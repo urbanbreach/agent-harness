@@ -17,7 +17,7 @@ fn discovery_context(cwd: &Path, xdg_config_home: Option<&Path>) -> ConfigLoadCo
 }
 
 fn config_fixture(
-    agents: &str,
+    agent: &str,
     api_key: &str,
     ui_section: Option<&str>,
     schema: Option<&str>,
@@ -45,8 +45,9 @@ fn config_fixture(
               }},
             }},
           }},
-          agents: {{
-            {agents}
+          model: "default/gpt-4o-mini",
+          agent: {{
+            {agent}
           }},
           permissions: {{
             defaults: {{
@@ -95,7 +96,7 @@ fn config_fixture(
         "#,
         schema_section = schema_section,
         api_key = api_key,
-        agents = agents,
+        agent = agent,
         ui_section = ui_section,
     )
 }
@@ -103,9 +104,7 @@ fn config_fixture(
 fn deep_profile(extra_fields: &str) -> String {
     format!(
         r#"
-            deep: {{
-              description: "Deep work",
-              model_ref: "default:gpt-4o-mini",
+            default: {{
               {extra_fields}
             }},
             "#,
@@ -150,11 +149,10 @@ fn public_minimal_config_with_permission(permission: &str) -> String {
           }},
           model: "default/gpt-4o-mini",
           agent: {{
-            build: {{
-              system_prompt: "Build work"
+            default: {{
+              system_prompt: "Do the work"
             }}
           }},
-          default_agent: "build",
           permission: {permission}
         }}
         "#
@@ -180,18 +178,16 @@ fn public_minimal_config_without_permission() -> String {
           },
           model: "default/gpt-4o-mini",
           agent: {
-            build: {
-              system_prompt: "Build work"
+            default: {
+              system_prompt: "Do the work"
             }
-          },
-          default_agent: "build"
+          }
         }
         "#
     .to_string()
 }
 
 mod agents_profiles_test;
-mod discovery_merge_overlay_test;
 mod discovery_merge_test;
 mod discovery_schema_test;
 mod env_assets_test;

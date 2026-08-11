@@ -38,9 +38,9 @@ use harness_core::store::EventStoreError;
 use harness_core::tool::{Tool, ToolCapability, ToolContext, ToolError, ToolRegistry, ToolResult};
 use harness_providers::mock::{request_digest, MockProvider};
 use harness_providers::{
-    CompletionMessage, CompletionRequest, CompletionUsage, MessageRole, Provider, ProviderErrorCategory,
-    ProviderEventStream, ProviderStreamEvent, ProviderStreamFinishedMetadata,
-    ProviderStreamStartMetadata, ProviderStreamThinkingMetadata,
+    CompletionMessage, CompletionRequest, CompletionUsage, MessageRole, Provider,
+    ProviderErrorCategory, ProviderEventStream, ProviderStreamEvent,
+    ProviderStreamFinishedMetadata, ProviderStreamStartMetadata, ProviderStreamThinkingMetadata,
 };
 use serde_json::json;
 use tokio::sync::Notify;
@@ -127,7 +127,9 @@ async fn deterministic_runs_suppress_live_hook_execution() {
     let tool_finished = events
         .iter()
         .find_map(|event| match &event.payload {
-            EventV1::ToolCallFinished(data) if data.tool_call_id.as_str() == tool_call_id => Some(data),
+            EventV1::ToolCallFinished(data) if data.tool_call_id.as_str() == tool_call_id => {
+                Some(data)
+            }
             _ => None,
         })
         .unwrap_or_abort();
@@ -185,7 +187,10 @@ fn overflow_checkpoint(run: &RunInfo, events: &[EventEnvelopeV1]) -> ProviderCon
     checkpoint_for_trigger(run, events, "overflow_retry")
 }
 
-#[allow(deprecated, reason = "deprecated compaction event variants kept for backward compatibility tests")]
+#[allow(
+    deprecated,
+    reason = "deprecated compaction event variants kept for backward compatibility tests"
+)]
 fn checkpoint_for_trigger(
     run: &RunInfo,
     events: &[EventEnvelopeV1],
@@ -366,6 +371,10 @@ fn test_agent_tool_coordinator_with_compaction(
     config.permission_policy = permission_policy;
     config.compaction = compaction;
     config.agent_profiles = agent_profiles();
+    if let Some(profile) = config.agent_profiles.get_mut("default") {
+        profile.toolset = alpha_toolset.clone();
+        profile.max_iters = Some(alpha_max_iters);
+    }
     if let Some(profile) = config.agent_profiles.get_mut("alpha") {
         profile.toolset = alpha_toolset;
         profile.max_iters = Some(alpha_max_iters);
@@ -560,7 +569,7 @@ fn write_resumable_history_fixture(session_dir: &Path, run_id: &str) {
             2,
             EventV1::AgentSpawned(AgentSpawnedEvent {
                 agent_id: "agent_000001".to_string(),
-                profile: "alpha".to_string(),
+                profile: "default".to_string(),
                 parent_agent_id: None,
             }),
         ),
@@ -639,7 +648,7 @@ fn write_resumable_multi_turn_history_fixture(session_dir: &Path, run_id: &str) 
             2,
             EventV1::AgentSpawned(AgentSpawnedEvent {
                 agent_id: "agent_000001".to_string(),
-                profile: "alpha".to_string(),
+                profile: "default".to_string(),
                 parent_agent_id: None,
             }),
         ),
@@ -825,57 +834,40 @@ fn resume_fixture_event_with_actor_and_correlation(
 fn agent_profiles() -> BTreeMap<String, AgentProfile> {
     let mut profiles = BTreeMap::new();
     profiles.insert(
+        "default".to_string(),
+        AgentProfile { name: "default".to_string(), model_ref: "mock:model-1".to_string(),
+        model_ref_explicit: true,
+        system_prompt: "default-prompt".to_string(),
+        cache_retention: Default::default(),
+        max_iters: Some(12),
+        temperature: Some(0.0),
+        tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
+        toolset: vec![],
+        permission_ruleset: Vec::new(), },
+    );
+    profiles.insert(
         "alpha".to_string(),
-        AgentProfile {
-            name: "alpha".to_string(),
-            category: "deep".to_string(),
-            model_ref: "mock:model-1".to_string(),
-            model_ref_explicit: true,
-            system_prompt: "alpha-prompt".to_string(),
-            cache_retention: Default::default(),
-            max_iters: Some(12),
-            temperature: Some(0.0),
-            tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
-            toolset: vec![],
-            permission_ruleset: Vec::new(),
-        },
+        AgentProfile { name: "alpha".to_string(), model_ref: "mock:model-1".to_string(),
+        model_ref_explicit: true,
+        system_prompt: "alpha-prompt".to_string(),
+        cache_retention: Default::default(),
+        max_iters: Some(12),
+        temperature: Some(0.0),
+        tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
+        toolset: vec![],
+        permission_ruleset: Vec::new(), },
     );
     profiles.insert(
         "beta".to_string(),
-        AgentProfile {
-            name: "beta".to_string(),
-            category: "deep".to_string(),
-            model_ref: "mock:model-1".to_string(),
-            model_ref_explicit: true,
-            system_prompt: "beta-prompt".to_string(),
-            cache_retention: Default::default(),
-            max_iters: Some(12),
-            temperature: Some(0.0),
-            tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
-            toolset: vec![],
-            permission_ruleset: Vec::new(),
-        },
-    );
-    profiles
-}
-
-fn agent_profiles_with_title_agent() -> BTreeMap<String, AgentProfile> {
-    let mut profiles = agent_profiles();
-    profiles.insert(
-        harness_core::session_title::TITLE_AGENT_NAME.to_string(),
-        AgentProfile {
-            name: harness_core::session_title::TITLE_AGENT_NAME.to_string(),
-            category: harness_core::session_title::TITLE_AGENT_NAME.to_string(),
-            model_ref: "mock:title-model".to_string(),
-            model_ref_explicit: true,
-            system_prompt: harness_core::session_title::TITLE_AGENT_SYSTEM_PROMPT.to_string(),
-            cache_retention: Default::default(),
-            max_iters: None,
-            temperature: Some(harness_core::session_title::TITLE_AGENT_TEMPERATURE),
-            tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
-            toolset: vec![],
-            permission_ruleset: Vec::new(),
-        },
+        AgentProfile { name: "beta".to_string(), model_ref: "mock:model-1".to_string(),
+        model_ref_explicit: true,
+        system_prompt: "beta-prompt".to_string(),
+        cache_retention: Default::default(),
+        max_iters: Some(12),
+        temperature: Some(0.0),
+        tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
+        toolset: vec![],
+        permission_ruleset: Vec::new(), },
     );
     profiles
 }

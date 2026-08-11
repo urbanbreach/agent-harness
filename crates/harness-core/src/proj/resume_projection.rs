@@ -898,9 +898,66 @@ fn resume_plan_disabled_reason(
     if known_profiles.is_empty() {
         return Some("agent/profile bindings are unavailable".to_string());
     }
+    if known_profiles.iter().any(|profile| {
+        !matches!(
+            profile.as_str(),
+            "default" | "explore" | "general" | "librarian"
+        )
+    }) {
+        return Some("legacy unsupported profile binding cannot be resumed".to_string());
+    }
     if provider_model.is_none() {
         return Some("provider/model binding is unavailable".to_string());
     }
 
     None
+}
+
+#[cfg(test)]
+mod generic_profile_tests {
+    use std::collections::BTreeSet;
+
+    use super::{resume_plan_disabled_reason, LifecycleSegmentStatus};
+
+    #[test]
+    fn legacy_role_profile_binding_disables_resume() {
+        let known_profiles = BTreeSet::from(["build".to_string()]);
+
+        let reason = resume_plan_disabled_reason(
+            1,
+            LifecycleSegmentStatus::Finished,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            Some("/workspace/project"),
+            &known_profiles,
+            Some("mock/model-1"),
+        );
+
+        assert_eq!(
+            reason.as_deref(),
+            Some("legacy unsupported profile binding cannot be resumed")
+        );
+    }
+
+    #[test]
+    fn supported_named_subagent_profile_bindings_remain_resumable() {
+        let known_profiles = BTreeSet::from([
+            "default".to_string(),
+            "explore".to_string(),
+            "general".to_string(),
+            "librarian".to_string(),
+        ]);
+
+        let reason = resume_plan_disabled_reason(
+            1,
+            LifecycleSegmentStatus::Finished,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            Some("/workspace/project"),
+            &known_profiles,
+            Some("mock/model-1"),
+        );
+
+        assert_eq!(reason, None);
+    }
 }

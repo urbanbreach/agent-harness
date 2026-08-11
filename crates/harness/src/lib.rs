@@ -246,7 +246,7 @@ enum Commands {
         #[command(subcommand)]
         command: dashboard_cmd::DashboardSubcommand,
     },
-    /// Agent profile selection or ACP stdio agent mode.
+    /// ACP stdio agent mode.
     Agent {
         #[command(subcommand)]
         command: agent_stdio_cmd::AgentSubcommand,
@@ -1647,8 +1647,7 @@ mod tests {
     }
   },
   "model": "default/mock-model",
-  "agent": {"build": {"enable": true, "model": "default/mock-model"}},
-  "default_agent": "build"
+  "agent": {"default": {"model": "default/mock-model"}}
 }
 "#,
         )
@@ -1694,8 +1693,7 @@ mod tests {
     }
   },
   "model": "default/mock-model",
-  "agent": {"build": {"enable": true, "model": "default/mock-model"}},
-  "default_agent": "build"
+  "agent": {"default": {"model": "default/mock-model"}}
 }
 "#,
         )
@@ -1823,8 +1821,7 @@ mod tests {
     }
   },
   "model": "default/mock-model",
-  "agent": {"build": {"enable": true, "model": "default/mock-model"}},
-  "default_agent": "build"
+  "agent": {"default": {"model": "default/mock-model"}}
 }
 "#,
         )
@@ -1887,8 +1884,7 @@ mod tests {
     }
   },
   "model": "default/mock-model",
-  "agent": {"build": {"enable": true, "model": "default/mock-model"}},
-  "default_agent": "build"
+  "agent": {"default": {"model": "default/mock-model"}}
 }
 "#,
         )
@@ -1896,8 +1892,7 @@ mod tests {
         std::fs::write(
             project.join("harness.jsonc"),
             r#"{
-  "model": "default/mock-model",
-  "default_agent": "build"
+  "model": "default/mock-model"
 }
 "#,
         )

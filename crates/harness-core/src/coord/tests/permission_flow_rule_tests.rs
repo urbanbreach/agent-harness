@@ -18,12 +18,11 @@ pub(crate) async fn permission_rule_bash_selector_is_enforced_at_tool_call_site(
           },
           model: "default/gpt-4o-mini",
           agent: {
-            worker: {
+            default: {
               system_prompt: "Deep work",
               tools: ["shell.run"]
             }
           },
-          default_agent: "worker",
           permission: {
             bash: {
               "git status": "deny",
@@ -59,7 +58,7 @@ pub(crate) async fn permission_rule_bash_selector_is_enforced_at_tool_call_site(
     let denied = handle
         .request_tool_call(
             actor.clone(),
-            Some("worker".to_string()),
+            Some("default".to_string()),
             "shell.run",
             json!({"cmd": "git status"}),
         )
@@ -70,7 +69,7 @@ pub(crate) async fn permission_rule_bash_selector_is_enforced_at_tool_call_site(
     let allowed_tool_call_id = handle
         .request_tool_call(
             actor,
-            Some("worker".to_string()),
+            Some("default".to_string()),
             "shell.run",
             json!({"cmd": "git diff"}),
         )
@@ -107,12 +106,12 @@ pub(crate) async fn permission_rule_bash_selector_is_enforced_at_tool_call_site(
     }));
 }
 
-pub(crate) fn task_permission_rule_selector_uses_subagent_type_before_aliases() {
+pub(crate) fn task_permission_rule_selector_uses_only_subagent_type() {
     assert_eq!(
         permission_rule_request_selectors(
             Path::new("/workspace"),
             PermissionKind::Task,
-            &json!({"subagent_type": "explore", "category": "deep"}),
+            &json!({"subagent_type": "explore"}),
         ),
         vec![PermissionRuleRequest::TaskAgent("explore".to_string())]
     );
@@ -122,7 +121,7 @@ pub(crate) fn task_permission_rule_selector_uses_subagent_type_before_aliases() 
             PermissionKind::Task,
             &json!({"profileName": "reviewer"}),
         ),
-        vec![PermissionRuleRequest::TaskAgent("reviewer".to_string())]
+        Vec::<PermissionRuleRequest>::new()
     );
     assert_eq!(
         permission_rule_request_selectors(
@@ -130,7 +129,7 @@ pub(crate) fn task_permission_rule_selector_uses_subagent_type_before_aliases() 
             PermissionKind::Task,
             &json!({"subagent_type": "  ", "agent": " general "}),
         ),
-        vec![PermissionRuleRequest::TaskAgent("general".to_string())]
+        Vec::<PermissionRuleRequest>::new()
     );
     assert_eq!(
         permission_rule_request_selectors(
@@ -138,10 +137,7 @@ pub(crate) fn task_permission_rule_selector_uses_subagent_type_before_aliases() 
             PermissionKind::Task,
             &json!({"category": "quick"}),
         ),
-        vec![
-            PermissionRuleRequest::TaskAgent("quick".to_string()),
-            PermissionRuleRequest::TaskAgent("general".to_string()),
-        ]
+        Vec::<PermissionRuleRequest>::new()
     );
 }
 
@@ -162,19 +158,18 @@ pub(crate) async fn permission_rule_task_selector_is_enforced_at_tool_call_site(
           },
           model: "default/gpt-4o-mini",
           agent: {
-            worker: {
+            default: {
               system_prompt: "Deep work",
               tools: ["task"]
             }
           },
-          default_agent: "worker",
           permission: {
             bash: "allow",
             edit: "allow",
             question: "allow",
             task: {
               general: "deny",
-              quick: "allow",
+              explore: "allow",
               "*": "allow"
             },
             webfetch: "allow",
@@ -203,7 +198,7 @@ pub(crate) async fn permission_rule_task_selector_is_enforced_at_tool_call_site(
     let whitespace_denied = handle
         .request_tool_call(
             actor.clone(),
-            Some("worker".to_string()),
+            Some("default".to_string()),
             "task",
             json!({
                 "description": "Review",
@@ -219,24 +214,34 @@ pub(crate) async fn permission_rule_task_selector_is_enforced_at_tool_call_site(
         CoordinatorError::PermissionDenied(_)
     ));
 
-    let fallback_denied = handle
+    let allowed_tool_call_id = handle
         .request_tool_call(
             actor,
-            Some("worker".to_string()),
+            Some("default".to_string()),
             "task",
             json!({
-                "description": "Quick",
-                "prompt": "Quick work",
-                "category": "quick",
+                "description": "Explore",
+                "prompt": "Explore work",
+                "subagent_type": "explore",
                 "load_skills": [],
             }),
         )
         .await
-        .expect_err("category fallback selector should deny general fallback");
-    assert!(matches!(
-        fallback_denied,
-        CoordinatorError::PermissionDenied(_)
-    ));
+        .unwrap_or_abort();
+
+    wait_for_events(
+        &handle,
+        &run.events_path,
+        "allowed task rule tool call to start",
+        |event| {
+            matches!(
+                &event.payload,
+                EventV1::ToolCallStarted(data)
+                    if data.tool_call_id.as_str() == allowed_tool_call_id
+            )
+        },
+    )
+    .await;
 
     handle.stop_run().await.unwrap_or_abort();
     let events = read_events(&run.events_path);
@@ -247,9 +252,12 @@ pub(crate) async fn permission_rule_task_selector_is_enforced_at_tool_call_site(
                 if data.reason.as_deref() == Some("policy denied request (task)")
         )
     }));
-    assert!(events
-        .iter()
-        .all(|event| { !matches!(&event.payload, EventV1::ToolCallStarted(_)) }));
+    assert!(events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::ToolCallStarted(data) if data.tool_call_id.as_str() == allowed_tool_call_id
+        )
+    }));
 }
 
 pub(crate) async fn perm_ask_path_blocks_until_resolved() {

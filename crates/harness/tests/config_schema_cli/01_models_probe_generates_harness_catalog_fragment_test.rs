@@ -258,7 +258,7 @@ fn schema_cli_prints_runtime_json_schema() {
     assert!(root_properties.contains_key("permission"));
     assert!(root_properties.contains_key("mcp"));
     assert!(root_properties.contains_key("runtime"));
-    assert!(root_properties.contains_key("mode"));
+    assert!(!root_properties.contains_key("default_agent"));
     assert!(root_properties.contains_key("server"));
     assert!(root_properties.contains_key("command"));
     assert!(root_properties.contains_key("formatter"));
@@ -274,35 +274,16 @@ fn schema_cli_prints_runtime_json_schema() {
         .get("properties")
         .and_then(Value::as_object)
         .unwrap_or_abort();
-    for agent in [
-        "build",
-        "plan",
-        "general",
-        "explore",
-        "visual-engineering",
-        "artistry",
-        "ultrabrain",
-        "deep",
-        "quick",
-        "unspecified-low",
-        "unspecified-high",
-        "writing",
-        "title",
-        "summary",
-        "compaction",
-    ] {
+    for agent in ["default", "explore", "general", "librarian"] {
         assert!(
             agent_map_properties.contains_key(agent),
             "agent schema should expose built-in agent `{agent}`"
         );
     }
     assert_eq!(
-        definitions["PublicAgentMap"]
-            .get("additionalProperties")
-            .and_then(|value| value.get("$ref"))
-            .and_then(Value::as_str),
-        Some("#/definitions/PublicAgentConfig"),
-        "agent schema should type custom agent names as PublicAgentConfig"
+        definitions["PublicAgentMap"].get("additionalProperties"),
+        Some(&serde_json::json!(false)),
+        "agent schema must reject role and category names outside the fixed catalog"
     );
 
     let model_properties = definitions["ModelConfig"]
@@ -369,18 +350,15 @@ fn schema_cli_prints_runtime_json_schema() {
         .and_then(Value::as_object)
         .unwrap_or_abort();
     for key in [
-        "name",
-        "description",
         "system_prompt",
         "model",
+        "variant",
+        "temperature",
         "top_p",
-        "mode",
-        "hidden",
-        "color",
         "options",
-        "enable",
-        "disable",
+        "permission",
         "max_iters",
+        "tool_failure_mode",
         "tools",
     ] {
         assert!(
@@ -474,21 +452,12 @@ fn config_validate_cli_accepts_shipped_example_config() {
     assert_eq!(provider.models.len(), 2);
     assert!(provider.models.contains_key("gpt-5.5"));
     assert!(provider.models.contains_key("gpt-5.4-mini"));
-    assert!(parsed.agents.contains_key("build"));
-    for category in [
-        "visual-engineering",
-        "artistry",
-        "ultrabrain",
-        "deep",
-        "quick",
-        "unspecified-low",
-        "unspecified-high",
-        "writing",
-    ] {
+    assert!(parsed.agents.contains_key("default"));
+    for subagent in ["explore", "general", "librarian"] {
         let agent = parsed
             .agents
-            .get(category)
-            .unwrap_or_else(|| panic!("missing category route profile {category}"));
+            .get(subagent)
+            .unwrap_or_else(|| panic!("missing named subagent profile {subagent}"));
         assert_eq!(agent.mode, AgentMode::Subagent);
         assert!(!agent.hidden);
         assert_eq!(
@@ -497,7 +466,7 @@ fn config_validate_cli_accepts_shipped_example_config() {
                 .as_ref()
                 .and_then(|permissions| permissions.task.as_ref()),
             Some(&PermissionMode::Deny),
-            "category route {category} should not recursively redelegate by default"
+            "named subagent {subagent} should not recursively redelegate by default"
         );
     }
     assert!(parsed.runtime.compaction.enabled);

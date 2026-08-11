@@ -96,25 +96,28 @@ impl TestWorkspace {
     }},
     "session_dir": "{sessions}"
   }},
-  "providers": {{
+  "provider": {{
     "default": {{
       "type": "openai_compatible",
-      "base_url": "http://127.0.0.1:8317/v1",
-      "api_key": "test-key",
+      "options": {{
+        "baseURL": "http://127.0.0.1:8317/v1",
+        "apiKey": "test-key"
+      }},
       "models": {{
         "mock-model": {{
-          "display_name": "Mock Model"
+          "name": "Mock Model"
         }}
       }}
     }}
   }},
-  "agents": {{
-    "build": {{
-      "description": "Build work",
-      "model_ref": "default:mock-model",
+  "model": "default/mock-model",
+  "agent": {{
+    "default": {{
+      "model": "default/mock-model",
       "tools": ["read"]
     }}
-  }}
+  }},
+  "permission": "allow"
 }}
 "#,
             seed = self.seed,

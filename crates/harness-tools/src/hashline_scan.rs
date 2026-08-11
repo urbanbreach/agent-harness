@@ -175,7 +175,7 @@ mod tests {
             workspace_root: workspace_root.to_path_buf(),
             artifacts_dir: artifacts_dir.to_path_buf(),
             actor: EventActor::new(ActorKind::Worker, Some("worker-1".to_string())),
-            category: Some("deep".to_string()),
+            profile: Some("deep".to_string()),
             tool_call_id: "tool-call-1".into(),
             current_model_ref: None,
             current_model_settings: None,

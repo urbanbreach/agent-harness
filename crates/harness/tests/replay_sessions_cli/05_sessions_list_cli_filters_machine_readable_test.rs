@@ -28,7 +28,7 @@ fn sessions_list_cli_filters_machine_readable_selectors() {
                 2,
                 EventV1::AgentSpawned(AgentSpawnedEvent {
                     agent_id: "agent_1".to_string(),
-                    profile: "worker".to_string(),
+                    profile: "default".to_string(),
                     parent_agent_id: None,
                 }),
             ),
@@ -83,7 +83,7 @@ fn sessions_list_cli_filters_machine_readable_selectors() {
                 "run_id": "run_prompt_filtered",
                 "run_name": "prompt",
                 "workspace_root": "/tmp/workspace",
-                "profile_preset": "worker",
+                "profile_preset": "default",
                 "mode_source": "prompt",
                 "created_at": "1710000000000"
             }))
@@ -108,7 +108,7 @@ fn sessions_list_cli_filters_machine_readable_selectors() {
                 2,
                 EventV1::AgentSpawned(AgentSpawnedEvent {
                     agent_id: "agent_2".to_string(),
-                    profile: "reviewer".to_string(),
+                    profile: "general".to_string(),
                     parent_agent_id: None,
                 }),
             ),
@@ -131,7 +131,7 @@ fn sessions_list_cli_filters_machine_readable_selectors() {
             "--status",
             "finished",
             "--profile",
-            "worker",
+            "default",
             "--resumable",
             "false",
         ]);
@@ -154,7 +154,7 @@ fn sessions_list_cli_filters_machine_readable_selectors() {
     assert_eq!(row["run_name"], "prompt");
     assert_eq!(row["status"], "finished");
     assert_eq!(row["workspace_root"], "/tmp/workspace");
-    assert_eq!(row["profile_preset"], "worker");
+    assert_eq!(row["profile_preset"], "default");
     assert_eq!(row["provider_model"], serde_json::Value::Null);
     assert_eq!(row["mode_source"], "prompt");
     assert_eq!(row["is_resumable"], false);
@@ -189,7 +189,7 @@ fn sessions_inspect_cli_accepts_positional_session_selector() {
                 2,
                 EventV1::AgentSpawned(AgentSpawnedEvent {
                     agent_id: "agent_1".to_string(),
-                    profile: "worker".to_string(),
+                    profile: "default".to_string(),
                     parent_agent_id: None,
                 }),
             ),

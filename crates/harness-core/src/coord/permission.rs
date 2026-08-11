@@ -1,7 +1,5 @@
 // allow: SIZE_OK — coordinator state machine (turn lifecycle + scheduling)
 use std::collections::BTreeSet;
-use std::fs;
-use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -21,7 +19,6 @@ use crate::redact::Redactor;
 use crate::tool::canonical_tool_id_for;
 
 use super::question::validate_question_answers_reason;
-use super::task_category::task_category_fallback_profile;
 use super::tool_metadata::effective_mcp_tool_id;
 use super::{
     append_permission_grant_recorded_event, append_permission_resolved_event, hooks,
@@ -258,6 +255,15 @@ fn collect_external_paths_from_bash(
 
     let mut scanned_tokens = BTreeSet::new();
     let mut external = BTreeSet::new();
+    for key in ["cwd", "workdir"] {
+        if let Some(path) = args_json
+            .get(key)
+            .and_then(Value::as_str)
+            .and_then(|raw| resolve_outside_workspace_path(workspace, raw))
+        {
+            external.insert(path);
+        }
+    }
     for command in &shell_request.commands {
         for pattern in &command.path_patterns {
             scanned_tokens.insert(pattern.path.clone());
@@ -465,17 +471,17 @@ pub(super) fn external_directory_summary(paths: &[PathBuf]) -> String {
 
 pub(super) fn evaluate_permission_rule_requests(
     policy: &PermissionPolicy,
-    category: Option<&str>,
+    profile: Option<&str>,
     kind: PermissionKind,
     selectors: &[PermissionRuleRequest],
 ) -> PolicyDecision {
     if selectors.is_empty() {
-        return policy.evaluate_request(category, kind, None);
+        return policy.evaluate_request(profile, kind, None);
     }
 
     let mut ask_decision = None;
     for selector in selectors {
-        match policy.evaluate_request(category, kind, Some(selector)) {
+        match policy.evaluate_request(profile, kind, Some(selector)) {
             PolicyDecision::Deny => return PolicyDecision::Deny,
             PolicyDecision::Ask {
                 timeout_ms,
@@ -486,6 +492,29 @@ pub(super) fn evaluate_permission_rule_requests(
                     default_decision,
                 });
             }
+            PolicyDecision::Allow => {}
+        }
+    }
+
+    ask_decision.unwrap_or(PolicyDecision::Allow)
+}
+
+pub(super) fn evaluate_permission_rule_requests_with_ruleset(
+    policy: &PermissionPolicy,
+    profile: Option<&str>,
+    kind: PermissionKind,
+    selectors: &[PermissionRuleRequest],
+    ruleset: &[crate::perm::PermissionRule],
+) -> PolicyDecision {
+    if selectors.is_empty() {
+        return policy.evaluate_request_with_ruleset(profile, kind, None, ruleset);
+    }
+
+    let mut ask_decision = None;
+    for selector in selectors {
+        match policy.evaluate_request_with_ruleset(profile, kind, Some(selector), ruleset) {
+            PolicyDecision::Deny => return PolicyDecision::Deny,
+            decision @ PolicyDecision::Ask { .. } => ask_decision = Some(decision),
             PolicyDecision::Allow => {}
         }
     }
@@ -517,175 +546,6 @@ pub(super) fn permission_rule_request_selectors(
     }
 }
 
-pub(super) fn plan_mode_edit_boundary_denial(
-    category: Option<&str>,
-    kind: Option<PermissionKind>,
-    run_id: &str,
-    workspace_root: &Path,
-    args_json: &Value,
-) -> Option<String> {
-    if category != Some(crate::plan::PLAN_AGENT_NAME) || kind != Some(PermissionKind::EditFs) {
-        return None;
-    }
-
-    let active_plan = crate::plan::plan_file_relative_path(run_id)
-        .to_string_lossy()
-        .to_string();
-    let paths = workspace_path_selector_paths(workspace_root, args_json);
-    if !paths.is_empty() && paths.iter().all(|path| path == &active_plan) {
-        return active_plan_symlink_denial(workspace_root, &active_plan);
-    }
-
-    let requested = if paths.is_empty() {
-        "<unresolved path>".to_string()
-    } else {
-        paths.join(", ")
-    };
-    Some(format!(
-        "plan mode may edit only the active plan file `{active_plan}`; requested `{requested}`"
-    ))
-}
-
-pub(super) fn plan_mode_shell_boundary_denial(
-    category: Option<&str>,
-    kind: Option<PermissionKind>,
-    args_json: &Value,
-) -> Option<String> {
-    if category != Some(crate::plan::PLAN_AGENT_NAME) || kind != Some(PermissionKind::Shell) {
-        return None;
-    }
-
-    let command = args_json
-        .get("command")
-        .or_else(|| args_json.get("cmd"))
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|command| !command.is_empty());
-    let Some(command) = command else {
-        return Some("plan mode bash requires a read-only inspection command".to_string());
-    };
-
-    if is_plan_mode_read_only_shell_command(command) {
-        None
-    } else {
-        Some(format!(
-            "plan mode bash may only run read-only inspection commands; requested `{command}`"
-        ))
-    }
-}
-
-fn is_plan_mode_read_only_shell_command(command: &str) -> bool {
-    let trimmed = command.trim();
-    if trimmed.is_empty()
-        || contains_shell_control_operator(trimmed)
-        || contains_shell_quote_or_escape(trimmed)
-    {
-        return false;
-    }
-
-    let tokens = trimmed.split_whitespace().collect::<Vec<_>>();
-    match tokens.as_slice() {
-        ["pwd"] => true,
-        ["ls", ..] => true,
-        ["git", subcommand, args @ ..] => is_plan_mode_read_only_git_command(subcommand, args),
-        _ => false,
-    }
-}
-
-fn is_plan_mode_read_only_git_command(subcommand: &str, args: &[&str]) -> bool {
-    match subcommand {
-        "status" | "diff" | "log" | "show" | "rev-parse" | "merge-base" => {
-            !contains_git_write_output_arg(args) && !contains_git_exec_capable_arg(args)
-        }
-        "branch" => is_plan_mode_read_only_git_branch(args),
-        _ => false,
-    }
-}
-
-fn contains_git_write_output_arg(args: &[&str]) -> bool {
-    args.iter()
-        .any(|arg| *arg == "-o" || *arg == "--output" || arg.starts_with("--output="))
-}
-
-fn contains_git_exec_capable_arg(args: &[&str]) -> bool {
-    args.iter().any(|arg| {
-        matches!(*arg, "--ext-diff" | "--textconv")
-            || arg.starts_with("--ext-diff=")
-            || arg.starts_with("--textconv=")
-    })
-}
-
-fn is_plan_mode_read_only_git_branch(args: &[&str]) -> bool {
-    const MUTATING_FLAGS: &[&str] = &[
-        "-d",
-        "-D",
-        "-m",
-        "-M",
-        "-c",
-        "-C",
-        "--copy",
-        "--create-reflog",
-        "--delete",
-        "--edit-description",
-        "--move",
-        "--no-track",
-        "--set-upstream-to",
-        "--track",
-        "--unset-upstream",
-    ];
-
-    !args.iter().any(|arg| {
-        MUTATING_FLAGS.contains(arg)
-            || arg.starts_with("--set-upstream-to=")
-            || !arg.starts_with('-')
-    })
-}
-
-fn contains_shell_control_operator(command: &str) -> bool {
-    command
-        .chars()
-        .any(|ch| matches!(ch, '>' | '<' | '|' | '&' | ';' | '`'))
-        || command.contains("$(")
-}
-
-fn contains_shell_quote_or_escape(command: &str) -> bool {
-    command.chars().any(|ch| matches!(ch, '\'' | '"' | '\\'))
-}
-
-fn active_plan_symlink_denial(workspace_root: &Path, active_plan: &str) -> Option<String> {
-    let mut current = workspace_root.to_path_buf();
-    for component in Path::new(active_plan).components() {
-        match component {
-            std::path::Component::Normal(segment) => current.push(segment),
-            std::path::Component::CurDir => continue,
-            std::path::Component::ParentDir
-            | std::path::Component::RootDir
-            | std::path::Component::Prefix(_) => {
-                return Some(format!(
-                    "plan mode active plan path `{active_plan}` contains an invalid component"
-                ));
-            }
-        }
-
-        match fs::symlink_metadata(&current) {
-            Ok(metadata) if metadata.file_type().is_symlink() => {
-                return Some(format!(
-                    "plan mode active plan path `{active_plan}` must not contain symlink component `{}`",
-                    current.display()
-                ));
-            }
-            Ok(_) => {}
-            Err(err) if err.kind() == io::ErrorKind::NotFound => return None,
-            Err(err) => {
-                return Some(format!(
-                    "plan mode could not verify active plan path `{active_plan}`: {err}"
-                ));
-            }
-        }
-    }
-    None
-}
-
 fn task_agent_rule_selectors(args_json: &Value) -> Vec<PermissionRuleRequest> {
     let mut nested_selectors = Vec::new();
     if let Some(members) = args_json.get("members").and_then(Value::as_array) {
@@ -704,27 +564,10 @@ fn task_agent_rule_selectors(args_json: &Value) -> Vec<PermissionRuleRequest> {
         return nested_selectors;
     }
 
-    let category = trimmed_arg(args_json, "category");
-    let subagent_type = ["subagent_type", "agent", "profile", "profileName"]
+    trimmed_arg(args_json, "subagent_type")
+        .map(PermissionRuleRequest::TaskAgent)
         .into_iter()
-        .find_map(|key| trimmed_arg(args_json, key));
-
-    match (category, subagent_type) {
-        (Some(category), Some(subagent_type)) if category == subagent_type => {
-            vec![PermissionRuleRequest::TaskAgent(category)]
-        }
-        (Some(_), Some(subagent_type)) | (None, Some(subagent_type)) => {
-            vec![PermissionRuleRequest::TaskAgent(subagent_type)]
-        }
-        (Some(category), None) => {
-            let mut selectors = vec![PermissionRuleRequest::TaskAgent(category.clone())];
-            if let Some(fallback) = task_category_fallback_profile(&category) {
-                selectors.push(PermissionRuleRequest::TaskAgent(fallback.to_string()));
-            }
-            selectors
-        }
-        (None, None) => Vec::new(),
-    }
+        .collect()
 }
 
 fn permission_rule_request_key(selector: &PermissionRuleRequest) -> &str {
@@ -951,17 +794,17 @@ impl super::Coordinator {
             .clone()
             .or_else(|| Some(pending.tool_call_id.clone()));
         let hook_tool_call_id = pending.tool_call_id.clone();
-        let (hook_actor, hook_agent_id, hook_tool_id, hook_category) = match &pending.resolution {
+        let (hook_actor, hook_agent_id, hook_tool_id, hook_profile) = match &pending.resolution {
             PendingPermissionResolution::ToolCall {
                 tool_id,
                 actor,
-                category,
+                profile,
                 ..
             } => (
                 actor.clone(),
                 actor.agent_id.clone(),
                 Some(tool_id.clone()),
-                category.clone(),
+                profile.clone(),
             ),
             PendingPermissionResolution::Question { actor, .. } => (
                 actor.clone(),
@@ -1001,7 +844,7 @@ impl super::Coordinator {
                 provider_id: None,
                 model_id: None,
                 parent_agent_id: None,
-                category: hook_category,
+                profile: hook_profile,
                 outcome: Some(permission_decision_label(permission_decision).to_string()),
                 output_summary: reason.clone(),
                 failure_reason: reason.clone(),
@@ -1021,7 +864,7 @@ impl super::Coordinator {
                         tool_id,
                         args_json,
                         actor,
-                        category,
+                        profile,
                         respond_to,
                     },
                 ..
@@ -1089,6 +932,18 @@ impl super::Coordinator {
                     }
 
                     let resolved_kind = grant_request.as_ref().map(|g| g.kind);
+                    let effective_permission_ruleset = actor
+                        .agent_id
+                        .as_deref()
+                        .and_then(|agent_id| run_state.agents.get(agent_id))
+                        .map(|profile| profile.permission_ruleset.clone())
+                        .or_else(|| {
+                            profile
+                                .as_deref()
+                                .and_then(|name| self.config.agent_profiles.get(name))
+                                .map(|profile| profile.permission_ruleset.clone())
+                        })
+                        .unwrap_or_default();
                     match resolved_kind {
                         Some(PermissionKind::ExternalDirectory) => {
                             let collection = collect_external_directory_paths(
@@ -1108,7 +963,8 @@ impl super::Coordinator {
                                     tool_id,
                                     args_json,
                                     actor,
-                                    category,
+                                    profile: profile.clone(),
+                                    permission_ruleset: effective_permission_ruleset.clone(),
                                     hook_executions: permission_hook_executions,
                                     tool_registry: Arc::clone(&self.config.tool_registry),
                                     request_correlation_id,
@@ -1133,7 +989,8 @@ impl super::Coordinator {
                                     tool_id,
                                     args_json,
                                     actor,
-                                    category,
+                                    profile: profile.clone(),
+                                    permission_ruleset: effective_permission_ruleset.clone(),
                                     hook_executions: permission_hook_executions,
                                     tool_registry: Arc::clone(&self.config.tool_registry),
                                     request_correlation_id,
@@ -1157,7 +1014,8 @@ impl super::Coordinator {
                                     tool_id,
                                     args_json,
                                     actor,
-                                    category,
+                                    profile: profile.clone(),
+                                    permission_ruleset: effective_permission_ruleset,
                                     hook_executions: permission_hook_executions,
                                     tool_registry: Arc::clone(&self.config.tool_registry),
                                     request_correlation_id,
@@ -1203,7 +1061,7 @@ impl super::Coordinator {
                                 tool_id,
                                 args_json,
                                 actor,
-                                category,
+                                profile,
                                 respond_to,
                             },
                         },
@@ -1255,17 +1113,17 @@ impl super::Coordinator {
             .clone()
             .or_else(|| Some(pending.tool_call_id.clone()));
         let hook_tool_call_id = pending.tool_call_id.clone();
-        let (hook_actor, hook_agent_id, hook_tool_id, hook_category) = match &pending.resolution {
+        let (hook_actor, hook_agent_id, hook_tool_id, hook_profile) = match &pending.resolution {
             PendingPermissionResolution::ToolCall {
                 tool_id,
                 actor,
-                category,
+                profile,
                 ..
             } => (
                 actor.clone(),
                 actor.agent_id.clone(),
                 Some(tool_id.clone()),
-                category.clone(),
+                profile.clone(),
             ),
             PendingPermissionResolution::Question { actor, .. } => (
                 actor.clone(),
@@ -1303,7 +1161,7 @@ impl super::Coordinator {
                 provider_id: None,
                 model_id: None,
                 parent_agent_id: None,
-                category: hook_category,
+                profile: hook_profile,
                 outcome: Some("deny".to_string()),
                 output_summary: Some(timeout_reason.clone()),
                 failure_reason: Some(timeout_reason.clone()),
@@ -1324,7 +1182,7 @@ impl super::Coordinator {
                         tool_id,
                         args_json,
                         actor,
-                        category,
+                        profile,
                         respond_to,
                     },
                 ..
@@ -1358,7 +1216,7 @@ impl super::Coordinator {
                             tool_id,
                             args_json,
                             actor,
-                            category,
+                            profile,
                             respond_to,
                         },
                     },
@@ -1466,5 +1324,39 @@ mod external_directory_path_collect_tests {
             "expected both external paths; got {:?}",
             collection.paths
         );
+    }
+
+    #[test]
+    fn collect_external_bash_workdir_includes_absolute_outside() {
+        // arrange
+        let workspace = Path::new("/workspace/project");
+
+        // act
+        let collection = collect_external_directory_paths(
+            workspace,
+            "bash",
+            &json!({"command": "pwd", "workdir": "/tmp/outside"}),
+        );
+
+        // assert
+        assert!(collection.hard_deny.is_none());
+        assert_eq!(collection.paths, vec![Path::new("/tmp/outside")]);
+    }
+
+    #[test]
+    fn collect_external_bash_cwd_includes_absolute_outside() {
+        // arrange
+        let workspace = Path::new("/workspace/project");
+
+        // act
+        let collection = collect_external_directory_paths(
+            workspace,
+            "bash",
+            &json!({"cmd": "pwd", "cwd": "/tmp/outside"}),
+        );
+
+        // assert
+        assert!(collection.hard_deny.is_none());
+        assert_eq!(collection.paths, vec![Path::new("/tmp/outside")]);
     }
 }

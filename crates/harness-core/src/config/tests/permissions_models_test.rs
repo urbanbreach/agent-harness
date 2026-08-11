@@ -569,12 +569,11 @@ fn model_limit_modalities_and_options_normalize_to_catalog_metadata() {
           },
           model: "default/gpt-4o-mini",
           agent: {
-            build: {
-              system_prompt: "Build work",
+            default: {
+              system_prompt: "Do the work",
               variant: "fast"
             }
           },
-          default_agent: "build",
           permission: "allow"
         }
         "#;
@@ -591,7 +590,7 @@ fn model_limit_modalities_and_options_normalize_to_catalog_metadata() {
     assert!(model.options.contains_key("reasoning"));
     assert_eq!(model.variants["fast"].limit.output, Some(32_000));
 
-    let metadata = resolve_profile_model_metadata(&parsed, "build").unwrap_or_abort();
+    let metadata = resolve_profile_model_metadata(&parsed, "default").unwrap_or_abort();
     assert_eq!(metadata.context_window_tokens, Some(128_000));
     assert_eq!(metadata.max_input_tokens, Some(64_000));
     assert_eq!(metadata.max_output_tokens, Some(32_000));

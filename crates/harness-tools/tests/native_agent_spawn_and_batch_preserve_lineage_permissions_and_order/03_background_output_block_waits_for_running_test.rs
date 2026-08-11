@@ -25,9 +25,9 @@ async fn background_output_block_waits_for_running_child_completion() {
             Some("deep".to_string()),
             "task",
             json!({
-                "category": "deep",
                 "description": "Delayed background child",
                 "prompt": "Return a delayed completed result",
+                "subagent_type": "general",
                 "run_in_background": true,
                 "load_skills": ["background-skill"]
             }),
@@ -99,17 +99,58 @@ async fn background_output_retrieves_child_result_after_coordinator_resume() {
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
 
-    let (handle, run, worker_id) = spawn_run(&workspace).await;
+    let session_dir = workspace.join("sessions");
+    fs::create_dir_all(&session_dir).unwrap_or_abort();
+    let mut initial_config = CoordinatorConfig::new(session_dir.clone());
+    initial_config.permission_policy = PermissionPolicy::new(
+        PermissionMode::Allow,
+        PermissionMode::Deny,
+        PermissionMode::Allow,
+    );
+    initial_config.provider = Arc::new(StaticProvider);
+    initial_config.tool_registry = Arc::new(coordinator_registry(ShellAllowlist::default()));
+    initial_config.agent_profiles = BTreeMap::from([
+        (
+            "default".to_string(),
+            named_worker_profile(
+                "default",
+                &[
+                    "task",
+                    "background_output",
+                    "background_cancel",
+                    "read",
+                    "bash",
+                ],
+            ),
+        ),
+        (
+            "general".to_string(),
+            named_worker_profile("general", &["read", "bash"]),
+        ),
+    ]);
+    let handle = spawn_coordinator(
+        initial_config,
+        Arc::new(RealClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    let run = handle
+        .start_run("resumable_generic_task", &workspace)
+        .await
+        .unwrap_or_abort();
+    let worker_id = handle
+        .spawn_agent_idle(anonymous_supervisor_actor(), "default", None)
+        .await
+        .unwrap_or_abort();
 
     let task_tool_call_id = handle
         .request_tool_call(
             worker_actor(&worker_id),
-            Some("deep".to_string()),
+            Some("default".to_string()),
             "task",
             json!({
-                "category": "deep",
                 "description": "Resumable background child",
                 "prompt": "Return a concise completed result after resume",
+                "subagent_type": "general",
                 "run_in_background": true,
                 "load_skills": []
             }),
@@ -128,7 +169,6 @@ async fn background_output_retrieves_child_result_after_coordinator_resume() {
     wait_for_request_terminal(&run.events_path, &request_id).await;
     handle.stop_run().await.unwrap_or_abort();
 
-    let session_dir = workspace.join("sessions");
     let mut config = CoordinatorConfig::new(session_dir);
     config.permission_policy = PermissionPolicy::new(
         PermissionMode::Allow,
@@ -150,12 +190,25 @@ async fn background_output_retrieves_child_result_after_coordinator_resume() {
             ]),
         ),
         (
-            "explore".to_string(),
-            named_worker_profile("explore", &["read", "glob", "grep", "list"]),
+            "default".to_string(),
+            named_worker_profile(
+                "default",
+                &[
+                    "task",
+                    "background_output",
+                    "background_cancel",
+                    "read",
+                    "bash",
+                ],
+            ),
         ),
         (
             "general".to_string(),
             named_worker_profile("general", &["read", "bash"]),
+        ),
+        (
+            "explore".to_string(),
+            named_worker_profile("explore", &["read", "glob", "grep", "list"]),
         ),
     ]);
     let resumed = spawn_coordinator(
@@ -166,17 +219,17 @@ async fn background_output_retrieves_child_result_after_coordinator_resume() {
     let resumed_run = resumed
         .resume_run(run.run_id.to_string(), run.run_name.to_string())
         .await
-        .unwrap_or_abort();
+        .expect("resume task run");
 
     let output_tool_call_id = resumed
         .request_tool_call(
             worker_actor(&worker_id),
-            Some("deep".to_string()),
+            Some("default".to_string()),
             "background_output",
             json!({ "request_id": request_id }),
         )
         .await
-        .unwrap_or_abort();
+        .expect("retrieve resumed generic child output");
     wait_for_tool_call_finish(&resumed_run.events_path, &output_tool_call_id).await;
 
     let events = read_events(&resumed_run.events_path);
@@ -189,7 +242,7 @@ async fn background_output_retrieves_child_result_after_coordinator_resume() {
     assert_eq!(output["status"], json!("completed"));
     assert_eq!(output["result_summary"], json!("static child result"));
     assert_eq!(output["source"], json!("event_replay"));
-    assert_eq!(output["runtime"]["profile"], json!("deep"));
+    assert_eq!(output["runtime"]["profile"], json!("general"));
     assert_eq!(output["route"], task_output["route"]);
 }
 #[tokio::test]
@@ -209,9 +262,9 @@ async fn background_cancel_uses_same_coordinator_cancellation_path() {
             Some("deep".to_string()),
             "task",
             json!({
-                "category": "deep",
                 "description": "Explicit cancellable child",
                 "prompt": "Keep running until explicit cancellation",
+                "subagent_type": "general",
                 "run_in_background": true,
                 "load_skills": []
             }),
@@ -283,9 +336,9 @@ async fn background_output_can_cancel_authorized_child_request() {
             Some("deep".to_string()),
             "task",
             json!({
-                "category": "deep",
                 "description": "Cancellable child",
                 "prompt": "Keep running until cancelled",
+                "subagent_type": "general",
                 "run_in_background": true,
                 "load_skills": []
             }),
@@ -332,7 +385,7 @@ async fn background_output_can_cancel_authorized_child_request() {
         output["cancel_reason"],
         json!("test requested cancellation")
     );
-    assert_eq!(output["runtime"]["profile"], json!("deep"));
+    assert_eq!(output["runtime"]["profile"], json!("general"));
     assert!(events.iter().any(|event| matches!(
         &event.payload,
         EventV1::TaskCancelled(payload)
@@ -356,9 +409,9 @@ async fn background_output_cancel_after_terminal_does_not_report_performed() {
             Some("deep".to_string()),
             "task",
             json!({
-                "category": "deep",
                 "description": "Completed child",
                 "prompt": "Return before cancellation",
+                "subagent_type": "general",
                 "run_in_background": true,
                 "load_skills": []
             }),
@@ -449,7 +502,7 @@ async fn background_output_rejects_sibling_request_ids() {
 
     let (handle, run, worker_id) = spawn_run(&workspace).await;
     let sibling_worker_id = handle
-        .spawn_agent(anonymous_supervisor_actor(), "deep", None)
+        .spawn_agent(anonymous_supervisor_actor(), "default", None)
         .await
         .unwrap_or_abort();
 
@@ -459,9 +512,9 @@ async fn background_output_rejects_sibling_request_ids() {
             Some("deep".to_string()),
             "task",
             json!({
-                "category": "deep",
                 "description": "Private child",
                 "prompt": "Return a concise completed result",
+                "subagent_type": "general",
                 "run_in_background": true,
                 "load_skills": []
             }),
@@ -508,7 +561,7 @@ async fn background_cancel_rejects_sibling_request_ids() {
 
     let (handle, run, worker_id) = spawn_run(&workspace).await;
     let sibling_worker_id = handle
-        .spawn_agent(anonymous_supervisor_actor(), "deep", None)
+        .spawn_agent(anonymous_supervisor_actor(), "default", None)
         .await
         .unwrap_or_abort();
 
@@ -518,9 +571,9 @@ async fn background_cancel_rejects_sibling_request_ids() {
             Some("deep".to_string()),
             "task",
             json!({
-                "category": "deep",
                 "description": "Private cancellable child",
                 "prompt": "Return a concise completed result",
+                "subagent_type": "general",
                 "run_in_background": true,
                 "load_skills": []
             }),

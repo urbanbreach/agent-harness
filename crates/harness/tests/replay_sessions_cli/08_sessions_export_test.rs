@@ -219,15 +219,12 @@ fn sessions_export_cli_support_includes_readiness_and_config_summaries() {
     }
   },
   "model": "test/gpt-5.4-mini",
-  "default_agent": "build",
   "permission": "ask",
   "agent": {
-    "build": {
-      "enable": true,
+    "default": {
       "model": "test/gpt-5.4-mini"
     },
     "general": {
-      "enable": true,
       "model": "test/gpt-5.4-mini"
     }
   },
@@ -381,9 +378,9 @@ fn sessions_export_cli_support_includes_readiness_and_config_summaries() {
                 && entry["status"] == "disabled"
                 && entry["source_scope"] == "project"
                 && entry["body_loaded"] == false
-        }));
+    }));
     assert_eq!(bundle["support"]["config_summary"]["loaded"], true);
-    assert_eq!(bundle["support"]["config_summary"]["default_agent"], "build");
+    assert_eq!(bundle["support"]["config_summary"]["agent_count"], 4);
     assert_eq!(
         bundle["support"]["provider_summary"]["providers"][0]["id"],
         "test"
@@ -424,8 +421,7 @@ fn sessions_export_cli_redacts_support_bundle_secret_shapes() {
       }
     }
   },
-  "model": "test/gpt-5.4-mini",
-  "default_agent": "build"
+  "model": "test/gpt-5.4-mini"
 }
 "#,
     )

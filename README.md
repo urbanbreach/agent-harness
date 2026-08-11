@@ -22,9 +22,9 @@ Harness is a CLI and terminal UI for running coding agents with one coordinator 
 
 | You need | Harness gives you |
 | --- | --- |
-| A dependable interactive agent | A compose-first Ratatui shell, model and agent switching, permission prompts, and session navigation. |
+| A dependable interactive agent | A compose-first Ratatui shell, model switching, permission prompts, and session navigation. |
 | Scriptable automation | `run` for headless prompts, `prompt` for the focused compatibility surface, and deterministic mock runs for offline checks. |
-| Controlled delegation | First-class `task` calls, purpose-built agent profiles, category routes, and coordinator-owned background-task controls. |
+| Controlled delegation | Generic child `task` calls with coordinator-owned permissions, lineage, and background-task controls. |
 | Debuggable history | Redacted event logs, side-effect-free replay and inspection, lineage, and support exports. |
 | A configuration you can reason about | JSONC runtime and TUI settings, layered discovery, source attribution, and a secret-safe doctor. |
 
@@ -101,11 +101,8 @@ Copy the starter, then tune the few decisions that actually shape day-to-day beh
   // Default provider/model for sessions started here.
   "model": "openai-codex/gpt-5.4-mini",
 
-  // Agents can use a direct model or a named model profile.
-  "agent": {
-    "build": { "variant": "high" },
-    "explore": { "enable": false }
-  },
+  // One generic parent plus bounded named subagents.
+  "agent": { "default": { "variant": "high" } },
 
   // Make sensitive work explicit. The last matching bash rule wins.
   "permission": {
@@ -120,15 +117,15 @@ Copy the starter, then tune the few decisions that actually shape day-to-day beh
 }
 ```
 
-The snippet shows edits to a copied starter, not a standalone config. The starter supplies the provider catalog and agent definitions that those settings refer to.
+The snippet shows edits to a copied starter, not a standalone config. The starter supplies the provider catalog and generic agent defaults that those settings extend.
 
 ### What to configure first
 
 | Setting | Why it matters |
 | --- | --- |
 | `provider` and `model` | Defines the available provider/model catalog and the active default. |
-| `model_profile` | Names reusable model + reasoning-variant routes for category agents and fallbacks. |
-| `agent` and `default_agent` | Enables, disables, and tunes the Build, Plan, Explore, General, and category profiles. |
+| `model_profile` | Names reusable model and reasoning-variant targets. |
+| `agent` | Tunes the generic `default` parent and named subagents such as `explore` and `librarian`. |
 | `permission` | Decides whether built-in tool capabilities are allowed, asked, or denied. |
 | `formatter` | Controls post-edit formatters; omit it to keep the built-in formatter registry enabled. |
 | `mcp` | Registers enabled, config-backed MCP servers into the runtime tool registry. |
@@ -137,7 +134,7 @@ The [full config reference](docs/configuration/config.md) documents every public
 
 ### Understand where a setting came from
 
-Runtime config layers merge from shared defaults to project-local settings. The canonical locations are XDG global config, project `harness.json{,c}`, and `.agent-harness/harness.json{,c}` discovered toward the project root; explicit environment overlays can take final precedence. Agent Markdown profiles in `.agent-harness/agents/` are discovered independently.
+Runtime config layers merge from shared defaults to project-local settings. The canonical locations are XDG global config, project `harness.json{,c}`, and `.agent-harness/harness.json{,c}` discovered toward the project root; explicit environment overlays can take final precedence. The shipped generic prompt lives at `.agent-harness/agents/default.md`.
 
 Do not guess which file won. Ask the CLI:
 
@@ -173,13 +170,13 @@ See the [TUI configuration reference](docs/configuration/config.md#tui-top-level
 
 | Goal | Use |
 | --- | --- |
-| Work interactively | `harness` — Build is selected by default; use `Tab` to cycle primary agents. |
-| Think before changing files | Switch to Plan. It can inspect the workspace and write its active plan, then asks to hand work back to Build. |
+| Work interactively | `harness` starts the generic coding agent. |
+| Think before changing files | Ask the generic agent for analysis or a written plan before implementation. |
 | Run in CI or a script | `harness run "<prompt>"` |
 | Exercise a focused lower-level prompt path | `harness prompt --text "<prompt>" --out events.jsonl` |
 | Delegate bounded work | Have an agent call the canonical `task` tool with an explicit prompt, background choice, and optional skill list. |
 
-The [agents and subagents guide](docs/operations/agents-and-subagents.md) explains the shipped profiles, category fallback, delegation-body shape, and the runtime boundaries that prevent worker redelegation bypasses.
+The [generic agent and tasks guide](docs/operations/generic-agent-and-tasks.md) explains the parent prompt, named subagents, delegation-body shape, and runtime boundaries that prevent worker redelegation bypasses.
 
 ### Keep sessions inspectable
 
@@ -195,6 +192,23 @@ Harness treats events as the source of truth. Session tools and the CLI inspect 
 ```
 
 Use a support export rather than sharing raw events. It contains replay-derived metadata, a redaction manifest, non-secret configuration summaries, and a secret-scan result. Learn more in [sessions and replay](docs/architecture/sessions-and-replay.md) and [privacy and local data](docs/permissions/privacy-and-local-data.md).
+
+For command discovery and automation, these canonical paths are stable:
+
+```bash
+harness config validate
+harness config show --effective
+harness config sources
+harness config explain model
+harness config settings
+harness doctor
+harness prompt --text "Summarize the workspace" --out events.jsonl
+harness sessions inspect <session>
+harness sessions export --session-dir <dir> --output support.json <session>
+harness sessions tree <session>
+harness sessions fork <session>
+harness sessions clone <session>
+```
 
 ### Know the safety boundary
 

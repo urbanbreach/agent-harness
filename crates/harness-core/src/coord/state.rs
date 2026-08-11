@@ -182,7 +182,7 @@ impl RunState {
                 profile_name: task.profile.name.clone(),
                 model_ref: task.request.model_ref.clone(),
                 model_settings: task.request.model_settings.clone(),
-                category: Some(task.profile.category.clone()),
+                profile: Some(task.profile.name.clone()),
                 queue_key: task.queue_key.clone(),
                 cancellation_token,
                 started_mono_ms: clock.mono_ms(),
@@ -329,7 +329,7 @@ pub(in crate::coord) struct RunningAgentTurn {
     pub(in crate::coord) profile_name: String,
     pub(in crate::coord) model_ref: String,
     pub(in crate::coord) model_settings: AgentModelSettings,
-    pub(in crate::coord) category: Option<String>,
+    pub(in crate::coord) profile: Option<String>,
     pub(in crate::coord) queue_key: ConcurrencyKey,
     pub(in crate::coord) cancellation_token: CancellationToken,
     pub(in crate::coord) started_mono_ms: u64,
@@ -443,7 +443,7 @@ pub(in crate::coord) struct TaskState {
 #[derive(Debug, Clone, Default)]
 pub(in crate::coord) struct TaskHookState {
     pub(in crate::coord) tool_id: String,
-    pub(in crate::coord) category: Option<String>,
+    pub(in crate::coord) profile: Option<String>,
     pub(in crate::coord) hook_executions: Vec<HookExecutionMetadata>,
 }
 
@@ -460,7 +460,7 @@ pub(in crate::coord) enum PendingPermissionResolution {
         tool_id: String,
         args_json: Value,
         actor: EventActor,
-        category: Option<String>,
+        profile: Option<String>,
         respond_to: Option<oneshot::Sender<Result<ToolResult, String>>>,
     },
     Question {
@@ -492,7 +492,7 @@ pub(in crate::coord) struct HookInvocationContext {
     pub(in crate::coord) provider_id: Option<String>,
     pub(in crate::coord) model_id: Option<String>,
     pub(in crate::coord) parent_agent_id: Option<String>,
-    pub(in crate::coord) category: Option<String>,
+    pub(in crate::coord) profile: Option<String>,
     pub(in crate::coord) outcome: Option<String>,
     pub(in crate::coord) output_summary: Option<String>,
     pub(in crate::coord) failure_reason: Option<String>,
@@ -500,7 +500,7 @@ pub(in crate::coord) struct HookInvocationContext {
 
 pub(in crate::coord) struct PermissionDeniedArgs<'a> {
     pub(in crate::coord) actor: EventActor,
-    pub(in crate::coord) category: Option<String>,
+    pub(in crate::coord) profile: Option<String>,
     pub(in crate::coord) tool_id: &'a str,
     pub(in crate::coord) args_json: &'a Value,
     pub(in crate::coord) tool_call_id: &'a str,
@@ -545,7 +545,8 @@ pub(in crate::coord) struct ToolCallExecutionArgs {
     pub(in crate::coord) tool_id: String,
     pub(in crate::coord) args_json: Value,
     pub(in crate::coord) actor: EventActor,
-    pub(in crate::coord) category: Option<String>,
+    pub(in crate::coord) profile: Option<String>,
+    pub(in crate::coord) permission_ruleset: Vec<crate::perm::PermissionRule>,
     pub(in crate::coord) hook_executions: Vec<HookExecutionMetadata>,
     pub(in crate::coord) tool_registry: Arc<ToolRegistry>,
     pub(in crate::coord) request_correlation_id: Option<String>,

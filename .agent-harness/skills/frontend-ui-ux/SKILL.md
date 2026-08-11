@@ -3,8 +3,6 @@ name: frontend-ui-ux
 description: Visual engineering guidance for UI, typography, spacing, motion, and evidence-backed operator polish.
 argument_hint: UI surface or visual problem
 allowed_tools: read, grep, bash
-target_agent: build
-target_category: visual-engineering
 mcp: none
 resources:
 ---

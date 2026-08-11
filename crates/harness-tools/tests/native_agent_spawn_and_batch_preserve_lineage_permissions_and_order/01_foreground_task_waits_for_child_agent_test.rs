@@ -1,9 +1,7 @@
 use harness_tools::UnwrapOrAbort;
+
 #[tokio::test]
 async fn foreground_task_waits_for_child_agent_turn_after_child_tool_result() {
-    // arrange
-    // act
-    // assert
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     write_fixture(&workspace);
@@ -96,27 +94,13 @@ async fn foreground_task_waits_for_child_agent_turn_after_child_tool_result() {
         })
         .unwrap_or_abort();
 
-    assert!(
-        child_tool_finish_seq < child_agent_finish_seq,
-        "child tool task should finish before the child agent turn"
-    );
-    assert!(
-        child_agent_finish_seq < parent_task_tool_finish_seq,
-        "foreground task tool must wait for child agent turn completion"
-    );
-
-    let requests = provider.requests().await;
-    assert_eq!(
-        requests.len(),
-        2,
-        "child should make tool-use and final requests"
-    );
+    assert!(child_tool_finish_seq < child_agent_finish_seq);
+    assert!(child_agent_finish_seq < parent_task_tool_finish_seq);
+    assert_eq!(provider.requests().await.len(), 2);
 }
+
 #[tokio::test]
-async fn task_subagent_inherits_parent_turn_model_when_profile_model_is_defaulted() {
-    // arrange
-    // act
-    // assert
+async fn generic_task_inherits_parent_turn_model_when_subagent_model_is_implicit() {
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let session_dir = workspace.join("sessions");
@@ -130,7 +114,7 @@ async fn task_subagent_inherits_parent_turn_model_when_profile_model_is_defaulte
         PermissionMode::Allow,
     );
     let provider_clone = Arc::clone(&provider);
-        config.provider = provider_clone;
+    config.provider = provider_clone;
     config.tool_registry = Arc::new(coordinator_registry(ShellAllowlist::default()));
     let mut general = named_worker_profile("general", &["read", "bash"]);
     general.model_ref_explicit = false;
@@ -159,7 +143,7 @@ async fn task_subagent_inherits_parent_turn_model_when_profile_model_is_defaulte
         .request_agent_turn_with_model(
             anonymous_supervisor_actor(),
             worker_id,
-            "delegate to general",
+            "delegate to default",
             Some("default:parent-model".to_string()),
             Some(AgentModelSettings {
                 variant: Some("parent-variant".to_string()),
@@ -173,12 +157,8 @@ async fn task_subagent_inherits_parent_turn_model_when_profile_model_is_defaulte
         .unwrap_or_abort();
 
     wait_for_request_terminal(&run.events_path, &request_id).await;
-
     let requests = provider.requests().await;
-    assert!(
-        requests.len() >= 2,
-        "expected parent and child provider requests, got {requests:#?}"
-    );
+    assert!(requests.len() >= 2);
     assert_eq!(requests[0].model_id, "parent-model");
     assert_eq!(requests[1].model_id, "parent-model");
     assert_eq!(requests[1].variant.as_deref(), Some("parent-variant"));
@@ -186,11 +166,9 @@ async fn task_subagent_inherits_parent_turn_model_when_profile_model_is_defaulte
     assert_eq!(requests[1].text_verbosity.as_deref(), Some("low"));
     assert_eq!(requests[1].reasoning_summary.as_deref(), Some("auto"));
 }
+
 #[tokio::test]
-async fn task_subagent_keeps_explicit_profile_model_over_parent_turn_model() {
-    // arrange
-    // act
-    // assert
+async fn generic_task_keeps_explicit_subagent_model_over_parent_turn_model() {
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let session_dir = workspace.join("sessions");
@@ -204,10 +182,10 @@ async fn task_subagent_keeps_explicit_profile_model_over_parent_turn_model() {
         PermissionMode::Allow,
     );
     let provider_clone = Arc::clone(&provider);
-        config.provider = provider_clone;
+    config.provider = provider_clone;
     config.tool_registry = Arc::new(coordinator_registry(ShellAllowlist::default()));
     let mut general = named_worker_profile("general", &["read", "bash"]);
-    general.model_ref = "default:general".to_string();
+    general.model_ref = "default:generic-child".to_string();
     config.agent_profiles = BTreeMap::from([
         (
             "deep".to_string(),
@@ -233,7 +211,7 @@ async fn task_subagent_keeps_explicit_profile_model_over_parent_turn_model() {
         .request_agent_turn_with_model(
             anonymous_supervisor_actor(),
             worker_id,
-            "delegate to general",
+            "delegate to default",
             Some("default:parent-model".to_string()),
             Some(AgentModelSettings {
                 variant: Some("parent-variant".to_string()),
@@ -247,249 +225,12 @@ async fn task_subagent_keeps_explicit_profile_model_over_parent_turn_model() {
         .unwrap_or_abort();
 
     wait_for_request_terminal(&run.events_path, &request_id).await;
-
     let requests = provider.requests().await;
-    assert!(
-        requests.len() >= 2,
-        "expected parent and child provider requests, got {requests:#?}"
-    );
+    assert!(requests.len() >= 2);
     assert_eq!(requests[0].model_id, "parent-model");
-    assert_eq!(requests[1].model_id, "general");
+    assert_eq!(requests[1].model_id, "generic-child");
     assert_eq!(requests[1].variant, None);
     assert_eq!(requests[1].reasoning_effort, None);
     assert_eq!(requests[1].text_verbosity, None);
     assert_eq!(requests[1].reasoning_summary, None);
-}
-#[tokio::test]
-async fn native_plan_exit_switches_to_build_agent_after_approval() {
-    // arrange
-    // act
-    // assert
-    let temp_dir = setup_workspace();
-    let workspace = temp_dir.path().join("workspace");
-    let session_dir = workspace.join("sessions");
-    fs::create_dir_all(&session_dir).unwrap_or_abort();
-
-    let mut config = CoordinatorConfig::new(session_dir);
-    config.permission_policy = plan_mode_permission_policy();
-    config.tool_registry = Arc::new(coordinator_registry_with_question_answers(
-        ShellAllowlist::default(),
-        vec![vec!["Yes".to_string()]],
-    ));
-    config.agent_profiles = BTreeMap::from([
-        (
-            "plan".to_string(),
-            named_worker_profile("plan", &["plan_exit"]),
-        ),
-        ("build".to_string(), named_worker_profile("build", &[])),
-    ]);
-
-    let handle = spawn_coordinator(
-        config,
-        Arc::new(RealClock::new()),
-        Arc::new(DefaultRedactor::default()),
-    );
-    let run = handle
-        .start_run("native_plan_exit", &workspace)
-        .await
-        .unwrap_or_abort();
-    let plan_agent_id = handle
-        .spawn_agent_idle(anonymous_supervisor_actor(), "plan", None)
-        .await
-        .unwrap_or_abort();
-
-    let tool_call_id = handle
-        .request_tool_call(
-            worker_actor(&plan_agent_id),
-            Some("plan".to_string()),
-            "plan_exit",
-            json!({}),
-        )
-        .await
-        .unwrap_or_abort();
-    wait_for_tool_call_finish(&run.events_path, &tool_call_id).await;
-
-    let events = read_events(&run.events_path);
-    let finished = find_finished(&events, &tool_call_id);
-    assert_eq!(finished.status, ToolCallStatus::Succeeded);
-    let output = finished.output_json.unwrap_or_abort();
-    assert_eq!(output["agent"], "build");
-    assert_eq!(
-        output["plan_file"],
-        format!(".agent-harness/plans/{}.md", run.run_id)
-    );
-    assert_eq!(output["approved"], true);
-    let build_agent_id = output["build_agent_id"]
-        .as_str()
-        .unwrap_or_abort()
-        .to_string();
-    assert!(output["request_id"].as_str().is_some());
-
-    assert!(events.iter().any(|event| matches!(
-        &event.payload,
-        EventV1::AgentSpawned(payload)
-            if payload.agent_id == build_agent_id
-                && payload.profile == "build"
-                && payload.parent_agent_id.as_deref() == Some(plan_agent_id.as_str())
-    )));
-    assert!(events.iter().any(|event| matches!(
-        &event.payload,
-        EventV1::UserMessageSubmitted(payload)
-            if payload.text.contains("Your operational mode has changed from plan to build")
-                && payload.text.contains("has been approved, and you can now edit files")
-                && payload.text.contains(".agent-harness/plans/")
-    )));
-}
-#[tokio::test]
-async fn native_plan_exit_decline_leaves_plan_agent_active_without_spawning_build() {
-    // arrange
-    // act
-    // assert
-    let temp_dir = setup_workspace();
-    let workspace = temp_dir.path().join("workspace");
-    let session_dir = workspace.join("sessions");
-    fs::create_dir_all(&session_dir).unwrap_or_abort();
-
-    let mut config = CoordinatorConfig::new(session_dir);
-    config.permission_policy = plan_mode_permission_policy();
-    config.tool_registry = Arc::new(coordinator_registry_with_question_answers(
-        ShellAllowlist::default(),
-        vec![vec!["No".to_string()]],
-    ));
-    config.agent_profiles = BTreeMap::from([
-        (
-            "plan".to_string(),
-            named_worker_profile("plan", &["plan_exit"]),
-        ),
-        ("build".to_string(), named_worker_profile("build", &[])),
-    ]);
-
-    let handle = spawn_coordinator(
-        config,
-        Arc::new(RealClock::new()),
-        Arc::new(DefaultRedactor::default()),
-    );
-    let run = handle
-        .start_run("native_plan_exit_decline", &workspace)
-        .await
-        .unwrap_or_abort();
-    let plan_agent_id = handle
-        .spawn_agent_idle(anonymous_supervisor_actor(), "plan", None)
-        .await
-        .unwrap_or_abort();
-
-    let tool_call_id = handle
-        .request_tool_call(
-            worker_actor(&plan_agent_id),
-            Some("plan".to_string()),
-            "plan_exit",
-            json!({}),
-        )
-        .await
-        .unwrap_or_abort();
-    wait_for_tool_call_finish(&run.events_path, &tool_call_id).await;
-
-    let events = read_events(&run.events_path);
-    let finished = find_finished(&events, &tool_call_id);
-    assert_eq!(finished.status, ToolCallStatus::Succeeded);
-    let output = finished.output_json.unwrap_or_abort();
-    assert_eq!(output["agent"], "plan");
-    assert_eq!(output["approved"], false);
-    assert_eq!(
-        output["plan_file"],
-        format!(".agent-harness/plans/{}.md", run.run_id)
-    );
-    assert!(!events.iter().any(|event| matches!(
-        &event.payload,
-        EventV1::AgentSpawned(payload) if payload.profile == "build"
-    )));
-    assert!(!events.iter().any(|event| matches!(
-        &event.payload,
-        EventV1::UserMessageSubmitted(payload)
-            if payload.text.contains("Your operational mode has changed from plan to build")
-    )));
-}
-#[tokio::test]
-async fn native_plan_enter_switches_to_plan_agent_after_approval() {
-    // arrange
-    // act
-    // assert
-    let temp_dir = setup_workspace();
-    let workspace = temp_dir.path().join("workspace");
-    let session_dir = workspace.join("sessions");
-    fs::create_dir_all(&session_dir).unwrap_or_abort();
-
-    let mut config = CoordinatorConfig::new(session_dir);
-    config.permission_policy = plan_mode_permission_policy();
-    config.tool_registry = Arc::new(coordinator_registry_with_question_answers(
-        ShellAllowlist::default(),
-        vec![vec!["Yes".to_string()]],
-    ));
-    config.agent_profiles = BTreeMap::from([
-        (
-            "build".to_string(),
-            named_worker_profile("build", &["plan_enter"]),
-        ),
-        (
-            "plan".to_string(),
-            named_worker_profile("plan", &["plan_exit"]),
-        ),
-    ]);
-
-    let handle = spawn_coordinator(
-        config,
-        Arc::new(RealClock::new()),
-        Arc::new(DefaultRedactor::default()),
-    );
-    let run = handle
-        .start_run("native_plan_enter", &workspace)
-        .await
-        .unwrap_or_abort();
-    let build_agent_id = handle
-        .spawn_agent_idle(anonymous_supervisor_actor(), "build", None)
-        .await
-        .unwrap_or_abort();
-
-    let tool_call_id = handle
-        .request_tool_call(
-            worker_actor(&build_agent_id),
-            Some("build".to_string()),
-            "plan_enter",
-            json!({"goal": "implement parity", "reason": "multi-file change"}),
-        )
-        .await
-        .unwrap_or_abort();
-    wait_for_tool_call_finish(&run.events_path, &tool_call_id).await;
-
-    let events = read_events(&run.events_path);
-    let finished = find_finished(&events, &tool_call_id);
-    assert_eq!(finished.status, ToolCallStatus::Succeeded);
-    let output = finished.output_json.unwrap_or_abort();
-    assert_eq!(output["agent"], "plan");
-    assert_eq!(output["goal"], "implement parity");
-    assert_eq!(output["approved"], true);
-    assert_eq!(
-        output["plan_file"],
-        format!(".agent-harness/plans/{}.md", run.run_id)
-    );
-    let plan_agent_id = output["plan_agent_id"]
-        .as_str()
-        .unwrap_or_abort()
-        .to_string();
-    assert!(output["request_id"].as_str().is_some());
-
-    assert!(events.iter().any(|event| matches!(
-        &event.payload,
-        EventV1::AgentSpawned(payload)
-            if payload.agent_id == plan_agent_id
-                && payload.profile == "plan"
-                && payload.parent_agent_id.as_deref() == Some(build_agent_id.as_str())
-    )));
-    assert!(events.iter().any(|event| matches!(
-        &event.payload,
-        EventV1::UserMessageSubmitted(payload)
-            if payload.text.contains("Your operational mode has changed from build to plan")
-                && payload.text.contains("Original goal to plan: implement parity")
-                && payload.text.contains(".agent-harness/plans/")
-    )));
 }

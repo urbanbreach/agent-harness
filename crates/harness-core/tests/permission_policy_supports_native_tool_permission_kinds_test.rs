@@ -25,7 +25,7 @@ fn permission_policy_supports_native_tool_permission_kinds() {
     let config = load_config_from_str(
         r#"
         {
-          providers: {
+          provider: {
             default: {
               type: "openai_compatible",
               base_url: "http://127.0.0.1:8317/v1",
@@ -39,11 +39,11 @@ fn permission_policy_supports_native_tool_permission_kinds() {
               },
             },
           },
-          agents: {
-            deep: {
-              description: "Deep work",
-              model_ref: "default:gpt-4o-mini",
-              permissions: {
+          model: "default/gpt-4o-mini",
+          agent: {
+            general: {
+              model: "default/gpt-4o-mini",
+              permission: {
                 task: "deny",
                 websearch: "allow",
                 lsp: "ask",
@@ -51,41 +51,14 @@ fn permission_policy_supports_native_tool_permission_kinds() {
               tools: ["task", "websearch", "lsp", "batch"],
             },
           },
-          permissions: {
-            defaults: {
-              edit: "ask",
-              shell: "deny",
-              network: "deny",
-            },
-          },
-          runtime: {
-            background_tasks: {
-              default_concurrency: 2,
-              provider_concurrency: 2,
-              model_concurrency: 2,
-              stale_timeout_ms: 15000,
-              message_staleness_timeout_ms: 5000,
-            },
-            session_dir: ".agent-harness/sessions",
-          },
-          integrations: {
-            remote_search: {
-              endpoint: "https://mcp.exa.ai/mcp",
-            },
-          },
+          permission: { edit: "ask", bash: "deny", network: "deny" },
         }
         "#,
     )
     .unwrap_or_abort();
 
-    assert_eq!(
-        config.paths.session_dir,
-        PathBuf::from(".agent-harness/sessions")
-    );
-
     let policy = PermissionPolicy::from_config(&config).with_ask_timeout_ms(ASK_TIMEOUT_MS);
 
-    // Ordinary kinds allow when omitted; base question stays deny (build/plan re-allow).
     assert_eq!(
         policy.evaluate(None, PermissionKind::Question),
         PolicyDecision::Deny
@@ -112,19 +85,19 @@ fn permission_policy_supports_native_tool_permission_kinds() {
     );
 
     assert_eq!(
-        policy.evaluate(Some("deep"), PermissionKind::Task),
+        policy.evaluate(Some("general"), PermissionKind::Task),
         PolicyDecision::Deny
     );
     assert_eq!(
-        policy.evaluate(Some("deep"), PermissionKind::WebFetch),
+        policy.evaluate(Some("general"), PermissionKind::WebFetch),
         PolicyDecision::Allow
     );
     assert_eq!(
-        policy.evaluate(Some("deep"), PermissionKind::WebSearch),
+        policy.evaluate(Some("general"), PermissionKind::WebSearch),
         PolicyDecision::Allow
     );
     assert_eq!(
-        policy.evaluate(Some("deep"), PermissionKind::Lsp),
+        policy.evaluate(Some("general"), PermissionKind::Lsp),
         deny_default_ask_decision()
     );
 

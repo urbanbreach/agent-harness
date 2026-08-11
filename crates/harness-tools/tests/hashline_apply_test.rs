@@ -394,7 +394,6 @@ fn test_coordinator(session_dir: &Path, permission_policy: PermissionPolicy) -> 
         "worker".to_string(),
         AgentProfile {
             name: "worker".to_string(),
-            category: "deep".to_string(),
             model_ref: "mock:model-1".to_string(),
             model_ref_explicit: true,
             system_prompt: "worker-prompt".to_string(),

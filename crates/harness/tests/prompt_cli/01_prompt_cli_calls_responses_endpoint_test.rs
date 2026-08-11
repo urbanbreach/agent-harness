@@ -158,7 +158,7 @@ async fn prompt_cli_generates_harness_session_title() {
     assert_eq!(meta["run_name"], "Debugging production 500 errors");
     assert_eq!(meta["mode_source"], "prompt");
 
-    let requests = provider.requests();
+    let requests = provider.all_requests();
     assert_eq!(
         requests.len(),
         2,

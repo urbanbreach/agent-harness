@@ -1,5 +1,4 @@
 use harness_core::UnwrapOrAbort;
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -7,8 +6,8 @@ use async_trait::async_trait;
 use harness_core::agent::AgentProfile;
 use harness_core::clock::FakeClock;
 use harness_core::config::{
-    CategoryPermissions, PermissionMode, PermissionRuleSet, PermissionSelector,
-    PermissionSelectorRule,
+    PermissionMode, PermissionRuleSet, PermissionSelector, PermissionSelectorRule,
+    ProfilePermissions,
 };
 use harness_core::coord::{
     spawn_coordinator, CoordinatorConfig, CoordinatorError, CoordinatorHandle,
@@ -70,35 +69,38 @@ impl Tool for TestEditTool {
 }
 
 #[tokio::test]
-async fn tool_auth_uses_derived_worker_category_not_caller_category() {
+async fn worker_tool_auth_uses_profile_name_not_caller_category() {
     // arrange
     // act
     // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let policy = allow_all_permission_policy()
-        .with_category_override(
-            "worker-deny",
-            CategoryPermissions {
-                shell: Some(PermissionMode::Deny),
-                ..CategoryPermissions::default()
+        .with_profile_override(
+            "worker",
+            ProfilePermissions {
+                shell: Some(PermissionMode::Allow),
+                ..ProfilePermissions::default()
             },
         )
-        .with_category_override(
-            "spoof-allow",
-            CategoryPermissions {
-                shell: Some(PermissionMode::Allow),
-                ..CategoryPermissions::default()
+        .with_profile_override(
+            "spoof-deny",
+            ProfilePermissions {
+                shell: Some(PermissionMode::Deny),
+                ..ProfilePermissions::default()
             },
         );
 
     let coordinator = test_coordinator(
         temp_dir.path(),
-        worker_profile("worker-deny", vec!["shell.run".to_string()]),
+        worker_profile(vec!["shell.run".to_string()]),
         policy,
     );
 
     let run = coordinator
-        .start_run("derived_category", PathBuf::from("/workspace/project"))
+        .start_run(
+            "profile_name_permission",
+            PathBuf::from("/workspace/project"),
+        )
         .await
         .unwrap_or_abort();
 
@@ -107,20 +109,16 @@ async fn tool_auth_uses_derived_worker_category_not_caller_category() {
         .await
         .unwrap_or_abort();
 
-    let error = coordinator
+    let tool_call_id = coordinator
         .request_tool_call(
             EventActor::new(ActorKind::Worker, Some(worker_agent_id)),
-            Some("spoof-allow".to_string()),
+            Some("spoof-deny".to_string()),
             SHELL_RUN_TOOL_ID,
             json!({"cmd": TRUE_CMD_ARGS}),
         )
         .await
-        .expect_err("request should be denied by derived worker category");
-
-    let denied_tool_call_id = match error {
-        CoordinatorError::PermissionDenied(tool_call_id) => tool_call_id,
-        other => panic!("expected PermissionDenied, got {other:?}"),
-    };
+        .expect("profile name permission should allow the request");
+    wait_for_tool_call_finish(&run.events_path, &tool_call_id).await;
 
     coordinator.stop_run().await.unwrap_or_abort();
 
@@ -128,17 +126,59 @@ async fn tool_auth_uses_derived_worker_category_not_caller_category() {
     assert!(events.iter().any(|event| {
         matches!(
             &event.payload,
-            EventV1::PermissionResolved(data)
-                if data.decision == PermissionDecision::Deny
-                    && data.reason.as_deref() == Some("policy denied request (shell)")
+            EventV1::ToolCallFinished(data) if data.tool_call_id.as_str() == tool_call_id
         )
     }));
-    assert!(!events.iter().any(|event| {
-        matches!(
-            &event.payload,
-            EventV1::ToolCallStarted(data) if data.tool_call_id.as_str() == denied_tool_call_id
+}
+
+#[tokio::test]
+async fn supervisor_tool_auth_ignores_caller_category_for_permission_routing() {
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
+    let policy = allow_all_permission_policy()
+        .with_profile_override(
+            "default",
+            ProfilePermissions {
+                shell: Some(PermissionMode::Allow),
+                ..ProfilePermissions::default()
+            },
         )
-    }));
+        .with_profile_override(
+            "spoof-deny",
+            ProfilePermissions {
+                shell: Some(PermissionMode::Deny),
+                ..ProfilePermissions::default()
+            },
+        );
+    let coordinator = test_coordinator(
+        temp_dir.path(),
+        worker_profile(vec!["shell.run".to_string()]),
+        policy,
+    );
+    let run = coordinator
+        .start_run(
+            "supervisor_profile_permission",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .unwrap_or_abort();
+
+    let tool_call_id = coordinator
+        .request_tool_call(
+            supervisor_actor(),
+            Some("spoof-deny".to_string()),
+            SHELL_RUN_TOOL_ID,
+            json!({"cmd": TRUE_CMD_ARGS}),
+        )
+        .await
+        .expect("default profile permission should allow the request");
+    wait_for_tool_call_finish(&run.events_path, &tool_call_id).await;
+    coordinator.stop_run().await.unwrap_or_abort();
+
+    let events = load_events(&run.events_path);
+    assert!(events.iter().any(|event| matches!(
+        &event.payload,
+        EventV1::ToolCallFinished(data) if data.tool_call_id.as_str() == tool_call_id
+    )));
 }
 
 #[tokio::test]
@@ -150,7 +190,7 @@ async fn unknown_worker_agent_id_is_denied_closed() {
 
     let coordinator = test_coordinator(
         temp_dir.path(),
-        worker_profile("worker-allow", vec!["shell.run".to_string()]),
+        worker_profile(vec!["shell.run".to_string()]),
         allow_all_permission_policy(),
     );
 
@@ -191,7 +231,7 @@ async fn worker_toolset_enforcement_blocks_non_allowlisted_tool() {
 
     let coordinator = test_coordinator(
         temp_dir.path(),
-        worker_profile("worker-allow", vec!["edit".to_string()]),
+        worker_profile(vec!["edit".to_string()]),
         allow_all_permission_policy(),
     );
 
@@ -240,7 +280,7 @@ async fn shell_permission_summary_redacts_command_secrets() {
     .with_ask_timeout_ms(1);
     let coordinator = test_coordinator(
         temp_dir.path(),
-        worker_profile("worker-allow", vec![SHELL_RUN_TOOL_ID.to_string()]),
+        worker_profile(vec![SHELL_RUN_TOOL_ID.to_string()]),
         policy,
     );
     let run = coordinator
@@ -309,9 +349,9 @@ async fn edit_rename_requires_permission_for_destination_path() {
     // act
     // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
-    let policy = allow_all_permission_policy().with_category_override(
-        "plan",
-        CategoryPermissions {
+    let policy = allow_all_permission_policy().with_profile_override(
+        "worker",
+        ProfilePermissions {
             edit: Some(PermissionMode::Deny),
             rules: PermissionRuleSet {
                 edit: vec![PermissionSelectorRule {
@@ -320,13 +360,13 @@ async fn edit_rename_requires_permission_for_destination_path() {
                 }],
                 ..PermissionRuleSet::default()
             },
-            ..CategoryPermissions::default()
+            ..ProfilePermissions::default()
         },
     );
 
     let coordinator = test_coordinator(
         temp_dir.path(),
-        worker_profile("plan", vec![EDIT_TOOL_ID.to_string()]),
+        worker_profile(vec![EDIT_TOOL_ID.to_string()]),
         policy,
     );
 
@@ -370,11 +410,6 @@ async fn edit_rename_requires_permission_for_destination_path() {
             &event.payload,
             EventV1::PermissionResolved(data)
                 if data.decision == PermissionDecision::Deny
-                    && data.reason.as_deref().is_some_and(|reason|
-                        reason.contains("plan mode may edit only the active plan file")
-                            && reason.contains("src/new.rs")
-                            && reason.contains("edit_fs")
-                    )
         )
     }));
     assert!(!events.iter().any(|event| {
@@ -386,14 +421,14 @@ async fn edit_rename_requires_permission_for_destination_path() {
 }
 
 #[tokio::test]
-async fn plan_mode_edit_requires_active_plan_file_not_sibling_plan() {
+async fn profile_edit_rules_allow_path_prefix_and_deny_outside() {
     // arrange
     // act
     // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
-    let policy = allow_all_permission_policy().with_category_override(
-        "plan",
-        CategoryPermissions {
+    let policy = allow_all_permission_policy().with_profile_override(
+        "worker",
+        ProfilePermissions {
             edit: Some(PermissionMode::Deny),
             rules: PermissionRuleSet {
                 edit: vec![
@@ -408,14 +443,14 @@ async fn plan_mode_edit_requires_active_plan_file_not_sibling_plan() {
                 ],
                 ..PermissionRuleSet::default()
             },
-            ..CategoryPermissions::default()
+            ..ProfilePermissions::default()
         },
     );
 
     let workspace = temp_dir.path().join("workspace");
     let coordinator = test_coordinator(
         temp_dir.path(),
-        worker_profile("plan", vec![EDIT_TOOL_ID.to_string()]),
+        worker_profile(vec![EDIT_TOOL_ID.to_string()]),
         policy,
     );
 
@@ -445,10 +480,10 @@ async fn plan_mode_edit_requires_active_plan_file_not_sibling_plan() {
             EventActor::new(ActorKind::Worker, Some(worker_agent_id)),
             Some("spoof-allow".to_string()),
             EDIT_TOOL_ID,
-            json!({ "filePath": ".agent-harness/plans/other-run.md" }),
+            json!({ "filePath": "src/lib.rs" }),
         )
         .await
-        .expect_err("sibling plan file edit must be denied");
+        .expect_err("path outside the allowed prefix must be denied");
 
     let denied_tool_call_id = match denied_error {
         CoordinatorError::PermissionDenied(tool_call_id) => tool_call_id,
@@ -467,10 +502,6 @@ async fn plan_mode_edit_requires_active_plan_file_not_sibling_plan() {
         &event.payload,
         EventV1::PermissionResolved(data)
             if data.decision == PermissionDecision::Deny
-                && data.reason.as_deref().is_some_and(|reason|
-                    reason.contains("plan mode may edit only the active plan file")
-                        && reason.contains("edit_fs")
-                )
     )));
     assert!(!events.iter().any(|event| matches!(
         &event.payload,
@@ -478,86 +509,9 @@ async fn plan_mode_edit_requires_active_plan_file_not_sibling_plan() {
     )));
 }
 
-#[cfg(unix)]
-#[tokio::test]
-async fn plan_mode_edit_rejects_symlinked_active_plan_directory() {
-    // arrange
-    // act
-    // assert
-    let temp_dir = tempfile::tempdir().unwrap_or_abort();
-    let workspace = temp_dir.path().join("workspace");
-    let redirected_agent_harness = temp_dir.path().join("redirected-agent-harness");
-    fs::create_dir_all(&redirected_agent_harness).unwrap_or_abort();
-    fs::create_dir_all(&workspace).unwrap_or_abort();
-    std::os::unix::fs::symlink(&redirected_agent_harness, workspace.join(".agent-harness"))
-        .unwrap_or_abort();
-
-    let policy = allow_all_permission_policy().with_category_override(
-        "plan",
-        CategoryPermissions {
-            edit: Some(PermissionMode::Deny),
-            rules: PermissionRuleSet {
-                edit: vec![PermissionSelectorRule {
-                    selector: PermissionSelector::Prefix(".agent-harness/plans/".to_string()),
-                    mode: PermissionMode::Allow,
-                }],
-                ..PermissionRuleSet::default()
-            },
-            ..CategoryPermissions::default()
-        },
-    );
-    let coordinator = test_coordinator(
-        temp_dir.path(),
-        worker_profile("plan", vec![EDIT_TOOL_ID.to_string()]),
-        policy,
-    );
-
-    let run = coordinator
-        .start_run("symlinked_active_plan_edit", &workspace)
-        .await
-        .unwrap_or_abort();
-    let worker_agent_id = coordinator
-        .spawn_agent(supervisor_actor(), "worker", None)
-        .await
-        .unwrap_or_abort();
-    let active_plan = harness_core::plan::plan_file_display_path(run.run_id.as_str());
-
-    let denied_error = coordinator
-        .request_tool_call(
-            EventActor::new(ActorKind::Worker, Some(worker_agent_id)),
-            Some("spoof-allow".to_string()),
-            EDIT_TOOL_ID,
-            json!({ "filePath": active_plan }),
-        )
-        .await
-        .expect_err("symlinked active plan path must be denied");
-    let denied_tool_call_id = match denied_error {
-        CoordinatorError::PermissionDenied(tool_call_id) => tool_call_id,
-        other => panic!("expected PermissionDenied, got {other:?}"),
-    };
-
-    coordinator.stop_run().await.unwrap_or_abort();
-
-    let events = load_events(&run.events_path);
-    assert!(events.iter().any(|event| matches!(
-        &event.payload,
-        EventV1::PermissionResolved(data)
-            if data.decision == PermissionDecision::Deny
-                && data.reason.as_deref().is_some_and(|reason|
-                    reason.contains("must not contain symlink component")
-                        && reason.contains("edit_fs")
-                )
-    )));
-    assert!(!events.iter().any(|event| matches!(
-        &event.payload,
-        EventV1::ToolCallStarted(data) if data.tool_call_id.as_str() == denied_tool_call_id
-    )));
-}
-
-fn worker_profile(category: &str, toolset: Vec<String>) -> AgentProfile {
+fn worker_profile(toolset: Vec<String>) -> AgentProfile {
     AgentProfile {
         name: "worker".to_string(),
-        category: category.to_string(),
         model_ref: "mock:model-1".to_string(),
         model_ref_explicit: true,
         system_prompt: "worker-prompt".to_string(),

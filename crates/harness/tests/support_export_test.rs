@@ -78,8 +78,7 @@ fn minimal_workspace() -> (tempfile::TempDir, std::path::PathBuf, std::path::Pat
                 }
             },
             "model": "test/test-model",
-            "default_agent": "build",
-            "agent": { "build": { "enable": true, "model": "test/test-model" } },
+            "agent": { "default": { "model": "test/test-model" } },
             "permission": "allow"
         }"#,
     )
@@ -473,7 +472,7 @@ fn support_export_agent_catalog_source_is_harness_core() {
     assert!(
         entries
             .iter()
-            .any(|e| e["id"] == "build" && e["role"] == "primary"),
-        "build agent must appear in catalog with primary role"
+            .any(|e| e["id"] == "default" && e["mode"] == "primary"),
+        "default agent must appear in catalog with primary role"
     );
 }

@@ -336,8 +336,8 @@ fn hook_environment(
             parent_agent_id.clone(),
         );
     }
-    if let Some(category) = context.category.as_ref() {
-        env.insert("HARNESS_HOOK_CATEGORY".to_string(), category.clone());
+    if let Some(profile) = context.profile.as_ref() {
+        env.insert("HARNESS_HOOK_PROFILE".to_string(), profile.clone());
     }
     if let Some(outcome) = context.outcome.as_ref() {
         env.insert("HARNESS_HOOK_OUTCOME".to_string(), outcome.clone());
@@ -377,7 +377,7 @@ fn hook_environment(
             "provider_id": context.provider_id,
             "model_id": context.model_id,
             "parent_agent_id": context.parent_agent_id,
-            "category": context.category,
+            "profile": context.profile,
             "outcome": context.outcome,
             "output_summary": context.output_summary,
             "failure_reason": context.failure_reason,

@@ -42,14 +42,14 @@ fn assert_snapshot_invariants(snapshot: &Snapshot) {
         .iter()
         .map(|profile| profile.profile.as_str())
         .collect::<Vec<_>>();
-    assert_eq!(names, vec!["build", "plan", "category", "mcp"]);
+    assert_eq!(names, vec!["default", "explore", "general", "mcp"]);
 
-    assert_tool(snapshot, "build", "shell.run", "shell_run");
-    assert_tool(snapshot, "build", "github.issue", "github_issue");
-    assert_tool(snapshot, "build", "lsp.rename", "lsp_rename");
-    assert_tool(snapshot, "build", "apply_patch", "apply_patch");
-    assert_no_tool(snapshot, "build", "edit");
-    assert_no_tool(snapshot, "build", "write");
+    assert_tool(snapshot, "default", "shell.run", "shell_run");
+    assert_tool(snapshot, "default", "github.issue", "github_issue");
+    assert_tool(snapshot, "default", "lsp.rename", "lsp_rename");
+    assert_tool(snapshot, "default", "apply_patch", "apply_patch");
+    assert_no_tool(snapshot, "default", "edit");
+    assert_no_tool(snapshot, "default", "write");
     assert_tool(
         snapshot,
         "mcp",

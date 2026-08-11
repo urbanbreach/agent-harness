@@ -23,7 +23,7 @@ async fn resume_existing_run_persists_bindings_for_future_reresume() {
                 2,
                 EventV1::AgentSpawned(AgentSpawnedEvent {
                     agent_id: "agent_000001".to_string(),
-                    profile: "alpha".to_string(),
+                    profile: "default".to_string(),
                     parent_agent_id: None,
                 }),
             ),
@@ -71,7 +71,7 @@ async fn resume_existing_run_persists_bindings_for_future_reresume() {
             .known_agents
             .get("agent_000001")
             .map(String::as_str),
-        Some("alpha")
+        Some("default")
     );
     assert!(
         plan_after_first_resume.is_resumable,
@@ -88,10 +88,7 @@ async fn resume_existing_run_persists_bindings_for_future_reresume() {
         .await
         .unwrap_or_abort();
     assert_eq!(second_request_id, "req_000004");
-    second
-        .stop_run()
-        .await
-        .unwrap_or_abort();
+    second.stop_run().await.unwrap_or_abort();
 }
 #[tokio::test]
 async fn resume_existing_run_remains_resumable_after_open_and_quit_without_prompt() {
@@ -117,7 +114,7 @@ async fn resume_existing_run_remains_resumable_after_open_and_quit_without_promp
                 2,
                 EventV1::AgentSpawned(AgentSpawnedEvent {
                     agent_id: "agent_000001".to_string(),
-                    profile: "alpha".to_string(),
+                    profile: "default".to_string(),
                     parent_agent_id: None,
                 }),
             ),
@@ -148,10 +145,7 @@ async fn resume_existing_run_remains_resumable_after_open_and_quit_without_promp
         .resume_run(run_id, "interactive")
         .await
         .unwrap_or_abort();
-    first
-        .stop_run()
-        .await
-        .unwrap_or_abort();
+    first.stop_run().await.unwrap_or_abort();
 
     let plan_after_quit = inspect_resume_plan(&run.run_dir);
     assert_eq!(
@@ -177,10 +171,7 @@ async fn resume_existing_run_remains_resumable_after_open_and_quit_without_promp
         .await
         .unwrap_or_abort();
     assert_eq!(request_id, "req_000002");
-    second
-        .stop_run()
-        .await
-        .unwrap_or_abort();
+    second.stop_run().await.unwrap_or_abort();
 }
 #[tokio::test]
 async fn resume_existing_run_rejects_missing_historical_profile_binding() {
@@ -239,7 +230,7 @@ async fn resume_existing_run_rejects_missing_historical_profile_binding() {
         .await
         .expect_err("missing profile binding should fail closed");
 
-    let CoordinatorError::ResumeRestoreFailed {
+    let CoordinatorError::ResumeDisabled {
         run_id: restored_run_id,
         reason,
     } = error
@@ -248,8 +239,7 @@ async fn resume_existing_run_rejects_missing_historical_profile_binding() {
     };
     assert_eq!(restored_run_id, run_id);
     assert!(
-        reason
-            .contains("historical agent `agent_000001` references missing profile binding `gamma`"),
+        reason.contains("legacy unsupported profile binding cannot be resumed"),
         "unexpected restore failure reason: {reason}"
     );
 
@@ -306,7 +296,7 @@ async fn resume_existing_run_does_not_append_on_restore_failure() {
                 2,
                 EventV1::AgentSpawned(AgentSpawnedEvent {
                     agent_id: "agent_invalid".to_string(),
-                    profile: "alpha".to_string(),
+                    profile: "default".to_string(),
                     parent_agent_id: None,
                 }),
             ),
@@ -383,7 +373,7 @@ async fn resume_restores_interactive_provider_context() {
     assert_eq!(
         shape,
         vec![
-            (MessageRole::System, "alpha-prompt".to_string()),
+            (MessageRole::System, "default-prompt".to_string()),
             (MessageRole::User, "first question".to_string()),
             (MessageRole::Assistant, "first answer".to_string()),
             (MessageRole::User, "second question".to_string()),
@@ -407,7 +397,7 @@ async fn resumed_turn_matches_uninterrupted_conversation_request_shape() {
         .await
         .unwrap_or_abort();
     uninterrupted
-        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .spawn_agent_idle(supervisor_actor(), "default", None)
         .await
         .unwrap_or_abort();
     uninterrupted
@@ -420,10 +410,7 @@ async fn resumed_turn_matches_uninterrupted_conversation_request_shape() {
         .await
         .unwrap_or_abort();
     tokio::task::yield_now().await;
-    uninterrupted
-        .stop_run()
-        .await
-        .unwrap_or_abort();
+    uninterrupted.stop_run().await.unwrap_or_abort();
 
     let uninterrupted_shape = uninterrupted_provider
         .requests()
@@ -503,7 +490,7 @@ async fn resume_restores_multi_turn_historical_context_with_final_task_output() 
     assert_eq!(
         shape,
         vec![
-            (MessageRole::System, "alpha-prompt".to_string()),
+            (MessageRole::System, "default-prompt".to_string()),
             (MessageRole::User, "first question".to_string()),
             (MessageRole::Assistant, "first final answer".to_string()),
             (MessageRole::User, "second question".to_string()),

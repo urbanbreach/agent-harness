@@ -121,9 +121,9 @@ async fn task_tool_reenters_existing_child_session_by_session_id() {
             Some("deep".to_string()),
             "task",
             json!({
-                "category": "deep",
                 "description": "Initial child",
                 "prompt": "First child turn",
+                "subagent_type": "general",
                 "run_in_background": true,
                 "load_skills": []
             }),
@@ -156,9 +156,9 @@ async fn task_tool_reenters_existing_child_session_by_session_id() {
             Some("deep".to_string()),
             "task",
             json!({
-                "category": "deep",
                 "description": "Resume child by session id",
                 "prompt": "Second child turn by session_id",
+                "subagent_type": "general",
                 "session_id": child_session_id,
                 "run_in_background": true,
                 "load_skills": []

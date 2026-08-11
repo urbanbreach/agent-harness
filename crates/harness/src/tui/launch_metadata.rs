@@ -7,7 +7,6 @@ use harness_core::config::{
 };
 use harness_core::event::{ActorKind, EventEnvelopeV1, EventV1};
 use harness_core::proj::RecordedRuntimeContext;
-use harness_core::session_title::TITLE_AGENT_NAME;
 use harness_tui::app::{LaunchMetadata, ModelOption};
 
 pub(super) fn interactive_launch_metadata(
@@ -73,7 +72,6 @@ fn switchable_profile_names(
                     agent_profiles.contains_key(name.as_str())
                         && !profile.hidden
                         && !profile.mode.is_subagent_only()
-                        && name.as_str() != TITLE_AGENT_NAME
                 })
                 .map(|(name, _)| name.clone())
                 .collect::<Vec<_>>()
@@ -81,7 +79,7 @@ fn switchable_profile_names(
         .unwrap_or_default();
 
     if profiles.is_empty() {
-        profiles = ["build", "plan"]
+        profiles = ["default"]
             .into_iter()
             .filter(|profile| agent_profiles.contains_key(*profile))
             .map(str::to_string)
@@ -158,10 +156,7 @@ fn configured_profile_model_options(
         }
     }
 
-    for profile in agent_profiles
-        .keys()
-        .filter(|profile| profile.as_str() != TITLE_AGENT_NAME)
-    {
+    for profile in agent_profiles.keys() {
         if let Ok(metadata) = resolve_profile_model_metadata(config, profile) {
             let configured_provider = metadata.provider.clone();
             let configured_model = metadata.model.clone();
@@ -233,7 +228,6 @@ fn model_options_from_profiles(
 ) -> Vec<ModelOption> {
     agent_profiles
         .values()
-        .filter(|profile| profile.name != TITLE_AGENT_NAME)
         .map(|profile| ModelOption::from_model_ref(profile.name.clone(), &profile.model_ref))
         .collect()
 }

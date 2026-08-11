@@ -75,7 +75,7 @@ fn config_validate_cli_applies_harness_config_content_last() {
         .current_dir(temp.path())
         .env(
             "HARNESS_CONFIG_CONTENT",
-            r#"{ default_agent: "plan", permission: { bash: "deny" } }"#,
+            r#"{ model: "default/gpt-4o", permission: { bash: "deny" } }"#,
         )
         .args(["config", "validate"])
         .output()
@@ -168,8 +168,7 @@ fn config_validate_cli_rejects_unknown_provider_reference() {
     let config_path = temp.path().join("harness.jsonc");
     let mut config = canonical_runtime_config();
     config["agent"] = serde_json::json!({
-        "deep": {
-            "description": "Deep profile",
+        "default": {
             "model": "missing/gpt-4o-mini",
             "tools": []
         }
@@ -184,7 +183,7 @@ fn config_validate_cli_rejects_unknown_provider_reference() {
 
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("agent `deep` has invalid model selection `missing/gpt-4o-mini`"));
+    assert!(stderr.contains("agent `default` has invalid model selection `missing/gpt-4o-mini`"));
     assert!(stderr.contains("unknown provider `missing`"));
 }
 #[test]
@@ -250,7 +249,6 @@ fn compatibility_config_shape_accepts_subagents_and_safe_inert_keys() {
             }
           },
           model: "default/gpt-4o",
-          default_agent: "build",
           shell: "bash",
           logLevel: "INFO",
           username: "operator",
@@ -274,25 +272,13 @@ fn compatibility_config_shape_accepts_subagents_and_safe_inert_keys() {
             },
             disabled_only: { enabled: false }
           },
-          mode: {
-            legacy: {
-              description: "Legacy mode alias",
-              mode: "subagent"
-            }
-          },
           agent: {
+            default: {},
             general: {
-              description: "Configured general subagent",
-              mode: "subagent",
-              reasoningEffort: "high"
+              options: { reasoningEffort: "high" }
             },
-            reviewer: {
-              description: "Review work",
-              mode: "subagent",
-              customFlag: true
-            },
-            summary: { enable: false },
-            compaction: { enabled: false }
+            explore: {},
+            librarian: {}
           },
           permission: "allow"
         }
@@ -300,7 +286,7 @@ fn compatibility_config_shape_accepts_subagents_and_safe_inert_keys() {
     )
     .unwrap_or_abort();
 
-    assert!(parsed.agents.contains_key("build"));
+    assert!(parsed.agents.contains_key("default"));
     assert_eq!(
         parsed.agents["general"].mode,
         harness_core::config::AgentMode::Subagent
@@ -309,13 +295,7 @@ fn compatibility_config_shape_accepts_subagents_and_safe_inert_keys() {
         parsed.agents["general"].options.get("reasoningEffort"),
         Some(&serde_json::json!("high"))
     );
-    assert_eq!(
-        parsed.agents["reviewer"].options.get("customFlag"),
-        Some(&serde_json::json!(true))
-    );
-    assert!(parsed.agents.contains_key("legacy"));
-    assert!(!parsed.agents.contains_key("summary"));
-    assert!(!parsed.agents.contains_key("compaction"));
+    assert_eq!(parsed.agents.len(), 4);
     assert!(parsed.lsp.disabled);
     assert!(parsed
         .skills
@@ -436,7 +416,6 @@ fn shipped_runtime_example_parses_as_public_runtime_config() {
     let parsed: PublicRuntimeConfig =
         json5::from_str(&shipped).unwrap_or_abort();
 
-    assert_eq!(parsed.default_agent.as_deref(), Some("build"));
     assert_eq!(parsed.model.as_deref(), Some("openai-codex/gpt-5.4-mini"));
     assert_eq!(parsed.small_model.as_deref(), None);
     assert_eq!(parsed.provider.len(), 1);
@@ -450,29 +429,10 @@ fn shipped_runtime_example_parses_as_public_runtime_config() {
     assert_eq!(provider.models.len(), 2);
     assert!(provider.models.contains_key("gpt-5.5"));
     assert!(provider.models.contains_key("gpt-5.4-mini"));
-    assert!(parsed.agent.build.is_some());
-    assert!(parsed.agent.plan.is_some());
-    assert!(parsed.agent.general.is_some());
-    assert!(parsed.agent.explore.is_some());
-    assert!(parsed.agent.visual_engineering.is_some());
-    assert!(parsed.agent.artistry.is_some());
-    assert!(parsed.agent.ultrabrain.is_some());
-    assert!(parsed.agent.deep.is_some());
-    assert!(parsed.agent.quick.is_some());
-    assert!(parsed.agent.unspecified_low.is_some());
-    assert!(parsed.agent.unspecified_high.is_some());
-    assert!(parsed.agent.writing.is_some());
-    assert!(parsed.agent.title.is_some());
-    assert!(parsed.agent.summary.is_some());
-    assert!(parsed.agent.compaction.is_some());
-    assert_eq!(
-        parsed.agent.general.as_ref().and_then(|agent| agent.enable),
-        Some(true)
-    );
-    assert_eq!(
-        parsed.agent.title.as_ref().and_then(|agent| agent.hidden),
-        Some(true)
-    );
+    assert_eq!(parsed.agent.default.variant.as_deref(), Some("high"));
+    assert!(parsed.agent.explore.model.is_none());
+    assert!(parsed.agent.general.model.is_none());
+    assert!(parsed.agent.librarian.model.is_none());
     let mut variants = provider.models["gpt-5.4-mini"]
         .variants
         .keys()

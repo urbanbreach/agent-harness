@@ -16,9 +16,9 @@ async fn background_output_wait_any_returns_on_first_cancel_while_peer_still_run
                 Some("deep".to_string()),
                 "task",
                 json!({
-                    "category": "deep",
-                    "description": format!("Blocking child {i}"),
-                    "prompt": "Keep running until cancelled",
+                "description": format!("Blocking child {i}"),
+                "prompt": "Keep running until cancelled",
+                "subagent_type": "general",
                     "run_in_background": true,
                     "load_skills": []
                 }),
@@ -122,9 +122,9 @@ async fn background_output_wait_all_returns_when_every_request_is_terminal() {
                 Some("deep".to_string()),
                 "task",
                 json!({
-                    "category": "deep",
-                    "description": format!("Completing child {i}"),
-                    "prompt": "Return a concise completed result",
+                "description": format!("Completing child {i}"),
+                "prompt": "Return a concise completed result",
+                "subagent_type": "general",
                     "run_in_background": true,
                     "load_skills": []
                 }),
@@ -191,9 +191,9 @@ async fn background_output_wait_all_completes_when_cancel_makes_remaining_termin
                 Some("deep".to_string()),
                 "task",
                 json!({
-                    "category": "deep",
-                    "description": format!("Blocking child {i}"),
-                    "prompt": "Keep running until cancelled",
+                "description": format!("Blocking child {i}"),
+                "prompt": "Keep running until cancelled",
+                "subagent_type": "general",
                     "run_in_background": true,
                     "load_skills": []
                 }),

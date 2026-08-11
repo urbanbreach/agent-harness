@@ -1,222 +1,24 @@
 {
   "profiles": {
-    "artistry": {
-      "digest12": "ce0e5cea7163",
-      "line_count": 47,
-      "sections": [
-        "Identity",
-        "Goal",
-        "Use When",
-        "Do Not Use When",
-        "Scope Guard",
-        "Runtime-Enforced Permissions",
-        "Behavioral Guidance",
-        "Operating Loop",
-        "Ask Gate",
-        "Failure Recovery",
-        "Output Contract",
-        "Verification Gate"
-      ]
-    },
-    "build": {
-      "digest12": "46cb3cfa140e",
-      "line_count": 53,
-      "sections": [
-        "Identity",
-        "Goal",
-        "Use When",
-        "Do Not Use When",
-        "Scope Guard",
-        "Runtime-Enforced Permissions",
-        "Intent Gate",
-        "Behavioral Guidance",
-        "Operating Loop",
-        "Ask Gate",
-        "Failure Recovery",
-        "Output Contract",
-        "Verification Gate"
-      ]
-    },
-    "deep": {
-      "digest12": "111f5da1af62",
-      "line_count": 49,
-      "sections": [
-        "Identity",
-        "Goal",
-        "Use When",
-        "Do Not Use When",
-        "Scope Guard",
-        "Runtime-Enforced Permissions",
-        "Behavioral Guidance",
-        "Operating Loop",
-        "Ask Gate",
-        "Failure Recovery",
-        "Output Contract",
-        "Verification Gate"
-      ]
+    "default": {
+      "digest12": "5fcb9509af1d",
+      "line_count": 13,
+      "sections": []
     },
     "explore": {
-      "digest12": "82f0698e99ed",
-      "line_count": 47,
-      "sections": [
-        "Identity",
-        "Goal",
-        "Use When",
-        "Do Not Use When",
-        "Scope Guard",
-        "Runtime-Enforced Permissions",
-        "Behavioral Guidance",
-        "Operating Loop",
-        "Ask Gate",
-        "Failure Recovery",
-        "Output Contract",
-        "Verification Gate"
-      ]
+      "digest12": "d9c9e1b703f0",
+      "line_count": 9,
+      "sections": []
     },
     "general": {
-      "digest12": "2b1b66177c86",
-      "line_count": 47,
-      "sections": [
-        "Identity",
-        "Goal",
-        "Use When",
-        "Do Not Use When",
-        "Scope Guard",
-        "Runtime-Enforced Permissions",
-        "Behavioral Guidance",
-        "Operating Loop",
-        "Ask Gate",
-        "Failure Recovery",
-        "Output Contract",
-        "Verification Gate"
-      ]
+      "digest12": "786be16a1543",
+      "line_count": 7,
+      "sections": []
     },
-    "plan": {
-      "digest12": "35ba212e9e0c",
-      "line_count": 53,
-      "sections": [
-        "Identity",
-        "Goal",
-        "Use When",
-        "Do Not Use When",
-        "Scope Guard",
-        "Runtime-Enforced Permissions",
-        "Intent Gate",
-        "Behavioral Guidance",
-        "Operating Loop",
-        "Ask Gate",
-        "Failure Recovery",
-        "Output Contract",
-        "Verification Gate"
-      ]
-    },
-    "quick": {
-      "digest12": "989fa34b0b32",
-      "line_count": 59,
-      "sections": [
-        "Identity",
-        "Goal",
-        "Use When",
-        "Do Not Use When",
-        "Scope Guard",
-        "Runtime-Enforced Permissions",
-        "Behavioral Guidance",
-        "Operating Loop",
-        "Ask Gate",
-        "Failure Recovery",
-        "Output Contract",
-        "Verification Gate"
-      ]
-    },
-    "ultrabrain": {
-      "digest12": "35a99a4e14ae",
-      "line_count": 49,
-      "sections": [
-        "Identity",
-        "Goal",
-        "Use When",
-        "Do Not Use When",
-        "Scope Guard",
-        "Runtime-Enforced Permissions",
-        "Behavioral Guidance",
-        "Operating Loop",
-        "Ask Gate",
-        "Failure Recovery",
-        "Output Contract",
-        "Verification Gate"
-      ]
-    },
-    "unspecified-high": {
-      "digest12": "087492bfe9a9",
-      "line_count": 56,
-      "sections": [
-        "Identity",
-        "Goal",
-        "Use When",
-        "Do Not Use When",
-        "Scope Guard",
-        "Runtime-Enforced Permissions",
-        "Behavioral Guidance",
-        "Operating Loop",
-        "Ask Gate",
-        "Failure Recovery",
-        "Output Contract",
-        "Verification Gate"
-      ]
-    },
-    "unspecified-low": {
-      "digest12": "32c91a3c148a",
-      "line_count": 55,
-      "sections": [
-        "Identity",
-        "Goal",
-        "Use When",
-        "Do Not Use When",
-        "Scope Guard",
-        "Runtime-Enforced Permissions",
-        "Behavioral Guidance",
-        "Operating Loop",
-        "Ask Gate",
-        "Failure Recovery",
-        "Output Contract",
-        "Verification Gate"
-      ]
-    },
-    "visual-engineering": {
-      "digest12": "f05e0a3eca90",
-      "line_count": 53,
-      "sections": [
-        "Identity",
-        "Goal",
-        "Use When",
-        "Do Not Use When",
-        "Scope Guard",
-        "Runtime-Enforced Permissions",
-        "Behavioral Guidance",
-        "Operating Loop",
-        "Ask Gate",
-        "Failure Recovery",
-        "Output Contract",
-        "Verification Gate"
-      ]
-    },
-    "writing": {
-      "digest12": "e377119d4bdc",
-      "line_count": 49,
-      "sections": [
-        "Identity",
-        "Goal",
-        "Use When",
-        "Do Not Use When",
-        "Scope Guard",
-        "Runtime-Enforced Permissions",
-        "Behavioral Guidance",
-        "Operating Loop",
-        "Ask Gate",
-        "Failure Recovery",
-        "Output Contract",
-        "Verification Gate"
-      ]
+    "librarian": {
+      "digest12": "554705180af7",
+      "line_count": 7,
+      "sections": []
     }
   },
   "schema_version": "v1-prompt-assets-snapshot-v1"

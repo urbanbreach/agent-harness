@@ -59,9 +59,11 @@ impl ShellSafety {
         allow_prefixes: &[PathBuf],
     ) -> Result<(), ToolError> {
         validate_shell_executable_position(executable, cwd, workspace_root)?;
-        reject_shell_wrapper_builtin(executable)?;
+        reject_shell_wrapper_builtin(executable, None)?;
         reject_secret_dump_command(executable)?;
-        reject_shell_interpreter_command_mode(executable, args)?;
+        if self.allowlist.mode == ShellAllowlistMode::LegacyExecutables {
+            reject_shell_interpreter_command_mode(executable, args)?;
+        }
         validate_shell_path_arguments_with_grants(
             &ShellSegmentCommand {
                 executable: executable.to_string(),
@@ -88,6 +90,9 @@ impl ShellSafety {
         }
 
         let canonical = cwd.canonicalize().tool_err("failed to resolve cwd")?;
+        if ctx.external_path_authorized(&canonical) {
+            return Ok(canonical);
+        }
 
         let allowed = self.allowlist.cwd_roots.iter().any(|root| {
             ctx.resolve_workspace_path(Path::new(root))
@@ -165,7 +170,7 @@ impl ShellSafety {
                 ));
             }
             reject_shell_reserved_word(executable)?;
-            reject_shell_wrapper_builtin(executable)?;
+            reject_shell_wrapper_builtin(executable, Some(&command.args))?;
             reject_secret_dump_command(executable)?;
             if is_shell_builtin_allowed(executable) {
                 if is_path_sensitive_shell_builtin(executable) {
@@ -198,7 +203,6 @@ impl ShellSafety {
         workspace_root: &Path,
         allow_prefixes: &[PathBuf],
     ) -> Result<(), ToolError> {
-        reject_unsupported_bash_constructs(command)?;
         reject_background_execution(command)?;
         if command.trim().is_empty() {
             return Err(ToolError::InvalidArguments(
@@ -212,6 +216,15 @@ impl ShellSafety {
 
         let mut virtual_cwd = cwd.to_path_buf();
         for command in &scanned.commands {
+            let safety_source = if matches!(command.executable.as_str(), "python" | "python3")
+                && command.source.contains('\n')
+                && command.tokens.iter().any(|token| token == "<<")
+            {
+                command.source.lines().next().unwrap_or(&command.source)
+            } else {
+                &command.source
+            };
+            reject_unsupported_bash_constructs(safety_source)?;
             reject_scanned_env_assignments(command)?;
 
             let executable = command.executable.as_str();
@@ -231,10 +244,9 @@ impl ShellSafety {
                 ));
             }
             reject_shell_reserved_word(executable)?;
-            reject_shell_wrapper_builtin(executable)?;
+            reject_shell_wrapper_builtin(executable, Some(&command.tokens[1..]))?;
             reject_secret_dump_command(executable)?;
 
-            reject_scanned_interpreter_input_redirection(command)?;
             validate_scanned_command_paths_with_grants(
                 command,
                 &virtual_cwd,
@@ -255,10 +267,6 @@ impl ShellSafety {
             }
 
             let segment_command = scanned_to_segment_command(command);
-            reject_shell_interpreter_command_mode(
-                &segment_command.executable,
-                &segment_command.args,
-            )?;
             validate_shell_path_arguments_with_grants(
                 &segment_command,
                 &virtual_cwd,
@@ -439,10 +447,12 @@ fn reject_background_execution(command: &str) -> Result<(), ToolError> {
     let mut in_single = false;
     let mut in_double = false;
     let mut escaped = false;
+    let mut previous = None;
 
     while let Some(ch) = chars.next() {
         if escaped {
             escaped = false;
+            previous = None;
             continue;
         }
 
@@ -453,6 +463,9 @@ fn reject_background_execution(command: &str) -> Result<(), ToolError> {
             '&' if !in_single && !in_double && chars.peek() == Some(&'&') => {
                 chars.next();
             }
+            '&' if !in_single
+                && !in_double
+                && (matches!(previous, Some('<' | '>')) || chars.peek() == Some(&'>')) => {}
             '&' if !in_single && !in_double => {
                 return Err(ToolError::CommandBlocked(
                     "background execution is not allowed in bash".to_string(),
@@ -460,6 +473,7 @@ fn reject_background_execution(command: &str) -> Result<(), ToolError> {
             }
             _ => {}
         }
+        previous = Some(ch);
     }
 
     Ok(())
@@ -556,11 +570,17 @@ fn ensure_folder_trust_allows_local_executable(
     }
 }
 
-fn reject_shell_wrapper_builtin(executable: &str) -> Result<(), ToolError> {
+fn reject_shell_wrapper_builtin(
+    executable: &str,
+    args: Option<&[String]>,
+) -> Result<(), ToolError> {
     let executable_name = Path::new(executable)
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or(executable);
+    if executable_name == "command" && args.is_some_and(is_safe_shell_command_lookup) {
+        return Ok(());
+    }
     if matches!(executable_name, "builtin" | "command" | "eval" | "exec") {
         Err(ToolError::CommandBlocked(
             "shell wrapper builtins are not allowed in bash".to_string(),
@@ -568,6 +588,20 @@ fn reject_shell_wrapper_builtin(executable: &str) -> Result<(), ToolError> {
     } else {
         Ok(())
     }
+}
+
+fn is_safe_shell_command_lookup(args: &[String]) -> bool {
+    let Some((flag, names)) = args.split_first() else {
+        return false;
+    };
+    matches!(flag.as_str(), "-v" | "-V")
+        && !names.is_empty()
+        && names.iter().all(|name| {
+            !name.is_empty()
+                && name
+                    .chars()
+                    .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.' | '+'))
+        })
 }
 
 fn is_interpreter_command_mode_executable(executable: &str) -> bool {
@@ -1104,6 +1138,84 @@ mod tests {
     }
 
     #[test]
+    fn validate_bash_command_allows_file_descriptor_duplication() {
+        // arrange
+        let tempdir = tempfile::tempdir().unwrap_or_abort();
+        let safety = ShellSafety::new(ShellAllowlist::default());
+
+        for command in [
+            "printf ok >/dev/null 2>&1 && true",
+            "printf ok 2<&1",
+            "printf ok &>/dev/null",
+            "printf ok &>>/dev/null",
+        ] {
+            // act
+            let result = safety.validate_bash_command(command, tempdir.path(), tempdir.path());
+
+            // assert
+            result.unwrap_or_abort();
+        }
+    }
+
+    #[test]
+    fn validate_bash_command_rejects_escaped_redirect_background_bypass() {
+        // arrange
+        let tempdir = tempfile::tempdir().unwrap_or_abort();
+        let safety = ShellSafety::new(ShellAllowlist::default());
+
+        for command in [r"true \>& env", r"true \<& env"] {
+            // act
+            let result = safety.validate_bash_command(command, tempdir.path(), tempdir.path());
+
+            // assert
+            assert!(
+                matches!(result, Err(ToolError::CommandBlocked(_))),
+                "escaped redirect must not enable background execution: {command}"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_bash_command_allows_safe_command_lookup() {
+        // arrange
+        let tempdir = tempfile::tempdir().unwrap_or_abort();
+        let safety = ShellSafety::new(ShellAllowlist::default());
+
+        // act
+        let result = safety.validate_bash_command(
+            "command -v chromium || command -v google-chrome || true",
+            tempdir.path(),
+            tempdir.path(),
+        );
+
+        // assert
+        result.unwrap_or_abort();
+    }
+
+    #[test]
+    fn validate_bash_command_rejects_command_wrapper_bypasses() {
+        // arrange
+        let tempdir = tempfile::tempdir().unwrap_or_abort();
+        let safety = ShellSafety::new(ShellAllowlist::default());
+
+        for command in [
+            "command -- rm file",
+            "command -p rm file",
+            "command -v ../../bin/sh",
+            "command -v 'sh; rm'",
+        ] {
+            // act
+            let result = safety.validate_bash_command(command, tempdir.path(), tempdir.path());
+
+            // assert
+            assert!(
+                matches!(result, Err(ToolError::CommandBlocked(_))),
+                "wrapper bypass must remain blocked: {command}"
+            );
+        }
+    }
+
+    #[test]
     fn validate_bash_command_allows_pipeline_with_grep() {
         // arrange
         // act
@@ -1142,13 +1254,65 @@ mod tests {
     }
 
     #[test]
+    fn validate_permission_patterns_allows_python3_command_mode() {
+        // arrange
+        let tempdir = tempfile::tempdir().unwrap_or_abort();
+        let safety = ShellSafety::new(ShellAllowlist::default());
+
+        // act
+        let result = safety.validate_bash_command(
+            "python3 -c \"print('ok')\"",
+            tempdir.path(),
+            tempdir.path(),
+        );
+
+        // assert
+        result.unwrap_or_abort();
+    }
+
+    #[test]
+    fn validate_permission_patterns_allows_python3_heredoc() {
+        // arrange
+        let tempdir = tempfile::tempdir().unwrap_or_abort();
+        let safety = ShellSafety::new(ShellAllowlist::default());
+
+        // act
+        let result = safety.validate_bash_command(
+            "python3 - <<'PY'\nprint('ok')\nPY",
+            tempdir.path(),
+            tempdir.path(),
+        );
+
+        // assert
+        result.unwrap_or_abort();
+    }
+
+    #[test]
+    fn validate_direct_permission_patterns_allows_python3_command_mode() {
+        // arrange
+        let tempdir = tempfile::tempdir().unwrap_or_abort();
+        let safety = ShellSafety::new(ShellAllowlist::default());
+
+        // act
+        let result = safety.validate_direct_args(
+            "python3",
+            &["-c".to_string(), "print('ok')".to_string()],
+            tempdir.path(),
+            tempdir.path(),
+        );
+
+        // assert
+        result.unwrap_or_abort();
+    }
+
+    #[test]
     fn validate_bash_command_rejects_python3_c() {
         // arrange
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let safety = ShellSafety::new(ShellAllowlist {
-            executables: Vec::new(),
+            mode: ShellAllowlistMode::LegacyExecutables,
+            executables: vec!["python3".to_string()],
             cwd_roots: vec![".".to_string()],
-            ..ShellAllowlist::default()
         });
 
         // act
@@ -1165,9 +1329,9 @@ mod tests {
         // arrange
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let safety = ShellSafety::new(ShellAllowlist {
-            executables: Vec::new(),
+            mode: ShellAllowlistMode::LegacyExecutables,
+            executables: vec!["node".to_string()],
             cwd_roots: vec![".".to_string()],
-            ..ShellAllowlist::default()
         });
 
         // act
@@ -1191,9 +1355,9 @@ mod tests {
         // arrange
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let safety = ShellSafety::new(ShellAllowlist {
-            executables: Vec::new(),
+            mode: ShellAllowlistMode::LegacyExecutables,
+            executables: vec!["python3".to_string()],
             cwd_roots: vec![".".to_string()],
-            ..ShellAllowlist::default()
         });
 
         // act
@@ -1235,9 +1399,9 @@ mod tests {
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         std::fs::write(tempdir.path().join("script.sh"), "printf ok\n").unwrap_or_abort();
         let safety = ShellSafety::new(ShellAllowlist {
-            executables: Vec::new(),
+            mode: ShellAllowlistMode::LegacyExecutables,
+            executables: vec!["bash".to_string()],
             cwd_roots: vec![".".to_string()],
-            ..ShellAllowlist::default()
         });
 
         // act
@@ -1446,7 +1610,11 @@ mod tests {
     fn validate_bash_command_rejects_interpreter_pipeline_stdin_and_no_script() {
         // arrange
         let tempdir = tempfile::tempdir().unwrap_or_abort();
-        let safety = ShellSafety::new(ShellAllowlist::default());
+        let safety = ShellSafety::new(ShellAllowlist {
+            mode: ShellAllowlistMode::LegacyExecutables,
+            executables: vec!["python3".to_string()],
+            cwd_roots: Vec::new(),
+        });
 
         // act
         for command in ["printf 'print(1)' | python3", "python3"] {
@@ -1614,9 +1782,9 @@ mod tests {
         // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let safety = ShellSafety::new(ShellAllowlist {
+            mode: ShellAllowlistMode::LegacyExecutables,
             executables: vec!["bash".to_string(), "ls".to_string()],
             cwd_roots: vec![".".to_string()],
-            ..ShellAllowlist::default()
         });
 
         let external_path_err = safety

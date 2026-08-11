@@ -156,7 +156,6 @@ fn session_export_config_summary(
             .iter()
             .map(|path| path.display().to_string())
             .collect::<Vec<_>>(),
-        "default_agent": config.default_agent.as_deref(),
         "agent_count": config.agents.len(),
         "provider_count": config.providers.len(),
         "model_profile_count": config.model_profiles.len(),
@@ -191,7 +190,6 @@ fn session_export_agent_catalog_summary(config: &HarnessConfig) -> Value {
         "loaded": true,
         "source": "harness_core::agent_catalog",
         "entry_count": catalog.entries.len(),
-        "category_fallback": catalog.category_fallback,
         "entries": catalog.entries,
         "no_network_probes": true,
     })

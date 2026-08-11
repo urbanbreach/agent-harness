@@ -29,7 +29,7 @@ use harness_tools::{
 use crate::dynamic_prompt::{self, DynamicPromptContext};
 use crate::UnwrapOrAbort;
 
-const DEFAULT_INTERACTIVE_PROFILE: &str = "build";
+pub const DEFAULT_INTERACTIVE_PROFILE: &str = "default";
 
 const CONFIG_SEARCH_LOCATIONS: [&str; 4] = [
     "./harness.jsonc",
@@ -40,7 +40,7 @@ const CONFIG_SEARCH_LOCATIONS: [&str; 4] = [
 
 pub fn interactive_config_guidance() -> String {
     format!(
-        "interactive mode requires a config file; pass --config <path> or create {}. A starting point lives at configs/harness.example.jsonc and defaults to the build agent. If you want the demo/mock UI instead, re-run with --mock",
+        "interactive mode requires a config file; pass --config <path> or create {}. A starting point lives at configs/harness.example.jsonc and uses the generic agent. If you want the demo/mock UI instead, re-run with --mock",
         CONFIG_SEARCH_LOCATIONS.join(" or ")
     )
 }
@@ -67,6 +67,7 @@ pub fn build_interactive_coordinator_config(
     coordinator_config.compaction = cfg.runtime.compaction.clone();
     coordinator_config.provider_retry = cfg.runtime.provider_retry;
     coordinator_config.provider = Arc::new(build_provider_router(cfg)?);
+    coordinator_config.title_model_ref = cfg.small_model.clone();
     let (agent_profiles, agent_model_fallbacks) =
         interactive_agent_profiles_with_extra_tools(cfg, &auto_tool_ids)?;
     coordinator_config.agent_profiles = agent_profiles;
@@ -76,20 +77,8 @@ pub fn build_interactive_coordinator_config(
 }
 
 pub fn interactive_profile_name(cfg: &HarnessConfig) -> String {
-    cfg.default_agent
-        .clone()
-        .or_else(|| {
-            cfg.agents
-                .contains_key(DEFAULT_INTERACTIVE_PROFILE)
-                .then(|| DEFAULT_INTERACTIVE_PROFILE.to_string())
-        })
-        .or_else(|| {
-            cfg.agents
-                .keys()
-                .find(|name| name.as_str() != harness_core::session_title::TITLE_AGENT_NAME)
-                .cloned()
-        })
-        .unwrap_or_else(|| DEFAULT_INTERACTIVE_PROFILE.to_string())
+    let _ = cfg;
+    DEFAULT_INTERACTIVE_PROFILE.to_string()
 }
 
 fn install_task_tool_subagent_descriptions(tool_registry: &mut ToolRegistry, cfg: &HarnessConfig) {
@@ -98,14 +87,13 @@ fn install_task_tool_subagent_descriptions(tool_registry: &mut ToolRegistry, cfg
     };
     let base_description = task_tool.description().to_string();
     let permission_policy = PermissionPolicy::from_config(cfg);
-    let parent_profiles = cfg.agents.keys().cloned().collect::<Vec<_>>();
 
-    for parent_profile in parent_profiles {
+    for parent_profile in cfg.agents.keys() {
         let description = task_tool_description_for_profile(
             &base_description,
             cfg,
             &permission_policy,
-            &parent_profile,
+            parent_profile,
         );
         tool_registry.set_profile_tool_description("task", parent_profile, description);
     }
@@ -196,13 +184,10 @@ fn task_tool_description_for_profile(
     subagents.sort();
 
     let mut description = String::from(base_description);
-    description.push_str(
-        "\n\nAvailable subagents for this caller are listed below. Profiles omitted from this list are unavailable to this caller.",
-    );
+    description.push_str("\n\nAvailable subagents:");
     if subagents.is_empty() {
-        description.push_str("\n\nAvailable subagents:\n- none");
+        description.push_str("\n- none");
     } else {
-        description.push_str("\n\nAvailable subagents:");
         for subagent in subagents {
             description.push('\n');
             description.push_str(&subagent);
@@ -216,10 +201,6 @@ fn task_profile_allowed(
     child_profile: &str,
     permission_policy: &PermissionPolicy,
 ) -> bool {
-    if parent_profile == harness_core::plan::PLAN_AGENT_NAME && child_profile != "explore" {
-        return false;
-    }
-
     !matches!(
         permission_policy.evaluate_request(
             Some(parent_profile),
@@ -369,12 +350,6 @@ fn compose_interactive_system_prompt(
     model: &harness_core::config::ResolvedModelTarget,
     toolset: &[String],
 ) -> Result<String, String> {
-    if profile_name == harness_core::session_title::TITLE_AGENT_NAME {
-        return Ok(profile_cfg.system_prompt.clone().unwrap_or_else(|| {
-            harness_core::session_title::TITLE_AGENT_SYSTEM_PROMPT.to_string()
-        }));
-    }
-
     let bundled_prompt = profile_cfg
         .system_prompt
         .is_none()
@@ -383,7 +358,7 @@ fn compose_interactive_system_prompt(
 
     if profile_cfg.system_prompt.is_none() && bundled_prompt.is_none() {
         return Err(format!(
-            "agent `{profile_name}` is missing a system prompt; define `agents.{profile_name}.system_prompt` or ship `.agent-harness/agents/{profile_name}.md`"
+            "agent `{profile_name}` is missing a system prompt; define `agent.system_prompt` or ship `.agent-harness/agents/default.md`"
         ));
     }
 
@@ -401,26 +376,10 @@ fn compose_interactive_system_prompt(
 
 fn bundled_shipped_agent_prompt(profile_name: &str) -> Option<String> {
     let markdown = match profile_name {
-        harness_core::plan::BUILD_AGENT_NAME => {
-            include_str!("../../../.agent-harness/agents/build.md")
-        }
-        harness_core::plan::PLAN_AGENT_NAME => {
-            include_str!("../../../.agent-harness/agents/plan.md")
-        }
-        "general" => include_str!("../../../.agent-harness/agents/general.md"),
+        DEFAULT_INTERACTIVE_PROFILE => include_str!("../../../.agent-harness/agents/default.md"),
         "explore" => include_str!("../../../.agent-harness/agents/explore.md"),
-        "visual-engineering" => {
-            include_str!("../../../.agent-harness/agents/visual-engineering.md")
-        }
-        "artistry" => include_str!("../../../.agent-harness/agents/artistry.md"),
-        "ultrabrain" => include_str!("../../../.agent-harness/agents/ultrabrain.md"),
-        "deep" => include_str!("../../../.agent-harness/agents/deep.md"),
-        "quick" => include_str!("../../../.agent-harness/agents/quick.md"),
-        "unspecified-low" => include_str!("../../../.agent-harness/agents/unspecified-low.md"),
-        "unspecified-high" => {
-            include_str!("../../../.agent-harness/agents/unspecified-high.md")
-        }
-        "writing" => include_str!("../../../.agent-harness/agents/writing.md"),
+        "general" => include_str!("../../../.agent-harness/agents/general.md"),
+        "librarian" => include_str!("../../../.agent-harness/agents/librarian.md"),
         _ => return None,
     };
     Some(markdown_prompt_body(markdown))
@@ -506,7 +465,6 @@ fn interactive_agent_profiles_with_extra_tools(
             profile_name.clone(),
             AgentProfile {
                 name: profile_name.clone(),
-                category: profile_name.clone(),
                 model_ref: model_selection.primary.model_ref,
                 model_ref_explicit: profile_cfg.model_ref_explicit,
                 system_prompt,
@@ -597,22 +555,24 @@ mod tests {
         let raw = format!(
             r#"
             {{
-              providers: {{
+              provider: {{
                 default: {{
                   type: "openai_compatible",
-                  base_url: "http://127.0.0.1:8317/v1",
-                  api_key: "test-openai-api-key",
-                  api_mode: "responses",
-                  timeout_ms: 60000,
+                  options: {{
+                    baseURL: "http://127.0.0.1:8317/v1",
+                    apiKey: "test-openai-api-key",
+                    apiMode: "responses",
+                    timeoutMs: 60000,
+                  }},
                   models: {{
                     "gpt-5.4-mini": {{
-                      display_name: "GPT-5.4 mini",
+                      name: "GPT-5.4 mini",
                     }},
                     "gpt-5.4": {{
-                      display_name: "GPT-5.4",
+                      name: "GPT-5.4",
                       variants: {{
                         mini: {{
-                          display_name: "Mini",
+                          name: "Mini",
                         }},
                       }},
                     }},
@@ -625,51 +585,11 @@ mod tests {
                   variant: "mini",
                 }},
               }},
-              agents: {{
+              model: "default/gpt-5.4-mini",
+              agent: {{
                 {agents}
               }},
-              permissions: {{
-                defaults: {{
-                  edit: "ask",
-                  shell: "ask",
-                  network: "deny",
-                  question: "ask",
-                  task: "ask",
-                  webfetch: "deny",
-                  websearch: "deny",
-                  codesearch: "deny",
-                  lsp: "allow",
-                }},
-                shell_allowlist: {{
-                  executables: ["git"],
-                  cwd_roots: ["."],
-                }},
-              }},
-              runtime: {{
-                background_tasks: {{
-                  default_concurrency: 2,
-                  provider_concurrency: 2,
-                  model_concurrency: 2,
-                  stale_timeout_ms: 15000,
-                  message_staleness_timeout_ms: 5000,
-                }},
-                session_dir: ".agent-harness/sessions",
-                permissions: {{
-                  ask_timeout_ms: 45000,
-                }},
-                prompt: {{
-                  wait_timeout_ms: 15000,
-                }},
-                deterministic: {{
-                  enabled: false,
-                  seed: 42,
-                }},
-              }},
-              integrations: {{
-                remote_search: {{
-                  endpoint: "https://mcp.exa.ai/mcp",
-                }},
-              }},
+              permission: "allow",
             }}
             "#,
             agents = agents,
@@ -685,28 +605,26 @@ mod tests {
         // assert
         let cfg = config_fixture(
             r#"
-            deep: {
-              description: "Default iteration budget",
+            default: {
               system_prompt: "Deep prompt",
-              model_ref: "default:gpt-5.4-mini",
+              model: "default/gpt-5.4-mini",
               temperature: 0.7,
-              tools: ["fs.read"],
+              tools: ["read"],
             },
-            review: {
-              description: "Longer review budget",
+            general: {
               system_prompt: "Review prompt",
-              model_ref: "default:gpt-5.4-mini",
+              model: "default/gpt-5.4-mini",
               max_iters: 20,
-              tools: ["fs.read"],
+              tools: ["read"],
             },
             "#,
         );
 
         let profiles = interactive_agent_profiles(&cfg).unwrap_or_abort();
-        assert_eq!(profiles["deep"].max_iters, None);
-        assert_eq!(profiles["deep"].temperature, Some(0.7));
-        assert_eq!(profiles["review"].max_iters, Some(20));
-        assert_eq!(profiles["review"].temperature, None);
+        assert_eq!(profiles["default"].max_iters, None);
+        assert_eq!(profiles["default"].temperature, Some(0.7));
+        assert_eq!(profiles["general"].max_iters, Some(20));
+        assert_eq!(profiles["general"].temperature, None);
     }
 
     #[test]
@@ -719,28 +637,27 @@ mod tests {
         let configured_prompt_json = configured_prompt.replace('\n', "\\n");
         let cfg = config_fixture(&format!(
             r#"
-            review: {{
-              description: "Review profile",
+            default: {{
               system_prompt: "{configured_prompt_json}",
-              model_ref: "default:gpt-5.4-mini",
+              model: "default/gpt-5.4-mini",
               tools: ["read"],
             }},
             "#
         ));
 
         let profiles = interactive_agent_profiles(&cfg).unwrap_or_abort();
-        assert!(profiles["review"]
+        assert!(profiles["default"]
             .system_prompt
             .starts_with(configured_prompt));
-        assert!(profiles["review"]
+        assert!(profiles["default"]
             .system_prompt
             .contains("The exact model ID is default/gpt-5.4-mini"));
 
         let coordinator_config = build_interactive_coordinator_config(&cfg).unwrap_or_abort();
-        assert!(coordinator_config.agent_profiles["review"]
+        assert!(coordinator_config.agent_profiles["default"]
             .system_prompt
             .starts_with(configured_prompt));
-        assert!(coordinator_config.agent_profiles["review"]
+        assert!(coordinator_config.agent_profiles["default"]
             .system_prompt
             .contains("The exact model ID is default/gpt-5.4-mini"));
     }
@@ -752,37 +669,36 @@ mod tests {
         // assert
         let cfg = config_fixture(
             r#"
-            build: {
-              description: "Build lane",
+            default: {
               system_prompt: "Build prompt",
-              model_ref: "fast",
+              model: "fast",
               tools: ["read"],
             },
             "#,
         );
 
         let profiles = interactive_agent_profiles(&cfg).unwrap_or_abort();
-        assert_eq!(profiles["build"].model_ref, "default:gpt-5.4");
+        assert_eq!(profiles["default"].model_ref, "default:gpt-5.4");
     }
 
     #[test]
-    fn interactive_agents_require_explicit_or_discovered_system_prompt() {
+    fn interactive_agents_use_shipped_prompt_when_not_overridden() {
         // arrange
         // act
         // assert
         let cfg = config_fixture(
             r#"
-            custom: {
-              description: "Custom execution profile",
-              model_ref: "default:gpt-5.4-mini",
+            default: {
+              model: "default/gpt-5.4-mini",
               tools: ["read"],
             },
             "#,
         );
 
-        let err = interactive_agent_profiles(&cfg)
-            .expect_err("interactive profiles should fail without a prompt");
-        assert!(err.contains("agent `custom` is missing a system prompt"));
+        let profiles = interactive_agent_profiles(&cfg).unwrap_or_abort();
+        assert!(profiles["default"]
+            .system_prompt
+            .starts_with("You are an expert coding assistant"));
     }
 
     #[test]
@@ -792,10 +708,9 @@ mod tests {
         // assert
         let cfg = config_fixture(
             r#"
-            build: {
-              description: "Build lane",
+            default: {
               system_prompt: "Build prompt",
-              model_ref: "default:gpt-5.4-mini",
+              model: "default/gpt-5.4-mini",
               tools: ["read"],
             },
             "#,
@@ -810,87 +725,64 @@ mod tests {
         )
         .unwrap_or_abort();
 
-        assert!(profiles["build"].toolset.contains(&"read".to_string()));
-        assert!(profiles["build"]
+        assert!(profiles["default"].toolset.contains(&"read".to_string()));
+        assert!(profiles["default"]
             .toolset
             .contains(&"mcp.docs-rs.search_in_crate".to_string()));
-        assert!(profiles["build"]
+        assert!(profiles["default"]
             .toolset
             .contains(&"mcp.gh_grep.searchGitHub".to_string()));
-        assert!(!profiles["build"]
+        assert!(!profiles["default"]
             .toolset
             .contains(&"mcp.docs-rs.tool.call".to_string()));
     }
 
     #[test]
-    fn interactive_profile_name_defaults_to_build_when_present() {
+    fn interactive_profile_name_is_always_default() {
         // arrange
         // act
         // assert
         let cfg = config_fixture(
             r#"
-            build: {
-              description: "Build lane",
-              model_ref: "default:gpt-5.4-mini",
-              tools: ["fs.read"],
+            default: {
+              model: "default/gpt-5.4-mini",
+              tools: ["read"],
             },
             "#,
         );
 
-        assert_eq!(interactive_profile_name(&cfg), "build");
+        assert_eq!(interactive_profile_name(&cfg), "default");
     }
 
     #[test]
-    fn interactive_profile_name_uses_first_available_profile_without_build() {
-        // arrange
-        // act
-        // assert
-        let cfg = config_fixture(
-            r#"
-            deep: {
-              description: "Deep lane",
-              model_ref: "default:gpt-5.4-mini",
-              tools: ["fs.read"],
-            },
-            "#,
-        );
-
-        assert_eq!(interactive_profile_name(&cfg), "deep");
-    }
-
-    #[test]
-    fn shipped_example_config_seeds_build_plan_and_subagents() {
+    fn shipped_example_config_seeds_default_and_named_subagents() {
         // arrange
         // act
         // assert
         let config_path = crate::cli_config::shipped_example_config_path();
         let cfg = load_config_from_file(&config_path).unwrap_or_abort();
 
-        assert!(cfg.agents.contains_key("build"));
-        assert!(cfg.agents.contains_key("plan"));
+        assert!(cfg.agents.contains_key("default"));
         assert!(cfg.agents.contains_key("explore"));
         assert!(cfg.agents.contains_key("general"));
-        assert_eq!(cfg.default_agent.as_deref(), Some("build"));
+        assert!(cfg.agents.contains_key("librarian"));
 
         let profiles = interactive_agent_profiles(&cfg).unwrap_or_abort();
-        assert!(profiles["build"].toolset.contains(&"edit".to_string()));
-        assert!(profiles["build"].toolset.contains(&"bash".to_string()));
-        assert!(profiles["build"].toolset.contains(&"task".to_string()));
-        assert!(profiles["build"]
+        assert!(profiles["default"].toolset.contains(&"edit".to_string()));
+        assert!(profiles["default"].toolset.contains(&"bash".to_string()));
+        assert!(profiles["default"].toolset.contains(&"task".to_string()));
+        assert!(profiles["default"]
+            .toolset
+            .contains(&"background_output".to_string()));
+        assert!(profiles["default"]
+            .toolset
+            .contains(&"todowrite".to_string()));
+        assert!(!profiles["default"]
             .toolset
             .contains(&"plan_enter".to_string()));
-        assert!(profiles["build"]
+        assert!(!profiles["default"]
             .toolset
-            .contains(&"background_output".to_string()));
-        assert!(profiles["build"].toolset.contains(&"todowrite".to_string()));
-        assert!(profiles["plan"].toolset.contains(&"edit".to_string()));
-        assert!(profiles["plan"].toolset.contains(&"plan_exit".to_string()));
-        assert!(profiles["plan"].toolset.contains(&"task".to_string()));
-        assert!(profiles["plan"]
-            .toolset
-            .contains(&"background_output".to_string()));
-        assert!(profiles["plan"].toolset.contains(&"bash".to_string()));
-        assert!(!profiles["plan"].toolset.contains(&"plan_enter".to_string()));
+            .contains(&"plan_exit".to_string()));
         assert!(profiles["explore"].toolset.contains(&"read".to_string()));
         assert!(profiles["explore"].toolset.contains(&"grep".to_string()));
         assert!(!profiles["explore"].toolset.contains(&"edit".to_string()));
@@ -903,70 +795,56 @@ mod tests {
             .contains(&"websearch".to_string()));
         assert!(profiles["general"].toolset.contains(&"edit".to_string()));
         assert!(profiles["general"].toolset.contains(&"bash".to_string()));
-        assert!(profiles["general"].toolset.contains(&"task".to_string()));
-        assert!(profiles["general"]
+        assert!(!profiles["general"].toolset.contains(&"task".to_string()));
+        assert!(!profiles["general"]
             .toolset
             .contains(&"background_output".to_string()));
         assert!(!profiles["general"]
             .toolset
             .contains(&"todowrite".to_string()));
-        assert_eq!(
-            profiles[harness_core::session_title::TITLE_AGENT_NAME].system_prompt,
-            harness_core::session_title::TITLE_AGENT_SYSTEM_PROMPT
-        );
-        assert_eq!(
-            profiles[harness_core::session_title::TITLE_AGENT_NAME].temperature,
-            Some(harness_core::session_title::TITLE_AGENT_TEMPERATURE)
-        );
-        assert!(profiles[harness_core::session_title::TITLE_AGENT_NAME]
+        assert!(profiles["librarian"]
             .toolset
-            .is_empty());
-        assert!(profiles["build"].system_prompt.starts_with("## Identity"));
-        assert!(profiles["build"]
+            .contains(&"webfetch".to_string()));
+        assert!(profiles["default"]
             .system_prompt
-            .contains("You are the Build agent for Harness"));
-        assert!(profiles["plan"].system_prompt.starts_with("## Identity"));
-        assert!(profiles["plan"]
-            .system_prompt
-            .contains("You are the Plan agent for Harness"));
-        assert!(!profiles["build"]
-            .system_prompt
-            .to_lowercase()
-            .contains(&["open", "code"].concat()));
-        assert!(!profiles["plan"]
+            .starts_with("You are an expert coding assistant"));
+        assert!(profiles["default"].system_prompt.contains("inside Harness"));
+        assert!(!profiles["default"]
             .system_prompt
             .to_lowercase()
             .contains(&["open", "code"].concat()));
     }
 
     #[test]
-    fn task_tool_description_lists_available_subagents_for_build() {
+    fn task_tool_description_lists_available_subagents_for_default() {
         // arrange
         // act
         // assert
         let config_path = crate::cli_config::shipped_example_config_path();
         let cfg = load_config_from_file(&config_path).unwrap_or_abort();
         let coordinator_config = build_interactive_coordinator_config(&cfg).unwrap_or_abort();
-        let profile = &coordinator_config.agent_profiles["build"];
+        let profile = &coordinator_config.agent_profiles["default"];
         let task_description = task_description_for_profile(&coordinator_config, profile);
 
         assert!(task_description.contains("Available subagents:"));
-        assert!(task_description.contains("- explore: Read-only contextual codebase search agent"));
-        assert!(task_description.contains("- general: General-purpose implementation"));
-        assert!(!task_description.contains("- build:"));
-        assert!(!task_description.contains("- plan:"));
-        assert!(!task_description.contains("- title:"));
+        assert!(task_description.contains("- explore: Read-only codebase exploration subagent."));
+        assert!(task_description
+            .contains("- general: General-purpose implementation and research subagent."));
+        assert!(
+            task_description.contains("- librarian: Documentation and external research subagent.")
+        );
+        assert!(!task_description.contains("- default:"));
     }
 
     #[test]
-    fn skill_tool_description_lists_available_skills_for_build() {
+    fn skill_tool_description_lists_available_skills_for_default() {
         // arrange
         // act
         // assert
         let config_path = crate::cli_config::shipped_example_config_path();
         let cfg = load_config_from_file(&config_path).unwrap_or_abort();
         let coordinator_config = build_interactive_coordinator_config(&cfg).unwrap_or_abort();
-        let profile = &coordinator_config.agent_profiles["build"];
+        let profile = &coordinator_config.agent_profiles["default"];
         let skill_description = skill_description_for_profile(&coordinator_config, profile);
 
         assert!(skill_description.contains("<available_skills>"));
@@ -978,61 +856,40 @@ mod tests {
     }
 
     #[test]
-    fn task_tool_description_respects_plan_delegation_boundary() {
-        // arrange
-        // act
-        // assert
-        let config_path = crate::cli_config::shipped_example_config_path();
-        let cfg = load_config_from_file(&config_path).unwrap_or_abort();
-        let coordinator_config = build_interactive_coordinator_config(&cfg).unwrap_or_abort();
-        let profile = &coordinator_config.agent_profiles["plan"];
-        let task_description = task_description_for_profile(&coordinator_config, profile);
-
-        assert!(task_description.contains("- explore: Read-only contextual codebase search agent"));
-        assert!(!task_description.contains("- general:"));
-    }
-
-    #[test]
     fn task_tool_description_filters_denied_subagents() {
         // arrange
         // act
         // assert
         let cfg = config_fixture(
             r#"
-            build: {
-              description: "Build lane",
-              system_prompt: "Build prompt",
-              model_ref: "default:gpt-5.4-mini",
-              permissions: {
-                rules: {
-                  task: [
-                    { selector: { type: "exact", value: "general" }, mode: "deny" },
-                  ],
+            default: {
+              system_prompt: "Default prompt",
+              model: "default/gpt-5.4-mini",
+              permission: {
+                task: {
+                  general: "deny",
+                  "*": "allow",
                 },
               },
               tools: ["task"],
             },
             explore: {
-              description: "Explore lane",
               system_prompt: "Explore prompt",
-              model_ref: "default:gpt-5.4-mini",
-              mode: "subagent",
+              model: "default/gpt-5.4-mini",
               tools: ["read"],
             },
             general: {
-              description: "General lane",
               system_prompt: "General prompt",
-              model_ref: "default:gpt-5.4-mini",
-              mode: "subagent",
+              model: "default/gpt-5.4-mini",
               tools: ["read"],
             },
             "#,
         );
         let coordinator_config = build_interactive_coordinator_config(&cfg).unwrap_or_abort();
-        let profile = &coordinator_config.agent_profiles["build"];
+        let profile = &coordinator_config.agent_profiles["default"];
         let task_description = task_description_for_profile(&coordinator_config, profile);
 
-        assert!(task_description.contains("- explore: Explore lane"));
+        assert!(task_description.contains("- explore: Read-only codebase exploration subagent."));
         assert!(!task_description.contains("- general:"));
     }
 

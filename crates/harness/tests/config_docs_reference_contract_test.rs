@@ -25,7 +25,7 @@ fn config_docs_capture_harness_contract_and_migration_boundary() {
 }
 
 #[test]
-fn config_docs_capture_plan_operator_workflow_and_guardrails() {
+fn config_docs_capture_generic_agent_and_named_subagents() {
     // arrange
     let root = repo_root();
 
@@ -36,32 +36,34 @@ fn config_docs_capture_plan_operator_workflow_and_guardrails() {
 
     // assert
     for expected in [
-        "### Plan operator workflow",
-        "stable public runtime surface",
-        "experimental compatibility flag",
-        "Build call `plan_enter`",
-        ".agent-harness/plans/<run>.md",
-        "Plan calls `plan_exit`",
-        "restricted to `explore`",
-        "cannot launch\n   `general`, `build`, or user-defined writer subagents",
-        "Approving that prompt switches\n   back to Build",
-        "declining leaves the session in Plan",
+        "\"agent\": {",
+        "\"default\": { \"variant\": \"high\" }",
+        "\"explore\": {}",
+        "\"general\": {}",
+        "\"librarian\": {}",
+        ".agent-harness/agents/{default,explore,general,librarian}.md",
     ] {
         assert!(
             doc.contains(expected),
-            "docs/config.md missing Plan workflow anchor: {expected}"
+            "docs/config.md missing generic agent contract anchor: {expected}"
         );
     }
 
     for expected in [
-        "Stable read-only planning lane",
-        ".agent-harness/plans/<run>.md",
-        "plan_exit",
-        "continuing implementation in Build",
+        "task(subagent_type=...)",
+        "\"default\": { \"variant\": \"high\" }",
+        "\"explore\": {}",
+        "\"general\": {}",
+        "\"librarian\": {}",
     ] {
         assert!(
             example.contains(expected),
-            "configs/harness.example.jsonc missing Plan comment anchor: {expected}"
+            "configs/harness.example.jsonc missing generic agent contract anchor: {expected}"
         );
+    }
+
+    for retired_tool in ["plan_enter", "plan_exit"] {
+        assert!(!doc.contains(retired_tool));
+        assert!(!example.contains(retired_tool));
     }
 }

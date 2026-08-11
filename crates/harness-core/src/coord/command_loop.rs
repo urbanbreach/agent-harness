@@ -68,7 +68,6 @@ impl Coordinator {
         Ok(AgentRuntimeInfo {
             agent_id: agent_id.clone(),
             profile_name: profile.name.clone(),
-            profile_category: profile.category.clone(),
             model_ref: profile.model_ref.clone(),
             model_ref_explicit: profile.model_ref_explicit,
             toolset: profile.toolset.clone(),
@@ -192,19 +191,25 @@ impl Coordinator {
             }
             Command::RequestToolCall {
                 actor,
-                category,
+                legacy_profile_hint,
                 tool_id,
                 args_json,
                 respond_to,
             } => {
                 let result = self
-                    .request_tool_call_internal(actor, category, tool_id, args_json, None)
+                    .request_tool_call_internal(
+                        actor,
+                        legacy_profile_hint,
+                        tool_id,
+                        args_json,
+                        None,
+                    )
                     .await;
                 warn_oneshot_send_failure(respond_to.send(result), "request_tool_call");
             }
             Command::ExecuteAgentToolCall {
                 actor,
-                category,
+                legacy_profile_hint,
                 tool_id,
                 args_json,
                 respond_to,
@@ -212,7 +217,7 @@ impl Coordinator {
                 let _ = self
                     .request_tool_call_internal(
                         actor,
-                        category,
+                        legacy_profile_hint,
                         tool_id,
                         args_json,
                         Some(respond_to),

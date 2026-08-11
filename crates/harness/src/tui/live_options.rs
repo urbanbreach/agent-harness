@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::mpsc as std_mpsc;
 
@@ -20,6 +21,7 @@ pub(super) fn continue_live_tui_options(
     ui_intent_sender: UiIntentSink,
     compact_session_supported: bool,
     prompt_history_path: Option<PathBuf>,
+    keybindings: Option<BTreeMap<String, String>>,
     toggles: Option<TogglesConfig>,
     skip_alternate_screen: bool,
 ) -> TuiOptions {
@@ -34,7 +36,7 @@ pub(super) fn continue_live_tui_options(
         },
         exit_on_finish,
         on_ui_intent: Some(ui_intent_sender),
-        keybindings: None,
+        keybindings,
         toggles,
         preserve_terminal_on_exit: true,
         skip_alternate_screen,
@@ -53,6 +55,7 @@ pub(super) fn new_live_tui_options(
     ui_intent_sender: UiIntentSink,
     compact_session_supported: bool,
     prompt_history_path: Option<PathBuf>,
+    keybindings: Option<BTreeMap<String, String>>,
     toggles: Option<TogglesConfig>,
     skip_alternate_screen: bool,
 ) -> TuiOptions {
@@ -67,7 +70,7 @@ pub(super) fn new_live_tui_options(
         },
         exit_on_finish,
         on_ui_intent: Some(ui_intent_sender),
-        keybindings: None,
+        keybindings,
         toggles,
         preserve_terminal_on_exit: true,
         skip_alternate_screen,

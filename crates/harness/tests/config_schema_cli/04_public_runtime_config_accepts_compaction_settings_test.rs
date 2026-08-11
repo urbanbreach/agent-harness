@@ -93,25 +93,25 @@ fn root_runtime_example_uses_canonical_public_keys() {
     let parsed: PublicRuntimeConfig =
         json5::from_str(&root_example).unwrap_or_abort();
 
-    assert_eq!(parsed.default_agent.as_deref(), Some("build"));
     assert_eq!(parsed.model.as_deref(), Some("umans-ai-coding-plan/umans-kimi-k2.7"));
     assert_eq!(parsed.small_model.as_deref(), Some("umans-ai-coding-plan/umans-flash"));
     assert!(parsed.provider.contains_key("umans-ai-coding-plan"));
-    assert!(parsed.agent.build.is_some());
-    assert!(parsed.agent.plan.is_some());
-    assert!(parsed.agent.general.is_some());
-    assert!(parsed.agent.explore.is_some());
-    assert!(parsed.agent.visual_engineering.is_some());
-    assert!(parsed.agent.artistry.is_some());
-    assert!(parsed.agent.ultrabrain.is_some());
-    assert!(parsed.agent.deep.is_some());
-    assert!(parsed.agent.quick.is_some());
-    assert!(parsed.agent.unspecified_low.is_some());
-    assert!(parsed.agent.unspecified_high.is_some());
-    assert!(parsed.agent.writing.is_some());
-    assert!(parsed.agent.title.is_some());
-    assert!(parsed.agent.summary.is_some());
-    assert!(parsed.agent.compaction.is_some());
+    assert_eq!(
+        parsed.agent.default.model.as_deref(),
+        Some("umans-ai-coding-plan/umans-kimi-k2.7")
+    );
+    assert_eq!(
+        parsed.agent.explore.model.as_deref(),
+        Some("umans-ai-coding-plan/umans-flash")
+    );
+    assert_eq!(
+        parsed.agent.general.model.as_deref(),
+        Some("umans-ai-coding-plan/umans-kimi-k2.7")
+    );
+    assert_eq!(
+        parsed.agent.librarian.model.as_deref(),
+        Some("umans-ai-coding-plan/umans-flash")
+    );
     assert!(!root_example.contains("\"base_url\""));
     assert!(!root_example.contains("\"api_key\""));
     assert!(!root_example.contains("\"api_mode\""));

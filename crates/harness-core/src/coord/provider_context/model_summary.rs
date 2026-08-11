@@ -37,6 +37,50 @@ pub(in crate::coord) struct ModelBackedCompactionSummary {
     pub(in crate::coord) split_prefix_summary: Option<SplitPrefixSummaryDecision>,
 }
 
+struct CompactionOperationSpec {
+    model_ref: String,
+    system_prompt: &'static str,
+    user_prompt: String,
+    max_chars: usize,
+}
+
+impl CompactionOperationSpec {
+    fn completion_request(self) -> CompletionRequest {
+        let model = AgentModelRef::parse(&self.model_ref);
+        CompletionRequest {
+            provider_id: Some(model.provider_id),
+            model_id: model.model_id,
+            messages: vec![
+                CompletionMessage {
+                    role: MessageRole::System,
+                    content: self.system_prompt.to_string(),
+                    name: None,
+                    tool_call_id: None,
+                    assistant_tool_calls: None,
+                },
+                CompletionMessage {
+                    role: MessageRole::User,
+                    content: self.user_prompt,
+                    name: None,
+                    tool_call_id: None,
+                    assistant_tool_calls: None,
+                },
+            ],
+            temperature: None,
+            max_tokens: Some(u32::try_from(self.max_chars).unwrap_or(u32::MAX) / 3),
+            variant: None,
+            reasoning_effort: None,
+            text_verbosity: None,
+            reasoning_summary: None,
+            thinking: None,
+            tools: None,
+            tool_choice: None,
+            context: Default::default(),
+            stream: true,
+        }
+    }
+}
+
 pub(in crate::coord) fn compaction_summary_model_ref(
     config: &CompactionRuntimeConfig,
     trigger: &ProviderCompactionTrigger,
@@ -116,43 +160,18 @@ pub(in crate::coord) async fn model_backed_compaction_summary_for(
         &draft_source,
         compaction_config,
     );
-    let model = AgentModelRef::parse(&model_ref);
-    let request = CompletionRequest {
-        provider_id: Some(model.provider_id),
-        model_id: model.model_id,
-        messages: vec![
-            CompletionMessage {
-                role: MessageRole::System,
-                content: "You create Harness provider-context checkpoint summaries. Return only the updated structured checkpoint summary, preserving the requested markdown headings and rolling forward prior summary content instead of appending a raw previous-summary blob.".to_string(),
-                name: None,
-                tool_call_id: None,
-                assistant_tool_calls: None,
-            },
-            CompletionMessage {
-                role: MessageRole::User,
-                content: build_model_compaction_prompt(
-                    context.compacted_summary.as_deref(),
-                    &plan,
-                    &deterministic_draft,
-                    compaction_config,
-                ),
-                name: None,
-                tool_call_id: None,
-                assistant_tool_calls: None,
-            },
-        ],
-        temperature: None,
-        max_tokens: Some(u32::try_from(PROVIDER_CONTEXT_COMPACTION_SUMMARY_MAX_CHARS).unwrap_or(u32::MAX) / 3),
-        variant: None,
-        reasoning_effort: None,
-        text_verbosity: None,
-        reasoning_summary: None,
-        thinking: None,
-        tools: None,
-        tool_choice: None,
-        context: Default::default(),
-        stream: true,
-    };
+    let request = CompactionOperationSpec {
+        model_ref,
+        system_prompt: "You create Harness provider-context checkpoint summaries. Return only the updated structured checkpoint summary, preserving the requested markdown headings and rolling forward prior summary content instead of appending a raw previous-summary blob.",
+        user_prompt: build_model_compaction_prompt(
+            context.compacted_summary.as_deref(),
+            &plan,
+            &deterministic_draft,
+            compaction_config,
+        ),
+        max_chars: PROVIDER_CONTEXT_COMPACTION_SUMMARY_MAX_CHARS,
+    }
+    .completion_request();
 
     let mut stream = provider.stream_completion(request).await;
     let mut output = String::new();
@@ -217,38 +236,13 @@ async fn model_backed_split_prefix_summary_for(
     model_ref: &str,
     prefix_turn: &ProviderConversationTurn,
 ) -> Result<String, String> {
-    let model = AgentModelRef::parse(model_ref);
-    let request = CompletionRequest {
-        provider_id: Some(model.provider_id),
-        model_id: model.model_id,
-        messages: vec![
-            CompletionMessage {
-                role: MessageRole::System,
-                content: "You summarize oversized Harness turn prefixes for context compaction. Return only the requested markdown summary.".to_string(),
-                name: None,
-                tool_call_id: None,
-                assistant_tool_calls: None,
-            },
-            CompletionMessage {
-                role: MessageRole::User,
-                content: build_split_prefix_summary_prompt(prefix_turn),
-                name: None,
-                tool_call_id: None,
-                assistant_tool_calls: None,
-            },
-        ],
-        temperature: None,
-        max_tokens: Some(u32::try_from(PROVIDER_CONTEXT_SPLIT_PREFIX_SUMMARY_MAX_CHARS).unwrap_or(u32::MAX) / 3),
-        variant: None,
-        reasoning_effort: None,
-        text_verbosity: None,
-        reasoning_summary: None,
-        thinking: None,
-        tools: None,
-        tool_choice: None,
-        context: Default::default(),
-        stream: true,
-    };
+    let request = CompactionOperationSpec {
+        model_ref: model_ref.to_string(),
+        system_prompt: "You summarize oversized Harness turn prefixes for context compaction. Return only the requested markdown summary.",
+        user_prompt: build_split_prefix_summary_prompt(prefix_turn),
+        max_chars: PROVIDER_CONTEXT_SPLIT_PREFIX_SUMMARY_MAX_CHARS,
+    }
+    .completion_request();
 
     let mut stream = provider.stream_completion(request).await;
     let mut output = String::new();

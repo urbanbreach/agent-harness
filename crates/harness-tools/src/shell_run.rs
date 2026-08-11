@@ -816,7 +816,7 @@ impl ShellRunTool {
 impl Tool for ShellRunTool {
     tool_metadata!(
         "shell.run",
-        "Runs a shell command inside the workspace and returns stdout/stderr. Use bash for real shell work like git, cargo, or npm—not for file discovery, file search, reading, or editing. Commands such as find, grep/rg, cat, head, tail, sed, and awk are discouraged; use glob, grep, list, read, or edit instead when possible. Shell commands are controlled by permission patterns and workspace path safety.",
+        "Runs a shell command and returns stdout/stderr. The working directory defaults to the workspace; an outside-workspace cwd requires external_directory approval. Use bash for real shell work like git, cargo, or npm—not for file discovery, file search, reading, or editing. Commands such as find, grep/rg, cat, head, tail, sed, and awk are discouraged; use glob, grep, list, read, or edit instead when possible. Shell commands are controlled by permission patterns and workspace path safety.",
         ToolCapability::Shell,
         json_schema_for::<ShellRunArgs>()
     );
@@ -845,7 +845,7 @@ mod tests {
     };
     use crate::coordinator_registry;
     use crate::test_support::{read_spilled_artifact, tool_context as shell_test_context};
-    use harness_core::config::ShellAllowlist;
+    use harness_core::config::{ShellAllowlist, ShellAllowlistMode};
     use harness_core::tool::{Tool, ToolError};
     use serde_json::json;
 
@@ -1176,16 +1176,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn shell_run_rejects_direct_bash_command_mode_bypass() {
+    async fn shell_run_legacy_mode_rejects_direct_bash_command_mode_bypass() {
         // arrange
         // act
         // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let shell = ShellRunTool::with_runner(
             ShellAllowlist {
+                mode: ShellAllowlistMode::LegacyExecutables,
                 executables: vec!["bash".to_string()],
                 cwd_roots: Vec::new(),
-                ..ShellAllowlist::default()
             },
             ShellRunTool::default_runner(),
         );

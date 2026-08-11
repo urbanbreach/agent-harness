@@ -91,7 +91,7 @@ fn run_cli_no_input_on_tty_exits_quickly_with_clear_error() {
 
 #[allow(clippy::clone_on_ref_ptr, reason = "trait object coercion requires .clone() not Arc::clone")]
 #[test]
-fn run_cli_mock_model_and_agent_selector_fails_clearly_when_agent_is_unknown() {
+fn run_cli_rejects_removed_agent_selector() {
     // arrange
     // act
     // assert
@@ -105,14 +105,14 @@ fn run_cli_mock_model_and_agent_selector_fails_clearly_when_agent_is_unknown() {
             "-m",
             "mock:gpt-4o-mini",
             "--agent",
-            "build",
+            "anything",
             "hi",
         ],
     );
 
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("unknown"), "stderr:\n{stderr}");
+    assert!(stderr.contains("unexpected argument '--agent'"), "stderr:\n{stderr}");
 }
 
 #[allow(clippy::clone_on_ref_ptr, reason = "trait object coercion requires .clone() not Arc::clone")]

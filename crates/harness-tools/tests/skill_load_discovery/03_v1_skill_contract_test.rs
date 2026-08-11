@@ -17,8 +17,6 @@ fn v1_skill_catalog_reports_compact_metadata_without_body_leak() {
 description: V1 catalog metadata description
 argument_hint: ISSUE-123
 allowed_tools: read, grep
-target_agent: build
-target_category: deep
 mcp: deferred-local-metadata
 resources: bundled-reference-not-loaded"#,
         "BODY LEAK SENTINEL: only activation may expose this body.",
@@ -39,8 +37,6 @@ resources: bundled-reference-not-loaded"#,
     assert_eq!(entry.source_scope, "project");
     assert_eq!(entry.argument_hint.as_deref(), Some("ISSUE-123"));
     assert_eq!(entry.allowed_tools, vec!["read", "grep"]);
-    assert_eq!(entry.target_agent.as_deref(), Some("build"));
-    assert_eq!(entry.target_category.as_deref(), Some("deep"));
     assert_eq!(entry.deferred_mcp.as_deref(), Some("deferred-local-metadata"));
     assert_eq!(
         entry.deferred_resources.as_deref(),
@@ -50,6 +46,8 @@ resources: bundled-reference-not-loaded"#,
     assert!(entry.body_digest.is_none());
     let serialized = serde_json::to_string(&catalog).unwrap_or_abort();
     assert!(!serialized.contains("BODY LEAK SENTINEL"));
+    assert!(!serialized.contains("target_agent"));
+    assert!(!serialized.contains("target_category"));
 }
 
 #[tokio::test]

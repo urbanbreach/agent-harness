@@ -19,7 +19,7 @@ agent-harness/
 ├── configs/                  # generated schemas, starter examples, provider catalogs
 ├── docs/                     # public architecture/config/testing/tool/session/release documentation
 ├── scripts/                  # lane runner, static gates, perf/coverage/stress helpers
-└── .agent-harness/           # runtime agent profiles, prompt-family fragments, shipped skills, generated sessions
+└── .agent-harness/           # generic runtime prompt, prompt-family fragments, shipped skills, generated sessions
 ```
 
 ## WHERE TO LOOK
@@ -34,7 +34,7 @@ agent-harness/
 | TUI shell | `crates/harness-tui/AGENTS.md` | Read before touching app state, layout, transcript rendering, overlays, keybindings, or snapshots. |
 | TUI app state | `crates/harness-tui/src/app/AGENTS.md` | AppState, session projection/stack, permissions, composer, model switcher. |
 | Test helpers and signoff | `crates/harness-testkit/AGENTS.md`, `crates/harness-testkit/tests/AGENTS.md` | Deterministic fakes, simulation, PTY/live/native evidence, artifact provenance. |
-| Runtime prompt assets | `.agent-harness/AGENTS.md` | Runtime-loaded agent profiles, prompt-family fragments, and skill packages. |
+| Runtime prompt assets | `.agent-harness/AGENTS.md` | Generic runtime prompt, prompt-family fragments, and skill packages. |
 | Public docs | `docs/AGENTS.md` | Architecture, config, testing, tool catalog, session/replay, release evidence. |
 | Public config and schemas | `configs/AGENTS.md` | Generated schemas, example configs, provider catalogs. |
 | Build/test scripts | `scripts/AGENTS.md` | Lane runner, static gates, coverage/perf/stress scripts. |

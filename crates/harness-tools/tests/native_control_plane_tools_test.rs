@@ -21,7 +21,6 @@ use serde_json::json;
 fn worker_profile(name: &str, toolset: &[&str]) -> AgentProfile {
     AgentProfile {
         name: name.to_string(),
-        category: name.to_string(),
         model_ref: format!("default:{name}"),
         model_ref_explicit: true,
         system_prompt: format!("{name} prompt"),

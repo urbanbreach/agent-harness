@@ -17,9 +17,9 @@ async fn background_cancel_all_cancels_all_non_terminal_background_tasks() {
                 Some("deep".to_string()),
                 "task",
                 json!({
-                    "category": "deep",
-                    "description": format!("Background child {i}"),
-                    "prompt": "Keep running until cancelled",
+                "description": format!("Background child {i}"),
+                "prompt": "Keep running until cancelled",
+                "subagent_type": "general",
                     "run_in_background": true,
                     "load_skills": []
                 }),

@@ -271,7 +271,6 @@ fn agent_profiles() -> BTreeMap<String, AgentProfile> {
         PROFILE_NAME.to_string(),
         AgentProfile {
             name: PROFILE_NAME.to_string(),
-            category: "deep".to_string(),
             model_ref: MODEL_REF.to_string(),
             model_ref_explicit: true,
             system_prompt: "system prompt".to_string(),

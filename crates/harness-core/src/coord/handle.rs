@@ -177,13 +177,13 @@ impl CoordinatorHandle {
     pub async fn request_tool_call(
         &self,
         actor: EventActor,
-        category: Option<String>,
+        legacy_profile_hint: Option<String>,
         tool_id: impl Into<String>,
         args_json: Value,
     ) -> Result<String, CoordinatorError> {
         self.request(|respond_to| Command::RequestToolCall {
             actor,
-            category,
+            legacy_profile_hint,
             tool_id: tool_id.into(),
             args_json,
             respond_to,
@@ -194,13 +194,13 @@ impl CoordinatorHandle {
     pub async fn execute_agent_tool_call(
         &self,
         actor: EventActor,
-        category: Option<String>,
+        legacy_profile_hint: Option<String>,
         tool_id: impl Into<String>,
         args_json: Value,
     ) -> Result<ToolResult, String> {
         self.request_string_error(|respond_to| Command::ExecuteAgentToolCall {
             actor,
-            category,
+            legacy_profile_hint,
             tool_id: tool_id.into(),
             args_json,
             respond_to,

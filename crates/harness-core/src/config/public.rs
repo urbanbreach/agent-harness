@@ -4,7 +4,7 @@ use serde_json::Value; // allow: DYNAMIC — type alias for internal JSON proces
 
 use super::*;
 
-use self::agents::{default_shipped_agents, public_agent_to_profile};
+use self::agents::{public_agent_to_profile, shipped_agent_profiles};
 
 mod agents;
 mod contract;
@@ -37,10 +37,6 @@ pub struct PublicRuntimeConfig {
     pub model_profiles: BTreeMap<String, ModelProfileConfig>,
     #[serde(default)]
     pub agent: PublicAgentMap,
-    #[serde(default)]
-    pub mode: PublicAgentMap,
-    #[serde(default, alias = "defaultAgent")]
-    pub default_agent: Option<String>,
     #[serde(default)]
     pub permission: PublicPermissionValue,
     #[serde(default)]
@@ -265,7 +261,7 @@ pub(super) fn validate_public_root_config_object(
 
 fn default_internal_permissions_config() -> PermissionsConfig {
     // Harness-aligned allow-by-default for ordinary tool kinds. Safety kinds stay
-    // Ask: external_directory, doom_loop. Base question is Deny (build/plan re-allow).
+    // Ask: external_directory, doom_loop. Named profiles selectively re-allow questions.
     // Read stays Allow with .env pattern rules.
     PermissionsConfig {
         defaults: PermissionDefaultsConfig {
@@ -490,58 +486,30 @@ pub(super) fn translate_public_runtime_root(
     }
     translated.insert("model_profile".to_string(), model_profiles);
 
-    let mut agents = BTreeMap::new();
-    if let Some(value) = object.get("agents") {
-        let mut legacy: BTreeMap<String, ProfileConfig> = serde_json::from_value(value.clone())
-            .map_err(|err| ConfigError::ParseJson5(err.to_string()))?;
-        for profile in legacy.values_mut() {
-            profile.model_ref_explicit = true;
-        }
-        agents.extend(legacy);
-    }
-    for alias in ["categories", "profiles"] {
-        if let Some(value) = object.get(alias) {
-            let mut legacy: BTreeMap<String, ProfileConfig> = serde_json::from_value(value.clone())
-                .map_err(|err| ConfigError::ParseJson5(err.to_string()))?;
-            for profile in legacy.values_mut() {
-                profile.model_ref_explicit = true;
-            }
-            agents.extend(legacy);
-        }
-    }
-
-    let shipped = model
-        .as_deref()
-        .map(|model_ref| default_shipped_agents(model_ref, small_model.as_deref()))
+    let public_agents = object
+        .get("agent")
+        .cloned()
+        .map(serde_json::from_value::<PublicAgentMap>)
+        .transpose()
+        .map_err(|err| ConfigError::ParseJson5(err.to_string()))?
         .unwrap_or_default();
-
-    let mut disabled_agents = BTreeSet::new();
-    for key in ["mode", "agent"] {
-        if let Some(value) = object.get(key) {
-            let public_agents: PublicAgentMap = serde_json::from_value(value.clone())
-                .map_err(|err| ConfigError::ParseJson5(err.to_string()))?;
-            for (name, public_agent) in public_agents.into_entries() {
-                if public_agent.disable || public_agent.enable == Some(false) {
-                    agents.remove(&name);
-                    disabled_agents.insert(name);
-                    continue;
-                }
-                let base = agents.remove(&name).or_else(|| shipped.get(&name).cloned());
-                let profile = public_agent_to_profile(
-                    &name,
-                    public_agent,
-                    model.as_deref(),
-                    small_model.as_deref(),
-                    base,
-                )?;
-                agents.insert(name, profile);
-            }
-        }
-    }
-    for (name, profile) in shipped {
-        if !disabled_agents.contains(&name) {
-            agents.entry(name).or_insert(profile);
-        }
+    let mut shipped = model
+        .as_deref()
+        .map(shipped_agent_profiles)
+        .ok_or_else(|| {
+            ConfigError::InvalidReference(
+                "top-level `model` is required for shipped agent profiles".to_string(),
+            )
+        })?;
+    let mut agents = BTreeMap::new();
+    for (name, public_agent) in public_agents.into_entries() {
+        let base = shipped.remove(name).ok_or_else(|| {
+            ConfigError::InvalidReference(format!("missing shipped agent profile `{name}`"))
+        })?;
+        agents.insert(
+            name.to_string(),
+            public_agent_to_profile(public_agent, model.as_deref(), base)?,
+        );
     }
 
     translated.insert(
@@ -554,29 +522,6 @@ pub(super) fn translate_public_runtime_root(
             "small_model".to_string(),
             Value::String(small_model.clone()),
         );
-    }
-
-    if !disabled_agents.is_empty() {
-        translated.insert(
-            "disabled_agents".to_string(),
-            serde_json::to_value(&disabled_agents).unwrap_or(Value::Array(Vec::new())),
-        );
-    }
-
-    if let Some(default_agent) = object
-        .get("default_agent")
-        .or_else(|| object.get("defaultAgent"))
-        .cloned()
-    {
-        if let Some(default_agent_name) = default_agent.as_str() {
-            if disabled_agents.contains(default_agent_name.trim()) {
-                return Err(ConfigError::InvalidReference(format!(
-                    "default_agent `{}` references a disabled agent",
-                    default_agent_name.trim()
-                )));
-            }
-        }
-        translated.insert("default_agent".to_string(), default_agent);
     }
 
     let mut permissions = serde_json::to_value(default_internal_permissions_config())
@@ -716,45 +661,12 @@ pub(super) fn translate_public_runtime_root(
 }
 
 pub fn harness_schema_pretty_json() -> Result<String, ConfigError> {
-    let mut schema = serde_json::to_value(
+    let schema = serde_json::to_value(
         SchemaSettings::draft07()
             .into_generator()
             .into_root_schema_for::<PublicRuntimeConfig>(),
     )
     .map_err(|err| ConfigError::SerializeSchema(err.to_string()))?;
-    let definitions = schema.get_mut("definitions").and_then(Value::as_object_mut);
-    if let Some(definitions) = definitions {
-        if let Some(agent_map) = definitions
-            .get_mut("PublicAgentMap")
-            .and_then(Value::as_object_mut)
-        {
-            agent_map.insert(
-                "additionalProperties".to_string(),
-                serde_json::json!({ "$ref": "#/definitions/PublicAgentConfig" }),
-            );
-            agent_map.insert(
-                "description".to_string(),
-                Value::String(
-                    "Named agent definitions. Built-in Harness-compatible agents are explicit so editors can complete them, and custom names are accepted through the same shape."
-                        .to_string(),
-                ),
-            );
-        }
-        if let Some(disable_property) = definitions
-            .get_mut("PublicAgentConfig")
-            .and_then(|agent_config| agent_config.get_mut("properties"))
-            .and_then(Value::as_object_mut)
-            .and_then(|properties| properties.get_mut("disable"))
-            .and_then(Value::as_object_mut)
-        {
-            disable_property.insert(
-                "description".to_string(),
-                Value::String(
-                    "Compatibility negative toggle. Equivalent to `enable: false`.".to_string(),
-                ),
-            );
-        }
-    }
     serde_json::to_string_pretty(&schema)
         .map_err(|err| ConfigError::SerializeSchema(err.to_string()))
 }

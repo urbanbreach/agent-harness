@@ -1,54 +1,6 @@
 use harness::UnwrapOrAbort;
 #[allow(clippy::clone_on_ref_ptr, reason = "trait object coercion requires .clone() not Arc::clone")]
 #[tokio::test]
-async fn prompt_cli_routes_non_default_profile_to_matching_provider() {
-    // arrange
-    // act
-    // assert
-    let provider = ScriptedPromptProvider::fixed(text_events("Hello"));
-
-    let temp = tempdir().unwrap_or_abort();
-    let config_path = temp.path().join("harness.multi-provider.jsonc");
-    let session_dir = temp.path().join("sessions");
-
-    let config = prompt_cli_multi_provider_config(
-        "https://default.fixture/v1",
-        "https://ops.fixture/v1",
-        &session_dir,
-    );
-    fs::write(&config_path, config).unwrap_or_abort();
-
-    let config_arg = config_path.clone();
-    let temp_path = temp.path().to_path_buf();
-    let provider_for_run = provider.clone();
-    let output = tokio::task::spawn_blocking(move || {
-        run_harness_in_with_provider(temp_path, [
-                "--config",
-                config_arg.to_str().unwrap_or_abort(),
-                "prompt",
-                "--profile",
-                "ops",
-                "--text",
-                "Hello from ops",
-            ], provider_for_run)
-    })
-    .await
-    .unwrap_or_abort();
-
-    assert!(
-        output.status.success(),
-        "stdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    let requests = provider.requests();
-    assert_eq!(requests.len(), 1);
-    assert_eq!(requests[0].provider_id.as_deref(), Some("anthropic"));
-    assert_eq!(requests[0].model_id, "claude-3.7");
-}
-#[allow(clippy::clone_on_ref_ptr, reason = "trait object coercion requires .clone() not Arc::clone")]
-#[tokio::test]
 async fn prompt_cli_executes_tool_call_and_completes_turn() {
     // arrange
     // act
@@ -99,7 +51,10 @@ async fn prompt_cli_executes_tool_call_and_completes_turn() {
     );
 
     let events_body = fs::read_to_string(&out_path).unwrap_or_abort();
-    assert!(events_body.contains("\"event_type\":\"tool_call_requested\""));
+    assert!(
+        events_body.contains("\"event_type\":\"tool_call_requested\""),
+        "events:\n{events_body}"
+    );
     assert!(events_body.contains("\"event_type\":\"tool_call_started\""));
     assert!(events_body.contains("\"event_type\":\"tool_call_finished\""));
     assert!(events_body.contains("\"status\":\"succeeded\""));

@@ -322,7 +322,7 @@ async fn harness_skill_pack_is_discoverable_from_repo_checkout() {
     clippy::await_holding_lock,
     reason = "the global registry lock intentionally serializes skills registry mutation across awaits"
 )]
-async fn skill_load_reports_agent_hint_for_build() {
+async fn skill_load_reports_named_subagent_hint_for_general() {
     // arrange
     // act
     // assert
@@ -334,14 +334,14 @@ async fn skill_load_reports_agent_hint_for_build() {
 
     let err = skill_tool
         .call(
-            tool_context(&repo, "toolcall-build-agent-hint"),
-            json!({"name": "build"}),
+            tool_context(&repo, "toolcall-general-agent-hint"),
+            json!({"name": "general"}),
         )
         .await
-        .expect_err("build is an agent, not a skill");
+        .expect_err("general is an agent, not a skill");
 
     let message = err.to_string();
-    assert!(message.contains("Skill \"build\" not found"));
-    assert!(message.contains("`build` is an agent, not a skill"));
-    assert!(message.contains("task"));
+    assert!(message.contains("Skill \"general\" not found"));
+    assert!(message.contains("`general` is an agent, not a skill"));
+    assert!(message.contains("task(subagent_type=\"general\""));
 }

@@ -49,8 +49,6 @@ name: rust-best-practices
 description: Baseline Rust guidance for this workspace.
 argument_hint: optional short usage hint
 allowed_tools: read, grep
-target_agent: build
-target_category: deep
 mcp: deferred-local-metadata
 resources: references/usage.md, references/checklist.md
 ---
@@ -58,7 +56,7 @@ resources: references/usage.md, references/checklist.md
 
 Required fields are `name` and `description`. `name` must match the directory
 name and use lowercase words separated by single hyphens. Optional V1 fields are
-`argument_hint`, `allowed_tools`, `target_agent`, `target_category`, `mcp`,
+`argument_hint`, `allowed_tools`, `mcp`,
 `resources`, and a string-to-string `metadata` map. `resources` is a comma- or
 newline-separated list of relative files under the skill directory; it is loaded
 only on activation, never during catalog discovery. CamelCase aliases accepted by

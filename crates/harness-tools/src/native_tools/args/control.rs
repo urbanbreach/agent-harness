@@ -16,7 +16,7 @@ pub(in crate::native_tools) struct TodoWriteArgs {
     pub(in crate::native_tools) todos: Vec<TodoItem>,
 }
 
-#[derive(Debug, JsonSchema)]
+#[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(in crate::native_tools) struct TaskArgs {
     #[schemars(
@@ -29,13 +29,9 @@ pub(in crate::native_tools) struct TaskArgs {
     )]
     pub(in crate::native_tools) prompt: String,
     #[schemars(
-        description = "Specific configured subagent/profile to run, such as `explore` or `build`. Required when category is omitted; use either subagent_type or category, not both."
+        description = "Required named child profile. Must be one of `explore`, `general`, or `librarian`."
     )]
-    pub(in crate::native_tools) subagent_type: Option<String>,
-    #[schemars(
-        description = "Category selector for category-routed delegation. Required when subagent_type is omitted; use either category or subagent_type, not both."
-    )]
-    pub(in crate::native_tools) category: Option<String>,
+    pub(in crate::native_tools) subagent_type: TaskSubagentType,
     #[schemars(
         description = "Compatibility selector for continuing an existing child task/session when provided by prior task output."
     )]
@@ -45,19 +41,35 @@ pub(in crate::native_tools) struct TaskArgs {
     )]
     pub(in crate::native_tools) session_id: Option<String>,
     #[schemars(
-        description = "Optional, defaults to false. false waits synchronously; true returns request_id/task_id immediately. Use background_output for interim status checks, or cancel=true anytime, but wait for the coordinator/system completion notification before final result retrieval."
+        description = "Required execution choice. false waits synchronously; true returns request_id/task_id immediately. Use background_output for interim status checks, or cancel=true anytime, but wait for the coordinator/system completion notification before final result retrieval."
     )]
-    #[serde(default)]
     pub(in crate::native_tools) run_in_background: bool,
     #[schemars(
-        description = "Optional list of skills to load before child spawn, defaults to empty. Pass [] when no skills are needed."
+        description = "Required list of skills to load before child spawn. Pass [] when no skills are needed."
     )]
-    #[serde(default)]
     pub(in crate::native_tools) load_skills: Vec<String>,
     #[schemars(
         description = "Optional command/context string prepended to the child prompt as required delegation context."
     )]
     pub(in crate::native_tools) command: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub(in crate::native_tools) enum TaskSubagentType {
+    Explore,
+    General,
+    Librarian,
+}
+
+impl TaskSubagentType {
+    pub(in crate::native_tools) const fn as_str(self) -> &'static str {
+        match self {
+            Self::Explore => "explore",
+            Self::General => "general",
+            Self::Librarian => "librarian",
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -191,61 +203,6 @@ impl<'de> Deserialize<'de> for BackgroundCancelArgs {
 
 fn default_background_output_timeout_ms() -> u64 {
     120_000
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct TaskArgsCompat {
-    #[serde(default)]
-    description: Option<String>,
-    prompt: String,
-    #[serde(default)]
-    subagent_type: Option<String>,
-    #[serde(default)]
-    category: Option<String>,
-    #[serde(default)]
-    agent: Option<String>,
-    #[serde(default)]
-    profile: Option<String>,
-    #[serde(default, alias = "profileName")]
-    profile_name: Option<String>,
-    #[serde(default)]
-    task_id: Option<String>,
-    #[serde(default)]
-    session_id: Option<String>,
-    #[serde(default, alias = "background")]
-    run_in_background: Option<bool>,
-    #[serde(default, alias = "skills")]
-    load_skills: Option<Vec<String>>,
-    #[serde(default)]
-    command: Option<String>,
-}
-
-impl<'de> Deserialize<'de> for TaskArgs {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let compat = TaskArgsCompat::deserialize(deserializer)?;
-        let run_in_background = compat.run_in_background.unwrap_or(false);
-        let load_skills = compat.load_skills.unwrap_or_default();
-
-        Ok(Self {
-            description: compat.description,
-            prompt: compat.prompt,
-            subagent_type: compat
-                .subagent_type
-                .or(compat.agent)
-                .or(compat.profile)
-                .or(compat.profile_name),
-            category: compat.category,
-            task_id: compat.task_id,
-            session_id: compat.session_id,
-            run_in_background,
-            load_skills,
-            command: compat.command,
-        })
-    }
 }
 
 #[derive(Debug, JsonSchema)]

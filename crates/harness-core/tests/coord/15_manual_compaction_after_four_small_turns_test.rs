@@ -234,6 +234,9 @@ async fn manual_compaction_summary_call_uses_provider_without_emitting_provider_
         3,
         "two turns plus one summary model call"
     );
+    let summary_request = provider.requests().get(2).cloned().unwrap_or_abort();
+    assert_eq!(summary_request.tools, None);
+    assert_eq!(summary_request.tool_choice, None);
     let compaction = events
         .iter()
         .find_map(|event| match &event.payload {

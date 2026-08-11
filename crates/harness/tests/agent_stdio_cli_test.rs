@@ -59,10 +59,12 @@ fn agent_stdio_with_empty_command_rejects_with_usage() {
 }
 
 #[test]
-fn agent_select_stub_directs_to_flag() {
-    let (code, stdout, stderr) = run_cli(&["agent", "select", "--agent", "build"]);
+fn agent_select_subcommand_is_not_exposed() {
+    let (code, stdout, stderr) = run_cli(&["agent", "select"]);
     assert_eq!(code, 2);
     assert!(stdout.is_empty());
-    assert!(stderr.contains("not available"), "stderr: {stderr}");
-    assert!(stderr.contains("--agent"), "stderr: {stderr}");
+    assert!(
+        stderr.contains("unrecognized subcommand"),
+        "stderr: {stderr}"
+    );
 }

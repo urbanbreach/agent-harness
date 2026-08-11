@@ -69,10 +69,6 @@ fn known_public_keys_are_registered() {
 
     assert!(ids.contains("model"), "model must be registered");
     assert!(
-        ids.contains("default_agent"),
-        "default_agent must be registered"
-    );
-    assert!(
         ids.contains("permission.bash"),
         "permission.bash must be registered"
     );
@@ -334,7 +330,6 @@ fn expanded_high_value_keys_are_registered() {
         .map(|entry| entry.setting_id.as_str())
         .collect();
     for id in [
-        "mode",
         "lsp",
         "disabled_providers",
         "enabled_providers",

@@ -24,10 +24,9 @@ fn relative_paths_remain_cwd_relative_when_loading_from_file() {
                   }
                 }
               },
-              agents: {
-                deep: {
-                  description: "Deep work",
-                  model_ref: "default:gpt-4o-mini",
+              model: "default/gpt-4o-mini",
+              agent: {
+                default: {
                   tools: ["fs.read"]
                 }
               },
@@ -94,7 +93,7 @@ fn schema_uses_runtime_first_public_contract() {
     assert!(properties.contains_key("$schema"));
     assert!(properties.contains_key("provider"));
     assert!(properties.contains_key("agent"));
-    assert!(properties.contains_key("default_agent"));
+    assert!(!properties.contains_key("default_agent"));
     assert!(properties.contains_key("permission"));
     assert!(properties.contains_key("model"));
     assert!(properties.contains_key("small_model"));
@@ -226,10 +225,9 @@ fn json5_comments_trailing_commas_and_schema_field_parse() {
               },
             },
           },
-          agents: {
-            deep: {
-              description: "Deep work",
-              model_ref: "default:gpt-4o-mini",
+          model: "default/gpt-4o-mini",
+          agent: {
+            default: {
               tools: ["fs.read",],
             },
           },
@@ -274,7 +272,7 @@ fn json5_comments_trailing_commas_and_schema_field_parse() {
 
     let parsed = load_config_from_str(cfg).unwrap_or_abort();
     assert_eq!(parsed.schema.as_deref(), Some("./config.json"));
-    assert_eq!(parsed.agents["deep"].model_ref, "default:gpt-4o-mini");
+    assert_eq!(parsed.agents["default"].model_ref, "default/gpt-4o-mini");
 }
 
 #[test]
@@ -337,12 +335,8 @@ fn resolve_config_layer_paths_orders_global_then_local() {
     let cwd_config = temp.path().join("harness.jsonc");
 
     fs::create_dir_all(xdg_config.parent().unwrap_or_abort()).unwrap_or_abort();
-    fs::write(
-        &xdg_config,
-        "{ providers: {}, permissions: {}, runtime: {}, integrations: {}, agents: {} }",
-    )
-    .unwrap_or_abort();
-    fs::write(&cwd_config, "{ agents: {} }").unwrap_or_abort();
+    fs::write(&xdg_config, "{ model: \"default/model\", agent: {} }").unwrap_or_abort();
+    fs::write(&cwd_config, "{ model: \"default/model\", agent: {} }").unwrap_or_abort();
 
     let context = discovery_context(temp.path(), Some(&xdg_root));
 
@@ -431,6 +425,7 @@ fn load_resolved_config_merges_global_then_local_and_prefers_local_values() {
                   },
                 },
               },
+              model: "default/gpt-4o-mini",
               permissions: {
                 defaults: {
                   edit: "ask",
@@ -469,10 +464,19 @@ fn load_resolved_config_merges_global_then_local_and_prefers_local_values() {
         &cwd_config,
         r#"
             {
-              agents: {
-                build: {
-                  description: "Build profile",
-                  model_ref: "default:gpt-4o-mini",
+              provider: {
+                default: {
+                  type: "openai_compatible",
+                  base_url: "http://127.0.0.1:8317/v1",
+                  api_key: "test-key",
+                  models: {
+                    "gpt-4o-mini": { display_name: "GPT-4o mini" },
+                  },
+                },
+              },
+              model: "default/gpt-4o-mini",
+              agent: {
+                default: {
                   tools: ["read"],
                 },
               },
@@ -480,9 +484,6 @@ fn load_resolved_config_merges_global_then_local_and_prefers_local_values() {
                 defaults: {
                   shell: "allow",
                 },
-              },
-              ui: {
-                default_profile: "build",
               },
             }
             "#,
@@ -492,16 +493,15 @@ fn load_resolved_config_merges_global_then_local_and_prefers_local_values() {
     let context = discovery_context(temp.path(), Some(&xdg_root));
 
     let loaded = load_resolved_config_with_context(None, &context)
-        .unwrap_or_abort()
+        .unwrap_or_else(|error| panic!("layered config should load: {error}"))
         .unwrap_or_abort();
 
     assert_eq!(loaded.paths, vec![xdg_config.clone(), cwd_config.clone()]);
-    assert_eq!(loaded.config.ui.default_profile.as_deref(), Some("build"));
     assert!(matches!(
         loaded.config.permissions.defaults.shell,
         PermissionMode::Allow
     ));
-    assert!(loaded.config.agents.contains_key("build"));
+    assert!(loaded.config.agents.contains_key("default"));
     assert_eq!(loaded.primary_path(), Some(cwd_config.as_path()));
 }
 
@@ -519,8 +519,10 @@ fn load_resolved_config_applies_harness_config_content_last() {
             "provider": {
                 "default": {
                     "type": "openai_compatible",
-                    "base_url": "http://127.0.0.1:1/v1",
-                    "api_key": "DUMMY",
+                    "options": {
+                        "baseURL": "http://127.0.0.1:8317/v1",
+                        "apiKey": "DUMMY"
+                    },
                     "models": {
                         "gpt-4o": { "name": "GPT-4o" },
                         "gpt-4o-mini": { "name": "GPT-4o mini" }
@@ -529,7 +531,6 @@ fn load_resolved_config_applies_harness_config_content_last() {
             },
             "model": "default/gpt-4o",
             "small_model": "default/gpt-4o-mini",
-            "default_agent": "build",
             "permission": {
                 "bash": "deny",
                 "edit": "allow"
@@ -540,16 +541,25 @@ fn load_resolved_config_applies_harness_config_content_last() {
     .unwrap_or_abort();
 
     let mut context = discovery_context(temp.path(), None);
-    context.runtime_content =
-        Some("{ permission: { bash: \"allow\" }, default_agent: \"plan\" }".to_string());
+    context.runtime_content = Some(public_minimal_config_with_permission(
+        r#"{ bash: "allow", edit: "allow" }"#,
+    ));
     let loaded = load_resolved_config_with_context(None, &context)
-        .unwrap_or_abort()
+        .unwrap_or_else(|error| panic!("content overlay should load: {error}"))
         .unwrap_or_abort();
     assert!(matches!(
         loaded.config.permissions.defaults.shell,
         PermissionMode::Allow
     ));
-    assert_eq!(loaded.config.default_agent.as_deref(), Some("plan"));
+    assert_eq!(
+        loaded
+            .config
+            .agents
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        ["default", "explore", "general", "librarian"]
+    );
 }
 
 #[test]
@@ -565,12 +575,8 @@ fn load_resolved_config_explicit_path_bypasses_discovery_layers() {
     let explicit_config = temp.path().join("explicit.jsonc");
 
     fs::create_dir_all(xdg_config.parent().unwrap_or_abort()).unwrap_or_abort();
-    fs::write(
-        &xdg_config,
-        "{ providers: {}, permissions: {}, runtime: {}, integrations: {}, agents: {} }",
-    )
-    .unwrap_or_abort();
-    fs::write(&cwd_config, "{ agents: {} }").unwrap_or_abort();
+    fs::write(&xdg_config, "{ model: \"default/model\", agent: {} }").unwrap_or_abort();
+    fs::write(&cwd_config, "{ model: \"default/model\", agent: {} }").unwrap_or_abort();
     fs::write(
         &explicit_config,
         config_fixture(&deep_profile(r#"tools: ["read"],"#), "test-key", None, None),

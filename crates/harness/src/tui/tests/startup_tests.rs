@@ -34,6 +34,7 @@ fn workflow_managed_live_tuis_preserve_terminal_between_handoffs() {
         true,
         None,
         None,
+        None,
         false,
     );
     assert!(fresh.preserve_terminal_on_exit);
@@ -56,6 +57,7 @@ fn workflow_managed_live_tuis_preserve_terminal_between_handoffs() {
         true,
         None,
         None,
+        None,
         false,
     );
     assert!(resumed.preserve_terminal_on_exit);
@@ -66,6 +68,46 @@ fn workflow_managed_live_tuis_preserve_terminal_between_handoffs() {
             ..
         }
     ));
+}
+
+#[test]
+fn workflow_managed_live_tuis_preserve_configured_keybindings() {
+    // Given
+    let keybindings = BTreeMap::from([("submit_prompt".to_string(), "ctrl+g".to_string())]);
+    let sink: UiIntentSink = Arc::new(|_| {});
+
+    // When
+    let (_tx, rx) = std_mpsc::channel::<LiveUpdate>();
+    let fresh = new_live_tui_options(
+        PathBuf::from("/tmp/run-new"),
+        Vec::new(),
+        rx,
+        false,
+        Arc::clone(&sink),
+        true,
+        None,
+        Some(keybindings.clone()),
+        None,
+        false,
+    );
+    let (_tx, rx) = std_mpsc::channel::<LiveUpdate>();
+    let resumed = continue_live_tui_options(
+        PathBuf::from("/tmp/run-continue"),
+        Vec::new(),
+        Vec::new(),
+        rx,
+        false,
+        sink,
+        true,
+        None,
+        Some(keybindings.clone()),
+        None,
+        false,
+    );
+
+    // Then
+    assert_eq!(fresh.keybindings, Some(keybindings.clone()));
+    assert_eq!(resumed.keybindings, Some(keybindings));
 }
 
 #[test]
@@ -85,6 +127,7 @@ fn new_live_tui_options_allow_pre_bootstrap_run_directory() {
         false,
         sink,
         true,
+        None,
         None,
         None,
         false,
@@ -165,6 +208,7 @@ fn resumed_live_tui_options_carry_normalized_lineage_history() {
         false,
         sink,
         true,
+        None,
         None,
         None,
         false,

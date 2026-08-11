@@ -124,21 +124,19 @@ fn export_command_returns_meaningful_failure_directing_to_sessions_export() {
 }
 
 #[test]
-fn best_of_n_command_returns_meaningful_failure_directing_to_run() {
+fn best_of_n_command_is_not_exposed() {
     let (code, stdout, stderr) = run_cli_in_workspace(&["best-of-n", "--prompt", "hello"]);
     assert_eq!(code, 2);
     assert!(stdout.is_empty());
-    assert!(stderr.contains("not available"));
-    assert!(stderr.contains("harness run"));
+    assert!(stderr.contains("unrecognized subcommand 'best-of-n'"));
 }
 
 #[test]
-fn check_command_returns_meaningful_failure_directing_to_doctor() {
+fn check_command_is_not_exposed() {
     let (code, stdout, stderr) = run_cli_in_workspace(&["check", "--component", "config"]);
     assert_eq!(code, 2);
     assert!(stdout.is_empty());
-    assert!(stderr.contains("not available"));
-    assert!(stderr.contains("harness doctor"));
+    assert!(stderr.contains("unrecognized subcommand 'check'"));
 }
 
 #[test]

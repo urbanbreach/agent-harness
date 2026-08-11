@@ -352,7 +352,7 @@ pub fn build_provider_tool_defs_for_model(
     tool_registry: &ToolRegistry,
     model_ref: &str,
 ) -> Result<Vec<ToolDef>, String> {
-    let visible_tool_ids = provider_visible_tool_ids(profile, model_ref);
+    let visible_tool_ids = provider_visible_tool_ids(profile, tool_registry, model_ref);
     let mapping = build_tool_function_name_mapping(visible_tool_ids);
     let mut tools = Vec::new();
 
@@ -386,7 +386,11 @@ pub fn build_provider_tool_defs_for_model(
     Ok(tools)
 }
 
-fn provider_visible_tool_ids<'a>(profile: &'a AgentProfile, model_ref: &str) -> Vec<&'a str> {
+fn provider_visible_tool_ids<'a>(
+    profile: &'a AgentProfile,
+    tool_registry: &ToolRegistry,
+    model_ref: &str,
+) -> Vec<&'a str> {
     let model = AgentModelRef::parse(model_ref);
     let use_patch = model_uses_apply_patch_tool(&model.model_id);
     profile
@@ -400,7 +404,13 @@ fn provider_visible_tool_ids<'a>(profile: &'a AgentProfile, model_ref: &str) -> 
         })
         .filter(|tool_id| {
             profile.permission_ruleset.is_empty()
-                || !crate::perm::is_tool_disabled(tool_id, &profile.permission_ruleset)
+                || tool_registry.get(tool_id).is_none_or(|tool| {
+                    !crate::perm::is_tool_call_disabled(
+                        tool_id,
+                        tool.capability(),
+                        &profile.permission_ruleset,
+                    )
+                })
         })
         .collect()
 }

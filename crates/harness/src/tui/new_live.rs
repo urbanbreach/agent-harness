@@ -158,6 +158,10 @@ pub(super) async fn run_new_live_session(
     let exit_on_finish = cmd.exit_on_finish;
     let no_alt_screen = cmd.no_alt_screen;
     let toggles = Some(settings.toggles.clone());
+    let keybindings = settings
+        .config
+        .as_ref()
+        .map(|config| config.ui.keybindings.clone());
     let prompt_history_path = Some(prompt_history_path_for_session_dir(&settings.session_dir));
     set_pending_live_launch_metadata(launch_metadata);
     if let Some(config_path) = settings.config_path.clone() {
@@ -212,6 +216,7 @@ pub(super) async fn run_new_live_session(
             ui_intent_sender,
             true,
             prompt_history_path,
+            keybindings,
             toggles,
             no_alt_screen,
         ))

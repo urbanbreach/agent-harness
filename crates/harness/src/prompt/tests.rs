@@ -43,13 +43,11 @@ fn default_prompt_command() -> PromptCommand {
         variant: None,
         thinking: false,
         mock: false,
-        profile: None,
         resume: None,
         out: None,
         print_run_dir: false,
         max_turns: None,
         no_subagents: false,
-        no_plan: false,
         tools: Vec::new(),
         disallowed_tools: Vec::new(),
         disable_web_search: false,
@@ -132,7 +130,7 @@ fn no_config_prompt_with_stored_codex_uses_runtime_catalog() {
 
     assert!(config.providers.contains_key("openai-codex"));
     assert!(settings.config_digest.contains("builtin-auth-runtime"));
-    assert_eq!(settings.default_profile, "build");
+    assert_eq!(settings.default_profile, "default");
 }
 
 #[tokio::test]
@@ -641,18 +639,21 @@ fn resolve_permission_mode_default_resets_to_default() {
 }
 
 #[test]
-fn resolve_permission_mode_non_bypass_modes_do_not_activate() {
+fn resolve_permission_mode_without_selection_does_not_activate() {
     // arrange
     // act
     // assert
     assert_eq!(
-        resolve_permission_mode(Some("plan"), false).unwrap_or_abort(),
-        PermissionModeResolution::NoChange
-    );
-    assert_eq!(
         resolve_permission_mode(None, false).unwrap_or_abort(),
         PermissionModeResolution::NoChange
     );
+}
+
+#[test]
+fn resolve_permission_mode_rejects_removed_plan_mode() {
+    let error = resolve_permission_mode(Some("plan"), false).unwrap_err();
+
+    assert!(error.contains("unknown permission mode `plan`"));
 }
 
 #[test]
@@ -1767,6 +1768,7 @@ async fn run_prompt_with_tool_call_bypass_permissions_allows_edit() {
     std::fs::write(temp.path().join("test.txt"), "hello").unwrap_or_abort();
 
     let provider = SequenceProvider::new(vec![
+        text_events("Edit test"),
         tool_call_events(
             "call_1",
             "edit",
@@ -1827,6 +1829,7 @@ async fn run_prompt_with_tool_call_readonly_sandbox_denies_edit() {
     std::fs::write(temp.path().join("test.txt"), "hello").unwrap_or_abort();
 
     let provider = SequenceProvider::new(vec![
+        text_events("Edit test"),
         tool_call_events(
             "call_1",
             "edit",
@@ -1919,7 +1922,7 @@ async fn run_prompt_resume_appends_turn_to_existing_session() {
             stream_key: None,
             payload: EventV1::AgentSpawned(AgentSpawnedEvent {
                 agent_id: "agent_000001".to_string(),
-                profile: "worker".to_string(),
+                profile: "default".to_string(),
                 parent_agent_id: None,
             }),
         },

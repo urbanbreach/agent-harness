@@ -68,10 +68,7 @@ pub struct PromptCommand {
     #[arg(long, default_value_t = false, conflicts_with = "resume")]
     pub mock: bool,
 
-    #[arg(long, conflicts_with = "resume")]
-    pub profile: Option<String>,
-
-    #[arg(long, value_name = "RUN_ID_OR_PATH", conflicts_with = "profile")]
+    #[arg(long, value_name = "RUN_ID_OR_PATH")]
     pub resume: Option<String>,
 
     #[arg(long)]
@@ -85,9 +82,6 @@ pub struct PromptCommand {
 
     #[arg(long, default_value_t = false)]
     pub no_subagents: bool,
-
-    #[arg(long, default_value_t = false)]
-    pub no_plan: bool,
 
     /// Built-in tools to allow (comma-separated).
     #[arg(long, value_name = "TOOLS", value_delimiter = ',')]
@@ -129,7 +123,7 @@ pub struct PromptCommand {
     )]
     pub dangerously_skip_permissions: bool,
 
-    /// Permission mode (default, plan, bypassPermissions, acceptEdits, dontAsk).
+    /// Permission mode (default, bypassPermissions, acceptEdits, dontAsk).
     #[arg(long, value_name = "MODE")]
     pub permission_mode: Option<String>,
 
@@ -456,10 +450,7 @@ async fn run_prompt(
         let _ = logging::init_logging(config, &run.run_dir)?;
     }
 
-    let profile_name = cmd
-        .profile
-        .clone()
-        .unwrap_or_else(|| settings.default_profile.clone());
+    let profile_name = settings.default_profile.clone();
     let model_override = resolve_prompt_model_override(cmd, settings, &profile_name)?;
     let agent_id = coordinator
         .spawn_agent_idle(supervisor_actor(), profile_name, None)
@@ -867,13 +858,12 @@ pub(super) fn resolve_permission_mode(
             "default" => Ok(PermissionModeResolution::ResetToDefault),
             "acceptEdits" => Ok(PermissionModeResolution::AcceptEdits),
             "dontAsk" => Ok(PermissionModeResolution::DenyByDefault),
-            "plan" => Ok(PermissionModeResolution::NoChange),
             "auto" => Err(
                 "permission mode `auto` is recognized but not supported (requires classifier); use bypassPermissions or default"
                     .to_string(),
             ),
             _ => Err(format!(
-                "unknown permission mode `{m}`; expected default, plan, bypassPermissions, acceptEdits, or dontAsk"
+                "unknown permission mode `{m}`; expected default, bypassPermissions, acceptEdits, or dontAsk"
             )),
         }
     } else {
@@ -955,10 +945,6 @@ pub(super) fn apply_prompt_command_config(
         for profile in coordinator_config.agent_profiles.values_mut() {
             profile.toolset.retain(|t| t != "task");
         }
-    }
-
-    if cmd.no_plan {
-        coordinator_config.agent_profiles.remove("plan");
     }
 
     if !cmd.tools.is_empty() {

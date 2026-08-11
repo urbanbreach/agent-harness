@@ -9,9 +9,9 @@ use tokio_stream::StreamExt;
 mod provider_schema_compatibility_support;
 
 #[test]
-fn strict_openai_compatible_accepts_real_build_and_plan_tools() {
+fn strict_openai_compatible_accepts_real_default_and_explore_tools() {
     // arrange
-    let tools = [real_tools("build"), real_tools("plan")].concat();
+    let tools = [real_tools("default"), real_tools("explore")].concat();
 
     // act
     let prepared =
@@ -28,6 +28,47 @@ fn strict_openai_compatible_accepts_real_build_and_plan_tools() {
     assert!(prepared
         .iter()
         .all(|tool| has_no_top_level_combinator(&tool.parameters)));
+}
+
+#[test]
+fn openai_compatible_canonicalizes_nested_native_schema_extensions() {
+    let tools = real_tools("explore");
+
+    let prepared =
+        prepare_tools_for_family(ProviderSchemaFamily::OpenAiCompatible, tools).unwrap_or_abort();
+    let question = prepared
+        .iter()
+        .find(|tool| tool.tool_id == "question")
+        .unwrap_or_abort();
+
+    assert!(has_no_unsupported_openai_keywords(&question.parameters));
+    assert_eq!(
+        question.parameters["properties"]["questions"]["items"]["type"],
+        json!("object")
+    );
+}
+
+#[test]
+fn openai_compatible_rejects_unresolved_refs_instead_of_widening_schema() {
+    let mut tools = real_tools("explore");
+    tools[0].parameters["properties"]["broken"] = json!({"$ref": "#/$defs/Missing"});
+
+    let result = prepare_tools_for_family(ProviderSchemaFamily::OpenAiCompatible, tools);
+
+    assert!(result.is_err());
+}
+
+#[test]
+fn openai_compatible_rejects_heterogeneous_tuple_items() {
+    let mut tools = real_tools("explore");
+    tools[0].parameters["properties"]["tuple"] = json!({
+        "type": "array",
+        "items": [{"type": "string"}, {"type": "number"}],
+    });
+
+    let result = prepare_tools_for_family(ProviderSchemaFamily::OpenAiCompatible, tools);
+
+    assert!(result.is_err());
 }
 
 #[test]
@@ -68,7 +109,7 @@ fn gemini_like_normalizes_real_mcp_schema_extensions_and_rejects_top_level_combi
 #[test]
 fn kimi_like_normalizes_ref_siblings_and_tuple_items_on_real_tool_schema() {
     // arrange
-    let mut tools = real_tools("build");
+    let mut tools = real_tools("default");
     tools[0].parameters["properties"]["refArg"] = json!({
         "$ref": "#/$defs/Arg",
         "description": "Moonshot rejects siblings next to $ref"
@@ -132,4 +173,28 @@ fn has_no_top_level_combinator(schema: &serde_json::Value) -> bool {
     ["oneOf", "anyOf", "allOf", "enum", "not"]
         .iter()
         .all(|key| schema.get(key).is_none())
+}
+
+fn has_no_unsupported_openai_keywords(schema: &serde_json::Value) -> bool {
+    match schema {
+        serde_json::Value::Array(items) => items.iter().all(has_no_unsupported_openai_keywords),
+        serde_json::Value::Object(object) => {
+            let unsupported = [
+                "$defs",
+                "$ref",
+                "$schema",
+                "allOf",
+                "anyOf",
+                "definitions",
+                "not",
+                "oneOf",
+            ];
+            unsupported.iter().all(|key| !object.contains_key(*key))
+                && object.values().all(has_no_unsupported_openai_keywords)
+        }
+        serde_json::Value::Null
+        | serde_json::Value::Bool(_)
+        | serde_json::Value::Number(_)
+        | serde_json::Value::String(_) => true,
+    }
 }

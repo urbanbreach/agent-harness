@@ -5,8 +5,8 @@ use super::{
     PolicyDecision,
 };
 use crate::config::{
-    CategoryPermissions, PermissionMode, PermissionRuleSet, PermissionSelector,
-    PermissionSelectorRule,
+    PermissionMode, PermissionRuleSet, PermissionSelector, PermissionSelectorRule,
+    ProfilePermissions,
 };
 use crate::tool::ToolCapability;
 use crate::UnwrapOrAbort;
@@ -45,7 +45,7 @@ fn evaluate_uses_global_defaults() {
 }
 
 #[test]
-fn evaluate_uses_category_override_when_present() {
+fn evaluate_uses_profile_override_when_present() {
     // arrange
     // act
     // assert
@@ -54,23 +54,23 @@ fn evaluate_uses_category_override_when_present() {
         PermissionMode::Deny,
         PermissionMode::Deny,
     )
-    .with_category_override(
-        "deep",
-        CategoryPermissions {
+    .with_profile_override(
+        "general",
+        ProfilePermissions {
             edit: Some(PermissionMode::Allow),
             shell: Some(PermissionMode::Ask),
             network: None,
-            ..CategoryPermissions::default()
+            ..ProfilePermissions::default()
         },
     )
     .with_ask_timeout_ms(55);
 
     assert_eq!(
-        policy.evaluate(Some("deep"), PermissionKind::EditFs),
+        policy.evaluate(Some("general"), PermissionKind::EditFs),
         PolicyDecision::Allow
     );
     assert_eq!(
-        policy.evaluate(Some("deep"), PermissionKind::Shell),
+        policy.evaluate(Some("general"), PermissionKind::Shell),
         ask_decision(55)
     );
     assert_eq!(
@@ -89,14 +89,14 @@ fn native_permission_kinds_follow_explicit_and_migration_defaults() {
         PermissionMode::Deny,
         PermissionMode::Allow,
     )
-    .with_category_override(
+    .with_profile_override(
         "deep",
-        CategoryPermissions {
+        ProfilePermissions {
             question: Some(PermissionMode::Deny),
             task: Some(PermissionMode::Ask),
             websearch: Some(PermissionMode::Deny),
             lsp: Some(PermissionMode::Ask),
-            ..CategoryPermissions::default()
+            ..ProfilePermissions::default()
         },
     )
     .with_ask_timeout_ms(77);
@@ -149,9 +149,9 @@ fn permission_rule_precedence_for_bash_exact_prefix_and_catch_all() {
         PermissionMode::Allow,
         PermissionMode::Deny,
     )
-    .with_category_override(
-        "build",
-        CategoryPermissions {
+    .with_profile_override(
+        "default",
+        ProfilePermissions {
             rules: PermissionRuleSet {
                 shell: vec![
                     PermissionSelectorRule {
@@ -174,13 +174,13 @@ fn permission_rule_precedence_for_bash_exact_prefix_and_catch_all() {
                 read: Vec::new(),
                 external_directory: Vec::new(),
             },
-            ..CategoryPermissions::default()
+            ..ProfilePermissions::default()
         },
     );
 
     assert_eq!(
         policy.evaluate_request(
-            Some("build"),
+            Some("default"),
             PermissionKind::Shell,
             Some(&PermissionRuleRequest::ShellCommand {
                 pattern: "cargo test -p harness-core".to_string(),
@@ -190,7 +190,7 @@ fn permission_rule_precedence_for_bash_exact_prefix_and_catch_all() {
     );
     assert_eq!(
         policy.evaluate_request(
-            Some("build"),
+            Some("default"),
             PermissionKind::Shell,
             Some(&PermissionRuleRequest::ShellCommand {
                 pattern: "cargo test -p harness-core --lib".to_string(),
@@ -200,7 +200,7 @@ fn permission_rule_precedence_for_bash_exact_prefix_and_catch_all() {
     );
     assert_eq!(
         policy.evaluate_request(
-            Some("build"),
+            Some("default"),
             PermissionKind::Shell,
             Some(&PermissionRuleRequest::ShellCommand {
                 pattern: "git status".to_string(),
@@ -220,9 +220,9 @@ fn permission_rule_precedence_for_task_exact_glob_and_catch_all() {
         PermissionMode::Allow,
         PermissionMode::Deny,
     )
-    .with_category_override(
-        "build",
-        CategoryPermissions {
+    .with_profile_override(
+        "default",
+        ProfilePermissions {
             rules: PermissionRuleSet {
                 shell: Vec::new(),
                 edit: Vec::new(),
@@ -243,13 +243,13 @@ fn permission_rule_precedence_for_task_exact_glob_and_catch_all() {
                 read: Vec::new(),
                 external_directory: Vec::new(),
             },
-            ..CategoryPermissions::default()
+            ..ProfilePermissions::default()
         },
     );
 
     assert_eq!(
         policy.evaluate_request(
-            Some("build"),
+            Some("default"),
             PermissionKind::Task,
             Some(&PermissionRuleRequest::TaskAgent("review-code".to_string()))
         ),
@@ -257,7 +257,7 @@ fn permission_rule_precedence_for_task_exact_glob_and_catch_all() {
     );
     assert_eq!(
         policy.evaluate_request(
-            Some("build"),
+            Some("default"),
             PermissionKind::Task,
             Some(&PermissionRuleRequest::TaskAgent("review-docs".to_string()))
         ),
@@ -265,9 +265,9 @@ fn permission_rule_precedence_for_task_exact_glob_and_catch_all() {
     );
     assert_eq!(
         policy.evaluate_request(
-            Some("build"),
+            Some("default"),
             PermissionKind::Task,
-            Some(&PermissionRuleRequest::TaskAgent("build".to_string()))
+            Some(&PermissionRuleRequest::TaskAgent("default".to_string()))
         ),
         PolicyDecision::Deny
     );
@@ -283,9 +283,9 @@ fn config_permission_rule_precedence_for_bash_and_edit_exact_prefix_and_catch_al
         PermissionMode::Allow,
         PermissionMode::Deny,
     )
-    .with_category_override(
-        "build",
-        CategoryPermissions {
+    .with_profile_override(
+        "default",
+        ProfilePermissions {
             rules: PermissionRuleSet {
                 shell: vec![
                     PermissionSelectorRule {
@@ -321,13 +321,13 @@ fn config_permission_rule_precedence_for_bash_and_edit_exact_prefix_and_catch_al
                 read: Vec::new(),
                 external_directory: Vec::new(),
             },
-            ..CategoryPermissions::default()
+            ..ProfilePermissions::default()
         },
     );
 
     assert_eq!(
         policy.evaluate_request(
-            Some("build"),
+            Some("default"),
             PermissionKind::Shell,
             Some(&PermissionRuleRequest::ShellCommand {
                 pattern: "cargo test -p harness-core".to_string(),
@@ -337,7 +337,7 @@ fn config_permission_rule_precedence_for_bash_and_edit_exact_prefix_and_catch_al
     );
     assert_eq!(
         policy.evaluate_request(
-            Some("build"),
+            Some("default"),
             PermissionKind::Shell,
             Some(&PermissionRuleRequest::ShellCommand {
                 pattern: "cargo test -p harness-core --lib".to_string(),
@@ -347,7 +347,7 @@ fn config_permission_rule_precedence_for_bash_and_edit_exact_prefix_and_catch_al
     );
     assert_eq!(
         policy.evaluate_request(
-            Some("build"),
+            Some("default"),
             PermissionKind::Shell,
             Some(&PermissionRuleRequest::ShellCommand {
                 pattern: "git status".to_string(),
@@ -357,7 +357,7 @@ fn config_permission_rule_precedence_for_bash_and_edit_exact_prefix_and_catch_al
     );
     assert_eq!(
         policy.evaluate_request(
-            Some("build"),
+            Some("default"),
             PermissionKind::EditFs,
             Some(&PermissionRuleRequest::WorkspacePath(
                 "docs/locked.md".to_string()
@@ -367,7 +367,7 @@ fn config_permission_rule_precedence_for_bash_and_edit_exact_prefix_and_catch_al
     );
     assert_eq!(
         policy.evaluate_request(
-            Some("build"),
+            Some("default"),
             PermissionKind::EditFs,
             Some(&PermissionRuleRequest::WorkspacePath(
                 "docs/guide.md".to_string()
@@ -377,7 +377,7 @@ fn config_permission_rule_precedence_for_bash_and_edit_exact_prefix_and_catch_al
     );
     assert_eq!(
         policy.evaluate_request(
-            Some("build"),
+            Some("default"),
             PermissionKind::EditFs,
             Some(&PermissionRuleRequest::WorkspacePath(
                 "src/main.rs".to_string()
@@ -491,13 +491,12 @@ fn permission_rule_profile_override_beats_top_level_edit_rule() {
               },
               model: "default/gpt-4o-mini",
               agent: {
-                worker: {
+                default: {
                   system_prompt: "Deep work",
                   permission: { edit: "allow" },
                   tools: ["edit"]
                 }
               },
-              default_agent: "worker",
               permission: {
                 edit: { "*": "deny" },
                 bash: "allow",
@@ -516,7 +515,7 @@ fn permission_rule_profile_override_beats_top_level_edit_rule() {
 
     assert_eq!(
         policy.evaluate_request(
-            Some("worker"),
+            Some("default"),
             PermissionKind::EditFs,
             Some(&PermissionRuleRequest::WorkspacePath(
                 "docs/readme.md".to_string()
@@ -537,74 +536,12 @@ fn permission_rule_profile_override_beats_top_level_edit_rule() {
 }
 
 #[test]
-fn shipped_plan_agent_allows_only_plan_file_edits() {
-    // arrange
-    // act
-    // assert
-    let parsed = crate::config::load_config_from_str(
-        r#"
-            {
-              provider: {
-                default: {
-                  type: "openai_compatible",
-                  options: { baseURL: "http://127.0.0.1:8317/v1", apiKey: "test-key" },
-                  models: { "gpt-4o-mini": { name: "GPT-4o mini" } }
-                }
-              },
-              model: "default/gpt-4o-mini",
-              default_agent: "build",
-              permission: "allow"
-            }
-            "#,
-    )
-    .unwrap_or_abort();
-    let policy = PermissionPolicy::from_config(&parsed);
-
-    assert_eq!(
-        policy.evaluate_request(
-            Some("plan"),
-            PermissionKind::EditFs,
-            Some(&PermissionRuleRequest::WorkspacePath(
-                ".agent-harness/plans/run-001.md".to_string()
-            ))
-        ),
-        PolicyDecision::Allow
-    );
-    assert_eq!(
-        policy.evaluate_request(
-            Some("plan"),
-            PermissionKind::EditFs,
-            Some(&PermissionRuleRequest::WorkspacePath(
-                "src/lib.rs".to_string()
-            ))
-        ),
-        PolicyDecision::Deny
-    );
-    assert_eq!(
-        policy.evaluate_request(Some("plan"), PermissionKind::Shell, None),
-        ask_decision(0)
-    );
-    assert_eq!(
-        policy.evaluate_request(Some("plan"), PermissionKind::Task, None),
-        PolicyDecision::Allow
-    );
-}
-
-#[test]
 fn native_tool_ids_resolve_to_permission_kinds_without_aliases() {
     // arrange
     // act
     // assert
     assert_eq!(
         permission_kind_for_tool("question"),
-        Some(PermissionKind::Question)
-    );
-    assert_eq!(
-        permission_kind_for_tool("plan_enter"),
-        Some(PermissionKind::Question)
-    );
-    assert_eq!(
-        permission_kind_for_tool("plan_exit"),
         Some(PermissionKind::Question)
     );
     assert_eq!(permission_kind_for_tool("task"), Some(PermissionKind::Task));

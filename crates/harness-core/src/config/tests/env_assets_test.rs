@@ -39,7 +39,7 @@ fn ui_default_profile_parses() {
         Some(
             r#"
                 ui: {
-                  defaultProfile: "deep",
+                  defaultProfile: "default",
                 },
                 "#,
         ),
@@ -47,7 +47,7 @@ fn ui_default_profile_parses() {
     );
 
     let parsed = load_config_from_str(&cfg).unwrap_or_abort();
-    assert_eq!(parsed.ui.default_profile, Some("deep".to_string()));
+    assert_eq!(parsed.ui.default_profile, Some("default".to_string()));
 }
 
 #[test]
@@ -74,9 +74,9 @@ fn runtime_profile_max_iters_defaults_to_unbounded() {
     let cfg = config_fixture(&deep_profile(r#"tools: ["read"],"#), "test-key", None, None);
 
     let parsed = load_config_from_str(&cfg).unwrap_or_abort();
-    assert_eq!(parsed.agents["deep"].max_iters, None);
+    assert_eq!(parsed.agents["default"].max_iters, None);
     assert_eq!(
-        parsed.agents["deep"].tool_failure_mode,
+        parsed.agents["default"].tool_failure_mode,
         ToolFailureMode::ContinueAsToolMessage
     );
 }
@@ -102,12 +102,12 @@ fn profile_tool_failure_mode_and_system_prompt_parse_explicitly() {
 
     let parsed = load_config_from_str(&cfg).unwrap_or_abort();
     assert_eq!(
-        parsed.agents["deep"].tool_failure_mode,
+        parsed.agents["default"].tool_failure_mode,
         ToolFailureMode::ContinueAsToolMessage
     );
-    assert_eq!(parsed.agents["deep"].max_iters, Some(24));
+    assert_eq!(parsed.agents["default"].max_iters, Some(24));
     assert_eq!(
-        parsed.agents["deep"].system_prompt.as_deref(),
+        parsed.agents["default"].system_prompt.as_deref(),
         Some("Be precise.")
     );
 }
@@ -272,7 +272,7 @@ fn upstream_file_reference_resolves_relative_to_config_file() {
 }
 
 #[test]
-fn load_config_from_file_can_define_agent_from_markdown_frontmatter() {
+fn load_config_from_file_overlays_default_from_markdown_frontmatter() {
     // arrange
     // act
     // assert
@@ -286,10 +286,10 @@ fn load_config_from_file_can_define_agent_from_markdown_frontmatter() {
     fs::write(&config_path, config_fixture("", "test-key", None, None)).unwrap_or_abort();
     write_agent_markdown(
         &repo,
-        "build",
+        "default",
         r#"---
 {
-  description: "Build from markdown",
+  description: "Default from markdown",
   model_ref: "default:gpt-4o-mini",
   tools: ["read", "grep"],
   max_iters: 18
@@ -300,13 +300,14 @@ Execute from markdown only."#,
     );
 
     let parsed = load_config_from_file(&config_path).unwrap_or_abort();
-    let build = parsed.agents.get("build").unwrap_or_abort();
-    assert_eq!(build.description, "Build from markdown");
-    assert_eq!(build.model_ref, "default:gpt-4o-mini");
-    assert_eq!(build.tools, vec!["read", "grep"]);
-    assert_eq!(build.max_iters, Some(18));
+    let default = parsed.agents.get("default").unwrap_or_abort();
+    assert_eq!(default.description, "General-purpose Harness agent.");
+    assert_eq!(default.model_ref, "default:gpt-4o-mini");
+    assert!(default.tools.iter().any(|tool| tool == "task"));
+    assert!(default.tools.iter().any(|tool| tool == "edit"));
+    assert_eq!(default.max_iters, Some(18));
     assert_eq!(
-        build.system_prompt.as_deref(),
+        default.system_prompt.as_deref(),
         Some("Execute from markdown only.")
     );
 }
@@ -326,10 +327,10 @@ fn load_config_from_file_still_accepts_legacy_agent_harness_prompt_dir() {
     fs::write(&config_path, config_fixture("", "test-key", None, None)).unwrap_or_abort();
     write_legacy_agent_markdown(
         &repo,
-        "build",
+        "default",
         r#"---
 {
-  description: "Legacy build prompt",
+  description: "Legacy default prompt",
   model_ref: "default:gpt-4o-mini"
 }
 ---
@@ -339,7 +340,7 @@ Legacy prompt body."#,
 
     let parsed = load_config_from_file(&config_path).unwrap_or_abort();
     assert_eq!(
-        parsed.agents["build"].system_prompt.as_deref(),
+        parsed.agents["default"].system_prompt.as_deref(),
         Some("Legacy prompt body.")
     );
 }
@@ -371,11 +372,11 @@ fn load_config_from_file_keeps_inline_system_prompt_over_markdown_prompt() {
         ),
     )
     .unwrap_or_abort();
-    write_agent_markdown(&repo, "deep", "Markdown prompt body.");
+    write_agent_markdown(&repo, "default", "Markdown prompt body.");
 
     let parsed = load_config_from_file(&config_path).unwrap_or_abort();
     assert_eq!(
-        parsed.agents["deep"].system_prompt.as_deref(),
+        parsed.agents["default"].system_prompt.as_deref(),
         Some("Inline prompt")
     );
 }
@@ -426,10 +427,10 @@ fn load_config_from_file_discovers_repo_assets_when_cwd_differs() {
     fs::write(&config_path, config_fixture("", "test-key", None, None)).unwrap_or_abort();
     write_agent_markdown(
         &repo,
-        "build",
+        "default",
         r#"---
 {
-  description: "Build from repo root markdown",
+  description: "Default from repo root markdown",
   model_ref: "default:gpt-4o-mini"
 }
 ---
@@ -439,10 +440,10 @@ Prompt discovered from the config repo root."#,
     fs::write(repo.join("AGENTS.md"), "Repo-root instructions.").unwrap_or_abort();
 
     let parsed = load_config_from_file(&config_path).unwrap_or_abort();
-    let build = parsed.agents.get("build").unwrap_or_abort();
-    assert_eq!(build.description, "Build from repo root markdown");
+    let default = parsed.agents.get("default").unwrap_or_abort();
+    assert_eq!(default.description, "General-purpose Harness agent.");
     assert_eq!(
-        build.system_prompt.as_deref(),
+        default.system_prompt.as_deref(),
         Some("Prompt discovered from the config repo root.")
     );
     assert_eq!(parsed.instruction_files.len(), 1);
@@ -474,7 +475,7 @@ fn load_config_from_file_ignores_unmatched_prompt_only_markdown_assets() {
 
     let parsed = load_config_from_file(&config_path).unwrap_or_abort();
     assert!(!parsed.agents.contains_key("stray"));
-    assert!(parsed.agents.contains_key("deep"));
+    assert!(parsed.agents.contains_key("default"));
 }
 
 #[test]
@@ -496,7 +497,7 @@ fn load_config_from_file_rejects_invalid_markdown_frontmatter() {
     .unwrap_or_abort();
     write_agent_markdown(
         &repo,
-        "deep",
+        "default",
         r#"---
 { description: }
 ---
@@ -506,7 +507,7 @@ Broken prompt."#,
 
     let err = load_config_from_file(&config_path).expect_err("invalid markdown should fail");
     assert!(err.to_string().contains("invalid markdown frontmatter"));
-    assert!(err.to_string().contains("deep.md"));
+    assert!(err.to_string().contains("default.md"));
 }
 
 #[test]
@@ -528,7 +529,7 @@ fn load_config_from_file_rejects_legacy_plan_markdown_frontmatter() {
     .unwrap_or_abort();
     write_agent_markdown(
         &repo,
-        "deep",
+        "default",
         r#"---
 {
   description: "Legacy plan prompt",

@@ -129,7 +129,6 @@ fn canonical_runtime_config() -> serde_json::Value {
         },
         "model": "default/gpt-4o",
         "small_model": "default/gpt-4o-mini",
-        "default_agent": "build",
         "permission": {
             "edit": "allow",
             "bash": "allow",

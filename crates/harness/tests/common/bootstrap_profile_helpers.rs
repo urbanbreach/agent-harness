@@ -129,7 +129,7 @@ fn normalize_composed_prompt_snapshot(prompt: &str) -> String {
 #[allow(clippy::panic, reason = "test code must panic gracefully")]
 fn shipped_v1_prompt_asset_snapshot(repo_root: &Path) -> serde_json::Value {
     let mut profiles = serde_json::Map::new();
-    for profile in V1_PROMPT_PROFILES.split_whitespace() {
+    for profile in GENERIC_PROMPT_PROFILES.split_whitespace() {
         let asset_path = repo_root
             .join(".agent-harness")
             .join("agents")

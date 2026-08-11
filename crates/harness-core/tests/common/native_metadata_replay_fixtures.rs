@@ -127,20 +127,16 @@ fn test_coordinator(session_dir: &Path, tool_registry: Arc<ToolRegistry>) -> Coo
 fn agent_profiles() -> BTreeMap<String, AgentProfile> {
     let mut profiles = BTreeMap::new();
     profiles.insert(
-        "alpha".to_string(),
-        AgentProfile {
-            name: "alpha".to_string(),
-            category: "deep".to_string(),
-            model_ref: "mock:model-1".to_string(),
-            model_ref_explicit: true,
-            system_prompt: "alpha-prompt".to_string(),
-            cache_retention: Default::default(),
-            max_iters: Some(12),
-            temperature: Some(0.0),
-            tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
-            toolset: vec![],
-            permission_ruleset: Vec::new(),
-        },
+        "default".to_string(),
+        AgentProfile { name: "default".to_string(), model_ref: "mock:model-1".to_string(),
+        model_ref_explicit: true,
+        system_prompt: "default-prompt".to_string(),
+        cache_retention: Default::default(),
+        max_iters: Some(12),
+        temperature: Some(0.0),
+        tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
+        toolset: vec![],
+        permission_ruleset: Vec::new(), },
     );
     profiles
 }

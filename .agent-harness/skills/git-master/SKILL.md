@@ -3,8 +3,6 @@ name: git-master
 description: Safe git workflow guidance for commits, rebases, and history searches in the Harness workspace.
 argument_hint: commit | rebase | history-search
 allowed_tools: bash
-target_agent: build
-target_category: deep
 mcp: none
 resources:
 ---

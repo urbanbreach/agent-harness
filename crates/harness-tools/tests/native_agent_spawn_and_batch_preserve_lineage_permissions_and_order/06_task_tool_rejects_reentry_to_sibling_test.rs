@@ -9,7 +9,7 @@ async fn task_tool_rejects_reentry_to_sibling_child_session() {
 
     let (handle, run, worker_id) = spawn_run(&workspace).await;
     let sibling_parent = handle
-        .spawn_agent_idle(anonymous_supervisor_actor(), "deep", None)
+        .spawn_agent_idle(anonymous_supervisor_actor(), "default", None)
         .await
         .unwrap_or_abort();
     let sibling_child = handle
@@ -27,9 +27,9 @@ async fn task_tool_rejects_reentry_to_sibling_child_session() {
             Some("deep".to_string()),
             "task",
             json!({
-                "category": "general",
                 "description": "Forbidden sibling reentry",
                 "prompt": "Try to drive another parent's child",
+                "subagent_type": "general",
                 "session_id": sibling_child,
                 "run_in_background": true,
                 "load_skills": []
@@ -49,7 +49,7 @@ async fn task_tool_rejects_reentry_to_sibling_child_session() {
         .contains("is not a direct child of the calling agent"));
 }
 #[tokio::test]
-async fn plan_task_reentry_rejects_non_explore_existing_child_profile() {
+async fn task_reentry_rejects_mismatched_subagent_type() {
     // arrange
     // act
     // assert
@@ -91,9 +91,9 @@ async fn plan_task_reentry_rejects_non_explore_existing_child_profile() {
             Some("plan".to_string()),
             "task",
             json!({
-                "category": "explore",
                 "description": "Forbidden profile reentry",
                 "prompt": "Try to drive a write-capable existing child",
+                "subagent_type": "explore",
                 "session_id": general_child,
                 "run_in_background": true,
                 "load_skills": []

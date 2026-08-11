@@ -33,7 +33,6 @@ fn high_risk_provider_visible_tool_fields_have_model_guidance() {
                 "description",
                 "prompt",
                 "subagent_type",
-                "category",
                 "task_id",
                 "session_id",
                 "run_in_background",
@@ -113,11 +112,8 @@ fn tool_descriptions_route_models_away_from_known_smoke_test_confusions() {
             .contains("Use grep, ast_grep_search, or lsp for local workspace"),
         "codesearch should point models at local-first tools"
     );
-    assert!(
-        task.description()
-            .contains("Exactly one of `category` or `subagent_type` is required"),
-        "task should spell out the routing requirement that the parser enforces"
-    );
+    assert!(task.description().contains("generic child"));
+    assert!(task.description().contains("`subagent_type`"));
 
     let codesearch_schema = codesearch.parameters_json_schema();
     let query_description = codesearch_schema
@@ -128,16 +124,10 @@ fn tool_descriptions_route_models_away_from_known_smoke_test_confusions() {
     assert!(query_description.contains("not local workspace symbol lookup"));
 
     let task_schema = task.parameters_json_schema();
-    let category_description = task_schema
-        .pointer("/properties/category/description")
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or_abort();
-    let subagent_description = task_schema
-        .pointer("/properties/subagent_type/description")
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or_abort();
-    assert!(category_description.contains("Required when subagent_type is omitted"));
-    assert!(subagent_description.contains("Required when category is omitted"));
+    let task_properties = task_schema["properties"].as_object().unwrap_or_abort();
+    for selector in ["category", "agent", "profile", "profileName"] {
+        assert!(task_properties.get(selector).is_none());
+    }
 }
 
 #[allow(clippy::panic, reason = "test code must panic gracefully")]

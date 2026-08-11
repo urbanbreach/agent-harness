@@ -140,7 +140,6 @@ pub(in crate::coord) async fn run_agent_turn_phase_loop(
                 if let Err(reason) = run_tool_phase(
                     &job_tx,
                     &task.agent_id,
-                    Some(task.profile.category.clone()),
                     &task.profile,
                     &mut turn_state.messages,
                     tool_intents,
@@ -185,12 +184,12 @@ fn normalize_provider_phase_error(reason: String) -> String {
     }
 }
 
-pub(in crate::coord) async fn generate_harness_session_title(
+pub(in crate::coord) async fn execute_session_title_operation(
     provider: Arc<dyn Provider>,
-    profile: AgentProfile,
+    operation: SessionTitleOperationSpec,
     prompt: &str,
 ) -> Result<Option<String>, String> {
-    let model = AgentModelRef::parse(&profile.model_ref);
+    let model = AgentModelRef::parse(&operation.model_ref);
     let mut stream = provider
         .stream_completion(CompletionRequest {
             provider_id: Some(model.provider_id),
@@ -198,7 +197,7 @@ pub(in crate::coord) async fn generate_harness_session_title(
             messages: vec![
                 CompletionMessage {
                     role: MessageRole::System,
-                    content: profile.system_prompt,
+                    content: TITLE_OPERATION_SYSTEM_PROMPT.to_string(),
                     name: None,
                     tool_call_id: None,
                     assistant_tool_calls: None,
@@ -218,7 +217,7 @@ pub(in crate::coord) async fn generate_harness_session_title(
                     assistant_tool_calls: None,
                 },
             ],
-            temperature: profile.temperature,
+            temperature: Some(operation.temperature),
             max_tokens: None,
             variant: None,
             reasoning_effort: None,
@@ -581,7 +580,6 @@ fn decide_tool_phase(
 async fn run_tool_phase(
     job_tx: &mpsc::Sender<Command>,
     agent_id: &str,
-    category: Option<String>,
     profile: &AgentProfile,
     messages: &mut Vec<CompletionMessage>,
     tool_intents: Vec<AssistantToolIntent>,
@@ -592,13 +590,11 @@ async fn run_tool_phase(
     for (source_index, tool_call) in tool_intents.into_iter().enumerate() {
         let job_tx = job_tx.clone();
         let agent_id = agent_id.to_string();
-        let category = category.clone();
         let tool_id = tool_call.tool_id.clone();
         let args_json = tool_call.arguments.clone();
 
         tool_phase_tasks.spawn(async move {
-            let result =
-                execute_agent_tool_phase(&job_tx, &agent_id, category, tool_id, args_json).await;
+            let result = execute_agent_tool_phase(&job_tx, &agent_id, tool_id, args_json).await;
             AgentToolPhaseResult {
                 source_index,
                 tool_call,
@@ -657,7 +653,6 @@ struct AgentToolPhaseResult {
 async fn execute_agent_tool_phase(
     job_tx: &mpsc::Sender<Command>,
     agent_id: &str,
-    category: Option<String>,
     tool_id: String,
     args_json: Value,
 ) -> Result<ToolResult, String> {
@@ -665,7 +660,7 @@ async fn execute_agent_tool_phase(
     job_tx
         .send(Command::ExecuteAgentToolCall {
             actor: EventActor::new(ActorKind::Worker, Some(agent_id.to_string())),
-            category,
+            legacy_profile_hint: None,
             tool_id,
             args_json,
             respond_to,

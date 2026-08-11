@@ -1,5 +1,5 @@
-use harness_core::UnwrapOrAbort;
 use super::*;
+use harness_core::UnwrapOrAbort;
 
 async fn cooperative_provider_delay(delay: Duration) {
     let ticks = delay.as_millis().min(250) as usize;
@@ -147,20 +147,14 @@ impl CapturingProvider {
     }
 
     pub(super) fn requests(&self) -> Vec<CompletionRequest> {
-        self.captured_requests
-            .lock()
-            .unwrap_or_abort()
-            .clone()
+        self.captured_requests.lock().unwrap_or_abort().clone()
     }
 }
 
 #[async_trait]
 impl Provider for CapturingProvider {
     async fn stream_completion(&self, req: CompletionRequest) -> ProviderEventStream {
-        self.captured_requests
-            .lock()
-            .unwrap_or_abort()
-            .push(req);
+        self.captured_requests.lock().unwrap_or_abort().push(req);
 
         let response = self
             .queued_responses
@@ -235,10 +229,7 @@ impl SequentialScriptedProvider {
     }
 
     pub(super) fn requests(&self) -> Vec<CompletionRequest> {
-        self.captured_requests
-            .lock()
-            .unwrap_or_abort()
-            .clone()
+        self.captured_requests.lock().unwrap_or_abort().clone()
     }
 }
 
@@ -258,29 +249,30 @@ impl Provider for SequentialScriptedProvider {
             .unwrap_or_abort()
             .push(req.clone());
 
-        let mut next_call_index = self
-            .next_call_index
-            .lock()
-            .unwrap_or_abort();
+        let mut next_call_index = self.next_call_index.lock().unwrap_or_abort();
         let call_index = *next_call_index;
         *next_call_index += 1;
 
-        let events = self.scripted_events.get(call_index).cloned().unwrap_or_else(|| {
-            // Out-of-scripted-range calls (e.g., LLM summarization during compaction)
-            // echo the request's user messages so tests can still assert on captured
-            // content without pre-allocating an exact number of scripted responses.
-            vec![
-                ProviderStreamEvent::Start,
-                ProviderStreamEvent::TextDelta(fallback_text),
-                ProviderStreamEvent::Done {
-                    usage: Some(CompletionUsage {
-                        prompt_tokens: 100,
-                        completion_tokens: 100,
-                        total_tokens: 200,
-                    }),
-                },
-            ]
-        });
+        let events = self
+            .scripted_events
+            .get(call_index)
+            .cloned()
+            .unwrap_or_else(|| {
+                // Out-of-scripted-range calls (e.g., LLM summarization during compaction)
+                // echo the request's user messages so tests can still assert on captured
+                // content without pre-allocating an exact number of scripted responses.
+                vec![
+                    ProviderStreamEvent::Start,
+                    ProviderStreamEvent::TextDelta(fallback_text),
+                    ProviderStreamEvent::Done {
+                        usage: Some(CompletionUsage {
+                            prompt_tokens: 100,
+                            completion_tokens: 100,
+                            total_tokens: 200,
+                        }),
+                    },
+                ]
+            });
 
         Box::pin(tokio_stream::iter(events))
     }
@@ -382,7 +374,10 @@ pub(super) struct PromptScriptedProvider {
 }
 
 impl PromptScriptedProvider {
-    pub(super) fn new(scripts: BTreeMap<String, Vec<ProviderStreamEvent>>, delay: Duration) -> Self {
+    pub(super) fn new(
+        scripts: BTreeMap<String, Vec<ProviderStreamEvent>>,
+        delay: Duration,
+    ) -> Self {
         Self { scripts, delay }
     }
 }

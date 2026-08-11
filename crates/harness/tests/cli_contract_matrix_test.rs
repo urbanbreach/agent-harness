@@ -436,7 +436,7 @@ fn config_validate_fails_when_provider_options_conflict() {
             }
         },
         "model": "default/test-model",
-        "agent": { "build": { "enable": true, "model": "default/test-model" } },
+        "agent": { "default": { "model": "default/test-model" } },
         "permission": "allow"
     }"#;
     let config_path = write_config(temp.path(), config);
@@ -476,7 +476,7 @@ fn config_show_effective_redacts_api_key() {
             }
         },
         "model": "default/test-model",
-        "agent": { "build": { "enable": true, "model": "default/test-model" } },
+        "agent": { "default": { "model": "default/test-model" } },
         "permission": "allow"
     }"#;
     let config_path = write_config(temp.path(), config);
@@ -520,7 +520,7 @@ fn config_sources_shows_source_layer_paths() {
             }
         },
         "model": "default/test-model",
-        "agent": { "build": { "enable": true, "model": "default/test-model" } },
+        "agent": { "default": { "model": "default/test-model" } },
         "permission": "allow"
     }"#;
     let config_path = write_config(temp.path(), config);
@@ -561,7 +561,7 @@ fn config_explain_attributes_model_key_to_source() {
             }
         },
         "model": "default/test-model",
-        "agent": { "build": { "enable": true, "model": "default/test-model" } },
+        "agent": { "default": { "model": "default/test-model" } },
         "permission": "allow"
     }"#;
     let config_path = write_config(temp.path(), config);
@@ -610,7 +610,7 @@ fn settings_write_and_read_roundtrip_persists_compaction_enabled() {
                 }
             },
             "model": "default/test-model",
-            "agent": { "build": { "enable": true, "model": "default/test-model" } },
+            "agent": { "default": { "model": "default/test-model" } },
             "permission": "allow",
             "compaction": { "enabled": true }
         }"#,
@@ -715,12 +715,8 @@ fn models_command_lists_configured_models_in_workspace() {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Best-of-N and Check — meaningful failure (retained as redirects)
-// ---------------------------------------------------------------------------
-
 #[test]
-fn best_of_n_returns_meaningful_failure_directing_to_run() {
+fn best_of_n_is_not_exposed() {
     // arrange
     // act
     let (code, stdout, stderr) = run_cli_in_workspace(&["best-of-n", "--prompt", "hello"]);
@@ -728,12 +724,11 @@ fn best_of_n_returns_meaningful_failure_directing_to_run() {
     // assert
     assert_eq!(code, 2);
     assert!(stdout.is_empty());
-    assert!(stderr.contains("not available"));
-    assert!(stderr.contains("harness run"));
+    assert!(stderr.contains("unrecognized subcommand 'best-of-n'"));
 }
 
 #[test]
-fn check_returns_meaningful_failure_directing_to_doctor() {
+fn check_is_not_exposed() {
     // arrange
     // act
     let (code, stdout, stderr) = run_cli_in_workspace(&["check", "--component", "config"]);
@@ -741,16 +736,11 @@ fn check_returns_meaningful_failure_directing_to_doctor() {
     // assert
     assert_eq!(code, 2);
     assert!(stdout.is_empty());
-    assert!(stderr.contains("not available"));
-    assert!(stderr.contains("harness doctor"));
+    assert!(stderr.contains("unrecognized subcommand 'check'"));
 }
 
-// ---------------------------------------------------------------------------
-// Output format — meaningful failure (retained as redirect)
-// ---------------------------------------------------------------------------
-
 #[test]
-fn output_format_returns_meaningful_failure_directing_to_flag() {
+fn output_format_is_not_exposed() {
     // arrange
     // act
     let (code, stdout, stderr) = run_cli_in_workspace(&["output-format", "--format", "json"]);
@@ -758,8 +748,7 @@ fn output_format_returns_meaningful_failure_directing_to_flag() {
     // assert
     assert_eq!(code, 2);
     assert!(stdout.is_empty());
-    assert!(stderr.contains("not available"));
-    assert!(stderr.contains("--output-format"));
+    assert!(stderr.contains("unrecognized subcommand 'output-format'"));
 }
 
 // ---------------------------------------------------------------------------
@@ -812,8 +801,7 @@ fn run_deterministic_scenario_produces_events_file() {
             }
         },
         "model": "mock/test-model",
-        "default_agent": "build",
-        "agent": { "build": { "enable": true, "model": "mock/test-model" } },
+        "agent": { "default": { "model": "mock/test-model" } },
         "permission": "allow"
     }"#;
     let config_path = write_config(temp.path(), config);
@@ -870,7 +858,7 @@ fn sessions_list_json_in_temp_session_dir_returns_valid_json() {
             }
         },
         "model": "default/test-model",
-        "agent": { "build": { "enable": true, "model": "default/test-model" } },
+        "agent": { "default": { "model": "default/test-model" } },
         "permission": "allow"
     }"#;
     let config_path = write_config(temp.path(), config);
@@ -941,7 +929,7 @@ fn doctor_json_reports_no_network_probes() {
             }
         },
         "model": "default/test-model",
-        "agent": { "build": { "enable": true, "model": "default/test-model" } },
+        "agent": { "default": { "model": "default/test-model" } },
         "permission": "allow"
     }"#;
     let config_path = write_config(temp.path(), config);
@@ -1033,7 +1021,7 @@ fn config_explain_nested_provider_path_attributes_to_explicit_config() {
             }
         },
         "model": "myprov/m",
-        "agent": { "build": { "enable": true, "model": "myprov/m" } },
+        "agent": { "default": { "model": "myprov/m" } },
         "permission": "allow"
     }"#;
     let config_path = write_config(temp.path(), config);
@@ -1094,7 +1082,7 @@ fn config_show_effective_redacts_all_provider_api_keys() {
             }
         },
         "model": "prov_a/m",
-        "agent": { "build": { "enable": true, "model": "prov_a/m" } },
+        "agent": { "default": { "model": "prov_a/m" } },
         "permission": "allow"
     }"#;
     let config_path = write_config(temp.path(), config);
@@ -1222,7 +1210,7 @@ fn config_validate_with_separate_tui_config_succeeds() {
             }
         },
         "model": "default/test-model",
-        "agent": { "build": { "enable": true, "model": "default/test-model" } },
+        "agent": { "default": { "model": "default/test-model" } },
         "permission": "allow"
     }"#;
     let config_path = write_config(temp.path(), config);
@@ -1274,7 +1262,7 @@ fn settings_write_project_setting_bool_roundtrips_hashline_edit() {
                 }
             },
             "model": "default/test-model",
-            "agent": { "build": { "enable": true, "model": "default/test-model" } },
+            "agent": { "default": { "model": "default/test-model" } },
             "permission": "allow"
         }"#,
     )

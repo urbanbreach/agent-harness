@@ -168,7 +168,8 @@ async fn lifecycle_hooks_cover_provider_subagent_and_permission_events() {
         .iter()
         .find_map(|event| match &event.payload {
             EventV1::PermissionRequested(data)
-                if data.tool_call_id.as_ref().map(|id| id.as_str()) == Some(tool_call_id.as_str()) =>
+                if data.tool_call_id.as_ref().map(|id| id.as_str())
+                    == Some(tool_call_id.as_str()) =>
             {
                 Some(data.permission_id.clone())
             }
@@ -281,7 +282,7 @@ fn replay_reconstructs_parallel_child_sessions_and_timings() {
                 2,
                 EventV1::AgentSpawned(AgentSpawnedEvent {
                     agent_id: "agent_000001".to_string(),
-                    profile: "alpha".to_string(),
+                    profile: "default".to_string(),
                     parent_agent_id: None,
                 }),
             ),
@@ -290,7 +291,7 @@ fn replay_reconstructs_parallel_child_sessions_and_timings() {
                 3,
                 EventV1::AgentSpawned(AgentSpawnedEvent {
                     agent_id: "agent_000101".to_string(),
-                    profile: "build".to_string(),
+                    profile: "general".to_string(),
                     parent_agent_id: Some("agent_000001".to_string()),
                 }),
             ),
@@ -503,10 +504,7 @@ fn replay_reconstructs_parallel_child_sessions_and_timings() {
         "replay should preserve final lifecycle status"
     );
 
-    let child_a = plan
-        .child_sessions
-        .get("agent_000101")
-        .unwrap_or_abort();
+    let child_a = plan.child_sessions.get("agent_000101").unwrap_or_abort();
     assert_eq!(child_a.parent_session_id.as_deref(), Some("agent_000001"));
     assert_eq!(
         child_a.parent_tool_call_id.as_deref(),
@@ -527,10 +525,7 @@ fn replay_reconstructs_parallel_child_sessions_and_timings() {
         Some(51)
     );
 
-    let child_b = plan
-        .child_sessions
-        .get("agent_000102")
-        .unwrap_or_abort();
+    let child_b = plan.child_sessions.get("agent_000102").unwrap_or_abort();
     assert_eq!(child_b.parent_session_id.as_deref(), Some("agent_000001"));
     assert_eq!(
         child_b.parent_tool_call_id.as_deref(),

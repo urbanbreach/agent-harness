@@ -304,8 +304,6 @@ fn t0_opencode_matrix_base_defaults_include_safety_exceptions() {
     assert_eq!(by_perm.get(&("doom_loop", "*")), Some(&"ask"));
     assert_eq!(by_perm.get(&("external_directory", "*")), Some(&"ask"));
     assert_eq!(by_perm.get(&("question", "*")), Some(&"deny"));
-    assert_eq!(by_perm.get(&("plan_enter", "*")), Some(&"deny"));
-    assert_eq!(by_perm.get(&("plan_exit", "*")), Some(&"deny"));
     assert_eq!(by_perm.get(&("read", "*")), Some(&"allow"));
     assert_eq!(by_perm.get(&("read", "*.env")), Some(&"ask"));
     assert_eq!(by_perm.get(&("read", "*.env.*")), Some(&"ask"));
@@ -388,7 +386,7 @@ fn explore_permissions() -> ProfilePermissions {
     }
 }
 
-fn plan_permissions() -> ProfilePermissions {
+fn path_restricted_permissions() -> ProfilePermissions {
     ProfilePermissions {
         edit: None,
         shell: Some(PermissionMode::Ask),
@@ -456,13 +454,11 @@ fn p0_explore_ruleset_matches_harness_disabled_outcomes() {
 }
 
 #[test]
-fn p0_plan_keeps_edit_visible_despite_catch_all_deny() {
+fn p0_path_allow_keeps_edit_visible_despite_catch_all_deny() {
     // arrange
     // act
     // assert
-    let fixture = load_fixture();
-    assert!(fixture.agents.plan.edit_visible);
-    let ruleset = from_profile_permissions(&plan_permissions());
+    let ruleset = from_profile_permissions(&path_restricted_permissions());
     assert!(!is_tool_disabled("edit", &ruleset));
     assert!(!is_tool_disabled("write", &ruleset));
 }
@@ -543,7 +539,6 @@ fn p2_build_provider_tool_defs_omits_catch_all_denied_tools() {
     let registry = inventory_tool_registry(&tool_ids);
     let profile = AgentProfile {
         name: "explore-like".to_string(),
-        category: "explore".to_string(),
         model_ref: "mock:model".to_string(),
         model_ref_explicit: true,
         system_prompt: "sys".to_string(),
@@ -573,13 +568,12 @@ fn p2_build_provider_tool_defs_omits_catch_all_denied_tools() {
 }
 
 #[test]
-fn p2_build_provider_tool_defs_keeps_edit_when_plan_path_allow_exists() {
+fn p2_build_provider_tool_defs_keeps_edit_when_path_allow_exists() {
     // arrange
     let tool_ids = ["read", "edit", "write", "task", "bash"];
     let registry = inventory_tool_registry(&tool_ids);
     let profile = AgentProfile {
-        name: "plan-like".to_string(),
-        category: "plan".to_string(),
+        name: "path-restricted".to_string(),
         model_ref: "mock:model".to_string(),
         model_ref_explicit: true,
         system_prompt: "sys".to_string(),
@@ -588,7 +582,7 @@ fn p2_build_provider_tool_defs_keeps_edit_when_plan_path_allow_exists() {
         temperature: Some(0.0),
         tool_failure_mode: ToolFailureMode::FailTurn,
         toolset: tool_ids.iter().map(|id| (*id).to_string()).collect(),
-        permission_ruleset: from_profile_permissions(&plan_permissions()),
+        permission_ruleset: from_profile_permissions(&path_restricted_permissions()),
     };
 
     // act

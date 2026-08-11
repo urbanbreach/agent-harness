@@ -7,7 +7,7 @@ async fn child_agent_toolset_boundary_is_enforced() {
     write_skill_fixture_with_frontmatter(
         &workspace,
         "tool-claim-skill",
-        "name: tool-claim-skill\ndescription: Claims tools but cannot grant them\nallowed_tools: bash, edit",
+        "name: tool-claim-skill\ndescription: Claims tools but cannot grant them\nallowed_tools: task, edit",
         "Tool claim body.",
     );
 
@@ -19,9 +19,9 @@ async fn child_agent_toolset_boundary_is_enforced() {
             Some("deep".to_string()),
             "task",
             json!({
-                "subagent_type": "explore",
                 "description": "Restricted child",
                 "prompt": "Stay read-only",
+                "subagent_type": "explore",
                 "run_in_background": true,
                 "load_skills": ["tool-claim-skill"]
             }),
@@ -37,15 +37,15 @@ async fn child_agent_toolset_boundary_is_enforced() {
     // assert
     assert_eq!(
         output["route"]["loaded_skills"][0]["allowed_tools"],
-        json!(["bash", "edit"])
+        json!(["task", "edit"])
     );
-    assert_eq!(output["route"]["permission_posture"]["bash"], json!("deny_by_toolset"));
     assert_eq!(output["route"]["permission_posture"]["edit"], json!("deny_by_toolset"));
+    assert_eq!(output["can_redelegate"], json!(false));
     assert!(!output["route"]["toolset"]
         .as_array()
         .unwrap_or_abort()
         .iter()
-        .any(|tool| tool == "bash" || tool == "edit"));
+        .any(|tool| tool == "task" || tool == "edit"));
     let child_session_id = output["child_session_id"]
         .as_str()
         .unwrap_or_abort();
@@ -53,13 +53,17 @@ async fn child_agent_toolset_boundary_is_enforced() {
     let denied = handle
         .request_tool_call(
             worker_actor(child_session_id),
-            Some("explore".to_string()),
-            "bash",
-            json!({"command": "true", "description": "try child shell"}),
+            Some("default".to_string()),
+            "task",
+            json!({
+                "prompt": "try child delegation",
+                "run_in_background": false,
+                "load_skills": []
+            }),
         )
         .await
-        .expect_err("explore child must not be able to call bash");
+        .expect_err("generic child must not be able to redelegate");
     assert!(denied
         .to_string()
-        .contains("tool `bash` is not in worker toolset"));
+        .contains("tool `task` is not in worker toolset"));
 }

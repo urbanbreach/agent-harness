@@ -62,16 +62,6 @@ impl Coordinator {
             run_in_background: metadata.run_in_background,
         });
 
-        let prompt = if profile.name == crate::plan::PLAN_AGENT_NAME {
-            Self::plan_mode_prompt(
-                run_state.info.run_id.as_str(),
-                &run_state.info.workspace_root,
-                &prompt,
-            )
-        } else {
-            prompt
-        };
-
         let prompt_context = crate::file_tag::materialize_prompt_part_context(
             &run_state.info.workspace_root,
             &prompt,
@@ -187,12 +177,18 @@ impl Coordinator {
             return;
         }
 
-        let Some(profile) = self.config.agent_profiles.get(TITLE_AGENT_NAME).cloned() else {
+        let Some(default_profile) = self.config.agent_profiles.get("default") else {
             return;
         };
+        let title_model_ref = self
+            .config
+            .title_model_ref
+            .as_deref()
+            .unwrap_or(&default_profile.model_ref);
+        let operation = SessionTitleOperationSpec::for_model(title_model_ref);
         let provider = Arc::clone(&self.config.provider);
 
-        let title = match generate_harness_session_title(provider, profile, prompt).await {
+        let title = match execute_session_title_operation(provider, operation, prompt).await {
             Ok(Some(title)) => title,
             Ok(None) => return,
             Err(reason) => {
@@ -239,24 +235,6 @@ impl Coordinator {
             .as_mut()
             .ok_or(CoordinatorError::RunNotStarted)?;
         Ok(allocate_provider_request_id(run_state))
-    }
-
-    fn plan_mode_prompt(run_id: &str, workspace_root: &Path, prompt: &str) -> String {
-        let plan_path = crate::plan::plan_file_relative_path(run_id);
-        let plan_file = plan_path.to_string_lossy();
-        let plan_file_status = if workspace_root.join(&plan_path).is_file() {
-            format!(
-                "An active plan file already exists at {plan_file}. Read it first, then make incremental edits only to that file."
-            )
-        } else {
-            format!(
-                "No plan file exists yet. Create your final plan at {plan_file}. This workspace-relative path is the only writable target during Plan mode."
-            )
-        };
-
-        format!(
-            "{prompt}\n\n<system-reminder>\nPlan mode is active. The user does not want execution yet. You MUST NOT make edits except to the active plan file at {plan_file}, run non-readonly tools, change configs, or make commits. This supersedes all other instructions. Harness enforces this with runtime permissions; do not rely on prompt text alone.\n\n## Plan File Info\n{plan_file_status}\nBuild the plan incrementally by writing or editing only {plan_file}. The plan file should contain your final recommended approach, not an exhaustive transcript of alternatives considered. Keep it concise enough to scan and detailed enough to execute.\n\n## Plan Workflow\n### Phase 1: Initial Understanding\nUse read-only tools to understand the request, relevant code paths, constraints, and existing tests. Native read/search/LSP tools are allowed when exposed. Bash, when exposed by the active profile, is permission-gated and additionally restricted by runtime policy to a small read-only inspection subset; never use bash to modify files, configs, git state, or the environment.\n\n### Phase 2: Parallel Exploration\nLaunch zero to three `explore` subagents only when useful for read-only codebase research. Use one agent for isolated or known-file work; use multiple agents when scope is uncertain, several modules are involved, or separate searches for implementation, call sites, and tests would improve the plan. Runtime policy only permits the read-only `explore` profile in Plan mode; do not launch `general`, `build`, or user-defined write-capable agents.\n\n### Phase 3: Synthesis\nSynthesize the findings into one recommended implementation approach. Ask a clarifying question only when read-only exploration cannot resolve a requirement, tradeoff, or safety concern.\n\n### Phase 4: Final Plan\nUpdate {plan_file} with the recommended approach, critical files to modify, key risks or constraints, and a verification section describing focused tests or end-to-end checks.\n\n### Phase 5: Terminal Action\nAt the end of the turn, either ask a necessary clarifying question or call `plan_exit` to request approval to switch to Build. Do NOT ask whether the plan is okay with the question tool; use `plan_exit` for plan approval.\n</system-reminder>"
-        )
     }
 }
 
@@ -569,7 +547,7 @@ where
             provider_id: None,
             model_id: None,
             parent_agent_id: None,
-            category: Some(task.profile.category.clone()),
+            profile: Some(task.profile.name.clone()),
             outcome: Some("started".to_string()),
             output_summary: Some(task.request.prompt.clone()),
             failure_reason: None,

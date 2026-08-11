@@ -61,10 +61,6 @@ pub struct SkillCatalogEntry {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub allowed_tools: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub target_agent: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub target_category: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deferred_mcp: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deferred_resources: Option<String>,
@@ -363,8 +359,6 @@ fn build_skill_metadata(
         reason,
         argument_hint: frontmatter.argument_hint,
         allowed_tools: frontmatter.allowed_tools,
-        target_agent: frontmatter.target_agent,
-        target_category: frontmatter.target_category,
         deferred_mcp: frontmatter.deferred_mcp,
         deferred_resources: frontmatter.deferred_resources,
         body_loaded: false,
@@ -394,8 +388,6 @@ fn malformed_entry(
         reason: Some(reason.to_string()),
         argument_hint: None,
         allowed_tools: Vec::new(),
-        target_agent: None,
-        target_category: None,
         deferred_mcp: None,
         deferred_resources: None,
         body_loaded: false,

@@ -184,10 +184,10 @@ fn acp_bind_session_while_connected_assigns_session_id() {
     assert!(session.session().is_none());
 
     // When
-    let bound = session.bind_session("build").expect("bind");
+    let bound = session.bind_session("default").expect("bind");
 
     // Then
-    assert_eq!(bound.agent_name, "build");
+    assert_eq!(bound.agent_name, "default");
     assert_eq!(bound.session_id, "acp-session-1");
     assert_eq!(
         session.session().map(|s| s.session_id.as_str()),
@@ -204,7 +204,7 @@ fn acp_bind_session_while_disconnected_is_rejected() {
     let mut session = AcpConnection::new(MockAcpTransport::new());
 
     // When
-    let err = session.bind_session("build").expect_err("must reject");
+    let err = session.bind_session("default").expect_err("must reject");
 
     // Then
     assert!(matches!(err, AcpError::SessionBindNotConnected { .. }));
@@ -225,8 +225,8 @@ fn acp_bind_session_rejects_empty_agent_name_and_double_bind() {
     assert!(matches!(empty_err, AcpError::EmptyAgentName));
 
     // When / Then double bind
-    session.bind_session("build").expect("first bind");
-    let second = session.bind_session("plan").expect_err("double bind");
+    session.bind_session("default").expect("first bind");
+    let second = session.bind_session("explore").expect_err("double bind");
     assert!(matches!(
         second,
         AcpError::SessionAlreadyBound {
@@ -243,7 +243,7 @@ fn acp_disconnect_clears_bound_session() {
     // Given
     let mut session = AcpConnection::new(MockAcpTransport::new());
     session.connect().expect("connect");
-    session.bind_session("build").expect("bind");
+    session.bind_session("default").expect("bind");
     assert!(session.session().is_some());
 
     // When
@@ -275,7 +275,7 @@ fn acp_operator_diagnostics_cover_state_session_and_summary() {
 
     // When: connect + bind
     session.connect().expect("connect");
-    session.bind_session("build").expect("bind");
+    session.bind_session("default").expect("bind");
     let bound_summary = session.summary();
     let session_line = session.session().expect("bound").one_line();
 
@@ -284,9 +284,9 @@ fn acp_operator_diagnostics_cover_state_session_and_summary() {
     assert!(bound_summary.is_bound());
     assert!(bound_summary.one_line().contains("state=connected"));
     assert!(bound_summary.one_line().contains("session=`acp-session-1`"));
-    assert!(bound_summary.one_line().contains("agent=`build`"));
+    assert!(bound_summary.one_line().contains("agent=`default`"));
     assert!(session_line.contains("id=`acp-session-1`"));
-    assert!(session_line.contains("agent=`build`"));
+    assert!(session_line.contains("agent=`default`"));
 
     // When: transport error marks failed but keeps session for inspection
     session.transport_mut().fail_on_next_operate = true;

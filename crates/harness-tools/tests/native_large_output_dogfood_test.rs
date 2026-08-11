@@ -198,9 +198,9 @@ async fn child_task_returns_capped_summary_and_session_next_actions() {
             Some("parent".to_string()),
             "task",
             json!({
-                "subagent_type": "child",
                 "description": "Large child summary",
                 "prompt": "Return the deterministic large response.",
+                "subagent_type": "general",
                 "run_in_background": false,
                 "load_skills": []
             }),

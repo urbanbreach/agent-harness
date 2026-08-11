@@ -33,8 +33,7 @@ fn doctor_cli_reports_shipped_orchestration_health() {
     assert!(stdout.contains("provider_credentials"));
     assert!(stdout.contains("model_references"));
     assert!(stdout.contains("workflow_profiles"));
-    assert!(stdout.contains("category_routes"));
-    assert!(stdout.contains("visual-engineering"));
+    assert!(stdout.contains("resolved_routes"));
 }
 #[test]
 fn doctor_cli_emits_json_report() {
@@ -75,11 +74,6 @@ fn doctor_cli_emits_json_report() {
         .unwrap_or_abort()
         .iter()
         .any(|check| { check["name"] == "workflow_profiles" && check["status"] == "pass" }));
-    assert!(report["checks"]
-        .as_array()
-        .unwrap_or_abort()
-        .iter()
-        .any(|check| { check["name"] == "category_routes" && check["status"] == "pass" }));
     assert!(report["checks"]
         .as_array()
         .unwrap_or_abort()
@@ -189,36 +183,36 @@ fn doctor_cli_json_reports_resolved_route_metadata() {
         .unwrap_or_abort();
 
     assert_eq!(route_check["status"], "pass");
-    assert_eq!(route_check["details"]["routes"]["build"]["role"], "primary");
+    assert_eq!(route_check["details"]["routes"]["default"]["mode"], "primary");
     assert_eq!(
-        route_check["details"]["routes"]["build"]["model"]["tool_call_support"]["status"],
+        route_check["details"]["routes"]["default"]["model"]["tool_call_support"]["status"],
         "supported"
     );
     assert_eq!(
-        route_check["details"]["routes"]["build"]["model"]["tool_call_support"]
+        route_check["details"]["routes"]["default"]["model"]["tool_call_support"]
             ["supports_tool_calls"],
         true
     );
     assert_eq!(
-        route_check["details"]["routes"]["build"]["model"]["tool_call_support"]["source"],
+        route_check["details"]["routes"]["default"]["model"]["tool_call_support"]["source"],
         "provider_model_metadata"
     );
     assert_eq!(
-        route_check["details"]["routes"]["build"]["model"]["tool_call_support"]
+        route_check["details"]["routes"]["default"]["model"]["tool_call_support"]
             ["no_network_probes"],
         true
     );
     assert_eq!(
-        route_check["details"]["routes"]["build"]["model"]["prompt_family_asset"]["status"],
+        route_check["details"]["routes"]["default"]["model"]["prompt_family_asset"]["status"],
         "builtin"
     );
     assert_eq!(
-        route_check["details"]["routes"]["build"]["model"]["prompt_family_asset"]
+        route_check["details"]["routes"]["default"]["model"]["prompt_family_asset"]
             ["no_network_probes"],
         true
     );
     assert_eq!(
-        route_check["details"]["routes"]["build"]["prompt"]["status"],
+        route_check["details"]["routes"]["default"]["prompt"]["status"],
         "available"
     );
     assert_eq!(route_check["details"]["skills"]["status"], "configured");
@@ -262,33 +256,14 @@ fn doctor_cli_json_reports_resolved_route_metadata() {
         .unwrap_or_abort()
         .contains("Use focused diffs."));
     assert_eq!(
-        route_check["details"]["routes"]["general"]["role"],
+        route_check["details"]["routes"]["general"]["mode"],
         "subagent"
     );
     assert_eq!(
         route_check["details"]["routes"]["explore"]["permission_posture"]["edit"],
         "deny"
     );
-    assert_eq!(
-        route_check["details"]["routes"]["visual-engineering"]["role"],
-        "category"
-    );
-    assert_eq!(
-        route_check["details"]["routes"]["visual-engineering"]["permission_posture"]["task"],
-        "deny"
-    );
-    assert_eq!(
-        route_check["details"]["category_fallback"]["unknown_category_profile"],
-        "general"
-    );
-    assert_eq!(
-        route_check["details"]["category_fallback"]["disabled_for_parent"],
-        serde_json::json!(["plan"])
-    );
-    assert_eq!(
-        route_check["details"]["category_fallback"]["policy_source"],
-        "harness_core::coord::task_category_fallback_profile"
-    );
+    assert!(route_check["details"].get("category_fallback").is_none());
 }
 
 #[test]
@@ -347,7 +322,7 @@ fn doctor_cli_json_reports_prompt_family_asset_fallback_warning() {
         .iter()
         .find(|check| check["name"] == "resolved_routes")
         .unwrap_or_abort();
-    let prompt_asset = &route_check["details"]["routes"]["build"]["model"]["prompt_family_asset"];
+    let prompt_asset = &route_check["details"]["routes"]["default"]["model"]["prompt_family_asset"];
 
     assert_eq!(prompt_asset["family"], "anthropic");
     assert_eq!(prompt_asset["status"], "fallback");
@@ -391,10 +366,9 @@ fn doctor_cli_json_reports_stable_id_disabled_skill_metadata() {
             },
           },
           model: "default/gpt-5.4-mini",
-          default_agent: "build",
           agent: {
-            build: { enable: true, model: "default/gpt-5.4-mini" },
-            general: { enable: true, model: "default/gpt-5.4-mini" },
+            default: { model: "default/gpt-5.4-mini" },
+            general: { model: "default/gpt-5.4-mini" },
           },
           permission: "ask",
           skills: {
@@ -471,10 +445,9 @@ fn doctor_cli_json_reports_disabled_builtin_skill_metadata() {
             },
           },
           model: "default/gpt-5.4-mini",
-          default_agent: "build",
           agent: {
-            build: { enable: true, model: "default/gpt-5.4-mini" },
-            general: { enable: true, model: "default/gpt-5.4-mini" },
+            default: { model: "default/gpt-5.4-mini" },
+            general: { model: "default/gpt-5.4-mini" },
           },
           permission: "ask",
           skills: {

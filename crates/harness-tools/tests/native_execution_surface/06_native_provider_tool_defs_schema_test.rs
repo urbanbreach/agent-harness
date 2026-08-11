@@ -3,19 +3,15 @@ use harness_tools::UnwrapOrAbort;
 fn native_provider_tool_defs_accept_edit_and_question_export_schemas() {
     // arrange
     let registry = coordinator_registry(ShellAllowlist::default());
-    let profile = AgentProfile {
-        name: "provider-safe-native-schemas".to_string(),
-        category: "test".to_string(),
-        model_ref: "mock:model".to_string(),
-        model_ref_explicit: true,
-        system_prompt: "test".to_string(),
-        cache_retention: Default::default(),
-        max_iters: Some(4),
-        temperature: Some(0.0),
-        tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
-        toolset: vec!["edit".to_string(), "question".to_string()],
-        permission_ruleset: Vec::new(),
-    };
+    let profile = AgentProfile { name: "provider-safe-native-schemas".to_string(), model_ref: "mock:model".to_string(),
+    model_ref_explicit: true,
+    system_prompt: "test".to_string(),
+    cache_retention: Default::default(),
+    max_iters: Some(4),
+    temperature: Some(0.0),
+    tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
+    toolset: vec!["edit".to_string(), "question".to_string()],
+    permission_ruleset: Vec::new(), };
 
     // act
     let defs = build_provider_tool_defs(&profile, &registry)
@@ -32,25 +28,21 @@ fn native_provider_tool_defs_accept_edit_and_question_export_schemas() {
 fn provider_tool_defs_match_current_core_filesystem_input_schemas() {
     // arrange
     let registry = coordinator_registry(ShellAllowlist::default());
-    let profile = AgentProfile {
-        name: "provider-core-fs-schema-parity".to_string(),
-        category: "test".to_string(),
-        model_ref: "mock:model".to_string(),
-        model_ref_explicit: true,
-        system_prompt: "test".to_string(),
-        cache_retention: Default::default(),
-        max_iters: Some(4),
-        temperature: Some(0.0),
-        tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
-        toolset: vec![
-            "read".to_string(),
-            "glob".to_string(),
-            "grep".to_string(),
-            "edit".to_string(),
-            "write".to_string(),
-        ],
-        permission_ruleset: Vec::new(),
-    };
+    let profile = AgentProfile { name: "provider-core-fs-schema-parity".to_string(), model_ref: "mock:model".to_string(),
+    model_ref_explicit: true,
+    system_prompt: "test".to_string(),
+    cache_retention: Default::default(),
+    max_iters: Some(4),
+    temperature: Some(0.0),
+    tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
+    toolset: vec![
+        "read".to_string(),
+        "glob".to_string(),
+        "grep".to_string(),
+        "edit".to_string(),
+        "write".to_string(),
+    ],
+    permission_ruleset: Vec::new(), };
 
     // act
     let defs = build_provider_tool_defs(&profile, &registry)
@@ -98,19 +90,15 @@ fn provider_tool_defs_match_current_core_filesystem_input_schemas() {
 fn provider_tool_defs_do_not_advertise_runtime_only_grep_controls() {
     // arrange
     let registry = coordinator_registry(ShellAllowlist::default());
-    let profile = AgentProfile {
-        name: "provider-grep-text-parity".to_string(),
-        category: "test".to_string(),
-        model_ref: "mock:model".to_string(),
-        model_ref_explicit: true,
-        system_prompt: "test".to_string(),
-        cache_retention: Default::default(),
-        max_iters: Some(4),
-        temperature: Some(0.0),
-        tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
-        toolset: vec!["grep".to_string()],
-        permission_ruleset: Vec::new(),
-    };
+    let profile = AgentProfile { name: "provider-grep-text-parity".to_string(), model_ref: "mock:model".to_string(),
+    model_ref_explicit: true,
+    system_prompt: "test".to_string(),
+    cache_retention: Default::default(),
+    max_iters: Some(4),
+    temperature: Some(0.0),
+    tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
+    toolset: vec!["grep".to_string()],
+    permission_ruleset: Vec::new(), };
 
     // act
     let defs = build_provider_tool_defs(&profile, &registry)
@@ -141,24 +129,20 @@ fn provider_tool_defs_do_not_advertise_runtime_only_grep_controls() {
 fn native_provider_tool_defs_gate_patch_tools_like_baseline_registry() {
     // arrange
     let registry = coordinator_registry(ShellAllowlist::default());
-    let profile = AgentProfile {
-        name: "provider-patch-gating".to_string(),
-        category: "test".to_string(),
-        model_ref: "openai/gpt-5.5".to_string(),
-        model_ref_explicit: true,
-        system_prompt: "test".to_string(),
-        cache_retention: Default::default(),
-        max_iters: Some(4),
-        temperature: Some(0.0),
-        tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
-        toolset: vec![
-            "apply_patch".to_string(),
-            "edit".to_string(),
-            "write".to_string(),
-            "read".to_string(),
-        ],
-        permission_ruleset: Vec::new(),
-    };
+    let profile = AgentProfile { name: "provider-patch-gating".to_string(), model_ref: "openai/gpt-5.5".to_string(),
+    model_ref_explicit: true,
+    system_prompt: "test".to_string(),
+    cache_retention: Default::default(),
+    max_iters: Some(4),
+    temperature: Some(0.0),
+    tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
+    toolset: vec![
+        "apply_patch".to_string(),
+        "edit".to_string(),
+        "write".to_string(),
+        "read".to_string(),
+    ],
+    permission_ruleset: Vec::new(), };
 
     // act
     let defs = build_provider_tool_defs(&profile, &registry)
@@ -179,24 +163,20 @@ fn native_provider_tool_defs_gate_patch_tools_like_baseline_registry() {
 fn native_provider_tool_defs_gate_edit_write_tools_for_non_patch_models() {
     // arrange
     let registry = coordinator_registry(ShellAllowlist::default());
-    let profile = AgentProfile {
-        name: "provider-edit-write-gating".to_string(),
-        category: "test".to_string(),
-        model_ref: "mock:model".to_string(),
-        model_ref_explicit: true,
-        system_prompt: "test".to_string(),
-        cache_retention: Default::default(),
-        max_iters: Some(4),
-        temperature: Some(0.0),
-        tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
-        toolset: vec![
-            "apply_patch".to_string(),
-            "edit".to_string(),
-            "write".to_string(),
-            "read".to_string(),
-        ],
-        permission_ruleset: Vec::new(),
-    };
+    let profile = AgentProfile { name: "provider-edit-write-gating".to_string(), model_ref: "mock:model".to_string(),
+    model_ref_explicit: true,
+    system_prompt: "test".to_string(),
+    cache_retention: Default::default(),
+    max_iters: Some(4),
+    temperature: Some(0.0),
+    tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
+    toolset: vec![
+        "apply_patch".to_string(),
+        "edit".to_string(),
+        "write".to_string(),
+        "read".to_string(),
+    ],
+    permission_ruleset: Vec::new(), };
 
     // act
     let defs = build_provider_tool_defs(&profile, &registry)
@@ -217,24 +197,20 @@ fn native_provider_tool_defs_gate_edit_write_tools_for_non_patch_models() {
 fn native_provider_tool_defs_gate_patch_tools_by_actual_turn_model() {
     // arrange
     let registry = coordinator_registry(ShellAllowlist::default());
-    let profile = AgentProfile {
-        name: "provider-model-override-gating".to_string(),
-        category: "test".to_string(),
-        model_ref: "mock:model".to_string(),
-        model_ref_explicit: true,
-        system_prompt: "test".to_string(),
-        cache_retention: Default::default(),
-        max_iters: Some(4),
-        temperature: Some(0.0),
-        tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
-        toolset: vec![
-            "apply_patch".to_string(),
-            "edit".to_string(),
-            "write".to_string(),
-            "read".to_string(),
-        ],
-        permission_ruleset: Vec::new(),
-    };
+    let profile = AgentProfile { name: "provider-model-override-gating".to_string(), model_ref: "mock:model".to_string(),
+    model_ref_explicit: true,
+    system_prompt: "test".to_string(),
+    cache_retention: Default::default(),
+    max_iters: Some(4),
+    temperature: Some(0.0),
+    tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
+    toolset: vec![
+        "apply_patch".to_string(),
+        "edit".to_string(),
+        "write".to_string(),
+        "read".to_string(),
+    ],
+    permission_ruleset: Vec::new(), };
 
     // act
     let patch_defs = build_provider_tool_defs_for_model(&profile, &registry, "openai/gpt-5.5")

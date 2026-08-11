@@ -65,9 +65,6 @@ pub struct RunCommand {
     #[arg(long, short = 'm')]
     pub model: Option<String>,
 
-    #[arg(long = "agent")]
-    pub agent: Option<String>,
-
     #[arg(long)]
     pub variant: Option<String>,
 
@@ -93,9 +90,6 @@ pub struct RunCommand {
     #[arg(long, default_value_t = false)]
     pub no_subagents: bool,
 
-    #[arg(long, default_value_t = false)]
-    pub no_plan: bool,
-
     #[arg(long, value_name = "RULES")]
     pub rules: Option<String>,
 
@@ -114,7 +108,7 @@ pub struct RunCommand {
     #[arg(long, default_value_t = false)]
     pub disable_web_search: bool,
 
-    /// Permission mode (default, plan, auto).
+    /// Permission mode (default, bypassPermissions, acceptEdits, dontAsk).
     #[arg(long, value_name = "MODE")]
     pub permission_mode: Option<String>,
 
@@ -319,13 +313,11 @@ fn execute_prompt_run(
         variant: cmd.variant.clone(),
         thinking: cmd.thinking,
         mock: cmd.mock,
-        profile: cmd.agent.clone(),
         resume,
         out: cmd.out.clone(),
         print_run_dir: cmd.print_run_dir,
         max_turns: cmd.max_turns,
         no_subagents: cmd.no_subagents,
-        no_plan: cmd.no_plan,
         tools: cmd.tools.clone(),
         disallowed_tools: cmd.disallowed_tools.clone(),
         disable_web_search: cmd.disable_web_search,
@@ -594,20 +586,15 @@ async fn run_once(
         let _ = logging::init_logging(config, &run.run_dir)?;
     }
 
-    coordinator
-        .spawn_agent(supervisor_actor(), "planner", None)
-        .await
-        .map_err(|err| err.to_string())?;
-
-    let worker_agent_id = coordinator
-        .spawn_agent(supervisor_actor(), "worker", None)
+    let agent_id = coordinator
+        .spawn_agent(supervisor_actor(), "default", None)
         .await
         .map_err(|err| err.to_string())?;
 
     let tool_call_id = coordinator
         .request_tool_call(
-            worker_actor(worker_agent_id),
-            Some("deep".to_string()),
+            worker_actor(agent_id),
+            None,
             "edit",
             golden_path_edit_args(),
         )
@@ -707,7 +694,6 @@ mod tests {
             continue_session: false,
             session: None,
             model: None,
-            agent: None,
             variant: None,
             thinking: false,
             format: crate::prompt::PromptOutputFormat::Default,
@@ -715,7 +701,6 @@ mod tests {
             dangerously_skip_permissions: false,
             max_turns: None,
             no_subagents: false,
-            no_plan: false,
             rules: None,
             reasoning_effort: None,
             tools: Vec::new(),
@@ -845,10 +830,15 @@ mod tests {
             .await
             .unwrap_or_abort();
         let summary = summarize_session(&run.run_dir).unwrap_or_abort();
+        let events = std::fs::read_to_string(&run.events_path).unwrap_or_abort();
 
         assert_eq!(summary.status, RunStatus::Finished);
         assert_eq!(summary.counts_by_type.get("run_finished"), Some(&1));
         assert_eq!(summary.counts_by_type.get("edit_applied"), Some(&1));
+        assert!(
+            !events.contains("\"finish_reason\":\"error\""),
+            "golden path provider request failed:\n{events}"
+        );
         assert!(summary.pending_permissions.is_empty());
         assert!(summary.tasks_in_flight.is_empty());
     }

@@ -173,7 +173,7 @@ impl Coordinator {
                 provider_id: None,
                 model_id: None,
                 parent_agent_id: None,
-                category: None,
+                profile: None,
                 outcome: Some("started".to_string()),
                 output_summary: Some(run_state.info.run_name.to_string()),
                 failure_reason: None,
@@ -478,7 +478,7 @@ impl Coordinator {
                 provider_id: None,
                 model_id: None,
                 parent_agent_id: None,
-                category: None,
+                profile: None,
                 outcome: Some("finished".to_string()),
                 output_summary: Some(summary),
                 failure_reason: None,
@@ -541,7 +541,7 @@ impl Coordinator {
                 provider_id: None,
                 model_id: None,
                 parent_agent_id: None,
-                category: None,
+                profile: None,
                 outcome: Some("failed".to_string()),
                 output_summary: None,
                 failure_reason: Some(error),
@@ -627,11 +627,19 @@ impl Coordinator {
                 );
                 profile_cfg.permission_ruleset =
                     crate::perm::merge_rulesets([child_permission, derived]);
-                profile_cfg.toolset.retain(|tool_id| {
-                    !crate::perm::is_tool_disabled(tool_id, &profile_cfg.permission_ruleset)
-                });
             }
         }
+
+        profile_cfg.toolset.retain(|tool_id| {
+            self.config.tool_registry.get(tool_id).is_none_or(|tool| {
+                !self.config.permission_policy.is_tool_call_fully_denied(
+                    Some(&profile_cfg.name),
+                    tool_id,
+                    tool.capability(),
+                    &profile_cfg.permission_ruleset,
+                )
+            })
+        });
 
         let agent_id = format!("agent_{:06}", run_state.next_agent_id);
         run_state.next_agent_id += 1;
@@ -657,7 +665,7 @@ impl Coordinator {
                     provider_id: None,
                     model_id: None,
                     parent_agent_id: Some(parent.clone()),
-                    category: Some(profile.clone()),
+                    profile: Some(profile.clone()),
                     outcome: Some("spawned".to_string()),
                     output_summary: Some(profile.clone()),
                     failure_reason: None,

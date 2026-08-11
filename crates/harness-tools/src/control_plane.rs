@@ -679,7 +679,7 @@ fn skill_not_found_message(name: &str, catalog: &SkillCatalog) -> String {
 
     if let Some(agent_name) = known_agent_name(trimmed) {
         message.push_str(&format!(
-            ". `{trimmed}` is an agent, not a skill; use task(category=\"{agent_name}\", ...) if you need a child session"
+            ". `{trimmed}` is an agent, not a skill; use task(subagent_type=\"{agent_name}\", ...) if you need a child session"
         ));
     }
 
@@ -713,8 +713,9 @@ fn skill_unavailable_message(entry: &SkillCatalogEntry, catalog: &SkillCatalog) 
 
 fn known_agent_name(name: &str) -> Option<&'static str> {
     match name.trim().to_ascii_lowercase().as_str() {
-        "build" => Some("build"),
-        "plan" => Some("plan"),
+        "explore" => Some("explore"),
+        "general" => Some("general"),
+        "librarian" => Some("librarian"),
         _ => None,
     }
 }

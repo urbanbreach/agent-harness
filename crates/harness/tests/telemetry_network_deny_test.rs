@@ -151,8 +151,6 @@ const ALLOWED_HTTP_CLIENT_FILES: &[&str] = &[
     "crates/harness/src/prompt_queue_cmd.rs",
     "crates/harness/src/worktree_cmd.rs",
     "crates/harness/src/memory_cmd.rs",
-    "crates/harness/src/screen_flags_cmd.rs",
-    "crates/harness/src/agent_flags_cmd.rs",
     "crates/harness/src/session_flags_cmd.rs",
     "crates/harness/src/dynamic_prompt.rs",
     "crates/harness/src/runtime_catalog.rs",

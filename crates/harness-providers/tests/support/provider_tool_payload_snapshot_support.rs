@@ -59,12 +59,12 @@ pub(crate) async fn generate_snapshot() -> Result<Snapshot, Box<dyn Error>> {
         } else {
             &native_registry
         };
-        let profile = profile(spec.name, spec.category, spec.toolset);
+        let profile = profile(spec.name, spec.toolset);
         let tools = build_provider_tool_defs(&profile, registry)?;
         let request = completion_request(&profile, tools.clone());
         profiles.push(ProfileSnapshot {
             profile: profile.name.clone(),
-            category: profile.category.clone(),
+            category: profile.name.clone(),
             completion_request_digest: request_digest(&request),
             tools: summarize_tools(&tools),
             openai: vec![
@@ -99,15 +99,13 @@ fn summarize_tools(tools: &[ToolDef]) -> Vec<ToolSnapshot> {
 
 struct ProfileSpec {
     name: &'static str,
-    category: &'static str,
     toolset: Vec<&'static str>,
 }
 
 fn profile_specs() -> Vec<ProfileSpec> {
     vec![
         ProfileSpec {
-            name: "build",
-            category: "build",
+            name: "default",
             toolset: vec![
                 "read",
                 "edit",
@@ -120,27 +118,23 @@ fn profile_specs() -> Vec<ProfileSpec> {
             ],
         },
         ProfileSpec {
-            name: "plan",
-            category: "plan",
-            toolset: vec!["read", "glob", "grep", "list", "question", "plan_exit"],
+            name: "explore",
+            toolset: vec!["read", "glob", "grep", "list", "question"],
         },
         ProfileSpec {
-            name: "category",
-            category: "quick",
+            name: "general",
             toolset: vec!["task", "background_output", "todowrite", "skill"],
         },
         ProfileSpec {
             name: "mcp",
-            category: "mcp",
             toolset: vec!["mcp.docs.rs.tools.list", "mcp.docs.rs.tool.call"],
         },
     ]
 }
 
-fn profile(name: &str, category: &str, toolset: Vec<&str>) -> AgentProfile {
+fn profile(name: &str, toolset: Vec<&str>) -> AgentProfile {
     AgentProfile {
         name: name.to_string(),
-        category: category.to_string(),
         model_ref: "openai/gpt-5.5".to_string(),
         model_ref_explicit: true,
         system_prompt: format!("{name} profile snapshot"),

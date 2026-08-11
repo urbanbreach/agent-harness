@@ -1,33 +1,6 @@
 use super::*;
 use harness::UnwrapOrAbort;
 
-#[test]
-fn plan_handoff_updates_live_agent_target_to_spawned_build_agent() {
-    // arrange
-    // act
-    // assert
-    let target = Arc::new(Mutex::new(LiveAgentTarget {
-        agent_id: Some("agent_plan".to_string()),
-        profile: "plan".to_string(),
-        last_request_id: Some("req_plan".to_string()),
-    }));
-    let event = lineage_test_event(
-        1,
-        EventV1::AgentSpawned(AgentSpawnedEvent {
-            agent_id: "agent_build".to_string(),
-            profile: "build".to_string(),
-            parent_agent_id: Some("agent_plan".to_string()),
-        }),
-    );
-
-    maybe_update_live_agent_target_for_plan_handoff(&event, Some(&target));
-
-    let target = target.lock().unwrap_or_abort();
-    assert_eq!(target.agent_id.as_deref(), Some("agent_build"));
-    assert_eq!(target.profile, "build");
-    assert_eq!(target.last_request_id, None);
-}
-
 #[tokio::test]
 async fn compact_intent_reports_noop_status_for_idle_live_agent() {
     // arrange
@@ -48,13 +21,13 @@ async fn compact_intent_reports_noop_status_for_idle_live_agent() {
         .await
         .unwrap_or_abort();
     let agent_id = coordinator
-        .spawn_agent_idle(supervisor_actor(), "planner", None)
+        .spawn_agent_idle(supervisor_actor(), "default", None)
         .await
         .unwrap_or_abort();
 
     let live_agent_target = Arc::new(Mutex::new(LiveAgentTarget {
         agent_id: Some(agent_id),
-        profile: "planner".to_string(),
+        profile: "default".to_string(),
         last_request_id: None,
     }));
     let (intent_tx, intent_rx) = mpsc::unbounded_channel();
@@ -161,55 +134,6 @@ async fn event_forwarder_stops_after_terminal_event_when_requested() {
     assert!(
         matches!(updates[1], LiveUpdate::Event(ref event) if is_terminal_event(&event.payload))
     );
-}
-
-#[tokio::test]
-async fn event_forwarder_updates_live_agent_target_on_plan_handoff() {
-    // arrange
-    // act
-    // assert
-    let store = Arc::new(InMemoryEventStore::new());
-    store
-        .append(forwarder_event_draft(
-            "run_forwarder_plan_handoff",
-            "agent_spawned",
-            EventV1::AgentSpawned(AgentSpawnedEvent {
-                agent_id: "agent_build".to_string(),
-                profile: harness_core::plan::BUILD_AGENT_NAME.to_string(),
-                parent_agent_id: Some("agent_plan".to_string()),
-            }),
-        ))
-        .unwrap_or_abort();
-    store
-        .append(forwarder_event_draft(
-            "run_forwarder_plan_handoff",
-            "finished",
-            EventV1::RunFinished(RunFinishedEvent {
-                summary: "done".to_string(),
-            }),
-        ))
-        .unwrap_or_abort();
-    let (tx, rx) = std_mpsc::channel();
-    let target = Arc::new(Mutex::new(LiveAgentTarget {
-        agent_id: Some("agent_plan".to_string()),
-        profile: harness_core::plan::PLAN_AGENT_NAME.to_string(),
-        last_request_id: Some("req_plan".to_string()),
-    }));
-
-    tokio::time::timeout(
-        Duration::from_millis(500),
-        forward_events_to_tui(store, tx, 1, Some(Arc::clone(&target)), true),
-    )
-    .await
-    .unwrap_or_abort()
-    .unwrap_or_abort();
-
-    let updates = rx.try_iter().collect::<Vec<_>>();
-    assert_eq!(updates.len(), 2);
-    let target = target.lock().unwrap_or_abort();
-    assert_eq!(target.agent_id.as_deref(), Some("agent_build"));
-    assert_eq!(target.profile, harness_core::plan::BUILD_AGENT_NAME);
-    assert_eq!(target.last_request_id, None);
 }
 
 #[tokio::test]

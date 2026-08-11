@@ -1,5 +1,4 @@
-// allow: SIZE_OK — agent catalog (profile discovery + metadata)
-use crate::UnwrapOrAbort;
+// allow: SIZE_OK — serialized agent metadata contract and its resolver stay colocated
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
@@ -8,47 +7,10 @@ use crate::config::{
     resolve_model_selection, AgentMode, HarnessConfig, PermissionMode, ProfileConfig,
     ResolvedModelTarget,
 };
-use crate::coord::{
-    task_category_fallback_chain, TASK_CATEGORY_FALLBACK_DISABLED_PARENT_PROFILES,
-    TASK_CATEGORY_FALLBACK_PROFILE,
-};
-
-pub const SHIPPED_PRIMARY_PROFILES: &[&str] = &["build", "plan"];
-pub const SHIPPED_SUBAGENTS: &[&str] = &["explore", "general"];
-pub const SHIPPED_CATEGORY_ROUTES: &[&str] = &[
-    "visual-engineering",
-    "artistry",
-    "ultrabrain",
-    "deep",
-    "quick",
-    "unspecified-low",
-    "unspecified-high",
-    "writing",
-];
-pub const SHIPPED_HIDDEN_PROFILES: &[&str] = &["title", "summary", "compaction"];
-
-const DISPLAY_ORDER: &[&str] = &[
-    "build",
-    "plan",
-    "explore",
-    "general",
-    "visual-engineering",
-    "artistry",
-    "ultrabrain",
-    "deep",
-    "quick",
-    "unspecified-low",
-    "unspecified-high",
-    "writing",
-    "title",
-    "summary",
-    "compaction",
-];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentCatalog {
     pub entries: Vec<AgentCatalogEntry>,
-    pub category_fallback: CategoryFallbackCatalog,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -56,12 +18,7 @@ pub struct AgentCatalogEntry {
     pub id: String,
     pub display_name: String,
     pub description: String,
-    pub role: AgentCatalogRole,
     pub mode: AgentMode,
-    pub hidden: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub category_binding: Option<String>,
-    pub display_order: usize,
     pub prompt: AgentPromptCatalogMetadata,
     pub model: AgentModelCatalogMetadata,
     pub toolset: Vec<String>,
@@ -69,17 +26,6 @@ pub struct AgentCatalogEntry {
     pub skills: AgentSkillCatalogMetadata,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub readiness_warnings: Vec<String>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum AgentCatalogRole {
-    Primary,
-    Subagent,
-    Category,
-    Hidden,
-    Profile,
-    All,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -124,13 +70,6 @@ pub struct AgentSkillCatalogMetadata {
     pub configured_permission_patterns: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct CategoryFallbackCatalog {
-    pub unknown_category_profile: String,
-    pub disabled_parent_profiles: Vec<String>,
-    pub policy_source: String,
-}
-
 impl AgentCatalog {
     pub fn get(&self, id: &str) -> Option<&AgentCatalogEntry> {
         self.entries.iter().find(|entry| entry.id == id)
@@ -146,23 +85,12 @@ impl AgentCatalog {
 }
 
 pub fn resolve_agent_catalog(config: &HarnessConfig) -> AgentCatalog {
-    let mut entries = config
-        .agents
-        .iter()
-        .map(|(id, profile)| resolve_agent_catalog_entry(config, id, profile))
-        .collect::<Vec<_>>();
-    entries.sort_by_key(|entry| (entry.display_order, entry.id.clone()));
-
     AgentCatalog {
-        entries,
-        category_fallback: CategoryFallbackCatalog {
-            unknown_category_profile: TASK_CATEGORY_FALLBACK_PROFILE.to_string(),
-            disabled_parent_profiles: TASK_CATEGORY_FALLBACK_DISABLED_PARENT_PROFILES
-                .iter()
-                .map(|profile| profile.to_string())
-                .collect(),
-            policy_source: "harness_core::coord::task_category_fallback_profile".to_string(),
-        },
+        entries: config
+            .agents
+            .iter()
+            .map(|(id, profile)| resolve_agent_catalog_entry(config, id, profile))
+            .collect(),
     }
 }
 
@@ -171,45 +99,25 @@ pub fn resolve_agent_catalog_entry(
     id: &str,
     profile: &ProfileConfig,
 ) -> AgentCatalogEntry {
-    let role = agent_catalog_role(id, profile);
-    let prompt = prompt_metadata(id, profile);
+    let prompt = prompt_metadata(profile);
     let model = model_metadata(config, profile);
-    let permission_posture = permission_posture(config, profile);
-    let toolset = profile.tools.clone();
     let mut readiness_warnings = Vec::new();
-
     if prompt.status == "missing" {
         readiness_warnings.push("prompt_asset_missing".to_string());
     }
     if model.resolution_error.is_some() {
         readiness_warnings.push("model_resolution_failed".to_string());
     }
-    if matches!(role, AgentCatalogRole::Category) {
-        let task_permission = profile
-            .permissions
-            .as_ref()
-            .and_then(|permissions| permissions.task.as_ref());
-        if !matches!(task_permission, Some(PermissionMode::Deny)) {
-            readiness_warnings.push("category_route_can_redelegate".to_string());
-        }
-    }
 
     AgentCatalogEntry {
         id: id.to_string(),
-        display_name: profile
-            .name
-            .clone()
-            .unwrap_or_else(|| display_name_from_id(id)),
+        display_name: display_name(id),
         description: profile.description.clone(),
-        role,
         mode: profile.mode,
-        hidden: profile.hidden,
-        category_binding: matches!(role, AgentCatalogRole::Category).then(|| id.to_string()),
-        display_order: display_order(id),
         prompt,
         model,
-        toolset,
-        permission_posture,
+        toolset: profile.tools.clone(),
+        permission_posture: permission_posture(config, profile),
         skills: AgentSkillCatalogMetadata {
             tool_enabled: profile.tools.iter().any(|tool| tool == "skill"),
             configured_permission_patterns: config.skills.permissions.keys().cloned().collect(),
@@ -218,52 +126,32 @@ pub fn resolve_agent_catalog_entry(
     }
 }
 
-pub fn agent_catalog_role(id: &str, profile: &ProfileConfig) -> AgentCatalogRole {
-    if profile.hidden || SHIPPED_HIDDEN_PROFILES.contains(&id) {
-        return AgentCatalogRole::Hidden;
+fn display_name(id: &str) -> String {
+    match id {
+        "default" => "Harness",
+        "explore" => "Explore",
+        "general" => "General",
+        "librarian" => "Librarian",
+        _ => id,
     }
-    if SHIPPED_CATEGORY_ROUTES.contains(&id) {
-        return AgentCatalogRole::Category;
-    }
-    if SHIPPED_PRIMARY_PROFILES.contains(&id) || profile.mode == AgentMode::Primary {
-        return AgentCatalogRole::Primary;
-    }
-    if SHIPPED_SUBAGENTS.contains(&id) || profile.mode == AgentMode::Subagent {
-        return AgentCatalogRole::Subagent;
-    }
-    if profile.mode == AgentMode::All {
-        return AgentCatalogRole::All;
-    }
-    AgentCatalogRole::Profile
+    .to_string()
 }
 
-pub fn category_fallback_chain(category: Option<&str>) -> Vec<String> {
-    task_category_fallback_chain(category)
-}
-
-fn prompt_metadata(id: &str, profile: &ProfileConfig) -> AgentPromptCatalogMetadata {
-    if profile.system_prompt.as_deref().is_some_and(non_empty) {
-        return AgentPromptCatalogMetadata {
+fn prompt_metadata(profile: &ProfileConfig) -> AgentPromptCatalogMetadata {
+    match profile
+        .system_prompt
+        .as_deref()
+        .filter(|prompt| !prompt.trim().is_empty())
+    {
+        Some(_) => AgentPromptCatalogMetadata {
             status: "available".to_string(),
-            source: Some("configured_or_discovered".to_string()),
-        };
+            source: Some("configured".to_string()),
+        },
+        None => AgentPromptCatalogMetadata {
+            status: "missing".to_string(),
+            source: None,
+        },
     }
-    if bundled_prompt_available(id) {
-        return AgentPromptCatalogMetadata {
-            status: "available".to_string(),
-            source: Some("bundled_shipped_asset".to_string()),
-        };
-    }
-    AgentPromptCatalogMetadata {
-        status: "missing".to_string(),
-        source: None,
-    }
-}
-
-fn bundled_prompt_available(id: &str) -> bool {
-    SHIPPED_PRIMARY_PROFILES.contains(&id)
-        || SHIPPED_SUBAGENTS.contains(&id)
-        || SHIPPED_CATEGORY_ROUTES.contains(&id)
 }
 
 fn model_metadata(config: &HarnessConfig, profile: &ProfileConfig) -> AgentModelCatalogMetadata {
@@ -273,14 +161,10 @@ fn model_metadata(config: &HarnessConfig, profile: &ProfileConfig) -> AgentModel
             provider: Some(selection.primary.provider.clone()),
             model: selection.primary.model.clone(),
             variant: selection.primary.variant.clone(),
-            fallback_chain: selection
-                .fallback
-                .iter()
-                .map(model_target_label)
-                .collect::<Vec<_>>(),
+            fallback_chain: selection.fallback.iter().map(model_target_label).collect(),
             resolution_error: None,
         },
-        Err(err) => {
+        Err(error) => {
             let (_, model, variant) = split_model_ref(&profile.model_ref);
             AgentModelCatalogMetadata {
                 model_ref: profile.model_ref.clone(),
@@ -288,7 +172,7 @@ fn model_metadata(config: &HarnessConfig, profile: &ProfileConfig) -> AgentModel
                 model,
                 variant: profile.variant.clone().or(variant),
                 fallback_chain: Vec::new(),
-                resolution_error: Some(err.to_string()),
+                resolution_error: Some(error.to_string()),
             }
         }
     }
@@ -399,40 +283,16 @@ fn permission_mode_label(mode: &PermissionMode) -> String {
     }
 }
 
-fn display_order(id: &str) -> usize {
-    DISPLAY_ORDER
-        .iter()
-        .position(|candidate| *candidate == id)
-        .unwrap_or(DISPLAY_ORDER.len() + 100)
-}
-
-fn display_name_from_id(id: &str) -> String {
-    id.split(['_', '-', ' '])
-        .filter(|part| !part.is_empty())
-        .filter_map(|part| {
-            let mut chars = part.chars();
-            let first = chars.next()?;
-            Some(format!("{}{}", first.to_uppercase(), chars.as_str()))
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
-fn non_empty(value: &str) -> bool {
-    !value.trim().is_empty()
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{
-        resolve_agent_catalog, AgentCatalogRole, SHIPPED_CATEGORY_ROUTES, SHIPPED_PRIMARY_PROFILES,
-        SHIPPED_SUBAGENTS,
-    };
-    use crate::config::{load_config_from_str, AgentMode, HarnessConfig};
+    use super::resolve_agent_catalog;
+    use crate::config::load_config_from_str;
     use crate::UnwrapOrAbort;
 
-    fn config() -> HarnessConfig {
-        load_config_from_str(
+    #[test]
+    fn catalog_contains_primary_and_named_subagents() {
+        // Given
+        let config = load_config_from_str(
             r#"
             {
               provider: {
@@ -440,119 +300,47 @@ mod tests {
                   type: "openai_compatible",
                   options: {
                     baseURL: "http://127.0.0.1:8317/v1",
-                    apiKey: "test-key",
+                    apiKey: "test-key"
                   },
-                  models: {
-                    model: {
-                      name: "Mock model"
-                    }
-                  }
+                  models: { model: { name: "Mock model" } }
                 }
               },
               model: "mock/model",
-              small_model: "mock/model",
               agent: {
-                build: { system_prompt: "Build work" },
-                plan: { system_prompt: "Plan work" },
+                default: {
+                  system_prompt: "Do the work",
+                  tools: ["task", "read"]
+                }
               },
-              default_agent: "build",
-              permission: {
-                edit: "allow",
-                bash: "allow",
-                question: "allow",
-                task: "allow",
-                webfetch: "allow",
-                websearch: "allow",
-                codesearch: "allow",
-                lsp: "allow"
-              }
+              permission: "allow"
             }
             "#,
         )
-        .unwrap_or_abort()
-    }
+        .unwrap_or_abort();
 
-    #[test]
-    fn catalog_resolves_shipped_roles_and_hidden_profiles() {
-        // arrange
-        // act
-        // assert
-        let catalog = resolve_agent_catalog(&config());
+        // When
+        let catalog = resolve_agent_catalog(&config);
 
-        for id in SHIPPED_PRIMARY_PROFILES {
+        // Then
+        assert_eq!(
+            catalog
+                .entries
+                .iter()
+                .map(|entry| entry.id.as_str())
+                .collect::<Vec<_>>(),
+            ["default", "explore", "general", "librarian"]
+        );
+        let agent = catalog.get("default").unwrap_or_abort();
+        assert_eq!(agent.display_name, "Harness");
+        assert_eq!(agent.mode, crate::config::AgentMode::Primary);
+        assert_eq!(agent.model.provider.as_deref(), Some("mock"));
+        assert_eq!(agent.toolset, ["task", "read"]);
+        assert_eq!(agent.permission_posture.task, "allow");
+        for name in ["explore", "general", "librarian"] {
             assert_eq!(
-                catalog.get(id).unwrap_or_abort().role,
-                AgentCatalogRole::Primary
+                catalog.get(name).unwrap_or_abort().mode,
+                crate::config::AgentMode::Subagent
             );
         }
-        for id in SHIPPED_SUBAGENTS {
-            assert_eq!(
-                catalog.get(id).unwrap_or_abort().role,
-                AgentCatalogRole::Subagent
-            );
-        }
-        for id in SHIPPED_CATEGORY_ROUTES {
-            let entry = catalog.get(id).unwrap_or_abort();
-            assert_eq!(entry.role, AgentCatalogRole::Category);
-            assert_eq!(entry.category_binding.as_deref(), Some(*id));
-        }
-        assert_eq!(
-            catalog.get("title").unwrap_or_abort().role,
-            AgentCatalogRole::Hidden
-        );
-        assert_eq!(
-            catalog.get("summary").unwrap_or_abort().role,
-            AgentCatalogRole::Hidden
-        );
-        assert_eq!(
-            catalog.get("compaction").unwrap_or_abort().role,
-            AgentCatalogRole::Hidden
-        );
-    }
-
-    #[test]
-    fn catalog_reports_prompt_model_tools_permissions_and_fallback_policy() {
-        // arrange
-        // act
-        // assert
-        let catalog = resolve_agent_catalog(&config());
-        let build = catalog.get("build").unwrap_or_abort();
-
-        assert_eq!(build.prompt.status, "available");
-        assert_eq!(build.model.provider.as_deref(), Some("mock"));
-        assert_eq!(build.model.model, "model");
-        assert!(build.toolset.iter().any(|tool| tool == "task"));
-        assert_eq!(build.permission_posture.task, "allow");
-        assert_eq!(
-            catalog.category_fallback.unknown_category_profile.as_str(),
-            "general"
-        );
-    }
-
-    #[test]
-    fn catalog_keeps_custom_all_profile_visible() {
-        // arrange
-        // act
-        // assert
-        let mut fixture = config();
-        let mut custom = fixture.agents.get("build").unwrap_or_abort().clone();
-        custom.mode = AgentMode::All;
-        custom.hidden = false;
-        fixture.agents.insert("ops".to_string(), custom);
-
-        assert_eq!(
-            resolve_agent_catalog(&config())
-                .get("build")
-                .unwrap_or_abort()
-                .role,
-            AgentCatalogRole::Primary
-        );
-        assert_eq!(
-            resolve_agent_catalog(&fixture)
-                .get("ops")
-                .unwrap_or_abort()
-                .role,
-            AgentCatalogRole::All
-        );
     }
 }

@@ -623,7 +623,7 @@ mod tests {
             }
           },
           model: "github-copilot/custom",
-          agent: { build: { enable: true, model: "github-copilot/custom" } },
+          agent: { default: { model: "github-copilot/custom" } },
           permission: { "*": "deny" }
         }"#;
         let config = load_config_from_str(raw).unwrap_or_abort();
@@ -706,7 +706,7 @@ mod tests {
             }
           },
           model: "default/custom",
-          agent: { build: { enable: true, model: "default/custom" } },
+          agent: { default: { model: "default/custom" } },
           permission: { "*": "deny" }
         }"#;
         let config = load_config_from_str(raw).unwrap_or_abort();
@@ -866,7 +866,7 @@ mod tests {
             }
           },
           model: "default/gpt-5.4-mini",
-          agent: { build: { enable: true, model: "default/gpt-5.4-mini" } },
+          agent: { default: { model: "default/gpt-5.4-mini" } },
           permission: { "*": "deny" }
         }"#;
         let config = load_config_from_str(raw).unwrap_or_abort();

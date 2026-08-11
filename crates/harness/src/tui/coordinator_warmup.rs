@@ -31,10 +31,10 @@ impl LiveCoordinatorConfigWarmup {
         } else if let Some(mut config) = settings.config.clone() {
             let session_dir = settings.session_dir.clone();
             LiveCoordinatorConfigWarmupState::Pending(tokio::task::spawn_blocking(move || {
-                profile_log::profile_handoff("warmup.build.begin");
+                profile_log::profile_handoff("warmup.default.begin");
                 config.apply_session_dir_override(Some(session_dir));
                 let result = bootstrap::build_interactive_coordinator_config(&config);
-                profile_log::profile_handoff("warmup.build.end");
+                profile_log::profile_handoff("warmup.default.end");
                 result
             }))
         } else {

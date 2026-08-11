@@ -15,8 +15,8 @@ use common::{
 use harness_core::agent::{AgentModelSettings, AgentProfile};
 use harness_core::clock::RealClock;
 use harness_core::config::{
-    refresh_skills_config_registry, registered_skills_config, CategoryPermissions, HarnessConfig,
-    McpConfig, McpServerConfig, PermissionMode, ShellAllowlist, SkillsConfig,
+    refresh_skills_config_registry, registered_skills_config, HarnessConfig, McpConfig,
+    McpServerConfig, PermissionMode, ProfilePermissions, ShellAllowlist, SkillsConfig,
 };
 use harness_core::coord::{
     spawn_coordinator, CoordinatorConfig, CoordinatorError, CoordinatorHandle, RunInfo,
@@ -260,11 +260,10 @@ impl Provider for TaskCallingProvider {
 
 fn worker_profile(toolset: &[&str]) -> AgentProfile {
     AgentProfile {
-        name: "deep".to_string(),
-        category: "deep".to_string(),
-        model_ref: "default:deep".to_string(),
+        name: "default".to_string(),
+        model_ref: "default:test-model".to_string(),
         model_ref_explicit: true,
-        system_prompt: "deep prompt".to_string(),
+        system_prompt: "default prompt".to_string(),
         cache_retention: Default::default(),
         max_iters: Some(12),
         temperature: Some(0.0),
@@ -277,8 +276,7 @@ fn worker_profile(toolset: &[&str]) -> AgentProfile {
 fn named_worker_profile(name: &str, toolset: &[&str]) -> AgentProfile {
     AgentProfile {
         name: name.to_string(),
-        category: name.to_string(),
-        model_ref: "default:deep".to_string(),
+        model_ref: "default:test-model".to_string(),
         model_ref_explicit: true,
         system_prompt: format!("{name} prompt"),
         cache_retention: Default::default(),
@@ -290,11 +288,14 @@ fn named_worker_profile(name: &str, toolset: &[&str]) -> AgentProfile {
     }
 }
 
-fn named_worker_profile_with_prompt(name: &str, toolset: &[&str], system_prompt: &str) -> AgentProfile {
+fn named_worker_profile_with_prompt(
+    name: &str,
+    toolset: &[&str],
+    system_prompt: &str,
+) -> AgentProfile {
     AgentProfile {
         name: name.to_string(),
-        category: name.to_string(),
-        model_ref: "default:deep".to_string(),
+        model_ref: "default:test-model".to_string(),
         model_ref_explicit: true,
         system_prompt: system_prompt.to_string(),
         cache_retention: Default::default(),
@@ -328,7 +329,12 @@ fn write_skill_fixture(workspace: &Path, name: &str) {
     .unwrap_or_abort();
 }
 
-fn write_skill_fixture_with_frontmatter(workspace: &Path, name: &str, frontmatter: &str, body: &str) {
+fn write_skill_fixture_with_frontmatter(
+    workspace: &Path,
+    name: &str,
+    frontmatter: &str,
+    body: &str,
+) {
     let skill_dir = workspace.join(".agent-harness/skills").join(name);
     fs::create_dir_all(&skill_dir).unwrap_or_abort();
     fs::write(
@@ -370,16 +376,16 @@ fn harness_config_with_skills(skills: SkillsConfig) -> HarnessConfig {
                 "api_key": "DUMMY",
                 "api_mode": "responses",
                 "models": {
-                    "deep": {
-                        "display_name": "Deep model"
+                    "test-model": {
+                        "display_name": "Test model"
                     }
                 }
             }
         },
         "agents": {
-            "deep": {
-                "description": "Deep profile",
-                "model_ref": "default:deep",
+            "default": {
+                "description": "Default profile",
+                "model_ref": "default:test-model",
                 "tools": []
             }
         },
@@ -425,6 +431,10 @@ fn plan_task_profiles() -> BTreeMap<String, AgentProfile> {
             named_worker_profile("plan", &["task", "background_output", "bash"]),
         ),
         (
+            "default".to_string(),
+            named_worker_profile("default", &["read", "bash"]),
+        ),
+        (
             "explore".to_string(),
             named_worker_profile("explore", &["read", "grep", "glob", "list"]),
         ),
@@ -445,9 +455,9 @@ fn restricted_subagent_permission_policy() -> PermissionPolicy {
         PermissionMode::Allow,
         PermissionMode::Allow,
     )
-    .with_category_override(
+    .with_profile_override(
         "explore",
-        CategoryPermissions {
+        ProfilePermissions {
             edit: Some(PermissionMode::Deny),
             shell: Some(PermissionMode::Deny),
             network: Some(PermissionMode::Deny),
@@ -457,20 +467,24 @@ fn restricted_subagent_permission_policy() -> PermissionPolicy {
             websearch: Some(PermissionMode::Deny),
             codesearch: Some(PermissionMode::Deny),
             lsp: Some(PermissionMode::Allow),
-            ..CategoryPermissions::default()
+            ..ProfilePermissions::default()
         },
     )
-    .with_category_override(
+    .with_profile_override(
         "quick",
-        CategoryPermissions {
+        ProfilePermissions {
             task: Some(PermissionMode::Deny),
-            ..CategoryPermissions::default()
+            ..ProfilePermissions::default()
         },
     )
 }
 
 fn restricted_subagent_profiles() -> BTreeMap<String, AgentProfile> {
     BTreeMap::from([
+        (
+            "default".to_string(),
+            named_worker_profile("default", &["read", "bash"]),
+        ),
         (
             "explore".to_string(),
             named_worker_profile(
@@ -517,7 +531,7 @@ async fn spawn_run_with_provider(
         provider,
         BTreeMap::from([
             (
-                "deep".to_string(),
+                "default".to_string(),
                 worker_profile(&[
                     "task",
                     "background_output",
@@ -534,6 +548,10 @@ async fn spawn_run_with_provider(
             (
                 "general".to_string(),
                 named_worker_profile("general", &["read", "bash"]),
+            ),
+            (
+                "librarian".to_string(),
+                named_worker_profile("librarian", &["read"]),
             ),
         ]),
     )
@@ -568,7 +586,7 @@ async fn spawn_run_with_provider_and_profiles(
         .await
         .unwrap_or_abort();
     let worker_id = handle
-        .spawn_agent_idle(anonymous_supervisor_actor(), "deep", None)
+        .spawn_agent_idle(anonymous_supervisor_actor(), "default", None)
         .await
         .unwrap_or_abort();
 

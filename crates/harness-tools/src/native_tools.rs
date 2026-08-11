@@ -3,8 +3,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use crate::agent_ops::{
-    select_agent_selection, AgentOpsExecutor, AgentSpawnRequest, BackgroundCancelRequest,
-    BackgroundOutputRequest,
+    AgentOpsExecutor, AgentSpawnRequest, BackgroundCancelRequest, BackgroundOutputRequest,
 };
 use crate::code_lsp::{
     code_lsp_parameters_json_schema, parse_code_lsp_request, CodeLspExecutor, CodeLspRequest,
@@ -541,15 +540,13 @@ fn generate_task_description(prompt: &str) -> String {
 impl Tool for TaskTool {
     tool_metadata!(
         "task",
-        "Delegates work to another configured harness profile/category. Exactly one of `category` or `subagent_type` is required for new child tasks; use task_id/session_id only when continuing a prior task. `run_in_background` defaults to false: run_in_background=false waits and returns the child result synchronously; sync child tasks do not emit background wakeup notifications. run_in_background=true returns task_id/request_id immediately and is required when testing or exercising background scheduling, completion reminders, or background_output retrieval. `load_skills` defaults to an empty list; listed skills are resolved before spawning and injected into the child prompt. `description` is optional; when omitted, a short label is auto-generated from the first few words of the prompt. For non-trivial delegation, make `prompt` a structured body with sections: context, goal, downstream use, request, required tools, must-do, and must-not-do. Use background_output with the returned request_id for interim status checks, and with cancel=true anytime for cancellation. For the final result, wait for the coordinator/system completion notification before retrieving with background_output. `command` is prepended to the child prompt as explicit delegation context.",
+        "Delegates work to a named generic child selected by required `subagent_type`: `explore`, `general`, or `librarian`. For a new child omit task_id/session_id; provide one only when continuing a prior task with the same subagent_type. `run_in_background` is required: false waits and returns the child result synchronously, while true returns task_id/request_id immediately. `load_skills` is required; pass an empty list when no skills are needed. Listed skills are resolved before spawning and injected into the child prompt. `description` is optional; when omitted, a short label is auto-generated from the first few words of the prompt. For non-trivial delegation, make `prompt` a structured body with sections: context, goal, downstream use, request, required tools, must-do, and must-not-do. Use background_output with the returned request_id for interim status checks, and with cancel=true anytime for cancellation. For the final result, wait for the coordinator/system completion notification before retrieving with background_output. `command` is prepended to the child prompt as explicit delegation context.",
         ToolCapability::SpawnAgent,
         super::json_schema_for::<TaskArgs>()
     );
 
     async fn call(&self, ctx: ToolContext, args_json: Value) -> Result<ToolResult, ToolError> {
         let args: TaskArgs = parse_tool_args(args_json)?;
-        let selection =
-            select_agent_selection(args.category.as_deref(), args.subagent_type.as_deref())?;
         let description = args
             .description
             .unwrap_or_else(|| generate_task_description(&args.prompt));
@@ -558,8 +555,7 @@ impl Tool for TaskTool {
                 &ctx,
                 AgentSpawnRequest {
                     description,
-                    profile_name: selection.profile_name,
-                    category_selector: selection.category_selector,
+                    profile_name: args.subagent_type.as_str().to_string(),
                     prompt: args.prompt,
                     task_id: args.task_id,
                     session_id: args.session_id,

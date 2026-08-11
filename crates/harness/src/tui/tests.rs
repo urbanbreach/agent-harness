@@ -108,7 +108,7 @@ fn active_stable_lineage_test_events() -> Vec<EventEnvelopeV1> {
             EventV1::AgentSpawned(AgentSpawnedEvent {
                 agent_id: "agent_tui_lineage".to_string(),
                 parent_agent_id: None,
-                profile: "build".to_string(),
+                profile: "default".to_string(),
             }),
         ),
         lineage_test_event(
@@ -149,7 +149,7 @@ fn first_prompt_lineage_test_events() -> Vec<EventEnvelopeV1> {
             EventV1::AgentSpawned(AgentSpawnedEvent {
                 agent_id: "agent_tui_lineage".to_string(),
                 parent_agent_id: None,
-                profile: "build".to_string(),
+                profile: "default".to_string(),
             }),
         ),
     ]

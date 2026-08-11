@@ -53,10 +53,9 @@ fn config_with_hooks_json(hooks_json: &str) -> String {
               }},
             }},
           }},
-          agents: {{
-            deep: {{
-              description: "Deep work",
-              model_ref: "default:gpt-5.4-mini",
+          model: "default/gpt-5.4-mini",
+          agent: {{
+            default: {{
               tools: ["fs.read"],
             }},
           }},
@@ -620,7 +619,7 @@ fn acp_redaction_session_summary_does_not_expose_transport_secrets() {
     // Given: a connected + bound ACP session
     let mut session = AcpConnection::new(MockAcpTransport::new());
     session.connect().expect("connect");
-    session.bind_session("build").expect("bind");
+    session.bind_session("default").expect("bind");
 
     // When: the session summary is serialized
     let summary = session.summary();

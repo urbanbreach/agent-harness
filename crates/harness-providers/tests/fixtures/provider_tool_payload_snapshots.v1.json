@@ -2,9 +2,9 @@
   "version": 1,
   "profiles": [
     {
-      "profile": "build",
-      "category": "build",
-      "completion_request_digest": "1ee99d8f11dc344356dccda25e92c8b05709c61f57792814366830fadb656acc",
+      "profile": "default",
+      "category": "default",
+      "completion_request_digest": "345e5c92832fefd326414a9adfbf606d81585bf94c1ed454a040c7120e8537a4",
       "tools": [
         {
           "canonical_id": "apply_patch",
@@ -54,7 +54,7 @@
           "api_mode": "chat_completions",
           "endpoint_path": "/v1/chat/completions",
           "bearer_token": "<redacted>",
-          "request_body_digest": "13a189e667672e60b37826501641a0035bf4b3e57d85dcfc1a2921b860943759",
+          "request_body_digest": "00c4fd04f19328dcba5db50c0eb66bd1b3308657edd77fe70685613a98efcfda",
           "tool_function_names": [
             "apply_patch",
             "bash",
@@ -68,7 +68,7 @@
           "api_mode": "responses",
           "endpoint_path": "/v1/responses",
           "bearer_token": "<redacted>",
-          "request_body_digest": "60c440d0d50a425a70996818615b12694c90d2cfc8f9903f6704c09cf258627f",
+          "request_body_digest": "e170b6bf31f932a2d5e3ec3992ad8aeb26e07f965681b0d57444cfb819a66c0b",
           "tool_function_names": [
             "apply_patch",
             "bash",
@@ -81,9 +81,9 @@
       ]
     },
     {
-      "profile": "plan",
-      "category": "plan",
-      "completion_request_digest": "601c27e1f20dbd0ade17db0095f9c87ad61f7a340d234b5b0aeede3443d23260",
+      "profile": "explore",
+      "category": "explore",
+      "completion_request_digest": "dd460ed78dfae0edb57c089aae5f86dd4e1e1486eae5ca0c09812f81c8bcad72",
       "tools": [
         {
           "canonical_id": "glob",
@@ -107,13 +107,6 @@
           "parameters_type": "object"
         },
         {
-          "canonical_id": "plan_exit",
-          "provider_function_name": "plan_exit",
-          "description_digest": "bed32aeb1c520426037418028cf8647d13e589c5fdfcc8e0000ad3e48cea54da",
-          "parameters_digest": "7f750fbbcb071d1a4c8f3f36b3769e1c5843e8966c28420e3696a4b4eba55d8f",
-          "parameters_type": "object"
-        },
-        {
           "canonical_id": "question",
           "provider_function_name": "question",
           "description_digest": "2518caab3a7dc51d54e88d4e8605f4a00b0a4145323a4433eca9bf4f2757f71e",
@@ -133,12 +126,11 @@
           "api_mode": "chat_completions",
           "endpoint_path": "/v1/chat/completions",
           "bearer_token": "<redacted>",
-          "request_body_digest": "20c679d58e82b7441e2637f27c7ff96f00feef56b136615eff711af7758d19c6",
+          "request_body_digest": "afc86a8c8eb68e3a9505a22f35979e128a315dc6d961eabede60673bd3726dec",
           "tool_function_names": [
             "glob",
             "grep",
             "list",
-            "plan_exit",
             "question",
             "read"
           ]
@@ -147,12 +139,11 @@
           "api_mode": "responses",
           "endpoint_path": "/v1/responses",
           "bearer_token": "<redacted>",
-          "request_body_digest": "e063cd7ad0aa3bfe6570ad26dfc0e12a886cb19ebbb8c4c44373d63a4dcc1312",
+          "request_body_digest": "a263e905e97039297d80fe31009ce53380e327f34ea2a5427e9259606a4df063",
           "tool_function_names": [
             "glob",
             "grep",
             "list",
-            "plan_exit",
             "question",
             "read"
           ]
@@ -160,9 +151,9 @@
       ]
     },
     {
-      "profile": "category",
-      "category": "quick",
-      "completion_request_digest": "c4f3769dfbf646db83db07259c45d5d855f4c6f62d8efca84bf199d78f36906c",
+      "profile": "general",
+      "category": "general",
+      "completion_request_digest": "dd203e418c567086daf3b5b6fb3121036d0fc2c990c7e10944e346f991c7ce58",
       "tools": [
         {
           "canonical_id": "background_output",
@@ -181,8 +172,8 @@
         {
           "canonical_id": "task",
           "provider_function_name": "task",
-          "description_digest": "8e43f9b53e9f7294ba58e661effb0332b3f7c8977716ef63f10a565e4a6ac763",
-          "parameters_digest": "31e41417d6b1a413e7638dacfad0b648fb54b73466a8252d44a3266c822b4bda",
+          "description_digest": "716b0dda2653583dbcfc25434e758a3bbe48501ad70fcc3fdacbd1c4acb0e7bc",
+          "parameters_digest": "077f7368cb63c9bcdc1b84b7a3d6a52d8af2811c639f53a8267ad175b22d0fca",
           "parameters_type": "object"
         },
         {
@@ -198,7 +189,7 @@
           "api_mode": "chat_completions",
           "endpoint_path": "/v1/chat/completions",
           "bearer_token": "<redacted>",
-          "request_body_digest": "3f06cd56076b2b6a469d6ba72b305cb59043796e44acd4936b4fa0c4d8e54014",
+          "request_body_digest": "c20502b68456cf4966f6e70628add35e1bfcca3384a7e2e6ec5bb84403fe1fdb",
           "tool_function_names": [
             "background_output",
             "skill",
@@ -210,7 +201,7 @@
           "api_mode": "responses",
           "endpoint_path": "/v1/responses",
           "bearer_token": "<redacted>",
-          "request_body_digest": "fa7fedc0e8d4c7c587e3eeff6bf7b55fa67978cdf19646072cb7835f42d2ab37",
+          "request_body_digest": "7ab402fb10ae3259b1d47f774a1e5bc7e7f16d6740361ab3ec20dc9ae518506e",
           "tool_function_names": [
             "background_output",
             "skill",

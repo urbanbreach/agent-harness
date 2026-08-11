@@ -2,14 +2,6 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
   "definitions": {
-    "AgentMode": {
-      "enum": [
-        "primary",
-        "subagent",
-        "all"
-      ],
-      "type": "string"
-    },
     "AnthropicProviderOptions": {
       "additionalProperties": false,
       "properties": {
@@ -107,6 +99,10 @@
         },
         "structured_summary_contract": {
           "default": true,
+          "type": "boolean"
+        },
+        "suppress_auto_compaction": {
+          "default": false,
           "type": "boolean"
         }
       },
@@ -1002,43 +998,9 @@
       "type": "object"
     },
     "PublicAgentConfig": {
-      "additionalProperties": true,
-      "description": "Agent override or custom agent definition.",
+      "additionalProperties": false,
+      "description": "Configuration shared by the primary agent and named subagents.",
       "properties": {
-        "color": {
-          "default": null,
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "description": {
-          "default": null,
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "disable": {
-          "default": false,
-          "description": "Compatibility negative toggle. Equivalent to `enable: false`.",
-          "type": "boolean"
-        },
-        "enable": {
-          "default": null,
-          "description": "Set false to disable this agent. Set true to document that a shipped\ndefault remains active. `enabled` is accepted as an alias.",
-          "type": [
-            "boolean",
-            "null"
-          ]
-        },
-        "hidden": {
-          "default": null,
-          "type": [
-            "boolean",
-            "null"
-          ]
-        },
         "max_iters": {
           "default": null,
           "format": "uint",
@@ -1048,25 +1010,7 @@
             "null"
           ]
         },
-        "mode": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/AgentMode"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
         "model": {
-          "default": null,
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "name": {
           "default": null,
           "type": [
             "string",
@@ -1105,12 +1049,15 @@
           ]
         },
         "tool_failure_mode": {
-          "allOf": [
+          "anyOf": [
             {
               "$ref": "#/definitions/ToolFailureMode"
+            },
+            {
+              "type": "null"
             }
           ],
-          "default": "fail_turn"
+          "default": null
         },
         "tools": {
           "allOf": [
@@ -1128,10 +1075,6 @@
             "null"
           ]
         },
-        "use_small_model": {
-          "default": false,
-          "type": "boolean"
-        },
         "variant": {
           "default": null,
           "type": [
@@ -1143,175 +1086,83 @@
       "type": "object"
     },
     "PublicAgentMap": {
-      "additionalProperties": {
-        "$ref": "#/definitions/PublicAgentConfig"
-      },
-      "description": "Named agent definitions. Built-in Harness-compatible agents are explicit so editors can complete them, and custom names are accepted through the same shape.",
+      "additionalProperties": false,
       "properties": {
-        "artistry": {
-          "anyOf": [
+        "default": {
+          "allOf": [
             {
               "$ref": "#/definitions/PublicAgentConfig"
-            },
-            {
-              "type": "null"
             }
           ],
-          "default": null
-        },
-        "build": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/PublicAgentConfig"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "compaction": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/PublicAgentConfig"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "deep": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/PublicAgentConfig"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
+          "default": {
+            "max_iters": null,
+            "model": null,
+            "options": {},
+            "permission": null,
+            "system_prompt": null,
+            "temperature": null,
+            "tool_failure_mode": null,
+            "tools": [],
+            "top_p": null,
+            "variant": null
+          }
         },
         "explore": {
-          "anyOf": [
+          "allOf": [
             {
               "$ref": "#/definitions/PublicAgentConfig"
-            },
-            {
-              "type": "null"
             }
           ],
-          "default": null
+          "default": {
+            "max_iters": null,
+            "model": null,
+            "options": {},
+            "permission": null,
+            "system_prompt": null,
+            "temperature": null,
+            "tool_failure_mode": null,
+            "tools": [],
+            "top_p": null,
+            "variant": null
+          }
         },
         "general": {
-          "anyOf": [
+          "allOf": [
             {
               "$ref": "#/definitions/PublicAgentConfig"
-            },
-            {
-              "type": "null"
             }
           ],
-          "default": null
+          "default": {
+            "max_iters": null,
+            "model": null,
+            "options": {},
+            "permission": null,
+            "system_prompt": null,
+            "temperature": null,
+            "tool_failure_mode": null,
+            "tools": [],
+            "top_p": null,
+            "variant": null
+          }
         },
-        "plan": {
-          "anyOf": [
+        "librarian": {
+          "allOf": [
             {
               "$ref": "#/definitions/PublicAgentConfig"
-            },
-            {
-              "type": "null"
             }
           ],
-          "default": null
-        },
-        "quick": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/PublicAgentConfig"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "summary": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/PublicAgentConfig"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "title": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/PublicAgentConfig"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "ultrabrain": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/PublicAgentConfig"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "unspecified-high": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/PublicAgentConfig"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "unspecified-low": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/PublicAgentConfig"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "visual-engineering": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/PublicAgentConfig"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "writing": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/PublicAgentConfig"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
+          "default": {
+            "max_iters": null,
+            "model": null,
+            "options": {},
+            "permission": null,
+            "system_prompt": null,
+            "temperature": null,
+            "tool_failure_mode": null,
+            "tools": [],
+            "top_p": null,
+            "variant": null
+          }
         }
       },
       "type": "object"
@@ -1659,7 +1510,8 @@
             "keep_recent_tokens": 20000,
             "reserve_tokens": 16384,
             "split_oversized_turns": false,
-            "structured_summary_contract": true
+            "structured_summary_contract": true,
+            "suppress_auto_compaction": false
           }
         },
         "provider_retry": {
@@ -1780,21 +1632,54 @@
         }
       ],
       "default": {
-        "artistry": null,
-        "build": null,
-        "compaction": null,
-        "deep": null,
-        "explore": null,
-        "general": null,
-        "plan": null,
-        "quick": null,
-        "summary": null,
-        "title": null,
-        "ultrabrain": null,
-        "unspecified-high": null,
-        "unspecified-low": null,
-        "visual-engineering": null,
-        "writing": null
+        "default": {
+          "max_iters": null,
+          "model": null,
+          "options": {},
+          "permission": null,
+          "system_prompt": null,
+          "temperature": null,
+          "tool_failure_mode": null,
+          "tools": [],
+          "top_p": null,
+          "variant": null
+        },
+        "explore": {
+          "max_iters": null,
+          "model": null,
+          "options": {},
+          "permission": null,
+          "system_prompt": null,
+          "temperature": null,
+          "tool_failure_mode": null,
+          "tools": [],
+          "top_p": null,
+          "variant": null
+        },
+        "general": {
+          "max_iters": null,
+          "model": null,
+          "options": {},
+          "permission": null,
+          "system_prompt": null,
+          "temperature": null,
+          "tool_failure_mode": null,
+          "tools": [],
+          "top_p": null,
+          "variant": null
+        },
+        "librarian": {
+          "max_iters": null,
+          "model": null,
+          "options": {},
+          "permission": null,
+          "system_prompt": null,
+          "temperature": null,
+          "tool_failure_mode": null,
+          "tools": [],
+          "top_p": null,
+          "variant": null
+        }
       }
     },
     "autoshare": {
@@ -1806,13 +1691,6 @@
     },
     "command": {
       "default": null
-    },
-    "default_agent": {
-      "default": null,
-      "type": [
-        "string",
-        "null"
-      ]
     },
     "disabled_providers": {
       "default": null,
@@ -1874,30 +1752,6 @@
       "default": {},
       "type": "object"
     },
-    "mode": {
-      "allOf": [
-        {
-          "$ref": "#/definitions/PublicAgentMap"
-        }
-      ],
-      "default": {
-        "artistry": null,
-        "build": null,
-        "compaction": null,
-        "deep": null,
-        "explore": null,
-        "general": null,
-        "plan": null,
-        "quick": null,
-        "summary": null,
-        "title": null,
-        "ultrabrain": null,
-        "unspecified-high": null,
-        "unspecified-low": null,
-        "visual-engineering": null,
-        "writing": null
-      }
-    },
     "model": {
       "default": null,
       "type": [
@@ -1956,7 +1810,8 @@
           "keep_recent_tokens": 20000,
           "reserve_tokens": 16384,
           "split_oversized_turns": false,
-          "structured_summary_contract": true
+          "structured_summary_contract": true,
+          "suppress_auto_compaction": false
         },
         "provider_retry": {
           "base_delay_ms": 2000,

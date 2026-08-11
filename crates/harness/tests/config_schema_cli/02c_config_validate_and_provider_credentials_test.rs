@@ -1,6 +1,6 @@
 use harness::UnwrapOrAbort;
 #[test]
-fn doctor_cli_fails_invalid_category_routes_even_when_some_are_missing() {
+fn config_validate_rejects_role_shaped_agent_entries() {
     // arrange
     let temp = tempdir().unwrap_or_abort();
     fs::create_dir_all(temp.path().join(".agent-harness")).unwrap_or_abort();
@@ -21,8 +21,7 @@ fn doctor_cli_fails_invalid_category_routes_even_when_some_are_missing() {
           },
           model: "default/gpt-5.4-mini",
           agent: {
-            "visual-engineering": { hidden: true },
-            artistry: { enable: false },
+            "visual-engineering": {},
           },
           permission: "ask",
         }
@@ -35,7 +34,8 @@ fn doctor_cli_fails_invalid_category_routes_even_when_some_are_missing() {
         .args([
             "--config",
             config_path.to_str().unwrap_or_abort(),
-            "doctor",
+            "config",
+            "validate",
         ])
         .output()
         // act
@@ -43,11 +43,9 @@ fn doctor_cli_fails_invalid_category_routes_even_when_some_are_missing() {
 
     // assert
     assert!(!output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("doctor found issues:"));
-    assert!(stdout.contains("[FAIL] category_routes"));
-    assert!(stdout.contains("visual-engineering"));
-    assert!(stdout.contains("artistry"));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("visual-engineering"));
+    assert!(stderr.contains("unknown field"));
 }
 #[test]
 fn doctor_cli_reports_model_profile_fallback_targets() {
@@ -78,7 +76,7 @@ fn doctor_cli_reports_model_profile_fallback_targets() {
           },
           model: "fast",
           agent: {
-            build: { enable: true, model: "fast" },
+            default: { model: "fast" },
           },
           permission: "ask",
         }

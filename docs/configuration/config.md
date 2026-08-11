@@ -12,13 +12,11 @@ The generated JSON schemas are the source of truth:
 ## Minimal starter
 
 Start with `configs/harness.example.jsonc`. It keeps the happy path small: one
-Codex OAuth-backed OpenAI-compatible provider, two GPT-family model entries, explicit
-tool-call capability metadata, Category scale through model profiles
-with primary targets plus validated fallback metadata,
-per-agent model choices for the shipped profiles, scalar permission mode, and
-optional MCP. The full file is the canonical example; the excerpt below is
-intentionally abridged but keeps the same provider/model/agent shape and the
-fields that affect first-run behavior.
+Codex OAuth-backed OpenAI-compatible provider, two GPT-family model entries,
+explicit tool-call capability metadata, one generic parent with bounded named subagents, scalar permission
+mode, and optional MCP. The full file is the canonical example; the excerpt
+below is intentionally abridged but keeps the fields that affect first-run
+behavior.
 
 ```jsonc
 {
@@ -60,66 +58,12 @@ fields that affect first-run behavior.
     }
   },
   "model": "openai-codex/gpt-5.4-mini",
-  "model_profile": {
-    "category-visual-engineering": {
-      "model": "openai-codex/gpt-5.5",
-      "variant": "high",
-      "fallback": [{ "model": "openai-codex/gpt-5.4-mini", "variant": "high" }]
-    },
-    "category-artistry": {
-      "model": "openai-codex/gpt-5.5",
-      "variant": "high",
-      "fallback": [{ "model": "openai-codex/gpt-5.4-mini", "variant": "high" }]
-    },
-    "category-ultrabrain": {
-      "model": "openai-codex/gpt-5.5",
-      "variant": "xhigh",
-      "fallback": [{ "model": "openai-codex/gpt-5.4-mini", "variant": "high" }]
-    },
-    "category-deep": {
-      "model": "openai-codex/gpt-5.5",
-      "variant": "medium",
-      "fallback": [{ "model": "openai-codex/gpt-5.4-mini", "variant": "high" }]
-    },
-    "category-quick": {
-      "model": "openai-codex/gpt-5.4-mini",
-      "variant": "low",
-      "fallback": [{ "model": "openai-codex/gpt-5.5", "variant": "low" }]
-    },
-    "category-unspecified-low": {
-      "model": "openai-codex/gpt-5.4-mini",
-      "variant": "medium",
-      "fallback": [{ "model": "openai-codex/gpt-5.5", "variant": "medium" }]
-    },
-    "category-unspecified-high": {
-      "model": "openai-codex/gpt-5.5",
-      "variant": "high",
-      "fallback": [{ "model": "openai-codex/gpt-5.4-mini", "variant": "high" }]
-    },
-    "category-writing": {
-      "model": "openai-codex/gpt-5.4-mini",
-      "variant": "medium",
-      "fallback": [{ "model": "openai-codex/gpt-5.5", "variant": "medium" }]
-    }
-  },
   "agent": {
-    "build": { "enable": true, "model": "openai-codex/gpt-5.4-mini", "variant": "high" },
-    "plan": { "enable": true, "model": "openai-codex/gpt-5.5", "variant": "xhigh" },
-    "general": { "enable": true, "model": "openai-codex/gpt-5.4-mini", "variant": "medium" },
-    "explore": { "enable": true, "model": "openai-codex/gpt-5.4-mini", "variant": "low" },
-    "visual-engineering": { "enable": true, "model": "category-visual-engineering" },
-    "artistry": { "enable": true, "model": "category-artistry" },
-    "ultrabrain": { "enable": true, "model": "category-ultrabrain" },
-    "deep": { "enable": true, "model": "category-deep" },
-    "quick": { "enable": true, "model": "category-quick" },
-    "unspecified-low": { "enable": true, "model": "category-unspecified-low" },
-    "unspecified-high": { "enable": true, "model": "category-unspecified-high" },
-    "writing": { "enable": true, "model": "category-writing" },
-    "title": { "enable": true, "hidden": true },
-    "summary": { "enable": true, "hidden": true },
-    "compaction": { "enable": true, "hidden": true }
+    "default": { "variant": "high" },
+    "explore": {},
+    "general": {},
+    "librarian": {}
   },
-  "default_agent": "build",
   "permission": "allow",
   "mcp": {
     "cargo-mcp": {
@@ -131,15 +75,11 @@ fields that affect first-run behavior.
 }
 ```
 
-Only write the settings you want to own. The canonical example lists built-in
-agents for discoverability and pins category routes through named model profiles
-so doctor/TUI/task metadata agree. The starter adapts provider-specific reference
-category defaults into the local GPT-family catalog; larger catalogs can retarget
-the same `category-*` profile names to Gemini, Claude, Kimi, or other available
-providers. Each agent still inherits the shipped description, prompt,
-permissions, and tools unless you override those fields. Keep larger model
-catalogs, agent tool lists, background-task knobs, and compaction defaults out of
-day-to-day configs unless a project needs a deliberate override.
+Only write the settings you want to own. The generic parent and named subagents
+inherit their shipped prompts, permissions, and tools unless the corresponding
+`agent` entry overrides them. Keep larger model catalogs, tool lists, background-task knobs, and
+compaction defaults out of day-to-day configs unless a project needs a deliberate
+override.
 
 Reasoning-effort presets use the same explicit `variants` shape as the upstream
 local-coding config style.
@@ -308,13 +248,13 @@ entries, doctor checks stored credential presence before environment or inline f
 | --- | --- | --- |
 | Runtime config file | `harness.json` / `harness.jsonc` | Shared defaults live under the matching XDG harness directory. |
 | TUI config file | `tui.json` / `tui.jsonc` | Runtime and TUI settings are intentionally split. |
-| Core runtime keys | Upstream-compatible `provider`, `model`, `small_model`, `agent`, `default_agent`, `permission`, `mcp`, `skills`, `instructions`, plus harness runtime extensions | Side-effectful upstream product areas are accepted only when inactive and rejected when active. |
+| Core runtime keys | `provider`, `model`, `small_model`, `agent`, `permission`, `mcp`, `skills`, `instructions`, plus Harness runtime extensions | `agent` contains the generic `default` parent and named subagents, never alternate primary roles or category routes. |
 | TUI surface | `keybinds` | Unsupported TUI-only fields fail validation. |
 | Permission naming | `bash`, `edit`, `question`, `task`, `webfetch`, `websearch`, `codesearch`, `lsp`, plus safety kinds `read`, `external_directory`, and `doom_loop` | Legacy `shell` / `network` remain compatibility-only. `external_directory` and `doom_loop` default to ask; `read` defaults to allow with `.env` pattern asks. |
-| Prompt asset discovery | `.agent-harness/agents/*.md` | `AGENTS.md` is still auto-discovered separately. |
+| Prompt assets | `.agent-harness/agents/{default,explore,general,librarian}.md` | `AGENTS.md` is auto-discovered separately as project context. |
 
 Runtime and TUI config stay separate. Runtime config controls providers,
-models, agents, permissions, MCP, skills, instructions, and compaction. TUI
+models, the generic agent, permissions, MCP, skills, instructions, and compaction. TUI
 config stays limited to `$schema` plus `keybinds`; use `tui.json` or `tui.jsonc`
 for those settings instead of mixing them into runtime config.
 
@@ -323,10 +263,9 @@ for those settings instead of mixing them into runtime config.
 | Key | Purpose |
 | --- | --- |
 | `$schema` | Optional schema URI for editor integration. |
-| `agent` | Optional agent overrides or custom agent definitions. |
+| `agent` | Generic `default` parent and named subagent tuning. Alternate primary roles and category routes are rejected. |
 | `autoshare` | Upstream-compatible sharing flag; inactive `false` is accepted, active sharing is rejected. |
 | `command` | Upstream command configuration; accepted only when empty because the harness does not execute configured commands. |
-| `default_agent` | Default interactive agent selected at startup; the shipped example keeps `build` as the default while `plan` remains selectable. |
 | `disabled_providers` | Upstream-compatible provider filter; hides matching configured and authenticated built-in providers from runtime model catalogs. |
 | `enabled_providers` | Upstream-compatible provider allow-list; when non-empty, only matching configured/authenticated built-in providers remain in runtime model catalogs. |
 
@@ -334,7 +273,7 @@ for those settings instead of mixing them into runtime config.
 | `instructions` | Optional inline instructions or instruction file paths prepended before agent prompts. |
 | `lsp` | Upstream-compatible LSP setting; `false` disables harness LSP overrides, object values map to harness LSP servers when possible. |
 | `mcp` | MCP server definitions keyed by server name. |
-| `mode` | Deprecated upstream alias for `agent`; entries are translated as agent definitions. |
+| `mode` | Unsupported role-map compatibility surface; active entries are rejected. |
 | `model` | Default full-capability model reference. |
 | `model_profile` | Named model selectors that resolve to configured provider/model targets plus optional fallback metadata; runtime profile resolution selects the primary target in V1. |
 | `permission` | Default permission policy for the supported tool subset plus optional shell allowlist. Supports scalar `allow`/`ask`/`deny` or per-tool maps (ruleset-compatible pattern rules). Catch-all deny hides tools from the model; last matching pattern wins. |
@@ -343,7 +282,7 @@ for those settings instead of mixing them into runtime config.
 | `runtime` | Runtime knobs that are not provider/model/agent definitions, currently including provider-context compaction settings and provider retry policy. |
 | `server` | Upstream server configuration; accepted only when empty because server commands are outside this runtime config. |
 
-| `small_model` | Optional smaller model reference for custom secondary profiles. |
+| `small_model` | Optional smaller model reference for coordinator-owned internal operations such as title generation. |
 | `skills` | Shared skill discovery roots and permission overrides for skill loading. |
 
 ## Variable substitution
@@ -672,8 +611,6 @@ name: rust-best-practices
 description: Baseline Rust guidance for this workspace.
 argument_hint: optional short usage hint
 allowed_tools: read, grep
-target_agent: build
-target_category: deep
 mcp: deferred-local-metadata
 resources: bundled-reference-not-loaded
 ---
@@ -684,8 +621,7 @@ resources: bundled-reference-not-loaded
 Required fields are `name` and `description`. `name` must match the directory
 name and `^[a-z0-9]+(-[a-z0-9]+)*$`; `description` must be 1-1024 characters.
 Optional V1 fields are `argument_hint` / `argumentHint`, `allowed_tools` /
-`allowedTools` / `expected_tools` / `expectedTools`, `target_agent` /
-`targetAgent`, `target_category` / `targetCategory`, `mcp` / `deferred_mcp` /
+`allowedTools` / `expected_tools` / `expectedTools`, `mcp` / `deferred_mcp` /
 `deferredMcp`, `resources` / `deferred_resources` / `deferredResources`, and a
 string-to-string `metadata` map. `license` and `compatibility` are accepted as
 non-runtime metadata. Unsupported public fields make that skill `malformed`
@@ -699,93 +635,26 @@ resolves loadable skills before child spawn. Missing, denied, disabled,
 malformed, and symlink-unsafe skills fail before activation or child spawn.
 
 `allowed_tools` and related skill metadata are descriptive/restrictive contract
-metadata only. They never grant runtime tools, override a profile toolset, or
+metadata only. They never grant runtime tools, override the generic toolset, or
 bypass coordinator permission checks. Doctor JSON and support exports consume the
 same compact catalog metadata, report loadable/denied/disabled/malformed/shadowed
 counts, and keep full skill bodies out of readiness surfaces.
 
-The shipped `plan` agent provides a stable planning mode, not an experimental
-feature flag. It can read/search, ask questions, write only the active
-workspace-relative `.agent-harness/plans/<run>.md` plan file, and call
-`plan_exit` to ask whether to switch to `build`. The coordinator reminder tells
-Plan whether that active plan file already exists: the first Plan turn creates
-the file, while later turns should read and update the same path. The edit
-boundary is enforced by per-agent permission rules, not just prompt text.
+`harness doctor` validates the operator-facing runtime without making provider or
+MCP network calls. It checks provider/model metadata, credential availability
+without printing key values, the generic prompt and tool ids, permissions, skill
+roots and permission posture, session-directory readiness, and configured MCP
+server state. Use `--json` for machine-readable output.
 
-The shipped `build` agent exposes `plan_enter`, which asks whether to switch to
-Plan before complex implementation work and schedules a coordinator-owned Plan
-continuation when approved. To match the reference Plan workflow, the shipped
-Plan profile exposes `bash` behind shell permission prompts; Plan instructions
-and a coordinator-side shell guard still restrict bash to read-only inspection and
-forbid edits, config changes, commits, or other mutations. Plan-mode delegation
-remains restricted to the read-only `explore` profile by default; `general` and
-user-defined write-capable subagents are rejected before spawn unless a future
-profile deliberately adds parent-permission inheritance and tests for it.
+### Generic agent and child tasks
 
-selects an optional write-capable lead profile; when present, the coordinator
-`role: "member"`; set `role: "research"` only for read-only profiles such as
+Harness materializes one interactive profile named `default` with the Pi-style
+generic system prompt. Named `explore`, `general`, and `librarian` subagents keep
+bounded prompts and toolsets. There is no alternate primary role, planning role,
+or category router.
 
-`harness doctor` validates the operator-facing orchestration surface without
-making provider or MCP network calls. It checks provider/model metadata,
-provider credential availability without printing key values, configured agent
-and model-profile references, shipped workflow profile availability, category
-route coverage, profile tool ids, permissions, skill roots and permission
-posture, session-directory readiness, and configured MCP server state.
-Use `--json` for machine-readable output.
-
-### Plan operator workflow
-
-Use Plan when the operator wants a reviewed implementation plan before changing
-project files. Harness ships Plan as a stable public runtime surface, not an
-experimental compatibility flag, and the safety boundary is enforced by
-coordinator permissions as well as prompt instructions.
-
-1. Start in the primary `build` agent for normal implementation work.
-2. Switch to the primary `plan` agent with the TUI primary-agent switcher, or let
-   Build call `plan_enter` and approve the coordinator-owned switch when the work
-   is complex enough to plan first.
-3. Let Plan inspect the workspace with read/search/LSP tools and, when useful,
-   delegate read-only codebase research only to `explore`. Plan cannot launch
-   `general`, `build`, or user-defined writer subagents under the shipped policy.
-4. Let Plan create or update only the active plan file at
-   `.agent-harness/plans/<run>.md`. The first Plan turn is expected to create this
-   file; later Plan turns should read and refine the same file after operator
-   feedback or clarifying answers.
-5. Review the plan file. If Plan needs information that read-only exploration
-   cannot determine, answer its clarifying question and let it update the plan.
-6. When the plan is ready, Plan calls `plan_exit`. Approving that prompt switches
-   back to Build with the approved plan-file path in the continuation prompt;
-   declining leaves the session in Plan so the plan can be revised further.
-
-This differs intentionally from broader experimental Plan-style behavior:
-Harness keeps `plan_exit` available in the shipped `plan` profile and keeps
-Plan-spawned child work restricted to `explore` unless a future policy adds
-tested parent-permission inheritance for write-capable subagents.
-
-The shipped agent names are available without extra config: primary
-`build` and `plan`, subagents `general`, `explore`,
-`visual-engineering`, `artistry`, `ultrabrain`, `deep`, `quick`,
-`unspecified-low`, `unspecified-high`, and `writing`, plus hidden `title`,
-`summary`, and `compaction` profiles. `explore` is a read-only local codebase
-search profile for `task(subagent_type: "explore")`. `general` is a broader
-focused implementation/research profile for `task(subagent_type: "general")`.
-The category profiles are category-based routing lanes for `task(category: "...")`:
-the task tool selects the matching profile first and falls back to `general` only
-when no matching category profile is configured. `visual-engineering` covers UI,
-UX, layout, styling, animation, and design; `artistry` covers complex creative
-problem-solving; `ultrabrain` covers hard logic, architecture, algorithms, and
-deep debugging; `deep` covers autonomous research and end-to-end implementation;
-`quick` covers small low-risk changes; `unspecified-low` and `unspecified-high`
-cover uncategorized low-to-moderate and high-effort work; and `writing` covers
-docs and prose. Shipped subagents intentionally omit or deny `task` by default so
-they do not recursively redelegate unless a project opts into that tool. Named
-category model profiles preserve category scale as primary targets plus
-validated fallback metadata; automatic provider/model retry is not V1 runtime
-behavior.
-When a subagent profile does not configure its own `model`, task delegation
-inherits the invoking parent turn's active model and model settings. If the
-subagent profile has an explicit `model`, that configured model wins. The `task`
-tool requires `run_in_background` and `load_skills` on every call; pass
+The `task` tool requires `subagent_type`, `run_in_background`, and `load_skills`
+for every new child; pass
 `load_skills: []` when no skill context is needed. Listed skills are resolved in
 request order before the child is spawned; duplicate names are loaded once at the
 first occurrence. Missing, denied, disabled, malformed, or symlink-unsafe skills
@@ -799,22 +668,17 @@ child task. To stop an authorized non-terminal child request, call
 `background_cancel` with the same `request_id` and an optional `reason`; the
 coordinator records cancellation through the normal task lifecycle.
 `background_output(cancel: true)` remains supported as compatibility.
-Task and background-output results also include child runtime metadata such as
-profile, category, model ref, toolset, redelegation capability, and exact
-follow-up tool actions for status checks, waiting, cancellation, or continuation.
+Task and background-output results include child runtime metadata such as model
+ref, toolset, lineage, and exact follow-up actions for status checks, waiting,
+cancellation, or continuation.
 
-Agent `model` selects a provider/model target for that profile. `prompt` is the
-public prompt alias for `system_prompt`. `tools` accepts either a list of tool ids
-or a map of `{ tool_id: enabled }`; disabled map entries are omitted. `mode` may
-be `primary`, `subagent`, or `all`; the default agent must not be `subagent`-only
-or `hidden`. Agent `max_iters` / `maxIters` / `steps` / `maxSteps` is optional.
-When unset, the runtime does not add a profile-specific iteration cap; the agent
+`agent.<name>.system_prompt` replaces that shipped prompt. `tools` accepts either
+a list of tool ids or a map of `{ tool_id: enabled }`; disabled map entries are
+omitted. `max_iters` / `maxIters` / `steps` / `maxSteps` is optional. When unset,
+the runtime does not add an agent-specific iteration cap; the selected agent
 continues until the model stops, the user interrupts, or another runtime safety
 limit applies. Set an iteration cap only when a profile needs an explicit
-per-turn budget. `name`, `top_p` / `topP`, `color`, and `options` are accepted as
-agent metadata for consumers that need them. `enable: false` / `enabled: false`
-or `disable: true` removes a configured or shipped agent from the resolved
-runtime config; `enable: true` documents that a shipped default remains active.
+per-turn budget. Category routing and alternate primary profiles are rejected.
 
 ## Permission policy
 
@@ -828,8 +692,8 @@ The canonical scalar form is OpenCode-aligned allow-by-default:
 `deny` paint every canonical public kind. Scalar `allow` is OpenCode-like
 allow-with-safety-exceptions: ordinary tools (`bash`, `edit`, `task`,
 `webfetch`, `websearch`, `codesearch`, `lsp`, `read`) become allow, while
-`external_directory` and `doom_loop` stay ask, base `question` stays deny
-(build/plan re-allow), and `read` keeps `.env` pattern asks. When `permission`
+`external_directory` and `doom_loop` stay ask, base `question` stays deny, and
+`read` keeps `.env` pattern asks. When `permission`
 is omitted, the same allow-with-safety-exceptions defaults apply.
 
 The V1 native tool catalog is documented in
@@ -881,7 +745,7 @@ policy language:
 Bash selectors are either an exact command string, a trailing `*` prefix such as
 `cargo nextest run*`, or the `*` catch-all. Edit selectors are either an exact
 workspace-relative path, a trailing `/**` path prefix such as `docs/**`, or the
-`*` catch-all. Task selectors match the requested subagent/profile/category name;
+`*` catch-all. Task selectors match the requested subagent name;
 they accept exact names, `*` catch-all, and simple `*` glob patterns such as
 `review-*`. Regex is not supported.
 
@@ -890,10 +754,15 @@ It accepts `mode` values `permission_patterns` (the default) and
 `legacy_executables`, plus the compatibility aliases `policy_mode` and
 `policyMode`. Existing `executables` and `cwd_roots` entries still load, and
 `cwdRoots` remains accepted as an alias for `cwd_roots`. In
-`permission_patterns` mode, Harness still blocks environment-dump commands and
-interpreter eval flags such as `python3 -c` before execution. Permission
-decisions improve operator UX by deciding whether a tool call runs, asks, or is
-denied. They are not a sandbox or security boundary.
+`permission_patterns` mode, approved interpreter command modes such as
+`python3 -c` and heredocs execute normally; environment-dump commands remain
+blocked. Outside-workspace `cwd`/`workdir` values go through the
+`external_directory` permission gate. Permission decisions improve operator UX
+by deciding whether a tool call runs, asks, or is denied. They are not a sandbox
+or security boundary. `legacy_executables` retains the stricter executable and
+interpreter-mode checks for operators who select it explicitly. Approved
+interpreter code can perform host I/O that lexical shell path scanning cannot
+enumerate; use an enforced OS sandbox when that access must be confined.
 
 ## Deprecated compatibility behavior
 

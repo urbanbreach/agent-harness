@@ -5,11 +5,6 @@ mod part_01_foreground_task_waits_for_child_agent_test {
     include!("native_agent_spawn_and_batch_preserve_lineage_permissions_and_order/01_foreground_task_waits_for_child_agent_test.rs");
 }
 
-mod part_02_native_plan_enter_decline_leaves_build_test {
-    use super::*;
-    include!("native_agent_spawn_and_batch_preserve_lineage_permissions_and_order/02_native_plan_enter_decline_leaves_build_test.rs");
-}
-
 mod part_02b_background_output_completed_child_result_test {
     use super::*;
     include!("native_agent_spawn_and_batch_preserve_lineage_permissions_and_order/02b_background_output_completed_child_result_test.rs");

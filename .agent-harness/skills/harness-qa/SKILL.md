@@ -3,8 +3,6 @@ name: harness-qa
 description: Offline agent dogfood plus opt-in live smoke for product-touching harness changes with gitignored QA evidence.
 argument_hint: offline dogfood | live smoke | self-test evidence
 allowed_tools: bash, read, grep
-target_agent: build
-target_category: deep
 mcp: none
 resources: references/evidence-convention.md, references/skill-activation-recipe.md
 ---

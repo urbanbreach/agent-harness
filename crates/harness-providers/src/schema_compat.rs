@@ -5,6 +5,7 @@ use crate::{CompletionRequest, ToolDef};
 
 mod gemini;
 mod kimi;
+mod openai;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProviderSchemaFamily {
@@ -71,7 +72,8 @@ fn prepare_tool_for_family(
 ) -> Result<ToolDef, ProviderSchemaCompatibilityError> {
     validate_root_schema(family, &tool.tool_id, &tool.parameters)?;
     tool.parameters = match family {
-        ProviderSchemaFamily::OpenAiCompatible => tool.parameters,
+        ProviderSchemaFamily::OpenAiCompatible => openai::sanitize(tool.parameters)
+            .map_err(|reason| error(family, &tool.tool_id, reason))?,
         ProviderSchemaFamily::Gemini => gemini::sanitize(tool.parameters),
         ProviderSchemaFamily::Kimi => kimi::sanitize(tool.parameters),
     };

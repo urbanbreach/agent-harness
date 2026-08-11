@@ -68,7 +68,7 @@ impl Tool for TestBatchTool {
             ctx.coordinator
                 .request_tool_call(
                     ctx.actor.clone(),
-                    ctx.category.clone(),
+                    ctx.profile.clone(),
                     tool_call.tool,
                     tool_call.parameters,
                 )

@@ -45,9 +45,9 @@ async fn background_output_full_session_and_thinking_return_event_stream_and_art
             Some("deep".to_string()),
             "task",
             json!({
-                "category": "deep",
                 "description": "Reasoning background child",
                 "prompt": "Think and return a result",
+                "subagent_type": "general",
                 "run_in_background": true,
                 "load_skills": []
             }),
@@ -147,9 +147,9 @@ async fn background_output_default_behavior_unchanged_without_new_params() {
             Some("deep".to_string()),
             "task",
             json!({
-                "category": "deep",
                 "description": "Default behavior child",
                 "prompt": "Return a result",
+                "subagent_type": "general",
                 "run_in_background": true,
                 "load_skills": []
             }),

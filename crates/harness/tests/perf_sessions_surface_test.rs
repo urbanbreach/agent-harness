@@ -308,7 +308,7 @@ fn tool_context(workspace_root: &Path, tool_call_id: &str) -> ToolContext {
         workspace_root: workspace_root.to_path_buf(),
         artifacts_dir: workspace_root.join("artifacts"),
         actor: EventActor::new(ActorKind::Supervisor, None),
-        category: None,
+        profile: None,
         tool_call_id: tool_call_id.into(),
         current_model_ref: None,
         current_model_settings: None,

@@ -5,10 +5,9 @@ use crate::clock::Clock;
 const PARENT_TITLE_PREFIX: &str = "New session - ";
 const CHILD_TITLE_PREFIX: &str = "Child session - ";
 
-pub const TITLE_AGENT_NAME: &str = "title";
-pub const TITLE_AGENT_TEMPERATURE: f32 = 0.5;
+pub const TITLE_OPERATION_TEMPERATURE: f32 = 0.5;
 pub const TITLE_GENERATION_USER_PROMPT: &str = "Generate a title for this conversation:\n";
-pub const TITLE_AGENT_SYSTEM_PROMPT: &str = r#"You are a title generator. You output ONLY a thread title. Nothing else.
+pub const TITLE_OPERATION_SYSTEM_PROMPT: &str = r#"You are a title generator. You output ONLY a thread title. Nothing else.
 
 <task>
 Generate a brief title that would help the user find this conversation later.
@@ -52,6 +51,21 @@ Your output must be:
 "look at @config.json" → Config review
 "@App.tsx add dark mode toggle" → Dark mode toggle in App
 </examples>"#;
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct SessionTitleOperationSpec {
+    pub(crate) model_ref: String,
+    pub(crate) temperature: f32,
+}
+
+impl SessionTitleOperationSpec {
+    pub(crate) fn for_model(model_ref: &str) -> Self {
+        Self {
+            model_ref: model_ref.to_string(),
+            temperature: TITLE_OPERATION_TEMPERATURE,
+        }
+    }
+}
 
 pub fn create_default_title(clock: &(impl Clock + ?Sized), is_child: bool) -> String {
     let prefix = if is_child {

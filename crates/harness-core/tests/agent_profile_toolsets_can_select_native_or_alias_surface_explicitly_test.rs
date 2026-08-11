@@ -59,7 +59,6 @@ fn agent_profile_toolsets_are_exported_as_single_surface_provider_defs() {
 fn test_profile() -> AgentProfile {
     AgentProfile {
         name: "worker".to_string(),
-        category: "deep".to_string(),
         model_ref: "mock:model-1".to_string(),
         model_ref_explicit: true,
         system_prompt: "sys".to_string(),

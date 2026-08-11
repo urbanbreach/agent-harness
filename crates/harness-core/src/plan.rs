@@ -3,10 +3,6 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-pub const BUILD_AGENT_NAME: &str = "build";
-pub const PLAN_AGENT_NAME: &str = "plan";
-pub const PLAN_ENTER_TOOL_ID: &str = "plan_enter";
-pub const PLAN_EXIT_TOOL_ID: &str = "plan_exit";
 pub const PLAN_DIR: &str = ".agent-harness/plans";
 
 pub fn plan_file_relative_path(run_id: &str) -> PathBuf {

@@ -1,5 +1,4 @@
 use harness_tools::UnwrapOrAbort;
-use harness_core::agent_catalog::{SHIPPED_CATEGORY_ROUTES, SHIPPED_SUBAGENTS};
 use harness_tools::{discover_skill_catalog, SkillCatalogStatus};
 
 #[tokio::test]
@@ -161,8 +160,6 @@ fn shipped_v1_builtin_skills_have_quality_contract_and_catalog_metadata() {
             "description:",
             "argument_hint:",
             "allowed_tools:",
-            "target_agent:",
-            "target_category:",
             "mcp:",
             "resources:",
         // act
@@ -198,42 +195,10 @@ fn shipped_v1_builtin_skills_have_quality_contract_and_catalog_metadata() {
     let review = fs::read_to_string(skill_root.join("review-work/SKILL.md"))
         .unwrap_or_abort();
     for real_route in [
-        "category=\"deep\"",
-        "category=\"ultrabrain\"",
-        "category=\"unspecified-high\"",
         "run_in_background=true",
         "background_output",
     ] {
         assert!(review.contains(real_route), "review-work missing `{real_route}`");
     }
     assert!(!review.contains("oracle"), "review-work must not reference non-shipped oracle agent");
-}
-
-#[test]
-fn review_work_references_only_shipped_agent_catalog_routes() {
-    // arrange
-    let review = fs::read_to_string(repo_root().join(".agent-harness/skills/review-work/SKILL.md"))
-        .unwrap_or_abort();
-
-    // act
-    let category_refs = quoted_values_after(&review, "category=");
-    let subagent_refs = quoted_values_after(&review, "subagent_type=");
-
-    // assert
-    assert!(
-        !category_refs.is_empty(),
-        "review-work should name at least one shipped category route"
-    );
-    for category in category_refs {
-        assert!(
-            SHIPPED_CATEGORY_ROUTES.contains(&category.as_str()),
-            "review-work references non-shipped category `{category}`"
-        );
-    }
-    for subagent in subagent_refs {
-        assert!(
-            SHIPPED_SUBAGENTS.contains(&subagent.as_str()),
-            "review-work references non-shipped subagent `{subagent}`"
-        );
-    }
 }

@@ -6,8 +6,8 @@ use async_trait::async_trait;
 use harness_core::agent::AgentProfile;
 use harness_core::clock::FakeClock;
 use harness_core::config::{
-    CategoryPermissions, PermissionMode, PermissionRuleSet, PermissionSelector,
-    PermissionSelectorRule,
+    PermissionMode, PermissionRuleSet, PermissionSelector, PermissionSelectorRule,
+    ProfilePermissions,
 };
 use harness_core::coord::{
     spawn_coordinator, CoordinatorConfig, CoordinatorError, CoordinatorHandle,
@@ -49,9 +49,9 @@ impl Tool for TestApplyPatchTool {
 async fn apply_patch_requires_permission_for_patch_text_paths() {
     // arrange
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
-    let policy = allow_all_permission_policy().with_category_override(
+    let policy = allow_all_permission_policy().with_profile_override(
         "docs-only",
-        CategoryPermissions {
+        ProfilePermissions {
             edit: Some(PermissionMode::Deny),
             rules: PermissionRuleSet {
                 edit: vec![PermissionSelectorRule {
@@ -60,7 +60,7 @@ async fn apply_patch_requires_permission_for_patch_text_paths() {
                 }],
                 ..PermissionRuleSet::default()
             },
-            ..CategoryPermissions::default()
+            ..ProfilePermissions::default()
         },
     );
 
@@ -120,10 +120,9 @@ async fn apply_patch_requires_permission_for_patch_text_paths() {
     }));
 }
 
-fn worker_profile(category: &str, toolset: Vec<String>) -> AgentProfile {
+fn worker_profile(profile: &str, toolset: Vec<String>) -> AgentProfile {
     AgentProfile {
-        name: "worker".to_string(),
-        category: category.to_string(),
+        name: profile.to_string(),
         model_ref: "mock:model-1".to_string(),
         model_ref_explicit: true,
         system_prompt: "worker-prompt".to_string(),

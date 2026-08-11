@@ -88,19 +88,15 @@ async fn tui_new_live_bootstrap_stays_idle_until_first_user_prompt() {
     let mut coordinator_config = CoordinatorConfig::new(&session_dir);
     coordinator_config.agent_profiles.insert(
         "deep".to_string(),
-        AgentProfile {
-            name: "deep".to_string(),
-            category: "deep".to_string(),
-            model_ref: "default:default".to_string(),
-            model_ref_explicit: true,
-            system_prompt: "deep agent mode intro".to_string(),
-            cache_retention: Default::default(),
-            max_iters: Some(12),
-            temperature: Some(0.0),
-            tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
-            toolset: Vec::new(),
-            permission_ruleset: Vec::new(),
-        },
+        AgentProfile { name: "deep".to_string(), model_ref: "default:default".to_string(),
+        model_ref_explicit: true,
+        system_prompt: "deep agent mode intro".to_string(),
+        cache_retention: Default::default(),
+        max_iters: Some(12),
+        temperature: Some(0.0),
+        tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
+        toolset: Vec::new(),
+        permission_ruleset: Vec::new(), },
     );
 
     let coordinator = spawn_coordinator(
@@ -176,109 +172,6 @@ async fn tui_new_live_bootstrap_stays_idle_until_first_user_prompt() {
     );
 }
 #[tokio::test]
-async fn interactive_runtime_routes_non_default_profile_to_matching_provider() {
-    // arrange
-    // act
-    // assert
-    let (default_provider, ops_provider, provider_router) = capturing_interactive_provider_router();
-
-    let temp = tempdir().unwrap_or_abort();
-    let session_dir = temp.path().join("sessions");
-    let workspace = temp.path().join("workspace");
-    std::fs::create_dir_all(&workspace).unwrap_or_abort();
-
-    let config_path = temp.path().join("harness.multi-provider.jsonc");
-    std::fs::write(
-        &config_path,
-        multi_provider_interactive_config(
-            "https://default.fixture/v1",
-            "https://ops.fixture/v1",
-            &session_dir,
-        ),
-    )
-    .unwrap_or_abort();
-
-    let config = load_config_from_file(&config_path).unwrap_or_abort();
-    let mut coordinator_config = bootstrap::build_interactive_coordinator_config(&config)
-        .unwrap_or_abort();
-    coordinator_config.provider = provider_router;
-    let coordinator = spawn_coordinator(
-        coordinator_config,
-        Arc::new(FakeClock::new()),
-        Arc::new(DefaultRedactor::default()),
-    );
-
-    let run = coordinator
-        .start_run("interactive", &workspace)
-        .await
-        .unwrap_or_abort();
-    let agent_id = coordinator
-        .spawn_agent_idle(
-            EventActor::new(ActorKind::Supervisor, Some("agent-supervisor".to_string())),
-            "ops",
-            None,
-        )
-        .await
-        .unwrap_or_abort();
-    let request_id = coordinator
-        .request_agent_turn(
-            EventActor::new(ActorKind::User, Some("interactive-user".to_string())),
-            agent_id,
-            "Hello from ops",
-        )
-        .await
-        .unwrap_or_abort();
-
-    let provider_started = tokio::time::timeout(Duration::from_secs(2), async {
-        loop {
-            let events = load_events_from_run_dir(&run.run_dir).unwrap_or_abort();
-            if let Some(provider_started) = events.iter().find_map(|event| match &event.payload {
-                EventV1::ProviderRequestStarted(data)
-                    if event.correlation_id.as_deref() == Some(request_id.as_str()) =>
-                {
-                    Some(data.clone())
-                }
-                _ => None,
-            }) {
-                break provider_started;
-            }
-            tokio::task::yield_now().await;
-        }
-    })
-    .await
-    .unwrap_or_abort();
-
-    tokio::time::timeout(Duration::from_secs(2), async {
-        loop {
-            if !ops_provider.requests().is_empty() {
-                break;
-            }
-            tokio::task::yield_now().await;
-        }
-    })
-    .await
-    .unwrap_or_abort();
-
-    coordinator.stop_run().await.unwrap_or_abort();
-
-    let default_requests = default_provider.requests();
-    let ops_requests = ops_provider.requests();
-    assert!(
-        default_requests.is_empty(),
-        "interactive runtime should not hit providers.default for ops profile"
-    );
-    assert_eq!(
-        ops_requests.len(),
-        1,
-        "interactive runtime should hit the selected provider exactly once"
-    );
-    assert_eq!(ops_requests[0].provider_id.as_deref(), Some("anthropic"));
-    assert_eq!(ops_requests[0].model_id, "claude-3.7");
-
-    assert_eq!(provider_started.provider_id, "anthropic");
-    assert_eq!(provider_started.model_id, "claude-3.7");
-}
-#[tokio::test]
 async fn new_live_session_persists_selected_runtime_context_into_run_metadata() {
     // arrange
     // act
@@ -291,35 +184,27 @@ async fn new_live_session_persists_selected_runtime_context_into_run_metadata() 
     let mut coordinator_config = CoordinatorConfig::new(&session_dir);
     coordinator_config.agent_profiles.insert(
         "deep".to_string(),
-        AgentProfile {
-            name: "deep".to_string(),
-            category: "deep".to_string(),
-            model_ref: "default:gpt-5.4-mini".to_string(),
-            model_ref_explicit: true,
-            system_prompt: "deep agent mode intro".to_string(),
-            cache_retention: Default::default(),
-            max_iters: Some(12),
-            temperature: Some(0.0),
-            tool_failure_mode: ToolFailureMode::FailTurn,
-            toolset: Vec::new(),
-            permission_ruleset: Vec::new(),
-        },
+        AgentProfile { name: "deep".to_string(), model_ref: "default:gpt-5.4-mini".to_string(),
+        model_ref_explicit: true,
+        system_prompt: "deep agent mode intro".to_string(),
+        cache_retention: Default::default(),
+        max_iters: Some(12),
+        temperature: Some(0.0),
+        tool_failure_mode: ToolFailureMode::FailTurn,
+        toolset: Vec::new(),
+        permission_ruleset: Vec::new(), },
     );
     coordinator_config.agent_profiles.insert(
         "ops".to_string(),
-        AgentProfile {
-            name: "ops".to_string(),
-            category: "ops".to_string(),
-            model_ref: "anthropic:claude-3.7".to_string(),
-            model_ref_explicit: true,
-            system_prompt: "ops agent mode intro".to_string(),
-            cache_retention: Default::default(),
-            max_iters: Some(12),
-            temperature: Some(0.0),
-            tool_failure_mode: ToolFailureMode::FailTurn,
-            toolset: Vec::new(),
-            permission_ruleset: Vec::new(),
-        },
+        AgentProfile { name: "ops".to_string(), model_ref: "anthropic:claude-3.7".to_string(),
+        model_ref_explicit: true,
+        system_prompt: "ops agent mode intro".to_string(),
+        cache_retention: Default::default(),
+        max_iters: Some(12),
+        temperature: Some(0.0),
+        tool_failure_mode: ToolFailureMode::FailTurn,
+        toolset: Vec::new(),
+        permission_ruleset: Vec::new(), },
     );
 
     let coordinator = spawn_coordinator(

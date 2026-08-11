@@ -156,16 +156,11 @@ fn assert_support_export_catalog_metadata(bundle: &serde_json::Value) {
         bundle["support"]["agent_catalog_summary"]["source"],
         "harness_core::agent_catalog"
     );
-    assert_eq!(
-        bundle["support"]["agent_catalog_summary"]["category_fallback"]
-            ["unknown_category_profile"],
-        "general"
-    );
     assert!(bundle["support"]["agent_catalog_summary"]["entries"]
         .as_array()
         .unwrap_or_abort()
         .iter()
-        .any(|entry| entry["id"] == "build" && entry["role"] == "primary"));
+        .any(|entry| entry["id"] == "default" && entry["mode"] == "primary"));
     assert_eq!(
         bundle["support"]["native_tool_catalog_summary"]["source"],
         "harness_tools::tool_catalog"
@@ -201,7 +196,7 @@ fn resumable_finished_events(run_id: &str) -> Vec<EventEnvelopeV1> {
             2,
             EventV1::AgentSpawned(AgentSpawnedEvent {
                 agent_id: "agent_1".to_string(),
-                profile: "worker".to_string(),
+                profile: "default".to_string(),
                 parent_agent_id: None,
             }),
         ),
@@ -302,7 +297,7 @@ fn delegated_recovery_events(run_id: &str) -> Vec<EventEnvelopeV1> {
             2,
             EventV1::AgentSpawned(AgentSpawnedEvent {
                 agent_id: "child-run-001".to_string(),
-                profile: "worker".to_string(),
+                profile: "general".to_string(),
                 parent_agent_id: Some("agent_supervisor".to_string()),
             }),
         ),
@@ -480,7 +475,7 @@ fn delegated_recovery_events_with_control_chars(run_id: &str) -> Vec<EventEnvelo
             2,
             EventV1::AgentSpawned(AgentSpawnedEvent {
                 agent_id: child_session_id.clone(),
-                profile: "worker".to_string(),
+                profile: "default".to_string(),
                 parent_agent_id: Some("agent_supervisor".to_string()),
             }),
         ),

@@ -6,7 +6,7 @@ impl Coordinator {
     pub(in crate::coord) async fn request_tool_call_internal(
         &mut self,
         actor: EventActor,
-        category: Option<String>,
+        _legacy_profile_hint: Option<String>,
         tool_id: String,
         args_json: Value,
         respond_to: Option<oneshot::Sender<Result<ToolResult, String>>>,
@@ -84,7 +84,7 @@ impl Coordinator {
             ));
         }
 
-        let effective_category = if actor.kind == ActorKind::Worker {
+        let effective_profile_name = if actor.kind == ActorKind::Worker {
             let Some(worker_agent_id) = actor.agent_id.as_deref() else {
                 append_payload_event(
                     self.clock.as_ref(),
@@ -145,9 +145,14 @@ impl Coordinator {
                 )));
             }
 
-            Some(worker_profile.category.clone())
+            Some(worker_profile.name.clone())
         } else {
-            category.clone()
+            actor
+                .agent_id
+                .as_deref()
+                .and_then(|agent_id| run_state.agents.get(agent_id))
+                .map(|profile| profile.name.clone())
+                .or_else(|| Some("default".to_string()))
         };
 
         let raw_permission_kind = permission_kind_for_tool_call(&tool_id, capability);
@@ -162,12 +167,26 @@ impl Coordinator {
                 permission_rule_request_selectors(&run_state.info.workspace_root, kind, &args_json)
             })
             .unwrap_or_default();
+        let effective_permission_ruleset = if actor.kind == ActorKind::Worker {
+            actor
+                .agent_id
+                .as_deref()
+                .and_then(|id| run_state.agents.get(id))
+                .map(|profile| profile.permission_ruleset.as_slice())
+        } else {
+            effective_profile_name
+                .as_deref()
+                .and_then(|name| self.config.agent_profiles.get(name))
+                .map(|profile| profile.permission_ruleset.as_slice())
+        }
+        .unwrap_or_default();
         let decision = maybe_kind.map(|kind| {
-            evaluate_permission_rule_requests(
+            evaluate_permission_rule_requests_with_ruleset(
                 &self.config.permission_policy,
-                effective_category.as_deref(),
+                effective_profile_name.as_deref(),
                 kind,
                 &rule_selectors,
+                effective_permission_ruleset,
             )
         });
         let hashline_edit = hashline_edit_metadata(&tool_id, &args_json, &tool_call_id);
@@ -178,14 +197,22 @@ impl Coordinator {
                 .as_deref()
                 .and_then(|id| run_state.agents.get(id))
                 .is_some_and(|profile| {
-                    crate::perm::is_tool_disabled(&tool_id, &profile.permission_ruleset)
+                    crate::perm::is_tool_call_disabled(
+                        &tool_id,
+                        capability,
+                        &profile.permission_ruleset,
+                    )
                 })
         } else {
-            effective_category
+            effective_profile_name
                 .as_deref()
                 .and_then(|name| self.config.agent_profiles.get(name))
                 .is_some_and(|profile| {
-                    crate::perm::is_tool_disabled(&tool_id, &profile.permission_ruleset)
+                    crate::perm::is_tool_call_disabled(
+                        &tool_id,
+                        capability,
+                        &profile.permission_ruleset,
+                    )
                 })
         };
         if ruleset_denied {
@@ -199,72 +226,12 @@ impl Coordinator {
                 run_state,
                 PermissionDeniedArgs {
                     actor: actor.clone(),
-                    category: effective_category.clone(),
+                    profile: effective_profile_name.clone(),
                     tool_id: &tool_id,
                     args_json: &args_json,
                     tool_call_id: &tool_call_id,
                     hashline_edit: hashline_edit.as_ref(),
                     kind: maybe_kind.unwrap_or(PermissionKind::Task),
-                    reason: &reason,
-                    request_correlation_id: request_correlation_id.as_deref(),
-                },
-            )
-            .await?;
-            if let Some(respond_to) = respond_to {
-                let _ = respond_to.send(Err(format!("tool call denied: {reason}")));
-            }
-            return Err(CoordinatorError::PermissionDenied(tool_call_id));
-        }
-
-        if let Some(reason) = plan_mode_edit_boundary_denial(
-            effective_category.as_deref(),
-            maybe_kind,
-            run_state.info.run_id.as_str(),
-            &run_state.info.workspace_root,
-            &args_json,
-        ) {
-            finalize_permission_denied(
-                clock.as_ref(),
-                redactor.as_ref(),
-                self.config.hook_command_executor.as_ref(),
-                &self.config.hook_runtime_config,
-                run_state,
-                PermissionDeniedArgs {
-                    actor: actor.clone(),
-                    category: effective_category.clone(),
-                    tool_id: &tool_id,
-                    args_json: &args_json,
-                    tool_call_id: &tool_call_id,
-                    hashline_edit: hashline_edit.as_ref(),
-                    kind: PermissionKind::EditFs,
-                    reason: &reason,
-                    request_correlation_id: request_correlation_id.as_deref(),
-                },
-            )
-            .await?;
-            if let Some(respond_to) = respond_to {
-                let _ = respond_to.send(Err(format!("tool call denied: {reason}")));
-            }
-            return Err(CoordinatorError::PermissionDenied(tool_call_id));
-        }
-
-        if let Some(reason) =
-            plan_mode_shell_boundary_denial(effective_category.as_deref(), maybe_kind, &args_json)
-        {
-            finalize_permission_denied(
-                clock.as_ref(),
-                redactor.as_ref(),
-                self.config.hook_command_executor.as_ref(),
-                &self.config.hook_runtime_config,
-                run_state,
-                PermissionDeniedArgs {
-                    actor: actor.clone(),
-                    category: effective_category.clone(),
-                    tool_id: &tool_id,
-                    args_json: &args_json,
-                    tool_call_id: &tool_call_id,
-                    hashline_edit: hashline_edit.as_ref(),
-                    kind: PermissionKind::Shell,
                     reason: &reason,
                     request_correlation_id: request_correlation_id.as_deref(),
                 },
@@ -286,7 +253,7 @@ impl Coordinator {
                     run_state,
                     PermissionDeniedArgs {
                         actor: actor.clone(),
-                        category: effective_category.clone(),
+                        profile: effective_profile_name.clone(),
                         tool_id: &tool_id,
                         args_json: &args_json,
                         tool_call_id: &tool_call_id,
@@ -338,7 +305,8 @@ impl Coordinator {
                             tool_id,
                             args_json,
                             actor,
-                            category: effective_category.clone(),
+                            profile: effective_profile_name.clone(),
+                            permission_ruleset: effective_permission_ruleset.to_vec(),
                             hook_executions: Vec::new(),
                             tool_registry: Arc::clone(&self.config.tool_registry),
                             request_correlation_id,
@@ -385,7 +353,7 @@ impl Coordinator {
                         provider_id: None,
                         model_id: None,
                         parent_agent_id: None,
-                        category: effective_category.clone(),
+                        profile: effective_profile_name.clone(),
                         outcome: Some("requested".to_string()),
                         output_summary: Some(summary),
                         failure_reason: None,
@@ -402,7 +370,7 @@ impl Coordinator {
                         tool_id,
                         args_json,
                         actor,
-                        category: effective_category.clone(),
+                        profile: effective_profile_name.clone(),
                         respond_to,
                     },
                 };
@@ -457,9 +425,9 @@ impl Coordinator {
                             provider_id: None,
                             model_id: None,
                             parent_agent_id: None,
-                            category: match &pending.resolution {
-                                PendingPermissionResolution::ToolCall { category, .. } => {
-                                    category.clone()
+                            profile: match &pending.resolution {
+                                PendingPermissionResolution::ToolCall { profile, .. } => {
+                                    profile.clone()
                                 }
                                 PendingPermissionResolution::Question { .. } => None,
                             },
@@ -517,7 +485,8 @@ impl Coordinator {
                         tool_id,
                         args_json,
                         actor,
-                        category: effective_category.clone(),
+                        profile: effective_profile_name.clone(),
+                        permission_ruleset: effective_permission_ruleset.to_vec(),
                         hook_executions: Vec::new(),
                         tool_registry: Arc::clone(&self.config.tool_registry),
                         request_correlation_id,
@@ -567,11 +536,12 @@ where
         .await;
     }
 
-    let decision = evaluate_permission_rule_requests(
+    let decision = evaluate_permission_rule_requests_with_ruleset(
         permission_policy,
-        args.category.as_deref(),
+        args.profile.as_deref(),
         PermissionKind::DoomLoop,
         &[],
+        &args.permission_ruleset,
     );
     let grant_request = permission_grant_request(
         &run_state.info.workspace_root,
@@ -620,7 +590,7 @@ where
                 run_state,
                 PermissionDeniedArgs {
                     actor: args.actor.clone(),
-                    category: args.category.clone(),
+                    profile: args.profile.clone(),
                     tool_id: &args.tool_id,
                     args_json: &args.args_json,
                     tool_call_id: &args.tool_call_id,
@@ -686,7 +656,7 @@ where
                     provider_id: None,
                     model_id: None,
                     parent_agent_id: None,
-                    category: args.category.clone(),
+                    profile: args.profile.clone(),
                     outcome: Some("requested".to_string()),
                     output_summary: Some(summary),
                     failure_reason: None,
@@ -703,7 +673,7 @@ where
                     tool_id: args.tool_id,
                     args_json: args.args_json,
                     actor: args.actor,
-                    category: args.category,
+                    profile: args.profile,
                     respond_to: args.respond_to,
                 },
             };
@@ -777,7 +747,7 @@ where
             run_state,
             PermissionDeniedArgs {
                 actor: args.actor.clone(),
-                category: args.category.clone(),
+                profile: args.profile.clone(),
                 tool_id: &args.tool_id,
                 args_json: &args.args_json,
                 tool_call_id: &args.tool_call_id,
@@ -813,11 +783,12 @@ where
         .iter()
         .map(|path| PermissionRuleRequest::WorkspacePath(path.display().to_string()))
         .collect::<Vec<_>>();
-    let decision = evaluate_permission_rule_requests(
+    let decision = evaluate_permission_rule_requests_with_ruleset(
         permission_policy,
-        args.category.as_deref(),
+        args.profile.as_deref(),
         PermissionKind::ExternalDirectory,
         &selectors,
+        &args.permission_ruleset,
     );
     let digest = permission_request_digest(&args.tool_id, &args.args_json);
     let authorized = external_directory_grants_authorize(
@@ -841,7 +812,7 @@ where
                 run_state,
                 PermissionDeniedArgs {
                     actor: args.actor.clone(),
-                    category: args.category.clone(),
+                    profile: args.profile.clone(),
                     tool_id: &args.tool_id,
                     args_json: &args.args_json,
                     tool_call_id: &args.tool_call_id,
@@ -911,7 +882,7 @@ where
                     provider_id: None,
                     model_id: None,
                     parent_agent_id: None,
-                    category: args.category.clone(),
+                    profile: args.profile.clone(),
                     outcome: Some("requested".to_string()),
                     output_summary: Some(summary),
                     failure_reason: None,
@@ -928,7 +899,7 @@ where
                     tool_id: args.tool_id,
                     args_json: args.args_json,
                     actor: args.actor,
-                    category: args.category,
+                    profile: args.profile,
                     respond_to: args.respond_to,
                 },
             };
@@ -1008,7 +979,8 @@ where
         tool_id,
         args_json,
         actor,
-        category,
+        profile,
+        permission_ruleset: _,
         hook_executions,
         tool_registry,
         request_correlation_id,
@@ -1120,7 +1092,7 @@ where
             provider_id: None,
             model_id: None,
             parent_agent_id: None,
-            category: category.clone(),
+            profile: profile.clone(),
             outcome: Some("started".to_string()),
             output_summary: None,
             failure_reason: None,
@@ -1207,7 +1179,7 @@ where
         task_id.clone(),
         TaskHookState {
             tool_id: tool_id.clone(),
-            category: category.clone(),
+            profile: profile.clone(),
             hook_executions: initial_hook_executions,
         },
     );
@@ -1225,7 +1197,7 @@ where
             workspace_root,
             artifacts_dir,
             actor,
-            category,
+            profile,
             tool_call_id: tool_call_id.clone().into(),
             current_model_ref: current_model
                 .as_ref()

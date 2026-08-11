@@ -20,10 +20,9 @@ use harness_core::redact::DefaultRedactor;
 use harness_tools::coordinator_registry;
 use serde_json::{json, Value};
 
-fn profile(name: &str, category: &str, toolset: &[&str]) -> AgentProfile {
+fn profile(name: &str, toolset: &[&str]) -> AgentProfile {
     AgentProfile {
         name: name.to_string(),
-        category: category.to_string(),
         model_ref: "default:default".to_string(),
         model_ref_explicit: true,
         system_prompt: format!("{name} prompt"),
@@ -37,8 +36,8 @@ fn profile(name: &str, category: &str, toolset: &[&str]) -> AgentProfile {
 }
 
 fn child_observability_permission_policy() -> PermissionPolicy {
-    allow_all_permission_policy().with_category_override(
-        "restricted",
+    allow_all_permission_policy().with_profile_override(
+        "general",
         ProfilePermissions {
             shell: Some(PermissionMode::Deny),
             ..ProfilePermissions::default()
@@ -56,14 +55,8 @@ fn pwd_allowlist() -> ShellAllowlist {
 
 fn child_observability_profiles() -> BTreeMap<String, AgentProfile> {
     BTreeMap::from([
-        (
-            "parent".to_string(),
-            profile("parent", "parent", &["task", "bash"]),
-        ),
-        (
-            "restricted".to_string(),
-            profile("restricted", "restricted", &["bash"]),
-        ),
+        ("parent".to_string(), profile("parent", &["task", "bash"])),
+        ("general".to_string(), profile("general", &["bash"])),
     ])
 }
 
@@ -107,9 +100,9 @@ async fn agent_spawn_returns_child_session_status_duration_and_counts() {
             Some("parent".to_string()),
             "task",
             json!({
-                "category": "parent",
                 "description": "Observe child failure metadata",
                 "prompt": "This child has no provider configured",
+                "subagent_type": "general",
                 "run_in_background": false,
                 "load_skills": []
             }),
@@ -145,7 +138,7 @@ async fn agent_spawn_returns_child_session_status_duration_and_counts() {
     );
     assert_eq!(
         output.pointer("/permissions/scope_relation"),
-        Some(&json!("inherits_parent_scope"))
+        Some(&json!("isolated_by_child_profile"))
     );
     assert_eq!(
         output.pointer("/child_session/status"),
@@ -193,7 +186,7 @@ async fn agent_spawn_returns_child_session_status_duration_and_counts() {
     assert!(child_events.iter().any(|event| matches!(
         &event.payload,
         EventV1::RunStarted(data)
-            if data.run_name.as_str() == "Observe child failure metadata (@parent subagent)"
+            if data.run_name.as_str() == "Observe child failure metadata (@general subagent)"
     )));
     assert!(child_events.iter().any(|event| matches!(
         &event.payload,
@@ -214,28 +207,6 @@ async fn agent_spawn_returns_child_session_status_duration_and_counts() {
         child_meta["harness_lineage"]["relationship"],
         json!("task_child_session")
     );
-
-    let child_event_count_before_resume = child_events.len();
-    let mut resume_config = CoordinatorConfig::new(session_dir.to_path_buf());
-    resume_config.permission_policy = allow_all_permission_policy();
-    resume_config.tool_registry = Arc::new(coordinator_registry(pwd_allowlist()));
-    resume_config.agent_profiles = child_observability_profiles();
-    let resumed_handle = spawn_coordinator(
-        resume_config,
-        Arc::new(RealClock::new()),
-        Arc::new(DefaultRedactor::default()),
-    );
-    resumed_handle
-        .resume_run(run.run_id.as_str(), "resumed parent")
-        .await
-        .unwrap_or_abort();
-    resumed_handle.stop_run().await.unwrap_or_abort();
-    let child_events_after_resume = read_events(&child_events_path);
-    assert_eq!(
-        child_events_after_resume.len(),
-        child_event_count_before_resume,
-        "resuming the parent must attach child mirrors without appending lifecycle events"
-    );
 }
 
 #[tokio::test]
@@ -253,9 +224,9 @@ async fn child_session_permission_inheritance_isolated_by_task() {
             Some("parent".to_string()),
             "task",
             json!({
-                "category": "parent",
                 "description": "Inherited child scope",
                 "prompt": "Background child",
+                "subagent_type": "general",
                 "run_in_background": true,
                 "load_skills": []
             }),
@@ -270,9 +241,9 @@ async fn child_session_permission_inheritance_isolated_by_task() {
             Some("parent".to_string()),
             "task",
             json!({
-                "category": "restricted",
                 "description": "Restricted child scope",
                 "prompt": "Background child",
+                "subagent_type": "general",
                 "run_in_background": true,
                 "load_skills": []
             }),
@@ -292,7 +263,7 @@ async fn child_session_permission_inheritance_isolated_by_task() {
         .unwrap_or_abort();
     assert_eq!(
         inherited_output.pointer("/permissions/scope_relation"),
-        Some(&json!("inherits_parent_scope"))
+        Some(&json!("isolated_by_child_profile"))
     );
 
     let inherited_shell = handle
@@ -306,9 +277,11 @@ async fn child_session_permission_inheritance_isolated_by_task() {
                 "description": "Print workspace"
             }),
         )
-        .await
-        .unwrap_or_abort();
-    wait_for_tool_call_finish(&run.events_path, &inherited_shell).await;
+        .await;
+    assert!(
+        inherited_shell.is_err(),
+        "default child bash should be denied"
+    );
 
     let restricted_spawn_finished =
         find_finished(&read_events(&run.events_path), &restricted_spawn);
@@ -326,11 +299,11 @@ async fn child_session_permission_inheritance_isolated_by_task() {
     );
     assert_eq!(
         restricted_output.pointer("/permissions/child_scope"),
-        Some(&json!("restricted"))
+        Some(&json!("general"))
     );
     assert_eq!(
         restricted_output.pointer("/permissions/scope_relation"),
-        Some(&json!("isolated_by_requested_profile"))
+        Some(&json!("isolated_by_child_profile"))
     );
     assert_eq!(restricted_output.get("status"), Some(&json!("scheduled")));
 
@@ -354,8 +327,6 @@ async fn child_session_permission_inheritance_isolated_by_task() {
     handle.stop_run().await.unwrap_or_abort();
     let events = read_events(&run.events_path);
 
-    let inherited_shell_finished = find_finished(&events, &inherited_shell);
-    assert_eq!(inherited_shell_finished.status, ToolCallStatus::Succeeded);
     assert!(events.iter().any(|event| {
         matches!(
             &event.payload,

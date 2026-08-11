@@ -85,7 +85,6 @@ struct DashboardStatusResult {
     session_dir: String,
     session_count: usize,
     config_loaded: bool,
-    default_agent: Option<String>,
 }
 
 pub(crate) fn execute_with_io(
@@ -199,24 +198,15 @@ fn run_status(
     };
 
     let context = harness_core::config::ConfigLoadContext::from_env();
-    let config_loaded;
-    let default_agent: Option<String>;
-    match harness_core::config::load_resolved_config_with_context(None, &context) {
-        Ok(Some(loaded)) => {
-            config_loaded = true;
-            default_agent = loaded.config.default_agent.clone();
-        }
-        _ => {
-            config_loaded = false;
-            default_agent = None;
-        }
-    }
+    let config_loaded = matches!(
+        harness_core::config::load_resolved_config_with_context(None, &context),
+        Ok(Some(_))
+    );
 
     let result = DashboardStatusResult {
         session_dir: sdir.display().to_string(),
         session_count,
         config_loaded,
-        default_agent,
     };
 
     if cmd.json {
@@ -234,11 +224,6 @@ fn run_status(
         let _ = writeln!(io.stdout, "  session_dir:   {}", result.session_dir);
         let _ = writeln!(io.stdout, "  session_count: {}", result.session_count);
         let _ = writeln!(io.stdout, "  config_loaded: {}", result.config_loaded);
-        let _ = writeln!(
-            io.stdout,
-            "  default_agent: {}",
-            result.default_agent.as_deref().unwrap_or("-"),
-        );
     }
     0
 }

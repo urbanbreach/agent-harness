@@ -417,7 +417,7 @@ fn background_task_notification_run_state(session_dir: &Path, run_id: &str) -> R
             profile_name: "parent".to_string(),
             model_ref: "mock:parent-model".to_string(),
             model_settings: Default::default(),
-            category: Some("parent".to_string()),
+            profile: Some("parent".to_string()),
             queue_key: ConcurrencyKey::ProviderModel {
                 provider_id: "mock".to_string(),
                 model_id: "parent-model".to_string(),
@@ -439,7 +439,6 @@ fn background_task_notification_run_state(session_dir: &Path, run_id: &str) -> R
 fn parent_agent_profile() -> AgentProfile {
     AgentProfile {
         name: "parent".to_string(),
-        category: "parent".to_string(),
         model_ref: "mock:parent-model".to_string(),
         model_ref_explicit: true,
         system_prompt: "parent system".to_string(),
@@ -455,7 +454,6 @@ fn parent_agent_profile() -> AgentProfile {
 fn child_agent_profile() -> AgentProfile {
     AgentProfile {
         name: "child".to_string(),
-        category: "child".to_string(),
         model_ref: "mock:child-model".to_string(),
         model_ref_explicit: true,
         system_prompt: "child system".to_string(),

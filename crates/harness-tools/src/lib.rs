@@ -117,9 +117,6 @@ use ast_grep::{AstGrepReplaceTool, AstGrepSearchTool};
 pub mod tool_catalog;
 pub use tool_catalog::{native_tool_catalog_entries, NativeToolCatalogEntry};
 
-mod plan;
-use plan::{PlanEnterTool, PlanExitTool};
-
 pub use harness_core::UnwrapOrAbort;
 
 pub use harness_core::tool::canonical_tool_id_for;
@@ -440,8 +437,6 @@ fn coordinator_native_tool_surface(
         boxed_tool(SessionInfoTool),
         boxed_tool(ast_grep_tool),
         boxed_tool(ast_grep_replace_tool),
-        boxed_tool(PlanEnterTool::new(Arc::clone(&question_answer_source))),
-        boxed_tool(PlanExitTool::new(Arc::clone(&question_answer_source))),
         boxed_tool(HashlineEditTool),
         boxed_tool(WriteTool),
         boxed_tool(ApplyPatchTool),
@@ -591,7 +586,7 @@ pub(crate) mod test_support {
             workspace_root: workspace_root.to_path_buf(),
             artifacts_dir: workspace_root.join(".artifacts"),
             actor: EventActor::new(ActorKind::Supervisor, None),
-            category: Some("deep".to_string()),
+            profile: Some("deep".to_string()),
             tool_call_id: tool_call_id.into(),
             current_model_ref: None,
             current_model_settings: None,

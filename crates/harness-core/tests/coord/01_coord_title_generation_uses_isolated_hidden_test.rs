@@ -1,6 +1,6 @@
 use harness_core::UnwrapOrAbort;
 #[tokio::test]
-async fn coord_title_generation_uses_isolated_hidden_title_agent_request() {
+async fn coord_title_generation_uses_internal_operation_without_title_profile() {
     // arrange
     // act
     // assert
@@ -11,7 +11,18 @@ async fn coord_title_generation_uses_isolated_hidden_title_agent_request() {
     ]);
     let mut config = CoordinatorConfig::new(temp_dir.path());
     config.provider = Arc::new(provider.clone());
-    config.agent_profiles = agent_profiles_with_title_agent();
+    config.agent_profiles = BTreeMap::from([(
+        "default".to_string(),
+        AgentProfile { name: "default".to_string(), model_ref: "mock:model-1".to_string(),
+        model_ref_explicit: true,
+        system_prompt: "default-prompt".to_string(),
+        cache_retention: Default::default(),
+        max_iters: Some(12),
+        temperature: Some(0.0),
+        tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
+        toolset: vec![],
+        permission_ruleset: Vec::new(), },
+    )]);
 
     let coordinator = spawn_coordinator(
         config,
@@ -26,7 +37,7 @@ async fn coord_title_generation_uses_isolated_hidden_title_agent_request() {
         .await
         .unwrap_or_abort();
     let agent_id = coordinator
-        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .spawn_agent_idle(supervisor_actor(), "default", None)
         .await
         .unwrap_or_abort();
 
@@ -42,10 +53,10 @@ async fn coord_title_generation_uses_isolated_hidden_title_agent_request() {
     let requests = provider.requests();
     let title_request = requests.first().unwrap_or_abort();
     assert_eq!(title_request.provider_id.as_deref(), Some("mock"));
-    assert_eq!(title_request.model_id, "title-model");
+    assert_eq!(title_request.model_id, "model-1");
     assert_eq!(
         title_request.temperature,
-        Some(harness_core::session_title::TITLE_AGENT_TEMPERATURE)
+        Some(harness_core::session_title::TITLE_OPERATION_TEMPERATURE)
     );
     assert_eq!(title_request.tools, None);
     assert_eq!(title_request.tool_choice, None);
@@ -53,7 +64,7 @@ async fn coord_title_generation_uses_isolated_hidden_title_agent_request() {
     assert_eq!(title_request.messages[0].role, MessageRole::System);
     assert_eq!(
         title_request.messages[0].content,
-        harness_core::session_title::TITLE_AGENT_SYSTEM_PROMPT
+        harness_core::session_title::TITLE_OPERATION_SYSTEM_PROMPT
     );
     assert_eq!(title_request.messages[1].role, MessageRole::User);
     assert_eq!(
@@ -74,6 +85,10 @@ async fn coord_title_generation_uses_isolated_hidden_title_agent_request() {
         }),
         Some("Debugging production 500 errors")
     );
+    assert!(events.iter().all(|event| !matches!(
+        &event.payload,
+        EventV1::AgentSpawned(AgentSpawnedEvent { profile, .. }) if profile != "default"
+    )));
 }
 #[tokio::test]
 async fn coord_supervisor_first_turn_does_not_generate_session_title() {
@@ -84,7 +99,7 @@ async fn coord_supervisor_first_turn_does_not_generate_session_title() {
     let provider = CapturingProvider::new(vec!["main response"]);
     let mut config = CoordinatorConfig::new(temp_dir.path());
     config.provider = Arc::new(provider.clone());
-    config.agent_profiles = agent_profiles_with_title_agent();
+    config.agent_profiles = agent_profiles();
 
     let coordinator = spawn_coordinator(
         config,
@@ -118,103 +133,6 @@ async fn coord_supervisor_first_turn_does_not_generate_session_title() {
     assert!(!load_events(&run.events_path)
         .iter()
         .any(|event| matches!(event.payload, EventV1::SessionTitleUpdated(_))));
-}
-#[tokio::test]
-async fn coord_plan_mode_prompt_includes_workflow_and_plan_file_lifecycle() {
-    // arrange
-    // act
-    // assert
-    let temp_dir = tempfile::tempdir().unwrap_or_abort();
-    let workspace = temp_dir.path().join("workspace");
-    fs::create_dir_all(&workspace).unwrap_or_abort();
-    let provider = CapturingProvider::new(vec!["first plan turn", "second plan turn"]);
-    let mut config = CoordinatorConfig::new(temp_dir.path().join("sessions"));
-    config.provider = Arc::new(provider.clone());
-    config.agent_profiles = BTreeMap::from([(
-        harness_core::plan::PLAN_AGENT_NAME.to_string(),
-        AgentProfile {
-            name: harness_core::plan::PLAN_AGENT_NAME.to_string(),
-            category: harness_core::plan::PLAN_AGENT_NAME.to_string(),
-            model_ref: "mock:model-1".to_string(),
-            model_ref_explicit: true,
-            system_prompt: "plan-prompt".to_string(),
-            cache_retention: Default::default(),
-            max_iters: Some(12),
-            temperature: Some(0.0),
-            tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
-            toolset: vec![],
-            permission_ruleset: Vec::new(),
-        },
-    )]);
-
-    let coordinator = spawn_coordinator(
-        config,
-        Arc::new(FakeClock::new()),
-        Arc::new(DefaultRedactor::default()),
-    );
-    let run = coordinator
-        .start_run("coord_plan_prompt", &workspace)
-        .await
-        .unwrap_or_abort();
-    let agent_id = coordinator
-        .spawn_agent_idle(
-            supervisor_actor(),
-            harness_core::plan::PLAN_AGENT_NAME,
-            None,
-        )
-        .await
-        .unwrap_or_abort();
-
-    coordinator
-        .request_agent_turn(
-            EventActor::new(ActorKind::User, Some("user".to_string())),
-            agent_id.clone(),
-            "plan a careful change",
-        )
-        .await
-        .unwrap_or_abort();
-    tokio::task::yield_now().await;
-
-    let plan_file = harness_core::plan::plan_file_display_path(run.run_id.as_str());
-    let first_requests = provider.requests();
-    let first_prompt = &first_requests
-        .first()
-        .unwrap_or_abort()
-        .messages
-        .last()
-        .unwrap_or_abort()
-        .content;
-    assert!(first_prompt.contains("No plan file exists yet"));
-    assert!(first_prompt.contains(&plan_file));
-    assert!(first_prompt.contains("Launch zero to three `explore` subagents"));
-    assert!(first_prompt.contains("final recommended approach"));
-    assert!(first_prompt.contains("call `plan_exit`"));
-    assert!(first_prompt.contains("run non-readonly tools, change configs, or make commits"));
-
-    let plan_path = workspace.join(harness_core::plan::plan_file_relative_path(run.run_id.as_str()));
-    fs::create_dir_all(plan_path.parent().unwrap_or_abort()).unwrap_or_abort();
-    fs::write(&plan_path, "# Plan\n").unwrap_or_abort();
-
-    coordinator
-        .request_agent_turn(
-            EventActor::new(ActorKind::User, Some("user".to_string())),
-            agent_id,
-            "update the existing plan",
-        )
-        .await
-        .unwrap_or_abort();
-    tokio::task::yield_now().await;
-
-    let second_requests = provider.requests();
-    let second_prompt = &second_requests
-        .get(1)
-        .unwrap_or_abort()
-        .messages
-        .last()
-        .unwrap_or_abort()
-        .content;
-    assert!(second_prompt.contains("An active plan file already exists"));
-    assert!(second_prompt.contains(&plan_file));
 }
 #[tokio::test]
 async fn coord_start_run_appends_run_started() {

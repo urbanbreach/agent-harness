@@ -179,12 +179,9 @@ async fn manual_compaction_returns_noop_when_context_has_single_turn() {
     coordinator.stop_run().await.unwrap_or_abort();
 
     let events = load_events(&run.events_path);
-    assert!(events.iter().all(|event| {
-        !matches!(
-            event.payload,
-            EventV1::SessionCompaction(_)
-        )
-    }));
+    assert!(events
+        .iter()
+        .all(|event| { !matches!(event.payload, EventV1::SessionCompaction(_)) }));
 }
 #[tokio::test]
 async fn resume_rejects_missing_user_message_when_prompt_summary_is_truncated() {
@@ -210,7 +207,7 @@ async fn resume_rejects_missing_user_message_when_prompt_summary_is_truncated() 
                 2,
                 EventV1::AgentSpawned(AgentSpawnedEvent {
                     agent_id: "agent_000001".to_string(),
-                    profile: "alpha".to_string(),
+                    profile: "default".to_string(),
                     parent_agent_id: None,
                 }),
             ),

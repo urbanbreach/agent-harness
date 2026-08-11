@@ -25,6 +25,7 @@ use common::{CliHarness, CliHarnessOutput};
 
 #[derive(Debug, Clone, PartialEq)]
 struct CapturedPromptRequest {
+    request_id: Option<String>,
     provider_id: Option<String>,
     model_id: String,
     variant: Option<String>,
@@ -58,7 +59,10 @@ impl ScriptedPromptProvider {
     fn sequence(responses: Vec<Vec<ProviderStreamEvent>>) -> Arc<Self> {
         let responses = Arc::new(responses);
         let index = Arc::new(Mutex::new(0_usize));
-        Self::new(move |_| {
+        Self::new(move |request| {
+            if request.context.request_id.is_none() {
+                return text_events("Generated title");
+            }
             let mut guard = index.lock().unwrap_or_abort();
             let response = responses
                 .get(*guard)
@@ -71,6 +75,16 @@ impl ScriptedPromptProvider {
     }
 
     fn requests(&self) -> Vec<CapturedPromptRequest> {
+        self.requests
+            .lock()
+            .unwrap_or_abort()
+            .iter()
+            .filter(|request| request.request_id.is_some())
+            .cloned()
+            .collect()
+    }
+
+    fn all_requests(&self) -> Vec<CapturedPromptRequest> {
         self.requests.lock().unwrap_or_abort().clone()
     }
 }
@@ -102,6 +116,7 @@ impl Provider for ScriptedPromptProvider {
 impl CapturedPromptRequest {
     fn from(request: &CompletionRequest) -> Self {
         Self {
+            request_id: request.context.request_id.clone(),
             provider_id: request.provider_id.clone(),
             model_id: request.model_id.clone(),
             variant: request.variant.clone(),
@@ -262,25 +277,27 @@ where
 
 fn prompt_cli_config(base_url: &str, session_dir: &std::path::Path, tools: &[&str]) -> String {
     serde_json::json!({
-        "providers": {
+        "provider": {
             "default": {
                 "type": "openai_compatible",
-                "base_url": base_url,
-                "api_key": "DUMMY",
-                "api_mode": "responses",
-                "timeout_ms": 60000,
+                "options": {
+                    "baseURL": base_url,
+                    "apiKey": "DUMMY",
+                    "apiMode": "responses",
+                    "timeoutMs": 60000
+                },
                 "models": {
                     "gpt-4o-mini": {
-                        "display_name": "GPT-4o mini",
+                        "name": "GPT-4o mini",
                         "metadata": {
-                            "supports_reasoning_summaries": true
+                            "supportsReasoningSummaries": true
                         },
                         "variants": {
                             "low": {
-                                "display_name": "Low",
+                                "name": "Low",
                                 "metadata": {
-                                    "reasoning_effort": "low",
-                                    "text_verbosity": "low"
+                                    "reasoningEffort": "low",
+                                    "textVerbosity": "low"
                                 }
                             }
                         }
@@ -288,22 +305,15 @@ fn prompt_cli_config(base_url: &str, session_dir: &std::path::Path, tools: &[&st
                 }
             }
         },
-        "agents": {
-            "deep": {
-                "description": "Deep profile",
-                "system_prompt": "You are the deep profile.",
-                "model_ref": "default:gpt-4o-mini",
+        "model": "default/gpt-4o-mini",
+        "agent": {
+            "default": {
+                "system_prompt": "You are the default profile.",
                 "tool_failure_mode": "continue_as_tool_message",
                 "tools": tools
             }
         },
-        "permissions": {
-            "defaults": {
-                "edit": "allow",
-                "shell": "allow",
-                "network": "allow"
-            }
-        },
+        "permission": "allow",
         "runtime": {
             "background_tasks": {
                 "default_concurrency": 2,
@@ -320,93 +330,6 @@ fn prompt_cli_config(base_url: &str, session_dir: &std::path::Path, tools: &[&st
                 "enabled": false,
                 "seed": 42
             }
-        },
-        "integrations": {
-            "remote_search": {
-                "endpoint": "https://mcp.exa.ai/mcp"
-            }
-        },
-        "ui": {
-            "default_profile": "deep"
-        }
-    })
-    .to_string()
-}
-
-fn prompt_cli_multi_provider_config(
-    default_base_url: &str,
-    ops_base_url: &str,
-    session_dir: &std::path::Path,
-) -> String {
-    serde_json::json!({
-        "providers": {
-            "default": {
-                "type": "openai_compatible",
-                "base_url": default_base_url,
-                "api_key": "DUMMY",
-                "api_mode": "responses",
-                "timeout_ms": 60000,
-                "models": {
-                    "gpt-4o-mini": {
-                        "display_name": "GPT-4o mini"
-                    }
-                }
-            },
-            "anthropic": {
-                "type": "openai_compatible",
-                "base_url": ops_base_url,
-                "api_key": "DUMMY",
-                "api_mode": "responses",
-                "timeout_ms": 60000,
-                "models": {
-                    "claude-3.7": {
-                        "display_name": "Claude 3.7"
-                    }
-                }
-            }
-        },
-        "agents": {
-            "deep": {
-                "description": "Deep profile",
-                "system_prompt": "You are the deep profile.",
-                "model_ref": "default:gpt-4o-mini",
-                "tools": []
-            },
-            "ops": {
-                "description": "Ops profile",
-                "system_prompt": "You are the ops profile.",
-                "model_ref": "anthropic:claude-3.7",
-                "tools": []
-            }
-        },
-        "permissions": {
-            "defaults": {
-                "edit": "allow",
-                "shell": "allow",
-                "network": "allow"
-            }
-        },
-        "runtime": {
-            "background_tasks": {
-                "default_concurrency": 2,
-                "provider_concurrency": 2,
-                "model_concurrency": 2,
-                "stale_timeout_ms": 30000,
-                "message_staleness_timeout_ms": 10000
-            },
-            "session_dir": session_dir,
-            "deterministic": {
-                "enabled": false,
-                "seed": 42
-            }
-        },
-        "integrations": {
-            "remote_search": {
-                "endpoint": "https://mcp.exa.ai/mcp"
-            }
-        },
-        "ui": {
-            "default_profile": "deep"
         }
     })
     .to_string()
@@ -462,13 +385,12 @@ fn prompt_cli_public_runtime_config(base_url: &str) -> String {
         "model": "default/gpt-5.4",
         "small_model": "default/gpt-5.4-mini",
         "agent": {
-            "build": {
-                "system_prompt": "You are the build profile.",
+            "default": {
+                "system_prompt": "You are the default profile.",
                 "model": "default/gpt-5.4-mini",
                 "variant": "high"
             }
         },
-        "default_agent": "build",
         "permission": {
             "edit": "allow",
             "bash": "allow",
@@ -549,7 +471,7 @@ fn write_resume_fixture_events(run_dir: &std::path::Path) {
             2,
             EventV1::AgentSpawned(AgentSpawnedEvent {
                 agent_id: "agent_000001".to_string(),
-                profile: "deep".to_string(),
+                profile: "default".to_string(),
                 parent_agent_id: None,
             }),
         ),

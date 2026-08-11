@@ -18,7 +18,7 @@ pub fn test_context(workspace_root: &Path, run_id: &str, tool_call_id: &str) -> 
         workspace_root: workspace_root.to_path_buf(),
         artifacts_dir: workspace_root.join("artifacts"),
         actor: worker_actor("worker-1"),
-        category: Some("deep".to_string()),
+        profile: Some("deep".to_string()),
         tool_call_id: tool_call_id.into(),
         current_model_ref: None,
         current_model_settings: None,

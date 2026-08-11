@@ -224,10 +224,8 @@ const fn runtime_permission(
 // allow: SIZE_OK — static settings registry data table + metadata JSON API
 const SETTINGS_REGISTRY: &[SettingDefinition] = &[
     runtime_public("model", "harness.runtime.model", None),
-    runtime_public("default_agent", "harness.runtime.default_agent", None),
     runtime_public("small_model", "harness.runtime.small_model", None),
     runtime_public_map("agent", "harness.runtime.agent", None),
-    runtime_public_map("mode", "harness.runtime.mode", None),
     runtime_public_map("provider", "harness.runtime.provider", None),
     runtime_public_map("skills", "harness.runtime.skills", None),
     runtime_public_map("mcp", "harness.runtime.mcp", None),

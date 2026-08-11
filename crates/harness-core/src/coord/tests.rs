@@ -20,9 +20,9 @@ use crate::agent::{
 };
 use crate::clock::{FakeClock, RealClock};
 use crate::config::{
-    load_config_from_str, resolve_profile_model_metadata, CategoryPermissions,
-    CompactionRuntimeConfig, HookLifecycleEvent, HookRuntimeConfig, HooksConfig,
-    LifecycleHookConfig, PermissionMode, ShellAllowlist,
+    load_config_from_str, resolve_profile_model_metadata, CompactionRuntimeConfig,
+    HookLifecycleEvent, HookRuntimeConfig, HooksConfig, LifecycleHookConfig, PermissionMode,
+    ProfilePermissions, ShellAllowlist,
 };
 use crate::conversation::{
     ConversationAssistantMessage, ConversationMessage, ConversationToolCall,
@@ -57,16 +57,15 @@ use super::{
     append_permission_grant_recorded_event, append_permission_requested_event,
     append_tool_call_finished_event, append_tool_call_requested_event,
     append_tool_call_started_event, compact_session, completion_messages_to_conversation_messages,
-    permission_rule_request_selectors, plan_mode_shell_boundary_denial,
-    provider_tool_message_status, restore_provider_context_from_history,
-    schedule_pending_agent_wakeups_for_idle_agent, spawn_coordinator, summarize_hook_output,
-    system_actor, AppliedCompaction, ChildTaskTurnState, Coordinator, CoordinatorConfig,
-    CoordinatorError, EditAppliedEventArgs, FailedTerminalCompactionRequest, HashlineEditMetadata,
-    HookExecutionBatch, HookInvocationContext, JobOutcome, JobProgressKind,
-    PendingPermissionResolution, PendingPermissionState, PermissionRequestedEventArgs,
-    ProviderCompactionTrigger, QueuedAgentTurn, RunInfo, RunState, RunningAgentTurn,
-    TaskExecutionState, TaskState, TokioLifecycleHookCommandExecutor, ToolCallFinishedEventArgs,
-    ToolCallRequestedEventArgs,
+    permission_rule_request_selectors, provider_tool_message_status,
+    restore_provider_context_from_history, schedule_pending_agent_wakeups_for_idle_agent,
+    spawn_coordinator, summarize_hook_output, system_actor, AppliedCompaction, ChildTaskTurnState,
+    Coordinator, CoordinatorConfig, CoordinatorError, EditAppliedEventArgs,
+    FailedTerminalCompactionRequest, HashlineEditMetadata, HookExecutionBatch,
+    HookInvocationContext, JobOutcome, JobProgressKind, PendingPermissionResolution,
+    PendingPermissionState, PermissionRequestedEventArgs, ProviderCompactionTrigger,
+    QueuedAgentTurn, RunInfo, RunState, RunningAgentTurn, TaskExecutionState, TaskState,
+    TokioLifecycleHookCommandExecutor, ToolCallFinishedEventArgs, ToolCallRequestedEventArgs,
 };
 use harness_providers::{CompletionMessage, MessageRole};
 
@@ -179,7 +178,7 @@ async fn lifecycle_hooks_use_injected_executor_without_spawning() {
             provider_id: None,
             model_id: None,
             parent_agent_id: None,
-            category: None,
+            profile: None,
             outcome: Some("started".to_string()),
             output_summary: None,
             failure_reason: None,
@@ -262,7 +261,7 @@ async fn lifecycle_hooks_scoped_to_declared_event_invoke_nothing_else() {
             provider_id: None,
             model_id: None,
             parent_agent_id: None,
-            category: None,
+            profile: None,
             outcome: None,
             output_summary: None,
             failure_reason: None,
@@ -300,74 +299,6 @@ fn summarize_hook_output_truncates_long_single_stream_output() {
     assert_eq!(summary.chars().count(), 161);
     assert!(summary.starts_with(&"x".repeat(160)));
     assert!(summary.ends_with('…'));
-}
-
-#[test]
-fn plan_mode_shell_boundary_allows_only_read_only_inspection_commands() {
-    // arrange
-    // act
-    // assert
-    assert_eq!(
-        plan_mode_shell_boundary_denial(
-            Some(crate::plan::PLAN_AGENT_NAME),
-            Some(PermissionKind::Shell),
-            &json!({ "command": "git status --short" }),
-        ),
-        None
-    );
-    assert_eq!(
-        plan_mode_shell_boundary_denial(
-            Some(crate::plan::PLAN_AGENT_NAME),
-            Some(PermissionKind::Shell),
-            &json!({ "command": "git branch --show-current" }),
-        ),
-        None
-    );
-    assert_eq!(
-        plan_mode_shell_boundary_denial(
-            Some(crate::plan::PLAN_AGENT_NAME),
-            Some(PermissionKind::Shell),
-            &json!({ "command": "ls crates" }),
-        ),
-        None
-    );
-
-    let denied = plan_mode_shell_boundary_denial(
-        Some(crate::plan::PLAN_AGENT_NAME),
-        Some(PermissionKind::Shell),
-        &json!({ "command": "touch src/lib.rs" }),
-    )
-    .unwrap_or_abort();
-    assert!(denied.contains("read-only inspection commands"));
-
-    let redirected = plan_mode_shell_boundary_denial(
-        Some(crate::plan::PLAN_AGENT_NAME),
-        Some(PermissionKind::Shell),
-        &json!({ "command": "git status > status.txt" }),
-    )
-    .unwrap_or_abort();
-    assert!(redirected.contains("read-only inspection commands"));
-
-    for command in [
-        "git branch new-plan-branch",
-        "git branch -D old-plan-branch",
-        "git diff --output=plan-leak.txt",
-        "git show --output plan-leak.txt HEAD",
-        "git diff --ext-diff",
-        "git show --textconv HEAD:README.md",
-        "git log --ext-diff -p",
-        "git diff '--ext-diff'",
-        "git show \"--textconv\" HEAD:README.md",
-        "git diff --ext\\-diff",
-    ] {
-        let denied = plan_mode_shell_boundary_denial(
-            Some(crate::plan::PLAN_AGENT_NAME),
-            Some(PermissionKind::Shell),
-            &json!({ "command": command }),
-        )
-        .unwrap_or_else(|| panic!("command `{command}` should be denied"));
-        assert!(denied.contains("read-only inspection commands"));
-    }
 }
 
 #[test]
@@ -545,7 +476,6 @@ fn test_config(session_dir: &Path) -> CoordinatorConfig {
 fn test_agent_profile(name: &str) -> AgentProfile {
     AgentProfile {
         name: name.to_string(),
-        category: name.to_string(),
         model_ref: "mock:model-1".to_string(),
         model_ref_explicit: true,
         system_prompt: "sys".to_string(),
@@ -624,7 +554,7 @@ mod append_permission_tests;
 mod permission_flow_tests;
 
 delegate_tokio_test!(permission_rule_bash_selector_is_enforced_at_tool_call_site => permission_flow_tests::rule_permission_rule_bash_selector_is_enforced_at_tool_call_site);
-delegate_test!(task_permission_rule_selector_uses_subagent_type_before_aliases => permission_flow_tests::rule_task_permission_rule_selector_uses_subagent_type_before_aliases);
+delegate_test!(task_permission_rule_selector_uses_only_subagent_type => permission_flow_tests::rule_task_permission_rule_selector_uses_only_subagent_type);
 delegate_tokio_test!(permission_rule_task_selector_is_enforced_at_tool_call_site => permission_flow_tests::rule_permission_rule_task_selector_is_enforced_at_tool_call_site);
 delegate_tokio_test!(perm_ask_path_blocks_until_resolved => permission_flow_tests::rule_perm_ask_path_blocks_until_resolved);
 delegate_tokio_test!(allow_always_records_grant_and_authorizes_matching_future_shell_call => permission_flow_tests::allow_always_records_grant_and_authorizes_matching_future_shell_call);
@@ -805,7 +735,7 @@ async fn background_foreground_child_tasks_releases_parent_task_and_keeps_child_
                     reasoning_summary: None,
                     thinking: None,
                 },
-                category: Some("alpha".to_string()),
+                profile: Some("alpha".to_string()),
                 queue_key: ConcurrencyKey::ProviderModel {
                     provider_id: "mock".to_string(),
                     model_id: "model-1".to_string(),
@@ -952,7 +882,7 @@ async fn demote_foreground_child_task_releases_parent_for_single_handle() {
                     reasoning_summary: None,
                     thinking: None,
                 },
-                category: Some("alpha".to_string()),
+                profile: Some("alpha".to_string()),
                 queue_key: ConcurrencyKey::ProviderModel {
                     provider_id: "mock".to_string(),
                     model_id: "model-1".to_string(),
@@ -1135,7 +1065,7 @@ async fn demote_all_foreground_child_tasks_releases_multiple_parents() {
                         reasoning_summary: None,
                         thinking: None,
                     },
-                    category: Some("alpha".to_string()),
+                    profile: Some("alpha".to_string()),
                     queue_key: ConcurrencyKey::ProviderModel {
                         provider_id: "mock".to_string(),
                         model_id: "model-1".to_string(),

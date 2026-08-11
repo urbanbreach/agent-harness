@@ -460,36 +460,21 @@ pub(crate) fn execute_settings_editor_surface_evidence() {
     fs::write(
         &path,
         r#"{
-  "providers": {
+  "provider": {
     "default": {
       "type": "openai_compatible",
-      "base_url": "http://127.0.0.1:8317/v1",
-      "api_key": "test-key",
-      "models": { "gpt-4o-mini": { "display_name": "GPT 4o mini" } }
+      "options": { "baseURL": "http://127.0.0.1:8317/v1", "apiKey": "test-key" },
+      "models": { "gpt-4o-mini": { "name": "GPT 4o mini" } }
     }
   },
-  "agents": {
-    "build": {
-      "description": "Build work",
-      "model_ref": "default:gpt-4o-mini",
+  "model": "default/gpt-4o-mini",
+  "agent": {
+    "default": {
+      "model": "default/gpt-4o-mini",
       "tools": ["read"]
     }
   },
-  "permissions": {
-    "defaults": { "edit": "ask", "shell": "ask", "network": "deny" }
-  },
-  "runtime": {
-    "background_tasks": {
-      "default_concurrency": 2,
-      "provider_concurrency": 2,
-      "model_concurrency": 2,
-      "stale_timeout_ms": 15000,
-      "message_staleness_timeout_ms": 5000
-    },
-    "session_dir": ".agent-harness/sessions",
-    "deterministic": { "enabled": false, "seed": 42 },
-    "compaction": { "enabled": true }
-  },
+  "permission": { "edit": "ask", "bash": "ask", "webfetch": "deny" },
   "hashline_edit": true
 }"#,
     )

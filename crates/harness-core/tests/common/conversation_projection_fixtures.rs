@@ -44,19 +44,15 @@ fn envelope(
 }
 
 fn boundary_profile() -> AgentProfile {
-    AgentProfile {
-        name: "worker".to_string(),
-        category: "deep".to_string(),
-        model_ref: "mock:model-1".to_string(),
-        model_ref_explicit: true,
-        system_prompt: "sys".to_string(),
-        temperature: Some(0.1),
-        cache_retention: Default::default(),
-        max_iters: Some(12),
-        tool_failure_mode: ToolFailureMode::FailTurn,
-        toolset: vec!["read".to_string()],
-        permission_ruleset: Vec::new(),
-    }
+    AgentProfile { name: "worker".to_string(), model_ref: "mock:model-1".to_string(),
+    model_ref_explicit: true,
+    system_prompt: "sys".to_string(),
+    temperature: Some(0.1),
+    cache_retention: Default::default(),
+    max_iters: Some(12),
+    tool_failure_mode: ToolFailureMode::FailTurn,
+    toolset: vec!["read".to_string()],
+    permission_ruleset: Vec::new(), }
 }
 
 fn checkpoint_metadata() -> ProviderContextCheckpointMetadata {

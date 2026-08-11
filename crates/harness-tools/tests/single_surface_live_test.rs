@@ -66,7 +66,6 @@ fn example_profiles(
                 name.clone(),
                 AgentProfile {
                     name: name.clone(),
-                    category: name.clone(),
                     model_ref: profile.model_ref.clone(),
                     model_ref_explicit: true,
                     system_prompt: profile.description.clone(),
@@ -86,7 +85,6 @@ fn example_profiles(
         SURFACE_LIVE_PROFILE.to_string(),
         AgentProfile {
             name: SURFACE_LIVE_PROFILE.to_string(),
-            category: SURFACE_LIVE_PROFILE.to_string(),
             model_ref: build_profile.model_ref,
             model_ref_explicit: true,
             system_prompt: "Single-surface live registry test profile.".to_string(),
@@ -512,9 +510,9 @@ async fn single_surface_tools_execute_under_example_config() {
             Some(SURFACE_LIVE_PROFILE.to_string()),
             "task",
             serde_json::json!({
-                "category": SURFACE_LIVE_PROFILE,
                 "description": "Background subtask",
                 "prompt": "Say hello",
+                "subagent_type": "general",
                 "run_in_background": true,
                 "load_skills": [],
             }),

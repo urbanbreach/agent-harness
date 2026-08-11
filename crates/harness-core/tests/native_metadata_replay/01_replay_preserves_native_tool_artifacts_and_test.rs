@@ -241,7 +241,7 @@ async fn legacy_sessions_remain_loadable_after_native_metadata_extension() {
                 2,
                 EventV1::AgentSpawned(AgentSpawnedEvent {
                     agent_id: "agent_000001".to_string(),
-                    profile: "alpha".to_string(),
+                    profile: "default".to_string(),
                     parent_agent_id: None,
                 }),
             ),
@@ -443,7 +443,7 @@ async fn resume_projection_handles_checkpoint_between_turn_and_provider_restart(
                 5,
                 EventV1::AgentSpawned(AgentSpawnedEvent {
                     agent_id: "agent_000001".to_string(),
-                    profile: "alpha".to_string(),
+                    profile: "default".to_string(),
                     parent_agent_id: None,
                 }),
             ),

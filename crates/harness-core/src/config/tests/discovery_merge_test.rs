@@ -1,9 +1,7 @@
 use super::*;
 use crate::UnwrapOrAbort;
 
-/// Minimal config with a model so shipped agents exist, plus an optional
-/// extra agent block injected into the legacy `agents` map.
-pub(super) fn merge_test_config(extra_agents: &str) -> String {
+pub(super) fn merge_test_config(agent_overrides: &str) -> String {
     format!(
         r#"
         {{
@@ -27,8 +25,8 @@ pub(super) fn merge_test_config(extra_agents: &str) -> String {
             }},
           }},
           model: "default/gpt-4o-mini",
-          agents: {{
-            {extra_agents}
+          agent: {{
+            {agent_overrides}
           }},
           permissions: {{
             defaults: {{
@@ -54,18 +52,13 @@ pub(super) fn merge_test_config(extra_agents: &str) -> String {
           }},
         }}
         "#,
-        extra_agents = extra_agents,
+        agent_overrides = agent_overrides,
     )
 }
 
-/// Agent with empty description and empty tools so markdown fallback can fire
-/// for those fields. `model_ref_explicit` is true because this goes through
-/// the legacy `agents` path.
-pub(super) fn empty_custom_agent() -> String {
+pub(super) fn empty_general_override() -> String {
     r#"
-    custom: {
-      description: "",
-      model_ref: "default/gpt-4o-mini",
+    general: {
       tools: []
     },
     "#
@@ -73,7 +66,7 @@ pub(super) fn empty_custom_agent() -> String {
 }
 
 #[test]
-fn merge_markdown_description_takes_effect_when_config_empty() {
+fn merge_shipped_description_remains_canonical_when_markdown_differs() {
     // arrange
     let _lock = CONFIG_DISCOVERY_TEST_LOCK.lock().unwrap_or_abort();
     let temp = tempfile::tempdir().unwrap_or_abort();
@@ -82,10 +75,10 @@ fn merge_markdown_description_takes_effect_when_config_empty() {
     fs::create_dir_all(repo.join(".git")).unwrap_or_abort();
 
     let config_path = repo.join("harness.jsonc");
-    fs::write(&config_path, merge_test_config(&empty_custom_agent())).unwrap_or_abort();
+    fs::write(&config_path, merge_test_config(&empty_general_override())).unwrap_or_abort();
     write_agent_markdown(
         &repo,
-        "custom",
+        "general",
         r#"---
 {
   description: "From markdown",
@@ -100,10 +93,10 @@ Prompt body."#,
     let parsed = load_config_from_file(&config_path).unwrap_or_abort();
 
     // assert
-    let custom = parsed.agents.get("custom").unwrap_or_abort();
+    let general = parsed.agents.get("general").unwrap_or_abort();
     assert_eq!(
-        custom.description, "From markdown",
-        "markdown description must take effect when config description is empty"
+        general.description, "General-purpose implementation and research subagent.",
+        "fixed profile descriptions must remain canonical"
     );
 }
 
@@ -120,28 +113,28 @@ fn merge_markdown_model_ref_takes_effect_for_shipped_agent() {
     fs::write(&config_path, merge_test_config("")).unwrap_or_abort();
     write_agent_markdown(
         &repo,
-        "build",
+        "default",
         r#"---
 {
-  description: "Build from markdown",
+  description: "Default from markdown",
   model_ref: "default/gpt-4o"
 }
 ---
 
-Build prompt."#,
+Default prompt."#,
     );
 
     // act
     let parsed = load_config_from_file(&config_path).unwrap_or_abort();
 
     // assert
-    let build = parsed.agents.get("build").unwrap_or_abort();
+    let default = parsed.agents.get("default").unwrap_or_abort();
     assert_eq!(
-        build.model_ref, "default/gpt-4o",
+        default.model_ref, "default/gpt-4o",
         "markdown model_ref must take effect for shipped agent (model_ref_explicit=false)"
     );
     assert!(
-        build.model_ref_explicit,
+        default.model_ref_explicit,
         "model_ref_explicit must be true when markdown provides model_ref"
     );
 }
@@ -156,10 +149,10 @@ fn merge_markdown_variant_takes_effect_when_config_has_none() {
     fs::create_dir_all(repo.join(".git")).unwrap_or_abort();
 
     let config_path = repo.join("harness.jsonc");
-    fs::write(&config_path, merge_test_config(&empty_custom_agent())).unwrap_or_abort();
+    fs::write(&config_path, merge_test_config(&empty_general_override())).unwrap_or_abort();
     write_agent_markdown(
         &repo,
-        "custom",
+        "general",
         r#"---
 {
   description: "Custom",
@@ -175,9 +168,9 @@ Prompt."#,
     let parsed = load_config_from_file(&config_path).unwrap_or_abort();
 
     // assert
-    let custom = parsed.agents.get("custom").unwrap_or_abort();
+    let general = parsed.agents.get("general").unwrap_or_abort();
     assert_eq!(
-        custom.variant.as_deref(),
+        general.variant.as_deref(),
         Some("high"),
         "markdown variant must take effect when config has no variant"
     );
@@ -193,10 +186,10 @@ fn merge_markdown_temperature_takes_effect_when_config_has_none() {
     fs::create_dir_all(repo.join(".git")).unwrap_or_abort();
 
     let config_path = repo.join("harness.jsonc");
-    fs::write(&config_path, merge_test_config(&empty_custom_agent())).unwrap_or_abort();
+    fs::write(&config_path, merge_test_config(&empty_general_override())).unwrap_or_abort();
     write_agent_markdown(
         &repo,
-        "custom",
+        "general",
         r#"---
 {
   description: "Custom",
@@ -212,16 +205,16 @@ Prompt."#,
     let parsed = load_config_from_file(&config_path).unwrap_or_abort();
 
     // assert
-    let custom = parsed.agents.get("custom").unwrap_or_abort();
+    let general = parsed.agents.get("general").unwrap_or_abort();
     assert_eq!(
-        custom.temperature,
+        general.temperature,
         Some(0.3),
         "markdown temperature must take effect when config has no temperature"
     );
 }
 
 #[test]
-fn merge_markdown_permissions_takes_effect_when_config_has_none() {
+fn merge_shipped_permissions_remain_canonical_when_markdown_differs() {
     // arrange
     let _lock = CONFIG_DISCOVERY_TEST_LOCK.lock().unwrap_or_abort();
     let temp = tempfile::tempdir().unwrap_or_abort();
@@ -230,10 +223,10 @@ fn merge_markdown_permissions_takes_effect_when_config_has_none() {
     fs::create_dir_all(repo.join(".git")).unwrap_or_abort();
 
     let config_path = repo.join("harness.jsonc");
-    fs::write(&config_path, merge_test_config(&empty_custom_agent())).unwrap_or_abort();
+    fs::write(&config_path, merge_test_config(&empty_general_override())).unwrap_or_abort();
     write_agent_markdown(
         &repo,
-        "custom",
+        "general",
         r#"---
 {
   description: "Custom",
@@ -252,12 +245,12 @@ Prompt."#,
     let parsed = load_config_from_file(&config_path).unwrap_or_abort();
 
     // assert
-    let custom = parsed.agents.get("custom").unwrap_or_abort();
-    let permissions = custom.permissions.as_ref().unwrap_or_abort();
+    let general = parsed.agents.get("general").unwrap_or_abort();
+    let permissions = general.permissions.as_ref().unwrap_or_abort();
     assert_eq!(
         permissions.shell,
-        Some(PermissionMode::Ask),
-        "markdown shell permission must take effect"
+        Some(PermissionMode::Allow),
+        "shipped shell permission must remain canonical"
     );
     assert_eq!(
         permissions.edit,
@@ -276,10 +269,10 @@ fn merge_markdown_max_iters_takes_effect_when_config_has_none() {
     fs::create_dir_all(repo.join(".git")).unwrap_or_abort();
 
     let config_path = repo.join("harness.jsonc");
-    fs::write(&config_path, merge_test_config(&empty_custom_agent())).unwrap_or_abort();
+    fs::write(&config_path, merge_test_config(&empty_general_override())).unwrap_or_abort();
     write_agent_markdown(
         &repo,
-        "custom",
+        "general",
         r#"---
 {
   description: "Custom",
@@ -295,9 +288,9 @@ Prompt."#,
     let parsed = load_config_from_file(&config_path).unwrap_or_abort();
 
     // assert
-    let custom = parsed.agents.get("custom").unwrap_or_abort();
+    let general = parsed.agents.get("general").unwrap_or_abort();
     assert_eq!(
-        custom.max_iters,
+        general.max_iters,
         Some(5),
         "markdown max_iters must take effect when config has no max_iters"
     );
@@ -313,10 +306,10 @@ fn merge_markdown_tool_failure_mode_takes_effect_when_config_has_serde_default()
     fs::create_dir_all(repo.join(".git")).unwrap_or_abort();
 
     let config_path = repo.join("harness.jsonc");
-    fs::write(&config_path, merge_test_config(&empty_custom_agent())).unwrap_or_abort();
+    fs::write(&config_path, merge_test_config(&empty_general_override())).unwrap_or_abort();
     write_agent_markdown(
         &repo,
-        "custom",
+        "general",
         r#"---
 {
   description: "Custom",
@@ -332,16 +325,16 @@ Prompt."#,
     let parsed = load_config_from_file(&config_path).unwrap_or_abort();
 
     // assert
-    let custom = parsed.agents.get("custom").unwrap_or_abort();
+    let general = parsed.agents.get("general").unwrap_or_abort();
     assert_eq!(
-        custom.tool_failure_mode,
+        general.tool_failure_mode,
         ToolFailureMode::FailTurn,
         "markdown tool_failure_mode must take effect when config has serde default (ContinueAsToolMessage)"
     );
 }
 
 #[test]
-fn merge_markdown_tools_take_effect_when_config_has_empty_tools() {
+fn merge_shipped_tools_remain_canonical_when_markdown_differs() {
     // arrange
     let _lock = CONFIG_DISCOVERY_TEST_LOCK.lock().unwrap_or_abort();
     let temp = tempfile::tempdir().unwrap_or_abort();
@@ -350,10 +343,10 @@ fn merge_markdown_tools_take_effect_when_config_has_empty_tools() {
     fs::create_dir_all(repo.join(".git")).unwrap_or_abort();
 
     let config_path = repo.join("harness.jsonc");
-    fs::write(&config_path, merge_test_config(&empty_custom_agent())).unwrap_or_abort();
+    fs::write(&config_path, merge_test_config(&empty_general_override())).unwrap_or_abort();
     write_agent_markdown(
         &repo,
-        "custom",
+        "general",
         r#"---
 {
   description: "Custom",
@@ -369,12 +362,9 @@ Prompt."#,
     let parsed = load_config_from_file(&config_path).unwrap_or_abort();
 
     // assert
-    let custom = parsed.agents.get("custom").unwrap_or_abort();
-    assert_eq!(
-        custom.tools,
-        vec!["read", "grep", "list"],
-        "markdown tools must take effect when config has empty tools"
-    );
+    let general = parsed.agents.get("general").unwrap_or_abort();
+    assert!(general.tools.iter().any(|tool| tool == "edit"));
+    assert!(general.tools.iter().any(|tool| tool == "skill"));
 }
 
 #[test]
@@ -391,9 +381,8 @@ fn merge_config_wins_when_both_present_for_all_fields() {
         &config_path,
         merge_test_config(
             r#"
-            custom: {
-              description: "From config",
-              model_ref: "default/gpt-4o-mini",
+            general: {
+              model: "default/gpt-4o-mini",
               variant: "low",
               temperature: 0.1,
               permissions: {
@@ -410,7 +399,7 @@ fn merge_config_wins_when_both_present_for_all_fields() {
     .unwrap_or_abort();
     write_agent_markdown(
         &repo,
-        "custom",
+        "general",
         r#"---
 {
   description: "From markdown",
@@ -434,26 +423,26 @@ Prompt."#,
     let parsed = load_config_from_file(&config_path).unwrap_or_abort();
 
     // assert
-    let custom = parsed.agents.get("custom").unwrap_or_abort();
+    let general = parsed.agents.get("general").unwrap_or_abort();
     assert_eq!(
-        custom.description, "From config",
-        "config description must win when both present"
+        general.description, "General-purpose implementation and research subagent.",
+        "fixed profile descriptions must remain canonical"
     );
     assert_eq!(
-        custom.model_ref, "default/gpt-4o-mini",
+        general.model_ref, "default/gpt-4o-mini",
         "config model_ref must win when both present (model_ref_explicit=true)"
     );
     assert_eq!(
-        custom.variant.as_deref(),
+        general.variant.as_deref(),
         Some("low"),
         "config variant must win when both present"
     );
     assert_eq!(
-        custom.temperature,
+        general.temperature,
         Some(0.1),
         "config temperature must win when both present"
     );
-    let permissions = custom.permissions.as_ref().unwrap_or_abort();
+    let permissions = general.permissions.as_ref().unwrap_or_abort();
     assert_eq!(
         permissions.shell,
         Some(PermissionMode::Deny),
@@ -465,17 +454,17 @@ Prompt."#,
         "config edit permission must win when both present"
     );
     assert_eq!(
-        custom.max_iters,
+        general.max_iters,
         Some(10),
         "config max_iters must win when both present"
     );
     assert_eq!(
-        custom.tool_failure_mode,
+        general.tool_failure_mode,
         ToolFailureMode::FailTurn,
         "config tool_failure_mode must win when both present (non-default value)"
     );
     assert_eq!(
-        custom.tools,
+        general.tools,
         vec!["read", "edit"],
         "config tools must win when both present (non-empty)"
     );

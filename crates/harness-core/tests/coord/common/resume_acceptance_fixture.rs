@@ -37,7 +37,10 @@ pub(super) fn write_resume_acceptance_fixture() -> ResumeAcceptanceFixture {
     };
     let worker = EventActor::new(ActorKind::Worker, Some("agent_000001".to_string()));
     let mut artifact_metadata = BTreeMap::new();
-    artifact_metadata.insert("summary".to_string(), "resume acceptance report".to_string());
+    artifact_metadata.insert(
+        "summary".to_string(),
+        "resume acceptance report".to_string(),
+    );
 
     write_resume_fixture(
         temp_dir.path(),
@@ -56,7 +59,7 @@ pub(super) fn write_resume_acceptance_fixture() -> ResumeAcceptanceFixture {
                 2,
                 EventV1::AgentSpawned(AgentSpawnedEvent {
                     agent_id: "agent_000001".to_string(),
-                    profile: "alpha".to_string(),
+                profile: "default".to_string(),
                     parent_agent_id: None,
                 }),
             ),
@@ -196,11 +199,11 @@ pub(super) fn write_resume_acceptance_fixture() -> ResumeAcceptanceFixture {
                 Some("req_000001"),
                 EventV1::ToolCallRequested(ToolCallRequestedEvent {
                     tool_call_id: "toolcall_000003".into(),
-                    tool_id: "plan_exit".to_string(),
+                tool_id: "question".to_string(),
                     args_summary: "handoff .agent-harness/plans/run_resume_acceptance_realistic.md"
                         .to_string(),
                     args_digest: "digest-plan".to_string(),
-                    metadata: Some(test_tool_metadata("plan_exit")),
+                metadata: Some(test_tool_metadata("question")),
                 }),
             ),
             resume_fixture_event_with_actor_and_correlation(
@@ -217,7 +220,7 @@ pub(super) fn write_resume_acceptance_fixture() -> ResumeAcceptanceFixture {
                     ),
                     output_digest: Some("digest-plan-output".to_string()),
                     output_json: None,
-                    metadata: Some(test_tool_metadata("plan_exit")),
+                metadata: Some(test_tool_metadata("question")),
                 }),
             ),
             resume_fixture_event_with_actor_and_correlation(
@@ -521,8 +524,7 @@ pub(super) fn write_resume_acceptance_fixture() -> ResumeAcceptanceFixture {
         ],
     );
     let artifact_abs_path = temp_dir.path().join(run_id).join(artifact_path);
-    fs::create_dir_all(artifact_abs_path.parent().unwrap_or_abort())
-        .unwrap_or_abort();
+    fs::create_dir_all(artifact_abs_path.parent().unwrap_or_abort()).unwrap_or_abort();
     fs::write(&artifact_abs_path, artifact_body).unwrap_or_abort();
 
     ResumeAcceptanceFixture {
@@ -539,7 +541,10 @@ pub(super) fn test_digest12(bytes: &[u8]) -> String {
     blake3::hash(bytes).to_hex().chars().take(12).collect()
 }
 
-pub(super) fn test_permission_request_digest(tool_id: &str, args_json: &serde_json::Value) -> String {
+pub(super) fn test_permission_request_digest(
+    tool_id: &str,
+    args_json: &serde_json::Value,
+) -> String {
     let canonical = serde_json::to_vec(args_json).unwrap_or_else(|_| b"null".to_vec());
     let mut bytes = Vec::with_capacity(tool_id.len() + 1 + canonical.len());
     bytes.extend_from_slice(tool_id.as_bytes());

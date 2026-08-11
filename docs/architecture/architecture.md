@@ -32,21 +32,20 @@ Core runtime and domain logic:
 - **proj/** - Pure projections for run summary, resume planning, and session catalog state
 - **transcript_projection** - Pure replay-derived transcript/session/message/part projection for resume, export, TUI, and debugging surfaces
 - **agent/** - Minimal agent runtime
-- **agent_catalog** - Resolved profile/category/hidden-agent metadata for doctor and support export, plus the documented task-route concepts that TUI/status surfaces align with where touched
+- **agent** - Provider-facing execution state for the singleton generic profile
 - **config** - Configuration parsing and validation
 - **clock** - Clock abstraction (real and fake for determinism)
 - **redact** - Secret redaction before persistence
 
 ### Agent prompt assets and instructions
 
-Interactive agent runtime settings still come from structured config, but prompt bodies are now resolved separately from markdown assets and project instructions:
+Interactive agent runtime settings come from structured config, while the prompt body is resolved separately from the shipped asset and project instructions:
 
-- Built-in `build` and `plan` use runtime-synthesized dynamic prompts when their shipped markdown assets contain only frontmatter.
-- `.agent-harness/agents/<agent>.md` can provide a file-backed prompt body for custom agents or local overrides.
-- inline `system_prompt` in config remains a compatibility override and wins over the markdown body.
+- `.agent-harness/agents/default.md` supplies the Pi-style generic coding prompt.
+- inline `agent.system_prompt` replaces the shipped body.
 - `AGENTS.md` is loaded as a separate project-instruction layer and composed into the final runtime system prompt.
 
-This keeps config focused on structured behavior while allowing the built-in agent prompts to adapt to model, workspace, project-instruction, and skill context.
+This keeps config focused on structured behavior while allowing one prompt to adapt to model, workspace, project-instruction, and skill context.
 
 ### Prompt reference seam map
 
@@ -54,9 +53,9 @@ Reference prompt-system behavior is adopted only as user-observable Harness beha
 
 | Reference pattern | Harness seam | V1 status |
 |---|---|---|
-| Intent-gate before tool use | `crates/harness/src/dynamic_prompt.rs` registered `intent_gate` fixture section plus primary `.agent-harness/agents/{build,plan}.md` `## Intent Gate` sections | Shipped through primary prompt assets and covered by prompt asset tests |
-| Structured delegation reminder | `crates/harness/src/dynamic_prompt.rs` registered `delegation_reminder` section, `docs/operations/agents-and-subagents.md`, and the `task` native tool contract | Shipped as V1 guidance; stricter fixture work remains tracked in WS9 |
-| Category-specific routing and prompt appends | `harness-core::agent_catalog`, `configs/harness.example.jsonc` category `model_profile` fallback metadata, and `.agent-harness/agents/{visual-engineering,artistry,ultrabrain,deep,quick,unspecified-low,unspecified-high,writing}.md` | Shipped through ordinary non-primary profiles with local GPT-family primary targets plus fallback metadata |
+| Generic coding prompt | `.agent-harness/agents/default.md`, `crates/harness/src/bootstrap.rs`, and `crates/harness/src/dynamic_prompt.rs` | Used by interactive execution without primary-role switching |
+| Named subagents | `.agent-harness/agents/{explore,general,librarian}.md` and the `task(subagent_type=...)` contract | Preserved as bounded Pi-style extension profiles |
+| Structured delegation reminder | `crates/harness/src/dynamic_prompt.rs`, `docs/operations/generic-agent-and-tasks.md`, and the `task` native tool contract | Shipped as named subagent guidance |
 | Markdown-defined skills with progressive disclosure | `harness-tools::skill_catalog`, `.agent-harness/skills/*/SKILL.md`, and `docs/configuration/starter-skills.md` | Shipped for the V1 built-in skill set |
 | Disableable built-in capabilities | `skills.disabled` config shape, `SkillCatalogStatus::Disabled`, doctor skill catalog metadata, `harness-core::extension_manifest`, `configs/extension-manifest.v1.schema.json`, and `docs/operations/extension-strategy.md` | Skills ship as runtime capabilities; typed extension manifests ship as descriptor-only metadata with runtime hosting post-V1 |
 | Command/hook lifecycle maps | `docs/operations/extension-strategy.md` command/hook seam | Native lifecycle hooks ship; markdown command files and extension command-hook execution remain unsupported/post-V1 |
@@ -388,14 +387,11 @@ guard when a checkpoint cannot reduce active context.
 
 ## Tool Surface Policy
 
-Provider and tool exposure is selected per agent by its configured `tools` list. The harness ships
-a single native tool surface, so profiles opt in by naming canonical tool ids such as `read`,
-`edit`, `bash`, `task`, `background_output`, and `plan_exit` directly. The shipped `plan` profile
-includes `edit` only for the active workspace-relative `.agent-harness/plans/<run>.md` file through
-runtime permission rules, exposes `bash` only behind shell permission and an additional runtime
-read-only inspection guard, may delegate read-only exploration only through the `explore` profile via
-`task`/`background_output`, and uses `plan_exit` approval before the coordinator schedules a `build`
-continuation with the active plan-file path. By default, `read` emits
+Provider and tool exposure is selected by the singleton `agent.tools` list. The harness ships
+a single native tool surface, so the generic agent opts in by naming canonical tool ids such as
+`read`, `edit`, `bash`, `task`, and `background_output` directly. Named subagents have bounded prompt
+and tool configurations; worker capability filtering, task permission checks, and direct-child ownership
+remain coordinator-enforced. By default, `read` emits
 `LINE#HASH|text` anchors and `edit` consumes hashline operations on that anchored view.
 
 Model-visible session tools are part of this native surface but remain replay
@@ -494,12 +490,11 @@ V1 compaction contract:
   model input window, clamped between 2,000 and 8,000 tokens. Manual `/compact` preserves the latest
   completed turn verbatim; overflow/failed-response compaction may use summary-only or split-tail
   boundaries only when that safely reduces provider context.
-- File/tool/skill/todo/plan context: checkpoint operational memory stores event-derived read-file and
-  modified-file facts, generic tool operation facts, skill loads, todo updates, and plan handoff/edit
-  references from compacted turns. These facts are redacted and capped before persistence.
-- Todo/plan bridging: todo updates (`todowrite`/`todoread`) and plan-mode handoff references
-  (`plan_exit`/`plan_enter` and `.agent-harness/plans/...`) are summarized as compact operation facts
-  so a resumed agent can continue without guessing which checklist or plan file was active.
+- File/tool/skill/todo context: checkpoint operational memory stores event-derived read-file and
+  modified-file facts, generic tool operation facts, skill loads, and todo updates from compacted
+  turns. These facts are redacted and capped before persistence.
+- Todo bridging: todo updates (`todowrite`/`todoread`) are summarized as compact operation facts so a
+  resumed agent can continue without guessing which checklist was active.
 - Post-compaction restoration hints: checkpoint summaries include source facts, relevant
   files/artifacts, operational memory, tail-boundary metadata, and a reminder that preserved recent turns plus the live user prompt take precedence over the lossy recap.
 

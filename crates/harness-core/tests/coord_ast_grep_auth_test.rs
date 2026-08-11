@@ -6,8 +6,8 @@ use async_trait::async_trait;
 use harness_core::agent::AgentProfile;
 use harness_core::clock::FakeClock;
 use harness_core::config::{
-    CategoryPermissions, PermissionMode, PermissionRuleSet, PermissionSelector,
-    PermissionSelectorRule,
+    PermissionMode, PermissionRuleSet, PermissionSelector, PermissionSelectorRule,
+    ProfilePermissions,
 };
 use harness_core::coord::{
     spawn_coordinator, CoordinatorConfig, CoordinatorError, CoordinatorHandle,
@@ -25,7 +25,7 @@ use common::{
 };
 
 const AST_GREP_REPLACE_TOOL_ID: &str = "ast_grep_replace";
-const PATH_SCOPED_WORKER_CATEGORY: &str = "worker-path-scoped-edit";
+const PATH_SCOPED_WORKER_PROFILE: &str = "worker-path-scoped-edit";
 
 struct TestAstGrepReplaceTool;
 
@@ -174,9 +174,9 @@ async fn ast_grep_replace_allowed_list_paths_execute_normally() {
 }
 
 fn path_scoped_edit_permission_policy() -> PermissionPolicy {
-    allow_all_permission_policy().with_category_override(
-        PATH_SCOPED_WORKER_CATEGORY,
-        CategoryPermissions {
+    allow_all_permission_policy().with_profile_override(
+        PATH_SCOPED_WORKER_PROFILE,
+        ProfilePermissions {
             edit: Some(PermissionMode::Allow),
             rules: PermissionRuleSet {
                 edit: vec![PermissionSelectorRule {
@@ -185,15 +185,14 @@ fn path_scoped_edit_permission_policy() -> PermissionPolicy {
                 }],
                 ..PermissionRuleSet::default()
             },
-            ..CategoryPermissions::default()
+            ..ProfilePermissions::default()
         },
     )
 }
 
 fn worker_profile() -> AgentProfile {
     AgentProfile {
-        name: "worker".to_string(),
-        category: PATH_SCOPED_WORKER_CATEGORY.to_string(),
+        name: PATH_SCOPED_WORKER_PROFILE.to_string(),
         model_ref: "mock:model-1".to_string(),
         model_ref_explicit: true,
         system_prompt: "worker-prompt".to_string(),

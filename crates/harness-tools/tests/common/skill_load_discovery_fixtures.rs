@@ -40,19 +40,15 @@ fn tool_context(workspace_root: &Path, tool_call_id: &str) -> ToolContext {
         Arc::new(DefaultRedactor::default()),
     );
 
-    ToolContext {
-        run_id: "run-skill-load-tests".into(),
-        workspace_root: workspace_root.to_path_buf(),
-        artifacts_dir: workspace_root.join(".artifacts"),
-        actor: anonymous_supervisor_actor(),
-        category: Some("deep".to_string()),
-        tool_call_id: tool_call_id.into(),
-        current_model_ref: None,
-        current_model_settings: None,
-        tool_state: ToolRunState::default(),
-        external_directory_allow_prefixes: Vec::new(),
-        coordinator,
-    }
+    ToolContext { run_id: "run-skill-load-tests".into(),
+    workspace_root: workspace_root.to_path_buf(),
+    artifacts_dir: workspace_root.join(".artifacts"),
+    actor: anonymous_supervisor_actor(), profile: Some("general".to_string()), tool_call_id: tool_call_id.into(),
+    current_model_ref: None,
+    current_model_settings: None,
+    tool_state: ToolRunState::default(),
+    external_directory_allow_prefixes: Vec::new(),
+    coordinator, }
 }
 
 fn write_skill(root: &Path, name: &str, description: &str, body: &str) {
@@ -112,35 +108,16 @@ fn assert_section_has_content(body: &str, section: &str, skill_name: &str) {
     );
 }
 
-fn quoted_values_after(body: &str, token: &str) -> Vec<String> {
-    body.match_indices(token)
-        .filter_map(|(index, _)| {
-            let after_token = &body[index + token.len()..];
-            let quote = after_token.chars().next()?;
-            if quote != '"' && quote != '\'' {
-                return None;
-            }
-            let after_quote = &after_token[quote.len_utf8()..];
-            let end = after_quote.find(quote)?;
-            Some(after_quote[..end].to_string())
-        })
-        .collect()
-}
-
 fn worker_profile(name: &str, toolset: &[&str]) -> AgentProfile {
-    AgentProfile {
-        name: name.to_string(),
-        category: name.to_string(),
-        model_ref: format!("default:{name}"),
-        model_ref_explicit: true,
-        system_prompt: format!("{name} prompt"),
-        temperature: None,
-        cache_retention: Default::default(),
-        max_iters: Some(12),
-        tool_failure_mode: ToolFailureMode::FailTurn,
-        toolset: toolset.iter().map(|tool| (*tool).to_string()).collect(),
-        permission_ruleset: Vec::new(),
-    }
+    AgentProfile { name: name.to_string(), model_ref: format!("default:{name}"),
+    model_ref_explicit: true,
+    system_prompt: format!("{name} prompt"),
+    temperature: None,
+    cache_retention: Default::default(),
+    max_iters: Some(12),
+    tool_failure_mode: ToolFailureMode::FailTurn,
+    toolset: toolset.iter().map(|tool| (*tool).to_string()).collect(),
+    permission_ruleset: Vec::new(), }
 }
 
 async fn spawn_worker_run(
@@ -187,8 +164,8 @@ fn harness_config_with_skills(skills: SkillsConfig) -> HarnessConfig {
             }
         },
         "agents": {
-            "deep": {
-                "description": "Deep profile",
+            "default": {
+                "description": "Default profile",
                 "model_ref": "default:gpt-5.4-mini",
                 "tools": []
             }

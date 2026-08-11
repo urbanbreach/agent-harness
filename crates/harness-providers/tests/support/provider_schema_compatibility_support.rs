@@ -84,9 +84,9 @@ pub(crate) fn real_tools(name: &str) -> Vec<ToolDef> {
     let native = coordinator_registry(ShellAllowlist::default());
     let mcp = coordinator_registry_with_mcp(ShellAllowlist::default(), mcp_config());
     let (profile, registry) = match name {
-        "build" => (
+        "default" => (
             profile(
-                "build",
+                "default",
                 vec![
                     "read",
                     "edit",
@@ -98,11 +98,8 @@ pub(crate) fn real_tools(name: &str) -> Vec<ToolDef> {
             ),
             &native,
         ),
-        "plan" => (
-            profile(
-                "plan",
-                vec!["read", "glob", "grep", "list", "question", "plan_exit"],
-            ),
+        "explore" => (
+            profile("explore", vec!["read", "glob", "grep", "list", "question"]),
             &native,
         ),
         "mcp" => (
@@ -149,7 +146,6 @@ pub(crate) fn completion_request(
 fn profile(name: &str, toolset: Vec<&str>) -> AgentProfile {
     AgentProfile {
         name: name.to_string(),
-        category: name.to_string(),
         model_ref: "openai/gpt-5.5".to_string(),
         model_ref_explicit: true,
         system_prompt: format!("{name} schema compatibility"),

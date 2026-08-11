@@ -109,7 +109,6 @@ fn summarize_description(description: &str) -> String {
 
 fn aliases_for_tool(tool_id: &str) -> Vec<String> {
     match tool_id {
-        "task" => vec!["agent".to_string(), "subagent_type".to_string()],
         "background_output" => vec!["task_id".to_string(), "session_id".to_string()],
         "background_cancel" => vec!["background_output(cancel=true)".to_string()],
         "read" => vec!["filePath".to_string(), "path".to_string()],

@@ -1,4 +1,5 @@
 // allow: SIZE_OK — CLI TUI handoff (launch + setup + config)
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::Write;
 #[cfg(test)]
@@ -105,7 +106,6 @@ use self::live_events::{forward_events_to_tui, latest_request_id_for_agent};
 #[cfg(test)]
 use self::live_intents::{
     foreground_background_success_message, manual_compaction_success_message,
-    maybe_update_live_agent_target_for_plan_handoff,
 };
 use self::live_intents::{handle_ui_intents, LiveAgentTarget};
 use self::live_options::{continue_live_tui_options, new_live_tui_options};
@@ -418,6 +418,10 @@ async fn run_interactive_mode(
                         persist_model_selection,
                         Some(prompt_history_path_for_session_dir(&settings.session_dir)),
                         TuiAuthBackendContext::from_settings(settings),
+                        settings
+                            .config
+                            .as_ref()
+                            .map(|config| config.ui.keybindings.clone()),
                         cmd.no_alt_screen,
                     )
                 }
@@ -534,6 +538,10 @@ async fn run_direct_continue_mode(
                         persist_model_selection,
                         Some(prompt_history_path_for_session_dir(&settings.session_dir)),
                         TuiAuthBackendContext::from_settings(settings),
+                        settings
+                            .config
+                            .as_ref()
+                            .map(|config| config.ui.keybindings.clone()),
                         cmd.no_alt_screen,
                     )
                 }
@@ -603,6 +611,7 @@ async fn run_startup_launcher(
     persist_model_selection: bool,
     prompt_history_path: Option<PathBuf>,
     auth_backend: TuiAuthBackendContext,
+    keybindings: Option<BTreeMap<String, String>>,
     skip_alternate_screen: bool,
 ) -> Result<InteractiveWorkflow, String> {
     profile_handoff("startup_launcher.begin");
@@ -662,7 +671,7 @@ async fn run_startup_launcher(
             },
             exit_on_finish,
             on_ui_intent: Some(on_ui_intent),
-            keybindings: None,
+            keybindings,
             toggles: None,
             preserve_terminal_on_exit: true,
             skip_alternate_screen,
@@ -807,6 +816,10 @@ async fn run_continue_session_bootstrap(
     let exit_on_finish = cmd.exit_on_finish;
     let no_alt_screen = cmd.no_alt_screen;
     let toggles = Some(settings.toggles.clone());
+    let keybindings = settings
+        .config
+        .as_ref()
+        .map(|config| config.ui.keybindings.clone());
     set_pending_live_launch_metadata(continue_metadata);
     if let Some(config_path) = settings.config_path.clone() {
         let hashline_edit = settings
@@ -863,6 +876,7 @@ async fn run_continue_session_bootstrap(
             ui_intent_sender,
             true,
             prompt_history_path,
+            keybindings,
             toggles,
             no_alt_screen,
         ))
@@ -1004,6 +1018,10 @@ async fn run_live_mode(
     let exit_on_finish = cmd.exit_on_finish;
     let no_alt_screen = cmd.no_alt_screen;
     let toggles = Some(settings.toggles.clone());
+    let keybindings = settings
+        .config
+        .as_ref()
+        .map(|config| config.ui.keybindings.clone());
     let prompt_history_path = Some(prompt_history_path_for_session_dir(&settings.session_dir));
     set_pending_live_launch_metadata(scenario_launch_metadata());
     let session_history_entries =
@@ -1019,6 +1037,7 @@ async fn run_live_mode(
             ui_intent_sender,
             false,
             prompt_history_path,
+            keybindings,
             toggles,
             no_alt_screen,
         ))
@@ -1076,18 +1095,13 @@ async fn run_scenario_runner(
         run_dir: run.run_dir.clone(),
     });
 
-    coordinator
-        .spawn_agent(supervisor_actor(), "planner", None)
-        .await
-        .map_err(|err| err.to_string())?;
-
-    let worker_agent_id = coordinator
-        .spawn_agent(supervisor_actor(), "worker", None)
+    let agent_id = coordinator
+        .spawn_agent(supervisor_actor(), "default", None)
         .await
         .map_err(|err| err.to_string())?;
 
     if scenario.is_question() {
-        let worker = worker_actor(worker_agent_id);
+        let worker = worker_actor(agent_id);
         if scenario.interactive_permissions() {
             let _ = coordinator
                 .request_question(
@@ -1132,8 +1146,8 @@ async fn run_scenario_runner(
 
     let tool_call_id = coordinator
         .request_tool_call(
-            worker_actor(worker_agent_id),
-            Some("deep".to_string()),
+            worker_actor(agent_id),
+            None,
             "edit",
             golden_path_edit_args(),
         )

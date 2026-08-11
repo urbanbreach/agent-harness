@@ -14,20 +14,16 @@ async fn task_delegation_fixture_covers_structured_prompt_lineage_and_summary_ca
     let provider = Arc::new(DelegationContractProvider::new());
     let profiles = BTreeMap::from([
         (
-            "deep".to_string(),
+            "default".to_string(),
             worker_profile(&["task", "background_output", "background_cancel"]),
         ),
         (
-            "visual-engineering".to_string(),
-            named_worker_profile_with_prompt(
-                "visual-engineering",
-                &["read", "bash"],
-                "visual-engineering category prompt append marker",
-            ),
-        ),
-        (
             "general".to_string(),
-            named_worker_profile("general", &["read", "bash"]),
+            named_worker_profile_with_prompt(
+                "general",
+                &["read", "bash"],
+                "general child prompt append marker",
+            ),
         ),
     ]);
     let provider_clone = Arc::clone(&provider);
@@ -39,7 +35,7 @@ goal: prove delegation evidence\n\
 downstream use: parent will synchronize PRD evidence\n\
 request: return an intentionally oversized summary\n\
 required tools: no tool calls\n\
-must-do: preserve the skill and category context\n\
+must-do: preserve the skill context\n\
 must-not-do: do not edit files";
     // act
     let sync_tool_call_id = handle
@@ -48,9 +44,9 @@ must-not-do: do not edit files";
             Some("deep".to_string()),
             "task",
             json!({
-                "category": "visual-engineering",
                 "description": "WS9 sync child",
                 "prompt": structured_prompt,
+                "subagent_type": "general",
                 "run_in_background": false,
                 "load_skills": ["ws9-skill"]
             }),
@@ -65,9 +61,9 @@ must-not-do: do not edit files";
             Some("deep".to_string()),
             "task",
             json!({
-                "category": "visual-engineering",
                 "description": "WS9 background child",
                 "prompt": structured_prompt,
+                "subagent_type": "general",
                 "run_in_background": true,
                 "load_skills": ["ws9-skill"]
             }),
@@ -85,8 +81,7 @@ must-not-do: do not edit files";
         .as_ref()
         .unwrap_or_abort();
     assert_delegation_output_is_capped(sync_output, "foreground");
-    assert_eq!(sync_output["route"]["requested_category"], json!("visual-engineering"));
-    assert_eq!(sync_output["route"]["resolved_profile"], json!("visual-engineering"));
+    assert_eq!(sync_output["route"]["profile_id"], json!("general"));
     assert_eq!(sync_output["loaded_skills"][0]["name"], json!("ws9-skill"));
     assert_eq!(sync_output["lineage"]["parent_tool_call_id"], json!(sync_tool_call_id));
 
@@ -131,7 +126,7 @@ must-not-do: do not edit files";
         .as_ref()
         .unwrap_or_abort();
     assert_delegation_output_is_capped(background_output, "background");
-    assert_eq!(background_output["route"]["resolved_profile"], json!("visual-engineering"));
+    assert_eq!(background_output["route"]["profile_id"], json!("general"));
     assert_eq!(background_output["source"], json!("event_replay"));
 
     assert!(events.iter().any(|event| matches!(
@@ -158,7 +153,7 @@ must-not-do: do not edit files";
                 .collect::<Vec<_>>()
                 .join("\n")
         })
-        .filter(|prompt| prompt.contains("visual-engineering category prompt append marker"))
+        .filter(|prompt| prompt.contains("general child prompt append marker"))
         .collect::<Vec<_>>();
     assert_eq!(
         child_prompts.len(),
@@ -166,7 +161,7 @@ must-not-do: do not edit files";
         "expected sync and background child prompts"
     );
     for prompt in child_prompts {
-        assert!(prompt.contains("visual-engineering category prompt append marker"));
+        assert!(prompt.contains("general child prompt append marker"));
         assert!(prompt.contains("<skill_content name=\"ws9-skill\">"));
         assert!(prompt.contains("WS9 skill body marker."));
         for field in [

@@ -182,19 +182,15 @@ async fn provider_single_call_returns_tool_intents_without_executing_tools() {
     }));
     let tool_registry = Arc::new(registry);
 
-    let profile = AgentProfile {
-        name: "alpha".to_string(),
-        category: "deep".to_string(),
-        model_ref: "mock:model-1".to_string(),
-        model_ref_explicit: true,
-        system_prompt: "single-call-system".to_string(),
-        temperature: Some(0.0),
-        cache_retention: Default::default(),
-        max_iters: Some(12),
-        tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
-        toolset: vec!["shell.run".to_string()],
-        permission_ruleset: Vec::new(),
-    };
+    let profile = AgentProfile { name: "alpha".to_string(), model_ref: "mock:model-1".to_string(),
+    model_ref_explicit: true,
+    system_prompt: "single-call-system".to_string(),
+    temperature: Some(0.0),
+    cache_retention: Default::default(),
+    max_iters: Some(12),
+    tool_failure_mode: harness_core::config::ToolFailureMode::FailTurn,
+    toolset: vec!["shell.run".to_string()],
+    permission_ruleset: Vec::new(), };
     let request = AgentRequest {
         agent_id: "agent_1".to_string(),
         prompt: "single provider call".to_string(),

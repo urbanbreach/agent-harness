@@ -38,8 +38,6 @@ fn coordinator_registry_exposes_single_native_tool_surface() {
         "invalid",
         "list",
         "lsp",
-        "plan_enter",
-        "plan_exit",
         "question",
         "read",
         "session_info",
@@ -68,6 +66,8 @@ fn coordinator_registry_exposes_single_native_tool_surface() {
     assert!(registry.get("edit.hashline_scan").is_none());
     assert!(registry.get("fs.write").is_none());
     assert!(registry.get("patch").is_none());
+    assert!(registry.get("plan_enter").is_none());
+    assert!(registry.get("plan_exit").is_none());
 
     for legacy_tool_id in [
         "agent.spawn",
@@ -204,11 +204,7 @@ fn bash_safety_guidance_and_ast_grep_replace_catalog_match_runtime_sources() {
         "const ALLOWED_SHELL_BUILTINS: &[&str] = &[\"echo\", \"false\", \"printf\", \"pwd\", \"test\", \"true\", \"[\"];"
     ));
 
-    for text in [
-        &doc,
-        &read_agent_prompt("build"),
-        &read_agent_prompt("plan"),
-    ] {
+    for text in [&doc] {
         assert!(text.contains("120000 ms"));
         assert!(text.contains("2000 lines"));
         assert!(text.contains("51200 bytes"));
@@ -281,19 +277,36 @@ fn changed_tool_schemas_and_docs_reflect_parity_params() {
         .get("task")
         .unwrap_or_abort()
         .parameters_json_schema();
-    for field in ["description", "run_in_background", "load_skills"] {
+    for field in [
+        "prompt",
+        "subagent_type",
+        "run_in_background",
+        "load_skills",
+    ] {
         let is_required = task_schema
             .get("required")
             .and_then(|v| v.as_array())
             .map(|arr| arr.iter().any(|v| v.as_str() == Some(field)))
             .unwrap_or(false);
-        assert!(!is_required, "task schema should not require {field}");
+        assert!(is_required, "task schema should require {field}");
     }
-    assert!(
-        doc.contains("optional with defaults"),
-        "docs missing task optional args note"
+    let task_properties = task_schema["properties"].as_object().unwrap_or_abort();
+    assert_eq!(
+        task_properties
+            .keys()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from([
+            "command",
+            "description",
+            "load_skills",
+            "prompt",
+            "run_in_background",
+            "session_id",
+            "subagent_type",
+            "task_id",
+        ])
     );
-
     let bg_output_schema = registry
         .get("background_output")
         .unwrap_or_abort()
@@ -411,10 +424,4 @@ fn documented_tool_rows(doc: &str) -> BTreeMap<String, DocumentedToolRow> {
             })
         })
         .collect()
-}
-
-#[allow(clippy::panic, reason = "test code must panic gracefully")]
-fn read_agent_prompt(profile: &str) -> String {
-    std::fs::read_to_string(repo_path(&format!(".agent-harness/agents/{profile}.md")))
-        .unwrap_or_else(|_| panic!("abort"))
 }

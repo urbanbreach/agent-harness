@@ -14,7 +14,7 @@ Read root `AGENTS.md` first. Config-specific schema guidance lives in `../config
 | Permissions/privacy | `permissions/permissions.md`, `permissions/privacy-and-local-data.md` | Approval limits, local data, redaction, support bundles. |
 | Testing/evidence | `testing/testing.md`, `testing/budgets.md` | Lane semantics, perf/coverage, evidence policy. |
 | Simulation/TUI manifests | `testing/simulation-matrix.json`, `testing/tui-signoff-manifest.v1.json` | Machine-read validation inputs. |
-| Agents/troubleshooting | `operations/agents-and-subagents.md`, `operations/troubleshooting.md` | Agent routing, local troubleshooting. |
+| Generic agent/troubleshooting | `operations/generic-agent-and-tasks.md`, `operations/troubleshooting.md` | Generic task execution and local troubleshooting. |
 | Extensions/migration | `operations/extension-strategy.md`, `operations/migration-notes.md` | Extension strategy and migration history. |
 | Static gate baseline | `testing/test-suite-conventions-baseline.json` | Machine-read debt baseline for test-suite gates. |
 

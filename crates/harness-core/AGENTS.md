@@ -36,7 +36,7 @@ Read root `AGENTS.md` first for search scope, cross-crate invariants, and comman
 - Typed extension manifests are descriptor-only in V1: no runtime tool registration, command execution, MCP launch, provider decorators, external code loading, or session mutation.
 
 ## CONFIG CONTRACT
-- Canonical runtime keys include `provider`, `model`, `small_model`, `model_profile`, `agent`, `default_agent`, `permission`, `mcp`, `skills`, `instructions`, `enabled_providers`, `disabled_providers`.
+- Canonical runtime keys include `provider`, `model`, `small_model`, `model_profile`, singleton `agent`, `permission`, `mcp`, `skills`, `instructions`, `enabled_providers`, `disabled_providers`.
 - Canonical permission names are `bash`, `edit`, `question`, `task`, `webfetch`, `websearch`, `codesearch`, `lsp`.
 - Legacy aliases/shapes are migration inputs only; examples/docs/tests should use the harness-centered split.
 - Runtime config belongs to `harness.json{,c}`; TUI config belongs to `tui.json{,c}`.

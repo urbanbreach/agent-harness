@@ -17,9 +17,9 @@ async fn native_batch_and_agent_spawn_preserve_child_lineage_permissions_and_ord
             Some("deep".to_string()),
             "task",
             json!({
-                "category": "deep",
                 "description": "Native background child",
                 "prompt": "Say hello from native child",
+                "subagent_type": "general",
                 "run_in_background": true,
                 "load_skills": ["rust-best-practices"],
                 "command": "delegate-native",
@@ -35,9 +35,9 @@ async fn native_batch_and_agent_spawn_preserve_child_lineage_permissions_and_ord
             Some("deep".to_string()),
             "task",
             json!({
-                "category": "deep",
                 "description": "Compat background child",
                 "prompt": "Say hello from compat child",
+                "subagent_type": "general",
                 "run_in_background": true,
                 "load_skills": ["rust-best-practices"],
             }),
@@ -320,9 +320,9 @@ async fn compat_task_and_batch_delegate_to_native_orchestration() {
             Some("deep".to_string()),
             "task",
             json!({
-                "category": "deep",
                 "description": "Compat child",
                 "prompt": "Say hello from compat child",
+                "subagent_type": "general",
                 "run_in_background": true,
                 "load_skills": ["rust-best-practices"],
             }),
@@ -478,42 +478,4 @@ async fn compat_task_and_batch_delegate_to_native_orchestration() {
         .and_then(Value::as_str)
         .unwrap_or_abort()
         .contains("|line-01"));
-}
-#[tokio::test]
-async fn task_tool_rejects_unknown_child_profile_before_spawning_fallback_model() {
-    // arrange
-    // act
-    // assert
-    let temp_dir = setup_workspace();
-    let workspace = temp_dir.path().join("workspace");
-
-    let (handle, run, worker_id) = spawn_run(&workspace).await;
-
-    let task_tool_call_id = handle
-        .request_tool_call(
-            worker_actor(&worker_id),
-            Some("deep".to_string()),
-            "task",
-            json!({
-                "description": "Missing child profile",
-                "prompt": "Try to inspect the repo",
-                "subagent_type": "missing_profile",
-                "run_in_background": false,
-                "load_skills": []
-            }),
-        )
-        .await
-        .unwrap_or_abort();
-    wait_for_tool_call_finish(&run.events_path, &task_tool_call_id).await;
-
-    handle.stop_run().await.unwrap_or_abort();
-    let events = read_events(&run.events_path);
-    let finished = find_finished(&events, &task_tool_call_id);
-
-    assert_eq!(finished.status, ToolCallStatus::Failed);
-    assert!(finished
-        .output_summary
-        .as_deref()
-        .unwrap_or_abort()
-        .contains("Unknown child profile `missing_profile`"));
 }

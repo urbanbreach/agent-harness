@@ -9,8 +9,6 @@ pub(super) struct ParsedSkillFrontmatter {
     pub(super) description: Option<String>,
     pub(super) argument_hint: Option<String>,
     pub(super) allowed_tools: Vec<String>,
-    pub(super) target_agent: Option<String>,
-    pub(super) target_category: Option<String>,
     pub(super) deferred_mcp: Option<String>,
     pub(super) deferred_resources: Option<String>,
 }
@@ -106,16 +104,6 @@ fn parse_frontmatter_fields(lines: &[&str]) -> Result<ParsedSkillFrontmatter, St
             "allowed_tools" | "allowedTools" | "expected_tools" | "expectedTools" => {
                 let (value, next_index) = parse_scalar_field(lines, index, field.raw_value)?;
                 frontmatter.allowed_tools = parse_list_field(&value);
-                index = next_index;
-            }
-            "target_agent" | "targetAgent" => {
-                let (value, next_index) = parse_scalar_field(lines, index, field.raw_value)?;
-                frontmatter.target_agent = non_empty(value);
-                index = next_index;
-            }
-            "target_category" | "targetCategory" => {
-                let (value, next_index) = parse_scalar_field(lines, index, field.raw_value)?;
-                frontmatter.target_category = non_empty(value);
                 index = next_index;
             }
             "mcp" | "deferred_mcp" | "deferredMcp" => {

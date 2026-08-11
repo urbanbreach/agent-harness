@@ -105,11 +105,8 @@ Kopioi aloitusasetus ja säädä sitten niitä harvoja päätöksiä, jotka tode
   // Istuntojen oletuspalveluntarjoaja ja -malli.
   "model": "openai-codex/gpt-5.4-mini",
 
-  // Agentit voivat käyttää suoraa mallia tai nimettyä malliprofiilia.
-  "agent": {
-    "build": { "variant": "high" },
-    "explore": { "enable": false }
-  },
+  // Yksi yleiskäyttöinen pääagentti ja rajatut nimetyt ala-agentit.
+  "agent": { "default": { "variant": "high" } },
 
   // Tee arkaluonteisesta työstä eksplisiittistä. Viimeisin täsmäävä bash-sääntö voittaa.
   "permission": {
@@ -131,8 +128,8 @@ Katkelma näyttää kopioituun aloitusasetukseen tehtävät muutokset, ei itsen�
 | Asetus | Miksi se on tärkeä |
 | --- | --- |
 | `provider` ja `model` | Määrittävät käytettävissä olevan palveluntarjoaja- ja malliluettelon sekä aktiivisen oletuksen. |
-| `model_profile` | Nimeää uudelleenkäytettävät malli- ja päättelyvarianttireitit kategoria-agenteille ja varavaihtoehdoille. |
-| `agent` ja `default_agent` | Ottavat käyttöön, poistavat käytöstä ja säätävät Build-, Plan-, Explore-, General- ja kategoriaprofiileja. |
+| `model_profile` | Nimeää uudelleenkäytettävät malli- ja päättelyvarianttikohteet. |
+| `agent` | Säätää yleiskäyttöistä `default`-pääagenttia ja nimettyjä ala-agentteja. |
 | `permission` | Päättää, sallitaanko sisäänrakennettujen työkalujen kyvykkyydet, kysytäänkö niistä vai kielletäänkö ne. |
 | `formatter` | Hallitsee muokkausten jälkeisiä muotoilijoita; jätä pois, jos haluat pitää sisäänrakennetun muotoilijarekisterin käytössä. |
 | `mcp` | Rekisteröi käytössä olevat, asetuksiin perustuvat MCP-palvelimet ajonaikaiseen työkalurekisteriin. |
@@ -141,7 +138,7 @@ Katkelma näyttää kopioituun aloitusasetukseen tehtävät muutokset, ei itsen�
 
 ### Selvitä, mistä asetus tulee
 
-Ajonaikaiset asetuskerrokset yhdistyvät yhteisistä oletuksista projektikohtaisiin asetuksiin. Kanoniset sijainnit ovat XDG:n yleiset asetukset, projektin `harness.json{,c}` ja `.agent-harness/harness.json{,c}`, joita etsitään kohti projektijuurta. Eksplisiittiset ympäristöpeiteasetukset voivat olla viimeisenä etusijalla. Markdown-muotoiset agenttiprofiilit hakemistossa `.agent-harness/agents/` löytyvät tästä riippumatta.
+Ajonaikaiset asetuskerrokset yhdistyvät yhteisistä oletuksista projektikohtaisiin asetuksiin. Kanoniset sijainnit ovat XDG:n yleiset asetukset, projektin `harness.json{,c}` ja `.agent-harness/harness.json{,c}`, joita etsitään kohti projektijuurta. Eksplisiittiset ympäristöpeiteasetukset voivat olla viimeisenä etusijalla. Yleiskäyttöinen prompt on tiedostossa `.agent-harness/agents/default.md`.
 
 Älä arvaa, mikä tiedosto voitti. Kysy komentorivityökalulta:
 
@@ -179,13 +176,13 @@ Katso kaikki toiminto-ID:t ja oletussidonnat [TUI-asetusten viitteestä](configu
 
 | Tavoite | Käytä tätä |
 | --- | --- |
-| Työskentele vuorovaikutteisesti | `harness` — Build on valittu oletuksena; siirry ensisijaisten agenttien välillä `Tab`-näppäimellä. |
-| Ajattele ennen tiedostojen muuttamista | Vaihda Planiin. Se voi tarkastella työtilaa ja kirjoittaa aktiivisen suunnitelmansa, minkä jälkeen se pyytää siirtämään työn takaisin Buildille. |
+| Työskentele vuorovaikutteisesti | `harness` käynnistää yleiskäyttöisen koodausagentin. |
+| Ajattele ennen tiedostojen muuttamista | Pyydä yleiskäyttöiseltä agentilta analyysi tai kirjallinen suunnitelma ennen toteutusta. |
 | Aja CI:ssä tai skriptissä | `harness run "<prompt>"` |
 | Kokeile kohdennettua alemman tason prompt-suorituspolkua | `harness prompt --text "<prompt>" --out events.jsonl` |
 | Delegoi rajattu työ | Pyydä agenttia kutsumaan kanonista `task`-työkalua eksplisiittisellä promptilla, taustavalinnalla ja valinnaisella taitoluettelolla. |
 
-[Agenttien ja ala-agenttien opas](operations/agents-and-subagents.md) selittää mukana toimitetut profiilit, kategoriavaravaihtoehdon, delegointipyynnön rakenteen ja ajonaikaiset rajat, jotka estävät työntekijää ohittamasta uudelleendelegoinnin rajoituksia.
+[Yleiskäyttöisen agentin ja tehtävien opas](operations/generic-agent-and-tasks.md) selittää promptin, delegointipyynnön rakenteen ja ajonaikaiset rajat, jotka estävät työntekijää ohittamasta uudelleendelegoinnin rajoituksia.
 
 ### Pidä istunnot tarkasteltavina
 

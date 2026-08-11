@@ -87,14 +87,13 @@ pub(crate) fn read_artifact(workspace: &Path, artifact_path: &str) -> String {
 pub(crate) fn task_profiles() -> BTreeMap<String, AgentProfile> {
     BTreeMap::from([
         ("parent".to_string(), profile("parent", &["task"])),
-        ("child".to_string(), profile("child", &[])),
+        ("general".to_string(), profile("general", &[])),
     ])
 }
 
 pub(crate) fn profile(name: &str, toolset: &[&str]) -> AgentProfile {
     AgentProfile {
         name: name.to_string(),
-        category: name.to_string(),
         model_ref: "mock:large-summary".to_string(),
         model_ref_explicit: true,
         system_prompt: format!("{name} prompt"),

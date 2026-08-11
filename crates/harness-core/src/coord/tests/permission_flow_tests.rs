@@ -7,7 +7,7 @@ pub(super) use permission_flow_rule_tests::{
     perm_ask_path_blocks_until_resolved as rule_perm_ask_path_blocks_until_resolved,
     permission_rule_bash_selector_is_enforced_at_tool_call_site as rule_permission_rule_bash_selector_is_enforced_at_tool_call_site,
     permission_rule_task_selector_is_enforced_at_tool_call_site as rule_permission_rule_task_selector_is_enforced_at_tool_call_site,
-    task_permission_rule_selector_uses_subagent_type_before_aliases as rule_task_permission_rule_selector_uses_subagent_type_before_aliases,
+    task_permission_rule_selector_uses_only_subagent_type as rule_task_permission_rule_selector_uses_only_subagent_type,
 };
 
 pub(super) async fn allow_always_records_grant_and_authorizes_matching_future_shell_call() {
@@ -237,11 +237,11 @@ pub(super) async fn allow_always_shell_run_grant_does_not_authorize_changed_args
 pub(super) async fn static_deny_overrides_permission_grant() {
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let mut config = test_config(temp_dir.path());
-    config.permission_policy = ask_shell_permission_policy(1_000).with_category_override(
+    config.permission_policy = ask_shell_permission_policy(1_000).with_profile_override(
         "locked",
-        CategoryPermissions {
+        ProfilePermissions {
             shell: Some(PermissionMode::Deny),
-            ..CategoryPermissions::default()
+            ..ProfilePermissions::default()
         },
     );
 

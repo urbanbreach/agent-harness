@@ -17,36 +17,8 @@ use harness_core::tool::ToolRegistry;
 use harness_core::workspace::WorkspaceEnvironment;
 use tempfile::tempdir;
 
-const V1_PROMPT_PROFILES: &str = "build plan general explore visual-engineering artistry ultrabrain deep quick unspecified-low unspecified-high writing";
-const V1_PRIMARY_PROMPTS: [&str; 2] = ["build", "plan"];
-const V1_CATEGORY_PROMPTS: [&str; 8] = [
-    "visual-engineering",
-    "artistry",
-    "ultrabrain",
-    "deep",
-    "quick",
-    "unspecified-low",
-    "unspecified-high",
-    "writing",
-];
-const V1_HIDDEN_PROMPTS: [&str; 3] = ["title", "summary", "compaction"];
-const V1_COMPOSED_PROMPTS: [&str; 15] = [
-    "build",
-    "plan",
-    "general",
-    "explore",
-    "visual-engineering",
-    "artistry",
-    "ultrabrain",
-    "deep",
-    "quick",
-    "unspecified-low",
-    "unspecified-high",
-    "writing",
-    "title",
-    "summary",
-    "compaction",
-];
+const GENERIC_PROMPT_PROFILES: &str = "default explore general librarian";
+const GENERIC_COMPOSED_PROMPTS: [&str; 4] = ["default", "explore", "general", "librarian"];
 const UPDATE_PROMPT_SNAPSHOTS_ENV: &str = "HARNESS_UPDATE_PROMPT_SNAPSHOTS";
 
 #[path = "../src/dynamic_prompt.rs"]
@@ -73,6 +45,29 @@ fn load_config_from_repo_file(config_path: &Path, repo: &Path) -> HarnessConfig 
 }
 
 #[test]
+fn shipped_runtime_materializes_generic_default_and_named_subagents() {
+    // arrange
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let config_path = repo_root.join("configs/harness.example.jsonc");
+    let config = load_config_from_repo_file(&config_path, &repo_root);
+
+    // act
+    let coordinator_config =
+        bootstrap::build_interactive_coordinator_config(&config).unwrap_or_abort();
+    let profile_ids = coordinator_config
+        .agent_profiles
+        .keys()
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+
+    // assert
+    assert_eq!(
+        profile_ids,
+        vec!["default", "explore", "general", "librarian"]
+    );
+}
+
+#[test]
 fn shipped_v1_prompt_assets_have_contract_bodies() {
     // arrange
     let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
@@ -84,27 +79,20 @@ fn shipped_v1_prompt_assets_have_contract_bodies() {
         bootstrap::build_interactive_coordinator_config(&config).unwrap_or_abort();
 
     // assert
-    for profile in V1_PROMPT_PROFILES.split_whitespace() {
+    for profile in GENERIC_PROMPT_PROFILES.split_whitespace() {
         let prompt = &coordinator_config.agent_profiles[profile].system_prompt;
-        for required in [
-            "## Identity",
-            "## Goal",
-            "## Use When",
-            "## Do Not Use When",
-            "## Scope Guard",
-            "## Runtime-Enforced Permissions",
-            "## Behavioral Guidance",
-            "## Operating Loop",
-            "## Ask Gate",
-            "## Failure Recovery",
-            "## Output Contract",
-            "## Verification Gate",
-        ] {
-            assert!(
-                prompt.contains(required),
-                "{profile} prompt missing required V1 prompt section {required}"
-            );
-        }
+        assert!(
+            prompt.contains("Harness"),
+            "{profile} prompt must identify Harness"
+        );
+        assert!(
+            prompt.contains("Do not") || prompt.contains("Guidelines:"),
+            "{profile} prompt must state behavioral boundaries"
+        );
+        assert!(
+            prompt.contains("evidence") || prompt.contains("Verify changes"),
+            "{profile} prompt must require verification or evidence"
+        );
     }
 }
 
@@ -190,14 +178,7 @@ fn shipped_v1_full_composed_prompt_snapshots_match_source() {
         .join("v1_composed_prompts");
 
     // act
-    for hidden_profile in V1_HIDDEN_PROMPTS {
-        assert!(
-            V1_COMPOSED_PROMPTS.contains(&hidden_profile),
-            "hidden profile {hidden_profile} must have a full composed prompt snapshot"
-        );
-    }
-
-    for profile in V1_COMPOSED_PROMPTS {
+    for profile in GENERIC_COMPOSED_PROMPTS {
         let runtime_prompt = coordinator_config
             .agent_profiles
             .get(profile)
@@ -211,7 +192,7 @@ fn shipped_v1_full_composed_prompt_snapshots_match_source() {
     }
 
     // assert
-    let expected_files = V1_COMPOSED_PROMPTS
+    let expected_files = GENERIC_COMPOSED_PROMPTS
         .iter()
         .map(|profile| format!("{profile}.txt"))
         .collect::<Vec<_>>();
@@ -319,66 +300,45 @@ fn shipped_v1_family_prompt_assets_match_golden_snapshots() {
 }
 
 #[test]
-fn shipped_v1_prompt_bodies_have_agent_specific_seams_and_intent_gate() {
+fn shipped_generic_prompt_bodies_have_distinct_scopes() {
     // arrange
     let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let required = [
         (
-            "build",
-            &["hashline edit", "real CLI", "recoverable tool failure"] as &[_],
-        ),
-        (
-            "plan",
+            "default",
             &[
-                ".agent-harness/plans/<run>.md",
-                "plan_exit",
-                "plan_enter",
-                "read-only shell guard",
-                "delegate only to Explore",
-            ],
+                "expert coding assistant",
+                "smallest complete change",
+                "real user surface",
+            ] as &[_],
         ),
         (
             "explore",
             &[
-                "read-only tools",
+                "read-only codebase research helper",
                 "files",
                 "relationships",
                 "answer",
                 "next_steps",
-                "stop condition",
+                "Stop when",
             ],
         ),
         (
             "general",
             &[
-                "multistep work",
-                "belongs to Build",
+                "focused helper",
+                "bounded implementation",
                 "compact parent context",
             ],
         ),
         (
-            "visual-engineering",
-            &["UI/UX", "layout", "visual evidence", "recursion-deny"],
+            "librarian",
+            &[
+                "external research specialist",
+                "official documentation",
+                "source URL",
+            ],
         ),
-        (
-            "artistry",
-            &["creative", "recursion-deny", "output contract"],
-        ),
-        (
-            "ultrabrain",
-            &["logic", "architecture", "effort estimate", "recursion-deny"],
-        ),
-        ("deep", &["end-to-end", "autonomous", "recursion-deny"]),
-        ("quick", &["small", "low-risk", "recursion-deny"]),
-        (
-            "unspecified-low",
-            &["low-to-moderate", "uncategorized", "recursion-deny"],
-        ),
-        (
-            "unspecified-high",
-            &["complex uncategorized", "high-effort", "recursion-deny"],
-        ),
-        ("writing", &["documentation", "prose", "recursion-deny"]),
     ];
 
     for (profile, anchors) in required {
@@ -388,34 +348,14 @@ fn shipped_v1_prompt_bodies_have_agent_specific_seams_and_intent_gate() {
             // assert
             assert!(
                 body.contains(anchor),
-                "{profile} prompt missing distinctive V1 seam anchor `{anchor}`"
-            );
-        }
-    }
-
-    for profile in V1_PRIMARY_PROMPTS {
-        let body = shipped_profile_body(&repo_root, profile);
-        assert!(
-            body.contains("## Intent Gate"),
-            "{profile} primary prompt missing named Intent Gate section"
-        );
-        for route in [
-            "explain",
-            "investigate",
-            "implement",
-            "plan",
-            "ask exactly one blocking question",
-        ] {
-            assert!(
-                body.contains(route),
-                "{profile} Intent Gate missing route `{route}`"
+                "{profile} prompt missing distinctive generic-agent anchor `{anchor}`"
             );
         }
     }
 }
 
 #[test]
-fn shipped_profile_permission_promises_match_runtime_policy_and_toolsets() {
+fn shipped_named_subagent_permissions_match_runtime_toolsets() {
     // arrange
     let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let config_path = repo_root.join("configs/harness.example.jsonc");
@@ -423,159 +363,47 @@ fn shipped_profile_permission_promises_match_runtime_policy_and_toolsets() {
     let coordinator_config =
         bootstrap::build_interactive_coordinator_config(&config).unwrap_or_abort();
 
-    let plan_prompt = prompt_section(
-        &coordinator_config.agent_profiles["plan"].system_prompt,
-        "Runtime-Enforced Permissions",
-    );
-    for anchor in [
-        "write only the active `.agent-harness/plans/<run>.md` plan file",
-        "runtime read-only shell guard for `bash`",
-        "delegate only to Explore",
-        // act
-    ] {
-        // assert
-        assert!(
-            plan_prompt.contains(anchor),
-            "plan permission prompt missing runtime-enforced anchor `{anchor}`"
-        );
-    }
-    assert_eq!(
-        coordinator_config.permission_policy.evaluate_request(
-            Some("plan"),
-            PermissionKind::EditFs,
-            Some(&PermissionRuleRequest::WorkspacePath(
-                ".agent-harness/plans/run_demo.md".to_string()
-            )),
-        ),
-        PolicyDecision::Allow
-    );
-    assert_eq!(
-        coordinator_config.permission_policy.evaluate_request(
-            Some("plan"),
-            PermissionKind::EditFs,
-            Some(&PermissionRuleRequest::WorkspacePath(
-                "src/lib.rs".to_string()
-            )),
-        ),
-        PolicyDecision::Deny
-    );
-    assert!(matches!(
-        coordinator_config
-            .permission_policy
-            .evaluate(Some("plan"), PermissionKind::Shell),
-        PolicyDecision::Ask { .. }
-    ));
-    let plan_task_description = task_description_for_profile(
+    let default_task_description = task_description_for_profile(
         coordinator_config.tool_registry.as_ref(),
-        &coordinator_config.agent_profiles["plan"],
+        &coordinator_config.agent_profiles["default"],
     );
-    assert!(plan_task_description.contains("- explore:"));
-    assert!(!plan_task_description.contains("- general:"));
-
-    let explore_prompt = prompt_section(
-        &coordinator_config.agent_profiles["explore"].system_prompt,
-        "Runtime-Enforced Permissions",
-    );
-    for (tool_id, prompt_anchor) in [
-        ("edit", "denies edit"),
-        ("codesearch", "codesearch"),
-        ("task", "task redelegation"),
-    ] {
+    for subagent in ["explore", "general", "librarian"] {
         assert!(
-            explore_prompt.contains(prompt_anchor),
-            "explore prompt missing restriction anchor `{prompt_anchor}`"
+            default_task_description.contains(&format!("- {subagent}:")),
+            "default task description must list {subagent}"
         );
         assert!(
-            coordinator_denies_tool_for_profile(&coordinator_config, "explore", tool_id),
-            "explore prompt claims `{tool_id}` is restricted but runtime allows it"
-        );
-    }
-    for (tool_id, prompt_anchor) in [
-        ("bash", "bash"),
-        ("webfetch", "webfetch"),
-        ("websearch", "websearch"),
-    ] {
-        assert!(
-            explore_prompt.contains(prompt_anchor),
-            "explore prompt missing allowed-tool anchor `{prompt_anchor}`"
-        );
-        assert!(
-            !coordinator_denies_tool_for_profile(&coordinator_config, "explore", tool_id),
-            "explore should allow `{tool_id}` under ruleset-compatible defaults"
+            coordinator_denies_tool_for_profile(&coordinator_config, subagent, "task"),
+            "named subagent {subagent} must not redelegate"
         );
     }
     assert!(
-        explore_prompt.contains("MCP write calls"),
-        "explore prompt must declare the MCP write-call boundary"
-    );
-
-    let general_prompt = prompt_section(
-        &coordinator_config.agent_profiles["general"].system_prompt,
-        "Runtime-Enforced Permissions",
+        coordinator_denies_tool_for_profile(&coordinator_config, "explore", "edit"),
+        "explore must remain read-only"
     );
     assert!(
-        general_prompt.contains("may redelegate") || general_prompt.contains("can redelegate"),
-        "general prompt should allow task redelegation under Harness-aligned matrix"
+        coordinator_denies_tool_for_profile(&coordinator_config, "librarian", "edit"),
+        "librarian must remain read-only"
     );
     assert!(
-        !coordinator_denies_tool_for_profile(&coordinator_config, "general", "task"),
-        "general must allow task (Harness general can redelegate)"
+        !coordinator_denies_tool_for_profile(&coordinator_config, "general", "edit"),
+        "general must retain bounded implementation capability"
     );
-    assert!(
-        coordinator_config.agent_profiles["general"]
-            .toolset
-            .iter()
-            .any(|t| t == "task"),
-        "general toolset must include task"
-    );
-    assert!(
-        coordinator_config.agent_profiles["general"]
-            .toolset
-            .iter()
-            .any(|t| t == "background_output"),
-        "general toolset must include background_output"
-    );
-    assert!(
-        is_tool_disabled(
-            "todowrite",
-            &coordinator_config.agent_profiles["general"].permission_ruleset
-        ),
-        "general must catch-all deny todowrite in permission_ruleset while allowing task"
-    );
-
-    for category in V1_CATEGORY_PROMPTS {
-        let section = prompt_section(
-            &coordinator_config.agent_profiles[category].system_prompt,
-            "Runtime-Enforced Permissions",
-        );
-        assert!(
-            section.contains("denies recursive task delegation"),
-            "{category} prompt missing category recursion-deny claim"
-        );
-        assert!(
-            coordinator_denies_tool_for_profile(&coordinator_config, category, "task"),
-            "{category} prompt claims recursive task denial but runtime allows task"
-        );
-    }
 }
 
 #[test]
-fn shipped_v1_primary_prompts_are_not_generic_scaffold_copies() {
+fn shipped_generic_prompt_assets_are_distinct() {
     // arrange
     let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let mut distinctive_sections = std::collections::BTreeSet::new();
 
-    for profile in V1_PRIMARY_PROMPTS {
+    for profile in GENERIC_PROMPT_PROFILES.split_whitespace() {
         let body = shipped_profile_body(&repo_root, profile);
-        let distinctive = format!(
-            "{}\n{}",
-            prompt_section(&body, "Behavioral Guidance"),
-            prompt_section(&body, "Operating Loop") // act
-        );
+        let distinctive = body;
         // assert
         assert!(
             distinctive_sections.insert(distinctive),
-            "{profile} Behavioral Guidance + Operating Loop duplicate another primary prompt"
+            "{profile} prompt duplicates another generic profile"
         );
     }
 }

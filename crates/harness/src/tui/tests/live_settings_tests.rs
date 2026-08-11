@@ -177,10 +177,8 @@ fn project_config_tui_ignores_legacy_model_selection() {
           },
           model: "openai-codex/gpt-5.4-mini",
           agent: {
-            build: { enable: true, model: "openai-codex/gpt-5.4-mini" },
-            plan: { enable: true, model: "openai-codex/gpt-5.4-mini" },
+            default: { model: "openai-codex/gpt-5.4-mini" },
           },
-          default_agent: "build",
           permission: "ask",
         }"#,
     )
@@ -234,15 +232,14 @@ fn mock_mode_ignores_discovered_cwd_config() {
               }
             }
           },
-          agents: {
-            build: {
-              description: "Implementation",
+          model: "default/gpt-5.4-mini",
+          agent: {
+            default: {
               system_prompt: "Implement carefully.",
-              model_ref: "default:gpt-5.4-mini",
+              model: "default/gpt-5.4-mini",
               tools: []
             }
           },
-          default_agent: "build",
           permissions: {
             defaults: {
               edit: "allow",
@@ -293,7 +290,7 @@ fn mock_mode_ignores_discovered_cwd_config() {
     let settings = result.unwrap_or_abort();
     assert!(settings.config.is_none());
     assert_eq!(settings.launch_mode_label.as_deref(), Some("Demo"));
-    assert_eq!(settings.launch_metadata.profile(), "worker");
+    assert_eq!(settings.launch_metadata.profile(), "default");
     assert_eq!(settings.launch_metadata.provider(), "mock");
     assert_eq!(settings.launch_metadata.model(), Some("model-1"));
 }
@@ -323,15 +320,14 @@ fn live_new_session_uses_current_workspace_instead_of_seeded_demo_workspace() {
               }
             }
           },
-          agents: {
-            build: {
-              description: "Implementation",
+          model: "default/gpt-5.4-mini",
+          agent: {
+            default: {
               system_prompt: "Implement carefully.",
-              model_ref: "default:gpt-5.4-mini",
+              model: "default/gpt-5.4-mini",
               tools: []
             }
           },
-          default_agent: "build",
           permissions: {
             defaults: {
               edit: "allow",

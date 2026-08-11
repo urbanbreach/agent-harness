@@ -59,7 +59,8 @@ use crate::sched::{
 };
 use crate::session_paths::{ARTIFACTS_DIR_NAME, META_FILE_NAME};
 use crate::session_title::{
-    clean_generated_title, is_parent_default_title, TITLE_AGENT_NAME, TITLE_GENERATION_USER_PROMPT,
+    clean_generated_title, is_parent_default_title, SessionTitleOperationSpec,
+    TITLE_GENERATION_USER_PROMPT, TITLE_OPERATION_SYSTEM_PROMPT,
 };
 use crate::store::{EventStore, EventStoreError, JsonlFileEventStore};
 use crate::text::{non_empty_trimmed, truncate_with_ellipsis};
@@ -94,7 +95,6 @@ mod revert;
 mod run_lifecycle;
 mod snapshot;
 mod state;
-mod task_category;
 mod task_lifecycle;
 mod tool_execution;
 mod tool_metadata;
@@ -107,7 +107,7 @@ use self::agent_turn_phases::{
     completion_messages_to_conversation_messages, provider_tool_message_status,
 };
 use self::agent_turn_phases::{
-    generate_harness_session_title, run_agent_turn_phase_loop, AgentTurnPhaseLoopRequest,
+    execute_session_title_operation, run_agent_turn_phase_loop, AgentTurnPhaseLoopRequest,
 };
 use self::agent_turn_runtime::{
     append_agent_turn_task_scheduled_event, schedule_agent_turn, start_agent_turn_execution,
@@ -141,11 +141,10 @@ pub(in crate::coord) use self::session_compaction::{compact_session, AppliedComp
 
 use self::permission::{
     call_scoped_external_allow_prefixes, collect_external_directory_paths,
-    evaluate_permission_rule_requests, event_permission_decision,
-    external_directory_grants_authorize, external_directory_summary, permission_grant_request,
-    permission_request_digest, permission_rule_request_selectors, permission_summary,
-    plan_mode_edit_boundary_denial, plan_mode_shell_boundary_denial,
-    record_external_directory_always_grants,
+    evaluate_permission_rule_requests, evaluate_permission_rule_requests_with_ruleset,
+    event_permission_decision, external_directory_grants_authorize, external_directory_summary,
+    permission_grant_request, permission_request_digest, permission_rule_request_selectors,
+    permission_summary, record_external_directory_always_grants,
 };
 use crate::perm::PermissionRuleRequest;
 
@@ -155,12 +154,6 @@ use self::hooks::summarize_hook_output;
 pub use self::hooks::{
     LifecycleHookCommandExecutor, LifecycleHookCommandInvocation, LifecycleHookCommandOutput,
     TokioLifecycleHookCommandExecutor,
-};
-
-pub use self::task_category::{
-    task_category_fallback_chain, task_category_fallback_disabled_for_parent,
-    task_category_fallback_profile, TASK_CATEGORY_FALLBACK_DISABLED_PARENT_PROFILES,
-    TASK_CATEGORY_FALLBACK_PROFILE,
 };
 
 use self::compaction_support::{
@@ -235,6 +228,7 @@ pub struct CoordinatorConfig {
     pub tool_registry: Arc<ToolRegistry>,
     pub provider: Arc<dyn Provider>,
     pub agent_profiles: BTreeMap<String, AgentProfile>,
+    pub title_model_ref: Option<String>,
     /// Remaining model-ref fallback chain keyed by agent profile name.
     ///
     /// Populated at bootstrap from `model_profile.fallback` after the primary is
@@ -266,6 +260,7 @@ impl CoordinatorConfig {
             tool_registry: Arc::new(ToolRegistry::new()),
             provider: default_provider(),
             agent_profiles: BTreeMap::new(),
+            title_model_ref: None,
             agent_model_fallbacks: BTreeMap::new(),
             hook_runtime_config: registered_hook_runtime_config(),
             hook_command_executor: Arc::new(TokioLifecycleHookCommandExecutor),
@@ -396,14 +391,14 @@ pub enum Command {
     },
     RequestToolCall {
         actor: EventActor,
-        category: Option<String>,
+        legacy_profile_hint: Option<String>,
         tool_id: String,
         args_json: Value,
         respond_to: oneshot::Sender<Result<String, CoordinatorError>>,
     },
     ExecuteAgentToolCall {
         actor: EventActor,
-        category: Option<String>,
+        legacy_profile_hint: Option<String>,
         tool_id: String,
         args_json: Value,
         respond_to: oneshot::Sender<Result<ToolResult, String>>,
@@ -540,7 +535,6 @@ pub enum Command {
 pub struct AgentRuntimeInfo {
     pub agent_id: String,
     pub profile_name: String,
-    pub profile_category: String,
     pub model_ref: String,
     pub model_ref_explicit: bool,
     pub toolset: Vec<String>,
@@ -712,7 +706,7 @@ where
 {
     let PermissionDeniedArgs {
         actor,
-        category,
+        profile,
         tool_id,
         args_json,
         tool_call_id,
@@ -756,7 +750,7 @@ where
             provider_id: None,
             model_id: None,
             parent_agent_id: None,
-            category,
+            profile,
             outcome: Some("deny".to_string()),
             output_summary: Some(denial_reason.clone()),
             failure_reason: Some(denial_reason.clone()),

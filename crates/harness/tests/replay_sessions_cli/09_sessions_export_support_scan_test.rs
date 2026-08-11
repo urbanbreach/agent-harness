@@ -174,15 +174,12 @@ fn sessions_export_cli_fails_closed_for_hidden_prompt_config_values_in_events() 
   },
   "model": "test/gpt-5.4-mini",
   "instructions": ["plain-hidden-instruction-secret"],
-  "default_agent": "build",
   "agent": {
-    "build": {
-      "enable": true,
+    "default": {
       "model": "test/gpt-5.4-mini",
-      "prompt": "plain-hidden-agent-prompt-secret"
+      "system_prompt": "plain-hidden-agent-prompt-secret"
     },
     "general": {
-      "enable": true,
       "model": "test/gpt-5.4-mini"
     }
   }
@@ -421,14 +418,11 @@ fn write_support_export_config(
     }}
   }},
   "model": "{provider_id}/gpt-5.4-mini",
-  "default_agent": "build",
   "agent": {{
-    "build": {{
-      "enable": true,
+    "default": {{
       "model": "{provider_id}/gpt-5.4-mini"
     }},
     "general": {{
-      "enable": true,
       "model": "{provider_id}/gpt-5.4-mini"
     }}
   }}

@@ -3,9 +3,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use clap::Args;
-use harness_core::agent_catalog::{
-    resolve_agent_catalog, SHIPPED_CATEGORY_ROUTES, SHIPPED_PRIMARY_PROFILES, SHIPPED_SUBAGENTS,
-};
+use harness_core::agent_catalog::resolve_agent_catalog;
 use harness_core::auth::{CredentialStore, StoredCredentialKind};
 use harness_core::config::{
     resolve_model_selection, AgentMode, HarnessConfig, McpServerConfig, PermissionMode,
@@ -29,26 +27,9 @@ use crate::{CliDeps, CliIo};
 mod doctor_metadata;
 use self::doctor_metadata::{attach_doctor_model_metadata, skill_readiness_metadata};
 mod checks;
-const REQUIRED_PRIMARY_AGENTS: [&str; 2] = ["build", "plan"];
-const REQUIRED_SUBAGENTS: [&str; 2] = ["explore", "general"];
-const REQUIRED_CATEGORY_ROUTES: [&str; 8] = [
-    "visual-engineering",
-    "artistry",
-    "ultrabrain",
-    "deep",
-    "quick",
-    "unspecified-low",
-    "unspecified-high",
-    "writing",
-];
-const BUILD_TOOLS: [&str; 5] = [
-    "todowrite",
-    "task",
-    "background_output",
-    "plan_enter",
-    "edit",
-];
-const PLAN_TOOLS: [&str; 4] = ["todowrite", "task", "background_output", "plan_exit"];
+const REQUIRED_PRIMARY_AGENTS: [&str; 1] = ["default"];
+const REQUIRED_SUBAGENTS: [&str; 3] = ["explore", "general", "librarian"];
+const DEFAULT_TOOLS: [&str; 4] = ["todowrite", "task", "background_output", "edit"];
 #[derive(Debug, Args, Clone, Default)]
 pub(crate) struct DoctorCommand {
     /// Emit machine-readable JSON instead of text.
@@ -219,7 +200,6 @@ fn build_report(
         checks::check_provider_credentials(config, env_var_is_set, &credential_store),
         checks::check_model_references(config),
         checks::check_shipped_profiles(config),
-        checks::check_category_routes(config),
         checks::check_resolved_routes(config, workspace_root),
         checks::check_profile_tools(config),
         checks::check_native_tool_catalog(config),

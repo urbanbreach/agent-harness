@@ -381,9 +381,8 @@ fn auth_list_sanitizes_control_provider_key_config_error_without_echoing_it() {
           },
           model: "evil\u001b]52;c;SGFja2Vk\u0007/m",
           agent: {
-            build: { system_prompt: "Build work" },
+            default: { system_prompt: "Default work" },
           },
-          default_agent: "build",
           permission: "ask",
         }
         "#,
@@ -426,9 +425,8 @@ fn auth_list_reports_arbitrary_configured_auth_provider() {
           },
           model: "anthropic_route/claude-test",
           agent: {
-            build: { system_prompt: "Build work" },
+            default: { system_prompt: "Default work" },
           },
-          default_agent: "build",
           permission: "ask",
         }
         "#,

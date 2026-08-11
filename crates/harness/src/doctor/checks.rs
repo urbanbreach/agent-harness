@@ -8,11 +8,9 @@ pub(super) fn check_resolved_routes(config: &HarnessConfig, workspace_root: &Pat
     let catalog = resolve_agent_catalog(config);
     let mut missing = Vec::new();
 
-    for profile in SHIPPED_PRIMARY_PROFILES
-        .iter()
-        .copied()
-        .chain(SHIPPED_SUBAGENTS.iter().copied())
-        .chain(SHIPPED_CATEGORY_ROUTES.iter().copied())
+    for profile in REQUIRED_PRIMARY_AGENTS
+        .into_iter()
+        .chain(REQUIRED_SUBAGENTS)
     {
         if catalog.get(profile).is_none() {
             missing.push(profile);
@@ -32,12 +30,6 @@ pub(super) fn check_resolved_routes(config: &HarnessConfig, workspace_root: &Pat
     let details = json!({
         "routes": routes,
         "skills": skill_readiness_metadata(config, workspace_root),
-        "category_fallback": {
-            "unknown_category_profile": catalog.category_fallback.unknown_category_profile,
-            "disabled_parent_profiles": catalog.category_fallback.disabled_parent_profiles.clone(),
-            "disabled_for_parent": catalog.category_fallback.disabled_parent_profiles,
-            "policy_source": catalog.category_fallback.policy_source,
-        },
         "catalog_source": "harness_core::agent_catalog",
         "no_network_probes": true,
     });
@@ -55,7 +47,7 @@ pub(super) fn check_resolved_routes(config: &HarnessConfig, workspace_root: &Pat
 
     pass_with_details(
         "resolved_routes",
-        format!("{route_count} shipped route(s) resolved with prompt, tool, model, and permission metadata"),
+        format!("{route_count} shipped agent profile(s) resolved with prompt, tool, model, and permission metadata"),
         details,
     )
 }
@@ -414,11 +406,10 @@ pub(super) fn check_model_references(config: &HarnessConfig) -> DoctorCheck {
         );
     }
 
-    let default_agent = config.default_agent.as_deref().unwrap_or("none");
     pass(
         "model_references",
         format!(
-            "{agent_selections} agent model selection(s) and {model_profile_selections} model profile(s) resolve; {fallback_targets} fallback target(s); default_agent={default_agent}"
+            "{agent_selections} agent model selection(s) and {model_profile_selections} model profile(s) resolve; {fallback_targets} fallback target(s)"
         ),
     )
 }
@@ -479,66 +470,7 @@ pub(super) fn check_shipped_profiles(config: &HarnessConfig) -> DoctorCheck {
 
     pass(
         "workflow_profiles",
-        "build, plan, explore, and general profiles are available",
-    )
-}
-
-pub(super) fn check_category_routes(config: &HarnessConfig) -> DoctorCheck {
-    let missing = REQUIRED_CATEGORY_ROUTES
-        .into_iter()
-        .filter(|profile| !config.agents.contains_key(*profile))
-        .collect::<Vec<_>>();
-
-    let invalid_routes = REQUIRED_CATEGORY_ROUTES
-        .into_iter()
-        .filter_map(|profile| {
-            let agent = config.agents.get(profile)?;
-            (agent.hidden || agent.mode == AgentMode::Primary).then_some(profile)
-        })
-        .collect::<Vec<_>>();
-
-    let recursive_routes = REQUIRED_CATEGORY_ROUTES
-        .into_iter()
-        .filter_map(|profile| {
-            let agent = config.agents.get(profile)?;
-            let task_permission = agent
-                .permissions
-                .as_ref()
-                .and_then(|permissions| permissions.task.as_ref());
-            (!matches!(task_permission, Some(PermissionMode::Deny))).then_some(profile)
-        })
-        .collect::<Vec<_>>();
-
-    let mut details = Vec::new();
-    if !invalid_routes.is_empty() {
-        details.push(format!(
-            "task category route profile(s) are hidden or primary-only: {}",
-            invalid_routes.join(", ")
-        ));
-    }
-    if !missing.is_empty() {
-        details.push(format!(
-            "missing recommended task category route profile(s): {}; task(category=...) falls back to general when no matching route exists",
-            missing.join(", ")
-        ));
-    }
-    if !recursive_routes.is_empty() {
-        details.push(format!(
-            "task category route profile(s) can redelegate or inherit task permission: {}; shipped category routes deny recursive delegation by default",
-            recursive_routes.join(", ")
-        ));
-    }
-
-    if !invalid_routes.is_empty() {
-        return fail("category_routes", details.join("; "));
-    }
-    if !details.is_empty() {
-        return warn("category_routes", details.join("; "));
-    }
-
-    pass(
-        "category_routes",
-        "visual-engineering, artistry, ultrabrain, deep, quick, unspecified-low, unspecified-high, and writing category routes are available",
+        "the generic default agent and named subagents are available",
     )
 }
 
@@ -576,7 +508,7 @@ pub(super) fn check_profile_tools(config: &HarnessConfig) -> DoctorCheck {
         );
     }
 
-    let missing_core_tools = [("build", &BUILD_TOOLS[..]), ("plan", &PLAN_TOOLS[..])]
+    let missing_core_tools = [("default", &DEFAULT_TOOLS[..])]
         .into_iter()
         .flat_map(|(profile, expected)| {
             expected.iter().filter_map(move |tool| {

@@ -72,10 +72,6 @@ struct MarkdownAgentFrontmatter {
     #[serde(alias = "toolFailureMode")]
     pub tool_failure_mode: Option<ToolFailureMode>,
     pub tools: Option<PublicAgentTools>,
-    #[serde(default, alias = "enabled")]
-    pub enable: Option<bool>,
-    #[serde(default)]
-    pub disable: bool,
     #[serde(default, alias = "smallModel")]
     pub use_small_model: bool,
 }
@@ -99,13 +95,11 @@ pub(super) fn resolve_discovered_prompt_assets_with_current_dir(
     current_dir: Option<&Path>,
 ) -> Result<(), ConfigError> {
     let small_model_ref = parsed.small_model.as_deref();
-    let disabled_agents = parsed.disabled_agents.clone();
     parsed.agents = merge_configured_and_markdown_agents(
         &parsed.agents,
         config_path,
         current_dir,
         small_model_ref,
-        &disabled_agents,
     )?;
     parsed.instruction_files = discover_instruction_files(config_path, current_dir)?;
     Ok(())
@@ -116,7 +110,6 @@ fn merge_configured_and_markdown_agents(
     config_path: &Path,
     current_dir: Option<&Path>,
     small_model_ref: Option<&str>,
-    disabled_agents: &BTreeSet<String>,
 ) -> Result<BTreeMap<String, ProfileConfig>, ConfigError> {
     let discovered = discover_markdown_agents(config_path, current_dir)?;
     let agent_names = discovered
@@ -127,9 +120,6 @@ fn merge_configured_and_markdown_agents(
     let mut merged = BTreeMap::new();
 
     for name in agent_names {
-        if disabled_agents.contains(&name) {
-            continue;
-        }
         let profile = match (discovered.get(&name), configured.get(&name)) {
             (Some(markdown), Some(config)) => {
                 Some(merge_markdown_agent_with_config(config, markdown))
@@ -146,9 +136,6 @@ fn merge_configured_and_markdown_agents(
         };
 
         if let Some(profile) = profile {
-            if profile.enabled == Some(false) {
-                continue;
-            }
             merged.insert(name, profile);
         }
     }
@@ -247,13 +234,6 @@ fn merge_markdown_agent_with_config(
         } else {
             config.tools.clone()
         },
-        enabled: config.enabled.or_else(|| {
-            if markdown.frontmatter.disable || markdown.frontmatter.enable == Some(false) {
-                Some(false)
-            } else {
-                None
-            }
-        }),
     }
 }
 
@@ -262,9 +242,6 @@ fn profile_from_markdown_agent(
     fallback_model_ref: Option<&str>,
     small_model_ref: Option<&str>,
 ) -> Result<Option<ProfileConfig>, ConfigError> {
-    if markdown.frontmatter.disable || markdown.frontmatter.enable == Some(false) {
-        return Ok(None);
-    }
     let Some(description) = markdown.frontmatter.description.clone() else {
         return Ok(None);
     };
@@ -310,7 +287,6 @@ fn profile_from_markdown_agent(
             .clone()
             .map(|t| t.tool_ids())
             .unwrap_or_default(),
-        enabled: None,
     }))
 }
 

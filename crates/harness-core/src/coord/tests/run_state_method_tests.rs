@@ -74,7 +74,7 @@ pub(super) fn run_state_permission_methods_own_pending_and_grant_state() {
             tool_id: "bash".to_string(),
             args_json: serde_json::json!({"cmd":"git status"}),
             actor: EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
-            category: Some("build".to_string()),
+            profile: Some("default".to_string()),
             respond_to: Some(respond_to),
         },
     };

@@ -10,8 +10,6 @@ pub(crate) fn mapping_status(tool_id: &str) -> &'static str {
         | "github.pull_request"
         | "list"
         | "lsp.rename"
-        | "plan_enter"
-        | "plan_exit"
         | "session_info"
         | "session_list"
         | "session_search"

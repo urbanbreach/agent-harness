@@ -57,7 +57,7 @@ fn completed_run_events(provider_turns: u64) -> Vec<EventEnvelopeV1> {
         Some(AGENT_ID),
         EventV1::AgentSpawned(AgentSpawnedEvent {
             agent_id: AGENT_ID.to_string(),
-            profile: "build".to_string(),
+            profile: "default".to_string(),
             parent_agent_id: None,
         }),
     ));

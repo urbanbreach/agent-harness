@@ -22,33 +22,6 @@ pub(super) struct LiveAgentTarget {
     pub(super) last_request_id: Option<String>,
 }
 
-pub(super) fn maybe_update_live_agent_target_for_plan_handoff(
-    event: &EventEnvelopeV1,
-    live_agent_target: Option<&LiveAgentTargetState>,
-) {
-    let Some(live_agent_target) = live_agent_target else {
-        return;
-    };
-    let EventV1::AgentSpawned(payload) = &event.payload else {
-        return;
-    };
-    if payload.profile != harness_core::plan::BUILD_AGENT_NAME {
-        return;
-    }
-
-    let mut target = recover_mutex_lock(live_agent_target);
-    if target.profile != harness_core::plan::PLAN_AGENT_NAME {
-        return;
-    }
-    if payload.parent_agent_id.as_deref() != target.agent_id.as_deref() {
-        return;
-    }
-
-    target.agent_id = Some(payload.agent_id.clone());
-    target.profile = payload.profile.clone();
-    target.last_request_id = None;
-}
-
 pub(super) async fn handle_ui_intents(
     coordinator: CoordinatorHandle,
     mut intent_rx: mpsc::UnboundedReceiver<UiIntent>,

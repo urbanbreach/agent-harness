@@ -1,5 +1,4 @@
-//! CLI surface for `harness agent` subcommands: profile select stub and ACP
-//! stdio agent mode.
+//! CLI surface for the ACP stdio agent mode.
 //!
 //! `agent stdio` wires through to
 //! `harness_core::integrations::acp_stdio::run_stdio_acp_agent_mode_product`,
@@ -11,15 +10,6 @@ use clap::{Args, Subcommand};
 use serde::Serialize;
 
 use crate::CliIo;
-
-/// Keep the old `agent --agent <name>` stub accessible as `agent select`.
-#[derive(Debug, Args, Clone)]
-pub(crate) struct AgentSelectCommand {
-    #[arg(long)]
-    agent: String,
-    #[arg(long)]
-    model: Option<String>,
-}
 
 #[derive(Debug, Args, Clone)]
 pub(crate) struct AgentStdioCommand {
@@ -34,8 +24,6 @@ pub(crate) struct AgentStdioCommand {
 
 #[derive(Debug, Subcommand, Clone)]
 pub(crate) enum AgentSubcommand {
-    /// Select an agent profile (compatibility stub).
-    Select(AgentSelectCommand),
     /// Start the stdio ACP agent mode.
     Stdio(AgentStdioCommand),
 }
@@ -53,17 +41,8 @@ struct AgentStdioResult {
 
 pub(crate) fn execute_with_io(command: AgentSubcommand, io: &mut CliIo<'_>) -> i32 {
     match command {
-        AgentSubcommand::Select(cmd) => run_select(cmd, io),
         AgentSubcommand::Stdio(cmd) => run_stdio(cmd, io),
     }
-}
-
-fn run_select(_command: AgentSelectCommand, io: &mut CliIo<'_>) -> i32 {
-    let _ = writeln!(
-        io.stderr,
-        "agent select: this subcommand is not available; use --agent <profile> to select an agent profile"
-    );
-    2
 }
 
 fn run_stdio(command: AgentStdioCommand, io: &mut CliIo<'_>) -> i32 {
@@ -143,25 +122,6 @@ mod tests {
         )
     }
 
-    fn run_select(agent: &str) -> (i32, String, String) {
-        let mut stdin = Cursor::new(Vec::new());
-        let mut stdout = Vec::new();
-        let mut stderr = Vec::new();
-        let mut io = CliIo::new(&mut stdin, &mut stdout, &mut stderr);
-        let code = execute_with_io(
-            AgentSubcommand::Select(AgentSelectCommand {
-                agent: agent.to_string(),
-                model: None,
-            }),
-            &mut io,
-        );
-        (
-            code,
-            String::from_utf8_lossy(&stdout).to_string(),
-            String::from_utf8_lossy(&stderr).to_string(),
-        )
-    }
-
     #[test]
     fn stdio_with_cat_succeeds_and_meets_contract() {
         let (code, stdout, stderr) = run_stdio("cat", true);
@@ -186,14 +146,5 @@ mod tests {
         assert_eq!(code, 2);
         assert!(stdout.is_empty());
         assert!(stderr.contains("must not be empty"));
-    }
-
-    #[test]
-    fn select_returns_meaningful_failure_directing_to_flag() {
-        let (code, stdout, stderr) = run_select("build");
-        assert_eq!(code, 2);
-        assert!(stdout.is_empty());
-        assert!(stderr.contains("not available"));
-        assert!(stderr.contains("--agent"));
     }
 }

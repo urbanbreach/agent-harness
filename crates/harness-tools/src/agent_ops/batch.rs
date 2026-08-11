@@ -71,11 +71,11 @@ pub(super) async fn execute_batch(
 
         let coordinator = ctx.coordinator.clone();
         let actor = ctx.actor.clone();
-        let category = ctx.category.clone();
+        let profile = ctx.profile.clone();
         join_set.spawn(async move {
             let execution_parameters = parameters.clone();
             let result = coordinator
-                .execute_agent_tool_call(actor, category, tool_id.clone(), execution_parameters)
+                .execute_agent_tool_call(actor, profile, tool_id.clone(), execution_parameters)
                 .await;
             BatchCallOutcome {
                 index,

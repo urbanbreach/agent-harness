@@ -45,13 +45,19 @@ enum QuoteState {
 }
 
 pub fn scan_shell_command(command: &str) -> Result<ShellCommandRequest, ShellScanError> {
-    let mut commands = Vec::new();
-    for source in split_shell_commands(command)? {
-        let tokens = tokenize_shell_command(&source)?;
-        if let Some(scanned) = scan_tokens(source, tokens) {
-            commands.push(scanned);
+    let commands = match scan_single_python_heredoc(command)? {
+        Some(command) => vec![command],
+        None => {
+            let mut commands = Vec::new();
+            for source in split_shell_commands(command)? {
+                let tokens = tokenize_shell_command(&source)?;
+                if let Some(scanned) = scan_tokens(source, tokens) {
+                    commands.push(scanned);
+                }
+            }
+            commands
         }
-    }
+    };
     let patterns = unique(commands.iter().map(|command| command.pattern.clone()));
     let always_patterns = unique(
         commands
@@ -64,6 +70,49 @@ pub fn scan_shell_command(command: &str) -> Result<ShellCommandRequest, ShellSca
         patterns,
         always_patterns,
     })
+}
+
+fn scan_single_python_heredoc(
+    command: &str,
+) -> Result<Option<ScannedShellCommand>, ShellScanError> {
+    let mut lines = command.lines();
+    let Some(header) = lines.next() else {
+        return Ok(None);
+    };
+    let tokens = tokenize_shell_command(header)?;
+    if !matches!(
+        tokens.first().map(String::as_str),
+        Some("python" | "python3")
+    ) {
+        return Ok(None);
+    }
+    let Some(redirection_index) = tokens.iter().position(|token| token == "<<") else {
+        return Ok(None);
+    };
+    if tokens.iter().filter(|token| token.as_str() == "<<").count() != 1
+        || redirection_index + 2 != tokens.len()
+    {
+        return Ok(None);
+    }
+    let Some(delimiter) = tokens.get(redirection_index + 1) else {
+        return Ok(None);
+    };
+
+    let mut found_delimiter = false;
+    for line in lines {
+        if found_delimiter {
+            if !line.trim().is_empty() {
+                return Ok(None);
+            }
+        } else if line == delimiter {
+            found_delimiter = true;
+        }
+    }
+    if !found_delimiter {
+        return Ok(None);
+    }
+
+    Ok(scan_tokens(command.to_string(), tokens))
 }
 
 pub fn direct_shell_command_request(cmd: &str, args: &[String]) -> ShellCommandRequest {
@@ -321,6 +370,14 @@ fn shell_path_patterns(tokens: &[String]) -> Vec<ShellPathPattern> {
             continue;
         }
         if token.starts_with('-') {
+            if let Some((_, value)) = token.split_once('=') {
+                if is_path_like(value) {
+                    paths.push(ShellPathPattern {
+                        path: value.to_string(),
+                        kind: "option".to_string(),
+                    });
+                }
+            }
             next_is_redirection = false;
             continue;
         }
@@ -458,6 +515,22 @@ mod tests {
     }
 
     #[test]
+    fn scan_shell_command_extracts_path_from_option_value() {
+        // arrange
+        let command = "chromium --screenshot=/tmp/harness-index.png index.html";
+
+        // act
+        let request = scan_shell_command(command).unwrap_or_abort();
+
+        // assert
+        assert_eq!(
+            request.commands[0].path_patterns[0].path,
+            "/tmp/harness-index.png"
+        );
+        assert_eq!(request.commands[0].path_patterns[0].kind, "option");
+    }
+
+    #[test]
     fn scan_shell_command_extracts_bare_file_operand_paths() {
         // arrange
         let command = "grep needle leak && cat other && bash script.sh && node app.js";
@@ -499,6 +572,107 @@ mod tests {
 
         assert_eq!(request.commands[0].arity_tokens, vec!["python3", "-c"]);
         assert_eq!(request.always_patterns, vec!["python3 -c *".to_string()]);
+    }
+
+    #[test]
+    fn scan_shell_command_excludes_heredoc_body_from_permission_patterns() {
+        // arrange
+        let command = "python3 - <<'PY'\nprint('ok')\nPY";
+
+        // act
+        let request = scan_shell_command(command).unwrap_or_abort();
+
+        // assert
+        assert_eq!(request.commands.len(), 1);
+        assert_eq!(request.commands[0].executable, "python3");
+        assert_eq!(request.always_patterns, vec!["python3 - *".to_string()]);
+    }
+
+    #[test]
+    fn scan_shell_command_does_not_mistake_quoted_shift_for_heredoc() {
+        // arrange
+        let command = "python3 -c 'print(1 << 2)'\nrm -rf /tmp/target";
+
+        // act
+        let request = scan_shell_command(command).unwrap_or_abort();
+
+        // assert
+        assert_eq!(request.commands.len(), 2);
+        assert_eq!(request.commands[1].executable, "rm");
+    }
+
+    #[test]
+    fn scan_shell_command_does_not_mistake_here_string_for_heredoc() {
+        // arrange
+        let command = "cat <<< harmless\nrm -rf /tmp/target";
+
+        // act
+        let request = scan_shell_command(command).unwrap_or_abort();
+
+        // assert
+        assert_eq!(request.commands.len(), 2);
+        assert_eq!(request.commands[1].executable, "rm");
+    }
+
+    #[test]
+    fn scan_shell_command_keeps_trailing_command_after_heredoc_visible() {
+        // arrange
+        let command = "python3 - <<'PY'\nprint('ok')\nPY\nrm -rf /tmp/target";
+
+        // act
+        let request = scan_shell_command(command).unwrap_or_abort();
+
+        // assert
+        assert!(request
+            .commands
+            .iter()
+            .any(|command| command.executable == "rm"));
+    }
+
+    #[test]
+    fn scan_shell_command_keeps_same_line_heredoc_pipeline_visible() {
+        // arrange
+        let command = "python3 - <<'PY' | sh\nprint('echo bypass')\nPY";
+
+        // act
+        let request = scan_shell_command(command).unwrap_or_abort();
+
+        // assert
+        assert!(request
+            .commands
+            .iter()
+            .any(|command| command.executable == "sh"));
+    }
+
+    #[test]
+    fn scan_shell_command_keeps_same_line_heredoc_conditionals_visible() {
+        // arrange
+        let command = "python3 - <<'PY' && env || source secrets\nprint('ok')\nPY";
+
+        // act
+        let request = scan_shell_command(command).unwrap_or_abort();
+
+        // assert
+        assert!(request
+            .commands
+            .iter()
+            .any(|command| command.executable == "env"));
+        assert!(request
+            .commands
+            .iter()
+            .any(|command| command.executable == "source"));
+    }
+
+    #[test]
+    fn scan_shell_command_does_not_collapse_multiple_heredocs() {
+        // arrange
+        let command = "python3 - <<'FIRST' <<'SECOND'\nprint('one')\nFIRST\nprint('two')\nSECOND";
+
+        // act
+        let request = scan_shell_command(command).unwrap_or_abort();
+
+        // assert
+        assert!(request.commands.len() > 1);
     }
 
     #[test]

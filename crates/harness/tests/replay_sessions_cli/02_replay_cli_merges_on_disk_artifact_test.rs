@@ -28,7 +28,7 @@ fn replay_cli_merges_on_disk_artifact_discovery_with_recovery_metadata() {
                 2,
                 EventV1::AgentSpawned(AgentSpawnedEvent {
                     agent_id: "agent_child".to_string(),
-                    profile: "worker".to_string(),
+                    profile: "default".to_string(),
                     parent_agent_id: Some("agent_parent".to_string()),
                 }),
             ),
@@ -306,7 +306,7 @@ fn sessions_inspect_cli_surfaces_recovery_details() {
                 2,
                 EventV1::AgentSpawned(AgentSpawnedEvent {
                     agent_id: "agent_root".to_string(),
-                    profile: "deep".to_string(),
+                    profile: "default".to_string(),
                     parent_agent_id: None,
                 }),
             ),
@@ -315,7 +315,7 @@ fn sessions_inspect_cli_surfaces_recovery_details() {
                 3,
                 EventV1::AgentSpawned(AgentSpawnedEvent {
                     agent_id: "agent_child".to_string(),
-                    profile: "worker".to_string(),
+                    profile: "general".to_string(),
                     parent_agent_id: Some("agent_root".to_string()),
                 }),
             ),

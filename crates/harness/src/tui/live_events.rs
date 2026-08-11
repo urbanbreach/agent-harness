@@ -5,7 +5,7 @@ use harness_core::event::{ActorKind, EventEnvelopeV1};
 use harness_core::store::{EventStore, EventStoreError};
 use harness_tui::LiveUpdate;
 
-use super::live_intents::{maybe_update_live_agent_target_for_plan_handoff, LiveAgentTargetState};
+use super::live_intents::LiveAgentTargetState;
 use harness_core::event::EventV1;
 
 pub(super) fn is_terminal_event(payload: &EventV1) -> bool {
@@ -27,7 +27,7 @@ pub(super) async fn forward_events_to_tui(
     store: Arc<dyn EventStore>,
     live_update_tx: std_mpsc::Sender<LiveUpdate>,
     start_from_seq: u64,
-    live_agent_target: Option<LiveAgentTargetState>,
+    _live_agent_target: Option<LiveAgentTargetState>,
     stop_after_terminal_event: bool,
 ) -> Result<(), String> {
     let mut from_seq = start_from_seq.max(1);
@@ -47,10 +47,6 @@ pub(super) async fn forward_events_to_tui(
                     let terminal_event = is_terminal_event(&event.payload);
                     last_seq_seen = event.seq;
                     from_seq = last_seq_seen.saturating_add(1);
-                    maybe_update_live_agent_target_for_plan_handoff(
-                        &event,
-                        live_agent_target.as_ref(),
-                    );
                     if live_update_tx
                         .send(LiveUpdate::Event(Box::new(event)))
                         .is_err()
@@ -81,10 +77,6 @@ pub(super) async fn forward_events_to_tui(
                         let terminal_event = is_terminal_event(&replayed_event.payload);
                         last_seq_seen = replayed_event.seq;
                         from_seq = last_seq_seen.saturating_add(1);
-                        maybe_update_live_agent_target_for_plan_handoff(
-                            &replayed_event,
-                            live_agent_target.as_ref(),
-                        );
                         if live_update_tx
                             .send(LiveUpdate::Event(Box::new(replayed_event)))
                             .is_err()

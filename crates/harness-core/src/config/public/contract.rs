@@ -225,7 +225,6 @@ const PUBLIC_RUNTIME_TOP_LEVEL_CONFIG_KEYS: &[PublicConfigTopLevelKey] = &[
         inactive = EmptyObject
     ),
     runtime_key!("compaction", InertCompatibility, no_schema, no_docs),
-    runtime_key!("default_agent", Canonical, schema, docs),
     runtime_key!("disabled_providers", Compatibility, schema, docs),
     runtime_key!("enabled_providers", Compatibility, schema, docs),
     runtime_key!(
@@ -242,7 +241,6 @@ const PUBLIC_RUNTIME_TOP_LEVEL_CONFIG_KEYS: &[PublicConfigTopLevelKey] = &[
     runtime_key!("logLevel", InertCompatibility, no_schema, no_docs),
     runtime_key!("lsp", Compatibility, schema, docs),
     runtime_key!("mcp", Canonical, schema, docs),
-    runtime_key!("mode", Compatibility, schema, docs, canonical = "agent"),
     runtime_key!("model", Canonical, schema, docs),
     runtime_key!("model_profile", Canonical, schema, docs),
     runtime_key!("permission", Canonical, schema, docs),
@@ -304,34 +302,6 @@ const PUBLIC_RUNTIME_TOP_LEVEL_CONFIG_KEYS: &[PublicConfigTopLevelKey] = &[
         no_schema,
         no_docs,
         canonical = "model_profile"
-    ),
-    runtime_key!(
-        "agents",
-        Compatibility,
-        no_schema,
-        no_docs,
-        canonical = "agent"
-    ),
-    runtime_key!(
-        "categories",
-        Compatibility,
-        no_schema,
-        no_docs,
-        canonical = "agent"
-    ),
-    runtime_key!(
-        "profiles",
-        Compatibility,
-        no_schema,
-        no_docs,
-        canonical = "agent"
-    ),
-    runtime_key!(
-        "defaultAgent",
-        Compatibility,
-        no_schema,
-        no_docs,
-        canonical = "default_agent"
     ),
     runtime_key!(
         "permissions",

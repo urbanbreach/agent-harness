@@ -80,6 +80,74 @@ async fn bash_outside_workspace_emits_external_directory_ask() {
 }
 
 #[tokio::test]
+async fn bash_outside_workspace_option_value_emits_external_directory_ask() {
+    // arrange
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
+    let outside_dir = tempfile::tempdir().unwrap_or_abort();
+    let outside_path = outside_dir.path().join("screenshot.png");
+    let coordinator = parity_coordinator(temp_dir.path());
+    let run = coordinator
+        .start_run(
+            "oc_parity_bash_external_option_value",
+            temp_dir.path().to_path_buf(),
+        )
+        .await
+        .unwrap_or_abort();
+
+    // act
+    let command = format!("true --output={}", outside_path.display());
+    let tool_call_id = request_bash(&coordinator, &command).await;
+    let events = wait_for_tool_settled(&run.events_path, &tool_call_id, 80).await;
+    coordinator.stop_run().await.unwrap_or_abort();
+
+    // assert
+    let kinds = permission_kinds_for_tool_call(&events, &tool_call_id);
+    assert!(
+        kinds.iter().any(|kind| kind == KIND_EXTERNAL_DIRECTORY),
+        "bash option containing an outside path must emit {KIND_EXTERNAL_DIRECTORY}; \
+         got kinds={kinds:?}; finished={:?}",
+        tool_finished_status(&events, &tool_call_id)
+    );
+}
+
+#[tokio::test]
+async fn bash_outside_workspace_workdir_emits_external_directory_ask() {
+    // arrange
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
+    let outside_dir = tempfile::tempdir().unwrap_or_abort();
+    let coordinator = parity_coordinator(temp_dir.path());
+    let run = coordinator
+        .start_run(
+            "oc_parity_bash_external_workdir",
+            temp_dir.path().to_path_buf(),
+        )
+        .await
+        .unwrap_or_abort();
+
+    // act
+    let tool_call_id = coordinator
+        .request_tool_call(
+            common::supervisor_actor(),
+            None,
+            "bash",
+            json!({"command": "pwd", "workdir": outside_dir.path()}),
+        )
+        .await
+        .unwrap_or_abort();
+    let events = wait_for_tool_settled(&run.events_path, &tool_call_id, 80).await;
+    coordinator.stop_run().await.unwrap_or_abort();
+
+    // assert
+    let kinds = permission_kinds_for_tool_call(&events, &tool_call_id);
+    assert!(
+        kinds.iter().any(|kind| kind == KIND_EXTERNAL_DIRECTORY),
+        "bash with outside-workspace workdir must emit PermissionRequested \
+         kind={KIND_EXTERNAL_DIRECTORY}; got kinds={kinds:?}; finished={:?}",
+        tool_finished_status(&events, &tool_call_id)
+    );
+}
+
+#[tokio::test]
 async fn edit_outside_workspace_emits_external_directory_ask() {
     // arrange
     // act

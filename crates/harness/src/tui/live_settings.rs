@@ -258,7 +258,7 @@ fn resolve_live_settings_with_deps(
         .or(global_session_dir)
         .unwrap_or(config_session_dir);
     let deterministic = cmd.deterministic || Determinism::enabled(config_deterministic);
-    let default_profile = cmd.profile.clone().unwrap_or(config_default_profile);
+    let default_profile = config_default_profile;
     let launch_mode_label = if live_config.is_some() {
         None
     } else {
@@ -381,5 +381,5 @@ pub(super) fn prepare_new_live_workspace(
 }
 
 pub(super) fn scenario_launch_metadata() -> LaunchMetadata {
-    LaunchMetadata::from_model_ref("worker", "mock:model-1").with_mode_label("Demo")
+    LaunchMetadata::from_model_ref("default", "mock:model-1").with_mode_label("Demo")
 }

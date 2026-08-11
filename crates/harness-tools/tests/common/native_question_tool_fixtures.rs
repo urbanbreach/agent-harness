@@ -33,25 +33,21 @@ fn question_tool_context(
     artifacts_dir: &Path,
     tool_call_id: &str,
 ) -> ToolContext {
-    ToolContext {
-        run_id: run_id.to_string(),
-        workspace_root: workspace_root.to_path_buf(),
-        artifacts_dir: artifacts_dir.to_path_buf(),
-        actor: worker_actor("agent-worker"),
-        category: Some("deep".to_string()),
-        tool_call_id: tool_call_id.into(),
-        current_model_ref: None,
-        current_model_settings: None,
-        tool_state: ToolRunState::default(),
-        external_directory_allow_prefixes: Vec::new(),
-        coordinator,
-    }
+    ToolContext { run_id: run_id.to_string(),
+    workspace_root: workspace_root.to_path_buf(),
+    artifacts_dir: artifacts_dir.to_path_buf(),
+    actor: worker_actor("agent-worker"), profile: Some("deep".to_string()), tool_call_id: tool_call_id.into(),
+    current_model_ref: None,
+    current_model_settings: None,
+    tool_state: ToolRunState::default(),
+    external_directory_allow_prefixes: Vec::new(),
+    coordinator, }
 }
 
 fn spawn_question_coordinator(session_dir: PathBuf, ask_timeout_ms: u64) -> CoordinatorHandle {
     let mut config = CoordinatorConfig::new(session_dir);
     config.permission_policy = allow_all_permission_policy()
-        .with_category_override(
+        .with_profile_override(
             "deep",
             ProfilePermissions {
                 question: Some(PermissionMode::Ask),

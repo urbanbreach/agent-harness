@@ -32,7 +32,7 @@ fn sessions_list_cli_prints_json_entries() {
     assert_eq!(row["run_id"], "run_json");
     assert_eq!(row["run_name"], "recovery-fixture");
     assert_eq!(row["status"], "finished");
-    assert_eq!(row["profile_preset"], "worker");
+    assert_eq!(row["profile_preset"], "general");
     assert_eq!(row["provider_model"], serde_json::Value::Null);
     assert_eq!(row["mode_source"], "unknown");
     assert_eq!(row["is_resumable"], false);
@@ -63,7 +63,7 @@ fn sessions_reopen_json_surfaces_prompt_context_child_sessions_and_artifacts() {
             2,
             EventV1::AgentSpawned(AgentSpawnedEvent {
                 agent_id: "agent_000001".to_string(),
-                profile: "worker".to_string(),
+                profile: "default".to_string(),
                 parent_agent_id: None,
             }),
         ),
@@ -107,7 +107,7 @@ fn sessions_reopen_json_surfaces_prompt_context_child_sessions_and_artifacts() {
         6,
         EventV1::AgentSpawned(AgentSpawnedEvent {
             agent_id: "agent_000002".to_string(),
-            profile: "worker".to_string(),
+            profile: "default".to_string(),
             parent_agent_id: Some("agent_000001".to_string()),
         }),
     ));
@@ -300,7 +300,7 @@ fn sessions_surfaces_checkpoint_artifacts_in_catalog_and_recovery_views() {
                 2,
                 EventV1::AgentSpawned(AgentSpawnedEvent {
                     agent_id: "agent_000001".to_string(),
-                    profile: "worker".to_string(),
+                    profile: "default".to_string(),
                     parent_agent_id: None,
                 }),
             ),

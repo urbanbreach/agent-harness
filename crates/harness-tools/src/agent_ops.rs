@@ -1,11 +1,7 @@
 // allow: SIZE_OK — agent operations executor (task spawn + background cancel + skill resolution + continuation)
-use crate::UnwrapOrAbort;
 use std::sync::Arc;
 
-use harness_core::coord::{
-    task_category_fallback_disabled_for_parent, task_category_fallback_profile, AgentRuntimeInfo,
-    ChildTaskRequestMetadata, CoordinatorError,
-};
+use harness_core::coord::{AgentRuntimeInfo, ChildTaskRequestMetadata, CoordinatorError};
 use harness_core::event::{ActorKind, EventActor};
 use harness_core::tool::{ToolContext, ToolError, ToolResult};
 use serde_json::json;
@@ -49,9 +45,8 @@ impl AgentOpsExecutor {
     pub(crate) async fn spawn_agent(
         &self,
         ctx: &ToolContext,
-        mut request: AgentSpawnRequest,
+        request: AgentSpawnRequest,
     ) -> Result<ToolResult, ToolError> {
-        enforce_parent_child_profile_policy(ctx, &request)?;
         let loaded_skills = resolve_task_skill_context(
             ctx,
             &request.load_skills,
@@ -68,11 +63,10 @@ impl AgentOpsExecutor {
                 .agent_runtime_info(session_id.clone())
                 .await
                 .map_err(|err| map_request_agent_turn_error(err, &request))?;
-            apply_category_fallback_for_existing_session(ctx, &mut request, &target_info);
             authorize_existing_child_session(ctx, &request, &target_info)?;
             (session_id, target_info)
         } else {
-            let agent_id = spawn_new_child_agent(ctx, &mut request, supervisor.clone()).await?;
+            let agent_id = spawn_new_child_agent(ctx, &request, supervisor.clone()).await?;
             let runtime = ctx
                 .coordinator
                 .agent_runtime_info(agent_id.clone())
@@ -110,7 +104,7 @@ impl AgentOpsExecutor {
             "child_session_id": agent_id.clone(),
             "child_request_id": request_id.clone(),
         });
-        let permissions = child_permission_metadata(ctx, &request);
+        let permissions = child_permission_metadata(ctx, &runtime);
 
         if request.run_in_background {
             let child_session = child_session_observability(
@@ -218,27 +212,12 @@ impl AgentOpsExecutor {
 pub(crate) struct AgentSpawnRequest {
     pub(crate) description: String,
     pub(crate) profile_name: String,
-    pub(crate) category_selector: Option<String>,
     pub(crate) prompt: String,
     pub(crate) task_id: Option<String>,
     pub(crate) session_id: Option<String>,
     pub(crate) run_in_background: bool,
     pub(crate) load_skills: Vec<String>,
     pub(crate) command: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct AgentSelection {
-    pub(crate) profile_name: String,
-    pub(crate) category_selector: Option<String>,
-}
-
-impl AgentSpawnRequest {
-    fn category_fallback_profile(&self) -> Option<&'static str> {
-        self.category_selector
-            .as_deref()
-            .and_then(task_category_fallback_profile)
-    }
 }
 
 fn build_child_prompt(request: &AgentSpawnRequest, loaded_skills: &[TaskSkillContext]) -> String {
@@ -272,22 +251,6 @@ fn build_child_prompt(request: &AgentSpawnRequest, loaded_skills: &[TaskSkillCon
     prompt
 }
 
-fn enforce_parent_child_profile_policy(
-    ctx: &ToolContext,
-    request: &AgentSpawnRequest,
-) -> Result<(), ToolError> {
-    if ctx.category.as_deref() == Some(harness_core::plan::PLAN_AGENT_NAME)
-        && request.profile_name != "explore"
-    {
-        return Err(ToolError::InvalidArguments(format!(
-            "Plan mode may only delegate to the read-only `explore` profile; requested `{}`",
-            request.profile_name
-        )));
-    }
-
-    Ok(())
-}
-
 fn authorize_existing_child_session(
     ctx: &ToolContext,
     request: &AgentSpawnRequest,
@@ -318,26 +281,12 @@ fn authorize_existing_child_session(
 
 async fn spawn_new_child_agent(
     ctx: &ToolContext,
-    request: &mut AgentSpawnRequest,
+    request: &AgentSpawnRequest,
     supervisor: EventActor,
 ) -> Result<String, ToolError> {
-    match spawn_child_agent_once(ctx, request, supervisor.clone()).await {
-        Ok(agent_id) => Ok(agent_id),
-        Err(CoordinatorError::UnknownAgent(_))
-            if !category_fallback_disabled(ctx)
-                && request.category_fallback_profile().is_some() =>
-        {
-            let fallback = request
-                .category_fallback_profile()
-                .unwrap_or_abort()
-                .to_string();
-            request.profile_name = fallback;
-            spawn_child_agent_once(ctx, request, supervisor)
-                .await
-                .map_err(|err| map_spawn_agent_error(err, request))
-        }
-        Err(err) => Err(map_spawn_agent_error(err, request)),
-    }
+    spawn_child_agent_once(ctx, request, supervisor)
+        .await
+        .map_err(map_spawn_agent_error)
 }
 
 async fn spawn_child_agent_once(
@@ -358,19 +307,6 @@ async fn spawn_child_agent_once(
         .await
 }
 
-fn apply_category_fallback_for_existing_session(
-    ctx: &ToolContext,
-    request: &mut AgentSpawnRequest,
-    target_info: &AgentRuntimeInfo,
-) {
-    if category_fallback_disabled(ctx) {
-        return;
-    }
-    if request.category_fallback_profile() == Some(target_info.profile_name.as_str()) {
-        request.profile_name = target_info.profile_name.clone();
-    }
-}
-
 fn inherited_model_override(
     ctx: &ToolContext,
     runtime: &AgentRuntimeInfo,
@@ -385,76 +321,24 @@ fn inherited_model_override(
     ))
 }
 
-fn category_fallback_disabled(ctx: &ToolContext) -> bool {
-    task_category_fallback_disabled_for_parent(ctx.category.as_deref())
-}
-
-pub(crate) fn select_agent_selection(
-    category: Option<&str>,
-    subagent_type: Option<&str>,
-) -> Result<AgentSelection, ToolError> {
-    let category = normalize_profile_selector(category).map(str::to_string);
-    let subagent_type = normalize_subagent_selector(subagent_type);
-    let category_selector = category_selector_for(&category, &subagent_type);
-    let profile_name = match (category, subagent_type) {
-        (Some(category), Some(subagent_type)) if category == subagent_type => Ok(category),
-        (Some(_), Some(subagent_type)) => Ok(subagent_type),
-        (Some(category), None) => Ok(category),
-        (None, Some(subagent_type)) => Ok(subagent_type),
-        (None, None) => Err(ToolError::InvalidArguments(
-            "category or subagent_type is required".to_string(),
-        )),
-    }?;
-    Ok(AgentSelection {
-        profile_name,
-        category_selector,
-    })
-}
-
-fn category_selector_for(
-    category: &Option<String>,
-    subagent_type: &Option<String>,
-) -> Option<String> {
-    subagent_type.is_none().then(|| category.clone()).flatten()
-}
-
-fn normalize_profile_selector(selector: Option<&str>) -> Option<&str> {
-    selector.and_then(|value| {
-        let trimmed = value.trim();
-        (!trimmed.is_empty()).then_some(trimmed)
-    })
-}
-
-fn normalize_subagent_selector(selector: Option<&str>) -> Option<String> {
-    normalize_profile_selector(selector).map(str::to_string)
-}
-
 fn map_request_agent_turn_error(err: CoordinatorError, request: &AgentSpawnRequest) -> ToolError {
     match err {
         CoordinatorError::UnknownAgent(agent_id)
             if request.session_id.is_some() || request.task_id.is_some() =>
         {
-            let mut message = format!(
+            let message = format!(
                 "Unknown child session `{agent_id}`. Provide a `session_id`/`task_id` returned by a prior `task` call, or omit it to start a new child session."
             );
-            if let Some(agent_hint) = normalize_subagent_selector(Some(&agent_id)) {
-                if agent_hint != agent_id {
-                    message.push_str(&format!(
-                        " If you meant the `{agent_hint}` agent, set `subagent_type: \"{agent_hint}\"` instead."
-                    ));
-                }
-            }
             ToolError::InvalidArguments(message)
         }
         other => ToolError::Execution(format!("failed to request agent turn: {other}")),
     }
 }
 
-fn map_spawn_agent_error(err: CoordinatorError, request: &AgentSpawnRequest) -> ToolError {
+fn map_spawn_agent_error(err: CoordinatorError) -> ToolError {
     match err {
         CoordinatorError::UnknownAgent(profile_name) => ToolError::InvalidArguments(format!(
-            "Unknown child profile `{profile_name}`. Configure that agent profile before using task with category/subagent_type `{}`.",
-            request.profile_name
+            "Unknown child profile `{profile_name}`. Use one of the configured task subagents: `explore`, `general`, or `librarian`."
         )),
         other => ToolError::Execution(format!("failed to spawn agent: {other}")),
     }
@@ -463,8 +347,7 @@ fn map_spawn_agent_error(err: CoordinatorError, request: &AgentSpawnRequest) -> 
 #[cfg(test)]
 mod tests {
     use super::{
-        build_child_prompt, map_request_agent_turn_error, map_spawn_agent_error,
-        select_agent_selection, AgentSelection, AgentSpawnRequest,
+        build_child_prompt, map_request_agent_turn_error, map_spawn_agent_error, AgentSpawnRequest,
     };
     use crate::UnwrapOrAbort;
     use harness_core::coord::CoordinatorError;
@@ -475,81 +358,11 @@ mod tests {
     use crate::skill_catalog::{SkillCatalogEntry, SkillCatalogStatus};
 
     #[test]
-    fn select_agent_selection_accepts_matching_category_and_subagent_type() {
-        // arrange
-        // act
-        // assert
-        assert_eq!(
-            select_agent_selection(Some("child"), Some("child"))
-                .unwrap_or_abort()
-                .profile_name,
-            "child"
-        );
-    }
-
-    #[test]
-    fn select_agent_selection_prefers_subagent_type_over_category_hint() {
-        // arrange
-        // act
-        // assert
-        assert_eq!(
-            select_agent_selection(Some("quick"), Some("child")).unwrap_or_abort(),
-            AgentSelection {
-                profile_name: "child".to_string(),
-                category_selector: None,
-            }
-        );
-    }
-
-    #[test]
-    fn select_agent_selection_uses_category_as_fallback_hint_for_category_only_request() {
-        // arrange
-        // act
-        // assert
-        assert_eq!(
-            select_agent_selection(Some("quick"), None).unwrap_or_abort(),
-            AgentSelection {
-                profile_name: "quick".to_string(),
-                category_selector: Some("quick".to_string()),
-            }
-        );
-    }
-
-    #[test]
-    fn select_agent_selection_ignores_blank_selectors() {
-        // arrange
-        // act
-        // assert
-        assert_eq!(
-            select_agent_selection(Some("  "), Some("child"))
-                .unwrap_or_abort()
-                .profile_name,
-            "child"
-        );
-    }
-
-    #[test]
-    fn select_agent_selection_preserves_category_fallback_only_for_category_requests() {
-        // arrange
-        // act
-        // assert
-        let category_only = select_agent_selection(Some("quick"), None).unwrap_or_abort();
-        assert_eq!(category_only.profile_name, "quick");
-        assert_eq!(category_only.category_selector.as_deref(), Some("quick"));
-
-        let explicit_subagent =
-            select_agent_selection(Some("quick"), Some("child")).unwrap_or_abort();
-        assert_eq!(explicit_subagent.profile_name, "child");
-        assert_eq!(explicit_subagent.category_selector, None);
-    }
-
-    #[test]
     fn child_prompt_preserves_v1_delegation_skill_command_task_precedence() {
         // arrange
         let request = AgentSpawnRequest {
             description: "spawn child".to_string(),
-            profile_name: "deep".to_string(),
-            category_selector: None,
+            profile_name: "general".to_string(),
             prompt: "Task body.".to_string(),
             task_id: None,
             session_id: None,
@@ -575,8 +388,6 @@ mod tests {
                 reason: None,
                 argument_hint: None,
                 allowed_tools: Vec::new(),
-                target_agent: None,
-                target_category: None,
                 deferred_mcp: None,
                 deferred_resources: None,
                 body_loaded: false,
@@ -619,8 +430,7 @@ mod tests {
             CoordinatorError::UnknownAgent("missing-session".to_string()),
             &AgentSpawnRequest {
                 description: "resume child".to_string(),
-                profile_name: "deep".to_string(),
-                category_selector: None,
+                profile_name: "general".to_string(),
                 prompt: "resume".to_string(),
                 task_id: Some("missing-session".to_string()),
                 session_id: None,
@@ -639,22 +449,9 @@ mod tests {
         // arrange
         // act
         // assert
-        let err = map_spawn_agent_error(
-            CoordinatorError::UnknownAgent("missing_profile".to_string()),
-            &AgentSpawnRequest {
-                description: "spawn child".to_string(),
-                profile_name: "missing_profile".to_string(),
-                category_selector: None,
-                prompt: "inspect".to_string(),
-                task_id: None,
-                session_id: None,
-                run_in_background: false,
-                load_skills: Vec::new(),
-                command: None,
-            },
-        );
+        let err = map_spawn_agent_error(CoordinatorError::UnknownAgent("general".to_string()));
         assert!(
-            matches!(err, ToolError::InvalidArguments(message) if message.contains("Unknown child profile `missing_profile`") && message.contains("category/subagent_type `missing_profile`"))
+            matches!(err, ToolError::InvalidArguments(message) if message.contains("Unknown child profile `general`") && message.contains("`explore`, `general`, or `librarian`"))
         );
     }
 

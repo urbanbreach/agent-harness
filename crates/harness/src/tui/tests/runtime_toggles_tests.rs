@@ -29,15 +29,14 @@ fn runtime_toggles_report_compact_skill_catalog_states() {
               models: { "gpt-5.4-mini": { display_name: "GPT-5.4 Mini" } }
             }
           },
-          agents: {
-            build: {
-              description: "Implementation",
+          model: "default/gpt-5.4-mini",
+          agent: {
+            default: {
               system_prompt: "Implement carefully.",
-              model_ref: "default:gpt-5.4-mini",
+              model: "default/gpt-5.4-mini",
               tools: ["skill"]
             }
           },
-          default_agent: "build",
           permissions: { defaults: { edit: "allow", shell: "allow", network: "allow" } },
           runtime: { session_dir: ".agent-harness/sessions" },
           integrations: { remote_search: { endpoint: "https://mcp.exa.ai/mcp" } },
@@ -59,10 +58,10 @@ fn runtime_toggles_report_compact_skill_catalog_states() {
         .find(|entry| {
             // assert
             matches!(&entry.kind, ToggleEntryKind::AgentSkill { agent, skill }
-                if agent == "build" && skill == "skill:project:ready-skill")
+                if agent == "default" && skill == "skill:project:ready-skill")
         })
         .unwrap_or_abort();
-    assert_eq!(ready.label, "build: ready-skill");
+    assert_eq!(ready.label, "default: ready-skill");
     assert!(ready.description.contains("loadable skill `ready-skill`"));
     assert!(ready.description.contains("project root"));
     assert!(ready.enabled);
@@ -72,10 +71,10 @@ fn runtime_toggles_report_compact_skill_catalog_states() {
         .iter()
         .find(|entry| {
             matches!(&entry.kind, ToggleEntryKind::AgentSkill { agent, skill }
-                if agent == "build" && skill == "skill:project:disabled-skill")
+                if agent == "default" && skill == "skill:project:disabled-skill")
         })
         .unwrap_or_abort();
-    assert_eq!(disabled.label, "build: disabled-skill");
+    assert_eq!(disabled.label, "default: disabled-skill");
     assert!(disabled
         .description
         .contains("disabled skill `disabled-skill`"));

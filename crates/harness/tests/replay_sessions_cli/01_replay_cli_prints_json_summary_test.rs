@@ -371,7 +371,7 @@ fn replay_cli_surfaces_recovery_context_in_json_summary() {
                 2,
                 EventV1::AgentSpawned(AgentSpawnedEvent {
                     agent_id: "agent_child".to_string(),
-                    profile: "worker".to_string(),
+                    profile: "default".to_string(),
                     parent_agent_id: Some("agent_root".to_string()),
                 }),
             ),

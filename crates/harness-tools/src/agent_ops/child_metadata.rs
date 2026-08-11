@@ -2,9 +2,7 @@
 use std::time::Duration;
 
 use harness_core::config::registered_profile_model_metadata;
-use harness_core::coord::{
-    task_category_fallback_chain, AgentRuntimeInfo, TASK_CATEGORY_FALLBACK_DISABLED_PARENT_PROFILES,
-};
+use harness_core::coord::AgentRuntimeInfo;
 use harness_core::event::{
     EventV1, TaskCancelledEvent, TaskCompletedEvent, TaskScheduleState, TaskTerminalScope,
     ToolCallStatus,
@@ -45,7 +43,6 @@ pub(super) struct ChildPermissionMetadata {
 #[derive(Debug, Clone, Serialize)]
 pub(super) struct ChildRuntimeMetadata {
     pub(super) profile: String,
-    pub(super) category: String,
     pub(super) role: &'static str,
     pub(super) model_ref: String,
     pub(super) model: ChildModelMetadata,
@@ -302,19 +299,19 @@ fn task_cancelled_marks_child_agent_turn(data: &TaskCancelledEvent) -> bool {
 
 pub(super) fn child_permission_metadata(
     ctx: &ToolContext,
-    request: &AgentSpawnRequest,
+    runtime: &AgentRuntimeInfo,
 ) -> ChildPermissionMetadata {
-    let parent_scope = ctx.category.clone();
-    let scope_relation = if parent_scope.as_deref() == Some(request.profile_name.as_str()) {
+    let parent_scope = ctx.profile.clone();
+    let scope_relation = if parent_scope.as_deref() == Some(runtime.profile_name.as_str()) {
         "inherits_parent_scope"
     } else {
-        "isolated_by_requested_profile"
+        "isolated_by_child_profile"
     };
 
     ChildPermissionMetadata {
         spawn_permission_kind: "task",
         parent_scope,
-        child_scope: request.profile_name.clone(),
+        child_scope: runtime.profile_name.clone(),
         scope_relation,
     }
 }
@@ -322,7 +319,6 @@ pub(super) fn child_permission_metadata(
 pub(super) fn child_runtime_metadata(runtime: &AgentRuntimeInfo) -> ChildRuntimeMetadata {
     ChildRuntimeMetadata {
         profile: runtime.profile_name.clone(),
-        category: runtime.profile_category.clone(),
         model_ref: runtime.model_ref.clone(),
         role: child_route_role(runtime),
         model: child_model_metadata(&runtime.profile_name, &runtime.model_ref),
@@ -379,13 +375,10 @@ fn split_model_ref(model_ref: &str) -> (Option<String>, String, Option<String>) 
 }
 
 fn child_route_role(runtime: &AgentRuntimeInfo) -> &'static str {
-    match runtime.profile_name.as_str() {
-        "build" | "plan" => "primary",
-        "general" | "explore" => "subagent",
-        "visual-engineering" | "artistry" | "ultrabrain" | "deep" | "quick" | "unspecified-low"
-        | "unspecified-high" | "writing" => "category",
-        _ if runtime.parent_agent_id.is_some() => "subagent",
-        _ => "profile",
+    if runtime.parent_agent_id.is_some() {
+        "subagent"
+    } else {
+        "primary"
     }
 }
 
@@ -462,7 +455,7 @@ pub(super) fn child_session_observability(
     ChildSessionObservability {
         session_id: session_id.to_string(),
         request_id: request_id.to_string(),
-        profile: request.profile_name.clone(),
+        profile: runtime.profile.clone(),
         background: request.run_in_background,
         mode: if request.run_in_background {
             "background"
@@ -491,19 +484,14 @@ pub(super) fn spawn_result_json(
 ) -> Value {
     json!({
         "description": request.description,
-        "profile": request.profile_name,
+        "profile": child_session.runtime.profile,
         "task_id": agent_id,
         "session_id": agent_id,
         "request_id": request_id,
         "child_session_id": agent_id,
         "child_request_id": request_id,
         "lineage": lineage,
-        "route": route_metadata(
-            request,
-            loaded_skills,
-            &child_session.runtime,
-            &child_session.permissions
-        ),
+        "route": route_metadata(loaded_skills, &child_session.runtime, &child_session.permissions),
         "load_skills": request.load_skills,
         "skills": request.load_skills,
         "loaded_skills": loaded_skill_metadata(loaded_skills),
@@ -531,16 +519,11 @@ pub(super) fn spawn_result_json(
 }
 
 fn route_metadata(
-    request: &AgentSpawnRequest,
     loaded_skills: &[TaskSkillContext],
     runtime: &ChildRuntimeMetadata,
     permissions: &ChildPermissionMetadata,
 ) -> Value {
-    let fallback_profile = request.category_fallback_profile();
     json!({
-        "requested_category": request.category_selector.clone(),
-        "requested_profile": request.category_selector.as_deref().unwrap_or(request.profile_name.as_str()),
-        "resolved_profile": request.profile_name.clone(),
         "profile_id": runtime.profile.clone(),
         "role": runtime.role,
         "hidden": false,
@@ -554,15 +537,6 @@ fn route_metadata(
         "permission_posture": runtime.permission_posture.clone(),
         "permissions": permissions,
         "loaded_skills": loaded_skill_metadata(loaded_skills),
-        "fallback_chain": task_category_fallback_chain(request.category_selector.as_deref()),
-        "category_fallback_chain": task_category_fallback_chain(request.category_selector.as_deref()),
-        "fallback": {
-            "applied": request.category_selector.is_some()
-                && fallback_profile == Some(request.profile_name.as_str()),
-            "fallback_profile": fallback_profile,
-            "policy_source": "harness_core::coord::task_category_fallback_profile",
-            "disabled_parent_profiles": TASK_CATEGORY_FALLBACK_DISABLED_PARENT_PROFILES,
-        },
     })
 }
 

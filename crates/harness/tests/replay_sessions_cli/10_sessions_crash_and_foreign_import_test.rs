@@ -24,7 +24,7 @@ fn sessions_inspect_surfaces_recovery_message_for_previous_crash() {
                 2,
                 EventV1::AgentSpawned(AgentSpawnedEvent {
                     agent_id: "agent_root".to_string(),
-                    profile: "build".to_string(),
+                    profile: "default".to_string(),
                     parent_agent_id: None,
                 }),
             ),

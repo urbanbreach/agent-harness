@@ -13,9 +13,9 @@ async fn background_output_retrieves_completed_child_result_by_request_id() {
             Some("deep".to_string()),
             "task",
             json!({
-                "category": "deep",
                 "description": "Background child",
                 "prompt": "Return a concise completed result",
+                "subagent_type": "general",
                 "run_in_background": true,
                 "load_skills": []
             }),
@@ -63,9 +63,9 @@ async fn background_output_retrieves_completed_child_result_by_request_id() {
     assert!(output["result_summary"]
         .as_str()
         .is_some_and(|value| !value.is_empty()));
-    assert_eq!(output["runtime"]["profile"], json!("deep"));
-    assert_eq!(output["runtime"]["model_ref"], json!("default:deep"));
-    assert_eq!(output["runtime"]["can_redelegate"], json!(true));
+    assert_eq!(output["runtime"]["profile"], json!("general"));
+    assert_eq!(output["runtime"]["model_ref"], json!("default:test-model"));
+    assert_eq!(output["runtime"]["can_redelegate"], json!(false));
     assert!(output["next_actions"]
         .as_array()
         .unwrap_or_abort()

@@ -28,10 +28,9 @@ fn minimal_runtime_config(hashline_edit: bool) -> String {
       }}
     }}
   }},
-  "agents": {{
-    "build": {{
-      "description": "Build work",
-      "model_ref": "default:gpt-4o-mini",
+  "model": "default/gpt-4o-mini",
+  "agent": {{
+    "default": {{
       "tools": ["read"]
     }}
   }},

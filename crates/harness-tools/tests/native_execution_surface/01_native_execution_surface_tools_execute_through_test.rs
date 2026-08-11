@@ -560,7 +560,7 @@ async fn native_bash_allows_touch_and_rm() {
 }
 
 #[tokio::test]
-async fn native_bash_rejects_python3_c() {
+async fn native_bash_allows_python3_c_in_permission_patterns_mode() {
     // arrange
     let workspace_fixture = setup_workspace_fixture();
     let workspace = workspace_fixture.workspace();
@@ -568,7 +568,7 @@ async fn native_bash_rejects_python3_c() {
     let bash = registry.get("bash").unwrap_or_abort();
 
     // act
-    let error = bash
+    let result = bash
         .call(
             test_context(workspace, "bash-python3-c"),
             json!({
@@ -577,10 +577,151 @@ async fn native_bash_rejects_python3_c() {
             }),
         )
         .await
-        .expect_err("bash python3 -c should be blocked");
+        .unwrap_or_abort();
 
     // assert
-    assert!(error.to_string().contains("interpreter command-eval flags"));
+    assert_eq!(result.display_text, "ok\n");
+    assert_eq!(result.structured_json.unwrap_or_abort()["success"], true);
+}
+
+#[tokio::test]
+async fn native_bash_allows_python3_heredoc_in_permission_patterns_mode() {
+    // arrange
+    let workspace_fixture = setup_workspace_fixture();
+    let workspace = workspace_fixture.workspace();
+    let registry = coordinator_registry(ShellAllowlist::default());
+    let bash = registry.get("bash").unwrap_or_abort();
+
+    // act
+    let result = bash
+        .call(
+            test_context(workspace, "bash-python3-heredoc"),
+            json!({
+                "command": "python3 - <<'PY'\nprint('heredoc-ok')\nPY",
+                "description": "run python3 heredoc",
+            }),
+        )
+        .await
+        .unwrap_or_abort();
+
+    // assert
+    assert_eq!(result.display_text, "heredoc-ok\n");
+    assert_eq!(result.structured_json.unwrap_or_abort()["success"], true);
+}
+
+#[tokio::test]
+async fn native_bash_uses_approved_outside_workspace_workdir() {
+    // arrange
+    let workspace_fixture = setup_workspace_fixture();
+    let workspace = workspace_fixture.workspace();
+    let outside = tempfile::tempdir().unwrap_or_abort();
+    let registry = coordinator_registry(ShellAllowlist {
+        cwd_roots: vec![".".to_string()],
+        ..ShellAllowlist::default()
+    });
+    let bash = registry.get("bash").unwrap_or_abort();
+    let mut context = test_context(workspace, "bash-outside-workdir");
+    context.external_directory_allow_prefixes = vec![outside.path().to_path_buf()];
+
+    // act
+    let result = bash
+        .call(
+            context,
+            json!({
+                "command": "pwd",
+                "workdir": outside.path(),
+                "description": "print approved outside workdir",
+            }),
+        )
+        .await
+        .unwrap_or_abort();
+
+    // assert
+    assert_eq!(result.display_text.trim(), outside.path().to_string_lossy());
+    assert_eq!(result.structured_json.unwrap_or_abort()["success"], true);
+}
+
+#[tokio::test]
+async fn native_bash_runs_unlisted_executable_and_reports_host_missing_binary() {
+    // arrange
+    let workspace_fixture = setup_workspace_fixture();
+    let workspace = workspace_fixture.workspace();
+    let registry = coordinator_registry(ShellAllowlist {
+        executables: vec!["git".to_string()],
+        ..ShellAllowlist::default()
+    });
+    let bash = registry.get("bash").unwrap_or_abort();
+
+    // act
+    let result = bash
+        .call(
+            test_context(workspace, "bash-unlisted-missing-command"),
+            json!({
+                "command": "harness-command-that-does-not-exist",
+                "description": "exercise host command lookup",
+            }),
+        )
+        .await
+        .unwrap_or_abort();
+
+    // assert
+    let metadata = result.structured_json.unwrap_or_abort();
+    assert_eq!(metadata["success"], false);
+    assert_eq!(metadata["status"], 127);
+    assert!(result.display_text.contains("command not found"));
+}
+
+#[tokio::test]
+async fn native_bash_runs_safe_command_lookup() {
+    // arrange
+    let workspace_fixture = setup_workspace_fixture();
+    let workspace = workspace_fixture.workspace();
+    let registry = coordinator_registry(ShellAllowlist::default());
+    let bash = registry.get("bash").unwrap_or_abort();
+
+    // act
+    let result = bash
+        .call(
+            test_context(workspace, "bash-command-lookup"),
+            json!({
+                "command": "command -v sh || true",
+                "description": "look up a shell executable",
+            }),
+        )
+        .await
+        .unwrap_or_abort();
+
+    // assert
+    assert!(!result.display_text.trim().is_empty());
+    assert_eq!(result.structured_json.unwrap_or_abort()["success"], true);
+}
+
+#[tokio::test]
+async fn native_bash_uses_approved_external_option_value() {
+    // arrange
+    let workspace_fixture = setup_workspace_fixture();
+    let workspace = workspace_fixture.workspace();
+    let outside = tempfile::tempdir().unwrap_or_abort();
+    let outside_path = outside.path().join("screenshot.png");
+    let registry = coordinator_registry(ShellAllowlist::default());
+    let bash = registry.get("bash").unwrap_or_abort();
+    let mut context = test_context(workspace, "bash-external-option-value");
+    context.external_directory_allow_prefixes = vec![outside.path().to_path_buf()];
+
+    // act
+    let result = bash
+        .call(
+            context,
+            json!({
+                "command": format!("true --output={}", outside_path.display()),
+                "description": "use an approved external option value",
+            }),
+        )
+        .await
+        .unwrap_or_abort();
+
+    // assert
+    assert_eq!(result.structured_json.unwrap_or_abort()["success"], true);
 }
 
 #[tokio::test]

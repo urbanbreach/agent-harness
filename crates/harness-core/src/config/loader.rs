@@ -12,12 +12,9 @@ use super::*;
 const REQUIRED_INTERNAL_CONFIG_SECTIONS: [&str; 4] =
     ["integrations", "permissions", "providers", "runtime"];
 
-const ALLOWED_INTERNAL_TOP_LEVEL_CONFIG_KEYS: [&str; 23] = [
+const ALLOWED_INTERNAL_TOP_LEVEL_CONFIG_KEYS: [&str; 20] = [
     "$schema",
     "agents",
-    "defaultAgent",
-    "default_agent",
-    "disabled_agents",
     "disabled_providers",
     "enabled_providers",
     "formatter",
@@ -198,15 +195,9 @@ fn parse_internal_config_from_value(root: serde_json::Value) -> Result<HarnessCo
         .remove("small_model")
         .and_then(|value| value.as_str().map(str::to_string));
 
-    let disabled_agents = object
-        .remove("disabled_agents")
-        .and_then(|value| serde_json::from_value(value).ok())
-        .unwrap_or_default();
-
     let mut parsed: HarnessConfig =
         serde_json::from_value(root).map_err(|err| ConfigError::ParseJson5(err.to_string()))?;
     parsed.small_model = small_model;
-    parsed.disabled_agents = disabled_agents;
     parsed.normalize_public_config_aliases()?;
     parsed.sync_derived_runtime_sections();
     Ok(parsed)

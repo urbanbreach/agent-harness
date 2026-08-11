@@ -5,10 +5,10 @@ use harness_core::model_resolution::{ModelFamily, ModelFamilySource, PromptFamil
 use harness_core::UnwrapOrAbort;
 
 fn variant_test_config() -> HarnessConfig {
-    json5::from_str(
+    load_config_from_str(
         r#"
         {
-          providers: {
+          provider: {
             default: {
               type: "openai_compatible",
               base_url: "http://127.0.0.1:8317/v1",
@@ -31,7 +31,7 @@ fn variant_test_config() -> HarnessConfig {
                         description: "Deterministic mode",
                         reasoning_effort: "minimal",
                         text_verbosity: "low",
-                        recommended_for: "deep",
+                        recommended_for: "analysis",
                       },
                     },
                   },
@@ -39,10 +39,10 @@ fn variant_test_config() -> HarnessConfig {
               },
             },
           },
-          agents: {
-            deep: {
-              description: "Deep work",
-              model_ref: "default:gpt-5.4-mini",
+          model: "default/gpt-5.4-mini",
+          agent: {
+            default: {
+              model: "default/gpt-5.4-mini",
               variant: "deterministic",
               tools: ["fs.read"],
             },
@@ -111,29 +111,14 @@ fn profile_test_config() -> HarnessConfig {
               ],
             },
           },
-          agents: {
-            build: {
-              description: "Build",
-              model_ref: "fast",
+          model: "fast",
+          agent: {
+            default: {
+              model: "fast",
               tools: ["read"],
             },
           },
-          permissions: {
-            defaults: { edit: "ask", shell: "ask", network: "deny" },
-          },
-          runtime: {
-            background_tasks: {
-              default_concurrency: 2,
-              provider_concurrency: 2,
-              model_concurrency: 2,
-              stale_timeout_ms: 15000,
-              message_staleness_timeout_ms: 5000,
-            },
-            session_dir: ".agent-harness/sessions",
-          },
-          integrations: {
-            remote_search: { endpoint: "https://mcp.exa.ai/mcp" },
-          },
+          permission: { edit: "ask", bash: "ask", network: "deny" },
         }
         "#,
     )
@@ -145,9 +130,10 @@ fn model_variant_resolution_returns_variant_display_and_metadata() {
     // arrange
     // act
     // assert
-    let metadata = resolve_profile_model_metadata(&variant_test_config(), "deep").unwrap_or_abort();
+    let metadata =
+        resolve_profile_model_metadata(&variant_test_config(), "default").unwrap_or_abort();
 
-    assert_eq!(metadata.profile, "deep");
+    assert_eq!(metadata.profile, "default");
     assert_eq!(metadata.provider, "default");
     assert_eq!(metadata.model, "gpt-5.4-mini");
     assert_eq!(metadata.variant.as_deref(), Some("deterministic"));
@@ -162,7 +148,7 @@ fn model_variant_resolution_returns_variant_display_and_metadata() {
     assert_eq!(metadata.description.as_deref(), Some("Deterministic mode"));
     assert_eq!(metadata.reasoning_effort.as_deref(), Some("minimal"));
     assert_eq!(metadata.text_verbosity.as_deref(), Some("low"));
-    assert_eq!(metadata.recommended_for.as_deref(), Some("deep"));
+    assert_eq!(metadata.recommended_for.as_deref(), Some("analysis"));
     assert_eq!(metadata.resolution.family, ModelFamily::Gpt5);
     assert_eq!(
         metadata.resolution.family_source,
@@ -207,15 +193,14 @@ fn model_variant_resolution_allows_variant_context_window_override() {
             },
           },
           model: "default/gpt-5.4",
-          agent: { build: { model: "default/gpt-5.4", variant: "1m-high" } },
-          default_agent: "build",
+          agent: { default: { model: "default/gpt-5.4", variant: "1m-high" } },
           permission: { edit: "ask", bash: "ask" },
         }
         "#,
     )
     .unwrap_or_abort();
 
-    let metadata = resolve_profile_model_metadata(&config, "build").unwrap_or_abort();
+    let metadata = resolve_profile_model_metadata(&config, "default").unwrap_or_abort();
 
     assert_eq!(metadata.model, "gpt-5.4");
     assert_eq!(metadata.variant.as_deref(), Some("1m-high"));
@@ -233,13 +218,13 @@ fn model_variant_resolution_rejects_unknown_variant() {
     // act
     // assert
     let mut config = variant_test_config();
-    config.agents.get_mut("deep").unwrap_or_abort().variant = Some("ghost".to_string());
+    config.agents.get_mut("default").unwrap_or_abort().variant = Some("ghost".to_string());
 
-    let err = resolve_profile_model_metadata(&config, "deep").expect_err("variant must fail");
+    let err = resolve_profile_model_metadata(&config, "default").expect_err("variant must fail");
 
     assert_eq!(
         err.to_string(),
-        "agent `deep` has invalid model selection `default:gpt-5.4-mini`: model selector: unknown variant `ghost` for model `default:gpt-5.4-mini`; available variants: deterministic"
+        "agent `default` has invalid model selection `default/gpt-5.4-mini`: model selector: unknown variant `ghost` for model `default:gpt-5.4-mini`; available variants: deterministic"
     );
 }
 
@@ -292,9 +277,8 @@ fn model_resolution_prefers_metadata_family_and_exposes_capabilities() {
           },
           model: "default/enterprise-alpha",
           agent: {
-            build: { model: "default/enterprise-alpha" },
+            default: { model: "default/enterprise-alpha" },
           },
-          default_agent: "build",
           permission: { edit: "ask", bash: "ask" },
         }
         "#,
@@ -352,7 +336,7 @@ fn named_model_profile_rejects_disabled_variant() {
     let err = load_config_from_str(
         r#"
         {
-          providers: {
+          provider: {
             default: {
               type: "openai_compatible",
               base_url: "http://127.0.0.1:8317/v1",
@@ -365,24 +349,14 @@ fn named_model_profile_rejects_disabled_variant() {
               },
             },
           },
-          modelProfile: {
+          model_profile: {
             fast: { model: "default:gpt-5.4-mini", variant: "disabled" },
           },
-          agents: {
-            build: { description: "Build", model_ref: "fast", tools: ["read"] },
+          model: "fast",
+          agent: {
+            default: { model: "fast", tools: ["read"] },
           },
-          permissions: { defaults: { edit: "ask", shell: "ask", network: "deny" } },
-          runtime: {
-            background_tasks: {
-              default_concurrency: 2,
-              provider_concurrency: 2,
-              model_concurrency: 2,
-              stale_timeout_ms: 15000,
-              message_staleness_timeout_ms: 5000,
-            },
-            session_dir: ".agent-harness/sessions",
-          },
-          integrations: { remote_search: { endpoint: "https://mcp.exa.ai/mcp" } },
+          permission: { edit: "ask", bash: "ask", network: "deny" },
         }
         "#,
     )

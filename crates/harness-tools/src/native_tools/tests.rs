@@ -35,7 +35,7 @@ async fn recursive_tree_renders_direct_children_once_in_sorted_order() {
         workspace_root: root.to_path_buf(),
         artifacts_dir: root.join("artifacts"),
         actor: EventActor::new(ActorKind::Worker, Some("worker-1".to_string())),
-        category: Some("quick".to_string()),
+        profile: Some("quick".to_string()),
         tool_call_id: "tree-test".into(),
         current_model_ref: None,
         current_model_settings: None,
@@ -128,70 +128,73 @@ fn skill_args_match_harness_name_only_schema() {
 }
 
 #[test]
-fn task_args_accept_agent_alias_fields() {
-    // arrange
-    // act
-    // assert
-    let args: TaskArgs = serde_json::from_value(json!({
-        "description": "Explore codebase",
+fn task_args_reject_role_selector_fields() {
+    for field in ["category", "agent", "profile", "profileName"] {
+        let mut value = json!({
+            "prompt": "Find auth flow",
+            "subagent_type": "explore",
+            "run_in_background": false,
+            "load_skills": []
+        });
+        value[field] = json!("explore");
+
+        let error = serde_json::from_value::<TaskArgs>(value)
+            .expect_err("generic task args must reject role selectors");
+
+        assert!(error.to_string().contains("unknown field"));
+    }
+}
+
+#[test]
+fn task_args_require_background_choice_and_skill_list() {
+    for missing_field in ["subagent_type", "run_in_background", "load_skills"] {
+        let mut value = json!({
+            "prompt": "Find auth flow",
+            "subagent_type": "explore",
+            "run_in_background": false,
+            "load_skills": []
+        });
+        value
+            .as_object_mut()
+            .unwrap_or_abort()
+            .remove(missing_field);
+
+        let error = serde_json::from_value::<TaskArgs>(value)
+            .expect_err("generic task args must require explicit execution inputs");
+
+        assert!(error.to_string().contains(missing_field));
+    }
+}
+
+#[test]
+fn task_args_accept_only_prompt_and_explicit_execution_inputs() {
+    for subagent_type in ["explore", "general", "librarian"] {
+        let args: TaskArgs = serde_json::from_value(json!({
+            "prompt": "Find auth flow",
+            "subagent_type": subagent_type,
+            "run_in_background": false,
+            "load_skills": []
+        }))
+        .unwrap_or_abort();
+
+        assert_eq!(args.description, None);
+        assert_eq!(args.subagent_type.as_str(), subagent_type);
+        assert!(!args.run_in_background);
+        assert!(args.load_skills.is_empty());
+    }
+}
+
+#[test]
+fn task_args_reject_unknown_subagent_type() {
+    let error = serde_json::from_value::<TaskArgs>(json!({
         "prompt": "Find auth flow",
-        "agent": "explorer",
-        "background": true,
+        "subagent_type": "quick",
+        "run_in_background": false,
         "load_skills": []
     }))
-    .unwrap_or_abort();
+    .expect_err("task must reject removed category profiles");
 
-    assert_eq!(args.subagent_type.as_deref(), Some("explorer"));
-    assert!(args.run_in_background);
-}
-
-#[test]
-fn task_args_accept_skills_alias_for_load_skills() {
-    // arrange
-    // act
-    // assert
-    let args: TaskArgs = serde_json::from_value(json!({
-        "description": "Explore codebase",
-        "prompt": "Find auth flow",
-        "category": "explore",
-        "run_in_background": false,
-        "skills": ["rust-best-practices"]
-    }))
-    .unwrap_or_abort();
-
-    assert_eq!(args.load_skills, vec!["rust-best-practices".to_string()]);
-}
-
-#[test]
-fn task_args_default_background_and_skills_when_omitted() {
-    // arrange
-    // act
-    // assert
-    let args: TaskArgs = serde_json::from_value(json!({
-        "description": "Explore codebase",
-        "prompt": "Find auth flow",
-        "category": "explore"
-    }))
-    .unwrap_or_abort();
-
-    assert!(!args.run_in_background);
-    assert!(args.load_skills.is_empty());
-}
-
-#[test]
-fn task_args_default_all_optional_fields_when_omitted() {
-    // arrange
-    // act
-    // assert
-    let args: TaskArgs = serde_json::from_value(json!({
-        "prompt": "Find auth flow",
-        "category": "explore"
-    }))
-    .unwrap_or_abort();
-
-    assert_eq!(args.description, None);
-    assert!(!args.run_in_background);
-    assert!(args.load_skills.is_empty());
+    assert!(error.to_string().contains("unknown variant `quick`"));
 }
 
 #[test]
@@ -227,15 +230,11 @@ fn task_and_background_output_descriptions_prefer_completion_notification() {
     let background_output = BackgroundOutputTool::new(executor);
 
     let task_description = task.description();
-    assert!(task_description.contains("`run_in_background` defaults to false"));
-    assert!(task_description.contains("`load_skills` defaults to an empty list"));
+    assert!(task_description.contains("`run_in_background` is required"));
+    assert!(task_description.contains("`load_skills` is required"));
     assert!(task_description.contains("`description` is optional"));
-    assert!(task_description.contains("run_in_background=true"));
+    assert!(task_description.contains("while true returns task_id/request_id immediately"));
     assert!(task_description.contains("returns task_id/request_id immediately"));
-    assert!(
-        task_description.contains("sync child tasks do not emit background wakeup notifications")
-    );
-    assert!(task_description.contains("testing or exercising background scheduling"));
     assert!(task_description.contains("injected into the child prompt"));
     assert!(task_description.contains("background_output"));
     assert!(task_description.contains("completion notification"));

@@ -15,6 +15,7 @@ mod defaults;
 mod discovery;
 mod integrations;
 mod loader;
+mod model_alias;
 mod model_catalog;
 mod model_selection;
 mod model_types;
@@ -57,6 +58,7 @@ pub use self::loader::{
     load_config_from_file, load_config_from_file_with_context, load_config_from_str,
     load_resolved_config, load_resolved_config_with_context, ConfigLoadContext, LoadedConfig,
 };
+pub use self::model_alias::{is_model_alias, known_model_aliases, resolve_model_alias, ModelAlias};
 pub use self::model_catalog::{
     configured_model_catalog, configured_model_profile_catalog, resolve_configured_model_metadata,
     resolve_profile_model_metadata,
@@ -206,8 +208,6 @@ pub struct HarnessConfig {
     pub logging: LoggingConfig,
     #[serde(default = "default_hashline_edit", alias = "hashlineEdit")]
     pub hashline_edit: bool,
-    #[serde(default, alias = "defaultAgent")]
-    pub default_agent: Option<String>,
     #[serde(default)]
     pub formatter: FormatterConfig,
     #[serde(default)]
@@ -218,10 +218,6 @@ pub struct HarnessConfig {
     #[serde(skip)]
     #[schemars(skip)]
     pub small_model: Option<String>,
-    #[serde(default)]
-    #[serde(skip)]
-    #[schemars(skip)]
-    pub disabled_agents: BTreeSet<String>,
 }
 
 fn is_false(value: &bool) -> bool {
@@ -384,26 +380,20 @@ impl HarnessConfig {
             provider.normalize_public_config_aliases()?;
         }
 
-        if let Some(default_agent) = self.default_agent.clone() {
-            match self.ui.default_profile.as_deref() {
-                None => self.ui.default_profile = Some(default_agent),
-                Some(profile) if profile == default_agent => {}
-                Some(profile) => {
-                    return Err(ConfigError::InvalidReference(format!(
-                        "top-level `default_agent` `{default_agent}` conflicts with `ui.default_profile` `{profile}`; use one value"
-                    )));
-                }
-            }
-        } else if let Some(default_profile) = self.ui.default_profile.clone() {
-            self.default_agent = Some(default_profile);
-        }
-
         Ok(())
     }
 
     fn validate_references(&mut self) -> Result<(), ConfigError> {
-        if self.agents.is_empty() {
-            return Err(ConfigError::MissingRequiredSections("agents".to_string()));
+        let supported_agents = ["default", "explore", "general", "librarian"];
+        if self.agents.len() != supported_agents.len()
+            || supported_agents
+                .iter()
+                .any(|name| !self.agents.contains_key(*name))
+        {
+            return Err(ConfigError::InvalidReference(
+                "agent registry must contain exactly `default`, `explore`, `general`, and `librarian`"
+                    .to_string(),
+            ));
         }
 
         for provider_name in self.providers.keys() {
@@ -429,30 +419,12 @@ impl HarnessConfig {
             resolve_agent_model_selection(self, agent_name, agent)?;
         }
 
-        if let Some(mut default_profile) = self.ui.default_profile.clone() {
+        if let Some(default_profile) = self.ui.default_profile.clone() {
             if !self.agents.contains_key(default_profile.as_str()) {
-                if self.agents.contains_key("build") {
-                    self.ui.default_profile = Some("build".to_string());
-                    self.default_agent = Some("build".to_string());
-                    default_profile = "build".to_string();
-                } else {
-                    return Err(ConfigError::InvalidReference(format!(
-                        "ui.default_profile references unknown agent `{default_profile}`; available agents: {}",
-                        format_name_list(self.agents.keys().map(|name| name.as_str()))
-                    )));
-                }
-            }
-            if let Some(profile) = self.agents.get(default_profile.as_str()) {
-                if profile.mode.is_subagent_only() {
-                    return Err(ConfigError::InvalidReference(format!(
-                        "default_agent `{default_profile}` must not reference a subagent-only profile"
-                    )));
-                }
-                if profile.hidden {
-                    return Err(ConfigError::InvalidReference(format!(
-                        "default_agent `{default_profile}` must not reference a hidden profile"
-                    )));
-                }
+                return Err(ConfigError::InvalidReference(format!(
+                    "ui.default_profile references unknown agent `{default_profile}`; available agents: {}",
+                    format_name_list(self.agents.keys().map(|name| name.as_str()))
+                )));
             }
         }
 
@@ -815,9 +787,6 @@ pub struct ProfileConfig {
     pub tool_failure_mode: ToolFailureMode,
     #[serde(default)]
     pub tools: Vec<String>,
-    #[serde(default)]
-    #[schemars(skip)]
-    pub enabled: Option<bool>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Default)]
@@ -834,9 +803,6 @@ impl AgentMode {
         matches!(self, Self::Subagent)
     }
 }
-
-/// Legacy compatibility alias kept for migration shims and older category-named call sites.
-pub type CategoryConfig = ProfileConfig;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Default)]
 #[serde(deny_unknown_fields)]
@@ -873,9 +839,6 @@ pub struct ProfilePermissions {
     #[serde(default)]
     pub rules: PermissionRuleSet,
 }
-
-/// Legacy compatibility alias kept for older category-scoped permission call sites.
-pub type CategoryPermissions = ProfilePermissions;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Default)]
 #[serde(rename_all = "snake_case")]

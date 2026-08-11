@@ -66,11 +66,7 @@ async fn completed_tool_turn_preserves_tool_messages_for_followup_context() {
         .await
         .unwrap_or_abort();
     let first_request_id = coordinator
-        .request_agent_turn(
-            supervisor_actor(),
-            "agent_000001",
-            "edit docs/config.md",
-        )
+        .request_agent_turn(supervisor_actor(), "agent_000001", "edit docs/config.md")
         .await
         .unwrap_or_abort();
     wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
@@ -134,9 +130,7 @@ async fn completed_tool_turn_preserves_tool_messages_for_followup_context() {
         })
         .unwrap_or_abort();
     assert_eq!(tool_result_message.name.as_deref(), Some("shell_run"));
-    assert!(tool_result_message
-        .content
-        .contains("touch docs/config.md"));
+    assert!(tool_result_message.content.contains("touch docs/config.md"));
     assert!(followup_messages.iter().any(|message| {
         message.role == MessageRole::Assistant
             && message.content == "I edited docs/config.md."
@@ -194,15 +188,11 @@ async fn resumed_tool_turn_preserves_tool_messages_for_followup_context() {
         .await
         .unwrap_or_abort();
     initial
-        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .spawn_agent_idle(supervisor_actor(), "default", None)
         .await
         .unwrap_or_abort();
     let first_request_id = initial
-        .request_agent_turn(
-            supervisor_actor(),
-            "agent_000001",
-            "edit docs/config.md",
-        )
+        .request_agent_turn(supervisor_actor(), "agent_000001", "edit docs/config.md")
         .await
         .unwrap_or_abort();
     wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
@@ -263,9 +253,7 @@ async fn resumed_tool_turn_preserves_tool_messages_for_followup_context() {
         })
         .unwrap_or_abort();
     assert_eq!(tool_result_message.name.as_deref(), Some("shell_run"));
-    assert!(tool_result_message
-        .content
-        .contains("touch docs/config.md"));
+    assert!(tool_result_message.content.contains("touch docs/config.md"));
 }
 #[tokio::test]
 async fn provider_stream_metadata_persists_to_jsonl_events() {
@@ -413,10 +401,7 @@ async fn provider_stream_metadata_persists_to_jsonl_events() {
     );
     assert!(assistant_message.text_digest.is_some());
     assert!(assistant_message.reasoning_digest.is_some());
-    let thinking = finished_metadata
-        .thinking
-        .as_ref()
-        .unwrap_or_abort();
+    let thinking = finished_metadata.thinking.as_ref().unwrap_or_abort();
     assert_eq!(
         thinking.summary.as_deref(),
         Some("provider supplied thinking summary")

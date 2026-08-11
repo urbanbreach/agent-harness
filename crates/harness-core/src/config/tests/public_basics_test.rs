@@ -59,14 +59,10 @@ fn example_config_parses_public_agents_and_compaction() {
     // act
     // assert
     let agents = r#"
-            deep: {
-              description: "Default deep execution profile",
-              model_ref: "default:gpt-4o-mini",
+            default: {
               tools: ["read"],
             },
-            review: {
-              description: "Review profile",
-              model_ref: "default:gpt-4o-mini",
+            general: {
               max_iters: 20,
               tool_failure_mode: "continue_as_tool_message",
               tools: ["read", "invalid"],
@@ -79,7 +75,7 @@ fn example_config_parses_public_agents_and_compaction() {
         Some(
             r#"
                 ui: {
-                  default_profile: "deep",
+                  default_profile: "default",
                 },
                 "#,
         ),
@@ -89,12 +85,12 @@ fn example_config_parses_public_agents_and_compaction() {
 
     assert_eq!(parsed.schema.as_deref(), Some("./config.json"));
     assert!(parsed.providers.contains_key("default"));
-    assert!(parsed.agents.contains_key("deep"));
+    assert!(parsed.agents.contains_key("default"));
     assert_eq!(
-        parsed.agents["review"].tool_failure_mode,
+        parsed.agents["general"].tool_failure_mode,
         ToolFailureMode::ContinueAsToolMessage
     );
-    assert_eq!(parsed.agents["review"].max_iters, Some(20));
+    assert_eq!(parsed.agents["general"].max_iters, Some(20));
     assert_eq!(
         parsed.permissions.defaults.question,
         Some(PermissionMode::Ask)
@@ -145,10 +141,9 @@ fn built_in_lsp_presets_accept_override_only_entries() {
                   }
                 }
               },
-              agents: {
-                deep: {
-                  description: "Deep work",
-                  model_ref: "default:gpt-4o-mini",
+              model: "default/gpt-4o-mini",
+              agent: {
+                default: {
                   tools: ["fs.read"]
                 }
               },
@@ -245,11 +240,10 @@ fn model_variant_metadata_accepts_max_reasoning_effort() {
               },
               model: "umans-ai-coding-plan/umans-glm-5.2",
               agent: {
-                build: {
-                  system_prompt: "Build work"
+                default: {
+                  system_prompt: "Do the work"
                 }
               },
-              default_agent: "build"
             }
         "#,
     )
@@ -265,12 +259,15 @@ fn model_variant_metadata_accepts_max_reasoning_effort() {
 }
 
 #[test]
-fn missing_required_sections_are_deterministic() {
+fn missing_required_model_is_deterministic() {
     // arrange
     // act
     // assert
-    let err = load_config_from_str("{}").expect_err("config without agents must fail");
-    assert_eq!(err.to_string(), "missing required config sections: agents");
+    let err = load_config_from_str("{}").expect_err("config without a model must fail");
+    assert_eq!(
+        err.to_string(),
+        "top-level `model` is required for shipped agent profiles"
+    );
 }
 
 #[test]
@@ -297,11 +294,10 @@ fn provider_keys_reject_terminal_control_characters_without_echoing_them() {
               },
               model: "evil\u001b]52;c;SGFja2Vk\u0007/gpt-4o-mini",
               agent: {
-                build: {
-                  system_prompt: "Build work"
+                default: {
+                  system_prompt: "Do the work"
                 }
               },
-              default_agent: "build",
               permission: "ask"
             }
             "#,
@@ -315,11 +311,11 @@ fn provider_keys_reject_terminal_control_characters_without_echoing_them() {
 }
 
 #[test]
-fn retired_top_level_keys_fail_with_migration_guidance() {
+fn retired_category_key_fails_closed() {
     // arrange
     // act
     // assert
-    let parsed = load_config_from_str(
+    let error = load_config_from_str(
         r#"
             {
               provider: {
@@ -359,14 +355,11 @@ fn retired_top_level_keys_fail_with_migration_guidance() {
             }
             "#,
     )
-    .unwrap_or_abort();
+    .expect_err("retired category config must fail");
 
-    assert!(parsed.agents.contains_key("deep"));
-    assert_eq!(parsed.runtime.background_tasks.default_concurrency, 2);
-    assert_eq!(
-        parsed.paths.session_dir,
-        PathBuf::from(".agent-harness/sessions")
-    );
+    assert!(error
+        .to_string()
+        .contains("unknown top-level config keys: `categories`"));
 }
 
 #[test]
@@ -389,10 +382,9 @@ fn runtime_background_tasks_camel_case_aliases_parse_without_duplicate_fields() 
                   }
                 }
               },
-              agents: {
-                deep: {
-                  description: "Deep work",
-                  model_ref: "default:gpt-4o-mini",
+              model: "default/gpt-4o-mini",
+              agent: {
+                default: {
                   tools: ["read"]
                 }
               },
@@ -453,10 +445,9 @@ fn unknown_top_level_key_is_rejected_strictly() {
                   }
                 }
               },
-              agents: {
-                deep: {
-                  description: "Deep work",
-                  model_ref: "default:gpt-4o-mini",
+              model: "default/gpt-4o-mini",
+              agent: {
+                default: {
                   tools: ["fs.read"]
                 }
               },
@@ -515,10 +506,9 @@ fn top_level_hashline_edit_alias_and_default_are_accepted() {
               }
             }
           },
-          agents: {
-            build: {
-              description: "Build work",
-              model_ref: "default:gpt-4o-mini",
+          model: "default/gpt-4o-mini",
+          agent: {
+            default: {
               tools: ["read"]
             }
           },
@@ -569,10 +559,9 @@ fn top_level_hashline_edit_alias_and_default_are_accepted() {
               }
             }
           },
-          agents: {
-            build: {
-              description: "Build work",
-              model_ref: "default:gpt-4o-mini",
+          model: "default/gpt-4o-mini",
+          agent: {
+            default: {
               tools: ["read"]
             }
           },

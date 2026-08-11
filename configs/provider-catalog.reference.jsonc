@@ -82,12 +82,11 @@
   },
   "model": "openai-codex/gpt-5.4",
   "agent": {
-    "build": {
+    "default": {
       "model": "openai-codex/gpt-5.4-mini",
       "variant": "high"
     }
   },
-  "default_agent": "build",
   "permission": "ask",
   "runtime": {
     "compaction": {

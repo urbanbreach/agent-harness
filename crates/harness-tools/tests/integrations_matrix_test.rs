@@ -127,36 +127,23 @@ fn mcp_bad_input_invalid_server_id_rejected_by_config_validation() {
     // Given: a config with an MCP server id containing invalid characters
     let raw = r#"
         {
-          providers: {
+          provider: {
             default: {
               type: "openai_compatible",
-              base_url: "http://127.0.0.1:8317/v1",
-              api_key: "test-key",
-              api_mode: "responses",
-              timeout_ms: 60000,
-              models: { "gpt-5.4-mini": { display_name: "GPT-5.4 Mini" } },
+              options: { baseURL: "http://127.0.0.1:8317/v1", apiKey: "test-key", apiMode: "responses", timeoutMs: 60000 },
+              models: { "gpt-5.4-mini": { name: "GPT-5.4 Mini" } },
             },
           },
-          agents: {
-            deep: { description: "Deep work", model_ref: "default:gpt-5.4-mini", tools: ["fs.read"] },
-          },
-          permissions: { defaults: { edit: "ask", shell: "ask", network: "deny" } },
-          runtime: {
-            background_tasks: { default_concurrency: 2, provider_concurrency: 2, model_concurrency: 2, stale_timeout_ms: 15000, message_staleness_timeout_ms: 5000 },
-            session_dir: ".agent-harness/sessions",
-          },
-          integrations: {
-            remote_search: { endpoint: "https://mcp.exa.ai/mcp" },
-            mcp: {
-              servers: {
+          model: "default/gpt-5.4-mini",
+          agent: { default: { tools: ["read"] } },
+          permission: { edit: "ask", bash: "ask", webfetch: "deny" },
+          mcp: {
                 "bad server!": {
                   transport: "stdio",
                   command: ["echo"],
-                  timeout_secs: 5,
+                  timeout: 5000,
                   enabled: true,
                 },
-              },
-            },
           },
         }
     "#;
@@ -284,25 +271,16 @@ fn config_with_lsp_json(lsp_json: &str) -> String {
     format!(
         r#"
         {{
-          providers: {{
+          provider: {{
             default: {{
               type: "openai_compatible",
-              base_url: "http://127.0.0.1:8317/v1",
-              api_key: "test-key",
-              api_mode: "responses",
-              timeout_ms: 60000,
-              models: {{ "gpt-5.4-mini": {{ display_name: "GPT-5.4 Mini" }} }},
+              options: {{ baseURL: "http://127.0.0.1:8317/v1", apiKey: "test-key", apiMode: "responses", timeoutMs: 60000 }},
+              models: {{ "gpt-5.4-mini": {{ name: "GPT-5.4 Mini" }} }},
             }},
           }},
-          agents: {{
-            deep: {{ description: "Deep work", model_ref: "default:gpt-5.4-mini", tools: ["fs.read"] }},
-          }},
-          permissions: {{ defaults: {{ edit: "ask", shell: "ask", network: "deny" }} }},
-          runtime: {{
-            background_tasks: {{ default_concurrency: 2, provider_concurrency: 2, model_concurrency: 2, stale_timeout_ms: 15000, message_staleness_timeout_ms: 5000 }},
-            session_dir: ".agent-harness/sessions",
-          }},
-          integrations: {{ remote_search: {{ endpoint: "https://mcp.exa.ai/mcp" }} }},
+          model: "default/gpt-5.4-mini",
+          agent: {{ default: {{ tools: ["read"] }} }},
+          permission: {{ edit: "ask", bash: "ask", webfetch: "deny" }},
           lsp: {{ servers: {lsp_json} }},
         }}
         "#

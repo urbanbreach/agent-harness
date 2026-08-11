@@ -216,7 +216,6 @@ mod tests {
                 build: { system_prompt: "Build" },
                 plan: { system_prompt: "Plan" },
               },
-              default_agent: "build",
               permission: {
                 edit: "allow", bash: "allow", question: "allow",
                 task: "allow", webfetch: "allow", websearch: "allow",

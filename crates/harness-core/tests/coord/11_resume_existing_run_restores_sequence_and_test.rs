@@ -23,7 +23,7 @@ async fn resume_existing_run_restores_sequence_and_ids() {
                 2,
                 EventV1::AgentSpawned(AgentSpawnedEvent {
                     agent_id: "agent_000003".to_string(),
-                    profile: "alpha".to_string(),
+                    profile: "default".to_string(),
                     parent_agent_id: None,
                 }),
             ),
@@ -123,12 +123,12 @@ async fn resume_existing_run_restores_sequence_and_ids() {
             EventV1::AgentSpawned(data)
                 if event.seq == 11
                     && data.agent_id == "agent_000003"
-                    && data.profile == "alpha"
+                && data.profile == "default"
         )
     }));
 
     let new_agent_id = coordinator
-        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .spawn_agent_idle(supervisor_actor(), "default", None)
         .await
         .unwrap_or_abort();
     assert_eq!(new_agent_id, "agent_000004");
@@ -204,7 +204,7 @@ async fn resume_existing_run_reuses_same_run_id_and_directory() {
                 2,
                 EventV1::AgentSpawned(AgentSpawnedEvent {
                     agent_id: "agent_000001".to_string(),
-                    profile: "alpha".to_string(),
+                    profile: "default".to_string(),
                     parent_agent_id: None,
                 }),
             ),
@@ -308,7 +308,7 @@ async fn resume_existing_run_restores_subagent_parent_lineage_for_hooks_and_repl
                 2,
                 EventV1::AgentSpawned(AgentSpawnedEvent {
                     agent_id: "agent_000001".to_string(),
-                    profile: "alpha".to_string(),
+                    profile: "default".to_string(),
                     parent_agent_id: None,
                 }),
             ),
@@ -317,7 +317,7 @@ async fn resume_existing_run_restores_subagent_parent_lineage_for_hooks_and_repl
                 3,
                 EventV1::AgentSpawned(AgentSpawnedEvent {
                     agent_id: "agent_000002".to_string(),
-                    profile: "beta".to_string(),
+                    profile: "default".to_string(),
                     parent_agent_id: Some("agent_000001".to_string()),
                 }),
             ),
@@ -377,10 +377,7 @@ async fn resume_existing_run_restores_subagent_parent_lineage_for_hooks_and_repl
     }));
 
     let plan = inspect_resume_plan(&run.run_dir);
-    let child = plan
-        .child_sessions
-        .get("agent_000002")
-        .unwrap_or_abort();
+    let child = plan.child_sessions.get("agent_000002").unwrap_or_abort();
     assert_eq!(child.parent_session_id.as_deref(), Some("agent_000001"));
 }
 #[tokio::test]
@@ -407,7 +404,7 @@ async fn resume_existing_run_restores_agent_profile_bindings() {
                 2,
                 EventV1::AgentSpawned(AgentSpawnedEvent {
                     agent_id: "agent_000001".to_string(),
-                    profile: "alpha".to_string(),
+                    profile: "default".to_string(),
                     parent_agent_id: None,
                 }),
             ),
@@ -471,7 +468,7 @@ async fn resumed_run_agent_ids_skip_existing_child_session_directories() {
                 2,
                 EventV1::AgentSpawned(AgentSpawnedEvent {
                     agent_id: "agent_000001".to_string(),
-                    profile: "alpha".to_string(),
+                    profile: "default".to_string(),
                     parent_agent_id: None,
                 }),
             ),
@@ -510,7 +507,7 @@ async fn resumed_run_agent_ids_skip_existing_child_session_directories() {
     let child_agent_id = coordinator
         .spawn_agent_idle(
             supervisor_actor(),
-            "alpha",
+            "default",
             Some("agent_000001".to_string()),
         )
         .await

@@ -6,9 +6,9 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 use crate::config::{
-    default_permission_rule_set_with_read_env, default_read_env_permission_rules,
-    CategoryPermissions, HarnessConfig, PermissionMode, PermissionRuleSet, PermissionSelector,
-    PermissionSelectorRule,
+    default_permission_rule_set_with_read_env, default_read_env_permission_rules, HarnessConfig,
+    PermissionMode, PermissionRuleSet, PermissionSelector, PermissionSelectorRule,
+    ProfilePermissions,
 };
 use crate::tool::{canonical_tool_id_for, ToolCapability};
 
@@ -267,6 +267,23 @@ impl PermissionKind {
             Self::DoomLoop => "doom_loop",
         }
     }
+
+    pub const fn ruleset_name(self) -> &'static str {
+        match self {
+            Self::EditFs => "edit",
+            Self::Shell => "bash",
+            Self::Network => "network",
+            Self::Question => "question",
+            Self::Task => "task",
+            Self::WebFetch => "webfetch",
+            Self::WebSearch => "websearch",
+            Self::CodeSearch => "codesearch",
+            Self::Lsp => "lsp",
+            Self::Read => "read",
+            Self::ExternalDirectory => "external_directory",
+            Self::DoomLoop => "doom_loop",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -296,7 +313,7 @@ pub enum PermissionRuleRequest {
 pub struct PermissionPolicy {
     defaults: DefaultPermissionModes,
     default_rules: PermissionRuleSet,
-    profile_overrides: BTreeMap<String, CategoryPermissions>,
+    profile_overrides: BTreeMap<String, ProfilePermissions>,
     ask_timeout_ms: u64,
 }
 
@@ -524,12 +541,12 @@ impl PermissionPolicy {
         self.ask_timeout_ms
     }
 
-    pub fn with_category_override(
+    pub fn with_profile_override(
         mut self,
-        category: impl Into<String>,
-        permissions: CategoryPermissions,
+        profile: impl Into<String>,
+        permissions: ProfilePermissions,
     ) -> Self {
-        self.profile_overrides.insert(category.into(), permissions);
+        self.profile_overrides.insert(profile.into(), permissions);
         self
     }
 
@@ -559,6 +576,57 @@ impl PermissionPolicy {
         }
     }
 
+    pub fn evaluate_request_with_ruleset(
+        &self,
+        profile: Option<&str>,
+        kind: PermissionKind,
+        selector: Option<&PermissionRuleRequest>,
+        ruleset: &[PermissionRule],
+    ) -> PolicyDecision {
+        let pattern = selector.map_or("*", PermissionRuleRequest::pattern);
+        let permission = kind.ruleset_name();
+        let action = ruleset
+            .iter()
+            .rfind(|rule| {
+                ruleset::wildcard_match(permission, &rule.permission)
+                    && ruleset::wildcard_match(pattern, &rule.pattern)
+            })
+            .map(|rule| rule.action);
+
+        match action {
+            Some(PermissionAction::Allow) => PolicyDecision::Allow,
+            Some(PermissionAction::Deny) => PolicyDecision::Deny,
+            Some(PermissionAction::Ask) => PolicyDecision::Ask {
+                timeout_ms: self.ask_timeout_ms,
+                default_decision: PermissionDecision::Deny,
+            },
+            None => self.evaluate_request(profile, kind, selector),
+        }
+    }
+
+    pub fn is_tool_call_fully_denied(
+        &self,
+        profile: Option<&str>,
+        tool_id: &str,
+        capability: ToolCapability,
+        ruleset: &[PermissionRule],
+    ) -> bool {
+        let Some(kind) = permission_kind_for_tool_call(tool_id, capability) else {
+            return false;
+        };
+        if is_tool_call_disabled(tool_id, capability, ruleset) {
+            return true;
+        }
+        let permission = kind.ruleset_name();
+        if ruleset.iter().any(|rule| {
+            ruleset::wildcard_match(permission, &rule.permission)
+                && rule.action != PermissionAction::Deny
+        }) {
+            return false;
+        }
+        self.evaluate(profile, kind) == PolicyDecision::Deny
+    }
+
     fn default_mode(&self, kind: PermissionKind) -> &PermissionMode {
         match kind {
             PermissionKind::EditFs => &self.defaults.edit,
@@ -577,8 +645,18 @@ impl PermissionPolicy {
     }
 }
 
+impl PermissionRuleRequest {
+    fn pattern(&self) -> &str {
+        match self {
+            Self::ShellCommand { pattern }
+            | Self::WorkspacePath(pattern)
+            | Self::TaskAgent(pattern) => pattern,
+        }
+    }
+}
+
 fn profile_mode_for_request<'a>(
-    permissions: &'a CategoryPermissions,
+    permissions: &'a ProfilePermissions,
     kind: PermissionKind,
     selector: Option<&PermissionRuleRequest>,
 ) -> Option<&'a PermissionMode> {
@@ -693,7 +771,6 @@ pub fn permission_kind_for_tool(tool_id: &str) -> Option<PermissionKind> {
 
     match canonical_tool_id {
         "question" => Some(PermissionKind::Question),
-        "plan_enter" | "plan_exit" => Some(PermissionKind::Question),
         "task" | "skill" => Some(PermissionKind::Task),
         "background_cancel" | "background_output" => Some(PermissionKind::Task),
         "todoread" | "todowrite" => Some(PermissionKind::Task),
@@ -729,6 +806,27 @@ pub fn permission_kind_for_tool_call(
     permission_kind_for_tool(tool_id).or_else(|| permission_kind_for_capability(capability))
 }
 
+pub fn is_tool_call_disabled(
+    tool_id: &str,
+    capability: ToolCapability,
+    ruleset: &[PermissionRule],
+) -> bool {
+    let Some(kind) = permission_kind_for_tool_call(tool_id, capability) else {
+        return false;
+    };
+    let permission = kind.ruleset_name();
+    let Some((deny_index, catch_all)) = ruleset.iter().enumerate().rfind(|(_, rule)| {
+        rule.pattern == "*" && ruleset::wildcard_match(permission, &rule.permission)
+    }) else {
+        return false;
+    };
+    catch_all.action == PermissionAction::Deny
+        && !ruleset.iter().skip(deny_index + 1).any(|rule| {
+            ruleset::wildcard_match(permission, &rule.permission)
+                && rule.action != PermissionAction::Deny
+        })
+}
+
 pub fn permission_kind_for_capability(capability: ToolCapability) -> Option<PermissionKind> {
     match capability {
         ToolCapability::EditFs => Some(PermissionKind::EditFs),
@@ -740,7 +838,7 @@ pub fn permission_kind_for_capability(capability: ToolCapability) -> Option<Perm
 }
 
 fn mode_for_kind(
-    permissions: &CategoryPermissions,
+    permissions: &ProfilePermissions,
     kind: PermissionKind,
 ) -> Option<&PermissionMode> {
     match kind {

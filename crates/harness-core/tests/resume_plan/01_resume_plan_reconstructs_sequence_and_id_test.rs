@@ -137,6 +137,62 @@ fn resume_plan_reconstructs_sequence_and_id_watermarks() {
     assert!(plan.is_resumable);
     assert_eq!(plan.resume_disabled_reason, None);
 }
+
+#[test]
+fn resume_plan_accepts_supported_named_subagent_bindings() {
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
+    let run_dir = temp_dir.path().join("run_resume_supported_subagent");
+    write_events(
+        &run_dir,
+        &[
+            envelope(
+                1,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "interactive".into(),
+                    workspace_root: "/workspace/project".to_string(),
+                }),
+            ),
+            envelope(
+                2,
+                EventV1::AgentSpawned(AgentSpawnedEvent {
+                    agent_id: "agent_000001".to_string(),
+                    profile: "default".to_string(),
+                    parent_agent_id: None,
+                }),
+            ),
+            envelope(
+                3,
+                EventV1::AgentSpawned(AgentSpawnedEvent {
+                    agent_id: "agent_000002".to_string(),
+                    profile: "explore".to_string(),
+                    parent_agent_id: Some("agent_000001".to_string()),
+                }),
+            ),
+            envelope(
+                4,
+                EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                    request_id: "req_000001".into(),
+                    provider_id: "mock".to_string(),
+                    model_id: "model-1".to_string(),
+                    prompt_summary: "prompt".to_string(),
+                    request_digest: "digest-req".to_string(),
+                    metadata: None,
+                }),
+            ),
+            envelope(
+                5,
+                EventV1::RunFinished(RunFinishedEvent {
+                    summary: "finished".to_string(),
+                }),
+            ),
+        ],
+    );
+
+    let plan = inspect_resume_plan(&run_dir);
+
+    assert!(plan.is_resumable, "{:?}", plan.resume_disabled_reason);
+    assert_eq!(plan.resume_disabled_reason, None);
+}
 #[test]
 fn resume_plan_preserves_run_scoped_permission_grants_across_resume_markers() {
     // arrange

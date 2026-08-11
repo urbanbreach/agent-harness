@@ -76,11 +76,11 @@ async fn prompt_cli_model_override_records_selected_model_in_run_metadata() {
                     }
                 }
             },
-            "agents": {
-                "deep": {
-                    "description": "Deep profile",
+            "model": "default/gpt-4o-mini",
+            "agent": {
+                "default": {
                     "system_prompt": "You are the deep profile.",
-                    "model_ref": "default:gpt-4o-mini",
+                    "model": "default/gpt-4o-mini",
                     "tools": []
                 }
             },
@@ -104,9 +104,6 @@ async fn prompt_cli_model_override_records_selected_model_in_run_metadata() {
                     "enabled": false,
                     "seed": 42
                 }
-            },
-            "ui": {
-                "default_profile": "deep"
             }
         })
         .to_string(),

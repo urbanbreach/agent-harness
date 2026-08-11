@@ -47,132 +47,14 @@
   // Active default model. Use provider/model, optionally provider/model/variant.
   "model": "openai-codex/gpt-5.4-mini",
 
-  // Category scale, adapted to the Codex OAuth-backed GPT-family starter catalog.
-  // Runtime profile resolution selects the primary target; fallback targets are
-  // validated/catalog metadata until explicit automatic model retry is shipped.
-  // Larger provider catalogs can point these same profile names at Gemini,
-  // Claude, Kimi, or other provider-specific targets without changing agents.
-  "model_profile": {
-    "category-visual-engineering": {
-      "model": "openai-codex/gpt-5.5",
-      "variant": "high",
-      "fallback": [{ "model": "openai-codex/gpt-5.4-mini", "variant": "high" }]
-    },
-    "category-artistry": {
-      "model": "openai-codex/gpt-5.5",
-      "variant": "high",
-      "fallback": [{ "model": "openai-codex/gpt-5.4-mini", "variant": "high" }]
-    },
-    "category-ultrabrain": {
-      "model": "openai-codex/gpt-5.5",
-      "variant": "xhigh",
-      "fallback": [{ "model": "openai-codex/gpt-5.4-mini", "variant": "high" }]
-    },
-    "category-deep": {
-      // Matches the Deep lane as broad autonomous work, not Ultrabrain-level reasoning.
-      "model": "openai-codex/gpt-5.5",
-      "variant": "medium",
-      "fallback": [{ "model": "openai-codex/gpt-5.4-mini", "variant": "high" }]
-    },
-    "category-quick": {
-      "model": "openai-codex/gpt-5.4-mini",
-      "variant": "low",
-      "fallback": [{ "model": "openai-codex/gpt-5.5", "variant": "low" }]
-    },
-    "category-unspecified-low": {
-      "model": "openai-codex/gpt-5.4-mini",
-      "variant": "medium",
-      "fallback": [{ "model": "openai-codex/gpt-5.5", "variant": "medium" }]
-    },
-    "category-unspecified-high": {
-      "model": "openai-codex/gpt-5.5",
-      "variant": "high",
-      "fallback": [{ "model": "openai-codex/gpt-5.4-mini", "variant": "high" }]
-    },
-    "category-writing": {
-      "model": "openai-codex/gpt-5.4-mini",
-      "variant": "medium",
-      "fallback": [{ "model": "openai-codex/gpt-5.5", "variant": "medium" }]
-    }
-  },
-
-  // Built-in agents are listed so they are easy to discover and toggle.
-  // Set enable:false (or enabled:false) to remove one from the runtime.
-  // Add model, prompt, tools, or permission here only when overriding defaults.
+  // The generic default handles interactive turns. Named subagents remain
+  // available for bounded delegation through task(subagent_type=...).
   "agent": {
-    "build": {
-      "enable": true,
-      "model": "openai-codex/gpt-5.4-mini",
-      "variant": "high",
-    },
-    // Stable read-only planning lane: Plan may inspect the workspace and write
-    // only .agent-harness/plans/<run>.md, then uses plan_exit to ask before
-    // continuing implementation in Build.
-    "plan": {
-      "enable": true,
-      "model": "openai-codex/gpt-5.5",
-      "variant": "xhigh",
-    },
-    "general": {
-      "enable": true,
-      "model": "openai-codex/gpt-5.4-mini",
-      "variant": "medium",
-    },
-    "explore": {
-      "enable": true,
-      "model": "openai-codex/gpt-5.4-mini",
-      "variant": "low",
-    },
-    // Task category routes. These are subagents used by
-    // task(category=...) and intentionally deny recursive task delegation by
-    // default.
-    "visual-engineering": {
-      "enable": true,
-      "model": "category-visual-engineering",
-    },
-    "artistry": {
-      "enable": true,
-      "model": "category-artistry",
-    },
-    "ultrabrain": {
-      "enable": true,
-      "model": "category-ultrabrain",
-    },
-    "deep": {
-      "enable": true,
-      "model": "category-deep",
-    },
-    "quick": {
-      "enable": true,
-      "model": "category-quick",
-    },
-    "unspecified-low": {
-      "enable": true,
-      "model": "category-unspecified-low",
-    },
-    "unspecified-high": {
-      "enable": true,
-      "model": "category-unspecified-high",
-    },
-    "writing": {
-      "enable": true,
-      "model": "category-writing",
-    },
-    "title": {
-      "enable": true,
-      "hidden": true,
-    },
-    "summary": {
-      "enable": true,
-      "hidden": true,
-    },
-    "compaction": {
-      "enable": true,
-      "hidden": true,
-    }
+    "default": { "variant": "high" },
+    "explore": {},
+    "general": {},
+    "librarian": {}
   },
-
-  "default_agent": "build",
 
   // Harness-aligned allow-by-default. A scalar applies to all supported tool
   // permissions; switch to an object for per-tool rules (ruleset-compatible
@@ -189,10 +71,7 @@
   //     "*": "deny"
   //   },
   //   "webfetch": "allow",
-  //   "task": {
-  //     "general": "deny",
-  //     "*": "allow"
-  //   },
+  //   "task": "allow",
   //   "shell_allowlist": {
   //     "mode": "permission_patterns",
   //     "cwd_roots": ["."]

@@ -27,7 +27,7 @@ impl Coordinator {
             return Ok(());
         };
         let turn_request_id = running.request_id.clone();
-        let category = running.category.clone();
+        let profile = running.profile.clone();
         let cancellation_token = running.cancellation_token.clone();
         let parent_agent_id = run_state.subagent_parent_by_id.get(&agent_id).cloned();
         let provider_id_for_state = provider_id.clone();
@@ -70,7 +70,7 @@ impl Coordinator {
                 provider_id: Some(provider_id),
                 model_id: Some(model_id),
                 parent_agent_id,
-                category,
+                profile,
                 outcome: Some("started".to_string()),
                 output_summary: Some(prompt_summary),
                 failure_reason: None,
@@ -199,7 +199,7 @@ impl Coordinator {
             return Ok(());
         };
         let turn_request_id = running.request_id.clone();
-        let category = running.category.clone();
+        let profile = running.profile.clone();
         let cancellation_token = running.cancellation_token.clone();
         let parent_agent_id = run_state.subagent_parent_by_id.get(&agent_id).cloned();
         let usage_for_state = usage.clone();
@@ -240,7 +240,7 @@ impl Coordinator {
                 provider_id: None,
                 model_id: None,
                 parent_agent_id,
-                category,
+                profile,
                 outcome: Some(finish_reason.clone()),
                 output_summary: output_digest,
                 failure_reason: None,

@@ -81,7 +81,8 @@ fn config_validate_cli_merges_xdg_defaults_with_local_project_override() {
     write_config(
         &local_config_path,
         &serde_json::json!({
-            "default_agent": "plan"
+            "model": "default/gpt-4o",
+            "permission": { "bash": "deny" }
         }),
     );
 
@@ -112,31 +113,30 @@ fn load_config_allows_public_agents_without_explicit_description() {
     let config_path = temp.path().join("harness.jsonc");
     let mut config = canonical_runtime_config();
     config["agent"] = serde_json::json!({
-        "plan": {
-            "use_small_model": true,
+        "default": {
+            "model": "default/gpt-4o-mini",
             "tools": []
         }
     });
-    config["default_agent"] = serde_json::json!("plan");
     write_config(&config_path, &config);
 
     let parsed = load_config_from_file(&config_path)
         .unwrap_or_abort();
-    let plan = parsed
+    let default = parsed
         .agents
-        .get("plan")
+        .get("default")
         // act
         .unwrap_or_abort();
 
     // assert
     assert_eq!(
-        plan.description,
-        "Plan mode. Disallows all edit tools except the active plan file."
+        default.description,
+        "General-purpose Harness agent."
     );
-    assert_eq!(plan.model_ref, "default/gpt-4o-mini");
+    assert_eq!(default.model_ref, "default/gpt-4o-mini");
 }
 #[test]
-fn config_validate_cli_accepts_legacy_harness_native_shape() {
+fn config_validate_cli_rejects_legacy_role_shaped_native_config() {
     // arrange
     let temp = tempdir().unwrap_or_abort();
     let config_path = temp.path().join("harness.jsonc");
@@ -153,12 +153,11 @@ fn config_validate_cli_accepts_legacy_harness_native_shape() {
         .unwrap_or_abort();
 
     // assert
-    assert!(
-        output.status.success(),
-        "stdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("unknown top-level config keys"));
+    assert!(stderr.contains("`agents`"));
+    assert!(stderr.contains("`default_agent`"));
 }
 #[test]
 fn config_validate_cli_accepts_legacy_xdg_config_path_for_migration() {

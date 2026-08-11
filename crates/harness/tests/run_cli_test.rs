@@ -11,34 +11,29 @@ use harness_testkit::workspace::TestWorkspace;
 
 fn run_cli_config(session_dir: &Path) -> String {
     serde_json::json!({
-        "providers": {
+        "provider": {
             "default": {
                 "type": "openai_compatible",
-                "base_url": "http://127.0.0.1:9999/v1",
-                "api_key": "DUMMY",
-                "api_mode": "responses",
-                "timeout_ms": 60000,
+                "options": {
+                    "baseURL": "http://127.0.0.1:9999/v1",
+                    "apiKey": "DUMMY",
+                    "apiMode": "responses",
+                    "timeoutMs": 60000
+                },
                 "models": {
                     "gpt-4o-mini": {
-                        "display_name": "GPT-4o mini"
+                        "name": "GPT-4o mini"
                     }
                 }
             }
         },
-        "agents": {
-            "deep": {
-                "description": "Deep profile",
-                "model_ref": "default:gpt-4o-mini",
+        "model": "default/gpt-4o-mini",
+        "agent": {
+            "default": {
                 "tools": []
             }
         },
-        "permissions": {
-            "defaults": {
-                "edit": "allow",
-                "shell": "allow",
-                "network": "allow"
-            }
-        },
+        "permission": "allow",
         "runtime": {
             "background_tasks": {
                 "default_concurrency": 2,
@@ -52,14 +47,6 @@ fn run_cli_config(session_dir: &Path) -> String {
                 "enabled": false,
                 "seed": 42
             }
-        },
-        "integrations": {
-            "remote_search": {
-                "endpoint": "https://mcp.exa.ai/mcp"
-            }
-        },
-        "ui": {
-            "default_profile": "deep"
         }
     })
     .to_string()
