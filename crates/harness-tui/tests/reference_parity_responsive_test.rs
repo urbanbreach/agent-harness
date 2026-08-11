@@ -12,6 +12,11 @@
     reason = "integration parity tests use fail-fast asserts"
 )]
 
+use harness_core::event::{
+    ActorKind, EventActor, EventEnvelopeV1, EventV1, PermissionDecision, PermissionRequestedEvent,
+    ProviderRequestStartedEvent, ProviderStreamDeltaEvent, ToolCallRequestedEvent,
+    UserMessageSubmittedEvent, SCHEMA_VERSION,
+};
 use harness_tui::app::{AppState, LaunchMetadata};
 use harness_tui::render_test::render_to_string;
 use harness_tui::ui;
@@ -25,6 +30,87 @@ fn idle_shell_app() -> AppState {
     app
 }
 
+fn streaming_shell_app() -> AppState {
+    let mut app = idle_shell_app();
+    for (seq, payload) in [
+        EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+            request_id: "req_responsive_stream".into(),
+            text: "Explain responsive hierarchy".to_string(),
+        }),
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "req_responsive_stream".into(),
+            provider_id: "mock".to_string(),
+            model_id: "model-1".to_string(),
+            prompt_summary: "Explain responsive hierarchy".to_string(),
+            request_digest: "digest-responsive-stream".to_string(),
+            metadata: None,
+        }),
+        EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+            request_id: "req_responsive_stream".into(),
+            delta: "Streaming remains recognizable at every viewport.".to_string(),
+        }),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        app.ingest_event(EventEnvelopeV1 {
+            schema_version: SCHEMA_VERSION,
+            event_id: format!("evt-responsive-stream-{seq:04}"),
+            seq: u64::try_from(seq + 1).expect("responsive event sequence fits u64"),
+            run_id: "run_responsive_stream".into(),
+            mono_ms: u64::try_from(seq + 1).expect("responsive monotonic time fits u64"),
+            ts: Some("2026-08-09T12:00:00Z".to_string()),
+            actor: EventActor::new(ActorKind::System, Some("responsive-test".to_string())),
+            correlation_id: Some("req_responsive_stream".to_string()),
+            causation_id: None,
+            stream_key: Some("run:run_responsive_stream".to_string()),
+            payload,
+        });
+    }
+    app
+}
+
+fn permission_shell_app() -> AppState {
+    let mut app = streaming_shell_app();
+    for (seq, payload) in [
+        EventV1::ToolCallRequested(ToolCallRequestedEvent {
+            tool_call_id: "call_responsive_edit".into(),
+            tool_id: "edit".to_string(),
+            args_summary: r#"{"path":"src/responsive.rs"}"#.to_string(),
+            args_digest: "digest-responsive-edit".to_string(),
+            metadata: None,
+        }),
+        EventV1::PermissionRequested(PermissionRequestedEvent {
+            permission_id: "perm_responsive_edit".to_string(),
+            kind: "edit".to_string(),
+            tool_call_id: Some("call_responsive_edit".into()),
+            summary: "Allow editing src/responsive.rs?".to_string(),
+            request_digest: "digest-responsive-permission".to_string(),
+            timeout_ms: 30_000,
+            default_decision: PermissionDecision::Deny,
+        }),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let seq = seq + 4;
+        app.ingest_event(EventEnvelopeV1 {
+            schema_version: SCHEMA_VERSION,
+            event_id: format!("evt-responsive-permission-{seq:04}"),
+            seq: u64::try_from(seq).expect("responsive event sequence fits u64"),
+            run_id: "run_responsive_stream".into(),
+            mono_ms: u64::try_from(seq).expect("responsive monotonic time fits u64"),
+            ts: Some("2026-08-09T12:00:00Z".to_string()),
+            actor: EventActor::new(ActorKind::System, Some("responsive-test".to_string())),
+            correlation_id: Some("req_responsive_stream".to_string()),
+            causation_id: None,
+            stream_key: Some("run:run_responsive_stream".to_string()),
+            payload,
+        });
+    }
+    app
+}
+
 fn render_at(app: &AppState, width: u16, height: u16) -> String {
     render_to_string(app, Rect::new(0, 0, width, height), |app, frame, _area| {
         ui::render_app(frame, app)
@@ -33,6 +119,76 @@ fn render_at(app: &AppState, width: u16, height: u16) -> String {
 
 fn count_char(rendered: &str, ch: char) -> usize {
     rendered.chars().filter(|c| *c == ch).count()
+}
+
+#[test]
+fn streaming_state_remains_recognizable_at_all_reference_viewports() {
+    let app = streaming_shell_app();
+
+    for (width, height) in [
+        (120_u16, 50_u16),
+        (120, 40),
+        (100, 30),
+        (80, 24),
+        (79, 24),
+        (60, 20),
+        (140, 40),
+    ] {
+        let rendered = render_at(&app, width, height);
+
+        assert!(
+            rendered.contains("Streaming remains recognizable")
+                || rendered.contains("Responding")
+                || rendered.contains("Waiting for response"),
+            "{width}x{height}: streaming state must remain visible\n{rendered}"
+        );
+        assert!(
+            rendered.contains('❯'),
+            "{width}x{height}: composer must remain usable while streaming\n{rendered}"
+        );
+        assert!(
+            rendered
+                .lines()
+                .all(|line| unicode_width::UnicodeWidthStr::width(line) <= usize::from(width)),
+            "{width}x{height}: no rendered row may overflow the viewport\n{rendered}"
+        );
+    }
+}
+
+#[test]
+fn permission_controls_remain_accessible_at_all_reference_viewports() {
+    let app = permission_shell_app();
+
+    for (width, height) in [
+        (120_u16, 50_u16),
+        (120, 40),
+        (100, 30),
+        (80, 24),
+        (79, 24),
+        (60, 20),
+        (140, 40),
+    ] {
+        let rendered = render_at(&app, width, height);
+
+        assert!(
+            rendered.contains("Yes") && rendered.contains("No, reject"),
+            "{width}x{height}: primary permission controls must remain accessible\n{rendered}"
+        );
+        assert!(
+            rendered.contains('●') && rendered.contains('○'),
+            "{width}x{height}: permission focus grammar must remain recognizable\n{rendered}"
+        );
+        assert!(
+            rendered.contains('❯'),
+            "{width}x{height}: permission surface must preserve the composer\n{rendered}"
+        );
+        assert!(
+            rendered
+                .lines()
+                .all(|line| unicode_width::UnicodeWidthStr::width(line) <= usize::from(width)),
+            "{width}x{height}: no permission row may overflow the viewport\n{rendered}"
+        );
+    }
 }
 
 /// RESP-80x24 idle shell: breadcrumb + empty body + bordered composer + idle footer.

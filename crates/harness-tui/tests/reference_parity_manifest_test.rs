@@ -289,6 +289,7 @@ fn validator_rejects_empty_owner_string() {
     // assert
     // arrange
     let mut manifest = checked_in_manifest();
+    manifest["rows"][0]["status"] = json!("pass");
     manifest["rows"][0]["owners"]["pty_test"] = json!("");
 
     // act / assert
@@ -429,11 +430,9 @@ fn checked_in_manifest_status_rollup_is_truthful_and_not_complete() {
         "status counts must sum to required"
     );
     assert_eq!(rollup.unknown, 0, "no unknown statuses allowed");
-    // With all remaining gaps formally excluded by approved scope, the manifest
-    // is complete when no incomplete or blocked rows remain.
     assert!(
-        rollup.a_manifest_complete(),
-        "A-MANIFEST must be complete (pass/diverged/excluded) after approved exclusions"
+        !rollup.a_manifest_complete(),
+        "A-MANIFEST must remain incomplete while required rows lack evidence"
     );
 }
 
@@ -675,7 +674,7 @@ fn validator_rejects_pass_row_with_stale_freeze_digest() {
     // arrange
     let mut manifest = checked_in_manifest();
     make_p0_start_01_pass(&mut manifest);
-    row_mut(&mut manifest, "P0-START-01")["reference_freeze_txt_sha256"] = json!(FREEZE_PNG_SHA256);
+    row_mut(&mut manifest, "P0-START-01")["reference_freeze_txt_sha256"] = json!("0".repeat(64));
 
     // act
     let result = validate_manifest(&manifest);

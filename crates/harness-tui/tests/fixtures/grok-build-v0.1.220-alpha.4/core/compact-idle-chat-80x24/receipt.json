@@ -1,0 +1,26 @@
+{
+  "artifact_cells_count": 1920,
+  "artifact_cells_json_sha256": "d34990e933708a8d0647c00b4cd3f7b948a77b45f98335e97d4a1c126eba8036",
+  "artifact_terminal_txt_sha256": "b793dd9ae341ee75082deb01ee1b1e6d5e6a9b0ae2a4cac43473327526d641b9",
+  "binary_path": "/home/urbanbreach/Projects/agent-harness/inspirations/grok-build/target/debug/xai-grok-pager",
+  "binary_sha256": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
+  "binary_version": "grok 0.1.220-alpha.4 (c1b5909) [stable]",
+  "capture_method": "pty.fork (python) + vt100::Parser -> SemanticFrame (replicated from harness-testkit vt100_adapter)",
+  "capture_source": "reference",
+  "capture_status": "captured",
+  "captured_at": 1785432058,
+  "frame": "compact-idle-chat-80x24",
+  "generating_command": "python pty.fork capture of reference binary -> terminal-ansi.bin; ref-capture from-ansi -> cells.json; compact-idle-chat-80x24",
+  "incomplete_reason": null,
+  "raw_bytes": 2450,
+  "schema_version": "reference-frame-receipt-v1",
+  "source_revision": "c1b5909ec707c069f1d21a93917af044e71da0d7",
+  "terminal_environment": {
+    "COLORTERM": "truecolor",
+    "TERM": "xterm-256color"
+  },
+  "viewport": {
+    "cols": 80,
+    "rows": 24
+  }
+}

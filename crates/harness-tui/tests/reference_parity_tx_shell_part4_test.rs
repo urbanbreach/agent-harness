@@ -98,6 +98,17 @@ fn tx_user_blocks_preserve_submission_order_across_turns() {
         }),
     ));
     app.ingest_event(envelope(
+        13,
+        Some("req_user_a"),
+        EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+            request_id: "req_user_a".into(),
+            finish_reason: "stop".to_string(),
+            output_digest: Some("digest-req-user-a-finished".to_string()),
+            usage: None,
+            metadata: None,
+        }),
+    ));
+    app.ingest_event(envelope(
         20,
         Some("req_user_b"),
         EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
@@ -297,6 +308,9 @@ fn tx_diff_tool_details_project_removed_and_added_versions() {
             metadata: None,
         }),
     ));
+    for _ in 0..6 {
+        app.advance_animation_tick_for_evidence();
+    }
     app.focus = Focus::Details;
 
     // act — palette -> "show tool details" -> render

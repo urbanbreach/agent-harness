@@ -170,6 +170,9 @@ fn shell_fail_keeps_error_in_full_width_transcript_with_composer() {
             metadata: None,
         }),
     ));
+    let streaming_dock = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, W, H))
+        .dock
+        .expect("live shell should have a control dock");
     app.ingest_event(envelope(
         3,
         None,
@@ -182,12 +185,23 @@ fn shell_fail_keeps_error_in_full_width_transcript_with_composer() {
     // act
     let rendered = render(&app);
     let runtime = app.runtime_state();
+    let failed_dock = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, W, H))
+        .dock
+        .expect("failed live shell should keep its control dock");
 
     assert_eq!(
         runtime.kind,
         RuntimeStateKind::Failure,
         "SHELL-FAIL: runtime must be Failure; got {:?}",
         runtime.kind
+    );
+    assert_eq!(
+        failed_dock.composer, streaming_dock.composer,
+        "SHELL-FAIL: terminal lifecycle transitions must not move the composer"
+    );
+    assert!(
+        failed_dock.status.is_some(),
+        "SHELL-FAIL: failed state must preserve the live status band"
     );
     assert!(
         rendered.contains("ping"),
@@ -292,16 +306,22 @@ fn shell_fail_dock_matches_freeze_vertical_ladder() {
 
     let plan = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, W, H));
     let dock = plan.dock.expect("live fail shell keeps a dock");
+    let status = dock.status.expect("live fail shell keeps a status band");
     let disclosure = dock.disclosure.expect("live fail shell keeps disclosure");
 
+    assert_eq!(
+        status,
+        Rect::new(2, 33, 116, 1),
+        "SHELL-FAIL freeze ladder: one status row sits immediately above the composer"
+    );
     assert_eq!(
         dock.composer.y, 34,
         "SHELL-FAIL freeze ladder: composer top y=34 (L35); got y={}",
         dock.composer.y
     );
     assert_eq!(
-        dock.composer.height, 4,
-        "SHELL-FAIL freeze ladder: composer band height 4; got {}",
+        dock.composer.height, 3,
+        "SHELL-FAIL keeps the three-row single-line composer contract; got {}",
         dock.composer.height
     );
     assert_eq!(
@@ -310,8 +330,8 @@ fn shell_fail_dock_matches_freeze_vertical_ladder() {
         disclosure.y
     );
     assert_eq!(
-        dock.shell.height, 6,
-        "SHELL-FAIL freeze ladder: dock shell height 6 (composer+gap+disclosure+bottom); got {}",
+        dock.shell.height, 7,
+        "SHELL-FAIL freeze ladder: dock shell height 7 (status+composer+gap+disclosure+bottom); got {}",
         dock.shell.height
     );
     assert_eq!(
@@ -594,14 +614,12 @@ fn shell_scroll_freeze_viewport_packs_f39_to_f55_at_120x32() {
     ));
 
     let _bottom = render_at(&app, W, SCROLL_FREEZE_H);
-    for _ in 0..2 {
-        app.handle_key(KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE));
-    }
+    app.handle_key(KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE));
     let after_pages = render_at(&app, W, SCROLL_FREEZE_H);
     let first_after_pages = first_inventory_line(&after_pages);
     assert!(
         first_after_pages.is_some_and(|n| (39..=45).contains(&n)),
-        "2×PageUp should land near freeze mid-band; first inventory={first_after_pages:?}\n{after_pages}"
+        "PageUp should land near freeze mid-band; first inventory={first_after_pages:?}\n{after_pages}"
     );
 
     let mut first = first_after_pages;
@@ -738,8 +756,8 @@ fn shell_scroll_page_keys_adjust_transcript_under_full_width() {
         "SHELL-SCROLL: PageDown must return to bottom (scroll 0)"
     );
     assert!(
-        !landed_at_bottom.follow_mode,
-        "SHELL-SCROLL: landing at bottom must remain detached"
+        landed_at_bottom.follow_mode,
+        "SHELL-SCROLL: PageDown reaching the bottom must restore follow mode"
     );
     assert!(
         after_overscroll.follow_mode,

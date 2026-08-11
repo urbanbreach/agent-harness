@@ -80,8 +80,9 @@ fn signoff_parity_dry_run_records_fail_closed_stages() {
     );
     assert!(
         verdict.contains("verdict=DRY-RUN")
-            && verdict.contains("owns=dual_binary_cells_and_pixels"),
-        "verdict must mark dry-run dual-binary ownership: {verdict}"
+            && verdict.contains("owns=dual_binary_cells_and_pixels")
+            && verdict.contains("parity_complete=false"),
+        "verdict must mark dry-run ownership and incomplete manifest parity: {verdict}"
     );
 }
 

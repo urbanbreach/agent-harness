@@ -169,11 +169,11 @@
         }
       }
     ],
-    "freeze_png_sha256": "",
+    "freeze_png_sha256": "0830427651ae47645ea3ea49b532ef7ea29a69c3140f140d7df201f5093d6016",
     "freeze_scenario": "startup_welcome_120x32",
-    "freeze_txt_sha256": "0a96e69bbcfdc0f44aa10993e52d3b4524af1a1cda76bb836b2f006ba6e474ac",
+    "freeze_txt_sha256": "1a5f24dc9be953df160e8d2bcb661f6f2d8dc7845021c3153cd415ab3889ca58",
     "receipt_id": "reference-freeze",
-    "receipt_path": "crates/harness-tui/tests/fixtures/grok-build-v0.1.220-alpha.4/core/startup-welcome-120x32/receipt.json",
+    "receipt_path": "target/test-lanes/latest/signoff-parity/evidence/receipts/reference-freeze.receipt.json",
     "source_revision": "c1b5909ec707c069f1d21a93917af044e71da0d7"
   },
   "rows": [

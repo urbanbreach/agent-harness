@@ -371,8 +371,8 @@ fn validate_reference_parity_manifest(manifest: &Value, crate_dir: &Path) -> Vec
             let cells_path = resolve_under_crate(crate_dir, cells_rel);
             match SemanticFrame::read_cells_json(&cells_path) {
                 Ok(frame_obj) => {
-                    if frame_obj.cols != cf["viewport"]["cols"].as_u64().unwrap_or(0) as u16
-                        || frame_obj.rows != cf["viewport"]["rows"].as_u64().unwrap_or(0) as u16
+                    if u64::from(frame_obj.cols) != cf["viewport"]["cols"].as_u64().unwrap_or(0)
+                        || u64::from(frame_obj.rows) != cf["viewport"]["rows"].as_u64().unwrap_or(0)
                     {
                         errs.push(format!("core frame {frame}: cells.json viewport mismatch"));
                     }
@@ -489,8 +489,7 @@ fn validate_reference_parity_manifest(manifest: &Value, crate_dir: &Path) -> Vec
 }
 
 fn parse_reference_parity_manifest() -> Value {
-    serde_json::from_str(REFERENCE_PARITY_MANIFEST)
-        .expect("docs/tui-reference-parity-manifest.v1.json must be valid JSON")
+    serde_json::from_str(REFERENCE_PARITY_MANIFEST).unwrap_or_abort()
 }
 
 #[test]

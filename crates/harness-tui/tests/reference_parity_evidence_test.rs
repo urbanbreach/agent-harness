@@ -88,6 +88,7 @@ fn make_p0_start_01_pass(manifest: &mut Value) {
     row["reference_freeze_txt_sha256"] = json!(FREEZE_TXT_SHA256);
     row["reference_freeze_png_sha256"] = json!(FREEZE_PNG_SHA256);
     row["reference_capture_path"] = json!("reference/freeze/run1-startup");
+    row["reference_receipt_path"] = json!(support::REFERENCE_RECEIPT_PATH);
     row["reference_txt_sha256"] = json!(FREEZE_TXT_SHA256);
     row["reference_png_sha256"] = json!(FREEZE_PNG_SHA256);
 }
@@ -136,6 +137,38 @@ fn evidence_validator_passes_with_seeded_evidence_root() {
     // assert
     result.unwrap_or_else(|failures| {
         panic!("seeded evidence root failed validation: {failures:?}");
+    });
+}
+
+#[test]
+fn lane_evidence_paths_rebase_to_the_fresh_root() {
+    // Given: a canonical workspace-relative lane artifact path.
+    let root = tempfile::tempdir().unwrap_or_abort();
+    let manifest = checked_in_manifest();
+    let declared = "target/test-lanes/latest/signoff-parity/evidence/receipts/example.json";
+
+    // When: the strict validator resolves it for an isolated signoff run.
+    let resolved = resolve_evidence_path(&manifest, root.path(), declared);
+
+    // Then: the canonical prefix is replaced by the fresh evidence root.
+    assert_eq!(resolved, root.path().join("receipts/example.json"));
+}
+
+#[test]
+fn source_owner_paths_are_not_required_inside_the_fresh_evidence_root() {
+    // Given: seeded pass rows with their synthetic source-owner copies removed.
+    let (root, manifest) = seeded_evidence_root();
+    let source_owner = root
+        .path()
+        .join("crates/harness-tui/src/app/tests/lifecycle_shell_tests.rs");
+    std::fs::remove_file(source_owner).unwrap_or_abort();
+
+    // When: the disk-backed validator checks lane-produced artifacts.
+    let result = validate_manifest_evidence(&manifest, root.path());
+
+    // Then: source ownership remains a structural contract, not a fabricated artifact.
+    result.unwrap_or_else(|failures| {
+        panic!("source owner path was incorrectly required as evidence: {failures:?}");
     });
 }
 

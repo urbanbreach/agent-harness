@@ -530,7 +530,9 @@ fn validate_row(
 
     validate_owners(row, path, status_str, failures);
     validate_claimed_evidence(row, path, status_str, failures);
-    validate_declared_digests(row, path, failures);
+    if status_str == "pass" || status_str == "diverged" {
+        validate_declared_digests(row, path, failures);
+    }
     validate_state_viewport(row, path, freeze_viewport, failures);
 
     if let Some(divergence) = row.get("deliberate_divergence_id") {
@@ -689,11 +691,13 @@ fn validate_owners(row: &Value, path: &str, status: &str, failures: &mut Vec<Man
     }
     for owner_key in OWNER_KEYS {
         match owners.get(*owner_key).and_then(Value::as_str) {
-            Some("") => failures.push(ManifestFailure::new(
-                "missing-owners",
-                format!("{path}.owners.{owner_key}"),
-                format!("owner {owner_key} must be non-empty"),
-            )),
+            Some("") if status == "pass" || status == "diverged" => {
+                failures.push(ManifestFailure::new(
+                    "missing-owners",
+                    format!("{path}.owners.{owner_key}"),
+                    format!("owner {owner_key} must be non-empty for {status} rows"),
+                ))
+            }
             Some("pending") if status == "pass" || status == "diverged" => {
                 failures.push(ManifestFailure::new(
                     "pending-owner",
@@ -737,7 +741,10 @@ fn validate_first_slice_row(row: &Value, path: &str, failures: &mut Vec<Manifest
             "first-slice row must pin the freeze binary digest",
         ));
     }
-    if row["reference_receipt_path"].as_str() != Some(REFERENCE_RECEIPT_PATH) {
+    let status = row["status"].as_str().unwrap_or("");
+    if (status == "pass" || status == "diverged")
+        && row["reference_receipt_path"].as_str() != Some(REFERENCE_RECEIPT_PATH)
+    {
         failures.push(ManifestFailure::new(
             "reference-receipt",
             format!("{path}.reference_receipt_path"),
@@ -745,7 +752,6 @@ fn validate_first_slice_row(row: &Value, path: &str, failures: &mut Vec<Manifest
         ));
     }
 
-    let status = row["status"].as_str().unwrap_or("");
     if status == "pass" || status == "diverged" {
         let evidence = &row["evidence_paths"];
         for layer in ["L1", "L2", "L3", "L4", "L5", "L6"] {

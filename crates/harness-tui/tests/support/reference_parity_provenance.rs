@@ -17,8 +17,8 @@ use crate::support::{
 };
 
 use super::{
-    is_sha256_hex, non_empty_str, parse_cols_rows, resolve_declared, resolve_evidence_path,
-    sha256_hex,
+    is_evidence_artifact_declaration, is_sha256_hex, non_empty_str, parse_cols_rows,
+    resolve_declared, resolve_evidence_path, sha256_hex,
 };
 
 /// Evidence files older than this threshold are considered stale (Contract §5.1).
@@ -64,12 +64,9 @@ pub fn validate_manifest_evidence(manifest: &Value, root: &Path) -> ValidateResu
             continue;
         }
         let path = format!("$.rows[{index}]");
-        let evidence_root = manifest["evidence_root"].as_str().unwrap_or("");
         for layer in EVIDENCE_LAYERS {
             if let Some(declared) = non_empty_str(&row["evidence_paths"][layer]) {
-                // Skip source code references — paths not under the evidence_root
-                // prefix are owner/test file references, not evidence artifacts.
-                if !evidence_root.is_empty() && !declared.starts_with(evidence_root) {
+                if !is_evidence_artifact_declaration(manifest, declared) {
                     continue;
                 }
                 if !path_present(&resolve_evidence_path(manifest, root, declared), declared) {
@@ -166,6 +163,7 @@ fn verify_freeze_receipt(manifest: &Value, root: &Path, failures: &mut Vec<Manif
         .as_str()
         .or_else(|| parsed["binary"]["sha256"].as_str())
         .or_else(|| parsed["reference_binary"]["sha256"].as_str())
+        .or_else(|| parsed["binary_sha256"].as_str())
         .unwrap_or("");
     if binary_digest != REFERENCE_BINARY_SHA256 {
         failures.push(ManifestFailure::new(
@@ -176,7 +174,8 @@ fn verify_freeze_receipt(manifest: &Value, root: &Path, failures: &mut Vec<Manif
     }
     let freeze_txt = parsed["freeze_txt_sha256"]
         .as_str()
-        .or_else(|| parsed["ref_vs_ref"]["terminal_txt_sha256"].as_str());
+        .or_else(|| parsed["ref_vs_ref"]["terminal_txt_sha256"].as_str())
+        .or_else(|| parsed["artifact_terminal_txt_sha256"].as_str());
     let freeze_png = parsed["freeze_png_sha256"]
         .as_str()
         .or_else(|| parsed["ref_vs_ref"]["terminal_png_sha256"].as_str());
@@ -219,7 +218,8 @@ fn verify_freeze_receipt(manifest: &Value, root: &Path, failures: &mut Vec<Manif
     }
     let claimed_scenario = parsed["scenario"]
         .as_str()
-        .or_else(|| parsed["ref_vs_ref"]["scenario"].as_str());
+        .or_else(|| parsed["ref_vs_ref"]["scenario"].as_str())
+        .or_else(|| parsed["frame"].as_str());
     if let Some(claimed) = claimed_scenario {
         if claimed != scenario {
             failures.push(ManifestFailure::new(

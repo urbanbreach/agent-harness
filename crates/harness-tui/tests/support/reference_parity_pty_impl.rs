@@ -47,6 +47,8 @@ const LIVE_COMPLETE_SCENARIO: &str = "live_complete";
 const LIVE_CANCEL_SCENARIO: &str = "live_cancel";
 const LIVE_RECOVER_SCENARIO: &str = "live_recover";
 const LIVE_TOOL_SCENARIO: &str = "live_tool";
+const LIVE_TOOL_FINISH_TRANSITION_SCENARIO: &str = "live_tool_finish_transition";
+const LIVE_TOOL_GROUP_FINISH_TRANSITION_SCENARIO: &str = "live_tool_group_finish_transition";
 const LIVE_DIFF_SCENARIO: &str = "live_diff";
 const LIVE_SCROLL_SCENARIO: &str = "live_scroll";
 const QUESTION_OVERLAY_SCENARIO: &str = "question_overlay";
@@ -617,23 +619,27 @@ pub(crate) fn tx_tool_pty() {
     }
     let mut helper = spawn_helper(LIVE_TOOL_HELPER, LIVE_TOOL_SCENARIO);
     helper.wait_for(TOOL_PATH_TEXT);
-    helper.wait_for("Responding");
+    helper.wait_for("Ctrl+c:cancel");
     let screen = helper.screen_text();
     assert!(
         screen.contains(TOOL_PATH_TEXT),
         "TX-TOOL PTY: echo tool row required\n{screen}"
     );
     assert!(
-        screen.contains("Responding") || screen.contains("Waiting for response"),
-        "TX-TOOL PTY: streaming indicator required (waiting-state form)\n{screen}"
+        screen.contains("Ran 10 commands") && screen.contains("Ctrl+c:cancel"),
+        "TX-TOOL PTY: active tool summary and cancel affordance required\n{screen}"
+    );
+    assert!(
+        !screen.contains("Responding"),
+        "TX-TOOL PTY: transcript must not duplicate the active lifecycle status\n{screen}"
     );
     assert!(
         screen.contains('◈') || screen.contains('◆'),
         "TX-TOOL PTY: tool diamond chrome required\n{screen}"
     );
     assert!(
-        !screen.contains('┃'),
-        "TX-TOOL PTY: no legacy left rail\n{screen}"
+        screen.contains('┃'),
+        "TX-TOOL PTY: grouped tool disclosure rail required\n{screen}"
     );
     assert_no_multi_row_prompt_rail(&screen, "TX-TOOL");
     exit_via_palette(&mut helper);
@@ -645,19 +651,53 @@ pub(crate) fn tx_diff_pty() {
     }
     let mut helper = spawn_helper(LIVE_DIFF_HELPER, LIVE_DIFF_SCENARIO);
     helper.wait_for(DIFF_PATH_TEXT);
-    helper.wait_for("Responding");
+    helper.wait_for("Waiting for response");
     let screen = helper.screen_text();
     assert!(
         screen.contains(DIFF_PATH_TEXT) || screen.contains('◆'),
         "TX-DIFF PTY: structured edit/path projection required\n{screen}"
     );
+    let edit_rows = screen
+        .lines()
+        .filter(|line| line.contains("Edit demo.txt +1/-1"))
+        .count();
+    assert_eq!(
+        edit_rows, 1,
+        "TX-DIFF PTY: duplicate successful writes must coalesce into one disclosure row\n{screen}"
+    );
+    assert!(
+        !screen.contains("old content"),
+        "TX-DIFF PTY: collapsed disclosure must not expose structured diff content\n{screen}"
+    );
+    // Focus transition and activation are separate observable steps: Tab
+    // leaves Prompt, the composer placeholder proves Details owns input, and
+    // only then may Enter activate the coalesced disclosure.
+    send_bytes(helper.writer.as_mut(), b"\t").unwrap_or_abort();
+    helper.wait_for("Build anything");
+    send_bytes(helper.writer.as_mut(), b"\r").unwrap_or_abort();
+    helper.wait_for("old content");
+    let expanded = helper.screen_text();
+    assert!(
+        expanded.contains("old content") && expanded.contains("parity-diff-ok"),
+        "TX-DIFF PTY: coalesced disclosure must toggle a real structured diff\n{expanded}"
+    );
+    assert!(
+        expanded
+            .lines()
+            .any(|line| line.contains("Edit demo.txt +1/-1") && line.contains('▾')),
+        "TX-DIFF PTY: expanded coalesced header must expose its open marker\n{expanded}"
+    );
     assert!(
         screen.contains("Responding") || screen.contains("Waiting for response"),
         "TX-DIFF PTY: streaming indicator required (waiting-state form)\n{screen}"
     );
-    assert!(
-        !screen.contains('┃'),
-        "TX-DIFF PTY: no legacy left rail\n{screen}"
+    assert_eq!(
+        expanded
+            .lines()
+            .filter(|line| line.contains("Edit demo.txt +1/-1"))
+            .count(),
+        1,
+        "TX-DIFF PTY: expansion must retain one stable coalesced header\n{expanded}"
     );
     assert_no_multi_row_prompt_rail(&screen, "TX-DIFF");
     exit_via_palette(&mut helper);
@@ -980,6 +1020,124 @@ pub(crate) fn pty_helper_live_tool_running() {
     let mut events = tool_events();
     events.truncate(5);
     run_live_with_historical_events(events);
+}
+
+pub(crate) fn pty_helper_live_tool_finish_transition() {
+    if std::env::var(HELPER_SCENARIO_ENV).as_deref() != Ok(LIVE_TOOL_FINISH_TRANSITION_SCENARIO) {
+        return;
+    }
+
+    let run_dir = tempfile::tempdir().unwrap_or_abort();
+    let (update_tx, update_rx) = mpsc::channel();
+    let inject_tx = update_tx.clone();
+    thread::spawn(move || {
+        thread::sleep(PERMISSION_INJECT_DELAY);
+        let _ = inject_tx.send(LiveUpdate::Event(Box::new(parity_envelope(
+            6,
+            Some("req_tool_pty"),
+            EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                tool_call_id: "tc_echo_0".into(),
+                status: ToolCallStatus::Succeeded,
+                output_summary: Some(TOOL_PATH_TEXT.to_string()),
+                output_digest: Some("digest-out-echo-transition".to_string()),
+                output_json: None,
+                metadata: None,
+            }),
+        ))));
+        let _ = inject_tx.send(LiveUpdate::Event(Box::new(parity_envelope(
+            7,
+            Some("req_tool_pty"),
+            EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+                request_id: "req_tool_pty".into(),
+                finish_reason: "stop".to_string(),
+                output_digest: Some("digest-out-tool-transition".to_string()),
+                usage: Some(parity_completion_usage(3_200)),
+                metadata: None,
+            }),
+        ))));
+    });
+
+    let mut events = tool_events();
+    events.remove(0);
+    events.truncate(4);
+    install_parity_context_window();
+    run_tui_with_options(TuiOptions {
+        mode: TuiMode::Live {
+            run_dir: run_dir.path().to_path_buf(),
+            historical_events: events,
+            session_history_entries: Vec::new(),
+            prompt_history_path: None,
+            update_rx,
+            compact_session_supported: false,
+        },
+        exit_on_finish: false,
+        on_ui_intent: None,
+        keybindings: None,
+        toggles: None,
+        preserve_terminal_on_exit: false,
+        skip_alternate_screen: false,
+    })
+    .unwrap_or_abort();
+}
+
+pub(crate) fn pty_helper_live_tool_group_finish_transition() {
+    if std::env::var(HELPER_SCENARIO_ENV).as_deref()
+        != Ok(LIVE_TOOL_GROUP_FINISH_TRANSITION_SCENARIO)
+    {
+        return;
+    }
+
+    let run_dir = tempfile::tempdir().unwrap_or_abort();
+    let (update_tx, update_rx) = mpsc::channel();
+    let inject_tx = update_tx.clone();
+    thread::spawn(move || {
+        thread::sleep(PERMISSION_INJECT_DELAY);
+        let _ = inject_tx.send(LiveUpdate::Event(Box::new(parity_envelope(
+            9,
+            Some("req_tool_pty"),
+            EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                tool_call_id: "tc_echo_1".into(),
+                status: ToolCallStatus::Failed,
+                output_summary: Some("command failed".to_string()),
+                output_digest: Some("digest-out-echo-group-transition".to_string()),
+                output_json: None,
+                metadata: None,
+            }),
+        ))));
+        let _ = inject_tx.send(LiveUpdate::Event(Box::new(parity_envelope(
+            10,
+            Some("req_tool_pty"),
+            EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+                request_id: "req_tool_pty".into(),
+                finish_reason: "stop".to_string(),
+                output_digest: Some("digest-out-tool-group-transition".to_string()),
+                usage: Some(parity_completion_usage(3_200)),
+                metadata: None,
+            }),
+        ))));
+    });
+
+    let mut events = tool_events();
+    events.remove(0);
+    events.truncate(7);
+    install_parity_context_window();
+    run_tui_with_options(TuiOptions {
+        mode: TuiMode::Live {
+            run_dir: run_dir.path().to_path_buf(),
+            historical_events: events,
+            session_history_entries: Vec::new(),
+            prompt_history_path: None,
+            update_rx,
+            compact_session_supported: false,
+        },
+        exit_on_finish: false,
+        on_ui_intent: None,
+        keybindings: None,
+        toggles: None,
+        preserve_terminal_on_exit: false,
+        skip_alternate_screen: false,
+    })
+    .unwrap_or_abort();
 }
 
 pub(crate) fn pty_helper_live_diff() {
@@ -1988,7 +2146,9 @@ fn diff_events() -> Vec<EventEnvelopeV1> {
 
 fn scroll_events() -> Vec<EventEnvelopeV1> {
     let request_id = "req_scroll_pty";
-    let assistant_text = if std::env::var_os("HARNESS_UI05_WIDE_PROBE").is_some() {
+    let assistant_text = if std::env::var_os("HARNESS_UI09_WIDE_PROBE").is_some() {
+        format!("{}한글 あア 界🙂e\u{301}", "1234567890 ".repeat(8))
+    } else if std::env::var_os("HARNESS_UI05_WIDE_PROBE").is_some() {
         format!("{SCROLL_ASSISTANT_TEXT} · 한글 あア")
     } else {
         SCROLL_ASSISTANT_TEXT.to_string()

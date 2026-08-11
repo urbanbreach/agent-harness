@@ -1,0 +1,20 @@
+
+~
+
+New worktreectrl+w
+Resume sessionctrl+s
+Changelog         
+Quit          ctrl+q
+         
+Changelog      
+
+•Thisisadummychangelogentryfortestingpurp…
+•Anotherdummyfeaturetoverifythewelcomescre…
+•Dummybugfixentryforlayouttesting.
+
+╭──────────────────────────────────────────────────────────╮
+│❯│
+╰────────────────────────────────────────────────────────╯
+
+LoggedinwithAPIkey  │  Grok Build  0.2.0-dev Beta
+

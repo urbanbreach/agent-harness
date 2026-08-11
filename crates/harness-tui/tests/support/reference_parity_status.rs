@@ -33,6 +33,8 @@ const SHA256_FIELDS: [&str; 4] = [
     "reference_png_sha256",
 ];
 
+const LANE_EVIDENCE_ROOT: &str = "target/test-lanes/latest/signoff-parity/evidence";
+
 /// Rows claiming completion must declare every applicable evidence layer.
 ///
 /// `pass` rows additionally require the comparison artifact declarations.
@@ -98,7 +100,7 @@ pub fn validate_claimed_evidence(
 pub fn validate_declared_digests(row: &Value, path: &str, failures: &mut Vec<ManifestFailure>) {
     for field in SHA256_FIELDS {
         if let Some(declared) = row[field].as_str() {
-            if !is_sha256_hex(declared) {
+            if !declared.is_empty() && !is_sha256_hex(declared) {
                 failures.push(ManifestFailure::new(
                     "invalid-evidence-digest",
                     format!("{path}.{field}"),
@@ -112,7 +114,7 @@ pub fn validate_declared_digests(row: &Value, path: &str, failures: &mut Vec<Man
         ("reference_freeze_png_sha256", FREEZE_PNG_SHA256),
     ] {
         if let Some(declared) = row[field].as_str() {
-            if declared != pinned {
+            if !declared.is_empty() && declared != pinned {
                 failures.push(ManifestFailure::new(
                     "stale-evidence-digest",
                     format!("{path}.{field}"),
@@ -227,33 +229,35 @@ pub fn derive_status(row: &Value, policy: &DivergencePolicy<'_>) -> &'static str
 /// do not carry the `evidence_root` prefix resolve unchanged.
 pub fn resolve_evidence_path(manifest: &Value, root: &Path, declared: &str) -> PathBuf {
     let evidence_root = manifest["evidence_root"].as_str().unwrap_or("");
+    resolve_declared(evidence_root, root, declared)
+}
+
+pub fn is_evidence_artifact_declaration(manifest: &Value, declared: &str) -> bool {
+    let evidence_root = manifest["evidence_root"].as_str().unwrap_or("");
+    declared.starts_with(LANE_EVIDENCE_ROOT)
+        || (!evidence_root.is_empty() && declared.starts_with(evidence_root))
+}
+
+/// Rebase a declared evidence path under `root` using either the fresh lane
+/// prefix or the checked-in fixture prefix.
+pub fn resolve_declared(evidence_root: &str, root: &Path, declared: &str) -> PathBuf {
+    if let Some(resolved) = resolve_prefixed(root, declared, LANE_EVIDENCE_ROOT) {
+        return resolved;
+    }
     if !evidence_root.is_empty() {
-        if let Some(rest) = declared.strip_prefix(evidence_root) {
-            if rest.is_empty() || rest == "/" {
-                return root.to_path_buf();
-            }
-            if let Some(stripped) = rest.strip_prefix('/') {
-                return root.join(stripped);
-            }
+        if let Some(resolved) = resolve_prefixed(root, declared, evidence_root) {
+            return resolved;
         }
     }
     root.join(declared)
 }
 
-/// Rebase a declared evidence path under `root` using the `evidence_root`
-/// prefix shared by [`crate::reference_parity_evidence_test`] fixtures.
-pub fn resolve_declared(evidence_root: &str, root: &Path, declared: &str) -> PathBuf {
-    if !evidence_root.is_empty() {
-        if let Some(rest) = declared.strip_prefix(evidence_root) {
-            if rest.is_empty() || rest == "/" {
-                return root.to_path_buf();
-            }
-            if let Some(stripped) = rest.strip_prefix('/') {
-                return root.join(stripped);
-            }
-        }
+fn resolve_prefixed(root: &Path, declared: &str, prefix: &str) -> Option<PathBuf> {
+    let rest = declared.strip_prefix(prefix)?;
+    if rest.is_empty() || rest == "/" {
+        return Some(root.to_path_buf());
     }
-    root.join(declared)
+    rest.strip_prefix('/').map(|stripped| root.join(stripped))
 }
 
 fn responsive_expectation(behavior_id: &str) -> Option<(u64, u64, String)> {

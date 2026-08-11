@@ -481,12 +481,10 @@ Current fail-closed stages (no `|| true`):
   (`behavior_ids` + `generating_command`). Journey-style L3+receipt contract — no Chrome, no
   pixel PNG. A failed capture fails the lane (no silent skip)
 - Evidence-generation stages after the captures: `reference_parity_freeze_receipt` writes the
-  pinned freeze receipt; `reference_parity_generate_evidence_layers` builds L1 reference freezes,
-  L2 cells, and L4/L5/L6 receipts from the pinned lab plus the fresh L3 captures (fail-closed on
-  any missing artifact or digest mismatch); `reference_parity_evidence_refresh` then updates
-  embedded `path`/`sha256` pairs in copied receipts (the CANCEL/COMPLETE divergence receipts carry
-  them) so every embedded digest hash-matches the fresh files. The refresh must run after layer
-  generation, not before
+  pinned freeze receipt; `reference_parity_generate_evidence_layers` builds evidence only for
+  visual rows currently claimed as `pass`/`diverged`, plus all claimed journey and terminal-
+  capability rows. Copied receipts remain immutable; embedded digests must already match the
+  fresh artifacts or the final provenance gate fails closed
 - `cargo nextest run -p harness-tui --test reference_parity_manifest_test`
 - `cargo nextest run -p harness-tui --test p0_parity_contract_test`
 - `cargo nextest run -p harness-tui --test shell_topology_contract_test`
@@ -505,7 +503,8 @@ Current fail-closed stages (no `|| true`):
   runs the strict validator (`validate_manifest_evidence` in
   `crates/harness-tui/tests/support/reference_parity_status.rs`) against the lane's fresh evidence
   root under `target/test-lanes/`, never the repository `artifacts/` tree. Every claimed
-  (`pass`/`diverged`) row must have all L1–L6 evidence files present, declared capture digests
+  (`pass`/`diverged`) row must have its applicable lane-artifact evidence files present; source
+  owner paths remain structural ownership references and are not copied into the evidence root. Declared capture digests
   (`reference_txt_sha256`/`reference_png_sha256`) must hash-match the actual artifact bytes,
   embedded receipt `path`/`sha256` pairs must hash-match, the freeze receipt must match the pinned
   reference block (binary digest, freeze txt/png digests, scenario, viewport), divergence
@@ -513,7 +512,9 @@ Current fail-closed stages (no `|| true`):
   match the rows owning that capture. Any missing, stale, copied, or mismatched artifact fails
   the lane.
 - Aggregate `parity-lane-verdict.txt` under the lane artifact tree, including an explicit
-  `stages=` list of the owners that ran
+  `stages=` list of the owners that ran and `parity_complete=true|false` derived from the
+  independent manifest rows. A lane `verdict=PASS` proves every required stage passed; it does
+  not turn manifest rows still marked `incomplete` or `blocked` into parity claims.
 
 Ordinary `cargo nextest` runs do not set `HARNESS_TUI_PARITY_STRICT`, so the env-gated strict
 provenance test stays inert and the suite passes from a clean checkout without signoff artifacts.

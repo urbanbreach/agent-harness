@@ -896,96 +896,14 @@ print(f\"wrote freeze receipt {out}\")
   # Generate canonical L1/L4/L5/L6 evidence layers from the pinned reference
   # lab and the fresh L3 captures produced above. Fail-closed: any missing
   # reference freeze, capture, or receipt causes the lane to fail.
+  local claimed_visual_rows
+  claimed_visual_rows="$(python3 -c 'import json,sys; manifest=json.load(open(sys.argv[1])); print(",".join(row["behavior_id"] for row in manifest["rows"] if row.get("status") in {"pass", "diverged"} and row.get("row_kind", "visual") == "visual"))' "$manifest_path")"
   run_stage "$mode_name" reference_parity_generate_evidence_layers "$repo_root" \
+    env HARNESS_TUI_PARITY_VISUAL_ROWS="$claimed_visual_rows" \
     python3 scripts/tui-parity/generate-evidence-layers.py \
       --lab "artifacts/qa-evidence/20260717-tui-reference-parity" \
       --out "$parity_artifacts_dir" \
       --lane
-
-  # Refresh evidence metadata after fresh captures AND L1-L6 layer generation:
-  # (1) add generating_command to any metadata.json that lacks it (fresh captures
-  # overwrite staged files), (2) update embedded sha256 hashes in receipt JSON
-  # files to match the actual file contents. This stage runs AFTER
-  # generate-evidence-layers because copied L5 receipts (CANCEL/COMPLETE) contain
-  # embedded path+sha256 pairs referencing lab-relative paths that must be
-  # refreshed to match the fresh lane capture digests.
-  run_stage "$mode_name" reference_parity_evidence_refresh "$repo_root" \
-    bash -c 'python3 -c "
-import json, os, sys, glob, hashlib
-
-root = sys.argv[1]
-
-def sha256_file(path):
-    h = hashlib.sha256()
-    with open(path, \"rb\") as f:
-        for chunk in iter(lambda: f.read(8192), b\"\"):
-            h.update(chunk)
-    return h.hexdigest()
-
-for mf in glob.glob(os.path.join(root, \"actual/*/metadata.json\")):
-    try:
-        with open(mf, \"r\") as f:
-            meta = json.load(f)
-        changed = False
-        if \"generating_command\" not in meta or not meta[\"generating_command\"]:
-            label = meta.get(\"source\", {}).get(\"label\", \"\")
-            meta[\"generating_command\"] = label or \"unknown\"
-            changed = True
-        if changed:
-            with open(mf, \"w\") as f:
-                json.dump(meta, f, indent=2)
-                f.write(\"\\n\")
-    except Exception:
-        pass
-
-def update_digests(obj, root):
-    modified = [False]
-    def walk(o):
-        if isinstance(o, dict):
-            path_val = o.get(\"path\", \"\")
-            sha_val = o.get(\"sha256\", \"\")
-            if path_val and sha_val and len(sha_val) == 64:
-                rel = path_val
-                if rel.startswith(\"/\"):
-                    parts = rel.split(\"/actual/\")
-                    if len(parts) == 2:
-                        rel = \"actual/\" + parts[1]
-                    else:
-                        parts = rel.split(\"/reference/\")
-                        if len(parts) == 2:
-                            rel = \"reference/\" + parts[1]
-                        else:
-                            return
-                full = os.path.join(root, rel)
-                if os.path.isfile(full):
-                    actual_sha = sha256_file(full)
-                    if actual_sha != sha_val:
-                        o[\"sha256\"] = actual_sha
-                        modified[0] = True
-            for v in o.values():
-                walk(v)
-        elif isinstance(o, list):
-            for item in o:
-                walk(item)
-    walk(obj)
-    return modified[0]
-
-for pattern in [\"receipts/*.json\", \"receipts/**/*.json\"]:
-    for jf in glob.glob(os.path.join(root, pattern), recursive=True):
-        try:
-            with open(jf, \"r\") as f:
-                text = f.read()
-            if \"\\\"path\\\"\" not in text or \"\\\"sha256\\\"\" not in text:
-                continue
-            parsed = json.loads(text)
-            if update_digests(parsed, root):
-                with open(jf, \"w\") as f:
-                    json.dump(parsed, f, indent=2)
-                    f.write(\"\\n\")
-        except Exception:
-            pass
-" "$0"' \
-    "$parity_artifacts_dir"
 
   run_stage "$mode_name" reference_parity_manifest_test "$repo_root" \
     env HARNESS_TUI_PARITY_ARTIFACT_DIR="$parity_artifacts_dir" \
@@ -1063,6 +981,10 @@ write_signoff_parity_verdict() {
   local manifest_path="${repo_root}/docs/reference/tui-reference-parity-manifest.v1.json"
   local manifest_digest
   manifest_digest="$(sha256sum "$manifest_path" 2>/dev/null | cut -d' ' -f1 || echo 'missing')"
+  local parity_complete="false"
+  if [[ -f "$manifest_path" ]]; then
+    parity_complete="$(python3 -c 'import json,sys; rows=json.load(open(sys.argv[1]))["rows"]; print("true" if all(row.get("status") in {"pass", "diverged", "excluded"} for row in rows) else "false")' "$manifest_path" 2>/dev/null || echo 'false')"
+  fi
 
   # Fail-closed: PASS requires at least one non-verdict artifact in the evidence dir
   if [[ "$verdict" == "PASS" ]]; then
@@ -1078,6 +1000,7 @@ write_signoff_parity_verdict() {
 schema=harness-signoff-parity-verdict-v1
 mode=signoff-parity
 verdict=${verdict}
+parity_complete=${parity_complete}
 note=${note}
 git_revision=${git_rev}
 manifest_sha256=${manifest_digest}

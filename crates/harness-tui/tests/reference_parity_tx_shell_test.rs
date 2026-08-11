@@ -386,7 +386,6 @@ fn shell_idle_stays_composer_ready_after_failed_tool_call() {
             metadata: None,
         }),
     ));
-
     // act
     let rendered = render(&app);
 
@@ -758,7 +757,7 @@ fn tx_assistant_message_chrome_is_rail_free_with_footer() {
         .find_map(|(i, line)| {
             (line.contains("Worked for")
                 || line.contains("model-tx")
-                || line.contains("build")
+                || line.contains("Assistant")
                 || line.contains("▪"))
             .then_some(i)
         })
@@ -961,6 +960,9 @@ fn tx_diff_inline_is_rail_free_without_message_card() {
             metadata: None,
         }),
     ));
+    for _ in 0..6 {
+        app.advance_animation_tick_for_evidence();
+    }
 
     // act
     let rendered = render(&app);
