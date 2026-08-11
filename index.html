@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="A visual field guide to Harness, the event-sourced, terminal-native runtime for capable and inspectable coding agents.">
+  <meta name="theme-color" content="#09110f">
+  <title>Harness — Agents with an audit trail</title>
+  <style>
+    :root {
+      --ink: #e9eee8;
+      --muted: #99a39b;
+      --faint: #68736c;
+      --paper: #09110f;
+      --panel: #0e1916;
+      --panel-2: #12201c;
+      --line: #25352f;
+      --acid: #c7f04b;
+      --acid-soft: #dffb8c;
+      --mint: #5ce1b6;
+      --orange: #ff9a62;
+      --red: #ff6b6b;
+      --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --max: 1180px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 78% -10%, rgba(92, 225, 182, .08), transparent 30rem),
+        var(--paper);
+      font-family: var(--sans);
+      line-height: 1.55;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: .17;
+      background-image: linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px);
+      background-size: 48px 48px;
+      mask-image: linear-gradient(to bottom, black, transparent 75%);
+    }
+    a { color: inherit; }
+    button { font: inherit; }
+    ::selection { background: var(--acid); color: #0a120e; }
+
+    .wrap { width: min(calc(100% - 40px), var(--max)); margin-inline: auto; }
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      border-bottom: 1px solid rgba(37, 53, 47, .8);
+      background: rgba(9, 17, 15, .86);
+      backdrop-filter: blur(16px);
+    }
+    nav { height: 68px; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+    .brand { display: flex; align-items: center; gap: 11px; font-weight: 760; letter-spacing: -.03em; text-decoration: none; }
+    .mark { width: 25px; height: 25px; border: 1px solid var(--acid); position: relative; transform: rotate(45deg); }
+    .mark::after { content: ""; position: absolute; inset: 5px; background: var(--acid); }
+    .navlinks { display: flex; align-items: center; gap: 28px; color: var(--muted); font-size: .86rem; }
+    .navlinks a { text-decoration: none; }
+    .navlinks a:hover { color: var(--ink); }
+    .nav-cta { border: 1px solid var(--line); border-radius: 99px; padding: 8px 14px; color: var(--ink) !important; }
+
+    .hero { padding: 92px 0 68px; min-height: 720px; display: grid; align-items: center; }
+    .hero-grid { display: grid; grid-template-columns: 1.06fr .94fr; gap: 70px; align-items: center; }
+    .eyebrow { display: flex; align-items: center; gap: 10px; color: var(--acid); font: 700 .73rem/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+    .eyebrow::before { content: ""; width: 27px; height: 1px; background: currentColor; }
+    h1 { margin: 24px 0 24px; max-width: 760px; font-size: clamp(3.8rem, 7.6vw, 7.4rem); line-height: .89; letter-spacing: -.075em; font-weight: 760; }
+    .accent { color: var(--acid); }
+    .lede { max-width: 620px; margin: 0; color: var(--muted); font-size: clamp(1.05rem, 2vw, 1.25rem); }
+    .hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 34px; }
+    .button { display: inline-flex; gap: 10px; align-items: center; justify-content: center; padding: 12px 17px; border: 1px solid var(--line); text-decoration: none; font: 700 .82rem/1 var(--mono); transition: transform .2s, border-color .2s, background .2s; }
+    .button:hover { transform: translateY(-2px); border-color: var(--mint); }
+    .button.primary { color: #0a120e; background: var(--acid); border-color: var(--acid); }
+    .button.primary:hover { background: var(--acid-soft); }
+
+    .terminal { border: 1px solid #30443c; background: rgba(11, 21, 18, .95); box-shadow: 22px 22px 0 rgba(199, 240, 75, .045); }
+    .terminal-head { height: 43px; display: flex; align-items: center; justify-content: space-between; padding: 0 15px; border-bottom: 1px solid var(--line); color: var(--faint); font: .68rem var(--mono); }
+    .lights { display: flex; gap: 6px; }
+    .lights i { display: block; width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+    .terminal-body { padding: 20px; min-height: 420px; font: .73rem/1.7 var(--mono); overflow: hidden; }
+    .t-row { display: grid; grid-template-columns: 28px 1fr; color: var(--muted); }
+    .t-row + .t-row { margin-top: 10px; }
+    .sig { color: var(--acid); }
+    .tool { margin: 15px 0 15px 28px; padding: 11px 13px; color: var(--ink); border-left: 2px solid var(--mint); background: rgba(92, 225, 182, .055); }
+    .tool small { display: block; color: var(--mint); margin-bottom: 3px; }
+    .event { color: var(--faint); }
+    .event strong { color: var(--orange); font-weight: 500; }
+    .caret { display: inline-block; width: 7px; height: 1em; vertical-align: -.18em; background: var(--acid); animation: blink 1s steps(1) infinite; }
+    @keyframes blink { 50% { opacity: 0; } }
+
+    .metrics { display: grid; grid-template-columns: repeat(4, 1fr); border-block: 1px solid var(--line); }
+    .metric { padding: 25px 0; }
+    .metric + .metric { padding-left: 26px; border-left: 1px solid var(--line); }
+    .metric b { display: block; margin-bottom: 5px; color: var(--acid); font: 700 1.15rem var(--mono); }
+    .metric span { color: var(--muted); font-size: .8rem; }
+
+    section { padding: 110px 0; }
+    .section-head { display: grid; grid-template-columns: .45fr 1fr; gap: 40px; margin-bottom: 54px; align-items: end; }
+    .kicker { color: var(--acid); font: 700 .7rem var(--mono); letter-spacing: .13em; text-transform: uppercase; }
+    h2 { margin: 0; max-width: 760px; font-size: clamp(2.4rem, 5vw, 4.6rem); line-height: .98; letter-spacing: -.055em; }
+    .section-copy { max-width: 610px; margin: 20px 0 0; color: var(--muted); }
+
+    .principles { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--line); }
+    .principle { padding: 34px 34px 10px 0; }
+    .principle + .principle { padding-left: 34px; border-left: 1px solid var(--line); }
+    .num { color: var(--acid); font: .7rem var(--mono); }
+    h3 { margin: 30px 0 12px; font-size: 1.35rem; letter-spacing: -.025em; }
+    .principle p, .card p { color: var(--muted); font-size: .92rem; }
+
+    .architecture { background: #0b1512; border-block: 1px solid var(--line); }
+    .architecture-grid { display: grid; grid-template-columns: .7fr 1.3fr; gap: 70px; align-items: start; }
+    .sticky { position: sticky; top: 110px; }
+    .flow { display: grid; gap: 10px; }
+    .flow-row { display: grid; grid-template-columns: 160px 34px 1fr; align-items: stretch; }
+    .flow-label { display: grid; place-items: center; min-height: 82px; border: 1px solid var(--line); background: var(--panel); font: 700 .74rem var(--mono); text-align: center; }
+    .flow-label.core { color: #0a120e; background: var(--acid); border-color: var(--acid); }
+    .connector { display: grid; place-items: center; color: var(--faint); font-family: var(--mono); }
+    .flow-detail { padding: 16px 19px; border: 1px solid var(--line); background: rgba(18,32,28,.55); }
+    .flow-detail b { display: block; margin-bottom: 4px; font-size: .91rem; }
+    .flow-detail span { color: var(--muted); font-size: .79rem; }
+
+    .surface-grid { display: grid; grid-template-columns: 1.25fr .75fr .75fr; grid-auto-rows: minmax(260px, auto); gap: 12px; }
+    .card { position: relative; padding: 30px; overflow: hidden; border: 1px solid var(--line); background: var(--panel); }
+    .card.wide { grid-row: span 2; }
+    .card h3 { margin-top: 22px; }
+    .card-code { margin-top: 34px; padding-top: 24px; border-top: 1px solid var(--line); color: var(--mint); font: .72rem/1.75 var(--mono); }
+    .card-code .dim { color: var(--faint); }
+    .tag { display: inline-block; color: var(--acid); font: .68rem var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+    .glyph { position: absolute; right: 20px; bottom: -30px; color: rgba(199,240,75,.08); font: 150px/1 var(--mono); }
+
+    .safety-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 70px; }
+    .rules { border-top: 1px solid var(--line); }
+    .rule { display: grid; grid-template-columns: 34px 1fr auto; gap: 14px; align-items: center; padding: 17px 0; border-bottom: 1px solid var(--line); }
+    .rule-id { color: var(--faint); font: .68rem var(--mono); }
+    .rule b { font-size: .89rem; }
+    .status { padding: 4px 7px; border: 1px solid; font: .62rem var(--mono); text-transform: uppercase; }
+    .allow { color: var(--mint); }
+    .ask { color: var(--orange); }
+    .deny { color: var(--red); }
+    .quote { padding: 36px; border-left: 1px solid var(--acid); background: linear-gradient(90deg, rgba(199,240,75,.05), transparent); font-size: clamp(1.45rem, 3vw, 2.25rem); line-height: 1.25; letter-spacing: -.035em; }
+    .quote small { display: block; margin-top: 25px; color: var(--muted); font: .68rem var(--mono); letter-spacing: .08em; }
+
+    .start { padding-top: 30px; }
+    .start-panel { position: relative; padding: clamp(34px, 7vw, 74px); color: #0a120e; background: var(--acid); overflow: hidden; }
+    .start-panel::after { content: "H"; position: absolute; right: -20px; bottom: -135px; color: rgba(10,18,14,.07); font: 700 430px/1 var(--mono); }
+    .start-panel h2 { position: relative; max-width: 660px; }
+    .start-panel p { position: relative; max-width: 560px; margin: 21px 0 30px; color: #344017; }
+    .command { position: relative; z-index: 1; display: flex; max-width: 680px; align-items: center; justify-content: space-between; gap: 15px; padding: 17px 18px; color: var(--ink); background: #0a120e; font: .76rem var(--mono); }
+    .copy { flex: 0 0 auto; border: 0; color: var(--acid); background: transparent; cursor: pointer; font: 700 .66rem var(--mono); text-transform: uppercase; }
+
+    footer { padding: 40px 0 55px; }
+    .footer-row { display: flex; justify-content: space-between; gap: 30px; padding-top: 25px; border-top: 1px solid var(--line); color: var(--faint); font: .7rem var(--mono); }
+
+    @media (max-width: 900px) {
+      .hero { padding-top: 65px; }
+      .hero-grid, .architecture-grid, .safety-layout { grid-template-columns: 1fr; }
+      .hero-grid { gap: 50px; }
+      .section-head { grid-template-columns: 1fr; gap: 15px; }
+      .sticky { position: static; }
+      .surface-grid { grid-template-columns: 1fr 1fr; }
+      .card.wide { grid-row: auto; grid-column: span 2; }
+      .metrics { grid-template-columns: 1fr 1fr; }
+      .metric:nth-child(3) { border-left: 0; padding-left: 0; }
+    }
+    @media (max-width: 620px) {
+      .wrap { width: min(calc(100% - 28px), var(--max)); }
+      .navlinks a:not(.nav-cta) { display: none; }
+      h1 { font-size: clamp(3.25rem, 18vw, 5rem); }
+      section { padding: 80px 0; }
+      .principles, .surface-grid { grid-template-columns: 1fr; }
+      .principle + .principle { padding-left: 0; border-left: 0; }
+      .principle { border-bottom: 1px solid var(--line); }
+      .card.wide { grid-column: auto; }
+      .flow-row { grid-template-columns: 105px 23px 1fr; }
+      .flow-detail { padding: 13px; }
+      .metrics { grid-template-columns: 1fr 1fr; }
+      .metric { padding-right: 8px; }
+      .metric + .metric { padding-left: 12px; }
+      .command { align-items: flex-start; }
+      .command span { overflow-wrap: anywhere; }
+      .footer-row { flex-direction: column; }
+    }
+    @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } .caret { animation: none; } }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <nav class="wrap" aria-label="Primary navigation">
+      <a class="brand" href="#top" aria-label="Harness home"><span class="mark" aria-hidden="true"></span> harness</a>
+      <div class="navlinks">
+        <a href="#architecture">Architecture</a>
+        <a href="#surfaces">Surfaces</a>
+        <a href="#safety">Safety</a>
+        <a class="nav-cta" href="#start">Get started ↗</a>
+      </div>
+    </nav>
+  </header>
+
+  <main id="top">
+    <div class="hero wrap">
+      <div class="hero-grid">
+        <div>
+          <div class="eyebrow">Event-sourced agent runtime</div>
+          <h1>Agents that act.<br><span class="accent">Evidence</span> that lasts.</h1>
+          <p class="lede">Harness is a local-first CLI and terminal UI for running coding agents with controlled tools, bounded delegation, and a replayable record of every decision.</p>
+          <div class="hero-actions">
+            <a class="button primary" href="#start">Run the harness <span>→</span></a>
+            <a class="button" href="#architecture">Trace the architecture</a>
+          </div>
+        </div>
+
+        <div class="terminal" aria-label="Illustrative Harness terminal session">
+          <div class="terminal-head"><span>session / 01J7A…C92</span><span class="lights"><i></i><i></i><i></i></span></div>
+          <div class="terminal-body">
+            <div class="t-row"><span class="sig">›</span><span>Inspect the workspace and find the failing test.</span></div>
+            <div class="t-row event"><span>01</span><span><strong>turn.started</strong> · provider/openai-codex</span></div>
+            <div class="tool"><small>TOOL · GREP / ALLOWED</small>pattern: "assert_session_lineage"<br>scope: crates/harness-core</div>
+            <div class="t-row event"><span>02</span><span><strong>tool.completed</strong> · 3 matches · 18 ms</span></div>
+            <div class="t-row"><span class="sig">◆</span><span>The failure is in resume projection: child lineage is reconstructed after status, so the parent edge is unavailable.</span></div>
+            <div class="tool"><small>TASK · EXPLORE / BACKGROUND</small>Read-only review of replay ordering.<br>request_id: bg_7f1c</div>
+            <div class="t-row event"><span>03</span><span><strong>event.appended</strong> · seq 148 · redacted</span></div>
+            <div class="t-row"><span class="sig">›</span><span><span class="caret" aria-hidden="true"></span></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="wrap metrics" aria-label="Harness highlights">
+      <div class="metric"><b>Rust</b><span>Coordinator + runtime core</span></div>
+      <div class="metric"><b>JSONL</b><span>Append-only event history</span></div>
+      <div class="metric"><b>Local-first</b><span>Sessions stay inspectable</span></div>
+      <div class="metric"><b>Multi-provider</b><span>One controlled boundary</span></div>
+    </div>
+
+    <section class="wrap" aria-labelledby="why-title">
+      <div class="section-head">
+        <div class="kicker">01 / Why Harness</div>
+        <div><h2 id="why-title">Capability without opacity.</h2><p class="section-copy">An agent should be able to explore, edit, run commands, and delegate—without turning the session into a black box. Harness makes control and observability part of the runtime itself.</p></div>
+      </div>
+      <div class="principles">
+        <article class="principle"><span class="num">[ 01 ]</span><h3>One authority</h3><p>The coordinator owns scheduling, permissions, tool execution, hooks, compaction, and lifecycle. There is one place to enforce the rules.</p></article>
+        <article class="principle"><span class="num">[ 02 ]</span><h3>Events are truth</h3><p>Every run becomes contiguous, append-only events. Replay derives state from history without re-running a provider, tool, hook, or network request.</p></article>
+        <article class="principle"><span class="num">[ 03 ]</span><h3>Delegation with lineage</h3><p>Parent agents can launch bounded child tasks while the coordinator preserves ancestry, permissions, status, and durable background results.</p></article>
+      </div>
+    </section>
+
+    <section class="architecture" id="architecture" aria-labelledby="architecture-title">
+      <div class="wrap architecture-grid">
+        <div class="sticky">
+          <div class="kicker">02 / Architecture</div>
+          <h2 id="architecture-title" style="margin-top:18px">A narrow waist for agent work.</h2>
+          <p class="section-copy">Interfaces vary. Providers vary. Tools vary. All consequential work still passes through a single event-sourced coordinator.</p>
+        </div>
+        <div class="flow" aria-label="Harness architecture layers">
+          <div class="flow-row"><div class="flow-label">CLI + TUI</div><div class="connector">→</div><div class="flow-detail"><b>Operator surfaces</b><span>Compose-first Ratatui shell, headless runs, config, doctor, session navigation, and support exports.</span></div></div>
+          <div class="flow-row"><div class="flow-label core">COORDINATOR</div><div class="connector">→</div><div class="flow-detail"><b>Single runtime authority</b><span>Turns, permissions, scheduling, hooks, task lifecycle, compaction, cancellation, and event append.</span></div></div>
+          <div class="flow-row"><div class="flow-label">PROVIDERS</div><div class="connector">→</div><div class="flow-detail"><b>Model boundary</b><span>OpenAI-compatible transport, streaming events, mock cassettes, request metadata, and redaction.</span></div></div>
+          <div class="flow-row"><div class="flow-label">NATIVE TOOLS</div><div class="connector">→</div><div class="flow-detail"><b>Action surface</b><span>Read, search, edit, shell, tasks, web, code search, LSP, MCP, questions, and session inspection.</span></div></div>
+          <div class="flow-row"><div class="flow-label">EVENT STORE</div><div class="connector">→</div><div class="flow-detail"><b>Durable evidence</b><span>Contiguous JSONL, replay projections, lineage, redacted artifacts, checkpoints, and side-effect-free inspection.</span></div></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="wrap" id="surfaces" aria-labelledby="surfaces-title">
+      <div class="section-head">
+        <div class="kicker">03 / Working surfaces</div>
+        <div><h2 id="surfaces-title">Interactive when you want it. Scriptable when you don't.</h2></div>
+      </div>
+      <div class="surface-grid">
+        <article class="card wide"><span class="tag">Terminal UI</span><h3>A compose-first operating room</h3><p>Start an agent, follow streaming work, review permission prompts, switch models, inspect lineage, and navigate session history without leaving the terminal.</p><div class="card-code"><span class="dim">$</span> harness<br><span class="dim">→</span> model switcher / permissions / transcript<br><span class="dim">→</span> live tools / task status / replay</div><span class="glyph" aria-hidden="true">›_</span></article>
+        <article class="card"><span class="tag">Automation</span><h3>Headless runs</h3><p>Use the same coordinator in CI, scripts, and deterministic offline checks.</p><div class="card-code"><span class="dim">$</span> harness run<br>"Summarize this workspace"</div></article>
+        <article class="card"><span class="tag">Control</span><h3>Typed config</h3><p>Separate runtime JSONC from TUI keybindings, with layered discovery and source attribution.</p><span class="glyph" aria-hidden="true">{ }</span></article>
+        <article class="card"><span class="tag">Recovery</span><h3>Replay + inspect</h3><p>Reconstruct state from disk without resuming providers or executing side effects.</p><div class="card-code"><span class="dim">$</span> harness sessions inspect<br>&lt;session&gt;</div></article>
+        <article class="card"><span class="tag">Extension</span><h3>Tools + MCP</h3><p>Use a canonical native tool set and register config-backed MCP servers behind the same permission boundary.</p></article>
+      </div>
+    </section>
+
+    <section class="wrap" id="safety" aria-labelledby="safety-title">
+      <div class="section-head">
+        <div class="kicker">04 / Safety boundary</div>
+        <div><h2 id="safety-title">Permission is a runtime fact—not a suggestion.</h2></div>
+      </div>
+      <div class="safety-layout">
+        <div class="rules" aria-label="Example permission policy">
+          <div class="rule"><span class="rule-id">01</span><b>Read workspace files</b><span class="status allow">allow</span></div>
+          <div class="rule"><span class="rule-id">02</span><b>Edit source code</b><span class="status ask">ask</span></div>
+          <div class="rule"><span class="rule-id">03</span><b>Run cargo tests</b><span class="status ask">ask</span></div>
+          <div class="rule"><span class="rule-id">04</span><b>Unknown shell command</b><span class="status deny">deny</span></div>
+          <div class="rule"><span class="rule-id">05</span><b>Launch bounded child task</b><span class="status allow">allow</span></div>
+        </div>
+        <div class="quote">“Permission checks happen before execution. Replay never becomes a back door to run work twice.”<small>CORE RUNTIME INVARIANT</small></div>
+      </div>
+    </section>
+
+    <section class="start wrap" id="start" aria-labelledby="start-title">
+      <div class="start-panel">
+        <div class="kicker" style="color:#344017">05 / Start locally</div>
+        <h2 id="start-title" style="margin-top:18px">Build it. Prove it offline. Then connect.</h2>
+        <p>Compile the CLI with the pinned Rust toolchain, validate the starter configuration, and exercise the complete event path with a deterministic mock run before spending a token.</p>
+        <div class="command"><span id="install-command">cargo build -p harness && target/debug/harness run --mock "Hello"</span><button class="copy" type="button" data-copy="install-command">Copy</button></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="wrap"><div class="footer-row"><span>HARNESS / EVENT-SOURCED AGENT RUNTIME</span><span>Rust · Ratatui · Local-first · Multi-provider</span></div></footer>
+
+  <script>
+    const copyButton = document.querySelector('[data-copy]');
+    copyButton.addEventListener('click', async () => {
+      const text = document.getElementById(copyButton.dataset.copy).textContent;
+      try {
+        await navigator.clipboard.writeText(text);
+        copyButton.textContent = 'Copied';
+        setTimeout(() => { copyButton.textContent = 'Copy'; }, 1600);
+      } catch (_) {
+        copyButton.textContent = 'Select + copy';
+      }
+    });
+  </script>
+</body>
+</html>
