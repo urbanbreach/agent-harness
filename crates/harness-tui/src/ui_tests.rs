@@ -249,9 +249,7 @@ fn transcript_debug_places_assistant_answer_before_nested_context() {
     ));
 
     let transcript = transcript_debug(&app);
-    let thinking_index = transcript
-        .find("Drafting a document-like plan")
-        .unwrap_or_abort();
+    let thinking_index = transcript.find("Thought").unwrap_or_abort();
     let answer_index = transcript
         .find("Found the transcript renderer and the composer chrome.")
         .unwrap_or_abort();
@@ -460,12 +458,12 @@ fn live_control_dock_keeps_current_runtime_primary_and_next_turn_secondary() {
 
     assert_eq!(
         app.runtime_context_summary_segment_text(),
-        Some("Next turns: deep · GPT-5.4 Mini".to_string())
+        Some("Next turns: GPT-5.4 Mini".to_string())
     );
 
     let debug = render_debug(&app, 160, 24);
-    assert!(!debug.contains("Current runtime: deep · GPT-5.4 Mini · Deterministic"));
-    assert!(!debug.contains("Current runtime: writer · GPT-5.4 Mini · Creative"));
+    assert!(!debug.contains("deep ·"));
+    assert!(!debug.contains("writer ·"));
 }
 
 #[test]
@@ -531,12 +529,12 @@ fn continued_live_control_dock_preserves_continued_runtime_after_switch() {
 
     assert_eq!(
         app.runtime_context_summary_segment_text(),
-        Some("Next turns: deep · GPT-5.4 Mini".to_string())
+        Some("Next turns: GPT-5.4 Mini".to_string())
     );
 
     let debug = render_debug(&app, 160, 24);
-    assert!(!debug.contains("Continued runtime: deep · GPT-5.4 Mini · Deterministic"));
-    assert!(!debug.contains("Continued runtime: writer · GPT-5.4 Mini · Creative"));
+    assert!(!debug.contains("deep ·"));
+    assert!(!debug.contains("writer ·"));
 }
 
 #[test]
@@ -663,11 +661,11 @@ fn help_surface_lists_active_bindings() {
     assert!(debug.contains("Keyboard Shortcuts"));
     assert!(debug.contains("Essentials"));
     assert!(debug.contains("Send"));
-    assert!(debug.contains("Enter"));
+    assert!(debug.contains("Ctrl+s"));
     assert!(debug.contains("Cycle mode"));
     assert!(debug.contains("Shift+Tab"));
     assert!(debug.contains("Command palette"));
-    assert!(debug.contains("Ctrl+p / ?"));
+    assert!(debug.contains('?'));
     assert!(!debug.contains("Live shell:"));
     assert!(!debug.contains("Review event log"));
     assert!(!debug.contains("Review diff artifact"));

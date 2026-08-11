@@ -239,8 +239,7 @@ impl AppState {
         {
             self.slash_draft_snapshot = Some(self.composer.prompt_buffer.clone());
         }
-        if c != '\n'
-            && self.composer.parity_editing_ready()
+        if self.composer.parity_editing_ready()
             && self.composer.parity_insert_text(&c.to_string()).is_ok()
         {
             self.sync_slash_overlay();

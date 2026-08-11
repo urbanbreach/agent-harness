@@ -319,6 +319,15 @@ ANSI-256 quantizes these RGB values deterministically. ANSI-16 uses named
 semantic fallbacks, and no-color mode uses the terminal-native reset palette;
 those modes preserve role distinctions without claiming RGB identity.
 
+Terminal capability negotiation also selects glyph and motion fallbacks. A
+Unicode-capable terminal keeps the preferred `❯`, `◆`, `●`, and `✗` glyphs;
+the compact/legacy width profile uses the semantic ASCII alternatives `>`,
+`*`, `o`, and `x`. Setting `HARNESS_TUI_REDUCED_MOTION` to `1`, `true`, `yes`,
+or `on` selects the scheduler's immediate-settle path: status distinctions
+remain visible, but continuous animation deadlines are not armed. Capability
+evidence labels record color, glyph, and motion modes and must not describe a
+reduced capture as pixel-identical truecolor output.
+
 Capture paths for future color lock:
 
 ```text
@@ -492,6 +501,10 @@ monotonic, reduced/disabled motion is deterministic, and settled idle requests n
 animation redraws. Tool expansion, permission/question selection, overlay focus,
 multiline composer growth, and scroll/follow each require both the before and
 after frame plus a state-transition assertion.
+
+Tool motion uses the design-contract `ToolPulse` token for active running rails
+and `ToolFinishFlash` (33 ms × 6 frames) for the bounded terminal transition.
+Queued, waiting, replayed, off-screen, and settled tool rows remain static.
 
 If a state cannot be produced against both exact binaries, its row remains
 `incomplete`; it cannot be promoted by a structurally similar helper frame or by

@@ -28,7 +28,7 @@ fn model_switcher_ui_opens_from_slash_command() {
 
     let mut app = AppState::new_live(None, false, Some(sink));
     app.set_launch_metadata(
-        LaunchMetadata::from_model_ref("deep", "default:gpt-5.4-mini")
+        LaunchMetadata::from_model_ref("default", "default:gpt-5.4-mini")
             .with_available_models(available_models.clone()),
     );
 
@@ -49,7 +49,7 @@ fn model_switcher_ui_opens_from_slash_command() {
 
     let mut replay = AppState::new_replay(PathBuf::from("/tmp/replay-models"), Vec::new());
     replay.set_launch_metadata(
-        LaunchMetadata::from_model_ref("deep", "default:gpt-5.4-mini")
+        LaunchMetadata::from_model_ref("default", "default:gpt-5.4-mini")
             .with_available_models(available_models),
     );
     assert_eq!(replay.current_model_label(), "GPT-5.4 Mini · Deterministic");
@@ -66,7 +66,7 @@ fn model_switcher_populates_options_from_launch_metadata() {
 
     let mut app = AppState::new_live(None, false, None);
     app.set_launch_metadata(
-        LaunchMetadata::from_model_ref("deep", "default:gpt-5.4-mini")
+        LaunchMetadata::from_model_ref("default", "default:gpt-5.4-mini")
             .with_available_models(available_models),
     );
 
@@ -93,7 +93,7 @@ fn model_switcher_shows_base_models_without_variant_rows() {
 
     let mut app = AppState::new_live(None, false, None);
     app.set_launch_metadata(
-        LaunchMetadata::from_model_ref("deep", "default:gpt-5.4-mini")
+        LaunchMetadata::from_model_ref("default", "default:gpt-5.4-mini")
             .with_available_models(same_profile_variant_options()),
     );
 
@@ -237,8 +237,8 @@ fn model_switcher_enter_emits_switch_intent_for_selected_model() {
 
     let mut app = AppState::new_live(None, false, Some(sink));
     app.set_launch_metadata(
-        LaunchMetadata::from_model_ref("build", "default:gpt-5.4-mini")
-            .with_available_models(build_plan_models())
+        LaunchMetadata::from_model_ref("default", "default:gpt-5.4-mini")
+            .with_available_models(primary_subagent_models())
             .with_mode_label("Continued"),
     );
 
@@ -249,7 +249,7 @@ fn model_switcher_enter_emits_switch_intent_for_selected_model() {
     app.handle_key(key(KeyCode::Enter));
 
     assert!(!app.model_switcher_visible);
-    assert_eq!(app.active_profile(), "build");
+    assert_eq!(app.active_profile(), "default");
     assert_eq!(app.launch_mode_label(), Some("Continued"));
     let intents = intents.lock().unwrap_or_abort();
     let UiIntent::SwitchModel {
@@ -259,14 +259,14 @@ fn model_switcher_enter_emits_switch_intent_for_selected_model() {
     else {
         panic!("expected switch model intent");
     };
-    assert_eq!(profile, "build");
+    assert_eq!(profile, "default");
     assert_eq!(launch_metadata.variant(), None);
 }
 
 fn authenticated_builtin_models() -> Vec<harness_tui::app::ModelOption> {
     vec![
         harness_tui::app::ModelOption {
-            profile: "build".to_string(),
+            profile: "default".to_string(),
             provider: "openai-codex".to_string(),
             provider_display_label: Some("OpenAI Codex".to_string()),
             provider_backend_label: Some("OpenAI-compatible".to_string()),
@@ -280,14 +280,14 @@ fn authenticated_builtin_models() -> Vec<harness_tui::app::ModelOption> {
             max_input_tokens: Some(272000),
             max_output_tokens: Some(128000),
             description: None,
-            profile_description: Some("Build".to_string()),
+            profile_description: None,
             reasoning_effort: None,
             text_verbosity: None,
             thinking: None,
             recommended_for: None,
         },
         harness_tui::app::ModelOption {
-            profile: "build".to_string(),
+            profile: "default".to_string(),
             provider: "github-copilot".to_string(),
             provider_display_label: Some("GitHub Copilot".to_string()),
             provider_backend_label: Some("OpenAI-compatible".to_string()),
@@ -301,7 +301,7 @@ fn authenticated_builtin_models() -> Vec<harness_tui::app::ModelOption> {
             max_input_tokens: Some(272000),
             max_output_tokens: Some(128000),
             description: Some("offline fallback".to_string()),
-            profile_description: Some("Build".to_string()),
+            profile_description: None,
             reasoning_effort: None,
             text_verbosity: None,
             thinking: None,
@@ -316,7 +316,7 @@ fn model_switcher_opens_no_provider_connect_state() {
     // act
     // assert
     let mut app = AppState::new_live(None, false, None);
-    app.set_launch_metadata(LaunchMetadata::new("build", "local", None));
+    app.set_launch_metadata(LaunchMetadata::new("default", "local", None));
 
     for ch in "/model".chars() {
         app.handle_key(key(KeyCode::Char(ch)));
@@ -423,7 +423,7 @@ fn no_provider_prompt_submission_blocks_with_connect_guidance() {
         })
     };
     let mut app = AppState::new_live(None, false, Some(sink));
-    app.set_launch_metadata(LaunchMetadata::new("build", "local", None));
+    app.set_launch_metadata(LaunchMetadata::new("default", "local", None));
 
     for ch in "hello".chars() {
         app.handle_key(key(KeyCode::Char(ch)));
@@ -444,7 +444,7 @@ fn auth_catalog_refresh_opens_model_picker_with_connected_models() {
     // assert
     let mut app = AppState::new_live(None, false, None);
     let models = authenticated_builtin_models();
-    app.set_launch_metadata(LaunchMetadata::new("build", "local", None));
+    app.set_launch_metadata(LaunchMetadata::new("default", "local", None));
 
     app.apply_auth_provider_catalog_refresh(
         LaunchMetadata::from_model_option(&models[0]).with_available_models(models),

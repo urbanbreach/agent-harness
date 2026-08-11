@@ -18,10 +18,14 @@ pub(super) fn transcript_scroll_position(
     let viewport_height = usize::from(viewport_height);
     let regular_max = layout.total_height.saturating_sub(viewport_height);
     if matches!(page_flip, PageFlipState::Detached { .. }) {
-        if regular_max == 0 {
+        let pinned_surface_exists = page_flip
+            .activity_first_seq()
+            .and_then(|first_seq| user_surface_metrics(layout, first_seq))
+            .is_some();
+        if regular_max == 0 || (!pinned_surface_exists && regular_top >= regular_max) {
             return TranscriptScrollPosition {
-                top: 0,
-                max_scroll: 0,
+                top: regular_max,
+                max_scroll: regular_max,
                 page_flip: page_flip.consume(),
             };
         }

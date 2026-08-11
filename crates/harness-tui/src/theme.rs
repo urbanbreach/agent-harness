@@ -428,6 +428,15 @@ pub struct StatusGlyphs {
 pub struct TranscriptGlyphs {
     pub user_marker: &'static str,
     pub tool_marker: &'static str,
+    pub thought_marker: &'static str,
+    pub group_marker: &'static str,
+    pub rail: &'static str,
+    pub disclosure_open: &'static str,
+    pub disclosure_closed: &'static str,
+    pub choice_selected: &'static str,
+    pub choice_unselected: &'static str,
+    pub choice_checked: &'static str,
+    pub success_marker: &'static str,
     pub card_top: &'static str,
     pub card_mid: &'static str,
     pub card_bottom: &'static str,
@@ -549,6 +558,12 @@ pub struct LiveShellSpacingTokens {
 pub struct LiveShellGlyphCatalog {
     pub status: StatusGlyphs,
     pub transcript: TranscriptGlyphs,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GlyphMode {
+    Preferred,
+    Ascii,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1105,6 +1120,15 @@ impl Theme {
         transcript_glyphs: TranscriptGlyphs {
             user_marker: "❯",
             tool_marker: "◆",
+            thought_marker: "◇",
+            group_marker: "◈",
+            rail: "┃",
+            disclosure_open: "▾",
+            disclosure_closed: "▸",
+            choice_selected: "●",
+            choice_unselected: "○",
+            choice_checked: "✓",
+            success_marker: "✓",
             card_top: "  ",
             card_mid: " ",
             card_bottom: "  ",
@@ -1123,6 +1147,15 @@ impl Theme {
             transcript: TranscriptGlyphs {
                 user_marker: ">",
                 tool_marker: "*",
+                thought_marker: "*",
+                group_marker: "*",
+                rail: "|",
+                disclosure_open: "v",
+                disclosure_closed: ">",
+                choice_selected: "*",
+                choice_unselected: "o",
+                choice_checked: "x",
+                success_marker: "v",
                 card_top: "  ",
                 card_mid: " ",
                 card_bottom: "  ",
@@ -1268,31 +1301,8 @@ impl Theme {
         }
     }
 
-    pub fn agent_accent(self, profile: &str) -> Color {
-        let profile = profile.trim();
-        if profile.is_empty()
-            || profile.eq_ignore_ascii_case("default")
-            || profile.eq_ignore_ascii_case("build")
-        {
-            return self.agents.build;
-        }
-        if profile.eq_ignore_ascii_case("plan") {
-            return self.agents.plan;
-        }
-        if profile.eq_ignore_ascii_case("docs") {
-            return self.agents.docs;
-        }
-        if profile.eq_ignore_ascii_case("ask") {
-            return self.agents.ask;
-        }
-
-        let hash = profile
-            .to_ascii_lowercase()
-            .bytes()
-            .fold(0usize, |hash, byte| {
-                hash.wrapping_mul(31).wrapping_add(usize::from(byte))
-            });
-        self.agents.palette[hash % self.agents.palette.len()]
+    pub const fn agent_accent(self, _profile: &str) -> Color {
+        self.text.accent
     }
 
     pub fn harness_dark() -> Self {
@@ -2183,6 +2193,29 @@ impl Theme {
     pub const fn lifecycle_surface_layout(self, width: u16, height: u16) -> LifecycleSurfaceLayout {
         self.live_shell.lifecycle_layout(width, height)
     }
+
+    pub fn with_glyph_mode(mut self, mode: GlyphMode) -> Self {
+        let glyphs = match mode {
+            GlyphMode::Preferred => LiveShellGlyphCatalog {
+                status: status_glyphs(true),
+                transcript: transcript_glyphs(true),
+            },
+            GlyphMode::Ascii => self.live_shell.ascii_glyphs,
+        };
+        self.live_shell.glyphs = glyphs.status;
+        self.live_shell.transcript_glyphs = glyphs.transcript;
+        self
+    }
+
+    pub fn glyph_mode(self) -> GlyphMode {
+        if self.live_shell.glyphs == self.live_shell.ascii_glyphs.status
+            && self.live_shell.transcript_glyphs == self.live_shell.ascii_glyphs.transcript
+        {
+            GlyphMode::Ascii
+        } else {
+            GlyphMode::Preferred
+        }
+    }
 }
 
 fn status_glyphs(preferred: bool) -> StatusGlyphs {
@@ -2230,6 +2263,15 @@ fn transcript_glyphs(preferred: bool) -> TranscriptGlyphs {
     TranscriptGlyphs {
         user_marker: glyph(GlyphRole::UserMarker, "❯"),
         tool_marker: glyph(GlyphRole::ToolMarker, "◆"),
+        thought_marker: if preferred { "◇" } else { "*" },
+        group_marker: if preferred { "◈" } else { "*" },
+        rail: if preferred { "┃" } else { "|" },
+        disclosure_open: if preferred { "▾" } else { "v" },
+        disclosure_closed: if preferred { "▸" } else { ">" },
+        choice_selected: if preferred { "●" } else { "*" },
+        choice_unselected: if preferred { "○" } else { "o" },
+        choice_checked: if preferred { "✓" } else { "x" },
+        success_marker: if preferred { "✓" } else { "v" },
         card_top: glyph(GlyphRole::CardTop, "  "),
         card_mid: glyph(GlyphRole::CardMiddle, " "),
         card_bottom: glyph(GlyphRole::CardBottom, "  "),

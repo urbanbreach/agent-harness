@@ -35,6 +35,16 @@ impl ViewportId {
         }
     }
 
+    pub fn closest(width: u16, height: u16) -> Self {
+        Self::ALL
+            .into_iter()
+            .min_by_key(|viewport| {
+                let (candidate_width, candidate_height) = viewport.dimensions();
+                candidate_width.abs_diff(width) + candidate_height.abs_diff(height)
+            })
+            .unwrap_or(Self::Standard100x30)
+    }
+
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Compact40x10 => "40x10",

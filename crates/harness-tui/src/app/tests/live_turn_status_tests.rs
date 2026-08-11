@@ -298,6 +298,10 @@ pub(super) fn clicking_stop_affordance_interrupts_active_task() {
             task_ids: vec!["task_stop".to_string()],
         }]
     );
+    let screen = render_text(&app, 140, 40);
+    assert!(screen.contains("Cancelling…"), "{screen}");
+    assert!(!status_row(&screen, "Cancelling…").contains("[stop]"));
+    assert!(!app.has_active_animations_for_evidence());
 }
 
 pub(super) fn hovering_stop_affordance_updates_live_status_state() {

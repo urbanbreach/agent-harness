@@ -7,7 +7,6 @@
 //! and must not be edited by the integrator.
 
 pub mod action;
-pub mod group_a_plan;
 pub mod group_b_composer_modes;
 pub mod group_c_screen_modes;
 pub mod group_d_dashboard;

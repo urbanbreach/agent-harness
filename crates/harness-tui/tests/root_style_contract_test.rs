@@ -424,46 +424,18 @@ fn default_theme_is_harness_chat() {
 }
 
 // ---------------------------------------------------------------------------
-// Group 8 — Agent accent contract
+// Group 8 — Generic assistant accent contract
 // ---------------------------------------------------------------------------
 
 #[test]
-fn agent_accent_is_deterministic() {
+fn agent_accent_is_profile_independent() {
+    // Given: a theme and arbitrary legacy profile labels.
     let theme = Theme::harness_dark();
-    assert_eq!(theme.agent_accent("worker"), theme.agent_accent("worker"));
-}
 
-#[test]
-fn agent_accent_ignores_case() {
-    let theme = Theme::harness_dark();
-    assert_eq!(theme.agent_accent("Worker"), theme.agent_accent("worker"));
-}
-
-#[test]
-fn agent_accent_for_known_profiles_returns_profile_color() {
-    let theme = Theme::harness_dark();
-    assert_eq!(theme.agent_accent("build"), theme.agents.build);
-    assert_eq!(theme.agent_accent("plan"), theme.agents.plan);
-    assert_eq!(theme.agent_accent("docs"), theme.agents.docs);
-    assert_eq!(theme.agent_accent("ask"), theme.agents.ask);
-}
-
-#[test]
-fn agent_accent_for_custom_profile_is_palette_bounded() {
-    let theme = Theme::harness_dark();
-    let accent = theme.agent_accent("custom-worker-name");
-    assert!(
-        theme.agents.palette.contains(&accent),
-        "custom agent accent must come from the bounded palette"
-    );
-}
-
-#[test]
-fn agent_accent_empty_or_default_returns_build() {
-    let theme = Theme::harness_dark();
-    assert_eq!(theme.agent_accent(""), theme.agents.build);
-    assert_eq!(theme.agent_accent("default"), theme.agents.build);
-    assert_eq!(theme.agent_accent("build"), theme.agents.build);
+    // When/Then: every legacy label resolves to the same semantic text accent.
+    for profile in ["", "default", "build", "plan", "docs", "ask", "worker"] {
+        assert_eq!(theme.agent_accent(profile), theme.text.accent);
+    }
 }
 
 // ---------------------------------------------------------------------------

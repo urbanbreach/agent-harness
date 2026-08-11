@@ -1,6 +1,22 @@
-use super::permissions::{
-    PermissionConfirmSelection, PermissionModalSelection, PermissionModalStage,
+use super::{
+    permissions::{PermissionConfirmSelection, PermissionModalSelection, PermissionModalStage},
+    Focus,
 };
+use ratatui::layout::Rect;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PermissionPointerTarget {
+    Decision(PermissionModalSelection),
+    Confirm(PermissionConfirmSelection),
+    QuestionChoice(usize),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PermissionPointerDown {
+    pub(crate) permission_id: String,
+    pub(crate) target: PermissionPointerTarget,
+    pub(crate) area: Rect,
+}
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct PermissionPromptState {
@@ -8,4 +24,6 @@ pub(crate) struct PermissionPromptState {
     pub(crate) stage: PermissionModalStage,
     pub(crate) selection: PermissionModalSelection,
     pub(crate) confirm_selection: PermissionConfirmSelection,
+    pub(crate) pointer_down: Option<PermissionPointerDown>,
+    pub(crate) focus_return: Option<Focus>,
 }

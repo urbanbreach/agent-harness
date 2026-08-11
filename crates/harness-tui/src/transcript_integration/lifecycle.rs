@@ -126,6 +126,13 @@ impl LifecycleCoordinator {
     pub fn snapshots(&self) -> Vec<LifecycleSnapshot> {
         self.entries.iter().map(|entry| entry.snapshot).collect()
     }
+
+    pub(crate) fn snapshot(&self, block_id: BlockId) -> Option<LifecycleSnapshot> {
+        self.entries
+            .iter()
+            .find(|entry| entry.snapshot.block_id == block_id)
+            .map(|entry| entry.snapshot)
+    }
 }
 
 fn phase_for(lifecycle: BlockLifecycle) -> LifecyclePhase {
@@ -166,9 +173,9 @@ use super::TranscriptIntegrationError;
 impl TranscriptComposite {
     pub(crate) fn invalidation_for(&self, event: &TranscriptEvent) -> CacheInvalidation {
         match event {
-            TranscriptEvent::TurnStarted(_) | TranscriptEvent::TurnStatus { .. } => {
-                CacheInvalidation::ReplayReset
-            }
+            TranscriptEvent::TurnStarted(_)
+            | TranscriptEvent::TurnUpdated(_)
+            | TranscriptEvent::TurnStatus { .. } => CacheInvalidation::ReplayReset,
             TranscriptEvent::BlockCreated(block) => CacheInvalidation::BlockRemoved(block.id),
             TranscriptEvent::BlockAppended { id, .. } => CacheInvalidation::BlockAppended(*id),
             TranscriptEvent::BlockLifecycle { id, lifecycle } => {
@@ -190,6 +197,11 @@ impl TranscriptComposite {
     }
 
     pub(crate) fn rebuild(&mut self) -> Result<(), TranscriptIntegrationError> {
+        self.work_metrics.full_rebuilds = self.work_metrics.full_rebuilds.saturating_add(1);
+        self.work_metrics.events_reprojected = self
+            .work_metrics
+            .events_reprojected
+            .saturating_add(self.events.len());
         let Projection {
             turns: seeds,
             blocks,
@@ -219,6 +231,7 @@ impl TranscriptComposite {
             .update_document(identity.clone(), turns.clone())?;
         self.identity = identity;
         self.turns = turns;
+        self.turn_seeds = seeds;
         self.layout = build_layout(
             &self.turns,
             &self.blocks,

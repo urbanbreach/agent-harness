@@ -97,18 +97,7 @@ pub enum Focus {
 pub enum SessionMode {
     #[default]
     Normal,
-    Plan,
     AlwaysApprove,
-}
-
-impl SessionMode {
-    const fn next(self) -> Self {
-        match self {
-            Self::Normal => Self::Plan,
-            Self::Plan => Self::Normal,
-            Self::AlwaysApprove => Self::Normal,
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -266,17 +255,6 @@ pub enum LifecycleShellState {
 impl AppState {
     pub fn session_mode(&self) -> SessionMode {
         self.session_mode
-    }
-
-    pub(in crate::app) fn cycle_session_mode(&mut self) {
-        self.session_mode = self.session_mode.next();
-        self.always_approve_mode = self.session_mode == SessionMode::AlwaysApprove;
-        let label = match self.session_mode {
-            SessionMode::Normal => "Normal mode",
-            SessionMode::Plan => "Plan mode",
-            SessionMode::AlwaysApprove => "Always-approve mode",
-        };
-        self.show_mode_banner(label);
     }
 
     pub(in crate::app) fn launch_value_is_unknown(value: &str) -> bool {
@@ -828,6 +806,7 @@ impl AppState {
 
     pub(crate) fn interrupt_hint_visible(&self) -> bool {
         !self.replay_mode
+            && !self.interrupt_requested()
             && !self.startup_shell_visible()
             && !self.composer_disabled()
             && !self.slash_visible
@@ -840,7 +819,22 @@ impl AppState {
     }
 
     pub(crate) fn live_turn_stop_available(&self) -> bool {
-        !self.replay_mode && self.active_interrupt_task_id().is_some()
+        !self.replay_mode
+            && !self.interrupt_requested()
+            && self.active_interrupt_task_id().is_some()
+    }
+
+    pub(crate) fn interrupt_requested(&self) -> bool {
+        let active = self.active_interrupt_task_ids();
+        self.interrupt_requested_task_ids
+            .iter()
+            .any(|task_id| active.contains(task_id))
+    }
+
+    pub(in crate::app) fn reconcile_interrupt_request(&mut self) {
+        let active = self.active_interrupt_task_ids();
+        self.interrupt_requested_task_ids
+            .retain(|task_id| active.contains(task_id));
     }
 
     pub(crate) fn live_turn_stop_hovered(&self) -> bool {
@@ -907,8 +901,9 @@ impl AppState {
             return false;
         }
         self.emit_ui_intent(UiIntent::InterruptSession {
-            task_ids: task_ids.into_iter().collect(),
+            task_ids: task_ids.iter().cloned().collect(),
         });
+        self.interrupt_requested_task_ids = task_ids;
         self.reset_interrupt_confirmation();
         true
     }

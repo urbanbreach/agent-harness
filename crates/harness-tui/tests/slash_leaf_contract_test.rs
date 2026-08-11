@@ -1,6 +1,6 @@
 //! Slash command leaf contract tests for Todo 11.
 //!
-//! Proves the 25 slash command leaf definitions are deterministic, match the
+//! Proves the 26 slash command leaf definitions are deterministic, match the
 //! existing command_registry exactly, have zero duplicate IDs, reject empty
 //! definitions, reject error-state mutations, and each have a single owner module.
 
@@ -15,7 +15,7 @@ use harness_tui::keybindings::slash_commands;
 use harness_tui::slash::commands::all_commands;
 use harness_tui::slash::{SlashCommandLeaf, SlashCommandLeafError};
 
-/// (a) The 25 slash command IDs are deterministic and match the existing
+/// (a) The 26 slash command IDs are deterministic and match the existing
 /// registry exactly — id, metadata_id, aliases, and order.
 #[test]
 fn slash_command_ids_match_registry_exactly() {
@@ -61,6 +61,7 @@ fn canonical_order_matches_specification() {
         "auth",
         "connect",
         "help",
+        "feedback",
         "shell",
         "follow",
         "compact",
@@ -73,16 +74,16 @@ fn canonical_order_matches_specification() {
         "settings",
         "view-plan",
         "dashboard",
-        "feedback",
+        "import",
     ];
     let actual: Vec<&str> = all_commands().iter().map(|l| l.id).collect();
     assert_eq!(actual, expected);
 }
 
-/// There are exactly 25 slash commands.
+/// There are exactly 26 slash commands.
 #[test]
-fn slash_commands_count_is_25() {
-    assert_eq!(all_commands().len(), 25);
+fn slash_commands_count_is_26() {
+    assert_eq!(all_commands().len(), 26);
 }
 
 /// (b) Zero duplicate IDs across all leaf definitions.
@@ -116,7 +117,7 @@ fn empty_metadata_id_rejected() {
     );
 }
 
-/// (d) Error-state mutations are rejected: all 25 canonical leaves pass
+/// (d) Error-state mutations are rejected: all 26 canonical leaves pass
 /// validation, and the definitions are immutable static constants.
 #[test]
 fn error_state_mutation_rejected() {
@@ -142,18 +143,18 @@ fn leaf_definitions_are_immutable_constants() {
     );
 }
 
-/// (e) Each leaf command definition has a single owner module: 25 leaves
-/// from 25 files, all IDs unique.
+/// (e) Each leaf command definition has a single owner module: 26 leaves
+/// from 26 files, all IDs unique.
 #[test]
 fn each_command_has_single_owner_module() {
     let leaves = all_commands();
-    assert_eq!(leaves.len(), 25, "expected 25 leaves from 25 owner modules");
+    assert_eq!(leaves.len(), 26, "expected 26 leaves from 26 owner modules");
     let mut ids: Vec<&str> = leaves.iter().map(|l| l.id).collect();
     ids.sort_unstable();
     ids.dedup();
     assert_eq!(
         ids.len(),
-        25,
+        26,
         "duplicate IDs found — some module owns more than one definition"
     );
 }

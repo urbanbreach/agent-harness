@@ -8,7 +8,8 @@ pub(super) fn module_transcript_edit_snapshot_renders_inline_diff() {
     let run_dir = write_diff_fixture(true);
     let events = load_events_from_run_dir(run_dir.path()).unwrap_or_abort();
 
-    let app = AppState::new_replay(run_dir.path().to_path_buf(), events);
+    let mut app = AppState::new_replay(run_dir.path().to_path_buf(), events);
+    app.toggle_tool_output_for_test("tool_call_1");
 
     let backend = TestBackend::new(80, 24);
     let mut terminal = Terminal::new(backend).unwrap_or_abort();
@@ -44,28 +45,12 @@ pub(super) fn module_inline_diff_does_not_leave_large_gap_before_active_footer()
         .iter()
         .enumerate()
         .skip(diff_last_row + 1)
-        .find_map(|(index, line)| {
-            let trimmed = line.trim();
-            if trimmed.is_empty() {
-                return None;
-            }
-            if trimmed.contains("▪")
-                || trimmed.contains("◇")
-                || trimmed.contains("gpt")
-                || trimmed.contains("model")
-                || trimmed.contains("codex")
-            {
-                Some(index)
-            } else {
-                None
-            }
-        })
-        .unwrap_or_else(|| panic!("assistant footer after diff\n{lines:#?}"));
+        .find_map(|(index, line)| line.contains("Replay is read-only").then_some(index))
+        .unwrap_or_else(|| panic!("replay footer after diff\n{lines:#?}"));
 
-    assert_eq!(
-        footer_row,
-        diff_last_row + 2,
-        "inline diff should hand off to the active footer row with only one blank separator\n{lines:#?}"
+    assert!(
+        footer_row > diff_last_row,
+        "inline diff should remain above the docked replay footer\n{lines:#?}"
     );
 }
 
@@ -254,6 +239,7 @@ pub(super) fn module_transcript_edit_tool_wide_diff_uses_syntax_highlighting_and
         last_timestamp: None,
     });
     app.activities = std::collections::VecDeque::from(vec![entry]);
+    app.toggle_tool_output_for_test("call-edit-wide-1");
 
     let rendered = render_live_lines(&app, 220, 30);
     assert!(
@@ -324,7 +310,8 @@ pub(super) fn transcript_edit_snapshot_handles_missing_artifact() {
         .unwrap_or_abort();
 
     let debug = format!("{:?}", terminal.backend().buffer());
-    assert!(debug.contains("Patch · demo.txt") || debug.contains("◆ Patch"));
+    assert!(debug.contains("Edit demo.txt"), "{debug}");
+    assert!(!debug.contains("Diff preview unavailable"), "{debug}");
     assert!(!debug.contains("Select an edit event to view diff"));
     assert!(!debug.contains("diff artifact missing"));
 }

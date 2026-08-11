@@ -183,7 +183,7 @@ pub(super) fn command_palette_dims_background_instead_of_repainting_it() {
             .palette_overlay
             .unwrap_or_abort();
     let palette_buffer = render_live_cells(&palette, width, height);
-    let mut saw_outside_reset = false;
+    let mut saw_dimmed_outside = false;
     for index in 0..base_buffer.content.len() {
         let x = u16::try_from(index % usize::from(width)).unwrap_or_abort();
         let y = u16::try_from(index / usize::from(width)).unwrap_or_abort();
@@ -194,18 +194,19 @@ pub(super) fn command_palette_dims_background_instead_of_repainting_it() {
         if inside_overlay {
             continue;
         }
+        let base_cell = &base_buffer[(x, y)];
         let palette_cell = &palette_buffer[(x, y)];
-        if matches!(
-            (palette_cell.fg, palette_cell.bg),
-            (ratatui::style::Color::Reset, ratatui::style::Color::Reset)
-        ) {
-            saw_outside_reset = true;
+        if !base_cell.symbol().trim().is_empty()
+            && palette_cell.symbol() == base_cell.symbol()
+            && (palette_cell.fg != base_cell.fg || palette_cell.bg != base_cell.bg)
+        {
+            saw_dimmed_outside = true;
             break;
         }
     }
     assert!(
-        saw_outside_reset,
-        "palette backdrop should reset colors outside the overlay under freeze Color::Reset surfaces"
+        saw_dimmed_outside,
+        "palette backdrop should dim existing colored glyphs outside the overlay"
     );
 
     let shared = base_buffer
@@ -233,11 +234,6 @@ pub(super) fn command_palette_dims_background_instead_of_repainting_it() {
             "shared glyph at ({x}, {y}) should survive palette open"
         );
     }
-}
-
-fn overlay_scrim_channel(channel: u8) -> u8 {
-    let channel = u16::from(channel);
-    u8::try_from(channel.saturating_mul(105) / 255).unwrap_or_default()
 }
 
 pub(super) fn command_palette_empty_state_renders() {

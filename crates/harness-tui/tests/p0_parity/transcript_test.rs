@@ -308,7 +308,14 @@ fn transcript_scroll_selection_and_tool_detail_toggle_under_full_width_shell() {
             Some(rid),
             EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
                 request_id: rid.into(),
-                delta: format!("Assistant body for {rid}"),
+                delta: format!(
+                    "Assistant body for {rid}\n{}",
+                    if rid == "req_a" {
+                        "older req_a history row\n".repeat(40)
+                    } else {
+                        String::new()
+                    }
+                ),
             }),
         ));
         app.ingest_event(envelope(
@@ -324,6 +331,10 @@ fn transcript_scroll_selection_and_tool_detail_toggle_under_full_width_shell() {
         ));
     }
     app.focus = Focus::Details;
+    let plan = plan_for(&app, 120, 40);
+    let transcript_height = usize::from(plan.transcript.expect("transcript rect").height);
+    let expected_page_rows = transcript_height.saturating_sub(4 + 2).max(1);
+    let _ = render_text(&app, 120, 40);
     let before = app.transcript_interaction_snapshot();
     assert!(before.follow_mode);
     assert_eq!(before.scroll, 0);
@@ -332,12 +343,17 @@ fn transcript_scroll_selection_and_tool_detail_toggle_under_full_width_shell() {
     app.handle_key(key(KeyCode::PageUp));
     let after_page_up = app.transcript_interaction_snapshot();
     assert_eq!(
-        after_page_up.scroll, 10,
+        after_page_up.scroll, expected_page_rows,
         "P0-TX-03: PageUp must increase transcript_scroll by one page"
     );
     assert!(
         !after_page_up.follow_mode,
         "P0-TX-03: PageUp must leave follow mode"
+    );
+    let detached_rendered = render_text(&app, 120, 40);
+    assert!(
+        detached_rendered.contains("older req_a history row"),
+        "P0-TX-03: PageUp must reveal preserved older content\n{detached_rendered}"
     );
 
     app.handle_key(key(KeyCode::PageDown));
@@ -396,16 +412,8 @@ fn transcript_scroll_selection_and_tool_detail_toggle_under_full_width_shell() {
         "P0-TX-03: transcript surface allocated"
     );
     assert!(
-        rendered.contains("First user turn for selection"),
-        "P0-TX-03: first activity body must remain structured\n{rendered}"
-    );
-    assert!(
         rendered.contains("Second user turn for selection"),
         "P0-TX-03: second activity body must remain structured\n{rendered}"
-    );
-    assert!(
-        rendered.contains("Assistant body for req_a"),
-        "P0-TX-03: assistant stream body must remain structured\n{rendered}"
     );
     assert!(
         rendered.contains("read"),

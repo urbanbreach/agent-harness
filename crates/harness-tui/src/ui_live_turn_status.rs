@@ -44,6 +44,18 @@ pub(super) fn render_live_turn_status(
         return;
     }
 
+    if app.interrupt_requested() {
+        frame.render_widget(Block::default().style(Style::default()), area);
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                "Cancelling…",
+                Style::default().fg(theme.status.warning),
+            ))),
+            area,
+        );
+        return;
+    }
+
     let runtime_kind = app.runtime_state().kind;
     if !app.has_live_turn_activity()
         && !matches!(

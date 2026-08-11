@@ -242,15 +242,6 @@ impl AppState {
         self.toggles_yolo_confirm_visible
     }
 
-    pub(in crate::app) fn primary_agent_enabled(&self, profile: &str) -> bool {
-        self.runtime_toggles
-            .entries
-            .iter()
-            .find(|entry| matches!(&entry.kind, ToggleEntryKind::Agent { name } if name == profile))
-            .map(|entry| entry.enabled)
-            .unwrap_or(true)
-    }
-
     pub(in crate::app) fn seed_toggles_from_launch_metadata(&mut self) {
         let primary_profiles = self
             .launch_metadata
@@ -261,16 +252,6 @@ impl AppState {
                 (!trimmed.is_empty()).then(|| trimmed.to_string())
             })
             .collect::<Vec<_>>();
-        for profile in &primary_profiles {
-            self.add_toggle_entry_if_missing(ToggleEntryState {
-                kind: ToggleEntryKind::Agent {
-                    name: profile.clone(),
-                },
-                label: profile.clone(),
-                description: "Primary agent".to_string(),
-                enabled: true,
-            });
-        }
 
         let subagent_profiles = self
             .launch_metadata
@@ -407,6 +388,9 @@ impl AppState {
             .iter()
             .enumerate()
             .filter_map(|(index, entry)| {
+                if matches!(&entry.kind, ToggleEntryKind::Agent { .. }) {
+                    return None;
+                }
                 let matches = input.is_empty()
                     || entry.label.to_lowercase().contains(&input)
                     || entry.description.to_lowercase().contains(&input)

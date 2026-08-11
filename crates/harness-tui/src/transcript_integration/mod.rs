@@ -7,6 +7,7 @@ use std::fmt::Write as _;
 
 mod cache;
 mod composite;
+mod incremental;
 mod invalidation;
 mod lifecycle;
 
@@ -16,6 +17,7 @@ pub use cache::{
     MAX_LAYOUT_PAYLOAD_BYTES,
 };
 pub use composite::{TranscriptComposite, TranscriptIntegrationError, TranscriptViewModel};
+pub use incremental::TranscriptWorkMetrics;
 pub use invalidation::{
     BlockSeed, CacheInvalidation, InvalidationReport, TranscriptEvent, TurnSeed,
 };

@@ -78,7 +78,6 @@ impl Palette {
         let question = theme.question_prompt;
         let status = theme.status;
         let markdown = theme.markdown;
-        let agents = theme.agents;
         let scrollbar = theme.scrollbar;
         Self {
             values: [
@@ -127,10 +126,10 @@ impl Palette {
                 markdown.list_item,
                 markdown.list_enum,
                 markdown.rule,
-                agents.build,
-                agents.plan,
-                agents.docs,
-                agents.ask,
+                text.accent,
+                text.accent,
+                text.accent,
+                text.accent,
                 scrollbar.track,
                 scrollbar.thumb,
                 scrollbar.thumb_active,

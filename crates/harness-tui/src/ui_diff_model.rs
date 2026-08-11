@@ -47,7 +47,9 @@ pub(super) enum StructuredDiffDisplayRow {
         before: Option<DiffCell>,
         after: Option<DiffCell>,
     },
-    Spacer,
+    UnchangedGap {
+        lines: usize,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -113,15 +115,21 @@ fn build_structured_diff_file(
     let mut additions = 0;
     let mut removals = 0;
 
+    let mut previous_before_end = None;
     for (index, hunk) in file.hunks.into_iter().enumerate() {
+        let (before_start, _) = parse_hunk_start_lines(&hunk.header);
         if index == 0 {
             rows.push(StructuredDiffDisplayRow::FileHeader);
-        } else {
-            rows.push(StructuredDiffDisplayRow::Spacer);
+        } else if let Some(previous_end) = previous_before_end {
+            let lines = before_start.saturating_sub(previous_end);
+            if lines > 0 {
+                rows.push(StructuredDiffDisplayRow::UnchangedGap { lines });
+            }
         }
         rows.push(StructuredDiffDisplayRow::HunkHeader {
             text: hunk.header.clone(),
         });
+        previous_before_end = Some(before_start.saturating_add(hunk.before_lines.len()));
 
         let aligned = align_patch_hunk(&hunk, highlight_intraline);
         additions += aligned.additions;

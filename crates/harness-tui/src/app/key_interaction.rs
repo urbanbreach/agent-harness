@@ -1031,9 +1031,6 @@ impl AppState {
             Action::ScrollDown if self.focus == Focus::Details => {
                 self.scroll_page_down(1);
             }
-            Action::CycleMode => {
-                self.cycle_session_mode();
-            }
             Action::ToggleTasks => {
                 self.live_details_drawer_open = !self.live_details_drawer_open;
                 self.focus = if self.live_details_drawer_open {
@@ -1115,12 +1112,6 @@ impl AppState {
             }
             Action::DiffHunkPrevious => {
                 self.navigate_diff_hunk(true);
-            }
-            Action::AgentCycle => {
-                self.cycle_agent(false);
-            }
-            Action::AgentCycleReverse => {
-                self.cycle_agent(true);
             }
             Action::VariantCycle => {
                 self.cycle_variant();
@@ -1491,11 +1482,11 @@ impl AppState {
     fn handle_prompt_transcript_scroll_key(&mut self, key: KeyEvent) -> bool {
         match (key.modifiers, key.code) {
             (KeyModifiers::NONE, KeyCode::PageUp) => {
-                self.scroll_transcript_up(10);
+                self.scroll_page_up(usize::from(self.transcript_page_scroll_rows()));
                 true
             }
             (KeyModifiers::NONE, KeyCode::PageDown) => {
-                self.scroll_transcript_down(10);
+                self.scroll_page_down(usize::from(self.transcript_page_scroll_rows()));
                 true
             }
             (KeyModifiers::CONTROL, KeyCode::Up) => {
@@ -1581,13 +1572,28 @@ impl AppState {
         }
 
         match key.code {
+            KeyCode::Enter => {
+                let tool_call_ids = self.selected_activity_expandable_tool_ids();
+                if tool_call_ids.is_empty() {
+                    false
+                } else {
+                    let expand = tool_call_ids.iter().any(|tool_call_id| {
+                        !self
+                            .transcript_view
+                            .expanded_tool_outputs
+                            .contains(tool_call_id)
+                    });
+                    self.set_tool_group_outputs_expanded(&tool_call_ids, expand);
+                    true
+                }
+            }
             KeyCode::Char('v') | KeyCode::Char('V') => self.open_selected_transcript_viewer(),
             KeyCode::PageUp => {
-                self.scroll_transcript_up(10);
+                self.scroll_page_up(usize::from(self.transcript_page_scroll_rows()));
                 true
             }
             KeyCode::PageDown => {
-                self.scroll_transcript_down(10);
+                self.scroll_page_down(usize::from(self.transcript_page_scroll_rows()));
                 true
             }
             KeyCode::Home => {

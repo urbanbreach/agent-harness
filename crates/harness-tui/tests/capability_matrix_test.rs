@@ -1,5 +1,5 @@
 use harness_tui::capability_matrix::*;
-use harness_tui::theme::ColorLevel;
+use harness_tui::theme::{ColorLevel, Theme};
 
 #[test]
 fn axes_have_stable_labels_and_mappings() {
@@ -42,6 +42,7 @@ fn known_profiles_classify_expected_capabilities() {
     assert_eq!(xterm.graphics(), GraphicsCapability::None);
     assert_eq!(xterm.keyboard(), KeyboardCapability::Legacy);
     assert_eq!(xterm.focus(), FocusCapability::Unknown);
+    assert_eq!(xterm.glyph_mode(), harness_tui::theme::GlyphMode::Preferred);
     let dumb = &profiles[4].1;
     assert_eq!(dumb.color(), ColorCapability::NoColor);
     assert_eq!(dumb.graphics(), GraphicsCapability::None);
@@ -49,6 +50,7 @@ fn known_profiles_classify_expected_capabilities() {
     assert_eq!(dumb.focus(), FocusCapability::Unknown);
     assert_eq!(dumb.clipboard(), ClipboardCapability::None);
     assert_eq!(dumb.title(), TitleCapability::Unsupported);
+    assert_eq!(dumb.glyph_mode(), harness_tui::theme::GlyphMode::Ascii);
     let tmux = &profiles[5].1;
     assert_eq!(tmux.multiplexer(), MultiplexerCapability::Tmux);
     assert_eq!(tmux.notification(), NotificationCapability::Osc9);
@@ -68,4 +70,27 @@ fn matrix_contains_classified_cell_for_every_viewport() {
     assert!(matrix.all_classified());
     assert!(matrix.unclassified_combinations().is_empty());
     assert!(matrix.cells().iter().all(|cell| !cell.label().is_empty()));
+}
+
+#[test]
+fn reduced_capability_cell_applies_and_labels_every_visible_fallback() {
+    let classifier = harness_tui::capability_matrix::well_known_profiles()
+        .remove(4)
+        .1;
+    let matrix = CapabilityMatrix::new(classifier);
+    let mut cell = *matrix
+        .for_viewport(ViewportCapability::Default80x24)
+        .expect("default viewport capability");
+    cell.motion = MotionCapability::Reduced;
+
+    let reduced = cell.apply_to_theme(Theme::harness_chat());
+
+    assert_eq!(reduced.color_level(), ColorLevel::None);
+    assert_eq!(reduced.live_shell.glyphs.streaming, "o");
+    assert_eq!(reduced.live_shell.glyphs.done, "*");
+    assert_eq!(reduced.live_shell.transcript_glyphs.user_marker, ">");
+    assert_eq!(
+        cell.label(),
+        "color=no_color:glyphs=ascii:motion=reduced:graphics=none:keyboard=minimal:viewport=80x24"
+    );
 }

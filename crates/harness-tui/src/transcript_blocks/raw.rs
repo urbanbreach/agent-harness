@@ -212,8 +212,8 @@ fn redact_prefixed(
                 source
                     .get(cursor + index..)
                     .filter(|tail| {
-                        tail.len() >= prefix.len()
-                            && tail[..prefix.len()].eq_ignore_ascii_case(prefix)
+                        tail.get(..prefix.len())
+                            .is_some_and(|candidate| candidate.eq_ignore_ascii_case(prefix))
                     })
                     .map(|_| index)
             })
@@ -267,4 +267,23 @@ fn token_end(source: &str, start: usize, valid: fn(char) -> bool) -> usize {
 
 fn is_token_character(character: char) -> bool {
     character.is_ascii_alphanumeric() || matches!(character, '_' | '-')
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::{RawDisclosure, RawPayload};
+
+    #[test]
+    fn from_json_preserves_multibyte_text_without_credentials() {
+        // Given
+        let source = json!({"summary": "gpt-5 · high"});
+
+        // When
+        let disclosure = RawDisclosure::from_json(&source);
+
+        // Then
+        assert_eq!(disclosure.payload, RawPayload::Json(source));
+    }
 }

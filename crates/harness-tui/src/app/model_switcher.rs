@@ -6,7 +6,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use super::model_metadata::{LaunchMetadata, ModelOption};
 use super::session_history::{fuzzy_subsequence_score, session_history_profile_label};
 use super::{set_pending_live_launch_metadata, AppState, UiIntent};
-use crate::text::{has_trimmed_content, non_empty_trimmed};
+use crate::text::has_trimmed_content;
 
 fn non_empty_str(value: &str) -> Option<&str> {
     has_trimmed_content(value).then_some(value)
@@ -103,11 +103,11 @@ fn model_selector_fuzzy_score(option: &ModelOption, needle: &str) -> Option<usiz
 }
 
 fn runtime_identity_for_metadata(metadata: &LaunchMetadata) -> String {
-    let model_label = metadata
+    metadata
         .display_label()
         .or_else(|| metadata.model())
-        .unwrap_or("-");
-    format!("{} · {model_label}", metadata.profile())
+        .unwrap_or("-")
+        .to_string()
 }
 
 fn model_option_favorite_key(option: &ModelOption) -> String {
@@ -217,18 +217,6 @@ impl AppState {
         Some(provider.to_string())
     }
 
-    pub fn current_agent_label(&self) -> Option<String> {
-        let profile = self
-            .launch_metadata
-            .configured_profile()
-            .or_else(|| {
-                let profile = self.active_profile();
-                (!Self::launch_value_is_unknown(profile) && profile != "default").then_some(profile)
-            })
-            .filter(|value| !Self::launch_value_is_unknown(value))?;
-        Some(super::humanize_profile_label(profile))
-    }
-
     pub(in crate::app) fn runtime_context_metadata(&self) -> &LaunchMetadata {
         self.runtime_context_metadata
             .as_ref()
@@ -263,11 +251,7 @@ impl AppState {
     }
 
     pub(in crate::app) fn runtime_context_identity(&self) -> String {
-        format!(
-            "{} · {}",
-            self.runtime_context_profile(),
-            self.runtime_context_model_label()
-        )
+        self.runtime_context_model_label()
     }
 
     pub(in crate::app) fn runtime_context_label(&self) -> crate::view_model::RuntimeContextLabel {
@@ -294,8 +278,7 @@ impl AppState {
 
         let current = self.runtime_context_metadata();
         let next = &self.launch_metadata;
-        let changed = current.profile() != next.profile()
-            || current.provider() != next.provider()
+        let changed = current.provider() != next.provider()
             || current.model() != next.model()
             || current.variant() != next.variant();
         changed.then(|| runtime_identity_for_metadata(next))
@@ -541,110 +524,6 @@ impl AppState {
         self.apply_selected_model_option(selected_model, !self.replay_mode);
     }
 
-    pub(super) fn cycle_agent(&mut self, reverse: bool) {
-        if self.replay_mode {
-            return;
-        }
-
-        let profiles = self.switchable_agent_profiles();
-        if profiles.len() < 2 {
-            return;
-        }
-
-        let current_profile = self.active_profile();
-        let current_index = profiles
-            .iter()
-            .position(|profile| profile == current_profile)
-            .unwrap_or(0);
-        let next_index = if reverse {
-            current_index
-                .checked_sub(1)
-                .unwrap_or_else(|| profiles.len().saturating_sub(1))
-        } else {
-            (current_index + 1) % profiles.len()
-        };
-
-        let Some(selected_model) = self.model_option_for_agent_profile(&profiles[next_index])
-        else {
-            return;
-        };
-        self.apply_selected_model_option(selected_model, true);
-    }
-
-    fn switchable_agent_profiles(&self) -> Vec<String> {
-        let mut profiles = self
-            .launch_metadata
-            .switchable_profiles()
-            .iter()
-            .filter_map(|profile| non_empty_trimmed(profile))
-            .filter(|profile| self.primary_agent_enabled(profile))
-            .map(str::to_string)
-            .collect::<Vec<_>>();
-
-        if profiles.is_empty() {
-            for candidate in ["build", "plan"] {
-                if self
-                    .launch_metadata
-                    .available_models()
-                    .iter()
-                    .any(|option| option.profile == candidate)
-                    && self.primary_agent_enabled(candidate)
-                {
-                    profiles.push(candidate.to_string());
-                }
-            }
-        }
-
-        if profiles.is_empty() {
-            profiles.push(self.active_profile().to_string());
-        }
-
-        let mut deduped = Vec::new();
-        for profile in profiles {
-            if !deduped.contains(&profile) {
-                deduped.push(profile);
-            }
-        }
-        deduped
-    }
-
-    fn model_option_for_agent_profile(&self, profile: &str) -> Option<ModelOption> {
-        let available = self.launch_metadata.available_models();
-        let provider = self.launch_metadata.provider();
-        let model = self.launch_metadata.model();
-        let variant = self.current_model_variant();
-
-        available
-            .iter()
-            .find(|option| {
-                option.profile == profile
-                    && option.provider == provider
-                    && Some(option.model.as_str()) == model
-                    && option.variant() == variant
-            })
-            .cloned()
-            .or_else(|| {
-                available
-                    .iter()
-                    .find(|option| {
-                        option.profile == profile
-                            && option.provider == provider
-                            && Some(option.model.as_str()) == model
-                    })
-                    .cloned()
-            })
-            .or_else(|| {
-                self.launch_metadata
-                    .to_model_option()
-                    .map(|option| option.with_profile(profile.to_string()))
-            })
-            .or_else(|| {
-                available
-                    .iter()
-                    .find(|option| option.profile == profile)
-                    .cloned()
-            })
-    }
     pub(crate) fn is_current_model_option(&self, option: &ModelOption) -> bool {
         option.profile == self.active_profile()
             && option.provider == self.active_provider()

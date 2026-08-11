@@ -196,8 +196,8 @@ fn scroll_down_decreases_offset_and_reengages_at_bottom() {
         "scroll clamps to zero at bottom"
     );
     assert!(
-        !app.follow_mode_active(),
-        "landing at scroll=0 remains detached"
+        app.follow_mode_active(),
+        "page down reaching scroll=0 re-engages follow mode"
     );
 
     app.scroll_page_down(30);
@@ -307,7 +307,7 @@ fn follow_mode_round_trip_up_and_back_down() {
     assert!(!app.follow_mode_active());
 
     app.scroll_page_down(30);
-    assert!(!app.follow_mode_active());
+    assert!(app.follow_mode_active());
 
     app.scroll_page_down(30);
     assert!(app.follow_mode_active());

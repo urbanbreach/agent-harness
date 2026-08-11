@@ -85,12 +85,12 @@ fn leaf_views_have_no_registry_dependency() {
     assert!(composer_a.prompt_visible);
 }
 
-/// Render the slash menu via Ratatui TestBackend showing all 25 canonical
+/// Render the slash menu via Ratatui TestBackend showing all 26 canonical
 /// IDs in order. This is a real-surface artifact, not a snapshot.
 #[test]
-fn slash_menu_renders_all_25_commands_in_order() {
+fn slash_menu_renders_all_26_commands_in_order() {
     let commands = slash_commands();
-    assert_eq!(commands.len(), 25, "registry must have 25 commands");
+    assert_eq!(commands.len(), 26, "registry must have 26 commands");
 
     let area = Rect::new(0, 0, 80, 30);
     let backend = TestBackend::new(area.width, area.height);
@@ -117,7 +117,7 @@ fn slash_menu_renders_all_25_commands_in_order() {
     let buffer = terminal.backend().buffer().clone();
     let output = buffer_to_string(&buffer, area.width);
 
-    // Verify all 25 IDs appear in the rendered output, in order.
+    // Verify all 26 IDs appear in the rendered output, in order.
     let mut last_pos = 0;
     for cmd in commands {
         let id = cmd.id;

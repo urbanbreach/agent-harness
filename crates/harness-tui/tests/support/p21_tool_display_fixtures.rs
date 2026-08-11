@@ -8,8 +8,8 @@ use harness_core::event::{
 
 /// Build events that exercise the P2.1 tool display descriptor families:
 /// running, completed, failed, denied, truncated, cancelled, late-result,
-/// plus Harness-only tool families (background_cancel, plan_enter, session_list,
-/// ast_grep_search, lsp, skill).
+/// plus Harness-only tool families (background_cancel, session_list, ast_grep_search, lsp,
+/// skill).
 pub(crate) fn p21_tool_display_events() -> Vec<EventEnvelopeV1> {
     let request_id = "req_p21_display";
     vec![
@@ -198,28 +198,9 @@ pub(crate) fn p21_tool_display_events() -> Vec<EventEnvelopeV1> {
             })),
             None,
         ),
-        // S8: plan_enter — Harness-only control plane tool
-        p21_tool_requested(
-            24,
-            request_id,
-            "tc_plan_enter",
-            "plan_enter",
-            r#"{"goal":"Plan the refactor"}"#,
-            None,
-        ),
-        p21_tool_started(25, request_id, "tc_plan_enter"),
-        p21_tool_finished(
-            26,
-            request_id,
-            "tc_plan_enter",
-            ToolCallStatus::Succeeded,
-            Some("Entered plan mode"),
-            None,
-            None,
-        ),
         // Final assistant text
         envelope(
-            27,
+            24,
             Some(request_id),
             EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
                 request_id: request_id.into(),
@@ -227,7 +208,7 @@ pub(crate) fn p21_tool_display_events() -> Vec<EventEnvelopeV1> {
             }),
         ),
         envelope(
-            28,
+            25,
             Some(request_id),
             EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
                 request_id: request_id.into(),

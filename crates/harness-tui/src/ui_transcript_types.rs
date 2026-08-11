@@ -34,6 +34,16 @@ pub(in crate::ui) struct TranscriptRenderSurface {
     pub(in crate::ui) selection_rows: Option<Vec<TranscriptSelectionRow>>,
     pub(in crate::ui) diff_hunk_offsets: Vec<usize>,
     pub(in crate::ui) selected_rail: bool,
+    pub(in crate::ui) tool_rail_motion: Option<ToolRailMotion>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ToolRailMotion {
+    Running { phase: usize },
+    Waiting,
+    Queued,
+    FinishFlash { remaining: u8 },
+    Settled,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -133,6 +143,7 @@ pub(super) struct TranscriptLabeledTextSection {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct TranscriptToolCallSection {
     pub(super) tool_call_id: String,
+    pub(super) coalesced_tool_call_ids: Vec<String>,
     pub(super) child_session_id: Option<String>,
     pub(super) hovered_target: Option<TranscriptMouseTarget>,
     pub(super) header: TranscriptToolCallHeader,
@@ -141,6 +152,7 @@ pub(super) struct TranscriptToolCallSection {
     pub(super) details_preview_visible: bool,
     pub(super) animation_phase: usize,
     pub(super) expanded: bool,
+    pub(super) rail_motion: ToolRailMotion,
 }
 
 impl TranscriptToolCallSection {
@@ -186,6 +198,7 @@ pub(in crate::ui) enum TranscriptToolCallDetailBlock {
         fallback_path: Option<String>,
         force_stacked: bool,
         plain_numbered: bool,
+        highlight_syntax: bool,
         show_file_header: bool,
     },
     FileSection(TranscriptToolCallFileSection),
@@ -241,6 +254,5 @@ pub(super) const TRANSCRIPT_ASSISTANT_BODY_PREFIX: &str = "   ";
 pub(super) const TRANSCRIPT_USER_BODY_PREFIX: &str = "     ";
 pub(super) const TRANSCRIPT_REASONING_BODY_PREFIX: &str = "   ";
 pub(super) const TRANSCRIPT_REASONING_HEADER_PREFIX: &str = "   ";
-pub(super) const TRANSCRIPT_SELECTED_RAIL_GLYPH: &str = "┃";
 pub(super) const TRANSCRIPT_NESTED_INDENT: &str = "     ";
 pub(super) const TRANSCRIPT_OPCODE_EDIT_INDENT: &str = "       ";

@@ -241,10 +241,10 @@ fn color_for(theme: &Theme, role: ColorRole) -> Color {
         ColorRole::QuestionPrimary => theme.question_prompt.primary,
         ColorRole::QuestionAccent => theme.question_prompt.accent,
         ColorRole::QuestionSecondary => theme.question_prompt.secondary,
-        ColorRole::AgentBuild => theme.agents.build,
-        ColorRole::AgentPlan => theme.agents.plan,
-        ColorRole::AgentDocs => theme.agents.docs,
-        ColorRole::AgentAsk => theme.agents.ask,
+        ColorRole::AgentBuild
+        | ColorRole::AgentPlan
+        | ColorRole::AgentDocs
+        | ColorRole::AgentAsk => theme.text.accent,
         ColorRole::TerminalPrimary => theme.reference_terminal.primary,
         ColorRole::TerminalSecondary => theme.reference_terminal.secondary,
         ColorRole::TerminalMuted => theme.reference_terminal.muted,

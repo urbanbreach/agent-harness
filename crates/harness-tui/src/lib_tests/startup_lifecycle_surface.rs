@@ -134,7 +134,7 @@ pub(super) fn startup_surface_projects_clipboard_capability() {
 pub(super) fn startup_typing_moves_to_quick_start_prompt() {
     let mut app = app::AppState::new_startup(Vec::new(), None);
 
-    assert_eq!(app.focus, app::Focus::List);
+    assert_eq!(app.focus, app::Focus::Prompt);
     assert!(app.composer.prompt_buffer.is_empty());
 
     app.handle_key(key(crossterm::event::KeyCode::Char('x')));
@@ -251,7 +251,8 @@ pub(super) fn post_run_failure_handoff_renders_recovery_actions() {
     assert!(app.completed_session_shell_active());
 
     let rendered = render_live_lines(&app, 100, 24);
-    assert!(rendered.contains("Tab focus") || rendered.contains("q quit"));
+    assert!(rendered.contains("Shift+Tab:mode"));
+    assert!(rendered.contains("Ctrl+x:shortcuts"));
     assert!(!rendered.contains("Next action"));
     assert!(!rendered.contains("Continue this session"));
 }
@@ -284,23 +285,10 @@ pub(super) fn post_run_handoff_disables_prompt_submission() {
 
     app.focus = app::Focus::Prompt;
     app.handle_key(key(crossterm::event::KeyCode::Enter));
-    assert!(app.composer.prompt_buffer.is_empty());
-
-    app.focus = app::Focus::List;
-    app.handle_key(key(crossterm::event::KeyCode::Enter));
+    assert_eq!(app.composer.prompt_buffer, "blocked prompt");
 
     let intents = intents.lock().unwrap_or_abort();
-    assert_eq!(
-        &*intents,
-        &[UiIntent::SubmitPrompt {
-            text: "blocked prompt".to_string(),
-            selected_file_tags: Vec::new(),
-            selected_agent_tags: Vec::new(),
-            selected_resource_tags: Vec::new(),
-            attachments: Vec::new(),
-            launch_metadata: app::LaunchMetadata::default(),
-        }]
-    );
+    assert!(intents.is_empty());
     assert!(!app.should_quit);
 }
 
@@ -651,7 +639,8 @@ pub(super) fn lifecycle_shell_snapshots_preserve_startup_and_handoff_contracts()
 
     let fallback_render = render_live_lines(&fallback, 100, 24);
     assert!(!fallback_render.contains("Run complete"));
-    assert!(fallback_render.contains("q quit"));
+    assert!(fallback_render.contains("Shift+Tab:mode"));
+    assert!(fallback_render.contains("Ctrl+x:shortcuts"));
     assert!(!fallback_render.contains("Composer"));
     assert!(!fallback_render.contains("Next action"));
     insta::with_settings!({ prepend_module_to_snapshot => false, snapshot_path => "../snapshots" }, {

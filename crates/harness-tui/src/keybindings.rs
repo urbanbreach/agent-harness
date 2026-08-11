@@ -69,9 +69,6 @@ pub enum Action {
     SessionParent,
     DiffHunkNext,
     DiffHunkPrevious,
-    AgentCycle,
-    AgentCycleReverse,
-    CycleMode,
     VariantCycle,
     AllowPermission,
     /// Open always-approve confirm for the active permission modal
@@ -168,9 +165,6 @@ impl Action {
             Action::SessionParent => Some("session_parent"),
             Action::DiffHunkNext => Some("diff_hunk_next"),
             Action::DiffHunkPrevious => Some("diff_hunk_previous"),
-            Action::AgentCycle => Some("agent_cycle"),
-            Action::AgentCycleReverse => Some("agent_cycle_reverse"),
-            Action::CycleMode => Some("cycle_mode"),
             Action::VariantCycle => Some("cycle_variant"),
             Action::AllowPermission => Some("allow_permission"),
             Action::AlwaysApprovePermission => Some("always_approve_permission"),
@@ -276,9 +270,6 @@ impl Action {
             Action::SessionParent => "session_parent",
             Action::DiffHunkNext => "diff_hunk_next",
             Action::DiffHunkPrevious => "diff_hunk_previous",
-            Action::AgentCycle => "agent_cycle",
-            Action::AgentCycleReverse => "agent_cycle_reverse",
-            Action::CycleMode => "cycle_mode",
             Action::VariantCycle => "variant_cycle",
             Action::AllowPermission => "allow_permission",
             Action::AlwaysApprovePermission => "always_approve_permission",
@@ -408,9 +399,6 @@ impl FromStr for Action {
             "session_parent" => Ok(Action::SessionParent),
             "diff_hunk_next" => Ok(Action::DiffHunkNext),
             "diff_hunk_previous" => Ok(Action::DiffHunkPrevious),
-            "agent_cycle" => Ok(Action::AgentCycle),
-            "agent_cycle_reverse" => Ok(Action::AgentCycleReverse),
-            "cycle_mode" => Ok(Action::CycleMode),
             "variant_cycle" => Ok(Action::VariantCycle),
             "allow_permission" => Ok(Action::AllowPermission),
             "always_approve_permission" => Ok(Action::AlwaysApprovePermission),
@@ -613,14 +601,6 @@ impl KeyMap {
         keymap.bind(
             KeyBinding::new(KeyCode::BackTab, KeyModifiers::NONE),
             Action::VariantCycle,
-        );
-        keymap.bind(
-            KeyBinding::new(KeyCode::Tab, KeyModifiers::CONTROL),
-            Action::AgentCycle,
-        );
-        keymap.bind(
-            KeyBinding::new(KeyCode::BackTab, KeyModifiers::CONTROL),
-            Action::AgentCycleReverse,
         );
         keymap.bind(
             KeyBinding::new(KeyCode::Tab, KeyModifiers::CONTROL | KeyModifiers::SHIFT),

@@ -64,16 +64,6 @@ const COMMAND_METADATA: &[CommandMetadata] = &[
         description: "Browse available provider/model options",
     },
     CommandMetadata {
-        id: "agent_cycle",
-        label: "Next agent",
-        description: "Cycle to the next primary agent",
-    },
-    CommandMetadata {
-        id: "agent_cycle_reverse",
-        label: "Previous agent",
-        description: "Cycle to the previous primary agent",
-    },
-    CommandMetadata {
         id: "cycle_variant",
         label: "Cycle reasoning preset",
         description: "Cycle the configured model variant/reasoning preset",
@@ -690,18 +680,6 @@ const PALETTE_COMMANDS: &[PaletteCommand] = &[
         id: "switch_model",
         metadata_id: "switch_model",
         shortcut: "models",
-        section: PaletteCommandSection::Agent,
-    },
-    PaletteCommand {
-        id: "agent_cycle",
-        metadata_id: "agent_cycle",
-        shortcut: "tab",
-        section: PaletteCommandSection::Agent,
-    },
-    PaletteCommand {
-        id: "agent_cycle_reverse",
-        metadata_id: "agent_cycle_reverse",
-        shortcut: "shift+tab",
         section: PaletteCommandSection::Agent,
     },
     PaletteCommand {

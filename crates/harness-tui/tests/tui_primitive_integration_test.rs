@@ -463,6 +463,7 @@ fn scrollback_scroll_to_viewport_and_render() {
     assert_eq!(app.transcript_scroll_offset(), 0, "scroll at bottom is 0");
 
     // --- T12: half-page scroll precision ---
+    app.record_transcript_max_scroll(50);
     app.scroll_half_page_up(10);
     let half_scroll = app.transcript_scroll_offset();
     assert!(
@@ -662,11 +663,15 @@ fn frame_clock_cursor_and_writer_pipeline() {
     assert_eq!(clock.phase().get(), 0);
 
     clock.tick();
-    assert_eq!(clock.mono_ms(), 100, "default tick is 100ms");
+    assert_eq!(
+        clock.mono_ms(),
+        33,
+        "default tick follows the 30 Hz cadence"
+    );
     assert_eq!(clock.phase().get(), 1);
 
     clock.tick_n(4);
-    assert_eq!(clock.mono_ms(), 500, "5 total ticks × 100ms = 500ms");
+    assert_eq!(clock.mono_ms(), 165, "5 total ticks × 33ms = 165ms");
     assert_eq!(clock.phase().get(), 5);
 
     // --- T10: CursorState ---

@@ -12,6 +12,18 @@ fn action_from_str_roundtrip() {
 }
 
 #[test]
+fn legacy_primary_mode_action_is_rejected() {
+    // Given: the retired primary-mode action and the supported model-variant action.
+    // When: both identifiers are parsed from keybinding configuration.
+    let legacy_mode = Action::from_str("cycle_mode");
+    let model_variant = Action::from_str("variant_cycle");
+
+    // Then: only the model control remains configurable.
+    assert!(legacy_mode.is_err());
+    assert_eq!(model_variant, Ok(Action::VariantCycle));
+}
+
+#[test]
 fn command_metadata_covers_palette_and_slash_commands() {
     // arrange
     let palette_commands = Action::palette_commands();
@@ -461,7 +473,7 @@ fn ws8_keyboard_surfaces_use_registry_actions_instead_of_hardcoded_keys() {
         source_between(
             key_interaction_source,
             "Action::DiffHunkNext =>",
-            "            Action::AgentCycle =>",
+            "            Action::VariantCycle =>",
         ),
     );
 
@@ -533,7 +545,7 @@ fn keymap_accepts_leader_sequence_overrides() {
 }
 
 #[test]
-fn keymap_binds_tab_to_focus_and_shift_tab_to_variant_cycle_by_default() {
+fn keymap_leaves_control_tab_unbound_while_preserving_focus_and_variant_actions() {
     // arrange
     // act
     // assert
@@ -549,16 +561,11 @@ fn keymap_binds_tab_to_focus_and_shift_tab_to_variant_cycle_by_default() {
     );
     assert_eq!(
         keymap.get_action(&KeyEvent::new(KeyCode::Tab, KeyModifiers::CONTROL)),
-        Some(Action::AgentCycle)
+        None
     );
     assert_eq!(
         keymap.get_action(&KeyEvent::new(KeyCode::BackTab, KeyModifiers::CONTROL)),
-        Some(Action::AgentCycleReverse)
-    );
-    assert_eq!(keymap.get_binding_str(Action::AgentCycle), "Ctrl+Tab");
-    assert_eq!(
-        keymap.get_binding_str(Action::AgentCycleReverse),
-        "Ctrl+Shift+Tab"
+        None
     );
 }
 

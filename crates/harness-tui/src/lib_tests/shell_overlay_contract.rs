@@ -103,10 +103,10 @@ pub(super) fn completed_sessions_show_inline_completion_state_instead_of_handoff
 
     assert!(app.completed_session_shell_active());
     assert!(!app.post_run_handoff_visible());
-    assert!(rendered.contains("Tab focus"));
+    assert!(rendered.contains("Shift+Tab:mode"));
     assert!(
-        rendered.contains("commands") && rendered.contains("quit"),
-        "completed shell uses focus/commands/quit disclosure, not live Shift+Tab:mode chrome\n{rendered}"
+        rendered.contains("Ctrl+x:shortcuts"),
+        "completed shell preserves the standard composer disclosure\n{rendered}"
     );
     assert!(!rendered.contains("Next action"));
     assert!(!rendered.contains("Continue this session"));
@@ -231,10 +231,13 @@ pub(super) fn slash_overlay_uses_input_width_aligned_rows_and_accent_selection()
     let rendered = render_live_lines(&app, 100, 24);
     let lines = rendered.lines().collect::<Vec<_>>();
     assert!(!rendered.contains("/events"));
-    let row = find_line_containing_all(&lines, &["/feedback", "Show shortcuts and TUI controls"])
-        .unwrap_or_else(|| panic!("slash /feedback row\n{rendered}"));
-    let feedback_description = lines[row]
-        .find("Show shortcuts and TUI controls")
+    let row = find_line_containing_all(
+        &lines,
+        &["/agents", "Browse available provider/model options"],
+    )
+    .unwrap_or_else(|| panic!("slash /agents row\n{rendered}"));
+    let agents_description = lines[row]
+        .find("Browse available provider/model options")
         .unwrap_or_abort();
     let exit_row = find_line_containing_all(&lines, &["/exit", "Quit the application"])
         .unwrap_or_else(|| panic!("slash /exit row\n{rendered}"));
@@ -242,7 +245,7 @@ pub(super) fn slash_overlay_uses_input_width_aligned_rows_and_accent_selection()
         .find("Quit the application")
         .unwrap_or_abort();
 
-    assert_eq!(feedback_description, exit_description);
+    assert_eq!(agents_description, exit_description);
     assert!(!lines[row].contains('┃'));
     assert!(
         !lines[row].contains('╭') && !lines[row].contains('╰'),
@@ -339,6 +342,9 @@ pub(super) fn overlays_share_elevated_card_language() {
         crossterm::event::KeyCode::Char('p'),
         crossterm::event::KeyModifiers::CONTROL,
     ));
+    for ch in "resume".chars() {
+        palette.handle_key(exact_test_key(crossterm::event::KeyCode::Char(ch)));
+    }
     let palette_render = render_live_lines(&palette, width, height);
     assert!(palette_render.contains("Commands"));
     let palette_buffer = render_live_cells(&palette, width, height);
@@ -347,19 +353,18 @@ pub(super) fn overlays_share_elevated_card_language() {
     let start_byte = row.find("Resume Session").unwrap_or_abort();
     let start = row[..start_byte].chars().count();
     let end = start + "Resume Session".chars().count();
+    let theme = Theme::default();
     assert!(
         bgs[start..end]
             .iter()
-            .all(|color| *color == ratatui::style::Color::Indexed(0)
-                || *color == ratatui::style::Color::Indexed(7)),
-        "selected palette row uses freeze Indexed(0) or Indexed(7) surface, not inverse card fill\n{row}"
+            .all(|color| *color == theme.text.accent),
+        "selected palette row uses semantic selection surface\n{row}"
     );
     assert!(
         fgs[start..end]
             .iter()
-            .all(|color| *color == ratatui::style::Color::Indexed(0)
-                || *color == ratatui::style::Color::Indexed(15)),
-        "selected palette row keeps primary text on Indexed(0) surface\n{row}"
+            .all(|color| *color == theme.text.inverse),
+        "selected palette row uses semantic inverse text\n{row}"
     );
 
     let mut sessions = app::AppState::new_startup(
@@ -393,23 +398,14 @@ pub(super) fn overlays_share_elevated_card_language() {
     assert!(
         sessions_bgs[sessions_start..sessions_end]
             .iter()
-            .all(|color| *color == ratatui::style::Color::Reset
-                || *color == ratatui::style::Color::Indexed(0)
-                || *color == ratatui::style::Color::Indexed(7)
-                || *color == ratatui::style::Color::Rgb(0xD9, 0x84, 0xD9)
-                || *color == ratatui::style::Color::Rgb(0x0B, 0x0E, 0x14)
-                || *color == ratatui::style::Color::Rgb(0x12, 0x16, 0x1E)),
-        "session history selected row uses freeze surface chrome\n{sessions_row}"
+            .all(|color| *color == theme.surface.card),
+        "session history selected row uses semantic card surface\n{sessions_row}"
     );
     assert!(
         sessions_fgs[sessions_start..sessions_end]
             .iter()
-            .all(|color| *color == ratatui::style::Color::Reset
-                || *color == ratatui::style::Color::Indexed(15)
-                || *color == ratatui::style::Color::Indexed(7)
-                || *color == ratatui::style::Color::Rgb(0xD7, 0xDA, 0xE0)
-                || *color == ratatui::style::Color::Rgb(0x0B, 0x0E, 0x14)),
-        "session history selected row keeps readable text chrome\n{sessions_row}"
+            .all(|color| *color == theme.reference_terminal.primary),
+        "session history selected row uses semantic primary text\n{sessions_row}"
     );
 }
 
@@ -430,17 +426,18 @@ pub(super) fn quiet_overlay_helper_rows_use_semantic_chrome_palette() {
         .chars()
         .count();
     let commands_end = commands_start + "Commands".chars().count();
+    let theme = Theme::default();
     assert!(
         commands_bgs[commands_start..commands_end]
             .iter()
-            .all(|color| *color == ratatui::style::Color::Indexed(7)),
-        "Commands title uses freeze Indexed(7) surface\n{commands_row}"
+            .all(|color| *color == theme.surface.canvas),
+        "Commands title uses semantic palette surface\n{commands_row}"
     );
     assert!(
         commands_fgs[commands_start..commands_end]
             .iter()
-            .all(|color| *color == ratatui::style::Color::Indexed(0)),
-        "Commands title uses Indexed(0) text on Indexed(7) surface\n{commands_row}"
+            .all(|color| *color == theme.text.primary),
+        "Commands title uses semantic palette title text\n{commands_row}"
     );
 
     let mut sessions = app::AppState::new_startup(
@@ -477,14 +474,14 @@ pub(super) fn quiet_overlay_helper_rows_use_semantic_chrome_palette() {
     assert!(
         title_bgs[title_start..title_end]
             .iter()
-            .all(|color| *color == ratatui::style::Color::Indexed(7)),
-        "session history title uses freeze Indexed(7) surface\n{title_row}"
+            .all(|color| *color == theme.surface.canvas),
+        "session history title uses semantic palette surface\n{title_row}"
     );
     assert!(
         title_fgs[title_start..title_end]
             .iter()
-            .all(|color| *color == ratatui::style::Color::Indexed(0)),
-        "session history title uses Indexed(0) text on Indexed(7) surface\n{title_row}"
+            .all(|color| *color == theme.text.primary),
+        "session history title uses semantic palette title text\n{title_row}"
     );
 }
 
@@ -525,11 +522,10 @@ pub(super) fn live_shell_redesign_preserves_replay_overlay_and_permission_parity
             });
     let user_row = find_line_containing(&replay_lines, "Explain the refactor")
         .unwrap_or_else(|| panic!("replay shell should preserve the user turn\n{replay_render}"));
-    let thinking_row =
-        find_line_containing_all_from(&replay_lines, user_row + 1, &["Working through the steps."])
-            .unwrap_or_else(|| {
-                panic!("replay shell should preserve visible thinking text\n{replay_render}")
-            });
+    let thinking_row = find_line_containing_all_from(&replay_lines, user_row + 1, &["Thought"])
+        .unwrap_or_else(|| {
+            panic!("replay shell should preserve collapsed thinking state\n{replay_render}")
+        });
 
     assert!(replay_header_row < replay_disabled_row && replay_disabled_row < replay_shortcuts_row);
     assert!(
@@ -541,15 +537,15 @@ pub(super) fn live_shell_redesign_preserves_replay_overlay_and_permission_parity
         100,
         replay_disabled_row,
         theme.status.disabled,
-        ratatui::style::Color::Reset,
+        theme.reference_terminal.canvas,
         "replay disabled composer",
     );
     assert_row_segment_palette(
         &replay_buffer,
         100,
-        "h shortcuts",
+        "shortcuts",
         theme.text.secondary,
-        ratatui::style::Color::Reset,
+        theme.reference_terminal.canvas,
     );
 
     let mut degraded = app::AppState::new_live(None, false, None);
@@ -621,18 +617,16 @@ pub(super) fn permission_modal_remains_visually_dominant_and_fail_closed() {
             || rendered.contains("esc:cancel")
     );
     assert!(!rendered.contains("Commands"));
-    // Waiting state: selected option is distinguished by the filled marker only, with the same
-    // card-surface background and primary text as unselected options.
     assert!(
         bgs[start..end]
             .iter()
-            .all(|color| *color == theme.surface.card),
-        "selected allow option should use the card surface background\n{row}"
+            .all(|color| *color == theme.question_prompt.selected),
+        "selected allow option should use the question selection background\n{row}"
     );
     assert!(
-        fgs[start..end]
-            .iter()
-            .all(|color| *color == theme.text.primary),
-        "selected allow option should use primary text color\n{row}"
+        fgs[start..end].iter().all(|color| {
+            *color == theme.question_prompt.primary || *color == theme.question_prompt.accent
+        }),
+        "selected allow option should use semantic question text colors\n{row}"
     );
 }

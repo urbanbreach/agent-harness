@@ -782,6 +782,7 @@ fn live_dock_rhythm(
 ) -> LiveDockRhythm {
     let disclosure_rows = control_dock_disclosure_rows(app, contract);
     let active_permission = app.active_permission_view();
+    let runtime_kind = app.runtime_state().kind;
     let status_rows = if let Some(permission) = active_permission.as_ref() {
         permission_prompt_block_height(
             app,
@@ -790,8 +791,13 @@ fn live_dock_rhythm(
             permission,
         )
     } else if matches!(
-        app.runtime_state().kind,
-        crate::app::RuntimeStateKind::Sending | crate::app::RuntimeStateKind::Streaming
+        runtime_kind,
+        crate::app::RuntimeStateKind::Sending
+            | crate::app::RuntimeStateKind::Streaming
+            | crate::app::RuntimeStateKind::Failure
+            | crate::app::RuntimeStateKind::Cancelled
+            | crate::app::RuntimeStateKind::Degraded
+            | crate::app::RuntimeStateKind::Disconnected
     ) {
         status_row_height
     } else {
@@ -803,7 +809,11 @@ fn live_dock_rhythm(
     } else {
         0
     };
-    let status_composer_spacer_rows = if status_rows > 0 {
+    let status_composer_spacer_rows = if active_permission.is_some()
+        || matches!(
+            runtime_kind,
+            crate::app::RuntimeStateKind::Sending | crate::app::RuntimeStateKind::Streaming
+        ) {
         LIVE_STATUS_COMPOSER_SPACER_ROWS
     } else {
         0

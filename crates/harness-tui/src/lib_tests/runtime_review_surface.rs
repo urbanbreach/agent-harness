@@ -295,5 +295,9 @@ pub(super) fn review_surfaces_restore_panel_chrome() {
         help_rendered.contains("Keyboard Shortcuts") || help_rendered.contains("Essentials"),
         "help surface restores freeze-aligned keyboard shortcuts chrome\n{help_rendered}"
     );
+    assert!(
+        help_rendered.contains("Enter open"),
+        "help footer must render its final action completely at 100 columns\n{help_rendered}"
+    );
     assert!(!help_rendered.contains("Allow Edit"));
 }

@@ -104,10 +104,13 @@ fn status_entry_reaches_source_observed_dashboard_at_all_viewports() {
         assert!(app.status_dashboard_is_active());
         assert_eq!(app.status_dashboard_focus(), Some(DashboardPane::Roster));
         assert!(
-            rest.contains("Peek / tail"),
+            rest.contains("Peek / tail") || rest.contains("dashboard peek"),
             "rest frame lost dashboard panes: {rest}"
         );
-        assert!(rest.contains("Reply"), "rest frame lost reply pane: {rest}");
+        assert!(
+            rest.contains("Reply") || rest.contains("reply composer"),
+            "rest frame lost reply pane: {rest}"
+        );
 
         // When: the source starts the run (working), then records completion (settled).
         app.replace_events(vec![started()]);

@@ -165,7 +165,7 @@ pub(super) fn resume_history_surface_uses_meaningful_session_title() {
             status: Some(harness_core::proj::RunStatus::Finished),
             last_updated_at: Some("2026-02-03T12:00:00Z".to_string()),
             workspace_root: Some("/tmp/workspace".to_string()),
-            profile_preset: Some("build".to_string()),
+            profile_preset: Some("default".to_string()),
             provider_model: Some("mock/model".to_string()),
             mode_source: harness_core::proj::SessionModeSource::InteractiveLive,
             is_resumable: true,
@@ -227,7 +227,7 @@ pub(super) fn live_session_picker_continue_quits_tui_and_emits_intent() {
             status: Some(harness_core::proj::RunStatus::Finished),
             last_updated_at: Some("2026-02-03T12:00:00Z".to_string()),
             workspace_root: Some("/tmp/workspace".to_string()),
-            profile_preset: Some("build".to_string()),
+            profile_preset: Some("default".to_string()),
             provider_model: Some("mock/model".to_string()),
             mode_source: harness_core::proj::SessionModeSource::InteractiveLive,
             is_resumable: true,
@@ -280,7 +280,7 @@ pub(super) fn live_session_picker_replay_quits_tui_and_emits_intent() {
             status: Some(harness_core::proj::RunStatus::Finished),
             last_updated_at: Some("2026-02-03T12:00:00Z".to_string()),
             workspace_root: Some("/tmp/workspace".to_string()),
-            profile_preset: Some("build".to_string()),
+            profile_preset: Some("default".to_string()),
             provider_model: Some("mock/model".to_string()),
             mode_source: harness_core::proj::SessionModeSource::InteractiveLive,
             is_resumable: true,
@@ -379,8 +379,11 @@ pub(super) fn slash_menu_supports_mouse_selection() {
 pub(super) fn slash_menu_exposes_model_switcher_when_models_are_configured() {
     let mut app = AppState::new_startup(Vec::new(), None);
     app.set_launch_metadata(
-        LaunchMetadata::from_model_ref("build", "default:gpt-5.4-mini").with_available_models(
-            vec![ModelOption::from_model_ref("build", "default:gpt-5.4-mini")],
+        LaunchMetadata::from_model_ref("default", "default:gpt-5.4-mini").with_available_models(
+            vec![ModelOption::from_model_ref(
+                "default",
+                "default:gpt-5.4-mini",
+            )],
         ),
     );
 

@@ -1,3 +1,5 @@
+// SIZE_OK: Permission-modal regressions share private AppState fixtures and exact transitions.
+use super::super::permission_prompt::PermissionPointerTarget;
 use super::*;
 use crate::UnwrapOrAbort;
 
@@ -695,5 +697,507 @@ pub(super) fn permission_modal_allow_session_requests_session_grant() {
             reason: None,
             grant_scope: Some(harness_core::perm::PermissionGrantScope::Session),
         }]
+    );
+}
+
+fn mouse_event(kind: MouseEventKind, area: Rect) -> MouseEvent {
+    MouseEvent {
+        kind,
+        column: area.x,
+        row: area.y,
+        modifiers: KeyModifiers::NONE,
+    }
+}
+
+fn three_choice_question_event(permission_id: &str) -> EventEnvelopeV1 {
+    envelope(
+        1,
+        permission_id,
+        EventV1::PermissionRequested(PermissionRequestedEvent {
+            permission_id: permission_id.to_string(),
+            kind: "question".to_string(),
+            tool_call_id: Some("tool_call_question_mouse".into()),
+            summary: serde_json::json!({
+                "questions": [{
+                    "question": "Which color?",
+                    "header": "Color",
+                    "options": [
+                        {"label": "A", "description": "Option A"},
+                        {"label": "B", "description": "Option B"},
+                        {"label": "C", "description": "Option C"}
+                    ],
+                    "multiple": false,
+                    "custom": false
+                }]
+            })
+            .to_string(),
+            request_digest: format!("digest-{permission_id}"),
+            timeout_ms: 30_000,
+            default_decision: harness_core::event::PermissionDecision::Deny,
+        }),
+    )
+}
+
+fn edit_permission_event(seq: u64, permission_id: &str, tool_call_id: &str) -> EventEnvelopeV1 {
+    envelope(
+        seq,
+        permission_id,
+        EventV1::PermissionRequested(PermissionRequestedEvent {
+            permission_id: permission_id.to_string(),
+            kind: "edit_fs".to_string(),
+            tool_call_id: Some(tool_call_id.into()),
+            summary: "Apply hashline edit to demo.txt".to_string(),
+            request_digest: format!("digest-{permission_id}"),
+            timeout_ms: 30_000,
+            default_decision: harness_core::event::PermissionDecision::Deny,
+        }),
+    )
+}
+
+#[test]
+fn permission_mouse_hit_regions_match_the_rendered_option_rows() {
+    // Given: the four-choice permission dock at the primary parity viewport.
+    let frame_area = Rect::new(0, 0, 120, 40);
+    let mut app = AppState::new_live(None, false, None);
+    app.ingest_event(edit_permission_event(
+        1,
+        "perm_mouse_regions",
+        "tool_call_mouse_regions",
+    ));
+
+    // When: the pointer map is derived from the active frame plan.
+    let regions = app.permission_prompt_hit_regions_for_test(frame_area);
+
+    // Then: only the four painted option rows are interactive.
+    assert_eq!(
+        regions,
+        vec![
+            (
+                PermissionPointerTarget::Decision(PermissionModalSelection::AllowAlways),
+                Rect::new(5, 25, 112, 1),
+            ),
+            (
+                PermissionPointerTarget::Decision(PermissionModalSelection::AllowSession),
+                Rect::new(5, 26, 112, 1),
+            ),
+            (
+                PermissionPointerTarget::Decision(PermissionModalSelection::AllowOnce),
+                Rect::new(5, 27, 112, 1),
+            ),
+            (
+                PermissionPointerTarget::Decision(PermissionModalSelection::Reject),
+                Rect::new(5, 28, 112, 1),
+            ),
+        ]
+    );
+
+    app.handle_key(key(KeyCode::Enter));
+    assert_eq!(
+        app.permission_prompt_hit_regions_for_test(frame_area),
+        vec![
+            (
+                PermissionPointerTarget::Confirm(PermissionConfirmSelection::Confirm),
+                Rect::new(5, 25, 11, 1),
+            ),
+            (
+                PermissionPointerTarget::Confirm(PermissionConfirmSelection::Cancel),
+                Rect::new(17, 25, 10, 1),
+            ),
+        ]
+    );
+}
+
+#[test]
+fn question_mouse_hit_regions_match_the_rendered_option_rows() {
+    // Given: a three-choice question dock at the primary parity viewport.
+    let frame_area = Rect::new(0, 0, 120, 40);
+    let mut app = AppState::new_live(None, false, None);
+    app.ingest_event(three_choice_question_event("question_mouse_regions"));
+
+    // When: the pointer map is derived from question content packing.
+    let regions = app.permission_prompt_hit_regions_for_test(frame_area);
+
+    // Then: each painted question row has one full-width deterministic target.
+    assert_eq!(
+        regions,
+        vec![
+            (
+                PermissionPointerTarget::QuestionChoice(0),
+                Rect::new(5, 23, 111, 1),
+            ),
+            (
+                PermissionPointerTarget::QuestionChoice(1),
+                Rect::new(5, 24, 111, 1),
+            ),
+            (
+                PermissionPointerTarget::QuestionChoice(2),
+                Rect::new(5, 25, 111, 1),
+            ),
+        ]
+    );
+}
+
+#[test]
+fn permission_mouse_click_selects_before_emitting_only_a_resolution_intent() {
+    // Given: a permission dock backed by an intent sink.
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink_intents = Arc::clone(&intents);
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> =
+        Arc::new(move |intent| sink_intents.lock().unwrap_or_abort().push(intent));
+    let frame_area = Rect::new(0, 0, 120, 40);
+    let mut app = AppState::new_live(None, false, Some(sink));
+    app.ingest_event(edit_permission_event(
+        1,
+        "perm_mouse_select",
+        "tool_call_mouse_select",
+    ));
+    let option_area = app
+        .permission_prompt_hit_regions_for_test(frame_area)
+        .into_iter()
+        .find_map(|(target, area)| {
+            (target == PermissionPointerTarget::Decision(PermissionModalSelection::AllowOnce))
+                .then_some(area)
+        })
+        .unwrap_or_abort();
+
+    // When: pointer-down selects the row and pointer-up activates that same row.
+    let pressed = app.handle_mouse(
+        mouse_event(MouseEventKind::Down(MouseButton::Left), option_area),
+        frame_area,
+        None,
+        None,
+        None,
+    );
+
+    // Then: press feedback is local UI state and cannot resolve or execute anything.
+    assert!(pressed);
+    assert_eq!(
+        app.permission_modal_selection("perm_mouse_select"),
+        PermissionModalSelection::AllowOnce
+    );
+    assert!(intents.lock().unwrap_or_abort().is_empty());
+
+    let released = app.handle_mouse(
+        mouse_event(MouseEventKind::Up(MouseButton::Left), option_area),
+        frame_area,
+        None,
+        None,
+        None,
+    );
+    assert!(released);
+    assert_eq!(
+        intents.lock().unwrap_or_abort().as_slice(),
+        &[UiIntent::ResolvePermission {
+            permission_id: "perm_mouse_select".to_string(),
+            decision: PermissionDecision::Allow,
+            reason: None,
+            grant_scope: None,
+        }]
+    );
+    assert!(app.active_permission().is_some());
+    assert!(app.permission_submission_pending("perm_mouse_select"));
+}
+
+#[test]
+fn permission_always_mouse_requires_confirmation_before_emitting_intent() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink_intents = Arc::clone(&intents);
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> =
+        Arc::new(move |intent| sink_intents.lock().unwrap_or_abort().push(intent));
+    let frame_area = Rect::new(0, 0, 120, 40);
+    let mut app = AppState::new_live(None, false, Some(sink));
+    app.ingest_event(edit_permission_event(
+        1,
+        "permission_mouse_always",
+        "tool_call_mouse_always",
+    ));
+    let always_area = app
+        .permission_prompt_hit_regions_for_test(frame_area)
+        .into_iter()
+        .find_map(|(target, area)| {
+            (target == PermissionPointerTarget::Decision(PermissionModalSelection::AllowAlways))
+                .then_some(area)
+        })
+        .unwrap_or_abort();
+
+    app.handle_mouse(
+        mouse_event(MouseEventKind::Down(MouseButton::Left), always_area),
+        frame_area,
+        None,
+        None,
+        None,
+    );
+    app.handle_mouse(
+        mouse_event(MouseEventKind::Up(MouseButton::Left), always_area),
+        frame_area,
+        None,
+        None,
+        None,
+    );
+
+    assert_eq!(
+        app.permission_modal_stage("permission_mouse_always"),
+        PermissionModalStage::AlwaysConfirm
+    );
+    assert!(intents.lock().unwrap_or_abort().is_empty());
+    let confirm_area = app
+        .permission_prompt_hit_regions_for_test(frame_area)
+        .into_iter()
+        .find_map(|(target, area)| {
+            (target == PermissionPointerTarget::Confirm(PermissionConfirmSelection::Confirm))
+                .then_some(area)
+        })
+        .unwrap_or_abort();
+
+    app.handle_mouse(
+        mouse_event(MouseEventKind::Down(MouseButton::Left), confirm_area),
+        frame_area,
+        None,
+        None,
+        None,
+    );
+    assert!(intents.lock().unwrap_or_abort().is_empty());
+    app.handle_mouse(
+        mouse_event(MouseEventKind::Up(MouseButton::Left), confirm_area),
+        frame_area,
+        None,
+        None,
+        None,
+    );
+
+    assert!(app.always_approve_mode());
+    assert_eq!(
+        intents.lock().unwrap_or_abort().as_slice(),
+        &[UiIntent::ResolvePermission {
+            permission_id: "permission_mouse_always".to_string(),
+            decision: PermissionDecision::Allow,
+            reason: None,
+            grant_scope: Some(harness_core::perm::PermissionGrantScope::Run),
+        }]
+    );
+}
+
+#[test]
+fn question_mouse_click_preserves_shell_state_and_emits_only_answer_intent() {
+    // Given: a detached transcript, parked list focus, and preserved composer draft.
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink_intents = Arc::clone(&intents);
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> =
+        Arc::new(move |intent| sink_intents.lock().unwrap_or_abort().push(intent));
+    let frame_area = Rect::new(0, 0, 120, 40);
+    let mut app = AppState::new_live(None, false, Some(sink));
+    app.focus = Focus::List;
+    app.composer.prompt_buffer = "preserved question draft".to_string();
+    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
+    app.transcript_view.transcript_scroll = 4;
+    app.transcript_view.follow_mode = false;
+    let composer_before = FrameLayoutPlan::for_app(&app, frame_area).composer;
+    app.ingest_event(three_choice_question_event("question_mouse_select"));
+    let option_area = app
+        .permission_prompt_hit_regions_for_test(frame_area)
+        .into_iter()
+        .find_map(|(target, area)| {
+            (target == PermissionPointerTarget::QuestionChoice(1)).then_some(area)
+        })
+        .unwrap_or_abort();
+
+    // When: the B row is pressed and released in place.
+    app.handle_mouse(
+        mouse_event(MouseEventKind::Down(MouseButton::Left), option_area),
+        frame_area,
+        None,
+        None,
+        None,
+    );
+
+    // Then: pointer-down changes selection but emits no permission decision.
+    assert_eq!(app.question_prompt_selection("question_mouse_select"), 1);
+    assert!(intents.lock().unwrap_or_abort().is_empty());
+
+    app.handle_mouse(
+        mouse_event(MouseEventKind::Up(MouseButton::Left), option_area),
+        frame_area,
+        None,
+        None,
+        None,
+    );
+    assert_eq!(
+        intents.lock().unwrap_or_abort().as_slice(),
+        &[UiIntent::ResolvePermission {
+            permission_id: "question_mouse_select".to_string(),
+            decision: PermissionDecision::Allow,
+            reason: Some("[[\"B\"]]".to_string()),
+            grant_scope: None,
+        }]
+    );
+    assert_eq!(app.focus, Focus::List);
+    assert_eq!(app.composer.prompt_buffer, "preserved question draft");
+    assert_eq!(app.transcript_view.transcript_scroll, 4);
+    assert!(!app.transcript_view.follow_mode);
+    assert_eq!(
+        FrameLayoutPlan::for_app(&app, frame_area).composer,
+        composer_before
+    );
+}
+
+pub(super) fn permission_modal_restores_focus_after_authoritative_resolution() {
+    // Given: a permission modal that preempts list focus.
+    let mut app = AppState::new_live(None, false, None);
+    app.focus = Focus::List;
+    app.ingest_event(envelope(
+        1,
+        "req_permission_focus_restore",
+        EventV1::PermissionRequested(PermissionRequestedEvent {
+            permission_id: "perm_focus_restore".to_string(),
+            kind: "edit_fs".to_string(),
+            tool_call_id: Some("tool_focus_restore".into()),
+            summary: "edit requires permission".to_string(),
+            request_digest: "digest-focus-restore".to_string(),
+            timeout_ms: 30_000,
+            default_decision: harness_core::event::PermissionDecision::Deny,
+        }),
+    ));
+    assert_eq!(
+        app.overlay_stack().top(),
+        Some(OverlayKind::PermissionModal)
+    );
+
+    // When: an unrelated local transition changes focus before coordinator resolution.
+    app.focus = Focus::Prompt;
+    app.ingest_event(envelope(
+        2,
+        "req_permission_focus_restore",
+        EventV1::PermissionResolved(PermissionResolvedEvent {
+            permission_id: "perm_focus_restore".to_string(),
+            decision: harness_core::event::PermissionDecision::Deny,
+            reason: Some("operator denied".to_string()),
+        }),
+    ));
+
+    // Then: closing the modal restores the owner that was focused before preemption.
+    assert_eq!(app.overlay_stack().top(), None);
+    assert_eq!(app.focus, Focus::List);
+}
+
+#[test]
+fn permission_decision_waits_for_resolution_then_resumes_and_settles_tool() {
+    // Given: a running request paused at a permission gate with parked shell state.
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink_intents = Arc::clone(&intents);
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> =
+        Arc::new(move |intent| sink_intents.lock().unwrap_or_abort().push(intent));
+    let frame_area = Rect::new(0, 0, 120, 40);
+    let mut app = AppState::new_live(None, false, Some(sink));
+    app.focus = Focus::List;
+    app.composer.prompt_buffer = "stable permission draft".to_string();
+    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
+    app.transcript_view.transcript_scroll = 3;
+    app.transcript_view.follow_mode = false;
+    let composer_before = FrameLayoutPlan::for_app(&app, frame_area).composer;
+    app.ingest_event(envelope(
+        1,
+        "req_permission_lifecycle",
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "req_permission_lifecycle".into(),
+            provider_id: "mock".to_string(),
+            model_id: "model-1".to_string(),
+            prompt_summary: "permission lifecycle".to_string(),
+            request_digest: "digest-permission-lifecycle".to_string(),
+            metadata: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        2,
+        "req_permission_lifecycle",
+        EventV1::ToolCallRequested(ToolCallRequestedEvent {
+            tool_call_id: "tool_call_permission_lifecycle".into(),
+            tool_id: "edit".to_string(),
+            args_summary: "edit demo.txt".to_string(),
+            args_digest: "digest-permission-lifecycle-args".to_string(),
+            metadata: None,
+        }),
+    ));
+    app.ingest_event(edit_permission_event(
+        3,
+        "perm_mouse_lifecycle",
+        "tool_call_permission_lifecycle",
+    ));
+    let option_area = app
+        .permission_prompt_hit_regions_for_test(frame_area)
+        .into_iter()
+        .find_map(|(target, area)| {
+            (target == PermissionPointerTarget::Decision(PermissionModalSelection::AllowOnce))
+                .then_some(area)
+        })
+        .unwrap_or_abort();
+
+    // When: the user clicks allow-once, only the intent is emitted initially.
+    app.handle_mouse(
+        mouse_event(MouseEventKind::Down(MouseButton::Left), option_area),
+        frame_area,
+        None,
+        None,
+        None,
+    );
+    app.handle_mouse(
+        mouse_event(MouseEventKind::Up(MouseButton::Left), option_area),
+        frame_area,
+        None,
+        None,
+        None,
+    );
+
+    // Then: the tool remains paused until coordinator-owned events advance it.
+    assert_eq!(
+        app.activities[0].tool_calls[0].status,
+        ToolCallDisplayStatus::PendingPermission
+    );
+    app.ingest_event(envelope(
+        4,
+        "req_permission_lifecycle",
+        EventV1::PermissionResolved(PermissionResolvedEvent {
+            permission_id: "perm_mouse_lifecycle".to_string(),
+            decision: harness_core::event::PermissionDecision::Allow,
+            reason: None,
+        }),
+    ));
+    assert_eq!(
+        app.activities[0].tool_calls[0].status,
+        ToolCallDisplayStatus::Queued
+    );
+    app.ingest_event(envelope(
+        5,
+        "req_permission_lifecycle",
+        EventV1::ToolCallStarted(ToolCallStartedEvent {
+            tool_call_id: "tool_call_permission_lifecycle".into(),
+        }),
+    ));
+    assert_eq!(
+        app.activities[0].tool_calls[0].status,
+        ToolCallDisplayStatus::Running
+    );
+    app.ingest_event(envelope(
+        6,
+        "req_permission_lifecycle",
+        EventV1::ToolCallFinished(ToolCallFinishedEvent {
+            tool_call_id: "tool_call_permission_lifecycle".into(),
+            status: ToolCallStatus::Succeeded,
+            output_summary: Some("edit complete".to_string()),
+            output_digest: Some("digest-permission-lifecycle-output".to_string()),
+            output_json: None,
+            metadata: None,
+        }),
+    ));
+    assert_eq!(
+        app.activities[0].tool_calls[0].status,
+        ToolCallDisplayStatus::Succeeded
+    );
+    assert_eq!(app.focus, Focus::List);
+    assert_eq!(app.composer.prompt_buffer, "stable permission draft");
+    assert_eq!(app.transcript_view.transcript_scroll, 3);
+    assert!(!app.transcript_view.follow_mode);
+    assert_eq!(
+        FrameLayoutPlan::for_app(&app, frame_area).composer,
+        composer_before
     );
 }

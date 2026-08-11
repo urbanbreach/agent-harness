@@ -76,6 +76,23 @@ pub struct ActivePermissionView {
 }
 
 impl AppState {
+    pub(super) fn reconcile_permission_focus(&mut self, was_pending: bool) {
+        let is_pending = self.active_permission().is_some();
+        match (was_pending, is_pending) {
+            (false, true) => {
+                self.permission_prompt
+                    .focus_return
+                    .get_or_insert(self.focus);
+            }
+            (true, false) => {
+                if let Some(focus) = self.permission_prompt.focus_return.take() {
+                    self.focus = focus;
+                }
+            }
+            (false, false) | (true, true) => {}
+        }
+    }
+
     fn permission_modal_is_active(&self, permission_id: &str) -> bool {
         self.permission_prompt.permission_id.as_deref() == Some(permission_id)
     }

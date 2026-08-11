@@ -31,6 +31,18 @@ mod event_ingest;
 use self::background_notification::{
     activity_is_background_notification_reminder, background_task_notification_text,
 };
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) enum ProjectionDelta {
+    #[default]
+    None,
+    Activity {
+        index: usize,
+    },
+    FullRebuild,
+    ReplayPending,
+}
+
 #[derive(Default)]
 pub struct SessionProjection {
     pub(crate) events: Vec<EventEnvelopeV1>,
@@ -50,6 +62,7 @@ pub struct SessionProjection {
     pub(crate) pending_permissions: BTreeMap<String, PendingPermission>,
     pub(crate) run_terminal_seen: bool,
     pub(crate) pending_status_notice: Option<String>,
+    transcript_delta: ProjectionDelta,
 }
 
 impl SessionProjection {
@@ -69,6 +82,7 @@ impl SessionProjection {
         self.events_trimmed_count = 0;
         self.transcript_trimmed_count = 0;
         self.pending_status_notice = None;
+        self.transcript_delta = ProjectionDelta::FullRebuild;
     }
 
     pub(crate) fn set_fallback_profile_label(&mut self, profile: impl Into<String>) {
@@ -128,10 +142,132 @@ impl SessionProjection {
     }
 
     pub(crate) fn ingest_event(&mut self, event: EventEnvelopeV1, historical: bool) -> usize {
+        let previous_activity_count = self.activities.len();
+        let previous_trimmed_count = self.transcript_trimmed_count;
         self.seen_seqs.insert(event.seq);
         self.update_derived_state_for_event(&event, historical);
+        self.transcript_delta = if historical {
+            ProjectionDelta::ReplayPending
+        } else {
+            self.transcript_delta_for_event(&event, previous_activity_count, previous_trimmed_count)
+        };
         self.events.push(event);
         self.enforce_event_memory_cap()
+    }
+
+    pub(crate) fn take_transcript_delta(&mut self) -> ProjectionDelta {
+        std::mem::take(&mut self.transcript_delta)
+    }
+
+    #[expect(
+        deprecated,
+        reason = "legacy compaction events still require replay-safe transcript fallback"
+    )]
+    fn transcript_delta_for_event(
+        &self,
+        event: &EventEnvelopeV1,
+        previous_activity_count: usize,
+        previous_trimmed_count: usize,
+    ) -> ProjectionDelta {
+        if self.transcript_trimmed_count != previous_trimmed_count {
+            return ProjectionDelta::FullRebuild;
+        }
+        if self.activities.len() != previous_activity_count {
+            return if self.activities.len() == previous_activity_count.saturating_add(1) {
+                ProjectionDelta::Activity {
+                    index: self.activities.len().saturating_sub(1),
+                }
+            } else {
+                ProjectionDelta::FullRebuild
+            };
+        }
+        if matches!(
+            event.payload,
+            EventV1::CompactionApplied(_)
+                | EventV1::CompactionWritten(_)
+                | EventV1::SessionCompaction(_)
+        ) {
+            return ProjectionDelta::FullRebuild;
+        }
+        self.transcript_activity_index_for_event(event)
+            .map_or(ProjectionDelta::None, |index| ProjectionDelta::Activity {
+                index,
+            })
+    }
+
+    fn transcript_activity_index_for_event(&self, event: &EventEnvelopeV1) -> Option<usize> {
+        let request_index = |request_id: &str| {
+            self.activities
+                .iter()
+                .position(|activity| activity.request_id == request_id)
+        };
+        let tool_index = |tool_call_id: &str| {
+            self.activities.iter().position(|activity| {
+                activity
+                    .tool_calls
+                    .iter()
+                    .any(|tool| tool.tool_call_id == tool_call_id)
+            })
+        };
+        let correlated_request = || event.correlation_id.as_deref().and_then(request_index);
+        match &event.payload {
+            EventV1::UserMessageSubmitted(data) => request_index(data.request_id.as_str()),
+            EventV1::ProviderRequestStarted(data) => event
+                .correlation_id
+                .as_deref()
+                .and_then(request_index)
+                .or_else(|| request_index(data.request_id.as_str())),
+            EventV1::ProviderRequestFinished(data) => event
+                .correlation_id
+                .as_deref()
+                .and_then(request_index)
+                .or_else(|| request_index(data.request_id.as_str())),
+            EventV1::ProviderStreamDelta(data) => event
+                .correlation_id
+                .as_deref()
+                .and_then(request_index)
+                .or_else(|| request_index(data.request_id.as_str())),
+            EventV1::ProviderReasoningDelta(data) => event
+                .correlation_id
+                .as_deref()
+                .and_then(request_index)
+                .or_else(|| request_index(data.request_id.as_str())),
+            EventV1::ToolCallRequested(data) => correlated_request()
+                .or_else(|| tool_index(data.tool_call_id.as_str()))
+                .or_else(|| self.activities.len().checked_sub(1)),
+            EventV1::ToolCallStarted(data) => tool_index(data.tool_call_id.as_str()),
+            EventV1::ToolCallFinished(data) => tool_index(data.tool_call_id.as_str()),
+            EventV1::PermissionRequested(data) => data
+                .tool_call_id
+                .as_ref()
+                .and_then(|id| tool_index(id.as_str()))
+                .or_else(correlated_request),
+            EventV1::PermissionResolved(data) => self.activities.iter().position(|activity| {
+                activity
+                    .permissions
+                    .iter()
+                    .chain(
+                        activity
+                            .tool_calls
+                            .iter()
+                            .flat_map(|tool| tool.permissions.iter()),
+                    )
+                    .any(|permission| permission.permission_id == data.permission_id)
+            }),
+            EventV1::TaskCompleted(_) | EventV1::TaskScheduled(_) | EventV1::TaskCancelled(_) => {
+                correlated_request()
+            }
+            EventV1::BackgroundTaskNotification(data) => data
+                .delivered_turn_request_id
+                .as_deref()
+                .and_then(request_index)
+                .or_else(|| request_index(data.child_request_id.as_str())),
+            EventV1::EditProposed(_) | EventV1::EditApplied(_) | EventV1::EditRejected(_) => {
+                event.correlation_id.as_deref().and_then(tool_index)
+            }
+            EventV1::RunFailed(_) => self.activities.len().checked_sub(1),
+            _ => None,
+        }
     }
 
     fn find_tool_call_mut(&mut self, tool_call_id: &str) -> Option<&mut ToolCallEntry> {

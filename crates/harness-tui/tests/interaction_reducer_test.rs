@@ -147,7 +147,7 @@ fn parity_shell_call_chain_reaches_the_installed_render_owner() {
     assert!(buffer
         .content
         .iter()
-        .any(|cell| cell.bg == Color::Rgb(11, 14, 20)));
+        .any(|cell| cell.bg == app.theme().surface.canvas));
 }
 
 #[test]

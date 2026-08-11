@@ -159,12 +159,12 @@ pub struct FocusStyles {
 #[serde(rename_all = "snake_case")]
 #[rustfmt::skip]
 pub enum MotionKind {
-    ActiveTick, StreamingSpinner, ToolPulse, StartupShimmer, ToastLifetime,
+    ActiveTick, StreamingSpinner, ToolPulse, ToolFinishFlash, StartupShimmer, ToastLifetime,
 }
 
 #[rustfmt::skip]
 impl MotionKind {
-    pub const ALL: [Self; 5] = [Self::ActiveTick, Self::StreamingSpinner, Self::ToolPulse, Self::StartupShimmer, Self::ToastLifetime];
+    pub const ALL: [Self; 6] = [Self::ActiveTick, Self::StreamingSpinner, Self::ToolPulse, Self::ToolFinishFlash, Self::StartupShimmer, Self::ToastLifetime];
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -176,7 +176,7 @@ pub struct MotionToken {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MotionTokens {
-    pub all: [MotionToken; 5],
+    pub all: [MotionToken; 6],
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

@@ -1,5 +1,355 @@
 // allow: SIZE_OK — TUI app state (session projection + interaction)
+use super::permission_prompt::{PermissionPointerDown, PermissionPointerTarget};
 use super::*;
+use ratatui::text::Line;
+
+const PERMISSION_SHELL_CONTENT_ROWS: u16 = 3;
+const QUESTION_OUTER_FOOTER_ROWS: u16 = 3;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PermissionPromptHitRegion {
+    target: PermissionPointerTarget,
+    area: Rect,
+}
+
+fn permission_prompt_hit_regions(
+    app: &AppState,
+    frame_area: Rect,
+) -> Vec<PermissionPromptHitRegion> {
+    let Some(permission) = app.active_permission_view() else {
+        return Vec::new();
+    };
+    let Some(status_area) = crate::layout::FrameLayoutPlan::for_app(app, frame_area).status else {
+        return Vec::new();
+    };
+
+    if permission.question_prompts.is_some() {
+        question_prompt_hit_regions(app, status_area, &permission)
+    } else {
+        permission_choice_hit_regions(
+            status_area,
+            app.permission_modal_stage(&permission.permission_id),
+        )
+    }
+}
+
+fn permission_choice_hit_regions(
+    status_area: Rect,
+    stage: PermissionModalStage,
+) -> Vec<PermissionPromptHitRegion> {
+    let Some(tray) = permission_tray_inner(status_area) else {
+        return Vec::new();
+    };
+
+    match stage {
+        PermissionModalStage::Decision => [
+            PermissionModalSelection::AllowAlways,
+            PermissionModalSelection::AllowSession,
+            PermissionModalSelection::AllowOnce,
+            PermissionModalSelection::Reject,
+        ]
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, selection)| {
+            let y = tray
+                .y
+                .saturating_add(u16::try_from(index).unwrap_or(u16::MAX));
+            (y < tray.bottom()).then_some(PermissionPromptHitRegion {
+                target: PermissionPointerTarget::Decision(selection),
+                area: Rect::new(tray.x, y, tray.width, 1),
+            })
+        })
+        .collect(),
+        PermissionModalStage::AlwaysConfirm => {
+            let mut x = tray.x;
+            [
+                (PermissionConfirmSelection::Confirm, "Confirm"),
+                (PermissionConfirmSelection::Cancel, "Cancel"),
+            ]
+            .into_iter()
+            .filter_map(|(selection, label)| {
+                let width = u16::try_from(Line::from(format!(" ● {label} ")).width())
+                    .unwrap_or(u16::MAX)
+                    .min(tray.right().saturating_sub(x));
+                let region = (width > 0).then_some(PermissionPromptHitRegion {
+                    target: PermissionPointerTarget::Confirm(selection),
+                    area: Rect::new(x, tray.y, width, 1),
+                });
+                x = x.saturating_add(width).saturating_add(1);
+                region
+            })
+            .collect()
+        }
+    }
+}
+
+fn permission_tray_inner(status_area: Rect) -> Option<Rect> {
+    let dock_layout = crate::layout::permission_dock_layout(status_area, false);
+    if status_area.width <= dock_layout.rail_width || status_area.height <= dock_layout.tray_height
+    {
+        return None;
+    }
+    let shell_height = PERMISSION_SHELL_CONTENT_ROWS.min(
+        status_area
+            .height
+            .saturating_sub(dock_layout.tray_height)
+            .max(1),
+    );
+    let used_height = shell_height
+        .saturating_add(dock_layout.tray_height)
+        .min(status_area.height);
+    let dock_y = status_area
+        .y
+        .saturating_add(status_area.height.saturating_sub(used_height));
+    let body = Rect::new(
+        status_area.x.saturating_add(dock_layout.rail_width),
+        dock_y,
+        status_area.width.saturating_sub(dock_layout.rail_width),
+        used_height,
+    );
+    let tray = Rect::new(
+        body.x,
+        body.y.saturating_add(shell_height),
+        body.width,
+        body.height.saturating_sub(shell_height),
+    );
+    let inner = crate::layout::pad_rect(tray, dock_layout.tray_padding);
+    (inner.width > 0 && inner.height > 0).then_some(inner)
+}
+
+fn question_prompt_hit_regions(
+    app: &AppState,
+    status_area: Rect,
+    permission: &ActivePermissionView,
+) -> Vec<PermissionPromptHitRegion> {
+    let Some(prompts) = permission.question_prompts.as_deref() else {
+        return Vec::new();
+    };
+    if prompts.is_empty() || app.question_prompt_editing(&permission.permission_id) {
+        return Vec::new();
+    }
+
+    let single = prompts.len() == 1 && !prompts[0].multiple;
+    let tab = app
+        .question_prompt_tab(&permission.permission_id)
+        .min(prompts.len());
+    if !single && tab >= prompts.len() {
+        return Vec::new();
+    }
+    let Some(prompt) = prompts.get(tab.min(prompts.len().saturating_sub(1))) else {
+        return Vec::new();
+    };
+    let Some(inner) = question_prompt_inner(status_area) else {
+        return Vec::new();
+    };
+
+    let question = if prompt.multiple {
+        format!("{} (select all that apply)", prompt.question)
+    } else {
+        prompt.question.clone()
+    };
+    let mut row = u16::from(!single).saturating_mul(2);
+    row = row
+        .saturating_add(question_wrapped_row_count(&question, inner.width))
+        .saturating_add(1);
+
+    let selected = app.question_prompt_selection(&permission.permission_id);
+    let answers = app.question_prompt_answers(&permission.permission_id);
+    let current_answers = answers.get(tab).cloned().unwrap_or_default();
+    let label_width = prompt
+        .options
+        .iter()
+        .map(|option| Line::from(option.label.clone()).width())
+        .max()
+        .unwrap_or(0);
+    let mut ranges = Vec::with_capacity(prompt.options.len());
+    for (index, option) in prompt.options.iter().enumerate() {
+        let picked = current_answers.iter().any(|value| value == &option.label);
+        let marker = if prompt.multiple {
+            if picked {
+                "[✓]"
+            } else {
+                "[ ]"
+            }
+        } else if picked {
+            "●"
+        } else {
+            "○"
+        };
+        let visual = if option.description.is_empty() {
+            format!("{} ({marker}) {}", index + 1, option.label)
+        } else {
+            let padding = label_width.saturating_sub(Line::from(option.label.clone()).width());
+            format!(
+                "{} ({marker}) {}{}  {}",
+                index + 1,
+                option.label,
+                " ".repeat(padding),
+                option.description
+            )
+        };
+        let height = if index == selected {
+            question_wrapped_row_count(&visual, inner.width)
+        } else {
+            1
+        };
+        ranges.push((index, row, row.saturating_add(height)));
+        row = row.saturating_add(height);
+    }
+
+    let sticky_height = u16::from(prompt.custom);
+    if prompt.custom {
+        row = row.saturating_add(1);
+        let custom = app
+            .question_prompt_custom(&permission.permission_id, tab)
+            .unwrap_or_default();
+        if !custom.is_empty() {
+            row = row.saturating_add(1);
+        }
+    }
+    if app
+        .question_answer_error(&permission.permission_id)
+        .is_some()
+    {
+        row = row.saturating_add(2);
+    }
+
+    let dock_layout = crate::layout::permission_dock_layout(status_area, true);
+    let total_lines = row.saturating_sub(sticky_height);
+    let body_capacity = inner
+        .height
+        .saturating_sub(sticky_height)
+        .saturating_sub(dock_layout.question_chrome_gap)
+        .saturating_sub(dock_layout.question_footer_height);
+    let body_lines = total_lines.min(body_capacity);
+    let used_height = body_lines
+        .saturating_add(sticky_height)
+        .saturating_add(dock_layout.question_chrome_gap)
+        .saturating_add(dock_layout.question_footer_height)
+        .min(inner.height);
+    let body_height = body_lines.min(
+        used_height
+            .saturating_sub(sticky_height)
+            .saturating_sub(dock_layout.question_chrome_gap)
+            .saturating_sub(dock_layout.question_footer_height),
+    );
+    let max_scroll = total_lines.saturating_sub(body_height);
+    let scroll_y = if prompt.custom && selected == prompt.options.len() {
+        max_scroll
+    } else {
+        ranges
+            .get(selected)
+            .map(|(_, _, bottom)| bottom.saturating_sub(body_height).min(max_scroll))
+            .unwrap_or(0)
+    };
+    let visible_bottom = scroll_y.saturating_add(body_height);
+    let mut regions = ranges
+        .into_iter()
+        .filter_map(|(index, start, end)| {
+            let visible_start = start.max(scroll_y);
+            let visible_end = end.min(visible_bottom);
+            (visible_start < visible_end).then_some(PermissionPromptHitRegion {
+                target: PermissionPointerTarget::QuestionChoice(index),
+                area: Rect::new(
+                    inner.x,
+                    inner
+                        .y
+                        .saturating_add(visible_start.saturating_sub(scroll_y)),
+                    inner.width,
+                    visible_end.saturating_sub(visible_start),
+                ),
+            })
+        })
+        .collect::<Vec<_>>();
+    if prompt.custom && sticky_height > 0 {
+        regions.push(PermissionPromptHitRegion {
+            target: PermissionPointerTarget::QuestionChoice(prompt.options.len()),
+            area: Rect::new(
+                inner.x,
+                inner.y.saturating_add(body_height),
+                inner.width,
+                sticky_height,
+            ),
+        });
+    }
+    regions
+}
+
+fn question_prompt_inner(status_area: Rect) -> Option<Rect> {
+    let dock_area = if status_area.height > QUESTION_OUTER_FOOTER_ROWS {
+        Rect::new(
+            status_area.x,
+            status_area.y,
+            status_area.width,
+            status_area
+                .height
+                .saturating_sub(QUESTION_OUTER_FOOTER_ROWS),
+        )
+    } else {
+        status_area
+    };
+    let dock_layout = crate::layout::permission_dock_layout(dock_area, true);
+    if dock_area.width <= dock_layout.rail_width {
+        return None;
+    }
+    let body = Rect::new(
+        dock_area.x.saturating_add(dock_layout.rail_width),
+        dock_area.y,
+        dock_area.width.saturating_sub(dock_layout.rail_width),
+        dock_area.height,
+    );
+    let inner = crate::layout::pad_rect(body, dock_layout.question_content_padding);
+    (inner.width > 0 && inner.height > 0).then_some(inner)
+}
+
+fn question_wrapped_row_count(text: &str, width: u16) -> u16 {
+    let width = usize::from(width.max(1));
+    let chars = text
+        .chars()
+        .map(|character| (character, Line::from(character.to_string()).width().max(1)))
+        .collect::<Vec<_>>();
+    if chars.is_empty() {
+        return 1;
+    }
+
+    let mut rows = 0usize;
+    let mut start = 0usize;
+    while start < chars.len() {
+        rows = rows.saturating_add(1);
+        let fit_end = question_fit_end(&chars, start, width);
+        if fit_end >= chars.len() {
+            break;
+        }
+        if let Some(break_at) = chars[start..fit_end]
+            .iter()
+            .rposition(|(character, _)| character.is_whitespace())
+            .map(|offset| start + offset)
+            .filter(|break_at| *break_at > start)
+        {
+            start = break_at + 1;
+        } else if chars[fit_end].0.is_whitespace() {
+            start = fit_end + 1;
+        } else {
+            start = chars[fit_end..]
+                .iter()
+                .position(|(character, _)| character.is_whitespace())
+                .map(|offset| fit_end + offset)
+                .unwrap_or(chars.len());
+        }
+    }
+    u16::try_from(rows.max(1)).unwrap_or(u16::MAX)
+}
+
+fn question_fit_end(chars: &[(char, usize)], start: usize, width: usize) -> usize {
+    let mut used = 0usize;
+    for (position, (_, character_width)) in chars.iter().enumerate().skip(start) {
+        if position > start && used.saturating_add(*character_width) > width {
+            return position;
+        }
+        used = used.saturating_add(*character_width);
+    }
+    chars.len()
+}
 
 impl AppState {
     pub(in crate::app) fn handle_connect_dialog_mouse(
@@ -80,44 +430,7 @@ impl AppState {
         if !actual_composer.is_some_and(|area| rect_contains(area, mouse.column, mouse.row)) {
             return false;
         }
-        let viewport = crate::design_contract::ViewportId::ALL
-            .into_iter()
-            .find(|viewport| viewport.dimensions() == (frame_area.width, frame_area.height))
-            .unwrap_or(crate::design_contract::ViewportId::Standard100x30);
-        let hit_map = self.composer_hit_map(viewport);
-        if !rect_contains(hit_map.composer_rect, mouse.column, mouse.row) {
-            return false;
-        }
-        let Some(target) = hit_map.hit_test(mouse.column, mouse.row) else {
-            return false;
-        };
-        if !matches!(
-            target,
-            crate::composer_integration::ComposerHitTarget::Shell(
-                crate::shell_geometry::HitTarget::Composer,
-            ) | crate::composer_integration::ComposerHitTarget::Completion(_)
-                | crate::composer_integration::ComposerHitTarget::Attachment(_)
-        ) {
-            return false;
-        }
-
-        if matches!(mouse.kind, MouseEventKind::Up(MouseButton::Left)) {
-            if let crate::composer_integration::ComposerHitTarget::Completion(index) = target {
-                let _ = self.composer_accept_completion_mouse(index);
-                return true;
-            }
-        }
-
-        if let Some(intent) = hit_map.intent_for(mouse) {
-            match intent {
-                crate::app::interaction_reducer::UiIntent::DispatchAction(action) => {
-                    self.execute_action(action);
-                }
-                intent => {
-                    let _ = self.composer.slice.apply_interaction(intent);
-                }
-            }
-        }
+        self.focus = Focus::Prompt;
         true
     }
 
@@ -154,7 +467,9 @@ impl AppState {
         let Some(selection) = self.transcript_view.transcript_selection else {
             return false;
         };
-        let Some(text) = ui::transcript_selection_text(self, frame_area, selection) else {
+        let Some(text) = ui::transcript_selection_patch_text(self, frame_area, selection)
+            .or_else(|| ui::transcript_selection_text(self, frame_area, selection))
+        else {
             return false;
         };
 
@@ -373,6 +688,163 @@ impl AppState {
         true
     }
 
+    fn clear_blocked_pointer_state(&mut self) -> bool {
+        let changed = self.transcript_view.transcript_scrollbar_drag.is_some()
+            || self.transcript_view.hovered_transcript_target.is_some()
+            || self.hovered_subagent_footer_target.is_some()
+            || self.hovered_live_turn_stop
+            || self.transcript_view.transcript_selection.is_some()
+            || self.secondary_surfaces.selection.is_some();
+        self.transcript_view.transcript_scrollbar_drag = None;
+        self.transcript_view.hovered_transcript_target = None;
+        self.hovered_subagent_footer_target = None;
+        self.hovered_live_turn_stop = false;
+        self.pending_subagent_footer_target = None;
+        self.clear_transcript_selection();
+        self.clear_operator_sidebar_selection();
+        changed
+    }
+
+    fn select_permission_pointer_target(
+        &mut self,
+        permission: &ActivePermissionView,
+        target: PermissionPointerTarget,
+    ) -> bool {
+        match target {
+            PermissionPointerTarget::Decision(selection)
+                if permission.question_prompts.is_none()
+                    && self.permission_modal_stage(&permission.permission_id)
+                        == PermissionModalStage::Decision =>
+            {
+                self.permission_prompt.permission_id = Some(permission.permission_id.clone());
+                self.permission_prompt.stage = PermissionModalStage::Decision;
+                self.permission_prompt.selection = selection;
+                true
+            }
+            PermissionPointerTarget::Confirm(selection)
+                if permission.question_prompts.is_none()
+                    && self.permission_modal_stage(&permission.permission_id)
+                        == PermissionModalStage::AlwaysConfirm =>
+            {
+                self.permission_prompt.permission_id = Some(permission.permission_id.clone());
+                self.permission_prompt.stage = PermissionModalStage::AlwaysConfirm;
+                self.permission_prompt.confirm_selection = selection;
+                true
+            }
+            PermissionPointerTarget::QuestionChoice(index) => {
+                let Some(prompts) = permission.question_prompts.as_deref() else {
+                    return false;
+                };
+                let tab = self
+                    .question_prompt_tab(&permission.permission_id)
+                    .min(prompts.len());
+                let Some(prompt) = prompts.get(tab.min(prompts.len().saturating_sub(1))) else {
+                    return false;
+                };
+                let choice_count = prompt
+                    .options
+                    .len()
+                    .saturating_add(usize::from(prompt.custom));
+                if index >= choice_count || self.question_prompt_editing(&permission.permission_id)
+                {
+                    return false;
+                }
+                if self.question_prompt.permission_id.as_deref()
+                    != Some(permission.permission_id.as_str())
+                {
+                    self.handle_permission_modal_key(KeyEvent::new(
+                        KeyCode::Null,
+                        KeyModifiers::NONE,
+                    ));
+                }
+                if self.question_prompt.permission_id.as_deref()
+                    != Some(permission.permission_id.as_str())
+                {
+                    return false;
+                }
+                self.question_prompt.selection = index;
+                true
+            }
+            PermissionPointerTarget::Decision(_) | PermissionPointerTarget::Confirm(_) => false,
+        }
+    }
+
+    fn handle_permission_prompt_mouse(&mut self, mouse: MouseEvent, frame_area: Rect) -> bool {
+        if mouse.modifiers.contains(KeyModifiers::CONTROL) {
+            self.permission_prompt.pointer_down = None;
+            return false;
+        }
+
+        match mouse.kind {
+            MouseEventKind::Down(MouseButton::Left) => {
+                let region = permission_prompt_hit_regions(self, frame_area)
+                    .into_iter()
+                    .find(|region| rect_contains(region.area, mouse.column, mouse.row));
+                let Some(region) = region else {
+                    self.permission_prompt.pointer_down = None;
+                    return false;
+                };
+                let Some(permission) = self.active_permission_view() else {
+                    self.permission_prompt.pointer_down = None;
+                    return false;
+                };
+                if !self.select_permission_pointer_target(&permission, region.target) {
+                    self.permission_prompt.pointer_down = None;
+                    return false;
+                }
+                self.permission_prompt.pointer_down = Some(PermissionPointerDown {
+                    permission_id: permission.permission_id,
+                    target: region.target,
+                    area: region.area,
+                });
+                true
+            }
+            MouseEventKind::Drag(MouseButton::Left) => {
+                let Some(pointer_down) = self.permission_prompt.pointer_down.as_ref() else {
+                    return false;
+                };
+                let remains_inside = rect_contains(pointer_down.area, mouse.column, mouse.row)
+                    && self.active_permission_view().is_some_and(|permission| {
+                        permission.permission_id == pointer_down.permission_id
+                    });
+                if !remains_inside {
+                    self.permission_prompt.pointer_down = None;
+                }
+                true
+            }
+            MouseEventKind::Up(MouseButton::Left) => {
+                let Some(pointer_down) = self.permission_prompt.pointer_down.take() else {
+                    return false;
+                };
+                if !rect_contains(pointer_down.area, mouse.column, mouse.row) {
+                    return true;
+                }
+                let Some(permission) = self.active_permission_view() else {
+                    return true;
+                };
+                if permission.permission_id != pointer_down.permission_id
+                    || !self.select_permission_pointer_target(&permission, pointer_down.target)
+                {
+                    return true;
+                }
+                self.handle_permission_modal_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+                true
+            }
+            _ => false,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn permission_prompt_hit_regions_for_test(
+        &self,
+        frame_area: Rect,
+    ) -> Vec<(PermissionPointerTarget, Rect)> {
+        permission_prompt_hit_regions(self, frame_area)
+            .into_iter()
+            .map(|region| (region.target, region.area))
+            .collect()
+    }
+
     pub(crate) fn handle_mouse(
         &mut self,
         mouse: MouseEvent,
@@ -410,21 +882,14 @@ impl AppState {
             return self.handle_status_dashboard_mouse(mouse);
         }
 
+        if self.overlay_stack().top() == Some(OverlayKind::PermissionModal) {
+            let handled = self.handle_permission_prompt_mouse(mouse, frame_area);
+            let cleared = self.clear_blocked_pointer_state();
+            return handled || cleared;
+        }
+
         if self.overlay_stack().blocks_pointer_interaction() {
-            let changed = self.transcript_view.transcript_scrollbar_drag.is_some()
-                || self.transcript_view.hovered_transcript_target.is_some()
-                || self.hovered_subagent_footer_target.is_some()
-                || self.hovered_live_turn_stop
-                || self.transcript_view.transcript_selection.is_some()
-                || self.secondary_surfaces.selection.is_some();
-            self.transcript_view.transcript_scrollbar_drag = None;
-            self.transcript_view.hovered_transcript_target = None;
-            self.hovered_subagent_footer_target = None;
-            self.hovered_live_turn_stop = false;
-            self.pending_subagent_footer_target = None;
-            self.clear_transcript_selection();
-            self.clear_operator_sidebar_selection();
-            return changed;
+            return self.clear_blocked_pointer_state();
         }
 
         self.set_frame_area(frame_area);

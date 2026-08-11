@@ -112,16 +112,16 @@ fn tool_lifecycle_rows_stay_ordered_without_pty() {
     let tool_markers: &[&str] = &[
         "Inspect tool activity",
         "Read 1 file",
-        "Remove diff review surface",
+        "Edit ui.rs",
         "Researcher Task — audit tool lifecycle parity",
-        "cargo test -p harness-tui",
+        "Run cargo test -p harness-tui",
         "snapshot mismatch",
         "Tool summaries are now easier to scan, and edits stay inline.",
     ];
     assert_markers_in_order(&rendered, tool_markers);
     assert!(!rendered.contains("Compat alias ·"));
     assert!(!rendered.contains("↳ Loaded src/ui.rs"));
-    assert!(rendered.contains("artifacts/tool-lifecycle-inline.diff"));
+    assert!(!rendered.contains("Diff preview unavailable"));
 }
 
 #[test]
@@ -153,8 +153,7 @@ fn p21_tool_display_descriptors_cover_state_families_without_pty() {
     assert_markers_in_order(&rendered, &["Cancelled background task", "req-bg-child"]);
     // S7: late-result — background_output shows late result status
     assert_markers_in_order(&rendered, &["Checked background output", "late_result"]);
-    // S8: plan_enter — Harness-only control plane tool
-    assert_markers_in_order(&rendered, &["Plan mode", "Plan the refactor"]);
+    assert!(!rendered.contains("Plan mode"), "{rendered}");
     assert!(rendered.contains("P2.1 tool display descriptors cover all state families."));
 }
 

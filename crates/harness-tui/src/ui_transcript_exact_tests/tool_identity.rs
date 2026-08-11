@@ -122,7 +122,10 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_reference_timestamps_a
         false,
         None,
     );
-    assert_eq!(task_section.header.disclosure_state, None);
+    assert_eq!(
+        task_section.header.disclosure_state,
+        Some(TranscriptToolCallDisclosureState::Collapsed)
+    );
     assert_eq!(
         task_section.child_session_id.as_deref(),
         Some("agent_worker")
@@ -181,6 +184,7 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_reference_timestamps_a
                 selection_rows: None,
                 diff_hunk_offsets: Vec::new(),
                 selected_rail: false,
+                tool_rail_motion: None,
             }],
             lines: task_render.lines.clone(),
         }],
@@ -284,7 +288,10 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_reference_timestamps_a
         false,
         None,
     );
-    assert_eq!(fetch_section.header.disclosure_state, None);
+    assert_eq!(
+        fetch_section.header.disclosure_state,
+        Some(TranscriptToolCallDisclosureState::Collapsed)
+    );
     let mut fetch_lines = Vec::new();
     {
         let render =
@@ -497,8 +504,14 @@ pub(crate) fn exact_test_mcp_tool_transcript_rows_use_effective_identity_without
         wrapper_section.header.visual_style,
         direct_section.header.visual_style
     );
-    assert_eq!(direct_section.header.disclosure_state, None);
-    assert_eq!(wrapper_section.header.disclosure_state, None);
+    assert_eq!(
+        direct_section.header.disclosure_state,
+        Some(TranscriptToolCallDisclosureState::Collapsed)
+    );
+    assert_eq!(
+        wrapper_section.header.disclosure_state,
+        Some(TranscriptToolCallDisclosureState::Collapsed)
+    );
 
     let mut direct_lines = Vec::new();
     {
@@ -571,7 +584,10 @@ pub(crate) fn exact_test_generic_tool_successful_output_prefers_inline_backgroun
         section.header.visual_style,
         TranscriptToolCallVisualStyle::Inline
     );
-    assert_eq!(section.header.disclosure_state, None);
+    assert_eq!(
+        section.header.disclosure_state,
+        Some(TranscriptToolCallDisclosureState::Collapsed)
+    );
 
     let rendered = transcript_test_line_texts({
         let mut lines = Vec::new();
@@ -671,7 +687,10 @@ pub(crate) fn exact_test_lsp_tool_successful_output_stays_hidden_until_generic_o
         hidden.header.visual_style,
         TranscriptToolCallVisualStyle::Inline
     );
-    assert_eq!(hidden.header.disclosure_state, None);
+    assert_eq!(
+        hidden.header.disclosure_state,
+        Some(TranscriptToolCallDisclosureState::Collapsed)
+    );
 
     let hidden_text = transcript_test_line_texts({
         let mut lines = Vec::new();
@@ -906,17 +925,32 @@ pub(crate) fn exact_test_todo_write_rows_render_open_checklist() {
         ),
         (None, "# Todos")
     );
-    assert_eq!(write_section.header.disclosure_state, None);
+    assert_eq!(
+        write_section.header.disclosure_state,
+        Some(TranscriptToolCallDisclosureState::Collapsed)
+    );
 
+    let expanded_write_section =
+        build_tool_call_section(&write_call, &app, false, false, false, true, false, None)
+            .unwrap_or_abort();
     let todo_lines = {
-        let render =
-            append_tool_call_section_lines(&write_section, &theme, 96, theme.surface.panel);
+        let render = append_tool_call_section_lines(
+            &expanded_write_section,
+            &theme,
+            96,
+            theme.surface.panel,
+        );
         render.lines
     };
     let rendered = transcript_test_line_texts(todo_lines.clone()).join("\n");
+    let active_marker = format!("[{}] Implement UI", theme.live_shell.glyphs.streaming);
+    let completed_marker = format!(
+        "[{}] Plan work",
+        theme.live_shell.transcript_glyphs.choice_checked
+    );
     assert!(rendered.contains("Todos"));
-    assert!(rendered.contains("[•] Implement UI"));
-    assert!(rendered.contains("[✓] Plan work"));
+    assert!(rendered.contains(&active_marker));
+    assert!(rendered.contains(&completed_marker));
     assert!(rendered.contains("[ ] Verify tests"));
 
     assert!(
@@ -933,14 +967,14 @@ pub(crate) fn exact_test_todo_write_rows_render_open_checklist() {
     );
     let active_line = rendered
         .lines()
-        .find(|line| line.contains("[•] Implement UI"))
+        .find(|line| line.contains(&active_marker))
         .expect("active todo line should be present");
     assert!(
-        active_line.contains("[•] Implement UI"),
+        active_line.contains(&active_marker),
         "todo items should remain structured: {active_line}"
     );
-    let completed = rendered.find("[✓] Plan work").unwrap_or_abort();
-    let active = rendered.find("[•] Implement UI").unwrap_or_abort();
+    let completed = rendered.find(&completed_marker).unwrap_or_abort();
+    let active = rendered.find(&active_marker).unwrap_or_abort();
     assert!(
         completed < active,
         "todo rows should preserve tool-provided order\n{rendered}"
@@ -961,7 +995,7 @@ pub(crate) fn exact_test_todo_write_rows_render_open_checklist() {
         false,
         false,
         false,
-        false,
+        true,
         false,
         None,
     )

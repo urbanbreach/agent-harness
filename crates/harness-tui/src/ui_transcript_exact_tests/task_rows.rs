@@ -278,7 +278,7 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
     )
     .join("\n");
     assert!(detached_active_text.contains("Researcher Task (background) — audit transcript parity"));
-    assert!(detached_active_text.contains("↳ Retrying (attempt 1) · rate_limited"));
+    assert!(!detached_active_text.contains("Retrying (attempt 1) · rate_limited"));
     assert!(!detached_active_text.contains("↳ 1 toolcall ·"));
 
     app.ingest_event(event(
@@ -368,7 +368,7 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
     }
     let completed_text = transcript_test_line_texts(completed_lines).join("\n");
     assert!(completed_text.contains("Researcher Task (background) — audit transcript parity"));
-    assert!(completed_text.contains("↳ 2 toolcalls · 1.6s"));
+    assert!(!completed_text.contains("↳ 2 toolcalls · 1.6s"));
     assert!(!completed_text.contains("background_output("));
     assert!(!completed_text.contains("task(task_id=\"agent_worker\")"));
     assert!(!completed_text.contains("Found the inline transcript path."));

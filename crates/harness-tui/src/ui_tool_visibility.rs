@@ -50,7 +50,16 @@ pub(super) fn tool_call_has_transcript_disclosure(tool_call: &ToolCallEntry) -> 
 
     if matches!(
         tool_call.effective_tool_id(),
-        "fs.read" | "read" | "fs.glob" | "glob" | "fs.grep" | "grep" | "fs.ls" | "list"
+        "fs.read"
+            | "read"
+            | "fs.glob"
+            | "glob"
+            | "fs.grep"
+            | "grep"
+            | "fs.ls"
+            | "list"
+            | "skill"
+            | "skill.load"
     ) {
         return false;
     }
@@ -86,10 +95,15 @@ pub(super) fn tool_disclosure_state(
 
 pub(super) fn tool_header_disclosure_glyph(
     disclosure_state: Option<TranscriptToolCallDisclosureState>,
+    theme: &crate::theme::Theme,
 ) -> Option<&'static str> {
     match disclosure_state {
-        Some(TranscriptToolCallDisclosureState::Collapsed) => Some("▸"),
-        Some(TranscriptToolCallDisclosureState::Expanded) => Some("▾"),
+        Some(TranscriptToolCallDisclosureState::Collapsed) => {
+            Some(theme.live_shell.transcript_glyphs.disclosure_closed)
+        }
+        Some(TranscriptToolCallDisclosureState::Expanded) => {
+            Some(theme.live_shell.transcript_glyphs.disclosure_open)
+        }
         None => None,
     }
 }

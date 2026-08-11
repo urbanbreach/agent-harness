@@ -175,6 +175,15 @@ impl CapabilityClassifier {
             WidthCapability::Compact
         }
     }
+    pub fn glyph_mode(&self) -> crate::theme::GlyphMode {
+        if self.width() == WidthCapability::Compact
+            && self.keyboard() == KeyboardCapability::Minimal
+        {
+            crate::theme::GlyphMode::Ascii
+        } else {
+            crate::theme::GlyphMode::Preferred
+        }
+    }
     pub const fn motion(&self) -> MotionCapability {
         MotionCapability::Full
     }

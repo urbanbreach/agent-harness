@@ -234,6 +234,11 @@ impl AppState {
     }
 
     pub(in crate::app) fn composer_undo(&mut self) {
+        if self.composer.parity_editing_ready() && matches!(self.composer.parity_undo(), Ok(true)) {
+            self.sync_slash_overlay();
+            self.sync_file_mention_overlay();
+            return;
+        }
         let Some(snapshot) = self.composer.undo_stack.pop() else {
             return;
         };
@@ -244,6 +249,11 @@ impl AppState {
     }
 
     pub(in crate::app) fn composer_redo(&mut self) {
+        if self.composer.parity_editing_ready() && matches!(self.composer.parity_redo(), Ok(true)) {
+            self.sync_slash_overlay();
+            self.sync_file_mention_overlay();
+            return;
+        }
         let Some(snapshot) = self.composer.redo_stack.pop() else {
             return;
         };

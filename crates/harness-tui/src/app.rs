@@ -92,7 +92,7 @@ use crate::keybindings::{Action, KeyBinding, KeyMap};
 use crate::overlay::{OverlayKind, OverlayStack, OverlayState};
 use crate::prompt_queue_actions::{QueueAction, QueueError, QueueLifecycle};
 use crate::text::{non_empty_trimmed, trimmed_json_string_field};
-use crate::theme::{ColorLevel, Theme};
+use crate::theme::{ColorLevel, GlyphMode, Theme};
 use crate::theme_family::{
     deserialize_choice, serialize_choice, AutoResolver, PersistError, ThemeChoice, ThemeFamily,
     ThemePreview,
@@ -612,6 +612,7 @@ pub struct AppState {
     replay_navigation_handoff_enabled: bool,
     interrupt_confirm_deadline: Option<Instant>,
     interrupt_confirm_task_ids: BTreeSet<String>,
+    interrupt_requested_task_ids: BTreeSet<String>,
     clear_prompt_confirm_deadline: Option<Instant>,
     live_turn_started_at: Option<Instant>,
     live_turn_phase_started_at: Option<Instant>,
@@ -841,6 +842,7 @@ impl Default for AppState {
             replay_navigation_handoff_enabled: false,
             interrupt_confirm_deadline: None,
             interrupt_confirm_task_ids: BTreeSet::new(),
+            interrupt_requested_task_ids: BTreeSet::new(),
             clear_prompt_confirm_deadline: None,
             live_turn_started_at: None,
             live_turn_phase_started_at: None,
@@ -1059,22 +1061,23 @@ impl AppState {
     }
 
     pub fn composer_view_model_for_area(&self, area: Rect) -> ComposerViewModel {
-        let viewport = ViewportId::ALL
-            .into_iter()
-            .find(|viewport| viewport.dimensions() == (area.width, area.height))
-            .unwrap_or(ViewportId::Standard100x30);
+        let viewport = ViewportId::closest(area.width, area.height);
         self.composer_view_model(viewport)
     }
 
     pub fn composer_submission(
         &self,
     ) -> Result<ComposerUiIntent, crate::composer_integration::ComposerSliceError> {
-        self.composer.slice.submit()
+        let mut submission = self.composer.slice.submit()?;
+        if submission.text != self.composer.prompt_buffer {
+            submission.text.clone_from(&self.composer.prompt_buffer);
+        }
+        Ok(submission)
     }
 
     pub(crate) fn composer_render_text(&self) -> String {
         let parity_text = self.composer.parity_text();
-        if parity_text.is_empty() && !self.composer.prompt_buffer.is_empty() {
+        if parity_text != self.composer.prompt_buffer {
             self.composer.prompt_buffer.clone()
         } else {
             parity_text
@@ -1082,7 +1085,11 @@ impl AppState {
     }
 
     pub(crate) fn composer_render_cursor(&self) -> usize {
-        self.composer.parity_cursor()
+        if self.composer.parity_text() != self.composer.prompt_buffer {
+            self.composer.prompt_cursor
+        } else {
+            self.composer.parity_cursor()
+        }
     }
 
     pub fn composer_hit_map(
@@ -1353,6 +1360,7 @@ impl AppState {
         if self.theme_color_level == level {
             return;
         }
+        let glyph_mode = self.theme.glyph_mode();
         self.theme_color_level = level;
         self.theme = match self.theme_name.as_str() {
             "default" | "harness-chat" => Theme::harness_chat(),
@@ -1369,11 +1377,21 @@ impl AppState {
                 },
             },
         }
-        .for_color_level(level);
+        .for_color_level(level)
+        .with_glyph_mode(glyph_mode);
+        self.bump_transcript_render_epoch();
+    }
+
+    pub(crate) fn set_glyph_mode(&mut self, mode: GlyphMode) {
+        if self.theme.glyph_mode() == mode {
+            return;
+        }
+        self.theme = self.theme.with_glyph_mode(mode);
         self.bump_transcript_render_epoch();
     }
 
     fn resolve_theme_choice(&mut self, choice: ThemeChoice) {
+        let glyph_mode = self.theme.glyph_mode();
         let family = match choice {
             ThemeChoice::Dark => ThemeFamily::Dark,
             ThemeChoice::Light => ThemeFamily::Light,
@@ -1391,11 +1409,13 @@ impl AppState {
                 ThemeFamily::Light => Theme::harness_light(),
             },
         }
-        .for_color_level(self.theme_color_level);
+        .for_color_level(self.theme_color_level)
+        .with_glyph_mode(glyph_mode);
         self.bump_transcript_render_epoch();
     }
 
     pub(crate) fn apply_theme_by_name(&mut self, name: &str) {
+        let glyph_mode = self.theme.glyph_mode();
         let choice = match name {
             "default" | "harness-chat" => {
                 self.theme_name = name.to_string();
@@ -1403,7 +1423,9 @@ impl AppState {
                 self.theme_family = ThemeFamily::Dark;
                 self.theme_preview.begin_preview(ThemeFamily::Dark);
                 self.theme_preview.commit();
-                self.theme = Theme::harness_chat().for_color_level(self.theme_color_level);
+                self.theme = Theme::harness_chat()
+                    .for_color_level(self.theme_color_level)
+                    .with_glyph_mode(glyph_mode);
                 self.bump_transcript_render_epoch();
                 return;
             }
@@ -1419,7 +1441,9 @@ impl AppState {
 
         match Theme::by_name(name) {
             Some(theme) => {
-                self.theme = theme.for_color_level(self.theme_color_level);
+                self.theme = theme
+                    .for_color_level(self.theme_color_level)
+                    .with_glyph_mode(glyph_mode);
                 self.theme_name = name.to_string();
                 self.bump_transcript_render_epoch();
             }
@@ -1454,6 +1478,7 @@ impl AppState {
         self.permission_prompt.stage = PermissionModalStage::Decision;
         self.permission_prompt.selection = PermissionModalSelection::AllowAlways;
         self.permission_prompt.confirm_selection = PermissionConfirmSelection::Confirm;
+        self.permission_prompt.focus_return = None;
         self.question_prompt.tab = 0;
         self.question_prompt.selection = 0;
         self.question_prompt.answers.clear();
@@ -1462,16 +1487,19 @@ impl AppState {
         self.transcript_view.expanded_tool_outputs.clear();
         self.transcript_view.expanded_patch_file_outputs.clear();
         self.transcript_view.expanded_reasoning_requests.clear();
+        self.transcript_view.tool_motion = Default::default();
+        self.transcript_view.visible_running_tool_motion.set(false);
         self.cancel_transcript_page_flip();
         self.live_turn_started_at = None;
         self.live_turn_phase_started_at = None;
         self.live_turn_request_id = None;
+        self.interrupt_requested_task_ids.clear();
 
         for event in events {
             self.ingest_historical_event(event);
         }
         self.resume_live_turn_timing_from_projection();
-        self.sync_transcript_integration();
+        self.sync_transcript_integration(false);
 
         if self.projection.events.is_empty() {
             self.selected_event_index = 0;
@@ -1505,6 +1533,7 @@ impl AppState {
             return;
         }
 
+        let permission_was_pending = !historical && self.active_permission().is_some();
         self.starting_session_seed = false;
         self.bump_transcript_render_epoch();
 
@@ -1543,6 +1572,10 @@ impl AppState {
         }
         self.update_transient_state_for_event(&event);
         let trimmed_events = self.projection.ingest_event(event.clone(), historical);
+        if !historical {
+            self.reconcile_permission_focus(permission_was_pending);
+            self.reconcile_interrupt_request();
+        }
         if !historical {
             self.retarget_local_transcript_page_flip(&event);
         }
@@ -1596,7 +1629,7 @@ impl AppState {
         if !historical {
             self.maybe_auto_allow_active_permission();
         }
-        self.sync_transcript_integration();
+        self.sync_transcript_integration(!historical);
         if self.status_dashboard_is_active() {
             self.refresh_status_dashboard();
         }
@@ -2988,10 +3021,10 @@ impl AppState {
       }
     }
   },
-  "agents": {
-    "build": {
-      "description": "Build work",
-      "model_ref": "default:gpt-4o-mini",
+  "model": "default/gpt-4o-mini",
+  "agent": {
+    "default": {
+      "model": "default/gpt-4o-mini",
       "tools": ["read"]
     }
   },
@@ -3556,7 +3589,12 @@ impl AppState {
 
     /// Scroll down (toward bottom) by `viewport` rows. Re-engages follow at 0.
     pub fn scroll_page_down(&mut self, viewport: usize) {
-        self.scroll_transcript_down(u16::try_from(viewport.max(1)).unwrap_or(u16::MAX));
+        let viewport = viewport.max(1);
+        if self.transcript_scroll_offset() <= viewport {
+            self.scroll_goto_bottom();
+        } else {
+            self.scroll_transcript_down(u16::try_from(viewport).unwrap_or(u16::MAX));
+        }
     }
 
     /// Scroll up by half of `viewport` (rounded up), breaking follow mode.

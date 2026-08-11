@@ -8,7 +8,7 @@ use ratatui::{
 
 use crate::theme::Theme;
 
-use super::ui_transcript::{TranscriptRenderSurface, TranscriptRenderSurfaceKind};
+use super::ui_transcript::{ToolRailMotion, TranscriptRenderSurface, TranscriptRenderSurfaceKind};
 use super::ui_transcript_interaction::TranscriptInteractionRow;
 use super::ui_transcript_selection::{
     compact_selection_row, TranscriptSelectionCell, TranscriptSelectionRow,
@@ -18,9 +18,7 @@ use super::ui_transcript_surface::{
     transcript_surface_leading_gap, transcript_surface_render_width,
 };
 
-const SELECTED_RAIL_GLYPH: &str = "┃";
-
-const TRANSCRIPT_SECTION_GAP_HEIGHT: usize = 1;
+const TRANSCRIPT_SECTION_GAP_HEIGHT: usize = 2;
 
 #[derive(Debug, Clone)]
 pub(super) struct MeasuredTranscriptSection {
@@ -113,6 +111,26 @@ pub(super) fn transcript_viewport_rows(
         sticky_height,
         viewport_height,
     }
+}
+
+pub(super) fn transcript_layout_has_visible_running_tool(
+    layout: &MeasuredTranscriptLayout,
+    viewport_height: usize,
+    scroll_top: usize,
+) -> bool {
+    let viewport_bottom = scroll_top.saturating_add(viewport_height);
+    layout.sections.iter().any(|section| {
+        let section_top = section.top_row.saturating_add(section.leading_gap_height);
+        section.surfaces.iter().any(|surface| {
+            let surface_top = section_top.saturating_add(surface.top_offset);
+            let surface_bottom = surface_top.saturating_add(surface.height);
+            matches!(
+                surface.tool_rail_motion,
+                Some(ToolRailMotion::Running { .. })
+            ) && surface_bottom > scroll_top
+                && surface_top < viewport_bottom
+        })
+    })
 }
 
 impl MeasuredTranscriptLayout {
@@ -324,6 +342,7 @@ pub(super) struct MeasuredTranscriptSurface {
     pub(super) selection_rows: Option<Vec<TranscriptSelectionRow>>,
     pub(super) diff_hunk_offsets: Vec<usize>,
     pub(super) selected_rail: bool,
+    pub(super) tool_rail_motion: Option<ToolRailMotion>,
 }
 
 pub(super) fn measure_transcript_layout<Section>(
@@ -367,26 +386,12 @@ pub(super) fn measure_transcript_layout<Section>(
                 selection_rows: surface.selection_rows,
                 diff_hunk_offsets: surface.diff_hunk_offsets,
                 selected_rail: surface.selected_rail,
+                tool_rail_motion: surface.tool_rail_motion,
             });
             previous_surface_kind = Some(surface.kind);
         }
-        let previous_ends_with_body =
-            measured_sections
-                .last()
-                .and_then(|section: &MeasuredTranscriptSection| {
-                    section.surfaces.iter().rev().find(|surface| {
-                        surface.kind != TranscriptRenderSurfaceKind::AssistantFooter
-                    })
-                })
-                .is_some_and(|surface| surface.kind == TranscriptRenderSurfaceKind::AssistantBody);
-        let current_starts_with_body = measured_surfaces
-            .first()
-            .is_some_and(|surface| surface.kind == TranscriptRenderSurfaceKind::AssistantBody);
-        let leading_gap_height = if previous_ends_with_body && current_starts_with_body {
-            0
-        } else {
-            usize::from(!measured_sections.is_empty()) * TRANSCRIPT_SECTION_GAP_HEIGHT
-        };
+        let leading_gap_height =
+            usize::from(!measured_sections.is_empty()) * TRANSCRIPT_SECTION_GAP_HEIGHT;
         let measured_section = MeasuredTranscriptSection {
             activity_first_seq: activity_first_seq(section),
             top_row,
@@ -512,8 +517,17 @@ pub(super) fn render_transcript_layout_surfaces(
                 u16::try_from(visible_height).unwrap_or(u16::MAX),
             );
             render_transcript_surface(frame, surface, surface_rect, local_scroll, theme);
-            if surface.selected_rail && local_scroll == 0 && surface_rect.height > 0 {
-                paint_selected_rail_glyph(frame, surface_rect, surface.rail_color);
+            if surface.selected_rail
+                && surface.tool_rail_motion.is_none()
+                && local_scroll == 0
+                && surface_rect.height > 0
+            {
+                paint_selected_rail_glyph(
+                    frame,
+                    surface_rect,
+                    surface.rail_color,
+                    surface.rail_glyph,
+                );
             }
         }
     }
@@ -616,16 +630,16 @@ fn run_write_footer_outdent(surface: &MeasuredTranscriptSurface) -> u16 {
     u16::from(is_run_write_footer)
 }
 
-fn paint_selected_rail_glyph(frame: &mut Frame, surface_rect: Rect, rail_color: Color) {
+fn paint_selected_rail_glyph(
+    frame: &mut Frame,
+    surface_rect: Rect,
+    rail_color: Color,
+    rail_glyph: &'static str,
+) {
     let rail_x = surface_rect.x;
     let rail_rect = Rect::new(rail_x, surface_rect.y, 1, surface_rect.height);
     let rail_lines = (0..surface_rect.height)
-        .map(|_| {
-            Line::from(Span::styled(
-                SELECTED_RAIL_GLYPH,
-                Style::default().fg(rail_color),
-            ))
-        })
+        .map(|_| Line::from(Span::styled(rail_glyph, Style::default().fg(rail_color))))
         .collect::<Vec<_>>();
     frame.render_widget(Paragraph::new(rail_lines), rail_rect);
 }
@@ -695,6 +709,7 @@ mod pin_tests {
                         selection_rows: None,
                         diff_hunk_offsets: Vec::new(),
                         selected_rail: false,
+                        tool_rail_motion: None,
                     },
                     MeasuredTranscriptSurface {
                         kind: TranscriptRenderSurfaceKind::AssistantFooter,
@@ -710,6 +725,7 @@ mod pin_tests {
                         selection_rows: None,
                         diff_hunk_offsets: Vec::new(),
                         selected_rail: false,
+                        tool_rail_motion: None,
                     },
                 ],
                 lines: vec![
@@ -775,6 +791,7 @@ mod pin_tests {
                         selection_rows: None,
                         diff_hunk_offsets: Vec::new(),
                         selected_rail: false,
+                        tool_rail_motion: None,
                     },
                     MeasuredTranscriptSurface {
                         kind: TranscriptRenderSurfaceKind::AssistantBody,
@@ -792,6 +809,7 @@ mod pin_tests {
                         selection_rows: None,
                         diff_hunk_offsets: Vec::new(),
                         selected_rail: false,
+                        tool_rail_motion: None,
                     },
                 ],
                 lines: (0..user_height)

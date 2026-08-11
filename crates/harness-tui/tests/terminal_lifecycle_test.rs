@@ -38,7 +38,7 @@ fn frame_clock_starts_at_zero_phase_and_mono_ms() {
     assert_eq!(clock.mono_ms(), 0);
     assert_eq!(clock.phase().get(), 0);
     assert_eq!(clock.tick_ms(), DEFAULT_FRAME_TICK_MS);
-    assert_eq!(DEFAULT_FRAME_TICK_MS, 100);
+    assert_eq!(DEFAULT_FRAME_TICK_MS, 33);
 }
 
 #[test]
@@ -50,7 +50,7 @@ fn frame_clock_single_tick_advances_one_phase_and_one_step() {
     clock.tick();
 
     // assert
-    assert_eq!(clock.mono_ms(), 100);
+    assert_eq!(clock.mono_ms(), DEFAULT_FRAME_TICK_MS);
     assert_eq!(clock.phase().get(), 1);
 }
 
@@ -91,9 +91,10 @@ fn frame_clock_shares_its_backing_clock_with_consumers() {
     clock.tick_n(3);
 
     // assert — both the frame clock and the shared handle observe the same reading
-    assert_eq!(clock.mono_ms(), 300);
-    assert_eq!(shared.mono_ms(), 300);
-    assert_eq!(clock.clock().mono_ms(), 300);
+    let elapsed = DEFAULT_FRAME_TICK_MS.saturating_mul(3);
+    assert_eq!(clock.mono_ms(), elapsed);
+    assert_eq!(shared.mono_ms(), elapsed);
+    assert_eq!(clock.clock().mono_ms(), elapsed);
 }
 
 #[test]

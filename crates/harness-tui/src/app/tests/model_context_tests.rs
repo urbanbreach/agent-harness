@@ -77,7 +77,7 @@ pub(super) fn runtime_context_labels_distinguish_live_continue_and_replay() {
     let startup_dock = startup.control_dock_view_model();
     assert_eq!(
         startup_dock.primary_summary,
-        "Launch: deep · GPT-5.4 Mini · Deterministic"
+        "Launch: GPT-5.4 Mini · Deterministic"
     );
     assert_eq!(startup_dock.summary_segment, None);
     assert_eq!(startup_dock.runtime_context.as_deref(), Some("default"));
@@ -87,7 +87,7 @@ pub(super) fn runtime_context_labels_distinguish_live_continue_and_replay() {
     let live_dock = live.control_dock_view_model();
     assert_eq!(
         live_dock.primary_summary,
-        "Context: deep · GPT-5.4 Mini · Deterministic"
+        "Context: GPT-5.4 Mini · Deterministic"
     );
     assert_eq!(live_dock.summary_segment, None);
     assert_eq!(live_dock.runtime_context.as_deref(), Some("default"));
@@ -99,7 +99,7 @@ pub(super) fn runtime_context_labels_distinguish_live_continue_and_replay() {
     let continued_dock = continued.control_dock_view_model();
     assert_eq!(
         continued_dock.primary_summary,
-        "Context: deep · GPT-5.4 Mini · Deterministic"
+        "Context: GPT-5.4 Mini · Deterministic"
     );
     assert_eq!(continued_dock.summary_segment, None);
     assert_eq!(continued_dock.runtime_context.as_deref(), Some("default"));
@@ -109,14 +109,15 @@ pub(super) fn runtime_context_labels_distinguish_live_continue_and_replay() {
     let replay_dock = replay.control_dock_view_model();
     assert_eq!(
         replay_dock.primary_summary,
-        "Recorded runtime · read-only: deep · GPT-5.4 Mini · Deterministic"
+        "Recorded runtime · read-only: GPT-5.4 Mini · Deterministic"
     );
     assert_eq!(replay_dock.summary_segment, None);
     assert_eq!(replay_dock.runtime_context.as_deref(), Some("default"));
     assert!(replay_dock.composer_disabled);
 }
 
-pub(super) fn composer_metadata_prefers_short_agent_name_and_configured_source_label() {
+pub(super) fn composer_metadata_omits_profile_and_keeps_model_and_source_labels() {
+    // Given: launch metadata still carries an internal profile and public model/source labels.
     let option = metadata_model_option(
         "build",
         Some("Deep Agent"),
@@ -129,7 +130,12 @@ pub(super) fn composer_metadata_prefers_short_agent_name_and_configured_source_l
     let mut app = AppState::new_live(None, false, None);
     app.set_launch_metadata(LaunchMetadata::from_model_option(&option));
 
-    assert_eq!(app.current_agent_label().as_deref(), Some("Build"));
+    // When: the live shell is rendered.
+    let rendered = render_debug(&app, 100, 32);
+
+    // Then: model/source metadata remains visible without exposing the profile label.
+    assert!(rendered.contains("GPT-5.4 Mini"), "{rendered}");
+    assert!(!rendered.contains("Build"), "{rendered}");
     assert_eq!(app.current_source_label().as_deref(), Some("CLIProxyAPI"));
 }
 
@@ -190,13 +196,13 @@ pub(super) fn live_switch_model_labels_next_turn_only() {
     let dock = live.control_dock_view_model();
     assert_eq!(
         dock.primary_summary,
-        "Context: deep · GPT-5.4 Mini · Deterministic"
+        "Context: GPT-5.4 Mini · Deterministic"
     );
     assert_eq!(
         dock.summary_segment,
         Some(view_model::ControlDockSummarySegment {
             kind: view_model::ControlDockSummarySegmentKind::Orchestration,
-            text: "Next turns: deep · GPT-5.4 Mini".to_string(),
+            text: "Next turns: GPT-5.4 Mini".to_string(),
             tone: view_model::ControlDockSummaryTone::Secondary,
         })
     );
@@ -216,14 +222,15 @@ pub(super) fn live_switch_model_labels_next_turn_only() {
     let replay_dock = replay.control_dock_view_model();
     assert_eq!(
         replay_dock.primary_summary,
-        "Recorded runtime · read-only: deep · GPT-5.4 Mini · Deterministic"
+        "Recorded runtime · read-only: GPT-5.4 Mini · Deterministic"
     );
     assert_eq!(replay_dock.summary_segment, None);
     assert_eq!(replay.current_model_label(), "GPT-5.4 Mini · Deterministic");
     assert_eq!(replay.active_profile(), "deep");
 }
 
-pub(super) fn tab_cycles_build_and_plan_primary_agents() {
+pub(super) fn control_tab_does_not_cycle_named_profiles() {
+    // Given: legacy launch metadata advertises multiple named profiles.
     let build_option =
         runtime_context_model_option("build", "default", "gpt-5.4-mini", None, "GPT-5.4 Mini");
     let plan_option =
@@ -244,95 +251,17 @@ pub(super) fn tab_cycles_build_and_plan_primary_agents() {
             .with_switchable_profiles(vec!["build".to_string(), "plan".to_string()]),
     );
 
+    // When: the removed profile-cycle shortcuts are pressed.
     app.handle_key(key_with_modifiers(KeyCode::Tab, KeyModifiers::CONTROL));
-
-    assert_eq!(app.active_profile(), "plan");
-    assert_eq!(app.current_agent_label().as_deref(), Some("Plan"));
-    {
-        let intents = intents.lock().unwrap_or_abort();
-        let [UiIntent::SwitchModel {
-            profile,
-            launch_metadata,
-        }] = intents.as_slice()
-        else {
-            panic!("expected one switch-model intent: {intents:?}");
-        };
-        assert_eq!(profile, "plan");
-        assert_eq!(launch_metadata.profile(), "plan");
-        assert_eq!(launch_metadata.switchable_profiles(), &["build", "plan"]);
-    }
-
     app.handle_key(key_with_modifiers(KeyCode::BackTab, KeyModifiers::CONTROL));
 
+    // Then: the active profile and model-switch intent stream remain unchanged.
     assert_eq!(app.active_profile(), "build");
     let intents = intents.lock().unwrap_or_abort();
-    let Some(UiIntent::SwitchModel {
-        profile,
-        launch_metadata,
-    }) = intents.get(1)
-    else {
-        panic!("expected second switch-model intent: {intents:?}");
-    };
-    assert_eq!(profile, "build");
-    assert_eq!(launch_metadata.profile(), "build");
-}
-
-pub(super) fn agent_cycle_preserves_user_selected_provider_model_across_profiles() {
-    let build_codex = runtime_context_model_option(
-        "build",
-        "openai-codex",
-        "gpt-5.5",
-        Some("high"),
-        "GPT 5.5 · High",
+    assert!(
+        intents.is_empty(),
+        "unexpected profile-switch intents: {intents:?}"
     );
-    let build_default = runtime_context_model_option(
-        "build",
-        "default",
-        "gpt-5.5",
-        Some("high"),
-        "GPT 5.5 · High",
-    );
-    let plan_default = runtime_context_model_option(
-        "plan",
-        "default",
-        "gpt-5.5",
-        Some("xhigh"),
-        "GPT 5.5 · XHigh",
-    );
-    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
-    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
-        let intents = Arc::clone(&intents);
-        Arc::new(move |intent: UiIntent| {
-            intents.lock().unwrap_or_abort().push(intent);
-        })
-    };
-
-    let mut app = AppState::new_live(None, false, Some(sink));
-    app.set_launch_metadata(
-        LaunchMetadata::from_model_option(&build_codex)
-            .with_available_models(vec![build_codex, build_default, plan_default])
-            .with_switchable_profiles(vec!["build".to_string(), "plan".to_string()]),
-    );
-
-    app.handle_key(key_with_modifiers(KeyCode::Tab, KeyModifiers::CONTROL));
-
-    assert_eq!(app.active_profile(), "plan");
-    assert_eq!(app.active_provider(), "openai-codex");
-    assert_eq!(app.launch_metadata().model(), Some("gpt-5.5"));
-    assert_eq!(app.launch_metadata().variant(), Some("high"));
-    let intents = intents.lock().unwrap_or_abort();
-    let [UiIntent::SwitchModel {
-        profile,
-        launch_metadata,
-    }] = intents.as_slice()
-    else {
-        panic!("expected one switch-model intent: {intents:?}");
-    };
-    assert_eq!(profile, "plan");
-    assert_eq!(launch_metadata.profile(), "plan");
-    assert_eq!(launch_metadata.provider(), "openai-codex");
-    assert_eq!(launch_metadata.model(), Some("gpt-5.5"));
-    assert_eq!(launch_metadata.variant(), Some("high"));
 }
 
 pub(super) fn current_context_window_tokens_uses_runtime_context_after_model_switch() {
@@ -378,33 +307,50 @@ pub(super) fn current_context_window_tokens_uses_runtime_context_after_model_swi
     );
 }
 
-pub(super) fn switching_agent_after_submit_keeps_existing_turn_footer_agent() {
-    let build_option =
+pub(super) fn submitted_turn_omits_named_profile_badge() {
+    // Given: a submitted turn whose event metadata carries a legacy profile name.
+    let option =
         runtime_context_model_option("build", "default", "gpt-5.4-mini", None, "GPT-5.4 Mini");
-    let plan_option =
-        runtime_context_model_option("plan", "default", "gpt-5.4-mini", None, "GPT-5.4 Mini");
-
     let mut app = AppState::new_live(None, false, None);
-    app.set_launch_metadata(
-        LaunchMetadata::from_model_option(&build_option)
-            .with_available_models(vec![build_option, plan_option])
-            .with_switchable_profiles(vec!["build".to_string(), "plan".to_string()]),
-    );
+    app.set_launch_metadata(LaunchMetadata::from_model_option(&option));
 
-    for ch in "keep footer agent".chars() {
-        app.handle_key(key(KeyCode::Char(ch)));
-    }
-    app.handle_key(key(KeyCode::Enter));
-    app.handle_key(key_with_modifiers(KeyCode::Tab, KeyModifiers::CONTROL));
+    app.ingest_event(envelope(
+        1,
+        "req_footer",
+        EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+            request_id: "req_footer".into(),
+            text: "keep footer generic".to_string(),
+        }),
+    ));
+    app.ingest_event(provider_started(2, "req_footer", "default", "gpt-5.4-mini"));
+    app.ingest_event(envelope(
+        3,
+        "req_footer",
+        EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+            request_id: "req_footer".into(),
+            delta: "Generic assistant response".to_string(),
+        }),
+    ));
+    app.ingest_event(envelope(
+        4,
+        "req_footer",
+        EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+            request_id: "req_footer".into(),
+            finish_reason: "stop".to_string(),
+            output_digest: Some("digest-footer-finished".to_string()),
+            usage: None,
+            metadata: None,
+        }),
+    ));
 
-    assert_eq!(app.active_profile(), "plan");
+    // When: the completed turn is rendered.
     let rendered = render_debug(&app, 100, 32);
+
+    // Then: the response remains visible without a named-profile badge.
     assert!(
-        rendered.contains("Build"),
-        "submitted turn footer should keep its original agent after switching\n{rendered}"
+        rendered.contains("Generic assistant response"),
+        "{rendered}"
     );
-    assert!(
-        !rendered.contains("Plan"),
-        "submitted turn footer must not follow the newly selected agent\n{rendered}"
-    );
+    assert!(!rendered.contains("Build"), "{rendered}");
+    assert!(!rendered.contains("Plan"), "{rendered}");
 }

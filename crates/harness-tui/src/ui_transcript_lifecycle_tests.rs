@@ -136,13 +136,13 @@ fn streaming_turn_with_own_user_message_does_not_render_queued_badge() {
         "a turn should not mark its own user message as queued once it is the active assistant turn: {lines:#?}"
     );
     assert!(
-        lines.iter().any(|line| line.contains("gpt-5.4-mini")),
-        "streaming follow-up should keep the active assistant footer: {lines:#?}"
+        lines.iter().all(|line| !line.contains("gpt-5.4-mini")),
+        "streaming follow-up should leave lifecycle status to the live dock: {lines:#?}"
     );
 }
 
 #[test]
-fn queued_user_followup_keeps_active_footer_on_streaming_turn() {
+fn queued_user_followup_keeps_active_status_out_of_transcript() {
     // arrange
     // act
     // assert
@@ -216,8 +216,8 @@ fn queued_user_followup_keeps_active_footer_on_streaming_turn() {
     ));
 
     assert!(
-        lines.iter().any(|line| line.contains("gpt-5.4-mini")),
-        "active assistant footer should stay on the in-flight turn: {lines:#?}"
+        lines.iter().all(|line| !line.contains("gpt-5.4-mini")),
+        "active lifecycle text should not be duplicated in the transcript footer: {lines:#?}"
     );
     assert!(
         lines.iter().any(|line| line.contains(" QUEUED ")),
@@ -372,27 +372,30 @@ fn startup_lifecycle_text_participates_in_selection_copy() {
         })
         .unwrap_or_abort();
 
-    let hit = transcript_selection_cell(
+    let anchor = transcript_selection_cell(
         &app,
         area,
         snapshot.viewport.x,
         snapshot.viewport.y + u16::try_from(row).unwrap_or_abort(),
     )
     .unwrap_or_abort();
-    assert_eq!(hit.row, row);
-
-    let copied = transcript_selection_text(
+    assert_eq!(anchor.row, row);
+    let row_width = display_width(snapshot.rows[row].trim_end()).saturating_sub(1);
+    let focus = transcript_selection_cell(
         &app,
         area,
-        TranscriptSelection {
-            anchor: TranscriptSelectionCell { row, column: 0 },
-            focus: TranscriptSelectionCell {
-                row,
-                column: usize::from(snapshot.viewport.width.saturating_sub(1)),
-            },
-        },
+        snapshot
+            .viewport
+            .x
+            .saturating_add(u16::try_from(row_width).unwrap_or(u16::MAX)),
+        snapshot.viewport.y + u16::try_from(row).unwrap_or_abort(),
     )
     .unwrap_or_abort();
+    app.transcript_view.transcript_selection = Some(TranscriptSelection { anchor, focus });
+    app.transcript_view.transcript_selection_anchors.set(None);
+
+    let copied = transcript_selection_text(&app, area, TranscriptSelection { anchor, focus })
+        .unwrap_or_abort();
     assert!(
         copied.contains("Harness")
             || copied.contains("New worktree")

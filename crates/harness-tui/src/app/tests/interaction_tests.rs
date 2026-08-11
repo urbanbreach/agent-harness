@@ -163,6 +163,7 @@ pub(super) fn transcript_navigation_keys_match_scroll_expectations() {
     let mut app = AppState::new_live(None, false, None);
     app.focus = Focus::Details;
     app.transcript_view.last_transcript_max_scroll.set(42);
+    app.transcript_view.last_transcript_viewport_height.set(12);
 
     app.handle_key(key(KeyCode::PageUp));
     assert_eq!(app.transcript_view.transcript_scroll, 10);
@@ -170,7 +171,7 @@ pub(super) fn transcript_navigation_keys_match_scroll_expectations() {
 
     app.handle_key(key(KeyCode::PageDown));
     assert_eq!(app.transcript_view.transcript_scroll, 0);
-    assert!(!app.transcript_view.follow_mode);
+    assert!(app.transcript_view.follow_mode);
 
     app.handle_key(key(KeyCode::PageDown));
     assert_eq!(app.transcript_view.transcript_scroll, 0);
@@ -336,6 +337,7 @@ pub(super) fn page_up_down_with_prompt_focus_scrolls_transcript_without_clearing
     app.composer.prompt_buffer = "draft text".to_string();
     app.composer.prompt_cursor = 10;
     app.transcript_view.last_transcript_max_scroll.set(42);
+    app.transcript_view.last_transcript_viewport_height.set(12);
 
     app.handle_key(key(KeyCode::PageUp));
     assert_eq!(app.transcript_view.transcript_scroll, 10);
@@ -346,7 +348,7 @@ pub(super) fn page_up_down_with_prompt_focus_scrolls_transcript_without_clearing
 
     app.handle_key(key(KeyCode::PageDown));
     assert_eq!(app.transcript_view.transcript_scroll, 0);
-    assert!(!app.transcript_view.follow_mode);
+    assert!(app.transcript_view.follow_mode);
 
     app.handle_key(key(KeyCode::PageDown));
     assert!(app.transcript_view.follow_mode);

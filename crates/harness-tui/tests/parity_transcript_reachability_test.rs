@@ -16,6 +16,7 @@ use harness_tui::transcript_pager::{
     PagerCommand, PagerError, PagerStdio, TerminalControl, TerminalState,
 };
 use harness_tui::transcript_scroll::MotionPreference;
+use harness_tui::UnwrapOrAbort;
 use ratatui::{backend::TestBackend, Terminal};
 
 const APP_SOURCE: &str = include_str!("../src/app.rs");
@@ -46,8 +47,8 @@ fn user_event(seq: u64, request_id: &str, text: &str) -> EventEnvelopeV1 {
 }
 
 fn composite_with_raw_tool() -> TranscriptComposite {
-    let mut composite = TranscriptComposite::new(ratatui::layout::Rect::new(0, 0, 80, 24))
-        .expect("valid transcript viewport");
+    let mut composite =
+        TranscriptComposite::new(ratatui::layout::Rect::new(0, 0, 80, 24)).unwrap_or_abort();
     let replay = ReplayTurn::event(1, 0, 1);
     composite
         .replace_events(vec![
@@ -67,7 +68,7 @@ fn composite_with_raw_tool() -> TranscriptComposite {
                 }))),
             }),
         ])
-        .expect("tool transcript events should project");
+        .unwrap_or_abort();
     composite
 }
 
@@ -148,10 +149,10 @@ fn live_and_replay_sessions_reach_the_transcript_parity_owner() {
     live.ingest_event(first);
     live.ingest_event(second);
     live.focus = Focus::Details;
-    let mut terminal = Terminal::new(TestBackend::new(100, 30)).expect("test terminal");
+    let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap_or_abort();
     terminal
         .draw(|frame| harness_tui::ui::render_app(frame, &live))
-        .expect("live transcript should render");
+        .unwrap_or_abort();
 
     // Then: both paths expose stable identity/block state through the composite owner.
     assert_eq!(
@@ -163,6 +164,7 @@ fn live_and_replay_sessions_reach_the_transcript_parity_owner() {
         live.transcript_view_model().map(|view| view.blocks.len()),
         Some(2)
     );
+    live.scroll_page_up(1);
     assert!(live.select_transcript_turn_at(1));
     assert_eq!(
         live.transcript_view_model()
@@ -170,8 +172,6 @@ fn live_and_replay_sessions_reach_the_transcript_parity_owner() {
         Some(harness_tui::transcript_identity::TranscriptFocus::Timeline)
     );
     assert!(!live.transcript_following() || live.transcript_scroll_offset() == 0);
-    live.scroll_page_up(1);
-    assert!(!live.transcript_following());
     assert!(live.toggle_selected_transcript_fold());
     live.handle_key(KeyEvent::new(KeyCode::Char('v'), KeyModifiers::NONE));
     assert_eq!(
@@ -186,7 +186,7 @@ fn live_and_replay_sessions_reach_the_transcript_parity_owner() {
             PagerStdio::capture_with_timeout(Duration::from_secs(1)),
             &mut pager_terminal,
         )
-        .expect("live pager should restore terminal state");
+        .unwrap_or_abort();
     assert_eq!(pager_exit.code, Some(0));
     assert_eq!(
         live.transcript_screen_mode(),
@@ -212,40 +212,36 @@ fn transcript_parity_owner_reaches_navigation_viewer_pager_selection_and_scroll(
     let block_id = view.blocks[0].id;
 
     // When: timeline selection, fold, viewer raw mode, pager suspension, and scroll are used.
-    composite.select_turn(turn_id).expect("timeline selection");
-    composite.toggle_fold(block_id).expect("fold toggle");
+    composite.select_turn(turn_id).unwrap_or_abort();
+    composite.toggle_fold(block_id).unwrap_or_abort();
     assert_eq!(composite.view().blocks[0].fold_state, FoldState::Expanded);
-    composite.open_viewer(block_id).expect("viewer opens");
+    composite.open_viewer(block_id).unwrap_or_abort();
     assert_eq!(
         composite.viewer().map(|viewer| viewer.mode()),
         Some(harness_tui::transcript_block_viewer::ViewerMode::Wrapped)
     );
     composite
         .viewer_mut()
-        .expect("viewer remains live")
+        .unwrap_or_abort()
         .toggle_mode()
-        .expect("raw viewer mode");
+        .unwrap_or_abort();
     assert_eq!(
         composite.viewer().map(|viewer| viewer.mode()),
         Some(harness_tui::transcript_block_viewer::ViewerMode::Raw)
     );
-    composite
-        .close_viewer()
-        .expect("viewer restores transcript");
-    let snapshot = composite.suspend_pager().expect("pager snapshot");
+    composite.close_viewer().unwrap_or_abort();
+    let snapshot = composite.suspend_pager().unwrap_or_abort();
     assert!(snapshot.as_str().contains("tool output"));
-    composite
-        .restore_pager()
-        .expect("pager restores transcript");
+    composite.restore_pager().unwrap_or_abort();
     composite
         .scroll_to(0.0, 0, MotionPreference::ReducedMotion)
-        .expect("scroll transition");
+        .unwrap_or_abort();
     composite
         .resize(ratatui::layout::Rect::new(0, 0, 100, 30))
-        .expect("resize preserves the composite layout");
+        .unwrap_or_abort();
 
     // Then: replay identity-backed selection remains valid after the navigation lifecycle.
-    let selection = TranscriptSelection::new(turn_id, block_id, 0..4).expect("valid selection");
+    let selection = TranscriptSelection::new(turn_id, block_id, 0..4).unwrap_or_abort();
     assert!(selection.is_present_in(&composite.view().identity));
     assert_eq!(
         composite.view().screen.mode(),
@@ -275,6 +271,6 @@ fn live_transcript_reachability_guards_cover_input_mouse_render_and_pager_adapte
     assert!(UI_TRANSCRIPT_SOURCE.contains("transcript_viewer"));
     assert!(TRANSCRIPT_INTEGRATION_SOURCE.contains("ExternalPagerSuspended"));
     assert!(MOUSE_SOURCE.contains("set_transcript_scroll_from_top_with_max"));
-    assert!(TRANSCRIPT_STATE_SOURCE.contains("composite.detach_at"));
+    assert!(TRANSCRIPT_STATE_SOURCE.contains("measured_viewport().detach_at"));
     assert!(TRANSCRIPT_INTEGRATION_SOURCE.contains("self.scroll_to(target"));
 }

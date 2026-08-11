@@ -739,7 +739,7 @@ fn live_freeze_shortcut_disclosure_row(
         .bg(surface)
         .add_modifier(Modifier::DIM);
 
-    let mode_key = freeze_preferred_binding(app, Action::CycleMode, "Shift+Tab");
+    let mode_key = freeze_preferred_binding(app, Action::VariantCycle, "Shift+Tab");
     let help_key = freeze_preferred_binding(app, Action::Help, "Ctrl+x");
     let active_turn = app.active_turn_in_progress();
 

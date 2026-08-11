@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use crate::design_contract::LifecycleState;
 use crate::transcript_blocks::{
     BlockEvent, BlockKind, BlockLifecycle, BlockStoreError, RawDisclosure, TranscriptBlocks,
@@ -53,6 +55,7 @@ pub struct BlockSeed {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TranscriptEvent {
     TurnStarted(TurnSeed),
+    TurnUpdated(TurnSeed),
     TurnStatus {
         turn_id: TurnId,
         status: TimelineStatus,
@@ -152,9 +155,17 @@ pub(crate) fn project(
 ) -> Result<Projection, TranscriptIntegrationError> {
     let mut turns = Vec::new();
     let mut blocks = Vec::new();
+    let mut block_ids = HashSet::new();
     for event in events {
         match event {
             TranscriptEvent::TurnStarted(turn) => turns.push(turn.clone()),
+            TranscriptEvent::TurnUpdated(updated) => {
+                let turn = turns
+                    .iter_mut()
+                    .find(|turn| turn.turn_id() == updated.turn_id())
+                    .ok_or(TranscriptIntegrationError::MissingTurn(updated.turn_id()))?;
+                *turn = updated.clone();
+            }
             TranscriptEvent::TurnStatus {
                 turn_id,
                 status,
@@ -168,10 +179,7 @@ pub(crate) fn project(
                 turn.lifecycle = *lifecycle;
             }
             TranscriptEvent::BlockCreated(seed) => {
-                if blocks
-                    .iter()
-                    .any(|block: &ProjectedBlock| block.seed.id == seed.id)
-                {
+                if !block_ids.insert(seed.id) {
                     return Err(TranscriptIntegrationError::Blocks(
                         BlockStoreError::DuplicateBlock(seed.id),
                     ));
@@ -227,13 +235,12 @@ pub(crate) fn project(
             }
         }
     }
+    let present_turns = turns.iter().map(TurnSeed::turn_id).collect::<HashSet<_>>();
     let mut projected = TranscriptBlocks::new();
-    for block in blocks.into_iter().filter(|block| {
-        !block.removed
-            && turns
-                .iter()
-                .any(|turn| turn.turn_id() == block.seed.turn_id)
-    }) {
+    for block in blocks
+        .into_iter()
+        .filter(|block| !block.removed && present_turns.contains(&block.seed.turn_id))
+    {
         projected.insert(
             block.seed.id,
             block.seed.kind,

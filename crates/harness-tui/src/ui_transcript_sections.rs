@@ -1,5 +1,5 @@
 // allow: SIZE_OK — TUI transcript rendering (indivisible view model)
-use super::ui_transcript_tool_sections::build_tool_call_section;
+use super::ui_transcript_tool_sections::{build_tool_call_section, successful_edit_summary_title};
 use super::*;
 
 pub(super) fn build_transcript_sections(app: &AppState) -> Vec<TranscriptTurnSection> {
@@ -156,27 +156,61 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
         });
     }
 
-    let ordered_tool_calls = activity
-        .tool_calls
-        .iter()
-        .filter_map(|tool_call| {
-            build_tool_call_section(
-                tool_call,
-                app,
-                show_tool_details,
-                timestamps_visible,
-                show_generic_tool_output,
-                app.tool_output_expanded(tool_call),
-                stacked_diffs,
-                session_path,
-            )
-            .map(|section| TranscriptOrderedToolCallSection {
-                tool_call_id: tool_call.tool_call_id.clone(),
-                first_seq: tool_call.first_seq,
-                section,
-            })
-        })
-        .collect::<Vec<_>>();
+    let mut ordered_tool_calls: Vec<TranscriptOrderedToolCallSection> = Vec::new();
+    for tool_call in &activity.tool_calls {
+        let Some(section) = build_tool_call_section(
+            tool_call,
+            app,
+            show_tool_details,
+            timestamps_visible,
+            show_generic_tool_output,
+            app.tool_output_expanded(tool_call),
+            stacked_diffs,
+            session_path,
+        ) else {
+            continue;
+        };
+        if let Some(previous) = ordered_tool_calls.last_mut() {
+            let previous_call = activity
+                .tool_calls
+                .iter()
+                .find(|candidate| candidate.tool_call_id == previous.tool_call_id);
+            if previous_call.is_some_and(|candidate| safe_same_file_edit_pair(candidate, tool_call))
+                && !previous.section.detail_blocks.is_empty()
+                && !section.detail_blocks.is_empty()
+                && previous
+                    .section
+                    .detail_blocks
+                    .iter()
+                    .all(is_structured_diff_block)
+                && section.detail_blocks.iter().all(is_structured_diff_block)
+            {
+                if previous.section.detail_blocks != section.detail_blocks {
+                    previous.section.detail_blocks.extend(section.detail_blocks);
+                }
+                previous
+                    .section
+                    .coalesced_tool_call_ids
+                    .push(tool_call.tool_call_id.clone());
+                previous.section.expanded |= section.expanded;
+                previous.section.details_collapsed_by_default = true;
+                previous.section.details_preview_visible = false;
+                previous.section.header.disclosure_state = Some(if previous.section.expanded {
+                    TranscriptToolCallDisclosureState::Expanded
+                } else {
+                    TranscriptToolCallDisclosureState::Collapsed
+                });
+                previous.section.header.title =
+                    successful_edit_summary_title(tool_call, &previous.section.detail_blocks);
+                continue;
+            }
+        }
+        ordered_tool_calls.push(TranscriptOrderedToolCallSection {
+            tool_call_id: tool_call.tool_call_id.clone(),
+            first_seq: tool_call.first_seq,
+            section,
+        });
+    }
     let tool_calls = ordered_tool_calls
         .iter()
         .map(|tool_call| tool_call.section.clone())
@@ -260,6 +294,34 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
         error,
         assistant_parts,
     }
+}
+
+fn is_structured_diff_block(block: &TranscriptToolCallDetailBlock) -> bool {
+    matches!(block, TranscriptToolCallDetailBlock::StructuredDiff { .. })
+}
+
+fn safe_same_file_edit_pair(
+    before: &crate::app::ToolCallEntry,
+    after: &crate::app::ToolCallEntry,
+) -> bool {
+    let trusted_success = |call: &crate::app::ToolCallEntry| {
+        call.status == ToolCallDisplayStatus::Succeeded
+            && matches!(
+                call.effective_tool_id(),
+                "edit" | "edit.hashline_apply" | "write" | "fs.write"
+            )
+            && call
+                .edit
+                .as_ref()
+                .is_none_or(|edit| edit.status == crate::app::EditDisplayStatus::Applied)
+    };
+    let both_writes = matches!(before.effective_tool_id(), "write" | "fs.write")
+        && matches!(after.effective_tool_id(), "write" | "fs.write");
+    trusted_success(before)
+        && trusted_success(after)
+        && before.edit_path_display().is_some()
+        && before.edit_path_display() == after.edit_path_display()
+        && (!both_writes || before.args_summary == after.args_summary)
 }
 
 fn build_ordered_assistant_parts(
@@ -735,4 +797,122 @@ fn cancel_error_display_text(raw: &str, duration_ms: Option<u64>) -> Option<Stri
         None => "0.0s".to_string(),
     };
     Some(format!("Turn cancelled by user in {duration}."))
+}
+
+#[cfg(test)]
+mod ui10_tests {
+    use super::*;
+
+    fn successful_edit(id: &str, path: &str) -> crate::app::ToolCallEntry {
+        let mut call = transcript_section_model_test_tool_call(id, "edit");
+        call.canonical_tool_id = Some("edit".to_string());
+        call.args_summary = serde_json::json!({
+            "filePath": path,
+            "oldString": "old\n",
+            "newString": "new\n"
+        })
+        .to_string();
+        call.status = ToolCallDisplayStatus::Succeeded;
+        call
+    }
+
+    #[test]
+    fn same_file_coalescing_accepts_only_trusted_successful_adjacent_edits() {
+        let first = successful_edit("edit-1", "src/lib.rs");
+        let second = successful_edit("edit-2", "src/lib.rs");
+        assert!(safe_same_file_edit_pair(&first, &second));
+        let mut failed = successful_edit("edit-3", "src/lib.rs");
+        failed.status = ToolCallDisplayStatus::Failed;
+        assert!(!safe_same_file_edit_pair(&second, &failed));
+        assert!(!safe_same_file_edit_pair(
+            &second,
+            &successful_edit("edit-4", "src/main.rs")
+        ));
+
+        let mut first_write = successful_edit("write-1", "src/lib.rs");
+        first_write.tool_id = "fs.write".to_string();
+        first_write.canonical_tool_id = Some("fs.write".to_string());
+        let mut duplicate_write = first_write.clone();
+        duplicate_write.tool_call_id = "write-2".to_string();
+        assert!(safe_same_file_edit_pair(&first_write, &duplicate_write));
+        duplicate_write.args_summary.push(' ');
+        assert!(!safe_same_file_edit_pair(&first_write, &duplicate_write));
+    }
+
+    #[test]
+    fn live_duplicate_writes_coalesce_under_first_identity_and_expand_as_a_group() {
+        let run_dir = tempfile::tempdir().unwrap_or_abort();
+        let mut app = AppState::new_live(Some(run_dir.path().to_path_buf()), false, None);
+        let mut activity = transcript_section_model_test_activity(
+            "request-live-diff",
+            ActivityStatus::Streaming,
+            "",
+        );
+        let mut writes = Vec::new();
+        for index in 0..3 {
+            let mut write = successful_edit(&format!("write-{index}"), "demo.txt");
+            write.tool_id = "fs.write".to_string();
+            write.canonical_tool_id = Some("fs.write".to_string());
+            write.args_summary =
+                r#"{"path":"demo.txt","content":"parity-diff-ok\n","oldContent":"old content\n"}"#
+                    .to_string();
+            writes.push(write);
+        }
+        activity.tool_calls = writes;
+        app.activities = std::collections::VecDeque::from([activity]);
+
+        let collapsed = build_transcript_sections(&app);
+        assert_eq!(collapsed[0].tool_calls.len(), 1);
+        assert_eq!(collapsed[0].tool_calls[0].tool_call_id, "write-0");
+        assert_eq!(
+            collapsed[0].tool_calls[0].coalesced_tool_call_ids,
+            ["write-0", "write-1", "write-2"]
+        );
+        assert_eq!(
+            collapsed[0].tool_calls[0].header.title,
+            "Edit demo.txt +1/-1"
+        );
+        assert!(!collapsed[0].tool_calls[0].details_visible());
+
+        for id in ["write-0", "write-1", "write-2"] {
+            app.toggle_tool_output_for_test(id);
+        }
+        let expanded = build_transcript_sections(&app);
+        assert!(expanded[0].tool_calls[0].details_visible());
+        assert_eq!(expanded[0].tool_calls[0].detail_blocks.len(), 1);
+    }
+
+    #[test]
+    fn tool_lifecycle_upgrades_diff_highlight_without_replacing_identity_or_content() {
+        let mut blocks = vec![TranscriptToolCallDetailBlock::StructuredDiff {
+            diff_content: "--- src/lib.rs\n+++ src/lib.rs\n@@ -1 +1 @@\n-old\n+new\n".to_string(),
+            fallback_path: Some("src/lib.rs".to_string()),
+            force_stacked: false,
+            plain_numbered: false,
+            highlight_syntax: false,
+            show_file_header: false,
+        }];
+        let before = blocks.clone();
+        super::super::ui_transcript_tool_sections::set_diff_highlight_phase(&mut blocks, true);
+        let TranscriptToolCallDetailBlock::StructuredDiff {
+            diff_content: before_text,
+            fallback_path: before_path,
+            ..
+        } = &before[0]
+        else {
+            panic!("structured before block");
+        };
+        let TranscriptToolCallDetailBlock::StructuredDiff {
+            diff_content: after_text,
+            fallback_path: after_path,
+            highlight_syntax,
+            ..
+        } = &blocks[0]
+        else {
+            panic!("structured after block");
+        };
+        assert!(*highlight_syntax);
+        assert_eq!(before_text, after_text);
+        assert_eq!(before_path, after_path);
+    }
 }

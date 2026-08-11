@@ -280,6 +280,86 @@ pub(super) fn mouse_drag_copy_on_select_keeps_body_rows_aligned_after_reasoning_
     crate::clipboard::set_copy_override(None);
 }
 
+pub(super) fn expanded_edit_ctrl_c_copies_canonical_unified_patches() {
+    let _guard = ClipboardModeGuard::disabled_copy_on_select();
+    let copied = Arc::new(Mutex::new(None::<String>));
+    let sink = Arc::clone(&copied);
+    crate::clipboard::set_copy_override(Some(Box::new(move |text| {
+        *sink.lock().unwrap_or_abort() = Some(text.to_string());
+        Ok(())
+    })));
+
+    let run_dir = tempfile::tempdir().unwrap_or_abort();
+    let mut app = transcript_selection_test_app();
+    app.session_path = Some(run_dir.path().to_path_buf());
+    app.activities[0].transcript_text.clear();
+    let make_edit = |id: &str, path: &str, old: &str, new: &str, seq: u64| ToolCallEntry {
+        tool_call_id: id.to_string(),
+        tool_id: "edit".to_string(),
+        canonical_tool_id: Some("edit".to_string()),
+        alias_source_tool_id: None,
+        resolved_tool_identity: None,
+        args_summary: serde_json::json!({
+            "filePath": path,
+            "oldString": old,
+            "newString": new
+        })
+        .to_string(),
+        args_digest: format!("digest-{id}"),
+        lifecycle_state: None,
+        status: ToolCallDisplayStatus::Succeeded,
+        output_summary: Some("edited".to_string()),
+        output_digest: Some(format!("output-{id}")),
+        output_json: None,
+        truncated_output: None,
+        edit: None,
+        lineage: None,
+        artifact_refs: Vec::new(),
+        timing_elapsed_ms: None,
+        permissions: Vec::new(),
+        first_seq: seq,
+        last_seq: seq,
+        first_mono_ms: seq,
+        last_mono_ms: seq,
+        first_timestamp: None,
+        last_timestamp: None,
+    };
+    app.activities[0].tool_calls = vec![
+        make_edit("create", "created.txt", "", "created line\n", 10),
+        make_edit("modify", "modified.txt", "old line\n", "new line\n", 20),
+        make_edit("delete", "deleted.txt", "deleted line\n", "", 30),
+    ];
+    for id in ["create", "modify", "delete"] {
+        app.toggle_tool_output_for_test(id);
+    }
+
+    let (start_column, start_row, _) = transcript_selection_text_bounds(&app, "created line");
+    let (end_column, end_row, end_width) = transcript_selection_text_bounds(&app, "deleted line");
+    drag_transcript_selection_range(
+        &mut app,
+        (start_column, start_row),
+        (end_column.saturating_add(end_width), end_row),
+    );
+    app.set_frame_area(TEST_FRAME_AREA);
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char('c'),
+        KeyModifiers::CONTROL,
+    ));
+
+    let patch = copied.lock().unwrap_or_abort().clone().unwrap_or_abort();
+    assert!(patch.contains("--- /dev/null\n+++ created.txt\n@@ -0,0 +1,1 @@"));
+    assert!(patch.contains("--- modified.txt\n+++ modified.txt\n@@ -1,1 +1,1 @@"));
+    assert!(patch.contains("--- deleted.txt\n+++ /dev/null\n@@ -1,1 +0,0 @@"));
+    assert!(patch.contains("+created line"));
+    assert!(patch.contains("-old line\n+new line"));
+    assert!(patch.contains("-deleted line"));
+    assert_eq!(
+        crate::ui::structured_diff_stats(&patch, None, false),
+        Some((2, 2))
+    );
+    crate::clipboard::set_copy_override(None);
+}
+
 pub(super) fn transcript_selection_hit_testing_reuses_cached_snapshot_during_drag() {
     let app = transcript_selection_test_app();
     let (column, row, width) = transcript_selection_text_bounds(&app, "Copy this exact reply");

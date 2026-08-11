@@ -139,9 +139,7 @@ fn transcript_pending_permission_stays_after_last_activity() {
 
 #[test]
 fn transcript_layout_cache_invalidates_when_animation_frame_changes() {
-    // arrange
-    // act
-    // assert
+    // Given: a streaming transcript whose render key includes animation phase.
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
         request_id: "request-streaming-cache".to_string(),
@@ -171,27 +169,15 @@ fn transcript_layout_cache_invalidates_when_animation_frame_changes() {
     }]);
     app.transcript_view.selected_activity_index = 0;
 
-    let initial_lines = transcript_test_line_texts(build_transcript_lines_for_width(
-        &app,
-        &Theme::default(),
-        80,
-    ));
-    assert!(initial_lines
-        .iter()
-        .any(|line| line.contains("⠋ gpt-5.4-mini")));
+    let initial_key = app.transcript_render_cache_key();
 
+    // When: the animation advances to a different visible frame.
     for _ in 0..4 {
         app.advance_transcript_animation_phase();
     }
 
-    let updated_lines = transcript_test_line_texts(build_transcript_lines_for_width(
-        &app,
-        &Theme::default(),
-        80,
-    ));
-    assert!(updated_lines
-        .iter()
-        .any(|line| line.contains("⠙ gpt-5.4-mini")));
+    // Then: the render cache key changes without pinning lifecycle prose.
+    assert_ne!(app.transcript_render_cache_key(), initial_key);
 }
 
 #[test]
@@ -381,7 +367,7 @@ fn pending_permission_sections_render_warning_turn_container() {
 }
 
 #[test]
-fn streaming_assistant_footer_uses_reserved_active_label() {
+fn streaming_assistant_footer_reserves_blank_geometry_for_live_status() {
     // arrange
     // act
     // assert
@@ -420,15 +406,10 @@ fn streaming_assistant_footer_uses_reserved_active_label() {
         80,
     ));
 
-    let footer_row = lines
-        .iter()
-        .position(|line| line.contains("gpt-5.4-mini"))
-        .unwrap_or_abort();
-    assert_eq!(footer_row, 0);
-    let footer = lines[footer_row].trim_start();
-    assert!(
-        footer.contains("⠋") && footer.contains("gpt-5.4-mini"),
-        "streaming footer should keep spinner + model id\n{footer}"
+    assert_eq!(
+        lines,
+        vec![String::new()],
+        "streaming footer should reserve one blank row while the live status owns lifecycle text"
     );
 }
 
@@ -796,7 +777,7 @@ fn completed_latest_turn_keeps_footer_after_streaming_finishes() {
     ));
     assert!(streaming_lines
         .iter()
-        .any(|line| line.contains("gpt-5.4-mini")));
+        .any(|line| line.contains("completed reply")));
 
     app.activities[0].status = ActivityStatus::Done;
     app.mark_transcript_dirty_for_test();
@@ -1480,7 +1461,7 @@ fn assistant_tool_surface_spacing_matches_shell_rhythm() {
 }
 
 #[test]
-fn command_group_counts_all_members_and_discloses_output() {
+fn command_group_counts_all_members_and_discloses_output_only_when_expanded() {
     // arrange
     let mut activity =
         transcript_section_model_test_activity("request-command-group", ActivityStatus::Done, "");
@@ -2122,7 +2103,7 @@ fn reasoning_header_suppresses_empty_redacted_reasoning() {
 }
 
 #[test]
-fn streaming_assistant_footer_spinner_uses_deterministic_braille_frames() {
+fn streaming_assistant_footer_stays_blank_across_animation_ticks() {
     // arrange
     // act
     // assert
@@ -2169,15 +2150,10 @@ fn streaming_assistant_footer_spinner_uses_deterministic_braille_frames() {
         80,
     ));
 
-    assert!(
-        first[0].contains('⠋') && first[0].contains("gpt-5.4-mini"),
-        "first spinner frame missing\n{}",
-        first[0]
-    );
-    assert!(
-        second[0].contains('⠙') && second[0].contains("gpt-5.4-mini"),
-        "second spinner frame missing\n{}",
-        second[0]
+    assert_eq!(
+        (first, second),
+        (vec![String::new()], vec![String::new()]),
+        "animation ticks must not reintroduce a second lifecycle status source"
     );
 }
 

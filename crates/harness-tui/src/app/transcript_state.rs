@@ -14,6 +14,7 @@ use crate::UnwrapOrAbort;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
+use super::session_projection::ProjectionDelta;
 #[cfg(test)]
 use super::transcript_cache::TranscriptRenderCache;
 use super::transcript_viewport::MeasuredTranscriptViewport;
@@ -62,7 +63,24 @@ impl AppState {
             .and_then(TranscriptComposite::viewer)
     }
 
-    pub(crate) fn sync_transcript_integration(&mut self) {
+    pub(crate) fn sync_transcript_integration(&mut self, animate_tool_transitions: bool) {
+        let projection_delta = self.projection.take_transcript_delta();
+        let terminal_tool_ids = self
+            .activities
+            .iter()
+            .flat_map(|activity| activity.tool_calls.iter())
+            .filter(|tool_call| {
+                matches!(
+                    tool_call.status,
+                    ToolCallDisplayStatus::Succeeded | ToolCallDisplayStatus::Failed
+                )
+            })
+            .map(|tool_call| tool_call.tool_call_id.clone())
+            .collect::<Vec<_>>();
+        self.transcript_view.tool_motion.sync_terminal_ids(
+            terminal_tool_ids,
+            animate_tool_transitions && !self.replay_mode,
+        );
         let lifecycle = if self.active_turn_in_progress() {
             QueueLifecycle::Streaming
         } else {
@@ -79,11 +97,28 @@ impl AppState {
         if self.transcript_integration.is_none() {
             self.transcript_integration = TranscriptComposite::new(viewport).ok();
         }
-        let events = transcript_events_for_activities(self);
-        if let Some(composite) = self.transcript_integration.as_mut() {
-            let _ = composite.resize(viewport);
-            let _ = composite.replace_events(events);
+        let Some(mut composite) = self.transcript_integration.take() else {
+            return;
+        };
+        let _ = composite.resize(viewport);
+        match (animate_tool_transitions, projection_delta) {
+            (false, ProjectionDelta::ReplayPending) | (true, ProjectionDelta::None) => {}
+            (false, _) | (true, ProjectionDelta::FullRebuild | ProjectionDelta::ReplayPending) => {
+                let _ = composite.replace_events(transcript_events_for_activities(self));
+            }
+            (true, ProjectionDelta::Activity { index }) => {
+                let incremental = self
+                    .activities
+                    .get(index)
+                    .map(|activity| transcript_events_for_activity(index, activity));
+                let incremental_applied =
+                    incremental.is_some_and(|events| composite.sync_turn(events).is_ok());
+                if !incremental_applied {
+                    let _ = composite.replace_events(transcript_events_for_activities(self));
+                }
+            }
         }
+        self.transcript_integration = Some(composite);
     }
 
     pub fn transcript_following(&self) -> bool {
@@ -484,10 +519,17 @@ impl AppState {
     }
 
     pub(crate) fn advance_transcript_animation_phase(&mut self) {
+        self.advance_transcript_animation_phase_with_motion(
+            std::env::var_os("HARNESS_DISABLE_ANIMATIONS").is_none(),
+        );
+    }
+
+    fn advance_transcript_animation_phase_with_motion(&mut self, motion_enabled: bool) {
         self.transcript_view.transcript_animation_phase = self
             .transcript_view
             .transcript_animation_phase
             .wrapping_add(1);
+        self.transcript_view.tool_motion.advance(motion_enabled);
         self.clear_expired_interrupt_confirmation();
         let toast_occluded = self.overlay_stack().top().is_some();
         if !toast_occluded {
@@ -501,7 +543,7 @@ impl AppState {
         if let Some(composite) = self.transcript_integration.as_mut() {
             let animation_ms = u64::try_from(self.transcript_view.transcript_animation_phase)
                 .unwrap_or(u64::MAX)
-                .saturating_mul(33);
+                .saturating_mul(crate::scheduling::active_animation_period_ms());
             let _ = composite.tick_at(FrameNow {
                 animation_ms,
                 flush_ms: animation_ms,
@@ -514,19 +556,28 @@ impl AppState {
         self.advance_transcript_animation_phase();
     }
 
+    pub fn advance_animation_tick_with_motion_for_evidence(&mut self, motion_enabled: bool) {
+        self.advance_transcript_animation_phase_with_motion(motion_enabled);
+    }
+
     /// Current transcript animation phase for evidence metadata.
     pub fn animation_phase_for_evidence(&self) -> usize {
         self.transcript_animation_phase()
     }
 
     pub(crate) fn has_active_animations(&self) -> bool {
-        (self.startup_shell_visible()
-            && self.composer.prompt_buffer.is_empty()
-            && std::env::var_os("HARNESS_DISABLE_ANIMATIONS").is_none())
-            || (self.starting_session_seed_visible()
-                && std::env::var_os("HARNESS_DISABLE_ANIMATIONS").is_none())
-            || self.active_turn_in_progress()
-            || self.active_background_task_count() > 0
+        let motion_enabled = std::env::var_os("HARNESS_DISABLE_ANIMATIONS").is_none();
+        self.has_active_animations_with_motion(motion_enabled)
+    }
+
+    fn has_active_animations_with_motion(&self, motion_enabled: bool) -> bool {
+        let tool_motion_demand = self.active_turn_tool_motion_demand();
+        let interrupt_requested = self.interrupt_requested();
+        (self.startup_shell_visible() && self.composer.prompt_buffer.is_empty() && motion_enabled)
+            || (self.starting_session_seed_visible() && motion_enabled)
+            || (motion_enabled && tool_motion_demand && !interrupt_requested)
+            || (motion_enabled && self.active_background_task_count() > 0 && !interrupt_requested)
+            || self.transcript_view.tool_motion.has_finish_flash()
             || self.toast.is_some()
             || self.interrupt_confirmation_pending()
     }
@@ -542,6 +593,55 @@ impl AppState {
     /// Whether the shell currently requests animation ticks (evidence / tests).
     pub fn has_active_animations_for_evidence(&self) -> bool {
         self.has_active_animations()
+    }
+
+    pub fn has_active_animations_with_motion_for_evidence(&self, motion_enabled: bool) -> bool {
+        self.has_active_animations_with_motion(motion_enabled)
+    }
+
+    pub(crate) fn tool_finish_flash_remaining(&self, tool_call_id: &str) -> Option<u8> {
+        self.transcript_view
+            .tool_motion
+            .finish_flash_remaining(tool_call_id)
+    }
+
+    pub(crate) fn record_visible_running_tool_motion(&self, visible: bool) {
+        self.transcript_view
+            .visible_running_tool_motion
+            .set(visible);
+    }
+
+    pub fn record_visible_running_tool_motion_for_evidence(&self, visible: bool) {
+        self.record_visible_running_tool_motion(visible);
+    }
+
+    pub(crate) fn active_turn_tool_motion_demand(&self) -> bool {
+        if self.replay_mode || self.interrupt_requested() || !self.active_turn_in_progress() {
+            return false;
+        }
+        let mut has_active_tool = false;
+        let mut has_running_tool = false;
+        for tool_call in self
+            .activities
+            .iter()
+            .flat_map(|activity| activity.tool_calls.iter())
+        {
+            match tool_call.status {
+                ToolCallDisplayStatus::Running => {
+                    has_active_tool = true;
+                    has_running_tool = true;
+                }
+                ToolCallDisplayStatus::PendingPermission | ToolCallDisplayStatus::Queued => {
+                    has_active_tool = true;
+                }
+                ToolCallDisplayStatus::Succeeded | ToolCallDisplayStatus::Failed => {}
+            }
+        }
+        super::transcript_view::active_turn_motion_demand(
+            has_active_tool,
+            has_running_tool,
+            self.transcript_view.visible_running_tool_motion.get(),
+        )
     }
 
     pub(in crate::app) fn bump_transcript_render_epoch(&mut self) {
@@ -664,7 +764,11 @@ impl AppState {
         }
     }
 
-    fn set_tool_group_outputs_expanded(&mut self, tool_call_ids: &[String], expanded: bool) {
+    pub(super) fn set_tool_group_outputs_expanded(
+        &mut self,
+        tool_call_ids: &[String],
+        expanded: bool,
+    ) {
         for tool_call_id in tool_call_ids {
             self.set_tool_output_expanded(tool_call_id, expanded);
         }
@@ -798,53 +902,66 @@ impl AppState {
 fn transcript_events_for_activities(app: &AppState) -> Vec<TranscriptEvent> {
     let mut events = Vec::new();
     for (activity_index, activity) in app.activities.iter().enumerate() {
-        let mut blocks = Vec::new();
-        if let Some(user_message) = activity.user_message.as_ref() {
-            blocks.push((BlockKind::User, user_message.text.clone(), None));
-        }
-        if !activity.thinking_text.is_empty() {
-            blocks.push((BlockKind::Thinking, activity.thinking_text.clone(), None));
-        }
-        if !activity.transcript_text.is_empty() {
-            blocks.push((BlockKind::Assistant, activity.transcript_text.clone(), None));
-        }
-        for tool in &activity.tool_calls {
-            let content = tool
-                .output_summary
-                .as_deref()
-                .or(Some(tool.args_summary.as_str()))
-                .unwrap_or_default()
-                .to_owned();
-            let raw = tool.output_json.as_ref().map(RawDisclosure::from_json);
-            blocks.push((BlockKind::Tool, content, raw));
-        }
-        if blocks.is_empty() {
-            blocks.push((BlockKind::System, activity.status.to_string(), None));
-        }
-
-        let turn_index = u64::try_from(activity_index).unwrap_or(u64::MAX);
-        let replay = ReplayTurn::event(
-            activity.first_seq.max(1),
-            turn_index,
-            u64::try_from(blocks.len()).unwrap_or(u64::MAX),
-        );
-        events.push(TranscriptEvent::TurnStarted(TurnSeed::new(
-            replay,
-            timeline_status(activity.status),
-            lifecycle_state(activity),
-        )));
-        for (block_index, (kind, content, raw)) in blocks.into_iter().enumerate() {
-            let block_index = u64::try_from(block_index).unwrap_or(u64::MAX);
-            events.push(TranscriptEvent::BlockCreated(BlockSeed {
-                id: replay.block_id(block_index),
-                turn_id: replay.turn_id(),
-                kind,
-                lifecycle: block_lifecycle(activity.status),
-                content,
-                raw,
-            }));
-        }
+        events.extend(transcript_events_for_activity(activity_index, activity));
     }
+    events
+}
+
+fn transcript_events_for_activity(
+    activity_index: usize,
+    activity: &ActivityEntry,
+) -> Vec<TranscriptEvent> {
+    let mut blocks = Vec::new();
+    if let Some(user_message) = activity.user_message.as_ref() {
+        blocks.push((BlockKind::User, user_message.text.clone(), None));
+    }
+    if !activity.thinking_text.is_empty() {
+        blocks.push((BlockKind::Thinking, activity.thinking_text.clone(), None));
+    }
+    if !activity.transcript_text.is_empty() {
+        blocks.push((BlockKind::Assistant, activity.transcript_text.clone(), None));
+    }
+    for tool in &activity.tool_calls {
+        let content = tool
+            .output_summary
+            .as_deref()
+            .unwrap_or(tool.args_summary.as_str())
+            .to_owned();
+        let raw = tool.output_json.as_ref().map(RawDisclosure::from_json);
+        blocks.push((BlockKind::Tool, content, raw));
+    }
+    if blocks.is_empty() {
+        blocks.push((BlockKind::System, activity.status.to_string(), None));
+    }
+
+    let turn_index = u64::try_from(activity_index).unwrap_or(u64::MAX);
+    let replay = ReplayTurn::event(
+        activity.first_seq.max(1),
+        turn_index,
+        u64::try_from(blocks.len()).unwrap_or(u64::MAX),
+    );
+    let mut events = Vec::with_capacity(blocks.len().saturating_add(1));
+    events.push(TranscriptEvent::TurnStarted(TurnSeed::new(
+        replay,
+        timeline_status(activity.status),
+        lifecycle_state(activity),
+    )));
+    events.extend(
+        blocks
+            .into_iter()
+            .enumerate()
+            .map(|(block_index, (kind, content, raw))| {
+                let block_index = u64::try_from(block_index).unwrap_or(u64::MAX);
+                TranscriptEvent::BlockCreated(BlockSeed {
+                    id: replay.block_id(block_index),
+                    turn_id: replay.turn_id(),
+                    kind,
+                    lifecycle: block_lifecycle(activity.status),
+                    content,
+                    raw,
+                })
+            }),
+    );
     events
 }
 
@@ -970,6 +1087,17 @@ impl AppState {
             .measured_viewport()
             .scroll_up(usize::from(amount.max(1)));
         self.transcript_view.set_measured_viewport(next);
+    }
+
+    pub(in crate::app) fn transcript_page_scroll_rows(&self) -> u16 {
+        u16::try_from(
+            self.transcript_view
+                .last_transcript_viewport_height
+                .get()
+                .saturating_sub(2)
+                .max(1),
+        )
+        .unwrap_or(u16::MAX)
     }
 
     pub(in crate::app) fn scroll_transcript_down(&mut self, amount: u16) {

@@ -20,8 +20,8 @@ expression: "completed_shell_render.lines().map(str::trim_end).collect::<Vec<_>>
 
 
 
-
             ╭──────────────────────────────────────────────────────────────────────────╮
             │ ❯ keep this draft                                                        │
             ╰──────────────────────────────────────────────────────────────── unknown ─╯
+
             Enter:send  │  Shift+Tab:mode  │  Ctrl+x:shortcuts

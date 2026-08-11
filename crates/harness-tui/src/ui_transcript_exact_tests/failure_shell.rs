@@ -25,10 +25,10 @@ pub(crate) fn exact_test_block_tool_cards_skip_empty_subtitle_rows() {
         false,
         None,
     );
-    assert_eq!(section.header.subtitle, None);
+    assert_eq!(section.header.subtitle, Some("Failed".to_string()));
     assert_eq!(
         section.header.visual_style,
-        TranscriptToolCallVisualStyle::Inline
+        TranscriptToolCallVisualStyle::Block
     );
 
     let mut lines = Vec::new();
@@ -407,7 +407,7 @@ fn batch_write_edit_and_patch_rows_match_reference_headers() {
         None,
     );
     assert_eq!(write_section.header.icon, Some("←"));
-    assert_eq!(write_section.header.title, "Created src/main.rs");
+    assert_eq!(write_section.header.title, "Edit main.rs");
     assert_eq!(write_section.header.subtitle, None);
 
     let mut edit_call = transcript_section_model_test_tool_call("tc-edit-row", "edit");
@@ -425,7 +425,7 @@ fn batch_write_edit_and_patch_rows_match_reference_headers() {
         None,
     );
     assert_eq!(edit_section.header.icon, Some("←"));
-    assert_eq!(edit_section.header.title, "Edit src/main.rs");
+    assert_eq!(edit_section.header.title, "Edit main.rs");
     assert_eq!(edit_section.header.subtitle, None);
 
     let mut patch_call = transcript_section_model_test_tool_call("tc-patch-row", "apply_patch");
@@ -513,6 +513,7 @@ fn block_tool_cards_render_subtitle_inline_with_title() {
     let theme = Theme::default();
     let section = TranscriptToolCallSection {
         tool_call_id: "tool-agent-spawn".to_string(),
+        coalesced_tool_call_ids: vec!["tool-agent-spawn".to_string()],
         child_session_id: None,
         hovered_target: None,
         header: TranscriptToolCallHeader {
@@ -534,6 +535,7 @@ fn block_tool_cards_render_subtitle_inline_with_title() {
         details_preview_visible: false,
         animation_phase: 0,
         expanded: false,
+        rail_motion: ToolRailMotion::Settled,
     };
 
     let mut lines = Vec::new();
@@ -1095,6 +1097,7 @@ pub(crate) fn exact_test_inline_tool_rows_wrap_long_subtitles_cleanly() {
     let theme = Theme::default();
     let section = TranscriptToolCallSection {
         tool_call_id: "tool-inline-read".to_string(),
+        coalesced_tool_call_ids: vec!["tool-inline-read".to_string()],
         child_session_id: None,
         hovered_target: None,
         header: TranscriptToolCallHeader {
@@ -1116,6 +1119,7 @@ pub(crate) fn exact_test_inline_tool_rows_wrap_long_subtitles_cleanly() {
         details_preview_visible: false,
         animation_phase: 0,
         expanded: false,
+        rail_motion: ToolRailMotion::Settled,
     };
 
     let mut lines = Vec::new();

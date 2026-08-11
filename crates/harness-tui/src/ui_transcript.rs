@@ -71,8 +71,9 @@ use super::ui_transcript_interaction::{
 };
 use super::ui_transcript_layout::{
     measure_transcript_layout, render_transcript_layout_surfaces,
-    transcript_diff_hunk_rows_for_layout, transcript_layout_lines, transcript_viewport_rows,
-    MeasuredTranscriptLayout, MeasuredTranscriptSurface,
+    transcript_diff_hunk_rows_for_layout, transcript_layout_has_visible_running_tool,
+    transcript_layout_lines, transcript_viewport_rows, MeasuredTranscriptLayout,
+    MeasuredTranscriptSurface,
 };
 use super::ui_transcript_page_flip::{transcript_scroll_position, TranscriptScrollPosition};
 use super::ui_transcript_scrollbar::{
@@ -134,8 +135,8 @@ use ui_transcript_tool_sections::{
 };
 use ui_transcript_types::*;
 pub(super) use ui_transcript_types::{
-    TranscriptRenderSurface, TranscriptRenderSurfaceKind, TranscriptToolCallDetailBlock,
-    TranscriptToolCallDetailTone,
+    ToolRailMotion, TranscriptRenderSurface, TranscriptRenderSurfaceKind,
+    TranscriptToolCallDetailBlock, TranscriptToolCallDetailTone,
 };
 
 #[cfg(test)]
@@ -206,6 +207,7 @@ fn cached_render_surfaces(
                 selection_rows: surface.selection_rows.clone(),
                 diff_hunk_offsets: surface.diff_hunk_offsets.clone(),
                 selected_rail: surface.selected_rail,
+                tool_rail_motion: surface.tool_rail_motion,
             })
             .collect()
     })
@@ -453,6 +455,9 @@ fn render_measured_transcript_pane(
             let regular_max = layout
                 .total_height
                 .saturating_sub(usize::from(viewport.content.height));
+            app.transcript_view
+                .last_transcript_viewport_height
+                .set(usize::from(viewport.content.height));
             app.transcript_view.record_measured_max_scroll(regular_max);
             let transcript_scroll = transcript_scroll_top(app, layout, viewport.content.height);
             let TranscriptScrollPosition {
@@ -475,6 +480,12 @@ fn render_measured_transcript_pane(
                     page_flip,
                 },
             );
+            app.record_visible_running_tool_motion(transcript_layout_has_visible_running_tool(
+                layout,
+                usize::from(surface_area.height),
+                transcript_scroll,
+            ));
+            render_integrated_timeline(frame, app, surface_area);
             render_transcript_layout_surfaces(
                 frame,
                 layout,
@@ -482,7 +493,6 @@ fn render_measured_transcript_pane(
                 transcript_scroll,
                 theme,
             );
-            render_integrated_timeline(frame, app, surface_area);
             render_transcript_selection(
                 frame,
                 app.transcript_selection(),
@@ -1170,6 +1180,73 @@ pub(crate) fn transcript_selection_text(
 ) -> Option<String> {
     with_transcript_selection_snapshot(app, area, |snapshot| snapshot.selection_text(selection))
         .flatten()
+}
+
+pub(crate) fn transcript_selection_patch_text(
+    app: &AppState,
+    area: Rect,
+    selection: TranscriptSelection,
+) -> Option<String> {
+    let selected = transcript_selection_text(app, area, selection)?;
+    let sections = build_transcript_sections(app);
+    let mut patches = Vec::new();
+    for tool in sections.iter().flat_map(|turn| turn.tool_calls.iter()) {
+        if tool.details_visible() {
+            collect_selected_diff_patches(&tool.detail_blocks, &selected, &mut patches);
+        }
+    }
+    if patches.is_empty() {
+        None
+    } else {
+        Some(
+            patches
+                .into_iter()
+                .map(|patch| {
+                    if patch.ends_with('\n') {
+                        patch
+                    } else {
+                        format!("{patch}\n")
+                    }
+                })
+                .collect(),
+        )
+    }
+}
+
+fn collect_selected_diff_patches(
+    blocks: &[TranscriptToolCallDetailBlock],
+    selected: &str,
+    patches: &mut Vec<String>,
+) {
+    for block in blocks {
+        match block {
+            TranscriptToolCallDetailBlock::StructuredDiff { diff_content, .. }
+                if unified_patch_change_is_selected(diff_content, selected) =>
+            {
+                if !patches.contains(diff_content) {
+                    patches.push(diff_content.clone());
+                }
+            }
+            TranscriptToolCallDetailBlock::FileSection(section)
+                if section.disclosure_state == TranscriptToolCallDisclosureState::Expanded =>
+            {
+                collect_selected_diff_patches(&section.detail_blocks, selected, patches);
+            }
+            _ => {}
+        }
+    }
+}
+
+fn unified_patch_change_is_selected(patch: &str, selected: &str) -> bool {
+    patch.lines().any(|line| {
+        let Some(body) = line.strip_prefix(['+', '-']) else {
+            return false;
+        };
+        !line.starts_with("+++")
+            && !line.starts_with("---")
+            && !body.is_empty()
+            && selected.contains(body)
+    })
 }
 
 #[cfg(test)]

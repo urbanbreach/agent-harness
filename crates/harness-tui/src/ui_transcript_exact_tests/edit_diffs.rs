@@ -52,6 +52,7 @@ pub(crate) fn exact_test_transcript_edit_tool_matches_inline_diff_shape() {
         last_timestamp: None,
     });
     app.activities = std::collections::VecDeque::from(vec![entry]);
+    app.toggle_tool_output_for_test("call-edit-1");
 
     let rendered = build_transcript_lines_for_width(&app, &Theme::default(), 160)
         .into_iter()
@@ -64,7 +65,7 @@ pub(crate) fn exact_test_transcript_edit_tool_matches_inline_diff_shape() {
         .collect::<Vec<_>>()
         .join("\n");
 
-    assert!(rendered.contains("Patch · ui.rs") || rendered.contains("◆ Patch"));
+    assert!(rendered.contains("Edit ui.rs +1/-1"), "{rendered}");
     assert!(rendered.contains("crates/harness-tui/src"));
     assert!(rendered.contains("render_diff_tab"));
     assert!(rendered.contains("render_live_details_overlay"));
@@ -185,7 +186,7 @@ pub(crate) fn exact_test_transcript_apply_patch_multifile_uses_output_edit_paths
         output_summary: Some("Success. Updated the following files".to_string()),
         output_digest: Some("digest-apply-patch-output".to_string()),
         output_json: Some(serde_json::json!({
-            "files": ["M notes/a.md", "M notes/b.md"],
+            "files": ["M notes/a.md", "M notes/b.md", "M notes/missing.md"],
             "edits": [
                 {
                     "edit_id": "apply-patch-1",
@@ -202,6 +203,14 @@ pub(crate) fn exact_test_transcript_apply_patch_multifile_uses_output_edit_paths
                     "deleted": false,
                     "diff_rel_path": "artifacts/apply-b.diff",
                     "diff_digest": "digest-apply-b"
+                },
+                {
+                    "edit_id": "apply-patch-3",
+                    "path": "notes/missing.md",
+                    "summary": "apply patch update notes/missing.md",
+                    "deleted": false,
+                    "diff_rel_path": "artifacts/missing.diff",
+                    "diff_digest": "digest-apply-missing"
                 }
             ]
         })),
@@ -234,11 +243,20 @@ pub(crate) fn exact_test_transcript_apply_patch_multifile_uses_output_edit_paths
     assert!(app.patch_file_output_expanded("call-apply-patch-1", "notes/b.md"));
     let sections = build_transcript_sections(&app);
     let turn = &sections[0];
-    let Some(TranscriptToolCallDetailBlock::FileSection(file_section)) =
-        turn.tool_calls[0].detail_blocks.first()
-    else {
-        panic!("expected apply_patch file section");
-    };
+    let file_sections = turn.tool_calls[0]
+        .detail_blocks
+        .iter()
+        .filter_map(|block| match block {
+            TranscriptToolCallDetailBlock::FileSection(section) => Some(section),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        file_sections.len(),
+        2,
+        "unreadable artifacts must not create empty disclosures"
+    );
+    let file_section = file_sections[0];
     assert_eq!(
         file_section.disclosure_state,
         TranscriptToolCallDisclosureState::Expanded
@@ -266,8 +284,10 @@ pub(crate) fn exact_test_transcript_apply_patch_multifile_uses_output_edit_paths
     )
     .join("\n");
 
-    assert!(rendered.contains("Patch 2 files") || rendered.contains("◆ Patch"));
-    assert!(!rendered.contains("Patch 2 files  ▸"));
+    assert!(rendered.contains("Patch 3 files") || rendered.contains("◆ Patch"));
+    assert!(!rendered.contains("Patch 3 files  ▸"));
+    assert!(rendered.contains("notes/missing.md"));
+    assert!(!rendered.contains("missing.md · notes  ▸"));
     assert!(rendered.contains("a.md · notes"));
     assert!(rendered.contains("b.md · notes"));
     assert!(
@@ -579,7 +599,7 @@ pub(crate) fn exact_test_transcript_inline_diff_stays_compact_between_tool_rows(
 }
 
 #[cfg(test)]
-pub(crate) fn exact_test_transcript_applied_edit_missing_diff_surfaces_fallback() {
+pub(crate) fn exact_test_transcript_applied_edit_missing_diff_surfaces_truthful_summary() {
     let run_dir = tempfile::tempdir().unwrap_or_abort();
     let mut app = AppState::new_live(Some(run_dir.path().to_path_buf()), false, None);
     let mut entry = transcript_section_model_test_activity(
@@ -636,10 +656,12 @@ pub(crate) fn exact_test_transcript_applied_edit_missing_diff_surfaces_fallback(
         .collect::<Vec<_>>()
         .join("\n");
 
-    assert!(rendered.contains("Patch · rust.md") || rendered.contains("◆ Patch"));
-    assert!(rendered.contains("docs"));
-    assert!(rendered.contains("Diff preview unavailable"));
-    assert!(rendered.contains("artifacts/missing-edit.diff"));
+    assert!(rendered.contains("Edit rust.md"), "{rendered}");
+    assert!(!rendered.contains("Diff preview unavailable"), "{rendered}");
+    assert!(
+        !rendered.contains("artifacts/missing-edit.diff"),
+        "{rendered}"
+    );
 }
 
 #[cfg(test)]
@@ -871,7 +893,7 @@ pub(crate) fn exact_test_write_tool_hides_redundant_patched_file_header() {
         Some(run_dir.path()),
     );
 
-    assert_eq!(section.header.title, "Creating demo.txt");
+    assert_eq!(section.header.title, "Edit demo.txt");
     let structured = section
         .detail_blocks
         .iter()
@@ -1046,8 +1068,8 @@ pub(crate) fn exact_test_write_tool_title_matches_thought_lead() {
 
     let title_idx = lines
         .iter()
-        .position(|line| line.contains("Creating demo.txt"))
-        .unwrap_or_else(|| panic!("missing Creating title\n{}", lines.join("\n")));
+        .position(|line| line.contains("Edit demo.txt"))
+        .unwrap_or_else(|| panic!("missing Edit title\n{}", lines.join("\n")));
     let body_idx = lines
         .iter()
         .position(|line| line.contains("old content"))

@@ -3068,7 +3068,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_acp_session() {
     ));
     app.set_acp_session_info(Some(harness_core::integrations::AcpSessionInfo {
         session_id: "acp-session-1".to_string(),
-        agent_name: "build".to_string(),
+        agent_name: "demo-agent".to_string(),
     }));
 
     // When
@@ -3092,7 +3092,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_acp_session() {
     assert!(state.contains("connected"), "state={state}");
     let session = summary.acp_session.as_deref().expect("acp session");
     assert!(session.contains("acp-session-1"), "session={session}");
-    assert!(session.contains("build"), "session={session}");
+    assert!(session.contains("demo-agent"), "session={session}");
     assert!(rendered.contains("ACP state:"), "rendered={rendered}");
     assert!(rendered.contains("ACP session:"), "rendered={rendered}");
 }

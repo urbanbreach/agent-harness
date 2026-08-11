@@ -30,6 +30,7 @@ use harness_tui::render_test::{render_to_buffer, render_to_string};
 use harness_tui::ui;
 use ratatui::layout::Rect;
 use ratatui::style::Color;
+use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 const W: u16 = 120;
@@ -483,6 +484,27 @@ fn render_p0_key_01_footer_changes_with_draft() {
     assert!(
         rendered_draft.contains("Enter:send") || rendered_draft.contains("Enter: send"),
         "P0-KEY-01: draft footer must use Enter:send grammar\n{rendered_draft}"
+    );
+}
+
+#[test]
+fn startup_draft_footer_uses_configured_submit_binding() {
+    // Given
+    let mut app = startup_app();
+    app.apply_keybindings(BTreeMap::from([(
+        "submit_prompt".to_string(),
+        "ctrl+g".to_string(),
+    )]));
+    app.composer.prompt_buffer = "/help".to_string();
+    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
+
+    // When
+    let rendered = render(&app);
+
+    // Then
+    assert!(
+        rendered.contains("Ctrl+g:send") && !rendered.contains("Enter:send"),
+        "startup draft footer must show the active submit binding\n{rendered}"
     );
 }
 

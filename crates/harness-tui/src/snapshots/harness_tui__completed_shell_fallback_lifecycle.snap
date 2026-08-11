@@ -20,8 +20,8 @@ expression: "fallback_render.lines().map(str::trim_end).collect::<Vec<_>>().join
 
 
 
-
             ╭──────────────────────────────────────────────────────────────────────────╮
-            │ ❯                                                                        │
-            ╰──────────────────────────────────────────────────────────────── unknown ─╯
-            ready for first turn                Tab focus  ·  ? commands  ·  Ctrl+q quit
+            │ ❯ Build anything                                                         │
+            ╰───────────────────────────────────────────────────────────────────────  ─╯
+
+            Shift+Tab:mode  │  Ctrl+x:shortcuts

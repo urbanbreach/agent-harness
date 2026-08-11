@@ -1,15 +1,33 @@
 use std::collections::BTreeMap;
 
-use harness_tui::theme::Theme;
+use harness_tui::theme::{GlyphMode, Theme};
 use harness_tui::theme_system::{
     auto::{detect_system_appearance, SystemAppearance, ThemeChoice, ThemeEnvironment},
     fallback::{ColorLevel, FALLBACK_LADDER},
     family::ThemeFamily,
     persist::{load_theme_choice, store_theme_choice},
     preview::{ThemePreviewState, ThemePreviewStatus},
-    roles::{BorderRole, FocusRole, GlyphRole, LifecycleState, PaletteRole},
+    roles::{BorderRole, FocusRole, GlyphRole, LifecycleState, Palette, PaletteRole},
 };
 use ratatui::style::Color;
+
+#[test]
+fn legacy_agent_palette_roles_use_generic_accent() {
+    // Given: a theme that still carries compatibility slots for historical roles.
+    let theme = Theme::default();
+
+    // When: the active theme-system palette resolves those slots.
+    let palette = Palette::from_theme(&theme);
+    let colors = [
+        palette.color(PaletteRole::AgentBuild),
+        palette.color(PaletteRole::AgentPlan),
+        palette.color(PaletteRole::AgentDocs),
+        palette.color(PaletteRole::AgentAsk),
+    ];
+
+    // Then: no historical role receives distinct primary chrome.
+    assert_eq!(colors, [theme.text.accent; 4]);
+}
 
 #[test]
 fn theme_family_contract_exposes_every_role_without_missing_mappings() {
@@ -113,6 +131,43 @@ fn fallback_ladder_has_deterministic_truecolor_to_no_color_matrix() {
             }
         }
     }
+}
+
+#[test]
+fn legacy_glyph_mode_uses_semantic_ascii_without_changing_colors() {
+    let preferred = Theme::harness_chat();
+    let legacy = preferred.with_glyph_mode(GlyphMode::Ascii);
+
+    assert_eq!(legacy.live_shell.glyphs.streaming, "o");
+    assert_eq!(legacy.live_shell.glyphs.done, "*");
+    assert_eq!(legacy.live_shell.glyphs.error, "x");
+    assert_eq!(legacy.live_shell.transcript_glyphs.user_marker, ">");
+    assert_eq!(legacy.live_shell.transcript_glyphs.tool_marker, "*");
+    assert_eq!(legacy.surface, preferred.surface);
+    assert_eq!(legacy.status, preferred.status);
+}
+
+#[test]
+fn limited_color_modes_preserve_status_meaning() {
+    let basic = Theme::harness_chat().for_color_level(ColorLevel::Basic);
+    assert_ne!(basic.status.success, basic.status.warning);
+    assert_ne!(basic.status.success, basic.status.error);
+    assert_ne!(basic.status.warning, basic.status.error);
+
+    let no_color = Theme::harness_chat()
+        .for_color_level(ColorLevel::None)
+        .with_glyph_mode(GlyphMode::Ascii);
+    assert_eq!(no_color.status.success, Color::Reset);
+    assert_eq!(no_color.status.warning, Color::Reset);
+    assert_eq!(no_color.status.error, Color::Reset);
+    assert_ne!(
+        no_color.live_shell.glyphs.succeeded,
+        no_color.live_shell.glyphs.failed
+    );
+    assert_ne!(
+        no_color.live_shell.glyphs.pending_permission,
+        no_color.live_shell.glyphs.running
+    );
 }
 
 #[test]

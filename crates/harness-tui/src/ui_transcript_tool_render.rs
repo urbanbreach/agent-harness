@@ -57,7 +57,7 @@ fn build_tool_header_spans(
         spans.push(Span::styled(subtitle.to_string(), muted_meta_style(theme)));
     }
     if !compact_edit {
-        if let Some(disclosure) = tool_header_disclosure_glyph(header.disclosure_state) {
+        if let Some(disclosure) = tool_header_disclosure_glyph(header.disclosure_state, theme) {
             spans.push(Span::styled("  ", muted_meta_style(theme)));
             spans.push(Span::styled(disclosure, muted_meta_style(theme)));
         }
@@ -238,10 +238,7 @@ fn append_inline_tool_section_lines(
     append_surface_row_with_target(
         &mut render.lines,
         &mut render.interaction_rows,
-        tool_header_target(
-            &tool_call.tool_call_id,
-            tool_call.header.disclosure_state.is_some(),
-        ),
+        coalesced_tool_header_target(tool_call),
         TRANSCRIPT_ASSISTANT_BODY_PREFIX,
         base_surface,
         spans,
@@ -249,6 +246,20 @@ fn append_inline_tool_section_lines(
     );
 
     append_tool_call_detail_blocks(render, tool_call, theme, width, base_surface, None);
+}
+
+fn coalesced_tool_header_target(
+    tool_call: &TranscriptToolCallSection,
+) -> Option<TranscriptMouseTarget> {
+    if tool_call.header.disclosure_state.is_none() {
+        None
+    } else if tool_call.coalesced_tool_call_ids.len() > 1 {
+        Some(TranscriptMouseTarget::ToolGroup {
+            tool_call_ids: tool_call.coalesced_tool_call_ids.clone(),
+        })
+    } else {
+        tool_header_target(&tool_call.tool_call_id, true)
+    }
 }
 
 fn append_task_inline_tool_section_lines(
@@ -275,7 +286,8 @@ fn append_task_inline_tool_section_lines(
         spans.push(Span::styled(" · ", muted_meta_style(theme)));
         spans.push(Span::styled(subtitle.to_string(), muted_meta_style(theme)));
     }
-    if let Some(disclosure) = tool_header_disclosure_glyph(tool_call.header.disclosure_state) {
+    if let Some(disclosure) = tool_header_disclosure_glyph(tool_call.header.disclosure_state, theme)
+    {
         spans.push(Span::styled("  ", muted_meta_style(theme)));
         spans.push(Span::styled(disclosure, muted_meta_style(theme)));
     }
@@ -337,6 +349,7 @@ fn append_task_inline_tool_section_lines(
                     render,
                     &TranscriptToolCallSection {
                         tool_call_id: tool_call.tool_call_id.clone(),
+                        coalesced_tool_call_ids: tool_call.coalesced_tool_call_ids.clone(),
                         child_session_id: tool_call.child_session_id.clone(),
                         hovered_target: tool_call.hovered_target.clone(),
                         header: tool_call.header.clone(),
@@ -345,6 +358,7 @@ fn append_task_inline_tool_section_lines(
                         details_preview_visible: tool_call.details_preview_visible,
                         animation_phase: tool_call.animation_phase,
                         expanded: tool_call.expanded,
+                        rail_motion: tool_call.rail_motion,
                     },
                     theme,
                     width,
@@ -569,6 +583,7 @@ fn append_shell_tool_harness_card(
                     render,
                     &TranscriptToolCallSection {
                         tool_call_id: tool_call.tool_call_id.clone(),
+                        coalesced_tool_call_ids: tool_call.coalesced_tool_call_ids.clone(),
                         child_session_id: tool_call.child_session_id.clone(),
                         hovered_target: tool_call.hovered_target.clone(),
                         header: tool_call.header.clone(),
@@ -577,6 +592,7 @@ fn append_shell_tool_harness_card(
                         details_preview_visible: tool_call.details_preview_visible,
                         animation_phase: tool_call.animation_phase,
                         expanded: tool_call.expanded,
+                        rail_motion: tool_call.rail_motion,
                     },
                     theme,
                     width,
@@ -672,6 +688,7 @@ pub(super) fn append_tool_call_detail_blocks(
                 fallback_path,
                 force_stacked,
                 plain_numbered,
+                highlight_syntax,
                 show_file_header,
             } => {
                 append_tool_call_diff_block(
@@ -680,6 +697,7 @@ pub(super) fn append_tool_call_detail_blocks(
                     fallback_path.as_deref(),
                     *force_stacked,
                     *plain_numbered,
+                    *highlight_syntax,
                     *show_file_header,
                     theme,
                     width,
@@ -724,7 +742,8 @@ fn append_tool_call_file_section(
     }
     spans.push(Span::styled("  ", muted_meta_style(theme)));
     spans.push(Span::styled(
-        tool_header_disclosure_glyph(Some(file_section.disclosure_state)).unwrap_or("▸"),
+        tool_header_disclosure_glyph(Some(file_section.disclosure_state), theme)
+            .unwrap_or(theme.live_shell.transcript_glyphs.disclosure_closed),
         muted_meta_style(theme),
     ));
 
@@ -742,6 +761,7 @@ fn append_tool_call_file_section(
     if file_section.disclosure_state == TranscriptToolCallDisclosureState::Expanded {
         let nested_tool = TranscriptToolCallSection {
             tool_call_id: file_section.tool_call_id.clone(),
+            coalesced_tool_call_ids: vec![file_section.tool_call_id.clone()],
             child_session_id: None,
             hovered_target: None,
             header: TranscriptToolCallHeader {
@@ -760,6 +780,7 @@ fn append_tool_call_file_section(
             details_preview_visible: false,
             animation_phase: 0,
             expanded: true,
+            rail_motion: ToolRailMotion::Settled,
         };
         append_tool_call_detail_blocks(
             render,
@@ -953,7 +974,10 @@ fn append_tool_call_todo_list(
         let marker_style = item.status.style(theme);
         let content_style = item.status.content_style(theme);
         let spans = vec![
-            Span::styled(format!("{} ", item.status.checkbox_glyph()), marker_style),
+            Span::styled(
+                format!("{} ", item.status.checkbox_glyph(theme)),
+                marker_style,
+            ),
             Span::styled(item.content.clone(), content_style),
         ];
         append_card_surface_row(
@@ -977,6 +1001,7 @@ fn append_tool_call_diff_block(
     fallback_path: Option<&str>,
     force_stacked: bool,
     plain_numbered: bool,
+    highlight_syntax: bool,
     show_file_header: bool,
     theme: &Theme,
     width: u16,
@@ -1010,7 +1035,7 @@ fn append_tool_call_diff_block(
             force_stacked,
             plain_numbered,
             highlight_intraline: false,
-            highlight_syntax: !plain_numbered,
+            highlight_syntax: highlight_syntax && !plain_numbered,
             show_file_header,
             show_hunk_header: false,
         },

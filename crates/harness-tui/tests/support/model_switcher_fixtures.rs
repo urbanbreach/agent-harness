@@ -10,6 +10,7 @@ pub(crate) fn key(code: KeyCode) -> KeyEvent {
 pub(crate) fn rich_model_config() -> &'static str {
     r#"
     {
+      model: "default:gpt-5.4-mini",
       providers: {
         default: {
           type: "openai_compatible",
@@ -50,18 +51,16 @@ pub(crate) fn rich_model_config() -> &'static str {
           },
         },
       },
-      agents: {
-        deep: {
-          description: "Deep work",
-          model_ref: "default:gpt-5.4-mini",
+      agent: {
+        default: {
+          model: "default:gpt-5.4-mini",
           variant: "deterministic",
-          tools: ["fs.read"],
+          tools: ["read"],
         },
-        writer: {
-          description: "Writer",
-          model_ref: "default:gpt-5.4-mini",
+        general: {
+          model: "default:gpt-5.4-mini",
           variant: "creative",
-          tools: ["fs.read"],
+          tools: ["read"],
         },
       },
       permissions: {
@@ -92,16 +91,16 @@ pub(crate) fn rich_model_config() -> &'static str {
 
 pub(crate) fn available_models() -> Vec<ModelOption> {
     vec![
-        ModelOption::from_model_ref("deep", "default:gpt-5.4-mini"),
-        ModelOption::from_model_ref("writer", "default:gpt-5.4-mini"),
+        ModelOption::from_model_ref("default", "default:gpt-5.4-mini"),
+        ModelOption::from_model_ref("general", "default:gpt-5.4-mini"),
     ]
 }
 
-pub(crate) fn build_plan_models() -> Vec<ModelOption> {
+pub(crate) fn primary_subagent_models() -> Vec<ModelOption> {
     vec![
-        ModelOption::from_model_ref("build", "default:gpt-5.4-mini"),
+        ModelOption::from_model_ref("default", "default:gpt-5.4-mini"),
         ModelOption {
-            profile: "plan".to_string(),
+            profile: "general".to_string(),
             provider: "default".to_string(),
             provider_display_label: Some("default".to_string()),
             provider_backend_label: Some("OpenAI".to_string()),
@@ -115,11 +114,11 @@ pub(crate) fn build_plan_models() -> Vec<ModelOption> {
             max_input_tokens: Some(128000),
             max_output_tokens: Some(4096),
             description: Some("Stable low-variance coding".to_string()),
-            profile_description: Some("Writer".to_string()),
+            profile_description: None,
             reasoning_effort: Some("minimal".to_string()),
             text_verbosity: Some("low".to_string()),
             thinking: None,
-            recommended_for: Some("planning".to_string()),
+            recommended_for: Some("research".to_string()),
         },
     ]
 }
@@ -127,7 +126,7 @@ pub(crate) fn build_plan_models() -> Vec<ModelOption> {
 pub(crate) fn multi_provider_models() -> Vec<ModelOption> {
     vec![
         ModelOption {
-            profile: "build".to_string(),
+            profile: "default".to_string(),
             provider: "anthropic".to_string(),
             provider_display_label: Some("Anthropic".to_string()),
             provider_backend_label: None,
@@ -141,14 +140,14 @@ pub(crate) fn multi_provider_models() -> Vec<ModelOption> {
             max_input_tokens: None,
             max_output_tokens: None,
             description: None,
-            profile_description: Some("Build".to_string()),
+            profile_description: None,
             reasoning_effort: None,
             text_verbosity: None,
             thinking: None,
             recommended_for: None,
         },
         ModelOption {
-            profile: "build".to_string(),
+            profile: "default".to_string(),
             provider: "default".to_string(),
             provider_display_label: Some("OpenAI".to_string()),
             provider_backend_label: None,
@@ -162,7 +161,7 @@ pub(crate) fn multi_provider_models() -> Vec<ModelOption> {
             max_input_tokens: None,
             max_output_tokens: None,
             description: None,
-            profile_description: Some("Build".to_string()),
+            profile_description: None,
             reasoning_effort: None,
             text_verbosity: None,
             thinking: None,
@@ -171,10 +170,10 @@ pub(crate) fn multi_provider_models() -> Vec<ModelOption> {
     ]
 }
 
-pub(crate) fn duplicate_build_plan_models() -> Vec<ModelOption> {
+pub(crate) fn duplicate_primary_subagent_models() -> Vec<ModelOption> {
     vec![
         ModelOption {
-            profile: "build".to_string(),
+            profile: "default".to_string(),
             provider: "default".to_string(),
             provider_display_label: Some("default".to_string()),
             provider_backend_label: Some("OpenAI".to_string()),
@@ -188,14 +187,14 @@ pub(crate) fn duplicate_build_plan_models() -> Vec<ModelOption> {
             max_input_tokens: Some(128000),
             max_output_tokens: Some(4096),
             description: Some("Stable low-variance coding".to_string()),
-            profile_description: Some("Build".to_string()),
+            profile_description: None,
             reasoning_effort: Some("minimal".to_string()),
             text_verbosity: Some("low".to_string()),
             thinking: None,
-            recommended_for: Some("build".to_string()),
+            recommended_for: Some("implementation".to_string()),
         },
         ModelOption {
-            profile: "plan".to_string(),
+            profile: "general".to_string(),
             provider: "default".to_string(),
             provider_display_label: Some("default".to_string()),
             provider_backend_label: Some("OpenAI".to_string()),
@@ -209,11 +208,11 @@ pub(crate) fn duplicate_build_plan_models() -> Vec<ModelOption> {
             max_input_tokens: Some(128000),
             max_output_tokens: Some(4096),
             description: Some("Stable low-variance coding".to_string()),
-            profile_description: Some("Plan".to_string()),
+            profile_description: None,
             reasoning_effort: Some("minimal".to_string()),
             text_verbosity: Some("low".to_string()),
             thinking: None,
-            recommended_for: Some("planning".to_string()),
+            recommended_for: Some("research".to_string()),
         },
     ]
 }
@@ -221,7 +220,7 @@ pub(crate) fn duplicate_build_plan_models() -> Vec<ModelOption> {
 pub(crate) fn same_profile_variant_options() -> Vec<ModelOption> {
     vec![
         ModelOption {
-            profile: "deep".to_string(),
+            profile: "default".to_string(),
             provider: "default".to_string(),
             provider_display_label: Some("default".to_string()),
             provider_backend_label: Some("OpenAI".to_string()),
@@ -235,14 +234,14 @@ pub(crate) fn same_profile_variant_options() -> Vec<ModelOption> {
             max_input_tokens: Some(128000),
             max_output_tokens: Some(4096),
             description: Some("Stable low-variance coding".to_string()),
-            profile_description: Some("Deep work".to_string()),
+            profile_description: None,
             reasoning_effort: Some("minimal".to_string()),
             text_verbosity: Some("low".to_string()),
             thinking: None,
-            recommended_for: Some("deep debugging".to_string()),
+            recommended_for: Some("debugging".to_string()),
         },
         ModelOption {
-            profile: "deep".to_string(),
+            profile: "default".to_string(),
             provider: "default".to_string(),
             provider_display_label: Some("default".to_string()),
             provider_backend_label: Some("OpenAI".to_string()),
@@ -256,7 +255,7 @@ pub(crate) fn same_profile_variant_options() -> Vec<ModelOption> {
             max_input_tokens: Some(128000),
             max_output_tokens: Some(16384),
             description: Some("Higher-variance drafting".to_string()),
-            profile_description: Some("Deep work".to_string()),
+            profile_description: None,
             reasoning_effort: Some("high".to_string()),
             text_verbosity: Some("high".to_string()),
             thinking: None,
@@ -273,7 +272,7 @@ pub(crate) fn reasoning_order_variant_options() -> Vec<ModelOption> {
     ]
     .into_iter()
     .map(|(variant, label, reasoning_effort)| ModelOption {
-        profile: "deep".to_string(),
+        profile: "default".to_string(),
         provider: "default".to_string(),
         provider_display_label: Some("default".to_string()),
         provider_backend_label: Some("OpenAI".to_string()),
@@ -287,7 +286,7 @@ pub(crate) fn reasoning_order_variant_options() -> Vec<ModelOption> {
         max_input_tokens: Some(128000),
         max_output_tokens: Some(16384),
         description: None,
-        profile_description: Some("Deep work".to_string()),
+        profile_description: None,
         reasoning_effort: Some(reasoning_effort.to_string()),
         text_verbosity: Some("medium".to_string()),
         thinking: None,

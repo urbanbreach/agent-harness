@@ -120,6 +120,22 @@ impl ComposerState {
         Ok(())
     }
 
+    pub(super) fn parity_undo(&mut self) -> Result<bool, ComposerSliceError> {
+        let changed = self.slice.undo()?;
+        if changed {
+            self.sync_legacy_from_parity();
+        }
+        Ok(changed)
+    }
+
+    pub(super) fn parity_redo(&mut self) -> Result<bool, ComposerSliceError> {
+        let changed = self.slice.redo()?;
+        if changed {
+            self.sync_legacy_from_parity();
+        }
+        Ok(changed)
+    }
+
     pub(super) fn snapshot(&self) -> ComposerSnapshot {
         ComposerSnapshot {
             text: self.prompt_buffer.clone(),

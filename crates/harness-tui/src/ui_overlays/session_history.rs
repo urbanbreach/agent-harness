@@ -858,9 +858,15 @@ mod tests {
         let line = fork_selector_row(&row, &theme, 86);
 
         assert_eq!(line.spans[0].content.as_ref(), "  ");
-        assert_eq!(line.spans[0].style.bg, Some(Color::Rgb(0xE8, 0xA0, 0xE8)));
+        assert_eq!(
+            line.spans[0].style.bg,
+            Some(ui_chrome::fork_selector_selection_bg(&theme))
+        );
         assert_eq!(line.spans[1].content.as_ref(), "    ");
-        assert_eq!(line.spans[1].style.bg, Some(Color::Rgb(0xE8, 0xA0, 0xE8)));
+        assert_eq!(
+            line.spans[1].style.bg,
+            Some(ui_chrome::fork_selector_selection_bg(&theme))
+        );
         assert_eq!(line.spans[2].content.as_ref(), "Fork this prompt");
         assert_eq!(line.spans[2].style.fg, Some(theme.text.inverse));
         assert!(line.spans[2].style.add_modifier.contains(Modifier::BOLD));
@@ -876,8 +882,7 @@ mod tests {
         let style = session_history_row_style(&theme, true);
 
         assert_eq!(style.bg, Some(theme.surface.card));
-        assert_eq!(style.bg, Some(Color::Rgb(0x55, 0x57, 0x53)));
-        assert_eq!(style.fg, Some(Color::Indexed(15)));
+        assert_eq!(style.fg, Some(theme.reference_terminal.primary));
     }
 
     #[test]

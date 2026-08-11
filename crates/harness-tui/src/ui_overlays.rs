@@ -1067,18 +1067,28 @@ fn command_palette_row(
     width: u16,
     show_thumb: bool,
 ) -> Line<'static> {
-    let _ = (description, is_selected);
+    let _ = description;
     let row_width = usize::from(width);
     let gutter = 4usize;
     let body_row_width = row_width.saturating_sub(gutter);
     let surface = ui_chrome::command_palette_surface(theme);
-    let row_style = Style::default()
-        .fg(ui_chrome::command_palette_title(theme))
-        .bg(surface);
+    let row_style = if is_selected {
+        Style::default()
+            .fg(ui_chrome::command_palette_selection_fg(theme))
+            .bg(ui_chrome::command_palette_selection_bg(theme))
+    } else {
+        Style::default()
+            .fg(ui_chrome::command_palette_title(theme))
+            .bg(surface)
+    };
     let label_style = row_style;
-    let prefix_style = Style::default()
-        .fg(ui_chrome::command_palette_muted(theme))
-        .bg(surface);
+    let prefix_style = if is_selected {
+        row_style
+    } else {
+        Style::default()
+            .fg(ui_chrome::command_palette_muted(theme))
+            .bg(surface)
+    };
     let shortcut_style = prefix_style;
 
     let shortcut_len = if shortcut.is_empty() {

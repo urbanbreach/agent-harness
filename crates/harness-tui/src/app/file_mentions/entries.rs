@@ -91,10 +91,11 @@ pub(super) fn file_mention_agent_entries(
     let mut names = BTreeSet::new();
     for option in launch_metadata.available_models() {
         let profile = option.profile.trim();
-        if profile.is_empty()
-            || profile == current
-            || profile == harness_core::session_title::TITLE_AGENT_NAME
-        {
+        let is_primary = launch_metadata
+            .switchable_profiles()
+            .iter()
+            .any(|primary| primary.trim() == profile);
+        if profile.is_empty() || profile == current || is_primary {
             continue;
         }
         names.insert(profile.to_string());

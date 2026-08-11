@@ -393,6 +393,7 @@ pub(in crate::ui) fn question_permission_body_text(
         .bg(surface)
         .add_modifier(Modifier::BOLD);
     let error_style = Style::default().fg(theme.status.error).bg(surface);
+    let glyphs = theme.live_shell.transcript_glyphs;
     let single = prompts.len() == 1 && !prompts[0].multiple;
     let tab = app
         .question_prompt_tab(&permission.permission_id)
@@ -488,15 +489,14 @@ pub(in crate::ui) fn question_permission_body_text(
         let active = index == selected;
         let marker = if prompt.multiple {
             if picked {
-                "[✓]"
+                format!("[{}]", glyphs.choice_checked)
             } else {
-                "[ ]"
+                "[ ]".to_string()
             }
         } else if picked {
-            // Unanswered options use (○); cursor focus uses active styles only.
-            "●"
+            glyphs.choice_selected.to_string()
         } else {
-            "○"
+            glyphs.choice_unselected.to_string()
         };
         let row_style = if active {
             active_label_style
@@ -555,15 +555,14 @@ pub(in crate::ui) fn question_permission_body_text(
         let active = selected == prompt.options.len();
         let marker = if prompt.multiple {
             if picked {
-                "[✓]"
+                format!("[{}]", glyphs.choice_checked)
             } else {
-                "[ ]"
+                "[ ]".to_string()
             }
         } else if picked {
-            // Unanswered options use (○); cursor focus uses active styles only.
-            "●"
+            glyphs.choice_selected.to_string()
         } else {
-            "○"
+            glyphs.choice_unselected.to_string()
         };
         let row_style = if active {
             active_label_style
@@ -593,14 +592,14 @@ pub(in crate::ui) fn question_permission_body_text(
         if editing {
             let preview = app.question_answer_preview(&permission.permission_id);
             let (text, style) = if preview == "█" {
-                ("❯ ".to_string(), muted_style)
+                (format!("{} ", glyphs.user_marker), muted_style)
             } else {
-                (format!("❯ {preview}"), primary_style)
+                (format!("{} {preview}", glyphs.user_marker), primary_style)
             };
             lines.push(Line::from(vec![Span::styled(format!("    {text}"), style)]));
         } else if !custom_value.is_empty() {
             lines.push(Line::from(vec![Span::styled(
-                format!("    ❯ {custom_value}"),
+                format!("    {} {custom_value}", glyphs.user_marker),
                 muted_style,
             )]));
         }

@@ -130,32 +130,70 @@ pub(super) fn submitting_selected_file_mention_emits_structured_file_part() {
     assert_eq!(selected_file_tags[0].source.value, "@src/main.rs");
 }
 
-pub(super) fn file_mention_picker_selects_agent_parts_from_launch_metadata() {
+pub(super) fn file_mention_picker_excludes_primary_profiles_from_launch_metadata() {
+    // Given: an empty workspace with primary profiles and preserved subagents.
+    let tempdir = tempfile::tempdir().unwrap_or_abort();
     let mut app = AppState::new_live(None, false, None);
+    app.set_file_mention_collaborators_for_test(tempdir.path().to_path_buf(), Vec::new(), 0);
     app.set_launch_metadata(
-        LaunchMetadata::from_model_ref("build", "mock:model-1").with_available_models(vec![
-            ModelOption::from_model_ref("build", "mock:model-1"),
-            ModelOption::from_model_ref("plan", "mock:model-1"),
-            ModelOption::from_model_ref(
-                harness_core::session_title::TITLE_AGENT_NAME,
-                "mock:model-1",
-            ),
-        ]),
+        LaunchMetadata::from_model_ref("build", "mock:model-1")
+            .with_available_models(vec![
+                ModelOption::from_model_ref("build", "mock:model-1"),
+                ModelOption::from_model_ref("plan", "mock:model-1"),
+                ModelOption::from_model_ref("explore", "mock:model-1"),
+                ModelOption::from_model_ref("librarian", "mock:model-1"),
+            ])
+            .with_switchable_profiles(vec!["build".to_string(), "plan".to_string()]),
     );
     app.focus = Focus::Prompt;
 
-    for ch in "@pla".chars() {
+    // When: the mention picker opens without a search query.
+    app.handle_key(key(KeyCode::Char('@')));
+
+    // Then: primary profiles are absent and preserved subagents remain selectable.
+    assert!(app
+        .file_mention_entries
+        .iter()
+        .all(|entry| entry.path != "agent:build" && entry.path != "agent:plan"));
+    assert!(app
+        .file_mention_entries
+        .iter()
+        .any(|entry| entry.path == "agent:explore"));
+    assert!(app
+        .file_mention_entries
+        .iter()
+        .any(|entry| entry.path == "agent:librarian"));
+}
+
+pub(super) fn file_mention_picker_selects_subagent_parts_from_launch_metadata() {
+    // Given: an empty workspace with one primary profile and one subagent.
+    let tempdir = tempfile::tempdir().unwrap_or_abort();
+    let mut app = AppState::new_live(None, false, None);
+    app.set_file_mention_collaborators_for_test(tempdir.path().to_path_buf(), Vec::new(), 0);
+    app.set_launch_metadata(
+        LaunchMetadata::from_model_ref("build", "mock:model-1")
+            .with_available_models(vec![
+                ModelOption::from_model_ref("build", "mock:model-1"),
+                ModelOption::from_model_ref("explore", "mock:model-1"),
+            ])
+            .with_switchable_profiles(vec!["build".to_string()]),
+    );
+    app.focus = Focus::Prompt;
+
+    // When: the subagent mention is selected.
+    for ch in "@expl".chars() {
         app.handle_key(key(KeyCode::Char(ch)));
     }
     app.handle_key(key(KeyCode::Enter));
 
-    assert_eq!(app.composer.prompt_buffer, "@plan ");
+    // Then: the prompt and structured tag identify that subagent.
+    assert_eq!(app.composer.prompt_buffer, "@explore ");
     assert!(app.selected_file_tags().is_empty());
     assert!(app.selected_resource_tags().is_empty());
     let selected = app.selected_agent_tags();
     assert_eq!(selected.len(), 1);
-    assert_eq!(selected[0].name, "plan");
-    assert_eq!(selected[0].source.value, "@plan");
+    assert_eq!(selected[0].name, "explore");
+    assert_eq!(selected[0].source.value, "@explore");
 }
 
 pub(super) fn file_mention_picker_selects_mcp_resource_parts_from_launch_metadata() {

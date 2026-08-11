@@ -166,7 +166,15 @@ pub(super) fn render_structured_diff_model(
                         }
                     }
                 }
-                StructuredDiffDisplayRow::Spacer => lines.push(Line::from("")),
+                StructuredDiffDisplayRow::UnchangedGap { lines: unchanged } => {
+                    lines.push(render_diff_unchanged_gap(
+                        prefix,
+                        *unchanged,
+                        content_width,
+                        line_number_width,
+                        theme,
+                    ));
+                }
             }
         }
     }
@@ -328,49 +336,6 @@ fn truncate_diff_segments(
     rendered
 }
 
-fn wrap_diff_segments(segments: &[DiffSegment], max_width: usize) -> Vec<Vec<DiffSegment>> {
-    if max_width == 0 {
-        return vec![Vec::new()];
-    }
-
-    let mut lines = vec![Vec::new()];
-    let mut remaining = max_width;
-
-    for segment in segments {
-        let mut rest = segment.text.as_str();
-        if rest.is_empty() {
-            continue;
-        }
-
-        loop {
-            if remaining == 0 {
-                lines.push(Vec::new());
-                remaining = max_width;
-            }
-
-            let piece = take_width_prefix(rest, remaining);
-            if piece.is_empty() {
-                lines.push(Vec::new());
-                remaining = max_width;
-                continue;
-            }
-
-            push_wrapped_segment(&mut lines[..], segment.kind, piece);
-            remaining = remaining.saturating_sub(display_width(piece));
-            rest = &rest[piece.len()..];
-
-            if rest.is_empty() {
-                break;
-            }
-
-            lines.push(Vec::new());
-            remaining = max_width;
-        }
-    }
-
-    lines
-}
-
 fn wrap_plain_text_lines(text: &str, max_width: usize) -> Vec<String> {
     if max_width == 0 {
         return vec![String::new()];
@@ -397,22 +362,6 @@ fn wrap_plain_text_lines(text: &str, max_width: usize) -> Vec<String> {
     lines
 }
 
-fn push_wrapped_segment(lines: &mut [Vec<DiffSegment>], kind: DiffSegmentKind, text: &str) {
-    let Some(current) = lines.last_mut() else {
-        return;
-    };
-    if let Some(last) = current.last_mut() {
-        if last.kind == kind {
-            last.text.push_str(text);
-            return;
-        }
-    }
-    current.push(DiffSegment {
-        kind,
-        text: text.to_string(),
-    });
-}
-
 #[expect(
     clippy::too_many_arguments,
     reason = "stacked diff rows keep number gutters and width math explicit at the call site"
@@ -432,58 +381,53 @@ fn render_stacked_diff_lines(
     let palette = diff_row_palette(marker, theme);
     let number_width = line_number_width.saturating_add(1) * 2;
     let text_width = width.saturating_sub(number_width + 2);
-    let rows = if highlight_syntax {
-        highlight_diff_line_chunks(
-            syntax_path,
-            text,
-            Some(palette.content_bg),
-            theme.color_level(),
-        )
-        .map(|chunks| wrap_styled_chunks(&chunks, text_width))
-    } else {
-        None
-    };
-    rows.unwrap_or_else(|| {
-        wrap_plain_text_lines(text, text_width)
-            .into_iter()
-            .map(|chunk| {
-                vec![StyledTextChunk {
-                    text: chunk,
-                    style: diff_segment_style(
-                        DiffSegmentKind::Unchanged,
-                        DiffSegmentKind::Unchanged,
-                        Some(palette.content_bg),
-                        theme,
-                    ),
-                }]
-            })
-            .collect::<Vec<_>>()
-    })
-    .into_iter()
-    .enumerate()
-    .map(|(index, chunks)| {
-        let mut spans = stacked_diff_gutter_spans(
-            prefix,
-            StackedDiffGutter {
-                marker,
-                before_line: (index == 0).then_some(before_line).flatten(),
-                after_line: (index == 0).then_some(after_line).flatten(),
-                show_marker: index == 0,
-                line_number_width,
-                gutter_bg: Some(palette.gutter_bg),
-                content_bg: Some(palette.content_bg),
-            },
-            theme,
-        );
-        spans.extend(styled_chunks_to_spans(chunks));
-        pad_diff_row_to_width_with_background(
-            spans,
-            display_width(prefix),
-            width,
-            Some(palette.content_bg),
-        )
-    })
-    .collect()
+    let chunks = highlight_syntax
+        .then(|| {
+            highlight_diff_line_chunks(
+                syntax_path,
+                text,
+                Some(palette.content_bg),
+                theme.color_level(),
+            )
+        })
+        .flatten()
+        .unwrap_or_else(|| {
+            vec![StyledTextChunk {
+                text: text.to_string(),
+                style: diff_segment_style(
+                    DiffSegmentKind::Unchanged,
+                    DiffSegmentKind::Unchanged,
+                    Some(palette.content_bg),
+                    theme,
+                ),
+            }]
+        });
+    wrap_styled_chunks(&chunks, text_width)
+        .into_iter()
+        .enumerate()
+        .map(|(index, chunks)| {
+            let mut spans = stacked_diff_gutter_spans(
+                prefix,
+                StackedDiffGutter {
+                    marker,
+                    before_line: (index == 0).then_some(before_line).flatten(),
+                    after_line: (index == 0).then_some(after_line).flatten(),
+                    show_marker: index == 0,
+                    line_number_width,
+                    gutter_bg: Some(palette.gutter_bg),
+                    content_bg: Some(palette.content_bg),
+                },
+                theme,
+            );
+            spans.extend(styled_chunks_to_spans(chunks));
+            pad_diff_row_to_width_with_background(
+                spans,
+                display_width(prefix),
+                width,
+                Some(palette.content_bg),
+            )
+        })
+        .collect()
 }
 
 fn render_stacked_diff_cell_lines(
@@ -513,65 +457,60 @@ fn render_stacked_diff_cell_lines(
     let palette = diff_row_palette(cell.marker, theme);
     let number_width = line_number_width.saturating_add(1) * 2;
     let text_width = width.saturating_sub(number_width + 2);
-    let rows = if highlight_syntax {
-        highlight_diff_line_chunks(
-            syntax_path,
-            &cell.text,
-            Some(palette.content_bg),
-            theme.color_level(),
-        )
-        .map(|chunks| wrap_styled_chunks(&chunks, text_width))
-    } else {
-        None
-    };
-    rows.unwrap_or_else(|| {
-        wrap_diff_segments(&cell.segments, text_width)
-            .into_iter()
-            .map(|segments| {
-                segments
-                    .into_iter()
-                    .map(|segment| StyledTextChunk {
-                        text: segment.text,
-                        style: diff_segment_style(
-                            segment.kind,
-                            accent_kind,
-                            Some(palette.content_bg),
-                            theme,
-                        ),
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .collect::<Vec<_>>()
-    })
-    .into_iter()
-    .enumerate()
-    .map(|(index, chunks)| {
-        let mut spans = stacked_diff_gutter_spans(
-            prefix,
-            StackedDiffGutter {
-                marker: cell.marker,
-                before_line: (index == 0 && cell.marker == '-')
-                    .then_some(cell.line_number)
-                    .flatten(),
-                after_line: (index == 0 && cell.marker == '+')
-                    .then_some(cell.line_number)
-                    .flatten(),
-                show_marker: index == 0,
-                line_number_width,
-                gutter_bg: Some(palette.gutter_bg),
-                content_bg: Some(palette.content_bg),
-            },
-            theme,
-        );
-        spans.extend(styled_chunks_to_spans(chunks));
-        pad_diff_row_to_width_with_background(
-            spans,
-            display_width(prefix),
-            width,
-            Some(palette.content_bg),
-        )
-    })
-    .collect()
+    let chunks = highlight_syntax
+        .then(|| {
+            highlight_diff_line_chunks(
+                syntax_path,
+                &cell.text,
+                Some(palette.content_bg),
+                theme.color_level(),
+            )
+        })
+        .flatten()
+        .unwrap_or_else(|| {
+            cell.segments
+                .iter()
+                .map(|segment| StyledTextChunk {
+                    text: segment.text.clone(),
+                    style: diff_segment_style(
+                        segment.kind,
+                        accent_kind,
+                        Some(palette.content_bg),
+                        theme,
+                    ),
+                })
+                .collect::<Vec<_>>()
+        });
+    wrap_styled_chunks(&chunks, text_width)
+        .into_iter()
+        .enumerate()
+        .map(|(index, chunks)| {
+            let mut spans = stacked_diff_gutter_spans(
+                prefix,
+                StackedDiffGutter {
+                    marker: cell.marker,
+                    before_line: (index == 0 && cell.marker == '-')
+                        .then_some(cell.line_number)
+                        .flatten(),
+                    after_line: (index == 0 && cell.marker == '+')
+                        .then_some(cell.line_number)
+                        .flatten(),
+                    show_marker: index == 0,
+                    line_number_width,
+                    gutter_bg: Some(palette.gutter_bg),
+                    content_bg: Some(palette.content_bg),
+                },
+                theme,
+            );
+            spans.extend(styled_chunks_to_spans(chunks));
+            pad_diff_row_to_width_with_background(
+                spans,
+                display_width(prefix),
+                width,
+                Some(palette.content_bg),
+            )
+        })
+        .collect()
 }
 
 fn render_plain_numbered_diff_cell_lines(
@@ -704,6 +643,45 @@ pub(super) fn diff_segment_style(
             apply_optional_bg(Style::default().fg(fg), row_bg)
         }
     }
+}
+
+fn render_diff_unchanged_gap(
+    prefix: &str,
+    unchanged: usize,
+    width: usize,
+    line_number_width: usize,
+    theme: &Theme,
+) -> Line<'static> {
+    let palette = diff_hunk_palette(theme);
+    let content = format!(
+        "… {unchanged} unchanged line{}",
+        if unchanged == 1 { "" } else { "s" }
+    );
+    let header_width = width.saturating_sub(line_number_width.saturating_add(1) * 2 + 2);
+    let mut spans = vec![Span::styled(
+        prefix.to_string(),
+        transcript_prefix_style(theme),
+    )];
+    for _ in 0..2 {
+        spans.push(Span::styled(
+            format_line_number(None, line_number_width),
+            diff_line_number_style(' ', Some(palette.gutter_bg), theme),
+        ));
+    }
+    spans.push(Span::styled(
+        "  ".to_string(),
+        Style::default().bg(palette.content_bg),
+    ));
+    spans.push(Span::styled(
+        truncate_plain_text(&content, header_width),
+        muted_meta_style(theme).bg(palette.content_bg),
+    ));
+    pad_diff_row_to_width_with_background(
+        spans,
+        display_width(prefix),
+        width,
+        Some(palette.content_bg),
+    )
 }
 
 pub(super) fn render_diff_hunk_header(

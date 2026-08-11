@@ -130,6 +130,7 @@ pub(super) fn build_compaction_render_surface(
         selection_rows: None,
         diff_hunk_offsets: Vec::new(),
         selected_rail: false,
+        tool_rail_motion: None,
     }
 }
 

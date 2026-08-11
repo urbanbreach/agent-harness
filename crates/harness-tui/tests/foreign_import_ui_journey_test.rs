@@ -7,6 +7,7 @@ use std::path::PathBuf;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use harness_tui::app::{AppState, UiIntent};
+use harness_tui::UnwrapOrAbort;
 
 fn write_foreign_event_envelope(
     path: &std::path::Path,
@@ -18,7 +19,7 @@ fn write_foreign_event_envelope(
         r#"{{"schema_version":1,"event_id":"{event_id}","seq":1,"run_id":"{run_id}","mono_ms":1,"actor":{{"kind":"system"}},"payload":{{"event_type":"run_finished","data":{{"summary":"{summary}"}}}}}}
 "#
     );
-    std::fs::write(path, body).expect("write foreign events.jsonl");
+    std::fs::write(path, body).unwrap_or_abort();
 }
 
 fn unique_temp_dir(label: &str) -> PathBuf {
@@ -27,7 +28,7 @@ fn unique_temp_dir(label: &str) -> PathBuf {
         std::process::id()
     ));
     let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).expect("create temp dir");
+    std::fs::create_dir_all(&dir).unwrap_or_abort();
     dir
 }
 
@@ -36,7 +37,7 @@ fn foreign_import_picker_discover_preview_import_events_appended() {
     // -- arrange: foreign scan root with one importable candidate
     let scan_root = unique_temp_dir("scan");
     let foreign_session = scan_root.join("codex_session_alpha");
-    std::fs::create_dir_all(&foreign_session).expect("create foreign session dir");
+    std::fs::create_dir_all(&foreign_session).unwrap_or_abort();
     write_foreign_event_envelope(
         &foreign_session.join("events.jsonl"),
         "evt_foreign_alpha",
@@ -46,9 +47,8 @@ fn foreign_import_picker_discover_preview_import_events_appended() {
 
     // Also create a corrupt candidate to prove classification
     let corrupt_session = scan_root.join("corrupt_session");
-    std::fs::create_dir_all(&corrupt_session).expect("create corrupt session dir");
-    std::fs::write(corrupt_session.join("events.jsonl"), "{not-valid-json\n")
-        .expect("write corrupt events");
+    std::fs::create_dir_all(&corrupt_session).unwrap_or_abort();
+    std::fs::write(corrupt_session.join("events.jsonl"), "{not-valid-json\n").unwrap_or_abort();
 
     // Destination session dir (simulates harness session store)
     let dest_session_dir = unique_temp_dir("dest");
@@ -56,13 +56,13 @@ fn foreign_import_picker_discover_preview_import_events_appended() {
     // Track emitted UiIntents
     let intents: std::sync::Arc<std::sync::Mutex<Vec<UiIntent>>> =
         std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-    let intents_clone = intents.clone();
+    let intents_clone = std::sync::Arc::clone(&intents);
 
     let mut app = AppState::new_live(
         Some(dest_session_dir.clone()),
         false,
         Some(std::sync::Arc::new(move |intent: UiIntent| {
-            intents_clone.lock().expect("intents lock").push(intent);
+            intents_clone.lock().unwrap_or_abort().push(intent);
         })),
     );
 
@@ -94,7 +94,7 @@ fn foreign_import_picker_discover_preview_import_events_appended() {
     let selected = app
         .foreign_import_picker
         .selected_candidate()
-        .expect("expected a selected candidate");
+        .unwrap_or_abort();
     assert!(
         selected.is_importable(),
         "auto-selection should land on an importable candidate"
@@ -116,13 +116,11 @@ fn foreign_import_picker_discover_preview_import_events_appended() {
         .candidates
         .iter()
         .position(|candidate| candidate.is_importable())
-        .expect("must have importable candidate");
+        .unwrap_or_abort();
     app.foreign_import_picker.selected = importable_index;
 
     // -- act step 3: import (inline, proving events are appended)
-    let result = app
-        .execute_foreign_import_inline()
-        .expect("inline import should succeed for importable candidate");
+    let result = app.execute_foreign_import_inline().unwrap_or_abort();
 
     // -- assert: import result is correct
     assert!(result.event_count >= 1, "expected imported events");
@@ -139,7 +137,7 @@ fn foreign_import_picker_discover_preview_import_events_appended() {
 
     // -- assert: events.jsonl content is valid and appended
     let events_content =
-        std::fs::read_to_string(result.run_dir.join("events.jsonl")).expect("read events");
+        std::fs::read_to_string(result.run_dir.join("events.jsonl")).unwrap_or_abort();
     let event_count = events_content
         .lines()
         .filter(|line| !line.trim().is_empty())
@@ -155,17 +153,14 @@ fn foreign_import_picker_discover_preview_import_events_appended() {
         "foreign source events.jsonl must still exist"
     );
     let foreign_content =
-        std::fs::read_to_string(foreign_session.join("events.jsonl")).expect("read foreign source");
+        std::fs::read_to_string(foreign_session.join("events.jsonl")).unwrap_or_abort();
     assert!(
         foreign_content.contains("evt_foreign_alpha"),
         "foreign source must be unchanged"
     );
 
     // -- assert: status banner confirms import
-    let banner = app
-        .status_banner
-        .as_deref()
-        .expect("status banner must be set after import");
+    let banner = app.status_banner.as_deref().unwrap_or_abort();
     assert!(banner.contains("imported"), "banner: {banner}");
 
     // -- assert: last_import_summary is set
@@ -181,7 +176,7 @@ fn foreign_import_picker_emits_ui_intent_on_enter() {
     // -- arrange
     let scan_root = unique_temp_dir("intent-scan");
     let foreign_session = scan_root.join("session_bravo");
-    std::fs::create_dir_all(&foreign_session).expect("create foreign session dir");
+    std::fs::create_dir_all(&foreign_session).unwrap_or_abort();
     write_foreign_event_envelope(
         &foreign_session.join("events.jsonl"),
         "evt_foreign_bravo",
@@ -192,13 +187,13 @@ fn foreign_import_picker_emits_ui_intent_on_enter() {
     let dest_session_dir = unique_temp_dir("intent-dest");
     let intents: std::sync::Arc<std::sync::Mutex<Vec<UiIntent>>> =
         std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-    let intents_clone = intents.clone();
+    let intents_clone = std::sync::Arc::clone(&intents);
 
     let mut app = AppState::new_live(
         Some(dest_session_dir.clone()),
         false,
         Some(std::sync::Arc::new(move |intent: UiIntent| {
-            intents_clone.lock().expect("intents lock").push(intent);
+            intents_clone.lock().unwrap_or_abort().push(intent);
         })),
     );
 
@@ -209,7 +204,7 @@ fn foreign_import_picker_emits_ui_intent_on_enter() {
     app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
     // -- assert: UiIntent::ImportForeignSession was emitted
-    let intents_guard = intents.lock().expect("intents lock");
+    let intents_guard = intents.lock().unwrap_or_abort();
     let import_intents: Vec<_> = intents_guard
         .iter()
         .filter(|intent| matches!(intent, UiIntent::ImportForeignSession { .. }))

@@ -66,8 +66,8 @@ pub(crate) fn session_view_events() -> Vec<harness_core::event::EventEnvelopeV1>
         envelope(
             3,
             Some("req_001"),
-            harness_core::event::EventV1::ProviderStreamDelta(
-                harness_core::event::ProviderStreamDeltaEvent {
+            harness_core::event::EventV1::ProviderReasoningDelta(
+                harness_core::event::ProviderReasoningDeltaEvent {
                     request_id: "req_001".into(),
                     delta: "Working through the steps.".to_string(),
                 },

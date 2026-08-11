@@ -4,8 +4,6 @@ use crate::ui::ui_transcript_style::blend_color;
 use crate::UnwrapOrAbort;
 use ratatui::widgets::BorderType;
 
-pub(super) const COMPOSER_PROMPT_GLYPH: &str = "❯";
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct ComposerViewport {
     pub(super) lines: Vec<String>,
@@ -166,7 +164,10 @@ pub(super) fn render_document_composer_content(
         let height = usize::from(rail_area.height);
         let mut rail_lines = Vec::with_capacity(height.max(1));
         if height > 0 {
-            rail_lines.push(Line::from(Span::styled(COMPOSER_PROMPT_GLYPH, glyph_style)));
+            rail_lines.push(Line::from(Span::styled(
+                theme.live_shell.transcript_glyphs.user_marker,
+                glyph_style,
+            )));
             rail_lines.extend(
                 std::iter::repeat_with(|| Line::from(Span::styled(" ", glyph_style)))
                     .take(height.saturating_sub(1)),
@@ -242,7 +243,6 @@ pub(super) fn render_document_composer_content(
                 context.disclosure_visible,
                 usize::from(rows[3].width),
                 theme,
-                composer_agent_accent(theme, app),
                 composer_surface,
             ))
             .style(Style::default().bg(composer_surface)),
@@ -254,9 +254,6 @@ pub(super) fn render_document_composer_content(
 fn composer_model_badge(app: &AppState, extra_identity: &[String], max_width: usize) -> String {
     let model = app.current_model_base_label();
     let mut identity = Vec::new();
-    if let Some(profile) = active_turn_profile_label(app) {
-        identity.push(profile);
-    }
     if !model.is_empty() && model != "-" && !model.eq_ignore_ascii_case("unknown") {
         identity.push(model.to_string());
     } else if !app.composer.prompt_buffer.is_empty() {
@@ -276,8 +273,6 @@ fn composer_model_badge(app: &AppState, extra_identity: &[String], max_width: us
     let mut status = Vec::new();
     if app.always_approve_mode() {
         status.push("always-approve".to_string());
-    } else if app.session_mode() == crate::app::SessionMode::Plan {
-        status.push("plan".to_string());
     }
     if app.shell_mode() {
         status.push("shell".to_string());
@@ -424,7 +419,7 @@ fn render_bordered_composer(
             .bg(composer_surface)
     };
 
-    let glyph_prefix = format!(" {COMPOSER_PROMPT_GLYPH} ");
+    let glyph_prefix = format!(" {} ", theme.live_shell.transcript_glyphs.user_marker);
     let glyph_cols = display_width(&glyph_prefix);
     let draft_width = usize::from(inner.width)
         .saturating_sub(glyph_cols.saturating_add(1))
@@ -534,7 +529,6 @@ mod active_thinking_color_tests {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ComposerMetadataTone {
     Accent,
-    AgentAccent,
     Primary,
     Secondary,
 }
@@ -545,7 +539,6 @@ fn composer_metadata_line(
     _disclosure_visible: bool,
     max_width: usize,
     theme: &Theme,
-    agent_accent: Color,
     surface: Color,
 ) -> Line<'static> {
     let candidates = composer_metadata_candidates(app, dock);
@@ -567,7 +560,7 @@ fn composer_metadata_line(
                 Span::styled(
                     text,
                     Style::default()
-                        .fg(composer_metadata_color(tone, theme, agent_accent))
+                        .fg(composer_metadata_color(tone, theme))
                         .bg(surface),
                 )
             })
@@ -575,14 +568,9 @@ fn composer_metadata_line(
     )
 }
 
-fn composer_metadata_color(
-    tone: ComposerMetadataTone,
-    theme: &Theme,
-    agent_accent: Color,
-) -> Color {
+fn composer_metadata_color(tone: ComposerMetadataTone, theme: &Theme) -> Color {
     match tone {
         ComposerMetadataTone::Accent => composer_input_accent(theme),
-        ComposerMetadataTone::AgentAccent => agent_accent,
         ComposerMetadataTone::Primary => composer_input_text(theme),
         ComposerMetadataTone::Secondary => composer_input_muted(theme),
     }
@@ -599,7 +587,6 @@ pub(super) fn composer_metadata_candidates(
     app: &AppState,
     dock: &crate::view_model::ControlDockViewModel,
 ) -> Vec<Vec<(String, ComposerMetadataTone)>> {
-    let profile = active_turn_profile_label(app).or_else(|| app.current_agent_label());
     let model = app.current_model_base_label().to_string();
     let source = app.current_source_label();
     let tail = app
@@ -615,9 +602,6 @@ pub(super) fn composer_metadata_candidates(
         (app.queued_prompt_count > 0).then(|| format!("queued {}", app.queued_prompt_count));
 
     let mut full = Vec::new();
-    if let Some(profile) = profile.clone() {
-        full.push((profile, ComposerMetadataTone::AgentAccent));
-    }
     if !model.is_empty() && model != "-" {
         if !full.is_empty() {
             full.push((" ".to_string(), ComposerMetadataTone::Secondary));
@@ -644,9 +628,6 @@ pub(super) fn composer_metadata_candidates(
     }
 
     let mut compact = Vec::new();
-    if let Some(profile) = profile.as_ref() {
-        compact.push((profile.clone(), ComposerMetadataTone::AgentAccent));
-    }
     if !model.is_empty() && model != "-" {
         if !compact.is_empty() {
             compact.push((" ".to_string(), ComposerMetadataTone::Secondary));
@@ -671,11 +652,6 @@ pub(super) fn composer_metadata_candidates(
     candidates.push(
         source
             .map(|source| vec![(source, ComposerMetadataTone::Secondary)])
-            .or_else(|| {
-                profile
-                    .as_ref()
-                    .map(|profile| vec![(profile.clone(), ComposerMetadataTone::AgentAccent)])
-            })
             .unwrap_or_default(),
     );
     candidates.push(vec![(
@@ -683,36 +659,6 @@ pub(super) fn composer_metadata_candidates(
         ComposerMetadataTone::Secondary,
     )]);
     candidates
-}
-
-fn active_turn_profile_label(app: &AppState) -> Option<String> {
-    let hidden_child_request_ids = app.hidden_delegated_child_request_ids_in_current_view();
-    let activity = app
-        .activities
-        .iter()
-        .rev()
-        .filter(|activity| {
-            activity.request_id.is_empty()
-                || !hidden_child_request_ids.contains(activity.request_id.as_str())
-        })
-        .find(|activity| activity.status == ActivityStatus::Streaming)
-        .or_else(|| {
-            app.activities.iter().rev().find(|activity| {
-                activity.request_id.is_empty()
-                    || !hidden_child_request_ids.contains(activity.request_id.as_str())
-            })
-        })?;
-    if !matches!(
-        activity.status,
-        ActivityStatus::Streaming | ActivityStatus::Queued
-    ) {
-        return None;
-    }
-    let profile = activity.profile_label.trim();
-    if profile.is_empty() || profile.eq_ignore_ascii_case("unknown") {
-        return None;
-    }
-    Some(crate::app::humanize_profile_label(profile))
 }
 
 fn composer_metadata_text(
@@ -724,13 +670,8 @@ fn composer_metadata_text(
         return String::new();
     }
 
-    let profile = active_turn_profile_label(app)
-        .or_else(|| app.current_agent_label())
-        .unwrap_or_else(|| app.active_profile().to_string());
-
     best_fit_text(
         &[
-            Some(format!("{profile} {}", app.current_model_label())),
             app.launch_mode_label().map(str::to_string),
             Some(dock.primary_summary.clone()),
             Some(app.current_model_label().to_string()),

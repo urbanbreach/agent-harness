@@ -22,7 +22,7 @@ Read root `AGENTS.md` first. E2E lane details live in `crates/harness-testkit/te
 ## SHELL CONTRACT
 - Compose-first home screen: entry point is the composer, not a replay browser.
 - Transcript-first live shell: full-width scrollback/transcript above a bottom composer; no persistent right-hand operator sidebar as primary chrome.
-- Operator facts (MCP/LSP/modified files/subagents/todos) remain reachable via secondary surfaces: status dialog (`open_status_dialog` / `toggle_operator_sidebar` alias), details overlay, palette, slash commands, and transcript blocks.
+- Operator facts (MCP/LSP/modified files/child tasks/todos) remain reachable via secondary surfaces: status dialog (`open_status_dialog` / `toggle_operator_sidebar` alias), details overlay, palette, slash commands, and transcript blocks.
 - Replay mode is read-only; it must not emit live submission intents. Replay may still use a details sidebar for inspection.
 - Debug/inspector surfaces stay secondary; no default tab chrome.
 - Topology contract owner: `tests/shell_topology_contract_test.rs` (viewports 80x24 / 100x30 / 120x40 and width >= 121).

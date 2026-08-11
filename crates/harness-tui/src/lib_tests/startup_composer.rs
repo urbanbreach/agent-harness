@@ -23,8 +23,8 @@ pub(super) fn startup_home_screen_renders_compose_first_shell() {
     );
     assert!(rendered.contains('❯'), "composer glyph present\n{rendered}");
     assert!(
-        !rendered.contains("gpt-5.4") && !rendered.contains("Deep") && !rendered.contains("Demo"),
-        "freeze bare startup hides model badge when prompt is empty\n{rendered}"
+        rendered.contains("gpt-5.4") && rendered.contains("Demo"),
+        "compose-first startup keeps runtime metadata visible\n{rendered}"
     );
     assert!(!rendered.contains("Launch: deep · gpt-5.4"));
     assert!(!rendered.contains("Provider proxy"));
@@ -35,7 +35,7 @@ pub(super) fn startup_home_screen_renders_compose_first_shell() {
     let draft = render_live_lines(&app, 160, 48);
     assert!(
         draft.contains("gpt-5.4") || draft.contains("Deep") || draft.contains("Demo"),
-        "draft startup restores model chrome on composer\n{draft}"
+        "draft startup keeps model chrome on composer\n{draft}"
     );
 }
 

@@ -213,11 +213,12 @@ pub(crate) fn exact_test_live_control_dock_renders_shared_surface() {
     let area = Rect::new(0, 0, width, height);
     let plan = FrameLayoutPlan::for_app(&app, area);
     let dock = plan.dock.unwrap_or_abort();
+    let status = dock.status.unwrap_or_abort();
     let composer = dock.composer;
 
-    assert_eq!(dock.status, None);
-    assert_eq!(dock.shell.height, composer.height.saturating_add(2));
-    assert_eq!(dock.shell.y, composer.y);
+    assert_eq!(dock.shell.height, composer.height.saturating_add(5));
+    assert_eq!(dock.shell.y, status.y);
+    assert_eq!(composer.y, status.y.saturating_add(2));
     assert_eq!(dock.disclosure, Some(Rect::new(2, 28, 96, 1)));
 
     let backend = TestBackend::new(width, height);
@@ -232,16 +233,16 @@ pub(crate) fn exact_test_live_control_dock_renders_shared_surface() {
         .x
         .saturating_add(dock.shell.width.saturating_sub(1));
 
-    let expected_surface = ratatui::style::Color::Indexed(0);
+    let expected_surface = app.theme().surface.canvas;
     assert_eq!(buffer[(right_edge, composer.y)].bg, expected_surface);
     assert_eq!(buffer[(right_edge, dock.shell.y)].bg, expected_surface);
     assert!(
         matches!(
-            buffer[(right_edge, dock.shell.y)].symbol(),
+            buffer[(right_edge, composer.y)].symbol(),
             "╮" | "│" | "╯" | " "
         ),
         "bordered live composer uses rounded chrome, got {:?}",
-        buffer[(right_edge, dock.shell.y)].symbol()
+        buffer[(right_edge, composer.y)].symbol()
     );
     assert_eq!(
         buffer[(
@@ -717,4 +718,29 @@ pub(crate) fn exact_test_footer_status_cluster_empty_when_no_activity() {
 
     let data = crate::ui::ui_secondary::footer_status_cluster_data(&app);
     assert_eq!(data.pending_permissions, 0);
+}
+
+#[test]
+fn hidden_header_identity_omits_primary_profile() {
+    // Given live sessions launched with either primary profile.
+    let identities = ["build", "plan"].map(|profile| {
+        let mut app = AppState::new_live(None, false, None);
+        app.set_launch_metadata(crate::app::LaunchMetadata::new(
+            profile,
+            "default",
+            Some("model-alpha".to_string()),
+        ));
+
+        // When the compact header identity is composed.
+        header_identity_text(&app, SessionHeaderMode::Hidden)
+    });
+
+    // Then provider and model remain visible without the primary profile.
+    assert_eq!(
+        identities,
+        [
+            "run unknown · default/model-alpha".to_string(),
+            "run unknown · default/model-alpha".to_string(),
+        ]
+    );
 }

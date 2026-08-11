@@ -104,7 +104,7 @@ pub(super) fn render_structured_diff_lines_with_hunk_offsets(
     ))
 }
 
-pub(super) fn structured_diff_stats(
+pub(crate) fn structured_diff_stats(
     diff_content: &str,
     fallback_path: Option<&str>,
     highlight_intraline: bool,
@@ -379,6 +379,69 @@ mod tests {
             .iter()
             .all(|chunk| !matches!(chunk.style.bg, Some(Color::Rgb(_, _, _)))));
     }
+    #[test]
+    fn separated_hunks_render_truthful_unchanged_line_marker() {
+        let diff = "--- src/demo.rs\n+++ src/demo.rs\n@@ -1,2 +1,2 @@\n-old_one\n+new_one\n keep_one\n@@ -20,2 +20,2 @@\n-old_two\n+new_two\n keep_two\n";
+        let lines = render_structured_diff_lines_with_options(
+            diff,
+            None,
+            "",
+            72,
+            StructuredDiffRenderOptions {
+                force_stacked: true,
+                plain_numbered: false,
+                highlight_intraline: true,
+                highlight_syntax: true,
+                show_file_header: true,
+                show_hunk_header: false,
+            },
+            &Theme::default(),
+        )
+        .unwrap_or_abort();
+        let text = lines
+            .into_iter()
+            .map(line_to_plain_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(text.contains("… 17 unchanged lines"), "{text}");
+    }
+
+    #[test]
+    fn highlight_upgrade_preserves_text_and_row_geometry() {
+        let diff = "--- src/demo.rs\n+++ src/demo.rs\n@@ -1,2 +1,2 @@\n-fn old() { let value = 1; }\n+fn new() { let value = 2; }\n context();\n";
+        let render = |highlight_syntax| {
+            render_structured_diff_lines_with_options(
+                diff,
+                None,
+                "",
+                64,
+                StructuredDiffRenderOptions {
+                    force_stacked: true,
+                    plain_numbered: false,
+                    highlight_intraline: true,
+                    highlight_syntax,
+                    show_file_header: true,
+                    show_hunk_header: false,
+                },
+                &Theme::default(),
+            )
+            .unwrap_or_abort()
+        };
+        let local = render(false);
+        let upgraded = render(true);
+        assert_eq!(local.len(), upgraded.len());
+        assert_eq!(
+            local
+                .into_iter()
+                .map(line_to_plain_text)
+                .collect::<Vec<_>>(),
+            upgraded
+                .into_iter()
+                .map(line_to_plain_text)
+                .collect::<Vec<_>>()
+        );
+    }
+
     #[test]
     fn structured_diff_headers_surface_rename_paths() {
         // arrange

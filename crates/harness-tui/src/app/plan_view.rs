@@ -4,9 +4,7 @@ use std::ffi::OsStr;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
-use harness_core::plan::{
-    plan_file_relative_path, project_plan_list, PlanProjectionEntry, PLAN_DIR,
-};
+use harness_core::plan::{project_plan_list, PlanProjectionEntry, PLAN_DIR};
 
 use super::{AppState, ToastVariant};
 
@@ -392,79 +390,6 @@ impl AppState {
         project_plan_list(&workspace, active_run)
     }
 
-    // -----------------------------------------------------------------------
-    // Plan Mode behavior contracts
-    // -----------------------------------------------------------------------
-
-    /// Write the plan body to the canonical `.agent-harness/plans/<run>.md`.
-    pub fn plan_edit(&mut self, body: String) -> Result<(), String> {
-        if self.plan_is_replay_mutation_blocked() {
-            let message = "plan edits are unavailable during replay".to_string();
-            self.status_banner = Some(message.clone());
-            return Err(message);
-        }
-
-        let run_id = self
-            .run_id()
-            .ok_or_else(|| "cannot edit a plan without an active run id".to_string())?
-            .to_string();
-        let relative_path = plan_file_relative_path(&run_id);
-        let relative_text = relative_path.to_string_lossy().into_owned();
-        self.plan_validate_path(&relative_text)?;
-
-        let workspace = self
-            .file_mention_workspace_root
-            .clone()
-            .or_else(|| (self.file_mention_workspace_root_provider)())
-            .ok_or_else(|| "cannot edit a plan without a workspace root".to_string())?;
-        validate_plan_path_components(&workspace, &relative_path)?;
-
-        let plans_dir = workspace.join(PLAN_DIR);
-        fs::create_dir_all(&plans_dir).map_err(|err| {
-            format!(
-                "failed to create plan directory `{}`: {err}",
-                plans_dir.display()
-            )
-        })?;
-        let absolute_path = workspace.join(&relative_path);
-        fs::write(&absolute_path, body)
-            .map_err(|err| format!("failed to write plan `{}`: {err}", absolute_path.display()))?;
-        self.status_banner = Some(format!("plan updated: {relative_text}"));
-        Ok(())
-    }
-
-    /// Approve the active plan: set a status banner and close the plan view.
-    pub fn plan_approve(&mut self) {
-        if self.plan_is_replay_mutation_blocked() {
-            self.status_banner = Some("plan approval is unavailable during replay".to_string());
-            return;
-        }
-
-        self.status_banner = Some("plan approved; ready for build".to_string());
-        self.close_plan_view();
-    }
-
-    /// Reject the active plan: set a status banner and close the plan view.
-    pub fn plan_reject(&mut self) {
-        if self.plan_is_replay_mutation_blocked() {
-            self.status_banner = Some("plan rejection is unavailable during replay".to_string());
-            return;
-        }
-
-        self.status_banner = Some("plan rejected; continue refining".to_string());
-        self.close_plan_view();
-    }
-
-    /// Cancel plan editing: close the plan view without writing a plan file.
-    pub fn plan_cancel(&mut self) {
-        if self.plan_is_replay_mutation_blocked() {
-            self.status_banner = Some("plan cancellation is unavailable during replay".to_string());
-            return;
-        }
-
-        self.close_plan_view();
-    }
-
     /// Validate that a plan path is confined to `.agent-harness/plans/*.md`.
     ///
     /// Rejects path traversal, absolute paths, non-`.md` extensions, and paths
@@ -508,18 +433,6 @@ impl AppState {
             return Err("plan path must use its canonical relative form".to_string());
         }
         Ok(())
-    }
-
-    /// Suspend the active child session as part of Plan Mode handoff.
-    pub fn plan_child_suspend(&self) -> Result<(), String> {
-        if self.replay_mode {
-            return Err("child suspension is unavailable during replay".to_string());
-        }
-        if self.current_subagent_session_present() {
-            Ok(())
-        } else {
-            Err("no active child session to suspend".to_string())
-        }
     }
 
     /// Whether plan mutations are blocked by replay mode.

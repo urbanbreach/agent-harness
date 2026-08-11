@@ -118,6 +118,7 @@ pub(crate) use ui_chrome::{
     exact_test_subagent_replay_suppresses_parent_replay_dock,
 };
 pub(crate) use ui_chrome::{subagent_footer_target_at, SubagentFooterTarget};
+pub(crate) use ui_diff::structured_diff_stats;
 pub(super) use ui_lifecycle::render_startup_lifecycle_surface;
 use ui_lifecycle::{
     live_empty_state_visible, live_transcript_area_with_breadcrumb, render_live_breadcrumb,
@@ -143,7 +144,9 @@ pub(crate) use ui_transcript::transcript_scrollbar_hit;
 #[cfg(test)]
 pub(crate) use ui_transcript::transcript_selection_debug_snapshot;
 pub(crate) use ui_transcript::transcript_timeline_turn_at;
-pub(crate) use ui_transcript::{transcript_selection_cell, transcript_selection_text};
+pub(crate) use ui_transcript::{
+    transcript_selection_cell, transcript_selection_patch_text, transcript_selection_text,
+};
 pub use ui_transcript_interaction::hovered_wheel_target;
 pub(crate) use ui_transcript_interaction::TranscriptMouseTarget;
 pub(crate) use ui_transcript_scrollbar::TranscriptScrollbarHit;
@@ -239,13 +242,13 @@ pub(crate) use ui_transcript::{
     exact_test_pending_edit_permission_packs_dual_run_write_duration,
     exact_test_pending_question_has_no_selected_rail,
     exact_test_redacted_only_reasoning_matches_reference_empty_body,
-    exact_test_selected_rail_falls_back_to_thought_without_tools,
-    exact_test_selected_rail_prefers_last_tool_over_thought,
+    exact_test_selected_turn_with_tool_stays_rail_free,
+    exact_test_selected_turn_without_tool_stays_rail_free,
     exact_test_skill_tool_rows_match_reference_title_and_icon,
     exact_test_todo_write_rows_render_open_checklist,
     exact_test_todo_write_running_renders_inline_updating_indicator,
     exact_test_tool_turn_without_thinking_omits_thought,
-    exact_test_transcript_applied_edit_missing_diff_surfaces_fallback,
+    exact_test_transcript_applied_edit_missing_diff_surfaces_truthful_summary,
     exact_test_transcript_apply_patch_multifile_uses_output_edit_paths,
     exact_test_transcript_apply_patch_surfaces_rename_and_wrapped_inline_diffs,
     exact_test_transcript_edit_tool_matches_inline_diff_shape,

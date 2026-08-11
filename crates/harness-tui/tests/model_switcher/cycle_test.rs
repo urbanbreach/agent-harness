@@ -24,7 +24,7 @@ fn ctrl_t_cycles_reasoning_variants_in_semantic_order() {
 
     live.handle_key(KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL));
 
-    assert_eq!(live.active_profile(), "deep");
+    assert_eq!(live.active_profile(), "default");
     assert_eq!(live.current_model_label(), "GPT-5.4 Mini · High");
     assert_eq!(live.current_model_reasoning_label(), Some("high"));
 
@@ -50,7 +50,7 @@ fn launch_mode_label_is_not_used_as_model_reasoning_fallback() {
 }
 
 #[test]
-fn model_switcher_deduplicates_agent_rows_and_preserves_current_agent() {
+fn model_switcher_deduplicates_profile_rows_and_preserves_primary_profile() {
     // arrange
     // act
     // assert
@@ -64,8 +64,8 @@ fn model_switcher_deduplicates_agent_rows_and_preserves_current_agent() {
 
     let mut app = AppState::new_live(None, false, Some(sink));
     app.set_launch_metadata(
-        LaunchMetadata::from_model_ref("build", "default:gpt-5.4-mini")
-            .with_available_models(duplicate_build_plan_models()),
+        LaunchMetadata::from_model_ref("default", "default:gpt-5.4-mini")
+            .with_available_models(duplicate_primary_subagent_models()),
     );
 
     for ch in "/model".chars() {
@@ -75,25 +75,25 @@ fn model_switcher_deduplicates_agent_rows_and_preserves_current_agent() {
 
     assert!(app.model_switcher_visible);
     assert_eq!(app.model_options.len(), 1);
-    assert_eq!(app.model_options[0].profile, "build");
+    assert_eq!(app.model_options[0].profile, "default");
 
-    for ch in "plan".chars() {
+    for ch in "general".chars() {
         app.handle_key(key(KeyCode::Char(ch)));
     }
 
     assert!(app.model_filtered.is_empty());
 
-    for _ in 0..4 {
+    for _ in 0..7 {
         app.handle_key(key(KeyCode::Backspace));
     }
     app.handle_key(key(KeyCode::Enter));
 
-    assert_eq!(app.active_profile(), "build");
+    assert_eq!(app.active_profile(), "default");
     let intents = intents.lock().unwrap_or_abort();
     let UiIntent::SwitchModel { profile, .. } = intents.last().unwrap_or_abort() else {
         panic!("expected switch model intent");
     };
-    assert_eq!(profile, "build");
+    assert_eq!(profile, "default");
 }
 
 #[test]
@@ -118,14 +118,14 @@ fn variant_cycle_updates_selected_model_without_losing_launch_metadata() {
     let mut live = AppState::new_live(None, false, Some(sink));
     live.apply_keybindings(variant_cycle_overrides.clone());
     live.set_launch_metadata(
-        LaunchMetadata::from_model_ref("deep", "default:gpt-5.4-mini")
+        LaunchMetadata::from_model_ref("default", "default:gpt-5.4-mini")
             .with_available_models(available_models.clone())
             .with_mode_label("Demo"),
     );
 
     live.handle_key(key(KeyCode::Tab));
 
-    assert_eq!(live.active_profile(), "deep");
+    assert_eq!(live.active_profile(), "default");
     assert_eq!(live.current_model_label(), "GPT-5.4 Mini · Creative");
     assert_eq!(live.launch_mode_label(), Some("Demo"));
 
@@ -137,7 +137,7 @@ fn variant_cycle_updates_selected_model_without_losing_launch_metadata() {
     else {
         panic!("expected switch model intent");
     };
-    assert_eq!(profile, "deep");
+    assert_eq!(profile, "default");
     assert_eq!(launch_metadata.variant(), Some("creative"));
     assert_eq!(launch_metadata.mode_label(), Some("Demo"));
     assert_eq!(launch_metadata.available_models().len(), 2);
@@ -145,14 +145,14 @@ fn variant_cycle_updates_selected_model_without_losing_launch_metadata() {
     let mut replay = AppState::new_replay(PathBuf::from("/tmp/replay-variant-cycle"), Vec::new());
     replay.apply_keybindings(variant_cycle_overrides);
     replay.set_launch_metadata(
-        LaunchMetadata::from_model_ref("deep", "default:gpt-5.4-mini")
+        LaunchMetadata::from_model_ref("default", "default:gpt-5.4-mini")
             .with_available_models(available_models)
             .with_mode_label("Demo"),
     );
 
     replay.handle_key(key(KeyCode::Tab));
 
-    assert_eq!(replay.active_profile(), "deep");
+    assert_eq!(replay.active_profile(), "default");
     assert_eq!(replay.current_model_label(), "GPT-5.4 Mini · Deterministic");
     assert_eq!(replay.launch_mode_label(), Some("Demo"));
 }
@@ -174,7 +174,7 @@ fn ctrl_t_cycles_thinking_variant_within_current_profile() {
 
     let mut live = AppState::new_live(None, false, Some(sink));
     live.set_launch_metadata(
-        LaunchMetadata::from_model_ref("deep", "default:gpt-5.4-mini")
+        LaunchMetadata::from_model_ref("default", "default:gpt-5.4-mini")
             .with_available_models(same_profile_variant_options())
             .with_oauth_authentication()
             .with_mode_label("Demo"),
@@ -182,7 +182,7 @@ fn ctrl_t_cycles_thinking_variant_within_current_profile() {
 
     live.handle_key(KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL));
 
-    assert_eq!(live.active_profile(), "deep");
+    assert_eq!(live.active_profile(), "default");
     assert_eq!(live.current_model_label(), "GPT-5.4 Mini · Creative");
     assert_eq!(live.launch_mode_label(), Some("Demo"));
     assert!(live.launch_metadata().uses_oauth_authentication());
@@ -195,7 +195,7 @@ fn ctrl_t_cycles_thinking_variant_within_current_profile() {
     else {
         panic!("expected switch model intent");
     };
-    assert_eq!(profile, "deep");
+    assert_eq!(profile, "default");
     assert_eq!(launch_metadata.variant(), Some("creative"));
     assert_eq!(launch_metadata.reasoning_effort(), Some("high"));
     assert!(launch_metadata.uses_oauth_authentication());
@@ -216,25 +216,25 @@ fn ctrl_t_includes_base_model_entries_in_config_backed_variant_cycle() {
         })
     };
 
-    let available_models = config_backed_profile_model_options("deep");
+    let available_models = config_backed_profile_model_options("default");
     assert!(available_models
         .iter()
         .any(|option| option.variant().is_none()));
 
     let mut live = AppState::new_live(None, false, Some(sink));
     live.set_launch_metadata(
-        LaunchMetadata::from_model_ref("deep", "default:gpt-5.4-mini")
+        LaunchMetadata::from_model_ref("default", "default:gpt-5.4-mini")
             .with_available_models(available_models)
             .with_mode_label("Demo"),
     );
 
     live.handle_key(KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL));
 
-    assert_eq!(live.active_profile(), "deep");
+    assert_eq!(live.active_profile(), "default");
     assert_eq!(live.current_model_label(), "GPT-5.4 Mini · Creative");
     assert_eq!(
         live.runtime_context_summary_segment_text(),
-        Some("Next turns: deep · GPT-5.4 Mini · Creative".to_string())
+        Some("Next turns: GPT-5.4 Mini · Creative".to_string())
     );
 
     let intents = intents.lock().unwrap_or_abort();
@@ -245,7 +245,7 @@ fn ctrl_t_includes_base_model_entries_in_config_backed_variant_cycle() {
     else {
         panic!("expected switch model intent");
     };
-    assert_eq!(profile, "deep");
+    assert_eq!(profile, "default");
     assert_eq!(launch_metadata.variant(), Some("creative"));
     assert_eq!(launch_metadata.reasoning_effort(), Some("high"));
 }
@@ -275,7 +275,7 @@ fn ctrl_t_cycles_from_last_variant_to_none() {
 
     live.handle_key(KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL));
 
-    assert_eq!(live.active_profile(), "deep");
+    assert_eq!(live.active_profile(), "default");
     assert_eq!(live.current_model_label(), "GPT-5.4 Mini");
     assert_eq!(live.launch_mode_label(), Some("Demo"));
 
@@ -287,7 +287,7 @@ fn ctrl_t_cycles_from_last_variant_to_none() {
     else {
         panic!("expected switch model intent");
     };
-    assert_eq!(profile, "deep");
+    assert_eq!(profile, "default");
     assert_eq!(launch_metadata.variant(), None);
     assert_eq!(launch_metadata.reasoning_effort(), None);
     assert_eq!(launch_metadata.mode_label(), Some("Demo"));

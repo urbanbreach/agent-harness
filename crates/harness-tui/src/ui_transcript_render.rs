@@ -82,6 +82,7 @@ fn build_user_render_surface(
         selection_rows: None,
         diff_hunk_offsets: Vec::new(),
         selected_rail: false,
+        tool_rail_motion: None,
     }
 }
 
@@ -336,12 +337,16 @@ fn build_assistant_render_surfaces(
     let agent_accent = theme.agent_accent(&turn.header.profile_label);
     let (assistant_icon, assistant_color, assistant_status) = match turn.header.status {
         ActivityStatus::Queued => (
-            "◇",
+            theme.live_shell.transcript_glyphs.thought_marker,
             pending_diamond_color(theme, turn.animation_phase),
             "queued",
         ),
         ActivityStatus::Streaming => (
-            transcript_streaming_spinner_frame(turn.animation_phase),
+            if theme.glyph_mode() == crate::theme::GlyphMode::Ascii {
+                theme.live_shell.glyphs.streaming
+            } else {
+                transcript_streaming_spinner_frame(turn.animation_phase)
+            },
             agent_accent,
             "active",
         ),
@@ -804,11 +809,7 @@ fn build_assistant_part_render_surface(
             (
                 kind,
                 false,
-                if tool_call.header.title == "edit" || tool_call.header.title.starts_with("edit ") {
-                    theme.reference_terminal.error
-                } else {
-                    transcript_nested_rail_color(theme)
-                },
+                tool_rail_color(tool_call.header.status, theme),
                 base_surface,
                 Some(render.interaction_rows),
                 None,
@@ -845,6 +846,16 @@ fn build_assistant_part_render_surface(
                 surface.diff_hunk_offsets,
             )
         }
+    };
+    let tool_rail_motion = match part {
+        TranscriptAssistantPart::ToolCall(tool_call) => match tool_call.rail_motion {
+            ToolRailMotion::Settled => None,
+            motion => Some(motion),
+        },
+        TranscriptAssistantPart::Reasoning(_)
+        | TranscriptAssistantPart::Body(_)
+        | TranscriptAssistantPart::Error(_)
+        | TranscriptAssistantPart::Compaction(_) => None,
     };
 
     let mut interaction_rows = interaction_rows;
@@ -892,7 +903,11 @@ fn build_assistant_part_render_surface(
     TranscriptRenderSurface {
         kind,
         show_outer_rail,
-        rail_glyph: TRANSCRIPT_RAIL_GLYPH,
+        rail_glyph: if tool_rail_motion.is_some() {
+            theme.live_shell.transcript_glyphs.rail
+        } else {
+            TRANSCRIPT_RAIL_GLYPH
+        },
         rail_color,
         surface,
         lines,
@@ -900,6 +915,7 @@ fn build_assistant_part_render_surface(
         selection_rows,
         diff_hunk_offsets,
         selected_rail: false,
+        tool_rail_motion,
     }
 }
 
@@ -934,6 +950,7 @@ fn build_footer_only_render_surface(
         selection_rows: None,
         diff_hunk_offsets: Vec::new(),
         selected_rail: false,
+        tool_rail_motion: None,
     }
 }
 
@@ -963,7 +980,11 @@ pub(super) fn append_reasoning_block(
 
     let active = spinner_active && !completed;
     let marker = if active {
-        transcript_streaming_spinner_frame_with_motion(animation_phase, motion_enabled)
+        if theme.glyph_mode() == crate::theme::GlyphMode::Ascii {
+            theme.live_shell.glyphs.streaming
+        } else {
+            transcript_streaming_spinner_frame_with_motion(animation_phase, motion_enabled)
+        }
     } else {
         theme.live_shell.transcript_glyphs.tool_marker
     };
@@ -972,7 +993,11 @@ pub(super) fn append_reasoning_block(
     } else {
         header_color
     });
-    let disclosure = if expanded { "▾" } else { "▸" };
+    let disclosure = if expanded {
+        theme.live_shell.transcript_glyphs.disclosure_open
+    } else {
+        theme.live_shell.transcript_glyphs.disclosure_closed
+    };
     let header_spans = if completed {
         let mut spans = vec![Span::styled(format!("{marker} Thought"), label_style)];
         if let Some(duration_ms) = duration_ms {
@@ -1102,6 +1127,31 @@ fn build_context_tool_group_render_surface(
     } else {
         base_surface
     };
+    let tool_rail_motion = tool_calls
+        .iter()
+        .filter_map(|tool_call| match tool_call.rail_motion {
+            ToolRailMotion::FinishFlash { remaining } => Some(remaining),
+            ToolRailMotion::Running { .. }
+            | ToolRailMotion::Waiting
+            | ToolRailMotion::Queued
+            | ToolRailMotion::Settled => None,
+        })
+        .max()
+        .map(|remaining| ToolRailMotion::FinishFlash { remaining })
+        .or_else(|| tool_calls.first().map(|_| ToolRailMotion::Settled));
+    let aggregate_status = if tool_calls
+        .iter()
+        .any(|tool_call| tool_call.header.status == ToolCallDisplayStatus::Failed)
+    {
+        ToolCallDisplayStatus::Failed
+    } else {
+        ToolCallDisplayStatus::Succeeded
+    };
+    let rail_color = if tool_calls.is_empty() {
+        theme.border.subtle
+    } else {
+        tool_rail_color(aggregate_status, theme)
+    };
     let group_expanded = tool_calls.iter().any(|tool_call| tool_call.expanded);
     let group_disclosure = if tool_calls.is_empty() {
         None
@@ -1138,7 +1188,7 @@ fn build_context_tool_group_render_surface(
     let mut summary = if command_group {
         vec![
             Span::styled(
-                "◈ ",
+                format!("{} ", theme.live_shell.transcript_glyphs.group_marker),
                 Style::default().fg(theme.reference_terminal.secondary),
             ),
             Span::styled(
@@ -1197,13 +1247,13 @@ fn build_context_tool_group_render_surface(
         summary.push(Span::styled(" · ", count_style));
         summary.push(Span::styled(counts.join(" · "), count_style));
     }
-    if let Some(disclosure) = tool_header_disclosure_glyph(group_disclosure) {
+    if let Some(disclosure) = tool_header_disclosure_glyph(group_disclosure, theme) {
         summary.push(Span::styled("  ", muted_meta_style(theme)));
         summary.push(Span::styled(disclosure, muted_meta_style(theme)));
     }
 
     let summary_prefix = if command_group {
-        format!("{TRANSCRIPT_SELECTED_RAIL_GLYPH}  ")
+        format!("{}  ", theme.live_shell.transcript_glyphs.rail)
     } else {
         TRANSCRIPT_ASSISTANT_BODY_PREFIX.to_string()
     };
@@ -1217,7 +1267,7 @@ fn build_context_tool_group_render_surface(
 
     if command_group || group_expanded {
         let detail_prefix = if command_group {
-            format!("{TRANSCRIPT_SELECTED_RAIL_GLYPH}  ")
+            format!("{}  ", theme.live_shell.transcript_glyphs.rail)
         } else {
             format!("{TRANSCRIPT_ASSISTANT_BODY_PREFIX}  ")
         };
@@ -1230,7 +1280,7 @@ fn build_context_tool_group_render_surface(
             let mut spans = Vec::new();
             if command_group {
                 spans.push(Span::styled(
-                    "◆ ",
+                    format!("{} ", theme.live_shell.transcript_glyphs.tool_marker),
                     Style::default().fg(command_group_accent),
                 ));
                 spans.push(Span::styled(
@@ -1268,7 +1318,7 @@ fn build_context_tool_group_render_surface(
                     }
                 }
             }
-            if command_group && tool_call.details_visible() {
+            if command_group && group_expanded && tool_call.details_visible() {
                 let mut detail_render = ToolSectionRender {
                     lines: Vec::new(),
                     interaction_rows: Vec::new(),
@@ -1316,18 +1366,25 @@ fn build_context_tool_group_render_surface(
     TranscriptRenderSurface {
         kind: TranscriptRenderSurfaceKind::AssistantTool,
         show_outer_rail: false,
-        rail_glyph: TRANSCRIPT_RAIL_GLYPH,
-        rail_color: if command_group {
-            theme.surface.card
-        } else {
-            transcript_nested_rail_color(theme)
-        },
+        rail_glyph: theme.live_shell.transcript_glyphs.rail,
+        rail_color,
         surface,
         lines,
         interaction_rows: Some(interaction_rows),
         selection_rows: None,
         diff_hunk_offsets: Vec::new(),
         selected_rail: false,
+        tool_rail_motion,
+    }
+}
+
+const fn tool_rail_color(status: ToolCallDisplayStatus, theme: &Theme) -> Color {
+    match status {
+        ToolCallDisplayStatus::Running => theme.text.accent,
+        ToolCallDisplayStatus::Queued => theme.text.secondary,
+        ToolCallDisplayStatus::PendingPermission => theme.status.warning,
+        ToolCallDisplayStatus::Succeeded => theme.status.success,
+        ToolCallDisplayStatus::Failed => theme.status.error,
     }
 }
 
@@ -1361,52 +1418,9 @@ fn build_assistant_footer_line(
         return pack_waiting_on_answers_footer_line(turn, &waiting, theme, content_width);
     }
 
-    // Auto-retry chrome: streaming with retry metadata shows
-    // "⠸ Retrying (attempt N)… <retry-elapsed>" with total duration + tokens + [stop] right meta.
     if matches!(turn.header.status, ActivityStatus::Streaming) {
-        if let Some(retry) = retry_attempt(turn) {
-            return pack_retrying_footer_line(
-                turn,
-                retry,
-                assistant_icon,
-                assistant_color,
-                theme,
-                content_width,
-            );
-        }
-    }
-
-    // Reference streaming state: streaming with no body text but with token usage
-    // (ProviderRequestFinished seeded total_tokens) shows "Waiting for response…"
-    // with elapsed time + download counter + [stop] right meta.
-    if matches!(turn.header.status, ActivityStatus::Streaming)
-        && turn.body_blocks.is_empty()
-        && (turn.assistant_parts.is_empty() || turn_has_only_terminal_tool_calls(turn))
-        && turn.header.total_tokens.is_some_and(|tokens| tokens > 0)
-    {
-        return pack_waiting_for_response_footer_line(
-            turn,
-            assistant_icon,
-            assistant_color,
-            theme,
-            content_width,
-        );
-    }
-
-    // Reference scroll state: streaming with body text and token usage
-    // shows "Responding…" with responding-elapsed (time since first delta)
-    // + total duration + download counter + [stop] right meta.
-    if matches!(turn.header.status, ActivityStatus::Streaming)
-        && !turn.assistant_parts.is_empty()
-        && turn.header.total_tokens.is_some_and(|tokens| tokens > 0)
-    {
-        return pack_responding_footer_line(
-            turn,
-            assistant_icon,
-            assistant_color,
-            theme,
-            content_width,
-        );
+        // Keep the reserved footer row while the bottom dock owns active lifecycle text.
+        return Line::default();
     }
 
     if !assistant_icon.is_empty() {
@@ -1443,136 +1457,8 @@ fn build_assistant_footer_line(
     Line::from(spans)
 }
 
-fn turn_has_only_terminal_tool_calls(turn: &TranscriptTurnSection) -> bool {
-    !turn.tool_calls.is_empty()
-        && turn.tool_calls.iter().all(|tool_call| {
-            matches!(
-                tool_call.header.status,
-                ToolCallDisplayStatus::Succeeded | ToolCallDisplayStatus::Failed
-            )
-        })
-}
-
-fn pack_waiting_for_response_footer_line(
-    turn: &TranscriptTurnSection,
-    assistant_icon: &str,
-    _assistant_color: Color,
-    theme: &Theme,
-    content_width: u16,
-) -> Line<'static> {
-    let mut left_text = String::new();
-    if !assistant_icon.is_empty() {
-        left_text.push_str(assistant_icon);
-        left_text.push(' ');
-    }
-    left_text.push_str("Waiting for response…");
-    if let Some(duration_ms) = turn.header.duration_ms {
-        left_text.push(' ');
-        left_text.push_str(&format_thought_duration_ms(duration_ms));
-    }
-    let right = waiting_status_right_meta(turn);
-    let target = assistant_footer_available_width(content_width);
-    let left_width = display_width(&left_text);
-    let right_width = display_width(&right);
-    let gap = target
-        .saturating_sub(left_width)
-        .saturating_sub(right_width)
-        .max(if right.is_empty() { 0 } else { 1 });
-
-    let mut spans = vec![
-        Span::raw(TRANSCRIPT_ASSISTANT_BODY_PREFIX.to_string()),
-        Span::styled(left_text, Style::default().fg(theme.text.secondary)),
-    ];
-    if gap > 0 {
-        spans.push(Span::raw(" ".repeat(gap)));
-    }
-    if !right.is_empty() {
-        spans.push(Span::styled(right, muted_meta_style(theme)));
-    }
-    Line::from(spans)
-}
-
-fn pack_responding_footer_line(
-    turn: &TranscriptTurnSection,
-    assistant_icon: &str,
-    _assistant_color: Color,
-    theme: &Theme,
-    content_width: u16,
-) -> Line<'static> {
-    let mut left_text = String::new();
-    if !assistant_icon.is_empty() {
-        left_text.push_str(assistant_icon);
-        left_text.push(' ');
-    }
-    left_text.push_str("Responding…");
-    if let Some(duration_ms) = turn.header.responding_duration_ms {
-        left_text.push(' ');
-        left_text.push_str(&format_thought_duration_ms(duration_ms));
-    }
-    let right = waiting_status_right_meta(turn);
-    let target = assistant_footer_available_width(content_width);
-    let left_width = display_width(&left_text);
-    let right_width = display_width(&right);
-    let gap = target
-        .saturating_sub(left_width)
-        .saturating_sub(right_width)
-        .max(if right.is_empty() { 0 } else { 1 });
-
-    let mut spans = vec![
-        Span::raw(TRANSCRIPT_ASSISTANT_BODY_PREFIX.to_string()),
-        Span::styled(left_text, Style::default().fg(theme.text.secondary)),
-    ];
-    if gap > 0 {
-        spans.push(Span::raw(" ".repeat(gap)));
-    }
-    if !right.is_empty() {
-        spans.push(Span::styled(right, muted_meta_style(theme)));
-    }
-    Line::from(spans)
-}
-
 fn retry_attempt(turn: &TranscriptTurnSection) -> Option<&ProviderRequestRetryMetadata> {
     turn.header.retry.as_ref().filter(|retry| retry.attempt > 0)
-}
-
-fn pack_retrying_footer_line(
-    turn: &TranscriptTurnSection,
-    retry: &ProviderRequestRetryMetadata,
-    assistant_icon: &str,
-    _assistant_color: Color,
-    theme: &Theme,
-    content_width: u16,
-) -> Line<'static> {
-    let mut left_text = String::new();
-    if !assistant_icon.is_empty() {
-        left_text.push_str(assistant_icon);
-        left_text.push(' ');
-    }
-    left_text.push_str(&format!("Retrying (attempt {})…", retry.attempt));
-    if let Some(elapsed_ms) = turn.header.retry_elapsed_ms {
-        left_text.push(' ');
-        left_text.push_str(&format_thought_duration_ms(elapsed_ms));
-    }
-    let right = waiting_status_right_meta(turn);
-    let target = assistant_footer_available_width(content_width);
-    let left_width = display_width(&left_text);
-    let right_width = display_width(&right);
-    let gap = target
-        .saturating_sub(left_width)
-        .saturating_sub(right_width)
-        .max(if right.is_empty() { 0 } else { 1 });
-
-    let mut spans = vec![
-        Span::raw(TRANSCRIPT_ASSISTANT_BODY_PREFIX.to_string()),
-        Span::styled(left_text, Style::default().fg(theme.status.warning)),
-    ];
-    if gap > 0 {
-        spans.push(Span::raw(" ".repeat(gap)));
-    }
-    if !right.is_empty() {
-        spans.push(Span::styled(right, muted_meta_style(theme)));
-    }
-    Line::from(spans)
 }
 
 fn pack_waiting_on_answers_footer_line(
@@ -1754,9 +1640,319 @@ fn format_thought_duration_ms(duration_ms: u64) -> String {
 mod tests {
     use super::{build_transcript_render_surfaces, reasoning_summary};
     use crate::{
-        app::{ActivityStatus, AppState},
+        app::{ActivityStatus, ActivityUsage, AppState, ToolCallDisplayStatus},
         theme::Theme,
     };
+    use harness_core::event::{
+        ActorKind, EventActor, EventEnvelopeV1, EventV1, ProviderRequestFinishedEvent,
+        ProviderRequestStartedEvent, ProviderStreamDeltaEvent, ToolCallFinishedEvent,
+        ToolCallRequestedEvent, ToolCallStartedEvent, ToolCallStatus, SCHEMA_VERSION,
+    };
+    use ratatui::{backend::TestBackend, layout::Rect, Terminal};
+
+    fn lifecycle_event(seq: u64, request_id: &str, payload: EventV1) -> EventEnvelopeV1 {
+        EventEnvelopeV1 {
+            schema_version: SCHEMA_VERSION,
+            event_id: format!("evt_ui11_{seq:04}"),
+            seq,
+            run_id: "run_ui11".into(),
+            mono_ms: seq,
+            ts: None,
+            actor: EventActor::new(ActorKind::System, Some("ui11-test".to_string())),
+            correlation_id: Some(request_id.to_string()),
+            causation_id: None,
+            stream_key: None,
+            payload,
+        }
+    }
+
+    fn render_app_text(app: &AppState, width: u16, height: u16) -> String {
+        let backend = TestBackend::new(width, height);
+        let mut terminal = Terminal::new(backend).expect("test terminal");
+        terminal
+            .draw(|frame| crate::ui::render_app(frame, app))
+            .expect("render app");
+        terminal
+            .backend()
+            .buffer()
+            .content
+            .chunks(usize::from(width))
+            .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    fn ui10_diff_turn(highlight_syntax: bool) -> super::super::TranscriptTurnSection {
+        let tool = super::super::TranscriptToolCallSection {
+            tool_call_id: "edit-ui10".to_string(),
+            coalesced_tool_call_ids: vec!["edit-ui10".to_string()],
+            child_session_id: None,
+            hovered_target: None,
+            header: super::super::TranscriptToolCallHeader {
+                tool_id: "edit".to_string(),
+                title: "edit src/lib.rs".to_string(),
+                subtitle: None,
+                path_metadata: None,
+                icon: None,
+                status: ToolCallDisplayStatus::Succeeded,
+                visual_style: super::super::TranscriptToolCallVisualStyle::Block,
+                struck_out: false,
+                disclosure_state: None,
+            },
+            detail_blocks: vec![
+                super::super::TranscriptToolCallDetailBlock::StructuredDiff {
+                    diff_content: concat!(
+                        "--- src/lib.rs\n",
+                        "+++ src/lib.rs\n",
+                        "@@ -1 +1 @@\n",
+                        "-let result = compute(alpha + beta + gamma + delta);\n",
+                        "+let result = compute(alpha + beta + gamma + epsilon);\n"
+                    )
+                    .to_string(),
+                    fallback_path: Some("src/lib.rs".to_string()),
+                    force_stacked: true,
+                    plain_numbered: false,
+                    highlight_syntax,
+                    show_file_header: false,
+                },
+            ],
+            details_collapsed_by_default: false,
+            details_preview_visible: false,
+            animation_phase: 0,
+            expanded: true,
+            rail_motion: super::super::ToolRailMotion::Settled,
+        };
+
+        super::super::TranscriptTurnSection {
+            activity_first_seq: 1,
+            request_id: "request-ui10".to_string(),
+            user_message: None,
+            show_footer: false,
+            footer_timestamp: None,
+            animation_phase: 0,
+            reasoning_expanded: false,
+            header: super::super::TranscriptTurnHeader {
+                status: ActivityStatus::Done,
+                is_selected: false,
+                provider_request_open: false,
+                profile_label: "default".to_string(),
+                model_id: "model-ui10".to_string(),
+                duration_ms: None,
+                thinking_duration_ms: None,
+                responding_duration_ms: None,
+                total_tokens: None,
+                retry: None,
+                retry_elapsed_ms: None,
+            },
+            body_blocks: Vec::new(),
+            tool_calls: vec![tool.clone()],
+            thinking: None,
+            error: None,
+            assistant_parts: vec![super::super::TranscriptAssistantPart::ToolCall(Box::new(
+                tool,
+            ))],
+        }
+    }
+
+    #[test]
+    fn syntax_style_upgrade_preserves_diff_text_rows_selection_and_anchors() {
+        // Given: one expanded diff measured while its tool is still using provisional styles.
+        let theme = Theme::default();
+        let width = 36;
+        let before_turn = ui10_diff_turn(false);
+        let measure = |turn: &super::super::TranscriptTurnSection| {
+            super::super::measure_transcript_layout(
+                std::slice::from_ref(turn),
+                &theme,
+                width,
+                theme.surface.shell,
+                |section| section.activity_first_seq,
+                |section, theme, width, surface| {
+                    build_transcript_render_surfaces(section, theme, width, surface)
+                },
+            )
+        };
+        let before = measure(&before_turn);
+        let anchor_row = before.sections[0].surfaces[0].height / 2;
+        let content_anchor = before
+            .capture_content_anchor(anchor_row)
+            .expect("diff content anchor");
+        let selection_cell = super::super::TranscriptSelectionCell {
+            row: anchor_row,
+            column: 8,
+        };
+        let selection_anchor = before
+            .capture_selection_anchor(selection_cell)
+            .expect("diff selection anchor");
+        let before_text = before.sections[0]
+            .surfaces
+            .iter()
+            .flat_map(|surface| surface.lines.iter())
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>();
+        let before_selection = super::super::transcript_selection_rows(&before, usize::from(width));
+
+        // When: the lifecycle promotes the same diff to full syntax styles.
+        let mut after_turn = before_turn.clone();
+        for tool in &mut after_turn.tool_calls {
+            super::super::ui_transcript_tool_sections::set_diff_highlight_phase(
+                &mut tool.detail_blocks,
+                true,
+            );
+        }
+        for part in &mut after_turn.assistant_parts {
+            if let super::super::TranscriptAssistantPart::ToolCall(tool) = part {
+                super::super::ui_transcript_tool_sections::set_diff_highlight_phase(
+                    &mut tool.detail_blocks,
+                    true,
+                );
+            }
+        }
+        let after = measure(&after_turn);
+        let after_text = after.sections[0]
+            .surfaces
+            .iter()
+            .flat_map(|surface| surface.lines.iter())
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>();
+        let after_selection = super::super::transcript_selection_rows(&after, usize::from(width));
+
+        // Then: style-only promotion leaves every geometry-bearing projection unchanged.
+        assert_eq!(
+            (
+                after_text,
+                after.total_height,
+                after_selection,
+                after.resolve_content_anchor(content_anchor),
+                after.resolve_selection_anchor(selection_anchor),
+            ),
+            (
+                before_text,
+                before.total_height,
+                before_selection,
+                Some(anchor_row),
+                Some(selection_cell),
+            )
+        );
+    }
+
+    #[test]
+    fn active_lifecycle_has_one_status_source_and_stable_composer_geometry() {
+        // Given: a live response with usage metadata, which previously duplicated Responding status.
+        const WIDTH: u16 = 120;
+        const HEIGHT: u16 = 40;
+        let area = Rect::new(0, 0, WIDTH, HEIGHT);
+        let request_id = "request-ui11";
+        let mut app = AppState::new_live(None, false, None);
+        app.ingest_event(lifecycle_event(
+            1,
+            request_id,
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: request_id.into(),
+                provider_id: "openai".to_string(),
+                model_id: "gpt-5.4-mini".to_string(),
+                prompt_summary: "stream then use a tool".to_string(),
+                request_digest: "digest-ui11".to_string(),
+                metadata: None,
+            }),
+        ));
+        app.ingest_event(lifecycle_event(
+            2,
+            request_id,
+            EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+                request_id: request_id.into(),
+                delta: "Working on it".to_string(),
+            }),
+        ));
+        app.activities.back_mut().expect("streaming activity").usage = Some(ActivityUsage {
+            prompt_tokens: 100,
+            completion_tokens: 20,
+            total_tokens: 120,
+        });
+        let streaming_screen = render_app_text(&app, WIDTH, HEIGHT);
+        let streaming_transcript = super::super::transcript_test_line_texts(
+            super::super::build_transcript_lines_for_width(&app, &Theme::default(), WIDTH),
+        )
+        .join("\n");
+        let streaming_composer = crate::layout::FrameLayoutPlan::for_app(&app, area)
+            .composer
+            .expect("streaming composer");
+
+        // When: the same turn moves through a running tool and then terminal completion.
+        app.ingest_event(lifecycle_event(
+            3,
+            request_id,
+            EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                tool_call_id: "tool-ui11".into(),
+                tool_id: "fs.read".to_string(),
+                args_summary: r#"{"filePath":"src/lib.rs"}"#.to_string(),
+                args_digest: "digest-tool-ui11".to_string(),
+                metadata: None,
+            }),
+        ));
+        app.ingest_event(lifecycle_event(
+            4,
+            request_id,
+            EventV1::ToolCallStarted(ToolCallStartedEvent {
+                tool_call_id: "tool-ui11".into(),
+            }),
+        ));
+        let tool_screen = render_app_text(&app, WIDTH, HEIGHT);
+        let tool_composer = crate::layout::FrameLayoutPlan::for_app(&app, area)
+            .composer
+            .expect("tool composer");
+        app.ingest_event(lifecycle_event(
+            5,
+            request_id,
+            EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                tool_call_id: "tool-ui11".into(),
+                status: ToolCallStatus::Succeeded,
+                output_summary: Some("read src/lib.rs".to_string()),
+                output_digest: None,
+                output_json: None,
+                metadata: None,
+            }),
+        ));
+        app.ingest_event(lifecycle_event(
+            6,
+            request_id,
+            EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+                request_id: request_id.into(),
+                finish_reason: "stop".to_string(),
+                output_digest: None,
+                usage: None,
+                metadata: None,
+            }),
+        ));
+        let terminal_screen = render_app_text(&app, WIDTH, HEIGHT);
+        let terminal_composer = crate::layout::FrameLayoutPlan::for_app(&app, area)
+            .composer
+            .expect("terminal composer");
+
+        // Then: only the bottom-dock status owns active lifecycle text and the composer never moves.
+        assert_eq!(
+            (
+                streaming_screen.matches("Responding…").count(),
+                streaming_transcript.matches("Responding…").count(),
+                tool_screen.matches("Run fs.read").count(),
+                terminal_screen.matches("Responding…").count()
+                    + terminal_screen.matches("Run fs.read").count(),
+                tool_composer,
+                terminal_composer,
+            ),
+            (1, 0, 1, 0, streaming_composer, streaming_composer)
+        );
+    }
 
     #[test]
     fn ordinary_assistant_text_surfaces_use_themed_base_surface() {
@@ -1877,6 +2073,7 @@ mod tests {
         ) -> super::super::TranscriptToolCallSection {
             super::super::TranscriptToolCallSection {
                 tool_call_id: id.to_string(),
+                coalesced_tool_call_ids: vec![id.to_string()],
                 child_session_id: None,
                 hovered_target: None,
                 header: super::super::TranscriptToolCallHeader {
@@ -1895,6 +2092,7 @@ mod tests {
                 details_preview_visible: false,
                 animation_phase: 0,
                 expanded: true,
+                rail_motion: super::super::ToolRailMotion::Settled,
             }
         }
 

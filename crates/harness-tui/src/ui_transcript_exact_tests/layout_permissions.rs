@@ -103,6 +103,7 @@ pub(crate) fn exact_test_visible_surface_lines_support_large_offsets() {
         selection_rows: None,
         diff_hunk_offsets: Vec::new(),
         selected_rail: false,
+        tool_rail_motion: None,
     };
 
     let visible = visible_surface_lines(&surface, usize::from(u16::MAX) + 7, 3)

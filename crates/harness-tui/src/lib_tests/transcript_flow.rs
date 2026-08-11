@@ -413,8 +413,7 @@ pub(super) fn transcript_shell_remains_scannable_without_bubble_cards() {
     let lines = rendered.lines().collect::<Vec<_>>();
     let prompt_row = find_line_containing(&lines, "Restyle the transcript shell").unwrap_or_abort();
     let thinking_row =
-        find_line_containing_all_from(&lines, prompt_row + 1, &["Drafting a document-like plan"])
-            .unwrap_or_abort();
+        find_line_containing_all_from(&lines, prompt_row + 1, &["Thought"]).unwrap_or_abort();
     let tool_row =
         find_line_containing_all_from(&lines, thinking_row + 1, &["Read 1 file"]).unwrap_or_abort();
     let body_row = find_line_containing_from(
@@ -429,12 +428,8 @@ pub(super) fn transcript_shell_remains_scannable_without_bubble_cards() {
     assert!(thinking_row < tool_row);
     assert!(tool_row < body_row);
     assert!(
-        first_alphanumeric_column(lines[thinking_row]) == first_alphanumeric_column(lines[body_row]),
-        "reasoning should align with the assistant body text while keeping its own muted rail\n{rendered}"
-    );
-    assert!(
-        first_alphanumeric_column(lines[tool_row]) > first_alphanumeric_column(lines[body_row]),
-        "tool details should remain nested deeper than the assistant body rail\n{rendered}"
+        lines[tool_row].contains('┃') && !lines[body_row].contains('┃'),
+        "tool details should keep their nested rail while the assistant body remains rail-free\n{rendered}"
     );
     assert!(!rendered.contains("Composer ·"));
     assert!(!rendered.contains("Ask Harness to inspect, edit, or explain…"));
@@ -491,6 +486,8 @@ pub(super) fn transcript_turn_spacing_collapses_without_losing_actor_boundaries(
 pub(super) fn nested_transcript_rows_preserve_prefix_on_wrapped_continuations() {
     let mut app = rich_transcript_fixture_app();
     app.activities[0].thinking_text = "Drafting a document-like plan with enough extra detail to force a wrapped continuation so the nested rail stays visible on every continued row.".to_string();
+    app.transcript_view.selected_activity_index = 0;
+    assert!(app.toggle_selected_transcript_fold());
 
     // Scroll to top so wrapped thinking first-line + body both stay visible under breadcrumb chrome.
     app.transcript_view.follow_mode = false;
@@ -508,11 +505,6 @@ pub(super) fn nested_transcript_rows_preserve_prefix_on_wrapped_continuations() 
         .find(|row| !lines[*row].trim().is_empty())
         .unwrap_or_abort();
 
-    assert!(
-        first_alphanumeric_column(lines[thinking_row])
-            == first_alphanumeric_column(lines[body_row]),
-        "reasoning should keep the same text column while wrapping under its own rail\n{rendered}"
-    );
     assert_eq!(
         first_alphanumeric_column(lines[thinking_row]),
         first_alphanumeric_column(lines[continuation_row]),

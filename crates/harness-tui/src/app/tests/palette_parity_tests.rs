@@ -189,9 +189,9 @@ pub(super) fn palette_excludes_hidden_non_targets_in_startup_shell() {
 pub(super) fn palette_includes_model_list_in_live_session() {
     let mut app = AppState::new_live(None, false, None);
     app.set_launch_metadata(
-        crate::app::LaunchMetadata::from_model_ref("build", "default:gpt-5.4-mini")
+        crate::app::LaunchMetadata::from_model_ref("default", "default:gpt-5.4-mini")
             .with_available_models(vec![crate::app::ModelOption::from_model_ref(
-                "build",
+                "default",
                 "default:gpt-5.4-mini",
             )]),
     );
@@ -643,9 +643,9 @@ pub(super) fn palette_state_provider_disconnected() {
 pub(super) fn palette_state_provider_connected() {
     let mut app = AppState::new_live(None, false, None);
     app.set_launch_metadata(
-        crate::app::LaunchMetadata::from_model_ref("build", "default:gpt-5.4-mini")
+        crate::app::LaunchMetadata::from_model_ref("default", "default:gpt-5.4-mini")
             .with_available_models(vec![crate::app::ModelOption::from_model_ref(
-                "build",
+                "default",
                 "default:gpt-5.4-mini",
             )]),
     );
@@ -2085,9 +2085,9 @@ pub(super) fn palette_mouse_semantics_platform_limitation() {
 pub(super) fn palette_behavior_model_list_opens_switcher() {
     let mut app = AppState::new_live(None, false, None);
     app.set_launch_metadata(
-        crate::app::LaunchMetadata::from_model_ref("build", "default:gpt-5.4-mini")
+        crate::app::LaunchMetadata::from_model_ref("default", "default:gpt-5.4-mini")
             .with_available_models(vec![crate::app::ModelOption::from_model_ref(
-                "build",
+                "default",
                 "default:gpt-5.4-mini",
             )]),
     );
@@ -2210,7 +2210,7 @@ pub(super) fn palette_log_failure_has_error_kind() {
 pub(super) fn palette_log_has_redacted_ids() {
     let mut app = AppState::new_live(None, false, None);
     app.set_launch_metadata(crate::app::LaunchMetadata::from_model_ref(
-        "build",
+        "default",
         "default:gpt-5.4-mini",
     ));
     open_palette(&mut app);

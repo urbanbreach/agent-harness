@@ -481,28 +481,15 @@ fn token_families_expose_chrome_and_composer_contracts() {
     );
 }
 
-/// Agent accent selection is deterministic and palette-bounded.
 #[test]
-fn agent_accent_selection_is_deterministic_and_bounded() {
+fn agent_accent_selection_is_profile_independent() {
     // arrange
     // act
     // assert
     for theme in [Theme::harness_dark(), Theme::harness_high_contrast()] {
-        let first = theme.agent_accent("zebra-lane");
-        assert_eq!(
-            first,
-            theme.agent_accent("zebra-lane"),
-            "agent accent must be stable across calls"
-        );
-        assert_eq!(
-            theme.agent_accent("worker"),
-            theme.agent_accent("Worker"),
-            "agent accent must ignore case"
-        );
-        assert!(
-            theme.agents.palette.contains(&first),
-            "custom agent accents must come from the bounded palette"
-        );
+        for profile in ["zebra-lane", "worker", "Worker", "build", "plan"] {
+            assert_eq!(theme.agent_accent(profile), theme.text.accent);
+        }
     }
 }
 

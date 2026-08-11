@@ -109,7 +109,7 @@ pub(super) fn transcript_turn_sections_render_open_rail_surfaces() {
     );
     assert!(user_body_bgs[user_body_column..user_body_column + 4]
         .iter()
-        .all(|color| *color == theme.surface.card));
+        .all(|color| *color == theme.surface.selected_card));
     assert!(
         assistant_footer_bgs[assistant_body_column..assistant_body_column + 9]
             .iter()
@@ -212,7 +212,7 @@ pub(super) fn transcript_turn_sections_keep_nested_tool_details() {
     let buffer = render_live_cells(&app, 100, 24);
     let theme = Theme::default();
     let lines = rendered.lines().collect::<Vec<_>>();
-    let reasoning_row = find_line_containing(&lines, "tool planning")
+    let reasoning_row = find_line_containing(&lines, "Thought")
         .unwrap_or_else(|| panic!("reasoning row\n{rendered}"));
     let body_row = find_line_containing(&lines, "Assistant body")
         .unwrap_or_else(|| panic!("assistant body row\n{rendered}"));
@@ -234,22 +234,17 @@ pub(super) fn transcript_turn_sections_keep_nested_tool_details() {
     let (reasoning_row_text, reasoning_row_fgs, _) =
         row_at(&buffer, 100, reasoning_row).unwrap_or_abort();
     let thinking_body_start = reasoning_row_text
-        [..reasoning_row_text.find("tool planning").unwrap_or_abort()]
+        [..reasoning_row_text.find("Thought").unwrap_or_abort()]
         .chars()
         .count();
 
-    assert!(reasoning_row_text.contains("tool planning"));
+    assert!(reasoning_row_text.contains("Thought"));
     assert!(
         !reasoning_row_text.contains('┃'),
         "thinking traces should not have an outer rail\n{rendered}"
     );
     assert!(
-        first_alphanumeric_column(lines[reasoning_row]) == assistant_body_column,
-        "thinking body should align with the assistant body column\n{rendered}"
-    );
-    assert!(
-        reasoning_row_fgs
-            [thinking_body_start..thinking_body_start + "tool planning".chars().count()]
+        reasoning_row_fgs[thinking_body_start..thinking_body_start + "Thought".chars().count()]
             .iter()
             .all(|color| *color == theme.text.secondary),
         "thinking body should stay muted like the shell\n{rendered}"

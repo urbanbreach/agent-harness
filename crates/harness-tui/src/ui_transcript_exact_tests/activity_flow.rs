@@ -87,6 +87,7 @@ pub(crate) fn exact_test_transcript_section_model_keeps_nested_tool_and_error_bl
         turn.tool_calls[0],
         TranscriptToolCallSection {
             tool_call_id: "call-1".to_string(),
+            coalesced_tool_call_ids: vec!["call-1".to_string()],
             child_session_id: None,
             hovered_target: None,
             header: TranscriptToolCallHeader {
@@ -108,9 +109,10 @@ pub(crate) fn exact_test_transcript_section_model_keeps_nested_tool_and_error_bl
                 tone: TranscriptToolCallDetailTone::Error,
             }],
             details_collapsed_by_default: true,
-            details_preview_visible: false,
+            details_preview_visible: true,
             animation_phase: 0,
             expanded: false,
+            rail_motion: ToolRailMotion::Settled,
         }
     );
 }
@@ -899,7 +901,7 @@ fn task_row_renders_task_result_markdown_without_wrappers() {
     let (title, icon, visual_style, _) =
         build_agent_spawn_tool_row(&tool_call, None, &mut detail_blocks, 0);
     // assert
-    assert_eq!(title, "Explore Task — review streaming states");
+    assert_eq!(title, "Task — review streaming states");
     assert_eq!(icon, Some("✓"));
     assert_eq!(visual_style, TranscriptToolCallVisualStyle::TaskInline);
     let detail_text = task_detail_blocks_text(&detail_blocks);
@@ -944,10 +946,7 @@ fn task_row_title_uses_partial_args_or_child_prompt_before_terminal_output() {
 
     let mut detail_blocks = Vec::new();
     let (title, icon, _, _) = build_agent_spawn_tool_row(&tool_call, None, &mut detail_blocks, 0);
-    assert_eq!(
-        title,
-        "Explore Task — review queued background completion wakeups"
-    );
+    assert_eq!(title, "Task — review queued background completion wakeups");
     assert_ne!(title, "Delegating...");
     assert_eq!(icon, Some("⠋"));
 
@@ -977,7 +976,7 @@ fn task_row_title_uses_partial_args_or_child_prompt_before_terminal_output() {
     };
     let (title, _, _, _) =
         build_agent_spawn_tool_row(&tool_call, Some(&task_row), &mut Vec::new(), 0);
-    assert_eq!(title, "General Task — inspect task behavior");
+    assert_eq!(title, "Task — inspect task behavior");
 
     let fallback_task_row = crate::app::OrchestrationTaskRow {
         result_summary: None,
@@ -985,7 +984,7 @@ fn task_row_title_uses_partial_args_or_child_prompt_before_terminal_output() {
     };
     let (title, icon, _, _) =
         build_agent_spawn_tool_row(&tool_call, Some(&fallback_task_row), &mut Vec::new(), 0);
-    assert_eq!(title, "General Task");
+    assert_eq!(title, "Task");
     assert_eq!(icon, Some("⠋"));
 }
 
@@ -1052,18 +1051,6 @@ fn inline_metadata_collapse_removes_terminal_controls() {
     );
 }
 
-#[test]
-fn task_row_profile_label_matches_harness_titlecase() {
-    // arrange
-    // act
-    // assert
-    assert_eq!(subagent_profile_label(""), "General");
-    assert_eq!(subagent_profile_label("general"), "General");
-    assert_eq!(subagent_profile_label("foo-bar"), "Foo-Bar");
-    assert_eq!(subagent_profile_label("foo_bar"), "Foo_bar");
-    assert_eq!(subagent_profile_label("gPT worker"), "GPT Worker");
-}
-
 fn surface_line_text(surface: &MeasuredTranscriptSurface) -> String {
     surface
         .lines
@@ -1079,8 +1066,8 @@ fn surface_line_text(surface: &MeasuredTranscriptSurface) -> String {
 }
 
 #[cfg(test)]
-pub(crate) fn exact_test_selected_rail_prefers_last_tool_over_thought() {
-    // Given: a selected completed turn with Thought chrome and a succeeded tool
+pub(crate) fn exact_test_selected_turn_with_tool_stays_rail_free() {
+    // Given: a selected completed turn with Thought chrome and a succeeded tool.
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
         "request-tool-selected",
@@ -1102,43 +1089,19 @@ pub(crate) fn exact_test_selected_rail_prefers_last_tool_over_thought() {
     let layout = build_measured_transcript_layout_for_width(&app, &Theme::default(), 120);
     assert_eq!(layout.sections.len(), 1);
     let surfaces = &layout.sections[0].surfaces;
-    let selected: Vec<_> = surfaces
-        .iter()
-        .filter(|surface| surface.selected_rail)
-        .map(surface_line_text)
-        .collect();
-    let thought_selected = surfaces
-        .iter()
-        .any(|surface| surface.selected_rail && surface_line_text(surface).contains("Thought for"));
-    let tool_selected = surfaces.iter().any(|surface| {
-        surface.selected_rail
-            && (surface_line_text(surface).contains("Listed")
-                || surface_line_text(surface).contains("list")
-                || surface_line_text(surface).contains("◈"))
-    });
-
-    // Then: selected rail prefers the last tool surface, not Thought
-    assert!(
-        tool_selected,
-        "selected completed tool turns must paint ❙ on the last tool surface\nselected={selected:#?}"
-    );
-    assert!(
-        !thought_selected,
-        "Thought must not keep selected rail when a tool surface exists\nselected={selected:#?}"
-    );
+    // Then: selection does not restore the removed legacy rail on any surface.
     assert_eq!(
         surfaces
             .iter()
             .filter(|surface| surface.selected_rail)
             .count(),
-        1,
-        "exactly one surface should carry selected rail\nselected={selected:#?}"
+        0
     );
 }
 
 #[cfg(test)]
-pub(crate) fn exact_test_selected_rail_falls_back_to_thought_without_tools() {
-    // Given: a selected completed turn with Thought chrome and no tools
+pub(crate) fn exact_test_selected_turn_without_tool_stays_rail_free() {
+    // Given: a selected completed turn with Thought chrome and no tools.
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
         "request-thought-selected",
@@ -1153,27 +1116,13 @@ pub(crate) fn exact_test_selected_rail_falls_back_to_thought_without_tools() {
     let layout = build_measured_transcript_layout_for_width(&app, &Theme::default(), 120);
     assert_eq!(layout.sections.len(), 1);
     let surfaces = &layout.sections[0].surfaces;
-    let selected: Vec<_> = surfaces
-        .iter()
-        .filter(|surface| surface.selected_rail)
-        .map(surface_line_text)
-        .collect();
-    let thought_selected = surfaces
-        .iter()
-        .any(|surface| surface.selected_rail && surface_line_text(surface).contains("Thought for"));
-
-    // Then: selected rail falls back to Thought when no tool surfaces exist
-    assert!(
-        thought_selected,
-        "selected completed turns without tools must paint ❙ on Thought\nselected={selected:#?}"
-    );
+    // Then: selection does not restore the removed legacy rail on Thought.
     assert_eq!(
         surfaces
             .iter()
             .filter(|surface| surface.selected_rail)
             .count(),
-        1,
-        "exactly one surface should carry selected rail\nselected={selected:#?}"
+        0
     );
 }
 

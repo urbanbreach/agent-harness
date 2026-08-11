@@ -7,11 +7,13 @@ use ratatui::{
     Frame,
 };
 
+use crate::design_contract::{MotionKind, DESIGN_TOKENS};
 use crate::theme::Theme;
 
 use super::ui_chrome::{display_width, panel_style, take_width_prefix};
-use super::ui_transcript::{TranscriptRenderSurface, TranscriptRenderSurfaceKind};
+use super::ui_transcript::{ToolRailMotion, TranscriptRenderSurface, TranscriptRenderSurfaceKind};
 use super::ui_transcript_layout::MeasuredTranscriptSurface;
+use super::ui_transcript_style::blend_color;
 
 const TRANSCRIPT_SURFACE_RAIL_WIDTH: u16 = 1;
 pub(super) const TRANSCRIPT_SURFACE_TRAILING_GAP_WIDTH: u16 = 2;
@@ -26,7 +28,7 @@ pub(super) fn transcript_surface_leading_gap(
             if transcript_surface_is_assistant_tool_like(previous)
                 && transcript_surface_is_assistant_tool_like(current) =>
         {
-            0
+            1
         }
         // Reference question state: Thought then Ask are adjacent (no blank between).
         Some(TranscriptRenderSurfaceKind::AssistantReasoning)
@@ -83,19 +85,25 @@ pub(super) fn render_transcript_surface(
         area,
     );
 
-    let rail_width = if surface.show_outer_rail {
+    let tool_rail_overlay = surface.tool_rail_motion.is_some();
+    let rail_visible = surface.show_outer_rail || tool_rail_overlay;
+    let rail_width = if surface.show_outer_rail && !tool_rail_overlay {
         area.width.min(TRANSCRIPT_SURFACE_RAIL_WIDTH)
     } else {
         0
     };
-    if rail_width > 0 {
-        let rail_rect = Rect::new(area.x, area.y, rail_width, area.height);
+    if rail_visible && !tool_rail_overlay {
+        let rail_rect = Rect::new(
+            area.x,
+            area.y,
+            area.width.min(TRANSCRIPT_SURFACE_RAIL_WIDTH),
+            area.height,
+        );
         frame.render_widget(
-            Paragraph::new(transcript_surface_rail_lines(
+            Paragraph::new(transcript_surface_rail_lines_for_motion(
+                surface,
+                local_scroll,
                 usize::from(area.height),
-                surface.rail_glyph,
-                surface.rail_color,
-                surface.surface,
             ))
             .style(Style::default().bg(surface.surface)),
             rail_rect,
@@ -117,6 +125,80 @@ pub(super) fn render_transcript_surface(
     let paragraph = Paragraph::new(Text::from(visible_lines))
         .style(panel_style(surface.surface, theme.text.primary));
     frame.render_widget(paragraph, content_rect);
+    if tool_rail_overlay {
+        let rail_rect = Rect::new(
+            area.x,
+            area.y,
+            area.width.min(TRANSCRIPT_SURFACE_RAIL_WIDTH),
+            area.height,
+        );
+        frame.render_widget(
+            Paragraph::new(transcript_surface_rail_lines_for_motion(
+                surface,
+                local_scroll,
+                usize::from(area.height),
+            ))
+            .style(Style::default().bg(surface.surface)),
+            rail_rect,
+        );
+    }
+}
+
+fn transcript_surface_rail_lines_for_motion(
+    surface: &MeasuredTranscriptSurface,
+    local_scroll: usize,
+    visible_height: usize,
+) -> Vec<Line<'static>> {
+    let dim = blend_color(Color::Rgb(0, 0, 0), surface.rail_color, 0.35);
+    (0..visible_height)
+        .map(|local_row| {
+            let absolute_row = local_scroll.saturating_add(local_row);
+            let color = match surface.tool_rail_motion {
+                Some(ToolRailMotion::Running { phase }) => {
+                    let pulse_phase = DESIGN_TOKENS
+                        .motion_tokens
+                        .all
+                        .iter()
+                        .find(|token| token.kind == MotionKind::ToolPulse)
+                        .map_or(phase, |token| {
+                            let frames = usize::from(token.frames);
+                            if frames == 0 {
+                                phase
+                            } else {
+                                phase % frames
+                            }
+                        });
+                    if surface.height <= 1 {
+                        if pulse_phase.is_multiple_of(2) {
+                            surface.rail_color
+                        } else {
+                            blend_color(Color::Rgb(0, 0, 0), surface.rail_color, 0.55)
+                        }
+                    } else if absolute_row == pulse_phase % surface.height {
+                        surface.rail_color
+                    } else {
+                        dim
+                    }
+                }
+                Some(ToolRailMotion::FinishFlash { remaining }) => {
+                    let alpha = if remaining.is_multiple_of(2) {
+                        0.8
+                    } else {
+                        0.55
+                    };
+                    blend_color(surface.surface, Color::White, alpha)
+                }
+                Some(ToolRailMotion::Waiting)
+                | Some(ToolRailMotion::Queued)
+                | Some(ToolRailMotion::Settled)
+                | None => surface.rail_color,
+            };
+            Line::from(Span::styled(
+                surface.rail_glyph,
+                Style::default().fg(color).bg(surface.surface),
+            ))
+        })
+        .collect()
 }
 
 pub(super) fn visible_surface_lines(

@@ -8,6 +8,7 @@ use harness_tui::dashboard::{
     build_dashboard_read_model, DashboardEligibilityRules, DashboardGroupKey, DashboardReadModel,
     DashboardReplayRegistry, DashboardSessionInput, DashboardStatus, SelectionKey,
 };
+use harness_tui::UnwrapOrAbort;
 
 fn catalog(id: &str, parent: Option<&str>, mode: SessionModeSource) -> SessionCatalogEntry {
     SessionCatalogEntry {
@@ -128,7 +129,7 @@ fn project(
     registry: &DashboardReplayRegistry,
     rules: &DashboardEligibilityRules,
 ) -> DashboardReadModel {
-    build_dashboard_read_model(registry, rules).expect("dashboard projection")
+    build_dashboard_read_model(registry, rules).unwrap_or_abort()
 }
 
 fn registry() -> DashboardReplayRegistry {

@@ -113,7 +113,12 @@ pub(super) fn render_inline_permission_dock(
             height: rail_paint_height,
         };
         let rail_lines = (0..usize::from(rail_paint.height))
-            .map(|_| Line::from(Span::styled("┃", rail_style)))
+            .map(|_| {
+                Line::from(Span::styled(
+                    theme.live_shell.transcript_glyphs.rail,
+                    rail_style,
+                ))
+            })
             .collect::<Vec<_>>();
         frame.render_widget(
             Paragraph::new(Text::from(rail_lines)).style(Style::default().bg(dock_surface)),
@@ -441,7 +446,12 @@ fn render_question_permission_dock(
     if rail_area.width > 0 && rail_area.height > 0 {
         let rail_style = Style::default().fg(rail_color).bg(surface);
         let rail_lines = (0..usize::from(rail_area.height))
-            .map(|_| Line::from(Span::styled("┃", rail_style)))
+            .map(|_| {
+                Line::from(Span::styled(
+                    theme.live_shell.transcript_glyphs.rail,
+                    rail_style,
+                ))
+            })
             .collect::<Vec<_>>();
         frame.render_widget(
             Paragraph::new(Text::from(rail_lines)).style(Style::default().bg(surface)),
@@ -708,21 +718,19 @@ fn permission_prompt_action_line(
     surface: Color,
     options: &[(&str, bool)],
 ) -> Line<'static> {
-    let selected_style = Style::default().fg(theme.text.primary).bg(surface);
-    let unselected_style = Style::default().fg(theme.text.primary).bg(surface);
     let mut spans = Vec::new();
     for (index, (label, selected)) in options.iter().enumerate() {
         if index > 0 {
             spans.push(Span::styled(" ", Style::default().bg(surface)));
         }
-        let marker = if *selected { "●" } else { "○" };
+        let marker = if *selected {
+            theme.live_shell.transcript_glyphs.choice_selected
+        } else {
+            theme.live_shell.transcript_glyphs.choice_unselected
+        };
         spans.push(Span::styled(
             format!(" {marker} {label} "),
-            if *selected {
-                selected_style
-            } else {
-                unselected_style
-            },
+            permission_prompt_option_style(theme, surface, *selected),
         ));
     }
     Line::from(spans)
@@ -737,7 +745,11 @@ fn permission_prompt_numbered_options(
         .iter()
         .enumerate()
         .map(|(index, (label, selected))| {
-            let marker = if *selected { "●" } else { "○" };
+            let marker = if *selected {
+                theme.live_shell.transcript_glyphs.choice_selected
+            } else {
+                theme.live_shell.transcript_glyphs.choice_unselected
+            };
             let style = permission_prompt_option_style(theme, surface, *selected);
             Line::from(vec![Span::styled(
                 format!("{} ({marker}) {label}", index + 1),
@@ -782,9 +794,13 @@ fn permission_hint_area(row: Rect) -> Rect {
 
 fn permission_prompt_option_style(theme: &Theme, surface: Color, selected: bool) -> Style {
     if selected {
-        super::slash_command_row_style(theme, true)
+        Style::default()
+            .fg(theme.question_prompt.primary)
+            .bg(theme.question_prompt.selected)
     } else {
-        Style::default().fg(theme.text.primary).bg(surface)
+        Style::default()
+            .fg(theme.question_prompt.primary)
+            .bg(surface)
     }
 }
 
@@ -833,4 +849,22 @@ fn permission_prompt_hint_line(
             Style::default().fg(theme.text.primary).bg(surface),
         ),
     ])
+}
+
+#[cfg(test)]
+mod semantic_style_tests {
+    use super::*;
+
+    #[test]
+    fn selected_permission_choice_uses_question_choice_tokens() {
+        // Given: the reference-backed Harness chat theme.
+        let theme = Theme::harness_chat();
+
+        // When: a permission choice is selected.
+        let style = permission_prompt_option_style(&theme, theme.question_prompt.surface, true);
+
+        // Then: the row uses choice semantics, not slash-command selection colors.
+        assert_eq!(style.fg, Some(theme.question_prompt.primary));
+        assert_eq!(style.bg, Some(theme.question_prompt.selected));
+    }
 }

@@ -43,14 +43,9 @@ fn harness_dark_theme_matches_palette_contract() {
             rgb(0x56, 0xB6, 0xC2),
         ]
     );
-    assert_eq!(theme.agent_accent("build"), rgb(0x5C, 0x9C, 0xF5));
-    assert_eq!(theme.agent_accent("Build"), rgb(0x5C, 0x9C, 0xF5));
-    assert_eq!(theme.agent_accent("default"), rgb(0x5C, 0x9C, 0xF5));
-    assert_eq!(theme.agent_accent("plan"), rgb(0xD9, 0x84, 0xD9));
-    assert_eq!(theme.agent_accent("docs"), rgb(0xE5, 0xC0, 0x7B));
-    assert_eq!(theme.agent_accent("ask"), rgb(0xE8, 0xA0, 0xE8));
-    assert_eq!(theme.agent_accent("Plan"), theme.agent_accent(" plan "));
-    assert_eq!(theme.agent_accent("worker"), theme.agent_accent("Worker"));
+    for profile in ["build", "Build", "default", "plan", "docs", "ask", "worker"] {
+        assert_eq!(theme.agent_accent(profile), theme.text.accent);
+    }
     assert_eq!(theme.scrollbar.track, rgb(0x0B, 0x0E, 0x14));
     assert_eq!(theme.scrollbar.thumb, rgb(0x32, 0x36, 0x3C));
     assert_eq!(theme.scrollbar.thumb_active, rgb(0x60, 0x63, 0x6A));

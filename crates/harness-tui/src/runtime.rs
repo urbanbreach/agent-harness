@@ -9,8 +9,8 @@ use anyhow::{Context, Result};
 use crossterm::cursor::MoveTo;
 use crossterm::event::{
     DisableBracketedPaste, DisableFocusChange, DisableMouseCapture, EnableBracketedPaste,
-    EnableFocusChange, EnableMouseCapture, KeyboardEnhancementFlags, MouseButton, MouseEventKind,
-    PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+    EnableFocusChange, EnableMouseCapture, KeyModifiers, KeyboardEnhancementFlags, MouseButton,
+    MouseEvent, MouseEventKind, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
 };
 use crossterm::terminal::{BeginSynchronizedUpdate, Clear, ClearType, EndSynchronizedUpdate};
 use harness_core::event::EventEnvelopeV1;
@@ -23,10 +23,10 @@ use crate::app::{
 };
 use crate::event::{self, poll};
 use crate::runtime_integration::RuntimeExperience;
+use crate::scheduling::{FrameNow, RuntimePacer, WheelBatch, WheelDirection, WheelSample};
 use crate::terminal::ProductionTerminalSession;
 use crate::ui;
 
-const ACTIVE_POLL_INTERVAL: Duration = Duration::from_millis(1_000 / 30);
 const IDLE_POLL_INTERVAL: Duration = Duration::from_secs(1);
 const LIVE_UPDATE_DRAIN_MAX_PER_FRAME: usize = 16;
 const LIVE_UPDATE_DRAIN_MAX_DURATION: Duration = Duration::from_millis(8);
@@ -126,6 +126,15 @@ fn truecolor_from_colorterm(value: Option<&str>) -> bool {
     value
         .map(str::to_ascii_lowercase)
         .is_some_and(|lower| lower.contains("truecolor") || lower.contains("24bit"))
+}
+
+fn reduced_motion_from_env(value: Option<&str>) -> bool {
+    value.is_some_and(|value| {
+        matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        )
+    })
 }
 
 /// Merge static env probes with interactive setup success flags.
@@ -468,6 +477,9 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         std::env::var("COLORTERM").ok().as_deref(),
         std::env::var("TERM").ok().as_deref(),
     ));
+    app.set_glyph_mode(terminal_session.matrix.classified_by().glyph_mode());
+    let reduced_motion =
+        reduced_motion_from_env(std::env::var("HARNESS_TUI_REDUCED_MOTION").ok().as_deref());
 
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
@@ -487,15 +499,18 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
     let mut restore_guard = TerminalRestoreGuard::new(capabilities);
 
     let run_result = (|| -> Result<()> {
-        let mut redraw_requested = true;
-        let mut next_animation_tick = None;
+        let pacing_epoch = Instant::now();
+        let mut pacer = RuntimePacer::with_reduced_motion(reduced_motion);
+        let mut initial_paint = true;
 
         loop {
             let mut live_updates_pending = false;
             if let Some(update_rx) = live_updates.as_ref() {
                 let drain_state =
                     drain_live_updates_with_experience(&mut app, update_rx, &mut experience);
-                redraw_requested |= drain_state.changed;
+                if drain_state.changed {
+                    pacer.request_flush();
+                }
                 if drain_state.disconnected {
                     live_updates = None;
                 }
@@ -504,10 +519,28 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                 }
             }
             if app.clear_expired_quit_confirmation() {
-                redraw_requested = true;
+                pacer.request_flush();
             }
 
-            if redraw_requested {
+            let pacing_action = pacer.poll(
+                runtime_frame_now(pacing_epoch, Instant::now()),
+                app.has_active_animations(),
+            );
+            if pacing_action.advance_animation {
+                app.advance_transcript_animation_phase();
+            }
+            let wheel_changed = if let Some(batch) = pacing_action.wheel_batch {
+                let size = terminal.size()?;
+                let frame_area = ratatui::layout::Rect::new(0, 0, size.width, size.height);
+                app.set_frame_area(frame_area);
+                let changed = dispatch_wheel_batch(&mut app, frame_area, batch);
+                app.tick_composer_runtime();
+                changed
+            } else {
+                false
+            };
+
+            if initial_paint || pacing_action.should_paint(wheel_changed) {
                 let size = terminal.size()?;
                 let frame_area = ratatui::layout::Rect::new(0, 0, size.width, size.height);
                 app.set_frame_area(frame_area);
@@ -516,38 +549,21 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                 terminal.draw(|frame| ui::render_app(frame, &app))?;
                 crossterm::execute!(terminal.backend_mut(), EndSynchronizedUpdate)?;
                 experience.post_flush(terminal.backend_mut());
-                redraw_requested = false;
+                initial_paint = false;
             }
 
             if app.should_quit {
                 break;
             }
 
-            let now = Instant::now();
-            schedule_tick(&mut next_animation_tick, app.animation_tick_interval(), now);
-            if animation_tick_due(next_animation_tick, now) {
-                next_animation_tick = None;
-                app.advance_transcript_animation_phase();
-                redraw_requested = true;
-                continue;
-            }
-
             let event = if live_updates_pending {
                 poll(Duration::ZERO)?
             } else {
                 poll(poll_timeout(
-                    next_animation_tick,
-                    live_updates.is_some(),
-                    Instant::now(),
+                    &pacer,
+                    runtime_frame_now(pacing_epoch, Instant::now()),
                 ))?
             };
-
-            if event.is_none() && animation_tick_due(next_animation_tick, Instant::now()) {
-                next_animation_tick = None;
-                app.advance_transcript_animation_phase();
-                redraw_requested = true;
-                continue;
-            }
 
             if let Some(event) = event {
                 let event_changed = match event {
@@ -572,6 +588,16 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                             continue;
                         }
 
+                        let wheel_direction = match mouse.kind {
+                            MouseEventKind::ScrollUp => Some(WheelDirection::Up),
+                            MouseEventKind::ScrollDown => Some(WheelDirection::Down),
+                            _ => None,
+                        };
+                        if let Some(direction) = wheel_direction {
+                            pacer.queue_wheel(WheelSample::new(direction, mouse.column, mouse.row));
+                            continue;
+                        }
+
                         let size = terminal.size()?;
                         let frame_area = ratatui::layout::Rect::new(0, 0, size.width, size.height);
                         app.set_frame_area(frame_area);
@@ -580,11 +606,6 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                             clicked_operator_sidebar_section,
                             transcript_scrollbar_hit,
                         ) = match mouse.kind {
-                            MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => (
-                                ui::hovered_wheel_target(&app, frame_area, mouse.column, mouse.row),
-                                None,
-                                None,
-                            ),
                             MouseEventKind::Down(MouseButton::Left) => (
                                 None,
                                 ui::operator_sidebar_section_hit_target(
@@ -627,7 +648,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                     }
                 };
                 if event_changed {
-                    redraw_requested = true;
+                    pacer.request_flush();
                 }
             }
         }
@@ -721,34 +742,48 @@ pub fn run_tui() -> Result<()> {
     })
 }
 
-fn poll_timeout(
-    next_animation_tick: Option<Instant>,
-    live_updates_connected: bool,
-    now: Instant,
-) -> Duration {
-    if let Some(next_animation_tick) = next_animation_tick {
-        return next_animation_tick.saturating_duration_since(now);
-    }
-
-    let _ = live_updates_connected;
-    IDLE_POLL_INTERVAL
-}
-
-/// Synchronize the one-shot timer to the app's current tick demand.
-///
-/// Redraws do not move an existing deadline: mouse movement and provider
-/// updates therefore cannot accelerate the phase clock. A `None` demand
-/// actively disarms stale work so an idle shell does not redraw itself.
-fn schedule_tick(tick_at: &mut Option<Instant>, interval: Option<Duration>, now: Instant) {
-    match interval {
-        Some(interval) if tick_at.is_none() => *tick_at = Some(now + interval),
-        Some(_) => {}
-        None => *tick_at = None,
+fn runtime_frame_now(epoch: Instant, now: Instant) -> FrameNow {
+    let elapsed_ms =
+        u64::try_from(now.saturating_duration_since(epoch).as_millis()).unwrap_or(u64::MAX);
+    FrameNow {
+        animation_ms: elapsed_ms,
+        flush_ms: elapsed_ms,
     }
 }
 
-fn animation_tick_due(tick_at: Option<Instant>, now: Instant) -> bool {
-    tick_at.is_some_and(|tick_at| now >= tick_at)
+fn poll_timeout(pacer: &RuntimePacer, now: FrameNow) -> Duration {
+    pacer
+        .next_wait_ms(now)
+        .map_or(IDLE_POLL_INTERVAL, Duration::from_millis)
+}
+
+fn dispatch_wheel_batch(
+    app: &mut AppState,
+    frame_area: ratatui::layout::Rect,
+    batch: WheelBatch,
+) -> bool {
+    let kind = match batch.direction() {
+        WheelDirection::Up => MouseEventKind::ScrollUp,
+        WheelDirection::Down => MouseEventKind::ScrollDown,
+    };
+    let hovered_wheel_target =
+        ui::hovered_wheel_target(app, frame_area, batch.column(), batch.row());
+    let mut changed = false;
+    for _ in 0..batch.steps() {
+        changed |= app.handle_mouse(
+            MouseEvent {
+                kind,
+                column: batch.column(),
+                row: batch.row(),
+                modifiers: KeyModifiers::NONE,
+            },
+            frame_area,
+            hovered_wheel_target,
+            None,
+            None,
+        );
+    }
+    changed
 }
 
 fn mouse_event_requires_handling(_kind: MouseEventKind, _slash_visible: bool) -> bool {
@@ -902,80 +937,40 @@ mod tests {
     use harness_core::proj::{RunStatus, SessionCatalogEntry, SessionModeSource};
 
     #[test]
-    fn poll_timeout_parks_when_no_animation_timer_is_armed() {
-        // Given: an idle shell with and without its live-update receiver.
-        let now = Instant::now();
+    fn poll_timeout_parks_when_runtime_pacer_is_idle() {
+        // Given: an idle runtime pacer.
+        let pacer = RuntimePacer::new();
 
-        // When: neither state has an animation deadline.
+        // When: the terminal asks how long it may park.
+        let timeout = poll_timeout(&pacer, FrameNow::default());
 
-        // Then: both use the non-redrawing idle poll interval.
-        assert_eq!(poll_timeout(None, false, now), IDLE_POLL_INTERVAL);
-        assert_eq!(poll_timeout(None, true, now), IDLE_POLL_INTERVAL);
+        // Then: no paint deadline shortens the idle interval.
+        assert_eq!(timeout, IDLE_POLL_INTERVAL);
     }
 
     #[test]
-    fn poll_timeout_tracks_next_animation_tick() {
-        // arrange
-        // act
-        // assert
-        let now = Instant::now();
-        let next_tick = now + Duration::from_millis(42);
+    fn poll_timeout_tracks_runtime_pacer_animation_deadline() {
+        // Given: an active runtime pacer armed at zero.
+        let mut pacer = RuntimePacer::new();
+        pacer.poll(FrameNow::default(), true);
 
-        assert_eq!(
-            poll_timeout(Some(next_tick), false, now),
-            Duration::from_millis(42)
-        );
-        assert_eq!(
-            poll_timeout(Some(next_tick), true, next_tick),
-            Duration::ZERO
-        );
-    }
-
-    #[test]
-    fn tick_scheduler_parks_idle_without_a_redraw_deadline() {
-        // Given: a stale deadline from a previously active surface.
-        let now = Instant::now();
-        let mut tick_at = Some(now + ACTIVE_POLL_INTERVAL);
-
-        // When: the app no longer requests animation work.
-        schedule_tick(&mut tick_at, None, now);
-
-        // Then: no animation tick remains armed and event polling uses its idle timeout.
-        assert_eq!(tick_at, None);
-        assert_eq!(poll_timeout(tick_at, false, now), IDLE_POLL_INTERVAL);
-    }
-
-    #[test]
-    fn tick_scheduler_arms_active_work_at_thirty_fps() {
-        // Given: a scheduler with no existing deadline.
-        let now = Instant::now();
-        let mut tick_at = None;
-
-        // When: the app requests the active root cadence.
-        schedule_tick(&mut tick_at, Some(ACTIVE_POLL_INTERVAL), now);
-
-        // Then: exactly one 30 Hz redraw deadline is armed.
-        assert_eq!(tick_at, Some(now + ACTIVE_POLL_INTERVAL));
-    }
-
-    #[test]
-    fn tick_scheduler_rearms_only_after_the_previous_frame_completes() {
-        // Given: a slow previous frame and a disarmed one-shot scheduler.
-        let started_at = Instant::now();
-        let slow_frame_completed_at = started_at + ACTIVE_POLL_INTERVAL * 3;
-        let mut tick_at = None;
-
-        // When: active animation requests its next deadline.
-        schedule_tick(
-            &mut tick_at,
-            Some(ACTIVE_POLL_INTERVAL),
-            slow_frame_completed_at,
+        // When: the terminal checks before and at the animation deadline.
+        let pending = poll_timeout(&pacer, FrameNow::default());
+        let due = poll_timeout(
+            &pacer,
+            FrameNow {
+                animation_ms: crate::scheduling::ANIMATION_PERIOD_MS,
+                flush_ms: 0,
+            },
         );
 
-        // Then: it waits one full 30 Hz interval instead of catching up in a burst.
+        // Then: the scheduler's 30 Hz deadline is the poll authority.
         assert_eq!(
-            poll_timeout(tick_at, false, slow_frame_completed_at),
-            ACTIVE_POLL_INTERVAL
+            (pending, due),
+            (
+                Duration::from_millis(crate::scheduling::ANIMATION_PERIOD_MS),
+                Duration::ZERO,
+            )
         );
     }
 
@@ -1426,6 +1421,17 @@ mod tests {
         assert!(!truecolor_from_colorterm(Some("")));
         assert!(!truecolor_from_colorterm(Some("xterm-256color")));
         assert!(!truecolor_from_colorterm(None));
+    }
+
+    #[test]
+    fn reduced_motion_override_accepts_only_explicit_enabled_values() {
+        assert!(reduced_motion_from_env(Some("1")));
+        assert!(reduced_motion_from_env(Some("true")));
+        assert!(reduced_motion_from_env(Some("YES")));
+        assert!(reduced_motion_from_env(Some("on")));
+        assert!(!reduced_motion_from_env(Some("0")));
+        assert!(!reduced_motion_from_env(Some("false")));
+        assert!(!reduced_motion_from_env(None));
     }
 
     #[test]

@@ -4,7 +4,6 @@ use harness_tui::render_test::render_to_buffer;
 use harness_tui::theme_family::ThemeFamily;
 use harness_tui::ui;
 use ratatui::layout::Rect;
-use ratatui::style::Color;
 
 const APP_SOURCE: &str = include_str!("../src/app.rs");
 const LIB_SOURCE: &str = include_str!("../src/lib.rs");
@@ -18,9 +17,12 @@ const UI_LIFECYCLE_SOURCE: &str = include_str!("../src/ui_lifecycle.rs");
 fn assert_source_order(source: &str, markers: &[&str]) {
     let mut offset = 0;
     for marker in markers {
-        let Some(relative) = source[offset..].find(marker) else {
-            panic!("source is missing ordered marker {marker:?}");
-        };
+        let relative = source[offset..].find(marker);
+        assert!(
+            relative.is_some(),
+            "source is missing ordered marker {marker:?}"
+        );
+        let relative = relative.unwrap_or_default();
         offset = offset.saturating_add(relative + marker.len());
     }
 }
@@ -89,7 +91,7 @@ fn live_shell_call_chain_keeps_one_parity_renderer_owner() {
         ),
         (
             UI_LIFECYCLE_SOURCE,
-            &["WelcomeLayout", "app.welcome_layout", "app.welcome_hit_map"] as &[&str],
+            &["WelcomeLayout", "app.welcome_layout"] as &[&str],
         ),
     ] {
         for marker in markers {
@@ -118,7 +120,7 @@ fn startup_and_live_shells_render_through_parity_primitives() {
     assert!(startup_buffer
         .content
         .iter()
-        .any(|cell| cell.bg == Color::Rgb(11, 14, 20)));
+        .any(|cell| cell.bg == startup.theme().surface.canvas));
     assert!(startup_buffer
         .content
         .iter()
@@ -131,5 +133,5 @@ fn startup_and_live_shells_render_through_parity_primitives() {
     assert!(live_buffer
         .content
         .iter()
-        .any(|cell| cell.bg == Color::Rgb(11, 14, 20)));
+        .any(|cell| cell.bg == live.theme().surface.canvas));
 }

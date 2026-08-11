@@ -62,7 +62,6 @@ use self::ui_control_dock_disclosure::{
 #[path = "ui_composer.rs"]
 mod ui_composer;
 use self::ui_composer::render_document_composer_content;
-use self::ui_composer::COMPOSER_PROMPT_GLYPH;
 #[cfg(test)]
 use self::ui_composer::{
     composer_line_with_file_tags, composer_metadata_candidates, composer_viewport,
@@ -396,15 +395,23 @@ fn render_startup_reference_footer(frame: &mut Frame, app: &AppState, area: Rect
         .bg(theme.surface.canvas);
     let dim = normal.add_modifier(Modifier::DIM);
     if !app.composer.prompt_buffer.is_empty() || app.welcome_dismissed() {
+        let submit = app.keymap.get_binding_str(Action::SubmitPrompt);
+        let variant = app.keymap.get_binding_str(Action::VariantCycle);
+        let help = app
+            .keymap
+            .get_binding_strs(Action::Help)
+            .into_iter()
+            .find(|binding| binding == "Ctrl+x")
+            .unwrap_or_else(|| app.keymap.get_binding_str(Action::Help));
         let line = Line::from(vec![
             Span::styled("  ", normal),
-            Span::styled("Enter", bold),
+            Span::styled(submit, bold),
             Span::styled(":send", normal),
             Span::styled("  │  ", dim),
-            Span::styled("Shift+Tab", bold),
+            Span::styled(variant, bold),
             Span::styled(":mode", normal),
             Span::styled("  │  ", dim),
-            Span::styled("Ctrl+x", bold),
+            Span::styled(help, bold),
             Span::styled(":shortcuts", normal),
         ]);
         frame.render_widget(Paragraph::new(line), area);
@@ -641,8 +648,7 @@ fn header_identity_text(app: &AppState, header_mode: SessionHeaderMode) -> Strin
     match header_mode {
         SessionHeaderMode::Hidden => {
             let identity = format!(
-                "{run_identity} · {}/{} · {}",
-                app.active_profile(),
+                "{run_identity} · {}/{}",
                 app.active_provider(),
                 app.current_model_label()
             );

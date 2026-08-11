@@ -1,6 +1,6 @@
 //! Cross-group ownership test for Todo 26.
 //!
-//! Verifies that all nine groups (A-I) have unique group IDs, no overlapping
+//! Verifies that all eight retained groups (B-I) have unique group IDs, no overlapping
 //! capability IDs, and every group names a real backend owner path. This is
 //! the duplicate-group-ownership TDD failure case at the aggregate level.
 
@@ -11,8 +11,6 @@
     reason = "contract tests use fail-fast asserts for missing leaf state"
 )]
 
-#[path = "../src/leaf_actions/group_a_plan.rs"]
-mod group_a_plan;
 #[path = "../src/leaf_actions/group_b_composer_modes.rs"]
 mod group_b_composer_modes;
 #[path = "../src/leaf_actions/group_c_screen_modes.rs"]
@@ -32,11 +30,10 @@ mod group_i_preferences;
 
 use std::collections::HashSet;
 
-/// All nine group IDs are unique (A through I).
+/// All retained group IDs are unique (B through I).
 #[test]
 fn all_group_ids_are_unique() {
     let ids = [
-        group_a_plan::group_id(),
         group_b_composer_modes::group_id(),
         group_c_screen_modes::group_id(),
         group_d_dashboard::group_id(),
@@ -49,10 +46,10 @@ fn all_group_ids_are_unique() {
     let unique: HashSet<&str> = ids.iter().copied().collect();
     assert_eq!(
         unique.len(),
-        9,
-        "expected 9 unique group IDs, got {unique:?}"
+        8,
+        "expected 8 unique group IDs, got {unique:?}"
     );
-    for expected in ["A", "B", "C", "D", "E", "F", "G", "H", "I"] {
+    for expected in ["B", "C", "D", "E", "F", "G", "H", "I"] {
         assert!(unique.contains(expected), "missing group ID {expected}");
     }
 }
@@ -61,7 +58,6 @@ fn all_group_ids_are_unique() {
 #[test]
 fn no_overlapping_capability_ids_across_groups() {
     let all_ids: Vec<&'static str> = [
-        group_a_plan::capability_ids(),
         group_b_composer_modes::capability_ids(),
         group_c_screen_modes::capability_ids(),
         group_d_dashboard::capability_ids(),
@@ -88,7 +84,6 @@ fn no_overlapping_capability_ids_across_groups() {
 #[test]
 fn every_group_resolves_to_real_backend_owner() {
     let samples: &[(&str, &str)] = &[
-        ("A", "tui.plan_mode"),
         ("B", "tui.vim_mode"),
         ("C", "tui.minimal_mode"),
         ("D", "cli.dashboard"),
@@ -101,9 +96,6 @@ fn every_group_resolves_to_real_backend_owner() {
 
     for (group, cap_id) in samples {
         let backend_owner: &str = match *group {
-            "A" => group_a_plan::resolve(cap_id)
-                .map(|r| r.backend_owner)
-                .unwrap_or_else(|| panic!("group A must resolve {cap_id}")),
             "B" => group_b_composer_modes::resolve(cap_id)
                 .map(|r| r.backend_owner)
                 .unwrap_or_else(|| panic!("group B must resolve {cap_id}")),
@@ -158,7 +150,6 @@ fn eight_implement_rows_covered_excluding_session_tree() {
 
     for row in implement_rows {
         let found = [
-            group_a_plan::resolve(row).is_some(),
             group_b_composer_modes::resolve(row).is_some(),
             group_c_screen_modes::resolve(row).is_some(),
             group_d_dashboard::resolve(row).is_some(),
@@ -177,7 +168,6 @@ fn eight_implement_rows_covered_excluding_session_tree() {
 
     // tui.session_tree is NOT covered by any group (belongs to Todo 24).
     let session_tree_found = [
-        group_a_plan::resolve("tui.session_tree").is_some(),
         group_b_composer_modes::resolve("tui.session_tree").is_some(),
         group_c_screen_modes::resolve("tui.session_tree").is_some(),
         group_d_dashboard::resolve("tui.session_tree").is_some(),

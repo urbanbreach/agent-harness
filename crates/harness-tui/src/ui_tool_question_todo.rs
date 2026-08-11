@@ -199,11 +199,12 @@ impl TranscriptTodoStatus {
         }
     }
 
-    pub(super) fn checkbox_glyph(self) -> &'static str {
+    pub(super) fn checkbox_glyph(self, theme: &Theme) -> String {
+        let glyphs = theme.live_shell.transcript_glyphs;
         match self {
-            Self::Completed => "[✓]",
-            Self::InProgress => "[•]",
-            Self::Cancelled | Self::Pending => "[ ]",
+            Self::Completed => format!("[{}]", glyphs.choice_checked),
+            Self::InProgress => format!("[{}]", theme.live_shell.glyphs.streaming),
+            Self::Cancelled | Self::Pending => "[ ]".to_string(),
         }
     }
 
@@ -307,4 +308,20 @@ fn question_prompt_texts(summary: &str) -> Vec<String> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod glyph_tests {
+    use super::*;
+    use crate::theme::GlyphMode;
+
+    #[test]
+    fn completed_todo_uses_ascii_marker_in_legacy_mode() {
+        let theme = Theme::harness_chat().with_glyph_mode(GlyphMode::Ascii);
+
+        assert_eq!(
+            TranscriptTodoStatus::Completed.checkbox_glyph(&theme),
+            "[x]"
+        );
+    }
 }

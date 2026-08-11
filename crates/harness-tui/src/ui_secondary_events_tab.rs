@@ -192,17 +192,14 @@ fn render_help_footer(frame: &mut Frame, theme: &Theme, primary: Rect, secondary
             Span::styled("↑/↓".to_string(), key),
             Span::styled(" nav".to_string(), secondary_text),
             Span::styled("  |  ".to_string(), muted),
-            Span::styled("f".to_string(), key),
-            Span::styled(" filter".to_string(), secondary_text),
-            Span::styled("  |  ".to_string(), muted),
-            Span::styled("e/Space/→".to_string(), key),
+            Span::styled("Space".to_string(), key),
             Span::styled(" expand".to_string(), secondary_text),
             Span::styled("  |  ".to_string(), muted),
             Span::styled("←".to_string(), key),
             Span::styled(" collapse".to_string(), secondary_text),
             Span::styled("  |  ".to_string(), muted),
             Span::styled("Enter".to_string(), key),
-            Span::styled(" details".to_string(), secondary_text),
+            Span::styled(" open".to_string(), secondary_text),
         ];
         frame.render_widget(
             Paragraph::new(Line::from(spans)).alignment(Alignment::Center),
@@ -227,21 +224,12 @@ fn render_help_footer(frame: &mut Frame, theme: &Theme, primary: Rect, secondary
 fn help_shortcut_rows(app: &AppState, theme: &Theme, width: usize) -> Vec<Line<'static>> {
     let mut rows = vec![
         section_row("Essentials", theme),
-        labeled_shortcut_row(
-            app,
-            theme,
-            Action::SubmitPrompt,
-            "Send",
-            "Enter",
-            width,
-            true,
-        ),
+        labeled_shortcut_row(app, theme, Action::SubmitPrompt, "Send", width, true),
         labeled_shortcut_row(
             app,
             theme,
             Action::FocusNext,
             "Focus scrollback",
-            "Tab",
             width,
             false,
         ),
@@ -250,7 +238,6 @@ fn help_shortcut_rows(app: &AppState, theme: &Theme, width: usize) -> Vec<Line<'
             theme,
             Action::DismissModal,
             "Cancel turn",
-            "Ctrl+c",
             width,
             false,
         ),
@@ -259,43 +246,17 @@ fn help_shortcut_rows(app: &AppState, theme: &Theme, width: usize) -> Vec<Line<'
             theme,
             Action::VariantCycle,
             "Cycle mode (Normal / Plan / Always-approve)",
-            "Shift+Tab",
             width,
             false,
         ),
-        labeled_shortcut_row(
-            app,
-            theme,
-            Action::Quit,
-            "Quit",
-            "Ctrl+q / Ctrl+d",
-            width,
-            false,
-        ),
-        labeled_shortcut_row(
-            app,
-            theme,
-            Action::Palette,
-            "Command palette",
-            "Ctrl+p / ?",
-            width,
-            false,
-        ),
-        labeled_shortcut_row(
-            app,
-            theme,
-            Action::Help,
-            "Keyboard shortcuts",
-            "Ctrl+x / Ctrl+.",
-            width,
-            false,
-        ),
+        labeled_shortcut_row(app, theme, Action::Quit, "Quit", width, false),
+        labeled_shortcut_row(app, theme, Action::Palette, "Command palette", width, false),
+        labeled_shortcut_row(app, theme, Action::Help, "Keyboard shortcuts", width, false),
         labeled_shortcut_row(
             app,
             theme,
             Action::OpenStatusDialog,
             "Open the settings modal",
-            "F2 / Ctrl+, / Super+,",
             width,
             false,
         ),
@@ -337,15 +298,15 @@ fn collapsed_section_row(title: &str, count: usize, theme: &Theme) -> Line<'stat
 }
 
 fn labeled_shortcut_row(
-    _app: &AppState,
+    app: &AppState,
     theme: &Theme,
-    _action: Action,
+    action: Action,
     label: &str,
-    freeze_binding: &str,
     width: usize,
     is_selected: bool,
 ) -> Line<'static> {
-    shortcut_row_with_binding(theme, label, freeze_binding, width, is_selected)
+    let binding = app.keymap.get_binding_str(action);
+    shortcut_row_with_binding(theme, label, &binding, width, is_selected)
 }
 
 fn shortcut_row_with_binding(
@@ -401,6 +362,29 @@ mod tests {
     use super::*;
     use crate::UnwrapOrAbort;
     use ratatui::{backend::TestBackend, style::Color, Terminal};
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn help_shortcut_rows_use_the_active_keymap_binding() {
+        // Given: the submit action is remapped away from its default key.
+        let mut app = AppState::new_live(None, false, None);
+        app.keymap.apply_overrides(&BTreeMap::from([(
+            "submit_prompt".to_string(),
+            "ctrl+g".to_string(),
+        )]));
+
+        // When: the help modal builds its shortcut rows.
+        let rows = help_shortcut_rows(&app, &Theme::harness_chat(), 72);
+        let send_row = rows[1]
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect::<String>();
+
+        // Then: the rendered binding follows the active keymap rather than the frozen default.
+        assert!(send_row.contains("Ctrl+g"), "send row: {send_row}");
+        assert!(!send_row.contains("Enter"), "send row: {send_row}");
+    }
 
     #[test]
     fn help_modal_matches_grok_sizing_at_reference_viewports() {
@@ -441,11 +425,11 @@ mod tests {
             .unwrap_or_abort();
 
         let buffer = terminal.backend().buffer();
-        assert_eq!(buffer[(0, 0)].fg, Color::Indexed(8));
-        assert_eq!(buffer[(0, 0)].bg, Color::Indexed(0));
-        assert_eq!(buffer[(3, 0)].fg, Color::Indexed(15));
-        assert_eq!(buffer[(0, 1)].fg, Color::Indexed(8));
-        assert_eq!(buffer[(1, 1)].bg, Color::Indexed(0));
+        assert_eq!(buffer[(0, 0)].fg, theme.reference_terminal.muted);
+        assert_eq!(buffer[(0, 0)].bg, theme.reference_terminal.canvas);
+        assert_eq!(buffer[(3, 0)].fg, theme.reference_terminal.primary);
+        assert_eq!(buffer[(0, 1)].fg, theme.reference_terminal.muted);
+        assert_eq!(buffer[(1, 1)].bg, theme.reference_terminal.canvas);
     }
 
     #[test]

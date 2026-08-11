@@ -206,8 +206,16 @@ fn basic_unified_diff(path: &str, before: &str, after: &str) -> String {
     let after_start = if after_count == 0 { 0 } else { 1 };
 
     let mut diff = String::new();
-    diff.push_str(&format!("--- {path}\n"));
-    diff.push_str(&format!("+++ {path}\n"));
+    if before_count == 0 && after_count > 0 {
+        diff.push_str("--- /dev/null\n");
+    } else {
+        diff.push_str(&format!("--- {path}\n"));
+    }
+    if after_count == 0 && before_count > 0 {
+        diff.push_str("+++ /dev/null\n");
+    } else {
+        diff.push_str(&format!("+++ {path}\n"));
+    }
     diff.push_str(&format!(
         "@@ -{before_start},{before_count} +{after_start},{after_count} @@\n"
     ));

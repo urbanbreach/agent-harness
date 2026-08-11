@@ -17,6 +17,7 @@ use crate::transcript_timeline::{
 };
 
 use super::cache::{empty_view, BoundedLayoutCache};
+use super::incremental::TranscriptWorkMetrics;
 use super::invalidation::{CacheInvalidation, TranscriptEvent, TurnSeed};
 use super::lifecycle::{LifecycleCoordinator, LifecycleSnapshot};
 
@@ -50,6 +51,7 @@ pub enum TranscriptIntegrationError {
     MissingBlock(BlockId),
     NoViewer,
     NoPager,
+    IncrementalSync(&'static str),
 }
 
 impl Display for TranscriptIntegrationError {
@@ -67,6 +69,9 @@ impl Display for TranscriptIntegrationError {
             Self::MissingBlock(id) => write!(formatter, "missing transcript block {id}"),
             Self::NoViewer => formatter.write_str("no transcript viewer is open"),
             Self::NoPager => formatter.write_str("no transcript pager is suspended"),
+            Self::IncrementalSync(message) => {
+                write!(formatter, "incremental sync failed: {message}")
+            }
         }
     }
 }
@@ -85,7 +90,8 @@ impl std::error::Error for TranscriptIntegrationError {
             | Self::MissingTurn(_)
             | Self::MissingBlock(_)
             | Self::NoViewer
-            | Self::NoPager => None,
+            | Self::NoPager
+            | Self::IncrementalSync(_) => None,
         }
     }
 }
@@ -128,6 +134,7 @@ impl From<PagerError> for TranscriptIntegrationError {
 
 pub struct TranscriptComposite {
     pub(super) events: Vec<TranscriptEvent>,
+    pub(super) turn_seeds: Vec<TurnSeed>,
     pub(super) viewport: Rect,
     pub(super) shell_state: ShellState,
     pub(super) identity: TranscriptIdentity,
@@ -144,6 +151,7 @@ pub struct TranscriptComposite {
     pub(super) lifecycle: LifecycleCoordinator,
     pub(super) cache: BoundedLayoutCache,
     pub(super) view: TranscriptViewModel,
+    pub(super) work_metrics: TranscriptWorkMetrics,
 }
 
 impl TranscriptComposite {
@@ -164,6 +172,7 @@ impl TranscriptComposite {
         let view = empty_view(viewport, &identity, &screen, follow, &cache);
         Ok(Self {
             events: Vec::new(),
+            turn_seeds: Vec::new(),
             viewport,
             shell_state: ShellState::Streaming,
             identity,
@@ -180,14 +189,15 @@ impl TranscriptComposite {
             lifecycle: LifecycleCoordinator::new(false),
             cache,
             view,
+            work_metrics: TranscriptWorkMetrics::default(),
         })
     }
 
     pub fn apply(&mut self, event: TranscriptEvent) -> Result<(), TranscriptIntegrationError> {
-        self.cache.apply(self.invalidation_for(&event));
-        self.events.push(event);
-        if let Err(error) = self.rebuild() {
+        self.events.push(event.clone());
+        if let Err(error) = self.apply_incremental_event(&event) {
             let _ = self.events.pop();
+            self.cache.apply(CacheInvalidation::ReplayReset);
             let _ = self.rebuild();
             return Err(error);
         }
@@ -198,13 +208,16 @@ impl TranscriptComposite {
         if viewport.width == 0 || viewport.height == 0 {
             return Err(TranscriptIntegrationError::InvalidViewport);
         }
+        if self.viewport == viewport {
+            return Ok(());
+        }
         let previous = self.viewport.width;
         self.viewport = viewport;
         self.cache.apply(CacheInvalidation::WidthChanged {
             from: previous,
             to: viewport.width,
         });
-        self.rebuild()
+        self.remeasure_projected_document()
     }
 
     pub fn set_block_lifecycle(

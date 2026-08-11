@@ -166,18 +166,18 @@ pub(super) fn completed_shell_bottom_rows_do_not_duplicate_command_help_footers(
 
     let rendered = render_live_lines(&app, 100, 24);
     let lines = rendered.lines().collect::<Vec<_>>();
-    let footer_row = find_last_line_containing(&lines, "Tab focus").unwrap_or_abort();
+    let footer_row = find_last_line_containing(&lines, "Ctrl+x:shortcuts").unwrap_or_abort();
 
     assert_eq!(
         lines
             .iter()
-            .filter(|line| line.contains("Tab focus"))
+            .filter(|line| line.contains("Ctrl+x:shortcuts"))
             .count(),
         1,
         "completed shell should keep a single footer hint row\n{rendered}"
     );
-    assert!(lines[footer_row].contains("? commands"));
-    assert!(lines[footer_row].contains("q quit"));
+    assert!(lines[footer_row].contains("Shift+Tab:mode"));
+    assert!(!lines[footer_row].contains("? commands"));
 }
 
 pub(super) fn live_state_matrix_preserves_shell_structure() {

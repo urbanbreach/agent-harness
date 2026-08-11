@@ -1,7 +1,6 @@
 use ratatui::style::Color;
 
 use crate::app::ActivityStatus;
-use crate::text::has_trimmed_content;
 use crate::theme::Theme;
 
 use super::ui_chrome::elevated_card_surface;
@@ -87,22 +86,8 @@ pub(super) fn blend_color(base: Color, overlay: Color, alpha: f32) -> Color {
     }
 }
 
-pub(super) fn assistant_footer_label(value: &str) -> String {
-    if !has_trimmed_content(value)
-        || value.eq_ignore_ascii_case("unknown")
-        || value.eq_ignore_ascii_case("default")
-    {
-        return "Assistant".to_string();
-    }
-    titlecase_label(value.trim())
-}
-
-fn titlecase_label(value: &str) -> String {
-    let mut chars = value.chars();
-    let Some(first) = chars.next() else {
-        return String::new();
-    };
-    format!("{}{}", first.to_uppercase(), chars.as_str())
+pub(super) fn assistant_footer_label(_value: &str) -> String {
+    "Assistant".to_string()
 }
 
 pub(super) fn assistant_primary_label_color(status: ActivityStatus, theme: &Theme) -> Color {
@@ -157,7 +142,7 @@ pub(super) fn transcript_emphasized_surface(theme: &Theme, base_surface: Color) 
 #[cfg(test)]
 mod tests {
     use super::{
-        blend_color, pending_diamond_color, thinking_header_color,
+        assistant_footer_label, blend_color, pending_diamond_color, thinking_header_color,
         transcript_running_tool_marker_color, transcript_streaming_spinner_frame_with_motion,
         Theme,
     };
@@ -249,5 +234,18 @@ mod tests {
         // Then: the active state remains clear without continuous movement.
         assert_eq!(first, "⠋");
         assert_eq!(later, first);
+    }
+
+    #[test]
+    fn assistant_footer_label_is_profile_independent() {
+        // Given: legacy primary-profile labels on recorded turns.
+        // When: the fallback assistant label is derived.
+        let labels = [
+            assistant_footer_label("build"),
+            assistant_footer_label("plan"),
+        ];
+
+        // Then: both turns retain the generic transcript message role.
+        assert_eq!(labels, ["Assistant", "Assistant"]);
     }
 }

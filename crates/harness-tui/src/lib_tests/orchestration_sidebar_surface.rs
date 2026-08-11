@@ -145,17 +145,17 @@ pub(super) fn layout_plan_primary_geometry_docks_live_details_sidebar() {
     assert_eq!(plan.shell, ratatui::layout::Rect::new(0, 0, 100, 30));
     assert_eq!(
         plan.transcript,
-        Some(ratatui::layout::Rect::new(0, 0, 100, 25))
+        Some(ratatui::layout::Rect::new(0, 0, 100, 24))
     );
     assert_eq!(plan.operator_sidebar, None);
     assert_eq!(
         plan.details_overlay,
-        Some(ratatui::layout::Rect::new(58, 0, 42, 25))
+        Some(ratatui::layout::Rect::new(58, 0, 42, 24))
     );
     assert_eq!(plan.status, None);
     assert_eq!(
         plan.composer,
-        Some(ratatui::layout::Rect::new(2, 25, 96, 3))
+        Some(ratatui::layout::Rect::new(2, 24, 96, 3))
     );
     assert_eq!(
         plan.disclosure,
@@ -173,16 +173,16 @@ pub(super) fn layout_plan_minimum_geometry_stacks_live_details_drawer() {
     assert_eq!(plan.shell, ratatui::layout::Rect::new(0, 0, 80, 24));
     assert_eq!(
         plan.transcript,
-        Some(ratatui::layout::Rect::new(0, 0, 80, 19))
+        Some(ratatui::layout::Rect::new(0, 0, 80, 18))
     );
     assert_eq!(
         plan.details_overlay,
-        Some(ratatui::layout::Rect::new(38, 0, 42, 19))
+        Some(ratatui::layout::Rect::new(38, 0, 42, 18))
     );
     assert_eq!(plan.status, None);
     assert_eq!(
         plan.composer,
-        Some(ratatui::layout::Rect::new(2, 19, 76, 3))
+        Some(ratatui::layout::Rect::new(2, 18, 76, 3))
     );
     assert_eq!(
         plan.disclosure,
@@ -321,6 +321,6 @@ pub(super) fn replay_and_completed_states_preserve_read_only_and_session_preserv
     ));
 
     let completed_render = render_live_lines(&completed, 100, 30);
-    assert!(completed_render.contains("Tab focus"));
-    assert!(completed_render.contains("q quit"));
+    assert!(completed_render.contains("Shift+Tab:mode"));
+    assert!(completed_render.contains("Ctrl+x:shortcuts"));
 }

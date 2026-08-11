@@ -1,4 +1,5 @@
 // allow: SIZE_OK — TUI transcript rendering (indivisible view model)
+use super::ui_diff::structured_diff_stats;
 use super::ui_tool_delegation::agent_spawn_is_background;
 use super::ui_tool_visibility::tool_call_has_transcript_disclosure;
 use super::*;
@@ -32,7 +33,7 @@ pub(super) fn build_tool_call_section(
 
     let task_row = app.transcript_task_row_for_tool_call(tool_call);
 
-    Some(build_transcript_tool_call_section(
+    let mut section = build_transcript_tool_call_section(
         tool_call,
         app,
         task_row.as_ref(),
@@ -41,7 +42,9 @@ pub(super) fn build_tool_call_section(
         tool_output_expanded,
         stacked_diffs,
         session_path,
-    ))
+    );
+    section.details_preview_visible |= show_tool_details;
+    Some(section)
 }
 
 #[expect(
@@ -78,7 +81,7 @@ pub(super) fn build_transcript_tool_call_section(
 
     let animation_phase = app.transcript_animation_phase();
 
-    let (title, icon, visual_style, uses_generic_output_visibility) = match display_tool_id {
+    let (mut title, icon, visual_style, uses_generic_output_visibility) = match display_tool_id {
         "fs.read" | "read" => {
             let path = tool_path_display(tool_call);
             let title = match tool_call.status {
@@ -524,6 +527,20 @@ pub(super) fn build_transcript_tool_call_section(
         }
     };
 
+    set_diff_highlight_phase(
+        &mut detail_blocks,
+        tool_call.status == ToolCallDisplayStatus::Succeeded,
+    );
+
+    if tool_call.status == ToolCallDisplayStatus::Succeeded
+        && matches!(
+            display_tool_id,
+            "edit.hashline_apply" | "edit" | "write" | "fs.write"
+        )
+    {
+        title = successful_edit_summary_title(tool_call, &detail_blocks);
+    }
+
     if detail_blocks.is_empty()
         && uses_generic_output_visibility
         && if tool_call.status == ToolCallDisplayStatus::Failed {
@@ -579,20 +596,40 @@ pub(super) fn build_transcript_tool_call_section(
             tool_in_path_description(tool_call),
             tool_match_count_description(tool_call),
         ),
-        "edit.hashline_apply" => tool_call_path_metadata(tool_call.edit_path_display().as_deref())
-            .map(|metadata| {
+        "edit.hashline_apply" | "fs.write" | "write" | "edit" => {
+            let path = tool_call
+                .edit_path_display()
+                .or_else(|| tool_path_display(tool_call));
+            tool_call_path_metadata(path.as_deref()).and_then(|metadata| {
                 header_path_metadata = metadata.parent.clone();
-                metadata.leaf
-            }),
-        "fs.write" | "write" | "edit" => None,
+                (tool_call.status != ToolCallDisplayStatus::Succeeded).then_some(metadata.leaf)
+            })
+        }
         "background_output" => background_output_tool_subtitle(tool_call),
         "agent.spawn" | "task" => agent_spawn_subtitle(tool_call),
         "apply_patch" => None,
         _ => None,
     };
+    let rail_motion = if app.replay_mode {
+        ToolRailMotion::Settled
+    } else if let Some(remaining) = app.tool_finish_flash_remaining(&tool_call.tool_call_id) {
+        ToolRailMotion::FinishFlash { remaining }
+    } else {
+        match tool_call.status {
+            ToolCallDisplayStatus::Running => ToolRailMotion::Running {
+                phase: animation_phase,
+            },
+            ToolCallDisplayStatus::PendingPermission => ToolRailMotion::Waiting,
+            ToolCallDisplayStatus::Queued => ToolRailMotion::Queued,
+            ToolCallDisplayStatus::Succeeded | ToolCallDisplayStatus::Failed => {
+                ToolRailMotion::Settled
+            }
+        }
+    };
 
     TranscriptToolCallSection {
         tool_call_id: tool_call.tool_call_id.clone(),
+        coalesced_tool_call_ids: vec![tool_call.tool_call_id.clone()],
         child_session_id,
         hovered_target: app.hovered_transcript_target().cloned(),
         header: TranscriptToolCallHeader {
@@ -625,6 +662,7 @@ pub(super) fn build_transcript_tool_call_section(
         details_preview_visible,
         animation_phase,
         expanded,
+        rail_motion,
     }
 }
 
@@ -641,27 +679,69 @@ fn web_search_provider_label(tool_call: &crate::app::ToolCallEntry) -> &'static 
     }
 }
 
-fn push_applied_edit_fallback_block(
-    detail_blocks: &mut Vec<TranscriptToolCallDetailBlock>,
-    edit: &crate::app::EditEntry,
+pub(super) fn set_diff_highlight_phase(
+    blocks: &mut [TranscriptToolCallDetailBlock],
+    full_file_ready: bool,
 ) {
-    let summary = edit.summary.as_deref().map(collapse_inline_whitespace);
-    let diff_rel_path = edit
-        .diff_rel_path
-        .as_deref()
-        .map(collapse_inline_whitespace);
-    let text = match (summary.as_deref(), diff_rel_path.as_deref()) {
-        (Some(summary), Some(diff_rel_path)) => {
-            format!("{summary} · Diff preview unavailable ({diff_rel_path})")
+    for block in blocks {
+        match block {
+            TranscriptToolCallDetailBlock::StructuredDiff {
+                highlight_syntax, ..
+            } => *highlight_syntax = full_file_ready,
+            TranscriptToolCallDetailBlock::FileSection(section) => {
+                set_diff_highlight_phase(&mut section.detail_blocks, full_file_ready);
+            }
+            _ => {}
         }
-        (Some(summary), None) => format!("{summary} · Diff preview unavailable"),
-        (None, Some(diff_rel_path)) => format!("Diff preview unavailable · {diff_rel_path}"),
-        (None, None) => "Diff preview unavailable".to_string(),
-    };
-    detail_blocks.push(TranscriptToolCallDetailBlock::Message {
-        text,
-        tone: TranscriptToolCallDetailTone::Secondary,
-    });
+    }
+}
+
+pub(super) fn successful_edit_summary_title(
+    tool_call: &crate::app::ToolCallEntry,
+    detail_blocks: &[TranscriptToolCallDetailBlock],
+) -> String {
+    let path = tool_call
+        .edit_path_display()
+        .or_else(|| tool_path_display(tool_call))
+        .unwrap_or_else(|| "file".to_string());
+    let basename = Path::new(&path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(&path);
+    let creating = matches!(tool_call.effective_tool_id(), "write" | "fs.write")
+        && detail_blocks.iter().any(|block| match block {
+            TranscriptToolCallDetailBlock::StructuredDiff { diff_content, .. } => diff_content
+                .lines()
+                .any(|line| line.trim() == "--- /dev/null"),
+            _ => false,
+        });
+    let (additions, removals) = detail_blocks.iter().fold(
+        (0usize, 0usize),
+        |(additions, removals), block| match block {
+            TranscriptToolCallDetailBlock::StructuredDiff {
+                diff_content,
+                fallback_path,
+                ..
+            } => structured_diff_stats(diff_content, fallback_path.as_deref(), false).map_or(
+                (additions, removals),
+                |(added, removed)| {
+                    (
+                        additions.saturating_add(added),
+                        removals.saturating_add(removed),
+                    )
+                },
+            ),
+            _ => (additions, removals),
+        },
+    );
+    let action = if creating { "Create" } else { "Edit" };
+    if additions == 0 && removals == 0 {
+        format!("{action} {basename}")
+    } else if creating {
+        format!("{action} {basename} +{additions}")
+    } else {
+        format!("{action} {basename} +{additions}/-{removals}")
+    }
 }
 
 fn push_tool_call_diff_blocks(
@@ -672,12 +752,6 @@ fn push_tool_call_diff_blocks(
     stacked_diffs: bool,
 ) -> bool {
     let Some(session_path) = session_path else {
-        if let Some(edit) = tool_call.edit.as_ref() {
-            if edit.status == crate::app::EditDisplayStatus::Applied {
-                push_applied_edit_fallback_block(detail_blocks, edit);
-                return true;
-            }
-        }
         return false;
     };
 
@@ -722,6 +796,7 @@ fn push_tool_call_diff_blocks(
                 fallback_path,
                 force_stacked,
                 plain_numbered,
+                highlight_syntax: false,
                 show_file_header: !matches!(
                     tool_call.effective_tool_id(),
                     "edit" | "write" | "fs.write"
@@ -753,19 +828,8 @@ fn push_tool_call_diff_blocks(
             }
         }
 
-        if let Some(edit) = tool_call.edit.as_ref() {
-            if edit.status == crate::app::EditDisplayStatus::Applied {
-                push_applied_edit_fallback_block(detail_blocks, edit);
-                return true;
-            }
-        }
-        if tool_call_has_diff_preview(tool_call) {
-            detail_blocks.push(TranscriptToolCallDetailBlock::Message {
-                text: "Diff preview unavailable".to_string(),
-                tone: TranscriptToolCallDetailTone::Secondary,
-            });
-            return true;
-        }
+        // Optional preview artifacts are not user-facing errors. The header already
+        // carries the truthful file summary when an artifact is absent or unreadable.
     }
 
     rendered
@@ -795,6 +859,13 @@ fn push_apply_patch_file_sections(
                 false,
                 false,
             );
+        }
+        if file_detail_blocks.is_empty() {
+            detail_blocks.push(TranscriptToolCallDetailBlock::Message {
+                text: entry.file_path.clone(),
+                tone: TranscriptToolCallDetailTone::Secondary,
+            });
+            continue;
         }
         let metadata =
             tool_call_path_metadata(Some(&entry.file_path)).unwrap_or(TranscriptPathMetadata {
@@ -839,6 +910,7 @@ fn push_structured_diff_artifact_block(
         fallback_path: fallback_path.map(str::to_string),
         force_stacked,
         plain_numbered,
+        highlight_syntax: false,
         show_file_header,
     });
     true

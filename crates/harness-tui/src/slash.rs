@@ -1,7 +1,7 @@
 //! Slash command leaf definitions extracted from `command_registry.rs`.
 //!
 //! Each command has its own owner module under `commands/`. The aggregator
-//! in `commands/mod.rs` collects them into the canonical ordered list of 25.
+//! in `commands/mod.rs` collects them into the canonical ordered list of 26.
 //! This module defines the shared `SlashCommandLeaf` value type; it does not
 //! contain command-specific logic.
 

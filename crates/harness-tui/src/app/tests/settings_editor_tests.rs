@@ -78,13 +78,7 @@ pub(super) fn settings_editor_toggles_hashline_edit_persists_and_reloads() {
       "models": { "gpt-4o-mini": { "display_name": "GPT-4o mini" } }
     }
   },
-  "agents": {
-    "build": {
-      "description": "Build work",
-      "model_ref": "default:gpt-4o-mini",
-      "tools": ["read"]
-    }
-  },
+  "model": "default:gpt-4o-mini",
   "permissions": {
     "defaults": { "edit": "ask", "shell": "ask", "network": "deny" }
   },
@@ -219,13 +213,7 @@ pub(super) fn settings_editor_toggles_compaction_enabled_persists_and_reloads() 
       "models": { "gpt-4o-mini": { "display_name": "GPT-4o mini" } }
     }
   },
-  "agents": {
-    "build": {
-      "description": "Build work",
-      "model_ref": "default:gpt-4o-mini",
-      "tools": ["read"]
-    }
-  },
+  "model": "default:gpt-4o-mini",
   "permissions": {
     "defaults": { "edit": "ask", "shell": "ask", "network": "deny" }
   },
@@ -304,13 +292,7 @@ pub(super) fn settings_editor_toggles_compaction_auto_retry_overflow_persists_an
       "models": { "gpt-4o-mini": { "display_name": "GPT-4o mini" } }
     }
   },
-  "agents": {
-    "build": {
-      "description": "Build work",
-      "model_ref": "default:gpt-4o-mini",
-      "tools": ["read"]
-    }
-  },
+  "model": "default:gpt-4o-mini",
   "permissions": {
     "defaults": { "edit": "ask", "shell": "ask", "network": "deny" }
   },
@@ -428,13 +410,7 @@ pub(super) fn settings_editor_toggles_deterministic_enabled_persists_and_reloads
       "models": { "gpt-4o-mini": { "display_name": "GPT-4o mini" } }
     }
   },
-  "agents": {
-    "build": {
-      "description": "Build work",
-      "model_ref": "default:gpt-4o-mini",
-      "tools": ["read"]
-    }
-  },
+  "model": "default:gpt-4o-mini",
   "permissions": {
     "defaults": { "edit": "ask", "shell": "ask", "network": "deny" }
   },
@@ -503,13 +479,7 @@ pub(super) fn settings_editor_toggles_compaction_structured_summary_contract_per
       "models": { "gpt-4o-mini": { "display_name": "GPT-4o mini" } }
     }
   },
-  "agents": {
-    "build": {
-      "description": "Build work",
-      "model_ref": "default:gpt-4o-mini",
-      "tools": ["read"]
-    }
-  },
+  "model": "default:gpt-4o-mini",
   "permissions": {
     "defaults": { "edit": "ask", "shell": "ask", "network": "deny" }
   },
@@ -578,13 +548,7 @@ pub(super) fn settings_editor_toggles_compaction_estimated_token_triggers_persis
       "models": { "gpt-4o-mini": { "display_name": "GPT-4o mini" } }
     }
   },
-  "agents": {
-    "build": {
-      "description": "Build work",
-      "model_ref": "default:gpt-4o-mini",
-      "tools": ["read"]
-    }
-  },
+  "model": "default:gpt-4o-mini",
   "permissions": {
     "defaults": { "edit": "ask", "shell": "ask", "network": "deny" }
   },
@@ -658,13 +622,7 @@ pub(super) fn settings_editor_e2e_open_edit_persist_and_read_effective() {
       "models": { "gpt-4o-mini": { "display_name": "GPT-4o mini" } }
     }
   },
-  "agents": {
-    "build": {
-      "description": "Build work",
-      "model_ref": "default:gpt-4o-mini",
-      "tools": ["read"]
-    }
-  },
+  "model": "default:gpt-4o-mini",
   "permissions": {
     "defaults": { "edit": "ask", "shell": "ask", "network": "deny" }
   },

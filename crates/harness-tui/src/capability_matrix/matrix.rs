@@ -18,18 +18,39 @@ pub struct CapabilityCell {
     pub viewport: ViewportCapability,
 }
 impl CapabilityCell {
+    pub const fn glyph_mode(&self) -> crate::theme::GlyphMode {
+        if matches!(self.width, WidthCapability::Compact)
+            && matches!(self.keyboard, KeyboardCapability::Minimal)
+        {
+            crate::theme::GlyphMode::Ascii
+        } else {
+            crate::theme::GlyphMode::Preferred
+        }
+    }
+
     pub const fn is_classified(&self) -> bool {
         true
     }
     pub fn label(&self) -> String {
         format!(
-            "{}:{}:{}:{}x{}",
+            "color={}:glyphs={}:motion={}:graphics={}:keyboard={}:viewport={}x{}",
             self.color.label(),
+            match self.glyph_mode() {
+                crate::theme::GlyphMode::Preferred => "preferred",
+                crate::theme::GlyphMode::Ascii => "ascii",
+            },
+            self.motion.label(),
             self.graphics.label(),
             self.keyboard.label(),
             self.viewport.dimensions().0,
             self.viewport.dimensions().1
         )
+    }
+
+    pub fn apply_to_theme(&self, theme: crate::theme::Theme) -> crate::theme::Theme {
+        theme
+            .for_color_level(self.color.to_color_level())
+            .with_glyph_mode(self.glyph_mode())
     }
 }
 
