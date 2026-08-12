@@ -55,6 +55,7 @@ crates/harness/harness.json
 **/__pycache__/
 
 # UI parity / reference-copy development artifacts
+/43-ui-catalog-coverage.md
 /task-verification-*.json
 /configs/tui-fidelity-closure-contract.json
 /docs/reference/grok-build-*.md
