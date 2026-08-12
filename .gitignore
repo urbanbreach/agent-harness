@@ -15,6 +15,10 @@ artifacts/
 # Local scratch / research material
 inspirations/
 .omx/
+.senpi/
+.ruff_cache
+logo-drafts/
+receipts/
 .codex/*
 !.codex/agents/
 !.codex/agents/**
