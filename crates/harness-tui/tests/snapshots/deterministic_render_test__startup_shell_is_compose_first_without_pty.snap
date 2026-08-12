@@ -3,7 +3,7 @@ source: crates/harness-tui/tests/deterministic_render_test.rs
 expression: normalize_volatile_branch(&trim_trailing_snapshot_whitespace(&rendered))
 ---
 
-             test-workspace worktree /workspace/agent-harness
+   test-workspace worktree /workspace/agent-harness
 
 
 
@@ -20,8 +20,8 @@ expression: normalize_volatile_branch(&trim_trailing_snapshot_whitespace(&render
 
 
 
-            ╭──────────────────────────────────────────────────────────────────────────╮
-            │ ❯ Explain deterministic TUI tests                                        │
-            ╰───────────────────────────────────────────────────────── model-1 · Demo ─╯
+  ╭──────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ ❯ Explain deterministic TUI tests                                                            │
+  ╰───────────────────────────────────────────────────────────────────────────── model-1 · Demo ─╯
 
-            Enter:send  │  Shift+Tab:mode  │  Ctrl+x:shortcuts
+  Enter:send  │  Shift+Tab:mode  │  Ctrl+x:shortcuts

@@ -84,6 +84,40 @@ fn live_single_line_composer_rect_is_stable_across_idle_draft_and_streaming() {
 }
 
 #[test]
+fn startup_idle_and_first_streaming_frames_share_composer_geometry_at_home_widths() {
+    let startup = AppState::new_startup(Vec::new(), None);
+    let idle = AppState::new_live(None, false, None);
+    let streaming = live_session_app();
+
+    for (width, height, expected) in [
+        (80, 24, Rect::new(2, 18, 76, 3)),
+        (90, 24, Rect::new(2, 18, 86, 3)),
+        (100, 30, Rect::new(2, 24, 96, 3)),
+        (120, 32, Rect::new(2, 26, 116, 3)),
+    ] {
+        let startup_composer = plan_for(&startup, width, height)
+            .composer
+            .expect("startup composer");
+        let idle_composer = plan_for(&idle, width, height)
+            .composer
+            .expect("idle composer");
+        let streaming_composer = plan_for(&streaming, width, height)
+            .composer
+            .expect("streaming composer");
+
+        assert_eq!(
+            (startup_composer, idle_composer, streaming_composer),
+            (expected, expected, expected),
+            "first submission must not move or resize the composer at {width}x{height}"
+        );
+        assert_eq!(
+            startup_composer.height, 3,
+            "single-line composer remains top/content/bottom at {width}x{height}"
+        );
+    }
+}
+
+#[test]
 fn live_session_sidebar_must_not_reappear_as_primary_chrome_at_width_ge_121() {
     // arrange
     let app = live_session_app();

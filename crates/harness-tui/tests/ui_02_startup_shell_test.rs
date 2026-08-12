@@ -8,7 +8,9 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use harness_tui::app::{AppState, LaunchMetadata};
 use harness_tui::render_test::render_to_string;
 use harness_tui::ui;
-use ratatui::layout::Rect;
+use harness_tui::welcome_surface::WelcomeLayout;
+use harness_tui::FrameLayoutPlan;
+use ratatui::{backend::TestBackend, layout::Rect, style::Modifier, Terminal};
 
 fn startup_app() -> AppState {
     let mut app = AppState::new_startup(Vec::new(), None);
@@ -28,6 +30,15 @@ fn render(app: &AppState, width: u16, height: u16) -> String {
     render_to_string(app, Rect::new(0, 0, width, height), |app, frame, _area| {
         ui::render_app(frame, app)
     })
+}
+
+fn render_terminal(app: &AppState, width: u16, height: u16) -> Terminal<TestBackend> {
+    let backend = TestBackend::new(width, height);
+    let mut terminal = Terminal::new(backend).expect("startup test terminal");
+    terminal
+        .draw(|frame| ui::render_app(frame, app))
+        .expect("startup render");
+    terminal
 }
 
 #[test]
@@ -55,6 +66,66 @@ fn primary_startup_uses_measured_vertical_order_at_120x32() {
 }
 
 #[test]
+fn home_top_bar_and_hero_topology_hold_at_80_90_100_and_120_columns() {
+    for (width, height, welcome_boxes) in [(80, 24, 1), (90, 24, 2), (100, 30, 2), (120, 32, 2)] {
+        let rendered = render(&startup_app(), width, height);
+        let lines = rendered.lines().collect::<Vec<_>>();
+        let breadcrumb = lines.iter().position(|line| line.contains(''));
+
+        assert_eq!(
+            breadcrumb,
+            Some(1),
+            "the one-row startup top bar must stay on row 2 at {width}x{height}\n{rendered}"
+        );
+        assert_eq!(
+            rendered.matches('╭').count(),
+            welcome_boxes,
+            "80 columns keeps only the composer box; 90+ keeps welcome plus composer at {width}x{height}\n{rendered}"
+        );
+        assert!(
+            rendered.contains("New worktree") && rendered.contains("Changelog"),
+            "startup actions and changelog must remain reachable at {width}x{height}\n{rendered}"
+        );
+        assert_eq!(
+            rendered.contains("██╗"),
+            width >= 90,
+            "the two-column logo panel starts at 90 columns at {width}x{height}\n{rendered}"
+        );
+    }
+}
+
+#[test]
+fn focused_home_action_uses_the_full_semantic_selection_row_at_all_breakpoints() {
+    for (width, height) in [(80, 24), (90, 24), (100, 30), (120, 32)] {
+        let mut app = startup_app();
+        app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        let frame_area = Rect::new(0, 0, width, height);
+        let startup_area = FrameLayoutPlan::for_app(&app, frame_area)
+            .transcript
+            .expect("startup transcript area");
+        let layout = WelcomeLayout::for_area(
+            (
+                startup_area.x,
+                startup_area.y,
+                startup_area.width,
+                startup_area.height,
+            ),
+            false,
+        );
+
+        let terminal = render_terminal(&app, width, height);
+        let action = layout.action_rects[0];
+        for column in action.0..action.0.saturating_add(action.2) {
+            assert_eq!(
+                terminal.backend().buffer()[(column, action.1)].bg,
+                app.theme().surface.selected_card,
+                "focused action row must use the semantic selected surface at {width}x{height}, column {column}"
+            );
+        }
+    }
+}
+
+#[test]
 fn primary_startup_keeps_harness_identity_in_reference_region_without_dead_action() {
     let rendered = render(&startup_app_with_clipboard_warning(), 120, 32);
     let title = rendered
@@ -67,6 +138,35 @@ fn primary_startup_keeps_harness_identity_in_reference_region_without_dead_actio
         (title_column, rendered.matches("Changelog").count()),
         (Some(23), 1),
         "Harness identity must use the measured title column and Changelog must remain a section, not a dead action\n{rendered}"
+    );
+}
+
+#[test]
+fn primary_startup_renders_changelog_as_a_bold_section_label() {
+    let app = startup_app_with_clipboard_warning();
+    let terminal = render_terminal(&app, 120, 32);
+    let rendered = render(&app, 120, 32);
+    let (row, column) = rendered
+        .lines()
+        .enumerate()
+        .find_map(|(row, line)| {
+            line.contains("Changelog").then(|| {
+                let column = line
+                    .chars()
+                    .position(|character| character == 'C')
+                    .expect("Changelog starts with C");
+                (row, column)
+            })
+        })
+        .expect("Changelog section label");
+    let row = u16::try_from(row).expect("render row fits terminal coordinates");
+    let column = u16::try_from(column).expect("render column fits terminal coordinates");
+
+    assert!(
+        terminal.backend().buffer()[(column, row)]
+            .modifier
+            .contains(Modifier::BOLD),
+        "Changelog must use the measured bold section-label hierarchy\n{rendered}"
     );
 }
 
@@ -92,16 +192,17 @@ fn compact_startup_collapses_welcome_chrome_but_keeps_bordered_composer() {
 }
 
 #[test]
-fn disconnected_startup_keeps_the_compact_notice_actionable_and_footer_truthful() {
+fn disconnected_startup_keeps_recovery_status_in_footer_without_panel_notice() {
     let mut app = AppState::new_startup(Vec::new(), None);
     app.maybe_set_no_provider_banner();
 
     let rendered = render(&app, 80, 24);
     assert!(
-        rendered.contains("No provider connected. Use /connect.")
+        !rendered.contains("No provider connected. Use /connect.")
+            && !rendered.contains("Notices:")
             && rendered.contains("Provider not connected")
             && !rendered.contains("Logged in with API key"),
-        "disconnected startup must not contradict or truncate its recovery action\n{rendered}"
+        "disconnected startup must reserve welcome content for the measured anatomy and keep status truthful in the footer\n{rendered}"
     );
 }
 

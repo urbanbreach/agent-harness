@@ -3,7 +3,7 @@ source: crates/harness-tui/tests/deterministic_render_test.rs
 expression: rendered.as_str()
 ---
                                                                                                     
-             test-workspace /workspace/agent-harness                                               
+   test-workspace /workspace/agent-harness                                                         
                                                                                                     
                                                                                                     
                                                                                                     
@@ -11,21 +11,21 @@ expression: rendered.as_str()
                                                                                                     
                                                                                                     
                                                                                                     
-            ┃                                                                                       
-            ┃  Pick one                                                                             
-            ┃                                                                                       
-            ┃                                                                                       
-            ┃  1 (○) A  Option A                                                                    
-            ┃  z (○) Type your answer here                                                          
-            ┃                                                                                       
-            ┃  ↑/↓ navigate · y copy                                      Enter:submit              
-            ┃                                                                                       
+  ┃                                                                                                 
+  ┃  Pick one                                                                                       
+  ┃                                                                                                 
+  ┃                                                                                                 
+  ┃  1 (○) A  Option A                                                                              
+  ┃  z (○) Type your answer here                                                                    
+  ┃                                                                                                 
+  ┃  ↑/↓ navigate · y copy                                                          Enter:submit    
+  ┃                                                                                                 
                                                                                                     
-            Esc:unselect  │  Tab:scrollback  │  Ctrl+c:dismiss                                      
+  Esc:unselect  │  Tab:scrollback  │  Ctrl+c:dismiss                                                
                                                                                                     
                                                                                                     
-            ╭──────────────────────────────────────────────────────────────────────────╮            
-            │ ❯ Build anything                                                         │            
-            ╰───────────────────────────────────────────────────────────────────────  ─╯            
+  ╭──────────────────────────────────────────────────────────────────────────────────────────────╮  
+  │ ❯ Build anything                                                                             │  
+  ╰───────────────────────────────────────────────────────────────────────────────────────────  ─╯  
                                                                                                     
-            Shift+Tab:mode  │  Ctrl+x:shortcuts
+  Shift+Tab:mode  │  Ctrl+x:shortcuts

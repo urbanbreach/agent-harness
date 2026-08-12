@@ -33,6 +33,56 @@ fn layout_matches_full_and_compact_viewports() {
 }
 
 #[test]
+fn responsive_hero_stacks_below_90_columns_and_splits_at_or_above_90() {
+    for (width, stacked) in [(80, true), (90, false), (100, false), (120, false)] {
+        let layout = WelcomeLayout::compute(width, 18);
+
+        assert_eq!(
+            layout.compact, stacked,
+            "{width} columns must select the expected hero topology"
+        );
+        if stacked {
+            assert!(layout.panel_rect.is_none());
+            assert_eq!(layout.action_rects[0].0, layout.content_rect.0);
+        } else {
+            assert!(layout.panel_rect.is_some());
+            assert_eq!(layout.logo_rect.2, 15);
+            assert_eq!(layout.logo_rect.3, 7);
+            assert!(
+                layout.action_rects[0].0
+                    >= layout.logo_rect.0.saturating_add(layout.logo_rect.2 + 2),
+                "wide actions must occupy the details column at {width} columns"
+            );
+            assert_eq!(
+                layout.action_rects[0].0.saturating_add(1),
+                layout.content_rect.0.saturating_add(18),
+                "the action hit row must include the focus marker at {width} columns"
+            );
+        }
+    }
+}
+
+#[test]
+fn hero_breakpoint_depends_on_width_even_when_height_is_short() {
+    let stacked = WelcomeLayout::compute(89, 20);
+    let split = WelcomeLayout::compute(90, 20);
+
+    assert!(stacked.compact);
+    assert!(!split.compact);
+}
+
+#[test]
+fn wide_hero_uses_compact_topology_when_the_panel_would_clip() {
+    let clipped = WelcomeLayout::compute(90, 16);
+    let complete = WelcomeLayout::compute(90, 18);
+
+    assert!(clipped.compact);
+    assert!(clipped.panel_rect.is_none());
+    assert!(!complete.compact);
+    assert_eq!(complete.panel_rect.map(|panel| panel.3), Some(15));
+}
+
+#[test]
 fn region_at_identifies_regions_and_gaps() {
     let layout = WelcomeLayout::compute(120, 32);
     for (region, rect) in layout.all_regions() {
@@ -108,6 +158,28 @@ fn state_focuses_the_clicked_menu_item() {
 
     assert_eq!(state.focus_menu_item(2), InputResult::FocusChanged);
     assert_eq!(state.focus(), WelcomeFocus::Menu(2));
+}
+
+#[test]
+fn state_tracks_the_hovered_menu_item_independently_from_focus() {
+    let mut state = WelcomeState::new(3, false);
+
+    let changed = state.set_hovered_action(Some(1));
+
+    assert!(changed);
+    assert_eq!(state.hovered_action(), Some(1));
+    assert_eq!(state.focus(), WelcomeFocus::Prompt);
+}
+
+#[test]
+fn state_clears_an_out_of_range_hover_target() {
+    let mut state = WelcomeState::new(3, false);
+    state.set_hovered_action(Some(1));
+
+    let changed = state.set_hovered_action(Some(3));
+
+    assert!(changed);
+    assert_eq!(state.hovered_action(), None);
 }
 
 #[test]

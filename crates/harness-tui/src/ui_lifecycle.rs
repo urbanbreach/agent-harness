@@ -38,6 +38,20 @@ const WELCOME_LOGO_ROWS: [&str; 7] = [
     " ╚═╝  ╚═╝",
 ];
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WelcomeActionEmphasis {
+    Default,
+    Hovered,
+    Focused,
+}
+
+struct WelcomeActionLine {
+    label: &'static str,
+    shortcut: &'static str,
+    width: usize,
+    emphasis: WelcomeActionEmphasis,
+}
+
 #[derive(Debug, Clone)]
 pub(super) struct LifecycleSelectionSurface {
     pub viewport: Rect,
@@ -377,6 +391,60 @@ fn welcome_text_after_logo(text: &str, inner_width: usize) -> String {
     truncate_plain_text(text, budget)
 }
 
+fn welcome_action_emphasis(app: &AppState, index: usize) -> WelcomeActionEmphasis {
+    if app.welcome_state().focus() == WelcomeFocus::Menu(index) {
+        WelcomeActionEmphasis::Focused
+    } else if app.welcome_state().hovered_action() == Some(index) {
+        WelcomeActionEmphasis::Hovered
+    } else {
+        WelcomeActionEmphasis::Default
+    }
+}
+
+fn welcome_action_spans(theme: &Theme, row: WelcomeActionLine) -> Vec<Span<'static>> {
+    if row.width == 0 {
+        return Vec::new();
+    }
+
+    let surface = match row.emphasis {
+        WelcomeActionEmphasis::Default => theme.surface.canvas,
+        WelcomeActionEmphasis::Hovered => theme.surface.card,
+        WelcomeActionEmphasis::Focused => theme.surface.selected_card,
+    };
+    let label_style = Style::default()
+        .fg(theme.text.primary)
+        .bg(surface)
+        .add_modifier(Modifier::BOLD);
+    let shortcut_foreground = match row.emphasis {
+        WelcomeActionEmphasis::Focused => theme.text.primary,
+        WelcomeActionEmphasis::Default | WelcomeActionEmphasis::Hovered => theme.text.secondary,
+    };
+    let shortcut_style = Style::default().fg(shortcut_foreground).bg(surface);
+    let marker = if row.emphasis == WelcomeActionEmphasis::Focused {
+        "›"
+    } else {
+        " "
+    };
+    let shortcut = truncate_plain_text(row.shortcut, row.width.saturating_sub(1));
+    let shortcut_width = super::display_width(&shortcut);
+    let label_budget = row.width.saturating_sub(shortcut_width).saturating_sub(3);
+    let label = truncate_plain_text(row.label, label_budget);
+    let used = 1usize.saturating_add(super::display_width(&label));
+    let shortcut_column = row.width.saturating_sub(shortcut_width.saturating_add(2));
+    let gap = shortcut_column.saturating_sub(used);
+    let trailing = row
+        .width
+        .saturating_sub(used.saturating_add(gap).saturating_add(shortcut_width));
+
+    vec![
+        Span::styled(marker, label_style),
+        Span::styled(label, label_style),
+        Span::styled(" ".repeat(gap), shortcut_style),
+        Span::styled(shortcut, shortcut_style),
+        Span::styled(" ".repeat(trailing), shortcut_style),
+    ]
+}
+
 fn welcome_inner_lines(theme: &Theme, inner_width: usize, app: &AppState) -> Vec<Line<'static>> {
     let surface = theme.surface.canvas;
     let title_style = Style::default()
@@ -384,20 +452,9 @@ fn welcome_inner_lines(theme: &Theme, inner_width: usize, app: &AppState) -> Vec
         .bg(surface)
         .add_modifier(Modifier::BOLD);
     let muted = Style::default().fg(theme.text.secondary).bg(surface);
-    let body = Style::default().fg(theme.text.primary).bg(surface);
-    let dim_style = Style::default()
-        .fg(theme.text.tertiary)
-        .bg(surface)
-        .add_modifier(Modifier::DIM);
     let identity = welcome::welcome_identity(theme.live_shell.startup.title);
     let changelog_bullets = welcome::changelog_bullets();
     let action_col = WELCOME_ACTION_COL;
-    let shortcut_width = 8usize;
-    let label_width = inner_width
-        .saturating_sub(action_col)
-        .saturating_sub(shortcut_width)
-        .saturating_sub(2)
-        .max(12);
 
     let mut lines = Vec::new();
     lines.push(Line::from(Span::styled(" ", muted)));
@@ -430,7 +487,7 @@ fn welcome_inner_lines(theme: &Theme, inner_width: usize, app: &AppState) -> Vec
             1 => {
                 spans.push(Span::styled(
                     welcome_text_after_logo("   Changelog", inner_width),
-                    dim_style,
+                    title_style,
                 ));
             }
             2 => {
@@ -471,136 +528,55 @@ fn welcome_inner_lines(theme: &Theme, inner_width: usize, app: &AppState) -> Vec
         .into_iter()
         .enumerate()
     {
-        let selected =
-            app.welcome_state().focus() == crate::welcome_surface::WelcomeFocus::Menu(index);
-        let label = action.label();
-        let shortcut = action.shortcut();
-        let pad_width = action_col.min(inner_width);
-        let pad = if selected && pad_width > 0 {
-            format!("{}›", " ".repeat(pad_width.saturating_sub(1)))
-        } else {
-            " ".repeat(pad_width)
-        };
-        let action_style = if selected {
-            Style::default()
-                .fg(theme.text.accent)
-                .bg(surface)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            body.add_modifier(Modifier::BOLD)
-        };
-        let label_text = truncate_plain_text(label, label_width);
-        let label_width_actual = super::display_width(&label_text);
-        let mut spans: Vec<Span<'static>> = vec![
-            Span::styled(pad, if selected { action_style } else { muted }),
-            Span::styled(label_text.to_string(), action_style),
-        ];
-        let shortcut_chars = shortcut.chars().count();
-        let used = action_col.min(inner_width) + label_width_actual;
-        let target = inner_width.saturating_sub(shortcut_chars.saturating_add(2));
-        if used < target {
-            spans.push(Span::styled(" ".repeat(target.saturating_sub(used)), muted));
-        }
-        spans.push(Span::styled(
-            shortcut.to_string(),
-            if selected { action_style } else { muted },
+        let prefix_width = action_col.saturating_sub(1).min(inner_width);
+        let mut spans = vec![Span::styled(" ".repeat(prefix_width), muted)];
+        spans.extend(welcome_action_spans(
+            theme,
+            WelcomeActionLine {
+                label: action.label(),
+                shortcut: action.shortcut(),
+                width: inner_width.saturating_sub(prefix_width),
+                emphasis: welcome_action_emphasis(app, index),
+            },
         ));
         lines.push(Line::from(spans));
     }
 
-    // Local notices section: derived from app status banner (e.g. missing
-    // provider). Replaces the trailing blank so the panel height stays stable.
-    if let Some(banner) = app
-        .status_banner
-        .as_deref()
-        .filter(|banner| !banner.is_empty() && !startup_banner_is_clipboard_warning(banner))
-    {
-        let label = "Notices: ";
-        let label_width = super::display_width(label);
-        let budget = inner_width.saturating_sub(label_width).max(1);
-        let notice_text = truncate_plain_text(banner, budget);
-        lines.push(Line::from(vec![
-            Span::styled(label.to_string(), dim_style),
-            Span::styled(notice_text, muted),
-        ]));
-    } else {
-        lines.push(Line::from(Span::styled(" ", muted)));
-    }
+    lines.push(Line::from(Span::styled(" ", muted)));
 
     lines
 }
 
 fn compact_welcome_lines(
-    _theme: &Theme,
+    theme: &Theme,
     inner_width: usize,
     max_lines: usize,
     app: &AppState,
 ) -> Vec<Line<'static>> {
-    let surface = _theme.surface.canvas;
-    let body = Style::default()
-        .fg(_theme.text.primary)
-        .bg(surface)
-        .add_modifier(Modifier::BOLD);
-    let muted = Style::default().fg(_theme.text.secondary).bg(surface);
+    let surface = theme.surface.canvas;
+    let muted = Style::default().fg(theme.text.secondary).bg(surface);
     let dim_style = Style::default()
-        .fg(_theme.text.tertiary)
+        .fg(theme.text.tertiary)
         .bg(surface)
         .add_modifier(Modifier::DIM);
-    let shortcut_width = 8usize;
-    let label_width = inner_width
-        .saturating_sub(shortcut_width)
-        .saturating_sub(1)
-        .max(8);
 
     let mut lines = Vec::new();
     for (index, action) in crate::welcome_surface::WelcomeAction::ALL
         .into_iter()
         .enumerate()
     {
-        let selected =
-            app.welcome_state().focus() == crate::welcome_surface::WelcomeFocus::Menu(index);
-        let label = action.label();
-        let shortcut = action.shortcut();
         if lines.len() >= max_lines {
             break;
         }
-        let label_text = if selected {
-            format!(
-                "› {}",
-                truncate_plain_text(label, label_width.saturating_sub(2))
-            )
-        } else {
-            truncate_plain_text(label, label_width)
-        };
-        let used = label_text.chars().count();
-        let target = inner_width.saturating_sub(shortcut.chars().count());
-        let gap = if used < target {
-            " ".repeat(target.saturating_sub(used))
-        } else {
-            String::new()
-        };
-        let row_width = used
-            .saturating_add(gap.chars().count())
-            .saturating_add(shortcut.chars().count());
-        let mut spans = vec![
-            Span::styled(
-                label_text,
-                if selected {
-                    body.fg(_theme.text.accent)
-                } else {
-                    body
-                },
-            ),
-            Span::styled(gap, muted),
-            Span::styled(shortcut.to_string(), muted),
-        ];
-        if row_width < inner_width {
-            spans.push(Span::styled(
-                " ".repeat(inner_width.saturating_sub(row_width)),
-                muted,
-            ));
-        }
-        lines.push(Line::from(spans));
+        lines.push(Line::from(welcome_action_spans(
+            theme,
+            WelcomeActionLine {
+                label: action.label(),
+                shortcut: action.shortcut(),
+                width: inner_width,
+                emphasis: welcome_action_emphasis(app, index),
+            },
+        )));
     }
     let changelog_min_lines = 2 + 1 + 1 + 1;
     if max_lines.saturating_sub(lines.len()) >= changelog_min_lines {
@@ -616,23 +592,6 @@ fn compact_welcome_lines(
                 truncate_plain_text(&text, inner_width),
                 muted,
             )));
-        }
-    }
-    // Compact local notices: show the status banner if present.
-    if lines.len() < max_lines {
-        if let Some(banner) = app
-            .status_banner
-            .as_deref()
-            .filter(|banner| !banner.is_empty() && !startup_banner_is_clipboard_warning(banner))
-        {
-            let label = "Notices: ";
-            let label_width = super::display_width(label);
-            let budget = inner_width.saturating_sub(label_width).max(1);
-            let notice_text = truncate_plain_text(banner, budget);
-            lines.push(Line::from(vec![
-                Span::styled(label.to_string(), dim_style),
-                Span::styled(notice_text, muted),
-            ]));
         }
     }
     lines
@@ -936,5 +895,75 @@ mod breadcrumb_token_meta_tests {
         let cell = &terminal.backend().buffer()[(text_width + 1, 1)];
         assert_eq!(cell.bg, theme.surface.canvas);
         assert!(!cell.modifier.contains(Modifier::DIM));
+    }
+}
+
+#[cfg(test)]
+mod welcome_action_style_tests {
+    use super::{welcome_action_spans, WelcomeActionEmphasis, WelcomeActionLine};
+    use crate::theme::Theme;
+    use crate::welcome_surface::WelcomeAction;
+
+    #[test]
+    fn hovered_action_uses_the_hover_surface_across_the_complete_row() {
+        let theme = Theme::harness_chat();
+
+        let spans = welcome_action_spans(
+            &theme,
+            WelcomeActionLine {
+                label: WelcomeAction::NewWorktree.label(),
+                shortcut: WelcomeAction::NewWorktree.shortcut(),
+                width: 40,
+                emphasis: WelcomeActionEmphasis::Hovered,
+            },
+        );
+
+        assert_eq!(
+            (
+                spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<String>()
+                    .starts_with(" New worktree"),
+                spans.iter().map(|span| span.width()).sum::<usize>(),
+                spans
+                    .iter()
+                    .all(|span| span.style.bg == Some(theme.surface.card)),
+            ),
+            (true, 40, true)
+        );
+    }
+
+    #[test]
+    fn focused_action_uses_the_selected_surface_and_visible_marker() {
+        let theme = Theme::harness_chat();
+
+        let spans = welcome_action_spans(
+            &theme,
+            WelcomeActionLine {
+                label: WelcomeAction::ResumeSession.label(),
+                shortcut: WelcomeAction::ResumeSession.shortcut(),
+                width: 40,
+                emphasis: WelcomeActionEmphasis::Focused,
+            },
+        );
+
+        assert_eq!(
+            (
+                spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<String>()
+                    .starts_with("›Resume session"),
+                spans.iter().map(|span| span.width()).sum::<usize>(),
+                spans
+                    .iter()
+                    .all(|span| span.style.bg == Some(theme.surface.selected_card)),
+                spans
+                    .iter()
+                    .all(|span| span.style.fg == Some(theme.text.primary)),
+            ),
+            (true, 40, true, true)
+        );
     }
 }

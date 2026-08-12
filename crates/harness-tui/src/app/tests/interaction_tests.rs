@@ -41,6 +41,72 @@ pub(super) fn focus_returns_after_palette_close() {
     assert_eq!(app.focus, Focus::Details);
 }
 
+pub(super) fn welcome_mouse_move_applies_hover_state_to_the_action_row() {
+    let mut app = AppState::new_startup(Vec::new(), None);
+    let (column, row) = transcript_click_position(&app, "New worktree");
+
+    let changed = app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Moved,
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        },
+        TEST_FRAME_AREA,
+        None,
+        None,
+        None,
+    );
+
+    assert_eq!(
+        (
+            changed,
+            app.welcome_state().hovered_action(),
+            rendered_cell_bg(&app, column, row),
+        ),
+        (true, Some(0), app.theme().surface.card)
+    );
+}
+
+pub(super) fn welcome_mouse_move_away_clears_hover_state_and_row_surface() {
+    let mut app = AppState::new_startup(Vec::new(), None);
+    let (column, row) = transcript_click_position(&app, "New worktree");
+    app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Moved,
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        },
+        TEST_FRAME_AREA,
+        None,
+        None,
+        None,
+    );
+
+    let changed = app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Moved,
+            column: 0,
+            row: 0,
+            modifiers: KeyModifiers::NONE,
+        },
+        TEST_FRAME_AREA,
+        None,
+        None,
+        None,
+    );
+
+    assert_eq!(
+        (
+            changed,
+            app.welcome_state().hovered_action(),
+            rendered_cell_bg(&app, column, row),
+        ),
+        (true, None, app.theme().surface.canvas)
+    );
+}
+
 pub(super) fn details_drawer_toggles_without_stealing_transcript_state() {
     let mut app = AppState::new_live(None, false, None);
 
@@ -157,6 +223,51 @@ pub(super) fn mouse_wheel_scrolls_transcript_without_stealing_focus() {
     );
     assert!(app.transcript_view.follow_mode);
     assert_eq!(app.focus, Focus::Prompt);
+}
+
+pub(super) fn resize_invalidates_geometry_dependent_pointer_state() {
+    // Given: hover state resolved against the currently rendered frame.
+    let mut app = AppState::new_live(None, false, None);
+    app.set_frame_area(TEST_FRAME_AREA);
+    app.hovered_live_turn_stop = true;
+
+    // When: the same geometry is observed, then the terminal width changes.
+    app.set_frame_area(TEST_FRAME_AREA);
+    let same_frame_kept_hover = app.hovered_live_turn_stop;
+    app.set_frame_area(Rect::new(
+        TEST_FRAME_AREA.x,
+        TEST_FRAME_AREA.y,
+        TEST_FRAME_AREA.width + 1,
+        TEST_FRAME_AREA.height,
+    ));
+
+    // Then: stable geometry preserves hover, while resized geometry cannot keep stale hits.
+    assert!(same_frame_kept_hover);
+    assert!(!app.hovered_live_turn_stop);
+}
+
+pub(super) fn pointer_drag_suppresses_stale_hover_feedback() {
+    // Given: a hover affordance was active before a pointer drag began.
+    let mut app = AppState::new_live(None, false, None);
+    app.hovered_live_turn_stop = true;
+
+    // When: a left-button drag is delivered outside an active selection.
+    let changed = app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Drag(MouseButton::Left),
+            column: 5,
+            row: 5,
+            modifiers: KeyModifiers::NONE,
+        },
+        TEST_FRAME_AREA,
+        None,
+        None,
+        None,
+    );
+
+    // Then: hover feedback is cleared for the drag generation.
+    assert!(changed);
+    assert!(!app.hovered_live_turn_stop);
 }
 
 pub(super) fn transcript_navigation_keys_match_scroll_expectations() {

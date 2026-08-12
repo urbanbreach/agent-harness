@@ -59,6 +59,7 @@ pub enum InputResult {
 
 pub struct WelcomeState {
     focus: WelcomeFocus,
+    hovered_action: Option<usize>,
     menu_item_count: usize,
     dismissed: bool,
     authed: bool,
@@ -70,6 +71,7 @@ impl WelcomeState {
     pub fn new(menu_item_count: usize, authed: bool) -> Self {
         Self {
             focus: WelcomeFocus::Prompt,
+            hovered_action: None,
             menu_item_count,
             dismissed: false,
             authed,
@@ -89,6 +91,7 @@ impl WelcomeState {
     pub fn dismiss_for_input(&mut self) {
         self.dismissed = true;
         self.focus = WelcomeFocus::Prompt;
+        self.hovered_action = None;
     }
 
     pub fn is_dismissed(&self) -> bool {
@@ -100,6 +103,19 @@ impl WelcomeState {
             return InputResult::NoOp;
         }
         self.change_focus(WelcomeFocus::Menu(index))
+    }
+
+    pub fn hovered_action(&self) -> Option<usize> {
+        self.hovered_action
+    }
+
+    pub fn set_hovered_action(&mut self, index: Option<usize>) -> bool {
+        let next = index.filter(|index| *index < self.menu_item_count);
+        if self.hovered_action == next {
+            return false;
+        }
+        self.hovered_action = next;
+        true
     }
 
     pub fn selected_action(&self) -> Option<WelcomeAction> {

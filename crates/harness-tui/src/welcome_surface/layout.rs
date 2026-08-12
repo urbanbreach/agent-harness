@@ -1,3 +1,7 @@
+const TWO_COLUMN_MIN_WIDTH: u16 = 90;
+const WIDE_ACTION_MARKER_OFFSET: u16 = 17;
+const WIDE_PANEL_MIN_HEIGHT: u16 = 15;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum WelcomeRegion {
     Hero,
@@ -33,23 +37,21 @@ impl WelcomeLayout {
         (origin_x, origin_y, width, height): (u16, u16, u16, u16),
         clipboard_warning_visible: bool,
     ) -> Self {
-        let compact = width < 90 || height < 22;
+        let wide = width >= TWO_COLUMN_MIN_WIDTH;
         let menu_items_visible = 3;
         let terminal_height = height.saturating_add(5);
-        let base_top: u16 = if !compact && terminal_height <= 30 {
-            3
-        } else {
-            4
-        };
+        let base_top: u16 = if wide && terminal_height <= 30 { 3 } else { 4 };
         let top = base_top
             .saturating_add(terminal_height.saturating_sub(30) / 3)
             .saturating_add(u16::from(clipboard_warning_visible) * 3)
             .min(height.saturating_sub(8));
+        let compact = !wide || height.saturating_sub(top) < WIDE_PANEL_MIN_HEIGHT;
         let panel_width = width.saturating_sub(6).clamp(20, 120);
-        let panel_height = 16.min(height.saturating_sub(top).max(8));
+        let panel_height = 16.min(height.saturating_sub(top));
         let panel_x = origin_x.saturating_add(width.saturating_sub(panel_width) / 2);
         let panel_y = origin_y.saturating_add(top);
-        let panel_rect = (!compact).then_some((panel_x, panel_y, panel_width, panel_height));
+        let panel_rect =
+            (!compact && panel_height > 0).then_some((panel_x, panel_y, panel_width, panel_height));
         let content = if let Some(panel) = panel_rect {
             (
                 panel.0.saturating_add(2),
@@ -81,7 +83,9 @@ impl WelcomeLayout {
             content.1
         };
         let action_x = if panel_rect.is_some() {
-            content.0.saturating_add(18.min(content.2))
+            content
+                .0
+                .saturating_add(WIDE_ACTION_MARKER_OFFSET.min(content.2))
         } else {
             content.0
         };
@@ -172,8 +176,8 @@ impl WelcomeLayout {
             (WelcomeRegion::Hero, self.hero_rect),
             (WelcomeRegion::Logo, self.logo_rect),
             (WelcomeRegion::Menu, self.menu_rect),
-            (WelcomeRegion::Prompt, self.prompt_rect),
             (WelcomeRegion::StatusBar, self.status_rect),
+            (WelcomeRegion::Prompt, self.prompt_rect),
         ]
     }
 }

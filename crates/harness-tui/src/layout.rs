@@ -1055,11 +1055,14 @@ fn centered_live_shell_area(area: Rect, shell: LiveShellLayout) -> Rect {
     }
 
     let width = match shell.target {
-        crate::theme::ShellGeometryTarget::Minimum => {
+        crate::theme::ShellGeometryTarget::Minimum
+            if area.width < crate::theme::ShellGeometry::SPLIT.width =>
+        {
             max_width.min(shell.centered_content_width).max(1)
         }
-        crate::theme::ShellGeometryTarget::Split => max_width.max(1),
-        crate::theme::ShellGeometryTarget::Primary => max_width.max(1),
+        crate::theme::ShellGeometryTarget::Minimum
+        | crate::theme::ShellGeometryTarget::Split
+        | crate::theme::ShellGeometryTarget::Primary => max_width.max(1),
     };
     let x = area.x.saturating_add(area.width.saturating_sub(width) / 2);
     Rect::new(x, area.y, width, area.height)

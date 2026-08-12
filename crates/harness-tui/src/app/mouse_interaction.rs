@@ -636,6 +636,19 @@ impl AppState {
     }
 
     pub(crate) fn set_frame_area(&mut self, area: Rect) {
+        if self
+            .last_frame_area
+            .is_some_and(|previous| previous != area)
+        {
+            self.transcript_view.transcript_scrollbar_drag = None;
+            self.transcript_view.hovered_transcript_target = None;
+            self.transcript_view.transcript_selection_dragging = false;
+            self.hovered_subagent_footer_target = None;
+            self.hovered_live_turn_stop = false;
+            self.pending_subagent_footer_target = None;
+            self.secondary_surfaces.selection_dragging = false;
+            self.secondary_surfaces.pending_click = None;
+        }
         self.last_frame_area = Some(area);
         if let Some(dashboard) = self.dashboard.as_mut() {
             let viewport = crate::dashboard_integration::dashboard_viewport(area).unwrap_or(area);
@@ -915,6 +928,19 @@ impl AppState {
 
         match mouse.kind {
             MouseEventKind::Moved => {
+                let hovered_welcome_action = self
+                    .startup_shell_visible()
+                    .then(|| {
+                        let startup_area =
+                            crate::layout::FrameLayoutPlan::for_app(self, frame_area)
+                                .transcript
+                                .unwrap_or(frame_area);
+                        self.welcome_hit_map(startup_area)
+                            .hit(mouse.column, mouse.row)
+                            .and_then(|hit| hit.item_index)
+                    })
+                    .flatten();
+                let welcome_hover_changed = self.welcome.set_hovered_action(hovered_welcome_action);
                 let hovered_live_turn_stop = ui::live_turn_stop_rect(self, frame_area)
                     .is_some_and(|area| rect_contains(area, mouse.column, mouse.row));
                 let hovered_subagent_footer_target =
@@ -924,8 +950,8 @@ impl AppState {
                 } else {
                     None
                 };
-                let changed = self.transcript_view.hovered_transcript_target
-                    != hovered_transcript_target
+                let changed = welcome_hover_changed
+                    || self.transcript_view.hovered_transcript_target != hovered_transcript_target
                     || self.hovered_subagent_footer_target != hovered_subagent_footer_target
                     || self.hovered_live_turn_stop != hovered_live_turn_stop;
                 self.transcript_view.hovered_transcript_target = hovered_transcript_target;
@@ -1060,6 +1086,12 @@ impl AppState {
                 true
             }
             MouseEventKind::Drag(MouseButton::Left) => {
+                let hover_changed = self.transcript_view.hovered_transcript_target.is_some()
+                    || self.hovered_subagent_footer_target.is_some()
+                    || self.hovered_live_turn_stop;
+                self.transcript_view.hovered_transcript_target = None;
+                self.hovered_subagent_footer_target = None;
+                self.hovered_live_turn_stop = false;
                 if self.transcript_view.transcript_scrollbar_drag.is_some() {
                     self.update_transcript_scrollbar_drag(mouse.row);
                     return true;
@@ -1099,7 +1131,7 @@ impl AppState {
                             self.pending_subagent_footer_target = None;
                         }
                     }
-                    false
+                    hover_changed
                 }
             }
             MouseEventKind::Up(MouseButton::Left) => {
