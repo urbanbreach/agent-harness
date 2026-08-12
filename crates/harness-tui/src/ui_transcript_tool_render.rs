@@ -1,6 +1,8 @@
 // allow: SIZE_OK — TUI transcript rendering (indivisible view model)
 use super::*;
 
+use crate::app::{ToolCallPresentation, ToolCallPresentationStatus};
+
 // Empty indent places the todo-block rail at column 0 (matching the user
 // message box rail). One leading content space offsets the nested rail glyph
 // and its trailing gap so todo text starts at column 3, matching user-message
@@ -15,7 +17,7 @@ fn build_tool_header_spans(
     marker_style: Style,
 ) -> Vec<Span<'static>> {
     let mut spans = Vec::new();
-    let marker = completed_tool_marker(header.status, theme);
+    let marker = completed_tool_marker(header.presentation.status, theme);
     spans.push(Span::styled(format!("{marker} "), marker_style));
     let _ = header.icon;
     let compact_edit = matches!(header.tool_id.as_str(), "fs.write" | "write")
@@ -38,7 +40,7 @@ fn build_tool_header_spans(
             edit_style.add_modifier(Modifier::BOLD),
         ));
     } else {
-        let title_style = if header.status == crate::app::ToolCallDisplayStatus::Failed {
+        let title_style = if header.presentation.status == ToolCallPresentationStatus::Failed {
             title_style.add_modifier(Modifier::BOLD)
         } else {
             title_style
@@ -65,15 +67,14 @@ fn build_tool_header_spans(
     spans
 }
 
-fn completed_tool_marker(status: crate::app::ToolCallDisplayStatus, theme: &Theme) -> &'static str {
+fn completed_tool_marker(status: ToolCallPresentationStatus, theme: &Theme) -> &'static str {
     match status {
-        crate::app::ToolCallDisplayStatus::Succeeded
-        | crate::app::ToolCallDisplayStatus::PendingPermission
-        | crate::app::ToolCallDisplayStatus::Queued
-        | crate::app::ToolCallDisplayStatus::Running
-        | crate::app::ToolCallDisplayStatus::Failed => {
-            theme.live_shell.transcript_glyphs.tool_marker
-        }
+        ToolCallPresentationStatus::Queued
+        | ToolCallPresentationStatus::Running
+        | ToolCallPresentationStatus::Waiting
+        | ToolCallPresentationStatus::Succeeded
+        | ToolCallPresentationStatus::Failed
+        | ToolCallPresentationStatus::Cancelled => theme.live_shell.transcript_glyphs.tool_marker,
     }
 }
 
@@ -86,16 +87,16 @@ fn tool_call_marker_style(
     let color = if edit {
         theme.reference_terminal.error
     } else {
-        match tool_call.header.status {
-            crate::app::ToolCallDisplayStatus::Running => {
+        match tool_call.header.presentation.status {
+            ToolCallPresentationStatus::Running => {
                 transcript_running_tool_marker_color(theme, tool_call.animation_phase)
             }
-            crate::app::ToolCallDisplayStatus::Failed
-            | crate::app::ToolCallDisplayStatus::PendingPermission => {
-                theme.reference_terminal.error
+            ToolCallPresentationStatus::Waiting => theme.status.warning,
+            ToolCallPresentationStatus::Failed => theme.reference_terminal.error,
+            ToolCallPresentationStatus::Cancelled => theme.status.disabled,
+            ToolCallPresentationStatus::Queued | ToolCallPresentationStatus::Succeeded => {
+                inactive_color
             }
-            crate::app::ToolCallDisplayStatus::Succeeded
-            | crate::app::ToolCallDisplayStatus::Queued => inactive_color,
         }
     };
     tool_call_header_style(tool_call.header.struck_out, color)
@@ -229,7 +230,7 @@ fn append_inline_tool_section_lines(
     width: u16,
     base_surface: Color,
 ) {
-    let fg = inline_tool_color(tool_call.header.status, theme);
+    let fg = inline_tool_color(tool_call.header.presentation.status, theme);
     let style = tool_call_header_style(tool_call.header.struck_out, fg);
 
     let marker_style = tool_call_marker_style(tool_call, theme, fg);
@@ -275,7 +276,11 @@ fn append_task_inline_tool_section_lines(
         })
     });
     let hovered = transcript_target_is_hovered(target.as_ref(), tool_call.hovered_target.as_ref());
-    let fg = task_inline_tool_color(tool_call.header.status, theme, hovered && target.is_some());
+    let fg = task_inline_tool_color(
+        tool_call.header.presentation.status,
+        theme,
+        hovered && target.is_some(),
+    );
     let style = tool_call_header_style(tool_call.header.struck_out, fg);
     let surface = base_surface;
     let mut spans = Vec::new();
@@ -405,7 +410,7 @@ fn append_block_tool_section_lines(
         if is_todo_block {
             theme.text.secondary
         } else {
-            block_tool_color(tool_call.header.status, theme)
+            block_tool_color(tool_call.header.presentation.status, theme)
         },
     );
     let header_target = tool_header_target(
@@ -465,12 +470,6 @@ pub(super) fn tool_call_is_todo(tool_call: &TranscriptToolCallSection) -> bool {
 
 pub(super) fn shell_tool_uses_harness_bash_card(tool_call: &TranscriptToolCallSection) -> bool {
     matches!(tool_call.header.tool_id.as_str(), "shell.run" | "bash")
-        && tool_call.detail_blocks.iter().any(|detail_block| {
-            matches!(
-                detail_block,
-                TranscriptToolCallDetailBlock::BashPanel { .. }
-            )
-        })
 }
 
 fn append_shell_tool_harness_card(
@@ -499,10 +498,14 @@ fn append_shell_tool_harness_card(
                 .filter(|value| !value.trim().is_empty())
                 .map(str::to_owned);
         }
+    } else if !header.title.starts_with("Run ") {
+        header.title = format!("Run {}", header.title.trim());
     }
 
-    let title_style =
-        tool_call_header_style(header.struck_out, block_tool_color(header.status, theme));
+    let title_style = tool_call_header_style(
+        header.struck_out,
+        block_tool_color(header.presentation.status, theme),
+    );
     let marker_style = tool_call_marker_style(tool_call, theme, title_style.fg.unwrap_or_default());
     let title_spans = build_tool_header_spans(&header, theme, title_style, marker_style);
     let header_target =
@@ -770,7 +773,9 @@ fn append_tool_call_file_section(
                 subtitle: None,
                 path_metadata: None,
                 icon: None,
-                status: ToolCallDisplayStatus::Succeeded,
+                presentation: ToolCallPresentation::from_display_status(
+                    ToolCallDisplayStatus::Succeeded,
+                ),
                 visual_style: TranscriptToolCallVisualStyle::Block,
                 struck_out: false,
                 disclosure_state: None,
@@ -1069,14 +1074,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn tool_path_metadata_stays_on_the_header_line() {
+    fn generic_tool_header_omits_terminal_count_and_timing_metadata() {
         let header = TranscriptToolCallHeader {
             tool_id: "edit".to_string(),
             title: "Edit".to_string(),
             subtitle: None,
             path_metadata: Some("src/main.rs".to_string()),
             icon: None,
-            status: ToolCallDisplayStatus::Succeeded,
+            presentation: ToolCallPresentation {
+                status: ToolCallPresentationStatus::Succeeded,
+                duration_ms: Some(1_250),
+                result_count: Some(7),
+            },
             visual_style: TranscriptToolCallVisualStyle::Block,
             struck_out: false,
             disclosure_state: None,
@@ -1094,5 +1103,7 @@ mod tests {
             .collect::<String>();
 
         assert!(rendered.contains("Edit src/main.rs"));
+        assert!(!rendered.contains("7 results"), "{rendered:?}");
+        assert!(!rendered.contains("1.2s"), "{rendered:?}");
     }
 }

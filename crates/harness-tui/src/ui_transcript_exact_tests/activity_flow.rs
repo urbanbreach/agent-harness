@@ -96,7 +96,9 @@ pub(crate) fn exact_test_transcript_section_model_keeps_nested_tool_and_error_bl
                 subtitle: Some("Failed".to_string()),
                 path_metadata: None,
                 icon: None,
-                status: ToolCallDisplayStatus::Failed,
+                presentation: crate::app::ToolCallPresentation::from_display_status(
+                    ToolCallDisplayStatus::Failed,
+                ),
                 visual_style: TranscriptToolCallVisualStyle::Block,
                 struck_out: false,
                 disclosure_state: Some(TranscriptToolCallDisclosureState::Collapsed),
@@ -901,7 +903,7 @@ fn task_row_renders_task_result_markdown_without_wrappers() {
     let (title, icon, visual_style, _) =
         build_agent_spawn_tool_row(&tool_call, None, &mut detail_blocks, 0);
     // assert
-    assert_eq!(title, "Task — review streaming states");
+    assert_eq!(title, "Explore Task — review streaming states");
     assert_eq!(icon, Some("✓"));
     assert_eq!(visual_style, TranscriptToolCallVisualStyle::TaskInline);
     let detail_text = task_detail_blocks_text(&detail_blocks);
@@ -946,7 +948,10 @@ fn task_row_title_uses_partial_args_or_child_prompt_before_terminal_output() {
 
     let mut detail_blocks = Vec::new();
     let (title, icon, _, _) = build_agent_spawn_tool_row(&tool_call, None, &mut detail_blocks, 0);
-    assert_eq!(title, "Task — review queued background completion wakeups");
+    assert_eq!(
+        title,
+        "Explore Task — review queued background completion wakeups"
+    );
     assert_ne!(title, "Delegating...");
     assert_eq!(icon, Some("⠋"));
 

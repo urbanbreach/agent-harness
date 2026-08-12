@@ -1,6 +1,7 @@
 // allow: SIZE_OK — TUI transcript rendering (indivisible view model)
 use super::ui_diff::structured_diff_stats;
 use super::ui_tool_delegation::agent_spawn_is_background;
+use super::ui_tool_paths::tool_id_matches;
 use super::ui_tool_visibility::tool_call_has_transcript_disclosure;
 use super::*;
 
@@ -165,7 +166,7 @@ pub(super) fn build_transcript_tool_call_section(
                 (
                     cmd.clone(),
                     Some("$"),
-                    TranscriptToolCallVisualStyle::Inline,
+                    TranscriptToolCallVisualStyle::Block,
                     false,
                 )
             }
@@ -461,8 +462,25 @@ pub(super) fn build_transcript_tool_call_section(
                 true,
             )
         }
-        "user.question" => {
-            let _ = &question_answers;
+        "user.question" | "question" => {
+            if !question_answers.is_empty() {
+                detail_blocks.push(TranscriptToolCallDetailBlock::Message {
+                    text: question_answers
+                        .iter()
+                        .enumerate()
+                        .map(|(index, item)| {
+                            format!(
+                                "{}. {}\n    → {}",
+                                index.saturating_add(1),
+                                item.question,
+                                item.answer
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n"),
+                    tone: TranscriptToolCallDetailTone::Primary,
+                });
+            }
             (
                 question_tool_title(tool_call, &question_answers),
                 Some("→"),
@@ -470,12 +488,6 @@ pub(super) fn build_transcript_tool_call_section(
                 false,
             )
         }
-        "question" => (
-            "question".to_string(),
-            Some("→"),
-            TranscriptToolCallVisualStyle::Inline,
-            false,
-        ),
         "tool.batch" | "batch" => (
             batch_tool_title(tool_call),
             Some("#"),
@@ -652,7 +664,7 @@ pub(super) fn build_transcript_tool_call_section(
             },
             path_metadata: header_path_metadata,
             icon,
-            status: tool_call.status,
+            presentation: tool_call.presentation(),
             visual_style,
             struck_out,
             disclosure_state,
@@ -933,7 +945,26 @@ pub(super) fn build_agent_spawn_tool_row(
             .map(collapse_inline_whitespace)
             .filter(|value| !value.is_empty())
     });
-    let title = agent_spawn_title(tool_call, description);
+    let has_profile = tool_call
+        .output_json
+        .as_ref()
+        .and_then(|value| value.get("profile"))
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|profile| !profile.trim().is_empty())
+        || tool_summary_string(
+            &tool_call.args_summary,
+            &["profile_name", "profile", "subagent_type"],
+        )
+        .is_some();
+    let has_task_args = serde_json::from_str::<serde_json::Value>(&tool_call.args_summary)
+        .ok()
+        .and_then(|value| value.as_object().map(|args| !args.is_empty()))
+        .unwrap_or(false);
+    let title = if tool_id_matches(tool_call, &["task"]) && !has_profile && !has_task_args {
+        generic_task_title(description.as_deref(), agent_spawn_is_background(tool_call))
+    } else {
+        agent_spawn_title(tool_call, description)
+    };
     let background_child_running = tool_call.status == ToolCallDisplayStatus::Succeeded
         && agent_spawn_is_background(tool_call)
         && task_row.is_some_and(|row| !row.state.is_terminal());
@@ -970,6 +1001,18 @@ pub(super) fn build_agent_spawn_tool_row(
         icon,
         TranscriptToolCallVisualStyle::TaskInline,
         false,
+    )
+}
+
+fn generic_task_title(description: Option<&str>, background: bool) -> String {
+    let label = if background {
+        "Task (background)"
+    } else {
+        "Task"
+    };
+    description.map_or_else(
+        || label.to_string(),
+        |description| format!("{label} — {description}"),
     )
 }
 
@@ -1199,4 +1242,125 @@ fn tool_file_count(tool_call: &crate::app::ToolCallEntry) -> Option<u64> {
                 }
             })
         })
+}
+
+#[cfg(test)]
+mod presentation_section_tests {
+    use super::*;
+    use crate::app::{PermissionEntry, ToolCallDisplayStatus, ToolCallPresentationStatus};
+    use crate::ui::ui_transcript_test_helpers::transcript_section_model_test_tool_call;
+
+    fn section(tool_call: &crate::app::ToolCallEntry) -> TranscriptToolCallSection {
+        build_transcript_tool_call_section(
+            tool_call,
+            &AppState::default(),
+            None,
+            false,
+            false,
+            false,
+            false,
+            None,
+        )
+    }
+
+    #[test]
+    fn section_projects_waiting_and_correlated_cancelled_states() {
+        let mut waiting = transcript_section_model_test_tool_call("waiting", "bash");
+        waiting.status = ToolCallDisplayStatus::PendingPermission;
+        assert_eq!(
+            section(&waiting).header.presentation.status,
+            ToolCallPresentationStatus::Waiting
+        );
+
+        let mut cancelled =
+            transcript_section_model_test_tool_call("cancelled", "background_cancel");
+        cancelled.status = ToolCallDisplayStatus::Succeeded;
+        cancelled.args_summary = r#"{"request_id":"req-child"}"#.to_string();
+        cancelled.output_json = Some(serde_json::json!({
+            "request_id": "req-child",
+            "status": "cancelled"
+        }));
+        assert_eq!(
+            section(&cancelled).header.presentation.status,
+            ToolCallPresentationStatus::Cancelled
+        );
+    }
+
+    #[test]
+    fn section_preserves_terminal_metadata_and_disclosure_modes() {
+        let mut tool_call = transcript_section_model_test_tool_call("generic", "custom.tool");
+        tool_call.status = ToolCallDisplayStatus::Succeeded;
+        tool_call.output_summary = Some("result body".to_string());
+        tool_call.output_json = Some(serde_json::json!({ "result_count": 3 }));
+        tool_call.timing_elapsed_ms = Some(850);
+
+        let collapsed = section(&tool_call);
+        let preview = build_transcript_tool_call_section(
+            &tool_call,
+            &AppState::default(),
+            None,
+            false,
+            true,
+            false,
+            false,
+            None,
+        );
+        let expanded = build_transcript_tool_call_section(
+            &tool_call,
+            &AppState::default(),
+            None,
+            false,
+            false,
+            true,
+            false,
+            None,
+        );
+
+        assert_eq!(collapsed.header.presentation.duration_ms, Some(850));
+        assert_eq!(collapsed.header.presentation.result_count, Some(3));
+        assert_eq!(
+            collapsed.header.disclosure_state,
+            Some(TranscriptToolCallDisclosureState::Collapsed)
+        );
+        assert!(preview.details_preview_visible);
+        assert_eq!(
+            expanded.header.disclosure_state,
+            Some(TranscriptToolCallDisclosureState::Expanded)
+        );
+    }
+
+    #[test]
+    fn resolved_question_renders_numbered_question_and_answer_pairs() {
+        // Given: a completed native question call with one answer and one omission.
+        let mut tool_call = transcript_section_model_test_tool_call("question", "question");
+        tool_call.status = ToolCallDisplayStatus::Succeeded;
+        tool_call.args_summary =
+            r#"{"questions":[{"question":"Pick one"},{"question":"Pick two"}]}"#.to_string();
+        tool_call.permissions.push(PermissionEntry {
+            permission_id: "permission".to_string(),
+            kind: "question".to_string(),
+            tool_call_id: Some(tool_call.tool_call_id.clone()),
+            summary: tool_call.args_summary.clone(),
+            request_digest: "digest".to_string(),
+            timeout_ms: 30_000,
+            default_decision: harness_core::event::PermissionDecision::Deny,
+            resolved_decision: Some(harness_core::event::PermissionDecision::Allow),
+            resolution_reason: Some(r#"[["Alpha"],[]]"#.to_string()),
+            first_seq: 2,
+            last_seq: 3,
+        });
+
+        // When: the transcript section is projected.
+        let rendered = section(&tool_call);
+
+        // Then: the header and detail body preserve the reference question grammar.
+        assert_eq!(rendered.header.title, "Asked 2 questions");
+        assert_eq!(
+            rendered.detail_blocks,
+            vec![TranscriptToolCallDetailBlock::Message {
+                text: "1. Pick one\n    → Alpha\n2. Pick two\n    → (no answer)".to_string(),
+                tone: TranscriptToolCallDetailTone::Primary,
+            }]
+        );
+    }
 }

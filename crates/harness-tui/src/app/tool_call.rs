@@ -13,6 +13,39 @@ pub enum ToolCallDisplayStatus {
     Failed,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolCallPresentationStatus {
+    Queued,
+    Running,
+    Waiting,
+    Succeeded,
+    Failed,
+    Cancelled,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ToolCallPresentation {
+    pub status: ToolCallPresentationStatus,
+    pub duration_ms: Option<u64>,
+    pub result_count: Option<u64>,
+}
+
+impl ToolCallPresentation {
+    pub const fn from_display_status(status: ToolCallDisplayStatus) -> Self {
+        Self {
+            status: match status {
+                ToolCallDisplayStatus::PendingPermission => ToolCallPresentationStatus::Waiting,
+                ToolCallDisplayStatus::Queued => ToolCallPresentationStatus::Queued,
+                ToolCallDisplayStatus::Running => ToolCallPresentationStatus::Running,
+                ToolCallDisplayStatus::Succeeded => ToolCallPresentationStatus::Succeeded,
+                ToolCallDisplayStatus::Failed => ToolCallPresentationStatus::Failed,
+            },
+            duration_ms: None,
+            result_count: None,
+        }
+    }
+}
+
 impl std::fmt::Display for ToolCallDisplayStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -94,6 +127,26 @@ impl ToolCallEntry {
             (self.last_mono_ms >= self.first_mono_ms)
                 .then_some(self.last_mono_ms.saturating_sub(self.first_mono_ms))
         })
+    }
+
+    pub fn presentation(&self) -> ToolCallPresentation {
+        let status = if self.has_correlated_background_cancellation() {
+            ToolCallPresentationStatus::Cancelled
+        } else {
+            ToolCallPresentation::from_display_status(self.status).status
+        };
+        let terminal = matches!(
+            status,
+            ToolCallPresentationStatus::Succeeded
+                | ToolCallPresentationStatus::Failed
+                | ToolCallPresentationStatus::Cancelled
+        );
+
+        ToolCallPresentation {
+            status,
+            duration_ms: terminal.then_some(self.timing_elapsed_ms).flatten(),
+            result_count: terminal.then(|| self.structured_result_count()).flatten(),
+        }
     }
 
     pub fn invoked_tool_id(&self) -> &str {
@@ -187,6 +240,59 @@ impl ToolCallEntry {
             .map(|edit| edit.path.clone())
             .or_else(|| tool_path_summary(&self.args_summary))
     }
+
+    fn has_correlated_background_cancellation(&self) -> bool {
+        if self.status != ToolCallDisplayStatus::Succeeded
+            || !matches!(
+                self.effective_tool_id(),
+                "background_cancel" | "background_output"
+            )
+        {
+            return false;
+        }
+
+        let Some(requested_id) = json_string_field_from_text(&self.args_summary, "request_id")
+        else {
+            return false;
+        };
+        let Some(output) = self.output_json.as_ref() else {
+            return false;
+        };
+        let Some(output_id) = output.get("request_id").and_then(serde_json::Value::as_str) else {
+            return false;
+        };
+        let cancelled = output
+            .get("final_status")
+            .or_else(|| output.get("status"))
+            .and_then(serde_json::Value::as_str)
+            == Some("cancelled");
+
+        cancelled && requested_id == output_id
+    }
+
+    fn structured_result_count(&self) -> Option<u64> {
+        const RESULT_COUNT_FIELDS: [&str; 6] = [
+            "result_count",
+            "match_count",
+            "file_count",
+            "entry_count",
+            "processed_call_count",
+            "total_count",
+        ];
+
+        let output = self.output_json.as_ref()?;
+        RESULT_COUNT_FIELDS
+            .iter()
+            .find_map(|field| output.get(*field).and_then(serde_json::Value::as_u64))
+    }
+}
+
+fn json_string_field_from_text(text: &str, field: &str) -> Option<String> {
+    serde_json::from_str::<serde_json::Value>(text)
+        .ok()?
+        .get(field)?
+        .as_str()
+        .map(str::to_string)
 }
 
 fn tool_path_summary(args_summary: &str) -> Option<String> {
@@ -311,4 +417,130 @@ pub(in crate::app) fn execution_timing_elapsed_ms(timing: &ExecutionTimingMetada
             }
             _ => None,
         })
+}
+
+#[cfg(test)]
+mod presentation_tests {
+    use super::*;
+
+    fn tool_call(tool_id: &str) -> ToolCallEntry {
+        ToolCallEntry {
+            tool_call_id: "tool-call".to_string(),
+            tool_id: tool_id.to_string(),
+            canonical_tool_id: None,
+            alias_source_tool_id: None,
+            resolved_tool_identity: None,
+            args_summary: "{}".to_string(),
+            args_digest: "digest".to_string(),
+            lifecycle_state: Some(ToolCallLifecycleState::Completed),
+            status: ToolCallDisplayStatus::Succeeded,
+            output_summary: None,
+            output_digest: None,
+            output_json: None,
+            truncated_output: None,
+            edit: None,
+            lineage: None,
+            artifact_refs: Vec::new(),
+            timing_elapsed_ms: None,
+            permissions: Vec::new(),
+            first_seq: 1,
+            last_seq: 2,
+            first_mono_ms: 100,
+            last_mono_ms: 1_350,
+            first_timestamp: None,
+            last_timestamp: None,
+        }
+    }
+
+    #[test]
+    fn unresolved_permission_is_explicit_waiting_presentation() {
+        let mut tool_call = tool_call("bash");
+        tool_call.lifecycle_state = Some(ToolCallLifecycleState::Running);
+        tool_call.status = ToolCallDisplayStatus::Running;
+        tool_call.permissions.push(PermissionEntry {
+            permission_id: "permission".to_string(),
+            kind: "bash".to_string(),
+            tool_call_id: Some(tool_call.tool_call_id.clone()),
+            summary: "Run command".to_string(),
+            request_digest: "permission-digest".to_string(),
+            timeout_ms: 30_000,
+            default_decision: harness_core::event::PermissionDecision::Deny,
+            resolved_decision: None,
+            resolution_reason: None,
+            first_seq: 2,
+            last_seq: 2,
+        });
+
+        tool_call.sync_display_status();
+
+        assert_eq!(
+            tool_call.presentation().status,
+            ToolCallPresentationStatus::Waiting
+        );
+    }
+
+    #[test]
+    fn correlated_structured_background_cancellation_is_cancelled_presentation() {
+        for (tool_id, args_summary, output_json) in [
+            (
+                "background_cancel",
+                r#"{"request_id":"req-child"}"#,
+                serde_json::json!({
+                    "request_id": "req-child",
+                    "final_status": "cancelled"
+                }),
+            ),
+            (
+                "background_output",
+                r#"{"request_id":"req-child","cancel":true}"#,
+                serde_json::json!({
+                    "request_id": "req-child",
+                    "status": "cancelled"
+                }),
+            ),
+        ] {
+            let mut tool_call = tool_call(tool_id);
+            tool_call.args_summary = args_summary.to_string();
+            tool_call.output_json = Some(output_json);
+
+            assert_eq!(
+                tool_call.presentation().status,
+                ToolCallPresentationStatus::Cancelled
+            );
+        }
+    }
+
+    #[test]
+    fn cancellation_prose_or_mismatched_request_id_is_not_cancelled_presentation() {
+        let mut prose_only = tool_call("background_cancel");
+        prose_only.args_summary = r#"{"request_id":"req-child"}"#.to_string();
+        prose_only.output_summary = Some("Cancelled background task req-child".to_string());
+        assert_eq!(
+            prose_only.presentation().status,
+            ToolCallPresentationStatus::Succeeded
+        );
+
+        let mut mismatched = tool_call("background_cancel");
+        mismatched.args_summary = r#"{"request_id":"req-child"}"#.to_string();
+        mismatched.output_json = Some(serde_json::json!({
+            "request_id": "another-child",
+            "status": "cancelled"
+        }));
+        assert_eq!(
+            mismatched.presentation().status,
+            ToolCallPresentationStatus::Succeeded
+        );
+    }
+
+    #[test]
+    fn presentation_carries_explicit_duration_and_result_count_metadata() {
+        let mut tool_call = tool_call("grep");
+        tool_call.timing_elapsed_ms = Some(1_250);
+        tool_call.output_json = Some(serde_json::json!({ "match_count": 7 }));
+
+        let presentation = tool_call.presentation();
+
+        assert_eq!(presentation.duration_ms, Some(1_250));
+        assert_eq!(presentation.result_count, Some(7));
+    }
 }

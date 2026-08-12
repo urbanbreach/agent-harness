@@ -208,7 +208,7 @@ pub(in crate::app) use self::tool_call::{
 };
 pub use self::tool_call::{
     EditDisplayStatus, EditEntry, TaskLineageEntry, ToolArtifactEntry, ToolCallDisplayStatus,
-    ToolCallEntry,
+    ToolCallEntry, ToolCallPresentation, ToolCallPresentationStatus,
 };
 use self::tool_output::{
     json_string_field, task_child_request_id_from_output, task_child_session_id_from_output,

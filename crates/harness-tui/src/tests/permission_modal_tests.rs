@@ -312,9 +312,10 @@ pub(super) fn answered_questions_render_in_completed_tool_row() {
 
     let debug = render_live_buffer(&app, 120, 30);
     assert!(debug.contains("Asked 2 questions"));
-    assert!(!debug.contains("Pick one"));
-    assert!(!debug.contains("Pick another"));
-    assert!(!debug.contains("(no answer)"));
+    assert!(debug.contains("1. Pick one"));
+    assert!(debug.contains("→ A"));
+    assert!(debug.contains("2. Pick another"));
+    assert!(debug.contains("→ (no answer)"));
 }
 
 pub(super) fn permission_modal_ctrl_y_emits_resolve_intent_and_closes_on_resolved() {

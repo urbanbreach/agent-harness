@@ -1,6 +1,8 @@
 use super::*;
 use harness_core::event::ProviderRequestRetryMetadata;
 
+use crate::app::{ToolCallPresentation, ToolCallPresentationStatus};
+
 #[derive(Debug, Clone, Copy)]
 pub(super) struct TranscriptToolCardShell {
     pub(super) indent: &'static str,
@@ -44,6 +46,142 @@ pub(crate) enum ToolRailMotion {
     Queued,
     FinishFlash { remaining: u8 },
     Settled,
+}
+
+pub(crate) const TOOL_FINISH_ACKNOWLEDGEMENT_MS: u64 = 33 * 12;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum TranscriptToolVerb {
+    Run,
+    Read,
+    Search,
+    List,
+    Skill,
+}
+
+impl TranscriptToolVerb {
+    pub(super) fn from_tool_id(tool_id: &str) -> Option<Self> {
+        match tool_id {
+            "shell.run" | "bash" => Some(Self::Run),
+            "fs.read" | "read" => Some(Self::Read),
+            "fs.glob" | "glob" | "fs.grep" | "grep" => Some(Self::Search),
+            "fs.ls" | "list" => Some(Self::List),
+            "skill" | "skill.load" => Some(Self::Skill),
+            _ => None,
+        }
+    }
+
+    pub(super) const fn group_kind(self) -> TranscriptToolGroupKind {
+        match self {
+            Self::Run => TranscriptToolGroupKind::Commands,
+            Self::Read | Self::Search | Self::List | Self::Skill => {
+                TranscriptToolGroupKind::Context
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum TranscriptToolGroupKind {
+    Commands,
+    Context,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum TranscriptToolDisclosureMode {
+    Collapsed,
+    Preview,
+    Expanded,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct TranscriptToolGroupSummary {
+    pub(super) kind: TranscriptToolGroupKind,
+    pub(super) member_count: usize,
+    pub(super) verbs: Vec<TranscriptToolVerb>,
+    pub(super) queued_count: usize,
+    pub(super) running_count: usize,
+    pub(super) waiting_count: usize,
+    pub(super) succeeded_count: usize,
+    pub(super) failed_count: usize,
+    pub(super) cancelled_count: usize,
+    pub(super) disclosure: TranscriptToolDisclosureMode,
+    pub(super) duration_ms: Option<u64>,
+    pub(super) result_count: Option<u64>,
+}
+
+impl TranscriptToolGroupSummary {
+    pub(super) fn from_adjacent(parts: &[TranscriptAssistantPart]) -> Option<Self> {
+        let first = parts.first()?.tool_call()?;
+        let first_verb = TranscriptToolVerb::from_tool_id(&first.header.tool_id)?;
+        let kind = first_verb.group_kind();
+        let mut summary = Self {
+            kind,
+            member_count: 0,
+            verbs: Vec::new(),
+            queued_count: 0,
+            running_count: 0,
+            waiting_count: 0,
+            succeeded_count: 0,
+            failed_count: 0,
+            cancelled_count: 0,
+            disclosure: TranscriptToolDisclosureMode::Collapsed,
+            duration_ms: None,
+            result_count: None,
+        };
+
+        for part in parts {
+            let Some(tool_call) = part.tool_call() else {
+                break;
+            };
+            let Some(verb) = TranscriptToolVerb::from_tool_id(&tool_call.header.tool_id) else {
+                break;
+            };
+            if verb.group_kind() != kind {
+                break;
+            }
+
+            summary.member_count += 1;
+            if !summary.verbs.contains(&verb) {
+                summary.verbs.push(verb);
+            }
+            match tool_call.header.presentation.status {
+                ToolCallPresentationStatus::Queued => summary.queued_count += 1,
+                ToolCallPresentationStatus::Running => summary.running_count += 1,
+                ToolCallPresentationStatus::Waiting => summary.waiting_count += 1,
+                ToolCallPresentationStatus::Succeeded => summary.succeeded_count += 1,
+                ToolCallPresentationStatus::Failed => summary.failed_count += 1,
+                ToolCallPresentationStatus::Cancelled => summary.cancelled_count += 1,
+            }
+            summary.disclosure = if tool_call.expanded {
+                TranscriptToolDisclosureMode::Expanded
+            } else if summary.disclosure != TranscriptToolDisclosureMode::Expanded
+                && tool_call.details_preview_visible
+            {
+                TranscriptToolDisclosureMode::Preview
+            } else {
+                summary.disclosure
+            };
+            if let Some(duration_ms) = tool_call.header.presentation.duration_ms {
+                summary.duration_ms = Some(
+                    summary
+                        .duration_ms
+                        .unwrap_or_default()
+                        .saturating_add(duration_ms),
+                );
+            }
+            if let Some(result_count) = tool_call.header.presentation.result_count {
+                summary.result_count = Some(
+                    summary
+                        .result_count
+                        .unwrap_or_default()
+                        .saturating_add(result_count),
+                );
+            }
+        }
+
+        (summary.member_count > 0).then_some(summary)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -168,7 +306,7 @@ pub(super) struct TranscriptToolCallHeader {
     pub(super) subtitle: Option<String>,
     pub(super) path_metadata: Option<String>,
     pub(super) icon: Option<&'static str>,
-    pub(super) status: ToolCallDisplayStatus,
+    pub(super) presentation: ToolCallPresentation,
     pub(super) visual_style: TranscriptToolCallVisualStyle,
     pub(super) struck_out: bool,
     pub(super) disclosure_state: Option<TranscriptToolCallDisclosureState>,
@@ -250,9 +388,186 @@ pub(super) enum TranscriptAssistantPart {
     Compaction(TranscriptCompactionSection),
 }
 
+impl TranscriptAssistantPart {
+    fn tool_call(&self) -> Option<&TranscriptToolCallSection> {
+        match self {
+            Self::ToolCall(tool_call) => Some(tool_call),
+            Self::Reasoning(_) | Self::Body(_) | Self::Error(_) | Self::Compaction(_) => None,
+        }
+    }
+}
+
 pub(super) const TRANSCRIPT_ASSISTANT_BODY_PREFIX: &str = "   ";
 pub(super) const TRANSCRIPT_USER_BODY_PREFIX: &str = "     ";
 pub(super) const TRANSCRIPT_REASONING_BODY_PREFIX: &str = "   ";
 pub(super) const TRANSCRIPT_REASONING_HEADER_PREFIX: &str = "   ";
 pub(super) const TRANSCRIPT_NESTED_INDENT: &str = "     ";
 pub(super) const TRANSCRIPT_OPCODE_EDIT_INDENT: &str = "       ";
+
+#[cfg(test)]
+mod tool_group_tests {
+    use super::*;
+    use crate::app::{ToolCallDisplayStatus, ToolCallPresentation};
+
+    fn tool_part(
+        id: &str,
+        tool_id: &str,
+        status: ToolCallDisplayStatus,
+        preview: bool,
+        expanded: bool,
+    ) -> TranscriptAssistantPart {
+        TranscriptAssistantPart::ToolCall(Box::new(TranscriptToolCallSection {
+            tool_call_id: id.to_string(),
+            coalesced_tool_call_ids: vec![id.to_string()],
+            child_session_id: None,
+            hovered_target: None,
+            header: TranscriptToolCallHeader {
+                tool_id: tool_id.to_string(),
+                title: tool_id.to_string(),
+                subtitle: None,
+                path_metadata: None,
+                icon: None,
+                presentation: ToolCallPresentation::from_display_status(status),
+                visual_style: TranscriptToolCallVisualStyle::Inline,
+                struck_out: false,
+                disclosure_state: Some(TranscriptToolCallDisclosureState::Collapsed),
+            },
+            detail_blocks: Vec::new(),
+            details_collapsed_by_default: true,
+            details_preview_visible: preview,
+            animation_phase: 0,
+            expanded,
+            rail_motion: ToolRailMotion::Settled,
+        }))
+    }
+
+    #[test]
+    fn adjacent_command_group_keeps_mixed_member_states() {
+        let parts = vec![
+            tool_part(
+                "success",
+                "bash",
+                ToolCallDisplayStatus::Succeeded,
+                false,
+                false,
+            ),
+            tool_part(
+                "running",
+                "shell.run",
+                ToolCallDisplayStatus::Running,
+                false,
+                false,
+            ),
+            tool_part(
+                "failure",
+                "bash",
+                ToolCallDisplayStatus::Failed,
+                false,
+                false,
+            ),
+            TranscriptAssistantPart::Body(TranscriptBodyBlock::RichText("stop".to_string())),
+        ];
+
+        let summary = TranscriptToolGroupSummary::from_adjacent(&parts).expect("command group");
+
+        assert_eq!(summary.kind, TranscriptToolGroupKind::Commands);
+        assert_eq!(summary.member_count, 3);
+        assert_eq!(summary.succeeded_count, 1);
+        assert_eq!(summary.running_count, 1);
+        assert_eq!(summary.failed_count, 1);
+    }
+
+    #[test]
+    fn adjacent_group_stops_at_typed_group_boundary() {
+        let parts = vec![
+            tool_part(
+                "read",
+                "read",
+                ToolCallDisplayStatus::Succeeded,
+                false,
+                false,
+            ),
+            tool_part(
+                "search",
+                "grep",
+                ToolCallDisplayStatus::Running,
+                false,
+                false,
+            ),
+            tool_part(
+                "command",
+                "bash",
+                ToolCallDisplayStatus::Running,
+                false,
+                false,
+            ),
+        ];
+
+        let summary = TranscriptToolGroupSummary::from_adjacent(&parts).expect("context group");
+
+        assert_eq!(summary.kind, TranscriptToolGroupKind::Context);
+        assert_eq!(summary.member_count, 2);
+        assert_eq!(
+            summary.verbs,
+            vec![TranscriptToolVerb::Read, TranscriptToolVerb::Search]
+        );
+    }
+
+    #[test]
+    fn group_disclosure_promotes_collapsed_to_preview_then_expanded() {
+        let collapsed = vec![
+            tool_part(
+                "one",
+                "read",
+                ToolCallDisplayStatus::Succeeded,
+                false,
+                false,
+            ),
+            tool_part(
+                "two",
+                "grep",
+                ToolCallDisplayStatus::Succeeded,
+                false,
+                false,
+            ),
+        ];
+        let preview = vec![
+            tool_part("one", "read", ToolCallDisplayStatus::Succeeded, true, false),
+            tool_part(
+                "two",
+                "grep",
+                ToolCallDisplayStatus::Succeeded,
+                false,
+                false,
+            ),
+        ];
+        let expanded = vec![
+            tool_part("one", "read", ToolCallDisplayStatus::Succeeded, true, false),
+            tool_part("two", "grep", ToolCallDisplayStatus::Succeeded, false, true),
+        ];
+
+        assert_eq!(
+            TranscriptToolGroupSummary::from_adjacent(&collapsed)
+                .expect("collapsed")
+                .disclosure,
+            TranscriptToolDisclosureMode::Collapsed
+        );
+        assert_eq!(
+            TranscriptToolGroupSummary::from_adjacent(&preview)
+                .expect("preview")
+                .disclosure,
+            TranscriptToolDisclosureMode::Preview
+        );
+        assert_eq!(
+            TranscriptToolGroupSummary::from_adjacent(&expanded)
+                .expect("expanded")
+                .disclosure,
+            TranscriptToolDisclosureMode::Expanded
+        );
+    }
+
+    #[test]
+    fn finish_acknowledgement_duration_matches_design_contract() {
+        assert_eq!(TOOL_FINISH_ACKNOWLEDGEMENT_MS, 33 * 12);
+    }
+}

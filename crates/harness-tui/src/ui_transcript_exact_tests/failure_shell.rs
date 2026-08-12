@@ -319,7 +319,13 @@ fn question_tool_cards_render_answered_question_details() {
         section.header.visual_style,
         TranscriptToolCallVisualStyle::Inline
     );
-    assert!(section.detail_blocks.is_empty());
+    assert_eq!(
+        section.detail_blocks,
+        vec![TranscriptToolCallDetailBlock::Message {
+            text: "1. Pick one\n    → A\n2. Pick another\n    → (no answer)".to_string(),
+            tone: TranscriptToolCallDetailTone::Primary,
+        }]
+    );
 }
 
 #[cfg(test)]
@@ -355,8 +361,8 @@ fn question_tool_cards_render_pending_ask_title() {
 
     assert_eq!(section.header.title, "Ask Which color?");
     assert_eq!(
-        section.header.status,
-        ToolCallDisplayStatus::PendingPermission
+        section.header.presentation.status,
+        crate::app::ToolCallPresentationStatus::Waiting
     );
 }
 
@@ -522,7 +528,9 @@ fn block_tool_cards_render_subtitle_inline_with_title() {
             subtitle: Some("14:36 · 1.6s".to_string()),
             path_metadata: None,
             icon: Some("↗"),
-            status: ToolCallDisplayStatus::Succeeded,
+            presentation: crate::app::ToolCallPresentation::from_display_status(
+                ToolCallDisplayStatus::Succeeded,
+            ),
             visual_style: TranscriptToolCallVisualStyle::Block,
             struck_out: false,
             disclosure_state: None,
@@ -560,6 +568,73 @@ fn block_tool_cards_render_subtitle_inline_with_title() {
             .enumerate()
             .any(|(index, line)| index != title_row && line.contains("14:36 · 1.6s")),
         "block tool cards should not dedicate a separate subtitle row\n{text_lines:#?}"
+    );
+}
+
+#[test]
+fn running_and_finished_shell_tools_keep_one_command_header_identity() {
+    // Given: one shell tool before and after output arrives.
+    let theme = Theme::default();
+    let mut running = transcript_section_model_test_tool_call("tc-shell-stable", "shell.run");
+    running.args_summary = r#"{"command":"echo hi"}"#.to_string();
+    running.status = ToolCallDisplayStatus::Running;
+    let running_section = build_transcript_tool_call_section(
+        &running,
+        &AppState::default(),
+        None,
+        false,
+        false,
+        false,
+        false,
+        None,
+    );
+
+    let mut finished = running;
+    finished.status = ToolCallDisplayStatus::Succeeded;
+    finished.output_summary = Some("hi".to_string());
+    let finished_section = build_transcript_tool_call_section(
+        &finished,
+        &AppState::default(),
+        None,
+        false,
+        false,
+        false,
+        false,
+        None,
+    );
+
+    // When: both lifecycle states are rendered through the transcript surface.
+    let running_lines = transcript_test_line_texts(
+        append_tool_call_section_lines(&running_section, &theme, 96, theme.surface.panel).lines,
+    );
+    let finished_lines = transcript_test_line_texts(
+        append_tool_call_section_lines(&finished_section, &theme, 96, theme.surface.panel).lines,
+    );
+    let running_row = running_lines
+        .iter()
+        .position(|line| line.contains("echo hi"))
+        .unwrap_or_abort();
+    let finished_row = finished_lines
+        .iter()
+        .position(|line| line.contains("echo hi"))
+        .unwrap_or_abort();
+
+    // Then: output appends below one stable `Run` header instead of replacing
+    // an inline command row with a differently shaped completed block.
+    assert_eq!(
+        running_section.header.visual_style,
+        TranscriptToolCallVisualStyle::Block
+    );
+    assert_eq!(
+        finished_section.header.visual_style,
+        TranscriptToolCallVisualStyle::Block
+    );
+    assert!(running_lines[running_row].contains("◆ Run echo hi"));
+    assert!(finished_lines[finished_row].contains("◆ Run echo hi"));
+    assert_eq!(running_row, finished_row);
+    assert_eq!(
+        running_lines[running_row].find("◆ Run"),
+        finished_lines[finished_row].find("◆ Run")
     );
 }
 
@@ -1029,7 +1104,7 @@ fn completed_empty_shell_output_keeps_block_card() {
 }
 
 #[test]
-fn running_shell_without_output_metadata_uses_inline_fallback_until_output_event() {
+fn running_shell_without_output_metadata_uses_stable_command_surface() {
     // arrange
     // act
     // assert
@@ -1048,13 +1123,9 @@ fn running_shell_without_output_metadata_uses_inline_fallback_until_output_event
         None,
     );
 
-    // The harness transcript model has no running-output presence bit while a
-    // shell call is running without output. Until a result event carries
-    // `output_summary` or structured stdout/stderr, the closest deterministic
-    // equivalent is the harness inline shell row.
     assert_eq!(
         section.header.visual_style,
-        TranscriptToolCallVisualStyle::Inline
+        TranscriptToolCallVisualStyle::Block
     );
     assert_eq!(section.header.icon, Some("$"));
     assert!(section.detail_blocks.is_empty());
@@ -1109,7 +1180,9 @@ pub(crate) fn exact_test_inline_tool_rows_wrap_long_subtitles_cleanly() {
             ),
             path_metadata: None,
             icon: None,
-            status: ToolCallDisplayStatus::Succeeded,
+            presentation: crate::app::ToolCallPresentation::from_display_status(
+                ToolCallDisplayStatus::Succeeded,
+            ),
             visual_style: TranscriptToolCallVisualStyle::Inline,
             struck_out: false,
             disclosure_state: None,
