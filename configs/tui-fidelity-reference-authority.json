@@ -1,0 +1,77 @@
+{
+  "schema_version": "harness.tui-fidelity.reference-authority.v1",
+  "status": "active",
+  "reference": {
+    "canonical_checkout": "inspirations/grok-build",
+    "executable": "inspirations/grok-build/target/debug/xai-grok-pager",
+    "source_revision": "be713136d2a69080743a3f6b3c72077057e5948f",
+    "binary_sha256": "2198bc3699b0ac76d3e3d32bf3da2277479ad244e19cfb1be7d111fc5f4b8ca2",
+    "binary_version": "grok 1.0.1 (be71313) [alpha]"
+  },
+  "active_revision_sources": [
+    {
+      "path": "scripts/tui-fidelity/source-guard.sh",
+      "constant": "PINNED_REVISION"
+    },
+    {
+      "path": "crates/harness-testkit/src/bin/tui-fidelity.rs",
+      "constant": "REFERENCE_REVISION"
+    },
+    {
+      "path": "crates/harness-testkit/src/bin/binary_receipt.rs",
+      "constant": "REFERENCE_REVISION"
+    },
+    {
+      "path": "crates/harness-testkit/src/bin/tui_fidelity_commands/verify_executor.rs",
+      "constant": "REFERENCE_REVISION"
+    },
+    {
+      "path": "crates/harness-testkit/tests/source_guard_test.rs",
+      "constant": "PINNED_REVISION"
+    },
+    {
+      "path": "crates/harness-testkit/tests/binary_receipt_test.rs",
+      "constant": "REFERENCE_REVISION"
+    },
+    {
+      "path": "configs/tui-fidelity-requirement-inventory.json",
+      "revision_token": true
+    }
+  ],
+  "required_paths": [
+    "configs/tui-fidelity-reference-authority.json",
+    "configs/tui-fidelity-closure-contract.json",
+    "configs/tui-fidelity-requirement-inventory.json",
+    "configs/tui-fidelity-coverage-manifest.json",
+    "grok-build-ui-difference-catalog.md",
+    "docs/reference/grok-build-parity-loop-contract.md",
+    "docs/reference/tui-reference-parity-manifest.v1.json",
+    "crates/harness-testkit/src/tui_fidelity_scenarios/baseline/registry.json"
+  ],
+  "scenario_registry": "crates/harness-testkit/src/tui_fidelity_scenarios/baseline/registry.json",
+  "historical_non_acceptance": {
+    "source_revision": "c1b5909ec707c069f1d21a93917af044e71da0d7",
+    "binary_sha256": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
+    "binary_version": "grok 0.1.220-alpha.4 (c1b5909) [stable]",
+    "acceptance_eligible": false,
+    "surfaces": [
+      "configs/tui-fidelity-reference-authority.json",
+      "crates/harness-testkit/src/parity/catalog.rs",
+      "crates/harness-testkit/tests/parity_differential_proof_test.rs",
+      "crates/harness-testkit/tests/parity_motion_timing_test.rs",
+      "crates/harness-tui/tests/fixtures/grok-build-v0.1.220-alpha.4/core/compact-idle-chat-80x24/receipt.json",
+      "crates/harness-tui/tests/fixtures/grok-build-v0.1.220-alpha.4/core/completed-chat-120x40/receipt.json",
+      "crates/harness-tui/tests/fixtures/grok-build-v0.1.220-alpha.4/core/completed-transcript-120x40/receipt.json",
+      "crates/harness-tui/tests/fixtures/grok-build-v0.1.220-alpha.4/core/idle-chat-120x40/receipt.json",
+      "crates/harness-tui/tests/fixtures/grok-build-v0.1.220-alpha.4/core/startup-compact-60x20/receipt.json",
+      "crates/harness-tui/tests/fixtures/grok-build-v0.1.220-alpha.4/core/startup-draft-120x32/receipt.json",
+      "crates/harness-tui/tests/fixtures/grok-build-v0.1.220-alpha.4/core/startup-welcome-120x32/receipt.json",
+      "crates/harness-tui/tests/fixtures/grok-build-v0.1.220-alpha.4/core/streaming-chat-120x40/receipt.json",
+      "crates/harness-tui/tests/tui_signoff_manifest_test.rs",
+      "docs/reference/grok-build-parity-loop-contract.md",
+      "docs/reference/grok-build-tui-implementation-prompt.md",
+      "docs/reference/tui-reference-parity-manifest.v1.json",
+      "scripts/test-lanes.sh"
+    ]
+  }
+}

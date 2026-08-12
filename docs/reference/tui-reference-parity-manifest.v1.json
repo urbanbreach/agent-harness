@@ -19,7 +19,9 @@
     "A-REVIEW",
     "A-NO-RESKIN"
   ],
-  "contract_doc": "docs/grok-build-tui-implementation-prompt.md",
+  "acceptance_status": "historical_non_acceptance",
+  "active_authority": "configs/tui-fidelity-reference-authority.json",
+  "contract_doc": "docs/reference/grok-build-tui-implementation-prompt.md",
   "description": "Harness-owned independent TUI reference-parity traceability manifest. Rows join reference freeze receipts to Harness owners, L1-L6 evidence paths, and A-* acceptance gates. Does not replace docs/tui-signoff-manifest.v1.json. Reference source/tests/fixtures are not implementation material.",
   "evidence_root": "crates/harness-tui/tests/fixtures/grok-build-v0.1.220-alpha.4",
   "external_exclusions": [

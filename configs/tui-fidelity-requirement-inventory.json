@@ -38,7 +38,7 @@
     {
       "id": "global.scope.must_have.source_behavior",
       "source_line": 35,
-      "title": "Deliver a Harness-native TUI whose observable layout, interaction results, state choreography, keyboard/mouse behavior, motion cadence, terminal integration, and failure recovery match the canonical Grok Build binary built from source revision `500129c714ad1b10e6095481f4a8387a2ec52649`.",
+      "title": "Deliver a Harness-native TUI whose observable layout, interaction results, state choreography, keyboard/mouse behavior, motion cadence, terminal integration, and failure recovery match the canonical Grok Build binary built from source revision `be713136d2a69080743a3f6b3c72077057e5948f`.",
       "obligation": {
         "type": "dual_capture"
       }
@@ -3859,7 +3859,7 @@
     {
       "id": "global.success.candidate",
       "source_line": 707,
-      "title": "The canonical Grok binary is reproducibly built with `--locked` from source revision `500129c714ad1b10e6095481f4a8387a2ec52649`, has immutable receipts, and leaves its checkout byte-identical before/after every run.",
+      "title": "The canonical Grok binary is reproducibly built with `--locked` from source revision `be713136d2a69080743a3f6b3c72077057e5948f`, has immutable receipts, and leaves its checkout byte-identical before/after every run.",
       "obligation": {
         "type": "static_gate",
         "key": "fidelity-static-contract"

@@ -20,7 +20,7 @@ use harness_testkit::tui_fidelity_runner::{
 };
 
 const STARTUP_SMOKE: &str = include_str!("../../tests/fixtures/tui_fidelity/startup-smoke.json");
-const REFERENCE_REVISION: &str = "500129c714ad1b10e6095481f4a8387a2ec52649";
+const REFERENCE_REVISION: &str = "be713136d2a69080743a3f6b3c72077057e5948f";
 
 struct CompareArgs {
     scenario: String,

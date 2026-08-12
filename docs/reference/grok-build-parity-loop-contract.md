@@ -5,9 +5,9 @@
 > that loop were revoked after stale/disconnected evidence and aggregate
 > verification collapse. Use
 > [`grok-build-ui-difference-catalog.md`](../../grok-build-ui-difference-catalog.md)
-> for bounded UI discrepancy packets. Section 2 reference authority remains
-> binding until catalog prerequisite R0-02 reconciles and updates the checked-in
-> reference contract and manifest together.
+> for bounded UI discrepancy packets. The only active reference authority is
+> [`configs/tui-fidelity-reference-authority.json`](../../configs/tui-fidelity-reference-authority.json).
+> Section 2 and the old parity manifest are historical, non-acceptance records.
 
 > **Historical record:** The remaining text is preserved to explain the former
 > loop's scope, evidence vocabulary, and reference receipt. Its ordered
@@ -42,11 +42,11 @@ permission-before-execution, replay purity, redaction, runtime/TUI config
 separation, and append-only event semantics. Do not copy reference source,
 tests, fixtures, architecture, identifiers, or harnesses.
 
-## 2. Authority and reference access
+## 2. Historical reference and access record (non-acceptance)
 
-### 2.1 Pinned reference executable
+### 2.1 Retired reference executable
 
-The only authorized executable reference is:
+The retired loop used this executable reference:
 
 ```text
 inspirations/grok-build/target/debug/xai-grok-pager
@@ -55,9 +55,10 @@ version: grok 0.1.220-alpha.4 (c1b5909) [stable]
 reference revision: c1b5909ec707c069f1d21a93917af044e71da0d7
 ```
 
-Before reference execution, verify the executable bit, digest, version, and
-reference revision. Never search for, install, download, rebuild, or substitute
-another executable. Never modify anything below `inspirations/grok-build`.
+These values remain frozen solely to identify the historical Core-8 evidence.
+They are not eligible for current acceptance and must not be relabeled to the
+active revision. Current execution must use the active machine-readable
+authority named in the retirement notice.
 
 ### 2.2 Required reference repository inspection
 
