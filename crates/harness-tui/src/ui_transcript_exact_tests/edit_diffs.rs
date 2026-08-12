@@ -74,15 +74,14 @@ pub(crate) fn exact_test_transcript_edit_tool_matches_inline_diff_shape() {
         !rendered.contains("@@ -44,8 +44,7 @@"),
         "inline transcript diffs should suppress raw hunk headers to match harness chat diffs\n{rendered}"
     );
+    let removed = rendered.find("render_diff_tab").unwrap_or_abort();
+    let added = rendered
+        .find("render_live_details_overlay")
+        .unwrap_or_abort();
     assert!(
-        rendered.lines().any(|line| {
-            line.contains("render_diff_tab") && line.contains("render_live_details_overlay")
-        }),
-        "tool inline diff should render side-by-side in wide transcript layouts\n{rendered}"
+        removed < added,
+        "tool inline diff must render delete then insert in one unified stream\n{rendered}"
     );
-    assert!(rendered.lines().any(|line| {
-        line.contains("render_diff_tab") && line.contains('-') && line.contains('+')
-    }));
 }
 
 #[cfg(test)]
@@ -146,9 +145,7 @@ pub(crate) fn exact_test_transcript_native_edit_renders_inline_diff_from_artifac
     assert!(rendered.contains("Edit docs/rust.md") || rendered.contains("◆ Edit"));
     assert!(rendered.contains("docs"));
     assert!(rendered.contains("Ownership"));
-    assert!(rendered
-        .lines()
-        .any(|line| line.contains("Ownership") && line.contains('-')));
+    assert_eq!(rendered.matches("Ownership").count(), 1, "{rendered}");
 }
 
 #[cfg(test)]
@@ -396,6 +393,16 @@ pub(crate) fn exact_test_transcript_apply_patch_surfaces_rename_and_wrapped_inli
         84,
     ));
     let rendered = lines.join("\n");
+    let compact_rendered = rendered
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .collect::<String>();
+    let removed_expected = "session turn diff view keeps the tool row spacing perfectly aligned in every transcript lane for operators reviewing compact windows"
+        .split_whitespace()
+        .collect::<String>();
+    let added_expected = "session turn diff view keeps the tool row spacing perfectly aligned across the transcript surface for operators reviewing compact windows and narrow shells"
+        .split_whitespace()
+        .collect::<String>();
 
     let rename_header = lines
         .iter()
@@ -407,30 +414,8 @@ pub(crate) fn exact_test_transcript_apply_patch_surfaces_rename_and_wrapped_inli
     );
     assert!(rendered.contains("Patch 2 files") || rendered.contains("◆ Patch"));
     assert!(!rendered.contains("Patch 2 files  ▸"));
-    assert!(
-        lines.iter().any(|line| {
-            line.contains("session turn diff view keeps the tool row spacing perfectly align")
-        }),
-        "long diff prefix missing\n{rendered}"
-    );
-    assert!(
-        lines.iter().any(|line| {
-            line.contains("every transcript lane for operators reviewing compact wind")
-                || line.contains("n every transcript lane for operators reviewing compact wind")
-        }),
-        "removed line continuation missing\n{rendered}"
-    );
-    assert!(
-        lines.iter().any(|line| {
-            line.contains("across the transcript surface for operators reviewing compact")
-                || line.contains("ross the transcript surface for operators reviewing compact")
-        }),
-        "added line wrapped continuation prefix missing\n{rendered}"
-    );
-    assert!(
-        lines.iter().any(|line| { line.contains("narrow shells") }),
-        "added line wrapped continuation tail missing\n{rendered}"
-    );
+    assert!(compact_rendered.contains(&removed_expected), "{rendered}");
+    assert!(compact_rendered.contains(&added_expected), "{rendered}");
     assert!(
         !rendered.contains('…'),
         "wrapped transcript diff should not fall back to truncation\n{rendered}"
@@ -756,12 +741,12 @@ pub(crate) fn exact_test_transcript_harness_tool_progress_indicators() {
     ));
     let initial_rendered = initial_lines.join("\n");
     assert!(
-        initial_rendered.contains("Reading file") || initial_rendered.contains("◆ Reading"),
-        "missing pending read indicator\n{initial_rendered}"
+        initial_rendered.contains("Gathering context · 2 reads"),
+        "missing mixed context summary\n{initial_rendered}"
     );
     assert!(initial_lines
         .iter()
-        .any(|line| line.contains("Read src/lib.rs") || line.contains("Reading file")));
+        .any(|line| line.contains("Read src/lib.rs [offset=3, limit=8]")));
     assert!(initial_lines.iter().any(|line| line.contains("Edit")));
     assert!(initial_lines.iter().any(|line| line.contains("Patch")));
 
@@ -801,17 +786,13 @@ pub(crate) fn exact_test_transcript_harness_tool_progress_indicators() {
     ))
     .join("\n");
     assert!(
-        !mixed_context_rendered.contains("Gathering context"),
-        "active context tools should stay as per-tool indicators\n{mixed_context_rendered}"
-    );
-    assert!(
-        mixed_context_rendered.contains("◆ Read 1 file")
-            || mixed_context_rendered.contains("Read 1 file"),
-        "completed reads use freeze count form\n{mixed_context_rendered}"
+        mixed_context_rendered.contains("Gathering context · 1 read · 1 search"),
+        "mixed context tools should stay grouped\n{mixed_context_rendered}"
     );
     assert!(
         mixed_context_rendered.contains("◆ Glob")
-            || mixed_context_rendered.contains("Glob \"*.rs\"")
+            || mixed_context_rendered.contains("Glob \"*.rs\""),
+        "preview should show the active running member\n{mixed_context_rendered}"
     );
 }
 

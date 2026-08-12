@@ -149,7 +149,7 @@ const FOCUS: FocusStyles = FocusStyles {
 };
 #[rustfmt::skip]
 const MOTION: MotionTokens = MotionTokens {
-    all: [MotionToken { kind: MotionKind::ActiveTick, interval_ms: 33, frames: 0 }, MotionToken { kind: MotionKind::StreamingSpinner, interval_ms: 133, frames: 8 }, MotionToken { kind: MotionKind::ToolPulse, interval_ms: 33, frames: 16 }, MotionToken { kind: MotionKind::ToolFinishFlash, interval_ms: 33, frames: 6 }, MotionToken { kind: MotionKind::StartupShimmer, interval_ms: 100, frames: 8 }, MotionToken { kind: MotionKind::ToastLifetime, interval_ms: 1000, frames: 1 }],
+    all: [MotionToken { kind: MotionKind::ActiveTick, interval_ms: 33, frames: 0 }, MotionToken { kind: MotionKind::StreamingSpinner, interval_ms: 133, frames: 8 }, MotionToken { kind: MotionKind::ToolPulse, interval_ms: 33, frames: 16 }, MotionToken { kind: MotionKind::ToolFinishFlash, interval_ms: 33, frames: 12 }, MotionToken { kind: MotionKind::StartupShimmer, interval_ms: 100, frames: 8 }, MotionToken { kind: MotionKind::ToastLifetime, interval_ms: 1000, frames: 1 }],
 };
 #[rustfmt::skip]
 const REDUCED: ReducedMotionSubstitutions = ReducedMotionSubstitutions {

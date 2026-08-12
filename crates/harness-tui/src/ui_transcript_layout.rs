@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use ratatui::{
     layout::Rect,
     style::{Color, Style},
@@ -14,8 +16,9 @@ use super::ui_transcript_selection::{
     compact_selection_row, TranscriptSelectionCell, TranscriptSelectionRow,
 };
 use super::ui_transcript_surface::{
-    render_transcript_surface, render_transcript_surface_lines, transcript_surface_content_width,
-    transcript_surface_leading_gap, transcript_surface_render_width,
+    apply_reasoning_spinner_phase, render_transcript_surface, render_transcript_surface_lines,
+    transcript_surface_content_width, transcript_surface_leading_gap,
+    transcript_surface_render_width,
 };
 
 const TRANSCRIPT_SECTION_GAP_HEIGHT: usize = 2;
@@ -38,7 +41,7 @@ impl MeasuredTranscriptSection {
 
 #[derive(Debug, Clone, Default)]
 pub(super) struct MeasuredTranscriptLayout {
-    pub(super) sections: Vec<MeasuredTranscriptSection>,
+    pub(super) sections: Vec<Rc<MeasuredTranscriptSection>>,
     pub(super) total_height: usize,
 }
 
@@ -351,12 +354,22 @@ pub(super) fn measure_transcript_layout<Section>(
     width: u16,
     base_surface: Color,
     mut activity_first_seq: impl FnMut(&Section) -> u64,
+    mut cached_section: impl FnMut(usize, &Section) -> Option<Rc<MeasuredTranscriptSection>>,
     mut render_surfaces: impl FnMut(&Section, &Theme, u16, Color) -> Vec<TranscriptRenderSurface>,
 ) -> MeasuredTranscriptLayout {
     let mut top_row = 0;
     let mut measured_sections = Vec::with_capacity(sections.len());
 
-    for section in sections {
+    for (index, section) in sections.iter().enumerate() {
+        let leading_gap_height =
+            usize::from(!measured_sections.is_empty()) * TRANSCRIPT_SECTION_GAP_HEIGHT;
+        if let Some(measured) = cached_section(index, section).filter(|measured| {
+            measured.top_row == top_row && measured.leading_gap_height == leading_gap_height
+        }) {
+            top_row += measured.total_height();
+            measured_sections.push(measured);
+            continue;
+        }
         let surfaces = render_surfaces(section, theme, width, base_surface);
         let lines = render_transcript_surface_lines(&surfaces);
         let mut content_height = 0usize;
@@ -390,8 +403,6 @@ pub(super) fn measure_transcript_layout<Section>(
             });
             previous_surface_kind = Some(surface.kind);
         }
-        let leading_gap_height =
-            usize::from(!measured_sections.is_empty()) * TRANSCRIPT_SECTION_GAP_HEIGHT;
         let measured_section = MeasuredTranscriptSection {
             activity_first_seq: activity_first_seq(section),
             top_row,
@@ -401,7 +412,7 @@ pub(super) fn measure_transcript_layout<Section>(
             lines,
         };
         top_row += measured_section.total_height();
-        measured_sections.push(measured_section);
+        measured_sections.push(Rc::new(measured_section));
     }
 
     MeasuredTranscriptLayout {
@@ -412,9 +423,13 @@ pub(super) fn measure_transcript_layout<Section>(
 
 pub(super) fn transcript_layout_lines(
     layout: &MeasuredTranscriptLayout,
+    animation_phase: usize,
     theme: &Theme,
 ) -> Vec<Line<'static>> {
     let mut lines = layout.rendered_lines();
+    for line in &mut lines {
+        apply_reasoning_spinner_phase(line, animation_phase);
+    }
 
     if lines.is_empty() {
         lines.push(Line::from(Span::styled(
@@ -431,6 +446,7 @@ pub(super) fn render_transcript_layout_surfaces(
     layout: &MeasuredTranscriptLayout,
     area: Rect,
     scroll_top: usize,
+    animation_phase: usize,
     theme: &Theme,
 ) {
     let viewport_height = usize::from(area.height);
@@ -457,7 +473,14 @@ pub(super) fn render_transcript_layout_surfaces(
                 user_surface.width.min(area.width),
                 u16::try_from(sticky_h).unwrap_or(u16::MAX),
             );
-            render_transcript_surface(frame, user_surface, surface_rect, local_scroll, theme);
+            render_transcript_surface(
+                frame,
+                user_surface,
+                surface_rect,
+                local_scroll,
+                animation_phase,
+                theme,
+            );
         }
     }
 
@@ -516,7 +539,14 @@ pub(super) fn render_transcript_layout_surfaces(
                     .saturating_add(footer_outdent),
                 u16::try_from(visible_height).unwrap_or(u16::MAX),
             );
-            render_transcript_surface(frame, surface, surface_rect, local_scroll, theme);
+            render_transcript_surface(
+                frame,
+                surface,
+                surface_rect,
+                local_scroll,
+                animation_phase,
+                theme,
+            );
             if surface.selected_rail
                 && surface.tool_rail_motion.is_none()
                 && local_scroll == 0
@@ -689,7 +719,7 @@ mod pin_tests {
     fn run_write_layout(total_content_rows: usize) -> MeasuredTranscriptLayout {
         let body_height = total_content_rows.saturating_sub(1).max(1);
         MeasuredTranscriptLayout {
-            sections: vec![MeasuredTranscriptSection {
+            sections: vec![Rc::new(MeasuredTranscriptSection {
                 activity_first_seq: 0,
                 top_row: 0,
                 leading_gap_height: 0,
@@ -732,7 +762,7 @@ mod pin_tests {
                     Line::from("Creating demo.txt"),
                     Line::from("     ◆ Run Write `demo.txt` 19s"),
                 ],
-            }],
+            })],
             total_height: total_content_rows,
         }
     }
@@ -769,7 +799,7 @@ mod pin_tests {
     fn scroll_turn_layout(user_height: usize, body_height: usize) -> MeasuredTranscriptLayout {
         let content_height = user_height + body_height;
         MeasuredTranscriptLayout {
-            sections: vec![MeasuredTranscriptSection {
+            sections: vec![Rc::new(MeasuredTranscriptSection {
                 activity_first_seq: 0,
                 top_row: 0,
                 leading_gap_height: 0,
@@ -816,7 +846,7 @@ mod pin_tests {
                     .map(|i| Line::from(format!("user line {i}")))
                     .chain((0..body_height).map(|i| Line::from(format!("body line {i}"))))
                     .collect(),
-            }],
+            })],
             total_height: content_height,
         }
     }
@@ -864,7 +894,7 @@ mod pin_tests {
             hit_start: 0,
             hit_width: 20,
         });
-        layout.sections[0].surfaces[1].interaction_rows = Some(interaction_rows);
+        Rc::make_mut(&mut layout.sections[0]).surfaces[1].interaction_rows = Some(interaction_rows);
         let viewport = Rect::new(0, 0, 120, 10);
         let rows = transcript_viewport_rows(&layout, usize::from(viewport.height), 4);
 
@@ -919,9 +949,10 @@ mod pin_tests {
             .capture_content_anchor(10)
             .expect("assistant surface anchor");
         let mut after = before.clone();
-        after.sections[0].surfaces[0].height += 5;
-        after.sections[0].surfaces[1].top_offset += 5;
-        after.sections[0].content_height += 5;
+        let section = Rc::make_mut(&mut after.sections[0]);
+        section.surfaces[0].height += 5;
+        section.surfaces[1].top_offset += 5;
+        section.content_height += 5;
         after.total_height += 5;
 
         // When: disclosure above the viewport changes rendered height.
@@ -937,7 +968,7 @@ mod pin_tests {
     fn rendered_anchor_tracks_logical_position_through_long_line_rewrap() {
         // Given: a detached viewport on the third wrapped row of one logical line.
         let mut before = scroll_turn_layout(1, 3);
-        before.sections[0].surfaces[1].selection_rows = Some(vec![
+        Rc::make_mut(&mut before.sections[0]).surfaces[1].selection_rows = Some(vec![
             selection_row(4, false),
             selection_row(4, true),
             selection_row(4, true),
@@ -946,7 +977,7 @@ mod pin_tests {
             .capture_content_anchor(3)
             .expect("wrapped line anchor");
         let mut after = scroll_turn_layout(1, 2);
-        after.sections[0].surfaces[1].selection_rows =
+        Rc::make_mut(&mut after.sections[0]).surfaces[1].selection_rows =
             Some(vec![selection_row(6, false), selection_row(6, true)]);
 
         // When: width reflow changes the number of visual rows.
@@ -962,7 +993,7 @@ mod pin_tests {
     fn selection_endpoint_tracks_logical_cell_through_long_line_rewrap() {
         // Given: a selection endpoint two cells into the third wrapped row.
         let mut before = scroll_turn_layout(1, 3);
-        before.sections[0].surfaces[1].selection_rows = Some(vec![
+        Rc::make_mut(&mut before.sections[0]).surfaces[1].selection_rows = Some(vec![
             selection_row(4, false),
             selection_row(4, true),
             selection_row(4, true),
@@ -971,7 +1002,7 @@ mod pin_tests {
             .capture_selection_anchor(TranscriptSelectionCell { row: 3, column: 2 })
             .expect("selection endpoint anchor");
         let mut after = scroll_turn_layout(1, 2);
-        after.sections[0].surfaces[1].selection_rows =
+        Rc::make_mut(&mut after.sections[0]).surfaces[1].selection_rows =
             Some(vec![selection_row(6, false), selection_row(6, true)]);
 
         // When: width reflow packs that logical cell into two rows.

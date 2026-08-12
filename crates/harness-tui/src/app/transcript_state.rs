@@ -411,7 +411,6 @@ impl AppState {
         self.transcript_view.show_tool_details.hash(hasher);
         self.transcript_view.show_generic_tool_output.hash(hasher);
         self.transcript_view.stacked_transcript_diffs.hash(hasher);
-        self.transcript_view.transcript_animation_phase.hash(hasher);
         self.transcript_view.hovered_transcript_target.hash(hasher);
         self.transcript_view.transcript_cache.epoch().hash(hasher);
         self.active_profile().hash(hasher);
@@ -529,7 +528,9 @@ impl AppState {
             .transcript_view
             .transcript_animation_phase
             .wrapping_add(1);
-        self.transcript_view.tool_motion.advance(motion_enabled);
+        if self.transcript_view.tool_motion.advance(motion_enabled) {
+            self.bump_transcript_render_epoch();
+        }
         self.clear_expired_interrupt_confirmation();
         let toast_occluded = self.overlay_stack().top().is_some();
         if !toast_occluded {
@@ -571,15 +572,8 @@ impl AppState {
     }
 
     fn has_active_animations_with_motion(&self, motion_enabled: bool) -> bool {
-        let tool_motion_demand = self.active_turn_tool_motion_demand();
-        let interrupt_requested = self.interrupt_requested();
-        (self.startup_shell_visible() && self.composer.prompt_buffer.is_empty() && motion_enabled)
-            || (self.starting_session_seed_visible() && motion_enabled)
-            || (motion_enabled && tool_motion_demand && !interrupt_requested)
-            || (motion_enabled && self.active_background_task_count() > 0 && !interrupt_requested)
-            || self.transcript_view.tool_motion.has_finish_flash()
-            || self.toast.is_some()
-            || self.interrupt_confirmation_pending()
+        self.animation_tick_interval_with_motion(motion_enabled)
+            .is_some()
     }
 
     pub(crate) fn starting_session_seed_visible(&self) -> bool {

@@ -8,6 +8,7 @@ use super::ui_transcript_tool_render::{
     tool_call_is_todo,
 };
 use super::*;
+use crate::app::ToolCallPresentationStatus;
 use crate::composer_atoms::split_graphemes;
 use harness_core::event::ProviderRequestRetryMetadata;
 
@@ -371,7 +372,6 @@ fn build_assistant_render_surfaces(
         };
 
         if group_len > 1
-            && context_tool_group_complete(&turn.assistant_parts[index..index + group_len])
             && !context_tool_group_uses_individual_rows(
                 &turn.assistant_parts[index..index + group_len],
             )
@@ -595,49 +595,7 @@ fn append_plain_body_with_clock(
 }
 
 fn context_tool_group_len(parts: &[TranscriptAssistantPart]) -> usize {
-    let Some(command_group) = parts.first().and_then(transcript_part_tool_group_kind) else {
-        return 0;
-    };
-
-    parts
-        .iter()
-        .take_while(|part| {
-            matches!(
-                part,
-                TranscriptAssistantPart::ToolCall(tool_call)
-                    if tool_call_group_kind(tool_call) == Some(command_group)
-            )
-        })
-        .count()
-}
-
-fn transcript_part_tool_group_kind(tool_call: &TranscriptAssistantPart) -> Option<bool> {
-    let TranscriptAssistantPart::ToolCall(tool_call) = tool_call else {
-        return None;
-    };
-
-    tool_call_group_kind(tool_call)
-}
-
-fn tool_call_group_kind(tool_call: &TranscriptToolCallSection) -> Option<bool> {
-    match tool_call.header.tool_id.as_str() {
-        "shell.run" | "bash" => Some(true),
-        tool_id if context_group_tool_id(tool_id) => Some(false),
-        _ => None,
-    }
-}
-
-fn context_tool_group_complete(parts: &[TranscriptAssistantPart]) -> bool {
-    parts.iter().all(|part| {
-        matches!(
-            part,
-            TranscriptAssistantPart::ToolCall(tool_call)
-                if matches!(
-                    tool_call.header.status,
-                    ToolCallDisplayStatus::Succeeded | ToolCallDisplayStatus::Failed
-                )
-        )
-    })
+    TranscriptToolGroupSummary::from_adjacent(parts).map_or(0, |summary| summary.member_count)
 }
 
 fn context_tool_group_uses_individual_rows(parts: &[TranscriptAssistantPart]) -> bool {
@@ -809,7 +767,7 @@ fn build_assistant_part_render_surface(
             (
                 kind,
                 false,
-                tool_rail_color(tool_call.header.status, theme),
+                tool_rail_color(tool_call.header.presentation.status, theme),
                 base_surface,
                 Some(render.interaction_rows),
                 None,
@@ -1127,32 +1085,17 @@ fn build_context_tool_group_render_surface(
     } else {
         base_surface
     };
-    let tool_rail_motion = tool_calls
-        .iter()
-        .filter_map(|tool_call| match tool_call.rail_motion {
-            ToolRailMotion::FinishFlash { remaining } => Some(remaining),
-            ToolRailMotion::Running { .. }
-            | ToolRailMotion::Waiting
-            | ToolRailMotion::Queued
-            | ToolRailMotion::Settled => None,
-        })
-        .max()
-        .map(|remaining| ToolRailMotion::FinishFlash { remaining })
-        .or_else(|| tool_calls.first().map(|_| ToolRailMotion::Settled));
-    let aggregate_status = if tool_calls
-        .iter()
-        .any(|tool_call| tool_call.header.status == ToolCallDisplayStatus::Failed)
-    {
-        ToolCallDisplayStatus::Failed
-    } else {
-        ToolCallDisplayStatus::Succeeded
-    };
+    let tool_rail_motion = tool_group_rail_motion(tool_calls);
+    let aggregate_status = dominant_tool_group_status(tool_calls);
     let rail_color = if tool_calls.is_empty() {
         theme.border.subtle
     } else {
         tool_rail_color(aggregate_status, theme)
     };
     let group_expanded = tool_calls.iter().any(|tool_call| tool_call.expanded);
+    let group_preview_visible = tool_calls
+        .iter()
+        .any(|tool_call| tool_call.details_preview_visible);
     let group_disclosure = if tool_calls.is_empty() {
         None
     } else if group_expanded {
@@ -1172,14 +1115,21 @@ fn build_context_tool_group_render_surface(
             };
             let failed_commands = failed_commands
                 + usize::from(
-                    command_group && tool_call.header.status == ToolCallDisplayStatus::Failed,
+                    command_group
+                        && tool_call.header.presentation.status
+                            == ToolCallPresentationStatus::Failed,
                 );
             (
                 reads,
                 searches,
                 lists,
                 skills,
-                busy || !matches!(tool_call.header.status, ToolCallDisplayStatus::Succeeded),
+                busy || !matches!(
+                    tool_call.header.presentation.status,
+                    ToolCallPresentationStatus::Succeeded
+                        | ToolCallPresentationStatus::Failed
+                        | ToolCallPresentationStatus::Cancelled
+                ),
                 failed_commands,
             )
         },
@@ -1265,23 +1215,25 @@ fn build_context_tool_group_render_surface(
         transcript_surface_content_width(width, false),
     );
 
-    if command_group || group_expanded {
+    if command_group || group_preview_visible || group_expanded {
         let detail_prefix = if command_group {
             format!("{}  ", theme.live_shell.transcript_glyphs.rail)
         } else {
             format!("{TRANSCRIPT_ASSISTANT_BODY_PREFIX}  ")
         };
-        let command_group_accent = if failed_commands > 0 {
-            theme.reference_terminal.error
+        let preview_index = context_group_preview_index(tool_calls);
+        let visible_tool_calls = if command_group || group_expanded {
+            tool_calls
         } else {
-            theme.text.primary
+            &tool_calls[preview_index..tool_calls.len().min(preview_index + 1)]
         };
-        for tool_call in tool_calls {
+        for tool_call in visible_tool_calls {
             let mut spans = Vec::new();
+            let member_accent = inline_tool_color(tool_call.header.presentation.status, theme);
             if command_group {
                 spans.push(Span::styled(
                     format!("{} ", theme.live_shell.transcript_glyphs.tool_marker),
-                    Style::default().fg(command_group_accent),
+                    Style::default().fg(member_accent),
                 ));
                 spans.push(Span::styled(
                     "Run ",
@@ -1314,7 +1266,7 @@ fn build_context_tool_group_render_surface(
             if command_group {
                 for line in &mut lines[member_start..] {
                     if let Some(prefix) = line.spans.first_mut() {
-                        prefix.style = prefix.style.fg(command_group_accent);
+                        prefix.style = prefix.style.fg(member_accent);
                     }
                 }
             }
@@ -1378,13 +1330,91 @@ fn build_context_tool_group_render_surface(
     }
 }
 
-const fn tool_rail_color(status: ToolCallDisplayStatus, theme: &Theme) -> Color {
+fn context_group_preview_index(tool_calls: &[&TranscriptToolCallSection]) -> usize {
+    for status in [
+        ToolCallPresentationStatus::Waiting,
+        ToolCallPresentationStatus::Running,
+        ToolCallPresentationStatus::Queued,
+    ] {
+        if let Some(index) = tool_calls
+            .iter()
+            .position(|tool_call| tool_call.header.presentation.status == status)
+        {
+            return index;
+        }
+    }
+    0
+}
+
+fn tool_group_rail_motion(tool_calls: &[&TranscriptToolCallSection]) -> Option<ToolRailMotion> {
+    if tool_calls
+        .iter()
+        .any(|tool_call| tool_call.rail_motion == ToolRailMotion::Waiting)
+    {
+        return Some(ToolRailMotion::Waiting);
+    }
+    if let Some(phase) = tool_calls
+        .iter()
+        .filter_map(|tool_call| match tool_call.rail_motion {
+            ToolRailMotion::Running { phase } => Some(phase),
+            ToolRailMotion::Waiting
+            | ToolRailMotion::Queued
+            | ToolRailMotion::FinishFlash { .. }
+            | ToolRailMotion::Settled => None,
+        })
+        .max()
+    {
+        return Some(ToolRailMotion::Running { phase });
+    }
+    if tool_calls
+        .iter()
+        .any(|tool_call| tool_call.rail_motion == ToolRailMotion::Queued)
+    {
+        return Some(ToolRailMotion::Queued);
+    }
+    tool_calls
+        .iter()
+        .filter_map(|tool_call| match tool_call.rail_motion {
+            ToolRailMotion::FinishFlash { remaining } => Some(remaining),
+            ToolRailMotion::Running { .. }
+            | ToolRailMotion::Waiting
+            | ToolRailMotion::Queued
+            | ToolRailMotion::Settled => None,
+        })
+        .max()
+        .map(|remaining| ToolRailMotion::FinishFlash { remaining })
+        .or_else(|| tool_calls.first().map(|_| ToolRailMotion::Settled))
+}
+
+fn dominant_tool_group_status(
+    tool_calls: &[&TranscriptToolCallSection],
+) -> ToolCallPresentationStatus {
+    for status in [
+        ToolCallPresentationStatus::Waiting,
+        ToolCallPresentationStatus::Running,
+        ToolCallPresentationStatus::Queued,
+        ToolCallPresentationStatus::Failed,
+        ToolCallPresentationStatus::Cancelled,
+        ToolCallPresentationStatus::Succeeded,
+    ] {
+        if tool_calls
+            .iter()
+            .any(|tool_call| tool_call.header.presentation.status == status)
+        {
+            return status;
+        }
+    }
+    ToolCallPresentationStatus::Succeeded
+}
+
+const fn tool_rail_color(status: ToolCallPresentationStatus, theme: &Theme) -> Color {
     match status {
-        ToolCallDisplayStatus::Running => theme.text.accent,
-        ToolCallDisplayStatus::Queued => theme.text.secondary,
-        ToolCallDisplayStatus::PendingPermission => theme.status.warning,
-        ToolCallDisplayStatus::Succeeded => theme.status.success,
-        ToolCallDisplayStatus::Failed => theme.status.error,
+        ToolCallPresentationStatus::Running => theme.text.accent,
+        ToolCallPresentationStatus::Queued => theme.text.secondary,
+        ToolCallPresentationStatus::Waiting => theme.status.warning,
+        ToolCallPresentationStatus::Succeeded => theme.status.success,
+        ToolCallPresentationStatus::Failed => theme.status.error,
+        ToolCallPresentationStatus::Cancelled => theme.status.disabled,
     }
 }
 
@@ -1544,8 +1574,8 @@ fn pending_permission_tool_waiting(turn: &TranscriptTurnSection) -> Option<Strin
             continue;
         }
         if !matches!(
-            tool.header.status,
-            crate::app::ToolCallDisplayStatus::PendingPermission
+            tool.header.presentation.status,
+            ToolCallPresentationStatus::Waiting
         ) {
             continue;
         }
@@ -1572,10 +1602,10 @@ fn waiting_on_answers_label(turn: &TranscriptTurnSection) -> Option<String> {
             continue;
         }
         if !matches!(
-            tool.header.status,
-            crate::app::ToolCallDisplayStatus::PendingPermission
-                | crate::app::ToolCallDisplayStatus::Queued
-                | crate::app::ToolCallDisplayStatus::Running
+            tool.header.presentation.status,
+            ToolCallPresentationStatus::Waiting
+                | ToolCallPresentationStatus::Queued
+                | ToolCallPresentationStatus::Running
         ) {
             continue;
         }
@@ -1594,10 +1624,10 @@ fn waiting_on_answers_label(turn: &TranscriptTurnSection) -> Option<String> {
     for tool in &turn.tool_calls {
         if !(is_question_tool_id(&tool.header.tool_id) || tool.header.title.starts_with("Ask "))
             || !matches!(
-                tool.header.status,
-                crate::app::ToolCallDisplayStatus::PendingPermission
-                    | crate::app::ToolCallDisplayStatus::Queued
-                    | crate::app::ToolCallDisplayStatus::Running
+                tool.header.presentation.status,
+                ToolCallPresentationStatus::Waiting
+                    | ToolCallPresentationStatus::Queued
+                    | ToolCallPresentationStatus::Running
             )
         {
             continue;
@@ -1694,7 +1724,9 @@ mod tests {
                 subtitle: None,
                 path_metadata: None,
                 icon: None,
-                status: ToolCallDisplayStatus::Succeeded,
+                presentation: crate::app::ToolCallPresentation::from_display_status(
+                    ToolCallDisplayStatus::Succeeded,
+                ),
                 visual_style: super::super::TranscriptToolCallVisualStyle::Block,
                 struck_out: false,
                 disclosure_state: None,
@@ -1767,6 +1799,7 @@ mod tests {
                 width,
                 theme.surface.shell,
                 |section| section.activity_first_seq,
+                |_index, _section| None,
                 |section, theme, width, surface| {
                     build_transcript_render_surfaces(section, theme, width, surface)
                 },
@@ -2065,6 +2098,100 @@ mod tests {
     }
 
     #[test]
+    fn command_group_failure_color_stays_on_the_failed_member() {
+        // Given: adjacent commands with one successful and one failed member.
+        let command = |id: &str, title: &str, status: ToolCallDisplayStatus| {
+            super::super::TranscriptToolCallSection {
+                tool_call_id: id.to_string(),
+                coalesced_tool_call_ids: vec![id.to_string()],
+                child_session_id: None,
+                hovered_target: None,
+                header: super::super::TranscriptToolCallHeader {
+                    tool_id: "shell.run".to_string(),
+                    title: title.to_string(),
+                    subtitle: None,
+                    path_metadata: None,
+                    icon: None,
+                    presentation: crate::app::ToolCallPresentation::from_display_status(status),
+                    visual_style: super::super::TranscriptToolCallVisualStyle::Block,
+                    struck_out: false,
+                    disclosure_state: None,
+                },
+                detail_blocks: Vec::new(),
+                details_collapsed_by_default: false,
+                details_preview_visible: false,
+                animation_phase: 0,
+                expanded: false,
+                rail_motion: super::super::ToolRailMotion::Settled,
+            }
+        };
+        let succeeded = command("command-ok", "echo ok", ToolCallDisplayStatus::Succeeded);
+        let failed = command("command-failed", "echo fail", ToolCallDisplayStatus::Failed);
+        let turn = super::super::TranscriptTurnSection {
+            activity_first_seq: 0,
+            request_id: "request-command-colors".to_string(),
+            user_message: None,
+            show_footer: false,
+            footer_timestamp: None,
+            animation_phase: 0,
+            reasoning_expanded: false,
+            header: super::super::TranscriptTurnHeader {
+                status: ActivityStatus::Done,
+                is_selected: false,
+                provider_request_open: false,
+                profile_label: "default".to_string(),
+                model_id: "model".to_string(),
+                duration_ms: None,
+                thinking_duration_ms: None,
+                responding_duration_ms: None,
+                total_tokens: None,
+                retry: None,
+                retry_elapsed_ms: None,
+            },
+            body_blocks: Vec::new(),
+            tool_calls: vec![succeeded.clone(), failed.clone()],
+            thinking: None,
+            error: None,
+            assistant_parts: vec![
+                super::super::TranscriptAssistantPart::ToolCall(Box::new(succeeded)),
+                super::super::TranscriptAssistantPart::ToolCall(Box::new(failed)),
+            ],
+        };
+
+        // When: the mixed-status group is rendered.
+        let theme = Theme::default();
+        let group = super::build_context_tool_group_render_surface(
+            &turn,
+            &[&turn.tool_calls[0], &turn.tool_calls[1]],
+            &theme,
+            120,
+            ratatui::style::Color::Reset,
+            false,
+            "",
+            ratatui::style::Color::Reset,
+            "",
+        );
+        let row_has_error_color = |needle: &str| {
+            let row = group.lines.iter().find(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<String>()
+                    .contains(needle)
+            });
+            assert!(row.is_some(), "missing {needle}: {:#?}", group.lines);
+            row.expect("command member row")
+                .spans
+                .iter()
+                .any(|span| span.style.fg == Some(theme.reference_terminal.error))
+        };
+
+        // Then: aggregate failure chrome does not recolor successful siblings.
+        assert!(!row_has_error_color("echo ok"));
+        assert!(row_has_error_color("echo fail"));
+    }
+
+    #[test]
     fn assistant_tool_surfaces_use_themed_base_surface() {
         fn tool_section(
             id: &str,
@@ -2082,7 +2209,9 @@ mod tests {
                     subtitle: None,
                     path_metadata: None,
                     icon: None,
-                    status: crate::app::ToolCallDisplayStatus::Succeeded,
+                    presentation: crate::app::ToolCallPresentation::from_display_status(
+                        crate::app::ToolCallDisplayStatus::Succeeded,
+                    ),
                     visual_style: super::super::TranscriptToolCallVisualStyle::Block,
                     struck_out: false,
                     disclosure_state: None,

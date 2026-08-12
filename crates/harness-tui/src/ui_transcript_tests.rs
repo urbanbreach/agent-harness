@@ -138,8 +138,8 @@ fn transcript_pending_permission_stays_after_last_activity() {
 }
 
 #[test]
-fn transcript_layout_cache_invalidates_when_animation_frame_changes() {
-    // Given: a streaming transcript whose render key includes animation phase.
+fn transcript_render_key_reuses_content_hash_across_animation_frames() {
+    // Given: a streaming transcript whose content is unchanged between animation frames.
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
         request_id: "request-streaming-cache".to_string(),
@@ -169,15 +169,18 @@ fn transcript_layout_cache_invalidates_when_animation_frame_changes() {
     }]);
     app.transcript_view.selected_activity_index = 0;
 
+    AppState::reset_transcript_render_key_metrics_for_test();
     let initial_key = app.transcript_render_cache_key();
+    assert_eq!(AppState::transcript_render_key_build_count_for_test(), 1);
 
     // When: the animation advances to a different visible frame.
     for _ in 0..4 {
         app.advance_transcript_animation_phase();
     }
 
-    // Then: the render cache key changes without pinning lifecycle prose.
-    assert_ne!(app.transcript_render_cache_key(), initial_key);
+    // Then: animation-only paint state does not re-hash the full transcript.
+    assert_eq!(app.transcript_render_cache_key(), initial_key);
+    assert_eq!(AppState::transcript_render_key_build_count_for_test(), 1);
 }
 
 #[test]
@@ -267,6 +270,85 @@ fn transcript_layout_cache_does_not_rebuild_on_animation_phase_change() {
         builds_after_animation, 1,
         "animation phase change must not rebuild the measure cache key"
     );
+}
+
+#[test]
+fn long_transcript_reuses_measured_sections_across_animation_frames() {
+    // Given: a long transcript with one visible running tool that requests animation frames.
+    let mut app = AppState::default();
+    app.activities = std::collections::VecDeque::from(
+        (0..500)
+            .map(|index| {
+                let mut entry = transcript_section_model_test_activity(
+                    &format!("request-animation-cache-{index}"),
+                    if index == 499 {
+                        ActivityStatus::Streaming
+                    } else {
+                        ActivityStatus::Done
+                    },
+                    &format!("assistant response {index}"),
+                );
+                if index == 499 {
+                    let mut tool =
+                        transcript_section_model_test_tool_call("tool-animation-cache", "bash");
+                    tool.status = ToolCallDisplayStatus::Running;
+                    entry.tool_calls.push(tool);
+                }
+                entry
+            })
+            .collect::<Vec<_>>(),
+    );
+    app.transcript_view.selected_activity_index = 499;
+    let theme = Theme::default();
+    reset_transcript_section_render_count_for_test();
+    let _ = build_transcript_lines_for_width(&app, &theme, 120);
+    let rendered_sections = transcript_section_render_count_for_test();
+
+    // When: only the animation clock advances and the transcript is rendered again.
+    app.advance_transcript_animation_phase();
+    let _ = build_transcript_lines_for_width(&app, &theme, 120);
+
+    // Then: historical and active sections both reuse their measured render surfaces.
+    assert_eq!(
+        transcript_section_render_count_for_test(),
+        rendered_sections
+    );
+}
+
+#[test]
+fn streaming_delta_reuses_unrelated_running_tool_section() {
+    // Given: an earlier turn has a running background tool while the latest turn streams.
+    let mut background = transcript_section_model_test_activity(
+        "request-background-tool",
+        ActivityStatus::Streaming,
+        "background task still running",
+    );
+    let mut tool = transcript_section_model_test_tool_call("tool-background", "fs.read");
+    tool.status = ToolCallDisplayStatus::Running;
+    background.tool_calls.push(tool);
+    let active = transcript_section_model_test_activity(
+        "request-active-stream",
+        ActivityStatus::Streaming,
+        "active response",
+    );
+    let mut app = AppState::default();
+    app.activities = std::collections::VecDeque::from(vec![background, active]);
+    app.transcript_view.selected_activity_index = 1;
+    let theme = Theme::default();
+    let _ = build_transcript_lines_for_width(&app, &theme, 120);
+    reset_transcript_section_render_count_for_test();
+
+    // When: the active response changes while the shared animation clock advances.
+    if let Some(active) = app.activities.back_mut() {
+        active.transcript_text.push_str(" grows");
+        active.revision = active.revision.wrapping_add(1);
+    }
+    app.mark_transcript_dirty_for_test();
+    app.advance_transcript_animation_phase();
+    let _ = build_transcript_lines_for_width(&app, &theme, 120);
+
+    // Then: only the changed active turn is remeasured.
+    assert_eq!(transcript_section_render_count_for_test(), 1);
 }
 
 #[test]
@@ -1524,6 +1606,49 @@ fn command_group_counts_all_members_and_discloses_output_only_when_expanded() {
 }
 
 #[test]
+fn command_group_stays_coalesced_while_latest_member_is_running() {
+    let mut activity = transcript_section_model_test_activity(
+        "request-command-group-running",
+        ActivityStatus::Streaming,
+        "",
+    );
+    activity.user_message = Some(UserMessageSubmittedEvent {
+        request_id: "request-command-group-running".into(),
+        text: "run grouped commands".to_string(),
+    });
+    for (tool_call_id, command, status) in [
+        (
+            "tc-command-finished",
+            "printf finished",
+            ToolCallDisplayStatus::Succeeded,
+        ),
+        (
+            "tc-command-running",
+            "printf running",
+            ToolCallDisplayStatus::Running,
+        ),
+    ] {
+        let mut tool_call = transcript_section_model_test_tool_call(tool_call_id, "bash");
+        tool_call.args_summary = format!(r#"{{"command":"{command}"}}"#);
+        tool_call.status = status;
+        activity.tool_calls.push(tool_call);
+    }
+    let mut app = AppState::default();
+    app.activities = std::collections::VecDeque::from(vec![activity]);
+    app.transcript_view.selected_activity_index = 0;
+
+    let lines = transcript_test_line_texts(build_transcript_lines_for_width(
+        &app,
+        &Theme::default(),
+        80,
+    ));
+
+    assert!(lines.iter().any(|line| line.contains("Ran 2 commands")));
+    assert!(lines.iter().any(|line| line.contains("printf finished")));
+    assert!(lines.iter().any(|line| line.contains("printf running")));
+}
+
+#[test]
 fn reasoning_to_answer_transition_uses_two_blank_rows() {
     // arrange
     // act
@@ -2322,7 +2447,7 @@ fn perf_500_event_streaming_transcript_cache_and_layout_budget() {
     const ACTIVITY_COUNT: usize = 500;
     const STREAMING_DELTA_COUNT: usize = 20;
     const CACHE_KEY_BUDGET: Duration = Duration::from_millis(15);
-    const LAYOUT_BUDGET: Duration = Duration::from_millis(500);
+    const LAYOUT_BUDGET: Duration = Duration::from_millis(75);
 
     let activities: Vec<ActivityEntry> = (0..ACTIVITY_COUNT)
         .map(|index| {
@@ -2344,12 +2469,10 @@ fn perf_500_event_streaming_transcript_cache_and_layout_budget() {
                 text: format!("User turn {index}: inspect the workspace."),
             });
             if index % 10 == 0 {
-                entry
-                    .tool_calls
-                    .push(transcript_section_model_test_tool_call(
-                        &format!("tc-{index:04}"),
-                        "fs.read",
-                    ));
+                let mut tool_call =
+                    transcript_section_model_test_tool_call(&format!("tc-{index:04}"), "fs.read");
+                tool_call.status = ToolCallDisplayStatus::Succeeded;
+                entry.tool_calls.push(tool_call);
             }
             entry
         })
@@ -2363,6 +2486,7 @@ fn perf_500_event_streaming_transcript_cache_and_layout_budget() {
     let width: u16 = 120;
     // act
     let _ = build_transcript_lines_for_width(&app, &theme, width);
+    reset_transcript_section_render_count_for_test();
 
     let mut max_cache_key = Duration::ZERO;
     let mut max_layout = Duration::ZERO;
@@ -2376,6 +2500,7 @@ fn perf_500_event_streaming_transcript_cache_and_layout_budget() {
             ));
             last.revision = last.revision.wrapping_add(1);
         }
+        app.mark_transcript_dirty_for_test();
 
         app.advance_transcript_animation_phase();
 
@@ -2415,6 +2540,11 @@ fn perf_500_event_streaming_transcript_cache_and_layout_budget() {
         max_layout < LAYOUT_BUDGET,
         "per-delta layout time {max_layout:?} exceeded budget {LAYOUT_BUDGET:?} \
          (avg delta {avg_delta:?}, {STREAMING_DELTA_COUNT} deltas, {ACTIVITY_COUNT} activities)"
+    );
+    assert_eq!(
+        transcript_section_render_count_for_test(),
+        STREAMING_DELTA_COUNT,
+        "each streaming delta should rebuild only the changed active section"
     );
 }
 

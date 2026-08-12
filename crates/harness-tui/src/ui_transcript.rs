@@ -1,7 +1,9 @@
 // allow: SIZE_OK — TUI transcript rendering (indivisible view model)
+use crate::app::{ToolCallPresentation, ToolCallPresentationStatus};
 use crate::UnwrapOrAbort;
 use std::cell::{Cell, RefCell};
 use std::path::Path;
+use std::rc::Rc;
 
 use super::*;
 
@@ -142,7 +144,6 @@ pub(super) use ui_transcript_types::{
 #[cfg(test)]
 use super::ui_transcript_surface::{render_transcript_surface_lines, visible_surface_lines};
 
-#[cfg(test)]
 use super::ui_transcript_layout::MeasuredTranscriptSection;
 
 #[cfg(test)]
@@ -183,47 +184,21 @@ fn record_transcript_section_render_for_test() {
     TRANSCRIPT_SECTION_RENDER_COUNT.with(|count| count.set(count.get().saturating_add(1)));
 }
 
-fn cached_render_surfaces(
+fn cached_measured_section(
+    index: usize,
     section: &TranscriptTurnSection,
     previous: Option<&TranscriptLayoutCacheEntry>,
-) -> Option<Vec<TranscriptRenderSurface>> {
+) -> Option<Rc<MeasuredTranscriptSection>> {
     let previous = previous?;
-    let index = previous
-        .sections
-        .iter()
-        .position(|candidate| transcript_section_cache_matches(candidate, section))?;
-    previous.layout.sections.get(index).map(|measured| {
-        measured
-            .surfaces
-            .iter()
-            .map(|surface| TranscriptRenderSurface {
-                kind: surface.kind,
-                show_outer_rail: surface.show_outer_rail,
-                rail_glyph: surface.rail_glyph,
-                rail_color: surface.rail_color,
-                surface: surface.surface,
-                lines: surface.lines.clone(),
-                interaction_rows: surface.interaction_rows.clone(),
-                selection_rows: surface.selection_rows.clone(),
-                diff_hunk_offsets: surface.diff_hunk_offsets.clone(),
-                selected_rail: surface.selected_rail,
-                tool_rail_motion: surface.tool_rail_motion,
-            })
-            .collect()
-    })
+    transcript_section_cache_matches(previous.sections.get(index)?, section)
+        .then(|| previous.layout.sections.get(index).cloned())
+        .flatten()
 }
 
 fn transcript_section_cache_matches(
     candidate: &TranscriptTurnSection,
     section: &TranscriptTurnSection,
 ) -> bool {
-    if matches!(
-        section.header.status,
-        ActivityStatus::Streaming | ActivityStatus::Queued
-    ) {
-        return candidate == section;
-    }
-
     candidate.activity_first_seq == section.activity_first_seq
         && candidate.request_id == section.request_id
         && candidate.user_message == section.user_message
@@ -232,10 +207,85 @@ fn transcript_section_cache_matches(
         && candidate.reasoning_expanded == section.reasoning_expanded
         && candidate.header == section.header
         && candidate.body_blocks == section.body_blocks
-        && candidate.tool_calls == section.tool_calls
+        && transcript_tool_calls_cache_match(&candidate.tool_calls, &section.tool_calls)
         && candidate.thinking == section.thinking
         && candidate.error == section.error
-        && candidate.assistant_parts == section.assistant_parts
+        && transcript_assistant_parts_cache_match(
+            &candidate.assistant_parts,
+            &section.assistant_parts,
+        )
+}
+
+fn transcript_tool_calls_cache_match(
+    candidate: &[TranscriptToolCallSection],
+    section: &[TranscriptToolCallSection],
+) -> bool {
+    candidate.len() == section.len()
+        && candidate
+            .iter()
+            .zip(section)
+            .all(|(candidate, section)| transcript_tool_call_cache_matches(candidate, section))
+}
+
+fn transcript_tool_call_cache_matches(
+    candidate: &TranscriptToolCallSection,
+    section: &TranscriptToolCallSection,
+) -> bool {
+    candidate.tool_call_id == section.tool_call_id
+        && candidate.coalesced_tool_call_ids == section.coalesced_tool_call_ids
+        && candidate.child_session_id == section.child_session_id
+        && candidate.hovered_target == section.hovered_target
+        && transcript_tool_header_cache_matches(&candidate.header, &section.header)
+        && candidate.detail_blocks == section.detail_blocks
+        && candidate.details_collapsed_by_default == section.details_collapsed_by_default
+        && candidate.details_preview_visible == section.details_preview_visible
+        && candidate.expanded == section.expanded
+        && transcript_tool_rail_motion_cache_matches(candidate.rail_motion, section.rail_motion)
+}
+
+fn transcript_tool_header_cache_matches(
+    candidate: &TranscriptToolCallHeader,
+    section: &TranscriptToolCallHeader,
+) -> bool {
+    candidate.tool_id == section.tool_id
+        && candidate.title == section.title
+        && candidate.subtitle == section.subtitle
+        && candidate.path_metadata == section.path_metadata
+        && (candidate.icon == section.icon
+            || (candidate.presentation.status == ToolCallPresentationStatus::Running
+                && section.presentation.status == ToolCallPresentationStatus::Running))
+        && candidate.presentation == section.presentation
+        && candidate.visual_style == section.visual_style
+        && candidate.struck_out == section.struck_out
+        && candidate.disclosure_state == section.disclosure_state
+}
+
+fn transcript_tool_rail_motion_cache_matches(
+    candidate: ToolRailMotion,
+    section: ToolRailMotion,
+) -> bool {
+    match (candidate, section) {
+        (ToolRailMotion::Running { .. }, ToolRailMotion::Running { .. })
+        | (ToolRailMotion::FinishFlash { .. }, ToolRailMotion::FinishFlash { .. }) => true,
+        _ => candidate == section,
+    }
+}
+
+fn transcript_assistant_parts_cache_match(
+    candidate: &[TranscriptAssistantPart],
+    section: &[TranscriptAssistantPart],
+) -> bool {
+    candidate.len() == section.len()
+        && candidate
+            .iter()
+            .zip(section)
+            .all(|(candidate, section)| match (candidate, section) {
+                (
+                    TranscriptAssistantPart::ToolCall(candidate),
+                    TranscriptAssistantPart::ToolCall(section),
+                ) => transcript_tool_call_cache_matches(candidate, section),
+                _ => candidate == section,
+            })
 }
 
 pub(super) fn render_transcript_pane(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
@@ -491,6 +541,7 @@ fn render_measured_transcript_pane(
                 layout,
                 surface_area,
                 transcript_scroll,
+                app.transcript_animation_phase(),
                 theme,
             );
             render_transcript_selection(
@@ -865,7 +916,7 @@ pub(crate) fn build_transcript_lines_for_width(
         theme,
         width,
         theme.surface.shell,
-        |layout| transcript_layout_lines(layout, theme),
+        |layout| transcript_layout_lines(layout, app.transcript_animation_phase(), theme),
     )
 }
 
@@ -917,30 +968,26 @@ fn with_measured_transcript_layout_for_width_on_surface<R>(
         }
 
         let sections = build_transcript_sections(app);
-        let previous = cache
-            .borrow()
-            .iter()
-            .rev()
-            .find(|entry| {
-                entry.app_instance_id == app_instance_id
-                    && entry.theme == *theme
-                    && entry.width == width
-                    && entry.base_surface == base_surface
-            })
-            .cloned();
+        let previous_cache = cache.borrow();
+        let previous = previous_cache.iter().rev().find(|entry| {
+            entry.app_instance_id == app_instance_id
+                && entry.theme == *theme
+                && entry.width == width
+                && entry.base_surface == base_surface
+        });
         let layout = measure_transcript_layout(
             &sections,
             theme,
             width,
             base_surface,
             |section| section.activity_first_seq,
+            |index, section| cached_measured_section(index, section, previous),
             |section, theme, width, base_surface| {
-                cached_render_surfaces(section, previous.as_ref()).unwrap_or_else(|| {
-                    record_transcript_section_render_for_test();
-                    build_transcript_render_surfaces(section, theme, width, base_surface)
-                })
+                record_transcript_section_render_for_test();
+                build_transcript_render_surfaces(section, theme, width, base_surface)
             },
         );
+        drop(previous_cache);
 
         {
             let mut cache = cache.borrow_mut();

@@ -54,15 +54,18 @@ impl ToolMotionTracker {
         }
     }
 
-    pub(crate) fn advance(&mut self, motion_enabled: bool) {
+    pub(crate) fn advance(&mut self, motion_enabled: bool) -> bool {
         if !motion_enabled {
+            let changed = !self.finish_flashes.is_empty();
             self.finish_flashes.clear();
-            return;
+            return changed;
         }
+        let previous_len = self.finish_flashes.len();
         self.finish_flashes.retain(|_, remaining| {
             *remaining = remaining.saturating_sub(1);
             *remaining > 0
         });
+        self.finish_flashes.len() != previous_len
     }
 
     pub(crate) fn finish_flash_remaining(&self, tool_call_id: &str) -> Option<u8> {

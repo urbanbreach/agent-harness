@@ -165,7 +165,7 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_reference_timestamps_a
         .unwrap_or_abort()
         .hit_start;
     let task_hit_layout = MeasuredTranscriptLayout {
-        sections: vec![MeasuredTranscriptSection {
+        sections: vec![std::rc::Rc::new(MeasuredTranscriptSection {
             activity_first_seq: 0,
             top_row: 0,
             leading_gap_height: 0,
@@ -187,7 +187,7 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_reference_timestamps_a
                 tool_rail_motion: None,
             }],
             lines: task_render.lines.clone(),
-        }],
+        })],
         total_height: task_render.lines.len(),
     };
     assert!(matches!(

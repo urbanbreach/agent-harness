@@ -1,7 +1,7 @@
 # Harness TUI Design Contract (Reference-Measured)
 
-> **Status:** Binding presentation contract for reference-parity work (Wave T03).  
-> **Source of truth:** Frozen black-box Grok Build captures — **not** current Harness chrome, theme tokens, or implementer preference.  
+> **Status:** Binding presentation contract for reference-parity work.
+> **Source of truth:** Frozen Grok Build captures plus clean-room behavioral audits of the pinned local source — **not** current Harness chrome, theme tokens, or implementer preference.
 > **Identity rule:** Harness branding may substitute logo glyphs and product text only. Geometry, rhythm, borders, focus, and choreography stay reference-shaped.
 
 ## 0. Evidence bases
@@ -14,6 +14,7 @@
 | Diagnostic draft | `/tmp/opencode/artifacts/harness-xterm-qa/evidence/grok-draft/` | 120×32 | Same draft transition; breadcrumb may show token usage |
 | Freeze receipt | `artifacts/qa-evidence/20260717-tui-reference-parity/receipts/reference-freeze.receipt.json` | — | Binary SHA-256, font stack, Chromium/xterm versions |
 | Complete chat-shell parity corpus | `artifacts/qa-evidence/20260801-grok-chat-shell-parity-final/` | 60×20 through 140×40 | Lifecycle, tools/diffs, overlays, questions, CJK, responsive, and synchronized motion evidence |
+| Pinned reference source | `inspirations/grok-build/crates/codegen/xai-grok-pager*` and `xai-ratatui-inline` | — | Observable state, hit-testing, grouping, diff, terminal-output, and pacing rules extracted without transplanting implementation |
 
 **Measured files per freeze run:** `terminal.txt`, `terminal-ansi.txt`, `terminal.png`, `metadata.json`.
 
@@ -463,6 +464,45 @@ Reference capture names: `run4-shell-idle-pinned-v1`,
 `run1-palette-pinned-v1`, `run1-ovl-help-pinned-v1`, and
 `run1-ovl-session-pinned-v1`.
 
+### Dynamic projection and frame contract
+
+Moving-state parity is governed by the live reference scrollback behavior, not
+by isolated settled screenshots. Harness keeps its event-sourced projection and
+product identity, but the visible transition semantics are binding:
+
+- **Stable entry identity.** A tool call owns one row identity from queued or
+  running through terminal completion. Refining metadata, appending output,
+  changing tense, or entering the finish flash updates that entry in place; it
+  must not replace an inline row with a differently shaped block. Command rows
+  are born as `Run <command>` and retain that header while output and disclosure
+  rows appear below it.
+- **Incremental dirty layout.** A live delta invalidates the changed entry and
+  dependent cumulative heights only. Width changes may remeasure visible
+  content, but restore a logical-line anchor rather than a wrapped display row.
+  Structural insertion or removal uses a one-shot stable-entry anchor.
+- **Follow is reading intent.** Tail growth follows only while follow mode is
+  armed. Manual scroll, selection, expansion, or fold growth that would move
+  the reader's content disarms follow until the explicit return-to-live action.
+- **Prompt transactions.** Permission and question surfaces stash the composer
+  draft and prior pane focus once, keep transcript geometry stable while open,
+  and restore both on resolve or dismiss. Unfocused prompts dim; focused prompts
+  do not animate their bounds.
+- **Shared live motion.** Active tool and thinking rails use one lifecycle:
+  queued or waiting static state, running pulse, frozen static frame when user
+  input requires attention or motion is reduced, bounded terminal finish flash,
+  then settled semantic color. Motion never changes row count or wrapping.
+
+Frame timing uses the measured reference cadences: active animation at `33 ms`,
+write coalescing at `16 ms`, slow/background chrome at `83 ms`, scroll sampling
+at `16 ms`, an `80 ms` stream-gap finalizer, and a `400 ms` terminal finish
+flash. Harness may batch more aggressively internally, but it may not emit more
+than one unacknowledged terminal frame, skip the final stream frame, or write
+bytes after the UI is settled. Reduced motion performs one deterministic state
+transition and parks continuous timers.
+
+Acceptance requires ordered before/mid/after PTY frame traces. A settled capture
+alone cannot prove this contract.
+
 ---
 
 ## 15. Module disposition
@@ -503,7 +543,7 @@ multiline composer growth, and scroll/follow each require both the before and
 after frame plus a state-transition assertion.
 
 Tool motion uses the design-contract `ToolPulse` token for active running rails
-and `ToolFinishFlash` (33 ms × 6 frames) for the bounded terminal transition.
+and `ToolFinishFlash` (33 ms × 12 frames, approximately 400 ms) for the bounded terminal transition.
 Queued, waiting, replayed, off-screen, and settled tool rows remain static.
 
 If a state cannot be produced against both exact binaries, its row remains

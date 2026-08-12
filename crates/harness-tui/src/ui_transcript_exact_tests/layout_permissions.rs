@@ -35,7 +35,7 @@ pub(crate) fn exact_test_transcript_follow_mode_uses_measured_surface_heights() 
     let measured_total_height = layout
         .sections
         .iter()
-        .map(MeasuredTranscriptSection::total_height)
+        .map(|section| section.total_height())
         .sum::<usize>();
     assert_eq!(layout.total_height, measured_total_height);
 

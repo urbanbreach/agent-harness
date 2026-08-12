@@ -13,7 +13,10 @@ use crate::theme::Theme;
 use super::ui_chrome::{display_width, panel_style, take_width_prefix};
 use super::ui_transcript::{ToolRailMotion, TranscriptRenderSurface, TranscriptRenderSurfaceKind};
 use super::ui_transcript_layout::MeasuredTranscriptSurface;
-use super::ui_transcript_style::blend_color;
+use super::ui_transcript_style::{
+    blend_color, pending_diamond_color, transcript_running_tool_marker_color,
+    transcript_streaming_spinner_frame,
+};
 
 const TRANSCRIPT_SURFACE_RAIL_WIDTH: u16 = 1;
 pub(super) const TRANSCRIPT_SURFACE_TRAILING_GAP_WIDTH: u16 = 2;
@@ -74,6 +77,7 @@ pub(super) fn render_transcript_surface(
     surface: &MeasuredTranscriptSurface,
     area: Rect,
     local_scroll: usize,
+    animation_phase: usize,
     theme: &Theme,
 ) {
     if area.width == 0 || area.height == 0 {
@@ -104,6 +108,7 @@ pub(super) fn render_transcript_surface(
                 surface,
                 local_scroll,
                 usize::from(area.height),
+                animation_phase,
             ))
             .style(Style::default().bg(surface.surface)),
             rail_rect,
@@ -120,8 +125,17 @@ pub(super) fn render_transcript_surface(
         area.width.saturating_sub(rail_width),
         area.height,
     );
-    let visible_lines =
+    let mut visible_lines =
         visible_surface_lines(surface, local_scroll, usize::from(content_rect.height));
+    apply_surface_animation_phase(&mut visible_lines, surface, animation_phase, theme);
+    if surface.kind == TranscriptRenderSurfaceKind::AssistantReasoning
+        && surface.show_outer_rail
+        && local_scroll == 0
+    {
+        if let Some(line) = visible_lines.first_mut() {
+            apply_reasoning_spinner_phase(line, animation_phase);
+        }
+    }
     let paragraph = Paragraph::new(Text::from(visible_lines))
         .style(panel_style(surface.surface, theme.text.primary));
     frame.render_widget(paragraph, content_rect);
@@ -137,6 +151,7 @@ pub(super) fn render_transcript_surface(
                 surface,
                 local_scroll,
                 usize::from(area.height),
+                animation_phase,
             ))
             .style(Style::default().bg(surface.surface)),
             rail_rect,
@@ -144,28 +159,91 @@ pub(super) fn render_transcript_surface(
     }
 }
 
+fn apply_surface_animation_phase(
+    lines: &mut [Line<'static>],
+    surface: &MeasuredTranscriptSurface,
+    animation_phase: usize,
+    theme: &Theme,
+) {
+    for line in lines {
+        apply_reasoning_spinner_phase(line, animation_phase);
+        for span in &mut line.spans {
+            if matches!(
+                span.content.as_ref(),
+                "⠋" | "⠙" | "⠹" | "⠸" | "⠼" | "⠴" | "⠦" | "⠧"
+            ) {
+                span.content = transcript_streaming_spinner_frame(animation_phase).into();
+            }
+            if matches!(
+                surface.tool_rail_motion,
+                Some(ToolRailMotion::Running { .. })
+            ) && span.content.as_ref() == surface.rail_glyph
+            {
+                span.style = span
+                    .style
+                    .fg(transcript_running_tool_marker_color(theme, animation_phase));
+            }
+        }
+        if surface.kind == TranscriptRenderSurfaceKind::User {
+            if let Some(marker) = line
+                .spans
+                .iter_mut()
+                .find(|span| span.content.as_ref() == "◆")
+            {
+                marker.style = marker
+                    .style
+                    .fg(pending_diamond_color(theme, animation_phase));
+            }
+        }
+    }
+}
+
+pub(super) fn apply_reasoning_spinner_phase(line: &mut Line<'static>, animation_phase: usize) {
+    let Some(marker_index) = line
+        .spans
+        .iter()
+        .position(|span| span.content.as_ref() == "⠋")
+    else {
+        return;
+    };
+    let Some(marker) = line.spans.get_mut(marker_index) else {
+        return;
+    };
+    let content = marker.content.to_mut();
+    let prefix_len = content.len().saturating_sub(content.trim_start().len());
+    let Some(first) = content[prefix_len..].chars().next() else {
+        return;
+    };
+    let end = prefix_len.saturating_add(first.len_utf8());
+    content.replace_range(
+        prefix_len..end,
+        transcript_streaming_spinner_frame(animation_phase),
+    );
+}
+
 fn transcript_surface_rail_lines_for_motion(
     surface: &MeasuredTranscriptSurface,
     local_scroll: usize,
     visible_height: usize,
+    animation_phase: usize,
 ) -> Vec<Line<'static>> {
     let dim = blend_color(Color::Rgb(0, 0, 0), surface.rail_color, 0.35);
     (0..visible_height)
         .map(|local_row| {
             let absolute_row = local_scroll.saturating_add(local_row);
             let color = match surface.tool_rail_motion {
-                Some(ToolRailMotion::Running { phase }) => {
+                Some(ToolRailMotion::Running { .. }) => {
                     let pulse_phase = DESIGN_TOKENS
                         .motion_tokens
                         .all
                         .iter()
                         .find(|token| token.kind == MotionKind::ToolPulse)
-                        .map_or(phase, |token| {
+                        .map_or(animation_phase, |token| {
                             let frames = usize::from(token.frames);
                             if frames == 0 {
-                                phase
+                                animation_phase
                             } else {
-                                phase % frames
+                                animation_phase % frames
                             }
                         });
                     if surface.height <= 1 {
@@ -180,8 +258,8 @@ fn transcript_surface_rail_lines_for_motion(
                         dim
                     }
                 }
-                Some(ToolRailMotion::FinishFlash { remaining }) => {
-                    let alpha = if remaining.is_multiple_of(2) {
+                Some(ToolRailMotion::FinishFlash { .. }) => {
+                    let alpha = if animation_phase.is_multiple_of(2) {
                         0.8
                     } else {
                         0.55
@@ -400,7 +478,7 @@ pub(super) fn append_user_surface_text_block_with_first_line_reserve(
     }
 }
 
-fn append_user_surface_wrapped_line(
+pub(super) fn append_user_surface_wrapped_line(
     lines: &mut Vec<Line<'static>>,
     content_spans: Vec<Span<'static>>,
     prefix: &str,
@@ -424,16 +502,50 @@ fn append_user_surface_wrapped_line(
         return;
     }
 
-    let mut narrow_rows = wrap_surface_spans(content_spans, first_content_width);
+    let mut trimming_leading_whitespace = true;
+    let content_spans = content_spans
+        .into_iter()
+        .filter_map(|mut span| {
+            if !trimming_leading_whitespace {
+                return Some(span);
+            }
+            let start = span
+                .content
+                .find(|character: char| !character.is_whitespace())?;
+            trimming_leading_whitespace = false;
+            if start > 0 {
+                span.content = span.content[start..].to_string().into();
+            }
+            Some(span)
+        })
+        .collect::<Vec<_>>();
+    let narrow_rows = wrap_surface_spans(content_spans.clone(), first_content_width);
     let Some(first) = narrow_rows.first().cloned() else {
         return;
     };
+    let consumed_characters = first
+        .iter()
+        .map(|span| span.content.chars().count())
+        .sum::<usize>();
     lines.push(user_surface_line(prefix, first, prefix_style, surface));
     if narrow_rows.len() <= 1 {
         return;
     }
-    narrow_rows.remove(0);
-    let remainder_spans: Vec<Span<'static>> = narrow_rows.into_iter().flatten().collect();
+    let mut characters_to_skip = consumed_characters;
+    let remainder_spans = content_spans
+        .into_iter()
+        .filter_map(|span| {
+            let content = span.content.into_owned();
+            let character_count = content.chars().count();
+            if characters_to_skip >= character_count {
+                characters_to_skip = characters_to_skip.saturating_sub(character_count);
+                return None;
+            }
+            let remainder = content.chars().skip(characters_to_skip).collect::<String>();
+            characters_to_skip = 0;
+            Some(Span::styled(remainder, span.style))
+        })
+        .collect::<Vec<_>>();
     if remainder_spans.is_empty() {
         return;
     }

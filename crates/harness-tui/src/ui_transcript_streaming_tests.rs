@@ -228,7 +228,7 @@ fn trailing_append_rerenders_only_the_active_turn_section() {
 }
 
 #[test]
-fn animation_tick_rerenders_only_the_active_turn_section() {
+fn animation_tick_reuses_all_measured_turn_sections() {
     // Given: one settled turn and one active streaming turn in the transcript cache.
     let mut app = AppState::new_live(None, false, None);
     start_turn(&mut app, 1, "req_done_tick", "first turn");
@@ -244,8 +244,8 @@ fn animation_tick_rerenders_only_the_active_turn_section() {
     app.advance_animation_tick_for_evidence();
     let _ = build_measured_transcript_layout_for_width(&app, &theme, 100);
 
-    // Then: settled transcript sections stay cached.
-    assert_eq!(transcript_section_render_count_for_test(), 1);
+    // Then: animation paint state reuses both settled and active measured sections.
+    assert_eq!(transcript_section_render_count_for_test(), 0);
 }
 
 #[test]

@@ -960,7 +960,7 @@ fn tx_diff_inline_is_rail_free_without_message_card() {
             metadata: None,
         }),
     ));
-    for _ in 0..6 {
+    for _ in 0..12 {
         app.advance_animation_tick_for_evidence();
     }
 

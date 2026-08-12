@@ -308,7 +308,7 @@ fn tx_diff_tool_details_project_removed_and_added_versions() {
             metadata: None,
         }),
     ));
-    for _ in 0..6 {
+    for _ in 0..12 {
         app.advance_animation_tick_for_evidence();
     }
     app.focus = Focus::Details;

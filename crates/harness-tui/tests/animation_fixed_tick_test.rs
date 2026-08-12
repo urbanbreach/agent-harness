@@ -285,6 +285,15 @@ fn rail_colors(buffer: &Buffer) -> Vec<Color> {
         .collect()
 }
 
+fn finish_flash_frames() -> u8 {
+    DESIGN_TOKENS
+        .motion_tokens
+        .all
+        .iter()
+        .find(|token| token.kind == MotionKind::ToolFinishFlash)
+        .map_or(0, |token| token.frames)
+}
+
 fn permission_wait_app() -> AppState {
     let mut app = AppState::new_live(Some(PathBuf::from("/tmp/run_anim_perm")), false, None);
     let request_id = "req-anim-perm";
@@ -351,10 +360,24 @@ fn startup_idle_app() -> AppState {
         "startup idle fixture must paint the startup shell"
     );
     assert!(
-        app.has_active_animations_for_evidence(),
-        "startup idle must request animation ticks for the welcome shimmer"
+        !app.has_active_animations_for_evidence(),
+        "settled startup must not request animation ticks"
     );
     app
+}
+
+#[test]
+fn static_startup_does_not_request_runtime_animation_ticks() {
+    // Given: the fully settled startup shell.
+    let app = AppState::new_startup(Vec::new(), None);
+
+    // When: the two runtime animation authorities inspect the same state.
+    let interval = app.animation_tick_interval_with_motion_for_evidence(true);
+    let animation_active = app.has_active_animations_with_motion_for_evidence(true);
+
+    // Then: neither authority arms a periodic redraw.
+    assert_eq!(interval, None);
+    assert!(!animation_active);
 }
 
 fn capture_pair(
@@ -708,7 +731,7 @@ fn finished_tool_flashes_once_then_settles_without_idle_redraws() {
         app.has_active_animations_for_evidence(),
         "finish flash must request ticks"
     );
-    for _ in 0..8 {
+    for _ in 0..finish_flash_frames().saturating_add(2) {
         app.advance_animation_tick_for_evidence();
     }
     let settled = rail_colors(&render_buffer(&app, 100, 24));
@@ -729,14 +752,14 @@ fn finished_tool_flashes_once_then_settles_without_idle_redraws() {
 fn every_finish_flash_frame_is_visually_distinct_from_the_settled_rail() {
     // Given: the static success rail after the bounded finish transition.
     let mut settled_app = tool_finished_app();
-    for _ in 0..8 {
+    for _ in 0..finish_flash_frames().saturating_add(2) {
         settled_app.advance_animation_tick_for_evidence();
     }
     let settled = rail_colors(&render_buffer(&settled_app, 100, 24));
     let mut flashing_app = tool_finished_app();
 
     // When: every token-owned finish frame is rendered.
-    let flash_frames = (0..6)
+    let flash_frames = (0..finish_flash_frames())
         .map(|_| {
             let colors = rail_colors(&render_buffer(&flashing_app, 100, 24));
             flashing_app.advance_animation_tick_for_evidence();
@@ -755,7 +778,7 @@ fn grouped_last_finisher_flashes_then_settles_to_failure_semantics() {
     let flash = rail_colors(&render_buffer(&grouped, 120, 40));
 
     // When: the newest member's bounded finish transition expires.
-    for _ in 0..8 {
+    for _ in 0..finish_flash_frames().saturating_add(2) {
         grouped.advance_animation_tick_for_evidence();
     }
     let settled = rail_colors(&render_buffer(&grouped, 120, 40));
