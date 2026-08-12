@@ -1,10 +1,9 @@
 // allow: SIZE_OK — CLI TUI workflow (launch + lineage + auth)
-use std::sync::mpsc as std_mpsc;
 use std::sync::{Arc, Mutex};
 
 use harness_core::coord::{CoordinatorError, CoordinatorHandle, ManualCompactionOutcome};
 use harness_core::event::{EventActor, EventEnvelopeV1, EventV1};
-use harness_tui::{LiveUpdate, OperatorNoticeLevel, UiIntent};
+use harness_tui::{LiveUpdate, LiveUpdateSender, OperatorNoticeLevel, UiIntent};
 use tokio::sync::mpsc;
 
 use super::auth_backend::{spawn_tui_auth_backend_task, TuiAuthBackendContext};
@@ -27,7 +26,7 @@ pub(super) async fn handle_ui_intents(
     mut intent_rx: mpsc::UnboundedReceiver<UiIntent>,
     user_actor: EventActor,
     live_agent_target: Option<LiveAgentTargetState>,
-    live_update_tx: std_mpsc::Sender<LiveUpdate>,
+    live_update_tx: LiveUpdateSender,
     auth_backend: TuiAuthBackendContext,
 ) -> Result<(), String> {
     while let Some(intent) = intent_rx.recv().await {

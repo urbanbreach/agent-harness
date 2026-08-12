@@ -31,7 +31,7 @@ async fn compact_intent_reports_noop_status_for_idle_live_agent() {
         last_request_id: None,
     }));
     let (intent_tx, intent_rx) = mpsc::unbounded_channel();
-    let (status_tx, status_rx) = std_mpsc::channel();
+    let (status_tx, status_rx) = live_update_channel();
 
     let handle = tokio::spawn(handle_ui_intents(
         coordinator.clone(),
@@ -116,7 +116,7 @@ async fn event_forwarder_stops_after_terminal_event_when_requested() {
             }),
         ))
         .unwrap_or_abort();
-    let (tx, rx) = std_mpsc::channel();
+    let (tx, rx) = live_update_channel();
 
     // act
     tokio::time::timeout(
@@ -157,7 +157,7 @@ async fn compact_intent_reports_unavailable_when_no_live_agent_target_exists() {
         .unwrap_or_abort();
 
     let (intent_tx, intent_rx) = mpsc::unbounded_channel();
-    let (status_tx, status_rx) = std_mpsc::channel();
+    let (status_tx, status_rx) = live_update_channel();
 
     let handle = tokio::spawn(handle_ui_intents(
         coordinator.clone(),

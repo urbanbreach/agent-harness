@@ -40,14 +40,10 @@ pub fn metrics(
     capture: &DualRuntimeReceipt,
 ) -> Result<PresentationComparisonMetrics, ComparatorError> {
     let (reference, candidate) = runtime_pair(capture)?;
-    Ok(PresentationComparisonMetrics {
-        reference: super::super::presentation_timing::derive_presentation_timing(
-            &reference.presentation,
-        )?,
-        candidate: super::super::presentation_timing::derive_presentation_timing(
-            &candidate.presentation,
-        )?,
-    })
+    super::super::presentation_timing::derive_comparison_presentation_timing(
+        &reference.presentation,
+        &candidate.presentation,
+    )
 }
 
 pub fn timing(capture: &DualRuntimeReceipt) -> Result<(), ComparatorError> {

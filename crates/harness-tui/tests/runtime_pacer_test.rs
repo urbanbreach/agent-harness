@@ -28,6 +28,23 @@ fn changed_work_is_coalesced_until_the_sixteen_millisecond_flush_deadline() {
 }
 
 #[test]
+fn arbiter_readiness_arms_then_waits_for_the_flush_deadline() {
+    let clock = DualClock::new();
+    let mut pacer = RuntimePacer::new();
+    pacer.request_flush();
+
+    assert!(pacer.needs_poll(clock.snapshot(), false));
+    let armed = pacer.poll(clock.snapshot(), false);
+    assert!(!armed.paint);
+    assert!(!pacer.needs_poll(clock.snapshot(), false));
+
+    clock.advance_flush(FLUSH_DEADLINE_MS);
+    assert!(pacer.needs_poll(clock.snapshot(), false));
+    assert!(pacer.poll(clock.snapshot(), false).paint);
+    assert!(!pacer.needs_poll(clock.snapshot(), false));
+}
+
+#[test]
 fn animation_ticks_remain_independent_from_the_flush_clock() {
     // Given: an active animation with no pending flush work.
     let clock = DualClock::new();

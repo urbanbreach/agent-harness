@@ -101,6 +101,12 @@ pub enum RunnerError {
     Comparison {
         detail: String,
     },
+    SemanticTargetMissing {
+        text: String,
+    },
+    DisclosureTransitionMissing {
+        transition: &'static str,
+    },
 }
 
 impl fmt::Display for RunnerError {
@@ -233,6 +239,12 @@ impl fmt::Display for RunnerError {
                 }
             }
             Self::Comparison { detail } => write!(formatter, "comparison: {detail}"),
+            Self::SemanticTargetMissing { text } => {
+                write!(formatter, "semantic target missing: {text}")
+            }
+            Self::DisclosureTransitionMissing { transition } => {
+                write!(formatter, "disclosure transition missing: {transition}")
+            }
         }
     }
 }

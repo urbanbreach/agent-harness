@@ -755,3 +755,28 @@ Retired harness-testkit T5 scenario owners:
 
 The acceptance owner map above is the source of truth for the test-suite overhaul. Concrete lane
 artifacts land under `target/test-suite-overhaul/` when those stages run.
+
+## Packet 2 scheduling signoff
+
+`scripts/test-lanes.sh signoff-packet2` is the real dual-runtime owner for
+`packet2-sustained-stream`. It requires absolute `--reference-bin`,
+`--reference-receipt`, and `--reference-root` inputs pinned to
+`be713136d2a69080743a3f6b3c72077057e5948f`. The lane builds a clean-worktree candidate, then runs
+exactly five comparisons sequentially and aggregates them with `--profile packet2-scheduling`.
+Each adapter gets an isolated loopback SSE server and workspace; every cleanup receipt must report
+zero survivors.
+
+The runtime contract is a bounded 128-event terminal ingress queue, a maximum 16 terminal events or
+2 ms per input quantum, and one fairness yield before input resumes. Live work is limited to one
+application per arbitration decision and retains the 16 live / 8 ms budget contract. The deadline
+clocks remain independent: 16 ms for flush and wheel work, an 80 ms lazy scroll-stream boundary,
+and 33 ms for semantic animation. Cancellation is classified from the decoded terminal event, not
+from a sent byte, and one frame may be in flight until its sink-flush acknowledgement.
+
+The comparison truthfully distinguishes `external_pty_observed` for both adapters from Harness-only
+`native_completed_write`. Packet 2 permits cells/pixels/motion to remain diagnostic, but requires
+presentation, timing, provenance, checkpoint, exit, and cleanup gates. Candidate external p95 must
+be at most 110% of reference, every interval gap at most twice cadence, input order exact, every
+scheduled interaction backed by positive live-ready depth, and idle redraws zero. Evidence is laid
+out as `signoff-packet2/run-{1,2,3,4,5}/{receipt,comparison,cleanup}.json`, followed by the aggregate
+and lane verdict.

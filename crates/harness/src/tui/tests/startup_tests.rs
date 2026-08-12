@@ -22,7 +22,7 @@ fn workflow_managed_live_tuis_preserve_terminal_between_handoffs() {
     // arrange
     // act
     // assert
-    let (_tx, rx) = std_mpsc::channel::<LiveUpdate>();
+    let (_tx, rx) = live_update_channel();
     let sink: UiIntentSink = Arc::new(|_| {});
 
     let fresh = new_live_tui_options(
@@ -46,7 +46,7 @@ fn workflow_managed_live_tuis_preserve_terminal_between_handoffs() {
         }
     ));
 
-    let (_tx, rx) = std_mpsc::channel::<LiveUpdate>();
+    let (_tx, rx) = live_update_channel();
     let resumed = continue_live_tui_options(
         PathBuf::from("/tmp/run-continue"),
         Vec::new(),
@@ -77,7 +77,7 @@ fn workflow_managed_live_tuis_preserve_configured_keybindings() {
     let sink: UiIntentSink = Arc::new(|_| {});
 
     // When
-    let (_tx, rx) = std_mpsc::channel::<LiveUpdate>();
+    let (_tx, rx) = live_update_channel();
     let fresh = new_live_tui_options(
         PathBuf::from("/tmp/run-new"),
         Vec::new(),
@@ -90,7 +90,7 @@ fn workflow_managed_live_tuis_preserve_configured_keybindings() {
         None,
         false,
     );
-    let (_tx, rx) = std_mpsc::channel::<LiveUpdate>();
+    let (_tx, rx) = live_update_channel();
     let resumed = continue_live_tui_options(
         PathBuf::from("/tmp/run-continue"),
         Vec::new(),
@@ -117,7 +117,7 @@ fn new_live_tui_options_allow_pre_bootstrap_run_directory() {
     // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_dir = temp_dir.path().join("run_projected_new_session");
-    let (_tx, rx) = std_mpsc::channel::<LiveUpdate>();
+    let (_tx, rx) = live_update_channel();
     let sink: UiIntentSink = Arc::new(|_| {});
 
     let options = new_live_tui_options(
@@ -154,7 +154,7 @@ async fn session_history_refresh_sends_bootstrapped_catalog() {
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_dir = temp_dir.path().join("run_projected_new_session");
     write_catalog_run(&run_dir, &catalog_events("run_projected_new_session"));
-    let (tx, rx) = std_mpsc::channel::<LiveUpdate>();
+    let (tx, rx) = live_update_channel();
 
     await_task(
         "session history refresh",
@@ -198,7 +198,7 @@ fn resumed_live_tui_options_carry_normalized_lineage_history() {
         Some("root_session")
     );
 
-    let (_tx, rx) = std_mpsc::channel::<LiveUpdate>();
+    let (_tx, rx) = live_update_channel();
     let sink: UiIntentSink = Arc::new(|_| {});
     let options = continue_live_tui_options(
         child_dir,

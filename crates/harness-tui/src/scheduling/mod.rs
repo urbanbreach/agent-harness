@@ -6,12 +6,18 @@
 mod coalesce;
 mod decision;
 mod dual_clock;
+mod runtime_arbiter;
 mod runtime_pacer;
 mod scheduler;
 
 pub use coalesce::RedrawCoalescer;
 pub use decision::{FrameDecision, FrameReason};
 pub use dual_clock::{DualClock, FrameNow};
+pub use runtime_arbiter::{
+    ArbiterClock, BatchBudget, DeferredLiveUpdate, FairnessTurn, RuntimeArbiter, RuntimeDecision,
+    RuntimePriority, RuntimeReady, SystemArbiterClock, INPUT_BATCH_LIMIT, INPUT_BATCH_TIME,
+    LIVE_BATCH_LIMIT, LIVE_BATCH_TIME,
+};
 pub use runtime_pacer::{
     RuntimePacer, RuntimePacerAction, WheelBatch, WheelDirection, WheelSample,
     MAX_WHEEL_STEPS_PER_FLUSH,

@@ -1,12 +1,12 @@
+use crossbeam_channel::{bounded, Receiver, Sender, TryRecvError, TrySendError};
 use std::io;
-use std::sync::mpsc::{self, Receiver, SyncSender, TryRecvError, TrySendError};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use super::capture::{capture_lock, synchronized_bytes, CaptureState, FrameOutputWriter};
 use super::model::{
-    FrameAck, FrameAckOutcome, FrameKind, FrameOutputMetrics, FrameSubmission, FrameWriterMetrics,
-    SerializedFrame,
+    FrameAck, FrameAckOutcome, FrameKind, FrameOutputFailure, FrameOutputMetrics, FrameSubmission,
+    FrameWriterMetrics, SerializedFrame,
 };
 use super::worker::{writer_metrics_lock, FrameOutputReceiver};
 use crate::presentation::{PresentationClock, RenderDemand};
@@ -14,7 +14,7 @@ use crate::terminal::writer::{BEGIN_SYNCHRONIZED_UPDATE, END_SYNCHRONIZED_UPDATE
 
 #[derive(Debug)]
 pub struct FrameOutput {
-    sender: SyncSender<SerializedFrame>,
+    sender: Sender<SerializedFrame>,
     acknowledgements: Receiver<FrameAck>,
     completed_acknowledgements: Vec<FrameAck>,
     capture: Arc<Mutex<CaptureState>>,
@@ -27,6 +27,7 @@ pub struct FrameOutput {
     metrics: FrameOutputMetrics,
     writer_metrics: Arc<Mutex<FrameWriterMetrics>>,
     frame_started_at: Option<Instant>,
+    fatal_failure: Option<FrameOutputFailure>,
 }
 
 impl FrameOutput {
@@ -38,8 +39,8 @@ impl FrameOutput {
         capacity: usize,
         clock: PresentationClock,
     ) -> (Self, FrameOutputWriter, FrameOutputReceiver) {
-        let (sender, receiver) = mpsc::sync_channel(capacity);
-        let (acknowledge, acknowledgements) = mpsc::channel();
+        let (sender, receiver) = bounded(capacity);
+        let (acknowledge, acknowledgements) = bounded(1);
         let capture = Arc::new(Mutex::new(CaptureState::default()));
         let writer_metrics = Arc::new(Mutex::new(FrameWriterMetrics::default()));
         let output = Self {
@@ -56,6 +57,7 @@ impl FrameOutput {
             metrics: FrameOutputMetrics::default(),
             writer_metrics: Arc::clone(&writer_metrics),
             frame_started_at: None,
+            fatal_failure: None,
         };
         (
             output,
@@ -70,7 +72,9 @@ impl FrameOutput {
                 Ok(ack) => self.record_acknowledgement(ack),
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => {
-                    self.in_flight = None;
+                    if self.in_flight.is_some() {
+                        self.fatal_failure = Some(FrameOutputFailure::Disconnected);
+                    }
                     break;
                 }
             }
@@ -84,14 +88,26 @@ impl FrameOutput {
         } else {
             self.full_repaint_required = true;
         }
-        if matches!(ack.outcome, FrameAckOutcome::Failure { .. }) {
-            self.full_repaint_required = true;
+        if let FrameAckOutcome::Failure { stage } = ack.outcome {
+            self.fatal_failure = Some(FrameOutputFailure::Write(stage));
         }
         self.completed_acknowledgements.push(ack);
     }
 
+    pub fn accept_acknowledgement(&mut self, ack: FrameAck) {
+        self.record_acknowledgement(ack);
+    }
+
     pub const fn has_in_flight_frame(&self) -> bool {
         self.in_flight.is_some()
+    }
+
+    pub fn acknowledgement_receiver(&self) -> &Receiver<FrameAck> {
+        &self.acknowledgements
+    }
+
+    pub fn take_fatal_failure(&mut self) -> Option<FrameOutputFailure> {
+        self.fatal_failure.take()
     }
 
     pub fn begin_frame(&mut self) -> io::Result<FrameKind> {
@@ -121,6 +137,7 @@ impl FrameOutput {
             FrameKind::Differential
         };
         capture.bytes.clear();
+        capture.write_calls = 0;
         capture.active = true;
         self.active_kind = Some(kind);
         self.active_demand = Some(demand);
@@ -153,11 +170,13 @@ impl FrameOutput {
             self.metrics.frame_build_time_micros.saturating_add(micros);
         self.metrics.max_frame_build_time_micros =
             self.metrics.max_frame_build_time_micros.max(micros);
-        let payload = {
+        let (payload, write_calls) = {
             let mut capture = capture_lock(&self.capture);
             capture.active = false;
-            std::mem::take(&mut capture.bytes)
+            (std::mem::take(&mut capture.bytes), capture.write_calls)
         };
+        self.metrics.capture_write_calls =
+            self.metrics.capture_write_calls.saturating_add(write_calls);
         if payload.is_empty() {
             self.metrics.no_op_frames = self.metrics.no_op_frames.saturating_add(1);
             return Ok(FrameSubmission::Unchanged);

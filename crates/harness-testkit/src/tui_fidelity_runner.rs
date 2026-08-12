@@ -23,6 +23,7 @@ mod renderer;
 mod renderer_command;
 mod runner;
 mod runtime_workspace;
+mod semantic_actions;
 mod source_guard;
 mod types;
 mod util;
@@ -31,14 +32,19 @@ pub use cleanup::record_preflight_failure;
 pub use error::RunnerError;
 pub use native_sidecar::read_native_trace;
 pub use presentation_receipt::*;
-pub use presentation_validation::{validate_presentation_evidence, PresentationValidationError};
+pub use presentation_validation::{
+    validate_packet2_disclosure, validate_presentation_evidence, PresentationValidationError,
+};
 pub use process_io::PtyRead;
 pub use pty_observation::{PtyObservationError, PtyObserver};
-pub use runner::{run_compare, run_compare_with_cached_reference};
+pub use runner::{
+    run_compare, run_compare_with_cached_reference, run_compare_with_cached_reference_and_profile,
+};
+pub use semantic_actions::semantic_click_bytes;
 pub use types::{
     AdapterReceipt, ArtifactDigest, BrowserCapabilities, CandidateBinding, CheckpointReceipt,
     CleanupReceipt, DualRuntimeReceipt, PresentationCaptureBinding, RendererConfig, RunnerConfig,
     RunnerTiming, RuntimeBinary, SourceGuardConfig,
 };
 
-pub const RUNNER_RECEIPT_SCHEMA: &str = "harness.tui-fidelity.runner.v3";
+pub const RUNNER_RECEIPT_SCHEMA: &str = "harness.tui-fidelity.runner.v4";

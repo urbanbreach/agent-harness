@@ -118,7 +118,10 @@ pub mod render_test;
 pub mod responsive;
 mod runtime;
 pub(crate) mod runtime_integration;
+pub mod runtime_live_updates;
 pub mod runtime_presentation;
+pub mod runtime_scheduling;
+pub mod runtime_wait_set;
 pub mod scheduling;
 mod session_events;
 pub mod shell_geometry;
@@ -204,5 +207,8 @@ pub use layout::FrameLayoutPlan;
 pub use runtime::{
     close_preserved_terminal_session, run_tui, run_tui_with_options,
     set_pending_replay_launch_metadata, LiveUpdate, OperatorNoticeLevel, TuiMode, TuiOptions,
+};
+pub use runtime_live_updates::{
+    live_update_channel, LiveUpdateReceiver, LiveUpdateSendError, LiveUpdateSender,
 };
 pub use theme::{LiveShellLayout, LiveShellTokens, ShellGeometry, ShellGeometryTarget, Theme};

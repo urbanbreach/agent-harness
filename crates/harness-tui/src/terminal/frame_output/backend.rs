@@ -1,4 +1,4 @@
-use std::io::{self, Write};
+use std::io::{self, BufWriter, Write};
 
 use ratatui::backend::{Backend, ClearType, CrosstermBackend, WindowSize};
 use ratatui::buffer::Cell;
@@ -16,16 +16,21 @@ pub struct FrameBackendMetrics {
 
 #[derive(Debug)]
 pub struct FrameOutputBackend {
-    inner: CrosstermBackend<FrameOutputWriter>,
+    inner: CrosstermBackend<BufWriter<FrameOutputWriter>>,
     cursor_position: Option<Position>,
     cursor_visible: Option<bool>,
     metrics: FrameBackendMetrics,
 }
 
 impl FrameOutputBackend {
+    const FRAME_BUFFER_CAPACITY: usize = 16 * 1024;
+
     pub fn new(writer: FrameOutputWriter) -> Self {
         Self {
-            inner: CrosstermBackend::new(writer),
+            inner: CrosstermBackend::new(BufWriter::with_capacity(
+                Self::FRAME_BUFFER_CAPACITY,
+                writer,
+            )),
             cursor_position: None,
             cursor_visible: None,
             metrics: FrameBackendMetrics::default(),
@@ -48,7 +53,9 @@ impl FrameOutputBackend {
 
 impl Write for FrameOutputBackend {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        self.inner.write(bytes)
+        let written = self.inner.write(bytes)?;
+        Write::flush(&mut self.inner)?;
+        Ok(written)
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -72,6 +79,7 @@ impl Backend for FrameOutputBackend {
             self.cursor_position = None;
         }
         self.inner.draw(content)?;
+        Backend::flush(&mut self.inner)?;
         self.metrics.cells_changed = self.metrics.cells_changed.saturating_add(changed);
         Ok(())
     }
@@ -81,6 +89,7 @@ impl Backend for FrameOutputBackend {
             return Ok(());
         }
         self.inner.hide_cursor()?;
+        Backend::flush(&mut self.inner)?;
         self.metrics.cursor_commands = self.metrics.cursor_commands.saturating_add(1);
         self.cursor_visible = Some(false);
         Ok(())
@@ -91,6 +100,7 @@ impl Backend for FrameOutputBackend {
             return Ok(());
         }
         self.inner.show_cursor()?;
+        Backend::flush(&mut self.inner)?;
         self.metrics.cursor_commands = self.metrics.cursor_commands.saturating_add(1);
         self.cursor_visible = Some(true);
         Ok(())
@@ -111,6 +121,7 @@ impl Backend for FrameOutputBackend {
             return Ok(());
         }
         self.inner.set_cursor_position(position)?;
+        Backend::flush(&mut self.inner)?;
         self.metrics.cursor_commands = self.metrics.cursor_commands.saturating_add(1);
         self.cursor_position = Some(position);
         Ok(())
@@ -118,12 +129,14 @@ impl Backend for FrameOutputBackend {
 
     fn clear(&mut self) -> Result<(), Self::Error> {
         self.metrics.clears = self.metrics.clears.saturating_add(1);
-        self.inner.clear()
+        self.inner.clear()?;
+        Backend::flush(&mut self.inner)
     }
 
     fn clear_region(&mut self, clear_type: ClearType) -> Result<(), Self::Error> {
         self.metrics.clears = self.metrics.clears.saturating_add(1);
-        self.inner.clear_region(clear_type)
+        self.inner.clear_region(clear_type)?;
+        Backend::flush(&mut self.inner)
     }
 
     fn size(&self) -> Result<Size, Self::Error> {

@@ -15,9 +15,8 @@
 )]
 
 use std::path::{Path, PathBuf};
-use std::sync::mpsc;
 
-use harness_tui::{run_tui_with_options, TuiMode, TuiOptions};
+use harness_tui::{live_update_channel, run_tui_with_options, TuiMode, TuiOptions};
 use tempfile::TempDir;
 
 /// Probe artifacts that `seed_operator_host_probes` writes to the workspace root.
@@ -49,7 +48,7 @@ fn production_tui_startup_does_not_write_synthetic_probe_artifacts() {
     let workspace_root = workspace.path();
 
     // act
-    let (_tx, rx) = mpsc::channel();
+    let (_tx, rx) = live_update_channel();
     let _ = run_tui_with_options(TuiOptions {
         mode: TuiMode::Startup {
             session_history_entries: Vec::new(),
@@ -82,7 +81,7 @@ fn production_tui_live_init_does_not_write_synthetic_probe_artifacts() {
     let run_dir = TempDir::new().expect("create temp run dir");
 
     // act
-    let (_tx, rx) = mpsc::channel();
+    let (_tx, rx) = live_update_channel();
     let _ = run_tui_with_options(TuiOptions {
         mode: TuiMode::Live {
             run_dir: run_dir.path().to_path_buf(),
@@ -171,7 +170,7 @@ fn production_tui_startup_preserves_existing_files_and_symlinks() {
     let before = collect_file_snapshot(workspace_root);
 
     // act
-    let (_tx, rx) = mpsc::channel();
+    let (_tx, rx) = live_update_channel();
     let _ = run_tui_with_options(TuiOptions {
         mode: TuiMode::Startup {
             session_history_entries: Vec::new(),
@@ -227,7 +226,7 @@ fn production_tui_live_init_preserves_existing_workspace_files() {
     let before = collect_file_snapshot(workspace_root);
 
     // act
-    let (_tx, rx) = mpsc::channel();
+    let (_tx, rx) = live_update_channel();
     let _ = run_tui_with_options(TuiOptions {
         mode: TuiMode::Live {
             run_dir: run_dir.path().to_path_buf(),

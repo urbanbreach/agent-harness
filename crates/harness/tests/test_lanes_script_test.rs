@@ -119,6 +119,27 @@ fn signoff_parity_mode_is_fail_closed() {
 }
 
 #[test]
+fn signoff_packet2_is_pinned_sequential_exactly_five_and_fail_closed() {
+    // Given: the canonical lane script.
+    let script = fs::read_to_string(repo_root().join("scripts/test-lanes.sh")).unwrap_or_abort();
+
+    // When: the Packet 2 function body is inspected independently of execution.
+    let body = function_body(&script, "run_signoff_packet2");
+
+    // Then: it requires pinned inputs, runs five sequential captures, and aggregates once.
+    assert!(script.contains("signoff-packet2"));
+    assert!(body.contains("be713136d2a69080743a3f6b3c72077057e5948f"));
+    assert!(body.contains("for ordinal in 1 2 3 4 5"));
+    assert_eq!(body.matches("for ordinal in 1 2 3 4 5").count(), 2);
+    assert!(body.contains("packet2-sustained-stream"));
+    assert!(body.contains("--acceptance packet2-scheduling"));
+    assert!(body.contains("--profile packet2-scheduling"));
+    assert!(body.contains("--reference-receipt"));
+    assert!(body.contains("--reference-root"));
+    assert!(!body.contains("&\n"));
+}
+
+#[test]
 fn test_lanes_runs_perf_artifact_freshness_gate() {
     // arrange
     let script = fs::read_to_string(repo_root().join("scripts/test-lanes.sh")).unwrap_or_abort();

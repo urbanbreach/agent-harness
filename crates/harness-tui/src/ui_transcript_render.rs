@@ -712,14 +712,18 @@ fn build_assistant_part_render_surface(
                     leading_pad_rows = 0;
                 }
             }
-            let selection_rows = selection_rows_for_rich_text_block(
-                text,
-                theme.text.primary,
-                TRANSCRIPT_ASSISTANT_BODY_PREFIX,
-                theme,
-                content_width,
-                is_streaming,
-            );
+            let selection_rows = if is_streaming {
+                None
+            } else {
+                selection_rows_for_rich_text_block(
+                    text,
+                    theme.text.primary,
+                    TRANSCRIPT_ASSISTANT_BODY_PREFIX,
+                    theme,
+                    content_width,
+                    false,
+                )
+            };
             if let Some(clock) = turn
                 .footer_timestamp
                 .as_deref()

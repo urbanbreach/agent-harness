@@ -1,9 +1,8 @@
-use std::sync::mpsc as std_mpsc;
 use std::sync::Arc;
 
 use harness_core::event::{ActorKind, EventEnvelopeV1};
 use harness_core::store::{EventStore, EventStoreError};
-use harness_tui::LiveUpdate;
+use harness_tui::{LiveUpdate, LiveUpdateSender};
 
 use super::live_intents::LiveAgentTargetState;
 use harness_core::event::EventV1;
@@ -25,7 +24,7 @@ pub(super) fn latest_request_id_for_agent(
 
 pub(super) async fn forward_events_to_tui(
     store: Arc<dyn EventStore>,
-    live_update_tx: std_mpsc::Sender<LiveUpdate>,
+    live_update_tx: LiveUpdateSender,
     start_from_seq: u64,
     _live_agent_target: Option<LiveAgentTargetState>,
     stop_after_terminal_event: bool,

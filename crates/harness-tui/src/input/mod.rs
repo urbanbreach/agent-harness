@@ -10,6 +10,8 @@ pub mod normalizer;
 pub mod paste;
 pub mod resize;
 pub mod scroll_normalizer;
+pub mod terminal_queue;
+pub mod terminal_reader;
 
 pub use ctrl_c::{CtrlCAction, CtrlCTracker, DEFAULT_CTRL_C_WINDOW};
 pub use esc::{EscAction, EscLayer, EscRouter};
@@ -22,4 +24,9 @@ pub use resize::{ResizeDebouncer, RESIZE_DEBOUNCE};
 pub use scroll_normalizer::{
     NormalizedScroll, ScrollConfigOverrides, ScrollInputMode, ScrollNormalizer,
     ScrollNormalizerConfig, ScrollSampleDirection, SCROLL_REDRAW_CADENCE, SCROLL_STREAM_GAP,
+};
+pub use terminal_queue::{TerminalEnvelope, TerminalQueue, TerminalSequence};
+pub use terminal_reader::{
+    CrosstermEventSource, TerminalEventSource, TerminalIngress, TerminalIngressReader,
+    TerminalReaderError, TerminalReaderStatus,
 };

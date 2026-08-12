@@ -88,6 +88,26 @@ fn validate_action(
                 return Err(ScenarioError::InvalidAction(ActionError::EmptyPaste));
             }
         }
+        ScenarioAction::TypeText(action) => {
+            if action.text.is_empty() {
+                return Err(ScenarioError::InvalidAction(ActionError::EmptyText));
+            }
+            if action.inter_byte_millis == 0 {
+                return Err(ScenarioError::InvalidAction(
+                    ActionError::ZeroInterByteDelay,
+                ));
+            }
+        }
+        ScenarioAction::WaitForText(action) => {
+            if action.text.is_empty() {
+                return Err(ScenarioError::InvalidAction(ActionError::EmptyText));
+            }
+        }
+        ScenarioAction::ClickText(action) => {
+            if action.text.is_empty() {
+                return Err(ScenarioError::InvalidAction(ActionError::EmptyText));
+            }
+        }
         ScenarioAction::Mouse(action) => {
             validate_point(action.point, active_viewport, index)?;
         }

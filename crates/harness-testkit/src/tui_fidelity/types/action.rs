@@ -101,6 +101,29 @@ pub struct PasteAction {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct TypeTextAction {
+    pub at_tick: Tick,
+    pub text: String,
+    pub inter_byte_millis: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WaitForTextAction {
+    pub at_tick: Tick,
+    pub text: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClickTextAction {
+    pub at_tick: Tick,
+    pub text: String,
+    pub offset_col: u16,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MouseAction {
     pub at_tick: Tick,
     pub button: MouseButton,
@@ -131,6 +154,8 @@ pub struct WheelAction {
 pub struct ResizeAction {
     pub at_tick: Tick,
     pub viewport: Viewport,
+    #[serde(default)]
+    pub dwell_millis: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -153,6 +178,9 @@ pub struct TerminalReplyAction {
 pub enum ScenarioAction {
     TimedKey(TimedKeyAction),
     Paste(PasteAction),
+    TypeText(TypeTextAction),
+    WaitForText(WaitForTextAction),
+    ClickText(ClickTextAction),
     Mouse(MouseAction),
     Drag(DragAction),
     Wheel(WheelAction),
@@ -166,6 +194,9 @@ impl ScenarioAction {
         match self {
             Self::TimedKey(action) => action.at_tick,
             Self::Paste(action) => action.at_tick,
+            Self::TypeText(action) => action.at_tick,
+            Self::WaitForText(action) => action.at_tick,
+            Self::ClickText(action) => action.at_tick,
             Self::Mouse(action) => action.at_tick,
             Self::Drag(action) => action.at_tick,
             Self::Wheel(action) => action.at_tick,
@@ -179,6 +210,9 @@ impl ScenarioAction {
         match self {
             Self::TimedKey(_) => "timed_key",
             Self::Paste(_) => "paste",
+            Self::TypeText(_) => "type_text",
+            Self::WaitForText(_) => "wait_for_text",
+            Self::ClickText(_) => "click_text",
             Self::Mouse(_) => "mouse",
             Self::Drag(_) => "drag",
             Self::Wheel(_) => "wheel",

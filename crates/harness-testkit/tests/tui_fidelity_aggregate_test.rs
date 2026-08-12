@@ -1,8 +1,13 @@
-#![allow(clippy::expect_used, reason = "fixture setup fails fast")]
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "fixture setup fails fast"
+)]
 
 use std::path::{Path, PathBuf};
 
-use harness_testkit::tui_fidelity_aggregate::{aggregate, AggregateError};
+use harness_testkit::tui_fidelity_aggregate::{aggregate, aggregate_with_profile, AggregateError};
+use harness_testkit::tui_fidelity_compare::AcceptanceProfile;
 use sha2::{Digest, Sha256};
 
 #[test]
@@ -57,6 +62,302 @@ fn mixed_authority_and_stale_artifact_fail_closed() {
     assert!(matches!(stale_error, AggregateError::Evidence { .. }));
 }
 
+#[test]
+fn packet2_profile_keeps_visual_failures_diagnostic() {
+    let fixture = AggregateFixture::new_packet2();
+
+    let summary = aggregate_with_profile(&fixture.roots, AcceptanceProfile::Packet2Scheduling)
+        .expect("scheduling profile passes");
+    let full = aggregate(&fixture.roots).expect_err("full parity rejects the same visual defects");
+
+    assert_eq!(summary.run_count, 5);
+    assert!(matches!(full, AggregateError::Evidence { .. }));
+    let comparison: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(fixture.roots[0].join("comparison.json")).expect("comparison"),
+    )
+    .expect("comparison JSON");
+    assert_eq!(comparison["gates"]["semantic_cell"]["passed"], false);
+    assert_eq!(comparison["gates"]["pixel"]["passed"], false);
+}
+
+#[test]
+fn packet2_profile_rejects_missing_digest_and_reordered_input() {
+    let missing = AggregateFixture::new_packet2();
+    mutate_json(&missing.roots[0].join("receipt.json"), |value| {
+        value["runtimes"][1]["presentation"]
+            .as_object_mut()
+            .expect("presentation")
+            .remove("scheduling_sidecar");
+    });
+    let missing_error =
+        aggregate_with_profile(&missing.roots, AcceptanceProfile::Packet2Scheduling)
+            .expect_err("missing digest rejected");
+
+    let reordered = AggregateFixture::new_packet2();
+    mutate_json(&reordered.roots[0].join("scheduling.json"), |value| {
+        value["actual_input_sends"]
+            .as_array_mut()
+            .expect("inputs")
+            .reverse();
+    });
+    mutate_json(&reordered.roots[0].join("receipt.json"), |value| {
+        value["runtimes"][1]["presentation"]["scheduling_sidecar"]["sha256"] =
+            serde_json::json!(digest(&reordered.roots[0].join("scheduling.json")));
+    });
+    let reordered_error =
+        aggregate_with_profile(&reordered.roots, AcceptanceProfile::Packet2Scheduling)
+            .expect_err("reordered input rejected");
+
+    let forged = AggregateFixture::new_packet2();
+    mutate_json(&forged.roots[0].join("scheduling.json"), |value| {
+        value["maximum_backlog_depth"] = serde_json::json!(99);
+    });
+    let forged_error = aggregate_with_profile(&forged.roots, AcceptanceProfile::Packet2Scheduling)
+        .expect_err("forged sidecar digest rejected");
+
+    for forged_maximum in [1, 3] {
+        let mismatch = AggregateFixture::new_packet2();
+        mutate_sidecar(&mismatch.roots[0], |value| {
+            value["maximum_backlog_depth"] = serde_json::json!(forged_maximum);
+        });
+        assert!(
+            aggregate_with_profile(&mismatch.roots, AcceptanceProfile::Packet2Scheduling)
+                .expect_err("maximum backlog mismatch rejected")
+                .to_string()
+                .contains("maximum backlog differs")
+        );
+    }
+
+    let synthesized = AggregateFixture::new_packet2();
+    mutate_sidecar(&synthesized.roots[0], |value| {
+        let send = &mut value["actual_input_sends"][0];
+        send["live_ready_depth"] = serde_json::json!(1);
+        send["queued_live_depth"] = serde_json::json!(0);
+        send["deferred_live_ready"] = serde_json::json!(false);
+        send["stream_active"] = serde_json::json!(true);
+        send["preempted_live"] = serde_json::json!(true);
+        value["maximum_backlog_depth"] = serde_json::json!(1);
+    });
+    let synthesized_error =
+        aggregate_with_profile(&synthesized.roots, AcceptanceProfile::Packet2Scheduling)
+            .expect_err("stream-active-only backlog rejected");
+
+    assert!(missing_error
+        .to_string()
+        .contains("missing Harness scheduling sidecar digest"));
+    assert!(reordered_error.to_string().contains("interaction 0"));
+    assert!(forged_error.to_string().contains("stale artifact digest"));
+    assert!(synthesized_error.to_string().contains("relabeled"));
+}
+
+#[test]
+fn packet2_profile_recomputes_required_gate_verdict_and_rejects_gate_shape_drift() {
+    // Given: four receipts whose persisted top-level pass boolean remains true.
+    let missing = AggregateFixture::new_packet2();
+    mutate_json(&missing.roots[0].join("comparison.json"), |value| {
+        value["gates"]
+            .as_object_mut()
+            .expect("gate map")
+            .remove("timing");
+    });
+    let failed = AggregateFixture::new_packet2();
+    mutate_json(&failed.roots[0].join("comparison.json"), |value| {
+        value["gates"]["presentation"]["passed"] = serde_json::json!(false);
+    });
+    let extra = AggregateFixture::new_packet2();
+    mutate_json(&extra.roots[0].join("comparison.json"), |value| {
+        value["gates"]["invented"] = serde_json::json!({"passed":true,"detail":"forged"});
+    });
+    let duplicate = AggregateFixture::new_packet2();
+    let duplicate_path = duplicate.roots[0].join("comparison.json");
+    let text = std::fs::read_to_string(&duplicate_path).expect("comparison text");
+    let text = text.replacen(
+        "\"timing\": {",
+        "\"timing\": {\"passed\":true,\"detail\":\"forged\"},\"timing\": {",
+        1,
+    );
+    std::fs::write(&duplicate_path, text).expect("duplicate gate fixture");
+
+    // When: the Packet 2 aggregate validates each persisted run.
+    let results = [missing, failed, extra, duplicate]
+        .into_iter()
+        .map(|fixture| aggregate_with_profile(&fixture.roots, AcceptanceProfile::Packet2Scheduling))
+        .collect::<Vec<_>>();
+
+    // Then: missing, failed, extra, and duplicate gate evidence all fail closed.
+    assert!(results.iter().all(Result::is_err));
+}
+
+#[test]
+fn packet2_profile_rejects_run_count_timing_idle_backlog_and_native_proof_defects() {
+    let six = AggregateFixture::new_packet2();
+    let mut six_roots = six.roots.clone();
+    six_roots.push(six.roots[0].clone());
+    assert!(matches!(
+        aggregate_with_profile(&six_roots, AcceptanceProfile::Packet2Scheduling),
+        Err(AggregateError::RunCount(6))
+    ));
+
+    let p95 = AggregateFixture::new_packet2();
+    mutate_json(&p95.roots[0].join("comparison.json"), |value| {
+        value["presentation"]["candidate"]["external_send_to_changed_observation_micros"] =
+            serde_json::json!([111, 111]);
+    });
+    assert!(
+        aggregate_with_profile(&p95.roots, AcceptanceProfile::Packet2Scheduling)
+            .expect_err("111% rejected")
+            .to_string()
+            .contains("110%")
+    );
+
+    let gap = AggregateFixture::new_packet2();
+    mutate_json(&gap.roots[0].join("comparison.json"), |value| {
+        value["presentation"]["candidate"]["external_cadence_micros"] = serde_json::json!(16);
+        value["presentation"]["candidate"]["external_observation_intervals_micros"] =
+            serde_json::json!([33]);
+    });
+    assert!(
+        aggregate_with_profile(&gap.roots, AcceptanceProfile::Packet2Scheduling)
+            .expect_err("33ms gap rejected")
+            .to_string()
+            .contains("twice cadence")
+    );
+
+    let semantic_boundary = AggregateFixture::new_packet2();
+    configure_packet2_semantic_gap(&semantic_boundary, 66_000);
+    aggregate_with_profile(
+        &semantic_boundary.roots,
+        AcceptanceProfile::Packet2Scheduling,
+    )
+    .expect("66ms semantic streaming gap accepted");
+    let handshake_wait = AggregateFixture::new_packet2();
+    configure_packet2_handshake_gap(&handshake_wait, 100_000, 20_000);
+    aggregate_with_profile(&handshake_wait.roots, AcceptanceProfile::Packet2Scheduling)
+        .expect("pre-input handshake wait with fast response accepted");
+    let response_defect = AggregateFixture::new_packet2();
+    configure_packet2_handshake_gap(&response_defect, 100_000, 32_001);
+    assert!(
+        aggregate_with_profile(&response_defect.roots, AcceptanceProfile::Packet2Scheduling)
+            .expect_err("slow post-send response rejected")
+            .to_string()
+            .contains("16 ms cadence")
+    );
+    let semantic_defect = AggregateFixture::new_packet2();
+    configure_packet2_semantic_gap(&semantic_defect, 66_001);
+    assert!(
+        aggregate_with_profile(&semantic_defect.roots, AcceptanceProfile::Packet2Scheduling,)
+            .expect_err("67ms semantic streaming gap rejected")
+            .to_string()
+            .contains("33 ms cadence")
+    );
+
+    for (field, value, expected) in [
+        ("idle_redraws", 1, "zero idle redraws"),
+        ("maximum_backlog_depth", 0, "maximum backlog differs"),
+    ] {
+        let fixture = AggregateFixture::new_packet2();
+        if field == "idle_redraws" {
+            mutate_json(&fixture.roots[0].join("receipt.json"), |receipt| {
+                receipt["runtimes"][1]["presentation"]["native"]["aggregates"][field] =
+                    serde_json::json!(value);
+            });
+        } else {
+            mutate_sidecar(&fixture.roots[0], |sidecar| {
+                sidecar[field] = serde_json::json!(value);
+            });
+        }
+        assert!(
+            aggregate_with_profile(&fixture.roots, AcceptanceProfile::Packet2Scheduling)
+                .expect_err("controlled defect rejected")
+                .to_string()
+                .contains(expected)
+        );
+    }
+
+    let native = AggregateFixture::new_packet2();
+    mutate_json(&native.roots[0].join("receipt.json"), |receipt| {
+        receipt["runtimes"][1]["presentation"]["native"]["acknowledgements"] =
+            serde_json::json!([{"outcome":"failed_write"}]);
+    });
+    assert!(
+        aggregate_with_profile(&native.roots, AcceptanceProfile::Packet2Scheduling)
+            .expect_err("completed write proof required")
+            .to_string()
+            .contains("completed_write")
+    );
+}
+
+fn configure_packet2_handshake_gap(
+    fixture: &AggregateFixture,
+    pre_send_micros: u64,
+    post_send_micros: u64,
+) {
+    for root in &fixture.roots {
+        mutate_json(&root.join("receipt.json"), |receipt| {
+            receipt["scenario_id"] = serde_json::json!("packet2-sustained-stream");
+            for runtime in receipt["runtimes"].as_array_mut().expect("runtime array") {
+                runtime["presentation_binding"]["scenario_id"] =
+                    serde_json::json!("packet2-sustained-stream");
+                let sends = runtime["presentation"]["external"]["actual_input_sends"]
+                    .as_array_mut()
+                    .expect("input sends");
+                sends[0]["sent_at"] = serde_json::json!(pre_send_micros);
+                sends[1]["sent_at"] = serde_json::json!(200_000);
+            }
+        });
+        mutate_json(&root.join("comparison.json"), |comparison| {
+            comparison["presentation"]["candidate"]["external_observation_timestamps_micros"] =
+                serde_json::json!([pre_send_micros, pre_send_micros + post_send_micros, 200_000]);
+        });
+    }
+}
+
+fn configure_packet2_semantic_gap(fixture: &AggregateFixture, gap_micros: u64) {
+    for root in &fixture.roots {
+        mutate_json(&root.join("receipt.json"), |receipt| {
+            receipt["scenario_id"] = serde_json::json!("packet2-sustained-stream");
+            for runtime in receipt["runtimes"].as_array_mut().expect("runtime array") {
+                runtime["presentation_binding"]["scenario_id"] =
+                    serde_json::json!("packet2-sustained-stream");
+                let sends = runtime["presentation"]["external"]["actual_input_sends"]
+                    .as_array_mut()
+                    .expect("input sends");
+                sends[0]["sent_at"] = serde_json::json!(0);
+                sends[1]["sent_at"] = serde_json::json!(100_000);
+            }
+        });
+        mutate_json(&root.join("comparison.json"), |comparison| {
+            comparison["presentation"]["candidate"]["external_observation_timestamps_micros"] =
+                serde_json::json!([1, 1 + gap_micros, 100_000]);
+        });
+    }
+}
+
+#[test]
+fn packet2_profile_rejects_every_mixed_authority_binding() {
+    for field in [
+        "scenario_id",
+        "receipt_schema",
+        "comparison_schema",
+        "reference_sha256",
+        "candidate_sha256",
+        "action_schedule_sha256",
+        "motion_contract_sha256",
+        "observer_version",
+        "terminal_identity",
+    ] {
+        let fixture = AggregateFixture::new_packet2();
+        mutate_authority(&fixture.roots[4], field);
+        assert!(
+            matches!(
+                aggregate_with_profile(&fixture.roots, AcceptanceProfile::Packet2Scheduling),
+                Err(AggregateError::MixedAuthority(_))
+            ),
+            "mixed field {field} must fail"
+        );
+    }
+}
+
 struct AggregateFixture {
     _temp: tempfile::TempDir,
     roots: Vec<PathBuf>,
@@ -73,6 +374,44 @@ impl AggregateFixture {
             })
             .collect();
         Self { _temp: temp, roots }
+    }
+
+    fn new_packet2() -> Self {
+        let fixture = Self::new();
+        for root in &fixture.roots {
+            let scheduling = root.join("scheduling.json");
+            write_json(
+                &scheduling,
+                &serde_json::json!({
+                    "schema_version":"harness.packet2-scheduling.v1",
+                    "actual_input_sends":[
+                        {"interaction_id":"scenario:action:0","action_ordinal":0,"terminal_sequence":1,"source_decision":"terminal_input","live_ready_depth":2,"queued_live_depth":2,"deferred_live_ready":false,"stream_active":true,"preempted_live":true,"fairness_yield":false,"deadline_millis":16,"cause_id":"cause:1"},
+                        {"interaction_id":"scenario:action:1","action_ordinal":1,"terminal_sequence":2,"source_decision":"terminal_input","live_ready_depth":1,"queued_live_depth":0,"deferred_live_ready":true,"stream_active":true,"preempted_live":true,"fairness_yield":true,"deadline_millis":16,"cause_id":"cause:2"}
+                    ],
+                "maximum_backlog_depth":2
+                }),
+            );
+            mutate_json(&root.join("receipt.json"), |value| {
+                value["runtimes"][1]["presentation"]["scheduling_sidecar"] = serde_json::json!({
+                    "path":scheduling,"sha256":digest(&scheduling)
+                });
+            });
+            mutate_json(&root.join("comparison.json"), |value| {
+                value["acceptance_profile"] = serde_json::json!("packet2_scheduling");
+                value["gates"] = serde_json::json!({
+                    "presentation":{"passed":true,"detail":"passed"},
+                    "timing":{"passed":true,"detail":"passed"},
+                    "provenance":{"passed":true,"detail":"passed"},
+                    "checkpoint":{"passed":true,"detail":"passed"},
+                    "exit":{"passed":true,"detail":"passed"},
+                    "cleanup":{"passed":true,"detail":"passed"},
+                    "semantic_cell":{"passed":false,"detail":"diagnostic"},
+                    "pixel":{"passed":false,"detail":"diagnostic"},
+                    "motion":{"passed":false,"detail":"diagnostic"}
+                });
+            });
+        }
+        fixture
     }
 }
 
@@ -104,7 +443,7 @@ fn write_run(root: &Path) {
              "presentation_binding":binding},
             {"adapter":"harness","binary":{"sha256":"2".repeat(64)},
              "presentation":{"kind":"harness_native","external":external(&harness_artifacts),
-                "native":{"aggregates":{"idle_redraws":0}},
+                "native":{"aggregates":{"idle_redraws":0},"acknowledgements":[{"outcome":"completed_write"}]},
                 "native_trace_artifact":{"path":native_sidecar,"sha256":digest(&native_sidecar)}},
              "presentation_binding":binding}
         ]
@@ -123,8 +462,18 @@ fn write_run(root: &Path) {
         })
     };
     let comparison = serde_json::json!({
-        "schema_version":"comparison.v1","capture_succeeded":true,"comparison_passed":true,
-        "gates":{"presentation":{"passed":true,"detail":"passed"}},
+        "schema_version":"comparison.v1","acceptance_profile":"full_parity","capture_succeeded":true,"comparison_passed":true,
+        "gates":{
+            "presentation":{"passed":true,"detail":"passed"},
+            "semantic_cell":{"passed":true,"detail":"passed"},
+            "pixel":{"passed":true,"detail":"passed"},
+            "motion":{"passed":true,"detail":"passed"},
+            "timing":{"passed":true,"detail":"passed"},
+            "provenance":{"passed":true,"detail":"passed"},
+            "checkpoint":{"passed":true,"detail":"passed"},
+            "exit":{"passed":true,"detail":"passed"},
+            "cleanup":{"passed":true,"detail":"passed"}
+        },
         "presentation":{"reference":metrics(100,false),"candidate":metrics(105,true)}
     });
     let cleanup = serde_json::json!({
@@ -173,4 +522,54 @@ fn mutate_json(path: &Path, mutate: impl FnOnce(&mut serde_json::Value)) {
         serde_json::from_slice(&std::fs::read(path).expect("read JSON")).expect("parse JSON");
     mutate(&mut value);
     write_json(path, &value);
+}
+
+fn mutate_sidecar(root: &Path, mutate: impl FnOnce(&mut serde_json::Value)) {
+    let path = root.join("scheduling.json");
+    mutate_json(&path, mutate);
+    mutate_json(&root.join("receipt.json"), |receipt| {
+        receipt["runtimes"][1]["presentation"]["scheduling_sidecar"]["sha256"] =
+            serde_json::json!(digest(&path));
+    });
+}
+
+fn mutate_authority(root: &Path, field: &str) {
+    mutate_json(&root.join("receipt.json"), |receipt| match field {
+        "scenario_id" => {
+            receipt["scenario_id"] = serde_json::json!("changed-scenario");
+            for runtime in receipt["runtimes"].as_array_mut().expect("runtimes") {
+                runtime["presentation_binding"]["scenario_id"] =
+                    serde_json::json!("changed-scenario");
+            }
+        }
+        "receipt_schema" => {
+            receipt["schema_version"] = serde_json::json!("changed-runner");
+            for runtime in receipt["runtimes"].as_array_mut().expect("runtimes") {
+                runtime["presentation_binding"]["receipt_schema"] =
+                    serde_json::json!("changed-runner");
+            }
+        }
+        "reference_sha256" => {
+            receipt["runtimes"][0]["binary"]["sha256"] = serde_json::json!("3".repeat(64));
+        }
+        "candidate_sha256" => {
+            receipt["runtimes"][1]["binary"]["sha256"] = serde_json::json!("4".repeat(64));
+        }
+        "action_schedule_sha256"
+        | "motion_contract_sha256"
+        | "observer_version"
+        | "terminal_identity" => {
+            for runtime in receipt["runtimes"].as_array_mut().expect("runtimes") {
+                runtime["presentation_binding"][field] =
+                    serde_json::json!(format!("changed-{field}"));
+            }
+        }
+        "comparison_schema" => {}
+        other => panic!("unknown authority field {other}"),
+    });
+    if field == "comparison_schema" {
+        mutate_json(&root.join("comparison.json"), |comparison| {
+            comparison["schema_version"] = serde_json::json!("changed-comparison");
+        });
+    }
 }

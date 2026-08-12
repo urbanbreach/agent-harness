@@ -10,12 +10,13 @@ use std::time::Duration;
 
 use crate::theme::Theme;
 
-use super::ui_chrome::{display_width, panel_style, take_width_prefix};
+use super::ui_chrome::{display_width, panel_style};
 use super::ui_transcript::{ToolRailMotion, TranscriptRenderSurface, TranscriptRenderSurfaceKind};
 use super::ui_transcript_layout::MeasuredTranscriptSurface;
 use super::ui_transcript_style::{
     blend_color, pending_diamond_color, transcript_streaming_spinner_frame,
 };
+use crate::composer_atoms::split_graphemes;
 
 const TRANSCRIPT_SURFACE_RAIL_WIDTH: u16 = 1;
 pub(super) const TRANSCRIPT_SURFACE_TRAILING_GAP_WIDTH: u16 = 2;
@@ -830,21 +831,24 @@ pub(super) fn wrap_surface_spans(
         if !current.is_empty() {
             rows.push(current);
             current = Vec::new();
-            current_width = 0;
         }
 
-        let mut remainder = token_text.as_str();
-        while !remainder.is_empty() {
-            let chunk = take_width_prefix(remainder, width);
-            current_width = display_width(chunk);
-            current.push(Span::styled(chunk.to_string(), token.style));
-            remainder = &remainder[chunk.len()..];
-            if !remainder.is_empty() {
+        let clusters = split_graphemes(&token_text);
+        let mut chunk = String::new();
+        let mut chunk_width = 0usize;
+        for cluster in clusters {
+            let cluster_width = usize::from(cluster.display_width());
+            if !chunk.is_empty() && chunk_width.saturating_add(cluster_width) > width {
+                current.push(Span::styled(std::mem::take(&mut chunk), token.style));
                 rows.push(current);
                 current = Vec::new();
-                current_width = 0;
+                chunk_width = 0;
             }
+            chunk.push_str(cluster.as_str());
+            chunk_width = chunk_width.saturating_add(cluster_width);
         }
+        current_width = chunk_width;
+        current.push(Span::styled(chunk, token.style));
     }
 
     if !current.is_empty() {

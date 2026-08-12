@@ -31,6 +31,7 @@ pub struct FrameOutputMetrics {
     pub no_op_frames: u64,
     pub full_repaints: u64,
     pub bytes_submitted: u64,
+    pub capture_write_calls: u64,
     pub frame_build_time_micros: u64,
     pub max_frame_build_time_micros: u64,
 }
@@ -48,6 +49,14 @@ pub struct FrameWriterMetrics {
 pub enum FrameWriteStage {
     Write,
     Flush,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum FrameOutputFailure {
+    #[error("terminal frame writer failed during {0:?}")]
+    Write(FrameWriteStage),
+    #[error("terminal frame writer acknowledgement channel disconnected")]
+    Disconnected,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

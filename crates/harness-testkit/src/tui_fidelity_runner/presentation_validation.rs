@@ -32,6 +32,47 @@ pub enum PresentationValidationError {
     VisibleCauseUnpresented { cause_id: String },
     #[error("runner interaction {interaction_id} has no native terminal receipt cause")]
     ExternalInteractionUnlinked { interaction_id: String },
+    #[error("disclosure transition missing: {transition}")]
+    DisclosureTransitionMissing { transition: &'static str },
+}
+
+pub fn validate_packet2_disclosure(
+    evidence: &ExternalPresentationEvidence,
+) -> Result<(), PresentationValidationError> {
+    let sentinel = crate::tui_fidelity_fixture::DISCLOSURE_SENTINEL;
+    let body = crate::tui_fidelity_fixture::DISCLOSURE_BODY;
+    let states = evidence.observations.iter().map(|observation| {
+        let text = observation
+            .frame
+            .cells
+            .iter()
+            .filter(|cell| !cell.continuation)
+            .fold(String::new(), |mut text, cell| {
+                text.push_str(&cell.grapheme);
+                text
+            });
+        (text.contains(sentinel), text.contains(body))
+    });
+    let mut open = false;
+    let mut closed_after_open = false;
+    for (sentinel_visible, body_visible) in states {
+        match (open, sentinel_visible, body_visible) {
+            (false, true, true) => open = true,
+            (true, _, false) => closed_after_open = true,
+            _ => {}
+        }
+    }
+    if !open {
+        return Err(PresentationValidationError::DisclosureTransitionMissing {
+            transition: "open",
+        });
+    }
+    if !closed_after_open {
+        return Err(PresentationValidationError::DisclosureTransitionMissing {
+            transition: "close",
+        });
+    }
+    Ok(())
 }
 
 pub fn validate_presentation_evidence(
@@ -54,6 +95,7 @@ pub fn validate_presentation_evidence(
                 external,
                 native,
                 native_trace_artifact,
+                scheduling_sidecar: _,
                 links,
             },
         ) => {

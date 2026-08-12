@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 pub(super) struct CaptureState {
     pub(super) active: bool,
     pub(super) bytes: Vec<u8>,
+    pub(super) write_calls: u64,
 }
 
 pub(super) fn capture_lock(state: &Mutex<CaptureState>) -> MutexGuard<'_, CaptureState> {
@@ -53,6 +54,7 @@ impl Write for FrameOutputWriter {
             .try_reserve(bytes.len())
             .map_err(|_| io::Error::other("terminal frame allocation failed"))?;
         capture.bytes.extend_from_slice(bytes);
+        capture.write_calls = capture.write_calls.saturating_add(1);
         Ok(bytes.len())
     }
 

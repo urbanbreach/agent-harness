@@ -16,6 +16,7 @@ pub mod tui_fidelity_closure;
 pub mod tui_fidelity_compare;
 pub mod tui_fidelity_deadline;
 pub mod tui_fidelity_dependency_cone;
+pub mod tui_fidelity_fixture;
 pub mod tui_fidelity_matrix;
 pub mod tui_fidelity_obligation;
 pub mod tui_fidelity_runner;

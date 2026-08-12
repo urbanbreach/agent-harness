@@ -1,10 +1,9 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
-use std::sync::mpsc as std_mpsc;
 
 use harness_core::event::EventEnvelopeV1;
 use harness_tui::app::{SessionHistoryEntry, TogglesConfig};
-use harness_tui::{LiveUpdate, TuiMode, TuiOptions};
+use harness_tui::{LiveUpdateReceiver, TuiMode, TuiOptions};
 
 use super::workflow::UiIntentSink;
 
@@ -16,7 +15,7 @@ pub(super) fn continue_live_tui_options(
     run_dir: PathBuf,
     historical_events: Vec<EventEnvelopeV1>,
     session_history_entries: Vec<SessionHistoryEntry>,
-    update_rx: std_mpsc::Receiver<LiveUpdate>,
+    update_rx: LiveUpdateReceiver,
     exit_on_finish: bool,
     ui_intent_sender: UiIntentSink,
     compact_session_supported: bool,
@@ -50,7 +49,7 @@ pub(super) fn continue_live_tui_options(
 pub(super) fn new_live_tui_options(
     run_dir: PathBuf,
     session_history_entries: Vec<SessionHistoryEntry>,
-    update_rx: std_mpsc::Receiver<LiveUpdate>,
+    update_rx: LiveUpdateReceiver,
     exit_on_finish: bool,
     ui_intent_sender: UiIntentSink,
     compact_session_supported: bool,

@@ -1,11 +1,10 @@
 // allow: SIZE_OK — CLI TUI workflow (launch + lineage + auth)
 use std::io::Write;
 use std::path::PathBuf;
-use std::sync::mpsc as std_mpsc;
 
 use harness_core::redact::{DefaultRedactor, Redactor};
 use harness_tui::app::LaunchMetadata;
-use harness_tui::{LiveUpdate, OperatorNoticeLevel};
+use harness_tui::{LiveUpdate, LiveUpdateSender, OperatorNoticeLevel};
 
 use super::live_settings::{resolve_live_settings, LiveSettings};
 use super::TuiCommand;
@@ -35,7 +34,7 @@ pub(super) fn spawn_tui_auth_backend_task(
     config_path: Option<PathBuf>,
     session_dir: Option<PathBuf>,
     workspace_root: PathBuf,
-    live_update_tx: std_mpsc::Sender<LiveUpdate>,
+    live_update_tx: LiveUpdateSender,
 ) {
     let normalized_args = normalize_tui_auth_args(args.clone());
     let display = display_tui_auth_args(&normalized_args);
@@ -123,7 +122,7 @@ pub(super) fn run_tui_auth_backend_once(
     session_dir: Option<PathBuf>,
     workspace_root: PathBuf,
     stdin: String,
-    live_update_tx: Option<std_mpsc::Sender<LiveUpdate>>,
+    live_update_tx: Option<LiveUpdateSender>,
 ) -> (String, OperatorNoticeLevel, bool) {
     let deps = harness::CliDeps::real().with_current_dir(workspace_root);
     run_tui_auth_backend_streaming_with_deps(
@@ -154,7 +153,7 @@ pub(super) fn run_tui_auth_backend_streaming_with_deps(
     session_dir: Option<PathBuf>,
     stdin: &str,
     deps: &harness::CliDeps,
-    live_update_tx: Option<std_mpsc::Sender<LiveUpdate>>,
+    live_update_tx: Option<LiveUpdateSender>,
 ) -> (String, OperatorNoticeLevel, bool) {
     let args = normalize_tui_auth_args(args);
     let mut stdin = std::io::Cursor::new(stdin.as_bytes().to_vec());
@@ -191,7 +190,7 @@ pub(super) fn run_tui_auth_backend_streaming_with_deps(
 }
 
 struct TuiAuthNoticeWriter {
-    live_update_tx: Option<std_mpsc::Sender<LiveUpdate>>,
+    live_update_tx: Option<LiveUpdateSender>,
     level: OperatorNoticeLevel,
     prefix: &'static str,
     redactor: DefaultRedactor,
@@ -201,7 +200,7 @@ struct TuiAuthNoticeWriter {
 
 impl TuiAuthNoticeWriter {
     fn new(
-        live_update_tx: Option<std_mpsc::Sender<LiveUpdate>>,
+        live_update_tx: Option<LiveUpdateSender>,
         level: OperatorNoticeLevel,
         prefix: &'static str,
     ) -> Self {

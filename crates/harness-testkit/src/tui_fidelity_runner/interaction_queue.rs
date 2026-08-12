@@ -45,6 +45,12 @@ fn expected_receipts(action: &ScenarioAction) -> Option<(InteractionEventClass, 
     match action {
         ScenarioAction::TimedKey(_) => Some((InteractionEventClass::Key, 1)),
         ScenarioAction::Paste(_) => Some((InteractionEventClass::Paste, 1)),
+        ScenarioAction::TypeText(action) => Some((
+            InteractionEventClass::Key,
+            u16::try_from(action.text.len()).unwrap_or(u16::MAX),
+        )),
+        ScenarioAction::ClickText(_) => Some((InteractionEventClass::Mouse, 2)),
+        ScenarioAction::WaitForText(_) => None,
         ScenarioAction::Mouse(_) => Some((InteractionEventClass::Mouse, 1)),
         ScenarioAction::Drag(_) => Some((InteractionEventClass::Mouse, 3)),
         ScenarioAction::Wheel(action) => Some((InteractionEventClass::Mouse, action.amount)),

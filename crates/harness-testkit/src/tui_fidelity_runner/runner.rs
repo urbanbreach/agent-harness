@@ -10,7 +10,7 @@ use super::types::{AdapterReceipt, DualRuntimeReceipt, RunnerConfig, RuntimeBina
 use super::util::write_json;
 use super::RUNNER_RECEIPT_SCHEMA;
 use crate::tui_fidelity::{AdapterKind, Scenario};
-use crate::tui_fidelity_compare::compare_capture;
+use crate::tui_fidelity_compare::{compare_capture_with_profile, AcceptanceProfile};
 
 pub fn run_compare(
     scenario: &Scenario,
@@ -23,6 +23,20 @@ pub fn run_compare_with_cached_reference(
     scenario: &Scenario,
     config: &RunnerConfig,
     cached_reference: Option<AdapterReceipt>,
+) -> Result<DualRuntimeReceipt, RunnerError> {
+    run_compare_with_cached_reference_and_profile(
+        scenario,
+        config,
+        cached_reference,
+        AcceptanceProfile::FullParity,
+    )
+}
+
+pub fn run_compare_with_cached_reference_and_profile(
+    scenario: &Scenario,
+    config: &RunnerConfig,
+    cached_reference: Option<AdapterReceipt>,
+    profile: AcceptanceProfile,
 ) -> Result<DualRuntimeReceipt, RunnerError> {
     let evidence = EvidenceSession::initialize(&config.evidence_dir)?;
     let mut tracker = CleanupTracker::default();
@@ -58,7 +72,7 @@ pub fn run_compare_with_cached_reference(
     }
     let result = result.and_then(|mut receipt| {
         let cleanup = tracker.receipt(None);
-        let comparison = compare_capture(scenario, &receipt, &cleanup);
+        let comparison = compare_capture_with_profile(scenario, &receipt, &cleanup, profile);
         write_json(&config.evidence_dir.join("comparison.json"), &comparison)?;
         receipt.comparison = Some(comparison.clone());
         write_json(&config.evidence_dir.join("receipt.json"), &receipt)?;
@@ -118,7 +132,22 @@ fn capture_adapter(
         AdapterKind::Harness => &config.harness,
     };
     let evidence_dir = config.evidence_dir.join(adapter.as_str());
-    let capture = execute(
+    let fixture = if scenario.id.0 == "packet2-sustained-stream" {
+        Some(
+            crate::tui_fidelity_fixture::Packet2FixtureServer::start().map_err(|error| {
+                RunnerError::Process {
+                    adapter,
+                    detail: format!("start Packet 2 fixture: {error}"),
+                }
+            })?,
+        )
+    } else {
+        None
+    };
+    let fixture_base_url = fixture
+        .as_ref()
+        .map(crate::tui_fidelity_fixture::Packet2FixtureServer::base_url);
+    let capture_result = execute(
         scenario,
         config.timing,
         adapter,
@@ -126,7 +155,17 @@ fn capture_adapter(
         &runtime,
         &evidence_dir,
         tracker,
-    )?;
+        fixture_base_url.as_deref(),
+    );
+    let fixture_result = fixture.map(|fixture| fixture.finish());
+    if let Some(result) = fixture_result {
+        let trace = result.map_err(|error| RunnerError::Process {
+            adapter,
+            detail: format!("finish Packet 2 fixture: {error}"),
+        })?;
+        write_json(&evidence_dir.join("packet2-fixture.json"), &trace)?;
+    }
+    let capture = capture_result?;
     let checkpoints = render(
         adapter,
         &capture,
@@ -218,6 +257,20 @@ fn adapter_receipt(
             adapter,
             detail: format!("presentation evidence: {error}"),
         })?;
+    if scenario.id.0 == "packet2-sustained-stream" {
+        let external = match &presentation {
+            super::presentation_receipt::PresentationEvidence::ExternalOnly { external }
+            | super::presentation_receipt::PresentationEvidence::HarnessNative {
+                external, ..
+            } => external,
+        };
+        super::presentation_validation::validate_packet2_disclosure(external).map_err(|error| {
+            RunnerError::Process {
+                adapter,
+                detail: format!("Packet 2 disclosure evidence: {error}"),
+            }
+        })?;
+    }
     Ok(AdapterReceipt {
         adapter,
         binary: binary.clone(),

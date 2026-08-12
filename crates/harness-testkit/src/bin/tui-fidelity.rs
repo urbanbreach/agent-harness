@@ -14,17 +14,22 @@ mod tui_fidelity_commands;
 use harness_testkit::binary_receipt::read_receipt;
 use harness_testkit::tui_fidelity::{AdapterKind, Scenario};
 use harness_testkit::tui_fidelity_cache::ReferenceCache;
+use harness_testkit::tui_fidelity_compare::AcceptanceProfile;
 use harness_testkit::tui_fidelity_runner::{
-    record_preflight_failure, run_compare_with_cached_reference, CandidateBinding, RendererConfig,
-    RunnerConfig, RunnerError, RunnerTiming, RuntimeBinary, SourceGuardConfig,
+    record_preflight_failure, run_compare_with_cached_reference_and_profile, CandidateBinding,
+    RendererConfig, RunnerConfig, RunnerError, RunnerTiming, RuntimeBinary, SourceGuardConfig,
 };
 
 const STARTUP_SMOKE: &str = include_str!("../../tests/fixtures/tui_fidelity/startup-smoke.json");
+const PACKET2_SUSTAINED_STREAM: &str =
+    include_str!("../../tests/fixtures/tui_fidelity/packet2-sustained-stream.json");
 const REFERENCE_REVISION: &str = "be713136d2a69080743a3f6b3c72077057e5948f";
 
 struct CompareArgs {
     scenario: String,
     reference_bin: PathBuf,
+    reference_receipt: PathBuf,
+    reference_root: PathBuf,
     harness_bin: PathBuf,
     candidate_receipt: PathBuf,
     evidence_dir: PathBuf,
@@ -32,6 +37,7 @@ struct CompareArgs {
     font_family: String,
     node_modules: Option<PathBuf>,
     timeout: Duration,
+    acceptance_profile: AcceptanceProfile,
 }
 
 fn main() -> ExitCode {
@@ -70,7 +76,7 @@ fn execute(arguments: Vec<OsString>) -> Result<(), RunnerError> {
         candidate_binding,
         source_guard: SourceGuardConfig {
             program: repo_root.join("scripts/tui-fidelity/source-guard.sh"),
-            reference_root: PathBuf::from("inspirations/grok-build"),
+            reference_root: args.reference_root,
             revision: REFERENCE_REVISION.to_owned(),
         },
         renderer: RendererConfig {
@@ -107,7 +113,12 @@ fn execute(arguments: Vec<OsString>) -> Result<(), RunnerError> {
         })?
         .flatten();
     let cache_hit = cached.is_some();
-    let receipt = run_compare_with_cached_reference(&scenario, &config, cached)?;
+    let receipt = run_compare_with_cached_reference_and_profile(
+        &scenario,
+        &config,
+        cached,
+        args.acceptance_profile,
+    )?;
     if !cache_hit {
         if let Some((cache, key)) = &cache {
             let reference = receipt
@@ -138,10 +149,12 @@ fn prepare_compare(
 ) -> Result<(Scenario, RuntimeBinary, RuntimeBinary, CandidateBinding), RunnerError> {
     let scenario = match args.scenario.as_str() {
         "startup-smoke" => Scenario::from_json(STARTUP_SMOKE).map_err(RunnerError::from)?,
+        "packet2-sustained-stream" => {
+            Scenario::from_json(PACKET2_SUSTAINED_STREAM).map_err(RunnerError::from)?
+        }
         other => tui_fidelity_baseline::load(other, repo_root)?,
     };
-    let receipt_path =
-        repo_root.join(".omo/evidence/task-2-grok-build-tui-experiential-parity/receipt.json");
+    let receipt_path = absolute_path(repo_root, &args.reference_receipt);
     let receipt = read_receipt(&receipt_path).map_err(|error| RunnerError::BinaryReceipt {
         path: receipt_path.clone(),
         detail: error.to_string(),
@@ -199,10 +212,12 @@ fn prepare_compare(
 fn parse_compare(arguments: Vec<OsString>) -> Result<CompareArgs, String> {
     let mut values = arguments.into_iter();
     if values.next().as_deref() != Some(std::ffi::OsStr::new("compare")) {
-        return Err("usage: tui-fidelity compare --scenario ID --reference-bin PATH --harness-bin PATH --candidate-receipt PATH --evidence-dir PATH [--browser-bin PATH] [--font-family NAME] [--node-modules PATH] [--timeout-ms N]".to_owned());
+        return Err("usage: tui-fidelity compare --scenario ID --reference-bin PATH --reference-receipt PATH --reference-root PATH --harness-bin PATH --candidate-receipt PATH --evidence-dir PATH [--acceptance full-parity|packet2-scheduling] [--browser-bin PATH] [--font-family NAME] [--node-modules PATH] [--timeout-ms N]".to_owned());
     }
     let mut scenario = None;
     let mut reference_bin = None;
+    let mut reference_receipt = None;
+    let mut reference_root = None;
     let mut harness_bin = None;
     let mut candidate_receipt = None;
     let mut evidence_dir = None;
@@ -210,6 +225,7 @@ fn parse_compare(arguments: Vec<OsString>) -> Result<CompareArgs, String> {
     let mut font_family = "DejaVu Sans Mono".to_owned();
     let mut node_modules = None;
     let mut timeout = Duration::from_secs(20);
+    let mut acceptance_profile = AcceptanceProfile::FullParity;
     while let Some(flag) = values.next() {
         let value = values
             .next()
@@ -217,6 +233,8 @@ fn parse_compare(arguments: Vec<OsString>) -> Result<CompareArgs, String> {
         match flag.to_str() {
             Some("--scenario") => scenario = Some(value.to_string_lossy().into_owned()),
             Some("--reference-bin") => reference_bin = Some(PathBuf::from(value)),
+            Some("--reference-receipt") => reference_receipt = Some(PathBuf::from(value)),
+            Some("--reference-root") => reference_root = Some(PathBuf::from(value)),
             Some("--harness-bin") => harness_bin = Some(PathBuf::from(value)),
             Some("--candidate-receipt") => candidate_receipt = Some(PathBuf::from(value)),
             Some("--evidence-dir") => evidence_dir = Some(PathBuf::from(value)),
@@ -230,12 +248,21 @@ fn parse_compare(arguments: Vec<OsString>) -> Result<CompareArgs, String> {
                     .map_err(|error| format!("invalid --timeout-ms: {error}"))?;
                 timeout = Duration::from_millis(millis);
             }
+            Some("--acceptance") => {
+                acceptance_profile = match value.to_str() {
+                    Some("full-parity") => AcceptanceProfile::FullParity,
+                    Some("packet2-scheduling") => AcceptanceProfile::Packet2Scheduling,
+                    _ => return Err("invalid --acceptance profile".to_owned()),
+                };
+            }
             _ => return Err(format!("unknown argument: {}", flag.to_string_lossy())),
         }
     }
     Ok(CompareArgs {
         scenario: scenario.ok_or("missing --scenario")?,
         reference_bin: reference_bin.ok_or("missing --reference-bin")?,
+        reference_receipt: reference_receipt.ok_or("missing --reference-receipt")?,
+        reference_root: reference_root.ok_or("missing --reference-root")?,
         harness_bin: harness_bin.ok_or("missing --harness-bin")?,
         candidate_receipt: candidate_receipt.ok_or("missing --candidate-receipt")?,
         evidence_dir: evidence_dir.ok_or("missing --evidence-dir")?,
@@ -243,6 +270,7 @@ fn parse_compare(arguments: Vec<OsString>) -> Result<CompareArgs, String> {
         font_family,
         node_modules,
         timeout,
+        acceptance_profile,
     })
 }
 

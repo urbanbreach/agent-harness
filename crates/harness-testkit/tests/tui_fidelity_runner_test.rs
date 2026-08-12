@@ -17,11 +17,14 @@ use harness_testkit::parity::semantic_frame_from_vt100_screen;
 use harness_testkit::tui_fidelity::{CheckpointError, CheckpointName, Scenario, ScenarioError};
 use harness_testkit::tui_fidelity_compare::compare_capture;
 use harness_testkit::tui_fidelity_runner::{
-    run_compare, run_compare_with_cached_reference, CleanupReceipt, PresentationEvidence,
-    PresentationTimestamp, RunnerError, RuntimeBinary,
+    run_compare, run_compare_with_cached_reference, run_compare_with_cached_reference_and_profile,
+    CleanupReceipt, PresentationEvidence, PresentationTimestamp, RunnerError, RuntimeBinary,
 };
 
 use support::{Fixture, STARTUP_SMOKE};
+
+const PACKET2_SUSTAINED_STREAM: &str =
+    include_str!("fixtures/tui_fidelity/packet2-sustained-stream.json");
 
 #[test]
 fn baseline_vt100_replay_preserves_unicode_wide_cell_geometry() {
@@ -490,6 +493,124 @@ fn packet1_controlled_defect_matrix() {
         receipt.comparison.unwrap().presentation
     );
     assert!(!missing_result.gates["presentation"].passed);
+}
+
+#[test]
+fn packet2_complete_real_process_receipt_passes() {
+    // Given: the pinned reference and current Harness binaries with isolated loopback fixtures.
+    let fixture = real_packet2_fixture("complete");
+    let scenario = Scenario::from_json(PACKET2_SUSTAINED_STREAM).expect("Packet 2 scenario");
+
+    // When: the production runner drives both real PTYs through the sustained scenario.
+    let receipt = run_compare_with_cached_reference_and_profile(
+        &scenario,
+        &fixture.config,
+        None,
+        harness_testkit::tui_fidelity_compare::AcceptanceProfile::Packet2Scheduling,
+    )
+    .expect("Packet 2 real-process receipt");
+
+    // Then: external evidence exists for both and Harness binds a scheduling sidecar.
+    assert_eq!(receipt.runtimes.len(), 2);
+    assert!(matches!(
+        &receipt.runtimes[1].presentation,
+        PresentationEvidence::HarnessNative {
+            scheduling_sidecar: Some(sidecar),
+            ..
+        } if sidecar.sha256.len() == 64
+    ));
+    let cleanup: CleanupReceipt = serde_json::from_slice(
+        &std::fs::read(fixture.config.evidence_dir.join("cleanup.json")).expect("cleanup receipt"),
+    )
+    .expect("cleanup JSON");
+    assert!(cleanup.surviving_pids.is_empty());
+    assert!(cleanup.cleanup_errors.is_empty());
+}
+
+#[test]
+fn packet2_rejects_unobserved_disclosure_and_stale_scheduling_digest() {
+    // Given: a complete Packet 2 receipt captured from real processes.
+    let fixture = real_packet2_fixture("defect");
+    let scenario = Scenario::from_json(PACKET2_SUSTAINED_STREAM).expect("Packet 2 scenario");
+    let mut receipt = run_compare_with_cached_reference_and_profile(
+        &scenario,
+        &fixture.config,
+        None,
+        harness_testkit::tui_fidelity_compare::AcceptanceProfile::Packet2Scheduling,
+    )
+    .expect("complete Packet 2 receipt");
+
+    // When: disclosure observations and the scheduling artifact are independently forged.
+    let external = harness_external_mut(&mut receipt);
+    for observation in &mut external.observations {
+        for cell in &mut observation.frame.cells {
+            cell.grapheme.clear();
+        }
+    }
+    let disclosure_error =
+        harness_testkit::tui_fidelity_runner::validate_packet2_disclosure(external)
+            .expect_err("unobserved disclosure must fail");
+    let PresentationEvidence::HarnessNative {
+        scheduling_sidecar: Some(sidecar),
+        ..
+    } = &receipt.runtimes[1].presentation
+    else {
+        panic!("Harness scheduling sidecar");
+    };
+    std::fs::write(&sidecar.path, b"stale").expect("forge scheduling sidecar");
+    let aggregate_error = harness_testkit::tui_fidelity_aggregate::aggregate_with_profile(
+        &five_copies_of_run(&fixture.config.evidence_dir),
+        harness_testkit::tui_fidelity_compare::AcceptanceProfile::Packet2Scheduling,
+    )
+    .expect_err("stale scheduling digest must fail");
+
+    // Then: both defects identify their fail-closed evidence boundary.
+    assert!(disclosure_error.to_string().contains("transition missing"));
+    assert!(aggregate_error.to_string().contains("digest"));
+}
+
+fn real_packet2_fixture(label: &str) -> Fixture {
+    let mut fixture = Fixture::new("normal", "normal", "normal");
+    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .expect("canonical repository root");
+    let revision = String::from_utf8(
+        std::process::Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(&repo)
+            .output()
+            .expect("Git revision")
+            .stdout,
+    )
+    .expect("UTF-8 revision")
+    .trim()
+    .to_owned();
+    let harness = repo.join("target/debug/harness");
+    let reference = repo.join("inspirations/grok-build/target/debug/xai-grok-pager");
+    fixture.config.repo_root = repo.clone();
+    fixture.config.reference =
+        RuntimeBinary::from_path(&reference, "be713136d2a69080743a3f6b3c72077057e5948f")
+            .expect("reference binary");
+    fixture.config.harness = RuntimeBinary::from_path(&harness, &revision).expect("Harness binary");
+    fixture.config.candidate_binding.candidate_sha = revision;
+    fixture.config.candidate_binding.candidate_binary_sha256 =
+        fixture.config.harness.sha256.clone();
+    fixture.config.candidate_binding.target_dir = repo.join("target");
+    fixture.config.timing = harness_testkit::tui_fidelity_runner::RunnerTiming {
+        tick: Duration::from_millis(75),
+        scenario_timeout: Duration::from_secs(20),
+        normal_exit_timeout: Duration::from_secs(5),
+        cleanup_timeout: Duration::from_secs(2),
+    };
+    if let Some(root) = std::env::var_os("HARNESS_PACKET2_EVIDENCE_DIR") {
+        fixture.config.evidence_dir = PathBuf::from(root).join(label);
+    }
+    fixture
+}
+
+fn five_copies_of_run(root: &std::path::Path) -> Vec<PathBuf> {
+    vec![root.to_path_buf(); 5]
 }
 
 fn write_packet1_artifact(name: &str, value: &impl serde::Serialize) {

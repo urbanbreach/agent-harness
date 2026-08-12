@@ -1,7 +1,6 @@
 // allow: SIZE_OK — CLI TUI workflow (launch + lineage + auth)
 use std::fs;
 use std::path::PathBuf;
-use std::sync::mpsc as std_mpsc;
 use std::sync::{Arc, Mutex};
 
 use harness_core::clock::{Clock, FakeClock, RealClock};
@@ -13,7 +12,10 @@ use harness_tui::app::{
     prompt_history_path_for_session_dir, set_pending_live_launch_metadata,
     set_pending_settings_project_config, LaunchMetadata,
 };
-use harness_tui::{run_tui_with_options, LiveUpdate, OperatorNoticeLevel, UiIntent};
+use harness_tui::{
+    live_update_channel, run_tui_with_options, LiveUpdate, LiveUpdateSender, OperatorNoticeLevel,
+    UiIntent,
+};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 
@@ -132,7 +134,7 @@ pub(super) async fn run_new_live_session(
     let launch_metadata = launch_metadata_for_mode(settings, &launch_selection);
     let run_dir = settings.session_dir.join(&run_id_override);
 
-    let (live_update_tx, live_update_rx) = std_mpsc::channel::<LiveUpdate>();
+    let (live_update_tx, live_update_rx) = live_update_channel();
     let (intent_tx, intent_rx) = mpsc::unbounded_channel::<UiIntent>();
     let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
     let mut shutdown_tx = Some(shutdown_tx);
@@ -264,7 +266,7 @@ async fn run_new_live_runtime(
     run_id_override: String,
     launch_metadata: LaunchMetadata,
     coordinator_config_warmup: LiveCoordinatorConfigWarmup,
-    live_update_tx: std_mpsc::Sender<LiveUpdate>,
+    live_update_tx: LiveUpdateSender,
     intent_rx: mpsc::UnboundedReceiver<UiIntent>,
     shutdown_rx: oneshot::Receiver<()>,
 ) -> Result<(), String> {
@@ -330,7 +332,7 @@ impl NewLiveRuntime {
 
 pub(super) fn spawn_session_history_refresh(
     session_dir: PathBuf,
-    live_update_tx: std_mpsc::Sender<LiveUpdate>,
+    live_update_tx: LiveUpdateSender,
 ) -> JoinHandle<Result<(), String>> {
     tokio::task::spawn_blocking(move || {
         match load_startup_session_history_entries(&session_dir) {
@@ -362,7 +364,7 @@ async fn bootstrap_new_live_runtime(
     run_id_override: String,
     launch_metadata: LaunchMetadata,
     coordinator_config_warmup: LiveCoordinatorConfigWarmup,
-    live_update_tx: std_mpsc::Sender<LiveUpdate>,
+    live_update_tx: LiveUpdateSender,
     intent_rx: mpsc::UnboundedReceiver<UiIntent>,
 ) -> Result<NewLiveRuntime, String> {
     let workspace = prepare_new_live_workspace(settings, demo_mode, run_id_override.as_str())?;

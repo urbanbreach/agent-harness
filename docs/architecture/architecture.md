@@ -552,6 +552,21 @@ This enables:
 - Deterministic test fixtures
 - Session sharing without code execution
 
+## Input-first TUI runtime scheduling
+
+Interactive input has one producer: a terminal-reader thread feeds a bounded 128-event FIFO. The
+runtime arbiter orders fatal writer failure, frame acknowledgement, quit/cancel, terminal input,
+pacer and animation deadlines, then live provider updates. An input quantum is bounded to 16
+terminal envelopes or 2 ms; fairness permits live progress without reordering input. Live work
+retains the 16 live / 8 ms budget boundary. The scheduler uses independent 16 ms flush, 80 ms lazy
+scroll-gesture, and 33 ms animation clocks and keeps the one-frame acknowledgement rule.
+
+Packet 2 QA exercises typing, wheel input, disclosure open/close, five resizes, and semantic
+cancellation while the isolated `packet2-sustained-stream` SSE fixture still has ready deltas. Its
+Harness-only scheduling sidecar records decisions, depths, preemptions, deadlines, action IDs, and
+cause IDs; it does not contain provider or terminal text. Both runtimes remain observable through
+`external_pty_observed`; only Harness may claim `native_completed_write` after write and flush.
+
 The session CLI and model-visible session tools both consume replay-derived
 projections. Support export adds local-readiness evidence from doctor plus agent
 catalog, native tool catalog, session-tool readiness, route metadata, artifact

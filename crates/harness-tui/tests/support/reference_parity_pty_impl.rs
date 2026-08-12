@@ -20,8 +20,8 @@ use harness_tui::app::{
 };
 use harness_tui::UnwrapOrAbort;
 use harness_tui::{
-    run_tui_with_options, set_pending_replay_launch_metadata, LiveUpdate, TuiMode, TuiOptions,
-    UiIntent,
+    live_update_channel, run_tui_with_options, set_pending_replay_launch_metadata, LiveUpdate,
+    TuiMode, TuiOptions, UiIntent,
 };
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use std::cmp;
@@ -815,7 +815,7 @@ pub(crate) fn pty_helper_type_first_startup() {
         return;
     }
 
-    let (_keepalive, update_rx) = mpsc::channel();
+    let (_keepalive, update_rx) = live_update_channel();
     run_tui_with_options(TuiOptions {
         mode: TuiMode::Startup {
             session_history_entries: Vec::new(),
@@ -838,7 +838,7 @@ pub(crate) fn pty_helper_idle_shell() {
     }
 
     let run_dir = tempfile::tempdir().unwrap_or_abort();
-    let (_keepalive, update_rx) = mpsc::channel();
+    let (_keepalive, update_rx) = live_update_channel();
     install_parity_context_window();
     let option = ModelOption {
         profile: "parity".to_string(),
@@ -912,7 +912,7 @@ pub(crate) fn pty_helper_live_draft() {
     }
 
     let run_dir = tempfile::tempdir().unwrap_or_abort();
-    let (_keepalive, update_rx) = mpsc::channel();
+    let (_keepalive, update_rx) = live_update_channel();
     run_tui_with_options(TuiOptions {
         mode: TuiMode::Live {
             run_dir: run_dir.path().to_path_buf(),
@@ -1029,7 +1029,7 @@ pub(crate) fn pty_helper_live_tool_finish_transition() {
     }
 
     let run_dir = tempfile::tempdir().unwrap_or_abort();
-    let (update_tx, update_rx) = mpsc::channel();
+    let (update_tx, update_rx) = live_update_channel();
     let inject_tx = update_tx.clone();
     thread::spawn(move || {
         thread::sleep(PERMISSION_INJECT_DELAY);
@@ -1089,7 +1089,7 @@ pub(crate) fn pty_helper_live_tool_group_finish_transition() {
     }
 
     let run_dir = tempfile::tempdir().unwrap_or_abort();
-    let (update_tx, update_rx) = mpsc::channel();
+    let (update_tx, update_rx) = live_update_channel();
     let inject_tx = update_tx.clone();
     let inject_delay = std::env::var(HELPER_INJECT_DELAY_MS_ENV)
         .ok()
@@ -1166,7 +1166,7 @@ pub(crate) fn pty_helper_question_overlay() {
     }
 
     let run_dir = tempfile::tempdir().unwrap_or_abort();
-    let (update_tx, update_rx) = mpsc::channel();
+    let (update_tx, update_rx) = live_update_channel();
     let inject_tx = update_tx.clone();
     // Reference question state: Thought + Ask + Waiting chrome above the dock.
     // Seed an in-flight turn, then inject the question permission so orphan Ask projects.
@@ -1219,7 +1219,7 @@ pub(crate) fn pty_helper_question_overlay() {
 
 fn run_live_with_historical_events(historical_events: Vec<EventEnvelopeV1>) {
     let run_dir = tempfile::tempdir().unwrap_or_abort();
-    let (_keepalive, update_rx) = mpsc::channel();
+    let (_keepalive, update_rx) = live_update_channel();
     install_parity_context_window();
     run_tui_with_options(TuiOptions {
         mode: TuiMode::Live {
@@ -1246,7 +1246,7 @@ pub(crate) fn pty_helper_permission_overlay() {
     }
 
     let run_dir = tempfile::tempdir().unwrap_or_abort();
-    let (update_tx, update_rx) = mpsc::channel();
+    let (update_tx, update_rx) = live_update_channel();
     let inject_tx = update_tx.clone();
     thread::spawn(move || {
         thread::sleep(PERMISSION_INJECT_DELAY);
@@ -1313,7 +1313,7 @@ pub(crate) fn pty_helper_permission_overlay_empty_draft() {
     }
 
     let run_dir = tempfile::tempdir().unwrap_or_abort();
-    let (update_tx, update_rx) = mpsc::channel();
+    let (update_tx, update_rx) = live_update_channel();
     let inject_tx = update_tx.clone();
     thread::spawn(move || {
         thread::sleep(PERMISSION_INJECT_DELAY);

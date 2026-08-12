@@ -344,6 +344,32 @@ fn accepted_frame_is_serialized_with_synchronized_markers() {
 }
 
 #[test]
+fn dense_draw_batches_terminal_capture_writes() {
+    // Given: enough changed cells to exceed the historical per-command capture path.
+    let (mut output, writer, receiver) = FrameOutput::bounded(1);
+    let mut backend = FrameOutputBackend::new(writer);
+    let cells = vec![Cell::default(); 3_500];
+
+    // When: a resize-sized differential frame is serialized.
+    output.begin_frame().expect("begin dense frame");
+    backend
+        .draw(cells.iter().enumerate().map(|(index, cell)| {
+            let index = u16::try_from(index).expect("test cell index");
+            (index % 100, index / 100, cell)
+        }))
+        .expect("draw dense frame");
+    output.finish_frame().expect("finish dense frame");
+
+    // Then: Crossterm commands cross the synchronized capture boundary in bounded batches.
+    assert!(receiver.try_recv().is_ok());
+    assert!(
+        output.metrics().capture_write_calls <= 2,
+        "dense frame used {} capture writes",
+        output.metrics().capture_write_calls
+    );
+}
+
+#[test]
 fn unchanged_cursor_emits_zero_commands() {
     // Given: a backend whose visible cursor position has already been recorded.
     let (mut output, writer, receiver) = FrameOutput::bounded(1);

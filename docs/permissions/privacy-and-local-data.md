@@ -28,6 +28,12 @@ cleanup/provenance metadata. They must not include raw user input, provider cont
 cookies, or hidden reasoning. Operators should keep the generated artifact directory local, review
 it before sharing, and use the normal redacted support export for support cases.
 
+Packet 2 scheduling evidence follows the same boundary. The
+`harness.packet2-scheduling.v1` sidecar stores only terminal sequence numbers, source decisions,
+ready depths, preemption/fairness facts, deadlines, and opaque action/cause IDs. Fixture request and
+delta logs are local artifacts bound by SHA-256; scheduling receipts never copy prompt text,
+disclosure content, provider deltas, shell output, credentials, or hidden reasoning.
+
 ## Operator checklist
 
 1. Review provider/MCP config before live calls.

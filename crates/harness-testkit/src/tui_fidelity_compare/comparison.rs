@@ -8,7 +8,7 @@ use crate::tui_fidelity::{CheckpointName, Scenario};
 use crate::tui_fidelity_runner::{AdapterReceipt, CleanupReceipt, DualRuntimeReceipt};
 
 use super::error::ComparatorError;
-use super::types::{ComparisonReceipt, GateReceipt, COMPARISON_RECEIPT_SCHEMA};
+use super::types::{AcceptanceProfile, ComparisonReceipt, GateReceipt, COMPARISON_RECEIPT_SCHEMA};
 
 const REQUIRED_ARTIFACTS: [&str; 6] = [
     "terminal.png",
@@ -23,6 +23,15 @@ pub fn compare_capture(
     scenario: &Scenario,
     capture: &DualRuntimeReceipt,
     cleanup: &CleanupReceipt,
+) -> ComparisonReceipt {
+    compare_capture_with_profile(scenario, capture, cleanup, AcceptanceProfile::FullParity)
+}
+
+pub fn compare_capture_with_profile(
+    scenario: &Scenario,
+    capture: &DualRuntimeReceipt,
+    cleanup: &CleanupReceipt,
+    profile: AcceptanceProfile,
 ) -> ComparisonReceipt {
     let mut gates = BTreeMap::new();
     record_gate(
@@ -52,9 +61,22 @@ pub fn compare_capture(
     record_gate(&mut gates, "exit", compare_exits(scenario, capture));
     record_gate(&mut gates, "cleanup", compare_cleanup(cleanup));
     let capture_succeeded = gates.get("presentation").is_some_and(|gate| gate.passed);
-    let comparison_passed = capture_succeeded && gates.values().all(|gate| gate.passed);
+    let comparison_passed = capture_succeeded
+        && match profile {
+            AcceptanceProfile::FullParity => gates.values().all(|gate| gate.passed),
+            AcceptanceProfile::Packet2Scheduling => [
+                "presentation",
+                "provenance",
+                "checkpoint",
+                "exit",
+                "cleanup",
+            ]
+            .iter()
+            .all(|name| gates.get(*name).is_some_and(|gate| gate.passed)),
+        };
     ComparisonReceipt {
         schema_version: COMPARISON_RECEIPT_SCHEMA.to_owned(),
+        acceptance_profile: profile,
         capture_succeeded,
         comparison_passed,
         gates,

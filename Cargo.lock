@@ -1476,6 +1476,7 @@ name = "harness-tui"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "crossbeam-channel",
  "crossterm",
  "font8x8",
  "fontdue",
@@ -1493,6 +1494,7 @@ dependencies = [
  "sha2 0.11.0",
  "syntect",
  "tempfile",
+ "thiserror 2.0.18",
  "unicode-width",
  "vt100",
 ]

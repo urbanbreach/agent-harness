@@ -34,11 +34,16 @@ case "$target_dir" in
   "$repo_root/target"/*) ;;
   *) fail "target directory must be inside the worktree target directory" ;;
 esac
-receipt_path="$(realpath -m -- "$repo_root/$receipt")"
+if [[ "$receipt" = /* ]]; then
+  receipt_path="$(realpath -m -- "$receipt")"
+else
+  receipt_path="$(realpath -m -- "$repo_root/$receipt")"
+fi
 mkdir -p -- "$target_dir" "$(dirname -- "$receipt_path")"
 
 CARGO_TARGET_DIR="$target_dir" cargo build -p harness --bin harness --locked
 CARGO_TARGET_DIR="$target_dir" cargo build -p harness-testkit --bin tui-fidelity --locked
+CARGO_TARGET_DIR="$target_dir" cargo build -p harness-testkit --bin tui_fidelity_aggregate --locked
 
 candidate_sha="$(GIT_MASTER=1 git rev-parse HEAD)"
 harness_bin="$target_dir/debug/harness"

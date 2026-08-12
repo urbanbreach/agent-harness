@@ -1,7 +1,6 @@
 // allow: SIZE_OK — TUI runtime loop (poll interval + event dispatch + terminal resize + shutdown handling)
 use crate::UnwrapOrAbort;
 use std::path::PathBuf;
-use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -16,34 +15,62 @@ use harness_core::event::EventEnvelopeV1;
 use ratatui::buffer::Buffer;
 use ratatui::Terminal;
 
-use crate::app::{
-    set_pending_live_prompt_draft, AppState, LaunchMetadata, SessionHistoryEntry, ToastVariant,
-    TogglesConfig, UiIntent,
-};
-use crate::event::{self, poll};
+use crate::app::{AppState, LaunchMetadata, SessionHistoryEntry, TogglesConfig, UiIntent};
+use crate::event;
 use crate::input::{
     ScrollConfigOverrides, ScrollNormalizer, ScrollNormalizerConfig, ScrollSampleDirection,
+    TerminalIngressReader, TerminalReaderStatus,
 };
-use crate::presentation::{PresentationCauseKind, PresentationClock, RenderDemand, RenderReason};
+use crate::presentation::{
+    CauseId, InteractionId, PresentationCauseKind, PresentationClock, RenderDemand, RenderReason,
+};
 use crate::runtime_integration::RuntimeExperience;
+use crate::runtime_live_updates::{
+    apply_one_live_update, live_update_channel, LiveUpdateDrainState, LiveUpdateReceiver,
+};
+#[cfg(test)]
+use crate::runtime_live_updates::{drain_live_updates, LIVE_UPDATE_DRAIN_MAX_PER_FRAME};
 use crate::runtime_presentation::{InteractionEventClass, PresentationTelemetrySession};
-use crate::scheduling::{FrameNow, RuntimePacer, WheelBatch, WheelDirection, WheelSample};
+use crate::runtime_scheduling::{
+    SchedulingLiveReadiness, SchedulingReadinessSignal, SchedulingTelemetrySession,
+};
+use crate::runtime_wait_set::{FrameRuntimeEvent, RuntimeWaitSet, RuntimeWake};
+use crate::scheduling::{
+    BatchBudget, FairnessTurn, FrameNow, RuntimeArbiter, RuntimeDecision, RuntimePacer,
+    RuntimePacerAction, RuntimeReady, WheelBatch, WheelDirection, WheelSample,
+};
 use crate::terminal::{
     FrameKind, FrameOutput, FrameOutputBackend, FrameSubmission, Presenter,
     ProductionTerminalSession,
 };
 use crate::ui;
 
-const IDLE_POLL_INTERVAL: Duration = Duration::from_secs(1);
-const FRAME_ACK_POLL_INTERVAL: Duration = Duration::from_millis(1);
-const LIVE_UPDATE_DRAIN_MAX_PER_FRAME: usize = 16;
-const LIVE_UPDATE_DRAIN_MAX_DURATION: Duration = Duration::from_millis(8);
 const FRAME_OUTPUT_QUEUE_CAPACITY: usize = 1;
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-struct LiveUpdateDrainState {
-    changed: bool,
-    disconnected: bool,
-    budget_exhausted: bool,
+
+fn select_runtime_decision(arbiter: &RuntimeArbiter, ready: RuntimeReady) -> RuntimeDecision {
+    arbiter.decide(ready)
+}
+
+fn record_scheduling_decision(
+    session: Option<&mut SchedulingTelemetrySession>,
+    interaction_id: Option<&InteractionId>,
+    cause_id: Option<&CauseId>,
+    live: SchedulingLiveReadiness,
+    fairness_yield: bool,
+) {
+    if let (Some(session), Some(cause_id)) = (session, cause_id) {
+        session.record_terminal_ready(
+            interaction_id,
+            cause_id,
+            live,
+            fairness_yield,
+            Some(crate::scheduling::FLUSH_DEADLINE_MS),
+        );
+    }
+}
+
+fn has_canonical_render_demand(telemetry_enabled: bool, demand: Option<&RenderDemand>) -> bool {
+    !telemetry_enabled || demand.is_some()
 }
 
 /// Explicit model of terminal features the TUI may enable or rely on.
@@ -269,7 +296,7 @@ pub enum TuiMode {
     Startup {
         session_history_entries: Vec<SessionHistoryEntry>,
         prompt_history_path: Option<PathBuf>,
-        update_rx: Receiver<LiveUpdate>,
+        update_rx: LiveUpdateReceiver,
     },
     Replay {
         run_dir: PathBuf,
@@ -280,7 +307,7 @@ pub enum TuiMode {
         historical_events: Vec<EventEnvelopeV1>,
         session_history_entries: Vec<SessionHistoryEntry>,
         prompt_history_path: Option<PathBuf>,
-        update_rx: Receiver<LiveUpdate>,
+        update_rx: LiveUpdateReceiver,
         compact_session_supported: bool,
     },
 }
@@ -519,6 +546,10 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         reduced_motion_from_env(std::env::var("HARNESS_TUI_REDUCED_MOTION").ok().as_deref());
     let mut presentation_session = PresentationTelemetrySession::from_env()
         .context("failed to initialize local presentation telemetry")?;
+    let mut scheduling_session = SchedulingTelemetrySession::from_env()
+        .context("failed to initialize local scheduling telemetry")?;
+    let mut scheduling_readiness = SchedulingReadinessSignal::from_env()
+        .context("failed to initialize local scheduling readiness signal")?;
     let presentation_clock = presentation_session
         .as_ref()
         .map_or_else(PresentationClock::new, PresentationTelemetrySession::clock);
@@ -531,8 +562,11 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
     let backend = FrameOutputBackend::new(frame_writer);
     let mut terminal = Terminal::new(backend)?;
     let writer_worker = frame_receiver.spawn(stdout)?;
+    let (terminal_reader, mut terminal_ingress) = TerminalIngressReader::spawn(usize::from(
+        crate::perf_budgets::QueueBounds::strict().max_input_events,
+    ));
 
-    let run_result = (|| -> Result<()> {
+    let mut run_result = (|| -> Result<()> {
         let pacing_epoch = Instant::now();
         let mut pacer = RuntimePacer::with_reduced_motion(reduced_motion);
         let scroll_mode = std::env::var("HARNESS_TUI_SCROLL_MODE").ok();
@@ -552,6 +586,9 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         .with_overrides(scroll_overrides);
         let mut scroll_normalizer = ScrollNormalizer::new(scroll_config);
         let mut presenter = Presenter::new();
+        let mut pending_terminal = None;
+        let mut arbiter = RuntimeArbiter::default();
+        let mut input_budget = None;
         if let Some(session) = presentation_session.as_mut() {
             session.record_visible_cause(
                 PresentationCauseKind::Startup,
@@ -562,28 +599,71 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
 
         loop {
             let frame_ready = frame_output.is_ready_for_frame();
+            if let Some(failure) = frame_output.take_fatal_failure() {
+                return Err(failure.into());
+            }
             if let Some(session) = presentation_session.as_mut() {
                 session.record_acknowledgements(frame_output.take_acknowledgements());
             }
-            let mut live_updates_pending = false;
-            if let Some(update_rx) = live_updates.as_ref() {
-                let drain_state =
-                    drain_live_updates_with_experience(&mut app, update_rx, &mut experience);
-                if drain_state.changed {
-                    if let Some(session) = presentation_session.as_mut() {
-                        session.record_visible_cause(
-                            PresentationCauseKind::LiveUpdate,
-                            RenderReason::LiveUpdate,
-                            None,
-                        );
+            if pending_terminal.is_none() {
+                pending_terminal = terminal_ingress.queue.try_recv().ok();
+            }
+            if let Some(signal) = scheduling_readiness.as_mut() {
+                let stream_active = app.active_turn_in_progress();
+                let live = live_updates.as_ref().map_or(
+                    SchedulingLiveReadiness {
+                        stream_active,
+                        ..SchedulingLiveReadiness::default()
+                    },
+                    |receiver| receiver.scheduling_readiness(stream_active),
+                );
+                signal
+                    .publish_if_changed(live)
+                    .context("failed to publish local scheduling readiness")?;
+            }
+            let now = Instant::now();
+            if input_budget
+                .as_ref()
+                .is_some_and(|budget: &BatchBudget| budget.exhausted(now))
+            {
+                arbiter.input_quantum_exhausted();
+            }
+            let pacing_due = pacer.needs_poll(
+                runtime_frame_now(pacing_epoch, now),
+                app.has_active_animations(),
+            );
+            let decision = select_runtime_decision(
+                &arbiter,
+                RuntimeReady {
+                    quit: app.should_quit,
+                    terminal_input: pending_terminal.is_some(),
+                    pacer_deadline: pacing_due,
+                    live_update: live_updates
+                        .as_ref()
+                        .is_some_and(|receiver| !receiver.is_empty()),
+                    ..RuntimeReady::default()
+                },
+            );
+            let input_priority = matches!(decision, RuntimeDecision::TerminalInput);
+            if matches!(decision, RuntimeDecision::LiveUpdate) {
+                if let Some(update_rx) = live_updates.as_ref() {
+                    let drain_state = apply_one_live_update(&mut app, update_rx, &mut experience);
+                    if drain_state.changed {
+                        if let Some(session) = presentation_session.as_mut() {
+                            session.record_visible_cause(
+                                PresentationCauseKind::LiveUpdate,
+                                RenderReason::LiveUpdate,
+                                None,
+                            );
+                        }
+                        presenter.request_redraw(Instant::now());
+                        pacer.request_flush();
                     }
-                    pacer.request_flush();
-                }
-                if drain_state.disconnected {
-                    live_updates = None;
-                }
-                if drain_state.budget_exhausted {
-                    live_updates_pending = true;
+                    if drain_state.disconnected {
+                        live_updates = None;
+                    }
+                    arbiter.live_applied();
+                    input_budget = None;
                 }
             }
             if app.clear_expired_quit_confirmation() {
@@ -597,10 +677,17 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                 pacer.request_flush();
             }
 
-            let pacing_action = pacer.poll(
-                runtime_frame_now(pacing_epoch, Instant::now()),
-                app.has_active_animations(),
-            );
+            let pacing_action = if matches!(
+                decision,
+                RuntimeDecision::PacerDeadline | RuntimeDecision::AnimationDeadline
+            ) {
+                pacer.poll(
+                    runtime_frame_now(pacing_epoch, Instant::now()),
+                    app.has_active_animations(),
+                )
+            } else {
+                RuntimePacerAction::default()
+            };
             if pacing_action.advance_animation {
                 app.advance_transcript_animation_phase();
                 if let Some(session) = presentation_session.as_mut() {
@@ -629,15 +716,22 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                     .and_then(PresentationTelemetrySession::take_render_demand);
                 match demand {
                     Some(demand) => presenter.request_redraw_for(demand, Instant::now()),
-                    None => presenter.request_redraw(Instant::now()),
+                    None if presentation_session.is_none() => {
+                        presenter.request_redraw(Instant::now());
+                    }
+                    None => {}
                 }
             }
-            if presenter.should_present(frame_ready) {
+            if !input_priority && presenter.should_present(frame_ready) {
                 let demand = presenter.take_render_demand().or_else(|| {
                     presentation_session
                         .as_mut()
                         .and_then(PresentationTelemetrySession::take_render_demand)
                 });
+                if !has_canonical_render_demand(presentation_session.is_some(), demand.as_ref()) {
+                    presenter.record_submission(FrameSubmission::Unchanged, Instant::now());
+                    continue;
+                }
                 let size = terminal.size()?;
                 let frame_area = ratatui::layout::Rect::new(0, 0, size.width, size.height);
                 app.set_frame_area(frame_area);
@@ -673,18 +767,64 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                 pacer.request_flush();
             }
 
-            if app.should_quit {
+            if matches!(decision, RuntimeDecision::Quit) || app.should_quit {
                 break;
             }
 
-            let event = if live_updates_pending {
-                poll(Duration::ZERO)?
+            let event = if input_priority {
+                let envelope = pending_terminal.take();
+                let budget = input_budget.get_or_insert_with(|| BatchBudget::input(Instant::now()));
+                budget.consume();
+                envelope.map(|envelope| envelope.event)
+            } else if matches!(decision, RuntimeDecision::Park) {
+                let now = Instant::now();
+                let deadline = pacer
+                    .next_wait_ms(runtime_frame_now(pacing_epoch, now))
+                    .map(|millis| now + Duration::from_millis(millis));
+                let wait_set = RuntimeWaitSet {
+                    frame: frame_output.acknowledgement_receiver(),
+                    reader: &terminal_ingress.status,
+                    terminal: terminal_ingress.queue.receiver(),
+                    live: live_updates.as_ref().map(LiveUpdateReceiver::receiver),
+                };
+                match wait_set.wait(deadline) {
+                    RuntimeWake::Terminal(envelope) => {
+                        pending_terminal = Some(envelope);
+                        None
+                    }
+                    RuntimeWake::Live(update) => {
+                        if let Some(update_rx) = live_updates.as_ref() {
+                            update_rx.defer_selected(update);
+                        }
+                        None
+                    }
+                    RuntimeWake::Frame(FrameRuntimeEvent::Acknowledged(ack)) => {
+                        frame_output.accept_acknowledgement(ack);
+                        None
+                    }
+                    RuntimeWake::Frame(FrameRuntimeEvent::Failed { ack, stage }) => {
+                        frame_output.accept_acknowledgement(ack);
+                        return Err(crate::terminal::FrameOutputFailure::Write(stage).into());
+                    }
+                    RuntimeWake::Frame(FrameRuntimeEvent::Disconnected) => {
+                        return Err(crate::terminal::FrameOutputFailure::Disconnected.into());
+                    }
+                    RuntimeWake::Reader(TerminalReaderStatus::Failed(error)) => {
+                        return Err(error.into());
+                    }
+                    RuntimeWake::LiveDisconnected => {
+                        live_updates = None;
+                        None
+                    }
+                    RuntimeWake::Reader(TerminalReaderStatus::Stopped)
+                    | RuntimeWake::ReaderDisconnected
+                    | RuntimeWake::TerminalDisconnected => {
+                        return Err(anyhow::anyhow!("terminal ingress reader disconnected"));
+                    }
+                    RuntimeWake::Deadline => None,
+                }
             } else {
-                poll(poll_timeout(
-                    &pacer,
-                    runtime_frame_now(pacing_epoch, Instant::now()),
-                    frame_output.has_in_flight_frame(),
-                ))?
+                None
             };
 
             if let Some(event) = event {
@@ -703,6 +843,16 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                         .context("failed to read runner interaction identity")?,
                     None => None,
                 };
+                let stream_active = app.active_turn_in_progress();
+                let live_readiness = live_updates.as_ref().map_or(
+                    SchedulingLiveReadiness {
+                        stream_active,
+                        ..SchedulingLiveReadiness::default()
+                    },
+                    |receiver| receiver.scheduling_readiness(stream_active),
+                );
+                let fairness_yield =
+                    matches!(arbiter.fairness(), FairnessTurn::OneLiveAfterInputQuantum);
                 let (cause_kind, render_reason) = match &event {
                     event::TuiEvent::Resize(_, _) => {
                         (PresentationCauseKind::Resize, RenderReason::Resize)
@@ -737,11 +887,21 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                     }
                     event::TuiEvent::Mouse(mouse) => {
                         if !mouse_event_requires_handling(mouse.kind, app.slash_visible) {
-                            if let Some(session) = presentation_session.as_mut() {
-                                session
-                                    .record_no_visible_cause(cause_kind, interaction_id)
-                                    .context("failed to record ignored terminal input")?;
-                            }
+                            let cause_id = match presentation_session.as_mut() {
+                                Some(session) => Some(
+                                    session
+                                        .record_no_visible_cause(cause_kind, interaction_id.clone())
+                                        .context("failed to record ignored terminal input")?,
+                                ),
+                                None => None,
+                            };
+                            record_scheduling_decision(
+                                scheduling_session.as_mut(),
+                                cause_id.as_ref().and(interaction_id.as_ref()),
+                                cause_id.as_ref(),
+                                live_readiness,
+                                fairness_yield,
+                            );
                             continue;
                         }
 
@@ -774,19 +934,33 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                                     normalized.row,
                                 ));
                             }
-                            if let Some(session) = presentation_session.as_mut() {
+                            let cause_id = if let Some(session) = presentation_session.as_mut() {
                                 if normalized.lines == 0 {
-                                    session
-                                        .record_no_visible_cause(cause_kind, interaction_id)
-                                        .context("failed to record unchanged wheel input")?;
+                                    Some(
+                                        session
+                                            .record_no_visible_cause(
+                                                cause_kind,
+                                                interaction_id.clone(),
+                                            )
+                                            .context("failed to record unchanged wheel input")?,
+                                    )
                                 } else {
-                                    session.record_visible_cause(
+                                    Some(session.record_visible_cause(
                                         cause_kind,
                                         render_reason,
-                                        interaction_id,
-                                    );
+                                        interaction_id.clone(),
+                                    ))
                                 }
-                            }
+                            } else {
+                                None
+                            };
+                            record_scheduling_decision(
+                                scheduling_session.as_mut(),
+                                cause_id.as_ref().and(interaction_id.as_ref()),
+                                cause_id.as_ref(),
+                                live_readiness,
+                                fairness_yield,
+                            );
                             continue;
                         }
 
@@ -839,16 +1013,31 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                         true
                     }
                 };
-                if event_changed {
-                    if let Some(session) = presentation_session.as_mut() {
-                        session.record_visible_cause(cause_kind, render_reason, interaction_id);
-                    }
+                let cause_id = if event_changed {
                     pacer.request_flush();
+                    presentation_session.as_mut().map(|session| {
+                        session.record_visible_cause(
+                            cause_kind,
+                            render_reason,
+                            interaction_id.clone(),
+                        )
+                    })
                 } else if let Some(session) = presentation_session.as_mut() {
-                    session
-                        .record_no_visible_cause(cause_kind, interaction_id)
-                        .context("failed to record unchanged terminal input")?;
-                }
+                    Some(
+                        session
+                            .record_no_visible_cause(cause_kind, interaction_id.clone())
+                            .context("failed to record unchanged terminal input")?,
+                    )
+                } else {
+                    None
+                };
+                record_scheduling_decision(
+                    scheduling_session.as_mut(),
+                    interaction_id.as_ref(),
+                    cause_id.as_ref(),
+                    live_readiness,
+                    fairness_yield,
+                );
             }
         }
         Ok(())
@@ -861,11 +1050,23 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                 .context("failed to close unpresented shutdown demand")?;
         }
     }
+    if terminal_reader.stop_and_join().is_err() && run_result.is_ok() {
+        run_result = Err(anyhow::anyhow!("terminal ingress reader panicked"));
+    }
     terminal.backend_mut().prepare_for_terminal_drop();
     drop(terminal);
     while frame_output.has_in_flight_frame() {
-        let _ = frame_output.is_ready_for_frame();
-        std::thread::yield_now();
+        match frame_output.acknowledgement_receiver().recv() {
+            Ok(ack) => frame_output.accept_acknowledgement(ack),
+            Err(_) => {
+                if run_result.is_ok() {
+                    run_result = Err(anyhow::anyhow!(
+                        "terminal frame writer acknowledgement disconnected"
+                    ));
+                }
+                break;
+            }
+        }
     }
     if let Some(session) = presentation_session.as_mut() {
         session.record_acknowledgements(frame_output.take_acknowledgements());
@@ -876,6 +1077,11 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         session
             .finish()
             .context("failed to persist local presentation telemetry")?;
+    }
+    if let Some(session) = scheduling_session.take() {
+        session
+            .finish()
+            .context("failed to persist local scheduling telemetry")?;
     }
     let mut stdout = writer_result.context("terminal frame writer failed")?;
     crossterm::execute!(stdout, Show).context("failed to restore terminal cursor after TUI")?;
@@ -947,7 +1153,7 @@ fn teardown_terminal_session(
 }
 
 pub fn run_tui() -> Result<()> {
-    let (_tx, rx) = mpsc::channel();
+    let (_tx, rx) = live_update_channel();
     run_tui_with_options(TuiOptions {
         mode: TuiMode::Live {
             run_dir: PathBuf::from("."),
@@ -975,15 +1181,9 @@ fn runtime_frame_now(epoch: Instant, now: Instant) -> FrameNow {
     }
 }
 
-fn poll_timeout(pacer: &RuntimePacer, now: FrameNow, frame_in_flight: bool) -> Duration {
-    let scheduled = pacer
-        .next_wait_ms(now)
-        .map_or(IDLE_POLL_INTERVAL, Duration::from_millis);
-    if frame_in_flight {
-        scheduled.min(FRAME_ACK_POLL_INTERVAL)
-    } else {
-        scheduled
-    }
+#[cfg(test)]
+fn poll_timeout(pacer: &RuntimePacer, now: FrameNow) -> Option<Duration> {
+    pacer.next_wait_ms(now).map(Duration::from_millis)
 }
 
 fn dispatch_wheel_batch(
@@ -1019,151 +1219,97 @@ fn mouse_event_requires_handling(_kind: MouseEventKind, _slash_visible: bool) ->
     true
 }
 
-fn drain_live_updates(
-    app: &mut AppState,
-    update_rx: &Receiver<LiveUpdate>,
-) -> LiveUpdateDrainState {
-    let mut experience = RuntimeExperience::new();
-    drain_live_updates_with_experience(app, update_rx, &mut experience)
-}
-
-fn drain_live_updates_with_experience(
-    app: &mut AppState,
-    update_rx: &Receiver<LiveUpdate>,
-    experience: &mut RuntimeExperience,
-) -> LiveUpdateDrainState {
-    let mut state = LiveUpdateDrainState::default();
-
-    let mut drained = 0usize;
-    let drain_started_at = Instant::now();
-
-    loop {
-        if drained >= LIVE_UPDATE_DRAIN_MAX_PER_FRAME
-            || (drained > 0 && drain_started_at.elapsed() >= LIVE_UPDATE_DRAIN_MAX_DURATION)
-        {
-            state.budget_exhausted = true;
-            break;
-        }
-
-        match update_rx.try_recv() {
-            Ok(LiveUpdate::Event(event)) => {
-                drained += 1;
-                if app
-                    .status_banner
-                    .as_deref()
-                    .is_some_and(transient_live_status_banner)
-                {
-                    app.set_status_banner(None);
-                }
-                experience.on_event(&event);
-                app.ingest_event(*event);
-                state.changed = true;
-            }
-            Ok(LiveUpdate::Status(status)) => {
-                drained += 1;
-                if app.status_banner.as_deref() != Some(status.as_str()) {
-                    app.set_status_banner(Some(status));
-                    state.changed = true;
-                }
-            }
-            Ok(LiveUpdate::SessionHistory(entries)) => {
-                drained += 1;
-                app.set_session_history_entries(entries);
-                state.changed = true;
-            }
-            Ok(LiveUpdate::ContinueSession {
-                run_id,
-                run_dir,
-                prompt_draft,
-            }) => {
-                drained += 1;
-                set_pending_live_prompt_draft(Some(prompt_draft));
-                app.emit_ui_intent(UiIntent::ContinueSession { run_id, run_dir });
-                app.should_quit = true;
-                state.changed = true;
-            }
-            Ok(LiveUpdate::OperatorNotice { message, level }) => {
-                drained += 1;
-                app.append_connect_dialog_authorization_detail(&message);
-                if matches!(level, OperatorNoticeLevel::Error)
-                    && is_auth_backend_failure_detail(&message)
-                {
-                    app.note_auth_backend_failure(&message);
-                }
-                if matches!(level, OperatorNoticeLevel::Error)
-                    && app.status_banner.as_deref() != Some(message.as_str())
-                    && !(is_auth_backend_failure_summary(&message)
-                        && app
-                            .status_banner
-                            .as_deref()
-                            .is_some_and(is_auth_backend_failure_detail))
-                {
-                    app.set_status_banner(Some(message.clone()));
-                }
-                app.show_toast(
-                    message,
-                    match level {
-                        OperatorNoticeLevel::Info => ToastVariant::Info,
-                        OperatorNoticeLevel::Error => ToastVariant::Error,
-                    },
-                );
-                state.changed = true;
-            }
-            Ok(LiveUpdate::AuthBackendResult { success, message }) => {
-                drained += 1;
-                let message = if !success && is_auth_backend_failure_summary(&message) {
-                    app.status_banner.clone().unwrap_or(message)
-                } else {
-                    message
-                };
-                app.apply_auth_backend_result(success, &message);
-                state.changed = true;
-            }
-            Ok(LiveUpdate::AuthProviderCatalogRefreshed { launch_metadata }) => {
-                drained += 1;
-                app.apply_auth_provider_catalog_refresh(*launch_metadata);
-                state.changed = true;
-            }
-            Ok(LiveUpdate::PluginLifecycleSummary(summary)) => {
-                drained += 1;
-                app.set_plugin_lifecycle_summary(Some(summary));
-                state.changed = true;
-            }
-            Err(TryRecvError::Empty) => break,
-            Err(TryRecvError::Disconnected) => {
-                let disconnected_message = "live event stream disconnected";
-                if app.status_banner.as_deref() != Some(disconnected_message) {
-                    app.set_status_banner(Some(disconnected_message.to_string()));
-                    state.changed = true;
-                }
-                state.disconnected = true;
-                break;
-            }
-        }
-    }
-
-    state
-}
-
-fn transient_live_status_banner(status: &str) -> bool {
-    let lower = status.to_ascii_lowercase();
-    lower.contains("lagged") || lower.contains("replaying")
-}
-
-fn is_auth_backend_failure_summary(message: &str) -> bool {
-    message.starts_with("auth backend failed (exit ") && !message.contains('\n')
-}
-
-fn is_auth_backend_failure_detail(message: &str) -> bool {
-    message.starts_with("auth backend error:")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::app::{AppState, ToastVariant};
+    use crate::scheduling::INPUT_BATCH_LIMIT;
     use crate::UnwrapOrAbort;
     use harness_core::proj::{RunStatus, SessionCatalogEntry, SessionModeSource};
+
+    #[test]
+    fn production_selector_observes_arbiter_fairness_mutation() {
+        let ready = RuntimeReady {
+            terminal_input: true,
+            live_update: true,
+            ..RuntimeReady::default()
+        };
+        let mut arbiter = RuntimeArbiter::default();
+
+        assert_eq!(
+            select_runtime_decision(&arbiter, ready),
+            RuntimeDecision::TerminalInput
+        );
+        arbiter.input_quantum_exhausted();
+        assert_eq!(
+            select_runtime_decision(&arbiter, ready),
+            RuntimeDecision::LiveUpdate
+        );
+        arbiter.live_applied();
+        assert_eq!(
+            select_runtime_decision(&arbiter, ready),
+            RuntimeDecision::TerminalInput
+        );
+    }
+
+    #[test]
+    fn active_stream_does_not_synthesize_live_readiness() {
+        let active_without_work = SchedulingLiveReadiness {
+            stream_active: true,
+            ..SchedulingLiveReadiness::default()
+        };
+        assert_eq!(active_without_work.ready_depth(), 0);
+        assert_eq!(
+            SchedulingLiveReadiness {
+                queued_depth: 7,
+                deferred_ready: true,
+                stream_active: true,
+            }
+            .ready_depth(),
+            8
+        );
+    }
+
+    #[test]
+    fn native_telemetry_never_synthesizes_an_unrecorded_frame_cause() {
+        assert!(!has_canonical_render_demand(true, None));
+        assert!(has_canonical_render_demand(false, None));
+    }
+
+    #[test]
+    fn production_selector_preempts_sustained_live_backlog_with_bounded_fairness() {
+        let ready = RuntimeReady {
+            terminal_input: true,
+            live_update: true,
+            ..RuntimeReady::default()
+        };
+        let mut arbiter = RuntimeArbiter::default();
+        let now = Instant::now();
+        let mut budget = BatchBudget::input(now);
+        let mut terminal_decisions = 0_usize;
+        let mut live_decisions = 0_usize;
+
+        for _ in 0..(INPUT_BATCH_LIMIT * 4 + 4) {
+            if budget.exhausted(now) {
+                arbiter.input_quantum_exhausted();
+            }
+            match select_runtime_decision(&arbiter, ready) {
+                RuntimeDecision::TerminalInput => {
+                    terminal_decisions = terminal_decisions.saturating_add(1);
+                    budget.consume();
+                }
+                RuntimeDecision::LiveUpdate => {
+                    live_decisions = live_decisions.saturating_add(1);
+                    arbiter.live_applied();
+                    budget = BatchBudget::input(now);
+                }
+                decision => panic!("unexpected scheduling decision: {decision:?}"),
+            }
+        }
+
+        assert_eq!(terminal_decisions, INPUT_BATCH_LIMIT * 4);
+        assert_eq!(live_decisions, 4);
+    }
 
     #[test]
     fn poll_timeout_parks_when_runtime_pacer_is_idle() {
@@ -1171,10 +1317,10 @@ mod tests {
         let pacer = RuntimePacer::new();
 
         // When: the terminal asks how long it may park.
-        let timeout = poll_timeout(&pacer, FrameNow::default(), false);
+        let timeout = poll_timeout(&pacer, FrameNow::default());
 
         // Then: no paint deadline shortens the idle interval.
-        assert_eq!(timeout, IDLE_POLL_INTERVAL);
+        assert_eq!(timeout, None);
     }
 
     #[test]
@@ -1184,22 +1330,23 @@ mod tests {
         pacer.poll(FrameNow::default(), true);
 
         // When: the terminal checks before and at the animation deadline.
-        let pending = poll_timeout(&pacer, FrameNow::default(), false);
+        let pending = poll_timeout(&pacer, FrameNow::default());
         let due = poll_timeout(
             &pacer,
             FrameNow {
                 animation_ms: crate::scheduling::ANIMATION_PERIOD_MS,
                 flush_ms: 0,
             },
-            false,
         );
 
         // Then: the scheduler's 30 Hz deadline is the poll authority.
         assert_eq!(
             (pending, due),
             (
-                Duration::from_millis(crate::scheduling::ANIMATION_PERIOD_MS),
-                Duration::ZERO,
+                Some(Duration::from_millis(
+                    crate::scheduling::ANIMATION_PERIOD_MS
+                )),
+                Some(Duration::ZERO),
             )
         );
     }
@@ -1222,7 +1369,7 @@ mod tests {
         // arrange
         // act
         // assert
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = live_update_channel();
         drop(tx);
         let mut app = AppState::default();
 
@@ -1269,7 +1416,7 @@ mod tests {
         // arrange
         // act
         // assert
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = live_update_channel();
         tx.send(LiveUpdate::OperatorNotice {
             message: "manual compaction skipped: need at least two completed turns".to_string(),
             level: OperatorNoticeLevel::Info,
@@ -1303,7 +1450,7 @@ mod tests {
         // arrange
         // act
         // assert
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = live_update_channel();
         tx.send(LiveUpdate::OperatorNotice {
             message: "manual compaction failed: boom".to_string(),
             level: OperatorNoticeLevel::Error,
@@ -1355,7 +1502,7 @@ mod tests {
                 parent_session_id: None,
             },
         };
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = live_update_channel();
         tx.send(LiveUpdate::SessionHistory(vec![entry.clone()]))
             .unwrap_or_abort();
 
@@ -1378,7 +1525,7 @@ mod tests {
         // arrange
         // act
         // assert
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = live_update_channel();
         let mut app = AppState::new_startup(Vec::new(), None);
         app.set_status_banner(Some("No provider connected. Use /connect.".to_string()));
         tx.send(LiveUpdate::AuthBackendResult {
@@ -1403,7 +1550,7 @@ mod tests {
     #[test]
     fn drain_live_updates_preserves_streamed_auth_failure_detail() {
         // arrange
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = live_update_channel();
         let mut app = AppState::new_startup(Vec::new(), None);
         tx.send(LiveUpdate::OperatorNotice {
             message:
@@ -1438,7 +1585,7 @@ mod tests {
         // arrange
         // act
         // assert
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = live_update_channel();
         for index in 0..=LIVE_UPDATE_DRAIN_MAX_PER_FRAME {
             tx.send(LiveUpdate::Status(format!("status {index}")))
                 .unwrap_or_abort();

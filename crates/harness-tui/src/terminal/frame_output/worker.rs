@@ -1,5 +1,5 @@
+use crossbeam_channel::{Receiver, Sender, TryRecvError};
 use std::io::{self, Write};
-use std::sync::mpsc::{Receiver, Sender, TryRecvError};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread::{self, JoinHandle};
 use std::time::Instant;
@@ -158,7 +158,7 @@ fn send_ack(
 }
 
 pub(super) fn spawn_writer<W>(
-    receiver: std::sync::mpsc::Receiver<SerializedFrame>,
+    receiver: Receiver<SerializedFrame>,
     acknowledge: Sender<FrameAck>,
     writer_metrics: Arc<Mutex<FrameWriterMetrics>>,
     mut sink: W,

@@ -55,6 +55,7 @@ pub fn build(
                 external,
                 native: Box::new(native),
                 native_trace_artifact: digest(&sidecar_path)?,
+                scheduling_sidecar: scheduling_artifact(evidence_dir)?,
                 links,
             }
         }
@@ -69,6 +70,15 @@ pub fn build(
         measurement_kind: PresentationMetricsKind::ExternalPtyObserved,
     };
     Ok((evidence, binding))
+}
+
+fn scheduling_artifact(evidence_dir: &Path) -> Result<Option<ArtifactDigest>, RunnerError> {
+    let path = evidence_dir.join("scheduling.json");
+    if path.is_file() {
+        digest(&path).map(Some)
+    } else {
+        Ok(None)
+    }
 }
 
 fn interaction_mappings(capture: &ProcessCapture) -> Vec<InteractionObservation> {

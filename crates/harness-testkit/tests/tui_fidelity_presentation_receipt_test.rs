@@ -3,8 +3,9 @@
 use harness_testkit::parity::{CursorState, SemanticFrame};
 use harness_testkit::tui_fidelity::AdapterKind;
 use harness_testkit::tui_fidelity_compare::{
-    compare_ordered_presentations, compare_presentation_timing, derive_presentation_timing,
-    NativeTimingMetrics, PresentationTimingMetrics,
+    compare_ordered_presentations, compare_presentation_timing,
+    derive_comparison_presentation_timing, derive_presentation_timing, NativeTimingMetrics,
+    PresentationTimingMetrics,
 };
 use harness_testkit::tui_fidelity_runner::*;
 
@@ -123,6 +124,7 @@ fn grok_external_and_harness_native_round_trip() {
                     path: "native.json".into(),
                     sha256: "e".repeat(64),
                 },
+                scheduling_sidecar: None,
                 links: vec![NativeExternalLink {
                     frame_sequence: 1,
                     byte_sha256: "d".repeat(64),
@@ -152,6 +154,7 @@ fn harness_external_interaction_without_native_receipt_fails_closed() {
             path: "native.json".into(),
             sha256: "e".repeat(64),
         },
+        scheduling_sidecar: None,
         links: vec![NativeExternalLink {
             frame_sequence: 1,
             byte_sha256: "d".repeat(64),
@@ -200,6 +203,7 @@ fn duplicate_ack_and_unknown_fields_fail_closed() {
                 path: "native.json".into(),
                 sha256: "e".repeat(64),
             },
+            scheduling_sidecar: None,
             links: vec![NativeExternalLink {
                 frame_sequence: 1,
                 byte_sha256: "d".repeat(64),
@@ -283,6 +287,7 @@ fn validate_native_fixture(
                 path: "native.json".into(),
                 sha256: "e".repeat(64),
             },
+            scheduling_sidecar: None,
             links,
         },
     ) {
@@ -474,6 +479,41 @@ fn presentation_timing_schedule_offsets_are_provenance_only() {
 
     // Then: schedule-only changes do not enter either latency distribution.
     assert_eq!(baseline_metrics, shifted_metrics);
+}
+
+#[test]
+fn no_visible_native_action_does_not_consume_unrelated_live_frame() {
+    let reference = PresentationEvidence::ExternalOnly {
+        external: external(),
+    };
+    let mut trace = native();
+    trace.causes[0].outcome = NativeCauseOutcome::NoVisibleChange;
+    trace.causes[0].resulting_revision = None;
+    trace.demands.clear();
+    trace.frames.clear();
+    trace.acknowledgements.clear();
+    let candidate = PresentationEvidence::HarnessNative {
+        external: external(),
+        native: Box::new(trace),
+        native_trace_artifact: ArtifactDigest {
+            path: "native.json".into(),
+            sha256: "e".repeat(64),
+        },
+        scheduling_sidecar: None,
+        links: Vec::new(),
+    };
+
+    let metrics = derive_comparison_presentation_timing(&reference, &candidate)
+        .expect("pairwise timing metrics");
+
+    assert!(metrics
+        .reference
+        .external_send_to_changed_observation_micros
+        .is_empty());
+    assert!(metrics
+        .candidate
+        .external_send_to_changed_observation_micros
+        .is_empty());
 }
 
 #[test]

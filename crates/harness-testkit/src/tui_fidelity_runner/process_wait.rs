@@ -139,6 +139,135 @@ pub(super) fn wait_for_prompt_ready(
 
 #[expect(
     clippy::too_many_arguments,
+    reason = "semantic text readiness observes one PTY lifecycle boundary"
+)]
+pub(super) fn wait_for_text(
+    text: &str,
+    viewport: Viewport,
+    deadline: Instant,
+    adapter: AdapterKind,
+    child: &mut PtyChild,
+    output: &Receiver<PtyRead>,
+    stream: &mut Vec<u8>,
+    observed: &mut BTreeSet<u32>,
+    pid: u32,
+) -> Result<crate::parity::SemanticFrame, RunnerError> {
+    loop {
+        drain(output, stream);
+        collect_descendants(pid, observed);
+        if let Some(status) = child
+            .try_wait()
+            .map_err(|error| process_error(adapter, "poll text target", error))?
+        {
+            return Err(RunnerError::PrematureExit {
+                adapter,
+                code: i32::try_from(status.exit_code()).unwrap_or(i32::MAX),
+            });
+        }
+        let frame = semantic_frame(stream, viewport);
+        if super::semantic_actions::find_text(&frame, text).is_some() {
+            return Ok(frame);
+        }
+        if Instant::now() >= deadline {
+            return Err(RunnerError::SemanticTargetMissing {
+                text: text.to_owned(),
+            });
+        }
+        thread::sleep(Duration::from_millis(5));
+    }
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "disclosure readiness observes one PTY lifecycle boundary"
+)]
+pub(super) fn wait_for_text_pair(
+    first: &str,
+    second: &str,
+    viewport: Viewport,
+    deadline: Instant,
+    adapter: AdapterKind,
+    child: &mut PtyChild,
+    output: &Receiver<PtyRead>,
+    stream: &mut Vec<u8>,
+    observed: &mut BTreeSet<u32>,
+    pid: u32,
+) -> Result<crate::parity::SemanticFrame, RunnerError> {
+    loop {
+        drain(output, stream);
+        collect_descendants(pid, observed);
+        if let Some(status) = child
+            .try_wait()
+            .map_err(|error| process_error(adapter, "poll disclosure target", error))?
+        {
+            return Err(RunnerError::PrematureExit {
+                adapter,
+                code: i32::try_from(status.exit_code()).unwrap_or(i32::MAX),
+            });
+        }
+        let frame = semantic_frame(stream, viewport);
+        if super::semantic_actions::find_text(&frame, first).is_some()
+            && super::semantic_actions::find_text(&frame, second).is_some()
+        {
+            return Ok(frame);
+        }
+        if Instant::now() >= deadline {
+            return Err(RunnerError::SemanticTargetMissing {
+                text: format!("{first} with disclosure {second}"),
+            });
+        }
+        thread::sleep(Duration::from_millis(5));
+    }
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "semantic text closure observes one PTY lifecycle boundary"
+)]
+pub(super) fn wait_for_text_absent(
+    text: &str,
+    viewport: Viewport,
+    deadline: Instant,
+    adapter: AdapterKind,
+    child: &mut PtyChild,
+    output: &Receiver<PtyRead>,
+    stream: &mut Vec<u8>,
+    observed: &mut BTreeSet<u32>,
+    pid: u32,
+) -> Result<(), RunnerError> {
+    loop {
+        drain(output, stream);
+        collect_descendants(pid, observed);
+        if let Some(status) = child
+            .try_wait()
+            .map_err(|error| process_error(adapter, "poll disclosure closure", error))?
+        {
+            return Err(RunnerError::PrematureExit {
+                adapter,
+                code: i32::try_from(status.exit_code()).unwrap_or(i32::MAX),
+            });
+        }
+        let frame = semantic_frame(stream, viewport);
+        if super::semantic_actions::find_text(&frame, text).is_none() {
+            return Ok(());
+        }
+        if Instant::now() >= deadline {
+            return Err(RunnerError::DisclosureTransitionMissing {
+                transition: "closed",
+            });
+        }
+        thread::sleep(Duration::from_millis(5));
+    }
+}
+
+pub(super) fn semantic_frame(stream: &[u8], viewport: Viewport) -> crate::parity::SemanticFrame {
+    let mut parser = vt100::Parser::new(viewport.rows, viewport.cols, 0);
+    parser.process(stream);
+    crate::parity::semantic_frame_from_vt100_screen(parser.screen())
+}
+
+#[expect(
+    clippy::too_many_arguments,
     reason = "frame readiness observes one PTY lifecycle boundary"
 )]
 fn wait_for_stable_frame(

@@ -100,7 +100,7 @@ fn tui_auth_backend_streams_output_and_accepts_hidden_stdin() {
         .with_current_dir(temp.path().to_path_buf())
         .with_env("HARNESS_DATA_HOME", data_home.to_string_lossy());
     let secret = "sk-tui-streamed-stdin-secret";
-    let (tx, rx) = std_mpsc::channel();
+    let (tx, rx) = live_update_channel();
 
     let (message, level, success) = run_tui_auth_backend_streaming_with_deps(
         vec![

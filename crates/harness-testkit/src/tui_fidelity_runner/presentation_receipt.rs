@@ -214,6 +214,7 @@ pub enum PresentationEvidence {
         external: ExternalPresentationEvidence,
         native: Box<NativePresentationTrace>,
         native_trace_artifact: super::types::ArtifactDigest,
+        scheduling_sidecar: Option<super::types::ArtifactDigest>,
         links: Vec<NativeExternalLink>,
     },
 }

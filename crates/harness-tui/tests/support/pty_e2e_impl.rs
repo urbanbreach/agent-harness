@@ -3,7 +3,9 @@ use harness_core::event::{
     ToolCallRequestedEvent, SCHEMA_VERSION,
 };
 use harness_tui::UnwrapOrAbort;
-use harness_tui::{run_tui_with_options, LiveUpdate, TuiMode, TuiOptions, UiIntent};
+use harness_tui::{
+    live_update_channel, run_tui_with_options, LiveUpdate, TuiMode, TuiOptions, UiIntent,
+};
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use std::cmp;
 use std::io::{Read, Write};
@@ -229,7 +231,7 @@ pub(crate) fn pty_helper_type_first_startup() {
     }
 
     let run_dir = tempfile::tempdir().unwrap_or_abort();
-    let (_keepalive, update_rx) = mpsc::channel();
+    let (_keepalive, update_rx) = live_update_channel();
     run_tui_with_options(TuiOptions {
         mode: TuiMode::Live {
             run_dir: run_dir.path().to_path_buf(),
@@ -255,7 +257,7 @@ pub(crate) fn pty_helper_permission_overlay() {
     }
 
     let run_dir = tempfile::tempdir().unwrap_or_abort();
-    let (update_tx, update_rx) = mpsc::channel();
+    let (update_tx, update_rx) = live_update_channel();
     let keepalive_tx = update_tx.clone();
     let inject_tx = update_tx.clone();
     thread::spawn(move || {
@@ -325,7 +327,7 @@ pub(crate) fn pty_helper_connect_auth() {
     }
 
     let _workspace_root = tempfile::tempdir().unwrap_or_abort();
-    let (update_tx, update_rx) = mpsc::channel();
+    let (update_tx, update_rx) = live_update_channel();
     let auth_tx = update_tx.clone();
     let on_ui_intent: Arc<dyn Fn(UiIntent) + Send + Sync> = Arc::new(move |intent| {
         if matches!(intent, UiIntent::OpenAuthManager { .. }) {

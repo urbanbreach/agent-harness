@@ -36,6 +36,8 @@ pub enum MotionCaptureError {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ActionError {
     EmptyPaste,
+    EmptyText,
+    ZeroInterByteDelay,
     EmptyTerminalReply,
     ControlText,
     NullCharacter,

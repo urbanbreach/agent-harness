@@ -38,6 +38,12 @@ pub(super) fn execute(arguments: Vec<OsString>, repo_root: &Path) -> Result<(), 
                 OsString::from(&execution.row.scenario_id),
                 OsString::from("--reference-bin"),
                 reference_bin.as_os_str().to_owned(),
+                OsString::from("--reference-receipt"),
+                repo_root
+                    .join(".omo/evidence/task-2-grok-build-tui-experiential-parity/receipt.json")
+                    .into_os_string(),
+                OsString::from("--reference-root"),
+                repo_root.join("inspirations/grok-build").into_os_string(),
                 OsString::from("--harness-bin"),
                 harness_bin.as_os_str().to_owned(),
                 OsString::from("--evidence-dir"),

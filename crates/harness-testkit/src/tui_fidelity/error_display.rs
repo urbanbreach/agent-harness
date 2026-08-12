@@ -70,6 +70,8 @@ impl fmt::Display for ActionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::EmptyPaste => f.write_str("paste text is empty"),
+            Self::EmptyText => f.write_str("action text is empty"),
+            Self::ZeroInterByteDelay => f.write_str("typing delay must be nonzero"),
             Self::EmptyTerminalReply => f.write_str("terminal reply is empty"),
             Self::ControlText => f.write_str("action text contains a control character"),
             Self::NullCharacter => f.write_str("key character must not be NUL"),

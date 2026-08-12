@@ -23,7 +23,14 @@ pub use super::timing::{
 
 pub type CompareResult = Result<(), ComparatorError>;
 
-pub const COMPARISON_RECEIPT_SCHEMA: &str = "harness.tui-fidelity.comparison.v1";
+pub const COMPARISON_RECEIPT_SCHEMA: &str = "harness.tui-fidelity.comparison.v2";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AcceptanceProfile {
+    FullParity,
+    Packet2Scheduling,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct GateReceipt {
@@ -34,6 +41,7 @@ pub struct GateReceipt {
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ComparisonReceipt {
     pub schema_version: String,
+    pub acceptance_profile: AcceptanceProfile,
     pub capture_succeeded: bool,
     pub comparison_passed: bool,
     pub gates: std::collections::BTreeMap<String, GateReceipt>,

@@ -13,11 +13,13 @@ categories.workspace = true
 anyhow = "1.0"
 ratatui.workspace = true
 crossterm = { workspace = true, features = ["event-stream"] }
+crossbeam-channel.workspace = true
 fuzzy-matcher = "0.3"
 harness-core = { path = "../harness-core" }
 imara-diff = "0.2"
 serde.workspace = true
 serde_json.workspace = true
+thiserror.workspace = true
 sha2 = "0.11"
 syntect = { version = "5.3", default-features = false, features = ["default-fancy"] }
 unicode-width = "0.2"

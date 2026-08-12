@@ -6,6 +6,9 @@ mode=""
 artifact_root=""
 dry_run=0
 harness_bin=""
+reference_bin=""
+reference_receipt=""
+reference_root=""
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/.." && pwd)"
@@ -33,6 +36,7 @@ Modes:
   signoff-live         Live provider signoff. Requires live env and runs live_proxy_preflight_requires_live_env first.
   signoff-native       Native visual signoff. Requires native visual env and runs ignored native visual tests single-threaded.
   signoff-parity       Strict fail-closed dual-binary TUI reference parity (cells/pixels) with executable evidence provenance. Missing manifest/env/binary/owners = FAIL.
+  signoff-packet2      Five sequential real-PTY Packet 2 scheduling comparisons against pinned reference assets.
   signoff-journeys     Strict fail-closed A-JOURNEYS scaffolding: offline config CLI journeys + worktree owner doc. Missing binary/owners = FAIL.
   stress-offline       Delegates to scripts/stress-harness.sh --mode offline.
   stress-live          Requires live env/config and delegates to scripts/stress-harness.sh --mode live.
@@ -43,6 +47,9 @@ Options:
   --dry-run            Write command/status artifacts and print commands without executing them.
   --artifact-dir <path>  Artifact root. Default: target/test-lanes/<timestamp>
   --harness-bin <path> Reuse an already-built harness binary for stress lanes.
+  --reference-bin <path> Absolute pinned reference executable for signoff-packet2.
+  --reference-receipt <path> Absolute pinned reference receipt for signoff-packet2.
+  --reference-root <path> Absolute clean pinned reference worktree for signoff-packet2.
   --help              Show this help.
 
 Artifacts:
@@ -121,11 +128,26 @@ while [[ $# -gt 0 ]]; do
       harness_bin="$(abspath "$2")"
       shift 2
       ;;
+    --reference-bin)
+      require_option_value "$1" "${2-}"
+      reference_bin="$2"
+      shift 2
+      ;;
+    --reference-receipt)
+      require_option_value "$1" "${2-}"
+      reference_receipt="$2"
+      shift 2
+      ;;
+    --reference-root)
+      require_option_value "$1" "${2-}"
+      reference_root="$2"
+      shift 2
+      ;;
     --help)
       usage
       exit 0
       ;;
-    fast|integration|quality-gates|perf|coverage|simulation|signoff-binary|signoff-pty|signoff-live|signoff-native|signoff-parity|signoff-journeys|stress-offline|stress-live|all-deterministic|help)
+    fast|integration|quality-gates|perf|coverage|simulation|signoff-binary|signoff-pty|signoff-live|signoff-native|signoff-parity|signoff-packet2|signoff-journeys|stress-offline|stress-live|all-deterministic|help)
       if [[ -n "$mode" ]]; then
         printf 'Multiple modes provided: %s and %s\n' "$mode" "$1" >&2
         usage >&2
@@ -879,6 +901,7 @@ receipt = {
     \"freeze_txt_sha256\": \"1a5f24dc9be953df160e8d2bcb661f6f2d8dc7845021c3153cd415ab3889ca58\",
     \"freeze_png_sha256\": \"0830427651ae47645ea3ea49b532ef7ea29a69c3140f140d7df201f5093d6016\"
 }
+
 os.makedirs(os.path.dirname(out), exist_ok=True)
 with open(out, \"w\") as f:
     json.dump(receipt, f, indent=2)
@@ -978,6 +1001,84 @@ print(f\"wrote freeze receipt {out}\")
       fail_count=$((fail_count + 1))
     fi
   fi
+}
+
+run_signoff_packet2() {
+  local mode_name="signoff-packet2"
+  local mode_root
+  mode_root="$(mode_dir_for "$mode_name")"
+  mkdir -p "$mode_root"
+  local commands_path="$mode_root/commands.txt"
+  local target_dir="$repo_root/target/packet2-candidate"
+  local candidate_receipt="$mode_root/candidate-receipt.json"
+  local runner="$target_dir/debug/tui-fidelity"
+  local candidate="$target_dir/debug/harness"
+  local aggregate="$target_dir/debug/tui_fidelity_aggregate"
+
+  if [[ -z "$reference_bin" || -z "$reference_receipt" || -z "$reference_root" ]]; then
+    printf 'signoff-packet2 preflight: --reference-bin, --reference-receipt, and --reference-root are required\n' >&2
+    fail_count=$((fail_count + 1))
+    return 2
+  fi
+  if [[ "$reference_bin" != /* || "$reference_receipt" != /* || "$reference_root" != /* ]]; then
+    printf 'signoff-packet2 preflight: reference inputs must be absolute paths\n' >&2
+    fail_count=$((fail_count + 1))
+    return 2
+  fi
+  if [[ "$dry_run" -eq 0 ]]; then
+    if [[ ! -x "$reference_bin" || ! -f "$reference_receipt" || ! -d "$reference_root" ]]; then
+      printf 'signoff-packet2 preflight: pinned reference binary, receipt, or root is missing\n' >&2
+      fail_count=$((fail_count + 1))
+      return 2
+    fi
+    if [[ "$(git -C "$reference_root" rev-parse HEAD 2>/dev/null)" != "be713136d2a69080743a3f6b3c72077057e5948f" ]]; then
+      printf 'signoff-packet2 preflight: reference revision mismatch\n' >&2
+      fail_count=$((fail_count + 1))
+      return 2
+    fi
+  fi
+
+  : >"$commands_path"
+  local run_root
+  for ordinal in 1 2 3 4 5; do
+    run_root="$mode_root/run-$ordinal"
+    write_quoted_command_line "$commands_path" \
+      "$runner" compare --scenario packet2-sustained-stream \
+      --acceptance packet2-scheduling --reference-bin "$reference_bin" \
+      --reference-receipt "$reference_receipt" --reference-root "$reference_root" \
+      --harness-bin "$candidate" --candidate-receipt "$candidate_receipt" \
+      --evidence-dir "$run_root"
+  done
+  write_quoted_command_line "$commands_path" "$aggregate" --profile packet2-scheduling \
+    "$mode_root/run-1" "$mode_root/run-2" "$mode_root/run-3" "$mode_root/run-4" "$mode_root/run-5"
+
+  run_stage "$mode_name" build_candidate "$repo_root" \
+    bash scripts/tui-fidelity/build-candidate.sh \
+      --target-dir target/packet2-candidate --receipt "$candidate_receipt"
+  for ordinal in 1 2 3 4 5; do
+    run_stage "$mode_name" "packet2_compare_$ordinal" "$repo_root" \
+      "$runner" compare --scenario packet2-sustained-stream \
+      --acceptance packet2-scheduling --reference-bin "$reference_bin" \
+      --reference-receipt "$reference_receipt" --reference-root "$reference_root" \
+      --harness-bin "$candidate" --candidate-receipt "$candidate_receipt" \
+      --evidence-dir "$mode_root/run-$ordinal"
+  done
+  run_stage "$mode_name" packet2_aggregate "$repo_root" \
+    "$aggregate" --profile packet2-scheduling \
+      "$mode_root/run-1" "$mode_root/run-2" "$mode_root/run-3" "$mode_root/run-4" "$mode_root/run-5"
+  run_stage "$mode_name" packet2_source_guard "$repo_root" \
+    git diff --exit-code 26ef1839 -- crates/harness-tui/tests/snapshots \
+      crates/harness-tui/src/ui.rs crates/harness-tui/src/layout.rs crates/harness-tui/src/theme.rs
+
+  local verdict="PASS"
+  if find "$mode_root/stages" -name status.txt -exec grep -l '^result=FAIL$' {} + | grep -q .; then
+    verdict="FAIL"
+    fail_count=$((fail_count + 1))
+  elif [[ "$dry_run" -eq 1 ]]; then
+    verdict="DRY-RUN"
+  fi
+  printf 'schema=harness-signoff-packet2-verdict-v1\nverdict=%s\nruns=5\nprofile=packet2-scheduling\n' \
+    "$verdict" >"$mode_root/lane-verdict.txt"
 }
 
 write_signoff_parity_verdict() {
@@ -1082,6 +1183,9 @@ run_mode() {
       ;;
     signoff-parity)
       run_signoff_parity
+      ;;
+    signoff-packet2)
+      run_signoff_packet2
       ;;
     signoff-journeys)
       run_signoff_journeys

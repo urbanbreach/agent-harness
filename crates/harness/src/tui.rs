@@ -6,7 +6,6 @@ use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::ExitCode;
-use std::sync::mpsc as std_mpsc;
 use std::sync::Arc;
 use std::sync::Mutex;
 
@@ -33,6 +32,7 @@ use harness_tui::app::{
     prompt_history_path_for_session_dir, set_pending_live_launch_metadata,
     set_pending_settings_project_config, SessionHistoryEntry,
 };
+use harness_tui::live_update_channel;
 #[cfg(test)]
 use harness_tui::OperatorNoticeLevel;
 use harness_tui::{
@@ -617,7 +617,7 @@ async fn run_startup_launcher(
     profile_handoff("startup_launcher.begin");
     let selected_intent = Arc::new(Mutex::new(None::<UiIntent>));
     let selected_intent_sink = Arc::clone(&selected_intent);
-    let (live_update_tx, live_update_rx) = std_mpsc::channel::<LiveUpdate>();
+    let (live_update_tx, live_update_rx) = live_update_channel();
     let auth_update_tx = live_update_tx.clone();
     let startup_auth_backend = auth_backend.clone();
     let on_ui_intent = Arc::new(move |intent: UiIntent| {
@@ -770,7 +770,7 @@ async fn run_continue_session_bootstrap(
             .available_models()
             .to_vec(),
     );
-    let (live_update_tx, live_update_rx) = std_mpsc::channel::<LiveUpdate>();
+    let (live_update_tx, live_update_rx) = live_update_channel();
     let (intent_tx, intent_rx) = mpsc::unbounded_channel::<UiIntent>();
     let intent_live_update_tx = live_update_tx.clone();
 
@@ -964,7 +964,7 @@ async fn run_live_mode(
     );
 
     let (bootstrap_tx, bootstrap_rx) = oneshot::channel::<LiveBootstrap>();
-    let (live_update_tx, live_update_rx) = std_mpsc::channel::<LiveUpdate>();
+    let (live_update_tx, live_update_rx) = live_update_channel();
     let (intent_tx, intent_rx) = mpsc::unbounded_channel::<UiIntent>();
     let intent_live_update_tx = live_update_tx.clone();
 

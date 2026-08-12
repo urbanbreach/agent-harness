@@ -4,7 +4,8 @@ use harness_tui::presentation::{
     CauseId, PresentationRevision, PresentationTimestamp, RenderDemand, RenderReason,
 };
 use harness_tui::terminal::{
-    FrameKind, FrameOutput, FrameOutputBackend, FrameSubmission, Presenter,
+    FrameKind, FrameOutput, FrameOutputBackend, FrameOutputFailure, FrameSubmission,
+    FrameWriteStage, Presenter,
 };
 use ratatui::backend::{Backend, ClearType};
 
@@ -26,6 +27,34 @@ fn output_waits_for_physical_ack_before_accepting_another_frame() {
     let frame = receiver.try_recv().unwrap();
     receiver.acknowledge(&frame).unwrap();
     assert!(output.is_ready_for_frame());
+}
+
+#[test]
+fn writer_failure_is_typed_and_keeps_the_frame_slot_fatal() {
+    struct FailedWrite;
+    impl Write for FailedWrite {
+        fn write(&mut self, _buffer: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "defect",
+            ))
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    let (mut output, mut writer, receiver) = FrameOutput::bounded(1);
+    output.begin_frame().unwrap();
+    writer.write_all(b"frame").unwrap();
+    output.finish_frame().unwrap();
+    assert!(receiver.write_next(&mut FailedWrite).is_err());
+    assert!(output.is_ready_for_frame());
+    assert_eq!(
+        output.take_fatal_failure(),
+        Some(FrameOutputFailure::Write(FrameWriteStage::Write))
+    );
 }
 
 #[test]

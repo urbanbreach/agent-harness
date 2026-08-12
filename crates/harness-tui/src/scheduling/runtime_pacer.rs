@@ -238,6 +238,15 @@ impl RuntimePacer {
         }
     }
 
+    pub fn needs_poll(&self, now: FrameNow, animation_active: bool) -> bool {
+        let flush_pending = self.flush_requested || self.wheel.is_pending();
+        let flush_unarmed = flush_pending && self.scheduler.flush_deadline().is_none();
+        let animation_unarmed = animation_active && self.scheduler.animation_deadline().is_none();
+        flush_unarmed
+            || animation_unarmed
+            || self.next_wait_ms(now).is_some_and(|millis| millis == 0)
+    }
+
     fn release_flush(&mut self, action: &mut RuntimePacerAction) {
         action.paint = self.flush_requested;
         action.wheel_batch = self.wheel.take();

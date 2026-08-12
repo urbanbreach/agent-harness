@@ -2549,6 +2549,31 @@ fn perf_500_event_streaming_transcript_cache_and_layout_budget() {
 }
 
 #[test]
+fn perf_packet2_streaming_tail_layout_stays_within_frame_budget() {
+    use std::time::{Duration, Instant};
+
+    let mut app = AppState::default();
+    let mut activity = transcript_section_model_test_activity(
+        "packet2-stream",
+        ActivityStatus::Streaming,
+        "PACKET2_DISCLOSURE_SENTINEL",
+    );
+    activity.transcript_text.push_str(&"···".repeat(3_000));
+    app.activities.push_back(activity);
+
+    let theme = Theme::default();
+    let started = Instant::now();
+    let lines = build_transcript_lines_for_width(&app, &theme, 98);
+    let elapsed = started.elapsed();
+
+    assert!(!lines.is_empty());
+    assert!(
+        elapsed < Duration::from_millis(16),
+        "Packet 2 streaming tail layout took {elapsed:?}"
+    );
+}
+
+#[test]
 fn capture_all_spacing_evidence() {
     // arrange
     // act

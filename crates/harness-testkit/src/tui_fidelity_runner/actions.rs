@@ -4,6 +4,7 @@ use std::time::Duration;
 use portable_pty::MasterPty;
 
 use super::error::RunnerError;
+use crate::parity::SemanticFrame;
 use crate::tui_fidelity::{
     AdapterKind, DragAction, KeyCode, KeySpec, MouseAction, MouseButton, MousePhase,
     ScenarioAction, WheelAction, WheelDirection,
@@ -15,6 +16,16 @@ pub(super) fn apply_action(
     master: &dyn MasterPty,
     writer: &mut dyn Write,
 ) -> Result<(), RunnerError> {
+    apply_action_with_frame(action, adapter, master, writer, None)
+}
+
+pub(super) fn apply_action_with_frame(
+    action: &ScenarioAction,
+    adapter: AdapterKind,
+    master: &dyn MasterPty,
+    writer: &mut dyn Write,
+    frame: Option<&SemanticFrame>,
+) -> Result<(), RunnerError> {
     match action {
         ScenarioAction::TimedKey(action) => write_bytes(writer, &key_bytes(action.key), adapter),
         ScenarioAction::Paste(action) => {
@@ -22,25 +33,95 @@ pub(super) fn apply_action(
             write_bytes(writer, action.text.as_bytes(), adapter)?;
             write_bytes(writer, b"\x1b[201~", adapter)
         }
+        ScenarioAction::TypeText(action) => {
+            for (index, byte) in action.text.as_bytes().iter().enumerate() {
+                write_bytes(writer, std::slice::from_ref(byte), adapter)?;
+                if index + 1 < action.text.len() {
+                    std::thread::sleep(Duration::from_millis(action.inter_byte_millis));
+                }
+            }
+            Ok(())
+        }
+        ScenarioAction::WaitForText(action) => frame
+            .filter(|frame| frame_contains_text(frame, &action.text))
+            .map(|_| ())
+            .ok_or_else(|| RunnerError::SemanticTargetMissing {
+                text: action.text.clone(),
+            }),
+        ScenarioAction::ClickText(action) => {
+            let frame = frame.ok_or_else(|| RunnerError::SemanticTargetMissing {
+                text: action.text.clone(),
+            })?;
+            let harness_disclosure = adapter == AdapterKind::Harness
+                && action.text == crate::tui_fidelity_fixture::DISCLOSURE_SENTINEL;
+            let grok_disclosure = adapter == AdapterKind::Grok
+                && action.text == crate::tui_fidelity_fixture::DISCLOSURE_SENTINEL;
+            if harness_disclosure {
+                let marker =
+                    super::semantic_actions::find_text(frame, &action.text).ok_or_else(|| {
+                        RunnerError::SemanticTargetMissing {
+                            text: action.text.clone(),
+                        }
+                    })?;
+                let point = ["▸", "▾"]
+                    .into_iter()
+                    .filter_map(|glyph| {
+                        super::semantic_actions::find_text_nearest_row(frame, glyph, marker.row)
+                    })
+                    .min_by_key(|point| point.row.abs_diff(marker.row))
+                    .ok_or_else(|| RunnerError::SemanticTargetMissing {
+                        text: "▸ or ▾".to_owned(),
+                    })?;
+                let bytes = super::semantic_actions::click_point_bytes(point)?;
+                return write_bytes(writer, &bytes, adapter);
+            }
+            if grok_disclosure
+                && super::semantic_actions::find_text(
+                    frame,
+                    crate::tui_fidelity_fixture::DISCLOSURE_BODY,
+                )
+                .is_some()
+            {
+                let close = super::semantic_actions::semantic_click_bytes(frame, "[x]", 0)?;
+                return write_bytes(writer, &close, adapter);
+            }
+            let bytes = super::semantic_actions::semantic_click_bytes(
+                frame,
+                &action.text,
+                action.offset_col,
+            )?;
+            write_bytes(writer, &bytes, adapter)?;
+            if grok_disclosure {
+                write_bytes(writer, b"\r", adapter)?;
+            }
+            Ok(())
+        }
         ScenarioAction::Mouse(action) => write_bytes(writer, &mouse_bytes(action), adapter),
         ScenarioAction::Drag(action) => write_bytes(writer, &drag_bytes(action), adapter),
         ScenarioAction::Wheel(action) => write_bytes(writer, &wheel_bytes(action), adapter),
-        ScenarioAction::Resize(action) => master
-            .resize(portable_pty::PtySize {
-                rows: action.viewport.rows,
-                cols: action.viewport.cols,
-                pixel_width: 0,
-                pixel_height: 0,
-            })
-            .map_err(|error| RunnerError::Process {
-                adapter,
-                detail: format!("resize: {error}"),
-            }),
+        ScenarioAction::Resize(action) => {
+            master
+                .resize(portable_pty::PtySize {
+                    rows: action.viewport.rows,
+                    cols: action.viewport.cols,
+                    pixel_width: 0,
+                    pixel_height: 0,
+                })
+                .map_err(|error| RunnerError::Process {
+                    adapter,
+                    detail: format!("resize: {error}"),
+                })?;
+            Ok(())
+        }
         ScenarioAction::WaitForSemanticState(_) => Ok(()),
         ScenarioAction::TerminalReply(action) => {
             write_bytes(writer, action.response.as_bytes(), adapter)
         }
     }
+}
+
+fn frame_contains_text(frame: &SemanticFrame, text: &str) -> bool {
+    super::semantic_actions::find_text(frame, text).is_some()
 }
 
 pub(super) struct ExitStep {
@@ -134,6 +215,14 @@ fn write_bytes(
             adapter,
             detail: format!("write input: {error}"),
         })
+}
+
+pub(super) fn write_input(
+    writer: &mut dyn Write,
+    bytes: &[u8],
+    adapter: AdapterKind,
+) -> Result<(), RunnerError> {
+    write_bytes(writer, bytes, adapter)
 }
 
 fn key_bytes(key: KeySpec) -> Vec<u8> {

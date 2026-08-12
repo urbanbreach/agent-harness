@@ -5,6 +5,7 @@ use crate::tui_fidelity_runner::{
 };
 
 use super::error::ComparatorError;
+use super::types::PresentationComparisonMetrics;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -34,6 +35,13 @@ pub struct PresentationTimingMetrics {
 pub fn derive_presentation_timing(
     evidence: &PresentationEvidence,
 ) -> Result<PresentationTimingMetrics, ComparatorError> {
+    derive_presentation_timing_excluding(evidence, &[])
+}
+
+pub(crate) fn derive_presentation_timing_excluding(
+    evidence: &PresentationEvidence,
+    excluded_action_ordinals: &[usize],
+) -> Result<PresentationTimingMetrics, ComparatorError> {
     let (external, native) = match evidence {
         PresentationEvidence::ExternalOnly { external } => (external, None),
         PresentationEvidence::HarnessNative {
@@ -41,7 +49,11 @@ pub fn derive_presentation_timing(
         } => (external, Some(native)),
     };
     let mut samples = Vec::with_capacity(external.actual_input_sends.len());
-    for send in &external.actual_input_sends {
+    for send in external
+        .actual_input_sends
+        .iter()
+        .filter(|send| !excluded_action_ordinals.contains(&send.action_ordinal))
+    {
         let observation = external
             .interaction_observations
             .iter()
@@ -73,6 +85,43 @@ pub fn derive_presentation_timing(
         external_observation_intervals_micros: observation_intervals,
         native: native.map(|trace| derive_native(trace)).transpose()?,
     })
+}
+
+pub fn derive_comparison_presentation_timing(
+    reference: &PresentationEvidence,
+    candidate: &PresentationEvidence,
+) -> Result<PresentationComparisonMetrics, ComparatorError> {
+    let excluded = no_visible_action_ordinals(candidate);
+    Ok(PresentationComparisonMetrics {
+        reference: derive_presentation_timing_excluding(reference, &excluded)?,
+        candidate: derive_presentation_timing_excluding(candidate, &excluded)?,
+    })
+}
+
+fn no_visible_action_ordinals(presentation: &PresentationEvidence) -> Vec<usize> {
+    let PresentationEvidence::HarnessNative {
+        external, native, ..
+    } = presentation
+    else {
+        return Vec::new();
+    };
+    external
+        .actual_input_sends
+        .iter()
+        .filter(|send| {
+            let causes = native
+                .causes
+                .iter()
+                .filter(|cause| cause.interaction_id.as_ref() == Some(&send.interaction_id))
+                .collect::<Vec<_>>();
+            !causes.is_empty()
+                && causes.iter().all(|cause| {
+                    cause.outcome == NativeCauseOutcome::NoVisibleChange
+                        && cause.resulting_revision.is_none()
+                })
+        })
+        .map(|send| send.action_ordinal)
+        .collect()
 }
 
 fn derive_native(

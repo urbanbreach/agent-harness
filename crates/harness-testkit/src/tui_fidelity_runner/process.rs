@@ -4,8 +4,9 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty};
+use serde::Deserialize;
 
-use super::actions::apply_action;
+use super::actions::apply_action_with_frame;
 use super::cleanup::CleanupTracker;
 use super::error::RunnerError;
 use super::interaction_queue;
@@ -14,7 +15,8 @@ use super::process_checkpoints::capture as capture_checkpoints;
 use super::process_io::{configure_environment, pty_size, spawn_reader};
 use super::process_readiness::{wait_for_readiness, wait_for_stable_frame};
 use super::process_wait::{
-    collect_descendants, drain, process_error, request_normal_exit, wait_until,
+    collect_descendants, drain, process_error, request_normal_exit, semantic_frame, wait_for_text,
+    wait_for_text_absent, wait_for_text_pair, wait_until,
 };
 use super::pty_child::PtyChildGuard;
 use super::types::{RunnerTiming, RuntimeBinary};
@@ -26,6 +28,119 @@ pub(super) struct CapturedCheckpoint {
     pub viewport: Viewport,
     pub elapsed: Duration,
     pub stream: Vec<u8>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SchedulingReadiness {
+    schema_version: String,
+    sample_sequence: u64,
+    sampled_at_micros: u64,
+    ready_depth: usize,
+    queued_depth: usize,
+    deferred_ready: bool,
+    stream_active: bool,
+}
+
+fn wait_for_literal_backlog(
+    path: &Path,
+    deadline: Instant,
+    last_sample_sequence: &mut Option<u64>,
+) -> Result<(), RunnerError> {
+    loop {
+        if readiness_sample(path, last_sample_sequence)? {
+            return Ok(());
+        }
+        if Instant::now() >= deadline {
+            return Err(RunnerError::Io {
+                path: path.to_path_buf(),
+                detail: "timed out waiting for fresh literal live backlog".to_owned(),
+            });
+        }
+        thread::sleep(Duration::from_millis(1));
+    }
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "combined scheduling and semantic readiness is one PTY boundary"
+)]
+fn wait_for_literal_backlog_and_text_pair(
+    path: &Path,
+    last_sample_sequence: &mut Option<u64>,
+    first: &str,
+    second: &str,
+    viewport: Viewport,
+    deadline: Instant,
+    adapter: AdapterKind,
+    child: &mut Box<dyn portable_pty::Child + Send + Sync>,
+    output: &std::sync::mpsc::Receiver<super::process_io::PtyRead>,
+    stream: &mut Vec<u8>,
+    observed: &mut std::collections::BTreeSet<u32>,
+    pid: u32,
+) -> Result<crate::parity::SemanticFrame, RunnerError> {
+    loop {
+        drain(output, stream);
+        collect_descendants(pid, observed);
+        if let Some(status) = child
+            .try_wait()
+            .map_err(|error| process_error(adapter, "poll combined readiness", error))?
+        {
+            return Err(RunnerError::PrematureExit {
+                adapter,
+                code: i32::try_from(status.exit_code()).unwrap_or(i32::MAX),
+            });
+        }
+        let frame = semantic_frame(stream, viewport);
+        let text_ready = super::semantic_actions::find_text(&frame, first).is_some()
+            && super::semantic_actions::find_text(&frame, second).is_some();
+        if text_ready && readiness_sample(path, last_sample_sequence)? {
+            return Ok(frame);
+        }
+        if Instant::now() >= deadline {
+            return Err(RunnerError::Io {
+                path: path.to_path_buf(),
+                detail: format!(
+                    "timed out waiting for fresh literal backlog with {first} and {second}"
+                ),
+            });
+        }
+        thread::sleep(Duration::from_millis(1));
+    }
+}
+
+fn readiness_sample(
+    path: &Path,
+    last_sample_sequence: &mut Option<u64>,
+) -> Result<bool, RunnerError> {
+    let Ok(bytes) = std::fs::read(path) else {
+        return Ok(false);
+    };
+    let sample: SchedulingReadiness =
+        serde_json::from_slice(&bytes).map_err(|error| RunnerError::Io {
+            path: path.to_path_buf(),
+            detail: format!("invalid scheduling readiness signal: {error}"),
+        })?;
+    let literal_depth = sample
+        .queued_depth
+        .saturating_add(usize::from(sample.deferred_ready));
+    if sample.schema_version != "harness.packet2-scheduling-readiness.v1"
+        || sample.ready_depth != literal_depth
+    {
+        return Err(RunnerError::Io {
+            path: path.to_path_buf(),
+            detail: "untruthful scheduling readiness signal".to_owned(),
+        });
+    }
+    if sample.ready_depth >= 16
+        && sample.stream_active
+        && Some(sample.sample_sequence) != *last_sample_sequence
+    {
+        *last_sample_sequence = Some(sample.sample_sequence);
+        let _ = sample.sampled_at_micros;
+        return Ok(true);
+    }
+    Ok(false)
 }
 
 pub(super) struct ProcessCapture {
@@ -46,6 +161,7 @@ pub(super) fn execute(
     runtime_dir: &Path,
     evidence_dir: &Path,
     tracker: &mut CleanupTracker,
+    fixture_base_url: Option<&str>,
 ) -> Result<ProcessCapture, RunnerError> {
     let launch_path = if adapter == AdapterKind::Grok {
         ReferenceBinaryCache::new(
@@ -70,14 +186,38 @@ pub(super) fn execute(
     if let Some(run_root) = runtime_dir.parent() {
         command.env("TUI_FIDELITY_RUN_ROOT", run_root);
     }
+    if fixture_base_url.is_some() {
+        let isolated_home = runtime_dir.join("home");
+        std::fs::create_dir_all(&isolated_home).map_err(|error| RunnerError::Io {
+            path: isolated_home.clone(),
+            detail: format!("create isolated runtime home: {error}"),
+        })?;
+        command.env("HOME", &isolated_home);
+        command.env("XDG_CONFIG_HOME", isolated_home.join(".config"));
+    }
     if adapter == AdapterKind::Harness {
+        command.arg("tui");
+        if let Some(base_url) = fixture_base_url {
+            let config_path = write_packet2_config(runtime_dir, base_url)?;
+            command.args(["--config", config_path.to_string_lossy().as_ref()]);
+            command.env("PACKET2_API_KEY", "packet2-local-only");
+        } else {
+            command.arg("--mock");
+        }
         command.args([
-            "tui",
-            "--mock",
             "--deterministic",
             "--session-dir",
             runtime_dir.join("sessions").to_string_lossy().as_ref(),
         ]);
+    } else if let Some(base_url) = fixture_base_url {
+        command.args(["--always-approve", "--no-leader"]);
+        command.env("XAI_API_KEY", "test-key-for-ci");
+        command.env("GROK_HOME", runtime_dir.join("home/.grok"));
+        command.env("GROK_XAI_API_BASE_URL", base_url);
+        command.env("GROK_CLI_CHAT_PROXY_BASE_URL", base_url);
+        command.env("GROK_TELEMETRY_ENABLED", "false");
+        command.env("GROK_FEEDBACK_ENABLED", "false");
+        command.env("GROK_TRACE_UPLOAD", "false");
     }
     configure_environment(&mut command, scenario.terminal_type);
     let child_evidence_dir = if evidence_dir.is_absolute() {
@@ -91,12 +231,23 @@ pub(super) fn execute(
             .join(evidence_dir)
     };
     let interaction_queue_path = child_evidence_dir.join("interaction-ids");
+    let scheduling_readiness_path = child_evidence_dir.join("scheduling-readiness.json");
     if adapter == AdapterKind::Harness {
         command.env(
             "TUI_FIDELITY_PRESENTATION_TRACE",
             child_evidence_dir.join("native-presentation.json"),
         );
         command.env("TUI_FIDELITY_INTERACTION_QUEUE", &interaction_queue_path);
+        if fixture_base_url.is_some() {
+            command.env(
+                "TUI_FIDELITY_SCHEDULING_TRACE",
+                child_evidence_dir.join("scheduling.json"),
+            );
+            command.env(
+                "TUI_FIDELITY_SCHEDULING_READINESS",
+                &scheduling_readiness_path,
+            );
+        }
     }
     let child = pair
         .slave
@@ -159,8 +310,26 @@ pub(super) fn execute(
             adapter == AdapterKind::Grok && binary.source_revision != "reference-revision",
         )?;
         lifecycle_phase = "prompt_ready";
+        if fixture_base_url.is_some() {
+            super::actions::write_input(writer.as_mut(), b"start packet2 fixture\r", adapter)?;
+            let (child, observed) = guard.parts_mut(adapter)?;
+            wait_for_text(
+                crate::tui_fidelity_fixture::STREAM_SENTINEL,
+                scenario.viewport,
+                deadline,
+                adapter,
+                child,
+                &output,
+                &mut stream,
+                observed,
+                pid,
+            )?;
+        }
         let start = Instant::now();
 
+        let mut action_viewport = scenario.viewport;
+        let mut disclosure_open = false;
+        let mut readiness_sample_sequence = None;
         for (ordinal, action) in scenario.actions.iter().enumerate() {
             let interaction_id = format!("{}:action:{ordinal}", scenario.id.0);
             let (child, observed) = guard.parts_mut(adapter)?;
@@ -176,6 +345,20 @@ pub(super) fn execute(
                 observed,
                 pid,
             )?;
+            if adapter == AdapterKind::Harness
+                && !matches!(
+                    action,
+                    crate::tui_fidelity::ScenarioAction::WaitForSemanticState(_)
+                        | crate::tui_fidelity::ScenarioAction::WaitForText(_)
+                        | crate::tui_fidelity::ScenarioAction::ClickText(_)
+                )
+            {
+                wait_for_literal_backlog(
+                    &scheduling_readiness_path,
+                    deadline,
+                    &mut readiness_sample_sequence,
+                )?;
+            }
             if matches!(
                 action,
                 crate::tui_fidelity::ScenarioAction::WaitForSemanticState(_)
@@ -195,7 +378,44 @@ pub(super) fn execute(
                     observed,
                     pid,
                 )?;
+            } else if let crate::tui_fidelity::ScenarioAction::WaitForText(wait) = action {
+                let (child, observed) = guard.parts_mut(adapter)?;
+                wait_for_text(
+                    &wait.text,
+                    action_viewport,
+                    deadline,
+                    adapter,
+                    child,
+                    &output,
+                    &mut stream,
+                    observed,
+                    pid,
+                )?;
             } else {
+                let prepared_frame = if adapter == AdapterKind::Harness {
+                    if let crate::tui_fidelity::ScenarioAction::ClickText(click) = action {
+                        let disclosure = if disclosure_open { "▾" } else { "▸" };
+                        let (child, observed) = guard.parts_mut(adapter)?;
+                        Some(wait_for_literal_backlog_and_text_pair(
+                            &scheduling_readiness_path,
+                            &mut readiness_sample_sequence,
+                            &click.text,
+                            disclosure,
+                            action_viewport,
+                            deadline,
+                            adapter,
+                            child,
+                            &output,
+                            &mut stream,
+                            observed,
+                            pid,
+                        )?)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
                 if let Some(queue) = interaction_queue.as_mut() {
                     interaction_queue::append(queue, &interaction_id, action).map_err(|error| {
                         RunnerError::Io {
@@ -204,7 +424,82 @@ pub(super) fn execute(
                         }
                     })?;
                 }
-                apply_action(action, adapter, pair.master.as_ref(), writer.as_mut())?;
+                let frame = prepared_frame.unwrap_or_else(|| {
+                    drain(&output, &mut stream);
+                    semantic_frame(&stream, action_viewport)
+                });
+                let disclosure_click = matches!(
+                    action,
+                    crate::tui_fidelity::ScenarioAction::ClickText(click)
+                        if click.text == crate::tui_fidelity_fixture::DISCLOSURE_SENTINEL
+                );
+                let sent_at = process_start.elapsed();
+                apply_action_with_frame(
+                    action,
+                    adapter,
+                    pair.master.as_ref(),
+                    writer.as_mut(),
+                    Some(&frame),
+                )?;
+                if let crate::tui_fidelity::ScenarioAction::Resize(resize) = action {
+                    std::thread::sleep(Duration::from_millis(resize.dwell_millis));
+                }
+                if disclosure_click && disclosure_open {
+                    let (child, observed) = guard.parts_mut(adapter)?;
+                    if adapter == AdapterKind::Harness {
+                        wait_for_text_pair(
+                            crate::tui_fidelity_fixture::DISCLOSURE_SENTINEL,
+                            "▸",
+                            action_viewport,
+                            deadline,
+                            adapter,
+                            child,
+                            &output,
+                            &mut stream,
+                            observed,
+                            pid,
+                        )?;
+                    } else {
+                        wait_for_text_absent(
+                            crate::tui_fidelity_fixture::DISCLOSURE_BODY,
+                            action_viewport,
+                            deadline,
+                            adapter,
+                            child,
+                            &output,
+                            &mut stream,
+                            observed,
+                            pid,
+                        )?;
+                    }
+                }
+                if disclosure_click {
+                    disclosure_open = !disclosure_open;
+                }
+                if let crate::tui_fidelity::ScenarioAction::Resize(resize) = action {
+                    action_viewport = resize.viewport;
+                }
+                if !matches!(
+                    action,
+                    crate::tui_fidelity::ScenarioAction::WaitForSemanticState(_)
+                        | crate::tui_fidelity::ScenarioAction::WaitForText(_)
+                ) {
+                    let scheduled_at = start.duration_since(process_start)
+                        + timing
+                            .tick
+                            .saturating_mul(u32::try_from(action.at_tick().0).unwrap_or(u32::MAX));
+                    action_sends.push(super::presentation_receipt::ActualInputSend {
+                        interaction_id: super::presentation_receipt::InteractionId(interaction_id),
+                        action_ordinal: ordinal,
+                        scheduled_at: super::presentation_receipt::PresentationTimestamp(
+                            u64::try_from(scheduled_at.as_micros()).unwrap_or(u64::MAX),
+                        ),
+                        sent_at: super::presentation_receipt::PresentationTimestamp(
+                            u64::try_from(sent_at.as_micros()).unwrap_or(u64::MAX),
+                        ),
+                        transport_drained_at: None,
+                    });
+                }
             }
             action_timeline.push(serde_json::json!({
                 "kind": action.kind_name(),
@@ -212,26 +507,6 @@ pub(super) fn execute(
                 "elapsed_millis": start.elapsed().as_millis(),
             }));
             inputs.push(start.elapsed());
-            if !matches!(
-                action,
-                crate::tui_fidelity::ScenarioAction::WaitForSemanticState(_)
-            ) {
-                let scheduled_at = start.duration_since(process_start)
-                    + timing
-                        .tick
-                        .saturating_mul(u32::try_from(action.at_tick().0).unwrap_or(u32::MAX));
-                action_sends.push(super::presentation_receipt::ActualInputSend {
-                    interaction_id: super::presentation_receipt::InteractionId(interaction_id),
-                    action_ordinal: ordinal,
-                    scheduled_at: super::presentation_receipt::PresentationTimestamp(
-                        u64::try_from(scheduled_at.as_micros()).unwrap_or(u64::MAX),
-                    ),
-                    sent_at: super::presentation_receipt::PresentationTimestamp(
-                        u64::try_from(process_start.elapsed().as_micros()).unwrap_or(u64::MAX),
-                    ),
-                    transport_drained_at: None,
-                });
-            }
         }
         if scenario.capture_mode == CaptureMode::ActionTail {
             stream.clear();
@@ -361,4 +636,46 @@ pub(super) fn execute(
         });
     }
     result
+}
+
+fn write_packet2_config(
+    runtime_dir: &Path,
+    base_url: &str,
+) -> Result<std::path::PathBuf, RunnerError> {
+    let path = runtime_dir.join("packet2-harness.json");
+    let config = serde_json::json!({
+        "provider": {
+            "packet2": {
+                "type": "openai_compatible",
+                "name": "Packet 2 loopback",
+                "options": {
+                    "baseURL": base_url,
+                    "apiKeyEnv": ["PACKET2_API_KEY"],
+                    "timeoutMs": 20000
+                },
+                "models": {
+                    "fixture": {
+                        "name": "Fixture",
+                        "metadata": {"supportsToolCalls": true},
+                        "limit": {"context": 16000, "input": 16000, "output": 8000}
+                    }
+                }
+            }
+        },
+        "model": "packet2/fixture",
+        "agent": {"default": {"model": "packet2/fixture"}},
+        "permission": "allow"
+    });
+    std::fs::write(
+        &path,
+        serde_json::to_vec_pretty(&config).map_err(|error| RunnerError::Io {
+            path: path.clone(),
+            detail: error.to_string(),
+        })?,
+    )
+    .map_err(|error| RunnerError::Io {
+        path: path.clone(),
+        detail: error.to_string(),
+    })?;
+    Ok(path)
 }

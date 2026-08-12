@@ -13,6 +13,8 @@ use harness_testkit::tui_fidelity::{
 };
 
 const STARTUP_SMOKE: &str = include_str!("fixtures/tui_fidelity/startup-smoke.json");
+const PACKET2_SUSTAINED_STREAM: &str =
+    include_str!("fixtures/tui_fidelity/packet2-sustained-stream.json");
 const CANARY_TERMINAL_QUERY: &str =
     include_str!("../src/tui_fidelity_scenarios/baseline/canary-terminal-query.json");
 
@@ -26,6 +28,50 @@ fn baseline_current_parity_support_exposes_semantic_frames_and_identity_cells() 
 
     let masks = IdentityMaskRegistry::new().with_field("product_title", [(1, 2)]);
     assert_eq!(masks.grapheme_mask_field(1, 2), Some("product_title"));
+}
+
+#[test]
+fn packet2_sustained_stream_preserves_input_and_resize_contract() {
+    let scenario = Scenario::from_json(PACKET2_SUSTAINED_STREAM).expect("packet2 parses");
+
+    let typed = scenario.actions.iter().find_map(|action| match action {
+        ScenarioAction::TypeText(action) => Some((action.text.as_str(), action.inter_byte_millis)),
+        _ => None,
+    });
+    let resizes = scenario
+        .actions
+        .iter()
+        .filter_map(|action| match action {
+            ScenarioAction::Resize(action) => Some((
+                action.viewport.cols,
+                action.viewport.rows,
+                action.dwell_millis,
+            )),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(typed, Some(("typed-while-streaming", 45)));
+    assert_eq!("typed-while-streaming".len(), 21);
+    assert_eq!(
+        resizes,
+        vec![
+            (100, 35, 120),
+            (160, 55, 120),
+            (100, 35, 120),
+            (160, 55, 120),
+            (120, 40, 120)
+        ]
+    );
+    assert_eq!(
+        scenario
+            .actions
+            .iter()
+            .filter(|action| matches!(action, ScenarioAction::Wheel(action) if action.amount == 8))
+            .count(),
+        1
+    );
+    assert_eq!(scenario.actions.iter().filter(|action| matches!(action, ScenarioAction::TimedKey(action) if action.key.modifiers.ctrl && action.key.code == harness_testkit::tui_fidelity::KeyCode::Char('c'))).count(), 1);
 }
 
 #[test]

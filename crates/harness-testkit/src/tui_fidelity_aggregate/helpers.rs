@@ -3,6 +3,7 @@ use super::*;
 pub(super) fn summarize(
     authority: Authority,
     runs: &[Run],
+    profile: AcceptanceProfile,
 ) -> Result<AggregateSummary, AggregateError> {
     let reference = collect(runs, |metrics| {
         &metrics
@@ -30,8 +31,23 @@ pub(super) fn summarize(
         ));
     }
     for run in runs {
-        check_gap(&run.metrics.reference)?;
-        check_gap(&run.metrics.candidate)?;
+        match profile {
+            AcceptanceProfile::FullParity => {
+                check_gap(&run.metrics.reference, None)?;
+                check_gap(&run.metrics.candidate, None)?;
+            }
+            AcceptanceProfile::Packet2Scheduling => {
+                if run.authority.scenario_id == "packet2-sustained-stream" {
+                    check_packet2_gaps(
+                        &run.metrics.candidate,
+                        run.candidate_active_window,
+                        &run.candidate_send_timestamps,
+                    )?;
+                } else {
+                    check_gap(&run.metrics.candidate, run.candidate_active_window)?;
+                }
+            }
+        }
     }
     let native = runs
         .iter()
@@ -67,6 +83,42 @@ pub(super) fn summarize(
     })
 }
 
+fn check_packet2_gaps(
+    metrics: &PresentationTimingMetrics,
+    active_window: Option<(u64, u64)>,
+    sends: &[u64],
+) -> Result<(), AggregateError> {
+    const FAST_CADENCE_MICROS: u64 = 16_000;
+    const STREAM_CADENCE_MICROS: u64 = 33_000;
+    let Some(active_window) = active_window else {
+        return Err(AggregateError::Threshold(
+            "Packet 2 active window is missing".into(),
+        ));
+    };
+    for window in metrics.external_observation_timestamps_micros.windows(2) {
+        if window[0] < active_window.0 || window[1] > active_window.1 {
+            continue;
+        }
+        let sends_in_gap = sends
+            .iter()
+            .copied()
+            .filter(|sent| *sent >= window[0] && *sent <= window[1])
+            .collect::<Vec<_>>();
+        if let Some(last_send) = sends_in_gap.last() {
+            if window[1].saturating_sub(*last_send) > FAST_CADENCE_MICROS.saturating_mul(2) {
+                return Err(AggregateError::Threshold(
+                    "input response gap exceeds twice 16 ms cadence".into(),
+                ));
+            }
+        } else if window[1].saturating_sub(window[0]) > STREAM_CADENCE_MICROS.saturating_mul(2) {
+            return Err(AggregateError::Threshold(
+                "streaming gap exceeds twice 33 ms cadence".into(),
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn collect(
     runs: &[Run],
     values: impl Fn(&crate::tui_fidelity_compare::PresentationComparisonMetrics) -> &[u64],
@@ -86,12 +138,21 @@ fn p95(values: &[u64]) -> Result<u64, AggregateError> {
         .ok_or_else(|| AggregateError::Threshold("empty aggregate metric".into()))
 }
 
-fn check_gap(metrics: &PresentationTimingMetrics) -> Result<(), AggregateError> {
+fn check_gap(
+    metrics: &PresentationTimingMetrics,
+    active_window: Option<(u64, u64)>,
+) -> Result<(), AggregateError> {
     if metrics.external_cadence_micros > 0
         && metrics
-            .external_observation_intervals_micros
-            .iter()
-            .any(|gap| *gap > metrics.external_cadence_micros.saturating_mul(2))
+            .external_observation_timestamps_micros
+            .windows(2)
+            .filter(|window| {
+                active_window.is_none_or(|(start, end)| window[0] >= start && window[1] <= end)
+            })
+            .any(|window| {
+                window[1].saturating_sub(window[0])
+                    > metrics.external_cadence_micros.saturating_mul(2)
+            })
     {
         return Err(AggregateError::Threshold(
             "gap exceeds twice cadence".into(),

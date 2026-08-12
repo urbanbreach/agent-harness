@@ -37,8 +37,8 @@ pub use fallback::{terminal_capability_fallback, TerminalContext};
 pub use frame_clock::{FrameClock, FramePhase, DEFAULT_FRAME_TICK_MS};
 pub use frame_output::{
     FrameAck, FrameAckOutcome, FrameBackendMetrics, FrameKind, FrameOutput, FrameOutputBackend,
-    FrameOutputMetrics, FrameOutputReceiver, FrameOutputWriter, FrameSubmission, FrameWriteStage,
-    SerializedFrame,
+    FrameOutputFailure, FrameOutputMetrics, FrameOutputReceiver, FrameOutputWriter,
+    FrameSubmission, FrameWriteStage, SerializedFrame,
 };
 pub use lifecycle::{
     AltScreenMode, ScreenBuffer, TeardownPlan, TerminalCapabilities, TerminalLifecycle,

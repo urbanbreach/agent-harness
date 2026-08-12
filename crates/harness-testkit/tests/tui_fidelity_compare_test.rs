@@ -12,10 +12,11 @@ use harness_testkit::parity::{
     CellModifiers, CursorState, ResolvedRgb, SemanticCell, SemanticFrame, TraceSource,
 };
 use harness_testkit::tui_fidelity_compare::{
-    compare_cells, compare_motion, compare_png_bytes, compare_timing, hash_artifacts,
-    reject_self_comparison, scan_artifacts, verify_freshness, ArtifactInputs, ArtifactRoots,
-    CellSnapshot, ComparatorError, FocusState, IdentityPixelSpan, MotionTrace, PixelRect,
-    TimingPhase, TimingTrace, ZOrderEntry,
+    compare_cells, compare_motion, compare_png_bytes, compare_presentation_timing, compare_timing,
+    hash_artifacts, reject_self_comparison, scan_artifacts, verify_freshness, ArtifactInputs,
+    ArtifactRoots, CellSnapshot, ComparatorError, FocusState, IdentityPixelSpan, MotionTrace,
+    NativeTimingMetrics, PixelRect, PresentationTimingMetrics, TimingPhase, TimingTrace,
+    ZOrderEntry,
 };
 
 #[test]
@@ -110,6 +111,39 @@ fn rejects_p95_above_exact_relative_limit() {
 
     // Then: no absolute jitter bypass weakens the 110% contract.
     assert!(result.is_err());
+}
+
+#[test]
+fn packet2_timing_accepts_110_and_32ms_but_rejects_111_and_33ms() {
+    let reference = presentation_metrics(100_000, 16_000, 32_000);
+    let exact = presentation_metrics(110_000, 16_000, 32_000);
+    let p95_over = presentation_metrics(111_000, 16_000, 32_000);
+    let gap_over = presentation_metrics(110_000, 16_000, 33_000);
+
+    assert!(compare_presentation_timing(&reference, &exact).is_ok());
+    assert!(compare_presentation_timing(&reference, &p95_over).is_err());
+    assert!(compare_presentation_timing(&reference, &gap_over).is_err());
+}
+
+fn presentation_metrics(latency: u64, cadence: u64, gap: u64) -> PresentationTimingMetrics {
+    PresentationTimingMetrics {
+        external_send_to_changed_observation_micros: vec![latency],
+        external_observation_timestamps_micros: vec![1, gap + 1],
+        external_observation_intervals_micros: vec![gap],
+        external_cadence_micros: cadence,
+        native: Some(NativeTimingMetrics {
+            receive_to_successful_flush_micros: vec![1],
+            request_to_successful_flush_micros: vec![1],
+            completed_write_timestamps_micros: vec![1, 2],
+            completed_write_intervals_micros: vec![1],
+            coalesced_requests: 0,
+            queue_saturation: 0,
+            resyncs: 0,
+            full_repaints: 1,
+            bytes_written: 1,
+            idle_redraws: 0,
+        }),
+    }
 }
 
 #[test]

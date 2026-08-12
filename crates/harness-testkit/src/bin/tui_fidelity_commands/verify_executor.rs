@@ -112,6 +112,14 @@ impl VerifyExecutor {
                 key.scenario.clone().into(),
                 "--reference-bin".into(),
                 self.reference_bin.as_os_str().to_owned(),
+                "--reference-receipt".into(),
+                self.repo_root
+                    .join(".omo/evidence/task-2-grok-build-tui-experiential-parity/receipt.json")
+                    .into_os_string(),
+                "--reference-root".into(),
+                self.repo_root
+                    .join("inspirations/grok-build")
+                    .into_os_string(),
                 "--harness-bin".into(),
                 self.harness_bin.as_os_str().to_owned(),
                 "--candidate-receipt".into(),
