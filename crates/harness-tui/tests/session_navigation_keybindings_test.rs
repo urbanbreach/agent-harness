@@ -357,7 +357,7 @@ fn continued_runtime_stays_primary_until_variant_cycle_sets_next_turns() {
 
     assert_eq!(
         app.runtime_context_primary_summary(),
-        "Context: deep · GPT-5.4 Mini · Deterministic"
+        "Context: GPT-5.4 Mini · Deterministic"
     );
     assert_eq!(app.runtime_context_summary_segment_text(), None);
 
@@ -365,10 +365,10 @@ fn continued_runtime_stays_primary_until_variant_cycle_sets_next_turns() {
 
     assert_eq!(
         app.runtime_context_primary_summary(),
-        "Context: deep · GPT-5.4 Mini · Deterministic"
+        "Context: GPT-5.4 Mini · Deterministic"
     );
     assert_eq!(
         app.runtime_context_summary_segment_text(),
-        Some("Next turns: deep · GPT-5.4 Mini".to_string())
+        Some("Next turns: GPT-5.4 Mini".to_string())
     );
 }

@@ -160,7 +160,7 @@ pub(super) fn replay_child_navigation_does_not_emit_live_intents() {
 
     let parent_events = vec![
         run_started(1),
-        agent_spawned(2, "parent", "planner"),
+        agent_spawned(2, "parent", "default"),
         provider_started(3, "req_parent", "mock", "model-parent"),
         child_link_requested(4, "req_parent", "tc_child_a", Some("child_a"), None),
         child_link_requested(5, "req_parent", "tc_child_b", Some("child_b"), None),
@@ -216,11 +216,11 @@ pub(super) fn replay_child_navigation_does_not_emit_live_intents() {
 
     app.handle_key(key(KeyCode::Up));
     assert_eq!(app.session_path.as_deref(), Some(parent_dir.as_path()));
-    assert_eq!(app.active_profile(), "planner");
+    assert_eq!(app.active_profile(), "default");
     assert!(intents.lock().unwrap_or_abort().is_empty());
 }
 
-pub(super) fn replay_handoff_parent_navigation_continues_resumable_parent_session() {
+pub(super) fn replay_handoff_parent_navigation_replays_non_resumable_parent_session() {
     let run_dir = tempfile::tempdir().unwrap_or_abort();
     let parent_dir = run_dir.path().join("parent");
     let child_dir = run_dir.path().join("child_a");
@@ -281,7 +281,7 @@ pub(super) fn replay_handoff_parent_navigation_continues_resumable_parent_sessio
     assert_eq!(app.session_path.as_deref(), Some(child_dir.as_path()));
     assert_eq!(
         intents.lock().unwrap_or_abort().as_slice(),
-        &[UiIntent::ContinueSession {
+        &[UiIntent::ReplaySession {
             run_id: "parent".into(),
             run_dir: parent_dir,
         }]
