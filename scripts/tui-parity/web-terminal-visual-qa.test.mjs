@@ -46,6 +46,7 @@ test("table actions capture semantic checkpoints and clean every descendant", { 
     { input: { text: "typed" } },
     { resize: { cols: 60, rows: 12 } },
     { waitForText: { text: "RESIZE 60x12", timeoutMs: 5_000 } },
+    { mouse: { kind: "move", col: 4, row: 4 } },
     { mouse: { kind: "click", col: 2, row: 2, button: "left" } },
     { mouse: { kind: "wheel", col: 3, row: 3, deltaY: 100 } },
     { mouse: { kind: "drag", from: { col: 2, row: 2 }, to: { col: 8, row: 4 }, button: "left" } },

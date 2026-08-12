@@ -243,7 +243,10 @@ async function cellPoint(page, point = {}) {
 
 async function driveMouse(page, mouse) {
   const button = mouse.button || "left";
-  if (mouse.kind === "click") {
+  if (mouse.kind === "move") {
+    const point = await cellPoint(page, mouse);
+    await page.mouse.move(point.x, point.y);
+  } else if (mouse.kind === "click") {
     const point = await cellPoint(page, mouse);
     await page.mouse.click(point.x, point.y, { button, count: mouse.clicks || 1 });
   } else if (mouse.kind === "wheel") {

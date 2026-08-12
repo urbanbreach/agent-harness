@@ -2,8 +2,8 @@
 # Capture startup welcome-panel L3 evidence (P0-START-01 / P0-START-02 / P0-COMP-01).
 # Reference freeze: run1-startup (120x32, pinned reference binary 883e3dea).
 # Harness scenario: type_first_startup helper (TuiMode::Startup, no keystrokes,
-# welcome panel settles with bordered actions + the disconnected-provider notice +
-# empty bordered composer strip).
+# welcome panel settles with bordered actions + an empty bottom pad + the
+# empty bordered composer strip; disconnected-provider status stays in the footer).
 #
 # Output:
 #   artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-startup-v24/
@@ -19,6 +19,7 @@ EVIDENCE_DIR="${EVIDENCE_DIR:-artifacts/qa-evidence/20260717-tui-reference-parit
 COLS=120
 ROWS=32
 FONT_SIZE=15
+FONT_FAMILY="${FONT_FAMILY:-Menlo, \"DejaVu Sans Mono\", \"Noto Sans Mono CJK KR\", monospace}"
 DWELL_MS="${DWELL_MS:-3500}"
 PRE_DWELL_MS="${PRE_DWELL_MS:-400}"
 CHROME_BIN="${CHROME_BIN:-${HOME}/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome}"
@@ -75,6 +76,7 @@ node scripts/tui-parity/web-terminal-visual-qa.mjs \
   --cols "$COLS" \
   --rows "$ROWS" \
   --font-size "$FONT_SIZE" \
+  --font-family "$FONT_FAMILY" \
   --dwell-ms "$DWELL_MS" \
   --pre-dwell-ms "$PRE_DWELL_MS" \
   --chrome-bin "$CHROME_BIN" \
@@ -93,8 +95,8 @@ if ! grep -q 'New worktree' "$EVIDENCE_DIR/terminal.txt"; then
   echo "FAIL: welcome L3 missing action rows" >&2
   exit 1
 fi
-if ! grep -q 'No provider connected. Use /connect.' "$EVIDENCE_DIR/terminal.txt"; then
-  echo "FAIL: welcome L3 missing the disconnected-provider notice" >&2
+if grep -q 'No provider connected. Use /connect.\|Notices:' "$EVIDENCE_DIR/terminal.txt"; then
+  echo "FAIL: welcome L3 must keep provider recovery copy out of the measured panel anatomy" >&2
   exit 1
 fi
 if ! grep -q '❯' "$EVIDENCE_DIR/terminal.txt"; then

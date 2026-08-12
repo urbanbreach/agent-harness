@@ -58,7 +58,8 @@ Inputs:
 Action objects:
   {"waitForText":{"text":"Ready","timeoutMs":5000}}  {"wait":{"ms":100}}  {"input":{"text":"hello"}}
   {"key":{"key":"Enter","modifiers":{"shift":true,"alt":false,"ctrl":false}}}  {"resize":{"cols":80,"rows":24}}
-  {"mouse":{"kind":"click","col":4,"row":2}}  {"mouse":{"kind":"wheel","deltaY":-100}}
+  {"mouse":{"kind":"move","col":4,"row":2}}  {"mouse":{"kind":"click","col":4,"row":2}}
+  {"mouse":{"kind":"wheel","deltaY":-100}}
   {"mouse":{"kind":"drag","from":{"col":2,"row":2},"to":{"col":12,"row":2}}}  {"checkpoint":{"name":"settled"}}
 
 Secret handling:
@@ -119,7 +120,7 @@ function parseAction(value, source) {
       throw new Error("resize cols and rows must be positive integers");
     }
   } else if (tag === "mouse") {
-    if (!["click", "wheel", "drag"].includes(payload.kind)) throw new Error("mouse.kind must be click, wheel, or drag");
+    if (!["move", "click", "wheel", "drag"].includes(payload.kind)) throw new Error("mouse.kind must be move, click, wheel, or drag");
   } else {
     throw new Error(`unknown action tag: ${tag}`);
   }

@@ -20,6 +20,7 @@ EVIDENCE_DIR="${EVIDENCE_DIR:-artifacts/qa-evidence/20260717-tui-reference-parit
 COLS=120
 ROWS=32
 FONT_SIZE=15
+FONT_FAMILY="${FONT_FAMILY:-Menlo, \"DejaVu Sans Mono\", \"Noto Sans Mono CJK KR\", monospace}"
 DWELL_MS="${DWELL_MS:-3500}"
 PRE_DWELL_MS="${PRE_DWELL_MS:-400}"
 CHROME_BIN="${CHROME_BIN:-${HOME}/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome}"
@@ -76,6 +77,7 @@ node scripts/tui-parity/web-terminal-visual-qa.mjs \
   --cols "$COLS" \
   --rows "$ROWS" \
   --font-size "$FONT_SIZE" \
+  --font-family "$FONT_FAMILY" \
   --dwell-ms "$DWELL_MS" \
   --pre-dwell-ms "$PRE_DWELL_MS" \
   --chrome-bin "$CHROME_BIN" \
