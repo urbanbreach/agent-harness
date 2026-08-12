@@ -121,6 +121,10 @@ fn line_to_plain_text(line: Line<'static>) -> String {
 }
 
 #[cfg(test)]
+#[path = "ui_diff_unified_tests.rs"]
+mod unified_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::UnwrapOrAbort;
@@ -145,7 +149,7 @@ mod tests {
     }
 
     #[test]
-    fn stacked_diff_text_spans_keep_row_backgrounds() {
+    fn unified_diff_text_spans_keep_row_backgrounds() {
         // arrange
         // act
         // assert
@@ -157,7 +161,7 @@ mod tests {
             "",
             80,
             StructuredDiffRenderOptions {
-                force_stacked: true,
+                force_stacked: false,
                 plain_numbered: false,
                 highlight_intraline: false,
                 highlight_syntax: false,
@@ -382,6 +386,7 @@ mod tests {
     #[test]
     fn separated_hunks_render_truthful_unchanged_line_marker() {
         let diff = "--- src/demo.rs\n+++ src/demo.rs\n@@ -1,2 +1,2 @@\n-old_one\n+new_one\n keep_one\n@@ -20,2 +20,2 @@\n-old_two\n+new_two\n keep_two\n";
+        let theme = Theme::default();
         let lines = render_structured_diff_lines_with_options(
             diff,
             None,
@@ -395,7 +400,7 @@ mod tests {
                 show_file_header: true,
                 show_hunk_header: false,
             },
-            &Theme::default(),
+            &theme,
         )
         .unwrap_or_abort();
         let text = lines
@@ -477,81 +482,74 @@ mod tests {
     }
 
     #[test]
-    fn stacked_diff_long_rows_wrap_instead_of_truncating() {
+    fn unified_diff_long_rows_wrap_instead_of_truncating() {
         // arrange
         // act
         // assert
-        let diff = "--- docs/transcript.md\n+++ docs/transcript.md\n@@ -1,1 +1,1 @@\n-session turn diff view keeps the tool row spacing perfectly aligned in every transcript lane for operators reviewing compact windows\n+session turn diff view keeps the tool row spacing perfectly aligned across the transcript surface for operators reviewing compact windows and narrow shells\n";
+        let removed_expected = "session turn diff view keeps the tool row spacing perfectly aligned in every transcript lane for operators reviewing compact windows";
+        let added_expected = "session turn diff view keeps the tool row spacing perfectly aligned across the transcript surface for operators reviewing compact windows and narrow shells";
+        let diff = format!(
+            "--- docs/transcript.md\n+++ docs/transcript.md\n@@ -1,1 +1,1 @@\n-{removed_expected}\n+{added_expected}\n"
+        );
+        let theme = Theme::default();
         let lines = render_structured_diff_lines_with_options(
-            diff,
+            &diff,
             None,
             "",
             84,
             StructuredDiffRenderOptions {
-                force_stacked: true,
+                force_stacked: false,
                 plain_numbered: false,
                 highlight_intraline: false,
                 highlight_syntax: false,
                 show_file_header: true,
                 show_hunk_header: true,
             },
-            &Theme::default(),
+            &theme,
         )
         .unwrap_or_abort();
+        let line_content = |line: &Line<'static>| {
+            let mut content_spans = line.spans.iter().skip(3).collect::<Vec<_>>();
+            if content_spans.last().is_some_and(|span| {
+                !span.content.is_empty() && span.content.chars().all(char::is_whitespace)
+            }) {
+                content_spans.pop();
+            }
+            content_spans
+                .into_iter()
+                .map(|span| span.content.as_ref())
+                .collect::<String>()
+        };
+        let collect_unified_cell_text = |marker| {
+            let background = diff_row_palette(marker, &theme).content_bg;
+            lines
+                .iter()
+                .filter(|line| {
+                    line.spans
+                        .iter()
+                        .any(|span| span.style.bg == Some(background))
+                })
+                .map(line_content)
+                .collect::<String>()
+        };
+        let removed_text = collect_unified_cell_text('-');
+        let added_text = collect_unified_cell_text('+');
         let rendered = lines
             .iter()
             .map(|line| line_to_plain_text(line.clone()))
             .collect::<Vec<_>>();
-        let collect_stacked_cell_text = |rows: &[String], marker: char| {
-            let marker_token = format!("{marker} ");
-            let start = rows
-                .iter()
-                .position(|line| line.contains(&marker_token))
-                .unwrap_or_else(|| panic!("missing {marker} row marker: {rows:#?}"));
-            let marker_column = rows[start]
-                .find(&marker_token)
-                .unwrap_or_else(|| panic!("missing {marker} marker column: {rows:#?}"));
-            let text_column = marker_column + marker_token.len();
-            let mut chunks = Vec::new();
-
-            for line in &rows[start..] {
-                let marker_cell = line.get(marker_column..text_column).unwrap_or("");
-                let Some(text) = line.get(text_column..) else {
-                    break;
-                };
-                let text = text.trim_end();
-
-                if marker_cell == marker_token {
-                    chunks.push(text.to_string());
-                    continue;
-                }
-
-                if marker_cell == "  " && !text.is_empty() {
-                    chunks.push(text.to_string());
-                    continue;
-                }
-
-                break;
-            }
-
-            chunks.concat()
-        };
-        let removed_text = collect_stacked_cell_text(&rendered, '-');
-        let added_text = collect_stacked_cell_text(&rendered, '+');
 
         assert!(
-            removed_text
-                == "session turn diff view keeps the tool row spacing perfectly aligned in every transcript lane for operators reviewing compact windows",
+            removed_text == removed_expected,
             "removed continuation should preserve the full text across wrapped rows: {rendered:#?}"
         );
         assert!(
-            added_text
-                == "session turn diff view keeps the tool row spacing perfectly aligned across the transcript surface for operators reviewing compact windows and narrow shells",
+            added_text == added_expected,
             "added continuation should preserve the full text across wrapped rows: {rendered:#?}"
         );
         assert!(
             rendered.iter().all(|line| !line.contains('…')),
-            "stacked renderer should keep the full text without ellipsis: {rendered:#?}"
+            "unified renderer should keep the full text without ellipsis: {rendered:#?}"
         );
     }
 }

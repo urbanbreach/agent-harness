@@ -18,7 +18,7 @@ use syntect::parsing::SyntaxSet;
 
 use crate::theme::{quantize_color, ColorLevel};
 
-use super::super::ui_chrome::{display_width, take_width_prefix, truncate_plain_text};
+use super::super::ui_chrome::{display_width, take_width_prefix};
 
 #[derive(Debug, Clone)]
 pub(crate) struct StyledTextChunk {
@@ -31,28 +31,6 @@ pub(super) fn styled_chunks_to_spans(chunks: Vec<StyledTextChunk>) -> Vec<Span<'
         .into_iter()
         .map(|chunk| Span::styled(chunk.text, chunk.style))
         .collect()
-}
-
-pub(super) fn truncate_styled_chunks(
-    chunks: &[StyledTextChunk],
-    max_width: usize,
-) -> Vec<Span<'static>> {
-    if max_width == 0 {
-        return Vec::new();
-    }
-
-    let mut rendered = Vec::new();
-    let mut used = 0usize;
-    for chunk in chunks {
-        if used >= max_width {
-            break;
-        }
-        let remaining = max_width - used;
-        let text = truncate_plain_text(&chunk.text, remaining);
-        used += display_width(&text);
-        rendered.push(Span::styled(text, chunk.style));
-    }
-    rendered
 }
 
 pub(super) fn wrap_styled_chunks(

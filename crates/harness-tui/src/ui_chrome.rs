@@ -1244,14 +1244,14 @@ pub(super) fn take_width_prefix(text: &str, max_width: usize) -> &str {
     }
 
     let mut used = 0usize;
-    let mut split_at = text.len();
-    for (index, ch) in text.char_indices() {
-        let ch_width = Line::from(ch.to_string()).width();
-        if used.saturating_add(ch_width) > max_width {
-            split_at = index;
+    let mut split_at = 0usize;
+    for cluster in crate::composer_atoms::split_graphemes(text) {
+        let cluster_width = usize::from(cluster.display_width());
+        if used.saturating_add(cluster_width) > max_width {
             break;
         }
-        used = used.saturating_add(ch_width);
+        used = used.saturating_add(cluster_width);
+        split_at = split_at.saturating_add(cluster.as_str().len());
     }
 
     &text[..split_at]

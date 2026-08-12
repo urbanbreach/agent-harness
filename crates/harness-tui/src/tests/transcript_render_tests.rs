@@ -121,23 +121,21 @@ pub(super) fn module_diff_renderer_uses_stacked_layout_in_narrow_geometries() {
     let app = transcript_diff_block_app();
 
     let rendered = render_live_lines(&app, 80, 24);
-    assert!(
-        rendered.contains("1    1   alpha"),
-        "narrow diff should show paired context line numbers\n{rendered}"
-    );
-    assert!(
-        rendered.contains("2      - beta"),
-        "narrow diff should stack removals with a deletion gutter\n{rendered}"
-    );
-    assert!(
-        rendered.contains("2 + BETA"),
-        "narrow diff should stack additions with an insertion gutter\n{rendered}"
-    );
-    assert!(
-        !rendered
-            .lines()
-            .any(|line| line.contains("- beta") && line.contains("+ BETA")),
-        "narrow diff should not pair both columns on one row\n{rendered}"
+    let rows = rendered.lines().collect::<Vec<_>>();
+    let removed = rows
+        .iter()
+        .position(|line| line.contains("beta") && !line.contains("BETA"))
+        .unwrap_or_abort();
+    let added = rows
+        .iter()
+        .position(|line| line.contains("BETA"))
+        .unwrap_or_abort();
+    assert_eq!(rendered.matches("alpha").count(), 1, "{rendered}");
+    assert!(removed < added, "delete must precede insert\n{rendered}");
+    assert_eq!(
+        rows[removed].find("beta"),
+        rows[added].find("BETA"),
+        "unified rows must share one content column\n{rendered}"
     );
 }
 
@@ -145,11 +143,18 @@ pub(super) fn module_wide_diff_renderer_pairs_before_and_after_columns() {
     let app = transcript_diff_block_app();
 
     let rendered = render_live_lines(&app, 220, 30);
+    let rows = rendered.lines().collect::<Vec<_>>();
+    let removed = rows
+        .iter()
+        .position(|line| line.contains("beta") && !line.contains("BETA"))
+        .unwrap_or_abort();
+    let added = rows
+        .iter()
+        .position(|line| line.contains("BETA"))
+        .unwrap_or_abort();
     assert!(
-        rendered
-            .lines()
-            .any(|line| line.contains("2 - beta") && line.contains("2 + BETA")),
-        "wide diff should pair before/after columns on one row with preserved gutters\n{rendered}"
+        removed < added && rows[removed].find("beta") == rows[added].find("BETA"),
+        "wide diffs must preserve the ordered unified content column\n{rendered}"
     );
 }
 
@@ -157,11 +162,18 @@ pub(super) fn module_diff_renderer_switches_to_side_by_side_at_primary_widths() 
     let app = transcript_diff_block_app();
 
     let rendered = render_live_lines(&app, 120, 30);
+    let rows = rendered.lines().collect::<Vec<_>>();
+    let removed = rows
+        .iter()
+        .position(|line| line.contains("beta") && !line.contains("BETA"))
+        .unwrap_or_abort();
+    let added = rows
+        .iter()
+        .position(|line| line.contains("BETA"))
+        .unwrap_or_abort();
     assert!(
-        rendered
-            .lines()
-            .any(|line| line.contains("- beta") && line.contains("+ BETA")),
-        "primary-width layouts should pair before/after columns on one row\n{rendered}"
+        removed < added && rows[removed].find("beta") == rows[added].find("BETA"),
+        "primary widths must retain the same ordered unified stream\n{rendered}"
     );
 }
 
@@ -249,8 +261,8 @@ pub(super) fn module_transcript_edit_tool_wide_diff_uses_syntax_highlighting_and
     assert!(
         rendered
             .lines()
-            .any(|line| line.matches("use ui_secondary::{").count() == 2),
-        "wide transcript inline diff should keep the context row side-by-side\n{rendered}"
+            .any(|line| line.matches("use ui_secondary::{").count() == 1),
+        "wide transcript inline diff should keep one unified context row\n{rendered}"
     );
 
     let buffer = render_live_cells(&app, 220, 30);
@@ -262,9 +274,10 @@ pub(super) fn module_transcript_edit_tool_wide_diff_uses_syntax_highlighting_and
         .match_indices("use ui_secondary::{")
         .map(|(index, _)| index)
         .collect::<Vec<_>>();
-    assert!(
-        context_matches.len() >= 2,
-        "expected both diff columns in row: {context_row}"
+    assert_eq!(
+        context_matches.len(),
+        1,
+        "expected one unified row: {context_row}"
     );
     let context_start = context_matches[0];
     let context_end = context_start + "use ui_secondary::{".chars().count();
@@ -285,15 +298,17 @@ pub(super) fn module_transcript_edit_tool_wide_diff_uses_syntax_highlighting_and
         "wide transcript code rows should not fall back to plain transcript coloring: {context_row}"
     );
 
-    let (changed_row, _, changed_bgs) =
+    let (removed_row, _, removed_bgs) =
+        row_text_and_palette(&buffer, 220, "render_diff_tab").unwrap_or_abort();
+    let (added_row, _, added_bgs) =
         row_text_and_palette(&buffer, 220, "render_live_details_overlay").unwrap_or_abort();
-    let removed_start = changed_row.find("render_diff_tab").unwrap_or_abort();
-    let added_start = changed_row
+    let removed_start = removed_row.find("render_diff_tab").unwrap_or_abort();
+    let added_start = added_row
         .find("render_live_details_overlay")
         .unwrap_or_abort();
     assert_ne!(
-        changed_bgs[removed_start], changed_bgs[added_start],
-        "wide transcript inline diff should tint before/after columns independently: {changed_row}"
+        removed_bgs[removed_start], added_bgs[added_start],
+        "wide transcript inline diff should tint removed and added rows independently"
     );
 }
 
