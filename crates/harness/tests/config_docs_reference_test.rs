@@ -489,6 +489,20 @@ fn v1_release_docs_cover_permissions_extension_privacy_migration_and_provider_su
         assert!(privacy.contains(topic), "privacy doc missing `{topic}`");
     }
 
+    let testing = read_doc("docs/testing/testing.md");
+    for label in [
+        "external_pty_observed",
+        "native_completed_write",
+        "transport-drain observation",
+        "native-visual observation",
+        "local-only",
+    ] {
+        assert!(
+            testing.contains(label),
+            "testing documentation missing Packet 1 evidence label `{label}`"
+        );
+    }
+
     let migration = read_doc("docs/operations/migration-notes.md");
     for unsupported in [
         "HTTP server",

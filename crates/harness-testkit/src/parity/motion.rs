@@ -198,7 +198,6 @@ impl fmt::Display for MotionDefect {
 /// Required ordering for the `OrderedMotion` family.
 const ORDERED_MOTION_SEQUENCE: &[MotionPhase] = &[
     MotionPhase::Startup,
-    MotionPhase::StreamingDelta,
     MotionPhase::FinishFlash,
     MotionPhase::SettleRepeat,
 ];
@@ -609,7 +608,6 @@ pub fn compare_motion_traces(
         // defects, but we cannot meaningfully compare cell content.
         return Err(defects);
     }
-    // Compare shared ticks cell-by-cell under the identity masks.
     let reference_by_tick: std::collections::BTreeMap<u64, &TickFrame> = reference
         .frames
         .iter()
@@ -633,9 +631,11 @@ pub fn compare_motion_traces(
         ));
     }
     for tick in &shared_ticks {
-        let reference_frame = &reference_by_tick[tick].frame;
-        let candidate_frame = &candidate_by_tick[tick].frame;
-        let cmp = super::compare::compare_frames(reference_frame, candidate_frame, masks);
+        let cmp = super::compare::compare_frames(
+            &reference_by_tick[tick].frame,
+            &candidate_by_tick[tick].frame,
+            masks,
+        );
         if let Err(cell_diffs) = cmp {
             for cell_diff in cell_diffs {
                 defects.push(MotionDefect::new(
@@ -644,6 +644,62 @@ pub fn compare_motion_traces(
                     format!("tick {tick}: {cell_diff}"),
                 ));
             }
+        }
+    }
+    if defects.is_empty() {
+        Ok(())
+    } else {
+        Err(defects)
+    }
+}
+
+pub fn compare_ordered_motion_traces(
+    reference: &FrameTrace,
+    candidate: &FrameTrace,
+    masks: &IdentityMaskRegistry,
+    families: &[MotionFamily],
+) -> Result<(), Vec<MotionDefect>> {
+    let mut defects = validate_motion_trace_with_families(reference, families)
+        .err()
+        .unwrap_or_default();
+    defects.extend(
+        validate_motion_trace_with_families(candidate, families)
+            .err()
+            .unwrap_or_default(),
+    );
+    if reference.source == candidate.source {
+        defects.push(MotionDefect::new(
+            MotionFamily::OrderedMotion,
+            "self_oracle",
+            "ordered traces must come from distinct sources",
+        ));
+    }
+    if defects.is_empty() {
+        for (index, (left, right)) in reference.frames.iter().zip(&candidate.frames).enumerate() {
+            if left.phase != right.phase {
+                defects.push(MotionDefect::new(
+                    MotionFamily::OrderedMotion,
+                    "phase_mismatch",
+                    format!("ordered frame {index} has different phases"),
+                ));
+                continue;
+            }
+            if let Err(diffs) = super::compare::compare_frames(&left.frame, &right.frame, masks) {
+                defects.extend(diffs.into_iter().map(|diff| {
+                    MotionDefect::new(
+                        MotionFamily::OrderedMotion,
+                        "frame_mismatch_at_ordered_index",
+                        format!("frame {index}: {diff}"),
+                    )
+                }));
+            }
+        }
+        if reference.frames.len() != candidate.frames.len() {
+            defects.push(MotionDefect::new(
+                MotionFamily::OrderedMotion,
+                "frame_count",
+                "ordered traces have different lengths",
+            ));
         }
     }
     if defects.is_empty() {

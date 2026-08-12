@@ -36,8 +36,9 @@ pub use event::{FocusEvent, KeyCode, KeyEvent, KeyModifiers, ResizeEvent, Termin
 pub use fallback::{terminal_capability_fallback, TerminalContext};
 pub use frame_clock::{FrameClock, FramePhase, DEFAULT_FRAME_TICK_MS};
 pub use frame_output::{
-    FrameBackendMetrics, FrameKind, FrameOutput, FrameOutputBackend, FrameOutputMetrics,
-    FrameOutputReceiver, FrameOutputWriter, FrameSubmission, SerializedFrame,
+    FrameAck, FrameAckOutcome, FrameBackendMetrics, FrameKind, FrameOutput, FrameOutputBackend,
+    FrameOutputMetrics, FrameOutputReceiver, FrameOutputWriter, FrameSubmission, FrameWriteStage,
+    SerializedFrame,
 };
 pub use lifecycle::{
     AltScreenMode, ScreenBuffer, TeardownPlan, TerminalCapabilities, TerminalLifecycle,

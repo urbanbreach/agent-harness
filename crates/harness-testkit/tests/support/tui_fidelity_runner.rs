@@ -86,6 +86,7 @@ impl Fixture {
 fn write_program(root: &Path, name: &str, mode: &str, identity: &str) -> PathBuf {
     let body = match mode {
         "normal" => "trap 'exit 0' INT\nstty raw -echo\nprintf '\\033[2Jfixture-ready\\r\\n\\033[1;1H❯'\nwhile IFS= read -r -n 1 c; do\n  [[ \"$c\" == $'\\003' || \"$c\" == $'\\021' ]] && exit 0\ndone\n",
+        "missing-telemetry" => "trap 'exit 0' INT\nstty raw -echo\nprintf '\\033[2Jfixture-ready\\r\\n\\033[1;1H❯'\nwhile IFS= read -r -n 1 c; do\n  [[ \"$c\" == $'\\003' || \"$c\" == $'\\021' ]] && exit 0\ndone\n",
         "premature" => "printf 'premature\\n'\nexit 0\n",
         "skipped" => "stty raw -echo\nprintf 'Skipped\\r\\n'\nwhile :; do sleep 1; done\n",
         "hang" => "stty raw -echo\ntrap '' INT TERM HUP\nprintf 'hanging\\r\\n\\033[1;1H❯'\nwhile :; do sleep 1; done\n",
@@ -97,7 +98,42 @@ fn write_program(root: &Path, name: &str, mode: &str, identity: &str) -> PathBuf
     write_executable(
         root,
         name,
-        &format!("#!/usr/bin/env bash\n# {identity}\nset -eu\n{body}"),
+        &format!(
+            "#!/usr/bin/env bash\n# {identity}\nset -eu\n{}{body}",
+            presentation_trace_hook(mode)
+        ),
+    )
+}
+
+fn presentation_trace_hook(mode: &str) -> String {
+    let frame = match mode {
+        "normal" => r#"$'\033[2Jfixture-ready\r\n\033[1;1H❯'"#,
+        "delayed-prompt" => r#"$'\033[2J\033[1;1H❯'"#,
+        _ => return String::new(),
+    };
+    format!(
+        r#"trace_frame={frame}
+emit_presentation_trace() {{
+  [[ -z ${{TUI_FIDELITY_PRESENTATION_TRACE:-}} ]] && return
+  mkdir -p "$(dirname "$TUI_FIDELITY_PRESENTATION_TRACE")"
+  digest=$(printf %s "$trace_frame" | sha256sum | awk '{{print $1}}')
+  count=$(printf %s "$trace_frame" | wc -c)
+  causes='{{"cause_id":"fixture:cause:1","interaction_id":null,"received_at":1,"kind":"startup","resulting_revision":1,"outcome":{{"kind":"visible_change","cause_id":"fixture:cause:1","revision":1}}}}'
+  if [[ -n ${{TUI_FIDELITY_INTERACTION_QUEUE:-}} && -s "$TUI_FIDELITY_INTERACTION_QUEUE" ]]; then
+    cause_sequence=2
+    while IFS= read -r queued_interaction; do
+      interaction_id=$(printf %s "$queued_interaction" | sed -n 's/.*"interaction_id":"\([^"]*\)".*/\1/p')
+      [[ -z $interaction_id ]] && continue
+      causes="$causes,{{\"cause_id\":\"fixture:cause:$cause_sequence\",\"interaction_id\":\"$interaction_id\",\"received_at\":$cause_sequence,\"kind\":\"terminal_input\",\"resulting_revision\":null,\"outcome\":{{\"kind\":\"no_visible_change\",\"cause_id\":\"fixture:cause:$cause_sequence\",\"closed_at\":$cause_sequence}}}}"
+      cause_sequence=$((cause_sequence + 1))
+    done <"$TUI_FIDELITY_INTERACTION_QUEUE"
+  fi
+  sed -e "s/@DIGEST@/$digest/g" -e "s/@COUNT@/$count/g" -e "s|@CAUSES@|$causes|g" >"$TUI_FIDELITY_PRESENTATION_TRACE" <<'JSON'
+{{"trace_id":"fixture","causes":[@CAUSES@],"demands":[{{"target_revision":1,"earliest_requested_at":2,"latest_requested_at":2,"cause_ids":["fixture:cause:1"],"reason":"startup","coalesced_request_count":0}}],"frames":[{{"sequence":1,"revision":1,"cause_ids":["fixture:cause:1"],"requested_at":2,"render_started_at":3,"render_ended_at":4,"submitted_at":5,"write_started_at":6,"write_ended_at":7,"acknowledged_at":8,"frame_kind":"full_repaint","byte_count":@COUNT@,"byte_sha256":"@DIGEST@","acknowledgement":{{"kind":"success"}}}}],"acknowledgements":[{{"sequence":1,"revision":1,"cause_ids":["fixture:cause:1"],"requested_at":2,"render_started_at":3,"render_ended_at":4,"submitted_at":5,"write_started_at":6,"write_ended_at":7,"acknowledged_at":8,"frame_kind":"full_repaint","byte_count":@COUNT@,"byte_sha256":"@DIGEST@","outcome":{{"kind":"success"}}}}],"outcomes":[],"aggregates":{{"coalesced_requests":0,"queue_saturation":0,"resyncs":0,"full_repaints":1,"bytes_written":@COUNT@,"idle_redraws":0}}}}
+JSON
+}}
+trap emit_presentation_trace EXIT
+"#
     )
 }
 

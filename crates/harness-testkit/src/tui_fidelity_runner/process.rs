@@ -1,4 +1,4 @@
-use std::io::Write;
+use std::fs::OpenOptions;
 use std::path::Path;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -8,6 +8,7 @@ use portable_pty::{native_pty_system, CommandBuilder, MasterPty};
 use super::actions::apply_action;
 use super::cleanup::CleanupTracker;
 use super::error::RunnerError;
+use super::interaction_queue;
 use super::lifecycle_diagnostics::write_failure;
 use super::process_checkpoints::capture as capture_checkpoints;
 use super::process_io::{configure_environment, pty_size, spawn_reader};
@@ -31,6 +32,10 @@ pub(super) struct ProcessCapture {
     pub exit_code: i32,
     pub input_timestamps: Vec<Duration>,
     pub checkpoints: Vec<CapturedCheckpoint>,
+    pub raw_reads: Vec<super::presentation_receipt::RawPtyRead>,
+    pub observations: Vec<super::presentation_receipt::TimedSemanticObservation>,
+    pub action_sends: Vec<super::presentation_receipt::ActualInputSend>,
+    pub pty_stream: Vec<u8>,
 }
 
 pub(super) fn execute(
@@ -75,6 +80,24 @@ pub(super) fn execute(
         ]);
     }
     configure_environment(&mut command, scenario.terminal_type);
+    let child_evidence_dir = if evidence_dir.is_absolute() {
+        evidence_dir.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .map_err(|error| RunnerError::Io {
+                path: evidence_dir.to_path_buf(),
+                detail: format!("resolve runner cwd for Harness evidence: {error}"),
+            })?
+            .join(evidence_dir)
+    };
+    let interaction_queue_path = child_evidence_dir.join("interaction-ids");
+    if adapter == AdapterKind::Harness {
+        command.env(
+            "TUI_FIDELITY_PRESENTATION_TRACE",
+            child_evidence_dir.join("native-presentation.json"),
+        );
+        command.env("TUI_FIDELITY_INTERACTION_QUEUE", &interaction_queue_path);
+    }
     let child = pair
         .slave
         .spawn_command(command)
@@ -97,10 +120,29 @@ pub(super) fn execute(
             .master
             .take_writer()
             .map_err(|error| process_error(adapter, "take writer", error))?;
-        let output = spawn_reader(reader);
         let process_start = Instant::now();
+        let (output, read_log) = spawn_reader(reader, process_start);
         let deadline = process_start + timing.scenario_timeout;
         let mut inputs = Vec::new();
+        let mut action_sends = Vec::new();
+        let mut interaction_queue = if adapter == AdapterKind::Harness {
+            std::fs::create_dir_all(evidence_dir).map_err(|error| RunnerError::Io {
+                path: evidence_dir.to_path_buf(),
+                detail: format!("create Harness evidence directory: {error}"),
+            })?;
+            Some(
+                OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&interaction_queue_path)
+                    .map_err(|error| RunnerError::Io {
+                        path: interaction_queue_path.clone(),
+                        detail: format!("open interaction queue: {error}"),
+                    })?,
+            )
+        } else {
+            None
+        };
         let readiness_viewport = scenario.viewport;
 
         let (child, observed) = guard.parts_mut(adapter)?;
@@ -119,7 +161,8 @@ pub(super) fn execute(
         lifecycle_phase = "prompt_ready";
         let start = Instant::now();
 
-        for action in &scenario.actions {
+        for (ordinal, action) in scenario.actions.iter().enumerate() {
+            let interaction_id = format!("{}:action:{ordinal}", scenario.id.0);
             let (child, observed) = guard.parts_mut(adapter)?;
             wait_until(
                 action.at_tick().0,
@@ -153,6 +196,14 @@ pub(super) fn execute(
                     pid,
                 )?;
             } else {
+                if let Some(queue) = interaction_queue.as_mut() {
+                    interaction_queue::append(queue, &interaction_id, action).map_err(|error| {
+                        RunnerError::Io {
+                            path: interaction_queue_path.clone(),
+                            detail: format!("append typed interaction receipt: {error}"),
+                        }
+                    })?;
+                }
                 apply_action(action, adapter, pair.master.as_ref(), writer.as_mut())?;
             }
             action_timeline.push(serde_json::json!({
@@ -161,6 +212,26 @@ pub(super) fn execute(
                 "elapsed_millis": start.elapsed().as_millis(),
             }));
             inputs.push(start.elapsed());
+            if !matches!(
+                action,
+                crate::tui_fidelity::ScenarioAction::WaitForSemanticState(_)
+            ) {
+                let scheduled_at = start.duration_since(process_start)
+                    + timing
+                        .tick
+                        .saturating_mul(u32::try_from(action.at_tick().0).unwrap_or(u32::MAX));
+                action_sends.push(super::presentation_receipt::ActualInputSend {
+                    interaction_id: super::presentation_receipt::InteractionId(interaction_id),
+                    action_ordinal: ordinal,
+                    scheduled_at: super::presentation_receipt::PresentationTimestamp(
+                        u64::try_from(scheduled_at.as_micros()).unwrap_or(u64::MAX),
+                    ),
+                    sent_at: super::presentation_receipt::PresentationTimestamp(
+                        u64::try_from(process_start.elapsed().as_micros()).unwrap_or(u64::MAX),
+                    ),
+                    transport_drained_at: None,
+                });
+            }
         }
         if scenario.capture_mode == CaptureMode::ActionTail {
             stream.clear();
@@ -230,10 +301,41 @@ pub(super) fn execute(
                 actual: exit_code,
             });
         }
+        let reads = read_log
+            .lock()
+            .map_err(|error| RunnerError::Process {
+                adapter,
+                detail: format!("read history lock: {error}"),
+            })?
+            .clone();
+        let stable_repeats = scenario
+            .motion_capture
+            .markers
+            .last()
+            .map_or(0, |marker| marker.repeat_count);
+        let mut observer = super::pty_observation::PtyObserver::new(scenario.viewport);
+        for read in &reads {
+            observer.observe(read);
+        }
+        let (raw_reads, observations) =
+            observer
+                .finish(stable_repeats)
+                .map_err(|error| RunnerError::Process {
+                    adapter,
+                    detail: format!("PTY observation: {error}"),
+                })?;
+        let pty_stream = reads
+            .iter()
+            .flat_map(|read| read.bytes.iter().copied())
+            .collect();
         Ok(ProcessCapture {
             exit_code,
             input_timestamps: inputs,
             checkpoints,
+            raw_reads,
+            observations,
+            action_sends,
+            pty_stream,
         })
     })();
     if let Err(error) = &result {

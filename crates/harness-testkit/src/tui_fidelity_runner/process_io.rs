@@ -1,6 +1,8 @@
 use std::io::Read;
 use std::sync::mpsc::{self, Receiver};
+use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::Instant;
 
 use portable_pty::{CommandBuilder, PtySize};
 
@@ -30,15 +32,37 @@ pub(super) const fn pty_size(viewport: Viewport) -> PtySize {
     }
 }
 
-pub(super) fn spawn_reader(mut reader: Box<dyn Read + Send>) -> Receiver<Vec<u8>> {
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PtyRead {
+    pub completed_at_micros: u64,
+    pub bytes: Vec<u8>,
+}
+
+pub(super) type PtyReadLog = Arc<Mutex<Vec<PtyRead>>>;
+
+pub(super) fn spawn_reader(
+    mut reader: Box<dyn Read + Send>,
+    epoch: Instant,
+) -> (Receiver<PtyRead>, PtyReadLog) {
     let (sender, receiver) = mpsc::channel();
+    let history = Arc::new(Mutex::new(Vec::new()));
+    let writer_history = Arc::clone(&history);
     thread::spawn(move || {
         let mut buffer = [0_u8; 4096];
         while let Ok(count) = reader.read(&mut buffer) {
-            if count == 0 || sender.send(buffer[..count].to_vec()).is_err() {
+            let read = PtyRead {
+                completed_at_micros: u64::try_from(epoch.elapsed().as_micros()).unwrap_or(u64::MAX),
+                bytes: buffer[..count].to_vec(),
+            };
+            if let Ok(mut entries) = writer_history.lock() {
+                entries.push(read.clone());
+            } else {
+                break;
+            }
+            if count == 0 || sender.send(read).is_err() {
                 break;
             }
         }
     });
-    receiver
+    (receiver, history)
 }

@@ -1,7 +1,6 @@
 use super::error::ComparatorError;
 
-pub const P95_SMOOTHNESS_PERCENT: u64 = 125;
-pub const P95_ABSOLUTE_JITTER_MS: u64 = 5;
+pub const P95_SMOOTHNESS_PERCENT: u64 = 110;
 pub const MAX_CADENCE_GAP_MULTIPLIER: u64 = 2;
 pub const MAX_PHASE_WINDOW_MS: u64 = 500;
 
@@ -137,15 +136,10 @@ fn compare_p95(reference: &TimingTrace, candidate: &TimingTrace, defects: &mut V
     };
     let exceeds_relative_limit =
         candidate_p95.saturating_mul(100) > reference_p95.saturating_mul(P95_SMOOTHNESS_PERCENT);
-    let exceeds_absolute_limit =
-        candidate_p95 > reference_p95.saturating_add(P95_ABSOLUTE_JITTER_MS);
-    if exceeds_relative_limit && exceeds_absolute_limit {
+    if exceeds_relative_limit {
         defects.push(TimingDefect {
             reason: "p95_smoothness".to_owned(),
-            expected: format!(
-                "<= {}% of {reference_p95}ms or +{P95_ABSOLUTE_JITTER_MS}ms",
-                P95_SMOOTHNESS_PERCENT
-            ),
+            expected: format!("<= {}% of {reference_p95}ms", P95_SMOOTHNESS_PERCENT),
             observed: format!("{candidate_p95}ms"),
         });
     }

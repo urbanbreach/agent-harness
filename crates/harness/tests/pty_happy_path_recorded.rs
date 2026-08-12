@@ -159,6 +159,68 @@ fn scripted_tui_happy_path_records_start_prompt_permission_tool_edit_resume_and_
     );
 }
 
+#[test]
+fn real_tui_cli_persists_valid_presentation_trace_after_boot_action_and_quit() {
+    // Given: the real Harness CLI in a PTY with runner-owned native telemetry paths.
+    let workspace = tempdir().unwrap_or_abort();
+    init_git_repo_for_workspace(workspace.path());
+    let session_dir = workspace.path().join("sessions");
+    let trace_path = workspace.path().join("evidence/native-presentation.json");
+    let interaction_path = workspace.path().join("evidence/interaction-ids");
+    fs::create_dir_all(interaction_path.parent().unwrap_or_abort()).unwrap_or_abort();
+    fs::write(
+        &interaction_path,
+        concat!(
+            r#"{"interaction_id":"real-cli:action:0","event_class":"key","receipt_count":1}"#,
+            "\n",
+        ),
+    )
+    .unwrap_or_abort();
+    let args = [
+        "tui".to_string(),
+        "--mock".to_string(),
+        "--deterministic".to_string(),
+        "--session-dir".to_string(),
+        session_dir.display().to_string(),
+    ];
+    let mut helper = spawn_harness_pty_in_owned(
+        workspace.path(),
+        &args,
+        None,
+        &[
+            ("TUI_FIDELITY_PRESENTATION_TRACE", trace_path.as_path()),
+            ("TUI_FIDELITY_INTERACTION_QUEUE", interaction_path.as_path()),
+        ],
+    );
+
+    // When: startup renders, one scripted key is received, and Ctrl+Q is confirmed twice.
+    helper.wait_for("❯", "presentation trace startup");
+    helper.write_text("x");
+    helper.wait_for("x", "presentation trace action");
+    let mut screens = Vec::new();
+    quit_helper(&mut helper, &mut screens);
+    helper.wait_success("presentation trace PTY child");
+
+    // Then: normal CLI finalization persists parseable boot/action/frame/ack evidence.
+    let trace: serde_json::Value =
+        serde_json::from_slice(&fs::read(trace_path).unwrap_or_abort()).unwrap_or_abort();
+    assert!(trace["causes"].as_array().is_some_and(|causes| {
+        causes.iter().any(|cause| cause["kind"] == "startup")
+            && causes.iter().any(|cause| {
+                cause["interaction_id"] == "real-cli:action:0" && cause["kind"] == "terminal_input"
+            })
+            && causes
+                .iter()
+                .all(|cause| cause["outcome"]["kind"] != "pending")
+    }));
+    assert!(trace["frames"]
+        .as_array()
+        .is_some_and(|frames| !frames.is_empty()));
+    assert!(trace["acknowledgements"]
+        .as_array()
+        .is_some_and(|acknowledgements| !acknowledgements.is_empty()));
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 #[ignore = "signoff-pty symlink overwrite regression; run via scripts/test-lanes.sh signoff-pty"]
@@ -296,12 +358,10 @@ fn dual_binary_cli_pty_worktree_ctrl_w_creates_git_worktree() {
         ],
     );
 
-    let start = helper.wait_for("New worktree", "cli welcome worktree row");
+    let start = helper.wait_for("Resume session", "cli welcome chrome");
+    let start_screen = helper.screen_text();
     assert!(
-        start["screen"]
-            .as_str()
-            .unwrap_or("")
-            .contains("Resume session"),
+        start_screen.contains("New worktree") && start_screen.contains("Resume session"),
         "startup welcome must still show resume row before worktree handoff"
     );
 
@@ -473,10 +533,6 @@ fn dual_binary_cli_pty_ctrl_s_resumes_seeded_session() {
         "resumed live shell should surface prior turn content\n{live_screen}"
     );
     assert!(
-        live_screen.contains("Shift+Tab:mode") || live_screen.contains("Ctrl+x:shortcuts"),
-        "startup launcher chrome must yield to live shell footer after resume\n{live_screen}"
-    );
-    assert!(
         !live_screen.contains("New worktree"),
         "startup New worktree welcome must clear after resume into live shell\n{live_screen}"
     );
@@ -554,11 +610,12 @@ fn dual_binary_cli_pty_startup_structural_markers() {
         session_dir.display().to_string(),
     ]);
 
-    let start = helper.wait_for("❯", "cli composer focus");
-    let start_screen = start["screen"].as_str().unwrap_or("");
+    let start = helper.wait_for("Quit", "cli welcome chrome");
+    let start_screen = helper.screen_text();
     let welcome_chrome = start_screen.contains("New worktree")
         && start_screen.contains("Resume session")
-        && start_screen.contains("Quit");
+        && start_screen.contains("Quit")
+        && start_screen.contains('❯');
     assert!(
         welcome_chrome,
         "compiled harness CLI under PTY must show freeze-aligned welcome action rows\n{start_screen}"
@@ -1112,7 +1169,6 @@ fn dual_binary_cli_pty_scenario_permission_deny_markers() {
     let open = helper.wait_for("Allow Edit", "cli permission deny open");
     helper.wait_for("always-approve", "cli permission deny choices");
     helper.send_ctrl(b'n');
-    let decision = helper.wait_for("decision sent", "cli permission deny decision sent");
     let choices_gone =
         helper.wait_until_absent("always-approve", "cli permission deny choices gone");
     let settled = helper.wait_until_absent("Allow Edit", "cli permission deny dock dismissed");
@@ -1125,6 +1181,18 @@ fn dual_binary_cli_pty_scenario_permission_deny_markers() {
         screen.contains('❯') || screen.contains("Worked for"),
         "denied permission dual-binary must settle to post-turn chrome\n{screen}"
     );
+    let run_dir = newest_run_dir(&session_dir).unwrap_or_abort();
+    let events_path = run_dir.join("events.jsonl");
+    let events = fs::read_to_string(&events_path).unwrap_or_abort();
+    assert!(
+        events.contains("\"event_type\":\"permission_resolved\"")
+            && events.contains("\"decision\":\"deny\""),
+        "denied permission must persist a resolved deny event\n{events}"
+    );
+    let decision = json!({
+        "marker": "persisted_permission_resolved_deny",
+        "events_path": events_path,
+    });
 
     if let Some(artifact_dir) = std::env::var_os(ARTIFACT_DIR_ENV).map(PathBuf::from) {
         fs::create_dir_all(&artifact_dir).unwrap_or_abort();
@@ -1139,7 +1207,7 @@ fn dual_binary_cli_pty_scenario_permission_deny_markers() {
             "markers": [
                 "Allow Edit",
                 "always-approve",
-                "decision sent",
+                "persisted:permission_resolved:deny",
                 "absent:always-approve",
                 "absent:Allow Edit"
             ],
@@ -1196,16 +1264,19 @@ fn dual_binary_cli_pty_scenario_question_resolve_markers() {
     // Freeze uses (○) until an answer is committed; focus is style-only, not ●.
     helper.wait_for("1 (○) A", "cli question choice row");
     helper.wait_for("Type your answer here", "cli question choice chrome");
-    helper.write_text("1");
-    helper.wait_for("1 (●) A", "cli question choice committed");
     helper.send_key(b'\r');
-    // Question text can remain in transcript history; assert modal chrome dismisses.
+    // The current question surface submits the focused option directly; the
+    // transcript records the answer as `→ A` without an intermediate ● frame.
     let dismissed = helper.wait_until_absent(
         "Type your answer here",
         "cli question resolve chrome dismissed",
     );
     helper.wait_until_absent("Enter:submit", "cli question resolve footer dismissed");
     let screen = helper.screen_text();
+    assert!(
+        screen.contains("→ A"),
+        "resolved question dual-binary must record the selected answer in the transcript\n{screen}"
+    );
     assert!(
         !screen.contains("Type your answer here") && !screen.contains("Enter:submit"),
         "resolved question dual-binary must dismiss choice chrome\n{screen}"
@@ -1228,11 +1299,10 @@ fn dual_binary_cli_pty_scenario_question_resolve_markers() {
                 "Pick one",
                 "1 (○) A",
                 "Type your answer here",
-                "1 (●) A",
                 "absent:Type your answer here",
                 "absent:Enter:submit",
                 "absent:1 (○) A",
-                "absent:1 (●) A"
+                "answer:→ A"
             ],
             "open_screen": open,
             "dismissed_screen": dismissed,
@@ -1470,7 +1540,7 @@ fn spawn_harness_pty(args: &[String]) -> SpawnedHarness {
     let workspace = tempdir().unwrap_or_abort();
     init_git_repo_for_workspace(workspace.path());
     let cwd = workspace.path().to_path_buf();
-    spawn_harness_pty_in_owned(&cwd, args, Some(workspace))
+    spawn_harness_pty_in_owned(&cwd, args, Some(workspace), &[])
 }
 
 fn init_git_repo_for_workspace(path: &Path) {
@@ -1484,13 +1554,14 @@ fn init_git_repo_for_workspace(path: &Path) {
 }
 
 fn spawn_harness_pty_in(cwd: &Path, args: &[String]) -> SpawnedHarness {
-    spawn_harness_pty_in_owned(cwd, args, None)
+    spawn_harness_pty_in_owned(cwd, args, None, &[])
 }
 
 fn spawn_harness_pty_in_owned(
     cwd: &Path,
     args: &[String],
     workspace: Option<tempfile::TempDir>,
+    environment: &[(&str, &Path)],
 ) -> SpawnedHarness {
     let pty_system = native_pty_system();
     let pair = pty_system
@@ -1506,6 +1577,9 @@ fn spawn_harness_pty_in_owned(
     command.cwd(cwd);
     for arg in args {
         command.arg(arg);
+    }
+    for (name, value) in environment {
+        command.env(*name, *value);
     }
     configure_deterministic_env(&mut command);
 
@@ -1621,8 +1695,7 @@ fn list_worktree_dirs(parent: &Path) -> Vec<PathBuf> {
 }
 
 fn live_shell_markers_present(screen: &str) -> bool {
-    (screen.contains("Shift+Tab:mode") || screen.contains("Ctrl+x:shortcuts"))
-        && (screen.contains("Demo") || screen.contains("model-1") || screen.contains('❯'))
+    screen.contains('❯') && screen.contains("model-1")
 }
 
 #[allow(
@@ -1680,8 +1753,8 @@ fn wait_for_resumed_live_shell(
             || screen.contains(seeded_run_id)
             || screen.contains(&format!("run {seeded_run_id}"));
         let prior_turn = screen.contains("Hello from PTY") || screen.contains("Hello world");
-        let live_footer = screen.contains("Shift+Tab:mode") || screen.contains("Ctrl+x:shortcuts");
-        if live_shell_markers_present(&screen) && continued_identity && prior_turn && live_footer {
+        let resumed_chrome = live_shell_markers_present(&screen);
+        if resumed_chrome && continued_identity && prior_turn {
             return json!({
                 "label": label,
                 "marker": "resumed_live_shell",

@@ -15,9 +15,22 @@ pub enum ScenarioError {
     InvalidTiming(TimingError),
     InvalidGeometry(GeometryError),
     InvalidCheckpoint(CheckpointError),
+    InvalidMotionCapture(MotionCaptureError),
     InvalidSubstitution(SubstitutionError),
     InvalidExitCode(ExitCodeError),
     InvalidCleanup(CleanupError),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum MotionCaptureError {
+    NoFamilies,
+    NoMarkers,
+    DuplicateFamily,
+    BoundaryOutOfRange { marker: usize, ordinal: usize },
+    MarkerOutOfOrder { marker: usize },
+    IncompatiblePhase { marker: usize },
+    InvalidRepeatCount { marker: usize },
+    MissingTerminalSettle,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

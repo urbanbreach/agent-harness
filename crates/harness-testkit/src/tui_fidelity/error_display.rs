@@ -2,7 +2,7 @@ use std::fmt;
 
 use super::error::{
     ActionError, CheckpointError, CleanupError, ExitCodeError, GeometryError, GeometrySubject,
-    ScenarioError, SubstitutionError, TimingError,
+    MotionCaptureError, ScenarioError, SubstitutionError, TimingError,
 };
 
 impl fmt::Display for ScenarioError {
@@ -27,9 +27,41 @@ impl fmt::Display for ScenarioError {
             Self::InvalidTiming(error) => error.fmt(f),
             Self::InvalidGeometry(error) => error.fmt(f),
             Self::InvalidCheckpoint(error) => error.fmt(f),
+            Self::InvalidMotionCapture(error) => error.fmt(f),
             Self::InvalidSubstitution(error) => error.fmt(f),
             Self::InvalidExitCode(error) => error.fmt(f),
             Self::InvalidCleanup(error) => error.fmt(f),
+        }
+    }
+}
+
+impl fmt::Display for MotionCaptureError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NoFamilies => f.write_str("motion capture selects no families"),
+            Self::NoMarkers => f.write_str("motion capture declares no markers"),
+            Self::DuplicateFamily => f.write_str("motion capture family is duplicated"),
+            Self::BoundaryOutOfRange { marker, ordinal } => {
+                write!(
+                    f,
+                    "motion marker {marker} references action {ordinal} out of range"
+                )
+            }
+            Self::MarkerOutOfOrder { marker } => {
+                write!(f, "motion marker {marker} is out of boundary order")
+            }
+            Self::IncompatiblePhase { marker } => {
+                write!(
+                    f,
+                    "motion marker {marker} phase is incompatible with its families"
+                )
+            }
+            Self::InvalidRepeatCount { marker } => {
+                write!(f, "motion marker {marker} has an invalid repeat count")
+            }
+            Self::MissingTerminalSettle => {
+                f.write_str("motion capture must end with three settled stable repeats")
+            }
         }
     }
 }

@@ -79,12 +79,15 @@ fn signoff_parity_mode_is_fail_closed() {
         && body.contains("capture-journey-l3.sh")
         && body.contains("reference_parity_manifest_evidence")
         && body.contains("reference_parity_evidence_test")
+        && body.contains("presentation_telemetry")
+        && body.contains("tui_fidelity_presentation_receipt_test")
+        && body.contains("tui_fidelity_runner_test")
         && body.contains("HARNESS_TUI_PTY_SIGNOFF=1");
     let strict_evidence = body.matches("HARNESS_TUI_PARITY_STRICT=1").count() >= 4
         && body.contains("reference_parity_cells_test")
         && body.contains("reference_parity_pixels_test");
     let fail_closed = !body.contains("|| true") && !verdict_writer.contains("|| true");
-    let lists_stages = verdict_writer.contains("stages=manifest,reference_binary,p0_contract,shell_topology,cells,pixels,first_slice,perm_question,tx_shell,responsive,pty_with_signoff,evidence_provenance");
+    let lists_stages = verdict_writer.contains("stages=manifest,reference_binary,p0_contract,shell_topology,cells,pixels,first_slice,perm_question,tx_shell,responsive,pty_with_signoff,presentation_telemetry,evidence_provenance");
 
     // assert
     assert!(help_declares, "help/usage must document signoff-parity");

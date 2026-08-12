@@ -4,7 +4,7 @@ use ratatui::backend::{Backend, ClearType, CrosstermBackend, WindowSize};
 use ratatui::buffer::Cell;
 use ratatui::layout::{Position, Size};
 
-use super::queue::FrameOutputWriter;
+use super::capture::FrameOutputWriter;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct FrameBackendMetrics {
@@ -35,6 +35,10 @@ impl FrameOutputBackend {
     pub fn invalidate_cursor_state(&mut self) {
         self.cursor_position = None;
         self.cursor_visible = None;
+    }
+
+    pub fn prepare_for_terminal_drop(&mut self) {
+        self.cursor_visible = Some(true);
     }
 
     pub const fn metrics(&self) -> FrameBackendMetrics {
@@ -93,7 +97,7 @@ impl Backend for FrameOutputBackend {
     }
 
     fn get_cursor_position(&mut self) -> Result<Position, Self::Error> {
-        let position = self.inner.get_cursor_position()?;
+        let position = self.cursor_position.unwrap_or(Position::ORIGIN);
         self.cursor_position = Some(position);
         Ok(position)
     }

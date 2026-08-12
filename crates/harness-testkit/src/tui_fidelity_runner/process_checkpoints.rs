@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 
 use super::error::RunnerError;
 use super::process::CapturedCheckpoint;
+use super::process_io::PtyRead;
 use super::process_wait::{drain, wait_until};
 use crate::tui_fidelity::{AdapterKind, CaptureMode, Scenario, Viewport};
 
@@ -20,7 +21,7 @@ pub(super) fn capture(
     deadline: Instant,
     adapter: AdapterKind,
     child: &mut PtyChild,
-    output: &Receiver<Vec<u8>>,
+    output: &Receiver<PtyRead>,
     stream: &mut Vec<u8>,
     observed: &mut BTreeSet<u32>,
     pid: u32,

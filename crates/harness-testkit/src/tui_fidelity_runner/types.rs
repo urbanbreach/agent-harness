@@ -104,6 +104,20 @@ pub struct AdapterReceipt {
     pub normal_exit_code: i32,
     pub input_timestamps_millis: Vec<u128>,
     pub checkpoints: Vec<CheckpointReceipt>,
+    pub presentation: super::presentation_receipt::PresentationEvidence,
+    pub presentation_binding: PresentationCaptureBinding,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PresentationCaptureBinding {
+    pub receipt_schema: String,
+    pub scenario_id: String,
+    pub action_schedule_sha256: String,
+    pub motion_contract_sha256: String,
+    pub observer_version: String,
+    pub terminal_identity: String,
+    pub measurement_kind: super::presentation_receipt::PresentationMetricsKind,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

@@ -24,7 +24,6 @@ const PERMISSION_OVERLAY_SCENARIO: &str = "permission_overlay";
 const TYPE_FIRST_STARTUP_TEST: &str = "pty_helper_type_first_startup";
 const CONNECT_AUTH_TEST: &str = "pty_helper_connect_auth";
 const PERMISSION_OVERLAY_TEST: &str = "pty_helper_permission_overlay";
-const READY_MARKER: &str = "Shift+Tab:mode";
 const DRAFT_TEXT: &str = "Hello from PTY";
 const PERMISSION_DRAFT: &str = "keep draft under permission";
 const CLEAR_DRAFT_TEXT: &str = "draft to clear via esc";
@@ -101,7 +100,6 @@ pub(crate) fn pty_permission_overlay_resolves_and_preserves_draft() {
     }
 
     let mut helper = spawn_helper(PERMISSION_OVERLAY_TEST, PERMISSION_OVERLAY_SCENARIO);
-    helper.wait_for(READY_MARKER);
     helper.wait_for("❯");
 
     helper

@@ -30,6 +30,7 @@ pub(super) fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError
         .map(|tick| tick.0)
         .unwrap_or(0);
     validate_checkpoints(&scenario.checkpoints, final_viewport, last_action_tick)?;
+    super::motion_validation::validate(scenario)?;
     validate_substitutions(&scenario.substitutions, &scenario.checkpoints)?;
     validate_exit_code(scenario.expected_exit.code)?;
     validate_cleanup(&scenario.cleanup)?;

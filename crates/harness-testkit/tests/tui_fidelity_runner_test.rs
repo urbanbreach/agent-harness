@@ -15,7 +15,11 @@ use std::time::Duration;
 
 use harness_testkit::parity::semantic_frame_from_vt100_screen;
 use harness_testkit::tui_fidelity::{CheckpointError, CheckpointName, Scenario, ScenarioError};
-use harness_testkit::tui_fidelity_runner::{run_compare, RunnerError};
+use harness_testkit::tui_fidelity_compare::compare_capture;
+use harness_testkit::tui_fidelity_runner::{
+    run_compare, run_compare_with_cached_reference, CleanupReceipt, PresentationEvidence,
+    PresentationTimestamp, RunnerError, RuntimeBinary,
+};
 
 use support::{Fixture, STARTUP_SMOKE};
 
@@ -213,6 +217,322 @@ fn compare_writes_dual_runtime_checkpoint_and_cleanup_receipts() {
                 );
             }
         }
+    }
+}
+
+#[test]
+fn presentation_trace_is_native_for_harness_and_external_for_grok() {
+    // Given: two real PTY fixture processes with Harness sidecar emission enabled by the runner.
+    let fixture = Fixture::new("normal", "normal", "normal");
+    let scenario = Scenario::from_json(STARTUP_SMOKE).expect("scenario");
+
+    // When: the production runner captures and compares both adapters.
+    let receipt = run_compare(&scenario, &fixture.config).expect("linked presentation receipt");
+
+    // Then: Grok is external-only and Harness has a hashed, byte-linked native sidecar.
+    assert!(matches!(
+        receipt.runtimes[0].presentation,
+        PresentationEvidence::ExternalOnly { .. }
+    ));
+    assert!(matches!(
+        &receipt.runtimes[1].presentation,
+        PresentationEvidence::HarnessNative {
+            native_trace_artifact,
+            links,
+            ..
+        } if native_trace_artifact.sha256.len() == 64 && !links.is_empty()
+    ));
+    let PresentationEvidence::HarnessNative { native, .. } = &receipt.runtimes[1].presentation
+    else {
+        panic!("Harness receipt must contain native presentation evidence");
+    };
+    assert!(native.causes.iter().any(|cause| {
+        cause
+            .interaction_id
+            .as_ref()
+            .is_some_and(|interaction| interaction.0 == format!("{}:action:0", scenario.id.0))
+    }));
+}
+
+#[test]
+fn relative_evidence_path_preserves_harness_native_sidecar_across_runtime_cleanup() {
+    // Given: runner-owned evidence addressed relative to the runner cwd while the child uses a
+    // separate temporary runtime cwd.
+    let mut fixture = Fixture::new("normal", "normal", "normal");
+    let runner_cwd = std::env::current_dir().expect("runner cwd");
+    let relative_root = runner_cwd.join("target/tui-fidelity-relative-evidence");
+    std::fs::create_dir_all(&relative_root).expect("relative evidence parent");
+    let evidence = tempfile::tempdir_in(&relative_root).expect("relative evidence tempdir");
+    let candidate = evidence.path().join("candidate/debug/harness");
+    std::fs::create_dir_all(candidate.parent().expect("candidate parent"))
+        .expect("candidate directory");
+    std::fs::copy(&fixture.config.harness.path, &candidate).expect("candidate copy");
+    fixture.config.harness = RuntimeBinary::from_path(&candidate, "harness-revision")
+        .expect("relative evidence candidate identity");
+    fixture.config.candidate_binding.candidate_binary_sha256 =
+        fixture.config.harness.sha256.clone();
+    fixture.config.candidate_binding.target_dir = candidate
+        .parent()
+        .and_then(std::path::Path::parent)
+        .expect("candidate target")
+        .to_path_buf();
+    fixture.config.repo_root = runner_cwd.clone();
+    fixture.config.evidence_dir = evidence
+        .path()
+        .strip_prefix(&runner_cwd)
+        .expect("evidence beneath runner cwd")
+        .join("capture");
+    let scenario = Scenario::from_json(STARTUP_SMOKE).expect("scenario");
+
+    // When: the production runner boots, acts on, and normally quits both PTY children.
+    let receipt = run_compare(&scenario, &fixture.config).expect("relative evidence compare");
+
+    // Then: Harness telemetry survives runtime-workspace cleanup at the requested evidence path.
+    let sidecar = fixture
+        .config
+        .evidence_dir
+        .join("harness/native-presentation.json");
+    let trace: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&sidecar).expect("native presentation sidecar"))
+            .expect("valid native presentation JSON");
+    assert!(trace["frames"]
+        .as_array()
+        .is_some_and(|frames| !frames.is_empty()));
+    assert!(matches!(
+        &receipt.runtimes[1].presentation,
+        PresentationEvidence::HarnessNative { .. }
+    ));
+}
+
+#[test]
+fn missing_or_failed_native_trace_is_rejected() {
+    // Given: a Harness fixture that exits normally but emits no required sidecar.
+    let fixture = Fixture::new("normal", "missing-telemetry", "normal");
+    let scenario = Scenario::from_json(STARTUP_SMOKE).expect("scenario");
+
+    // When: the production runner reaches Harness receipt construction.
+    let error = run_compare(&scenario, &fixture.config).expect_err("missing sidecar must fail");
+
+    // Then: missing telemetry fails closed instead of being reconstructed from checkpoints.
+    assert!(
+        matches!(error, RunnerError::Io { detail, .. } if detail.contains("required native presentation sidecar"))
+    );
+}
+
+#[test]
+fn cached_reference_requires_exact_presentation_identity() {
+    // Given: a fresh external-only reference receipt and a second identical run request.
+    let source = Fixture::new("normal", "normal", "normal");
+    let scenario = Scenario::from_json(STARTUP_SMOKE).expect("scenario");
+    let cached = run_compare(&scenario, &source.config)
+        .expect("source receipt")
+        .runtimes[0]
+        .clone();
+    let target = Fixture::new("normal", "normal", "normal");
+
+    // When: the exact cached receipt is supplied to the production runner.
+    let receipt = run_compare_with_cached_reference(&scenario, &target.config, Some(cached))
+        .expect("exact cached reference");
+
+    // Then: the reference remains external-only and comparison succeeds without recapture.
+    assert!(matches!(
+        receipt.runtimes[0].presentation,
+        PresentationEvidence::ExternalOnly { .. }
+    ));
+}
+
+#[test]
+fn cached_reference_rejects_trace_or_schedule_drift() {
+    // Given: a valid cached receipt whose schedule binding is mutated after capture.
+    let source = Fixture::new("normal", "normal", "normal");
+    let scenario = Scenario::from_json(STARTUP_SMOKE).expect("scenario");
+    let mut cached = run_compare(&scenario, &source.config)
+        .expect("source receipt")
+        .runtimes[0]
+        .clone();
+    cached.presentation_binding.action_schedule_sha256 = "0".repeat(64);
+    let target = Fixture::new("normal", "normal", "normal");
+
+    // When: the stale cached receipt is supplied to the production runner.
+    let error = run_compare_with_cached_reference(&scenario, &target.config, Some(cached))
+        .expect_err("schedule drift must invalidate cache");
+
+    // Then: cache validation stops before the Harness capture or comparison.
+    assert!(
+        matches!(error, RunnerError::BinaryReceipt { detail, .. } if detail.contains("stale or incomplete"))
+    );
+}
+
+#[test]
+fn cached_reference_rejects_trace_artifact_drift() {
+    // Given: a valid cached reference whose raw PTY artifact changes after receipt creation.
+    let source = Fixture::new("normal", "normal", "normal");
+    let scenario = Scenario::from_json(STARTUP_SMOKE).expect("scenario");
+    let cached = run_compare(&scenario, &source.config)
+        .expect("source receipt")
+        .runtimes[0]
+        .clone();
+    let PresentationEvidence::ExternalOnly { external } = &cached.presentation else {
+        panic!("Grok receipt must be external-only");
+    };
+    std::fs::write(&external.raw_ansi.path, b"tampered").expect("tamper raw PTY artifact");
+    let target = Fixture::new("normal", "normal", "normal");
+
+    // When: the cached reference is validated against its artifact bytes.
+    let error = run_compare_with_cached_reference(&scenario, &target.config, Some(cached))
+        .expect_err("artifact drift must invalidate cache");
+
+    // Then: rehashing rejects the stale artifact before comparison.
+    assert!(
+        matches!(error, RunnerError::BinaryReceipt { detail, .. } if detail.contains("artifact hash changed"))
+    );
+}
+
+#[test]
+fn packet1_complete_receipt_passes_all_gates() {
+    // Given: a complete dual-runtime receipt captured from two real PTY fixture processes.
+    let fixture = packet1_fixture("complete");
+    let scenario = Scenario::from_json(STARTUP_SMOKE).expect("scenario");
+    let receipt = run_compare(&scenario, &fixture.config).expect("complete receipt");
+
+    // When: the production comparator evaluates the persisted receipt again.
+    let comparison = compare_capture(&scenario, &receipt, &clean_cleanup());
+
+    // Then: presentation, timing, and ordered motion are required passing gates with metrics.
+    assert!(comparison.comparison_passed);
+    assert!(comparison.presentation.is_some());
+    for gate in ["presentation", "timing", "motion"] {
+        assert!(comparison.gates[gate].passed, "gate {gate}");
+    }
+    write_packet1_artifact("complete-comparison.json", &comparison);
+}
+
+#[test]
+fn packet1_controlled_defect_matrix() {
+    // Given: one complete production receipt and five isolated controlled mutations.
+    let fixture = packet1_fixture("defects");
+    let scenario = Scenario::from_json(STARTUP_SMOKE).expect("scenario");
+    let receipt = run_compare(&scenario, &fixture.config).expect("complete receipt");
+    let cleanup = clean_cleanup();
+
+    let mut delayed = receipt.clone();
+    let PresentationEvidence::HarnessNative {
+        external, native, ..
+    } = &mut delayed.runtimes[1].presentation
+    else {
+        panic!("Harness native receipt");
+    };
+    for observation in &mut external.observations {
+        observation.observed_at = PresentationTimestamp(observation.observed_at.0 + 10_000_000);
+    }
+    for ack in &mut native.acknowledgements {
+        ack.write_ended_at = PresentationTimestamp(ack.write_ended_at.0 + 10_000_000);
+        ack.acknowledged_at = PresentationTimestamp(ack.acknowledged_at.0 + 10_000_000);
+    }
+
+    let mut long_gap = receipt.clone();
+    let external = harness_external_mut(&mut long_gap);
+    let start = external
+        .actual_input_sends
+        .iter()
+        .map(|send| send.sent_at.0)
+        .max()
+        .unwrap_or_default()
+        .saturating_add(1_000);
+    for (observation, offset) in external.observations.iter_mut().zip([0_u64, 100, 200, 501]) {
+        observation.observed_at = PresentationTimestamp(start + offset);
+    }
+
+    let mut reordered = receipt.clone();
+    let frame = &mut harness_external_mut(&mut reordered).observations[0].frame;
+    frame.cells[0].grapheme = "controlled-transition-defect".to_owned();
+
+    let mut shifted_schedule = receipt.clone();
+    let shifted_external = harness_external_mut(&mut shifted_schedule);
+    for send in &mut shifted_external.actual_input_sends {
+        send.scheduled_at = PresentationTimestamp(send.scheduled_at.0 + 1_000_000);
+    }
+
+    let mut missing = receipt.clone();
+    let external = harness_external_mut(&mut missing).clone();
+    missing.runtimes[1].presentation = PresentationEvidence::ExternalOnly { external };
+
+    // When: every mutation traverses the production comparator.
+    let delayed_result = compare_capture(&scenario, &delayed, &cleanup);
+    let gap_result = compare_capture(&scenario, &long_gap, &cleanup);
+    let reorder_result = compare_capture(&scenario, &reordered, &cleanup);
+    let schedule_result = compare_capture(&scenario, &shifted_schedule, &cleanup);
+    let missing_result = compare_capture(&scenario, &missing, &cleanup);
+    write_packet1_artifact(
+        "controlled-defects.json",
+        &serde_json::json!({
+            "artificial_delay_timing_passed": delayed_result.gates["timing"].passed,
+            "long_interval_timing_passed": gap_result.gates["timing"].passed,
+            "reordered_transition_motion_passed": reorder_result.gates["motion"].passed,
+            "schedule_only_timing_passed": schedule_result.gates["timing"].passed,
+            "schedule_only_metrics_unchanged": schedule_result.presentation
+                == receipt.comparison.as_ref().and_then(|value| value.presentation.clone()),
+            "missing_native_presentation_passed": missing_result.gates["presentation"].passed,
+            "artificial_delay_detail": delayed_result.gates["timing"].detail,
+            "long_interval_detail": gap_result.gates["timing"].detail,
+            "reordered_transition_detail": reorder_result.gates["motion"].detail,
+            "missing_native_detail": missing_result.gates["presentation"].detail,
+        }),
+    );
+
+    // Then: each defect reaches its named gate while schedule provenance changes nothing.
+    assert!(!delayed_result.gates["timing"].passed);
+    assert!(!gap_result.gates["timing"].passed);
+    assert!(!reorder_result.gates["motion"].passed);
+    assert!(schedule_result.gates["timing"].passed);
+    assert_eq!(
+        schedule_result.presentation,
+        receipt.comparison.unwrap().presentation
+    );
+    assert!(!missing_result.gates["presentation"].passed);
+}
+
+fn write_packet1_artifact(name: &str, value: &impl serde::Serialize) {
+    let Some(root) = std::env::var_os("HARNESS_PACKET1_EVIDENCE_DIR") else {
+        return;
+    };
+    let path = PathBuf::from(root).join(name);
+    std::fs::create_dir_all(path.parent().expect("packet evidence parent"))
+        .expect("create packet evidence root");
+    std::fs::write(
+        path,
+        serde_json::to_vec_pretty(value).expect("serialize packet evidence"),
+    )
+    .expect("write packet evidence");
+}
+
+fn packet1_fixture(label: &str) -> Fixture {
+    let mut fixture = Fixture::new("normal", "normal", "normal");
+    if let Some(root) = std::env::var_os("HARNESS_PACKET1_EVIDENCE_DIR") {
+        fixture.config.evidence_dir = PathBuf::from(root).join(label);
+    }
+    fixture
+}
+
+fn harness_external_mut(
+    receipt: &mut harness_testkit::tui_fidelity_runner::DualRuntimeReceipt,
+) -> &mut harness_testkit::tui_fidelity_runner::ExternalPresentationEvidence {
+    match &mut receipt.runtimes[1].presentation {
+        PresentationEvidence::HarnessNative { external, .. } => external,
+        PresentationEvidence::ExternalOnly { .. } => panic!("Harness native receipt required"),
+    }
+}
+
+fn clean_cleanup() -> CleanupReceipt {
+    CleanupReceipt {
+        schema_version: "harness.tui-fidelity.cleanup.v1".to_owned(),
+        status: "clean".to_owned(),
+        forced_termination_observed: false,
+        detected_child_pids: Vec::new(),
+        surviving_pids: Vec::new(),
+        temporary_paths_removed: Vec::new(),
+        cleanup_errors: Vec::new(),
+        primary_error: None,
     }
 }
 

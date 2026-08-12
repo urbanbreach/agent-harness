@@ -24,8 +24,9 @@ pub use compare::{
 pub use frame_io::ParityCellError;
 pub use identity::{frame_line, IdentityKind, IdentityReplacement, IdentitySubstitution};
 pub use motion::{
-    compare_motion_traces, validate_motion_trace, validate_motion_trace_with_families, FrameTrace,
-    MotionDefect, MotionFamily, MotionPhase, TickFrame, TraceIdentity, TraceSource,
+    compare_motion_traces, compare_ordered_motion_traces, validate_motion_trace,
+    validate_motion_trace_with_families, FrameTrace, MotionDefect, MotionFamily, MotionPhase,
+    TickFrame, TraceIdentity, TraceSource,
 };
 pub use provenance::{
     compare_frames_with_provenance, validate_capture_provenance, validate_no_self_comparison,

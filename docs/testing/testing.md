@@ -521,6 +521,105 @@ provenance test stays inert and the suite passes from a clean checkout without s
 Only the lane (with the fresh evidence root populated by the capture flow) drives the executable
 provenance validation.
 
+### Packet 1 presentation-telemetry contract
+
+`signoff-parity` also runs the fail-closed `presentation_telemetry` stage. It owns the focused
+receipt/comparator owners in `crates/harness-testkit/tests/tui_fidelity_presentation_receipt_test.rs`
+and `crates/harness-testkit/tests/tui_fidelity_runner_test.rs`; a missing owner, reference binary,
+trace, comparison gate, receipt, or cleanup receipt is a failure, never a skip. The stage runs
+single-threaded and stores controlled-defect evidence under
+`<artifact-root>/signoff-parity/stages/presentation_telemetry/artifacts/`.
+
+The only common cross-binary endpoint is `external_pty_observed`: a timed PTY reader records the
+actual input send, completed reads, raw byte lengths and SHA-256 values, decoder status, and
+parser-derived semantic observations. This says only that the observer read bytes and reconstructed
+a terminal frame. It is not an emulator-presented, pixel-presented, native-visual, or physical-paint
+claim.
+
+Harness has a separate local endpoint, `native_completed_write`: input reception through the first
+successful native sink flush for a frame containing the causal revision. It is reported separately
+from PTY timing and likewise is not evidence that a terminal emulator presented or painted the
+frame. The pinned reference emits no native fields, so its valid evidence variant is external-only.
+
+| Evidence field or label | Required | Meaning and limits |
+|---|---|---|
+| `external_pty_observed` | both binaries | Timed PTY read/decode boundary; required for all receipt timing and ordered motion. |
+| `native_completed_write` | Harness only | Successful native write/flush acknowledgement linked by frame digest and byte order; never asserted for the reference. |
+| `transport-drain observation` | optional diagnostic | A distinct transport observation when available; it does not upgrade a PTY read or flush into visual presentation. |
+| `native-visual observation` | optional diagnostic | A separately captured local visual observation; it is not required by, and is never inferred from, the PTY lane. |
+| interaction `scenario-id:action:ordinal` | both binaries | Content-free runner identifier. Receipts do not retain raw input or provider content. |
+| native cause `trace-id:cause:sequence` | Harness only | Content-free causal join key for native trace coverage. |
+
+The receipt schemas are `harness.tui-fidelity.runner.v3`,
+`harness.tui-fidelity.comparison.v1`, and `harness.tui-fidelity.cleanup.v3`. The runner receipt
+uses a tagged evidence variant: `external_only` is valid only for the pinned reference;
+`harness_native` requires the shared external evidence, the complete native trace, its artifact
+digest, and ordered byte-digest links. `receipt.json` carries the adapter identity, scenario,
+binding hashes, evidence, and comparison; `comparison.json` records the `presentation`, `timing`,
+and `motion` gates and typed metrics; `cleanup.json` records descendant detection, survivors,
+removed temporary paths, and cleanup errors.
+
+Before metrics, receipt validation fails closed for a stale schema or binding, adapter/evidence
+mismatch, empty or non-monotonic input/read/observation records, incomplete or malformed decoder
+state, unresolved action/cause/frame/observation links, a non-monotonic revision or byte-link
+order, other than exactly one acknowledgement per accepted native frame, a visible cause without a
+completed frame, an unmatched native byte digest, a missing artifact digest, or non-clean idle and
+cleanup accounting. Freshness checks bind action schedules, motion contracts, the observer version,
+terminal identity, reference identity, and artifact bytes to the current run.
+
+Scenario `motion_capture` is an ordered contract, not a checkpoint guess. It names the applicable
+`MotionFamily` values and ordered markers with a boundary, observation rule, phase, and repeat
+count. The comparator normalizes timed semantic observations only through that contract and rejects
+missing, out-of-order, or incompatible markers. It never derives cancellation, finish, resize, or
+settled phases from a process name, a scenario id, arbitrary raw chunks, or rest/mid/settled
+checkpoints. Checkpoints remain supplemental semantic/pixel gates.
+
+`scheduled_at` and `input_timestamps_millis` are scenario provenance only. Application latency is
+derived from actual input send to the first changed `external_pty_observed` observation; Harness
+native receive-to-flush is reported separately. The external candidate p95 must satisfy
+`candidate_p95 * 100 <= reference_p95 * 110` with no additive allowance. Each observation stream
+also fails when a gap exceeds twice its applicable cadence. The metrics record external latency and
+interval samples plus native receive-to-flush, request-to-flush, completed-write intervals,
+coalescing, queue saturation, resyncs, full repaints, bytes written, and idle redraws. Idle redraws
+must be zero for the five-run signoff aggregate.
+
+For a real five-run Packet 1 signoff, run sequentially against the same pinned reference identity;
+do not parallelize the PTY lane:
+
+```bash
+attempt_dir="${ATTEMPT_DIR:-.omo/evidence}"
+for n in 1 2 3 4 5; do
+  RUST_TEST_THREADS=1 scripts/test-lanes.sh signoff-parity \
+    --artifact-dir "$attempt_dir/task-10-signoff-parity-run-$n" || exit 1
+done
+```
+
+Aggregate exactly those five fresh run roots with the shipped CLI:
+
+```bash
+cargo run -p harness-testkit --bin tui_fidelity_aggregate -- \
+  "$attempt_dir"/task-10-signoff-parity-run-1 \
+  "$attempt_dir"/task-10-signoff-parity-run-2 \
+  "$attempt_dir"/task-10-signoff-parity-run-3 \
+  "$attempt_dir"/task-10-signoff-parity-run-4 \
+  "$attempt_dir"/task-10-signoff-parity-run-5 \
+  >"$attempt_dir/task-10-five-run-summary.json"
+```
+
+The output schema is `harness.tui-fidelity.aggregate.v1`. The CLI accepts exactly five roots and
+recursively locates one `receipt.json`, `comparison.json`, and `cleanup.json` in each. It rejects a
+mixed scenario, schema, reference/candidate identity, action or motion binding, observer version,
+terminal identity, or input order; any failed comparison gate or unclean cleanup; stale raw,
+observation, or native-sidecar digest; p95 above the 110% limit; a gap above twice cadence; or a
+nonzero idle-redraw count.
+
+Each fresh comparison evidence root contains `receipt.json`, `comparison.json`, `cleanup.json`,
+`grok/raw-pty.ansi`, `grok/pty-observations.json`, `harness/raw-pty.ansi`,
+`harness/pty-observations.json`, and `harness/native-presentation.json`; the receipt binds their
+SHA-256 values and the cleanup receipt proves bounded process cleanup. These are opt-in,
+local-only QA evidence under the caller-selected artifact directory. Do not commit them, send them
+to a network service, or treat them as product telemetry.
+
 `--dry-run` still records the same stage command shape without executing. Optional live/native
 lanes (`signoff-live`, `signoff-native`) and developer lanes (`fast`, …) keep soft-stage semantics.
 `signoff-pty` is fail-closed (see Deterministic signoff PTY lane).

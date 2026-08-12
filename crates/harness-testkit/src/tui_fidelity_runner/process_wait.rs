@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 
 use super::actions::normal_exit_steps_for_state;
 use super::error::RunnerError;
+use super::process_io::PtyRead;
 use super::process_tree::descendants;
 use crate::tui_fidelity::{AdapterKind, Viewport};
 
@@ -47,7 +48,7 @@ pub(super) fn wait_until(
     deadline: Instant,
     adapter: AdapterKind,
     child: &mut PtyChild,
-    output: &Receiver<Vec<u8>>,
+    output: &Receiver<PtyRead>,
     stream: &mut Vec<u8>,
     observed: &mut BTreeSet<u32>,
     pid: u32,
@@ -88,7 +89,7 @@ pub(super) fn wait_for_visible_stable_frame(
     deadline: Instant,
     adapter: AdapterKind,
     child: &mut PtyChild,
-    output: &Receiver<Vec<u8>>,
+    output: &Receiver<PtyRead>,
     stream: &mut Vec<u8>,
     observed: &mut BTreeSet<u32>,
     pid: u32,
@@ -116,7 +117,7 @@ pub(super) fn wait_for_prompt_ready(
     deadline: Instant,
     adapter: AdapterKind,
     child: &mut PtyChild,
-    output: &Receiver<Vec<u8>>,
+    output: &Receiver<PtyRead>,
     stream: &mut Vec<u8>,
     observed: &mut BTreeSet<u32>,
     pid: u32,
@@ -145,7 +146,7 @@ fn wait_for_stable_frame(
     deadline: Instant,
     adapter: AdapterKind,
     child: &mut PtyChild,
-    output: &Receiver<Vec<u8>>,
+    output: &Receiver<PtyRead>,
     stream: &mut Vec<u8>,
     observed: &mut BTreeSet<u32>,
     pid: u32,
@@ -228,9 +229,9 @@ pub(super) fn request_normal_exit(
     Ok(None)
 }
 
-pub(super) fn drain(receiver: &Receiver<Vec<u8>>, stream: &mut Vec<u8>) {
-    while let Ok(chunk) = receiver.try_recv() {
-        stream.extend(chunk);
+pub(super) fn drain(receiver: &Receiver<PtyRead>, stream: &mut Vec<u8>) {
+    while let Ok(read) = receiver.try_recv() {
+        stream.extend(read.bytes);
     }
 }
 

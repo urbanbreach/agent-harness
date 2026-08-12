@@ -37,6 +37,14 @@ pub struct ComparisonReceipt {
     pub capture_succeeded: bool,
     pub comparison_passed: bool,
     pub gates: std::collections::BTreeMap<String, GateReceipt>,
+    pub presentation: Option<PresentationComparisonMetrics>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PresentationComparisonMetrics {
+    pub reference: super::presentation_timing::PresentationTimingMetrics,
+    pub candidate: super::presentation_timing::PresentationTimingMetrics,
 }
 
 impl ComparisonReceipt {

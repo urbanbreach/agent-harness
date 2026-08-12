@@ -18,6 +18,16 @@ Redaction is implemented in `crates/harness-core/src/redact.rs`. Support export 
 
 There is no telemetry, cloud analytics, billing, web share, or hosted collaboration surface in V1 unless explicitly added later by a new roadmap item and implementation. Doctor does not make provider network calls.
 
+### Local presentation-fidelity QA evidence
+
+The opt-in TUI fidelity runner may write local presentation receipts only when its runner-owned
+evidence path is supplied. This is local-only QA evidence, not product telemetry: it has no network
+path and is not enabled by runtime or TUI configuration. The records use content-free interaction
+and cause IDs plus timestamps, byte lengths, SHA-256 digests, decoder state, semantic frames, and
+cleanup/provenance metadata. They must not include raw user input, provider content, credentials,
+cookies, or hidden reasoning. Operators should keep the generated artifact directory local, review
+it before sharing, and use the normal redacted support export for support cases.
+
 ## Operator checklist
 
 1. Review provider/MCP config before live calls.

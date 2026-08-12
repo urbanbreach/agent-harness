@@ -727,6 +727,8 @@ run_signoff_parity() {
   local cells_test_rel="crates/harness-tui/tests/reference_parity_cells_test.rs"
   local pixels_test_rel="crates/harness-tui/tests/reference_parity_pixels_test.rs"
   local pty_test_rel="crates/harness-tui/tests/reference_parity_pty_test.rs"
+  local presentation_receipt_test_rel="crates/harness-testkit/tests/tui_fidelity_presentation_receipt_test.rs"
+  local presentation_runner_test_rel="crates/harness-testkit/tests/tui_fidelity_runner_test.rs"
   local reference_binary_rel="inspirations/grok-build/target/debug/xai-grok-pager"
   local reference_binary_path="${repo_root}/${reference_binary_rel}"
   # Pinned reference binary sha256 (must match $.reference.binary_sha256 in the manifest).
@@ -752,6 +754,8 @@ run_signoff_parity() {
       "$cells_test_rel" \
       "$pixels_test_rel" \
       "$pty_test_rel" \
+      "$presentation_receipt_test_rel" \
+      "$presentation_runner_test_rel" \
       "crates/harness-tui/tests/reference_parity_first_slice_test.rs" \
       "crates/harness-tui/tests/reference_parity_perm_question_test.rs" \
       "crates/harness-tui/tests/reference_parity_tx_shell_test.rs" \
@@ -936,6 +940,13 @@ print(f\"wrote freeze receipt {out}\")
     env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 HARNESS_TUI_PARITY_STRICT=1 \
     cargo nextest run -p harness-tui --test reference_parity_pty_test --test-threads 1
 
+  local presentation_artifacts_dir
+  presentation_artifacts_dir="$(stage_dir_for signoff-parity presentation_telemetry)/artifacts"
+  mkdir -p "$presentation_artifacts_dir"
+  run_stage "$mode_name" presentation_telemetry "$repo_root" \
+    bash -c 'cargo nextest run -p harness-testkit --test tui_fidelity_presentation_receipt_test && RUST_TEST_THREADS=1 HARNESS_PACKET1_EVIDENCE_DIR="$0/complete" cargo nextest run -p harness-testkit --test tui_fidelity_runner_test --test-threads 1 packet1_complete_receipt_passes_all_gates && RUST_TEST_THREADS=1 HARNESS_PACKET1_EVIDENCE_DIR="$0/defects" cargo nextest run -p harness-testkit --test tui_fidelity_runner_test --test-threads 1 packet1_controlled_defect_matrix' \
+    "$presentation_artifacts_dir"
+
   # Final fail-closed provenance gate: the strict validator must accept the
   # fresh evidence root (L1-L6 files present, capture/freeze/receipt digests
   # hash-matched, capture metadata matched to the owning rows).
@@ -1005,7 +1016,7 @@ note=${note}
 git_revision=${git_rev}
 manifest_sha256=${manifest_digest}
 owns=dual_binary_cells_and_pixels
-stages=manifest,reference_binary,p0_contract,shell_topology,cells,pixels,first_slice,perm_question,tx_shell,responsive,pty_with_signoff,evidence_provenance
+stages=manifest,reference_binary,p0_contract,shell_topology,cells,pixels,first_slice,perm_question,tx_shell,responsive,pty_with_signoff,presentation_telemetry,evidence_provenance
 does_not_own=tui-signoff-manifest.v1.json
 manifest=docs/reference/tui-reference-parity-manifest.v1.json
 EOF

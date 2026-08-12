@@ -422,3 +422,30 @@ fn validate_scenarios_self_test_passes() {
         "--self-test must report its own pass"
     );
 }
+
+#[test]
+fn cancellation_contract_orders_cancel_before_recovery() {
+    use harness_testkit::parity::MotionPhase;
+    use harness_testkit::tui_fidelity::Scenario;
+
+    let scenario = Scenario::from_json(include_str!(
+        "../src/tui_fidelity_scenarios/baseline/cancel.json"
+    ))
+    .expect("cancellation scenario");
+    let phases = scenario
+        .motion_capture
+        .markers
+        .iter()
+        .map(|marker| marker.phase)
+        .collect::<Vec<_>>();
+    let cancellation = phases
+        .iter()
+        .position(|phase| *phase == MotionPhase::Cancellation)
+        .expect("cancellation marker");
+    let recovery = phases
+        .iter()
+        .position(|phase| *phase == MotionPhase::CancelRecovered)
+        .expect("recovery marker");
+    assert!(cancellation < recovery);
+    assert_eq!(phases.last(), Some(&MotionPhase::SettleRepeat));
+}

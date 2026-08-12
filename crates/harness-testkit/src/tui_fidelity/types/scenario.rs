@@ -114,6 +114,7 @@ pub struct Scenario {
     #[serde(default)]
     pub capture_mode: CaptureMode,
     pub actions: Vec<super::action::ScenarioAction>,
+    pub motion_capture: super::motion_capture::MotionCaptureContract,
     pub checkpoints: Vec<Checkpoint>,
     pub substitutions: Vec<IdentitySubstitution>,
     pub expected_exit: ExpectedExit,

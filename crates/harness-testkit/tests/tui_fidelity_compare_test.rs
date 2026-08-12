@@ -100,19 +100,16 @@ fn accepts_declared_75ms_phase_cadence() {
 }
 
 #[test]
-fn accepts_small_wall_clock_p95_jitter() {
-    // Given: the candidate is two milliseconds slower in a small execution window.
-    let reference = TimingTrace::new(vec![0, 75, 150], vec![6, 6, 6]);
-    let candidate = TimingTrace::new(vec![0, 75, 150], vec![8, 8, 8]);
+fn rejects_p95_above_exact_relative_limit() {
+    // Given: the candidate exceeds the common-boundary p95 by more than 10%.
+    let reference = TimingTrace::new(vec![0, 75, 150], vec![100, 100, 100]);
+    let candidate = TimingTrace::new(vec![0, 75, 150], vec![111, 111, 111]);
 
     // When: the timing comparator evaluates p95 latency.
     let result = compare_timing(&reference, &candidate);
 
-    // Then: bounded scheduling jitter is accepted without disabling gross regressions.
-    assert!(
-        result.is_ok(),
-        "small wall-clock p95 jitter must be bounded, not rejected"
-    );
+    // Then: no absolute jitter bypass weakens the 110% contract.
+    assert!(result.is_err());
 }
 
 #[test]

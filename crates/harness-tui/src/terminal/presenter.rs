@@ -1,13 +1,16 @@
 use std::time::Instant;
 
+use crate::presentation::RenderDemand;
+
 use super::{FrameKind, FrameSubmission};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Presenter {
     dirty: bool,
     force_full_repaint: bool,
     last_draw_at: Option<Instant>,
     scheduled_at: Option<Instant>,
+    render_demand: Option<RenderDemand>,
 }
 
 impl Presenter {
@@ -17,6 +20,7 @@ impl Presenter {
             force_full_repaint: true,
             last_draw_at: None,
             scheduled_at: None,
+            render_demand: None,
         }
     }
 
@@ -25,6 +29,18 @@ impl Presenter {
         if self.scheduled_at.is_none() {
             self.scheduled_at = Some(now);
         }
+    }
+
+    pub fn request_redraw_for(&mut self, demand: RenderDemand, now: Instant) {
+        self.request_redraw(now);
+        match self.render_demand.as_mut() {
+            Some(pending) => pending.merge(demand),
+            None => self.render_demand = Some(demand),
+        }
+    }
+
+    pub fn take_render_demand(&mut self) -> Option<RenderDemand> {
+        self.render_demand.take()
     }
 
     pub const fn should_present(&self, writer_ready: bool) -> bool {

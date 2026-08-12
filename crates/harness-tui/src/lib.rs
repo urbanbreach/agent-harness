@@ -112,11 +112,13 @@ pub mod overlay;
     reason = "task 47 requires perf_budgets/mod.rs as the public facade"
 )]
 pub mod perf_budgets;
+pub mod presentation;
 pub mod prompt_queue_actions;
 pub mod render_test;
 pub mod responsive;
 mod runtime;
 pub(crate) mod runtime_integration;
+pub mod runtime_presentation;
 pub mod scheduling;
 mod session_events;
 pub mod shell_geometry;

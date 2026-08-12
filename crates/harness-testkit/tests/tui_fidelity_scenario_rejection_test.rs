@@ -254,6 +254,19 @@ fn cleanup_paths_must_be_relative_and_traversal_free() {
 }
 
 #[test]
+fn rejects_invalid_motion_capture_contract() {
+    let source = include_str!("../src/tui_fidelity_scenarios/baseline/cancel.json");
+    let mut value: serde_json::Value = serde_json::from_str(source).expect("fixture JSON");
+    value["motion_capture"]["markers"][1]["boundary"]["after_action"]["ordinal"] = 99.into();
+    let error = harness_testkit::tui_fidelity::Scenario::from_json(&value.to_string())
+        .expect_err("out-of-range marker rejected");
+    assert!(matches!(
+        error,
+        harness_testkit::tui_fidelity::ScenarioError::InvalidMotionCapture(_)
+    ));
+}
+
+#[test]
 fn empty_adapter_selection_is_rejected() {
     // Given: a scenario with no selected adapter.
     let result = mutated_scenario(|value| {

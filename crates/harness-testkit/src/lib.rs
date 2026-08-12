@@ -10,6 +10,7 @@ pub mod secret_scanner;
 pub mod simulation;
 pub mod tui_dependency_audit;
 pub mod tui_fidelity;
+pub mod tui_fidelity_aggregate;
 pub mod tui_fidelity_cache;
 pub mod tui_fidelity_closure;
 pub mod tui_fidelity_compare;

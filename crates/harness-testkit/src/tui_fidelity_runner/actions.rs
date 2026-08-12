@@ -17,7 +17,11 @@ pub(super) fn apply_action(
 ) -> Result<(), RunnerError> {
     match action {
         ScenarioAction::TimedKey(action) => write_bytes(writer, &key_bytes(action.key), adapter),
-        ScenarioAction::Paste(action) => write_bytes(writer, action.text.as_bytes(), adapter),
+        ScenarioAction::Paste(action) => {
+            write_bytes(writer, b"\x1b[200~", adapter)?;
+            write_bytes(writer, action.text.as_bytes(), adapter)?;
+            write_bytes(writer, b"\x1b[201~", adapter)
+        }
         ScenarioAction::Mouse(action) => write_bytes(writer, &mouse_bytes(action), adapter),
         ScenarioAction::Drag(action) => write_bytes(writer, &drag_bytes(action), adapter),
         ScenarioAction::Wheel(action) => write_bytes(writer, &wheel_bytes(action), adapter),

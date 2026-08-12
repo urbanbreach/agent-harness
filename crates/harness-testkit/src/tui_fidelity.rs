@@ -2,6 +2,7 @@ mod error;
 mod error_display;
 mod lifecycle;
 mod metadata;
+mod motion_validation;
 mod names;
 mod substitution;
 mod types;
@@ -9,7 +10,7 @@ mod validation;
 
 pub use error::{
     ActionError, CheckpointError, CleanupError, ExitCodeError, GeometryError, GeometrySubject,
-    ScenarioError, SubstitutionError, TimingError,
+    MotionCaptureError, ScenarioError, SubstitutionError, TimingError,
 };
 pub use types::*;
 

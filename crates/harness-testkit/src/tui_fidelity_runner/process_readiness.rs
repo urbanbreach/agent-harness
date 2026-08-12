@@ -3,6 +3,7 @@ use std::sync::mpsc::Receiver;
 use std::time::Instant;
 
 use super::error::RunnerError;
+use super::process_io::PtyRead;
 use super::process_wait::{wait_for_prompt_ready, wait_for_visible_stable_frame};
 use crate::tui_fidelity::{AdapterKind, TerminalType, Viewport};
 
@@ -18,7 +19,7 @@ pub(super) fn wait_for_readiness(
     deadline: Instant,
     adapter: AdapterKind,
     child: &mut PtyChild,
-    output: &Receiver<Vec<u8>>,
+    output: &Receiver<PtyRead>,
     stream: &mut Vec<u8>,
     observed: &mut BTreeSet<u32>,
     pid: u32,
@@ -52,7 +53,7 @@ pub(super) fn wait_for_stable_frame(
     deadline: Instant,
     adapter: AdapterKind,
     child: &mut PtyChild,
-    output: &Receiver<Vec<u8>>,
+    output: &Receiver<PtyRead>,
     stream: &mut Vec<u8>,
     observed: &mut BTreeSet<u32>,
     pid: u32,

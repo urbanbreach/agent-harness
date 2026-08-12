@@ -2,6 +2,7 @@ use super::cleanup::{CleanupTracker, EvidenceSession};
 use super::error::RunnerError;
 use super::preflight::prepare;
 use super::process::execute;
+use super::receipt_presentation;
 use super::renderer::{render, RenderContext};
 use super::runtime_workspace::OwnedRuntimeWorkspace;
 use super::source_guard;
@@ -86,7 +87,7 @@ fn run_inner(
 ) -> Result<DualRuntimeReceipt, RunnerError> {
     let before = source_guard::run(config, "source-guard-before.json", tracker)?;
     let reference_receipt = match cached_reference {
-        Some(receipt) => validate_cached_reference(receipt, config)?,
+        Some(receipt) => validate_cached_reference(receipt, scenario, config)?,
         None => capture_adapter(scenario, config, workspace, tracker, AdapterKind::Grok)?,
     };
     let after = source_guard::run(config, "source-guard-after.json", tracker)?;
@@ -136,25 +137,49 @@ fn capture_adapter(
             tracker,
         },
     )?;
-    Ok(adapter_receipt(adapter, binary, capture, checkpoints))
+    adapter_receipt(
+        scenario,
+        adapter,
+        binary,
+        capture,
+        checkpoints,
+        &evidence_dir,
+    )
 }
 
 fn validate_cached_reference(
     receipt: AdapterReceipt,
+    scenario: &Scenario,
     config: &RunnerConfig,
 ) -> Result<AdapterReceipt, RunnerError> {
-    if receipt.adapter == AdapterKind::Grok
+    let expected_actions = binding_hash(&scenario.actions)?;
+    let expected_motion = binding_hash(&scenario.motion_capture)?;
+    let binding = &receipt.presentation_binding;
+    let exact_identity = receipt.adapter == AdapterKind::Grok
         && receipt.binary.sha256 == config.reference.sha256
         && receipt.binary.source_revision == config.reference.source_revision
-    {
-        Ok(receipt)
-    } else {
-        Err(RunnerError::BinaryDigest {
+        && binding.receipt_schema == RUNNER_RECEIPT_SCHEMA
+        && binding.scenario_id == scenario.id.0
+        && binding.action_schedule_sha256 == expected_actions
+        && binding.motion_contract_sha256 == expected_motion
+        && binding.observer_version == receipt_presentation::PTY_OBSERVER_VERSION
+        && binding.terminal_identity == scenario.terminal_type.as_str();
+    if !exact_identity {
+        return Err(RunnerError::BinaryReceipt {
             path: config.reference.path.clone(),
-            expected: config.reference.sha256.clone(),
-            actual: receipt.binary.sha256,
-        })
+            detail: "cached reference presentation identity is stale or incomplete".to_owned(),
+        });
     }
+    super::presentation_validation::validate_presentation_evidence(
+        AdapterKind::Grok,
+        &receipt.presentation,
+    )
+    .map_err(|error| RunnerError::BinaryReceipt {
+        path: config.reference.path.clone(),
+        detail: error.to_string(),
+    })?;
+    rehash_presentation_artifacts(&receipt)?;
+    Ok(receipt)
 }
 
 fn finish<T>(
@@ -179,12 +204,21 @@ fn finish<T>(
 }
 
 fn adapter_receipt(
+    scenario: &Scenario,
     adapter: AdapterKind,
     binary: &RuntimeBinary,
     capture: super::process::ProcessCapture,
     checkpoints: Vec<super::types::CheckpointReceipt>,
-) -> AdapterReceipt {
-    AdapterReceipt {
+    evidence_dir: &std::path::Path,
+) -> Result<AdapterReceipt, RunnerError> {
+    let (presentation, presentation_binding) =
+        receipt_presentation::build(scenario, adapter, evidence_dir, &capture)?;
+    super::presentation_validation::validate_presentation_evidence(adapter, &presentation)
+        .map_err(|error| RunnerError::Process {
+            adapter,
+            detail: format!("presentation evidence: {error}"),
+        })?;
+    Ok(AdapterReceipt {
         adapter,
         binary: binary.clone(),
         normal_exit_code: capture.exit_code,
@@ -194,5 +228,43 @@ fn adapter_receipt(
             .map(std::time::Duration::as_millis)
             .collect(),
         checkpoints,
+        presentation,
+        presentation_binding,
+    })
+}
+
+fn binding_hash(value: &impl serde::Serialize) -> Result<String, RunnerError> {
+    use sha2::Digest as _;
+    let bytes = serde_json::to_vec(value).map_err(|error| RunnerError::Arguments {
+        detail: format!("cached presentation binding: {error}"),
+    })?;
+    Ok(sha2::Sha256::digest(bytes)
+        .iter()
+        .fold(String::with_capacity(64), |mut output, byte| {
+            use std::fmt::Write as _;
+            let _ = write!(output, "{byte:02x}");
+            output
+        }))
+}
+
+fn rehash_presentation_artifacts(receipt: &AdapterReceipt) -> Result<(), RunnerError> {
+    let external = match &receipt.presentation {
+        super::presentation_receipt::PresentationEvidence::ExternalOnly { external } => external,
+        super::presentation_receipt::PresentationEvidence::HarnessNative { .. } => {
+            return Err(RunnerError::BinaryReceipt {
+                path: receipt.binary.path.clone(),
+                detail: "cached reference cannot contain Harness-native evidence".to_owned(),
+            });
+        }
+    };
+    for artifact in [&external.raw_ansi, &external.observations_artifact] {
+        let observed = super::util::sha256_file(std::path::Path::new(&artifact.path))?;
+        if observed != artifact.sha256 {
+            return Err(RunnerError::BinaryReceipt {
+                path: artifact.path.clone().into(),
+                detail: "cached presentation artifact hash changed".to_owned(),
+            });
+        }
     }
+    Ok(())
 }

@@ -11,5 +11,6 @@
   ],
   "substitutions": [],
   "expected_exit": {"code": 0},
-  "cleanup": {"restore_workspace": true, "preserve_evidence": true, "temporary_paths": ["tmp/tui-fidelity"]}
+  "cleanup": {"restore_workspace": true, "preserve_evidence": true, "temporary_paths": ["tmp/tui-fidelity"]},
+  "motion_capture": {"families":["ordered_motion","settle_dwell"],"markers":[{"phase":"startup","boundary":{"before_action":{"ordinal":0}},"observation":"first_changed","repeat_count":1},{"phase":"finish_flash","boundary":{"checkpoint":{"name":"mid"}},"observation":"last_changed_before_stable","repeat_count":1},{"phase":"settle_repeat","boundary":{"checkpoint":{"name":"settled"}},"observation":"stable_repeat","repeat_count":3}]}
 }
