@@ -3,327 +3,280 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="A visual field guide to Harness, the event-sourced, terminal-native runtime for capable and inspectable coding agents.">
-  <meta name="theme-color" content="#09110f">
-  <title>Harness — Agents with an audit trail</title>
+  <meta name="description" content="Agent Harness is an event-sourced, terminal-native runtime for inspectable coding agents.">
+  <title>Agent Harness — Project Overview</title>
   <style>
     :root {
-      --ink: #e9eee8;
-      --muted: #99a39b;
-      --faint: #68736c;
-      --paper: #09110f;
-      --panel: #0e1916;
-      --panel-2: #12201c;
-      --line: #25352f;
-      --acid: #c7f04b;
-      --acid-soft: #dffb8c;
-      --mint: #5ce1b6;
-      --orange: #ff9a62;
-      --red: #ff6b6b;
+      --night: #08110f;
+      --panel: #0d1916;
+      --panel-2: #12221d;
+      --mint: #adffc8;
+      --lime: #d8ff70;
+      --white: #f4f7ef;
+      --muted: #9eada5;
+      --rule: rgba(216, 255, 112, .18);
+      --max: 1180px;
       --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
       --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      --max: 1180px;
     }
 
     * { box-sizing: border-box; }
     html { scroll-behavior: smooth; }
     body {
       margin: 0;
-      color: var(--ink);
+      color: var(--white);
       background:
-        radial-gradient(circle at 78% -10%, rgba(92, 225, 182, .08), transparent 30rem),
-        var(--paper);
+        radial-gradient(circle at 82% 4%, rgba(71, 173, 116, .17), transparent 28rem),
+        var(--night);
       font-family: var(--sans);
-      line-height: 1.55;
-    }
-    body::before {
-      content: "";
-      position: fixed;
-      inset: 0;
-      pointer-events: none;
-      opacity: .17;
-      background-image: linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px);
-      background-size: 48px 48px;
-      mask-image: linear-gradient(to bottom, black, transparent 75%);
+      -webkit-font-smoothing: antialiased;
     }
     a { color: inherit; }
-    button { font: inherit; }
-    ::selection { background: var(--acid); color: #0a120e; }
-
+    code, pre { font-family: var(--mono); }
     .wrap { width: min(calc(100% - 40px), var(--max)); margin-inline: auto; }
-    .topbar {
+    .skip-link { position: fixed; left: 12px; top: -60px; z-index: 99; padding: 10px 14px; background: var(--lime); color: var(--night); }
+    .skip-link:focus { top: 12px; }
+
+    header {
       position: sticky;
       top: 0;
-      z-index: 20;
-      border-bottom: 1px solid rgba(37, 53, 47, .8);
-      background: rgba(9, 17, 15, .86);
+      z-index: 10;
+      border-bottom: 1px solid var(--rule);
+      background: rgba(8, 17, 15, .88);
       backdrop-filter: blur(16px);
     }
-    nav { height: 68px; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
-    .brand { display: flex; align-items: center; gap: 11px; font-weight: 760; letter-spacing: -.03em; text-decoration: none; }
-    .mark { width: 25px; height: 25px; border: 1px solid var(--acid); position: relative; transform: rotate(45deg); }
-    .mark::after { content: ""; position: absolute; inset: 5px; background: var(--acid); }
-    .navlinks { display: flex; align-items: center; gap: 28px; color: var(--muted); font-size: .86rem; }
-    .navlinks a { text-decoration: none; }
-    .navlinks a:hover { color: var(--ink); }
-    .nav-cta { border: 1px solid var(--line); border-radius: 99px; padding: 8px 14px; color: var(--ink) !important; }
+    nav { min-height: 68px; display: flex; align-items: center; justify-content: space-between; gap: 28px; }
+    .brand { display: flex; align-items: center; gap: 12px; text-decoration: none; font: 700 14px var(--mono); letter-spacing: .04em; }
+    .brand-mark { width: 20px; height: 20px; border: 2px solid var(--lime); box-shadow: inset 5px -5px 0 var(--lime); transform: rotate(45deg); }
+    .links { display: flex; align-items: center; gap: 25px; font: 12px var(--mono); color: var(--muted); }
+    .links a { text-decoration: none; }
+    .links a:hover, .links a:focus-visible { color: var(--lime); }
+    .repo { padding: 9px 13px; border: 1px solid var(--rule); color: var(--white) !important; }
 
-    .hero { padding: 92px 0 68px; min-height: 720px; display: grid; align-items: center; }
-    .hero-grid { display: grid; grid-template-columns: 1.06fr .94fr; gap: 70px; align-items: center; }
-    .eyebrow { display: flex; align-items: center; gap: 10px; color: var(--acid); font: 700 .73rem/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; }
-    .eyebrow::before { content: ""; width: 27px; height: 1px; background: currentColor; }
-    h1 { margin: 24px 0 24px; max-width: 760px; font-size: clamp(3.8rem, 7.6vw, 7.4rem); line-height: .89; letter-spacing: -.075em; font-weight: 760; }
-    .accent { color: var(--acid); }
-    .lede { max-width: 620px; margin: 0; color: var(--muted); font-size: clamp(1.05rem, 2vw, 1.25rem); }
-    .hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 34px; }
-    .button { display: inline-flex; gap: 10px; align-items: center; justify-content: center; padding: 12px 17px; border: 1px solid var(--line); text-decoration: none; font: 700 .82rem/1 var(--mono); transition: transform .2s, border-color .2s, background .2s; }
-    .button:hover { transform: translateY(-2px); border-color: var(--mint); }
-    .button.primary { color: #0a120e; background: var(--acid); border-color: var(--acid); }
-    .button.primary:hover { background: var(--acid-soft); }
+    .hero { padding: 110px 0 90px; border-bottom: 1px solid var(--rule); }
+    .eyebrow { margin-bottom: 27px; font: 12px var(--mono); color: var(--lime); letter-spacing: .14em; text-transform: uppercase; }
+    h1 { max-width: 980px; margin: 0; font-size: clamp(58px, 10vw, 132px); line-height: .88; letter-spacing: -.075em; font-weight: 760; }
+    h1 span { color: var(--mint); }
+    .hero-grid { display: grid; grid-template-columns: 1.25fr .75fr; gap: 70px; margin-top: 64px; align-items: end; }
+    .lead { margin: 0; max-width: 720px; color: #cdd7d0; font-size: clamp(19px, 2.2vw, 27px); line-height: 1.5; letter-spacing: -.025em; }
+    .facts { display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid var(--rule); }
+    .fact { padding: 17px 0; border-bottom: 1px solid var(--rule); }
+    .fact:nth-child(even) { padding-left: 18px; border-left: 1px solid var(--rule); }
+    .fact small { display: block; color: var(--muted); font: 10px var(--mono); text-transform: uppercase; letter-spacing: .1em; }
+    .fact strong { display: block; margin-top: 7px; font: 600 14px var(--mono); }
 
-    .terminal { border: 1px solid #30443c; background: rgba(11, 21, 18, .95); box-shadow: 22px 22px 0 rgba(199, 240, 75, .045); }
-    .terminal-head { height: 43px; display: flex; align-items: center; justify-content: space-between; padding: 0 15px; border-bottom: 1px solid var(--line); color: var(--faint); font: .68rem var(--mono); }
-    .lights { display: flex; gap: 6px; }
-    .lights i { display: block; width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
-    .terminal-body { padding: 20px; min-height: 420px; font: .73rem/1.7 var(--mono); overflow: hidden; }
-    .t-row { display: grid; grid-template-columns: 28px 1fr; color: var(--muted); }
-    .t-row + .t-row { margin-top: 10px; }
-    .sig { color: var(--acid); }
-    .tool { margin: 15px 0 15px 28px; padding: 11px 13px; color: var(--ink); border-left: 2px solid var(--mint); background: rgba(92, 225, 182, .055); }
-    .tool small { display: block; color: var(--mint); margin-bottom: 3px; }
-    .event { color: var(--faint); }
-    .event strong { color: var(--orange); font-weight: 500; }
-    .caret { display: inline-block; width: 7px; height: 1em; vertical-align: -.18em; background: var(--acid); animation: blink 1s steps(1) infinite; }
-    @keyframes blink { 50% { opacity: 0; } }
+    section { padding: 105px 0; border-bottom: 1px solid var(--rule); }
+    .section-head { display: grid; grid-template-columns: .45fr 1.55fr; gap: 45px; margin-bottom: 54px; }
+    .index { color: var(--lime); font: 12px var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+    h2 { max-width: 820px; margin: 0; font-size: clamp(38px, 6vw, 72px); line-height: 1; letter-spacing: -.055em; }
+    h3 { margin: 0; font-size: 22px; letter-spacing: -.025em; }
+    p { line-height: 1.7; }
 
-    .metrics { display: grid; grid-template-columns: repeat(4, 1fr); border-block: 1px solid var(--line); }
-    .metric { padding: 25px 0; }
-    .metric + .metric { padding-left: 26px; border-left: 1px solid var(--line); }
-    .metric b { display: block; margin-bottom: 5px; color: var(--acid); font: 700 1.15rem var(--mono); }
-    .metric span { color: var(--muted); font-size: .8rem; }
+    .principles { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid var(--rule); }
+    .principle { min-height: 270px; padding: 28px; border-right: 1px solid var(--rule); background: linear-gradient(145deg, rgba(255,255,255,.025), transparent); }
+    .principle:last-child { border-right: 0; }
+    .principle .number { color: var(--lime); font: 11px var(--mono); }
+    .principle h3 { margin: 75px 0 16px; }
+    .principle p { margin: 0; color: var(--muted); font-size: 14px; }
 
-    section { padding: 110px 0; }
-    .section-head { display: grid; grid-template-columns: .45fr 1fr; gap: 40px; margin-bottom: 54px; align-items: end; }
-    .kicker { color: var(--acid); font: 700 .7rem var(--mono); letter-spacing: .13em; text-transform: uppercase; }
-    h2 { margin: 0; max-width: 760px; font-size: clamp(2.4rem, 5vw, 4.6rem); line-height: .98; letter-spacing: -.055em; }
-    .section-copy { max-width: 610px; margin: 20px 0 0; color: var(--muted); }
+    .architecture { background: rgba(13, 25, 22, .62); }
+    .crate-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    .crate { padding: 28px; min-height: 220px; background: var(--panel); border: 1px solid var(--rule); transition: transform .2s, border-color .2s; }
+    .crate:hover { transform: translateY(-4px); border-color: var(--lime); }
+    .crate code { color: var(--mint); font-size: 12px; }
+    .crate h3 { margin: 24px 0 13px; }
+    .crate p { margin: 0; color: var(--muted); font-size: 14px; }
 
-    .principles { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--line); }
-    .principle { padding: 34px 34px 10px 0; }
-    .principle + .principle { padding-left: 34px; border-left: 1px solid var(--line); }
-    .num { color: var(--acid); font: .7rem var(--mono); }
-    h3 { margin: 30px 0 12px; font-size: 1.35rem; letter-spacing: -.025em; }
-    .principle p, .card p { color: var(--muted); font-size: .92rem; }
+    .flow { display: grid; grid-template-columns: repeat(5, 1fr); counter-reset: flow; }
+    .step { position: relative; padding: 55px 24px 20px 0; border-top: 1px solid var(--rule); counter-increment: flow; }
+    .step::before { content: "0" counter(flow); position: absolute; top: -17px; left: 0; width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid var(--lime); border-radius: 50%; color: var(--night); background: var(--lime); font: 11px var(--mono); }
+    .step:not(:last-child)::after { content: "→"; position: absolute; right: 18px; top: -12px; color: var(--muted); }
+    .step h3 { font-size: 17px; }
+    .step p { color: var(--muted); font-size: 13px; }
 
-    .architecture { background: #0b1512; border-block: 1px solid var(--line); }
-    .architecture-grid { display: grid; grid-template-columns: .7fr 1.3fr; gap: 70px; align-items: start; }
-    .sticky { position: sticky; top: 110px; }
-    .flow { display: grid; gap: 10px; }
-    .flow-row { display: grid; grid-template-columns: 160px 34px 1fr; align-items: stretch; }
-    .flow-label { display: grid; place-items: center; min-height: 82px; border: 1px solid var(--line); background: var(--panel); font: 700 .74rem var(--mono); text-align: center; }
-    .flow-label.core { color: #0a120e; background: var(--acid); border-color: var(--acid); }
-    .connector { display: grid; place-items: center; color: var(--faint); font-family: var(--mono); }
-    .flow-detail { padding: 16px 19px; border: 1px solid var(--line); background: rgba(18,32,28,.55); }
-    .flow-detail b { display: block; margin-bottom: 4px; font-size: .91rem; }
-    .flow-detail span { color: var(--muted); font-size: .79rem; }
+    .capability-layout { display: grid; grid-template-columns: .75fr 1.25fr; gap: 80px; }
+    .capability-copy p { color: var(--muted); }
+    .tags { display: flex; flex-wrap: wrap; gap: 9px; align-content: start; }
+    .tag { padding: 12px 15px; border: 1px solid var(--rule); background: var(--panel); color: var(--mint); font: 12px var(--mono); }
+    .safety-note { margin-top: 35px; padding: 22px; border-left: 3px solid var(--lime); background: var(--panel-2); color: #cbd6ce; font-size: 14px; }
 
-    .surface-grid { display: grid; grid-template-columns: 1.25fr .75fr .75fr; grid-auto-rows: minmax(260px, auto); gap: 12px; }
-    .card { position: relative; padding: 30px; overflow: hidden; border: 1px solid var(--line); background: var(--panel); }
-    .card.wide { grid-row: span 2; }
-    .card h3 { margin-top: 22px; }
-    .card-code { margin-top: 34px; padding-top: 24px; border-top: 1px solid var(--line); color: var(--mint); font: .72rem/1.75 var(--mono); }
-    .card-code .dim { color: var(--faint); }
-    .tag { display: inline-block; color: var(--acid); font: .68rem var(--mono); letter-spacing: .08em; text-transform: uppercase; }
-    .glyph { position: absolute; right: 20px; bottom: -30px; color: rgba(199,240,75,.08); font: 150px/1 var(--mono); }
+    .terminal { overflow: hidden; border: 1px solid #30433c; border-radius: 8px; background: #050a09; box-shadow: 0 30px 80px rgba(0,0,0,.36); }
+    .terminal-top { display: flex; align-items: center; gap: 7px; padding: 13px 16px; border-bottom: 1px solid #25342f; background: #111c18; }
+    .terminal-top i { width: 9px; height: 9px; border-radius: 50%; background: #41534c; }
+    .terminal-top span { margin-left: 8px; color: #819189; font: 10px var(--mono); }
+    pre { margin: 0; padding: 30px; overflow-x: auto; color: #dbe4dd; font-size: 13px; line-height: 1.9; }
+    .cmd { color: var(--lime); }
+    .comment { color: #73847b; }
 
-    .safety-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 70px; }
-    .rules { border-top: 1px solid var(--line); }
-    .rule { display: grid; grid-template-columns: 34px 1fr auto; gap: 14px; align-items: center; padding: 17px 0; border-bottom: 1px solid var(--line); }
-    .rule-id { color: var(--faint); font: .68rem var(--mono); }
-    .rule b { font-size: .89rem; }
-    .status { padding: 4px 7px; border: 1px solid; font: .62rem var(--mono); text-transform: uppercase; }
-    .allow { color: var(--mint); }
-    .ask { color: var(--orange); }
-    .deny { color: var(--red); }
-    .quote { padding: 36px; border-left: 1px solid var(--acid); background: linear-gradient(90deg, rgba(199,240,75,.05), transparent); font-size: clamp(1.45rem, 3vw, 2.25rem); line-height: 1.25; letter-spacing: -.035em; }
-    .quote small { display: block; margin-top: 25px; color: var(--muted); font: .68rem var(--mono); letter-spacing: .08em; }
+    .docs-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    .doc-link { padding: 23px; border: 1px solid var(--rule); text-decoration: none; background: var(--panel); }
+    .doc-link:hover { border-color: var(--lime); }
+    .doc-link strong { display: block; color: var(--mint); }
+    .doc-link span { display: block; margin-top: 9px; color: var(--muted); font-size: 13px; }
 
-    .start { padding-top: 30px; }
-    .start-panel { position: relative; padding: clamp(34px, 7vw, 74px); color: #0a120e; background: var(--acid); overflow: hidden; }
-    .start-panel::after { content: "H"; position: absolute; right: -20px; bottom: -135px; color: rgba(10,18,14,.07); font: 700 430px/1 var(--mono); }
-    .start-panel h2 { position: relative; max-width: 660px; }
-    .start-panel p { position: relative; max-width: 560px; margin: 21px 0 30px; color: #344017; }
-    .command { position: relative; z-index: 1; display: flex; max-width: 680px; align-items: center; justify-content: space-between; gap: 15px; padding: 17px 18px; color: var(--ink); background: #0a120e; font: .76rem var(--mono); }
-    .copy { flex: 0 0 auto; border: 0; color: var(--acid); background: transparent; cursor: pointer; font: 700 .66rem var(--mono); text-transform: uppercase; }
-
-    footer { padding: 40px 0 55px; }
-    .footer-row { display: flex; justify-content: space-between; gap: 30px; padding-top: 25px; border-top: 1px solid var(--line); color: var(--faint); font: .7rem var(--mono); }
-
-    @media (max-width: 900px) {
-      .hero { padding-top: 65px; }
-      .hero-grid, .architecture-grid, .safety-layout { grid-template-columns: 1fr; }
-      .hero-grid { gap: 50px; }
-      .section-head { grid-template-columns: 1fr; gap: 15px; }
-      .sticky { position: static; }
-      .surface-grid { grid-template-columns: 1fr 1fr; }
-      .card.wide { grid-row: auto; grid-column: span 2; }
-      .metrics { grid-template-columns: 1fr 1fr; }
-      .metric:nth-child(3) { border-left: 0; padding-left: 0; }
+    footer { padding: 35px 0; color: var(--muted); font: 11px var(--mono); }
+    footer .wrap { display: flex; justify-content: space-between; gap: 20px; }
+    @media (max-width: 850px) {
+      .links a:not(.repo) { display: none; }
+      .hero { padding-top: 75px; }
+      .hero-grid, .section-head, .capability-layout { grid-template-columns: 1fr; gap: 35px; }
+      .principles, .crate-grid, .docs-grid { grid-template-columns: 1fr 1fr; }
+      .principle:nth-child(2) { border-right: 0; }
+      .principle:nth-child(-n+2) { border-bottom: 1px solid var(--rule); }
+      .flow { grid-template-columns: 1fr; }
+      .step { padding-left: 50px; border-top: 0; border-left: 1px solid var(--rule); }
+      .step::before { top: 50px; left: -17px; }
+      .step::after { display: none; }
     }
-    @media (max-width: 620px) {
+    @media (max-width: 560px) {
       .wrap { width: min(calc(100% - 28px), var(--max)); }
-      .navlinks a:not(.nav-cta) { display: none; }
-      h1 { font-size: clamp(3.25rem, 18vw, 5rem); }
-      section { padding: 80px 0; }
-      .principles, .surface-grid { grid-template-columns: 1fr; }
-      .principle + .principle { padding-left: 0; border-left: 0; }
-      .principle { border-bottom: 1px solid var(--line); }
-      .card.wide { grid-column: auto; }
-      .flow-row { grid-template-columns: 105px 23px 1fr; }
-      .flow-detail { padding: 13px; }
-      .metrics { grid-template-columns: 1fr 1fr; }
-      .metric { padding-right: 8px; }
-      .metric + .metric { padding-left: 12px; }
-      .command { align-items: flex-start; }
-      .command span { overflow-wrap: anywhere; }
-      .footer-row { flex-direction: column; }
+      h1 { font-size: clamp(52px, 19vw, 80px); }
+      section { padding: 76px 0; }
+      .principles, .crate-grid, .docs-grid { grid-template-columns: 1fr; }
+      .principle { border-right: 0; border-bottom: 1px solid var(--rule); }
+      .principle:last-child { border-bottom: 0; }
+      footer .wrap { flex-direction: column; }
     }
-    @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } .caret { animation: none; } }
+    @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } * { transition: none !important; } }
   </style>
 </head>
 <body>
-  <header class="topbar">
+  <a class="skip-link" href="#content">Skip to content</a>
+  <header>
     <nav class="wrap" aria-label="Primary navigation">
-      <a class="brand" href="#top" aria-label="Harness home"><span class="mark" aria-hidden="true"></span> harness</a>
-      <div class="navlinks">
+      <a class="brand" href="#top"><span class="brand-mark" aria-hidden="true"></span>AGENT_HARNESS</a>
+      <div class="links">
         <a href="#architecture">Architecture</a>
-        <a href="#surfaces">Surfaces</a>
-        <a href="#safety">Safety</a>
-        <a class="nav-cta" href="#start">Get started ↗</a>
+        <a href="#workflow">Workflow</a>
+        <a href="#tools">Tools</a>
+        <a class="repo" href="https://github.com/urbanbreach/agent-harness">View repository ↗</a>
       </div>
     </nav>
   </header>
 
-  <main id="top">
-    <div class="hero wrap">
-      <div class="hero-grid">
-        <div>
-          <div class="eyebrow">Event-sourced agent runtime</div>
-          <h1>Agents that act.<br><span class="accent">Evidence</span> that lasts.</h1>
-          <p class="lede">Harness is a local-first CLI and terminal UI for running coding agents with controlled tools, bounded delegation, and a replayable record of every decision.</p>
-          <div class="hero-actions">
-            <a class="button primary" href="#start">Run the harness <span>→</span></a>
-            <a class="button" href="#architecture">Trace the architecture</a>
-          </div>
-        </div>
-
-        <div class="terminal" aria-label="Illustrative Harness terminal session">
-          <div class="terminal-head"><span>session / 01J7A…C92</span><span class="lights"><i></i><i></i><i></i></span></div>
-          <div class="terminal-body">
-            <div class="t-row"><span class="sig">›</span><span>Inspect the workspace and find the failing test.</span></div>
-            <div class="t-row event"><span>01</span><span><strong>turn.started</strong> · provider/openai-codex</span></div>
-            <div class="tool"><small>TOOL · GREP / ALLOWED</small>pattern: "assert_session_lineage"<br>scope: crates/harness-core</div>
-            <div class="t-row event"><span>02</span><span><strong>tool.completed</strong> · 3 matches · 18 ms</span></div>
-            <div class="t-row"><span class="sig">◆</span><span>The failure is in resume projection: child lineage is reconstructed after status, so the parent edge is unavailable.</span></div>
-            <div class="tool"><small>TASK · EXPLORE / BACKGROUND</small>Read-only review of replay ordering.<br>request_id: bg_7f1c</div>
-            <div class="t-row event"><span>03</span><span><strong>event.appended</strong> · seq 148 · redacted</span></div>
-            <div class="t-row"><span class="sig">›</span><span><span class="caret" aria-hidden="true"></span></span></div>
+  <main id="content">
+    <section class="hero" id="top">
+      <div class="wrap">
+        <div class="eyebrow">Rust workspace / terminal-native / event-sourced</div>
+        <h1>Agents that act.<br><span>History that stays.</span></h1>
+        <div class="hero-grid">
+          <p class="lead">Agent Harness is a local-first CLI and terminal UI for running coding agents with controlled tools, bounded delegation, explicit permissions, and a complete replayable trail.</p>
+          <div class="facts" aria-label="Project facts">
+            <div class="fact"><small>Language</small><strong>Rust 2021</strong></div>
+            <div class="fact"><small>Interface</small><strong>Ratatui</strong></div>
+            <div class="fact"><small>License</small><strong>MIT</strong></div>
+            <div class="fact"><small>Version</small><strong>0.1.0</strong></div>
           </div>
         </div>
       </div>
-    </div>
-
-    <div class="wrap metrics" aria-label="Harness highlights">
-      <div class="metric"><b>Rust</b><span>Coordinator + runtime core</span></div>
-      <div class="metric"><b>JSONL</b><span>Append-only event history</span></div>
-      <div class="metric"><b>Local-first</b><span>Sessions stay inspectable</span></div>
-      <div class="metric"><b>Multi-provider</b><span>One controlled boundary</span></div>
-    </div>
-
-    <section class="wrap" aria-labelledby="why-title">
-      <div class="section-head">
-        <div class="kicker">01 / Why Harness</div>
-        <div><h2 id="why-title">Capability without opacity.</h2><p class="section-copy">An agent should be able to explore, edit, run commands, and delegate—without turning the session into a black box. Harness makes control and observability part of the runtime itself.</p></div>
-      </div>
-      <div class="principles">
-        <article class="principle"><span class="num">[ 01 ]</span><h3>One authority</h3><p>The coordinator owns scheduling, permissions, tool execution, hooks, compaction, and lifecycle. There is one place to enforce the rules.</p></article>
-        <article class="principle"><span class="num">[ 02 ]</span><h3>Events are truth</h3><p>Every run becomes contiguous, append-only events. Replay derives state from history without re-running a provider, tool, hook, or network request.</p></article>
-        <article class="principle"><span class="num">[ 03 ]</span><h3>Delegation with lineage</h3><p>Parent agents can launch bounded child tasks while the coordinator preserves ancestry, permissions, status, and durable background results.</p></article>
-      </div>
     </section>
 
-    <section class="architecture" id="architecture" aria-labelledby="architecture-title">
-      <div class="wrap architecture-grid">
-        <div class="sticky">
-          <div class="kicker">02 / Architecture</div>
-          <h2 id="architecture-title" style="margin-top:18px">A narrow waist for agent work.</h2>
-          <p class="section-copy">Interfaces vary. Providers vary. Tools vary. All consequential work still passes through a single event-sourced coordinator.</p>
+    <section id="principles">
+      <div class="wrap">
+        <div class="section-head">
+          <div class="index">01 / Design thesis</div>
+          <h2>Capability without opacity.</h2>
         </div>
-        <div class="flow" aria-label="Harness architecture layers">
-          <div class="flow-row"><div class="flow-label">CLI + TUI</div><div class="connector">→</div><div class="flow-detail"><b>Operator surfaces</b><span>Compose-first Ratatui shell, headless runs, config, doctor, session navigation, and support exports.</span></div></div>
-          <div class="flow-row"><div class="flow-label core">COORDINATOR</div><div class="connector">→</div><div class="flow-detail"><b>Single runtime authority</b><span>Turns, permissions, scheduling, hooks, task lifecycle, compaction, cancellation, and event append.</span></div></div>
-          <div class="flow-row"><div class="flow-label">PROVIDERS</div><div class="connector">→</div><div class="flow-detail"><b>Model boundary</b><span>OpenAI-compatible transport, streaming events, mock cassettes, request metadata, and redaction.</span></div></div>
-          <div class="flow-row"><div class="flow-label">NATIVE TOOLS</div><div class="connector">→</div><div class="flow-detail"><b>Action surface</b><span>Read, search, edit, shell, tasks, web, code search, LSP, MCP, questions, and session inspection.</span></div></div>
-          <div class="flow-row"><div class="flow-label">EVENT STORE</div><div class="connector">→</div><div class="flow-detail"><b>Durable evidence</b><span>Contiguous JSONL, replay projections, lineage, redacted artifacts, checkpoints, and side-effect-free inspection.</span></div></div>
+        <div class="principles">
+          <article class="principle"><span class="number">01</span><h3>Events are truth</h3><p>Every meaningful transition is written to an ordered, append-only JSONL event stream.</p></article>
+          <article class="principle"><span class="number">02</span><h3>One authority</h3><p>The coordinator owns scheduling, permissions, hooks, compaction, tools, and lifecycle.</p></article>
+          <article class="principle"><span class="number">03</span><h3>Replay never acts</h3><p>Inspection derives state without invoking providers, tools, hooks, MCP servers, or the network.</p></article>
+          <article class="principle"><span class="number">04</span><h3>Delegation has lineage</h3><p>Child sessions remain bounded, observable, cancellable, and connected to their parent.</p></article>
         </div>
       </div>
     </section>
 
-    <section class="wrap" id="surfaces" aria-labelledby="surfaces-title">
-      <div class="section-head">
-        <div class="kicker">03 / Working surfaces</div>
-        <div><h2 id="surfaces-title">Interactive when you want it. Scriptable when you don't.</h2></div>
-      </div>
-      <div class="surface-grid">
-        <article class="card wide"><span class="tag">Terminal UI</span><h3>A compose-first operating room</h3><p>Start an agent, follow streaming work, review permission prompts, switch models, inspect lineage, and navigate session history without leaving the terminal.</p><div class="card-code"><span class="dim">$</span> harness<br><span class="dim">→</span> model switcher / permissions / transcript<br><span class="dim">→</span> live tools / task status / replay</div><span class="glyph" aria-hidden="true">›_</span></article>
-        <article class="card"><span class="tag">Automation</span><h3>Headless runs</h3><p>Use the same coordinator in CI, scripts, and deterministic offline checks.</p><div class="card-code"><span class="dim">$</span> harness run<br>"Summarize this workspace"</div></article>
-        <article class="card"><span class="tag">Control</span><h3>Typed config</h3><p>Separate runtime JSONC from TUI keybindings, with layered discovery and source attribution.</p><span class="glyph" aria-hidden="true">{ }</span></article>
-        <article class="card"><span class="tag">Recovery</span><h3>Replay + inspect</h3><p>Reconstruct state from disk without resuming providers or executing side effects.</p><div class="card-code"><span class="dim">$</span> harness sessions inspect<br>&lt;session&gt;</div></article>
-        <article class="card"><span class="tag">Extension</span><h3>Tools + MCP</h3><p>Use a canonical native tool set and register config-backed MCP servers behind the same permission boundary.</p></article>
-      </div>
-    </section>
-
-    <section class="wrap" id="safety" aria-labelledby="safety-title">
-      <div class="section-head">
-        <div class="kicker">04 / Safety boundary</div>
-        <div><h2 id="safety-title">Permission is a runtime fact—not a suggestion.</h2></div>
-      </div>
-      <div class="safety-layout">
-        <div class="rules" aria-label="Example permission policy">
-          <div class="rule"><span class="rule-id">01</span><b>Read workspace files</b><span class="status allow">allow</span></div>
-          <div class="rule"><span class="rule-id">02</span><b>Edit source code</b><span class="status ask">ask</span></div>
-          <div class="rule"><span class="rule-id">03</span><b>Run cargo tests</b><span class="status ask">ask</span></div>
-          <div class="rule"><span class="rule-id">04</span><b>Unknown shell command</b><span class="status deny">deny</span></div>
-          <div class="rule"><span class="rule-id">05</span><b>Launch bounded child task</b><span class="status allow">allow</span></div>
+    <section class="architecture" id="architecture">
+      <div class="wrap">
+        <div class="section-head">
+          <div class="index">02 / Architecture</div>
+          <h2>Six crates. Clear boundaries.</h2>
         </div>
-        <div class="quote">“Permission checks happen before execution. Replay never becomes a back door to run work twice.”<small>CORE RUNTIME INVARIANT</small></div>
+        <div class="crate-grid">
+          <article class="crate"><code>crates/harness-core</code><h3>Runtime authority</h3><p>Coordinator, events, stores, permissions, projections, configuration, redaction, and atomic hashline editing.</p></article>
+          <article class="crate"><code>crates/harness</code><h3>CLI entrypoint</h3><p>Interactive launch, headless runs, auth, config validation, doctor, replay, and session support exports.</p></article>
+          <article class="crate"><code>crates/harness-providers</code><h3>Model boundary</h3><p>Streaming provider abstraction, OpenAI-compatible transport, Codex auth, mock fixtures, and usage metadata.</p></article>
+          <article class="crate"><code>crates/harness-tools</code><h3>Native capability</h3><p>Safe file operations, shell execution, language intelligence, web access, delegation, skills, and session inspection.</p></article>
+          <article class="crate"><code>crates/harness-tui</code><h3>Operator surface</h3><p>Compose-first terminal shell with live events, replay mode, permission prompts, diffs, and session navigation.</p></article>
+          <article class="crate"><code>crates/harness-testkit</code><h3>Proof layer</h3><p>Deterministic fakes, simulations, PTY end-to-end helpers, native evidence, and validation utilities.</p></article>
+        </div>
       </div>
     </section>
 
-    <section class="start wrap" id="start" aria-labelledby="start-title">
-      <div class="start-panel">
-        <div class="kicker" style="color:#344017">05 / Start locally</div>
-        <h2 id="start-title" style="margin-top:18px">Build it. Prove it offline. Then connect.</h2>
-        <p>Compile the CLI with the pinned Rust toolchain, validate the starter configuration, and exercise the complete event path with a deterministic mock run before spending a token.</p>
-        <div class="command"><span id="install-command">cargo build -p harness && target/debug/harness run --mock "Hello"</span><button class="copy" type="button" data-copy="install-command">Copy</button></div>
+    <section id="workflow">
+      <div class="wrap">
+        <div class="section-head">
+          <div class="index">03 / Runtime flow</div>
+          <h2>Intent becomes controlled execution.</h2>
+        </div>
+        <div class="flow">
+          <article class="step"><h3>Submit</h3><p>A prompt enters through the TUI or headless CLI.</p></article>
+          <article class="step"><h3>Stream</h3><p>A provider emits normalized response and tool-call events.</p></article>
+          <article class="step"><h3>Authorize</h3><p>The coordinator resolves allow, deny, or ask before execution.</p></article>
+          <article class="step"><h3>Execute</h3><p>Native tools act inside workspace and capability boundaries.</p></article>
+          <article class="step"><h3>Record</h3><p>Results are redacted, appended, projected, and replayable.</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section id="tools">
+      <div class="wrap capability-layout">
+        <div class="capability-copy">
+          <div class="index">04 / Tool surface</div>
+          <h2>Useful by default. Gated by design.</h2>
+          <p>Built-in tools cover workspace discovery, atomic edits, shell commands, structural and language search, provider-backed research, task delegation, and replay-derived session inspection.</p>
+          <div class="safety-note"><strong>Safety boundary:</strong> permission checks precede execution. Replay is side-effect free, and persisted provider metadata is redacted.</div>
+        </div>
+        <div class="tags" aria-label="Native tools">
+          <span class="tag">read</span><span class="tag">list</span><span class="tag">glob</span><span class="tag">grep</span><span class="tag">edit</span><span class="tag">bash</span><span class="tag">task</span><span class="tag">background_output</span><span class="tag">batch</span><span class="tag">question</span><span class="tag">skill</span><span class="tag">webfetch</span><span class="tag">websearch</span><span class="tag">codesearch</span><span class="tag">lsp</span><span class="tag">ast_grep_search</span><span class="tag">session_list</span><span class="tag">session_read</span><span class="tag">session_search</span><span class="tag">session_info</span>
+        </div>
+      </div>
+    </section>
+
+    <section id="start">
+      <div class="wrap">
+        <div class="section-head">
+          <div class="index">05 / Get started</div>
+          <h2>Build once. Prove the path offline.</h2>
+        </div>
+        <div class="terminal" aria-label="Getting started commands">
+          <div class="terminal-top"><i></i><i></i><i></i><span>agent-harness — bash</span></div>
+          <pre><span class="comment"># Build the CLI</span>
+<span class="cmd">$</span> cargo build -p harness
+
+<span class="comment"># Validate configuration and local readiness</span>
+<span class="cmd">$</span> cargo run -p harness -- --config configs/harness.example.jsonc config validate
+<span class="cmd">$</span> cargo run -p harness -- --config configs/harness.example.jsonc doctor
+
+<span class="comment"># Exercise a complete deterministic turn without provider credentials</span>
+<span class="cmd">$</span> target/debug/harness run --mock "Hello from Harness" --out prompt.events.jsonl
+
+<span class="comment"># Open the interactive terminal shell</span>
+<span class="cmd">$</span> target/debug/harness</pre>
+        </div>
+      </div>
+    </section>
+
+    <section id="docs">
+      <div class="wrap">
+        <div class="section-head">
+          <div class="index">06 / Explore</div>
+          <h2>Go deeper in the project docs.</h2>
+        </div>
+        <div class="docs-grid">
+          <a class="doc-link" href="docs/architecture/architecture.md"><strong>Architecture ↗</strong><span>Crate boundaries, event schema, coordination, and replay.</span></a>
+          <a class="doc-link" href="docs/configuration/config.md"><strong>Configuration ↗</strong><span>Providers, models, agents, permissions, skills, and TUI settings.</span></a>
+          <a class="doc-link" href="docs/tools/native-tool-catalog.md"><strong>Native tools ↗</strong><span>Canonical tool ids, capabilities, permissions, and replay behavior.</span></a>
+          <a class="doc-link" href="docs/architecture/sessions-and-replay.md"><strong>Sessions &amp; replay ↗</strong><span>Event history, inspection, lineage, recovery, and exports.</span></a>
+          <a class="doc-link" href="docs/permissions/permissions.md"><strong>Permissions ↗</strong><span>Capability gates and allow, deny, or ask semantics.</span></a>
+          <a class="doc-link" href="docs/testing/testing.md"><strong>Testing ↗</strong><span>Deterministic lanes, simulation, PTY, and evidence posture.</span></a>
+        </div>
       </div>
     </section>
   </main>
 
-  <footer class="wrap"><div class="footer-row"><span>HARNESS / EVENT-SOURCED AGENT RUNTIME</span><span>Rust · Ratatui · Local-first · Multi-provider</span></div></footer>
-
-  <script>
-    const copyButton = document.querySelector('[data-copy]');
-    copyButton.addEventListener('click', async () => {
-      const text = document.getElementById(copyButton.dataset.copy).textContent;
-      try {
-        await navigator.clipboard.writeText(text);
-        copyButton.textContent = 'Copied';
-        setTimeout(() => { copyButton.textContent = 'Copy'; }, 1600);
-      } catch (_) {
-        copyButton.textContent = 'Select + copy';
-      }
-    });
-  </script>
+  <footer>
+    <div class="wrap"><span>Agent Harness / local-first agent infrastructure</span><span>Rust · Ratatui · MIT</span></div>
+  </footer>
 </body>
 </html>
