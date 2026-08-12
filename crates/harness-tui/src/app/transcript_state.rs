@@ -65,6 +65,14 @@ impl AppState {
 
     pub(crate) fn sync_transcript_integration(&mut self, animate_tool_transitions: bool) {
         let projection_delta = self.projection.take_transcript_delta();
+        let now = self.now();
+        let running_tool_ids = self
+            .activities
+            .iter()
+            .flat_map(|activity| activity.tool_calls.iter())
+            .filter(|tool_call| tool_call.status == ToolCallDisplayStatus::Running)
+            .map(|tool_call| tool_call.tool_call_id.clone())
+            .collect::<Vec<_>>();
         let terminal_tool_ids = self
             .activities
             .iter()
@@ -77,9 +85,13 @@ impl AppState {
             })
             .map(|tool_call| tool_call.tool_call_id.clone())
             .collect::<Vec<_>>();
+        self.transcript_view
+            .tool_motion
+            .sync_running_ids(running_tool_ids, now);
         self.transcript_view.tool_motion.sync_terminal_ids(
             terminal_tool_ids,
             animate_tool_transitions && !self.replay_mode,
+            now,
         );
         let lifecycle = if self.active_turn_in_progress() {
             QueueLifecycle::Streaming
@@ -528,7 +540,12 @@ impl AppState {
             .transcript_view
             .transcript_animation_phase
             .wrapping_add(1);
-        if self.transcript_view.tool_motion.advance(motion_enabled) {
+        let now = self.now();
+        if self
+            .transcript_view
+            .tool_motion
+            .advance(now, motion_enabled)
+        {
             self.bump_transcript_render_epoch();
         }
         self.clear_expired_interrupt_confirmation();
@@ -554,6 +571,14 @@ impl AppState {
 
     /// Public fixed-tick advance for A-ANIMATION evidence capture (no wall clock).
     pub fn advance_animation_tick_for_evidence(&mut self) {
+        self.advance_animation_tick_by_for_evidence(Duration::from_millis(
+            crate::scheduling::active_animation_period_ms(),
+        ));
+    }
+
+    pub fn advance_animation_tick_by_for_evidence(&mut self, elapsed: Duration) {
+        let now = self.now() + elapsed;
+        self.now_fn = std::sync::Arc::new(move || now);
         self.advance_transcript_animation_phase();
     }
 
@@ -593,10 +618,16 @@ impl AppState {
         self.has_active_animations_with_motion(motion_enabled)
     }
 
-    pub(crate) fn tool_finish_flash_remaining(&self, tool_call_id: &str) -> Option<u8> {
+    pub(crate) fn tool_finish_flash_elapsed(&self, tool_call_id: &str) -> Option<Duration> {
         self.transcript_view
             .tool_motion
-            .finish_flash_remaining(tool_call_id)
+            .finish_flash_elapsed(tool_call_id, self.now())
+    }
+
+    pub(crate) fn tool_running_elapsed(&self, tool_call_id: &str) -> Duration {
+        self.transcript_view
+            .tool_motion
+            .running_elapsed(tool_call_id, self.now())
     }
 
     pub(crate) fn record_visible_running_tool_motion(&self, visible: bool) {

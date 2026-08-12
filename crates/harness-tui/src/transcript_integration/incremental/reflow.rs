@@ -80,28 +80,56 @@ impl TranscriptComposite {
         self.work_metrics.blocks_measured = self.work_metrics.blocks_measured.saturating_add(1);
         let measured_extent = f64::from(measured.rows.max(1));
         if previous_extent == Some(measured_extent) {
+            self.work_metrics.placements_reflowed =
+                self.work_metrics.placements_reflowed.saturating_add(1);
+            self.work_metrics.turns_reflowed = self.work_metrics.turns_reflowed.saturating_add(1);
             self.refresh_damaged_block(snapshot);
             return Ok(());
         }
 
-        let mut extents = self
+        if previous_extent.is_none() {
+            let mut extents = self
+                .layout
+                .as_ref()
+                .map(|layout| {
+                    layout
+                        .placements()
+                        .iter()
+                        .map(|placement| (placement.id(), placement.extent()))
+                        .collect::<HashMap<_, _>>()
+                })
+                .unwrap_or_default();
+            extents.insert(id, measured_extent);
+            let placements = ordered_placements(&self.turn_seeds, &extents);
+            self.work_metrics.placements_reflowed = self
+                .work_metrics
+                .placements_reflowed
+                .saturating_add(placements.len());
+            self.layout = TranscriptLayout::from_heights(
+                placements,
+                f64::from(regions.transcript_viewport.height.max(1)),
+            )
+            .ok();
+            return self.reflow_projected_state_with_anchor(Some(snapshot), old_anchor);
+        }
+
+        let tail_update = self
             .layout
             .as_ref()
-            .map(|layout| {
-                layout
-                    .placements()
-                    .iter()
-                    .map(|placement| (placement.id(), placement.extent()))
-                    .collect::<HashMap<_, _>>()
-            })
-            .unwrap_or_default();
-        extents.insert(id, measured_extent);
-        let placements = ordered_placements(&self.turn_seeds, &extents);
-        self.layout = TranscriptLayout::from_heights(
-            placements,
-            f64::from(regions.transcript_viewport.height.max(1)),
-        )
-        .ok();
+            .and_then(|layout| layout.placements().last())
+            .is_some_and(|placement| placement.id() == id);
+        let placements_reflowed = self
+            .layout
+            .as_mut()
+            .ok_or(TranscriptIntegrationError::MissingBlock(id))?
+            .update_extent(id, measured_extent)?;
+        self.work_metrics.placements_reflowed = self
+            .work_metrics
+            .placements_reflowed
+            .saturating_add(placements_reflowed);
+        if tail_update {
+            return self.reflow_tail_block(snapshot, old_anchor);
+        }
         self.reflow_projected_state_with_anchor(Some(snapshot), old_anchor)
     }
 
@@ -157,6 +185,8 @@ impl TranscriptComposite {
                 projected
             })
             .collect::<Vec<_>>();
+        self.work_metrics.turns_reflowed =
+            self.work_metrics.turns_reflowed.saturating_add(turns.len());
         self.timeline
             .update_document(identity.clone(), turns.clone())?;
         self.identity = identity;
@@ -182,9 +212,65 @@ impl TranscriptComposite {
         Ok(())
     }
 
+    fn reflow_tail_block(
+        &mut self,
+        snapshot: BlockSnapshot,
+        old_anchor: Option<crate::transcript_scroll::LogicalAnchor>,
+    ) -> Result<(), TranscriptIntegrationError> {
+        let seed = self
+            .turn_seeds
+            .last()
+            .ok_or(TranscriptIntegrationError::MissingBlock(snapshot.id))?;
+        let layout = self
+            .layout
+            .as_ref()
+            .ok_or(TranscriptIntegrationError::MissingBlock(snapshot.id))?;
+        let height = (0..seed.replay.block_count)
+            .filter_map(|index| {
+                let id = seed.replay.block_id(index);
+                layout
+                    .placements()
+                    .iter()
+                    .find(|placement| placement.id() == id)
+                    .map(|placement| extent_to_rows(placement.extent()))
+            })
+            .fold(0usize, usize::saturating_add)
+            .max(1);
+        let row = self.turns.last().map_or(0, |turn| turn.row);
+        let turn = TimelineTurn::from_replay(seed.replay, row, height, seed.status, seed.lifecycle)
+            .with_label(seed.label.clone());
+        self.timeline.update_last_turn(turn.clone())?;
+        if let Some(last) = self.turns.last_mut() {
+            *last = turn.clone();
+        }
+        self.work_metrics.turns_reflowed = self.work_metrics.turns_reflowed.saturating_add(1);
+
+        let max_scroll = layout.max_scroll();
+        self.follow.content_changed(max_scroll)?;
+        self.scroll_top = if self.follow.is_following() {
+            max_scroll
+        } else {
+            old_anchor
+                .and_then(|anchor| anchor.resolve(layout).ok())
+                .unwrap_or(self.scroll_top.min(max_scroll))
+        };
+        self.transition = None;
+        self.refresh_tail_view(snapshot, turn);
+        Ok(())
+    }
+
     fn refresh_damaged_block(&mut self, snapshot: BlockSnapshot) {
         let block_id = snapshot.id;
-        if let Some(block) = self
+        if self
+            .view
+            .blocks
+            .last()
+            .is_some_and(|block| block.id == block_id)
+        {
+            if let Some(block) = self.view.blocks.last_mut() {
+                *block = snapshot;
+            }
+        } else if let Some(block) = self
             .view
             .blocks
             .iter_mut()
@@ -239,6 +325,61 @@ impl TranscriptComposite {
         self.view.follow = self.follow;
         self.view.screen.clone_from(&self.screen);
         self.view.lifecycle = self.lifecycle.snapshots();
+        self.view.cache_entries = self.cache.len();
+    }
+
+    fn refresh_tail_view(&mut self, snapshot: BlockSnapshot, turn: TimelineTurn) {
+        if self
+            .view
+            .blocks
+            .last()
+            .is_some_and(|block| block.id == snapshot.id)
+        {
+            if let Some(block) = self.view.blocks.last_mut() {
+                *block = snapshot.clone();
+            }
+        } else if let Some(block) = self
+            .view
+            .blocks
+            .iter_mut()
+            .find(|block| block.id == snapshot.id)
+        {
+            *block = snapshot.clone();
+        }
+        if let Some(last) = self.view.turns.last_mut() {
+            *last = turn;
+        }
+        if let (Some(view_layout), Some(layout)) = (self.view.layout.as_mut(), self.layout.as_ref())
+        {
+            if let Some(placement) = layout.placements().last() {
+                let _ = view_layout.update_extent(placement.id(), placement.extent());
+            }
+        }
+        let regions = layout_for_rect(self.viewport, self.shell_state);
+        let rows = super::super::scroll_rows(self.scroll_top.max(0.0));
+        let first_visible = self.turns.partition_point(|candidate| candidate.row < rows);
+        let visible_turns = &self.turns[first_visible..];
+        let timeline = crate::transcript_timeline::geometry_for_rect(
+            regions.transcript_viewport,
+            visible_turns,
+            rows,
+        );
+        self.view.hit_map = TimelineHitMap::from_geometry(&timeline);
+        self.view.timeline = timeline;
+        self.view.scroll_top = self.scroll_top;
+        self.view.follow = self.follow;
+        if let Some(lifecycle) = self.lifecycle.snapshot(snapshot.id) {
+            if self
+                .view
+                .lifecycle
+                .last()
+                .is_some_and(|current| current.block_id == snapshot.id)
+            {
+                if let Some(last) = self.view.lifecycle.last_mut() {
+                    *last = lifecycle;
+                }
+            }
+        }
         self.view.cache_entries = self.cache.len();
     }
 }

@@ -120,7 +120,7 @@ pub(super) fn arbitrary_viewport_composer_mouse_uses_rendered_geometry() {
     let mouse = MouseEvent {
         kind: MouseEventKind::Down(MouseButton::Left),
         column: composer.x.saturating_add(2),
-        row: composer.y.saturating_add(1),
+        row: composer.y.saturating_add(composer.height / 2),
         modifiers: KeyModifiers::NONE,
     };
 

@@ -162,12 +162,10 @@ pub(super) fn live_empty_state_disappears_after_first_activity() {
 
 pub(super) fn live_shell_orchestration_status_strip_snapshot() {
     let app = orchestration_status_strip_fixture();
-    let status_row = live_status_strip_row(&app, 160, 30, "Shift+Tab:mode");
+    let rendered = render_live_lines(&app, 160, 30);
 
-    insta::assert_snapshot!(
-        status_row,
-        @"Shift+Tab:mode  │  Ctrl+x:shortcuts"
-    );
+    assert!(!rendered.contains("Shift+Tab:mode"));
+    assert!(!rendered.contains("Ctrl+x:shortcuts"));
 }
 
 pub(super) fn live_status_strip_orchestration_summary_truncates_warning_last() {

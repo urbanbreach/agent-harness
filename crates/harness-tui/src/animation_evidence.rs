@@ -7,6 +7,7 @@
 use std::fs;
 use std::io;
 use std::path::Path;
+use std::time::Duration;
 
 use harness_core::clock::{Clock, FakeClock};
 use ratatui::layout::Rect;
@@ -147,7 +148,7 @@ pub fn capture_stable_frame(
 /// Advance FakeClock and AppState animation phase by one fixed tick.
 pub fn advance_fixed_tick(app: &mut AppState, clock: &FakeClock, tick_ms: u64) {
     clock.advance(tick_ms);
-    app.advance_animation_tick_for_evidence();
+    app.advance_animation_tick_by_for_evidence(Duration::from_millis(tick_ms));
 }
 
 /// Capture a fixed-tick frame sequence.

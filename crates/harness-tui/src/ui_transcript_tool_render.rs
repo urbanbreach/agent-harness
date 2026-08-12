@@ -84,13 +84,22 @@ fn tool_call_marker_style(
     inactive_color: Color,
 ) -> Style {
     let edit = tool_call.header.title == "edit" || tool_call.header.title.starts_with("edit ");
-    let color = if edit {
+    let color = if matches!(
+        tool_call.rail_motion,
+        ToolRailMotion::Running { .. } | ToolRailMotion::FinishFlash { .. }
+    ) {
+        super::ui_transcript_surface::tool_rail_motion_color(
+            theme.surface.shell,
+            inactive_color,
+            Some(tool_call.rail_motion),
+            0,
+            tool_call.animation_phase,
+        )
+    } else if edit {
         theme.reference_terminal.error
     } else {
         match tool_call.header.presentation.status {
-            ToolCallPresentationStatus::Running => {
-                transcript_running_tool_marker_color(theme, tool_call.animation_phase)
-            }
+            ToolCallPresentationStatus::Running => inactive_color,
             ToolCallPresentationStatus::Waiting => theme.status.warning,
             ToolCallPresentationStatus::Failed => theme.reference_terminal.error,
             ToolCallPresentationStatus::Cancelled => theme.status.disabled,

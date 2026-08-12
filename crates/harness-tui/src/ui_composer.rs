@@ -324,6 +324,31 @@ fn render_bordered_composer(
     let focused = context.dock.composer_focused && !footer_suppressed_by_overlay(app);
     let border_fg = live_composer_border_color(theme, focused);
     let border_style = Style::default().fg(border_fg).bg(surface);
+    if area.height == 1 {
+        let line = Line::from(vec![
+            Span::styled(
+                format!("{} ", theme.live_shell.transcript_glyphs.user_marker),
+                Style::default()
+                    .fg(theme.reference_terminal.muted)
+                    .bg(surface),
+            ),
+            Span::styled(
+                "Build anything",
+                Style::default()
+                    .fg(live_composer_content_color(
+                        theme,
+                        theme.reference_terminal.secondary,
+                        false,
+                    ))
+                    .bg(surface),
+            ),
+        ]);
+        frame.render_widget(
+            Paragraph::new(line).style(Style::default().bg(surface)),
+            area,
+        );
+        return;
+    }
     let composer_view = app.composer_view_model_for_area(area);
     let mut extra_identity = Vec::new();
     if !composer_view.attachments.is_empty() {

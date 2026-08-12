@@ -1,6 +1,6 @@
 use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use super::transcript_cache::TranscriptRenderCache;
 use super::transcript_viewport::MeasuredTranscriptViewport;
@@ -8,6 +8,8 @@ use super::{AppState, TranscriptScrollbarDragState};
 use crate::design_contract::{MotionKind, DESIGN_TOKENS};
 use crate::transcript_scroll::PageFlipState;
 use crate::ui::{TranscriptContentAnchor, TranscriptMouseTarget, TranscriptSelection};
+
+pub(crate) const TOOL_FINISH_FLASH_DURATION: Duration = Duration::from_millis(400);
 
 pub(super) const fn active_turn_motion_demand(
     has_active_tool: bool,
@@ -33,43 +35,67 @@ fn motion_token(kind: MotionKind) -> Option<crate::design_contract::MotionToken>
 #[derive(Debug, Default)]
 pub(crate) struct ToolMotionTracker {
     seen_terminal: BTreeSet<String>,
-    finish_flashes: BTreeMap<String, u8>,
+    running_since: BTreeMap<String, Instant>,
+    finish_flashes: BTreeMap<String, Instant>,
 }
 
 impl ToolMotionTracker {
+    pub(crate) fn sync_running_ids(
+        &mut self,
+        running_ids: impl IntoIterator<Item = String>,
+        now: Instant,
+    ) {
+        let running = running_ids.into_iter().collect::<BTreeSet<_>>();
+        self.running_since
+            .retain(|tool_call_id, _| running.contains(tool_call_id));
+        for tool_call_id in running {
+            self.running_since.entry(tool_call_id).or_insert(now);
+        }
+    }
+
     pub(crate) fn sync_terminal_ids(
         &mut self,
         terminal_ids: impl IntoIterator<Item = String>,
         animate_new_terminal: bool,
+        now: Instant,
     ) {
-        let finish_frames =
-            motion_token(MotionKind::ToolFinishFlash).map_or(0, |token| token.frames);
         for tool_call_id in terminal_ids {
-            if self.seen_terminal.insert(tool_call_id.clone())
-                && animate_new_terminal
-                && finish_frames > 0
-            {
-                self.finish_flashes.insert(tool_call_id, finish_frames);
+            self.running_since.remove(&tool_call_id);
+            if self.seen_terminal.insert(tool_call_id.clone()) && animate_new_terminal {
+                self.finish_flashes.insert(tool_call_id, now);
             }
         }
     }
 
-    pub(crate) fn advance(&mut self, motion_enabled: bool) -> bool {
+    pub(crate) fn advance(&mut self, now: Instant, motion_enabled: bool) -> bool {
         if !motion_enabled {
             let changed = !self.finish_flashes.is_empty();
             self.finish_flashes.clear();
             return changed;
         }
         let previous_len = self.finish_flashes.len();
-        self.finish_flashes.retain(|_, remaining| {
-            *remaining = remaining.saturating_sub(1);
-            *remaining > 0
+        self.finish_flashes.retain(|_, started_at| {
+            now.saturating_duration_since(*started_at) < TOOL_FINISH_FLASH_DURATION
         });
         self.finish_flashes.len() != previous_len
     }
 
-    pub(crate) fn finish_flash_remaining(&self, tool_call_id: &str) -> Option<u8> {
-        self.finish_flashes.get(tool_call_id).copied()
+    pub(crate) fn finish_flash_elapsed(
+        &self,
+        tool_call_id: &str,
+        now: Instant,
+    ) -> Option<Duration> {
+        self.finish_flashes
+            .get(tool_call_id)
+            .map(|started_at| now.saturating_duration_since(*started_at))
+    }
+
+    pub(crate) fn running_elapsed(&self, tool_call_id: &str, now: Instant) -> Duration {
+        self.running_since
+            .get(tool_call_id)
+            .map_or(Duration::ZERO, |started_at| {
+                now.saturating_duration_since(*started_at)
+            })
     }
 
     pub(crate) fn has_finish_flash(&self) -> bool {
@@ -273,10 +299,11 @@ mod tests {
     #[test]
     fn reduced_motion_finish_flash_settles_after_one_transition_tick() {
         let mut tracker = ToolMotionTracker::default();
-        tracker.sync_terminal_ids(["tool-finished".to_string()], true);
+        let now = std::time::Instant::now();
+        tracker.sync_terminal_ids(["tool-finished".to_string()], true, now);
         assert!(tracker.has_finish_flash());
 
-        tracker.advance(false);
+        tracker.advance(now, false);
 
         assert!(!tracker.has_finish_flash());
     }

@@ -624,12 +624,16 @@ pub(super) fn build_transcript_tool_call_section(
     };
     let rail_motion = if app.replay_mode {
         ToolRailMotion::Settled
-    } else if let Some(remaining) = app.tool_finish_flash_remaining(&tool_call.tool_call_id) {
-        ToolRailMotion::FinishFlash { remaining }
+    } else if let Some(elapsed) = app.tool_finish_flash_elapsed(&tool_call.tool_call_id) {
+        ToolRailMotion::FinishFlash {
+            elapsed,
+            sampled_phase: app.transcript_animation_phase(),
+        }
     } else {
         match tool_call.status {
             ToolCallDisplayStatus::Running => ToolRailMotion::Running {
-                phase: animation_phase,
+                elapsed: app.tool_running_elapsed(&tool_call.tool_call_id),
+                sampled_phase: app.transcript_animation_phase(),
             },
             ToolCallDisplayStatus::PendingPermission => ToolRailMotion::Waiting,
             ToolCallDisplayStatus::Queued => ToolRailMotion::Queued,

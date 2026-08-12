@@ -554,6 +554,7 @@ fn footer_hints_follow_keymap_overrides() {
         .collect(),
     );
 
+    app.composer.prompt_buffer = "draft".to_string();
     let debug = render_debug(&app, 100, 24);
     assert!(debug.contains("Shift+Tab:mode"));
     assert!(debug.contains("Ctrl+x:shortcuts") || debug.contains(":shortcuts"));

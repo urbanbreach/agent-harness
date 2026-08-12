@@ -222,12 +222,11 @@ fn live_shell_collapses_chrome_while_startup_reserves_footer() {
     }
 }
 
-/// The status row folds into the composer band (never a separate surface),
-/// while disclosure presence distinguishes the three shell lifecycle states.
 #[test]
-fn status_fuses_into_composer_band_with_lifecycle_disclosure() {
+fn idle_live_dock_collapses_irrelevant_disclosure_and_unfocused_empty_composer() {
     // arrange
-    let live = idle_live_app();
+    let mut live = idle_live_app();
+    live.focus = harness_tui::app::Focus::List;
     let startup = AppState::new_startup(Vec::new(), None);
     let replay = AppState::new_replay(PathBuf::from("/tmp/task14-replay-disclosure"), Vec::new());
 
@@ -241,13 +240,8 @@ fn status_fuses_into_composer_band_with_lifecycle_disclosure() {
             "{cols}x{rows}: status must stay fused into the composer band; got {:?}",
             live_plan.status
         );
-        let disclosure = live_plan
-            .disclosure
-            .unwrap_or_else(|| panic!("{cols}x{rows}: idle live shell must keep a disclosure row"));
-        assert_eq!(
-            disclosure.height, 1,
-            "{cols}x{rows}: disclosure is a single row"
-        );
+        assert!(live_plan.disclosure.is_none());
+        assert_eq!(live_plan.composer.unwrap_or_abort().height, 1);
     }
 
     // assert
@@ -259,6 +253,9 @@ fn status_fuses_into_composer_band_with_lifecycle_disclosure() {
         plan_at(&replay, 120, 40).disclosure.is_none(),
         "replay shell carries no disclosure row"
     );
+
+    live.focus = harness_tui::app::Focus::Prompt;
+    assert_eq!(plan_at(&live, 120, 40).composer.unwrap_or_abort().height, 3);
 }
 
 /// Replay shells reserve header and footer bands and never claim a live anchor.

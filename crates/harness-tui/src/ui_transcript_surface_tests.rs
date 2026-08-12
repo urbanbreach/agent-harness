@@ -3,9 +3,66 @@ use ratatui::{
     text::Span,
 };
 
+use super::ui_transcript::TranscriptRenderSurfaceKind;
 use super::ui_transcript_surface::{
     append_user_surface_text_block_with_first_line_reserve, append_user_surface_wrapped_line,
+    line_has_tool_rail, tool_finish_flash_brightness, transcript_surface_leading_gap,
+    wave_brightness,
 };
+use std::time::Duration;
+
+#[test]
+fn consecutive_tool_surfaces_form_a_zero_gap_run() {
+    let gap = transcript_surface_leading_gap(
+        Some(TranscriptRenderSurfaceKind::AssistantTool),
+        TranscriptRenderSurfaceKind::AssistantCommandTool,
+    );
+
+    assert_eq!(gap, 0);
+}
+
+#[test]
+fn running_tool_wave_is_spatially_continuous_and_time_based() {
+    let at_start = (0..6)
+        .map(|row| wave_brightness(Duration::ZERO, row, 32))
+        .collect::<Vec<_>>();
+    let after_skipped_frames = (0..6)
+        .map(|row| wave_brightness(Duration::from_millis(160), row, 32))
+        .collect::<Vec<_>>();
+
+    assert!(at_start
+        .windows(2)
+        .all(|pair| (pair[0] - pair[1]).abs() > f32::EPSILON));
+    assert_ne!(at_start, after_skipped_frames);
+    assert!(at_start
+        .iter()
+        .chain(&after_skipped_frames)
+        .all(|brightness| (0.0..=1.0).contains(brightness)));
+}
+
+#[test]
+fn finish_flash_decays_by_elapsed_time_and_ends_at_four_hundred_ms() {
+    let start = tool_finish_flash_brightness(Duration::ZERO);
+    let middle = tool_finish_flash_brightness(Duration::from_millis(200));
+    let finished = tool_finish_flash_brightness(Duration::from_millis(400));
+
+    assert!(start > middle);
+    assert!(middle > finished);
+    assert!(finished.abs() <= f32::EPSILON);
+}
+
+#[test]
+fn tool_rail_motion_stops_before_group_spacers_and_assistant_footer() {
+    let group_header = ratatui::text::Line::from(Span::raw("┃  ◇ Ran 2 commands"));
+    let member = ratatui::text::Line::from(Span::raw("┃  ◆ Run cargo test"));
+    let spacer = ratatui::text::Line::default();
+    let footer = ratatui::text::Line::from(Span::raw("◇ model-tx"));
+
+    assert!(line_has_tool_rail(&group_header, "┃"));
+    assert!(line_has_tool_rail(&member, "┃"));
+    assert!(!line_has_tool_rail(&spacer, "┃"));
+    assert!(!line_has_tool_rail(&footer, "┃"));
+}
 
 #[test]
 fn first_line_reserve_preserves_space_across_rewrapped_rows() {

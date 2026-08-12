@@ -13,6 +13,15 @@ use crate::composer_atoms::split_graphemes;
 use harness_core::event::ProviderRequestRetryMetadata;
 
 const USER_MESSAGE_COLLAPSED_MAX_LINES: usize = 3;
+const DENSE_GROUP_VISIBLE_MEMBERS: usize = 10;
+
+fn dense_group_start(member_count: usize, command_group: bool, expanded: bool) -> usize {
+    if command_group && !expanded {
+        member_count.saturating_sub(DENSE_GROUP_VISIBLE_MEMBERS)
+    } else {
+        0
+    }
+}
 
 pub(super) fn build_transcript_render_surfaces(
     section: &TranscriptTurnSection,
@@ -366,7 +375,9 @@ fn build_assistant_render_surfaces(
             .and_then(|prev| turn.assistant_parts.get(prev));
         let group_len = match part {
             TranscriptAssistantPart::ToolCall(_) => {
-                context_tool_group_len(&turn.assistant_parts[index..])
+                TranscriptToolGroupSummary::from_adjacent(&turn.assistant_parts[index..])
+                    .filter(|summary| summary.member_count > 1)
+                    .map_or(0, |summary| summary.span_len)
             }
             _ => 0,
         };
@@ -592,10 +603,6 @@ fn append_plain_body_with_clock(
         lines.push(line);
     }
     lines.push(Line::default());
-}
-
-fn context_tool_group_len(parts: &[TranscriptAssistantPart]) -> usize {
-    TranscriptToolGroupSummary::from_adjacent(parts).map_or(0, |summary| summary.member_count)
 }
 
 fn context_tool_group_uses_individual_rows(parts: &[TranscriptAssistantPart]) -> bool {
@@ -1222,8 +1229,21 @@ fn build_context_tool_group_render_surface(
             format!("{TRANSCRIPT_ASSISTANT_BODY_PREFIX}  ")
         };
         let preview_index = context_group_preview_index(tool_calls);
+        let dense_start = dense_group_start(tool_calls.len(), command_group, group_expanded);
+        if dense_start > 0 {
+            append_surface_row(
+                &mut lines,
+                &detail_prefix,
+                surface,
+                vec![Span::styled(
+                    format!("… {dense_start} earlier operations"),
+                    muted_meta_style(theme),
+                )],
+                transcript_surface_content_width(width, false),
+            );
+        }
         let visible_tool_calls = if command_group || group_expanded {
-            tool_calls
+            &tool_calls[dense_start..]
         } else {
             &tool_calls[preview_index..tool_calls.len().min(preview_index + 1)]
         };
@@ -1353,18 +1373,24 @@ fn tool_group_rail_motion(tool_calls: &[&TranscriptToolCallSection]) -> Option<T
     {
         return Some(ToolRailMotion::Waiting);
     }
-    if let Some(phase) = tool_calls
+    if let Some((elapsed, sampled_phase)) = tool_calls
         .iter()
         .filter_map(|tool_call| match tool_call.rail_motion {
-            ToolRailMotion::Running { phase } => Some(phase),
+            ToolRailMotion::Running {
+                elapsed,
+                sampled_phase,
+            } => Some((elapsed, sampled_phase)),
             ToolRailMotion::Waiting
             | ToolRailMotion::Queued
             | ToolRailMotion::FinishFlash { .. }
             | ToolRailMotion::Settled => None,
         })
-        .max()
+        .max_by_key(|(elapsed, _)| *elapsed)
     {
-        return Some(ToolRailMotion::Running { phase });
+        return Some(ToolRailMotion::Running {
+            elapsed,
+            sampled_phase,
+        });
     }
     if tool_calls
         .iter()
@@ -1375,14 +1401,20 @@ fn tool_group_rail_motion(tool_calls: &[&TranscriptToolCallSection]) -> Option<T
     tool_calls
         .iter()
         .filter_map(|tool_call| match tool_call.rail_motion {
-            ToolRailMotion::FinishFlash { remaining } => Some(remaining),
+            ToolRailMotion::FinishFlash {
+                elapsed,
+                sampled_phase,
+            } => Some((elapsed, sampled_phase)),
             ToolRailMotion::Running { .. }
             | ToolRailMotion::Waiting
             | ToolRailMotion::Queued
             | ToolRailMotion::Settled => None,
         })
-        .max()
-        .map(|remaining| ToolRailMotion::FinishFlash { remaining })
+        .min_by_key(|(elapsed, _)| *elapsed)
+        .map(|(elapsed, sampled_phase)| ToolRailMotion::FinishFlash {
+            elapsed,
+            sampled_phase,
+        })
         .or_else(|| tool_calls.first().map(|_| ToolRailMotion::Settled))
 }
 
@@ -2415,5 +2447,13 @@ mod tests {
         let (title, body) = reasoning_summary("[REDACTED]**Title**\n\nbody");
         assert_eq!(title.as_deref(), Some("Title"));
         assert_eq!(body, "body");
+    }
+
+    #[test]
+    fn dense_command_groups_keep_only_the_latest_ten_members_when_collapsed() {
+        assert_eq!(super::dense_group_start(12, true, false), 2);
+        assert_eq!(super::dense_group_start(10, true, false), 0);
+        assert_eq!(super::dense_group_start(12, true, true), 0);
+        assert_eq!(super::dense_group_start(12, false, false), 0);
     }
 }

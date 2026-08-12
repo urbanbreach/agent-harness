@@ -7,6 +7,8 @@ use harness_tui::theme_system::{
 };
 use ratatui::style::Color;
 
+use harness_tui::design_contract::DESIGN_TOKENS;
+
 #[test]
 fn harness_chat_maps_every_visible_palette_role_to_groknight_truecolor() {
     let resolved = ThemeChoice::explicit(ThemeFamily::HarnessChat)
@@ -189,4 +191,18 @@ fn dark_family_truecolor_resolves_to_harness_chat() {
         ),
         Theme::harness_chat()
     );
+}
+
+#[test]
+fn generated_design_colors_resolve_through_the_harness_chat_theme() {
+    let theme = Theme::harness_chat();
+
+    for token in DESIGN_TOKENS.palette.roles {
+        assert_eq!(
+            theme.color_for_role(token.role),
+            Color::Rgb(token.value.red, token.value.green, token.value.blue),
+            "design token {:?} diverged from the semantic theme authority",
+            token.role
+        );
+    }
 }

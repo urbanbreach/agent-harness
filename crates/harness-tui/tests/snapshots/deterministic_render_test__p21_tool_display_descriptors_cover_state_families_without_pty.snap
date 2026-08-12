@@ -10,19 +10,13 @@ expression: trim_trailing_snapshot_whitespace(&rendered)
 
 
   ┃  ◆ List session  ▸
-
   ┃  ◆ LSP diagnostics src/main.rs
-
   ┃  ◆ AST Search "foo" · Failed  ▸
   ┃      ast-grep binary not found
-
   ┃  ◆ Skill "denied-skill" · Denied
   ┃      Operator denied skill load
-
   ┃  ◆ Read session · run-123  ▸
-
   ┃  ◆ Cancelled background task · req-bg-child  ▸
-
   ┃  ◆ Checked background output · req-bg-late · late_result · 3 child tool calls · 2ms  ▸
 
      P2.1 tool display descriptors cover all state families.
@@ -36,8 +30,15 @@ expression: trim_trailing_snapshot_whitespace(&rendered)
 
 
 
+
+
+
+
+
+
+
+
+
   ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
   │ ❯                                                                                                                                                                            │
   ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── model-1 ─╯
-
-  Shift+Tab:mode  │  Ctrl+x:shortcuts

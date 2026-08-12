@@ -86,10 +86,7 @@ fn resp_120x50_deterministic_capture_passes() {
         1,
         "RESP-120x50: exactly one bordered box (composer)\n{rendered}"
     );
-    assert!(
-        rendered.contains("Shift+Tab:mode") || rendered.contains("Ctrl+x:shortcuts"),
-        "RESP-120x50: idle footer required\n{rendered}"
-    );
+    assert!(!rendered.contains("Shift+Tab:mode") && !rendered.contains("Ctrl+x:shortcuts"));
     assert!(
         !rendered.contains("Enter:send"),
         "RESP-120x50: idle shell must not show draft footer\n{rendered}"
@@ -118,10 +115,7 @@ fn resp_120x40_deterministic_capture_passes() {
         1,
         "RESP-120x40: exactly one bordered box (composer)\n{rendered}"
     );
-    assert!(
-        rendered.contains("Shift+Tab:mode") || rendered.contains("Ctrl+x:shortcuts"),
-        "RESP-120x40: idle footer required\n{rendered}"
-    );
+    assert!(!rendered.contains("Shift+Tab:mode") && !rendered.contains("Ctrl+x:shortcuts"));
     assert!(
         !rendered.contains("Enter:send"),
         "RESP-120x40: idle shell must not show draft footer\n{rendered}"
@@ -150,10 +144,7 @@ fn resp_100x30_deterministic_capture_passes() {
         1,
         "RESP-100x30: exactly one bordered box (composer)\n{rendered}"
     );
-    assert!(
-        rendered.contains("Shift+Tab:mode") || rendered.contains("Ctrl+x:shortcuts"),
-        "RESP-100x30: idle footer required\n{rendered}"
-    );
+    assert!(!rendered.contains("Shift+Tab:mode") && !rendered.contains("Ctrl+x:shortcuts"));
     assert!(
         !rendered.contains("Enter:send"),
         "RESP-100x30: idle shell must not show draft footer\n{rendered}"
@@ -182,10 +173,7 @@ fn resp_80x24_deterministic_capture_passes() {
         1,
         "RESP-80x24: exactly one bordered box (composer)\n{rendered}"
     );
-    assert!(
-        rendered.contains("Shift+Tab:mode") || rendered.contains("Ctrl+x:shortcuts"),
-        "RESP-80x24: idle footer required\n{rendered}"
-    );
+    assert!(!rendered.contains("Shift+Tab:mode") && !rendered.contains("Ctrl+x:shortcuts"));
     assert!(
         !rendered.contains("Enter:send"),
         "RESP-80x24: idle shell must not show draft footer\n{rendered}"
@@ -214,10 +202,7 @@ fn resp_79x24_deterministic_capture_passes() {
         1,
         "RESP-79x24: exactly one bordered box (composer)\n{rendered}"
     );
-    assert!(
-        rendered.contains("Shift+Tab:mode") || rendered.contains("Ctrl+x:shortcuts"),
-        "RESP-79x24: idle footer required\n{rendered}"
-    );
+    assert!(!rendered.contains("Shift+Tab:mode") && !rendered.contains("Ctrl+x:shortcuts"));
     assert!(
         !rendered.contains("Enter:send"),
         "RESP-79x24: idle shell must not show draft footer\n{rendered}"
@@ -246,10 +231,7 @@ fn resp_60x20_deterministic_capture_passes() {
         1,
         "RESP-60x20: exactly one bordered box (composer)\n{rendered}"
     );
-    assert!(
-        rendered.contains("Shift+Tab:mode") || rendered.contains("Ctrl+x:shortcuts"),
-        "RESP-60x20: idle footer required\n{rendered}"
-    );
+    assert!(!rendered.contains("Shift+Tab:mode") && !rendered.contains("Ctrl+x:shortcuts"));
     assert!(
         !rendered.contains("Enter:send"),
         "RESP-60x20: idle shell must not show draft footer\n{rendered}"
@@ -278,10 +260,7 @@ fn resp_wide_140x40_deterministic_capture_passes() {
         1,
         "RESP-WIDE: exactly one bordered box (composer)\n{rendered}"
     );
-    assert!(
-        rendered.contains("Shift+Tab:mode") || rendered.contains("Ctrl+x:shortcuts"),
-        "RESP-WIDE: idle footer required\n{rendered}"
-    );
+    assert!(!rendered.contains("Shift+Tab:mode") && !rendered.contains("Ctrl+x:shortcuts"));
     assert!(
         !rendered.contains("Enter:send"),
         "RESP-WIDE: idle shell must not show draft footer\n{rendered}"

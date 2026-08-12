@@ -216,10 +216,10 @@ pub(crate) fn exact_test_live_control_dock_renders_shared_surface() {
     let status = dock.status.unwrap_or_abort();
     let composer = dock.composer;
 
-    assert_eq!(dock.shell.height, composer.height.saturating_add(5));
+    assert_eq!(dock.shell.height, composer.height.saturating_add(1));
     assert_eq!(dock.shell.y, status.y);
-    assert_eq!(composer.y, status.y.saturating_add(2));
-    assert_eq!(dock.disclosure, Some(Rect::new(2, 28, 96, 1)));
+    assert_eq!(composer.y, status.y.saturating_add(1));
+    assert_eq!(dock.disclosure, None);
 
     let backend = TestBackend::new(width, height);
     let mut terminal = Terminal::new(backend).unwrap_or_abort();
@@ -430,11 +430,10 @@ pub(crate) fn exact_test_live_composer_reserves_right_gap() {
     assert!(plan.operator_sidebar.is_none());
     assert_eq!(dock.composer.x, dock.shell.x);
     assert_eq!(dock.composer.width, dock.shell.width);
-    assert_eq!(dock.disclosure.map(|area| area.x), Some(dock.composer.x));
-    assert_eq!(
-        dock.disclosure.map(|area| area.width),
-        Some(dock.composer.width)
-    );
+    if let Some(disclosure) = dock.disclosure {
+        assert_eq!(disclosure.x, dock.composer.x);
+        assert_eq!(disclosure.width, dock.composer.width);
+    }
 }
 
 #[cfg(test)]

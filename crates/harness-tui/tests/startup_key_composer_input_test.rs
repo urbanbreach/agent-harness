@@ -596,17 +596,14 @@ fn unfocused_empty_composer_uses_grok_idle_state() {
         ui::render_app(frame, app);
     });
     let input_row = (composer.x..composer.right())
-        .map(|x| buffer[(x, composer.y + 1)].symbol())
+        .map(|x| buffer[(x, composer.y)].symbol())
         .collect::<String>();
 
+    assert_eq!(composer.height, 1);
     assert!(input_row.contains("Build anything"), "{input_row:?}");
-    assert_eq!(buffer[(composer.x, composer.y)].fg, Color::Rgb(50, 50, 55));
+    assert_eq!(buffer[(composer.x, composer.y)].fg, Color::Rgb(88, 88, 88));
     assert_eq!(
-        buffer[(composer.x + 2, composer.y + 1)].fg,
-        Color::Rgb(65, 65, 65)
-    );
-    assert_eq!(
-        buffer[(composer.x + 4, composer.y + 1)].fg,
+        buffer[(composer.x + 2, composer.y)].fg,
         Color::Rgb(78, 78, 78)
     );
 }

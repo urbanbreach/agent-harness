@@ -12,6 +12,7 @@ expression: rendered.as_str()
                                                                                                     
                                                                                                     
                                                                                                     
+                                                                                                    
   ┃                                                                                                 
   ┃  Allow Edit to demo.txt?                                                                        
   ┃  Draft preserved · keep this draft                                                              
@@ -22,7 +23,6 @@ expression: rendered.as_str()
   ┃                                                                                                 
                                                                                                     
        1/4:select  │  Ctrl+o:always-approve  │  Ctrl+c:cancel                                       
-                                                                                                    
                                                                                                     
   ╭──────────────────────────────────────────────────────────────────────────────────────────────╮  
   │ ❯ keep this draft                                                                            │  

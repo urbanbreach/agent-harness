@@ -195,10 +195,7 @@ fn shell_fail_keeps_error_in_full_width_transcript_with_composer() {
         "SHELL-FAIL: runtime must be Failure; got {:?}",
         runtime.kind
     );
-    assert_eq!(
-        failed_dock.composer, streaming_dock.composer,
-        "SHELL-FAIL: terminal lifecycle transitions must not move the composer"
-    );
+    assert!(failed_dock.composer.height < streaming_dock.composer.height);
     assert!(
         failed_dock.status.is_some(),
         "SHELL-FAIL: failed state must preserve the live status band"
@@ -219,8 +216,8 @@ fn shell_fail_keeps_error_in_full_width_transcript_with_composer() {
         "SHELL-FAIL: multi-line fail detail (Request URL / Turn failed) must project\n{rendered}"
     );
     assert!(
-        rendered.contains('❯') && count_char(&rendered, '╭') >= 1,
-        "SHELL-FAIL: bordered composer retained under full-width shell\n{rendered}"
+        rendered.contains('❯'),
+        "SHELL-FAIL: collapsed composer retained under full-width shell\n{rendered}"
     );
     assert!(
         !rendered.contains('┃'),
@@ -311,17 +308,17 @@ fn shell_fail_dock_matches_freeze_vertical_ladder() {
 
     assert_eq!(
         status,
-        Rect::new(2, 33, 116, 1),
+        Rect::new(2, 35, 116, 1),
         "SHELL-FAIL freeze ladder: one status row sits immediately above the composer"
     );
     assert_eq!(
-        dock.composer.y, 34,
-        "SHELL-FAIL freeze ladder: composer top y=34 (L35); got y={}",
+        dock.composer.y, 36,
+        "SHELL-FAIL compact ladder: composer top y=36; got y={}",
         dock.composer.y
     );
     assert_eq!(
-        dock.composer.height, 3,
-        "SHELL-FAIL keeps the three-row single-line composer contract; got {}",
+        dock.composer.height, 1,
+        "SHELL-FAIL collapses an empty unfocused composer; got {}",
         dock.composer.height
     );
     assert_eq!(
@@ -330,8 +327,8 @@ fn shell_fail_dock_matches_freeze_vertical_ladder() {
         disclosure.y
     );
     assert_eq!(
-        dock.shell.height, 7,
-        "SHELL-FAIL freeze ladder: dock shell height 7 (status+composer+gap+disclosure+bottom); got {}",
+        dock.shell.height, 5,
+        "SHELL-FAIL compact ladder uses status+composer+gap+disclosure+bottom; got {}",
         dock.shell.height
     );
     assert_eq!(
@@ -618,13 +615,13 @@ fn shell_scroll_freeze_viewport_packs_f39_to_f55_at_120x32() {
     let after_pages = render_at(&app, W, SCROLL_FREEZE_H);
     let first_after_pages = first_inventory_line(&after_pages);
     assert!(
-        first_after_pages.is_some_and(|n| (39..=45).contains(&n)),
+        first_after_pages.is_some_and(|n| (35..=41).contains(&n)),
         "PageUp should land near freeze mid-band; first inventory={first_after_pages:?}\n{after_pages}"
     );
 
     let mut first = first_after_pages;
     for _ in 0..8 {
-        if first == Some(39) {
+        if first == Some(35) {
             break;
         }
         app.handle_key(KeyEvent::new(KeyCode::Up, KeyModifiers::CONTROL));
@@ -636,8 +633,8 @@ fn shell_scroll_freeze_viewport_packs_f39_to_f55_at_120x32() {
     let first_packed = first_inventory_line(&packed);
     assert_eq!(
         first_packed,
-        Some(39),
-        "freeze viewport packing requires first inventory line f39; got {first_packed:?}\n{packed}"
+        Some(35),
+        "compact viewport packing requires first inventory line f35; got {first_packed:?}\n{packed}"
     );
     assert!(
         packed.contains("List every file in the current directory"),
@@ -650,8 +647,8 @@ fn shell_scroll_freeze_viewport_packs_f39_to_f55_at_120x32() {
         "SCROLL freeze sticky user: first user row packs 'all names' + wall clock\n{packed}"
     );
     assert!(
-        packed.contains("55. f55.txt"),
-        "freeze viewport packing requires f55 still visible\n{packed}"
+        packed.contains("54. f54.txt"),
+        "compact viewport packing requires f54 still visible\n{packed}"
     );
     assert!(
         packed.contains('▼'),
@@ -773,7 +770,7 @@ fn shell_scroll_page_keys_adjust_transcript_under_full_width() {
         "SHELL-SCROLL: transcript content remains under full-width shell\n{rendered}"
     );
     assert!(
-        rendered.contains('❯') && count_char(&rendered, '╭') >= 1,
-        "SHELL-SCROLL: bordered composer retained\n{rendered}"
+        rendered.contains('❯'),
+        "SHELL-SCROLL: composer retained\n{rendered}"
     );
 }

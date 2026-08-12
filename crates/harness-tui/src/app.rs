@@ -166,6 +166,7 @@ mod tool_output;
 mod transcript_cache;
 mod transcript_state;
 mod transcript_view;
+pub(crate) use transcript_view::TOOL_FINISH_FLASH_DURATION;
 mod transcript_viewport;
 mod workspace_display;
 mod worktree_picker;

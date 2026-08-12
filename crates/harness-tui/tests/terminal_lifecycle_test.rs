@@ -452,6 +452,7 @@ fn cursor_visibility_and_position_changes_emit_once() {
         frame.bytes(),
         b"\x1b[?2026h\x1b[?25h\x1b[3;5H\x1b[?2026l".as_ref()
     );
+    assert_eq!(backend.metrics().cursor_commands, 2);
 }
 
 #[test]

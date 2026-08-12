@@ -215,50 +215,7 @@ fn focus_style(theme: &Theme, role: FocusRole, glyph: &'static str) -> TimelineM
 }
 
 fn color_for(theme: &Theme, role: ColorRole) -> Color {
-    match role {
-        ColorRole::Canvas => theme.surface.canvas,
-        ColorRole::Shell => theme.surface.shell,
-        ColorRole::Panel => theme.surface.panel,
-        ColorRole::PanelElevated => theme.surface.panel_elevated,
-        ColorRole::Overlay => theme.surface.overlay,
-        ColorRole::Card => theme.surface.card,
-        ColorRole::SelectedCard => theme.surface.selected_card,
-        ColorRole::BorderSubtle => theme.border.subtle,
-        ColorRole::BorderStrong => theme.border.strong,
-        ColorRole::BorderFocus => theme.border.focus,
-        ColorRole::TextPrimary => theme.text.primary,
-        ColorRole::TextSecondary => theme.text.secondary,
-        ColorRole::TextTertiary => theme.text.tertiary,
-        ColorRole::TextAccent => theme.text.accent,
-        ColorRole::TextInverse => theme.text.inverse,
-        ColorRole::StatusSuccess => theme.status.success,
-        ColorRole::StatusWarning => theme.status.warning,
-        ColorRole::StatusError => theme.status.error,
-        ColorRole::StatusInfo => theme.status.info,
-        ColorRole::StatusDisabled => theme.status.disabled,
-        ColorRole::QuestionSurface => theme.question_prompt.surface,
-        ColorRole::QuestionSelected => theme.question_prompt.selected,
-        ColorRole::QuestionPrimary => theme.question_prompt.primary,
-        ColorRole::QuestionAccent => theme.question_prompt.accent,
-        ColorRole::QuestionSecondary => theme.question_prompt.secondary,
-        ColorRole::AgentBuild
-        | ColorRole::AgentPlan
-        | ColorRole::AgentDocs
-        | ColorRole::AgentAsk => theme.text.accent,
-        ColorRole::TerminalPrimary => theme.reference_terminal.primary,
-        ColorRole::TerminalSecondary => theme.reference_terminal.secondary,
-        ColorRole::TerminalMuted => theme.reference_terminal.muted,
-        ColorRole::TerminalError => theme.reference_terminal.error,
-        ColorRole::TerminalPaletteSection => theme.reference_terminal.palette_section,
-        ColorRole::TerminalForkAccent => theme.reference_terminal.fork_accent,
-        ColorRole::DiffAdded => theme.reference_terminal.diff_added,
-        ColorRole::DiffRemoved => theme.reference_terminal.diff_removed,
-        ColorRole::DiffAddedGutter => theme.reference_terminal.diff_added_gutter,
-        ColorRole::DiffRemovedGutter => theme.reference_terminal.diff_removed_gutter,
-        ColorRole::DiffAddedHighlight => theme.reference_terminal.diff_added_highlight,
-        ColorRole::DiffRemovedHighlight => theme.reference_terminal.diff_removed_highlight,
-        ColorRole::DiffHunkHeader => theme.reference_terminal.diff_hunk_header,
-    }
+    theme.color_for_role(role)
 }
 
 fn glyph_for(role: GlyphRole) -> &'static str {

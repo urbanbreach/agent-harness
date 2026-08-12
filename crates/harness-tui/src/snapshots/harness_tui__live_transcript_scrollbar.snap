@@ -6,6 +6,9 @@ expression: rendered
    test-workspace /workspace/agent-harness
 
 
+     ❯ question 10
+
+
      reply 10 keeps wrapping through the transcript viewport so the scrollbar
      thumb has real room to move
 
@@ -14,14 +17,12 @@ expression: rendered
 
      ❯ question 11
 
-
+                                                                             █
      reply 11 keeps wrapping through the transcript viewport so the scrollbar█
      thumb has real room to move                                             █
-                                                                             █
+
                                        ▼
 
   ╭──────────────────────────────────────────────────────────────────────────╮
   │ ❯                                                                        │
   ╰─────────────────────────────────────────────────────────── gpt-5.4-mini ─╯
-
-  Shift+Tab:mode  │  Ctrl+x:shortcuts

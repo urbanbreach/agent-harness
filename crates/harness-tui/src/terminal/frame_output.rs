@@ -3,8 +3,8 @@
 mod backend;
 mod queue;
 
-pub use backend::FrameOutputBackend;
+pub use backend::{FrameBackendMetrics, FrameOutputBackend};
 pub use queue::{
-    FrameKind, FrameOutput, FrameOutputReceiver, FrameOutputWriter, FrameSubmission,
-    SerializedFrame,
+    FrameKind, FrameOutput, FrameOutputMetrics, FrameOutputReceiver, FrameOutputWriter,
+    FrameSubmission, FrameWriterMetrics, SerializedFrame,
 };

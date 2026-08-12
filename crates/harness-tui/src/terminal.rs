@@ -17,6 +17,7 @@ pub mod frame_output;
 pub mod key;
 pub mod lifecycle;
 pub mod multiplexer;
+pub mod presenter;
 pub mod unicode_width;
 pub mod writer;
 
@@ -35,14 +36,15 @@ pub use event::{FocusEvent, KeyCode, KeyEvent, KeyModifiers, ResizeEvent, Termin
 pub use fallback::{terminal_capability_fallback, TerminalContext};
 pub use frame_clock::{FrameClock, FramePhase, DEFAULT_FRAME_TICK_MS};
 pub use frame_output::{
-    FrameKind, FrameOutput, FrameOutputBackend, FrameOutputReceiver, FrameOutputWriter,
-    FrameSubmission, SerializedFrame,
+    FrameBackendMetrics, FrameKind, FrameOutput, FrameOutputBackend, FrameOutputMetrics,
+    FrameOutputReceiver, FrameOutputWriter, FrameSubmission, SerializedFrame,
 };
 pub use lifecycle::{
     AltScreenMode, ScreenBuffer, TeardownPlan, TerminalCapabilities, TerminalLifecycle,
     TerminalLifecycleError,
 };
 pub use multiplexer::TerminalMultiplexer;
+pub use presenter::Presenter;
 pub use unicode_width::{char_display_width, UnicodeWidthEntry, UnicodeWidthRecord};
 pub use writer::{
     SyncFrameGuard, SynchronizedWriter, BEGIN_SYNCHRONIZED_UPDATE, END_SYNCHRONIZED_UPDATE,

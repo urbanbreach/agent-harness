@@ -13,7 +13,6 @@ expression: trim_trailing_snapshot_whitespace(&rendered)
 
 
   ┃  ◆ Web Search "harness sidebar"  ▸
-
   ┃  ◆ LSP goto_definition src/ui_secondary.rs  ▸
   ┃
   ┃  Worked for 0.0s.
@@ -26,8 +25,10 @@ expression: trim_trailing_snapshot_whitespace(&rendered)
 
 
 
+
+
+
+
   ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
   │ ❯                                                                                                                                                        │
   ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── gpt-5.4-mini ─╯
-
-  Shift+Tab:mode  │  Ctrl+x:shortcuts

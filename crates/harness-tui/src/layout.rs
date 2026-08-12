@@ -55,7 +55,6 @@ const STARTUP_COMPOSER_SPACER_ROWS: u16 = 1;
 const STARTUP_FOOTER_ROWS: u16 = 2;
 const SUBAGENT_FOOTER_ROWS: u16 = 3;
 const LIVE_POST_TURN_BOTTOM_MARGIN_ROWS: u16 = 1;
-const LIVE_STATUS_COMPOSER_SPACER_ROWS: u16 = 1;
 /// Spacer between the composer bottom border and the disclosure/footer row.
 /// Present at all viewports wider than the dense (60-col) compact cutoff;
 /// suppressed at ultra-compact sizes to maximize transcript space.
@@ -578,20 +577,29 @@ pub(crate) fn session_shell_layout(
                         .saturating_add(disclosure_height),
                 ),
             );
-            let rows = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(status_rows),
-                    Constraint::Length(status_composer_spacer),
-                    Constraint::Length(composer_height),
-                    Constraint::Length(composer_footer_spacer),
-                    Constraint::Length(disclosure_height),
-                    Constraint::Length(bottom_margin),
-                ])
-                .split(shell_area);
-            let composer = rows[2];
-            let disclosure = (disclosure_height > 0).then_some(rows[4]);
-            let status = (status_rows > 0).then_some(rows[0]);
+            let shell_bottom = shell_area.y.saturating_add(shell_area.height);
+            let disclosure_y = shell_bottom
+                .saturating_sub(bottom_margin)
+                .saturating_sub(disclosure_height);
+            let composer_y = disclosure_y
+                .saturating_sub(composer_footer_spacer)
+                .saturating_sub(composer_height);
+            let status_y = composer_y
+                .saturating_sub(status_composer_spacer)
+                .saturating_sub(status_rows);
+            let composer = Rect::new(shell_area.x, composer_y, shell_area.width, composer_height);
+            let disclosure = (disclosure_height > 0).then_some(Rect::new(
+                shell_area.x,
+                disclosure_y,
+                shell_area.width,
+                disclosure_height,
+            ));
+            let status = (status_rows > 0).then_some(Rect::new(
+                shell_area.x,
+                status_y,
+                shell_area.width,
+                status_rows,
+            ));
             control_dock_layout(shell_area, status, composer, disclosure)
         }
     };
@@ -780,7 +788,7 @@ fn live_dock_rhythm(
     status_row_height: u16,
     terminal_height: u16,
 ) -> LiveDockRhythm {
-    let disclosure_rows = control_dock_disclosure_rows(app, contract);
+    let mut disclosure_rows = control_dock_disclosure_rows(app, contract);
     let active_permission = app.active_permission_view();
     let runtime_kind = app.runtime_state().kind;
     let status_rows = if let Some(permission) = active_permission.as_ref() {
@@ -803,21 +811,16 @@ fn live_dock_rhythm(
     } else {
         0
     };
-    let compact_dock = width <= DENSE_SESSION_MAX_WIDTH;
-    let composer_footer_spacer_rows = if disclosure_rows > 0 {
+    let compact_dock = width <= DENSE_SESSION_MAX_WIDTH || terminal_height <= 20;
+    if terminal_height <= 16 {
+        disclosure_rows = 0;
+    }
+    let composer_footer_spacer_rows = if disclosure_rows > 0 && terminal_height > 20 {
         composer_footer_spacer_rows(width)
     } else {
         0
     };
-    let status_composer_spacer_rows = if active_permission.is_some()
-        || matches!(
-            runtime_kind,
-            crate::app::RuntimeStateKind::Sending | crate::app::RuntimeStateKind::Streaming
-        ) {
-        LIVE_STATUS_COMPOSER_SPACER_ROWS
-    } else {
-        0
-    };
+    let status_composer_spacer_rows = 0;
     let bottom_margin_rows = if disclosure_rows > 0 && !compact_dock {
         LIVE_POST_TURN_BOTTOM_MARGIN_ROWS
     } else {
@@ -924,6 +927,13 @@ fn live_prompt_block_height(
             .max(3 + STARTUP_COMPOSER_SPACER_ROWS);
     }
 
+    if app.focus != crate::app::Focus::Prompt
+        && app.composer.prompt_buffer.is_empty()
+        && app.active_permission_view().is_none()
+    {
+        return 1.min(max_block_height);
+    }
+
     let input_height = composer_input_height(&app.composer.prompt_buffer, area.width).max(1);
     input_height
         .saturating_add(STARTUP_BORDERED_COMPOSER_CHROME_ROWS)
@@ -937,8 +947,18 @@ fn control_dock_disclosure_rows(app: &AppState, contract: SessionGeometryContrac
     }
 
     let _ = contract;
-
-    1
+    let runtime_kind = app.runtime_state().kind;
+    u16::from(
+        app.interrupt_hint_visible()
+            || !app.composer.prompt_buffer.is_empty()
+            || matches!(
+                runtime_kind,
+                crate::app::RuntimeStateKind::Failure
+                    | crate::app::RuntimeStateKind::Cancelled
+                    | crate::app::RuntimeStateKind::Degraded
+                    | crate::app::RuntimeStateKind::Disconnected
+            ),
+    )
 }
 
 fn control_dock_layout(

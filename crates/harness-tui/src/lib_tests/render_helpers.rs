@@ -330,12 +330,7 @@ pub(crate) fn assert_live_shell_document_composer_contract(
         .or_else(|| find_line_containing_from(&lines, 0, "? commands"))
         .or_else(|| find_line_containing_from(&lines, 0, "q quit"))
         .or_else(|| find_line_containing_from(&lines, 0, "Enter send"))
-        .or_else(|| find_line_containing_from(&lines, composer_last_row + 1, "q quit"))
-        .unwrap_or_else(|| {
-            panic!(
-                "missing global footer marker {global_footer_marker:?} for {composer_marker:?}\n{rendered}"
-            )
-        });
+        .or_else(|| find_line_containing_from(&lines, composer_last_row + 1, "q quit"));
     assert!(
         find_line_containing_in_range(&lines, composer_first_row, composer_input_row, "Composer ·")
             .is_none(),
@@ -350,6 +345,11 @@ pub(crate) fn assert_live_shell_document_composer_contract(
 
     match composer_footer_marker {
         Some(marker) => {
+            let global_footer_row = global_footer_row.unwrap_or_else(|| {
+                panic!(
+                    "missing global footer marker {global_footer_marker:?} for {composer_marker:?}\n{rendered}"
+                )
+            });
             let composer_footer_row =
                 find_line_containing_from(&lines, composer_last_row + 1, marker).unwrap_or_else(
                     || {
@@ -371,13 +371,20 @@ pub(crate) fn assert_live_shell_document_composer_contract(
             );
         }
         None => {
-            assert!(
-                global_footer_row < composer_first_row
-                    || global_footer_row <= composer_last_row
-                    || Some(global_footer_row) == disclosure_row
-                    || Some(global_footer_row) == disclosure_row.map(|row| row + 1),
-                "the global footer should live above the dock, in the composer metadata row, the disclosure row, or directly under it\n{rendered}"
-            );
+            if let Some(global_footer_row) = global_footer_row {
+                assert!(
+                    global_footer_row < composer_first_row
+                        || global_footer_row <= composer_last_row
+                        || Some(global_footer_row) == disclosure_row
+                        || Some(global_footer_row) == disclosure_row.map(|row| row + 1),
+                    "the global footer should live above the dock, in the composer metadata row, the disclosure row, or directly under it\n{rendered}"
+                );
+            } else {
+                assert!(
+                    disclosure_row.is_none(),
+                    "an allocated disclosure row must render relevant content\n{rendered}"
+                );
+            }
         }
     }
 }

@@ -126,6 +126,31 @@ impl TimelineNavigation {
         Ok(self.snapshot())
     }
 
+    pub fn update_last_turn(
+        &mut self,
+        turn: TimelineTurn,
+    ) -> Result<TimelineNavigationSnapshot, TimelineNavigationError> {
+        let Some(last) = self.turns.last_mut() else {
+            return Err(TimelineNavigationError::TurnIdentityMismatch(
+                turn.turn_id(),
+            ));
+        };
+        if last.turn_id() != turn.turn_id() {
+            return Err(TimelineNavigationError::TurnIdentityMismatch(
+                turn.turn_id(),
+            ));
+        }
+        *last = turn;
+        self.anchor = self.selected_turn_id.and_then(|turn_id| {
+            self.turns
+                .last()
+                .filter(|last| last.turn_id() == turn_id)
+                .map(|last| ScrollAnchor::capture(last, self.scroll_top))
+                .or(self.anchor)
+        });
+        Ok(self.snapshot())
+    }
+
     pub const fn selected_turn_id(&self) -> Option<TurnId> {
         self.selected_turn_id
     }

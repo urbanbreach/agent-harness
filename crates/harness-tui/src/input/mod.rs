@@ -9,6 +9,7 @@ pub mod key;
 pub mod normalizer;
 pub mod paste;
 pub mod resize;
+pub mod scroll_normalizer;
 
 pub use ctrl_c::{CtrlCAction, CtrlCTracker, DEFAULT_CTRL_C_WINDOW};
 pub use esc::{EscAction, EscLayer, EscRouter};
@@ -18,3 +19,7 @@ pub use paste::{
     NormalizedPaste, PasteDetector, PasteKind, PasteOutput, PASTE_BURST_WINDOW, PASTE_START_WINDOW,
 };
 pub use resize::{ResizeDebouncer, RESIZE_DEBOUNCE};
+pub use scroll_normalizer::{
+    NormalizedScroll, ScrollConfigOverrides, ScrollInputMode, ScrollNormalizer,
+    ScrollNormalizerConfig, ScrollSampleDirection, SCROLL_REDRAW_CADENCE, SCROLL_STREAM_GAP,
+};

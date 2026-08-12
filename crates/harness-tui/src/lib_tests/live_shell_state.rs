@@ -1,7 +1,7 @@
 use super::*;
 use crate::UnwrapOrAbort;
 
-pub(super) fn live_shell_footer_is_shortcuts_only() {
+pub(super) fn live_shell_omits_irrelevant_idle_shortcuts() {
     let mut live = app::AppState::new_live(None, false, None);
     live.set_launch_metadata(
         app::LaunchMetadata::from_model_ref("deep", "proxy:gpt-5.4").with_mode_label("continued"),
@@ -9,10 +9,9 @@ pub(super) fn live_shell_footer_is_shortcuts_only() {
 
     let primary_render = render_live_lines(&live, 100, 30);
     assert!(!primary_render.contains("q quit"));
-    // Freeze post-turn disclosure: Shift+Tab:mode │ Ctrl+x:shortcuts (not live-ctx cluster)
     assert!(
-        primary_render.contains("Shift+Tab:mode") && primary_render.contains("Ctrl+x:shortcuts"),
-        "live disclosure must match freeze shortcut chrome\n{primary_render}"
+        !primary_render.contains("Shift+Tab:mode") && !primary_render.contains("Ctrl+x:shortcuts"),
+        "idle live shell must leave transcript space to the conversation\n{primary_render}"
     );
     assert!(
         !primary_render.contains("live ctx"),
@@ -21,17 +20,13 @@ pub(super) fn live_shell_footer_is_shortcuts_only() {
 
     let reduced_render = render_live_lines(&live, 80, 24);
     assert!(!reduced_render.contains("q quit"));
-    assert!(
-        reduced_render.contains("Shift+Tab:mode") && reduced_render.contains("Ctrl+x:shortcuts"),
-        "live disclosure must match freeze shortcut chrome at reduced width\n{reduced_render}"
-    );
+    assert!(!reduced_render.contains("Shift+Tab:mode"));
+    assert!(!reduced_render.contains("Ctrl+x:shortcuts"));
 
     let minimal_render = render_live_lines(&live, 60, 18);
     assert!(!minimal_render.contains("q quit"));
-    assert!(
-        minimal_render.contains("Shift+Tab:mode") || minimal_render.contains("Ctrl+x:shortcuts"),
-        "live disclosure keeps freeze shortcut chrome at dense width\n{minimal_render}"
-    );
+    assert!(!minimal_render.contains("Shift+Tab:mode"));
+    assert!(!minimal_render.contains("Ctrl+x:shortcuts"));
 
     let replay =
         app::AppState::new_replay(PathBuf::from("/tmp/replay-session"), session_view_events());
@@ -47,7 +42,7 @@ pub(super) fn live_shell_footer_is_shortcuts_only() {
     assert!(!replay_footer_row.contains("/status"));
 }
 
-pub(super) fn live_post_turn_disclosure_matches_freeze_shortcut_chrome() {
+pub(super) fn live_post_turn_disclosure_appears_only_for_a_draft() {
     // Given: live post-turn shell (not startup), empty draft — freeze run1-stream-probe footer
     let mut app = app::AppState::new_live(None, false, None);
     for event in session_view_events() {
@@ -57,34 +52,8 @@ pub(super) fn live_post_turn_disclosure_matches_freeze_shortcut_chrome() {
 
     // When: shell is rendered at freeze-primary geometry
     let rendered = render_live_lines(&app, 120, 40);
-    let lines = rendered.lines().collect::<Vec<_>>();
-    let disclosure_row = lines
-        .iter()
-        .rposition(|line| line.contains("Shift+Tab") || line.contains("Ctrl+x"))
-        .map(|idx| lines[idx].trim_end().to_string())
-        .unwrap_or_else(|| panic!("freeze shortcut disclosure row missing\n{rendered}"));
-
-    // Then: freeze chrome (lead-friendly left row), not live-ctx / ? commands cluster
-    assert!(
-        disclosure_row.contains("Shift+Tab:mode"),
-        "expected Shift+Tab:mode in disclosure\n{disclosure_row}\n{rendered}"
-    );
-    assert!(
-        disclosure_row.contains("Ctrl+x:shortcuts"),
-        "expected Ctrl+x:shortcuts in disclosure\n{disclosure_row}\n{rendered}"
-    );
-    assert!(
-        disclosure_row.contains('│'),
-        "expected freeze separator │ in disclosure\n{disclosure_row}\n{rendered}"
-    );
-    assert!(
-        !disclosure_row.contains("live ctx"),
-        "post-turn disclosure must not show live-ctx cluster\n{disclosure_row}\n{rendered}"
-    );
-    assert!(
-        !disclosure_row.contains("? commands"),
-        "post-turn disclosure must not show ? commands cluster\n{disclosure_row}\n{rendered}"
-    );
+    assert!(!rendered.contains("Shift+Tab:mode"));
+    assert!(!rendered.contains("Ctrl+x:shortcuts"));
 
     // Given: same shell with a non-empty draft — freeze run1-draft footer
     for ch in "Browser QA draft".chars() {

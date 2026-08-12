@@ -38,6 +38,7 @@ const READ_POLL_TIMEOUT: Duration = Duration::from_millis(50);
 const PTY_SIGNOFF_ENV: &str = "HARNESS_TUI_PTY_SIGNOFF";
 const PARITY_STRICT_ENV: &str = "HARNESS_TUI_PARITY_STRICT";
 const HELPER_SCENARIO_ENV: &str = "HARNESS_TUI_PTY_HELPER_SCENARIO";
+const HELPER_INJECT_DELAY_MS_ENV: &str = "HARNESS_TUI_PTY_HELPER_INJECT_DELAY_MS";
 const TYPE_FIRST_STARTUP_SCENARIO: &str = "type_first_startup";
 const IDLE_SHELL_SCENARIO: &str = "idle_shell";
 const LIVE_DRAFT_SCENARIO: &str = "live_draft";
@@ -1090,8 +1091,13 @@ pub(crate) fn pty_helper_live_tool_group_finish_transition() {
     let run_dir = tempfile::tempdir().unwrap_or_abort();
     let (update_tx, update_rx) = mpsc::channel();
     let inject_tx = update_tx.clone();
+    let inject_delay = std::env::var(HELPER_INJECT_DELAY_MS_ENV)
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .map(Duration::from_millis)
+        .unwrap_or(PERMISSION_INJECT_DELAY);
     thread::spawn(move || {
-        thread::sleep(PERMISSION_INJECT_DELAY);
+        thread::sleep(inject_delay);
         let _ = inject_tx.send(LiveUpdate::Event(Box::new(parity_envelope(
             9,
             Some("req_tool_pty"),

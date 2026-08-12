@@ -6,11 +6,20 @@ use ratatui::layout::{Position, Size};
 
 use super::queue::FrameOutputWriter;
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct FrameBackendMetrics {
+    pub draw_calls: u64,
+    pub cells_changed: u64,
+    pub cursor_commands: u64,
+    pub clears: u64,
+}
+
 #[derive(Debug)]
 pub struct FrameOutputBackend {
     inner: CrosstermBackend<FrameOutputWriter>,
     cursor_position: Option<Position>,
     cursor_visible: Option<bool>,
+    metrics: FrameBackendMetrics,
 }
 
 impl FrameOutputBackend {
@@ -19,12 +28,17 @@ impl FrameOutputBackend {
             inner: CrosstermBackend::new(writer),
             cursor_position: None,
             cursor_visible: None,
+            metrics: FrameBackendMetrics::default(),
         }
     }
 
     pub fn invalidate_cursor_state(&mut self) {
         self.cursor_position = None;
         self.cursor_visible = None;
+    }
+
+    pub const fn metrics(&self) -> FrameBackendMetrics {
+        self.metrics
     }
 }
 
@@ -45,11 +59,17 @@ impl Backend for FrameOutputBackend {
     where
         I: Iterator<Item = (u16, u16, &'a Cell)>,
     {
-        let mut content = content.peekable();
+        self.metrics.draw_calls = self.metrics.draw_calls.saturating_add(1);
+        let mut changed = 0u64;
+        let mut content = content
+            .inspect(|_| changed = changed.saturating_add(1))
+            .peekable();
         if content.peek().is_some() {
             self.cursor_position = None;
         }
-        self.inner.draw(content)
+        self.inner.draw(content)?;
+        self.metrics.cells_changed = self.metrics.cells_changed.saturating_add(changed);
+        Ok(())
     }
 
     fn hide_cursor(&mut self) -> Result<(), Self::Error> {
@@ -57,6 +77,7 @@ impl Backend for FrameOutputBackend {
             return Ok(());
         }
         self.inner.hide_cursor()?;
+        self.metrics.cursor_commands = self.metrics.cursor_commands.saturating_add(1);
         self.cursor_visible = Some(false);
         Ok(())
     }
@@ -66,6 +87,7 @@ impl Backend for FrameOutputBackend {
             return Ok(());
         }
         self.inner.show_cursor()?;
+        self.metrics.cursor_commands = self.metrics.cursor_commands.saturating_add(1);
         self.cursor_visible = Some(true);
         Ok(())
     }
@@ -85,15 +107,18 @@ impl Backend for FrameOutputBackend {
             return Ok(());
         }
         self.inner.set_cursor_position(position)?;
+        self.metrics.cursor_commands = self.metrics.cursor_commands.saturating_add(1);
         self.cursor_position = Some(position);
         Ok(())
     }
 
     fn clear(&mut self) -> Result<(), Self::Error> {
+        self.metrics.clears = self.metrics.clears.saturating_add(1);
         self.inner.clear()
     }
 
     fn clear_region(&mut self, clear_type: ClearType) -> Result<(), Self::Error> {
+        self.metrics.clears = self.metrics.clears.saturating_add(1);
         self.inner.clear_region(clear_type)
     }
 

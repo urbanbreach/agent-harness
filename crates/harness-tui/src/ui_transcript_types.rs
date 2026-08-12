@@ -1,5 +1,6 @@
 use super::*;
 use harness_core::event::ProviderRequestRetryMetadata;
+use std::time::Duration;
 
 use crate::app::{ToolCallPresentation, ToolCallPresentationStatus};
 
@@ -41,14 +42,18 @@ pub(in crate::ui) struct TranscriptRenderSurface {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ToolRailMotion {
-    Running { phase: usize },
+    Running {
+        elapsed: Duration,
+        sampled_phase: usize,
+    },
     Waiting,
     Queued,
-    FinishFlash { remaining: u8 },
+    FinishFlash {
+        elapsed: Duration,
+        sampled_phase: usize,
+    },
     Settled,
 }
-
-pub(crate) const TOOL_FINISH_ACKNOWLEDGEMENT_MS: u64 = 33 * 12;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum TranscriptToolVerb {
@@ -97,6 +102,7 @@ pub(super) enum TranscriptToolDisclosureMode {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct TranscriptToolGroupSummary {
     pub(super) kind: TranscriptToolGroupKind,
+    pub(super) span_len: usize,
     pub(super) member_count: usize,
     pub(super) verbs: Vec<TranscriptToolVerb>,
     pub(super) queued_count: usize,
@@ -117,6 +123,7 @@ impl TranscriptToolGroupSummary {
         let kind = first_verb.group_kind();
         let mut summary = Self {
             kind,
+            span_len: 0,
             member_count: 0,
             verbs: Vec::new(),
             queued_count: 0,
@@ -131,6 +138,10 @@ impl TranscriptToolGroupSummary {
         };
 
         for part in parts {
+            if matches!(part, TranscriptAssistantPart::Reasoning(_)) && summary.member_count > 0 {
+                summary.span_len = summary.span_len.saturating_add(1);
+                continue;
+            }
             let Some(tool_call) = part.tool_call() else {
                 break;
             };
@@ -141,6 +152,7 @@ impl TranscriptToolGroupSummary {
                 break;
             }
 
+            summary.span_len = summary.span_len.saturating_add(1);
             summary.member_count += 1;
             if !summary.verbs.contains(&verb) {
                 summary.verbs.push(verb);
@@ -568,6 +580,35 @@ mod tool_group_tests {
 
     #[test]
     fn finish_acknowledgement_duration_matches_design_contract() {
-        assert_eq!(TOOL_FINISH_ACKNOWLEDGEMENT_MS, 33 * 12);
+        assert_eq!(crate::app::TOOL_FINISH_FLASH_DURATION.as_millis(), 400);
+    }
+
+    #[test]
+    fn completed_reasoning_is_transparent_inside_a_tool_group_span() {
+        let parts = vec![
+            tool_part(
+                "read",
+                "read",
+                ToolCallDisplayStatus::Succeeded,
+                false,
+                false,
+            ),
+            TranscriptAssistantPart::Reasoning(TranscriptLabeledTextSection {
+                label: "Thought",
+                text: "checked the result".to_string(),
+            }),
+            tool_part(
+                "search",
+                "grep",
+                ToolCallDisplayStatus::Succeeded,
+                false,
+                false,
+            ),
+        ];
+
+        let summary = TranscriptToolGroupSummary::from_adjacent(&parts).expect("context group");
+
+        assert_eq!(summary.member_count, 2);
+        assert_eq!(summary.span_len, 3);
     }
 }

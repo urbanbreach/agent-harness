@@ -982,8 +982,8 @@ fn tx_diff_inline_is_rail_free_without_message_card() {
         "TX-DIFF: structured edit/path projection required\n{rendered}"
     );
     assert!(
-        !lines[tool_idx].contains('┃'),
-        "TX-DIFF: no legacy outer rail on diff/tool row\n{rendered}"
+        lines[tool_idx].contains('┃'),
+        "TX-DIFF: edit row must retain the semantic tool rail\n{rendered}"
     );
     let region_end = (tool_idx + 8).min(lines.len().saturating_sub(1));
     let region = lines[tool_idx..=region_end].join("\n");

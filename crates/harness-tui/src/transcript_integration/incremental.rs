@@ -11,6 +11,8 @@ pub struct TranscriptWorkMetrics {
     pub blocks_measured: usize,
     pub events_reprojected: usize,
     pub full_rebuilds: usize,
+    pub placements_reflowed: usize,
+    pub turns_reflowed: usize,
 }
 
 impl TranscriptComposite {

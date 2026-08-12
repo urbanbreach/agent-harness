@@ -6,16 +6,15 @@ use ratatui::{
     widgets::{Block, Paragraph},
     Frame,
 };
+use std::time::Duration;
 
-use crate::design_contract::{MotionKind, DESIGN_TOKENS};
 use crate::theme::Theme;
 
 use super::ui_chrome::{display_width, panel_style, take_width_prefix};
 use super::ui_transcript::{ToolRailMotion, TranscriptRenderSurface, TranscriptRenderSurfaceKind};
 use super::ui_transcript_layout::MeasuredTranscriptSurface;
 use super::ui_transcript_style::{
-    blend_color, pending_diamond_color, transcript_running_tool_marker_color,
-    transcript_streaming_spinner_frame,
+    blend_color, pending_diamond_color, transcript_streaming_spinner_frame,
 };
 
 const TRANSCRIPT_SURFACE_RAIL_WIDTH: u16 = 1;
@@ -31,7 +30,7 @@ pub(super) fn transcript_surface_leading_gap(
             if transcript_surface_is_assistant_tool_like(previous)
                 && transcript_surface_is_assistant_tool_like(current) =>
         {
-            1
+            0
         }
         // Reference question state: Thought then Ask are adjacent (no blank between).
         Some(TranscriptRenderSurfaceKind::AssistantReasoning)
@@ -127,7 +126,13 @@ pub(super) fn render_transcript_surface(
     );
     let mut visible_lines =
         visible_surface_lines(surface, local_scroll, usize::from(content_rect.height));
-    apply_surface_animation_phase(&mut visible_lines, surface, animation_phase, theme);
+    apply_surface_animation_phase(
+        &mut visible_lines,
+        surface,
+        local_scroll,
+        animation_phase,
+        theme,
+    );
     if surface.kind == TranscriptRenderSurfaceKind::AssistantReasoning
         && surface.show_outer_rail
         && local_scroll == 0
@@ -162,10 +167,11 @@ pub(super) fn render_transcript_surface(
 fn apply_surface_animation_phase(
     lines: &mut [Line<'static>],
     surface: &MeasuredTranscriptSurface,
+    local_scroll: usize,
     animation_phase: usize,
     theme: &Theme,
 ) {
-    for line in lines {
+    for (local_row, line) in lines.iter_mut().enumerate() {
         apply_reasoning_spinner_phase(line, animation_phase);
         for span in &mut line.spans {
             if matches!(
@@ -174,16 +180,9 @@ fn apply_surface_animation_phase(
             ) {
                 span.content = transcript_streaming_spinner_frame(animation_phase).into();
             }
-            if matches!(
-                surface.tool_rail_motion,
-                Some(ToolRailMotion::Running { .. })
-            ) && span.content.as_ref() == surface.rail_glyph
-            {
-                span.style = span
-                    .style
-                    .fg(transcript_running_tool_marker_color(theme, animation_phase));
-            }
         }
+        let absolute_row = local_scroll.saturating_add(local_row);
+        apply_tool_header_motion_color(line, surface, absolute_row, animation_phase);
         if surface.kind == TranscriptRenderSurfaceKind::User {
             if let Some(marker) = line
                 .spans
@@ -195,6 +194,36 @@ fn apply_surface_animation_phase(
                     .fg(pending_diamond_color(theme, animation_phase));
             }
         }
+    }
+}
+
+fn apply_tool_header_motion_color(
+    line: &mut Line<'static>,
+    surface: &MeasuredTranscriptSurface,
+    absolute_row: usize,
+    animation_phase: usize,
+) {
+    let Some(motion) = surface.tool_rail_motion else {
+        return;
+    };
+    let is_tool_header = line.spans.iter().any(|span| {
+        matches!(
+            span.content.trim_start().chars().next(),
+            Some('◆' | '◇' | '◈')
+        )
+    });
+    if !is_tool_header {
+        return;
+    }
+    let color = tool_rail_motion_color(
+        surface.surface,
+        surface.rail_color,
+        Some(motion),
+        absolute_row,
+        animation_phase,
+    );
+    for span in &mut line.spans {
+        span.style = span.style.fg(color);
     }
 }
 
@@ -227,56 +256,110 @@ fn transcript_surface_rail_lines_for_motion(
     visible_height: usize,
     animation_phase: usize,
 ) -> Vec<Line<'static>> {
-    let dim = blend_color(Color::Rgb(0, 0, 0), surface.rail_color, 0.35);
+    let row_scoped_rail = surface
+        .lines
+        .iter()
+        .any(|line| line_has_tool_rail(line, surface.rail_glyph));
     (0..visible_height)
         .map(|local_row| {
             let absolute_row = local_scroll.saturating_add(local_row);
-            let color = match surface.tool_rail_motion {
-                Some(ToolRailMotion::Running { .. }) => {
-                    let pulse_phase = DESIGN_TOKENS
-                        .motion_tokens
-                        .all
-                        .iter()
-                        .find(|token| token.kind == MotionKind::ToolPulse)
-                        .map_or(animation_phase, |token| {
-                            let frames = usize::from(token.frames);
-                            if frames == 0 {
-                                animation_phase
-                            } else {
-                                animation_phase % frames
-                            }
-                        });
-                    if surface.height <= 1 {
-                        if pulse_phase.is_multiple_of(2) {
-                            surface.rail_color
-                        } else {
-                            blend_color(Color::Rgb(0, 0, 0), surface.rail_color, 0.55)
-                        }
-                    } else if absolute_row == pulse_phase % surface.height {
-                        surface.rail_color
-                    } else {
-                        dim
-                    }
-                }
-                Some(ToolRailMotion::FinishFlash { .. }) => {
-                    let alpha = if animation_phase.is_multiple_of(2) {
-                        0.8
-                    } else {
-                        0.55
-                    };
-                    blend_color(surface.surface, Color::White, alpha)
-                }
-                Some(ToolRailMotion::Waiting)
-                | Some(ToolRailMotion::Queued)
-                | Some(ToolRailMotion::Settled)
-                | None => surface.rail_color,
-            };
+            let glyph = surface
+                .lines
+                .get(absolute_row)
+                .filter(|line| !row_scoped_rail || line_has_tool_rail(line, surface.rail_glyph))
+                .map_or(" ", |_| surface.rail_glyph);
+            let color = tool_rail_motion_color(
+                surface.surface,
+                surface.rail_color,
+                surface.tool_rail_motion,
+                absolute_row,
+                animation_phase,
+            );
             Line::from(Span::styled(
-                surface.rail_glyph,
+                glyph,
                 Style::default().fg(color).bg(surface.surface),
             ))
         })
         .collect()
+}
+
+pub(super) fn line_has_tool_rail(line: &Line<'_>, rail_glyph: &str) -> bool {
+    !rail_glyph.is_empty()
+        && line.spans.first().is_some_and(|span| {
+            span.content
+                .trim_start_matches(char::is_whitespace)
+                .starts_with(rail_glyph)
+        })
+}
+
+const TOOL_RAIL_WAVE_ROWS: usize = 32;
+const TOOL_RAIL_ANGULAR_SPEED: f32 = 4.5;
+const TOOL_RAIL_MIN_BRIGHTNESS: f32 = 0.28;
+const TOOL_RAIL_BRIGHTNESS_RANGE: f32 = 0.72;
+
+pub(super) fn wave_brightness(elapsed: Duration, row: usize, wave_rows: usize) -> f32 {
+    let elapsed_secs = elapsed.as_secs_f32();
+    let wave_rows = wave_rows.max(1);
+    let row = u16::try_from(row % wave_rows).unwrap_or(0);
+    let wave_rows = u16::try_from(wave_rows).unwrap_or(u16::MAX);
+    let spatial_phase = f32::from(row) / f32::from(wave_rows) * std::f32::consts::TAU;
+    (elapsed_secs.mul_add(TOOL_RAIL_ANGULAR_SPEED, spatial_phase))
+        .sin()
+        .powi(2)
+}
+
+pub(super) fn tool_finish_flash_brightness(elapsed: Duration) -> f32 {
+    let progress = (elapsed.as_secs_f32() / crate::app::TOOL_FINISH_FLASH_DURATION.as_secs_f32())
+        .clamp(0.0, 1.0);
+    (1.0 - progress).powi(2)
+}
+
+pub(super) fn tool_rail_motion_color(
+    surface: Color,
+    accent: Color,
+    motion: Option<ToolRailMotion>,
+    row: usize,
+    animation_phase: usize,
+) -> Color {
+    match motion {
+        Some(ToolRailMotion::Running { .. }) => {
+            let elapsed = motion_elapsed(motion, animation_phase);
+            let brightness = wave_brightness(elapsed, row, TOOL_RAIL_WAVE_ROWS);
+            blend_color(
+                surface,
+                accent,
+                TOOL_RAIL_MIN_BRIGHTNESS + brightness * TOOL_RAIL_BRIGHTNESS_RANGE,
+            )
+        }
+        Some(ToolRailMotion::FinishFlash { .. }) => {
+            let elapsed = motion_elapsed(motion, animation_phase);
+            blend_color(accent, Color::White, tool_finish_flash_brightness(elapsed))
+        }
+        Some(ToolRailMotion::Waiting)
+        | Some(ToolRailMotion::Queued)
+        | Some(ToolRailMotion::Settled)
+        | None => accent,
+    }
+}
+
+fn motion_elapsed(motion: Option<ToolRailMotion>, animation_phase: usize) -> Duration {
+    let (elapsed, sampled_phase) = match motion {
+        Some(ToolRailMotion::Running {
+            elapsed,
+            sampled_phase,
+        })
+        | Some(ToolRailMotion::FinishFlash {
+            elapsed,
+            sampled_phase,
+        }) => (elapsed, sampled_phase),
+        _ => return Duration::ZERO,
+    };
+    let phase_delta = animation_phase.saturating_sub(sampled_phase);
+    elapsed.saturating_add(Duration::from_millis(
+        u64::try_from(phase_delta)
+            .unwrap_or(u64::MAX)
+            .saturating_mul(crate::scheduling::active_animation_period_ms()),
+    ))
 }
 
 pub(super) fn visible_surface_lines(

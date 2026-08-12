@@ -488,9 +488,29 @@ product identity, but the visible transition semantics are binding:
   and restore both on resolve or dismiss. Unfocused prompts dim; focused prompts
   do not animate their bounds.
 - **Shared live motion.** Active tool and thinking rails use one lifecycle:
-  queued or waiting static state, running pulse, frozen static frame when user
-  input requires attention or motion is reduced, bounded terminal finish flash,
-  then settled semantic color. Motion never changes row count or wrapping.
+  queued or waiting static state, a 32-row continuous spatial wave sampled from
+  elapsed time, frozen static frame when user input requires attention or motion
+  is reduced, a 400 ms elapsed-time terminal finish flash, then settled semantic
+  color. The rail, tool glyph, group marker, and status label sample the same
+  brightness. Motion never changes row count or wrapping, and skipped frames do
+  not extend a transition.
+- **Dense activity groups.** Consecutive tool and transparent completed-thought
+  entries use zero internal vertical gaps. One group projection owns member
+  visibility, synthetic summary rows, expansion, height, navigation, hit testing,
+  and copy. Dense runs show at most 10 member entries before an aggregated hidden
+  count; separate conversational turns retain one full separator row.
+- **Conditional bottom dock.** Disclosure and status rows exist only while they
+  carry distinct live state. An empty unfocused composer collapses to one row.
+  At 20 rows or fewer optional vertical padding is removed; at 16 rows or fewer
+  tips, disclosure, redundant status spacing, and bottom margins are suppressed.
+- **Normalized scroll streams.** Raw direction-only terminal mouse reports form
+  streams separated by 80 ms. Terminal and multiplexer profiles, automatic or
+  forced wheel/trackpad mode, fractional line carry, duplicate-safe interval
+  acceleration, inversion, speed, line count, viewport-relative caps, and a
+  16 ms flush cadence resolve logical lines before presentation pacing.
+  `HARNESS_TUI_SCROLL_MODE`, `HARNESS_TUI_SCROLL_LINES`,
+  `HARNESS_TUI_SCROLL_SPEED`, and `HARNESS_TUI_INVERT_SCROLL` override those
+  preferences when terminal auto-detection is not the desired behavior.
 
 Frame timing uses the measured reference cadences: active animation at `33 ms`,
 write coalescing at `16 ms`, slow/background chrome at `83 ms`, scroll sampling

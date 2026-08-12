@@ -548,8 +548,29 @@ fn running_tool_rail_advances_while_waiting_rail_stays_paused() {
 }
 
 #[test]
-fn running_tool_wave_uses_the_tool_pulse_token_cycle() {
-    // Given: a running rail and the authoritative ToolPulse token.
+fn running_tool_marker_and_label_share_their_rail_row_wave_sample() {
+    let buffer = render_buffer(&tool_running_app(), 100, 24);
+    let width = usize::from(buffer.area.width);
+    let marker_index = buffer
+        .content
+        .iter()
+        .position(|cell| cell.symbol() == "◆")
+        .expect("running tool marker");
+    let row_start = marker_index / width * width;
+    let rail = buffer.content[row_start..row_start + width]
+        .iter()
+        .find(|cell| cell.symbol() == "┃")
+        .expect("running tool rail");
+    let marker = &buffer.content[marker_index];
+    let label = &buffer.content[marker_index + 2];
+
+    assert_eq!(marker.fg, rail.fg);
+    assert_eq!(label.fg, rail.fg);
+}
+
+#[test]
+fn running_tool_wave_keeps_continuous_time_across_the_legacy_frame_cycle() {
+    // Given: a running rail and the authoritative ToolPulse cadence token.
     let mut app = tool_running_app();
     let token = DESIGN_TOKENS
         .motion_tokens
@@ -560,14 +581,14 @@ fn running_tool_wave_uses_the_tool_pulse_token_cycle() {
         .expect("ToolPulse token");
     let initial = rail_colors(&render_buffer(&app, 100, 24));
 
-    // When: the token-owned frame cycle completes.
+    // When: the former discrete frame cycle elapses.
     for _ in 0..token.frames {
         app.advance_animation_tick_for_evidence();
     }
     let wrapped = rail_colors(&render_buffer(&app, 100, 24));
 
-    // Then: cadence and wave position are both owned by ToolPulse.
-    assert_eq!(initial, wrapped);
+    // Then: cadence remains token-owned, while continuous motion does not snap back.
+    assert_ne!(initial, wrapped);
     assert_eq!(
         app.animation_tick_interval_with_motion_for_evidence(true),
         Some(std::time::Duration::from_millis(u64::from(

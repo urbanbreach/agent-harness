@@ -209,8 +209,8 @@ fn permission_and_question_keep_pinned_composer_rects() {
     ));
 
     for (width, height, expected) in [
-        (120, 40, Rect::new(2, 34, 116, 3)),
-        (60, 20, Rect::new(1, 16, 58, 3)),
+        (120, 40, Rect::new(2, 37, 116, 3)),
+        (60, 20, Rect::new(1, 17, 58, 3)),
     ] {
         assert_eq!(plan_at(&permission, width, height).composer, Some(expected));
         assert_eq!(plan_at(&question, width, height).composer, Some(expected));

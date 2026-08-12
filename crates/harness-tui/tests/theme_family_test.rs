@@ -4,16 +4,16 @@ use harness_tui::theme_family::*;
 // --- Semantic role coverage ------------------------------------------------
 
 #[test]
-fn semantic_role_all_returns_64_roles_with_expected_kinds() {
+fn semantic_role_all_returns_every_role_with_expected_kinds() {
     let roles = SemanticRole::all();
 
-    assert_eq!(roles.len(), 64);
+    assert_eq!(roles.len(), 72);
     assert_eq!(
         roles
             .iter()
             .filter(|role| role.kind() == SemanticKind::Palette)
             .count(),
-        42
+        50
     );
     assert_eq!(
         roles
@@ -66,7 +66,7 @@ fn theme_family_all_and_display_match_contract() {
 fn theme_family_resolves_every_color_role_for_both_families() {
     for family in ThemeFamily::all() {
         let resolved = family.resolve_all();
-        assert_eq!(resolved.len(), 42);
+        assert_eq!(resolved.len(), ColorRole::ALL.len());
         for &role in &ColorRole::ALL {
             let color = family.resolve(role);
             assert_eq!(
@@ -80,7 +80,7 @@ fn theme_family_resolves_every_color_role_for_both_families() {
     }
     assert_eq!(
         ThemeFamily::Dark.resolve(ColorRole::Canvas).rgb(),
-        (11, 14, 20)
+        (20, 20, 20)
     );
 }
 

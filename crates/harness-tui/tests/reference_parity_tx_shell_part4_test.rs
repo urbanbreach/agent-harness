@@ -322,7 +322,6 @@ fn tx_diff_tool_details_project_removed_and_added_versions() {
     app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
     let rendered = render(&app);
 
-    // assert — details on; both versions project inline, no legacy rail
     assert!(
         app.transcript_interaction_snapshot().show_tool_details,
         "TX-DIFF: tool details must toggle on"
@@ -336,8 +335,8 @@ fn tx_diff_tool_details_project_removed_and_added_versions() {
         "TX-DIFF: added line must project in tool details\n{rendered}"
     );
     assert!(
-        !rendered.contains('┃'),
-        "TX-DIFF: no legacy outer rail on diff lines\n{rendered}"
+        rendered.contains('┃'),
+        "TX-DIFF: grouped edit details retain the semantic tool rail\n{rendered}"
     );
     let _ = Focus::Prompt; // keep Focus import meaningful for future state asserts
 }

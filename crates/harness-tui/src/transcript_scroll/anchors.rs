@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::transcript_identity::BlockId;
 
 use super::{ScrollError, ScrollResult};
@@ -34,6 +36,7 @@ impl BlockPlacement {
 #[derive(Debug, Clone, PartialEq)]
 pub struct TranscriptLayout {
     placements: Vec<BlockPlacement>,
+    placement_indices: HashMap<BlockId, usize>,
     viewport_extent: f64,
     content_extent: f64,
 }
@@ -46,8 +49,10 @@ impl TranscriptLayout {
         validate_positive(viewport_extent, "viewport_extent")?;
         let mut placements = Vec::new();
         let mut top = 0.0;
+        let mut placement_indices = HashMap::new();
         for (id, extent) in blocks {
             validate_positive(extent, "block_extent")?;
+            placement_indices.insert(id, placements.len());
             placements.push(BlockPlacement::new(id, top, extent));
             top += extent;
         }
@@ -56,6 +61,7 @@ impl TranscriptLayout {
         }
         Ok(Self {
             placements,
+            placement_indices,
             viewport_extent,
             content_extent: top,
         })
@@ -63,6 +69,25 @@ impl TranscriptLayout {
 
     pub fn placements(&self) -> &[BlockPlacement] {
         &self.placements
+    }
+
+    pub fn update_extent(&mut self, id: BlockId, extent: f64) -> ScrollResult<usize> {
+        validate_positive(extent, "block_extent")?;
+        let index = self
+            .placement_indices
+            .get(&id)
+            .copied()
+            .ok_or(ScrollError::MissingAnchor)?;
+        let previous = self.placements[index].extent;
+        let delta = extent - previous;
+        self.placements[index].extent = extent;
+        if delta != 0.0 {
+            for placement in &mut self.placements[index.saturating_add(1)..] {
+                placement.top += delta;
+            }
+            self.content_extent += delta;
+        }
+        Ok(self.placements.len().saturating_sub(index))
     }
 
     pub const fn viewport_extent(&self) -> f64 {

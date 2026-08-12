@@ -70,6 +70,8 @@ fn token_update_touches_one_activity_and_block_after_ten_thousand_settle() -> Te
     assert_eq!(metrics.activities_touched, 1);
     assert_eq!(metrics.blocks_touched, 1);
     assert_eq!(metrics.blocks_measured, 1);
+    assert_eq!(metrics.placements_reflowed, 1);
+    assert_eq!(metrics.turns_reflowed, 1);
     assert_eq!(metrics.events_reprojected, 0);
     assert_eq!(metrics.full_rebuilds, 0);
     assert!(incremental.cache().len() <= incremental.cache().capacity());
@@ -96,6 +98,8 @@ fn tool_update_touches_one_activity_and_block_after_ten_thousand_settle() -> Tes
     assert_eq!(metrics.activities_touched, 1);
     assert_eq!(metrics.blocks_touched, 1);
     assert_eq!(metrics.blocks_measured, 1);
+    assert_eq!(metrics.placements_reflowed, 1);
+    assert_eq!(metrics.turns_reflowed, 1);
     assert_eq!(metrics.events_reprojected, 0);
     assert_eq!(metrics.full_rebuilds, 0);
     assert!(incremental.cache().len() <= incremental.cache().capacity());

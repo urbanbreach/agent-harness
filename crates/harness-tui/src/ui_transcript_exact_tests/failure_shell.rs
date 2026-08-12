@@ -455,7 +455,7 @@ fn batch_write_edit_and_patch_rows_match_reference_headers() {
 }
 
 #[test]
-fn consecutive_tool_rows_insert_single_blank_row() {
+fn consecutive_tool_rows_form_a_zero_gap_activity_run() {
     // arrange
     // act
     // assert
@@ -506,8 +506,8 @@ fn consecutive_tool_rows_insert_single_blank_row() {
 
     assert_eq!(
         lsp_surface.top_offset,
-        cancel_surface.top_offset + cancel_surface.height + 1,
-        "consecutive tool surfaces should have 1 blank row between them to match the 12px gap"
+        cancel_surface.top_offset + cancel_surface.height,
+        "consecutive tool surfaces should remain visually grouped"
     );
 }
 

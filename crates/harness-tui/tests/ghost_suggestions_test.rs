@@ -212,7 +212,7 @@ fn ghost_rendering_uses_exact_muted_design_tokens_without_changing_text() {
 
     // Then: content is exact and the design-contract muted style is applied.
     assert_eq!(span.content.as_ref(), "ghost text");
-    assert_eq!(span.style.fg, Some(Color::Rgb(136, 139, 145)));
+    assert_eq!(span.style.fg, Some(Color::Rgb(88, 88, 88)));
     assert!(span.style.add_modifier.contains(Modifier::DIM));
 }
 

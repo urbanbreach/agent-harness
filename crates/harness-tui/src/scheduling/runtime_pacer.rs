@@ -24,6 +24,7 @@ impl WheelDirection {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WheelSample {
     direction: WheelDirection,
+    steps: u8,
     column: u16,
     row: u16,
 }
@@ -32,6 +33,16 @@ impl WheelSample {
     pub const fn new(direction: WheelDirection, column: u16, row: u16) -> Self {
         Self {
             direction,
+            steps: 1,
+            column,
+            row,
+        }
+    }
+
+    pub const fn logical(direction: WheelDirection, steps: u8, column: u16, row: u16) -> Self {
+        Self {
+            direction,
+            steps,
             column,
             row,
         }
@@ -78,7 +89,12 @@ impl WheelAccumulator {
             i16::from(MAX_WHEEL_STEPS_PER_FLUSH).saturating_mul(i16::from(self.events_per_step));
         self.delta = self
             .delta
-            .saturating_add(sample.direction.delta())
+            .saturating_add(
+                sample
+                    .direction
+                    .delta()
+                    .saturating_mul(i16::from(sample.steps)),
+            )
             .clamp(-cap, cap);
         self.column = sample.column;
         self.row = sample.row;

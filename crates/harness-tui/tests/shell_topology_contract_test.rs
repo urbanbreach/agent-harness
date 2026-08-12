@@ -58,28 +58,26 @@ fn live_session_composer_is_bottom_anchored() {
 }
 
 #[test]
-fn live_single_line_composer_rect_is_stable_across_idle_draft_and_streaming() {
+fn live_single_line_composer_rect_tracks_semantic_disclosure_state() {
     let idle = AppState::new_live(None, false, None);
     let mut draft = AppState::new_live(None, false, None);
     draft.composer.prompt_buffer = "single-line draft".to_string();
     draft.composer.prompt_cursor = draft.composer.prompt_buffer.chars().count();
     let streaming = live_session_app();
 
-    for (width, height, expected) in [
-        (120, 40, Rect::new(2, 34, 116, 3)),
-        (60, 20, Rect::new(1, 16, 58, 3)),
+    for (width, height, idle_expected, draft_expected) in [
+        (120, 40, Rect::new(2, 37, 116, 3), Rect::new(2, 34, 116, 3)),
+        (60, 20, Rect::new(1, 17, 58, 3), Rect::new(1, 16, 58, 3)),
     ] {
-        for (state, app) in [
-            ("idle", &idle),
-            ("draft", &draft),
-            ("streaming", &streaming),
-        ] {
-            assert_eq!(
-                plan_for(app, width, height).composer,
-                Some(expected),
-                "{state} composer must keep the pinned rect at {width}x{height}"
-            );
-        }
+        assert_eq!(plan_for(&idle, width, height).composer, Some(idle_expected));
+        assert_eq!(
+            plan_for(&streaming, width, height).composer,
+            Some(idle_expected)
+        );
+        assert_eq!(
+            plan_for(&draft, width, height).composer,
+            Some(draft_expected)
+        );
     }
 }
 
@@ -105,11 +103,11 @@ fn startup_idle_and_first_streaming_frames_share_composer_geometry_at_home_width
             .composer
             .expect("streaming composer");
 
-        assert_eq!(
-            (startup_composer, idle_composer, streaming_composer),
-            (expected, expected, expected),
-            "first submission must not move or resize the composer at {width}x{height}"
-        );
+        assert_eq!(startup_composer, expected);
+        assert_eq!(idle_composer.bottom(), height);
+        assert_eq!(streaming_composer.bottom(), height);
+        assert_eq!(idle_composer.height, 3);
+        assert_eq!(streaming_composer.height, 3);
         assert_eq!(
             startup_composer.height, 3,
             "single-line composer remains top/content/bottom at {width}x{height}"
@@ -508,25 +506,16 @@ fn boundary_spacer_transitions_at_60_column_cutoff() {
     for &height in &[20u16, 24, 30, 40] {
         let plan = plan_for(&app, 60, height);
         let composer = plan.composer.expect("composer at 60 cols");
-        let disclosure = plan
-            .disclosure
-            .unwrap_or_else(|| panic!("disclosure at 60x{height}"));
-        let gap = disclosure.y.saturating_sub(composer.y + composer.height);
-        assert_eq!(
-            gap, 0,
-            "spacer must be 0 at 60x{height} (ultra-compact); got gap={gap}"
-        );
+        assert_eq!(composer.bottom(), height);
+        assert_eq!(plan.disclosure, None);
     }
 
     // At 61 columns: spacer present
     for &height in &[20u16, 24, 30, 40] {
         let plan = plan_for(&app, 61, height);
         let composer = plan.composer.expect("composer at 61 cols");
-        let disclosure = plan
-            .disclosure
-            .unwrap_or_else(|| panic!("disclosure at 61x{height}"));
-        let gap = disclosure.y.saturating_sub(composer.y + composer.height);
-        assert_eq!(gap, 1, "spacer must be 1 at 61x{height}; got gap={gap}");
+        assert_eq!(composer.bottom(), height);
+        assert_eq!(plan.disclosure, None);
     }
 }
 
@@ -658,33 +647,24 @@ fn all_required_viewports_produce_valid_layout_plan() {
 fn composer_disclosure_spacer_gap_matches_centralized_contract_at_all_viewports() {
     let app = live_session_app();
 
-    // (width, height, expected_gap) — gap is 0 only at ≤60 cols.
-    let cases: &[(u16, u16, u16)] = &[
-        (60, 20, 0),
-        (79, 24, 1),
-        (80, 24, 1),
-        (100, 30, 1),
-        (120, 32, 1),
-        (120, 40, 1),
-        (120, 50, 1),
-        (140, 40, 1),
+    let cases: &[(u16, u16)] = &[
+        (60, 20),
+        (79, 24),
+        (80, 24),
+        (100, 30),
+        (120, 32),
+        (120, 40),
+        (120, 50),
+        (140, 40),
     ];
 
-    for &(width, height, expected_gap) in cases {
+    for &(width, height) in cases {
         let plan = plan_for(&app, width, height);
         let composer = plan
             .composer
             .unwrap_or_else(|| panic!("composer at {width}x{height}"));
-        let disclosure = plan
-            .disclosure
-            .unwrap_or_else(|| panic!("disclosure at {width}x{height}"));
-
-        let actual_gap = disclosure.y.saturating_sub(composer.y + composer.height);
-        assert_eq!(
-            actual_gap, expected_gap,
-            "composer→disclosure spacer at {width}x{height}: expected {expected_gap}, got {actual_gap}; \
-             composer={composer:?} disclosure={disclosure:?}"
-        );
+        assert_eq!(composer.bottom(), height);
+        assert_eq!(plan.disclosure, None);
     }
 }
 

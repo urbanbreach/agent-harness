@@ -168,21 +168,12 @@ pub(super) fn live_composer_disclosure_keeps_compact_summary_and_commands() {
         ready.ingest_event(event);
     }
     let rendered = render_live_lines(&ready, 100, 24);
-    let lines = rendered.lines().collect::<Vec<_>>();
-    let disclosure_row = find_line_containing(&lines, "Shift+Tab:mode")
-        .or_else(|| find_line_containing(&lines, "Ctrl+x:shortcuts"))
-        .unwrap_or_else(|| panic!("live composer freeze disclosure row\n{rendered}"));
-
-    assert!(
-        lines[disclosure_row].contains("Shift+Tab:mode")
-            && lines[disclosure_row].contains("Ctrl+x:shortcuts"),
-        "live disclosure must match freeze shortcut chrome\n{}",
-        lines[disclosure_row]
-    );
-    assert!(!lines[disclosure_row].contains("live ctx"));
-    assert!(!lines[disclosure_row].contains("Enter send"));
-    assert!(!lines[disclosure_row].contains("tool finished"));
-    assert!(!lines[disclosure_row].contains("turn 1"));
-    assert!(!lines[disclosure_row].contains("ready for next turn"));
+    assert!(!rendered.contains("Shift+Tab:mode"));
+    assert!(!rendered.contains("Ctrl+x:shortcuts"));
+    assert!(!rendered.contains("live ctx"));
+    assert!(!rendered.contains("Enter send"));
+    assert!(!rendered.contains("tool finished"));
+    assert!(!rendered.contains("turn 1"));
+    assert!(!rendered.contains("ready for next turn"));
     assert!(!rendered.contains("Current runtime:"));
 }

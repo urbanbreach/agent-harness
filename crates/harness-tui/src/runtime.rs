@@ -20,10 +20,14 @@ use crate::app::{
     TogglesConfig, UiIntent,
 };
 use crate::event::{self, poll};
+use crate::input::{
+    ScrollConfigOverrides, ScrollNormalizer, ScrollNormalizerConfig, ScrollSampleDirection,
+};
 use crate::runtime_integration::RuntimeExperience;
 use crate::scheduling::{FrameNow, RuntimePacer, WheelBatch, WheelDirection, WheelSample};
 use crate::terminal::{
-    FrameKind, FrameOutput, FrameOutputBackend, FrameSubmission, ProductionTerminalSession,
+    FrameKind, FrameOutput, FrameOutputBackend, FrameSubmission, Presenter,
+    ProductionTerminalSession,
 };
 use crate::ui;
 
@@ -518,12 +522,24 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
 
     let run_result = (|| -> Result<()> {
         let pacing_epoch = Instant::now();
-        let mut pacer = RuntimePacer::with_terminal_wheel_profile(
-            reduced_motion,
+        let mut pacer = RuntimePacer::with_reduced_motion(reduced_motion);
+        let scroll_mode = std::env::var("HARNESS_TUI_SCROLL_MODE").ok();
+        let scroll_lines = std::env::var("HARNESS_TUI_SCROLL_LINES").ok();
+        let scroll_speed = std::env::var("HARNESS_TUI_SCROLL_SPEED").ok();
+        let invert_scroll = std::env::var("HARNESS_TUI_INVERT_SCROLL").ok();
+        let scroll_overrides = ScrollConfigOverrides::from_values(
+            scroll_mode.as_deref(),
+            scroll_lines.as_deref(),
+            scroll_speed.as_deref(),
+            invert_scroll.as_deref(),
+        );
+        let scroll_config = ScrollNormalizerConfig::for_terminal(
             terminal_session.context.brand,
             terminal_session.context.multiplexer,
-        );
-        let mut initial_paint = true;
+        )
+        .with_overrides(scroll_overrides);
+        let mut scroll_normalizer = ScrollNormalizer::new(scroll_config);
+        let mut presenter = Presenter::new();
 
         loop {
             let frame_ready = frame_output.is_ready_for_frame();
@@ -563,8 +579,11 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                 false
             };
 
-            let paint_requested = initial_paint || pacing_action.should_paint(wheel_changed);
-            if paint_requested && frame_ready {
+            let paint_requested = pacing_action.should_paint(wheel_changed);
+            if paint_requested {
+                presenter.request_redraw(Instant::now());
+            }
+            if presenter.should_present(frame_ready) {
                 let size = terminal.size()?;
                 let frame_area = ratatui::layout::Rect::new(0, 0, size.width, size.height);
                 app.set_frame_area(frame_area);
@@ -578,8 +597,8 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                 if matches!(submission, FrameSubmission::ResyncRequired) {
                     pacer.request_flush();
                 }
-                initial_paint = false;
-            } else if paint_requested {
+                presenter.record_submission(submission, Instant::now());
+            } else if presenter.scheduled_at().is_some() {
                 pacer.request_flush();
             }
 
@@ -620,13 +639,35 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                             continue;
                         }
 
-                        let wheel_direction = match mouse.kind {
-                            MouseEventKind::ScrollUp => Some(WheelDirection::Up),
-                            MouseEventKind::ScrollDown => Some(WheelDirection::Down),
+                        let scroll_direction = match mouse.kind {
+                            MouseEventKind::ScrollUp => Some(ScrollSampleDirection::Up),
+                            MouseEventKind::ScrollDown => Some(ScrollSampleDirection::Down),
                             _ => None,
                         };
-                        if let Some(direction) = wheel_direction {
-                            pacer.queue_wheel(WheelSample::new(direction, mouse.column, mouse.row));
+                        if let Some(direction) = scroll_direction {
+                            let size = terminal.size()?;
+                            let normalized = scroll_normalizer.push(
+                                Instant::now().saturating_duration_since(pacing_epoch),
+                                direction,
+                                mouse.column,
+                                mouse.row,
+                                size.height,
+                            );
+                            if normalized.lines != 0 {
+                                let direction = if normalized.lines.is_negative() {
+                                    WheelDirection::Up
+                                } else {
+                                    WheelDirection::Down
+                                };
+                                let steps = u8::try_from(normalized.lines.unsigned_abs())
+                                    .unwrap_or(u8::MAX);
+                                pacer.queue_wheel(WheelSample::logical(
+                                    direction,
+                                    steps,
+                                    normalized.column,
+                                    normalized.row,
+                                ));
+                            }
                             continue;
                         }
 
