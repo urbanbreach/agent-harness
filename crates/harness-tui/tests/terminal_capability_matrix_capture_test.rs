@@ -6,17 +6,18 @@
 //! (DEC private-mode escape sequences), not visual rendering, so the L3 evidence
 //! is a capability matrix receipt rather than a terminal.png render.
 //!
-//! The L2 owner for all four rows is `crates/harness-tui/src/runtime.rs`. The
-//! negotiated capability model `TerminalCapabilityState` is `pub(crate)`, so
-//! this capture grounds the parity claim in the L2 owner *source*: it parses
-//! `runtime.rs` for the crossterm terminal-mode enable constructs it actually
-//! executes, derives the DEC private-mode set those produce, and asserts exact
+//! The L2 owners are `crates/harness-tui/src/runtime.rs` for terminal setup and
+//! `src/terminal/frame_output/queue.rs` for frame-scoped synchronized updates.
+//! The negotiated capability model `TerminalCapabilityState` is `pub(crate)`,
+//! so this capture grounds the parity claim in the L2 owner sources: it parses
+//! the crossterm terminal-mode enables and synchronized frame markers they
+//! execute, derives the DEC private-mode set those produce, and asserts exact
 //! parity with the modes the pinned reference binary enables (fail-closed).
 //! crossterm's single `EnableMouseCapture` call expands to modes
 //! 1000/1002/1003/1015/1006, matching the reference receipt.
 //!
-//! The always-on tests lock the claim: if `runtime.rs` ever stops enabling a
-//! reference mode, the parity assertion fails. The env-gated capture test
+//! The always-on tests lock the claim: if an owner stops enabling a reference
+//! mode, the parity assertion fails. The env-gated capture test
 //! materializes the proof as a fresh receipt under
 //! `$HARNESS_TERMCAP_ARTIFACT_DIR/harness-term-cap-v1/term-cap-matrix.json`,
 //! which `scripts/tui-parity/capture-term-cap-l3.sh` relocates into the
@@ -45,7 +46,7 @@ const REFERENCE_ENABLED_MODES: &[&str] = &[
 ];
 
 /// One terminal capability: the DEC private mode(s) it enables and the crossterm
-/// source token(s) that must be present in the L2 owner for Harness to enable
+/// source token(s) that must be present in the L2 owners for Harness to enable
 /// them. `required_tokens` is an AND list — every token must appear.
 struct ModeRule {
     label: &'static str,
@@ -55,8 +56,8 @@ struct ModeRule {
 
 /// Rules grounded in the crossterm calls `runtime.rs` executes during a
 /// successful interactive setup (`EnterAlternateScreen`, `EnableBracketedPaste`,
-/// `EnableMouseCapture`, `EnableFocusChange`, and the per-frame
-/// `Begin`/`EndSynchronizedUpdate` pair).
+/// `EnableMouseCapture`, `EnableFocusChange`) and the frame transport's per-frame
+/// synchronized-update marker pair.
 const MODE_RULES: &[ModeRule] = &[
     ModeRule {
         label: "alternate_screen",
@@ -84,14 +85,22 @@ const MODE_RULES: &[ModeRule] = &[
     ModeRule {
         label: "synchronized_output",
         modes: &["2026"],
-        required_tokens: &["BeginSynchronizedUpdate", "EndSynchronizedUpdate"],
+        required_tokens: &["BEGIN_SYNCHRONIZED_UPDATE", "END_SYNCHRONIZED_UPDATE"],
     },
 ];
 
-/// Read the L2 owner source from the harness-tui crate.
+/// Read the setup and frame-output owner sources from the harness-tui crate.
 fn runtime_source() -> String {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/runtime.rs");
-    fs::read_to_string(&path).unwrap_or_abort()
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    [
+        "src/runtime.rs",
+        "src/terminal/frame_output.rs",
+        "src/terminal/frame_output/queue.rs",
+    ]
+    .into_iter()
+    .map(|path| fs::read_to_string(crate_root.join(path)).unwrap_or_abort())
+    .collect::<Vec<_>>()
+    .join("\n")
 }
 
 /// Derive the sorted DEC private-mode set the L2 owner enables, by detecting

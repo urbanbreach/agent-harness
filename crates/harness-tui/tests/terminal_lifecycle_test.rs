@@ -14,15 +14,17 @@
     reason = "integration owner tests use fail-fast asserts"
 )]
 
-use std::io;
+use std::io::{self, Write};
 use std::sync::Arc;
 
 use harness_core::clock::{Clock, FakeClock};
 use harness_tui::terminal::{
-    AltScreenMode, CursorPosition, CursorShape, CursorState, FrameClock, ScreenBuffer,
-    SynchronizedWriter, TeardownPlan, TerminalCapabilities, TerminalLifecycle,
-    TerminalLifecycleError, DEFAULT_FRAME_TICK_MS, END_SYNCHRONIZED_UPDATE,
+    AltScreenMode, CursorPosition, CursorShape, CursorState, FrameClock, FrameKind, FrameOutput,
+    FrameOutputBackend, FrameSubmission, ScreenBuffer, SynchronizedWriter, TeardownPlan,
+    TerminalCapabilities, TerminalLifecycle, TerminalLifecycleError, BEGIN_SYNCHRONIZED_UPDATE,
+    DEFAULT_FRAME_TICK_MS, END_SYNCHRONIZED_UPDATE,
 };
+use ratatui::{backend::Backend, buffer::Cell, layout::Position};
 
 // ---------------------------------------------------------------------------
 // Frame clock (P5 motion / deterministic timing)
@@ -318,6 +320,173 @@ fn synchronized_writer_begin_bytes_match_dec_private_mode_2026() {
         b"\x1b[?2026h".as_ref()
     );
     assert_eq!(END_SYNCHRONIZED_UPDATE, b"\x1b[?2026l".as_ref());
+}
+
+#[test]
+fn accepted_frame_is_serialized_with_synchronized_markers() {
+    // Given: an empty bounded frame queue and its command-recording backend.
+    let (mut output, writer, receiver) = FrameOutput::bounded(1);
+    let mut backend = FrameOutputBackend::new(writer);
+
+    // When: one differential payload is accepted.
+    let kind = output.begin_frame().expect("begin frame");
+    backend.write_all(b"cells").expect("record payload");
+    let submission = output.finish_frame().expect("finish frame");
+    let frame = receiver.try_recv().expect("accepted frame");
+
+    // Then: the writer receives one indivisible synchronized-update record.
+    assert_eq!(kind, FrameKind::Differential);
+    assert_eq!(
+        submission,
+        FrameSubmission::Accepted(FrameKind::Differential)
+    );
+    assert_eq!(frame.bytes(), b"\x1b[?2026hcells\x1b[?2026l".as_ref());
+}
+
+#[test]
+fn unchanged_cursor_emits_zero_commands() {
+    // Given: a backend whose visible cursor position has already been recorded.
+    let (mut output, writer, receiver) = FrameOutput::bounded(1);
+    let mut backend = FrameOutputBackend::new(writer);
+    output.begin_frame().expect("begin initial frame");
+    backend.show_cursor().expect("show cursor");
+    backend
+        .set_cursor_position(Position::new(4, 2))
+        .expect("position cursor");
+    output.finish_frame().expect("finish initial frame");
+    let initial = receiver.try_recv().expect("initial cursor frame");
+    receiver.acknowledge(&initial).expect("acknowledge frame");
+    assert!(output.is_ready_for_frame());
+
+    // When: the next frame repeats the same visibility and position.
+    output.begin_frame().expect("begin unchanged frame");
+    backend.show_cursor().expect("repeat cursor visibility");
+    backend
+        .set_cursor_position(Position::new(4, 2))
+        .expect("repeat cursor position");
+    let submission = output.finish_frame().expect("finish unchanged frame");
+
+    // Then: no terminal command or synchronized marker is queued.
+    assert_eq!(submission, FrameSubmission::Unchanged);
+    assert!(receiver.try_recv().is_err());
+}
+
+#[test]
+fn empty_draw_preserves_the_cached_cursor_position() {
+    // Given: a backend whose visible cursor position has already been recorded.
+    let (mut output, writer, receiver) = FrameOutput::bounded(1);
+    let mut backend = FrameOutputBackend::new(writer);
+    output.begin_frame().expect("begin initial frame");
+    backend
+        .set_cursor_position(Position::new(4, 2))
+        .expect("position cursor");
+    output.finish_frame().expect("finish initial frame");
+    let initial = receiver.try_recv().expect("initial cursor frame");
+    receiver.acknowledge(&initial).expect("acknowledge frame");
+
+    // When: an empty draw is followed by the same logical cursor position.
+    output.begin_frame().expect("begin empty redraw frame");
+    backend
+        .draw(std::iter::empty())
+        .expect("draw no changed cells");
+    backend
+        .set_cursor_position(Position::new(4, 2))
+        .expect("repeat cursor position");
+    output.finish_frame().expect("finish empty redraw frame");
+    let frame = receiver.try_recv().expect("empty redraw frame");
+
+    // Then: no redundant cursor-position command is serialized.
+    assert!(!frame.bytes().windows(6).any(|bytes| bytes == b"\x1b[3;5H"));
+}
+
+#[test]
+fn drawing_invalidates_the_cached_cursor_position() {
+    // Given: a backend whose visible cursor position has already been recorded.
+    let (mut output, writer, receiver) = FrameOutput::bounded(1);
+    let mut backend = FrameOutputBackend::new(writer);
+    output.begin_frame().expect("begin initial frame");
+    backend
+        .set_cursor_position(Position::new(4, 2))
+        .expect("position cursor");
+    output.finish_frame().expect("finish initial frame");
+    let initial = receiver.try_recv().expect("initial cursor frame");
+    receiver.acknowledge(&initial).expect("acknowledge frame");
+
+    // When: drawing moves the physical cursor before the same logical position is restored.
+    output.begin_frame().expect("begin redraw frame");
+    let cell = Cell::default();
+    backend
+        .draw(std::iter::once((10, 4, &cell)))
+        .expect("draw changed cell");
+    backend
+        .set_cursor_position(Position::new(4, 2))
+        .expect("restore cursor position");
+    output.finish_frame().expect("finish redraw frame");
+    let frame = receiver.try_recv().expect("redraw frame");
+
+    // Then: the redraw frame explicitly restores the cursor to the composer cell.
+    assert!(frame.bytes().windows(6).any(|bytes| bytes == b"\x1b[3;5H"));
+}
+
+#[test]
+fn cursor_visibility_and_position_changes_emit_once() {
+    // Given: a fresh command-recording backend.
+    let (mut output, writer, receiver) = FrameOutput::bounded(1);
+    let mut backend = FrameOutputBackend::new(writer);
+
+    // When: one frame repeats each cursor transition.
+    output.begin_frame().expect("begin frame");
+    backend.show_cursor().expect("show cursor");
+    backend.show_cursor().expect("repeat show cursor");
+    backend
+        .set_cursor_position(Position::new(4, 2))
+        .expect("position cursor");
+    backend
+        .set_cursor_position(Position::new(4, 2))
+        .expect("repeat position cursor");
+    output.finish_frame().expect("finish frame");
+    let frame = receiver.try_recv().expect("cursor frame");
+
+    // Then: visibility and position each appear exactly once between the markers.
+    assert_eq!(
+        frame.bytes(),
+        b"\x1b[?2026h\x1b[?25h\x1b[3;5H\x1b[?2026l".as_ref()
+    );
+}
+
+#[test]
+fn in_flight_frame_blocks_capture_until_physical_ack() {
+    // Given: a queue with room for more than one frame.
+    let (mut output, mut writer, receiver) = FrameOutput::bounded(2);
+    output.begin_frame().expect("begin first frame");
+    writer.write_all(b"diff-a").expect("record first diff");
+    assert_eq!(
+        output.finish_frame().expect("finish first frame"),
+        FrameSubmission::Accepted(FrameKind::Differential)
+    );
+
+    // When: capture is attempted before and after the physical-write acknowledgement.
+    let blocked = output
+        .begin_frame()
+        .expect_err("in-flight frame must gate capture");
+    let first = receiver.try_recv().expect("drain first frame");
+    receiver
+        .acknowledge(&first)
+        .expect("acknowledge first frame");
+    assert!(output.is_ready_for_frame());
+    let next_kind = output.begin_frame().expect("begin next frame");
+    writer.write_all(b"diff-b").expect("record next diff");
+    let next = output.finish_frame().expect("accept next frame");
+    let second = receiver.try_recv().expect("drain next frame");
+
+    // Then: no differential frame is dropped or promoted to a full repaint.
+    assert_eq!(blocked.kind(), std::io::ErrorKind::WouldBlock);
+    assert_eq!(next_kind, FrameKind::Differential);
+    assert_eq!(next, FrameSubmission::Accepted(FrameKind::Differential));
+    assert!(first.bytes().windows(6).any(|bytes| bytes == b"diff-a"));
+    assert!(second.bytes().windows(6).any(|bytes| bytes == b"diff-b"));
+    assert!(first.sequence() < second.sequence());
+    assert!(!output.requires_full_repaint());
 }
 
 // ---------------------------------------------------------------------------

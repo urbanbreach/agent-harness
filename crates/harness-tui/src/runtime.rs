@@ -6,16 +6,14 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
-use crossterm::cursor::MoveTo;
 use crossterm::event::{
     DisableBracketedPaste, DisableFocusChange, DisableMouseCapture, EnableBracketedPaste,
     EnableFocusChange, EnableMouseCapture, KeyModifiers, KeyboardEnhancementFlags, MouseButton,
     MouseEvent, MouseEventKind, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
 };
-use crossterm::terminal::{BeginSynchronizedUpdate, Clear, ClearType, EndSynchronizedUpdate};
 use harness_core::event::EventEnvelopeV1;
 use ratatui::buffer::Buffer;
-use ratatui::{backend::CrosstermBackend, Terminal};
+use ratatui::Terminal;
 
 use crate::app::{
     set_pending_live_prompt_draft, AppState, LaunchMetadata, SessionHistoryEntry, ToastVariant,
@@ -24,12 +22,16 @@ use crate::app::{
 use crate::event::{self, poll};
 use crate::runtime_integration::RuntimeExperience;
 use crate::scheduling::{FrameNow, RuntimePacer, WheelBatch, WheelDirection, WheelSample};
-use crate::terminal::ProductionTerminalSession;
+use crate::terminal::{
+    FrameKind, FrameOutput, FrameOutputBackend, FrameSubmission, ProductionTerminalSession,
+};
 use crate::ui;
 
 const IDLE_POLL_INTERVAL: Duration = Duration::from_secs(1);
+const FRAME_ACK_POLL_INTERVAL: Duration = Duration::from_millis(1);
 const LIVE_UPDATE_DRAIN_MAX_PER_FRAME: usize = 16;
 const LIVE_UPDATE_DRAIN_MAX_DURATION: Duration = Duration::from_millis(8);
+const FRAME_OUTPUT_QUEUE_CAPACITY: usize = 1;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct LiveUpdateDrainState {
     changed: bool,
@@ -294,6 +296,30 @@ impl TuiOptions {
     }
 }
 
+fn render_terminal_frame(
+    terminal: &mut Terminal<FrameOutputBackend>,
+    output: &mut FrameOutput,
+    render: impl FnOnce(&mut Terminal<FrameOutputBackend>) -> Result<()>,
+) -> Result<FrameSubmission> {
+    let kind = output.begin_frame()?;
+    let render_result = (|| -> Result<()> {
+        if matches!(kind, FrameKind::FullRepaint) {
+            terminal.backend_mut().invalidate_cursor_state();
+            terminal
+                .clear()
+                .context("failed to clear terminal for full repaint")?;
+        }
+        render(terminal)
+    })();
+    match render_result {
+        Ok(()) => output.finish_frame().map_err(Into::into),
+        Err(error) => {
+            output.abort_frame();
+            Err(error)
+        }
+    }
+}
+
 pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
     let keybindings = options.take_external_keybindings();
     let TuiOptions {
@@ -481,29 +507,26 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
     let reduced_motion =
         reduced_motion_from_env(std::env::var("HARNESS_TUI_REDUCED_MOTION").ok().as_deref());
 
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
-    if reusing_terminal {
-        // Physical alternate-screen cells from the previous shell survive across
-        // handoff. Best-effort clear: some PTY backends reject Clear(All) while
-        // still accepting normal draws. Always reset ratatui buffers so undrawn
-        // regions cannot ghost startup welcome text into the next shell.
-        let _ = crossterm::execute!(terminal.backend_mut(), Clear(ClearType::All), MoveTo(0, 0));
-        let size = terminal
-            .size()
-            .context("failed to read terminal size for handoff clear")?;
-        let area = ratatui::layout::Rect::new(0, 0, size.width, size.height);
-        *terminal.current_buffer_mut() = Buffer::empty(area);
-    }
-
     let mut restore_guard = TerminalRestoreGuard::new(capabilities);
+
+    let (mut frame_output, frame_writer, frame_receiver) =
+        FrameOutput::bounded(FRAME_OUTPUT_QUEUE_CAPACITY);
+    frame_output.require_full_repaint();
+    let backend = FrameOutputBackend::new(frame_writer);
+    let mut terminal = Terminal::new(backend)?;
+    let writer_worker = frame_receiver.spawn(stdout)?;
 
     let run_result = (|| -> Result<()> {
         let pacing_epoch = Instant::now();
-        let mut pacer = RuntimePacer::with_reduced_motion(reduced_motion);
+        let mut pacer = RuntimePacer::with_terminal_wheel_profile(
+            reduced_motion,
+            terminal_session.context.brand,
+            terminal_session.context.multiplexer,
+        );
         let mut initial_paint = true;
 
         loop {
+            let frame_ready = frame_output.is_ready_for_frame();
             let mut live_updates_pending = false;
             if let Some(update_rx) = live_updates.as_ref() {
                 let drain_state =
@@ -540,16 +563,24 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                 false
             };
 
-            if initial_paint || pacing_action.should_paint(wheel_changed) {
+            let paint_requested = initial_paint || pacing_action.should_paint(wheel_changed);
+            if paint_requested && frame_ready {
                 let size = terminal.size()?;
                 let frame_area = ratatui::layout::Rect::new(0, 0, size.width, size.height);
                 app.set_frame_area(frame_area);
                 experience.tick(&app);
-                crossterm::queue!(terminal.backend_mut(), BeginSynchronizedUpdate)?;
-                terminal.draw(|frame| ui::render_app(frame, &app))?;
-                crossterm::execute!(terminal.backend_mut(), EndSynchronizedUpdate)?;
-                experience.post_flush(terminal.backend_mut());
+                let submission =
+                    render_terminal_frame(&mut terminal, &mut frame_output, |terminal| {
+                        terminal.draw(|frame| ui::render_app(frame, &app))?;
+                        experience.post_flush(terminal.backend_mut());
+                        Ok(())
+                    })?;
+                if matches!(submission, FrameSubmission::ResyncRequired) {
+                    pacer.request_flush();
+                }
                 initial_paint = false;
+            } else if paint_requested {
+                pacer.request_flush();
             }
 
             if app.should_quit {
@@ -562,6 +593,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                 poll(poll_timeout(
                     &pacer,
                     runtime_frame_now(pacing_epoch, Instant::now()),
+                    frame_output.has_in_flight_frame(),
                 ))?
             };
 
@@ -655,7 +687,12 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         Ok(())
     })();
 
-    experience.cleanup(terminal.backend_mut());
+    drop(terminal);
+    drop(frame_output);
+    let mut stdout = writer_worker
+        .join()
+        .context("terminal frame writer failed")?;
+    experience.cleanup(&mut stdout);
 
     if run_result.is_ok() && preserve_terminal_on_exit {
         *recover_mutex_lock(preserved_terminal_session()) = PreservedTerminalSession {
@@ -668,7 +705,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
     }
 
     *recover_mutex_lock(preserved_terminal_session()) = PreservedTerminalSession::default();
-    teardown_terminal_session(terminal.backend_mut(), capabilities)?;
+    teardown_terminal_session(&mut stdout, capabilities)?;
     terminal_session.finish();
     restore_guard.mark_restored();
 
@@ -751,10 +788,15 @@ fn runtime_frame_now(epoch: Instant, now: Instant) -> FrameNow {
     }
 }
 
-fn poll_timeout(pacer: &RuntimePacer, now: FrameNow) -> Duration {
-    pacer
+fn poll_timeout(pacer: &RuntimePacer, now: FrameNow, frame_in_flight: bool) -> Duration {
+    let scheduled = pacer
         .next_wait_ms(now)
-        .map_or(IDLE_POLL_INTERVAL, Duration::from_millis)
+        .map_or(IDLE_POLL_INTERVAL, Duration::from_millis);
+    if frame_in_flight {
+        scheduled.min(FRAME_ACK_POLL_INTERVAL)
+    } else {
+        scheduled
+    }
 }
 
 fn dispatch_wheel_batch(
@@ -942,7 +984,7 @@ mod tests {
         let pacer = RuntimePacer::new();
 
         // When: the terminal asks how long it may park.
-        let timeout = poll_timeout(&pacer, FrameNow::default());
+        let timeout = poll_timeout(&pacer, FrameNow::default(), false);
 
         // Then: no paint deadline shortens the idle interval.
         assert_eq!(timeout, IDLE_POLL_INTERVAL);
@@ -955,13 +997,14 @@ mod tests {
         pacer.poll(FrameNow::default(), true);
 
         // When: the terminal checks before and at the animation deadline.
-        let pending = poll_timeout(&pacer, FrameNow::default());
+        let pending = poll_timeout(&pacer, FrameNow::default(), false);
         let due = poll_timeout(
             &pacer,
             FrameNow {
                 animation_ms: crate::scheduling::ANIMATION_PERIOD_MS,
                 flush_ms: 0,
             },
+            false,
         );
 
         // Then: the scheduler's 30 Hz deadline is the poll authority.

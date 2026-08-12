@@ -1,5 +1,7 @@
 use std::cmp::Ordering;
 
+use crate::terminal::{TerminalMultiplexer, TerminalName};
+
 use super::{FrameInputs, FrameNow, FrameReason, FrameScheduler};
 
 pub const MAX_WHEEL_STEPS_PER_FLUSH: u8 = 8;
@@ -62,16 +64,18 @@ impl WheelBatch {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct WheelAccumulator {
     delta: i16,
     column: u16,
     row: u16,
+    events_per_step: u8,
 }
 
 impl WheelAccumulator {
     fn push(&mut self, sample: WheelSample) {
-        let cap = i16::from(MAX_WHEEL_STEPS_PER_FLUSH);
+        let cap =
+            i16::from(MAX_WHEEL_STEPS_PER_FLUSH).saturating_mul(i16::from(self.events_per_step));
         self.delta = self
             .delta
             .saturating_add(sample.direction.delta())
@@ -91,7 +95,12 @@ impl WheelAccumulator {
             Ordering::Equal => return None,
             Ordering::Greater => WheelDirection::Down,
         };
-        let steps = u8::try_from(delta.unsigned_abs()).unwrap_or(MAX_WHEEL_STEPS_PER_FLUSH);
+        let raw_steps = delta.unsigned_abs();
+        let divisor = u16::from(self.events_per_step);
+        let logical_steps = raw_steps.div_ceil(divisor);
+        let steps = u8::try_from(logical_steps)
+            .unwrap_or(MAX_WHEEL_STEPS_PER_FLUSH)
+            .min(MAX_WHEEL_STEPS_PER_FLUSH);
         Some(WheelBatch {
             direction,
             steps,
@@ -128,6 +137,21 @@ impl RuntimePacer {
     }
 
     pub const fn with_reduced_motion(reduced_motion: bool) -> Self {
+        Self::with_wheel_events_per_step(reduced_motion, 1)
+    }
+
+    pub const fn with_terminal_wheel_profile(
+        reduced_motion: bool,
+        terminal: TerminalName,
+        multiplexer: TerminalMultiplexer,
+    ) -> Self {
+        Self::with_wheel_events_per_step(
+            reduced_motion,
+            terminal_wheel_events_per_step(terminal, multiplexer),
+        )
+    }
+
+    const fn with_wheel_events_per_step(reduced_motion: bool, events_per_step: u8) -> Self {
         Self {
             scheduler: FrameScheduler::with_reduced_motion(reduced_motion),
             flush_requested: false,
@@ -135,6 +159,7 @@ impl RuntimePacer {
                 delta: 0,
                 column: 0,
                 row: 0,
+                events_per_step,
             },
         }
     }
@@ -201,6 +226,37 @@ impl RuntimePacer {
         action.paint = self.flush_requested;
         action.wheel_batch = self.wheel.take();
         self.flush_requested = false;
+    }
+}
+
+const fn terminal_wheel_events_per_step(
+    terminal: TerminalName,
+    multiplexer: TerminalMultiplexer,
+) -> u8 {
+    if multiplexer.is_detected() {
+        return 1;
+    }
+    match terminal {
+        TerminalName::Iterm2
+        | TerminalName::VsCode
+        | TerminalName::Cursor
+        | TerminalName::Windsurf
+        | TerminalName::Zed
+        | TerminalName::WezTerm => 1,
+        TerminalName::AppleTerminal
+        | TerminalName::Ghostty
+        | TerminalName::WarpTerminal
+        | TerminalName::Kitty
+        | TerminalName::Alacritty
+        | TerminalName::Rio
+        | TerminalName::Foot
+        | TerminalName::JetBrains
+        | TerminalName::GrokDesktop
+        | TerminalName::Vte
+        | TerminalName::Terminator
+        | TerminalName::WindowsTerminal
+        | TerminalName::Otty
+        | TerminalName::Unknown => 3,
     }
 }
 

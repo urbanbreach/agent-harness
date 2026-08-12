@@ -2,6 +2,8 @@ use harness_tui::scheduling::{
     DualClock, RuntimePacer, WheelDirection, WheelSample, ANIMATION_PERIOD_MS, FLUSH_DEADLINE_MS,
     MAX_WHEEL_STEPS_PER_FLUSH,
 };
+use harness_tui::terminal::brand::TerminalName;
+use harness_tui::terminal::multiplexer::TerminalMultiplexer;
 
 #[test]
 fn changed_work_is_coalesced_until_the_sixteen_millisecond_flush_deadline() {
@@ -129,6 +131,50 @@ fn wheel_flood_is_reduced_to_one_capped_batch() {
         Some((WheelDirection::Down, MAX_WHEEL_STEPS_PER_FLUSH, 72, 18,))
     );
     assert_eq!(after.wheel_batch, None);
+}
+
+#[test]
+fn three_event_terminal_wheel_notch_normalizes_to_one_step() {
+    // Given: a terminal that reports three wheel events for one physical notch.
+    let clock = DualClock::new();
+    let mut pacer = RuntimePacer::with_terminal_wheel_profile(
+        false,
+        TerminalName::Ghostty,
+        TerminalMultiplexer::Undetected,
+    );
+    for _ in 0..3 {
+        pacer.queue_wheel(WheelSample::new(WheelDirection::Down, 30, 12));
+    }
+    pacer.poll(clock.snapshot(), false);
+
+    // When: the coalesced wheel flush becomes due.
+    clock.advance_flush(FLUSH_DEADLINE_MS);
+    let due = pacer.poll(clock.snapshot(), false);
+
+    // Then: the physical notch dispatches one logical scroll step.
+    assert_eq!(due.wheel_batch.map(|batch| batch.steps()), Some(1));
+}
+
+#[test]
+fn multiplexer_reencoded_wheel_events_remain_individual_steps() {
+    // Given: the same terminal behind a multiplexer that re-encodes wheel input.
+    let clock = DualClock::new();
+    let mut pacer = RuntimePacer::with_terminal_wheel_profile(
+        false,
+        TerminalName::Ghostty,
+        TerminalMultiplexer::Tmux,
+    );
+    for _ in 0..3 {
+        pacer.queue_wheel(WheelSample::new(WheelDirection::Down, 30, 12));
+    }
+    pacer.poll(clock.snapshot(), false);
+
+    // When: the coalesced wheel flush becomes due.
+    clock.advance_flush(FLUSH_DEADLINE_MS);
+    let due = pacer.poll(clock.snapshot(), false);
+
+    // Then: all re-encoded events remain logical scroll steps.
+    assert_eq!(due.wheel_batch.map(|batch| batch.steps()), Some(3));
 }
 
 #[test]
