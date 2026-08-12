@@ -99,6 +99,9 @@ mod ui_transcript_style;
 #[path = "ui_transcript_surface.rs"]
 mod ui_transcript_surface;
 #[cfg(test)]
+#[path = "ui_transcript_surface_tests.rs"]
+mod ui_transcript_surface_tests;
+#[cfg(test)]
 #[path = "ui_transcript_test_helpers.rs"]
 mod ui_transcript_test_helpers;
 
