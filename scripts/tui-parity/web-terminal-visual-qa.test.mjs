@@ -44,6 +44,7 @@ test("table actions capture semantic checkpoints and clean every descendant", { 
     { key: { key: "x", modifiers: { alt: true } } },
     { key: { key: "g", modifiers: { ctrl: true } } },
     { input: { text: "typed" } },
+    { paste: { text: "line one\nline two" } },
     { resize: { cols: 60, rows: 12 } },
     { waitForText: { text: "RESIZE 60x12", timeoutMs: 5_000 } },
     { mouse: { kind: "move", col: 4, row: 4 } },
@@ -79,11 +80,17 @@ test("table actions capture semantic checkpoints and clean every descendant", { 
   assert.match(bootText, /BOOT TERM=ansi COLORTERM=24bit NO_COLOR=1/);
   assert.equal(boot.capabilities.unicodeVersion, "6");
   assert.deepEqual(boot.dimensions, { cols: 80, rows: 20 });
+  assert.deepEqual(boot.cursor, { row: 3, col: 0, visible: true, focused: true });
   assert.deepEqual(interactions.dimensions, { cols: 60, rows: 12 });
+  assert.equal(interactions.cursor.focused, true);
+  assert.equal(typeof interactions.cursor.row, "number");
+  assert.equal(typeof interactions.cursor.col, "number");
+  assert.equal(interactions.cursor.visible, false);
   assert.ok(interactions.capturedAtMillis >= boot.capturedAtMillis);
   assert.match(ansi, /INPUT_HEX 1b5b5a/);
   assert.match(ansi, /INPUT_HEX 1b78/);
   assert.match(ansi, /INPUT_HEX 07/);
+  assert.match(ansi, /INPUT_HEX 1b5b3230307e6c696e65206f6e650d6c696e652074776f1b5b3230317e/);
   assert.match(ansi, /INPUT_HEX 1b5b3c/);
   assert.equal(final.cleanupReceipt.status, "clean");
   assert.deepEqual(final.cleanupReceipt.survivingPids, []);

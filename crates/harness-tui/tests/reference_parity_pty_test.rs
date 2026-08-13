@@ -371,6 +371,14 @@ fn pty_helper_question_overlay() {
 }
 
 #[test]
+fn pty_helper_plan_composer() {
+    // Given: the test binary is launched as the isolated plan-composer helper.
+    // When: the matching scenario environment is active.
+    // Then: the helper owns the real PTY lifecycle and renders until driven by the caller.
+    reference_parity_pty_impl::pty_helper_plan_composer();
+}
+
+#[test]
 fn pty_helper_live_question_stream() {
     // arrange
     // act

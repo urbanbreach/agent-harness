@@ -276,7 +276,14 @@ pub(super) fn render_inline_permission_dock(
             PermissionConfirmSelection::Confirm => 1usize,
             PermissionConfirmSelection::Cancel => 2usize,
         };
-        let hint_line = permission_prompt_hint_line(app, theme, tray_surface, confirm_index, 2);
+        let hint_line = permission_prompt_hint_line(
+            app,
+            theme,
+            tray_surface,
+            confirm_index,
+            2,
+            tray_inner.width,
+        );
         if tray_inner.height > 1 {
             let rows = Layout::default()
                 .direction(Direction::Vertical)
@@ -300,21 +307,42 @@ pub(super) fn render_inline_permission_dock(
     }
 
     let selection = app.permission_modal_selection(&permission.permission_id);
-    let options = [
-        (
-            "Yes, and don't ask again for anything (always-approve mode)",
-            selection == PermissionModalSelection::AllowAlways,
-        ),
-        (
-            "Yes, allow all edits during this session",
-            selection == PermissionModalSelection::AllowSession,
-        ),
-        ("Yes", selection == PermissionModalSelection::AllowOnce),
-        (
-            "No, reject (type to add feedback)",
-            selection == PermissionModalSelection::Reject,
-        ),
-    ];
+    let options = if tray_inner.width <= 60 {
+        [
+            (
+                "Yes, always approve",
+                selection == PermissionModalSelection::AllowAlways,
+            ),
+            (
+                "Yes, allow edits this session",
+                selection == PermissionModalSelection::AllowSession,
+            ),
+            (
+                "Yes, once",
+                selection == PermissionModalSelection::AllowOnce,
+            ),
+            (
+                "No, reject and add feedback",
+                selection == PermissionModalSelection::Reject,
+            ),
+        ]
+    } else {
+        [
+            (
+                "Yes, and don't ask again for anything (always-approve mode)",
+                selection == PermissionModalSelection::AllowAlways,
+            ),
+            (
+                "Yes, allow all edits during this session",
+                selection == PermissionModalSelection::AllowSession,
+            ),
+            ("Yes", selection == PermissionModalSelection::AllowOnce),
+            (
+                "No, reject (type to add feedback)",
+                selection == PermissionModalSelection::Reject,
+            ),
+        ]
+    };
     let selected_index = match selection {
         PermissionModalSelection::AllowAlways => 1usize,
         PermissionModalSelection::AllowSession => 2usize,
@@ -322,8 +350,14 @@ pub(super) fn render_inline_permission_dock(
         PermissionModalSelection::Reject => 4usize,
     };
     let action_text = permission_prompt_numbered_options(theme, tray_surface, &options);
-    let hint_line =
-        permission_prompt_hint_line(app, theme, tray_surface, selected_index, options.len());
+    let hint_line = permission_prompt_hint_line(
+        app,
+        theme,
+        tray_surface,
+        selected_index,
+        options.len(),
+        tray_inner.width,
+    );
     let option_rows = u16::try_from(options.len()).unwrap_or(u16::MAX);
     // Freeze tray: options, post blank, empty, hints, trailing blank (height 8).
     if tray_inner.height >= option_rows.saturating_add(4) {
@@ -810,13 +844,20 @@ fn permission_prompt_hint_line(
     surface: Color,
     selected_index: usize,
     option_count: usize,
+    available_width: u16,
 ) -> Line<'static> {
     use crate::keybindings::Action;
 
     let count = option_count.max(1);
     let selected = selected_index.clamp(1, count);
     let always = app.keymap.get_binding_str(Action::AlwaysApprovePermission);
-    let always_label = if always == "-" {
+    let always_label = if available_width <= 60 {
+        if always == "-" {
+            "Ctrl+o:always".to_string()
+        } else {
+            format!("{always}:always")
+        }
+    } else if always == "-" {
         "Ctrl+o:always-approve".to_string()
     } else {
         format!("{always}:always-approve")

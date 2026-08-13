@@ -11,6 +11,7 @@ use crate::shell_geometry::{cursor_for, layout_for, CursorPlacement, FocusTarget
 
 use super::slice::ComposerSlice;
 use super::view_helpers::{atom_char_count, preview_label};
+use super::ComposerEditorModel;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ComposerBorderViewModel {
@@ -45,6 +46,7 @@ pub struct AttachmentPreviewViewModel {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ComposerViewModel {
+    pub editor: ComposerEditorModel,
     pub viewport_id: ViewportId,
     pub viewport: Rect,
     pub composer: Rect,
@@ -87,6 +89,11 @@ pub(super) fn build_for_rect(
     let regions = layout_for(viewport_id, shell_state);
     let text = slice.editor.text();
     let wrap_width = regions.composer.width.saturating_sub(2).max(1);
+    let editor = ComposerEditorModel::for_layout(
+        slice.editor(),
+        wrap_width,
+        usize::from(regions.composer.height.max(1)),
+    );
     let wrapped_lines = slice.editor.buffer().wrap(wrap_width);
     let cursor_chars = slice
         .editor
@@ -115,6 +122,7 @@ pub(super) fn build_for_rect(
             style: muted_style(),
         });
     ComposerViewModel {
+        editor,
         viewport_id,
         viewport,
         composer: regions.composer,

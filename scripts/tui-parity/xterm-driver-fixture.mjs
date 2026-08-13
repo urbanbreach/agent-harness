@@ -13,6 +13,7 @@ function printSize() {
 process.stdout.on("resize", printSize);
 process.on("SIGWINCH", printSize);
 process.stdin.on("data", (data) => {
+  if (data.includes(0x07)) process.stdout.write("\x1b[?25l");
   process.stdout.write(`INPUT_HEX ${data.toString("hex")}\r\n`);
 });
 
@@ -20,5 +21,4 @@ process.stdout.write(
   `BOOT TERM=${process.env.TERM ?? ""} COLORTERM=${process.env.COLORTERM ?? ""} NO_COLOR=${process.env.NO_COLOR ?? ""}\r\n`,
 );
 process.stdout.write(`CHILD_PID=${descendant.pid}\r\n`);
-process.stdout.write("\x1b[?1000h\x1b[?1002h\x1b[?1006hREADY\r\n");
-
+process.stdout.write("\x1b[?1000h\x1b[?1002h\x1b[?1006h\x1b[?2004hREADY\r\n");

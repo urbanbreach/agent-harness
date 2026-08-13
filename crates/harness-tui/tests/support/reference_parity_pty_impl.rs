@@ -53,6 +53,7 @@ const LIVE_TOOL_GROUP_FINISH_TRANSITION_SCENARIO: &str = "live_tool_group_finish
 const LIVE_DIFF_SCENARIO: &str = "live_diff";
 const LIVE_SCROLL_SCENARIO: &str = "live_scroll";
 const QUESTION_OVERLAY_SCENARIO: &str = "question_overlay";
+const PLAN_COMPOSER_SCENARIO: &str = "plan_composer";
 const PERMISSION_OVERLAY_SCENARIO: &str = "permission_overlay";
 /// Empty-draft variant: same permission overlay but without seeding a draft, so
 /// the capture verifies "Allow Edit" chrome renders with an empty composer.
@@ -96,6 +97,7 @@ const BLOCK_GRAMMAR_COMPACTION: &str = "PACKET3_COMPACTION retained context summ
 const STREAM_USER_TEXT: &str = "stream parity probe";
 const PERM_STREAM_USER_TEXT: &str = "edit a project file now";
 const QUESTION_STREAM_USER_TEXT: &str = "ask me the parity question";
+const QUESTION_DRAFT: &str = "keep draft under question";
 const FAIL_USER_TEXT: &str = "fail the parity probe";
 const COMPLETE_USER_TEXT: &str = "complete the parity probe";
 const COMPLETE_ASSISTANT_TEXT: &str = "parity turn complete stream final response rendered cleanly under the shell composer parity turn complete stream final response rendered cleanly under the shell composer parity turn complete stream final response rendered cleanly under the shell composer";
@@ -1294,11 +1296,42 @@ pub(crate) fn pty_helper_question_overlay() {
         let _ = inject_tx.send(LiveUpdate::Event(Box::new(finish)));
     });
 
+    set_pending_live_prompt_draft(Some(QUESTION_DRAFT.to_string()));
     install_parity_context_window();
     run_tui_with_options(TuiOptions {
         mode: TuiMode::Live {
             run_dir: run_dir.path().to_path_buf(),
             historical_events: question_turn_events(),
+            session_history_entries: Vec::new(),
+            prompt_history_path: None,
+            update_rx,
+            compact_session_supported: false,
+        },
+        exit_on_finish: false,
+        on_ui_intent: None,
+        keybindings: None,
+        toggles: None,
+        preserve_terminal_on_exit: false,
+        skip_alternate_screen: false,
+    })
+    .unwrap_or_abort();
+}
+
+pub(crate) fn pty_helper_plan_composer() {
+    if std::env::var(HELPER_SCENARIO_ENV).as_deref() != Ok(PLAN_COMPOSER_SCENARIO) {
+        return;
+    }
+
+    let run_dir = tempfile::tempdir().unwrap_or_abort();
+    let (_keepalive, update_rx) = live_update_channel();
+    set_pending_live_launch_metadata(
+        LaunchMetadata::from_model_ref("build", "mock:model-1").with_mode_label("Plan"),
+    );
+    set_pending_live_prompt_draft(Some("plan the safe Harness change".to_string()));
+    run_tui_with_options(TuiOptions {
+        mode: TuiMode::Live {
+            run_dir: run_dir.path().to_path_buf(),
+            historical_events: Vec::new(),
             session_history_entries: Vec::new(),
             prompt_history_path: None,
             update_rx,

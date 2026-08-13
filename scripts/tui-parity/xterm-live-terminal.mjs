@@ -169,17 +169,35 @@ html,body{margin:0;padding:0;background:#141414}
   term.loadAddon(unicode);
   term.unicode.activeVersion = '${unicodeVersion}';
   term.open(document.getElementById('t'));
-  window.__writeToTerm = (d) => new Promise((resolve) => term.write(d, resolve));
+  let cursorVisible = true;
+  let cursorSequenceTail = '';
+  const trackCursorVisibility = (data) => {
+    const scanned = cursorSequenceTail + data;
+    for (const match of scanned.matchAll(/\\x1b\\[\\?25([hl])/g)) cursorVisible = match[1] === 'h';
+    cursorSequenceTail = scanned.slice(-16);
+  };
+  window.__writeToTerm = (d) => new Promise((resolve) => {
+    trackCursorVisibility(d);
+    term.write(d, resolve);
+  });
   window.__screenText = () => {
     const b = term.buffer.active; const lines = [];
     for (let i = 0; i < b.length; i++) { const ln = b.getLine(i); lines.push(ln ? ln.translateToString(true) : ''); }
     return lines.join('\\n').replace(/\\n+$/, '\\n');
   };
-  window.__resetAndWrite = (d) => new Promise((resolve) => { term.reset(); term.write(d, resolve); });
+  window.__resetAndWrite = (d) => new Promise((resolve) => {
+    term.reset(); cursorVisible = true; cursorSequenceTail = ''; trackCursorVisibility(d); term.write(d, resolve);
+  });
+  window.__pasteToTerm = (text) => term.paste(text);
   window.__resizeTerm = (cols, rows) => term.resize(cols, rows);
   window.__terminalGeometry = () => {
     const rect = document.querySelector('.xterm-screen').getBoundingClientRect();
     return { left: rect.left, top: rect.top, width: rect.width, height: rect.height, cols: term.cols, rows: term.rows };
+  };
+  window.__terminalCursor = () => {
+    const buffer = term.buffer.active;
+    const focused = document.activeElement === term.textarea;
+    return { row: buffer.cursorY, col: buffer.cursorX, visible: cursorVisible && focused, focused };
   };
   window.__terminalCapabilities = () => ({
     unicodeVersion: term.unicode.activeVersion,
@@ -277,10 +295,11 @@ async function captureFrame(page, rawStream, redactStream, restore) {
     const geometry = window.__terminalGeometry();
     return { cols: geometry.cols, rows: geometry.rows };
   });
+  const cursor = await page.evaluate(() => window.__terminalCursor());
   const element = (await page.$(".xterm-screen")) || (await page.$(".xterm")) || page;
   const pngBuffer = await element.screenshot({ type: "png" });
   if (changed && restore) await page.evaluate((data) => window.__resetAndWrite(data), rawStream);
-  return { pngBuffer, screenText, rawStream, dimensions };
+  return { pngBuffer, screenText, rawStream, dimensions, cursor };
 }
 
 async function driveActions({ page, ptyProc, actions, pauseWrites, resumeWrites, redactStream, capabilities }) {
@@ -298,6 +317,8 @@ async function driveActions({ page, ptyProc, actions, pauseWrites, resumeWrites,
       await delay(payload.ms);
     } else if (type === "input") {
       await page.keyboard.type(payload.text, { delay: 10 });
+    } else if (type === "paste") {
+      await page.evaluate((text) => window.__pasteToTerm(text), payload.text);
     } else if (type === "key") {
       await pressKey(page, payload.key, payload.modifiers);
     } else if (type === "resize") {

@@ -35,7 +35,7 @@ Inputs:
   --from-file <path>     Render an existing raw terminal byte stream through xterm.js (replay; no interaction).
   --input <token>        Scripted interaction, repeatable, applied in order THROUGH the browser terminal.
                          Literal text is typed; {Enter} {Tab} {Escape} {ArrowDown} {Ctrl+C} etc. are pressed as keys.
-  --action <json>        Tagged action object, repeatable: waitForText, wait, input, key, resize, mouse, checkpoint.
+  --action <json>        Tagged action object, repeatable: waitForText, wait, input, paste, key, resize, mouse, checkpoint.
   --actions-file <path>  JSON array of tagged actions. Entries run in file/CLI order.
   --cwd <path>           Working directory for --command. Default: current directory.
   --cols <n> / --rows <n>  Terminal geometry. Default: 120 x 32.
@@ -105,6 +105,8 @@ function parseAction(value, source) {
     if (!Number.isInteger(payload.ms) || payload.ms < 0) throw new Error("wait.ms must be a non-negative integer");
   } else if (tag === "input") {
     if (typeof payload.text !== "string") throw new Error("input.text must be a string");
+  } else if (tag === "paste") {
+    if (typeof payload.text !== "string") throw new Error("paste.text must be a string");
   } else if (tag === "key") {
     if (typeof payload.key !== "string" || payload.key.length === 0) throw new Error("key.key must be non-empty");
     if (payload.modifiers !== undefined && (!payload.modifiers || typeof payload.modifiers !== "object" || Array.isArray(payload.modifiers))) {
@@ -251,6 +253,7 @@ async function run(args) {
       connector: cap.connector,
       source: sourceMetadata(args),
       dimensions: checkpoint.dimensions,
+      cursor: checkpoint.cursor,
       capabilities: checkpoint.capabilities,
       terminalProfile,
       cleanup: cap.cleanup,
@@ -280,6 +283,7 @@ async function run(args) {
       ...(args.fontFamily ? { fontFamily: args.fontFamily } : {}),
       terminalBackground: args.terminalBackground,
     },
+    ...(cap.cursor ? { cursor: cap.cursor } : {}),
     ...(cap.capabilities ? { capabilities: cap.capabilities } : {}),
     cleanup: cap.cleanup,
     ...(cap.cleanupReceipt ? { cleanupReceipt: cap.cleanupReceipt } : {}),

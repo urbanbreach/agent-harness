@@ -396,6 +396,42 @@ fn shell_perm_dock_renders_all_decision_options_with_default_marker() {
     );
 }
 
+#[test]
+fn shell_perm_dock_keeps_all_choices_and_footer_visible_at_60x20() {
+    // Given: a permission request rendered at the minimum supported viewport.
+    let mut app = live_app();
+    app.ingest_event(permission_requested_event(
+        1,
+        "perm_compact_parity",
+        "tool_call_compact",
+    ));
+
+    // When: the live shell renders at 60x20.
+    let rendered = render_to_string(&app, Rect::new(0, 0, 60, 20), |app, frame, _area| {
+        ui::render_app(frame, app)
+    });
+
+    // Then: every decision and both essential footer actions remain truthful and visible.
+    for expected in [
+        "1 (●) Yes, always approve",
+        "2 (○) Yes, allow edits this session",
+        "3 (○) Yes, once",
+        "4 (○) No, reject and add feedback",
+        "1/4:select",
+        "Ctrl+o:always",
+        "Ctrl+c:cancel",
+    ] {
+        assert!(
+            rendered.contains(expected),
+            "compact permission dock must retain {expected:?}\n{rendered}"
+        );
+    }
+    assert!(
+        rendered.lines().all(|line| line.chars().count() <= 60),
+        "compact permission dock must not overflow 60 columns\n{rendered}"
+    );
+}
+
 /// SHELL-PERM state machine: cycling moves the radio marker between options
 /// (h/l or arrows), preserving the draft; the default marker starts on
 /// always-approve and moves to session grant after one cycle-forward.
