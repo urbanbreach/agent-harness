@@ -13,7 +13,7 @@ use crate::{
 
 use super::{
     ui_chrome::{display_width, truncate_plain_text},
-    ui_transcript_style::transcript_streaming_spinner_frame,
+    ui_transcript_style::{pending_diamond_color, transcript_streaming_spinner_frame},
 };
 
 const STOP_LABEL: &str = "[stop]";
@@ -44,18 +44,6 @@ pub(super) fn render_live_turn_status(
         return;
     }
 
-    if app.interrupt_requested() {
-        frame.render_widget(Block::default().style(Style::default()), area);
-        frame.render_widget(
-            Paragraph::new(Line::from(Span::styled(
-                "Cancelling…",
-                Style::default().fg(theme.status.warning),
-            ))),
-            area,
-        );
-        return;
-    }
-
     let runtime_kind = app.runtime_state().kind;
     if !app.has_live_turn_activity()
         && !matches!(
@@ -75,15 +63,20 @@ pub(super) fn render_live_turn_status(
         .and_then(|permission| permission.question_prompts)
         .and_then(|prompts| prompts.into_iter().next())
         .map(|prompt| prompt.question);
-    let status = question_detail.as_deref().map_or_else(
-        || {
-            activity.map_or_else(
-                || LiveTurnStatus::waiting(theme),
-                |entry| LiveTurnStatus::from_activity(entry, theme),
-            )
-        },
-        |detail| LiveTurnStatus::waiting_on_answers(theme, Some(detail)),
-    );
+    let status = if app.interrupt_requested() {
+        LiveTurnStatus::cancelling(theme)
+    } else {
+        question_detail.as_deref().map_or_else(
+            || {
+                activity.map_or_else(
+                    || LiveTurnStatus::waiting(theme),
+                    |entry| LiveTurnStatus::from_activity(entry, theme),
+                )
+            },
+            |detail| LiveTurnStatus::waiting_on_answers(theme, Some(detail)),
+        )
+    };
+    let waiting_on_answers = question_detail.is_some() && !app.interrupt_requested();
     let projected_total =
         activity.map(|entry| entry.last_mono_ms.saturating_sub(entry.first_mono_ms));
     let live_phase_elapsed_ms =
@@ -115,7 +108,19 @@ pub(super) fn render_live_turn_status(
     let right_meta = format!("{total}{}", tokens.unwrap_or_default());
     let stop = app.live_turn_stop_available().then_some(STOP_LABEL);
     let right = stop.map_or_else(|| right_meta.clone(), |stop| format!("{right_meta} {stop}"));
-    let spinner = transcript_streaming_spinner_frame(app.transcript_animation_phase());
+    let spinner = if waiting_on_answers {
+        "◆"
+    } else {
+        transcript_streaming_spinner_frame(app.transcript_animation_phase())
+    };
+    let spinner_style = if waiting_on_answers {
+        Style::default().fg(pending_diamond_color(
+            theme,
+            app.transcript_animation_phase(),
+        ))
+    } else {
+        status.style
+    };
     let fixed_left_width =
         display_width(spinner)
             .saturating_add(1)
@@ -131,7 +136,7 @@ pub(super) fn render_live_turn_status(
     let label = truncate_plain_text(&status.label, label_width.max(1));
 
     frame.render_widget(Block::default().style(Style::default()), area);
-    let mut left_spans = vec![Span::styled(format!("{spinner} "), status.style)];
+    let mut left_spans = vec![Span::styled(format!("{spinner} "), spinner_style)];
     left_spans.push(Span::styled(label, status.style));
     if !phase.is_empty() {
         left_spans.push(Span::raw(" "));
@@ -169,10 +174,18 @@ struct LiveTurnStatus {
 }
 
 impl LiveTurnStatus {
+    fn cancelling(theme: &Theme) -> Self {
+        Self {
+            label: "Cancelling…".to_string(),
+            style: Style::default().fg(theme.status.error),
+            phase_elapsed_ms: None,
+        }
+    }
+
     fn waiting(theme: &Theme) -> Self {
         Self {
             label: "Waiting for response…".to_string(),
-            style: Style::default().fg(theme.text.primary),
+            style: Style::default().fg(theme.text.secondary),
             phase_elapsed_ms: None,
         }
     }
@@ -183,7 +196,7 @@ impl LiveTurnStatus {
                 || "Waiting on answers".to_string(),
                 |detail| format!("Waiting on answers for {detail}"),
             ),
-            style: Style::default().fg(theme.text.primary),
+            style: Style::default().fg(theme.text.secondary),
             phase_elapsed_ms: None,
         }
     }
@@ -213,7 +226,7 @@ impl LiveTurnStatus {
         {
             return Self {
                 label: format!("Run {}", tool.effective_tool_id()),
-                style: Style::default().fg(theme.text.accent),
+                style: Style::default().fg(theme.status.success),
                 phase_elapsed_ms: Some(tool.last_mono_ms.saturating_sub(tool.first_mono_ms)),
             };
         }
@@ -221,7 +234,7 @@ impl LiveTurnStatus {
         if !activity.transcript_text.is_empty() {
             return Self {
                 label: "Responding…".to_string(),
-                style: Style::default().fg(theme.text.accent),
+                style: Style::default().fg(theme.text.secondary),
                 phase_elapsed_ms: activity.responding_duration_ms(),
             };
         }
@@ -229,8 +242,8 @@ impl LiveTurnStatus {
         if !activity.thinking_text.trim().is_empty() {
             let phase_elapsed_ms = activity.thinking_duration_ms();
             return Self {
-                label: "Active".to_string(),
-                style: Style::default().fg(theme.text.accent),
+                label: "Thinking…".to_string(),
+                style: Style::default().fg(theme.text.secondary),
                 phase_elapsed_ms,
             };
         }
@@ -278,12 +291,12 @@ mod tests {
     use crate::theme::Theme;
 
     #[test]
-    fn waiting_status_uses_reference_primary_with_secondary_timers() {
+    fn waiting_status_uses_reference_secondary_text() {
         let theme = Theme::harness_chat();
 
         let status = LiveTurnStatus::waiting(&theme);
 
-        assert_eq!(status.style.fg, Some(theme.text.primary));
+        assert_eq!(status.style.fg, Some(theme.text.secondary));
     }
 
     #[test]

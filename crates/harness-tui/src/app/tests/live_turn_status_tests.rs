@@ -96,7 +96,7 @@ pub(super) fn thinking_phase_clock_advances_between_provider_deltas() {
 
     // Then: the visible thinking-phase clock continues advancing.
     let screen = render_text(&app, 140, 40);
-    assert!(status_row(&screen, "Active").contains("Active 0.5s"));
+    assert!(status_row(&screen, "Thinking…").contains("Thinking… 0.5s"));
 }
 
 pub(super) fn responding_phase_clock_advances_between_provider_deltas() {
@@ -143,7 +143,7 @@ pub(super) fn thinking_spinner_advances_on_animation_tick() {
         }),
     ));
     let before = render_text(&app, 140, 40);
-    let before_glyph = status_spinner_glyph(&before, "Active");
+    let before_glyph = status_spinner_glyph(&before, "Thinking…");
 
     // When: the fixed-rate animation scheduler advances one spinner frame.
     for _ in 0..4 {
@@ -152,7 +152,7 @@ pub(super) fn thinking_spinner_advances_on_animation_tick() {
 
     // Then: the visible spinner advances without requiring a provider event.
     let after = render_text(&app, 140, 40);
-    let after_glyph = status_spinner_glyph(&after, "Active");
+    let after_glyph = status_spinner_glyph(&after, "Thinking…");
     assert_ne!(before_glyph, after_glyph);
 }
 
@@ -237,7 +237,7 @@ pub(super) fn thinking_to_responding_keeps_shared_spinner_frame() {
         }),
     ));
     let thinking = render_text(&app, 140, 40);
-    let thinking_glyph = status_spinner_glyph(&thinking, "Active");
+    let thinking_glyph = status_spinner_glyph(&thinking, "Thinking…");
 
     // When: the same turn transitions to responding without an animation tick.
     app.ingest_event(envelope(
@@ -300,8 +300,36 @@ pub(super) fn clicking_stop_affordance_interrupts_active_task() {
     );
     let screen = render_text(&app, 140, 40);
     assert!(screen.contains("Cancelling…"), "{screen}");
-    assert!(!status_row(&screen, "Cancelling…").contains("[stop]"));
-    assert!(!app.has_active_animations_for_evidence());
+    let row = status_row(&screen, "Cancelling…");
+    assert!(row.contains("0.0s"), "status row: {row:?}");
+    assert!(row.contains("[stop]"), "status row: {row:?}");
+    assert!(crate::ui::live_turn_stop_rect(&app, TEST_FRAME_AREA).is_some());
+    assert!(app.has_active_animations_for_evidence());
+
+    let before_glyph = status_spinner_glyph(&screen, "Cancelling…");
+    for _ in 0..4 {
+        app.advance_animation_tick_for_evidence();
+    }
+    let after = render_text(&app, 140, 40);
+    let after_glyph = status_spinner_glyph(&after, "Cancelling…");
+    assert_ne!(before_glyph, after_glyph);
+
+    let stop = crate::ui::live_turn_stop_rect(&app, TEST_FRAME_AREA)
+        .unwrap_or_else(|| panic!("expected cancelling stop retry hit rectangle"));
+    assert!(app.handle_mouse(
+        mouse_at(MouseEventKind::Down(MouseButton::Left), stop.x, stop.y),
+        TEST_FRAME_AREA,
+        None,
+        None,
+        None,
+    ));
+    assert_eq!(
+        intents
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .len(),
+        2
+    );
 }
 
 pub(super) fn hovering_stop_affordance_updates_live_status_state() {
@@ -412,8 +440,8 @@ pub(super) fn hidden_delegated_child_cannot_steal_rendered_parent_clock() {
 
     // Then: the status renderer uses the same visible parent selected by timing.
     let screen = render_text(&app, 140, 40);
-    let row = status_row(&screen, "Active");
-    assert!(row.contains("Active 0.5s"), "status row: {row:?}");
+    let row = status_row(&screen, "Thinking…");
+    assert!(row.contains("Thinking… 0.5s"), "status row: {row:?}");
 }
 
 pub(super) fn hidden_delegated_child_activation_does_not_steal_detached_page_flip() {

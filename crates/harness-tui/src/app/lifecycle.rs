@@ -819,9 +819,7 @@ impl AppState {
     }
 
     pub(crate) fn live_turn_stop_available(&self) -> bool {
-        !self.replay_mode
-            && !self.interrupt_requested()
-            && self.active_interrupt_task_id().is_some()
+        !self.replay_mode && self.active_interrupt_task_id().is_some()
     }
 
     pub(crate) fn interrupt_requested(&self) -> bool {
