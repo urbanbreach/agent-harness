@@ -20,6 +20,7 @@ pub mod tui_fidelity_dependency_cone;
 pub mod tui_fidelity_fixture;
 pub mod tui_fidelity_matrix;
 pub mod tui_fidelity_obligation;
+pub mod tui_fidelity_packet6;
 pub mod tui_fidelity_runner;
 pub mod tui_fidelity_scheduler;
 pub mod tui_fidelity_staging;

@@ -1,16 +1,16 @@
 use std::fs;
 use std::path::Path;
 
-use harness_testkit::tui_fidelity::{
-    CheckpointName, IdentityScope, IdentitySubstitution, Rgb, Scenario, ScenarioAction,
-    TextPlacement, TextStyle, Viewport, Wrapping,
-};
+use harness_testkit::tui_fidelity::{Scenario, ScenarioAction, Viewport};
 use harness_testkit::tui_fidelity_runner::RunnerError;
 use serde::Deserialize;
 
 const REGISTRY_RELATIVE: &str =
     "crates/harness-testkit/src/tui_fidelity_scenarios/baseline/registry.json";
 const REGISTRY_SCHEMA: &str = "harness.tui-fidelity.baseline-registry.v1";
+
+#[path = "tui_fidelity_baseline_identity.rs"]
+mod identity;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -87,7 +87,7 @@ pub(super) fn load(scenario_id: &str, repo_root: &Path) -> Result<Scenario, Runn
     for checkpoint in &mut scenario.checkpoints {
         checkpoint.frame.viewport = viewport;
     }
-    add_common_identity_substitutions(&mut scenario, viewport);
+    identity::add(&mut scenario, viewport);
     Ok(scenario)
 }
 
@@ -134,107 +134,6 @@ pub(super) fn load_packet3(scenario_id: &str, repo_root: &Path) -> Result<Scenar
     Ok(scenario)
 }
 
-fn add_common_identity_substitutions(scenario: &mut Scenario, viewport: Viewport) {
-    if scenario.substitutions.is_empty() && viewport.cols >= 12 {
-        for checkpoint in [
-            CheckpointName::Rest,
-            CheckpointName::Mid,
-            CheckpointName::Settled,
-        ] {
-            scenario.substitutions.push(IdentitySubstitution {
-                checkpoint,
-                scope: IdentityScope::WorkspacePath,
-                rectangle: harness_testkit::tui_fidelity::CellRect {
-                    col: 2,
-                    row: 1,
-                    cols: viewport.cols - 2,
-                    rows: 1,
-                },
-                source: workspace_source(viewport.cols - 2),
-                target: workspace_target(viewport.cols - 2),
-            });
-            if viewport.rows > 26 && viewport.cols >= 51 {
-                scenario.substitutions.push(IdentitySubstitution {
-                    checkpoint,
-                    scope: IdentityScope::ProviderName,
-                    rectangle: harness_testkit::tui_fidelity::CellRect {
-                        col: viewport.cols - 51,
-                        row: 26,
-                        cols: 46,
-                        rows: 1,
-                    },
-                    source: provider_source(),
-                    target: provider_target(),
-                });
-            }
-        }
-    }
-}
-
-fn identity_style(dim: bool) -> TextStyle {
-    TextStyle {
-        foreground: Rgb {
-            r: 216,
-            g: 216,
-            b: 216,
-        },
-        background: Rgb {
-            r: 18,
-            g: 18,
-            b: 18,
-        },
-        bold: false,
-        dim,
-        italic: false,
-        underline: false,
-        inverse: false,
-    }
-}
-
-fn workspace_source(width: u16) -> TextPlacement {
-    TextPlacement {
-        text: "<harness-workspace>".to_owned(),
-        cell_width: width,
-        padding_left: 0,
-        padding_right: 0,
-        style: identity_style(true),
-        wrapping: Wrapping::NoWrap,
-    }
-}
-
-fn workspace_target(width: u16) -> TextPlacement {
-    TextPlacement {
-        text: IdentityScope::WorkspacePath.placeholder().to_owned(),
-        cell_width: 10,
-        padding_left: 0,
-        padding_right: width - 10,
-        style: identity_style(true),
-        wrapping: Wrapping::NoWrap,
-    }
-}
-
-fn provider_source() -> TextPlacement {
-    TextPlacement {
-        text: "GPT 5.6 Luna (CLIProxy) (low) · always-approve".to_owned(),
-        cell_width: 46,
-        padding_left: 0,
-        padding_right: 0,
-        style: identity_style(false),
-        wrapping: Wrapping::NoWrap,
-    }
-}
-
-fn provider_target() -> TextPlacement {
-    TextPlacement {
-        text: IdentityScope::ProviderName.placeholder().to_owned(),
-        cell_width: 10,
-        padding_left: 0,
-        padding_right: 36,
-        style: identity_style(false),
-        wrapping: Wrapping::NoWrap,
-    }
-}
-
 fn read_registry(path: &Path) -> Result<Registry, RunnerError> {
     let input = fs::read_to_string(path).map_err(|error| RunnerError::Io {
         path: path.to_path_buf(),
@@ -257,7 +156,7 @@ fn read_registry(path: &Path) -> Result<Registry, RunnerError> {
 
 #[cfg(test)]
 mod tests {
-    use super::load_packet3;
+    use super::{load, load_packet3};
     use harness_testkit::tui_fidelity::ScenarioAction;
     use std::path::Path;
 
@@ -280,5 +179,24 @@ mod tests {
             action,
             ScenarioAction::WaitForText(wait) if wait.text == "Packet 3 recovery complete"
         )));
+    }
+
+    #[test]
+    fn packet6_composer_loads_all_required_viewports() {
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let cases = [
+            ("minimum-60x20", (60, 20)),
+            ("default-80x24", (80, 24)),
+            ("standard-100x30", (100, 30)),
+            ("wide-120x40", (120, 40)),
+            ("extra-wide-140x40", (140, 40)),
+        ];
+
+        for (label, expected) in cases {
+            let scenario = load(&format!("packet6-composer--{label}"), &repo_root)
+                .expect("Packet 6 composer viewport");
+            assert_eq!((scenario.viewport.cols, scenario.viewport.rows), expected);
+            assert_eq!(scenario.adapters.len(), 2);
+        }
     }
 }

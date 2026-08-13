@@ -132,7 +132,9 @@ REFERENCE_REVISION="$(jq -er '.reference.source_revision' "$AUTHORITY_FILE")"
 [[ -s "$REFERENCE_RECEIPT" && -x "$HARNESS_BIN" && -s "$CANDIDATE_RECEIPT" ]] \
   || fail "packet3 capture prerequisite missing: dual-runtime receipt or candidate binary"
 jq -e --arg revision "$REFERENCE_REVISION" --arg digest "$REFERENCE_SHA256" \
-  '.reference.source_revision == $revision and .reference.sha256 == $digest' "$REFERENCE_RECEIPT" >/dev/null \
+  '.schema_version == "harness.tui-fidelity.reference-binary-receipt.v1"
+   and .source.revision == $revision and .source.clean == true
+   and .binary.sha256 == $digest' "$REFERENCE_RECEIPT" >/dev/null \
   || fail "packet3 capture source mismatch: reference receipt authority binding"
 
 cargo build -p harness-testkit --bin tui-fidelity

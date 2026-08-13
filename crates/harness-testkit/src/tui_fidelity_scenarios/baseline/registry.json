@@ -109,6 +109,14 @@
   ],
   "scenarios": [
     {
+      "id": "packet6-composer",
+      "path": "src/tui_fidelity_scenarios/baseline/packet6-composer.json",
+      "state": "natural-composer-draft",
+      "owner_source_paths": [
+        "crates/harness-testkit/src/tui_fidelity_scenarios/baseline/packet6-composer.json"
+      ]
+    },
+    {
       "id": "canary-terminal-query",
       "path": "src/tui_fidelity_scenarios/baseline/canary-terminal-query.json",
       "state": "canary-static-terminal-query",

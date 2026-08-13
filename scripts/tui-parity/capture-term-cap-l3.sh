@@ -24,6 +24,7 @@ cd "$ROOT"
 
 EVIDENCE_DIR="${EVIDENCE_DIR:-artifacts/qa-evidence/20260717-tui-reference-parity/actual/harness-term-cap-v1}"
 DIR="harness-term-cap-v1"
+AUTHORITY_FILE="${AUTHORITY_FILE:-configs/tui-fidelity-reference-authority.json}"
 
 export TZ=UTC
 export LANG=C.UTF-8
@@ -83,11 +84,13 @@ fi
 if ! python3 -c '
 import json, sys
 receipt = json.load(open(sys.argv[1], encoding="utf-8"))
+authority = json.load(open(sys.argv[2], encoding="utf-8"))
+active = authority["reference"]["binary_sha256"]
+if receipt.get("reference_binary_digest") != active:
+    sys.exit("capability owner receipt is not bound to the active authority")
 if receipt.get("parity") is not True:
     sys.exit("parity conclusion is not true")
-if receipt.get("reference_binary_digest") != "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5":
-    sys.exit("reference binary digest mismatch")
-' "$DEST/term-cap-matrix.json"; then
+' "$DEST/term-cap-matrix.json" "$AUTHORITY_FILE"; then
   echo "FAIL: TERM-CAP parity receipt failed honesty checks" >&2
   exit 1
 fi
