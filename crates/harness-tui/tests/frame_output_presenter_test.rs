@@ -95,6 +95,37 @@ fn presenter_retains_dirty_work_across_writer_backpressure() {
 }
 
 #[test]
+fn immediate_presenter_priority_survives_resync_until_acceptance() {
+    // Given: immediate input dirtied a presenter whose first submission meets backpressure.
+    let now = std::time::Instant::now();
+    let mut presenter = Presenter::new();
+    presenter.request_immediate_redraw(now);
+
+    // When: the submission requires resynchronization and is then accepted.
+    presenter.record_submission(FrameSubmission::ResyncRequired, now);
+    let priority_after_resync = presenter.immediate_pending();
+    presenter.record_submission(FrameSubmission::Accepted(FrameKind::FullRepaint), now);
+
+    // Then: priority survives the retry but clears once physical work is accepted.
+    assert!(priority_after_resync);
+    assert!(!presenter.immediate_pending());
+}
+
+#[test]
+fn unchanged_immediate_submission_clears_presenter_priority() {
+    // Given: immediate input requests a frame whose cells ultimately do not change.
+    let now = std::time::Instant::now();
+    let mut presenter = Presenter::new();
+    presenter.request_immediate_redraw(now);
+
+    // When: the terminal backend reports an unchanged frame.
+    presenter.record_submission(FrameSubmission::Unchanged, now);
+
+    // Then: no immediate priority remains to suppress unrelated live work.
+    assert!(!presenter.immediate_pending());
+}
+
+#[test]
 fn presenter_preserves_coalesced_demand_until_submission() {
     // Given: two revision-bearing redraw requests arrive before presentation.
     let now = std::time::Instant::now();

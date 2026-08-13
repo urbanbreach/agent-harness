@@ -24,7 +24,7 @@ use crate::input::{
 use crate::presentation::{
     CauseId, InteractionId, PresentationCauseKind, PresentationClock, RenderDemand, RenderReason,
 };
-use crate::runtime_input::InputPresentation;
+use crate::runtime_input::{should_apply_live_update, InputPresentation};
 use crate::runtime_integration::RuntimeExperience;
 use crate::runtime_live_updates::{
     apply_live_update_quantum, live_update_channel, LiveUpdateDrainState, LiveUpdateReceiver,
@@ -661,7 +661,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                 },
             );
             let mut input_priority = matches!(decision, RuntimeDecision::TerminalInput);
-            if matches!(decision, RuntimeDecision::LiveUpdate) {
+            if should_apply_live_update(decision, &presenter, frame_ready) {
                 if let Some(update_rx) = live_updates.as_ref() {
                     let drain_state =
                         apply_live_update_quantum(&mut app, update_rx, &mut experience);

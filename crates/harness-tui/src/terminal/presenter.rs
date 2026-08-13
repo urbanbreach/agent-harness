@@ -11,6 +11,7 @@ pub struct Presenter {
     last_draw_at: Option<Instant>,
     scheduled_at: Option<Instant>,
     render_demand: Option<RenderDemand>,
+    immediate: bool,
 }
 
 impl Presenter {
@@ -21,6 +22,7 @@ impl Presenter {
             last_draw_at: None,
             scheduled_at: None,
             render_demand: None,
+            immediate: false,
         }
     }
 
@@ -29,6 +31,11 @@ impl Presenter {
         if self.scheduled_at.is_none() {
             self.scheduled_at = Some(now);
         }
+    }
+
+    pub fn request_immediate_redraw(&mut self, now: Instant) {
+        self.request_redraw(now);
+        self.immediate = true;
     }
 
     pub fn request_redraw_for(&mut self, demand: RenderDemand, now: Instant) {
@@ -53,6 +60,7 @@ impl Presenter {
             FrameSubmission::Accepted(kind) => {
                 self.dirty = false;
                 self.scheduled_at = None;
+                self.immediate = false;
                 if kind == FrameKind::FullRepaint {
                     self.force_full_repaint = false;
                 }
@@ -60,6 +68,7 @@ impl Presenter {
             FrameSubmission::Unchanged => {
                 self.dirty = false;
                 self.scheduled_at = None;
+                self.immediate = false;
             }
             FrameSubmission::ResyncRequired => {
                 self.dirty = true;
@@ -79,6 +88,10 @@ impl Presenter {
 
     pub const fn scheduled_at(&self) -> Option<Instant> {
         self.scheduled_at
+    }
+
+    pub const fn immediate_pending(&self) -> bool {
+        self.immediate
     }
 }
 

@@ -3,7 +3,7 @@ use std::time::Instant;
 use crossterm::event::MouseEventKind;
 
 use crate::event::TuiEvent;
-use crate::scheduling::RuntimePacer;
+use crate::scheduling::{RuntimeDecision, RuntimePacer};
 use crate::terminal::Presenter;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -40,10 +40,19 @@ impl InputPresentation {
             return;
         }
         match self {
-            Self::Immediate => presenter.request_redraw(now),
+            Self::Immediate => presenter.request_immediate_redraw(now),
             Self::Coalesced => pacer.request_flush(),
         }
     }
+}
+
+pub(crate) const fn should_apply_live_update(
+    decision: RuntimeDecision,
+    presenter: &Presenter,
+    frame_ready: bool,
+) -> bool {
+    matches!(decision, RuntimeDecision::LiveUpdate)
+        && !(presenter.immediate_pending() && presenter.should_present(frame_ready))
 }
 
 #[cfg(test)]
@@ -138,5 +147,54 @@ mod tests {
         assert!(presenter.should_present(true));
         assert_eq!(pacer.next_wait_ms(FrameNow::default()), None);
         assert!(!pacer.needs_poll(FrameNow::default(), MotionPlan::none()));
+    }
+
+    #[test]
+    fn ready_immediate_resize_presents_before_queued_live_quantum() {
+        // Given: a resize has requested immediate presentation while live work is queued.
+        let now = Instant::now();
+        let mut presenter = Presenter::new();
+        let mut pacer = RuntimePacer::new();
+        InputPresentation::for_event(&TuiEvent::Resize(160, 55)).request(
+            true,
+            &mut presenter,
+            &mut pacer,
+            now,
+        );
+        let decision = RuntimeDecision::LiveUpdate;
+
+        // When: production chooses whether to apply that live quantum before rendering.
+        let apply_live = super::should_apply_live_update(decision, &presenter, true);
+
+        // Then: the resize frame starts first instead of inheriting the live batch latency.
+        assert!(!apply_live);
+    }
+
+    #[test]
+    fn ordinary_dirty_presenter_does_not_suppress_live_quantum() {
+        // Given: ordinary non-input work dirtied a presenter while live work is selected.
+        let presenter = Presenter::new();
+
+        // When: production checks whether the selected live quantum may run.
+        let apply_live =
+            super::should_apply_live_update(RuntimeDecision::LiveUpdate, &presenter, true);
+
+        // Then: only typed immediate input priority can defer live work.
+        assert!(apply_live);
+    }
+
+    #[test]
+    fn blocked_immediate_presenter_does_not_busy_loop_a_live_quantum() {
+        // Given: immediate input is dirty while the capacity-one writer is unavailable.
+        let now = Instant::now();
+        let mut presenter = Presenter::new();
+        presenter.request_immediate_redraw(now);
+
+        // When: production checks the selected live quantum before writer acknowledgement.
+        let apply_live =
+            super::should_apply_live_update(RuntimeDecision::LiveUpdate, &presenter, false);
+
+        // Then: live work progresses until immediate presentation becomes possible.
+        assert!(apply_live);
     }
 }
