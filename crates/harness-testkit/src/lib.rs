@@ -6,6 +6,7 @@
 pub mod binary_receipt;
 pub mod fakes;
 pub mod parity;
+pub mod reference_authority_receipt;
 pub mod secret_scanner;
 pub mod simulation;
 pub mod tui_dependency_audit;

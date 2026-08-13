@@ -11,7 +11,7 @@ mod tui_fidelity_baseline;
 #[path = "tui_fidelity_commands/mod.rs"]
 mod tui_fidelity_commands;
 
-use harness_testkit::binary_receipt::read_receipt;
+use harness_testkit::reference_authority_receipt::ReferenceAuthorityReceipt;
 use harness_testkit::tui_fidelity::{AdapterKind, Scenario};
 use harness_testkit::tui_fidelity_cache::ReferenceCache;
 use harness_testkit::tui_fidelity_compare::AcceptanceProfile;
@@ -158,15 +158,24 @@ fn prepare_compare(
         other => tui_fidelity_baseline::load(other, repo_root)?,
     };
     let receipt_path = absolute_path(repo_root, &args.reference_receipt);
-    let receipt = read_receipt(&receipt_path).map_err(|error| RunnerError::BinaryReceipt {
-        path: receipt_path.clone(),
-        detail: error.to_string(),
+    let receipt = ReferenceAuthorityReceipt::read(&receipt_path).map_err(|error| {
+        RunnerError::BinaryReceipt {
+            path: receipt_path.clone(),
+            detail: error.to_string(),
+        }
     })?;
+    let reference_path = absolute_path(repo_root, &args.reference_bin);
+    receipt
+        .verify(repo_root, &reference_path, REFERENCE_REVISION)
+        .map_err(|error| RunnerError::BinaryReceipt {
+            path: receipt_path,
+            detail: error.to_string(),
+        })?;
     let reference = checked_binary(ExpectedBinary {
         adapter: AdapterKind::Grok,
-        path: &args.reference_bin,
-        revision: &receipt.reference.source_revision,
-        sha256: &receipt.reference.sha256,
+        path: &reference_path,
+        revision: receipt.revision(),
+        sha256: receipt.sha256(),
     })?;
     let candidate_sha = current_revision(repo_root)?;
     let candidate_receipt_path = absolute_path(repo_root, &args.candidate_receipt);
