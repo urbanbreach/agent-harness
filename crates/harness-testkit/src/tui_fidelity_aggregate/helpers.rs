@@ -1,4 +1,10 @@
-use super::*;
+use std::path::{Path, PathBuf};
+
+use sha2::{Digest, Sha256};
+
+use super::types::{Artifact, Run};
+use super::{AcceptanceProfile, AggregateError, AggregateSummary, Authority};
+use crate::tui_fidelity_compare::PresentationTimingMetrics;
 
 pub(super) fn summarize(
     authority: Authority,
@@ -38,11 +44,12 @@ pub(super) fn summarize(
             }
             AcceptanceProfile::Packet2Scheduling => {
                 if run.authority.scenario_id == "packet2-sustained-stream" {
-                    check_packet2_gaps(
-                        &run.metrics.candidate,
-                        run.candidate_active_window,
-                        &run.candidate_send_timestamps,
-                    )?;
+                    run.packet2_contract
+                        .as_ref()
+                        .ok_or_else(|| {
+                            AggregateError::Threshold("Packet 2 contract missing".into())
+                        })?
+                        .check_gaps(&run.metrics.candidate, run.candidate_active_window)?;
                 } else {
                     check_gap(&run.metrics.candidate, run.candidate_active_window)?;
                 }
@@ -81,42 +88,6 @@ pub(super) fn summarize(
         idle_redraws: idle,
         artifact_sha256: runs.iter().flat_map(|run| run.artifacts.clone()).collect(),
     })
-}
-
-fn check_packet2_gaps(
-    metrics: &PresentationTimingMetrics,
-    active_window: Option<(u64, u64)>,
-    sends: &[u64],
-) -> Result<(), AggregateError> {
-    const FAST_CADENCE_MICROS: u64 = 16_000;
-    const STREAM_CADENCE_MICROS: u64 = 33_000;
-    let Some(active_window) = active_window else {
-        return Err(AggregateError::Threshold(
-            "Packet 2 active window is missing".into(),
-        ));
-    };
-    for window in metrics.external_observation_timestamps_micros.windows(2) {
-        if window[0] < active_window.0 || window[1] > active_window.1 {
-            continue;
-        }
-        let sends_in_gap = sends
-            .iter()
-            .copied()
-            .filter(|sent| *sent >= window[0] && *sent <= window[1])
-            .collect::<Vec<_>>();
-        if let Some(last_send) = sends_in_gap.last() {
-            if window[1].saturating_sub(*last_send) > FAST_CADENCE_MICROS.saturating_mul(2) {
-                return Err(AggregateError::Threshold(
-                    "input response gap exceeds twice 16 ms cadence".into(),
-                ));
-            }
-        } else if window[1].saturating_sub(window[0]) > STREAM_CADENCE_MICROS.saturating_mul(2) {
-            return Err(AggregateError::Threshold(
-                "streaming gap exceeds twice 33 ms cadence".into(),
-            ));
-        }
-    }
-    Ok(())
 }
 
 fn collect(

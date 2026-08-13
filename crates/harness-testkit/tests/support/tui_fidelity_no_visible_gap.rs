@@ -10,14 +10,12 @@ fn no_visible_send_does_not_create_input_response_tail() {
 }
 
 #[test]
-fn visible_send_with_same_timestamps_still_fails_fast_cadence() {
+fn visible_send_external_tail_uses_native_physical_latency() {
     let fixture = AggregateFixture::new_packet2();
     configure_gap(&fixture, "visible_change", Some(1));
 
-    let error = aggregate_with_profile(&fixture.roots, AcceptanceProfile::Packet2Scheduling)
-        .expect_err("visible input with 60ms response tail rejected");
-
-    assert!(error.to_string().contains("16 ms cadence"));
+    aggregate_with_profile(&fixture.roots, AcceptanceProfile::Packet2Scheduling)
+        .expect("external transport tail is not the physical input endpoint");
 }
 
 #[test]
@@ -40,20 +38,25 @@ fn mixed_native_outcomes_remain_visible() {
     configure_gap(&fixture, "no_visible_change", None);
     for root in &fixture.roots {
         mutate_json(&root.join("receipt.json"), |receipt| {
-            receipt["runtimes"][1]["presentation"]["native"]["causes"]
+            let causes = receipt["runtimes"][1]["presentation"]["native"]["causes"]
                 .as_array_mut()
-                .expect("causes")
-                .push(serde_json::json!({
-                    "interaction_id":"scenario:action:0","resulting_revision":1,
-                    "outcome":"visible_change"
-                }));
+                .expect("causes");
+            causes[1]["resulting_revision"] = serde_json::Value::Null;
+            causes[1]["outcome"] = serde_json::json!("no_visible_change");
+            causes.push(serde_json::json!({
+                "cause_id":"cause:2","interaction_id":"scenario:action:1",
+                "received_at":201,"kind":"terminal_input","resulting_revision":2,
+                "outcome":"visible_change"
+            }));
+            receipt["runtimes"][1]["presentation"]["native"]["acknowledgements"][1]
+                ["acknowledged_at"] = serde_json::json!(32_202);
         });
     }
 
     let error = aggregate_with_profile(&fixture.roots, AcceptanceProfile::Packet2Scheduling)
         .expect_err("mixed outcome send remains visible");
 
-    assert!(error.to_string().contains("16 ms cadence"));
+    assert!(error.to_string().contains("32000 microseconds"));
 }
 
 #[test]
@@ -87,9 +90,11 @@ fn configure_gap(fixture: &AggregateFixture, first_outcome: &str, first_revision
                 sends[1]["sent_at"] = serde_json::json!(100_000);
             }
             receipt["runtimes"][1]["presentation"]["native"]["causes"] = serde_json::json!([
-                {"interaction_id":"scenario:action:0","resulting_revision":first_revision,
+                {"cause_id":"cause:1","interaction_id":"scenario:action:0",
+                 "received_at":1,"kind":"terminal_input","resulting_revision":first_revision,
                  "outcome":first_outcome},
-                {"interaction_id":"scenario:action:1","resulting_revision":2,
+                {"cause_id":"cause:2","interaction_id":"scenario:action:1",
+                 "received_at":201,"kind":"terminal_input","resulting_revision":2,
                  "outcome":"visible_change"}
             ]);
         });

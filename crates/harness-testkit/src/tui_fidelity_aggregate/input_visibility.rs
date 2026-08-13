@@ -1,30 +1,55 @@
-use super::*;
+use std::path::Path;
+
+use serde::Deserialize;
+
+use super::helpers::evidence;
+use super::types::InputSend;
+use super::AggregateError;
 
 #[derive(Deserialize)]
 pub(super) struct Native {
     pub(super) aggregates: NativeAggregates,
     pub(super) acknowledgements: Vec<NativeAcknowledgement>,
     #[serde(default)]
-    causes: Vec<NativeCause>,
+    pub(super) causes: Vec<NativeCause>,
+    #[serde(default)]
+    pub(super) frames: Vec<NativeFrame>,
 }
 
 #[derive(Deserialize)]
-struct NativeCause {
-    interaction_id: Option<String>,
-    resulting_revision: Option<u64>,
-    outcome: NativeCauseOutcome,
+pub(super) struct NativeCause {
+    #[serde(default)]
+    pub(super) cause_id: String,
+    pub(super) interaction_id: Option<String>,
+    #[serde(default)]
+    pub(super) received_at: u64,
+    #[serde(default)]
+    pub(super) kind: String,
+    pub(super) resulting_revision: Option<u64>,
+    pub(super) outcome: NativeCauseOutcome,
 }
 
 #[derive(Clone, Copy, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-enum NativeCauseOutcome {
+pub(super) enum NativeCauseOutcome {
     VisibleChange,
     NoVisibleChange,
 }
 
 #[derive(Deserialize)]
 pub(super) struct NativeAcknowledgement {
+    #[serde(default)]
+    pub(super) sequence: u64,
+    #[serde(default)]
+    pub(super) acknowledged_at: u64,
     pub(super) outcome: NativeAcknowledgementOutcome,
+}
+
+#[derive(Deserialize)]
+pub(super) struct NativeFrame {
+    pub(super) sequence: u64,
+    pub(super) revision: u64,
+    pub(super) cause_ids: Vec<String>,
 }
 
 #[derive(Clone, Copy, Deserialize, PartialEq, Eq)]

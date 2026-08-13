@@ -12,6 +12,8 @@ use sha2::{Digest, Sha256};
 
 #[path = "support/tui_fidelity_no_visible_gap.rs"]
 mod tui_fidelity_no_visible_gap;
+#[path = "support/tui_fidelity_packet2_physical.rs"]
+mod tui_fidelity_packet2_physical;
 
 #[test]
 fn five_matching_fresh_runs_aggregate() {
@@ -235,15 +237,24 @@ fn packet2_profile_rejects_run_count_timing_idle_backlog_and_native_proof_defect
     .expect("66ms semantic streaming gap accepted");
     let handshake_wait = AggregateFixture::new_packet2();
     configure_packet2_handshake_gap(&handshake_wait, 100_000, 20_000);
-    aggregate_with_profile(&handshake_wait.roots, AcceptanceProfile::Packet2Scheduling)
-        .expect("pre-input handshake wait with fast response accepted");
+    assert!(
+        aggregate_with_profile(&handshake_wait.roots, AcceptanceProfile::Packet2Scheduling)
+            .expect_err("unexplained external cadence gap remains rejected")
+            .to_string()
+            .contains("33 ms cadence")
+    );
     let response_defect = AggregateFixture::new_packet2();
-    configure_packet2_handshake_gap(&response_defect, 100_000, 32_001);
+    for root in &response_defect.roots {
+        mutate_json(&root.join("receipt.json"), |receipt| {
+            receipt["runtimes"][1]["presentation"]["native"]["acknowledgements"][1]
+                ["acknowledged_at"] = serde_json::json!(32_202);
+        });
+    }
     assert!(
         aggregate_with_profile(&response_defect.roots, AcceptanceProfile::Packet2Scheduling)
-            .expect_err("slow post-send response rejected")
+            .expect_err("slow native receive to completed write rejected")
             .to_string()
-            .contains("16 ms cadence")
+            .contains("32000 microseconds")
     );
     let semantic_defect = AggregateFixture::new_packet2();
     configure_packet2_semantic_gap(&semantic_defect, 66_001);
@@ -286,7 +297,7 @@ fn packet2_profile_rejects_run_count_timing_idle_backlog_and_native_proof_defect
         aggregate_with_profile(&native.roots, AcceptanceProfile::Packet2Scheduling)
             .expect_err("completed write proof required")
             .to_string()
-            .contains("completed_write")
+            .contains("completed write")
     );
 }
 
@@ -453,10 +464,17 @@ fn write_run(root: &Path) {
              "presentation_binding":binding},
             {"adapter":"harness","binary":{"sha256":"2".repeat(64)},
              "presentation":{"kind":"harness_native","external":external(&harness_artifacts),
-                "native":{"aggregates":{"idle_redraws":0},"acknowledgements":[{"outcome":"completed_write"}],
+                "native":{"aggregates":{"idle_redraws":0},"acknowledgements":[
+                    {"sequence":1,"acknowledged_at":20,"outcome":"completed_write"},
+                    {"sequence":2,"acknowledged_at":220,"outcome":"completed_write"}
+                ],
                     "causes":[
-                        {"interaction_id":"scenario:action:0","resulting_revision":1,"outcome":"visible_change"},
-                        {"interaction_id":"scenario:action:1","resulting_revision":2,"outcome":"visible_change"}
+                        {"cause_id":"cause:1","interaction_id":"scenario:action:0","received_at":1,"kind":"terminal_input","resulting_revision":1,"outcome":"visible_change"},
+                        {"cause_id":"cause:2","interaction_id":"scenario:action:1","received_at":201,"kind":"terminal_input","resulting_revision":2,"outcome":"visible_change"}
+                    ],
+                    "frames":[
+                        {"sequence":1,"revision":1,"cause_ids":["cause:1"]},
+                        {"sequence":2,"revision":2,"cause_ids":["cause:2"]}
                     ]},
                 "native_trace_artifact":{"path":native_sidecar,"sha256":digest(&native_sidecar)}},
              "presentation_binding":binding}
