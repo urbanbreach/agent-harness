@@ -1,130 +1,8 @@
-use std::cmp::Ordering;
-
+use crate::terminal::FrameSubmission;
 use crate::terminal::{TerminalMultiplexer, TerminalName};
 
-use super::{FrameInputs, FrameNow, FrameReason, FrameScheduler};
-
-pub const MAX_WHEEL_STEPS_PER_FLUSH: u8 = 8;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum WheelDirection {
-    Up,
-    Down,
-}
-
-impl WheelDirection {
-    const fn delta(self) -> i16 {
-        match self {
-            Self::Up => -1,
-            Self::Down => 1,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct WheelSample {
-    direction: WheelDirection,
-    steps: u8,
-    column: u16,
-    row: u16,
-}
-
-impl WheelSample {
-    pub const fn new(direction: WheelDirection, column: u16, row: u16) -> Self {
-        Self {
-            direction,
-            steps: 1,
-            column,
-            row,
-        }
-    }
-
-    pub const fn logical(direction: WheelDirection, steps: u8, column: u16, row: u16) -> Self {
-        Self {
-            direction,
-            steps,
-            column,
-            row,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct WheelBatch {
-    direction: WheelDirection,
-    steps: u8,
-    column: u16,
-    row: u16,
-}
-
-impl WheelBatch {
-    pub const fn direction(self) -> WheelDirection {
-        self.direction
-    }
-
-    pub const fn steps(self) -> u8 {
-        self.steps
-    }
-
-    pub const fn column(self) -> u16 {
-        self.column
-    }
-
-    pub const fn row(self) -> u16 {
-        self.row
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct WheelAccumulator {
-    delta: i16,
-    column: u16,
-    row: u16,
-    events_per_step: u8,
-}
-
-impl WheelAccumulator {
-    fn push(&mut self, sample: WheelSample) {
-        let cap =
-            i16::from(MAX_WHEEL_STEPS_PER_FLUSH).saturating_mul(i16::from(self.events_per_step));
-        self.delta = self
-            .delta
-            .saturating_add(
-                sample
-                    .direction
-                    .delta()
-                    .saturating_mul(i16::from(sample.steps)),
-            )
-            .clamp(-cap, cap);
-        self.column = sample.column;
-        self.row = sample.row;
-    }
-
-    const fn is_pending(self) -> bool {
-        self.delta != 0
-    }
-
-    fn take(&mut self) -> Option<WheelBatch> {
-        let delta = std::mem::take(&mut self.delta);
-        let direction = match delta.cmp(&0) {
-            Ordering::Less => WheelDirection::Up,
-            Ordering::Equal => return None,
-            Ordering::Greater => WheelDirection::Down,
-        };
-        let raw_steps = delta.unsigned_abs();
-        let divisor = u16::from(self.events_per_step);
-        let logical_steps = raw_steps.div_ceil(divisor);
-        let steps = u8::try_from(logical_steps)
-            .unwrap_or(MAX_WHEEL_STEPS_PER_FLUSH)
-            .min(MAX_WHEEL_STEPS_PER_FLUSH);
-        Some(WheelBatch {
-            direction,
-            steps,
-            column: self.column,
-            row: self.row,
-        })
-    }
-}
+use super::runtime_wheel::{WheelAccumulator, WheelBatch, WheelSample};
+use super::{FrameInputs, FrameNow, FrameReason, FrameScheduler, MotionPlan};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct RuntimePacerAction {
@@ -145,6 +23,7 @@ pub struct RuntimePacer {
     scheduler: FrameScheduler,
     flush_requested: bool,
     wheel: WheelAccumulator,
+    suppressed_periodic: Option<(super::MotionCadence, u64, u64)>,
 }
 
 impl RuntimePacer {
@@ -171,12 +50,8 @@ impl RuntimePacer {
         Self {
             scheduler: FrameScheduler::with_reduced_motion(reduced_motion),
             flush_requested: false,
-            wheel: WheelAccumulator {
-                delta: 0,
-                column: 0,
-                row: 0,
-                events_per_step,
-            },
+            wheel: WheelAccumulator::new(events_per_step),
+            suppressed_periodic: None,
         }
     }
 
@@ -188,12 +63,14 @@ impl RuntimePacer {
         self.wheel.push(sample);
     }
 
-    pub fn poll(&mut self, now: FrameNow, animation_active: bool) -> RuntimePacerAction {
+    pub fn poll(&mut self, now: FrameNow, motion: impl Into<MotionPlan>) -> RuntimePacerAction {
+        let motion = motion.into();
+        let effective_motion = self.effective_motion(motion);
         let flush_pending = self.flush_requested || self.wheel.is_pending();
         let decision = self.scheduler.schedule(
             now,
             FrameInputs {
-                animation_active,
+                motion: effective_motion,
                 flush_requested: flush_pending,
             },
         );
@@ -208,7 +85,7 @@ impl RuntimePacer {
                     self.release_flush(&mut action);
                 }
                 FrameReason::ReducedMotion => {
-                    action.advance_animation = animation_active;
+                    action.advance_animation = !effective_motion.is_none();
                     self.release_flush(&mut action);
                 }
                 FrameReason::AnimationPending
@@ -238,13 +115,37 @@ impl RuntimePacer {
         }
     }
 
-    pub fn needs_poll(&self, now: FrameNow, animation_active: bool) -> bool {
+    pub fn needs_poll(&self, now: FrameNow, motion: impl Into<MotionPlan>) -> bool {
+        let motion = self.effective_motion(motion.into());
         let flush_pending = self.flush_requested || self.wheel.is_pending();
         let flush_unarmed = flush_pending && self.scheduler.flush_deadline().is_none();
-        let animation_unarmed = animation_active && self.scheduler.animation_deadline().is_none();
+        let animation_unarmed = !motion.is_none() && self.scheduler.animation_deadline().is_none();
         flush_unarmed
             || animation_unarmed
             || self.next_wait_ms(now).is_some_and(|millis| millis == 0)
+    }
+
+    pub fn record_submission(&mut self, submission: FrameSubmission, motion: MotionPlan) {
+        match submission {
+            FrameSubmission::Unchanged if motion.cadence().interval().is_some() => {
+                self.suppressed_periodic =
+                    Some((motion.cadence(), motion.revision(), motion.visual_sample()));
+            }
+            FrameSubmission::Accepted(_) | FrameSubmission::ResyncRequired => {
+                self.suppressed_periodic = None;
+            }
+            FrameSubmission::Unchanged => {}
+        }
+    }
+
+    fn effective_motion(&self, motion: MotionPlan) -> MotionPlan {
+        if self.suppressed_periodic
+            == Some((motion.cadence(), motion.revision(), motion.visual_sample()))
+        {
+            motion.without_cadence()
+        } else {
+            motion
+        }
     }
 
     fn release_flush(&mut self, action: &mut RuntimePacerAction) {

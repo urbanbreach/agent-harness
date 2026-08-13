@@ -1,5 +1,5 @@
 use crate::design_contract::{MotionKind, DESIGN_TOKENS};
-use crate::scheduling::{FrameDecision, FrameInputs, FrameNow, FrameScheduler};
+use crate::scheduling::{FrameDecision, FrameNow};
 use crate::shell_geometry::layout_for_rect;
 use crate::transcript_blocks::{BlockKind, BlockLifecycle};
 use crate::transcript_identity::{BlockId, TranscriptIdentity};
@@ -37,19 +37,20 @@ pub struct LifecycleFrame {
 #[derive(Debug, Clone, Copy)]
 struct LifecycleEntry {
     snapshot: LifecycleSnapshot,
+    started_at_ms: Option<u64>,
 }
 
 #[derive(Debug)]
 pub struct LifecycleCoordinator {
-    scheduler: FrameScheduler,
     entries: Vec<LifecycleEntry>,
+    reduced_motion: bool,
 }
 
 impl LifecycleCoordinator {
     pub const fn new(reduced_motion: bool) -> Self {
         Self {
-            scheduler: FrameScheduler::with_reduced_motion(reduced_motion),
             entries: Vec::new(),
+            reduced_motion,
         }
     }
 
@@ -68,10 +69,14 @@ impl LifecycleCoordinator {
         {
             if entry.snapshot.lifecycle != lifecycle || entry.snapshot.kind != kind {
                 entry.snapshot = next;
+                entry.started_at_ms = None;
             }
             return;
         }
-        self.entries.push(LifecycleEntry { snapshot: next });
+        self.entries.push(LifecycleEntry {
+            snapshot: next,
+            started_at_ms: None,
+        });
     }
 
     pub fn remove_missing(&mut self, present: &[BlockId]) {
@@ -80,7 +85,7 @@ impl LifecycleCoordinator {
     }
 
     pub fn set_reduced_motion(&mut self, reduced_motion: bool) {
-        self.scheduler.set_reduced_motion(reduced_motion);
+        self.reduced_motion = reduced_motion;
         if reduced_motion {
             for entry in &mut self.entries {
                 entry.snapshot.frame = 0;
@@ -89,29 +94,26 @@ impl LifecycleCoordinator {
     }
 
     pub const fn reduced_motion(&self) -> bool {
-        self.scheduler.reduced_motion()
+        self.reduced_motion
     }
 
     pub fn tick(&mut self, now: FrameNow) -> LifecycleFrame {
         let animation_active = self.animation_active();
-        let decision = self.scheduler.schedule(
-            now,
-            FrameInputs {
-                animation_active,
-                flush_requested: false,
-            },
-        );
-        if decision.is_some_and(|frame| frame.render) && animation_active && !self.reduced_motion()
-        {
-            for entry in &mut self.entries {
-                if entry.snapshot.phase.is_active() && is_animated(entry.snapshot.kind) {
-                    let frames = frames_for(entry.snapshot.kind);
-                    entry.snapshot.frame = entry.snapshot.frame.wrapping_add(1) % frames.max(1);
-                }
+        for entry in &mut self.entries {
+            if entry.snapshot.phase.is_active() && is_animated(entry.snapshot.kind) {
+                let started_at = *entry.started_at_ms.get_or_insert(now.animation_ms);
+                let frames = u64::from(frames_for(entry.snapshot.kind).max(1));
+                let interval = interval_for(entry.snapshot.kind).max(1);
+                let elapsed_frames = now.animation_ms.saturating_sub(started_at) / interval;
+                entry.snapshot.frame = if self.reduced_motion {
+                    0
+                } else {
+                    u8::try_from(elapsed_frames % frames).unwrap_or_default()
+                };
             }
         }
         LifecycleFrame {
-            decision,
+            decision: None,
             animation_active,
             states: self.entries.iter().map(|entry| entry.snapshot).collect(),
         }
@@ -133,6 +135,17 @@ impl LifecycleCoordinator {
             .find(|entry| entry.snapshot.block_id == block_id)
             .map(|entry| entry.snapshot)
     }
+}
+
+fn interval_for(kind: BlockKind) -> u64 {
+    let _ = kind;
+    let motion = MotionKind::ActiveTick;
+    DESIGN_TOKENS
+        .motion_tokens
+        .all
+        .iter()
+        .find(|token| token.kind == motion)
+        .map_or(33, |token| u64::from(token.interval_ms))
 }
 
 fn phase_for(lifecycle: BlockLifecycle) -> LifecyclePhase {

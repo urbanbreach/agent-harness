@@ -402,7 +402,10 @@ fn build_assistant_render_surfaces(
             if theme.glyph_mode() == crate::theme::GlyphMode::Ascii {
                 theme.live_shell.glyphs.streaming
             } else {
-                transcript_streaming_spinner_frame(turn.animation_phase)
+                transcript_streaming_spinner_frame_with_motion(
+                    turn.animation_phase,
+                    turn.motion_enabled,
+                )
             },
             agent_accent,
             "active",
@@ -1880,6 +1883,7 @@ mod tests {
             show_footer: false,
             footer_timestamp: None,
             animation_phase: 0,
+            motion_enabled: false,
             reasoning_expanded: false,
             header: super::super::TranscriptTurnHeader {
                 status: ActivityStatus::Done,
@@ -2246,6 +2250,7 @@ mod tests {
             show_footer: false,
             footer_timestamp: None,
             animation_phase: 0,
+            motion_enabled: false,
             reasoning_expanded: false,
             header: super::super::TranscriptTurnHeader {
                 status: ActivityStatus::Done,
@@ -2367,6 +2372,7 @@ mod tests {
             show_footer: false,
             footer_timestamp: None,
             animation_phase: 0,
+            motion_enabled: false,
             reasoning_expanded: false,
             header: super::super::TranscriptTurnHeader {
                 status: ActivityStatus::Done,

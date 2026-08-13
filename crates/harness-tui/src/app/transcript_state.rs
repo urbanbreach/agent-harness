@@ -31,15 +31,19 @@ pub(crate) enum ToastVariant {
 pub(crate) struct ToastState {
     pub message: String,
     pub variant: ToastVariant,
-    remaining_frames: u16,
+    expires_at: Instant,
+    paused_remaining: Option<Duration>,
 }
 
 impl ToastState {
-    pub(crate) fn fade_alpha(&self) -> f32 {
-        if self.variant != ToastVariant::Mode || self.remaining_frames > 9 {
+    pub(crate) fn fade_alpha(&self, now: Instant) -> f32 {
+        let remaining = self
+            .paused_remaining
+            .unwrap_or_else(|| self.expires_at.saturating_duration_since(now));
+        if self.variant != ToastVariant::Mode || remaining > Duration::from_millis(297) {
             1.0
         } else {
-            f32::from(self.remaining_frames) / 9.0
+            (remaining.as_secs_f32() / 0.297).clamp(0.0, 1.0)
         }
     }
 }
@@ -530,9 +534,7 @@ impl AppState {
     }
 
     pub(crate) fn advance_transcript_animation_phase(&mut self) {
-        self.advance_transcript_animation_phase_with_motion(
-            std::env::var_os("HARNESS_DISABLE_ANIMATIONS").is_none(),
-        );
+        self.advance_transcript_animation_phase_with_motion(!self.reduced_motion);
     }
 
     fn advance_transcript_animation_phase_with_motion(&mut self, motion_enabled: bool) {
@@ -549,15 +551,8 @@ impl AppState {
             self.bump_transcript_render_epoch();
         }
         self.clear_expired_interrupt_confirmation();
-        let toast_occluded = self.overlay_stack().top().is_some();
-        if !toast_occluded {
-            if let Some(toast) = self.toast.as_mut() {
-                toast.remaining_frames = toast.remaining_frames.saturating_sub(1);
-                if toast.remaining_frames == 0 {
-                    self.toast = None;
-                }
-            }
-        }
+        self.refresh_toast_motion(now);
+        #[cfg(test)]
         if let Some(composite) = self.transcript_integration.as_mut() {
             let animation_ms = u64::try_from(self.transcript_view.transcript_animation_phase)
                 .unwrap_or(u64::MAX)
@@ -592,13 +587,7 @@ impl AppState {
     }
 
     pub(crate) fn has_active_animations(&self) -> bool {
-        let motion_enabled = std::env::var_os("HARNESS_DISABLE_ANIMATIONS").is_none();
-        self.has_active_animations_with_motion(motion_enabled)
-    }
-
-    fn has_active_animations_with_motion(&self, motion_enabled: bool) -> bool {
-        self.animation_tick_interval_with_motion(motion_enabled)
-            .is_some()
+        !self.motion_plan().is_none()
     }
 
     pub(crate) fn starting_session_seed_visible(&self) -> bool {
@@ -615,7 +604,17 @@ impl AppState {
     }
 
     pub fn has_active_animations_with_motion_for_evidence(&self, motion_enabled: bool) -> bool {
-        self.has_active_animations_with_motion(motion_enabled)
+        let plan = self.motion_plan();
+        plan.until().is_some() || (motion_enabled && plan.cadence().interval().is_some())
+    }
+
+    pub fn animation_tick_interval_with_motion_for_evidence(
+        &self,
+        motion_enabled: bool,
+    ) -> Option<Duration> {
+        motion_enabled
+            .then(|| self.motion_plan().cadence().interval())
+            .flatten()
     }
 
     pub(crate) fn tool_finish_flash_elapsed(&self, tool_call_id: &str) -> Option<Duration> {
@@ -1021,26 +1020,77 @@ fn block_lifecycle(status: ActivityStatus) -> BlockLifecycle {
 
 impl AppState {
     pub(crate) fn show_toast(&mut self, message: impl Into<String>, variant: ToastVariant) {
+        let now = self.now();
         self.toast = Some(ToastState {
             message: message.into(),
             variant,
-            remaining_frames: 90,
+            expires_at: now + Duration::from_secs(2),
+            paused_remaining: None,
         });
+        self.motion_revision = self.motion_revision.wrapping_add(1);
     }
 
     pub(in crate::app) fn show_mode_banner(&mut self, message: impl Into<String>) {
+        let now = self.now();
         self.toast = Some(ToastState {
             message: message.into(),
             variant: ToastVariant::Mode,
-            remaining_frames: 69,
+            expires_at: now + Duration::from_millis(2_277),
+            paused_remaining: None,
         });
+        self.motion_revision = self.motion_revision.wrapping_add(1);
     }
 
     pub fn mode_banner_alpha_for_evidence(&self) -> Option<f32> {
         self.toast
             .as_ref()
             .filter(|toast| toast.variant == ToastVariant::Mode)
-            .map(ToastState::fade_alpha)
+            .map(|toast| toast.fade_alpha(self.now()))
+    }
+
+    pub(crate) fn toast_fade_alpha(&self) -> Option<f32> {
+        self.toast
+            .as_ref()
+            .map(|toast| toast.fade_alpha(self.now()))
+    }
+
+    pub(in crate::app) fn refresh_toast_motion(&mut self, now: Instant) -> bool {
+        let occluded = self.overlay_stack().top().is_some();
+        let Some(toast) = self.toast.as_mut() else {
+            return false;
+        };
+        match (occluded, toast.paused_remaining) {
+            (true, None) => {
+                toast.paused_remaining = Some(toast.expires_at.saturating_duration_since(now));
+            }
+            (false, Some(remaining)) => {
+                toast.expires_at = now + remaining;
+                toast.paused_remaining = None;
+            }
+            _ => {}
+        }
+        if !occluded && now >= toast.expires_at {
+            self.toast = None;
+            return true;
+        }
+        false
+    }
+
+    pub(in crate::app) fn toast_motion_remaining(&self, now: Instant) -> Option<Duration> {
+        self.toast.as_ref().and_then(|toast| {
+            toast
+                .paused_remaining
+                .is_none()
+                .then(|| toast.expires_at.saturating_duration_since(now))
+        })
+    }
+
+    pub(in crate::app) fn toast_requires_fade(&self, now: Instant) -> bool {
+        self.toast.as_ref().is_some_and(|toast| {
+            toast.variant == ToastVariant::Mode
+                && toast.paused_remaining.is_none()
+                && toast.expires_at.saturating_duration_since(now) <= Duration::from_millis(297)
+        })
     }
 
     pub(crate) fn toast(&self) -> Option<&ToastState> {
@@ -1221,25 +1271,26 @@ mod toast_tests {
     use super::*;
 
     #[test]
-    fn ambient_toast_lasts_ninety_ticks_and_pauses_behind_overlays() {
+    fn ambient_toast_uses_wall_clock_and_pauses_behind_overlays() {
         // arrange
         // act
         // assert
         let mut app = AppState::new_live(None, false, None);
+        app.freeze_now_for_animation_evidence();
         app.show_toast("Saved", ToastVariant::Info);
-        assert_eq!(app.toast().map(|toast| toast.remaining_frames), Some(90));
+        assert!(app.toast().is_some());
 
-        for _ in 0..45 {
+        for _ in 0..30 {
             app.advance_animation_tick_for_evidence();
         }
         app.palette_visible = true;
         for _ in 0..30 {
             app.advance_animation_tick_for_evidence();
         }
-        assert_eq!(app.toast().map(|toast| toast.remaining_frames), Some(45));
+        assert!(app.toast().is_some());
 
         app.palette_visible = false;
-        for _ in 0..45 {
+        for _ in 0..31 {
             app.advance_animation_tick_for_evidence();
         }
         assert!(app.toast().is_none());

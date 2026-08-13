@@ -5,7 +5,6 @@ use std::time::{Duration, Instant};
 use super::transcript_cache::TranscriptRenderCache;
 use super::transcript_viewport::MeasuredTranscriptViewport;
 use super::{AppState, TranscriptScrollbarDragState};
-use crate::design_contract::{MotionKind, DESIGN_TOKENS};
 use crate::transcript_scroll::PageFlipState;
 use crate::ui::{TranscriptContentAnchor, TranscriptMouseTarget, TranscriptSelection};
 
@@ -21,15 +20,6 @@ pub(super) const fn active_turn_motion_demand(
     } else {
         true
     }
-}
-
-fn motion_token(kind: MotionKind) -> Option<crate::design_contract::MotionToken> {
-    DESIGN_TOKENS
-        .motion_tokens
-        .all
-        .iter()
-        .find(|token| token.kind == kind)
-        .copied()
 }
 
 #[derive(Debug, Default)]
@@ -101,73 +91,20 @@ impl ToolMotionTracker {
     pub(crate) fn has_finish_flash(&self) -> bool {
         !self.finish_flashes.is_empty()
     }
-}
 
-/// The cadence requested by the currently visible TUI state.
-///
-/// `None` intentionally leaves no timer armed. `Slow` is reserved for the
-/// welcome shimmer; turn status and state-expiry work use the 30 Hz root tick.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum AnimationTickDemand {
-    None,
-    Slow,
-    Active,
-    ToolPulse,
-    ToolFinishFlash,
-}
-
-impl AnimationTickDemand {
-    fn interval(self) -> Option<Duration> {
-        let kind = match self {
-            Self::None => None,
-            Self::Slow => Some(MotionKind::StartupShimmer),
-            Self::Active => Some(MotionKind::ActiveTick),
-            Self::ToolPulse => Some(MotionKind::ToolPulse),
-            Self::ToolFinishFlash => Some(MotionKind::ToolFinishFlash),
-        }?;
-        motion_token(kind).map(|token| Duration::from_millis(u64::from(token.interval_ms)))
-    }
-}
-
-impl AppState {
-    /// Returns the next animation-tick interval, or `None` when the terminal
-    /// loop should park its animation timer.
-    pub(crate) fn animation_tick_interval(&self) -> Option<Duration> {
-        self.animation_tick_interval_with_motion(
-            std::env::var_os("HARNESS_DISABLE_ANIMATIONS").is_none(),
-        )
+    pub(crate) fn clear_finish_flashes(&mut self) {
+        self.finish_flashes.clear();
     }
 
-    pub(crate) fn animation_tick_interval_with_motion(
+    pub(crate) fn earliest_finish_flash_remaining(
         &self,
-        motion_enabled: bool,
+        now: Instant,
+        duration: Duration,
     ) -> Option<Duration> {
-        if self.transcript_view.tool_motion.has_finish_flash() {
-            return AnimationTickDemand::ToolFinishFlash.interval();
-        }
-        if self.toast.is_some() || self.interrupt_confirmation_pending() {
-            return AnimationTickDemand::Active.interval();
-        }
-
-        if !motion_enabled {
-            return AnimationTickDemand::None.interval();
-        }
-
-        if self.active_turn_tool_motion_demand() {
-            return AnimationTickDemand::ToolPulse.interval();
-        }
-        if self.starting_session_seed_visible() || self.active_background_task_count() > 0 {
-            return AnimationTickDemand::Active.interval();
-        }
-
-        AnimationTickDemand::None.interval()
-    }
-
-    pub fn animation_tick_interval_with_motion_for_evidence(
-        &self,
-        motion_enabled: bool,
-    ) -> Option<Duration> {
-        self.animation_tick_interval_with_motion(motion_enabled)
+        self.finish_flashes
+            .values()
+            .map(|started_at| duration.saturating_sub(now.saturating_duration_since(*started_at)))
+            .min()
     }
 }
 
@@ -243,50 +180,7 @@ impl Default for TranscriptViewState {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
-    use super::super::{AppState, ToastVariant};
     use super::{active_turn_motion_demand, ToolMotionTracker};
-
-    #[test]
-    fn animation_tick_demand_uses_fast_cadence_for_semantic_state() {
-        // Given: a live shell with a transient state that must expire.
-        let mut app = AppState::new_live(None, false, None);
-        app.show_toast("Saved", ToastVariant::Info);
-
-        // When: the animation scheduler queries the full-motion demand.
-        let interval = app.animation_tick_interval_with_motion(true);
-
-        // Then: expiry/state timing remains at the 30 Hz root cadence.
-        assert_eq!(interval, Some(Duration::from_millis(1_000 / 30)));
-    }
-
-    #[test]
-    fn animation_tick_demand_parks_idle_and_reduced_visual_only_shells() {
-        // Given: an idle live shell and a startup shell with visual motion disabled.
-        let idle = AppState::new_live(None, false, None);
-        let startup = AppState::new_startup(Vec::new(), None);
-
-        // When: each shell reports its timer demand.
-        let idle_interval = idle.animation_tick_interval_with_motion(true);
-        let disabled_startup_interval = startup.animation_tick_interval_with_motion(false);
-
-        // Then: neither arms a redraw timer.
-        assert_eq!(idle_interval, None);
-        assert_eq!(disabled_startup_interval, None);
-    }
-
-    #[test]
-    fn animation_tick_demand_parks_static_startup_shell() {
-        // Given: the empty compose-first startup shell.
-        let startup = AppState::new_startup(Vec::new(), None);
-
-        // When: the scheduler queries full-motion demand.
-        let interval = startup.animation_tick_interval_with_motion(true);
-
-        // Then: decorative startup content never arms a redraw timer.
-        assert_eq!(interval, None);
-    }
 
     #[test]
     fn active_turn_motion_demand_requires_a_visible_running_tool() {

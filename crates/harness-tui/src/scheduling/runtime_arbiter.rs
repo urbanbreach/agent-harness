@@ -141,12 +141,14 @@ impl<T> DeferredLiveUpdate<T> {
 #[derive(Clone, Copy, Debug)]
 pub struct RuntimeArbiter {
     fairness: FairnessTurn,
+    live_after_deadline: bool,
 }
 
 impl Default for RuntimeArbiter {
     fn default() -> Self {
         Self {
             fairness: FairnessTurn::InputFirst,
+            live_after_deadline: false,
         }
     }
 }
@@ -162,6 +164,11 @@ impl RuntimeArbiter {
 
     pub fn live_applied(&mut self) {
         self.fairness = FairnessTurn::InputFirst;
+        self.live_after_deadline = false;
+    }
+
+    pub fn deadline_served(&mut self) {
+        self.live_after_deadline = true;
     }
 
     pub fn decide(&self, ready: RuntimeReady) -> RuntimeDecision {
@@ -175,6 +182,11 @@ impl RuntimeArbiter {
             RuntimeDecision::Cancel
         } else if ready.terminal_input && matches!(self.fairness, FairnessTurn::InputFirst) {
             RuntimeDecision::TerminalInput
+        } else if ready.live_update
+            && (matches!(self.fairness, FairnessTurn::OneLiveAfterInputQuantum)
+                || self.live_after_deadline)
+        {
+            RuntimeDecision::LiveUpdate
         } else if ready.pacer_deadline {
             RuntimeDecision::PacerDeadline
         } else if ready.animation_deadline {

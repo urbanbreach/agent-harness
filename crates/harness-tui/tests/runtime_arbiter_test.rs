@@ -33,6 +33,7 @@ fn sustained_sources_obey_input_first_fairness_bound() {
     let mut arbiter = RuntimeArbiter::default();
     let ready = RuntimeReady {
         terminal_input: true,
+        pacer_deadline: true,
         live_update: true,
         ..RuntimeReady::default()
     };
@@ -71,4 +72,61 @@ fn batch_budget_honors_count_and_time_boundaries() {
     assert!(count.exhausted(start));
     let time = BatchBudget::new(INPUT_BATCH_LIMIT, INPUT_BATCH_TIME, start);
     assert!(time.exhausted(start + Duration::from_millis(2)));
+}
+
+#[test]
+fn continuously_due_pacer_yields_to_live_after_one_deadline() {
+    // Given: motion remains due while a provider stream has queued work.
+    let mut arbiter = RuntimeArbiter::default();
+    let ready = RuntimeReady {
+        pacer_deadline: true,
+        live_update: true,
+        ..RuntimeReady::default()
+    };
+
+    // When: one natural deadline is selected and consumed.
+    assert_eq!(arbiter.decide(ready), RuntimeDecision::PacerDeadline);
+    arbiter.deadline_served();
+
+    // Then: live work must progress before another continuously due deadline.
+    assert_eq!(arbiter.decide(ready), RuntimeDecision::LiveUpdate);
+    arbiter.live_applied();
+    assert_eq!(arbiter.decide(ready), RuntimeDecision::PacerDeadline);
+}
+
+#[test]
+fn forced_live_turn_preserves_fatal_ack_quit_cancel_and_input_priority() {
+    // Given: a due deadline has rotated the arbiter toward queued live work.
+    let mut arbiter = RuntimeArbiter::default();
+    arbiter.deadline_served();
+
+    // When/Then: protected sources and input-first remain ahead of that live turn.
+    let all = RuntimeReady {
+        fatal_writer_failure: true,
+        frame_acknowledged: true,
+        quit: true,
+        cancel: true,
+        terminal_input: true,
+        pacer_deadline: true,
+        animation_deadline: true,
+        live_update: true,
+    };
+    assert_eq!(arbiter.decide(all), RuntimeDecision::FatalWriterFailure);
+    assert_eq!(
+        arbiter.decide(RuntimeReady {
+            fatal_writer_failure: false,
+            ..all
+        }),
+        RuntimeDecision::FrameAcknowledged
+    );
+    assert_eq!(
+        arbiter.decide(RuntimeReady {
+            fatal_writer_failure: false,
+            frame_acknowledged: false,
+            quit: false,
+            cancel: false,
+            ..all
+        }),
+        RuntimeDecision::TerminalInput
+    );
 }

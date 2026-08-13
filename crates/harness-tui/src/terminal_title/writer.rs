@@ -18,17 +18,17 @@ impl Display for TitleWriteError {
 
 impl std::error::Error for TitleWriteError {}
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TitleWriter {
     suspended: bool,
-    written: bool,
+    last_written: Option<String>,
 }
 
 impl TitleWriter {
     pub fn new() -> Self {
         Self {
             suspended: false,
-            written: false,
+            last_written: None,
         }
     }
 
@@ -49,19 +49,22 @@ impl TitleWriter {
             return Ok(false);
         }
         let sanitized = super::sanitize::sanitize_title(title);
+        if self.last_written.as_deref() == Some(sanitized.as_str()) {
+            return Ok(false);
+        }
         out.write_all(format!("\x1b]2;{sanitized}\x07").as_bytes())
             .map_err(|error| TitleWriteError::IoError(error.to_string()))?;
-        self.written = true;
+        self.last_written = Some(sanitized);
         Ok(true)
     }
 
     pub fn reset(&mut self, out: &mut impl Write) -> Result<bool, TitleWriteError> {
-        if !self.written {
+        if self.last_written.is_none() {
             return Ok(false);
         }
         out.write_all(b"\x1b]2;\x07")
             .map_err(|error| TitleWriteError::IoError(error.to_string()))?;
-        self.written = false;
+        self.last_written = None;
         Ok(true)
     }
 }

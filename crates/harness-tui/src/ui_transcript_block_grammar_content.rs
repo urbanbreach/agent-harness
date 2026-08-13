@@ -15,7 +15,7 @@ pub(super) fn content_for_part(
                     && !reasoning_force_completed(turn),
                 expanded: turn.reasoning_expanded,
                 duration_ms: turn.header.thinking_duration_ms,
-                motion_enabled: transcript_motion_enabled(),
+                motion_enabled: turn.motion_enabled,
             },
         ),
         TranscriptAssistantPart::Body(TranscriptBodyBlock::RichText(text)) => (
@@ -74,7 +74,10 @@ pub(super) fn content_for_part(
 
 pub(super) fn apply_reasoning_policy(spec: &mut TranscriptBlockSpec) {
     let TranscriptBlockContent::Reasoning {
-        active, expanded, ..
+        active,
+        expanded,
+        motion_enabled,
+        ..
     } = spec.content
     else {
         return;
@@ -95,7 +98,7 @@ pub(super) fn apply_reasoning_policy(spec: &mut TranscriptBlockSpec) {
         expanded,
     };
     spec.compact = TranscriptBlockCompactPolicy::Collapse;
-    spec.motion = if active && transcript_motion_enabled() {
+    spec.motion = if active && motion_enabled {
         TranscriptBlockMotionDemand::Active
     } else {
         TranscriptBlockMotionDemand::None
@@ -212,16 +215,4 @@ fn reasoning_force_completed(turn: &TranscriptTurnSection) -> bool {
     turn.assistant_parts.iter().any(|part| {
         matches!(part, TranscriptAssistantPart::ToolCall(tool) if tool.header.tool_id == "question" || tool.header.presentation.status == ToolCallPresentationStatus::Waiting)
     })
-}
-
-fn transcript_motion_enabled() -> bool {
-    std::env::var_os("HARNESS_DISABLE_ANIMATIONS").is_none()
-        && !std::env::var("HARNESS_TUI_REDUCED_MOTION")
-            .ok()
-            .is_some_and(|value| {
-                matches!(
-                    value.to_ascii_lowercase().as_str(),
-                    "1" | "true" | "yes" | "on"
-                )
-            })
 }

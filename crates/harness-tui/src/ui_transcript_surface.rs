@@ -17,6 +17,7 @@ use super::ui_transcript_style::{
     blend_color, pending_diamond_color, transcript_streaming_spinner_frame,
 };
 use crate::composer_atoms::split_graphemes;
+use crate::terminal::char_display_width;
 
 const TRANSCRIPT_SURFACE_RAIL_WIDTH: u16 = 1;
 pub(super) const TRANSCRIPT_SURFACE_TRAILING_GAP_WIDTH: u16 = 2;
@@ -781,6 +782,25 @@ pub(super) fn wrap_surface_spans(
             current = Vec::new();
         }
 
+        if simple_grapheme_boundaries(&token_text) {
+            let mut chunk = String::new();
+            let mut chunk_width = 0usize;
+            for character in token_text.chars() {
+                let character_width = usize::from(char_display_width(character));
+                if !chunk.is_empty() && chunk_width.saturating_add(character_width) > width {
+                    current.push(Span::styled(std::mem::take(&mut chunk), token.style));
+                    rows.push(current);
+                    current = Vec::new();
+                    chunk_width = 0;
+                }
+                chunk.push(character);
+                chunk_width = chunk_width.saturating_add(character_width);
+            }
+            current_width = chunk_width;
+            current.push(Span::styled(chunk, token.style));
+            continue;
+        }
+
         let clusters = split_graphemes(&token_text);
         let mut chunk = String::new();
         let mut chunk_width = 0usize;
@@ -804,6 +824,15 @@ pub(super) fn wrap_surface_spans(
     }
 
     rows
+}
+
+fn simple_grapheme_boundaries(text: &str) -> bool {
+    text.chars().all(|character| {
+        char_display_width(character) > 0
+            && u32::from(character) <= 0xFFFF
+            && character != '\u{200D}'
+            && !matches!(character, '\u{1F1E6}'..='\u{1F1FF}' | '\u{1F3FB}'..='\u{1F3FF}')
+    })
 }
 
 fn surface_wrap_tokens(span: Span<'static>) -> Vec<Span<'static>> {
@@ -862,4 +891,48 @@ fn prepend_transcript_surface_rail(
     )];
     spans.extend(line.spans);
     Line::from(spans)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn wrapped_text(text: &str, width: usize) -> Vec<String> {
+        wrap_surface_spans(vec![Span::raw(text.to_string())], width)
+            .into_iter()
+            .map(|row| row.into_iter().map(|span| span.content).collect())
+            .collect()
+    }
+
+    fn legacy_wrapped_text(text: &str, width: usize) -> Vec<String> {
+        let mut rows = Vec::new();
+        let mut chunk = String::new();
+        let mut chunk_width = 0usize;
+        for cluster in split_graphemes(text) {
+            let cluster_width = usize::from(cluster.display_width());
+            if !chunk.is_empty() && chunk_width.saturating_add(cluster_width) > width {
+                rows.push(std::mem::take(&mut chunk));
+                chunk_width = 0;
+            }
+            chunk.push_str(cluster.as_str());
+            chunk_width = chunk_width.saturating_add(cluster_width);
+        }
+        if !chunk.is_empty() {
+            rows.push(chunk);
+        }
+        rows
+    }
+
+    #[test]
+    fn long_token_fast_path_preserves_unicode_and_complex_grapheme_boundaries() {
+        let simple = "abc界···xyz";
+        assert!(simple_grapheme_boundaries(simple));
+        assert_eq!(wrapped_text(simple, 4), legacy_wrapped_text(simple, 4));
+        assert!(!simple_grapheme_boundaries("e\u{301}x"));
+        assert!(!simple_grapheme_boundaries("👨\u{200D}💻x"));
+        assert!(!simple_grapheme_boundaries("🇫🇮x"));
+        assert_eq!(wrapped_text("e\u{301}x", 1), ["e\u{301}", "x"]);
+        assert_eq!(wrapped_text("👨\u{200D}💻x", 2), ["👨\u{200D}💻", "x"]);
+        assert_eq!(wrapped_text("🇫🇮x", 2), ["🇫🇮", "x"]);
+    }
 }

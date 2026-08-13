@@ -3,6 +3,7 @@ use super::ui_transcript_tool_sections::{build_tool_call_section, successful_edi
 use super::*;
 
 pub(super) fn build_transcript_sections(app: &AppState) -> Vec<TranscriptTurnSection> {
+    let motion_enabled = app.transcript_motion_enabled();
     let hidden_child_request_ids = hidden_delegated_child_request_ids(app);
     let visible_activities = app
         .activities
@@ -28,6 +29,7 @@ pub(super) fn build_transcript_sections(app: &AppState) -> Vec<TranscriptTurnSec
             show_tool_details: app.tool_details_visible(),
             show_generic_tool_output: app.generic_tool_output_visible(),
             stacked_diffs: app.stacked_transcript_diffs(),
+            motion_enabled,
             session_path: app.session_path.as_deref(),
             app,
         }));
@@ -112,6 +114,7 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
         show_tool_details,
         show_generic_tool_output,
         stacked_diffs,
+        motion_enabled,
         session_path,
         app,
     } = args;
@@ -238,6 +241,7 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
             .as_deref()
             .map(crate::time_format::wall_clock_12h),
         animation_phase: app.transcript_animation_phase(),
+        motion_enabled,
         reasoning_expanded: app.reasoning_expanded(&activity.request_id),
         header: TranscriptTurnHeader {
             status: activity.status,

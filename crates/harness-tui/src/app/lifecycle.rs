@@ -983,6 +983,8 @@ impl AppState {
             now.checked_sub(Duration::from_millis(phase_ms))
                 .unwrap_or(now),
         );
+        self.motion_epoch_started_at = self.live_turn_phase_started_at.unwrap_or(now);
+        self.motion_revision = self.motion_revision.wrapping_add(1);
     }
 
     pub(in crate::app) fn begin_live_turn_timing(&mut self, request_id: Option<&str>) {
@@ -999,11 +1001,16 @@ impl AppState {
         }
         self.live_turn_request_id = request_id.map(str::to_string);
         self.live_turn_phase_started_at = Some(now);
+        self.motion_epoch_started_at = now;
+        self.motion_revision = self.motion_revision.wrapping_add(1);
     }
 
     pub(in crate::app) fn restart_live_turn_phase_timing(&mut self, request_id: &str) {
         if self.live_turn_request_id.as_deref() == Some(request_id) {
-            self.live_turn_phase_started_at = Some(self.now());
+            let now = self.now();
+            self.live_turn_phase_started_at = Some(now);
+            self.motion_epoch_started_at = now;
+            self.motion_revision = self.motion_revision.wrapping_add(1);
         }
     }
 

@@ -200,18 +200,6 @@ fn hit_map_routes_shell_completion_and_attachment_targets() {
 }
 
 #[test]
-fn reduced_motion_makes_composer_transitions_immediate() {
-    let mut slice = ComposerSlice::with_reduced_motion(true);
-    let frame = slice
-        .schedule_motion(true, false)
-        .expect("reduced-motion transition renders");
-    assert!(frame.decision.render);
-    assert!(frame.decision.deadline_ms.is_none());
-    assert!(frame.immediate);
-    assert!(slice.schedule_motion(false, false).is_none());
-}
-
-#[test]
 fn responsive_wrapping_preserves_atom_identity_and_focus_bounds() {
     let slice = ComposerSlice::from_text("wide 界🙂 text with e\u{301} and more");
     let ids: Vec<AtomId> = slice

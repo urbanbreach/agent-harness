@@ -230,6 +230,7 @@ pub(super) struct BuildTurnSectionArgs<'a> {
     pub(super) show_tool_details: bool,
     pub(super) show_generic_tool_output: bool,
     pub(super) stacked_diffs: bool,
+    pub(super) motion_enabled: bool,
     pub(super) session_path: Option<&'a Path>,
     pub(super) app: &'a AppState,
 }
@@ -249,6 +250,7 @@ pub(super) struct TranscriptTurnSection {
     pub(super) show_footer: bool,
     pub(super) footer_timestamp: Option<String>,
     pub(super) animation_phase: usize,
+    pub(super) motion_enabled: bool,
     pub(super) reasoning_expanded: bool,
     pub(super) header: TranscriptTurnHeader,
     pub(super) assistant_parts: Vec<TranscriptAssistantPart>,

@@ -116,20 +116,15 @@ pub(crate) fn drain_live_updates(
     receiver: &LiveUpdateReceiver,
 ) -> LiveUpdateDrainState {
     let mut experience = RuntimeExperience::new();
-    drain_with_limit(
-        app,
-        receiver,
-        &mut experience,
-        LIVE_UPDATE_DRAIN_MAX_PER_FRAME,
-    )
+    apply_live_update_quantum(app, receiver, &mut experience)
 }
 
-pub(crate) fn apply_one_live_update(
+pub(crate) fn apply_live_update_quantum(
     app: &mut AppState,
     receiver: &LiveUpdateReceiver,
     experience: &mut RuntimeExperience,
 ) -> LiveUpdateDrainState {
-    drain_with_limit(app, receiver, experience, 1)
+    drain_with_limit(app, receiver, experience, LIVE_UPDATE_DRAIN_MAX_PER_FRAME)
 }
 
 fn drain_with_limit(

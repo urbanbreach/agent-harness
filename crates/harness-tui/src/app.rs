@@ -127,6 +127,7 @@ mod memory_browser;
 mod model_favorites;
 mod model_metadata;
 mod model_switcher;
+mod motion;
 mod mouse_interaction;
 mod new_worktree_dialog;
 pub mod notifications;
@@ -618,12 +619,16 @@ pub struct AppState {
     live_turn_started_at: Option<Instant>,
     live_turn_phase_started_at: Option<Instant>,
     live_turn_request_id: Option<String>,
+    motion_epoch_started_at: Instant,
+    motion_revision: u64,
+    reduced_motion: bool,
     now_fn: Arc<dyn Fn() -> Instant + Send + Sync>,
     on_ui_intent: Option<Arc<dyn Fn(UiIntent) + Send + Sync>>,
 }
 
 impl Default for AppState {
     fn default() -> Self {
+        let now = Instant::now();
         let auto_theme_resolver = AutoResolver::default();
         let initial_theme_family = ThemeFamily::Dark;
         Self {
@@ -848,6 +853,9 @@ impl Default for AppState {
             live_turn_started_at: None,
             live_turn_phase_started_at: None,
             live_turn_request_id: None,
+            motion_epoch_started_at: now,
+            motion_revision: 0,
+            reduced_motion: false,
             now_fn: Arc::new(Instant::now),
             on_ui_intent: None,
         }
@@ -1156,11 +1164,6 @@ impl AppState {
 
     pub fn handle_composer_mouse(&mut self, mouse: MouseEvent, frame_area: Rect) -> bool {
         self.handle_composer_mouse_event(mouse, frame_area)
-    }
-
-    pub(crate) fn tick_composer_runtime(&mut self) {
-        let animation_active = self.has_active_animations_for_evidence();
-        let _ = self.composer.slice.schedule_motion(animation_active, true);
     }
 
     pub fn composer_begin_completion(&mut self, trigger: CompletionTrigger) -> CompletionRequest {

@@ -1,5 +1,5 @@
 use harness_tui::design_contract::{LifecycleState, ViewportId};
-use harness_tui::scheduling::DualClock;
+use harness_tui::scheduling::FrameNow;
 use harness_tui::transcript_blocks::{BlockKind, BlockLifecycle, FoldState};
 use harness_tui::transcript_identity::{BlockId, ReplayTurn};
 use harness_tui::transcript_integration::{
@@ -41,19 +41,23 @@ fn cache_is_width_aware_bounded_and_lru_evicted() {
 }
 
 #[test]
-fn lifecycle_frames_advance_only_through_the_fake_clock_scheduler() -> TestResult {
-    // Given: one streaming thinking block and the task-10 dual fake clock.
+fn lifecycle_frames_are_pure_samples_of_the_runtime_clock() -> TestResult {
+    // Given: one streaming thinking block and two runtime-owned clock samples.
     let id = ReplayTurn::event(9, 0, 1).block_id(0);
     let mut lifecycle = LifecycleCoordinator::new(false);
     lifecycle.set_block(id, BlockKind::Thinking, BlockLifecycle::Streaming);
-    let clock = DualClock::new();
 
-    // When: the clock is sampled before and after one animation deadline.
-    let initial = lifecycle.tick(clock.snapshot());
-    clock.tick_animation();
-    let advanced = lifecycle.tick(clock.snapshot());
+    // When: lifecycle presentation samples the supplied wall clock without scheduling it.
+    let initial = lifecycle.tick(FrameNow {
+        animation_ms: 0,
+        flush_ms: 0,
+    });
+    let advanced = lifecycle.tick(FrameNow {
+        animation_ms: 33,
+        flush_ms: 0,
+    });
 
-    // Then: the first frame is stable and the scheduled frame advances deterministically.
+    // Then: elapsed wall time alone determines the frame and completed state parks.
     assert_eq!(initial.states[0].phase, LifecyclePhase::Streaming);
     assert_eq!(initial.states[0].frame, 0);
     assert!(advanced.states[0].frame > initial.states[0].frame);

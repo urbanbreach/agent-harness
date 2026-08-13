@@ -17,10 +17,7 @@ fn animation_phase_f32(animation_phase: usize) -> f32 {
 }
 
 pub(super) fn transcript_streaming_spinner_frame(animation_phase: usize) -> &'static str {
-    transcript_streaming_spinner_frame_with_motion(
-        animation_phase,
-        std::env::var_os("HARNESS_DISABLE_ANIMATIONS").is_none(),
-    )
+    transcript_streaming_spinner_frame_with_motion(animation_phase, true)
 }
 
 pub(super) fn transcript_streaming_spinner_frame_with_motion(
@@ -39,17 +36,11 @@ pub(super) fn thinking_header_color(theme: &Theme, _surface: Color) -> Color {
 }
 
 pub(super) fn transcript_running_tool_marker_color(theme: &Theme, animation_phase: usize) -> Color {
-    if std::env::var_os("HARNESS_DISABLE_ANIMATIONS").is_some() {
-        return theme.text.accent;
-    }
     let sine = (animation_phase_f32(animation_phase) * TRANSCRIPT_TOOL_WAVE_SPEED).sin();
     blend_color(theme.surface.canvas, theme.text.accent, sine * sine)
 }
 
 pub(super) fn pending_diamond_color(theme: &Theme, animation_phase: usize) -> Color {
-    if std::env::var_os("HARNESS_DISABLE_ANIMATIONS").is_some() {
-        return blend_color(theme.surface.canvas, theme.text.accent, 0.3);
-    }
     let sine = (animation_phase_f32(animation_phase) * USER_WAITING_PULSE_SPEED).sin();
     blend_color(
         theme.surface.canvas,

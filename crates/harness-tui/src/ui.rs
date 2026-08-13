@@ -570,9 +570,9 @@ fn render_toast(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
         ToastVariant::Mode => theme.text.accent,
     };
     let surface = theme.surface.panel;
-    let accent = ui_transcript_style::blend_color(surface, accent, toast.fade_alpha());
-    let text_color =
-        ui_transcript_style::blend_color(surface, theme.text.primary, toast.fade_alpha());
+    let fade_alpha = app.toast_fade_alpha().unwrap_or(1.0);
+    let accent = ui_transcript_style::blend_color(surface, accent, fade_alpha);
+    let text_color = ui_transcript_style::blend_color(surface, theme.text.primary, fade_alpha);
     let block = Block::default()
         .style(Style::default().bg(surface))
         .borders(Borders::LEFT | Borders::RIGHT)

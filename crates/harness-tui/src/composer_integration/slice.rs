@@ -18,7 +18,6 @@ use crate::scheduling::DualClock;
 use crate::shell_geometry::ShellState;
 
 use super::hit_map::{build as build_hit_map, ComposerHitMap};
-use super::motion::{ComposerMotion, ComposerMotionFrame};
 use super::submission::{build as build_submission, ComposerUiIntent, SubmissionError};
 use super::view_model::{build as build_view_model, ComposerViewModel};
 use crate::design_contract::ViewportId;
@@ -46,7 +45,6 @@ pub struct ComposerSlice {
     interaction: InteractionState,
     transitions: TransitionTable,
     pub(super) clock: DualClock,
-    motion: ComposerMotion,
 }
 
 #[derive(Debug)]
@@ -97,18 +95,14 @@ from_error!(SubmissionError, Submission);
 
 impl ComposerSlice {
     pub fn new() -> Self {
-        Self::with_editor(ComposerEditor::new(), false)
+        Self::with_editor(ComposerEditor::new())
     }
 
     pub fn from_text(text: &str) -> Self {
-        Self::with_editor(ComposerEditor::from_text(text), false)
+        Self::with_editor(ComposerEditor::from_text(text))
     }
 
-    pub fn with_reduced_motion(reduced_motion: bool) -> Self {
-        Self::with_editor(ComposerEditor::new(), reduced_motion)
-    }
-
-    fn with_editor(editor: ComposerEditor, reduced_motion: bool) -> Self {
+    fn with_editor(editor: ComposerEditor) -> Self {
         let queue = QueueState::default().with_draft(editor.text());
         Self {
             editor,
@@ -121,7 +115,6 @@ impl ComposerSlice {
             interaction: InteractionState::new(ScreenMode::Live, Focus::Prompt),
             transitions: TransitionTable,
             clock: DualClock::new(),
-            motion: ComposerMotion::new(reduced_motion),
         }
     }
 
@@ -151,10 +144,6 @@ impl ComposerSlice {
 
     pub(super) fn is_prompt_focused(&self) -> bool {
         self.interaction.focus == Focus::Prompt
-    }
-
-    pub const fn motion(&self) -> &ComposerMotion {
-        &self.motion
     }
 
     pub const fn clock(&self) -> &DualClock {
@@ -197,15 +186,6 @@ impl ComposerSlice {
 
     pub fn hit_map(&self, viewport: ViewportId) -> ComposerHitMap {
         build_hit_map(self, viewport)
-    }
-
-    pub fn schedule_motion(
-        &mut self,
-        animation_active: bool,
-        flush_requested: bool,
-    ) -> Option<ComposerMotionFrame> {
-        self.motion
-            .schedule(self.clock.snapshot(), animation_active, flush_requested)
     }
 
     pub(super) fn shell_state(&self) -> ShellState {

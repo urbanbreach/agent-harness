@@ -2,39 +2,43 @@ use crate::design_contract::{MotionKind, DESIGN_TOKENS};
 
 use super::coalesce::RedrawCoalescer;
 use super::decision::{FrameDecision, FrameReason};
-use super::{FrameNow, ANIMATION_PERIOD_MS, FLUSH_DEADLINE_MS};
+use super::{FrameNow, MotionPlan, ANIMATION_PERIOD_MS, FLUSH_DEADLINE_MS};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct FrameInputs {
-    pub animation_active: bool,
+    pub motion: MotionPlan,
     pub flush_requested: bool,
 }
 
 impl FrameInputs {
     pub const fn idle() -> Self {
         Self {
-            animation_active: false,
+            motion: MotionPlan::none(),
             flush_requested: false,
         }
     }
 
     pub const fn active() -> Self {
         Self {
-            animation_active: true,
+            motion: MotionPlan::from_demand(super::MotionDemand::fast(
+                std::time::Duration::from_millis(ANIMATION_PERIOD_MS),
+            )),
             flush_requested: false,
         }
     }
 
     pub const fn flush() -> Self {
         Self {
-            animation_active: false,
+            motion: MotionPlan::none(),
             flush_requested: true,
         }
     }
 
     pub const fn active_and_flush() -> Self {
         Self {
-            animation_active: true,
+            motion: MotionPlan::from_demand(super::MotionDemand::fast(
+                std::time::Duration::from_millis(ANIMATION_PERIOD_MS),
+            )),
             flush_requested: true,
         }
     }
@@ -42,17 +46,21 @@ impl FrameInputs {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FrameScheduler {
-    animation_deadline: Option<u64>,
-    flush_deadline: Option<u64>,
-    redraw_coalescer: RedrawCoalescer,
-    settled: bool,
-    reduced_motion: bool,
+    pub(super) animation_deadline: Option<u64>,
+    pub(super) animation_interval: Option<u64>,
+    pub(super) until_deadline: Option<u64>,
+    pub(super) flush_deadline: Option<u64>,
+    pub(super) redraw_coalescer: RedrawCoalescer,
+    pub(super) settled: bool,
+    pub(super) reduced_motion: bool,
 }
 
 impl FrameScheduler {
     pub const fn new() -> Self {
         Self {
             animation_deadline: None,
+            animation_interval: None,
+            until_deadline: None,
             flush_deadline: None,
             redraw_coalescer: RedrawCoalescer::new(),
             settled: true,
@@ -71,6 +79,8 @@ impl FrameScheduler {
         self.reduced_motion = reduced_motion;
         if reduced_motion {
             self.animation_deadline = None;
+            self.animation_interval = None;
+            self.until_deadline = None;
             self.flush_deadline = None;
             self.settled = true;
         }
@@ -85,27 +95,56 @@ impl FrameScheduler {
     }
 
     pub const fn animation_deadline(&self) -> Option<u64> {
-        self.animation_deadline
+        match (self.animation_deadline, self.until_deadline) {
+            (Some(cadence), Some(until)) => Some(if cadence <= until { cadence } else { until }),
+            (Some(cadence), None) => Some(cadence),
+            (None, Some(until)) => Some(until),
+            (None, None) => None,
+        }
     }
 
     pub const fn flush_deadline(&self) -> Option<u64> {
         self.flush_deadline
     }
 
+    pub fn cancel_periodic_motion(&mut self) {
+        self.animation_deadline = None;
+        self.animation_interval = None;
+        self.settled = self.until_deadline.is_none() && self.flush_deadline.is_none();
+    }
+
     pub fn schedule(&mut self, now: FrameNow, inputs: FrameInputs) -> Option<FrameDecision> {
         if self.reduced_motion {
-            return self.schedule_reduced_motion(inputs);
+            return self.schedule_reduced_motion(now, inputs);
         }
 
-        if inputs.animation_active {
+        let animation_interval = inputs.motion.cadence().interval().map(duration_millis_ceil);
+        if let Some(interval) = animation_interval {
             self.settled = false;
-            self.animation_deadline.get_or_insert_with(|| {
-                now.animation_ms
-                    .saturating_add(active_animation_period_ms())
-            });
+            if self.animation_interval != Some(interval) {
+                self.animation_deadline = Some(now.animation_ms.saturating_add(interval));
+            } else {
+                self.animation_deadline
+                    .get_or_insert(now.animation_ms.saturating_add(interval));
+            }
+            self.animation_interval = Some(interval);
         } else {
             self.animation_deadline = None;
+            self.animation_interval = None;
         }
+
+        self.until_deadline = match inputs.motion.until() {
+            Some(remaining) => {
+                let candidate = now
+                    .animation_ms
+                    .saturating_add(duration_millis_ceil(remaining));
+                Some(
+                    self.until_deadline
+                        .map_or(candidate, |current| current.min(candidate)),
+                )
+            }
+            None => None,
+        };
 
         if inputs.flush_requested {
             self.settled = false;
@@ -114,10 +153,13 @@ impl FrameScheduler {
                 .get_or_insert(now.flush_ms.saturating_add(FLUSH_DEADLINE_MS));
         }
 
-        let animation_due = inputs.animation_active
-            && self
-                .animation_deadline
-                .is_some_and(|deadline| now.animation_ms >= deadline);
+        let cadence_due = self
+            .animation_deadline
+            .is_some_and(|deadline| now.animation_ms >= deadline);
+        let until_due = self
+            .until_deadline
+            .is_some_and(|deadline| now.animation_ms >= deadline);
+        let animation_due = cadence_due || until_due;
         let flush_due = self.redraw_coalescer.is_pending()
             && self
                 .flush_deadline
@@ -131,11 +173,13 @@ impl FrameScheduler {
                 (false, false) => return None,
             };
 
-            if animation_due {
-                self.animation_deadline = Some(
-                    now.animation_ms
-                        .saturating_add(active_animation_period_ms()),
-                );
+            if cadence_due {
+                self.animation_deadline = self
+                    .animation_interval
+                    .map(|interval| now.animation_ms.saturating_add(interval));
+            }
+            if until_due {
+                self.until_deadline = None;
             }
             if flush_due {
                 self.flush_deadline = None;
@@ -143,7 +187,7 @@ impl FrameScheduler {
             }
 
             let deadline_ms = self.next_deadline();
-            self.settled = deadline_ms.is_none() && !inputs.animation_active;
+            self.settled = deadline_ms.is_none() && inputs.motion.is_none();
             return Some(FrameDecision::render(deadline_ms, reason));
         }
 
@@ -155,47 +199,10 @@ impl FrameScheduler {
         self.settled = false;
         Some(FrameDecision::pending(deadline_ms, self.pending_reason()))
     }
+}
 
-    fn schedule_reduced_motion(&mut self, inputs: FrameInputs) -> Option<FrameDecision> {
-        let transition_settled = inputs.animation_active && self.settled;
-        let input_pending = inputs.flush_requested || self.redraw_coalescer.is_pending();
-        self.animation_deadline = None;
-        self.flush_deadline = None;
-
-        if transition_settled || input_pending {
-            if inputs.flush_requested {
-                self.redraw_coalescer.request();
-            }
-            self.redraw_coalescer.take();
-            self.settled = true;
-            return Some(FrameDecision::render(None, FrameReason::ReducedMotion));
-        }
-
-        self.settled = true;
-        None
-    }
-
-    fn next_deadline(&self) -> Option<u64> {
-        match (self.animation_deadline, self.flush_deadline) {
-            (Some(animation), Some(flush)) => Some(animation.min(flush)),
-            (Some(animation), None) => Some(animation),
-            (None, Some(flush)) => Some(flush),
-            (None, None) => None,
-        }
-    }
-
-    fn pending_reason(&self) -> FrameReason {
-        match (self.animation_deadline, self.flush_deadline) {
-            (Some(animation), Some(flush)) if animation == flush => {
-                FrameReason::AnimationAndFlushPending
-            }
-            (Some(animation), Some(flush)) if animation < flush => FrameReason::AnimationPending,
-            (Some(_), Some(_)) => FrameReason::FlushPending,
-            (Some(_), None) => FrameReason::AnimationPending,
-            (None, Some(_)) => FrameReason::FlushPending,
-            (None, None) => FrameReason::ReducedMotion,
-        }
-    }
+pub(super) fn duration_millis_ceil(duration: std::time::Duration) -> u64 {
+    u64::try_from(duration.as_nanos().div_ceil(1_000_000)).unwrap_or(u64::MAX)
 }
 
 impl Default for FrameScheduler {

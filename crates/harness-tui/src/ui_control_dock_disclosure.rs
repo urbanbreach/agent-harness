@@ -409,7 +409,7 @@ pub(super) fn render_control_dock_disclosure(
         || app.compaction_usage_metrics().completed_count > 0;
 
     if active_live_composer && app.starting_session_seed_visible() {
-        let row = starting_session_seed_row(app.transcript_animation_phase(), theme, surface);
+        let row = starting_session_seed_row(app.startup_motion_phase(), theme, surface);
         frame.render_widget(Paragraph::new(Line::from(row)).style(base), area);
         return;
     }

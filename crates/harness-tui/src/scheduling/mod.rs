@@ -6,22 +6,24 @@
 mod coalesce;
 mod decision;
 mod dual_clock;
+mod motion_demand;
 mod runtime_arbiter;
 mod runtime_pacer;
+mod runtime_wheel;
 mod scheduler;
+mod scheduler_deadlines;
 
 pub use coalesce::RedrawCoalescer;
 pub use decision::{FrameDecision, FrameReason};
 pub use dual_clock::{DualClock, FrameNow};
+pub use motion_demand::{MotionCadence, MotionDemand, MotionPlan};
 pub use runtime_arbiter::{
     ArbiterClock, BatchBudget, DeferredLiveUpdate, FairnessTurn, RuntimeArbiter, RuntimeDecision,
     RuntimePriority, RuntimeReady, SystemArbiterClock, INPUT_BATCH_LIMIT, INPUT_BATCH_TIME,
     LIVE_BATCH_LIMIT, LIVE_BATCH_TIME,
 };
-pub use runtime_pacer::{
-    RuntimePacer, RuntimePacerAction, WheelBatch, WheelDirection, WheelSample,
-    MAX_WHEEL_STEPS_PER_FLUSH,
-};
+pub use runtime_pacer::{RuntimePacer, RuntimePacerAction};
+pub use runtime_wheel::{WheelBatch, WheelDirection, WheelSample, MAX_WHEEL_STEPS_PER_FLUSH};
 pub(crate) use scheduler::active_animation_period_ms;
 pub use scheduler::{FrameInputs, FrameScheduler};
 

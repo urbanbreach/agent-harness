@@ -21,9 +21,10 @@ pub use incremental::TranscriptWorkMetrics;
 pub use invalidation::{
     BlockSeed, CacheInvalidation, InvalidationReport, TranscriptEvent, TurnSeed,
 };
-pub use lifecycle::{LifecycleCoordinator, LifecycleFrame, LifecyclePhase, LifecycleSnapshot};
+pub use lifecycle::LifecycleFrame;
+pub use lifecycle::{LifecycleCoordinator, LifecyclePhase, LifecycleSnapshot};
 
-use crate::scheduling::{DualClock, FrameNow};
+use crate::scheduling::FrameNow;
 use crate::shell_geometry::layout_for_rect;
 use crate::terminal::char_display_width;
 use crate::transcript_block_viewer::{
@@ -166,10 +167,6 @@ impl TranscriptComposite {
         self.follow.jump_to_bottom();
         self.follow.scroll_by(max - target, max)?;
         self.scroll_to(target, 0, MotionPreference::Full)
-    }
-
-    pub fn tick(&mut self, clock: &DualClock) -> LifecycleFrame {
-        self.tick_at(clock.snapshot())
     }
 
     pub fn tick_at(&mut self, now: FrameNow) -> LifecycleFrame {

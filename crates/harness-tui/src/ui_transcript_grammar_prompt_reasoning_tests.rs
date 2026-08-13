@@ -157,29 +157,14 @@ fn grammar_reasoning_empty_emits_no_orphan_block() {
 
 #[test]
 fn grammar_reasoning_reduced_motion_has_no_timer_demand() {
-    let turn = active_reasoning_turn("active reasoning");
+    let mut turn = active_reasoning_turn("active reasoning");
+    turn.motion_enabled = false;
     let spec = normalize_turn_blocks(&turn)
         .into_iter()
         .find(|spec| spec.role == TranscriptBlockRole::Reasoning)
         .expect("reasoning spec");
 
-    let reduced = std::env::var_os("HARNESS_DISABLE_ANIMATIONS").is_some()
-        || std::env::var("HARNESS_TUI_REDUCED_MOTION")
-            .ok()
-            .is_some_and(|value| {
-                matches!(
-                    value.to_ascii_lowercase().as_str(),
-                    "1" | "true" | "yes" | "on"
-                )
-            });
-    assert_eq!(
-        spec.motion,
-        if reduced {
-            TranscriptBlockMotionDemand::None
-        } else {
-            TranscriptBlockMotionDemand::Active
-        }
-    );
+    assert_eq!(spec.motion, TranscriptBlockMotionDemand::None);
 }
 
 #[test]

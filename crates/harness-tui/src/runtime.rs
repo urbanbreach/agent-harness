@@ -19,14 +19,15 @@ use crate::app::{AppState, LaunchMetadata, SessionHistoryEntry, TogglesConfig, U
 use crate::event;
 use crate::input::{
     ScrollConfigOverrides, ScrollNormalizer, ScrollNormalizerConfig, ScrollSampleDirection,
-    TerminalIngressReader, TerminalReaderStatus,
+    TerminalEnvelope, TerminalIngressReader, TerminalQueue, TerminalReaderStatus,
 };
 use crate::presentation::{
     CauseId, InteractionId, PresentationCauseKind, PresentationClock, RenderDemand, RenderReason,
 };
+use crate::runtime_input::InputPresentation;
 use crate::runtime_integration::RuntimeExperience;
 use crate::runtime_live_updates::{
-    apply_one_live_update, live_update_channel, LiveUpdateDrainState, LiveUpdateReceiver,
+    apply_live_update_quantum, live_update_channel, LiveUpdateDrainState, LiveUpdateReceiver,
 };
 #[cfg(test)]
 use crate::runtime_live_updates::{drain_live_updates, LIVE_UPDATE_DRAIN_MAX_PER_FRAME};
@@ -36,7 +37,7 @@ use crate::runtime_scheduling::{
 };
 use crate::runtime_wait_set::{FrameRuntimeEvent, RuntimeWaitSet, RuntimeWake};
 use crate::scheduling::{
-    BatchBudget, FairnessTurn, FrameNow, RuntimeArbiter, RuntimeDecision, RuntimePacer,
+    BatchBudget, FairnessTurn, FrameNow, MotionPlan, RuntimeArbiter, RuntimeDecision, RuntimePacer,
     RuntimePacerAction, RuntimeReady, WheelBatch, WheelDirection, WheelSample,
 };
 use crate::terminal::{
@@ -71,6 +72,22 @@ fn record_scheduling_decision(
 
 fn has_canonical_render_demand(telemetry_enabled: bool, demand: Option<&RenderDemand>) -> bool {
     !telemetry_enabled || demand.is_some()
+}
+
+fn refresh_motion_plan(app: &mut AppState) -> MotionPlan {
+    app.refresh_motion_state();
+    app.motion_plan()
+}
+
+fn prioritize_terminal_before_present(
+    queue: &mut TerminalQueue,
+    pending: &mut Option<TerminalEnvelope>,
+    input_priority: &mut bool,
+) {
+    if !*input_priority && pending.is_none() {
+        *pending = queue.try_recv().ok();
+        *input_priority = pending.is_some();
+    }
 }
 
 /// Explicit model of terminal features the TUI may enable or rely on.
@@ -542,8 +559,9 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         std::env::var("TERM").ok().as_deref(),
     ));
     app.set_glyph_mode(terminal_session.matrix.classified_by().glyph_mode());
-    let reduced_motion =
-        reduced_motion_from_env(std::env::var("HARNESS_TUI_REDUCED_MOTION").ok().as_deref());
+    let reduced_motion = std::env::var_os("HARNESS_DISABLE_ANIMATIONS").is_some()
+        || reduced_motion_from_env(std::env::var("HARNESS_TUI_REDUCED_MOTION").ok().as_deref());
+    app.set_reduced_motion(reduced_motion);
     let mut presentation_session = PresentationTelemetrySession::from_env()
         .context("failed to initialize local presentation telemetry")?;
     let mut scheduling_session = SchedulingTelemetrySession::from_env()
@@ -598,6 +616,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         }
 
         loop {
+            let motion_plan = refresh_motion_plan(&mut app);
             let frame_ready = frame_output.is_ready_for_frame();
             if let Some(failure) = frame_output.take_fatal_failure() {
                 return Err(failure.into());
@@ -628,10 +647,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
             {
                 arbiter.input_quantum_exhausted();
             }
-            let pacing_due = pacer.needs_poll(
-                runtime_frame_now(pacing_epoch, now),
-                app.has_active_animations(),
-            );
+            let pacing_due = pacer.needs_poll(runtime_frame_now(pacing_epoch, now), motion_plan);
             let decision = select_runtime_decision(
                 &arbiter,
                 RuntimeReady {
@@ -644,10 +660,11 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                     ..RuntimeReady::default()
                 },
             );
-            let input_priority = matches!(decision, RuntimeDecision::TerminalInput);
+            let mut input_priority = matches!(decision, RuntimeDecision::TerminalInput);
             if matches!(decision, RuntimeDecision::LiveUpdate) {
                 if let Some(update_rx) = live_updates.as_ref() {
-                    let drain_state = apply_one_live_update(&mut app, update_rx, &mut experience);
+                    let drain_state =
+                        apply_live_update_quantum(&mut app, update_rx, &mut experience);
                     if drain_state.changed {
                         if let Some(session) = presentation_session.as_mut() {
                             session.record_visible_cause(
@@ -681,15 +698,15 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                 decision,
                 RuntimeDecision::PacerDeadline | RuntimeDecision::AnimationDeadline
             ) {
-                pacer.poll(
-                    runtime_frame_now(pacing_epoch, Instant::now()),
-                    app.has_active_animations(),
-                )
+                let action =
+                    pacer.poll(runtime_frame_now(pacing_epoch, Instant::now()), motion_plan);
+                arbiter.deadline_served();
+                action
             } else {
                 RuntimePacerAction::default()
             };
             if pacing_action.advance_animation {
-                app.advance_transcript_animation_phase();
+                app.sample_motion_clock();
                 if let Some(session) = presentation_session.as_mut() {
                     session.record_visible_cause(
                         PresentationCauseKind::AnimationTimer,
@@ -702,9 +719,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                 let size = terminal.size()?;
                 let frame_area = ratatui::layout::Rect::new(0, 0, size.width, size.height);
                 app.set_frame_area(frame_area);
-                let changed = dispatch_wheel_batch(&mut app, frame_area, batch);
-                app.tick_composer_runtime();
-                changed
+                dispatch_wheel_batch(&mut app, frame_area, batch)
             } else {
                 false
             };
@@ -722,6 +737,11 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                     None => {}
                 }
             }
+            prioritize_terminal_before_present(
+                &mut terminal_ingress.queue,
+                &mut pending_terminal,
+                &mut input_priority,
+            );
             if !input_priority && presenter.should_present(frame_ready) {
                 let demand = presenter.take_render_demand().or_else(|| {
                     presentation_session
@@ -729,7 +749,9 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                         .and_then(PresentationTelemetrySession::take_render_demand)
                 });
                 if !has_canonical_render_demand(presentation_session.is_some(), demand.as_ref()) {
-                    presenter.record_submission(FrameSubmission::Unchanged, Instant::now());
+                    let submission = FrameSubmission::Unchanged;
+                    pacer.record_submission(submission, motion_plan);
+                    presenter.record_submission(submission, Instant::now());
                     continue;
                 }
                 let size = terminal.size()?;
@@ -749,6 +771,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                 if matches!(submission, FrameSubmission::ResyncRequired) {
                     pacer.request_flush();
                 }
+                pacer.record_submission(submission, motion_plan);
                 if let (Some(session), Some(demand)) =
                     (presentation_session.as_mut(), demand.as_ref())
                 {
@@ -828,6 +851,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
             };
 
             if let Some(event) = event {
+                let input_presentation = InputPresentation::for_event(&event);
                 let event_class = match &event {
                     event::TuiEvent::Key(_) => InteractionEventClass::Key,
                     event::TuiEvent::Paste(_) => InteractionEventClass::Paste,
@@ -874,7 +898,6 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                         let frame_area = ratatui::layout::Rect::new(0, 0, size.width, size.height);
                         app.set_frame_area(frame_area);
                         app.handle_key(key);
-                        app.tick_composer_runtime();
                         true
                     }
                     event::TuiEvent::Paste(text) => {
@@ -882,7 +905,6 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                         let frame_area = ratatui::layout::Rect::new(0, 0, size.width, size.height);
                         app.set_frame_area(frame_area);
                         app.handle_paste(&text);
-                        app.tick_composer_runtime();
                         true
                     }
                     event::TuiEvent::Mouse(mouse) => {
@@ -989,15 +1011,13 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                             ),
                             _ => (None, None, None),
                         };
-                        let handled = app.handle_mouse(
+                        app.handle_mouse(
                             mouse,
                             frame_area,
                             hovered_wheel_target,
                             clicked_operator_sidebar_section,
                             transcript_scrollbar_hit,
-                        );
-                        app.tick_composer_runtime();
-                        handled
+                        )
                     }
                     event::TuiEvent::Resize(_, _) => true,
                     event::TuiEvent::FocusGained => {
@@ -1014,7 +1034,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                     }
                 };
                 let cause_id = if event_changed {
-                    pacer.request_flush();
+                    input_presentation.request(true, &mut presenter, &mut pacer, Instant::now());
                     presentation_session.as_mut().map(|session| {
                         session.record_visible_cause(
                             cause_kind,
@@ -1312,6 +1332,73 @@ mod tests {
     }
 
     #[test]
+    fn due_pacer_rotates_to_a_bounded_live_quantum() {
+        // Given: motion is continuously due and more live work is queued than one quantum.
+        let (sender, receiver) = live_update_channel();
+        for index in 0..(LIVE_UPDATE_DRAIN_MAX_PER_FRAME + 3) {
+            sender
+                .send(LiveUpdate::Status(format!("status {index}")))
+                .expect("live receiver remains connected");
+        }
+        let ready = RuntimeReady {
+            pacer_deadline: true,
+            live_update: true,
+            ..RuntimeReady::default()
+        };
+        let mut arbiter = RuntimeArbiter::default();
+
+        // When: one natural deadline is served and production applies the live turn.
+        assert_eq!(
+            select_runtime_decision(&arbiter, ready),
+            RuntimeDecision::PacerDeadline
+        );
+        arbiter.deadline_served();
+        assert_eq!(
+            select_runtime_decision(&arbiter, ready),
+            RuntimeDecision::LiveUpdate
+        );
+        let mut app = AppState::default();
+        let mut experience = RuntimeExperience::new();
+        let drained = apply_live_update_quantum(&mut app, &receiver, &mut experience);
+
+        // Then: the bounded quantum progresses sixteen items, rather than one item per frame.
+        assert!(drained.changed);
+        assert!(drained.budget_exhausted);
+        assert_eq!(receiver.ready_depth(), 3);
+    }
+
+    #[test]
+    fn terminal_arrival_after_arbitration_preempts_dirty_frame_build() {
+        // Given: lower-priority work won arbitration just before a click reaches ingress.
+        let (sender, receiver) = crossbeam_channel::bounded(2);
+        let mut queue = crate::input::TerminalQueue::new(receiver);
+        let mut pending = None;
+        let mut input_priority = false;
+        sender
+            .send(crate::input::TerminalEnvelope::new(
+                crate::input::TerminalSequence::new(1),
+                Instant::now(),
+                event::TuiEvent::Mouse(crossterm::event::MouseEvent {
+                    kind: MouseEventKind::Down(MouseButton::Left),
+                    column: 6,
+                    row: 8,
+                    modifiers: crossterm::event::KeyModifiers::NONE,
+                }),
+            ))
+            .expect("terminal queue remains connected");
+
+        // When: production reaches the last boundary before an expensive frame build.
+        prioritize_terminal_before_present(&mut queue, &mut pending, &mut input_priority);
+
+        // Then: the click is dispatched before lower-priority rendering starts.
+        assert!(input_priority);
+        assert!(matches!(
+            pending.map(|envelope| envelope.event),
+            Some(event::TuiEvent::Mouse(_))
+        ));
+    }
+
+    #[test]
     fn poll_timeout_parks_when_runtime_pacer_is_idle() {
         // Given: an idle runtime pacer.
         let pacer = RuntimePacer::new();
@@ -1409,6 +1496,23 @@ mod tests {
         app.set_toast_for_test("Copied", ToastVariant::Info);
 
         assert!(app.has_active_animations());
+    }
+
+    #[test]
+    fn overlay_pause_is_applied_before_runtime_arms_toast_deadline() {
+        // Given: an active toast becomes occluded before the next runtime loop.
+        let mut app = AppState::default();
+        app.set_toast_for_test("Copied", ToastVariant::Info);
+        assert!(app.motion_plan().until().is_some());
+        app.palette_visible = true;
+
+        // When: the production runtime refresh-and-plan boundary is evaluated.
+        let plan = refresh_motion_plan(&mut app);
+
+        // Then: the paused toast contributes no stale wake deadline.
+        assert!(plan.is_none());
+        let pacer = RuntimePacer::new();
+        assert!(!pacer.needs_poll(FrameNow::default(), plan));
     }
 
     #[test]
