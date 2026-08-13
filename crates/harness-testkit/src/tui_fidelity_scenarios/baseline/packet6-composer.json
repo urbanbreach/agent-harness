@@ -5,7 +5,7 @@
   "viewport": {"cols": 80, "rows": 24},
   "actions": [
     {"type_text": {"at_tick": 1, "text": "Draft a concise release note for the terminal update — 中🙂", "inter_byte_millis": 1}},
-    {"wait_for_text": {"at_tick": 2, "text": "Draft a concise release note for the terminal update — 中🙂"}}
+    {"wait_for_text": {"at_tick": 2, "text": "中🙂"}}
   ],
   "checkpoints": [
     {"name": "rest", "at_tick": 3, "frame": {"capture_id": "packet6-composer-rest", "viewport": {"cols": 80, "rows": 24}, "state": "rest"}},

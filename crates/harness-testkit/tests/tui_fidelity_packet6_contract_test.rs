@@ -20,7 +20,9 @@ fn composer_journey_uses_identical_natural_input_for_both_adapters() {
     assert!(matches!(
         scenario.actions.as_slice(),
         [ScenarioAction::TypeText(typed), ScenarioAction::WaitForText(wait)]
-            if typed.text == wait.text && typed.text.contains("中🙂")
+            if wait.text == "中🙂"
+                && typed.text.contains(&wait.text)
+                && typed.text.starts_with("Draft a concise release note")
     ));
 }
 
