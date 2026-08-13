@@ -91,6 +91,49 @@ pub(super) fn load(scenario_id: &str, repo_root: &Path) -> Result<Scenario, Runn
     Ok(scenario)
 }
 
+pub(super) fn load_packet3(scenario_id: &str, repo_root: &Path) -> Result<Scenario, RunnerError> {
+    let baseline_id =
+        scenario_id
+            .strip_prefix("packet3-")
+            .ok_or_else(|| RunnerError::UnknownScenario {
+                id: scenario_id.to_owned(),
+            })?;
+    let mut scenario = load(baseline_id, repo_root)?;
+    scenario.id.0 = scenario_id.to_owned();
+    let mut actions = Vec::with_capacity(scenario.actions.len() + 2);
+    for action in std::mem::take(&mut scenario.actions) {
+        match action {
+            ScenarioAction::Paste(paste) if !paste.text.contains('\n') => {
+                actions.push(ScenarioAction::TypeText(
+                    harness_testkit::tui_fidelity::TypeTextAction {
+                        at_tick: paste.at_tick,
+                        text: paste.text.clone(),
+                        inter_byte_millis: 1,
+                    },
+                ));
+            }
+            ScenarioAction::TerminalReply(_) => {}
+            action => actions.push(action),
+        }
+    }
+    scenario.actions = actions;
+    if !scenario_id.starts_with("packet3-baseline-stream--") {
+        let settle_tick = scenario
+            .actions
+            .last()
+            .map_or(harness_testkit::tui_fidelity::Tick(1), |action| {
+                harness_testkit::tui_fidelity::Tick(action.at_tick().0.saturating_add(1))
+            });
+        scenario.actions.push(ScenarioAction::WaitForText(
+            harness_testkit::tui_fidelity::WaitForTextAction {
+                at_tick: settle_tick,
+                text: "Packet 3 recovery complete".to_owned(),
+            },
+        ));
+    }
+    Ok(scenario)
+}
+
 fn add_common_identity_substitutions(scenario: &mut Scenario, viewport: Viewport) {
     if scenario.substitutions.is_empty() && viewport.cols >= 12 {
         for checkpoint in [
@@ -210,4 +253,32 @@ fn read_registry(path: &Path) -> Result<Registry, RunnerError> {
         });
     }
     Ok(registry)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::load_packet3;
+    use harness_testkit::tui_fidelity::ScenarioAction;
+    use std::path::Path;
+
+    #[test]
+    fn packet3_suite_uses_key_streams_for_native_interaction_receipts() {
+        // Given: the Packet 3 stream scenario resolved through the baseline registry.
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+
+        // When: the Packet 3 dual-runtime variant is loaded.
+        let scenario = load_packet3("packet3-baseline-stream--wide-120x40", &repo_root)
+            .expect("Packet 3 baseline");
+
+        // Then: pasted fixture text is expressed as typed keys and terminal replies remain typed separately.
+        assert!(matches!(scenario.actions[0], ScenarioAction::TypeText(_)));
+        assert!(!scenario
+            .actions
+            .iter()
+            .any(|action| matches!(action, ScenarioAction::TerminalReply(_))));
+        assert!(!scenario.actions.iter().any(|action| matches!(
+            action,
+            ScenarioAction::WaitForText(wait) if wait.text == "Packet 3 recovery complete"
+        )));
+    }
 }

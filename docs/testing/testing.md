@@ -451,13 +451,18 @@ reaps it, while the receipt keeps those two facts distinct.
 
 Current fail-closed stages (no `|| true`):
 
-- Prerequisites gate: independent reference-parity manifest path must exist; `cargo` must be on
-  `PATH`; all owner test files listed below must exist (missing owner = FAIL, not skip).
+- Prerequisites gate: the active reference authority and independent historical
+  reference-parity manifest paths must exist; `cargo` must be on `PATH`; all owner test files
+  listed below must exist (missing owner = FAIL, not skip).
+- `configs/tui-fidelity-reference-authority.json` supplies the active executable path, source
+  revision, binary SHA-256, and version. The lane does not duplicate those values.
+  `configs/tui-fidelity-reference-binary-receipt.json` records the corresponding clean source
+  tree, lockfile, toolchain, and executable identity for the active binary epoch.
 - `test -f docs/reference/tui-reference-parity-manifest.v1.json`
-- `reference_binary_present`: the pinned reference binary
-  `inspirations/grok-build/target/debug/xai-grok-pager` must exist and its SHA-256 must match the
-  pinned digest `883e3dea…3bb9a9a5` (presence and digest check only; the lane never rebuilds or
-  copies the binary)
+- `reference_binary_present`: the authority-named executable must exist and be executable; its
+  SHA-256 and `--version`, plus the canonical checkout revision, must exactly match the active
+  authority. The lane never rebuilds or copies the reference binary. Historical Core-8 fixture
+  receipts remain validated against their frozen `c1b5909…` identity and are not active preflight.
 - Fresh L3 capture stages (`reference_parity_capture_*`, including
   `reference_parity_capture_shell_lifecycle` for the 7 shell lifecycle rows): each stage runs a
   real PTY capture rendered through xterm.js/Chromium and writes `terminal.png`, `terminal.txt`,

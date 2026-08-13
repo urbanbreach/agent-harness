@@ -1496,53 +1496,6 @@ fn assistant_tool_surfaces_keep_same_trailing_gap_as_text_boxes() {
 }
 
 #[test]
-fn assistant_tool_surface_spacing_matches_shell_rhythm() {
-    // arrange
-    // act
-    // assert
-    assert_eq!(
-        transcript_surface_leading_gap(
-            Some(TranscriptRenderSurfaceKind::AssistantBody),
-            TranscriptRenderSurfaceKind::AssistantTool,
-        ),
-        1,
-        "assistant text should leave the reference section break before tool rows"
-    );
-    assert_eq!(
-        transcript_surface_leading_gap(
-            Some(TranscriptRenderSurfaceKind::AssistantTool),
-            TranscriptRenderSurfaceKind::AssistantBody,
-        ),
-        1,
-        "tool rows should still leave a single section break before the next assistant text block"
-    );
-    assert_eq!(
-        transcript_surface_leading_gap(
-            Some(TranscriptRenderSurfaceKind::AssistantReasoning),
-            TranscriptRenderSurfaceKind::AssistantBody,
-        ),
-        1,
-        "reasoning-to-body surface gap should be 1 to match the 12px assistant-content gap"
-    );
-    assert_eq!(
-        transcript_surface_leading_gap(
-            Some(TranscriptRenderSurfaceKind::AssistantTool),
-            TranscriptRenderSurfaceKind::AssistantReasoning,
-        ),
-        0,
-        "tool-to-reasoning spacing is carried by the reasoning block itself so the rendered gap stays single-row"
-    );
-    assert_eq!(
-        transcript_surface_leading_gap(
-            Some(TranscriptRenderSurfaceKind::AssistantReasoning),
-            TranscriptRenderSurfaceKind::AssistantTool,
-        ),
-        0,
-        "Reference question state: Thought then Ask are adjacent with no blank between"
-    );
-}
-
-#[test]
 fn command_group_counts_all_members_and_discloses_output_only_when_expanded() {
     // arrange
     let mut activity =

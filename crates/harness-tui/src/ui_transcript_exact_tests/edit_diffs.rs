@@ -240,7 +240,8 @@ pub(crate) fn exact_test_transcript_apply_patch_multifile_uses_output_edit_paths
     assert!(app.patch_file_output_expanded("call-apply-patch-1", "notes/b.md"));
     let sections = build_transcript_sections(&app);
     let turn = &sections[0];
-    let file_sections = turn.tool_calls[0]
+    let tool = turn.assistant_tools().next().expect("tool");
+    let file_sections = tool
         .detail_blocks
         .iter()
         .filter_map(|block| match block {
@@ -272,7 +273,7 @@ pub(crate) fn exact_test_transcript_apply_patch_multifile_uses_output_edit_paths
         .join("\n");
     let direct_rendered = transcript_test_line_texts(
         append_tool_call_section_lines(
-            &turn.tool_calls[0],
+            tool,
             &Theme::default(),
             140,
             Theme::default().surface.shell,

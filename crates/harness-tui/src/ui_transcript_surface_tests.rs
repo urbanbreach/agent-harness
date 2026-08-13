@@ -3,23 +3,11 @@ use ratatui::{
     text::Span,
 };
 
-use super::ui_transcript::TranscriptRenderSurfaceKind;
 use super::ui_transcript_surface::{
     append_user_surface_text_block_with_first_line_reserve, append_user_surface_wrapped_line,
-    line_has_tool_rail, tool_finish_flash_brightness, transcript_surface_leading_gap,
-    wave_brightness,
+    line_has_tool_rail, tool_finish_flash_brightness, wave_brightness,
 };
 use std::time::Duration;
-
-#[test]
-fn consecutive_tool_surfaces_form_a_zero_gap_run() {
-    let gap = transcript_surface_leading_gap(
-        Some(TranscriptRenderSurfaceKind::AssistantTool),
-        TranscriptRenderSurfaceKind::AssistantCommandTool,
-    );
-
-    assert_eq!(gap, 0);
-}
 
 #[test]
 fn running_tool_wave_is_spatially_continuous_and_time_based() {

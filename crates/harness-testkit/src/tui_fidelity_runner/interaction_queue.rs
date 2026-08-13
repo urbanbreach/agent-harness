@@ -25,8 +25,9 @@ pub(super) fn append(
     queue: &mut File,
     interaction_id: &str,
     action: &ScenarioAction,
+    coalesced_type_text: bool,
 ) -> io::Result<()> {
-    let Some((event_class, receipt_count)) = expected_receipts(action) else {
+    let Some((event_class, receipt_count)) = expected_receipts(action, coalesced_type_text) else {
         return Ok(());
     };
     serde_json::to_writer(
@@ -41,13 +42,20 @@ pub(super) fn append(
     queue.flush()
 }
 
-fn expected_receipts(action: &ScenarioAction) -> Option<(InteractionEventClass, u16)> {
+fn expected_receipts(
+    action: &ScenarioAction,
+    coalesced_type_text: bool,
+) -> Option<(InteractionEventClass, u16)> {
     match action {
         ScenarioAction::TimedKey(_) => Some((InteractionEventClass::Key, 1)),
         ScenarioAction::Paste(_) => Some((InteractionEventClass::Paste, 1)),
         ScenarioAction::TypeText(action) => Some((
             InteractionEventClass::Key,
-            u16::try_from(action.text.len()).unwrap_or(u16::MAX),
+            if coalesced_type_text {
+                1
+            } else {
+                u16::try_from(action.text.chars().count()).unwrap_or(u16::MAX)
+            },
         )),
         ScenarioAction::ClickText(_) => Some((InteractionEventClass::Mouse, 2)),
         ScenarioAction::WaitForText(_) => None,
@@ -55,7 +63,7 @@ fn expected_receipts(action: &ScenarioAction) -> Option<(InteractionEventClass, 
         ScenarioAction::Drag(_) => Some((InteractionEventClass::Mouse, 3)),
         ScenarioAction::Wheel(action) => Some((InteractionEventClass::Mouse, action.amount)),
         ScenarioAction::Resize(_) => Some((InteractionEventClass::Resize, 1)),
-        ScenarioAction::TerminalReply(_) => Some((InteractionEventClass::Key, 1)),
+        ScenarioAction::TerminalReply(_) => None,
         ScenarioAction::WaitForSemanticState(_) => None,
     }
 }

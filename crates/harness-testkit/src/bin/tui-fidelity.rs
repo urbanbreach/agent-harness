@@ -152,6 +152,9 @@ fn prepare_compare(
         "packet2-sustained-stream" => {
             Scenario::from_json(PACKET2_SUSTAINED_STREAM).map_err(RunnerError::from)?
         }
+        packet3 if packet3.starts_with("packet3-baseline-") => {
+            tui_fidelity_baseline::load_packet3(packet3, repo_root)?
+        }
         other => tui_fidelity_baseline::load(other, repo_root)?,
     };
     let receipt_path = absolute_path(repo_root, &args.reference_receipt);

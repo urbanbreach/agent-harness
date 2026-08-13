@@ -10,15 +10,16 @@ use ratatui::{
 
 use crate::theme::Theme;
 
-use super::ui_transcript::{ToolRailMotion, TranscriptRenderSurface, TranscriptRenderSurfaceKind};
+use super::ui_transcript::{
+    ToolRailMotion, TranscriptBlockPlacement, TranscriptRenderSurface, TranscriptRenderSurfaceKind,
+};
 use super::ui_transcript_interaction::TranscriptInteractionRow;
 use super::ui_transcript_selection::{
     compact_selection_row, TranscriptSelectionCell, TranscriptSelectionRow,
 };
 use super::ui_transcript_surface::{
     apply_reasoning_spinner_phase, render_transcript_surface, render_transcript_surface_lines,
-    transcript_surface_content_width, transcript_surface_leading_gap,
-    transcript_surface_render_width,
+    transcript_surface_content_width, transcript_surface_render_width,
 };
 
 const TRANSCRIPT_SECTION_GAP_HEIGHT: usize = 2;
@@ -333,6 +334,8 @@ fn selection_row_column(row: &TranscriptSelectionRow, column: usize) -> usize {
 #[derive(Debug, Clone)]
 pub(super) struct MeasuredTranscriptSurface {
     pub(super) kind: TranscriptRenderSurfaceKind,
+    pub(super) leading_gap_rows: usize,
+    pub(super) placement: TranscriptBlockPlacement,
     pub(super) top_offset: usize,
     pub(super) height: usize,
     pub(super) width: u16,
@@ -374,10 +377,9 @@ pub(super) fn measure_transcript_layout<Section>(
         let lines = render_transcript_surface_lines(&surfaces);
         let mut content_height = 0usize;
         let mut measured_surfaces = Vec::with_capacity(surfaces.len());
-        let mut previous_surface_kind = None;
         for surface in surfaces.into_iter() {
-            let top_offset = content_height
-                + transcript_surface_leading_gap(previous_surface_kind, surface.kind);
+            let leading_gap_rows = surface.leading_gap_rows;
+            let top_offset = content_height + leading_gap_rows;
             let render_width = transcript_surface_render_width(width, surface.kind);
             let content_width = usize::from(transcript_surface_content_width(
                 render_width,
@@ -387,6 +389,8 @@ pub(super) fn measure_transcript_layout<Section>(
             content_height = top_offset + height;
             measured_surfaces.push(MeasuredTranscriptSurface {
                 kind: surface.kind,
+                leading_gap_rows,
+                placement: surface.placement,
                 top_offset,
                 height,
                 width: render_width,
@@ -401,7 +405,6 @@ pub(super) fn measure_transcript_layout<Section>(
                 selected_rail: surface.selected_rail,
                 tool_rail_motion: surface.tool_rail_motion,
             });
-            previous_surface_kind = Some(surface.kind);
         }
         let measured_section = MeasuredTranscriptSection {
             activity_first_seq: activity_first_seq(section),
@@ -455,7 +458,7 @@ pub(super) fn render_transcript_layout_surfaces(
     }
 
     // Reference permission state: pin pending-permission Run Write footer to viewport bottom above dock.
-    let footer_pin = pending_permission_footer_pin_delta(layout, viewport_height, scroll_top);
+    let footer_pin = typed_footer_pin_delta(layout, viewport_height, scroll_top);
     // Reference scroll state: keep the latest turn's user prompt sticky at the top while body scrolls.
     // The measured surface gap already supplies the single blank row under a sticky user.
     let viewport_rows = transcript_viewport_rows(layout, viewport_height, scroll_top);
@@ -527,7 +530,7 @@ pub(super) fn render_transcript_layout_surfaces(
             let y_offset = visible_top.saturating_sub(scroll_top);
             let visible_height = visible_bottom.saturating_sub(visible_top);
             // Freeze PERM Run Write / Waiting footer uses lead=4 while body tools use lead=5.
-            let footer_outdent = run_write_footer_outdent(surface);
+            let footer_outdent = typed_footer_outdent(surface);
             let surface_rect = Rect::new(
                 body_area.x.saturating_sub(footer_outdent),
                 body_area
@@ -582,11 +585,10 @@ fn sticky_user_surface<'a>(
     if section_bottom <= scroll_top {
         return None;
     }
-    let (surface_idx, user_surface) = section
-        .surfaces
-        .iter()
-        .enumerate()
-        .find(|(_, surface)| surface.kind == TranscriptRenderSurfaceKind::User)?;
+    let (surface_idx, user_surface) =
+        section.surfaces.iter().enumerate().find(|(_, surface)| {
+            surface.placement == TranscriptBlockPlacement::StickyPromptCandidate
+        })?;
     let user_top = section_content_top.saturating_add(user_surface.top_offset);
     let user_bottom = user_top.saturating_add(user_surface.height);
     if user_bottom > scroll_top {
@@ -607,7 +609,7 @@ fn sticky_user_surface<'a>(
 }
 
 /// `(section_idx, surface_idx, pin_delta)` for pending-permission footer bottom pin.
-fn pending_permission_footer_pin_delta(
+fn typed_footer_pin_delta(
     layout: &MeasuredTranscriptLayout,
     viewport_height: usize,
     scroll_top: usize,
@@ -622,16 +624,10 @@ fn pending_permission_footer_pin_delta(
     let section = layout.sections.get(section_idx)?;
     let surface_idx = section.surfaces.len().checked_sub(1)?;
     let surface = section.surfaces.get(surface_idx)?;
-    let is_pinned_footer = surface.lines.iter().any(|line| {
-        line.spans.iter().any(|span| {
-            span.content.contains("Run Write")
-                || span.content.contains("Waiting on")
-                || span.content.contains("Waiting for response")
-                || span.content.contains("Retrying (attempt")
-                || span.content.contains("Responding")
-        })
-    });
-    if !is_pinned_footer {
+    if !matches!(
+        surface.placement,
+        TranscriptBlockPlacement::PinnedFooter { .. }
+    ) {
         return None;
     }
     let section_content_top = section.top_row.saturating_add(section.leading_gap_height);
@@ -648,16 +644,11 @@ fn pending_permission_footer_pin_delta(
     Some((section_idx, surface_idx, delta))
 }
 
-fn run_write_footer_outdent(surface: &MeasuredTranscriptSurface) -> u16 {
-    if surface.kind != TranscriptRenderSurfaceKind::AssistantFooter {
-        return 0;
+fn typed_footer_outdent(surface: &MeasuredTranscriptSurface) -> u16 {
+    if let TranscriptBlockPlacement::PinnedFooter { outdent_cells } = surface.placement {
+        return outdent_cells;
     }
-    let is_run_write_footer = surface.lines.iter().any(|line| {
-        line.spans
-            .iter()
-            .any(|span| span.content.contains("Run Write") || span.content.contains("Waiting on"))
-    });
-    u16::from(is_run_write_footer)
+    0
 }
 
 fn paint_selected_rail_glyph(
@@ -727,6 +718,8 @@ mod pin_tests {
                 surfaces: vec![
                     MeasuredTranscriptSurface {
                         kind: TranscriptRenderSurfaceKind::AssistantTool,
+                        leading_gap_rows: 0,
+                        placement: TranscriptBlockPlacement::Flow,
                         top_offset: 0,
                         height: body_height,
                         width: 120,
@@ -743,6 +736,8 @@ mod pin_tests {
                     },
                     MeasuredTranscriptSurface {
                         kind: TranscriptRenderSurfaceKind::AssistantFooter,
+                        leading_gap_rows: 0,
+                        placement: TranscriptBlockPlacement::PinnedFooter { outdent_cells: 1 },
                         top_offset: body_height,
                         height: 1,
                         width: 120,
@@ -775,7 +770,7 @@ mod pin_tests {
         // Given: short PERM turn content in a taller transcript viewport
         let layout = run_write_layout(6);
         // When: computing pin delta for viewport height 20 at follow-top
-        let pin = pending_permission_footer_pin_delta(&layout, 20, 0);
+        let pin = typed_footer_pin_delta(&layout, 20, 0);
         // Then: footer surface is shifted down toward the bottom edge
         let (section_idx, surface_idx, delta) = pin.expect("short content with Run Write must pin");
         assert_eq!(section_idx, 0);
@@ -793,7 +788,127 @@ mod pin_tests {
         // Given: content as tall as the viewport
         let layout = run_write_layout(20);
         // When/Then: no pin
-        assert_eq!(pending_permission_footer_pin_delta(&layout, 20, 0), None);
+        assert_eq!(typed_footer_pin_delta(&layout, 20, 0), None);
+    }
+
+    #[test]
+    fn typed_pinned_placement_is_copy_independent() {
+        let mut layout = run_write_layout(4);
+        let footer = Rc::make_mut(&mut layout.sections[0])
+            .surfaces
+            .last_mut()
+            .expect("footer");
+        footer.lines = vec![Line::from("alternate localized footer")];
+        let outdent = typed_footer_outdent(footer);
+
+        assert!(typed_footer_pin_delta(&layout, 20, 0).is_some());
+        assert_eq!(outdent, 1);
+    }
+
+    #[test]
+    fn typed_gap_rows_determine_measured_top_offset_once() {
+        let theme = Theme::default();
+        let layout = measure_transcript_layout(
+            &[()],
+            &theme,
+            80,
+            Color::Reset,
+            |_| 0,
+            |_, _| None,
+            |_, _, _, _| vec![test_render_surface(3, None)],
+        );
+
+        assert_eq!(layout.sections[0].surfaces[0].top_offset, 3);
+        assert_eq!(layout.sections[0].surfaces[0].leading_gap_rows, 3);
+    }
+
+    #[test]
+    fn typed_sticky_placement_survives_measurement() {
+        let theme = Theme::default();
+        let mut surface = test_render_surface(0, None);
+        surface.kind = TranscriptRenderSurfaceKind::User;
+        surface.placement = TranscriptBlockPlacement::StickyPromptCandidate;
+        let layout = measure_transcript_layout(
+            &[()],
+            &theme,
+            80,
+            Color::Reset,
+            |_| 0,
+            |_, _| None,
+            |_, _, _, _| vec![surface.clone()],
+        );
+
+        assert_eq!(
+            layout.sections[0].surfaces[0].placement,
+            TranscriptBlockPlacement::StickyPromptCandidate
+        );
+    }
+
+    #[test]
+    fn typed_layout_rejects_row_mismatch() {
+        use crate::ui::ui_transcript::ui_transcript_block_grammar::{
+            resolve_block_surface, test_spec, TranscriptBlockContent, TranscriptBlockRole,
+            TranscriptGrammarError,
+        };
+        let spec = test_spec(
+            TranscriptBlockRole::AssistantBody,
+            TranscriptBlockContent::AssistantBody {
+                text: String::new(),
+                streaming: false,
+                wall_clock: None,
+                has_tools: false,
+            },
+        );
+        let surface = test_render_surface(0, Some(vec![None, None]));
+
+        assert!(matches!(
+            resolve_block_surface(&spec, surface),
+            Err(TranscriptGrammarError::RowMismatch)
+        ));
+    }
+
+    #[test]
+    fn typed_layout_rejects_invalid_pin() {
+        use crate::ui::ui_transcript::ui_transcript_block_grammar::{
+            test_spec, validate_block_spec, TranscriptBlockContent, TranscriptBlockRole,
+            TranscriptGrammarError,
+        };
+        let mut spec = test_spec(
+            TranscriptBlockRole::AssistantBody,
+            TranscriptBlockContent::AssistantBody {
+                text: String::new(),
+                streaming: false,
+                wall_clock: None,
+                has_tools: false,
+            },
+        );
+        spec.placement = TranscriptBlockPlacement::PinnedFooter { outdent_cells: 1 };
+
+        assert_eq!(
+            validate_block_spec(&spec),
+            Err(TranscriptGrammarError::InvalidPlacement)
+        );
+    }
+
+    fn test_render_surface(
+        leading_gap_rows: usize,
+        interaction_rows: Option<Vec<Option<TranscriptInteractionRow>>>,
+    ) -> TranscriptRenderSurface {
+        TranscriptRenderSurface {
+            kind: TranscriptRenderSurfaceKind::AssistantBody,
+            leading_gap_rows,
+            placement: TranscriptBlockPlacement::Flow,
+            show_outer_rail: false,
+            rail_glyph: " ",
+            rail_color: Color::Reset,
+            surface: Color::Reset,
+            lines: vec![Line::from("body")],
+            interaction_rows,
+            selection_rows: None,
+            diff_hunk_offsets: Vec::new(),
+            selected_rail: false,
+            tool_rail_motion: None,
+        }
     }
 
     fn scroll_turn_layout(user_height: usize, body_height: usize) -> MeasuredTranscriptLayout {
@@ -807,6 +922,8 @@ mod pin_tests {
                 surfaces: vec![
                     MeasuredTranscriptSurface {
                         kind: TranscriptRenderSurfaceKind::User,
+                        leading_gap_rows: 0,
+                        placement: TranscriptBlockPlacement::StickyPromptCandidate,
                         top_offset: 0,
                         height: user_height,
                         width: 120,
@@ -825,6 +942,8 @@ mod pin_tests {
                     },
                     MeasuredTranscriptSurface {
                         kind: TranscriptRenderSurfaceKind::AssistantBody,
+                        leading_gap_rows: 0,
+                        placement: TranscriptBlockPlacement::Flow,
                         top_offset: user_height,
                         height: body_height,
                         width: 120,
@@ -864,6 +983,22 @@ mod pin_tests {
         assert_eq!(surface_idx, 0);
         assert_eq!(surface.kind, TranscriptRenderSurfaceKind::User);
         assert_eq!(surface.height, 4);
+    }
+
+    #[test]
+    fn sticky_prompt_selection_is_surface_kind_independent() {
+        let mut layout = scroll_turn_layout(4, 40);
+        let section = Rc::make_mut(&mut layout.sections[0]);
+        section.surfaces[0].kind = TranscriptRenderSurfaceKind::AssistantBody;
+
+        let (_, surface_idx, surface) = sticky_user_surface(&layout, 10, 20)
+            .expect("typed sticky placement must not depend on surface kind or copy");
+
+        assert_eq!(surface_idx, 0);
+        assert_eq!(
+            surface.placement,
+            TranscriptBlockPlacement::StickyPromptCandidate
+        );
     }
 
     #[test]

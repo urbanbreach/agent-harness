@@ -1,0 +1,30 @@
+{
+  "schema_version": "harness.tui-fidelity.reference-binary-receipt.v1",
+  "observed_at": "2026-08-13T03:31:40+03:00",
+  "source": {
+    "canonical_checkout": "inspirations/grok-build",
+    "revision": "be713136d2a69080743a3f6b3c72077057e5948f",
+    "tree": "ee8039b440cd38a62c1e007b5cd55c6bbe366aa4",
+    "clean": true,
+    "cargo_lock_sha256": "21e0cd14ac78d43ed48a5ce1e08e7281af19525e80566dcc4b7e1bdd357f7af8",
+    "rust_toolchain_sha256": "32a47ba7c3bcc9063bd056b833d12d51b628a38862b499fb4388d22c58cd64ca",
+    "cargo_config_sha256": "f4f52cf64a78df5636460fcfc7430a58b9906e11a199a4b7fe897e223b61af14"
+  },
+  "toolchain": {
+    "rustc_version": "rustc 1.94.0 (4a4ef493e 2026-03-02)",
+    "rustc_sha256": "103b60e1b1339968c1d74202ea1d45686037e82c4ea3e0569de24b18a1e6836a",
+    "cargo_version": "cargo 1.94.0 (85eff7c80 2026-01-15)",
+    "cargo_sha256": "77f14b761b02b47e6747473f556b3bc9f98f7e4525b7c3b8d74898ff816e4636"
+  },
+  "binary": {
+    "path": "inspirations/grok-build/target/debug/xai-grok-pager",
+    "sha256": "14fc3307626aec7ff9cd0738bd1b011ff194b527c5cc15eb9589b5ca34f60b67",
+    "version": "grok 1.0.1 (be71313) [alpha]",
+    "mtime": "2026-08-12T17:09:24.921509359+03:00"
+  },
+  "provenance": {
+    "packet": "G003-packet-2-input-first-runtime-schedul",
+    "prior_evidence": ".omo/evidence/ulw/019ff589-0d50-7d11-9225-c3a7b48f69e5/G003-packet-2-input-first-runtime-schedul/a1/manual-qa/reference-binary-receipt.json",
+    "rebuild_performed_during_reconciliation": false
+  }
+}

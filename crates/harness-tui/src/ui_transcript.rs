@@ -109,6 +109,9 @@ use super::ui_transcript_surface::{
 #[path = "ui_transcript_types.rs"]
 mod ui_transcript_types;
 
+#[path = "ui_transcript_block_grammar.rs"]
+pub(in crate::ui) mod ui_transcript_block_grammar;
+
 #[path = "ui_transcript_render.rs"]
 mod ui_transcript_render;
 
@@ -127,6 +130,8 @@ mod ui_transcript_sections;
 #[path = "ui_transcript_compaction.rs"]
 mod ui_transcript_compaction;
 
+pub(in crate::ui) use ui_transcript_block_grammar::TranscriptBlockPlacement;
+use ui_transcript_block_grammar::{normalize_turn_blocks, TranscriptBlockSpec};
 use ui_transcript_render::build_transcript_render_surfaces;
 use ui_transcript_sections::build_transcript_sections;
 #[cfg(test)]
@@ -145,9 +150,6 @@ pub(super) use ui_transcript_types::{
 use super::ui_transcript_surface::{render_transcript_surface_lines, visible_surface_lines};
 
 use super::ui_transcript_layout::MeasuredTranscriptSection;
-
-#[cfg(test)]
-use super::ui_transcript_surface::transcript_surface_leading_gap;
 
 #[cfg(test)]
 use super::ui_transcript_selection::{
@@ -190,41 +192,38 @@ fn cached_measured_section(
     previous: Option<&TranscriptLayoutCacheEntry>,
 ) -> Option<Rc<MeasuredTranscriptSection>> {
     let previous = previous?;
-    transcript_section_cache_matches(previous.sections.get(index)?, section)
-        .then(|| previous.layout.sections.get(index).cloned())
-        .flatten()
+    transcript_section_cache_matches(
+        previous.sections.get(index)?,
+        previous.normalized_specs.get(index)?,
+        section,
+    )
+    .then(|| previous.layout.sections.get(index).cloned())
+    .flatten()
 }
 
 fn transcript_section_cache_matches(
     candidate: &TranscriptTurnSection,
+    candidate_specs: &[TranscriptBlockSpec],
     section: &TranscriptTurnSection,
 ) -> bool {
     candidate.activity_first_seq == section.activity_first_seq
         && candidate.request_id == section.request_id
-        && candidate.user_message == section.user_message
+        && candidate_specs == normalize_turn_blocks(section)
         && candidate.show_footer == section.show_footer
         && candidate.footer_timestamp == section.footer_timestamp
-        && candidate.reasoning_expanded == section.reasoning_expanded
         && candidate.header == section.header
-        && candidate.body_blocks == section.body_blocks
-        && transcript_tool_calls_cache_match(&candidate.tool_calls, &section.tool_calls)
-        && candidate.thinking == section.thinking
-        && candidate.error == section.error
         && transcript_assistant_parts_cache_match(
             &candidate.assistant_parts,
             &section.assistant_parts,
         )
 }
 
-fn transcript_tool_calls_cache_match(
-    candidate: &[TranscriptToolCallSection],
-    section: &[TranscriptToolCallSection],
+#[cfg(test)]
+fn normalized_turn_cache_matches(
+    candidate: &TranscriptTurnSection,
+    section: &TranscriptTurnSection,
 ) -> bool {
-    candidate.len() == section.len()
-        && candidate
-            .iter()
-            .zip(section)
-            .all(|(candidate, section)| transcript_tool_call_cache_matches(candidate, section))
+    transcript_section_cache_matches(candidate, &normalize_turn_blocks(candidate), section)
 }
 
 fn transcript_tool_call_cache_matches(
@@ -997,6 +996,7 @@ fn with_measured_transcript_layout_for_width_on_surface<R>(
                     || entry.width != width
                     || entry.base_surface != base_surface
             });
+            let normalized_specs = sections.iter().map(normalize_turn_blocks).collect();
             cache.push(TranscriptLayoutCacheEntry {
                 app_instance_id,
                 render_key,
@@ -1004,6 +1004,7 @@ fn with_measured_transcript_layout_for_width_on_surface<R>(
                 width,
                 base_surface,
                 sections,
+                normalized_specs,
                 layout,
             });
             if cache.len() > 4 {
@@ -1237,7 +1238,12 @@ pub(crate) fn transcript_selection_patch_text(
     let selected = transcript_selection_text(app, area, selection)?;
     let sections = build_transcript_sections(app);
     let mut patches = Vec::new();
-    for tool in sections.iter().flat_map(|turn| turn.tool_calls.iter()) {
+    for tool in sections.iter().flat_map(|turn| {
+        turn.assistant_parts.iter().filter_map(|part| match part {
+            TranscriptAssistantPart::ToolCall(tool) => Some(tool.as_ref()),
+            _ => None,
+        })
+    }) {
         if tool.details_visible() {
             collect_selected_diff_patches(&tool.detail_blocks, &selected, &mut patches);
         }
@@ -1323,3 +1329,6 @@ mod streaming_tests;
 #[cfg(test)]
 #[path = "ui_transcript_tests.rs"]
 mod tests;
+#[cfg(test)]
+#[path = "ui_transcript_grammar_tests.rs"]
+mod ui_transcript_grammar_tests;

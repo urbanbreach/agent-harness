@@ -647,6 +647,10 @@ pub(super) fn build_transcript_tool_call_section(
         tool_call_id: tool_call.tool_call_id.clone(),
         coalesced_tool_call_ids: vec![tool_call.tool_call_id.clone()],
         child_session_id,
+        subagent_background: matches!(display_tool_id, "agent.spawn" | "task")
+            && agent_spawn_is_background(tool_call),
+        output_truncated: tool_call.truncated_output.is_some(),
+        replay_read_only: app.replay_mode,
         hovered_target: app.hovered_transcript_target().cloned(),
         header: TranscriptToolCallHeader {
             tool_id: if matches!(display_tool_id, "shell.run" | "bash") {

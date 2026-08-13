@@ -143,6 +143,21 @@ fn readiness_sample(
     Ok(false)
 }
 
+fn action_requires_literal_backlog(
+    adapter: AdapterKind,
+    fixture_active: bool,
+    action: &crate::tui_fidelity::ScenarioAction,
+) -> bool {
+    adapter == AdapterKind::Harness
+        && fixture_active
+        && !matches!(
+            action,
+            crate::tui_fidelity::ScenarioAction::WaitForSemanticState(_)
+                | crate::tui_fidelity::ScenarioAction::WaitForText(_)
+                | crate::tui_fidelity::ScenarioAction::ClickText(_)
+        )
+}
+
 pub(super) struct ProcessCapture {
     pub exit_code: i32,
     pub input_timestamps: Vec<Duration>,
@@ -162,7 +177,18 @@ pub(super) fn execute(
     evidence_dir: &Path,
     tracker: &mut CleanupTracker,
     fixture_base_url: Option<&str>,
+    packet2_scheduling: bool,
 ) -> Result<ProcessCapture, RunnerError> {
+    let child_evidence_dir = if evidence_dir.is_absolute() {
+        evidence_dir.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .map_err(|error| RunnerError::Io {
+                path: evidence_dir.to_path_buf(),
+                detail: format!("resolve runner cwd for evidence: {error}"),
+            })?
+            .join(evidence_dir)
+    };
     let launch_path = if adapter == AdapterKind::Grok {
         ReferenceBinaryCache::new(
             runtime_dir.join("reference-binary-cache"),
@@ -220,16 +246,6 @@ pub(super) fn execute(
         command.env("GROK_TRACE_UPLOAD", "false");
     }
     configure_environment(&mut command, scenario.terminal_type);
-    let child_evidence_dir = if evidence_dir.is_absolute() {
-        evidence_dir.to_path_buf()
-    } else {
-        std::env::current_dir()
-            .map_err(|error| RunnerError::Io {
-                path: evidence_dir.to_path_buf(),
-                detail: format!("resolve runner cwd for Harness evidence: {error}"),
-            })?
-            .join(evidence_dir)
-    };
     let interaction_queue_path = child_evidence_dir.join("interaction-ids");
     let scheduling_readiness_path = child_evidence_dir.join("scheduling-readiness.json");
     if adapter == AdapterKind::Harness {
@@ -238,7 +254,7 @@ pub(super) fn execute(
             child_evidence_dir.join("native-presentation.json"),
         );
         command.env("TUI_FIDELITY_INTERACTION_QUEUE", &interaction_queue_path);
-        if fixture_base_url.is_some() {
+        if packet2_scheduling {
             command.env(
                 "TUI_FIDELITY_SCHEDULING_TRACE",
                 child_evidence_dir.join("scheduling.json"),
@@ -310,7 +326,7 @@ pub(super) fn execute(
             adapter == AdapterKind::Grok && binary.source_revision != "reference-revision",
         )?;
         lifecycle_phase = "prompt_ready";
-        if fixture_base_url.is_some() {
+        if packet2_scheduling {
             super::actions::write_input(writer.as_mut(), b"start packet2 fixture\r", adapter)?;
             let (child, observed) = guard.parts_mut(adapter)?;
             wait_for_text(
@@ -345,14 +361,7 @@ pub(super) fn execute(
                 observed,
                 pid,
             )?;
-            if adapter == AdapterKind::Harness
-                && !matches!(
-                    action,
-                    crate::tui_fidelity::ScenarioAction::WaitForSemanticState(_)
-                        | crate::tui_fidelity::ScenarioAction::WaitForText(_)
-                        | crate::tui_fidelity::ScenarioAction::ClickText(_)
-                )
-            {
+            if action_requires_literal_backlog(adapter, packet2_scheduling, action) {
                 wait_for_literal_backlog(
                     &scheduling_readiness_path,
                     deadline,
@@ -417,11 +426,15 @@ pub(super) fn execute(
                     None
                 };
                 if let Some(queue) = interaction_queue.as_mut() {
-                    interaction_queue::append(queue, &interaction_id, action).map_err(|error| {
-                        RunnerError::Io {
-                            path: interaction_queue_path.clone(),
-                            detail: format!("append typed interaction receipt: {error}"),
-                        }
+                    interaction_queue::append(
+                        queue,
+                        &interaction_id,
+                        action,
+                        scenario.id.0.starts_with("packet3-baseline-"),
+                    )
+                    .map_err(|error| RunnerError::Io {
+                        path: interaction_queue_path.clone(),
+                        detail: format!("append typed interaction receipt: {error}"),
                     })?;
                 }
                 let frame = prepared_frame.unwrap_or_else(|| {
@@ -434,13 +447,43 @@ pub(super) fn execute(
                         if click.text == crate::tui_fidelity_fixture::DISCLOSURE_SENTINEL
                 );
                 let sent_at = process_start.elapsed();
-                apply_action_with_frame(
-                    action,
-                    adapter,
-                    pair.master.as_ref(),
-                    writer.as_mut(),
-                    Some(&frame),
-                )?;
+                if scenario.id.0.starts_with("packet3-baseline-") {
+                    if let crate::tui_fidelity::ScenarioAction::TypeText(typed) = action {
+                        super::actions::write_input(
+                            writer.as_mut(),
+                            typed.text.as_bytes(),
+                            adapter,
+                        )?;
+                        let (child, observed) = guard.parts_mut(adapter)?;
+                        wait_for_text(
+                            &typed.text,
+                            action_viewport,
+                            deadline,
+                            adapter,
+                            child,
+                            &output,
+                            &mut stream,
+                            observed,
+                            pid,
+                        )?;
+                    } else {
+                        apply_action_with_frame(
+                            action,
+                            adapter,
+                            pair.master.as_ref(),
+                            writer.as_mut(),
+                            Some(&frame),
+                        )?;
+                    }
+                } else {
+                    apply_action_with_frame(
+                        action,
+                        adapter,
+                        pair.master.as_ref(),
+                        writer.as_mut(),
+                        Some(&frame),
+                    )?;
+                }
                 if let crate::tui_fidelity::ScenarioAction::Resize(resize) = action {
                     std::thread::sleep(Duration::from_millis(resize.dwell_millis));
                 }
@@ -483,6 +526,7 @@ pub(super) fn execute(
                     action,
                     crate::tui_fidelity::ScenarioAction::WaitForSemanticState(_)
                         | crate::tui_fidelity::ScenarioAction::WaitForText(_)
+                        | crate::tui_fidelity::ScenarioAction::TerminalReply(_)
                 ) {
                     let scheduled_at = start.duration_since(process_start)
                         + timing
@@ -678,4 +722,45 @@ fn write_packet2_config(
         detail: error.to_string(),
     })?;
     Ok(path)
+}
+
+#[cfg(test)]
+mod readiness_scope_tests {
+    use super::action_requires_literal_backlog;
+    use crate::tui_fidelity::{
+        AdapterKind, KeyCode, KeyModifiers, KeySpec, ScenarioAction, Tick, TimedKeyAction,
+    };
+
+    #[test]
+    fn baseline_harness_actions_do_not_require_packet2_backlog() {
+        // Given: an ordinary Harness input action outside the Packet 2 fixture.
+        let action = ScenarioAction::TimedKey(TimedKeyAction {
+            at_tick: Tick(1),
+            key: KeySpec {
+                code: KeyCode::Char('x'),
+                modifiers: KeyModifiers {
+                    shift: false,
+                    alt: false,
+                    ctrl: false,
+                    meta: false,
+                },
+            },
+        });
+
+        // When: the action's scheduling handshake scope is selected.
+        let baseline = action_requires_literal_backlog(AdapterKind::Harness, false, &action);
+
+        // Then: only Harness actions backed by the Packet 2 fixture require backlog.
+        assert!(!baseline);
+        assert!(action_requires_literal_backlog(
+            AdapterKind::Harness,
+            true,
+            &action
+        ));
+        assert!(!action_requires_literal_backlog(
+            AdapterKind::Grok,
+            true,
+            &action
+        ));
+    }
 }

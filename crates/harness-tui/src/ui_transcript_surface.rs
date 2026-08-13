@@ -22,56 +22,6 @@ const TRANSCRIPT_SURFACE_RAIL_WIDTH: u16 = 1;
 pub(super) const TRANSCRIPT_SURFACE_TRAILING_GAP_WIDTH: u16 = 2;
 pub(super) const TRANSCRIPT_RAIL_GLYPH: &str = " ";
 
-pub(super) fn transcript_surface_leading_gap(
-    previous: Option<TranscriptRenderSurfaceKind>,
-    current: TranscriptRenderSurfaceKind,
-) -> usize {
-    match previous {
-        Some(previous)
-            if transcript_surface_is_assistant_tool_like(previous)
-                && transcript_surface_is_assistant_tool_like(current) =>
-        {
-            0
-        }
-        // Reference question state: Thought then Ask are adjacent (no blank between).
-        Some(TranscriptRenderSurfaceKind::AssistantReasoning)
-            if transcript_surface_is_assistant_tool_like(current) =>
-        {
-            0
-        }
-        Some(TranscriptRenderSurfaceKind::AssistantBody)
-            if transcript_surface_is_assistant_tool_like(current) =>
-        {
-            1
-        }
-        Some(TranscriptRenderSurfaceKind::AssistantBody)
-            if matches!(
-                current,
-                TranscriptRenderSurfaceKind::AssistantReasoning
-                    | TranscriptRenderSurfaceKind::AssistantBody
-            ) =>
-        {
-            0
-        }
-        Some(previous)
-            if transcript_surface_is_assistant_tool_like(previous)
-                && current == TranscriptRenderSurfaceKind::AssistantReasoning =>
-        {
-            0
-        }
-        Some(_) => 1,
-        None => 0,
-    }
-}
-
-fn transcript_surface_is_assistant_tool_like(kind: TranscriptRenderSurfaceKind) -> bool {
-    matches!(
-        kind,
-        TranscriptRenderSurfaceKind::AssistantTool
-            | TranscriptRenderSurfaceKind::AssistantCommandTool
-    )
-}
-
 pub(super) fn render_transcript_surface(
     frame: &mut Frame,
     surface: &MeasuredTranscriptSurface,
@@ -385,9 +335,8 @@ pub(super) fn render_transcript_surface_lines(
     surfaces: &[TranscriptRenderSurface],
 ) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
-    let mut previous_surface_kind = None;
     for surface in surfaces {
-        for _ in 0..transcript_surface_leading_gap(previous_surface_kind, surface.kind) {
+        for _ in 0..surface.leading_gap_rows {
             lines.push(Line::default());
         }
         if surface.show_outer_rail {
@@ -402,7 +351,6 @@ pub(super) fn render_transcript_surface_lines(
         } else {
             lines.extend(surface.lines.iter().cloned());
         }
-        previous_surface_kind = Some(surface.kind);
     }
     lines
 }

@@ -521,6 +521,9 @@ fn block_tool_cards_render_subtitle_inline_with_title() {
         tool_call_id: "tool-agent-spawn".to_string(),
         coalesced_tool_call_ids: vec!["tool-agent-spawn".to_string()],
         child_session_id: None,
+        subagent_background: false,
+        output_truncated: false,
+        replay_read_only: false,
         hovered_target: None,
         header: TranscriptToolCallHeader {
             tool_id: "agent.spawn".to_string(),
@@ -1170,6 +1173,9 @@ pub(crate) fn exact_test_inline_tool_rows_wrap_long_subtitles_cleanly() {
         tool_call_id: "tool-inline-read".to_string(),
         coalesced_tool_call_ids: vec!["tool-inline-read".to_string()],
         child_session_id: None,
+        subagent_background: false,
+        output_truncated: false,
+        replay_read_only: false,
         hovered_target: None,
         header: TranscriptToolCallHeader {
             tool_id: "fs.read".to_string(),

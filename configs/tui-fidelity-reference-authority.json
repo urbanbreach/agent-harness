@@ -5,8 +5,9 @@
     "canonical_checkout": "inspirations/grok-build",
     "executable": "inspirations/grok-build/target/debug/xai-grok-pager",
     "source_revision": "be713136d2a69080743a3f6b3c72077057e5948f",
-    "binary_sha256": "2198bc3699b0ac76d3e3d32bf3da2277479ad244e19cfb1be7d111fc5f4b8ca2",
-    "binary_version": "grok 1.0.1 (be71313) [alpha]"
+    "binary_sha256": "14fc3307626aec7ff9cd0738bd1b011ff194b527c5cc15eb9589b5ca34f60b67",
+    "binary_version": "grok 1.0.1 (be71313) [alpha]",
+    "receipt_path": "configs/tui-fidelity-reference-binary-receipt.json"
   },
   "active_revision_sources": [
     {
@@ -40,6 +41,7 @@
   ],
   "required_paths": [
     "configs/tui-fidelity-reference-authority.json",
+    "configs/tui-fidelity-reference-binary-receipt.json",
     "configs/tui-fidelity-closure-contract.json",
     "configs/tui-fidelity-requirement-inventory.json",
     "configs/tui-fidelity-coverage-manifest.json",
@@ -49,6 +51,16 @@
     "crates/harness-testkit/src/tui_fidelity_scenarios/baseline/registry.json"
   ],
   "scenario_registry": "crates/harness-testkit/src/tui_fidelity_scenarios/baseline/registry.json",
+  "prior_binary_epochs": [
+    {
+      "source_revision": "be713136d2a69080743a3f6b3c72077057e5948f",
+      "binary_sha256": "2198bc3699b0ac76d3e3d32bf3da2277479ad244e19cfb1be7d111fc5f4b8ca2",
+      "binary_version": "grok 1.0.1 (be71313) [alpha]",
+      "acceptance_eligible": false,
+      "status": "superseded_binary_epoch",
+      "provenance": "Packet 0 isolated canonical build; superseded by the Packet 2 canonical executable epoch at the same source revision"
+    }
+  ],
   "historical_non_acceptance": {
     "source_revision": "c1b5909ec707c069f1d21a93917af044e71da0d7",
     "binary_sha256": "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5",
@@ -70,8 +82,7 @@
       "crates/harness-tui/tests/tui_signoff_manifest_test.rs",
       "docs/reference/grok-build-parity-loop-contract.md",
       "docs/reference/grok-build-tui-implementation-prompt.md",
-      "docs/reference/tui-reference-parity-manifest.v1.json",
-      "scripts/test-lanes.sh"
+      "docs/reference/tui-reference-parity-manifest.v1.json"
     ]
   }
 }

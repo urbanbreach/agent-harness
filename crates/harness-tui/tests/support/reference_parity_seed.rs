@@ -10,10 +10,12 @@ use std::path::Path;
 
 use serde_json::{json, Value};
 
+const ACTIVE_REFERENCE_AUTHORITY: &str =
+    include_str!("../../../../configs/tui-fidelity-reference-authority.json");
+
 use crate::status::{non_empty_str, parse_cols_rows, resolve_declared, sha256_hex};
 use crate::support::{
     divergence_receipt_path, EVIDENCE_LAYERS, FREEZE_PNG_SHA256, FREEZE_TXT_SHA256,
-    REFERENCE_BINARY_SHA256,
 };
 
 /// Create fixture evidence under `root` for every claimed row so disk-backed
@@ -81,7 +83,9 @@ fn seed_freeze_receipt(evidence_root: &str, root: &Path, manifest: &Value) {
             "cols": freeze_viewport.map(|(cols, _)| cols).unwrap_or(0),
             "rows": freeze_viewport.map(|(_, rows)| rows).unwrap_or(0),
         },
-        "global_pinned_reference": { "binary_sha256": REFERENCE_BINARY_SHA256 },
+        "global_pinned_reference": {
+            "binary_sha256": active_reference_binary_sha256()
+        },
         "freeze_txt_sha256": FREEZE_TXT_SHA256,
         "freeze_png_sha256": FREEZE_PNG_SHA256,
     });
@@ -90,6 +94,14 @@ fn seed_freeze_receipt(evidence_root: &str, root: &Path, manifest: &Value) {
         &resolve_declared(evidence_root, root, receipt_path),
         body.as_bytes(),
     );
+}
+
+fn active_reference_binary_sha256() -> String {
+    serde_json::from_str::<Value>(ACTIVE_REFERENCE_AUTHORITY).expect("active reference authority")
+        ["reference"]["binary_sha256"]
+        .as_str()
+        .expect("active reference binary SHA-256")
+        .to_owned()
 }
 
 fn seed_capture_pair(evidence_root: &str, root: &Path, row: &mut Value) -> (String, String) {

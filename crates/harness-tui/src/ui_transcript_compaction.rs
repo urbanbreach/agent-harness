@@ -9,15 +9,11 @@
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 
-use crate::theme::Theme;
-use crate::ui::ui_chrome::display_width;
-
 use super::ui_transcript_style::transcript_emphasized_surface;
 use super::ui_transcript_surface::transcript_surface_content_width;
-use super::ui_transcript_types::{
-    TranscriptCompactionKind, TranscriptCompactionSection, TranscriptRenderSurface,
-    TranscriptRenderSurfaceKind,
-};
+use super::ui_transcript_types::{TranscriptCompactionKind, TranscriptCompactionSection};
+use crate::theme::Theme;
+use crate::ui::ui_chrome::display_width;
 
 const COMPACTION_BADGE: &str = "[compaction]";
 const BRANCH_SUMMARY_BADGE: &str = "[branch-summary]";
@@ -26,12 +22,17 @@ const DISCLOSURE_EXPANDED: &str = "\u{25bc} "; // ▼
 const FILE_BULLET: &str = "  ";
 const COMPACTION_PREFIX: &str = "   ";
 
-pub(super) fn build_compaction_render_surface(
+pub(super) struct ResolvedCompactionContent {
+    pub(super) lines: Vec<Line<'static>>,
+    pub(super) surface: Color,
+}
+
+pub(super) fn resolve_compaction_content(
     compaction: &TranscriptCompactionSection,
     theme: &Theme,
     width: u16,
     base_surface: Color,
-) -> TranscriptRenderSurface {
+) -> ResolvedCompactionContent {
     let surface = transcript_emphasized_surface(theme, base_surface);
     let content_width = transcript_surface_content_width(width, false);
     let mut lines = Vec::new();
@@ -119,19 +120,7 @@ pub(super) fn build_compaction_render_surface(
         content_width,
     );
 
-    TranscriptRenderSurface {
-        kind: TranscriptRenderSurfaceKind::Compaction,
-        show_outer_rail: false,
-        rail_glyph: " ",
-        rail_color: theme.border.subtle,
-        surface,
-        lines,
-        interaction_rows: None,
-        selection_rows: None,
-        diff_hunk_offsets: Vec::new(),
-        selected_rail: false,
-        tool_rail_motion: None,
-    }
+    ResolvedCompactionContent { surface, lines }
 }
 
 fn append_file_list(
@@ -280,8 +269,7 @@ mod tests {
             read_files: vec!["src/main.rs".to_string()],
             modified_files: vec!["src/lib.rs".to_string()],
         };
-        let surface = build_compaction_render_surface(&compaction, &theme, 80, theme.surface.shell);
-        assert_eq!(surface.kind, TranscriptRenderSurfaceKind::Compaction);
+        let surface = resolve_compaction_content(&compaction, &theme, 80, theme.surface.shell);
         let badge_line = &surface.lines[0];
         let badge_text = badge_line
             .spans
@@ -304,7 +292,7 @@ mod tests {
             read_files: vec![],
             modified_files: vec![],
         };
-        let surface = build_compaction_render_surface(&compaction, &theme, 80, theme.surface.shell);
+        let surface = resolve_compaction_content(&compaction, &theme, 80, theme.surface.shell);
         let token_line = &surface.lines[1];
         let token_text = token_line
             .spans
@@ -328,7 +316,7 @@ mod tests {
             read_files: vec![],
             modified_files: vec![],
         };
-        let surface = build_compaction_render_surface(&compaction, &theme, 80, theme.surface.shell);
+        let surface = resolve_compaction_content(&compaction, &theme, 80, theme.surface.shell);
         let badge_line = &surface.lines[0];
         let badge_text = badge_line
             .spans
@@ -351,7 +339,7 @@ mod tests {
             read_files: vec!["src/a.rs".to_string(), "src/b.rs".to_string()],
             modified_files: vec!["src/c.rs".to_string()],
         };
-        let surface = build_compaction_render_surface(&compaction, &theme, 80, theme.surface.shell);
+        let surface = resolve_compaction_content(&compaction, &theme, 80, theme.surface.shell);
         let all_text: String = surface
             .lines
             .iter()
@@ -465,8 +453,7 @@ mod tests {
             })
             .expect("compaction part should exist");
 
-        let surface =
-            build_compaction_render_surface(compaction_part, &theme, 80, theme.surface.shell);
+        let surface = resolve_compaction_content(compaction_part, &theme, 80, theme.surface.shell);
 
         let all_text: String = surface
             .lines

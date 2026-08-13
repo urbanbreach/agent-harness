@@ -10,6 +10,10 @@ use serde::Serialize;
 pub const DISCLOSURE_SENTINEL: &str = "PACKET2_DISCLOSURE_SENTINEL";
 pub const DISCLOSURE_BODY: &str = "PACKET2_DISCLOSURE_BODY";
 pub const STREAM_SENTINEL: &str = "PACKET2_STREAM_SENTINEL";
+pub const PACKET3_STREAM_REST: &str = "I inspected the requested stream.";
+pub const PACKET3_STREAM_MID: &str = "The deterministic output rendered correctly.";
+pub const PACKET3_STREAM_SETTLED: &str =
+    "The stream probe is complete; all requested work is finished.";
 pub const DELTA_COUNT: usize = 10_000;
 pub const DELTA_CADENCE: Duration = Duration::from_millis(2);
 pub const ISOLATED_COMMAND: &str =
@@ -46,6 +50,13 @@ pub struct Packet2FixtureServer {
     worker: Option<JoinHandle<Result<(), Packet2FixtureError>>>,
 }
 
+#[derive(Clone, Copy)]
+enum FixtureStream {
+    Sustained,
+    Packet3Stream,
+    Packet3Settled,
+}
+
 struct HttpRequest {
     path: String,
     body: String,
@@ -53,13 +64,22 @@ struct HttpRequest {
 
 impl Packet2FixtureServer {
     pub fn start() -> Result<Self, Packet2FixtureError> {
+        Self::start_with_stream(FixtureStream::Sustained)
+    }
+
+    pub fn start_packet3(scenario_id: &str) -> Result<Self, Packet2FixtureError> {
+        Self::start_with_stream(packet3_stream_mode(scenario_id))
+    }
+
+    fn start_with_stream(stream_mode: FixtureStream) -> Result<Self, Packet2FixtureError> {
         let listener = TcpListener::bind(("127.0.0.1", 0)).map_err(io_error)?;
         let address = listener.local_addr().map_err(io_error)?;
         let trace = Arc::new(Mutex::new(Packet2FixtureTrace::default()));
         let stop = Arc::new(AtomicBool::new(false));
         let worker_trace = Arc::clone(&trace);
         let worker_stop = Arc::clone(&stop);
-        let worker = std::thread::spawn(move || serve(listener, &worker_trace, &worker_stop));
+        let worker =
+            std::thread::spawn(move || serve(listener, &worker_trace, &worker_stop, stream_mode));
         Ok(Self {
             address,
             trace,
@@ -96,8 +116,12 @@ fn serve(
     listener: TcpListener,
     trace: &Arc<Mutex<Packet2FixtureTrace>>,
     stop: &AtomicBool,
+    stream_mode: FixtureStream,
 ) -> Result<(), Packet2FixtureError> {
     listener.set_nonblocking(true).map_err(io_error)?;
+    if matches!(stream_mode, FixtureStream::Packet3Stream) {
+        return serve_packet3_stream(listener, trace, stop);
+    }
     let (mut first, tool, responses_api) = loop {
         let Some(mut stream) = accept(&listener, stop)? else {
             return Ok(());
@@ -121,7 +145,7 @@ fn serve(
         value.request_count = 1;
         value.negotiated_tool = Some(tool.clone());
     });
-    send_tool_call(&mut first, &tool, responses_api)?;
+    send_tool_call(&mut first, &tool, responses_api, stream_mode)?;
     drop(first);
 
     let (mut second, second_request) = loop {
@@ -145,12 +169,133 @@ fn serve(
         value.request_count = 2;
         value.tool_result_observed = true;
     });
-    send_paced_stream(
-        &mut second,
-        trace,
-        stop,
-        second_request.path.ends_with("/responses"),
-    )
+    let responses_api = second_request.path.ends_with("/responses");
+    match stream_mode {
+        FixtureStream::Sustained => send_paced_stream(&mut second, trace, stop, responses_api),
+        FixtureStream::Packet3Settled => send_packet3_settled(&mut second, trace, responses_api),
+        FixtureStream::Packet3Stream => Err(Packet2FixtureError::Protocol(
+            "Packet 3 stream reached tool-result flow".to_owned(),
+        )),
+    }
+}
+
+fn packet3_stream_mode(scenario_id: &str) -> FixtureStream {
+    if scenario_id.starts_with("packet3-baseline-stream--") {
+        FixtureStream::Packet3Stream
+    } else {
+        FixtureStream::Packet3Settled
+    }
+}
+
+fn serve_packet3_stream(
+    listener: TcpListener,
+    trace: &Arc<Mutex<Packet2FixtureTrace>>,
+    stop: &AtomicBool,
+) -> Result<(), Packet2FixtureError> {
+    loop {
+        let Some(mut stream) = accept(&listener, stop)? else {
+            return Ok(());
+        };
+        let request = read_request(&mut stream)?;
+        update_trace(trace, |value| {
+            value.request_paths.push(request.path.clone())
+        });
+        if is_generation_path(&request.path) && is_packet3_stream_request(&request.body) {
+            update_trace(trace, |value| value.request_count = 1);
+            return send_packet3_stream(&mut stream, trace, request.path.ends_with("/responses"));
+        }
+        if is_generation_path(&request.path) {
+            send_simple_stream(&mut stream, request.path.ends_with("/responses"))?;
+        } else {
+            write_json_response(&mut stream)?;
+        }
+    }
+}
+
+fn is_packet3_stream_request(body: &str) -> bool {
+    body.contains("stream probe")
+}
+
+fn send_packet3_stream(
+    stream: &mut TcpStream,
+    trace: &Arc<Mutex<Packet2FixtureTrace>>,
+    responses_api: bool,
+) -> Result<(), Packet2FixtureError> {
+    write_headers(stream)?;
+    if responses_api {
+        write_sse(stream, &response_created("packet3-stream").to_string())?;
+    }
+    let started = Instant::now();
+    for (ordinal, text) in [
+        PACKET3_STREAM_REST,
+        PACKET3_STREAM_MID,
+        PACKET3_STREAM_SETTLED,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let chunk = if responses_api {
+            serde_json::json!({"type":"response.output_text.delta","sequence_number":ordinal + 1,"item_id":"packet3-stream-message","output_index":0,"content_index":0,"delta":format!("{text}\n")})
+        } else {
+            serde_json::json!({"id":"packet3-stream","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":format!("{text}\n")},"finish_reason":null}]})
+        };
+        write_sse(stream, &chunk.to_string())?;
+        let elapsed = started.elapsed().as_micros();
+        update_trace(trace, |value| {
+            value.delta_count += 1;
+            value.first_delta_micros.get_or_insert(elapsed);
+            value.last_delta_micros = Some(elapsed);
+        });
+        if ordinal < 2 {
+            std::thread::sleep(Duration::from_millis(300));
+        }
+    }
+    if responses_api {
+        let text =
+            format!("{PACKET3_STREAM_REST}\n{PACKET3_STREAM_MID}\n{PACKET3_STREAM_SETTLED}\n");
+        let output = vec![
+            serde_json::json!({"type":"message","id":"packet3-stream-message","role":"assistant","status":"completed","content":[{"type":"output_text","text":text,"annotations":[]}]}),
+        ];
+        write_sse(
+            stream,
+            &response_completed_at("packet3-stream", 4, output).to_string(),
+        )?;
+    }
+    write_sse(stream, "[DONE]")
+}
+
+fn send_packet3_settled(
+    stream: &mut TcpStream,
+    trace: &Arc<Mutex<Packet2FixtureTrace>>,
+    responses_api: bool,
+) -> Result<(), Packet2FixtureError> {
+    const TEXT: &str = "Packet 3 recovery complete — 漢字かなカナ";
+    update_trace(trace, |value| {
+        value.delta_count = 1;
+        value.first_delta_micros = Some(0);
+        value.last_delta_micros = Some(0);
+    });
+    write_headers(stream)?;
+    if responses_api {
+        let output = vec![serde_json::json!({
+            "type":"message",
+            "id":"packet3-message",
+            "role":"assistant",
+            "status":"completed",
+            "content":[{"type":"output_text","text":TEXT,"annotations":[]}]
+        })];
+        for event in [
+            response_created("packet3-settled"),
+            serde_json::json!({"type":"response.output_text.delta","sequence_number":1,"item_id":"packet3-message","output_index":0,"content_index":0,"delta":TEXT}),
+            response_completed("packet3-settled", output),
+        ] {
+            write_sse(stream, &event.to_string())?;
+        }
+    } else {
+        let chunk = serde_json::json!({"id":"packet3-settled","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":TEXT},"finish_reason":"stop"}]});
+        write_sse(stream, &chunk.to_string())?;
+    }
+    write_sse(stream, "[DONE]")
 }
 
 fn is_tool_result_request(body: &str) -> bool {
@@ -219,13 +364,10 @@ fn send_tool_call(
     stream: &mut TcpStream,
     tool: &str,
     responses_api: bool,
+    stream_mode: FixtureStream,
 ) -> Result<(), Packet2FixtureError> {
     write_headers(stream)?;
-    let command = if tool == "run_terminal_command" {
-        GROK_ISOLATED_COMMAND
-    } else {
-        ISOLATED_COMMAND
-    };
+    let command = fixture_command(tool, stream_mode);
     let arguments = serde_json::to_string(&serde_json::json!({"command": command}))
         .map_err(|error| Packet2FixtureError::Protocol(error.to_string()))?;
     if responses_api {
@@ -247,6 +389,16 @@ fn send_tool_call(
     let chunk = serde_json::json!({"id":"packet2-tool","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"packet2-call","type":"function","function":{"name":tool,"arguments":arguments}}]},"finish_reason":"tool_calls"}]});
     write_sse(stream, &chunk.to_string())?;
     write_sse(stream, "[DONE]")
+}
+
+fn fixture_command(tool: &str, stream_mode: FixtureStream) -> &'static str {
+    if matches!(stream_mode, FixtureStream::Packet3Settled) {
+        ISOLATED_COMMAND
+    } else if tool == "run_terminal_command" {
+        GROK_ISOLATED_COMMAND
+    } else {
+        ISOLATED_COMMAND
+    }
 }
 
 fn send_paced_stream(
@@ -321,7 +473,15 @@ fn response_created(id: &str) -> serde_json::Value {
 }
 
 fn response_completed(id: &str, output: Vec<serde_json::Value>) -> serde_json::Value {
-    serde_json::json!({"type":"response.completed","sequence_number":DELTA_COUNT + 1,"response":{"id":id,"object":"response","created_at":1,"model":"fixture","status":"completed","output":output,"usage":{"input_tokens":10,"output_tokens":10,"total_tokens":20,"input_tokens_details":{"cached_tokens":0},"output_tokens_details":{"reasoning_tokens":0}}}})
+    response_completed_at(id, DELTA_COUNT + 1, output)
+}
+
+fn response_completed_at(
+    id: &str,
+    sequence_number: usize,
+    output: Vec<serde_json::Value>,
+) -> serde_json::Value {
+    serde_json::json!({"type":"response.completed","sequence_number":sequence_number,"response":{"id":id,"object":"response","created_at":1,"model":"fixture","status":"completed","output":output,"usage":{"input_tokens":10,"output_tokens":10,"total_tokens":20,"input_tokens_details":{"cached_tokens":0},"output_tokens_details":{"reasoning_tokens":0}}}})
 }
 
 fn read_request(stream: &mut TcpStream) -> Result<HttpRequest, Packet2FixtureError> {
@@ -409,4 +569,35 @@ fn update_trace(
 }
 fn io_error(error: std::io::Error) -> Packet2FixtureError {
     Packet2FixtureError::Io(error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        fixture_command, is_packet3_stream_request, packet3_stream_mode, FixtureStream,
+        ISOLATED_COMMAND,
+    };
+
+    #[test]
+    fn packet3_stream_is_text_only_and_tool_modes_share_command_payload() {
+        // Given: Packet 3 stream and tool-family scenario identities.
+        let stream = packet3_stream_mode("packet3-baseline-stream--wide-120x40");
+        let tool = packet3_stream_mode("packet3-baseline-tool--wide-120x40");
+
+        // When: fixture modes and adapter tool dialects are resolved.
+        let grok_command = fixture_command("run_terminal_command", tool);
+        let harness_command = fixture_command("bash", tool);
+
+        // Then: stream bypasses tools and tool-family payloads are byte-identical.
+        assert!(matches!(stream, FixtureStream::Packet3Stream));
+        assert!(matches!(tool, FixtureStream::Packet3Settled));
+        assert_eq!(grok_command, ISOLATED_COMMAND);
+        assert_eq!(harness_command, ISOLATED_COMMAND);
+        assert!(is_packet3_stream_request(
+            r#"{"input":[{"content":"stream probe"}]}"#
+        ));
+        assert!(!is_packet3_stream_request(
+            r#"{"input":[{"content":"generate a title"}]}"#
+        ));
+    }
 }

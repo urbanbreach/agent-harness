@@ -7,7 +7,7 @@ use serde_json::Value;
 pub const AUTHORITY_PATH: &str = "configs/tui-fidelity-reference-authority.json";
 pub const ACTIVE_REVISION: &str = "be713136d2a69080743a3f6b3c72077057e5948f";
 pub const ACTIVE_BINARY_SHA256: &str =
-    "2198bc3699b0ac76d3e3d32bf3da2277479ad244e19cfb1be7d111fc5f4b8ca2";
+    "14fc3307626aec7ff9cd0738bd1b011ff194b527c5cc15eb9589b5ca34f60b67";
 pub const ACTIVE_VERSION: &str = "grok 1.0.1 (be71313) [alpha]";
 const HISTORICAL_REVISION_PREFIX: &str = "c1b5909ec707c069f1d21a93917af044";
 const HISTORICAL_REVISION_SUFFIX: &str = "e71da0d7";

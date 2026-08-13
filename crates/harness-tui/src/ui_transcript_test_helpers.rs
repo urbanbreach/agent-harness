@@ -1,6 +1,7 @@
-use ratatui::text::Line;
+use ratatui::{style::Color, text::Line};
 
-use crate::app::{ActivityEntry, ActivityStatus, ToolCallDisplayStatus, ToolCallEntry};
+use crate::app::{ActivityEntry, ActivityStatus, AppState, ToolCallDisplayStatus, ToolCallEntry};
+use harness_core::event::UserMessageSubmittedEvent;
 
 pub(crate) fn transcript_section_model_test_activity(
     request_id: &str,
@@ -77,4 +78,162 @@ pub(crate) fn transcript_test_line_texts(lines: Vec<Line<'static>>) -> Vec<Strin
                 .collect::<String>()
         })
         .collect()
+}
+
+pub(crate) fn transcript_grammar_test_app() -> AppState {
+    let mut activity = transcript_section_model_test_activity(
+        "grammar-turn",
+        ActivityStatus::Done,
+        "settled body こんにちは 👩🏽‍💻",
+    );
+    activity.user_message = Some(UserMessageSubmittedEvent {
+        request_id: "grammar-turn".into(),
+        text: "prompt こんにちは 👩🏽‍💻".to_string(),
+    });
+    activity.user_timestamp = Some("2026-08-13T09:41:00Z".to_string());
+    activity.thinking_text = "considering options".to_string();
+    activity.error_message = Some("recoverable error".to_string());
+    activity.tool_calls = [
+        ("generic", "fs.read", ToolCallDisplayStatus::Succeeded),
+        ("shell", "bash", ToolCallDisplayStatus::Running),
+        ("diff", "apply_patch", ToolCallDisplayStatus::Succeeded),
+        ("subagent", "task", ToolCallDisplayStatus::Succeeded),
+        (
+            "permission",
+            "write",
+            ToolCallDisplayStatus::PendingPermission,
+        ),
+        (
+            "question",
+            "question",
+            ToolCallDisplayStatus::PendingPermission,
+        ),
+    ]
+    .into_iter()
+    .map(|(id, tool_id, status)| {
+        let mut tool = transcript_section_model_test_tool_call(id, tool_id);
+        tool.status = status;
+        tool.output_summary = Some(format!("{id} output"));
+        tool.timing_elapsed_ms = Some(10);
+        tool
+    })
+    .collect();
+
+    let mut app = AppState::default();
+    app.activities.push_back(activity);
+    app.transcript_view.selected_activity_index = 0;
+    app
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum GrammarFamily {
+    User,
+    Reasoning,
+    Body,
+    Tool,
+    Command,
+    Error,
+    Footer,
+    Compaction,
+}
+
+pub(crate) const GRAMMAR_ALL_FAMILIES: [GrammarFamily; 13] = [
+    GrammarFamily::User,
+    GrammarFamily::Reasoning,
+    GrammarFamily::Body,
+    GrammarFamily::Body,
+    GrammarFamily::Tool,
+    GrammarFamily::Command,
+    GrammarFamily::Tool,
+    GrammarFamily::Tool,
+    GrammarFamily::Tool,
+    GrammarFamily::Tool,
+    GrammarFamily::Error,
+    GrammarFamily::Compaction,
+    GrammarFamily::Footer,
+];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum GrammarPlacement {
+    Flow,
+    StickyPrompt,
+    PinnedFooter,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum GrammarMotion {
+    Running,
+    Waiting,
+    FinishFlash,
+    Settled,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct GrammarSurfaceContract {
+    pub(crate) family: GrammarFamily,
+    pub(crate) width: u16,
+    pub(crate) leading_gap: usize,
+    pub(crate) rail: bool,
+    pub(crate) background: Color,
+    pub(crate) interaction_rows: Option<usize>,
+    pub(crate) selection_rows: Option<usize>,
+    pub(crate) line_rows: usize,
+    pub(crate) placement: GrammarPlacement,
+    pub(crate) motion: Option<GrammarMotion>,
+}
+
+pub(crate) fn validate_grammar_contract(
+    contract: &[GrammarSurfaceContract],
+) -> Result<(), &'static str> {
+    let first = contract.first().ok_or("missing surfaces")?;
+    if first.placement != GrammarPlacement::StickyPrompt || first.leading_gap != 0 {
+        return Err("sticky prompt placement drift");
+    }
+    let footer = contract.last().ok_or("missing footer")?;
+    if footer.family != GrammarFamily::Footer || footer.placement != GrammarPlacement::PinnedFooter
+    {
+        return Err("footer placement drift");
+    }
+    for surface in contract {
+        if surface.family == GrammarFamily::Reasoning && surface.rail {
+            return Err("reasoning rail drift");
+        }
+        if surface.leading_gap > 1 {
+            return Err("inter-block gap drift");
+        }
+        if surface
+            .interaction_rows
+            .is_some_and(|rows| rows != surface.line_rows)
+            || surface
+                .selection_rows
+                .is_some_and(|rows| rows > surface.line_rows)
+        {
+            return Err("row alignment drift");
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn assert_grammar_contract_error(
+    contract: &[GrammarSurfaceContract],
+    expected: &'static str,
+) {
+    assert_eq!(validate_grammar_contract(contract), Err(expected));
+}
+
+pub(crate) fn grammar_contract_has_background_transition(
+    contract: &[GrammarSurfaceContract],
+) -> bool {
+    contract
+        .windows(2)
+        .any(|pair| pair[0].background != pair[1].background)
+}
+
+pub(crate) fn grammar_contract_has_motion(
+    contract: &[GrammarSurfaceContract],
+    motion: GrammarMotion,
+) -> bool {
+    contract
+        .iter()
+        .any(|surface| surface.motion == Some(motion))
 }

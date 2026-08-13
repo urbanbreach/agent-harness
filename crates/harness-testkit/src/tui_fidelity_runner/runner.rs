@@ -141,12 +141,21 @@ fn capture_adapter(
                 }
             })?,
         )
+    } else if scenario.id.0.starts_with("packet3-baseline-") {
+        Some(
+            crate::tui_fidelity_fixture::Packet2FixtureServer::start_packet3(&scenario.id.0)
+                .map_err(|error| RunnerError::Process {
+                    adapter,
+                    detail: format!("start Packet 3 fixture: {error}"),
+                })?,
+        )
     } else {
         None
     };
     let fixture_base_url = fixture
         .as_ref()
         .map(crate::tui_fidelity_fixture::Packet2FixtureServer::base_url);
+    let packet2_scheduling = scenario.id.0 == "packet2-sustained-stream";
     let capture_result = execute(
         scenario,
         config.timing,
@@ -156,6 +165,7 @@ fn capture_adapter(
         &evidence_dir,
         tracker,
         fixture_base_url.as_deref(),
+        packet2_scheduling,
     );
     let fixture_result = fixture.map(|fixture| fixture.finish());
     if let Some(result) = fixture_result {

@@ -5,12 +5,12 @@
 //! test binary as a helper child with scenario env vars (same pattern as e2e).
 
 use harness_core::event::{
-    ActorKind, EventActor, EventEnvelopeV1, EventV1, PermissionRequestedEvent,
-    ProviderReasoningDeltaEvent, ProviderRequestFinishedEvent, ProviderRequestRetryMetadata,
-    ProviderRequestStartedEvent, ProviderRequestStartedMetadata, ProviderStreamDeltaEvent,
-    RunStartedEvent, TaskScheduleState, TaskScheduledEvent, ToolCallFinishedEvent,
-    ToolCallRequestedEvent, ToolCallStartedEvent, ToolCallStatus, UserMessageSubmittedEvent,
-    SCHEMA_VERSION,
+    ActorKind, AgentSpawnedEvent, AgentStoppedEvent, EventActor, EventEnvelopeV1, EventV1,
+    PermissionRequestedEvent, ProviderReasoningDeltaEvent, ProviderRequestFinishedEvent,
+    ProviderRequestRetryMetadata, ProviderRequestStartedEvent, ProviderRequestStartedMetadata,
+    ProviderStreamDeltaEvent, RunStartedEvent, SessionCompactionEvent, TaskCompletedEvent,
+    TaskScheduleState, TaskScheduledEvent, ToolCallFinishedEvent, ToolCallRequestedEvent,
+    ToolCallStartedEvent, ToolCallStatus, UserMessageSubmittedEvent, SCHEMA_VERSION,
 };
 use harness_core::proj::{RunStatus, SessionCatalogEntry, SessionModeSource};
 use harness_providers::{CompletionUsage, ProviderErrorCategory};
@@ -89,6 +89,10 @@ const PERMISSION_OVERLAY_HELPER: &str = "reference_parity_pty_helper_permission_
 const LIVE_PERM_STREAM_HELPER: &str = "pty_helper_live_perm_stream";
 const LIVE_QUESTION_STREAM_HELPER: &str = "pty_helper_live_question_stream";
 const LIVE_THINKING_HELPER: &str = "pty_helper_live_thinking";
+const LIVE_BLOCK_GRAMMAR_SCENARIO: &str = "live_block_grammar";
+const LIVE_BLOCK_GRAMMAR_HELPER: &str = "pty_helper_live_block_grammar";
+const BLOCK_GRAMMAR_PROMPT: &str = "PACKET3_PROMPT block grammar journey";
+const BLOCK_GRAMMAR_COMPACTION: &str = "PACKET3_COMPACTION retained context summary";
 const STREAM_USER_TEXT: &str = "stream parity probe";
 const PERM_STREAM_USER_TEXT: &str = "edit a project file now";
 const QUESTION_STREAM_USER_TEXT: &str = "ask me the parity question";
@@ -962,6 +966,99 @@ pub(crate) fn pty_helper_live_thinking() {
     run_live_with_historical_events(events);
 }
 
+pub(crate) fn pty_helper_live_block_grammar() {
+    if std::env::var(HELPER_SCENARIO_ENV).as_deref() == Ok(LIVE_BLOCK_GRAMMAR_SCENARIO) {
+        run_live_with_historical_events(block_grammar_events());
+        return;
+    }
+    if !require_pty_signoff() {
+        return;
+    }
+
+    let mut helper = spawn_helper_at(
+        LIVE_BLOCK_GRAMMAR_HELPER,
+        LIVE_BLOCK_GRAMMAR_SCENARIO,
+        120,
+        40,
+    );
+    let mut observed_screens = wait_for_any(
+        &mut helper,
+        &[BLOCK_GRAMMAR_PROMPT, BLOCK_GRAMMAR_COMPACTION],
+    );
+    for _ in 0..8 {
+        let screen = helper.screen_text();
+        observed_screens.push_str(&screen);
+        if screen.contains(BLOCK_GRAMMAR_COMPACTION) {
+            break;
+        }
+        send_bytes(helper.writer.as_mut(), b"\x1b[6~").unwrap_or_abort();
+        thread::sleep(READ_POLL_TIMEOUT);
+    }
+    helper.wait_for(BLOCK_GRAMMAR_COMPACTION);
+    for _ in 0..8 {
+        send_bytes(helper.writer.as_mut(), b"\x1b[5~").unwrap_or_abort();
+        thread::sleep(READ_POLL_TIMEOUT);
+        let screen = helper.screen_text();
+        observed_screens.push_str(&screen);
+        if screen.contains(BLOCK_GRAMMAR_PROMPT) {
+            break;
+        }
+    }
+    let head_screen = helper.screen_text();
+    assert!(
+        head_screen.contains(BLOCK_GRAMMAR_PROMPT),
+        "Packet 3 aggregate helper must detach to the transcript head"
+    );
+    maybe_dump_l3("HARNESS_PACKET3_BLOCK_GRAMMAR_HEAD_DUMP", &head_screen);
+    for (cols, rows) in [(80, 24), (60, 20), (120, 40)] {
+        helper.master.resize(pty_size(cols, rows)).unwrap_or_abort();
+        helper.parser.screen_mut().set_size(rows, cols);
+        thread::sleep(READ_POLL_TIMEOUT);
+    }
+    for _ in 0..8 {
+        send_bytes(helper.writer.as_mut(), b"\x1b[6~").unwrap_or_abort();
+        thread::sleep(READ_POLL_TIMEOUT);
+        if helper.screen_text().contains(BLOCK_GRAMMAR_COMPACTION) {
+            break;
+        }
+    }
+    helper.wait_for(BLOCK_GRAMMAR_COMPACTION);
+    let screen = helper.screen_text();
+    observed_screens.push_str(&screen);
+    assert!(
+        screen.contains(BLOCK_GRAMMAR_COMPACTION),
+        "Packet 3 aggregate helper must return to the live tail\n{screen}"
+    );
+    assert!(
+        screen.contains('❯'),
+        "Packet 3 aggregate helper must retain the composer\n{screen}"
+    );
+    maybe_dump_l3("HARNESS_PACKET3_BLOCK_GRAMMAR_L3_DUMP", &screen);
+    maybe_dump_l3(
+        "HARNESS_PACKET3_BLOCK_GRAMMAR_JOURNEY_DUMP",
+        &observed_screens,
+    );
+    for marker in [
+        BLOCK_GRAMMAR_PROMPT,
+        "PACKET3_BODY",
+        "Gathered context",
+        "Ran 10 commands",
+        "PACKET3_RUNNING_SHELL",
+        "PACKET3_SUBAGENT",
+        "packet3.txt",
+        "Which color?",
+        "fail the parity probe",
+        "recover the parity probe",
+        BLOCK_GRAMMAR_COMPACTION,
+    ] {
+        assert!(
+            observed_screens.contains(marker),
+            "Packet 3 aggregate helper did not expose required block marker {marker:?}"
+        );
+    }
+    exit_via_palette(&mut helper);
+}
+
 pub(crate) fn pty_helper_live_fail() {
     if std::env::var(HELPER_SCENARIO_ENV).as_deref() != Ok(LIVE_FAIL_SCENARIO) {
         return;
@@ -1587,6 +1684,245 @@ fn parity_envelope(seq: u64, correlation_id: Option<&str>, payload: EventV1) -> 
         stream_key: Some("run:run_parity_tx_shell".to_string()),
         payload,
     }
+}
+
+fn block_grammar_events() -> Vec<EventEnvelopeV1> {
+    let request_id = "req_packet3_grammar";
+    let mut events = vec![
+        parity_envelope(
+            1,
+            Some(request_id),
+            EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                request_id: request_id.into(),
+                text: BLOCK_GRAMMAR_PROMPT.to_string(),
+            }),
+        ),
+        parity_envelope(
+            2,
+            Some(request_id),
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: request_id.into(),
+                provider_id: "mock".to_string(),
+                model_id: "model-tx".to_string(),
+                prompt_summary: BLOCK_GRAMMAR_PROMPT.to_string(),
+                request_digest: "digest-packet3-grammar".to_string(),
+                metadata: None,
+            }),
+        ),
+        parity_envelope(
+            3,
+            Some(request_id),
+            EventV1::ProviderReasoningDelta(ProviderReasoningDeltaEvent {
+                request_id: request_id.into(),
+                delta: "Inspect every semantic block family before responding.".to_string(),
+            }),
+        ),
+        parity_envelope(
+            4,
+            Some(request_id),
+            EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+                request_id: request_id.into(),
+                delta: "PACKET3_BODY deterministic assistant body".to_string(),
+            }),
+        ),
+        parity_envelope(
+            5,
+            Some(request_id),
+            EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+                request_id: request_id.into(),
+                finish_reason: "stop".to_string(),
+                output_digest: Some("digest-packet3-body".to_string()),
+                usage: Some(parity_completion_usage(2_400)),
+                metadata: None,
+            }),
+        ),
+    ];
+
+    for index in 0..2 {
+        let tool_call_id = format!("tc_packet3_read_{index}");
+        events.extend([
+            parity_envelope(
+                1,
+                Some(request_id),
+                EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                    tool_call_id: tool_call_id.clone().into(),
+                    tool_id: "read".to_string(),
+                    args_summary: format!(r#"{{"path":"src/block-{index}.rs"}}"#),
+                    args_digest: format!("digest-packet3-read-{index}"),
+                    metadata: None,
+                }),
+            ),
+            parity_envelope(
+                2,
+                Some(request_id),
+                EventV1::ToolCallStarted(ToolCallStartedEvent {
+                    tool_call_id: tool_call_id.clone().into(),
+                }),
+            ),
+            parity_envelope(
+                3,
+                Some(request_id),
+                EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                    tool_call_id: tool_call_id.into(),
+                    status: ToolCallStatus::Succeeded,
+                    output_summary: Some(format!("PACKET3_GENERIC_TOOL read block {index}")),
+                    output_digest: Some(format!("digest-packet3-read-output-{index}")),
+                    output_json: None,
+                    metadata: None,
+                }),
+            ),
+        ]);
+    }
+
+    let mut tools = tool_events();
+    tools.retain(|event| !matches!(event.payload, EventV1::TaskScheduled(_)));
+    events.extend(tools);
+    let mut diffs = diff_events();
+    diffs.retain(|event| !matches!(event.payload, EventV1::TaskScheduled(_)));
+    events.extend(diffs);
+    let mut failure = fail_events();
+    failure.retain(|event| !matches!(event.payload, EventV1::TaskScheduled(_)));
+    events.extend(failure);
+    let mut recovery = recover_events();
+    recovery.retain(|event| !matches!(event.payload, EventV1::TaskScheduled(_)));
+    events.extend(recovery);
+    events.extend([
+        parity_envelope(
+            1,
+            Some(request_id),
+            EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                tool_call_id: "tc_packet3_running_shell".into(),
+                tool_id: "bash".to_string(),
+                args_summary: r#"{"command":"printf PACKET3_RUNNING_SHELL"}"#.to_string(),
+                args_digest: "digest-packet3-running-shell".to_string(),
+                metadata: None,
+            }),
+        ),
+        parity_envelope(
+            2,
+            Some(request_id),
+            EventV1::ToolCallStarted(ToolCallStartedEvent {
+                tool_call_id: "tc_packet3_running_shell".into(),
+            }),
+        ),
+        parity_envelope(
+            3,
+            Some(request_id),
+            EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                tool_call_id: "tc_packet3_subagent".into(),
+                tool_id: "task".to_string(),
+                args_summary:
+                    r#"{"description":"PACKET3_SUBAGENT inspect blocks","subagent_type":"explore"}"#
+                        .to_string(),
+                args_digest: "digest-packet3-subagent-call".to_string(),
+                metadata: None,
+            }),
+        ),
+        parity_envelope(
+            4,
+            Some(request_id),
+            EventV1::ToolCallStarted(ToolCallStartedEvent {
+                tool_call_id: "tc_packet3_subagent".into(),
+            }),
+        ),
+        parity_envelope(
+            5,
+            Some(request_id),
+            EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                tool_call_id: "tc_packet3_subagent".into(),
+                status: ToolCallStatus::Succeeded,
+                output_summary: Some("PACKET3_SUBAGENT completed inspection".to_string()),
+                output_digest: Some("digest-packet3-subagent-output".to_string()),
+                output_json: None,
+                metadata: None,
+            }),
+        ),
+        parity_envelope(
+            6,
+            Some(request_id),
+            EventV1::AgentSpawned(AgentSpawnedEvent {
+                agent_id: "packet3-subagent".to_string(),
+                profile: "explore".to_string(),
+                parent_agent_id: Some("root".to_string()),
+            }),
+        ),
+        parity_envelope(
+            7,
+            Some(request_id),
+            EventV1::TaskScheduled(TaskScheduledEvent {
+                task_id: "packet3-subagent-task".to_string().into(),
+                state: TaskScheduleState::Started,
+                queue_key: Some("agent:packet3-subagent".to_string()),
+            }),
+        ),
+        parity_envelope(
+            8,
+            Some(request_id),
+            EventV1::TaskCompleted(TaskCompletedEvent {
+                task_id: "packet3-subagent-task".to_string().into(),
+                result_summary: "PACKET3_SUBAGENT completed inspection".to_string(),
+                result_digest: "digest-packet3-subagent".to_string(),
+                metadata: None,
+            }),
+        ),
+        parity_envelope(
+            9,
+            Some(request_id),
+            EventV1::AgentStopped(AgentStoppedEvent {
+                agent_id: "packet3-subagent".to_string(),
+                reason: "completed".to_string(),
+            }),
+        ),
+        parity_envelope(
+            10,
+            Some(request_id),
+            EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                tool_call_id: "packet3-permission-tool".into(),
+                tool_id: "fs.write".to_string(),
+                args_summary: r#"{"path":"packet3.txt","content":"grammar"}"#.to_string(),
+                args_digest: "digest-packet3-permission-tool".to_string(),
+                metadata: None,
+            }),
+        ),
+        permission_requested_event(11, "packet3-permission", "packet3-permission-tool"),
+        permission_resolved_event(
+            12,
+            "packet3-permission",
+            harness_core::event::PermissionDecision::Allow,
+            Some("PACKET3_PERMISSION approved".to_string()),
+        ),
+        question_permission_requested_event(13, "packet3-question", "packet3-question-tool"),
+        permission_resolved_event(
+            14,
+            "packet3-question",
+            harness_core::event::PermissionDecision::Allow,
+            Some("PACKET3_QUESTION answered".to_string()),
+        ),
+        parity_envelope(
+            15,
+            None,
+            EventV1::SessionCompaction(SessionCompactionEvent {
+                agent_id: "root".to_string(),
+                summary: BLOCK_GRAMMAR_COMPACTION.to_string(),
+                first_kept_event_seq: 1,
+                first_kept_request_id: None,
+                tokens_before: 48_000,
+                read_files: vec!["src/transcript.rs".to_string()],
+                modified_files: vec!["src/grammar.rs".to_string()],
+                trigger_reason: "threshold".to_string(),
+                from_hook: false,
+            }),
+        ),
+    ]);
+
+    for (index, event) in events.iter_mut().enumerate() {
+        let seq = u64::try_from(index).unwrap_or(u64::MAX).saturating_add(1);
+        event.seq = seq;
+        event.event_id = format!("evt_packet3_grammar_{seq:04}");
+        event.mono_ms = seq.saturating_mul(100);
+        event.run_id = "run_packet3_block_grammar".into();
+    }
+    events
 }
 
 fn stream_events() -> Vec<EventEnvelopeV1> {

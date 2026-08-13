@@ -172,6 +172,8 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_reference_timestamps_a
             content_height: task_render.lines.len(),
             surfaces: vec![MeasuredTranscriptSurface {
                 kind: TranscriptRenderSurfaceKind::AssistantTool,
+                leading_gap_rows: 0,
+                placement: TranscriptBlockPlacement::Flow,
                 top_offset: 0,
                 height: task_render.lines.len(),
                 width: 120,

@@ -13,13 +13,15 @@ use serde_json::Value;
 use crate::support::{
     divergence_policy, divergence_receipt_path, validate_manifest, DivergencePolicy,
     ManifestFailure, ValidateResult, EVIDENCE_LAYERS, FREEZE_PNG_SHA256, FREEZE_TXT_SHA256,
-    REFERENCE_BINARY_SHA256,
 };
 
 use super::{
     is_evidence_artifact_declaration, is_sha256_hex, non_empty_str, parse_cols_rows,
     resolve_declared, resolve_evidence_path, sha256_hex,
 };
+
+const ACTIVE_REFERENCE_AUTHORITY: &str =
+    include_str!("../../../../configs/tui-fidelity-reference-authority.json");
 
 /// Evidence files older than this threshold are considered stale (Contract §5.1).
 const STALENESS_THRESHOLD: Duration = Duration::from_secs(3600);
@@ -165,7 +167,12 @@ fn verify_freeze_receipt(manifest: &Value, root: &Path, failures: &mut Vec<Manif
         .or_else(|| parsed["reference_binary"]["sha256"].as_str())
         .or_else(|| parsed["binary_sha256"].as_str())
         .unwrap_or("");
-    if binary_digest != REFERENCE_BINARY_SHA256 {
+    let authority = serde_json::from_str::<Value>(ACTIVE_REFERENCE_AUTHORITY)
+        .expect("active reference authority JSON");
+    let active_binary_digest = authority["reference"]["binary_sha256"]
+        .as_str()
+        .expect("active reference binary SHA-256");
+    if binary_digest != active_binary_digest {
         failures.push(ManifestFailure::new(
             "reference-block-mismatch",
             "$.reference.receipt_path",

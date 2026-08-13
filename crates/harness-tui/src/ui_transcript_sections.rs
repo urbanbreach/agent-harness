@@ -211,10 +211,6 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
             section,
         });
     }
-    let tool_calls = ordered_tool_calls
-        .iter()
-        .map(|tool_call| tool_call.section.clone())
-        .collect::<Vec<_>>();
     let error = activity
         .error_message
         .as_ref()
@@ -288,10 +284,6 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
                 .zip(activity.duration_ms())
                 .map(|(started, _)| activity.last_mono_ms.saturating_sub(started)),
         },
-        body_blocks,
-        tool_calls,
-        thinking,
-        error,
         assistant_parts,
     }
 }
@@ -862,24 +854,23 @@ mod ui10_tests {
         app.activities = std::collections::VecDeque::from([activity]);
 
         let collapsed = build_transcript_sections(&app);
-        assert_eq!(collapsed[0].tool_calls.len(), 1);
-        assert_eq!(collapsed[0].tool_calls[0].tool_call_id, "write-0");
+        let collapsed_tools = collapsed[0].assistant_tools().collect::<Vec<_>>();
+        assert_eq!(collapsed_tools.len(), 1);
+        assert_eq!(collapsed_tools[0].tool_call_id, "write-0");
         assert_eq!(
-            collapsed[0].tool_calls[0].coalesced_tool_call_ids,
+            collapsed_tools[0].coalesced_tool_call_ids,
             ["write-0", "write-1", "write-2"]
         );
-        assert_eq!(
-            collapsed[0].tool_calls[0].header.title,
-            "Edit demo.txt +1/-1"
-        );
-        assert!(!collapsed[0].tool_calls[0].details_visible());
+        assert_eq!(collapsed_tools[0].header.title, "Edit demo.txt +1/-1");
+        assert!(!collapsed_tools[0].details_visible());
 
         for id in ["write-0", "write-1", "write-2"] {
             app.toggle_tool_output_for_test(id);
         }
         let expanded = build_transcript_sections(&app);
-        assert!(expanded[0].tool_calls[0].details_visible());
-        assert_eq!(expanded[0].tool_calls[0].detail_blocks.len(), 1);
+        let expanded_tools = expanded[0].assistant_tools().collect::<Vec<_>>();
+        assert!(expanded_tools[0].details_visible());
+        assert_eq!(expanded_tools[0].detail_blocks.len(), 1);
     }
 
     #[test]

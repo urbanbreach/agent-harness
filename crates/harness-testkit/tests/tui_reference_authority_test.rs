@@ -31,6 +31,45 @@ fn active_reference_authority_agrees_with_all_declared_sources() {
 }
 
 #[test]
+fn active_reference_binary_receipt_agrees_with_authority() {
+    // Given
+    let root = repo_root();
+    let authority = read_json(&root.join(AUTHORITY_PATH));
+    let receipt_path = authority["reference"]["receipt_path"]
+        .as_str()
+        .expect("active receipt path");
+    let receipt = read_json(&root.join(receipt_path));
+
+    // When
+    let mut defects = Vec::new();
+    for (pointer, expected) in [
+        (
+            "/source/canonical_checkout",
+            authority["reference"]["canonical_checkout"]
+                .as_str()
+                .expect("canonical checkout"),
+        ),
+        ("/source/revision", ACTIVE_REVISION),
+        ("/binary/sha256", ACTIVE_BINARY_SHA256),
+        ("/binary/version", ACTIVE_VERSION),
+        (
+            "/binary/path",
+            authority["reference"]["executable"]
+                .as_str()
+                .expect("active executable"),
+        ),
+    ] {
+        check_field(&receipt, pointer, expected, &mut defects);
+    }
+    if receipt["source"]["clean"].as_bool() != Some(true) {
+        defects.push("reference receipt source must be clean".to_owned());
+    }
+
+    // Then
+    assert!(defects.is_empty(), "{}", defects.join("\n"));
+}
+
+#[test]
 fn active_reference_authority_rejects_copied_revision_mutation() {
     // Given
     let root = repo_root();

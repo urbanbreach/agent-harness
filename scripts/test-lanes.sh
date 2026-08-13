@@ -742,6 +742,8 @@ run_signoff_journeys() {
 
 run_signoff_parity() {
   local mode_name="signoff-parity"
+  local authority_rel="configs/tui-fidelity-reference-authority.json"
+  local authority_path="${repo_root}/${authority_rel}"
   local manifest_rel="docs/reference/tui-reference-parity-manifest.v1.json"
   local manifest_path="${repo_root}/${manifest_rel}"
   local manifest_test_rel="crates/harness-tui/tests/reference_parity_manifest_test.rs"
@@ -751,10 +753,30 @@ run_signoff_parity() {
   local pty_test_rel="crates/harness-tui/tests/reference_parity_pty_test.rs"
   local presentation_receipt_test_rel="crates/harness-testkit/tests/tui_fidelity_presentation_receipt_test.rs"
   local presentation_runner_test_rel="crates/harness-testkit/tests/tui_fidelity_runner_test.rs"
-  local reference_binary_rel="inspirations/grok-build/target/debug/xai-grok-pager"
+  local reference_binary_rel=""
+  local reference_checkout_rel=""
+  local reference_revision=""
+  local reference_binary_sha256=""
+  local reference_binary_version=""
+  if [[ -f "$authority_path" ]]; then
+    mapfile -t reference_authority_fields < <(python3 -c '
+import json, sys
+authority = json.load(open(sys.argv[1]))
+if authority.get("status") != "active":
+    raise SystemExit("reference authority is not active")
+reference = authority["reference"]
+for field in ("executable", "canonical_checkout", "source_revision", "binary_sha256", "binary_version"):
+    print(reference[field])
+' "$authority_path")
+    if [[ "${#reference_authority_fields[@]}" -eq 5 ]]; then
+      reference_binary_rel="${reference_authority_fields[0]}"
+      reference_checkout_rel="${reference_authority_fields[1]}"
+      reference_revision="${reference_authority_fields[2]}"
+      reference_binary_sha256="${reference_authority_fields[3]}"
+      reference_binary_version="${reference_authority_fields[4]}"
+    fi
+  fi
   local reference_binary_path="${repo_root}/${reference_binary_rel}"
-  # Pinned reference binary sha256 (must match $.reference.binary_sha256 in the manifest).
-  local reference_binary_sha256="883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5"
   local parity_evidence_root
   parity_evidence_root="$(stage_dir_for signoff-parity parity_evidence)"
   local parity_artifacts_dir="${parity_evidence_root}/artifacts"
@@ -765,6 +787,11 @@ run_signoff_parity() {
 
   if [[ "$dry_run" -eq 0 ]]; then
     local missing=()
+    if [[ ! -f "$authority_path" ]]; then
+      missing+=("${authority_rel} (active reference authority)")
+    elif [[ -z "$reference_binary_rel" || -z "$reference_checkout_rel" || -z "$reference_revision" || -z "$reference_binary_sha256" || -z "$reference_binary_version" ]]; then
+      missing+=("${authority_rel} (missing active executable, canonical_checkout, source_revision, binary_sha256, or binary_version)")
+    fi
     if [[ ! -f "$manifest_path" ]]; then
       missing+=("${manifest_rel} (independent dual-binary cells/pixels/PTY manifest; tui-signoff-manifest.v1.json does not own this lane)")
     fi
@@ -798,10 +825,10 @@ run_signoff_parity() {
 
   run_stage "$mode_name" reference_parity_manifest_present "$repo_root" test -f "$manifest_path"
 
-  # Presence + digest of the pinned reference binary only; never rebuild or copy it.
+  # Presence + identity of the active-authority reference binary only; never rebuild or copy it.
   run_stage "$mode_name" reference_binary_present "$repo_root" \
-    bash -c 'test -f "$0" || { echo "missing pinned reference binary $0" >&2; exit 1; }; actual="$(sha256sum "$0" | cut -d" " -f1)"; expected="$(cat "$1")"; if [ "$actual" != "$expected" ]; then echo "reference binary digest mismatch: actual=$actual expected=$expected" >&2; exit 1; fi' \
-    "$reference_binary_path" "$reference_pin_path"
+    bash -c 'test -x "$0" || { echo "missing active reference binary $0" >&2; exit 1; }; actual_sha="$(sha256sum "$0" | cut -d" " -f1)"; expected_sha="$(cat "$1")"; actual_version="$($0 --version)"; actual_revision="$(git -C "$2" rev-parse HEAD)"; if [ "$actual_sha" != "$expected_sha" ]; then echo "reference binary digest mismatch: actual=$actual_sha expected=$expected_sha" >&2; exit 1; fi; if [ "$actual_version" != "$3" ]; then echo "reference binary version mismatch: actual=$actual_version expected=$3" >&2; exit 1; fi; if [ "$actual_revision" != "$4" ]; then echo "reference revision mismatch: actual=$actual_revision expected=$4" >&2; exit 1; fi' \
+    "$reference_binary_path" "$reference_pin_path" "${repo_root}/${reference_checkout_rel}" "$reference_binary_version" "$reference_revision"
 
   # Generate fresh L3 captures by invoking the capture scripts. Each script
   # runs the Harness binary through a real PTY capture and writes terminal.png,
@@ -894,9 +921,10 @@ receipt = {
     \"scenario\": \"startup_welcome_120x32\",
     \"viewport\": {\"cols\": 120, \"rows\": 32},
     \"global_pinned_reference\": {
-        \"binary_sha256\": \"883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5\",
-        \"reference_revision\": \"c1b5909ec707c069f1d21a93917af044e71da0d7\",
-        \"version\": \"grok 0.1.220-alpha.4 (c1b5909) [stable]\"
+        \"binary_path\": sys.argv[5],
+        \"binary_sha256\": sys.argv[2],
+        \"reference_revision\": sys.argv[3],
+        \"version\": sys.argv[4]
     },
     \"freeze_txt_sha256\": \"1a5f24dc9be953df160e8d2bcb661f6f2d8dc7845021c3153cd415ab3889ca58\",
     \"freeze_png_sha256\": \"0830427651ae47645ea3ea49b532ef7ea29a69c3140f140d7df201f5093d6016\"
@@ -907,8 +935,8 @@ with open(out, \"w\") as f:
     json.dump(receipt, f, indent=2)
     f.write(\"\n\")
 print(f\"wrote freeze receipt {out}\")
-" "$0"' \
-    "$parity_artifacts_dir"
+" "$0" "$1" "$2" "$3" "$4"' \
+    "$parity_artifacts_dir" "$reference_binary_sha256" "$reference_revision" "$reference_binary_version" "$reference_binary_rel"
 
   # Fresh terminal capability L3 capture (shared by the four TERM-CAP-* rows):
   # runs the env-gated terminal_capability_matrix_capture_test, which derives

@@ -384,6 +384,14 @@ fn pty_helper_live_thinking() {
 }
 
 #[test]
+fn pty_helper_live_block_grammar() {
+    // arrange
+    // act
+    // assert
+    reference_parity_pty_impl::pty_helper_live_block_grammar();
+}
+
+#[test]
 fn reference_parity_pty_helper_permission_overlay() {
     // arrange
     // act

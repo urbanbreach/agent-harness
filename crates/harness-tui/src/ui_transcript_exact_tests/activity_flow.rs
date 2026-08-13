@@ -71,24 +71,28 @@ pub(crate) fn exact_test_transcript_section_model_keeps_nested_tool_and_error_bl
     let turn = &sections[0];
 
     assert_eq!(
-        turn.thinking.as_ref().map(|block| block.text.as_str()),
+        turn.assistant_reasoning().map(|block| block.text.as_str()),
         Some("tool planning")
     );
     assert_eq!(
-        turn.body_blocks,
+        turn.assistant_bodies().cloned().collect::<Vec<_>>(),
         vec![TranscriptBodyBlock::RichText("assistant body".to_string())]
     );
     assert_eq!(
-        turn.error.as_ref().map(|error| error.text.as_str()),
+        turn.assistant_error().map(|error| error.text.as_str()),
         Some("tool call failed")
     );
-    assert_eq!(turn.tool_calls.len(), 1);
+    let tools = turn.assistant_tools().collect::<Vec<_>>();
+    assert_eq!(tools.len(), 1);
     assert_eq!(
-        turn.tool_calls[0],
-        TranscriptToolCallSection {
+        tools[0],
+        &TranscriptToolCallSection {
             tool_call_id: "call-1".to_string(),
             coalesced_tool_call_ids: vec!["call-1".to_string()],
             child_session_id: None,
+            subagent_background: false,
+            output_truncated: true,
+            replay_read_only: false,
             hovered_target: None,
             header: TranscriptToolCallHeader {
                 tool_id: "shell.run".to_string(),

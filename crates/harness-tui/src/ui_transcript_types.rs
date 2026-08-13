@@ -1,3 +1,4 @@
+use super::ui_transcript_block_grammar::TranscriptBlockSpec;
 use super::*;
 use harness_core::event::ProviderRequestRetryMetadata;
 use std::time::Duration;
@@ -22,12 +23,15 @@ pub(super) struct TranscriptLayoutCacheEntry {
     pub(super) width: u16,
     pub(super) base_surface: Color,
     pub(super) sections: Vec<TranscriptTurnSection>,
+    pub(super) normalized_specs: Vec<Vec<TranscriptBlockSpec>>,
     pub(super) layout: MeasuredTranscriptLayout,
 }
 
 #[derive(Debug, Clone)]
 pub(in crate::ui) struct TranscriptRenderSurface {
     pub(in crate::ui) kind: TranscriptRenderSurfaceKind,
+    pub(in crate::ui) leading_gap_rows: usize,
+    pub(in crate::ui) placement: TranscriptBlockPlacement,
     pub(in crate::ui) show_outer_rail: bool,
     pub(in crate::ui) rail_glyph: &'static str,
     pub(in crate::ui) rail_color: Color,
@@ -247,11 +251,37 @@ pub(super) struct TranscriptTurnSection {
     pub(super) animation_phase: usize,
     pub(super) reasoning_expanded: bool,
     pub(super) header: TranscriptTurnHeader,
-    pub(super) body_blocks: Vec<TranscriptBodyBlock>,
-    pub(super) tool_calls: Vec<TranscriptToolCallSection>,
-    pub(super) thinking: Option<TranscriptLabeledTextSection>,
-    pub(super) error: Option<TranscriptErrorSection>,
     pub(super) assistant_parts: Vec<TranscriptAssistantPart>,
+}
+
+impl TranscriptTurnSection {
+    pub(super) fn assistant_tools(&self) -> impl Iterator<Item = &TranscriptToolCallSection> {
+        self.assistant_parts.iter().filter_map(|part| match part {
+            TranscriptAssistantPart::ToolCall(tool) => Some(tool.as_ref()),
+            _ => None,
+        })
+    }
+
+    pub(super) fn assistant_reasoning(&self) -> Option<&TranscriptLabeledTextSection> {
+        self.assistant_parts.iter().find_map(|part| match part {
+            TranscriptAssistantPart::Reasoning(reasoning) => Some(reasoning),
+            _ => None,
+        })
+    }
+
+    pub(super) fn assistant_bodies(&self) -> impl Iterator<Item = &TranscriptBodyBlock> {
+        self.assistant_parts.iter().filter_map(|part| match part {
+            TranscriptAssistantPart::Body(body) => Some(body),
+            _ => None,
+        })
+    }
+
+    pub(super) fn assistant_error(&self) -> Option<&TranscriptErrorSection> {
+        self.assistant_parts.iter().find_map(|part| match part {
+            TranscriptAssistantPart::Error(error) => Some(error),
+            _ => None,
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -295,6 +325,9 @@ pub(super) struct TranscriptToolCallSection {
     pub(super) tool_call_id: String,
     pub(super) coalesced_tool_call_ids: Vec<String>,
     pub(super) child_session_id: Option<String>,
+    pub(super) subagent_background: bool,
+    pub(super) output_truncated: bool,
+    pub(super) replay_read_only: bool,
     pub(super) hovered_target: Option<TranscriptMouseTarget>,
     pub(super) header: TranscriptToolCallHeader,
     pub(super) detail_blocks: Vec<TranscriptToolCallDetailBlock>,
@@ -418,6 +451,10 @@ pub(super) const TRANSCRIPT_OPCODE_EDIT_INDENT: &str = "       ";
 
 #[cfg(test)]
 mod tool_group_tests {
+    use super::super::ui_transcript_block_grammar::{
+        TranscriptBlockMotionDemand, TranscriptToolDisclosure, TranscriptToolPolicy,
+        TranscriptToolStatus,
+    };
     use super::*;
     use crate::app::{ToolCallDisplayStatus, ToolCallPresentation};
 
@@ -432,6 +469,9 @@ mod tool_group_tests {
             tool_call_id: id.to_string(),
             coalesced_tool_call_ids: vec![id.to_string()],
             child_session_id: None,
+            subagent_background: false,
+            output_truncated: false,
+            replay_read_only: false,
             hovered_target: None,
             header: TranscriptToolCallHeader {
                 tool_id: tool_id.to_string(),
@@ -610,5 +650,206 @@ mod tool_group_tests {
 
         assert_eq!(summary.member_count, 2);
         assert_eq!(summary.span_len, 3);
+    }
+
+    #[test]
+    fn transcript_block_spec_enumerates_semantic_families() {
+        use super::super::ui_transcript_block_grammar::{
+            test_spec, validate_block_spec, TranscriptBlockContent, TranscriptBlockId,
+            TranscriptBlockRole, TranscriptFooterContent, TranscriptFooterLifecycle,
+            TranscriptLifecycleState, TranscriptPromptState, TranscriptSubagentLifecycle,
+            TranscriptSubagentMode, TranscriptSubagentPolicy, TranscriptToolFamily,
+            TranscriptToolGroupClass,
+        };
+
+        let families = [
+            TranscriptToolFamily::Generic,
+            TranscriptToolFamily::Group,
+            TranscriptToolFamily::Shell,
+            TranscriptToolFamily::Diff,
+            TranscriptToolFamily::Subagent,
+            TranscriptToolFamily::Permission,
+            TranscriptToolFamily::Question,
+        ];
+        let mut specs = vec![
+            test_spec(
+                TranscriptBlockRole::UserPrompt,
+                TranscriptBlockContent::UserMessage {
+                    text: String::new(),
+                    queued: false,
+                    wall_clock: None,
+                    state: TranscriptPromptState::Idle,
+                },
+            ),
+            test_spec(
+                TranscriptBlockRole::AssistantBody,
+                TranscriptBlockContent::AssistantBody {
+                    text: String::new(),
+                    streaming: false,
+                    wall_clock: None,
+                    has_tools: false,
+                },
+            ),
+            test_spec(
+                TranscriptBlockRole::Reasoning,
+                TranscriptBlockContent::Reasoning {
+                    text: String::new(),
+                    active: false,
+                    expanded: false,
+                    duration_ms: None,
+                    motion_enabled: false,
+                },
+            ),
+            test_spec(
+                TranscriptBlockRole::Footer,
+                TranscriptBlockContent::Footer {
+                    lifecycle: TranscriptFooterLifecycle::Settled,
+                    state: TranscriptLifecycleState::Completed,
+                    content: TranscriptFooterContent::Settled,
+                },
+            ),
+            test_spec(
+                TranscriptBlockRole::Error,
+                TranscriptBlockContent::Error {
+                    message: String::new(),
+                },
+            ),
+            test_spec(
+                TranscriptBlockRole::Compaction,
+                TranscriptBlockContent::Compaction {
+                    branch_summary: false,
+                    summary: String::new(),
+                    tokens_before: None,
+                    read_files: Vec::new(),
+                    modified_files: Vec::new(),
+                },
+            ),
+            test_spec(
+                TranscriptBlockRole::Synthetic,
+                TranscriptBlockContent::Synthetic {
+                    value: String::new(),
+                },
+            ),
+        ];
+        specs.extend(families.into_iter().map(|family| {
+            let grouped = family == TranscriptToolFamily::Group;
+            let subagent = family == TranscriptToolFamily::Subagent;
+            let mut spec = test_spec(
+                TranscriptBlockRole::Tool,
+                TranscriptBlockContent::Tool {
+                    family,
+                    ids: if grouped {
+                        vec!["tool-1".into(), "tool-2".into()]
+                    } else {
+                        vec!["tool".into()]
+                    },
+                    policy: TranscriptToolPolicy {
+                        group_class: grouped.then_some(TranscriptToolGroupClass::Context),
+                        member_count: if grouped { 2 } else { 1 },
+                        visible_start: 0,
+                        disclosure: TranscriptToolDisclosure::None,
+                        status: TranscriptToolStatus::Succeeded,
+                        motion: TranscriptBlockMotionDemand::None,
+                        trailing_gap_cells: 0,
+                    },
+                    subagent: subagent.then_some(TranscriptSubagentPolicy {
+                        mode: TranscriptSubagentMode::Foreground,
+                        lifecycle: TranscriptSubagentLifecycle::Completed,
+                        child_session_id: None,
+                        output_truncated: false,
+                        replay_read_only: false,
+                    }),
+                },
+            );
+            if grouped {
+                spec.grouping.group_id = Some(TranscriptBlockId("group".into()));
+                spec.grouping.member_count = 2;
+            }
+            spec
+        }));
+
+        assert!(specs.iter().all(|spec| validate_block_spec(spec).is_ok()));
+        assert!(specs.iter().any(|spec| {
+            spec.role == TranscriptBlockRole::Tool
+                && matches!(spec.content, TranscriptBlockContent::Tool { .. })
+        }));
+    }
+
+    #[test]
+    fn transcript_block_spec_resolves_compatibility_surface() {
+        use super::super::ui_transcript_block_grammar::{
+            resolve_block_surface, test_spec, TranscriptBlockContent, TranscriptBlockRole,
+            TranscriptPromptState,
+        };
+        let spec = test_spec(
+            TranscriptBlockRole::UserPrompt,
+            TranscriptBlockContent::UserMessage {
+                text: "source".into(),
+                queued: false,
+                wall_clock: None,
+                state: TranscriptPromptState::Idle,
+            },
+        );
+        let surface = TranscriptRenderSurface {
+            kind: TranscriptRenderSurfaceKind::User,
+            leading_gap_rows: 0,
+            placement: TranscriptBlockPlacement::StickyPromptCandidate,
+            show_outer_rail: false,
+            rail_glyph: " ",
+            rail_color: Color::Reset,
+            surface: Color::Reset,
+            lines: vec![Line::default()],
+            interaction_rows: None,
+            selection_rows: None,
+            diff_hunk_offsets: Vec::new(),
+            selected_rail: false,
+            tool_rail_motion: None,
+        };
+
+        let resolved = resolve_block_surface(&spec, surface).expect("valid compatibility surface");
+
+        assert_eq!(resolved.kind, TranscriptRenderSurfaceKind::User);
+    }
+
+    #[test]
+    fn transcript_block_spec_rejects_invalid_combinations() {
+        use super::super::ui_transcript_block_grammar::*;
+        let base = test_spec(
+            TranscriptBlockRole::AssistantBody,
+            TranscriptBlockContent::AssistantBody {
+                text: String::new(),
+                streaming: false,
+                wall_clock: None,
+                has_tools: false,
+            },
+        );
+        let mut interaction = base.clone();
+        interaction.interaction.selected = true;
+        interaction.interaction.selectable = false;
+        let mut motion = base.clone();
+        motion.motion = TranscriptBlockMotionDemand::Active;
+        motion.chrome.accent = false;
+        let mut placement = base.clone();
+        placement.placement = TranscriptBlockPlacement::PinnedFooter { outdent_cells: 0 };
+        let mut disclosure = base.clone();
+        disclosure.disclosure.expanded = true;
+        let mut grouping = base;
+        grouping.grouping.member_count = 2;
+
+        let errors = [interaction, motion, placement, disclosure, grouping]
+            .iter()
+            .map(validate_block_spec)
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            errors,
+            vec![
+                Err(TranscriptGrammarError::InvalidInteraction),
+                Err(TranscriptGrammarError::InvalidMotion),
+                Err(TranscriptGrammarError::InvalidPlacement),
+                Err(TranscriptGrammarError::InvalidDisclosure),
+                Err(TranscriptGrammarError::InvalidGrouping),
+            ]
+        );
     }
 }
