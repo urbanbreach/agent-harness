@@ -39,8 +39,8 @@ const REFERENCE_AUTHORITY: &str =
     include_str!("../../../configs/tui-fidelity-reference-authority.json");
 
 fn reference_binary_sha256() -> String {
-    serde_json::from_str::<serde_json::Value>(REFERENCE_AUTHORITY)
-        .unwrap_or_abort()["reference"]["binary_sha256"]
+    serde_json::from_str::<serde_json::Value>(REFERENCE_AUTHORITY).unwrap_or_abort()["reference"]
+        ["binary_sha256"]
         .as_str()
         .unwrap_or_abort()
         .to_owned()

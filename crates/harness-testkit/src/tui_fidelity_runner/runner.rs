@@ -141,7 +141,9 @@ fn capture_adapter(
                 }
             })?,
         )
-    } else if scenario.id.0.starts_with("packet3-baseline-") {
+    } else if scenario.id.0.starts_with("packet3-baseline-")
+        || scenario.id.0.starts_with("packet6-composer--")
+    {
         Some(
             crate::tui_fidelity_fixture::Packet2FixtureServer::start_packet3(&scenario.id.0)
                 .map_err(|error| RunnerError::Process {
