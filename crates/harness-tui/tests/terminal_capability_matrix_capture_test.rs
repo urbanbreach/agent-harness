@@ -35,9 +35,16 @@ use serde_json::json;
 use std::fs;
 use std::path::Path;
 
-/// Pinned reference binary sha256 (must match the manifest `reference` block).
-const REFERENCE_BINARY_SHA256: &str =
-    "883e3dea2a57773f3a9b229746ff7a99b9761836401e0f022599914b3bb9a9a5";
+const REFERENCE_AUTHORITY: &str =
+    include_str!("../../../configs/tui-fidelity-reference-authority.json");
+
+fn reference_binary_sha256() -> String {
+    serde_json::from_str::<serde_json::Value>(REFERENCE_AUTHORITY)
+        .unwrap_or_abort()["reference"]["binary_sha256"]
+        .as_str()
+        .unwrap_or_abort()
+        .to_owned()
+}
 
 /// DEC private modes the pinned reference binary enables (capture lab receipt
 /// `receipts/term-cap-parity-v1.json`), sorted ascending.
@@ -264,11 +271,12 @@ fn terminal_capability_matrix_capture_writes_parity_receipt() {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_abort()
         .as_secs();
+    let reference_binary_sha256 = reference_binary_sha256();
 
     let receipt = json!({
         "schema_version": "harness-tui-termcap-parity-receipt-v1",
         "capture_unix_epoch": unix,
-        "reference_binary_digest": REFERENCE_BINARY_SHA256,
+        "reference_binary_digest": reference_binary_sha256,
         "harness_l2_owner": "crates/harness-tui/src/runtime.rs",
         "proof_method": "source-grounded: parses the L2 owner runtime.rs for the crossterm terminal-mode enable constructs it executes and asserts the derived DEC private-mode set equals the pinned reference set; crossterm EnableMouseCapture expands to modes 1000/1002/1003/1015/1006",
         "terminal_environment": {
@@ -345,6 +353,6 @@ fn terminal_capability_matrix_capture_writes_parity_receipt() {
     );
     assert_eq!(
         reread["reference_binary_digest"].as_str(),
-        Some(REFERENCE_BINARY_SHA256)
+        Some(reference_binary_sha256.as_str())
     );
 }
