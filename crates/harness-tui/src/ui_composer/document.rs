@@ -168,7 +168,10 @@ pub(crate) fn render_document_composer_content(
         let mut rail_lines = Vec::with_capacity(height.max(1));
         if height > 0 {
             rail_lines.push(Line::from(Span::styled(
-                theme.live_shell.transcript_glyphs.user_marker,
+                resolved
+                    .surface
+                    .marker()
+                    .unwrap_or(theme.live_shell.transcript_glyphs.user_marker),
                 glyph_style,
             )));
             rail_lines.extend(
@@ -233,6 +236,7 @@ pub(crate) fn render_document_composer_content(
             Paragraph::new(composer_metadata_line(
                 app,
                 context.dock,
+                resolved.surface.right_label(),
                 context.disclosure_visible,
                 usize::from(rows[3].width),
                 theme,

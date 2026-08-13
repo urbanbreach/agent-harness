@@ -720,6 +720,80 @@ pub(crate) fn exact_test_footer_status_cluster_empty_when_no_activity() {
 }
 
 #[test]
+fn compact_draft_footer_keeps_reference_hints_without_context_metadata() {
+    use ratatui::{backend::TestBackend, Terminal};
+
+    for (width, height) in [(60, 20), (80, 24)] {
+        let mut app = AppState::new_live(None, false, None);
+        app.startup_mode = false;
+        app.composer.prompt_buffer = "draft".to_string();
+        app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
+        let backend = TestBackend::new(width, height);
+        let mut terminal = Terminal::new(backend).unwrap_or_abort();
+        terminal
+            .draw(|frame| super::render_app(frame, &app))
+            .unwrap_or_abort();
+        let rendered = terminal
+            .backend()
+            .buffer()
+            .content
+            .chunks(usize::from(width))
+            .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let submit = rendered.find("Enter:send");
+        let newline = rendered.find("Alt+Enter:newline");
+        let mode = rendered.find("Shift+Tab:mode");
+        assert!(
+            matches!((submit, newline, mode), (Some(a), Some(b), Some(c)) if a < b && b < c),
+            "{width}x{height}\n{rendered}"
+        );
+        assert!(
+            !rendered.contains("live ctx"),
+            "{width}x{height}\n{rendered}"
+        );
+    }
+}
+
+#[test]
+fn shell_composer_renders_semantic_marker_and_label_without_model_identity() {
+    use ratatui::{backend::TestBackend, Terminal};
+
+    let mut app = AppState::new_live(None, false, None);
+    app.startup_mode = false;
+    app.composer.shell_mode = true;
+    app.composer.prompt_buffer = "printf safe-shell".to_string();
+    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
+    let composer = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, 80, 24))
+        .dock
+        .unwrap_or_abort()
+        .composer;
+    let backend = TestBackend::new(80, 24);
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
+    terminal
+        .draw(|frame| super::render_app(frame, &app))
+        .unwrap_or_abort();
+    let rendered = terminal
+        .backend()
+        .buffer()
+        .content
+        .chunks(80)
+        .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(rendered.contains("! printf safe-shell"), "{rendered}");
+    assert!(rendered.contains("Run shell command"), "{rendered}");
+    assert!(!rendered.contains("❯ printf safe-shell"), "{rendered}");
+    assert_eq!(
+        terminal.backend().buffer()[(composer.x, composer.y)].fg,
+        Color::Indexed(15),
+        "focused Shell border must encode ANSI bright white index 15"
+    );
+}
+
+#[test]
 fn hidden_header_identity_omits_primary_profile() {
     // Given live sessions launched with either primary profile.
     let identities = ["build", "plan"].map(|profile| {

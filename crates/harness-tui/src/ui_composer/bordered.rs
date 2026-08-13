@@ -59,8 +59,7 @@ pub(crate) fn render_bordered_composer(
 
     let composer_text = app.composer_render_text();
     let composer_empty = composer_text.is_empty();
-    let glyph_prefix = format!(" {} ", theme.live_shell.transcript_glyphs.user_marker);
-    let glyph_cols = display_width(&glyph_prefix);
+    let glyph_cols = 3_usize;
     let draft_width = usize::from(inner.width)
         .saturating_sub(glyph_cols.saturating_add(1))
         .max(1);
@@ -80,6 +79,14 @@ pub(crate) fn render_bordered_composer(
     ) else {
         return;
     };
+    let glyph_prefix = format!(
+        " {} ",
+        resolved
+            .surface
+            .marker()
+            .unwrap_or(theme.live_shell.transcript_glyphs.user_marker)
+    );
+    let glyph_cols = display_width(&glyph_prefix);
     let mode_style = composer_mode_style(theme, resolved.tone, focused);
     let border_style = Style::default().fg(mode_style.border).bg(surface);
     let block = block.border_style(border_style);
@@ -87,6 +94,7 @@ pub(crate) fn render_bordered_composer(
         .chrome
         .contains(&crate::composer_integration::ComposerChrome::Title)
     {
+        let badge = resolved.surface.right_label().unwrap_or(badge.as_str());
         let (badge_title, badge_style) = if badge.is_empty() {
             ("  ─".to_string(), border_style)
         } else {
@@ -188,7 +196,7 @@ pub(crate) fn connect_waiting_owns_input(app: &AppState) -> bool {
 
 pub(super) const fn live_composer_border_color(theme: &Theme, focused: bool) -> Color {
     if focused {
-        theme.reference_terminal.prompt_border_active
+        Color::Indexed(15)
     } else {
         theme.reference_terminal.prompt_border
     }
@@ -219,10 +227,7 @@ mod active_thinking_color_tests {
     fn live_composer_border_matches_the_groknight_active_prompt() {
         let theme = Theme::harness_chat();
 
-        assert_eq!(
-            live_composer_border_color(&theme, true),
-            Color::Rgb(0x50, 0x50, 0x58)
-        );
+        assert_eq!(live_composer_border_color(&theme, true), Color::Indexed(15));
         assert_eq!(
             live_composer_border_color(&theme, false),
             Color::Rgb(50, 50, 55)

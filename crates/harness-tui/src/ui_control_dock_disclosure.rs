@@ -416,7 +416,12 @@ pub(super) fn render_control_dock_disclosure(
 
     let background_task_count = app.active_background_task_count();
     if active_live_composer && background_task_count > 0 && !app.active_turn_in_progress() {
-        let freeze_row = live_freeze_shortcut_disclosure_row(app, theme, surface);
+        let freeze_row = live_freeze_shortcut_disclosure_row(
+            app,
+            theme,
+            surface,
+            area.width <= theme.live_shell.breakpoints.minimum.width,
+        );
         if spans_width(&freeze_row) <= usize::from(area.width) {
             frame.render_widget(Paragraph::new(Line::from(freeze_row)).style(base), area);
             return;
@@ -441,7 +446,12 @@ pub(super) fn render_control_dock_disclosure(
         && (!app.interrupt_hint_visible() || app.active_turn_in_progress())
         && (!context_summary_visible || app.active_turn_in_progress())
     {
-        let freeze_row = live_freeze_shortcut_disclosure_row(app, theme, surface);
+        let freeze_row = live_freeze_shortcut_disclosure_row(
+            app,
+            theme,
+            surface,
+            area.width <= theme.live_shell.breakpoints.minimum.width,
+        );
         if spans_width(&freeze_row) <= usize::from(area.width) {
             let disclosure_area = Rect {
                 x: area.x,
@@ -460,9 +470,18 @@ pub(super) fn render_control_dock_disclosure(
     let mut hint_candidates = if active_live_composer
         && (!app.interrupt_hint_visible() || app.active_turn_in_progress())
     {
-        let freeze_row = live_freeze_shortcut_disclosure_row(app, theme, surface);
+        let freeze_row = live_freeze_shortcut_disclosure_row(
+            app,
+            theme,
+            surface,
+            area.width <= theme.live_shell.breakpoints.minimum.width,
+        );
         if spans_width(&freeze_row) <= usize::from(area.width) {
             vec![freeze_row]
+        } else if !app.composer.prompt_buffer.is_empty() {
+            vec![live_freeze_primary_shortcut_disclosure_row(
+                app, theme, surface,
+            )]
         } else {
             composer_disclosure_hint_candidates(app, dock, theme, surface)
         }
@@ -724,6 +743,7 @@ fn live_freeze_shortcut_disclosure_row(
     app: &AppState,
     theme: &Theme,
     surface: Color,
+    compact: bool,
 ) -> Vec<Span<'static>> {
     // Reference idle footer uses 256-color palette: color 15 (bright white) for
     // bold key bindings, color 7 (normal white) for labels and dim separator.
@@ -742,19 +762,22 @@ fn live_freeze_shortcut_disclosure_row(
     let mode_key = freeze_preferred_binding(app, Action::VariantCycle, "Shift+Tab");
     let help_key = freeze_preferred_binding(app, Action::Help, "Ctrl+x");
     let active_turn = app.active_turn_in_progress();
-
     let mut spans = Vec::new();
     if !app.composer.prompt_buffer.is_empty() {
-        let send_key = freeze_preferred_binding(app, Action::SubmitPrompt, "Enter");
         spans.extend([
-            Span::styled(send_key, bold),
+            Span::styled(
+                freeze_preferred_binding(app, Action::SubmitPrompt, "Enter"),
+                bold,
+            ),
             Span::styled(if active_turn { ":queue" } else { ":send" }, normal),
             Span::styled("  │  ", dim),
         ]);
-        if active_turn {
-            let newline_key = freeze_preferred_binding(app, Action::InsertNewline, "Alt+Enter");
+        if active_turn || compact {
             spans.extend([
-                Span::styled(newline_key, bold),
+                Span::styled(
+                    freeze_preferred_binding(app, Action::InsertNewline, "Alt+Enter"),
+                    bold,
+                ),
                 Span::styled(":newline", normal),
                 Span::styled("  │  ", dim),
             ]);
@@ -777,6 +800,41 @@ fn live_freeze_shortcut_disclosure_row(
         Span::styled(":shortcuts", normal),
     ]);
     spans
+}
+
+fn live_freeze_primary_shortcut_disclosure_row(
+    app: &AppState,
+    theme: &Theme,
+    surface: Color,
+) -> Vec<Span<'static>> {
+    let bold = Style::default()
+        .fg(theme.reference_terminal.primary)
+        .bg(surface)
+        .add_modifier(Modifier::BOLD);
+    let normal = Style::default()
+        .fg(theme.reference_terminal.secondary)
+        .bg(surface);
+    let dim = normal.add_modifier(Modifier::DIM);
+    let active_turn = app.active_turn_in_progress();
+    vec![
+        Span::styled(
+            freeze_preferred_binding(app, Action::SubmitPrompt, "Enter"),
+            bold,
+        ),
+        Span::styled(if active_turn { ":queue" } else { ":send" }, normal),
+        Span::styled("  │  ", dim),
+        Span::styled(
+            freeze_preferred_binding(app, Action::InsertNewline, "Alt+Enter"),
+            bold,
+        ),
+        Span::styled(":newline", normal),
+        Span::styled("  │  ", dim),
+        Span::styled(
+            freeze_preferred_binding(app, Action::VariantCycle, "Shift+Tab"),
+            bold,
+        ),
+        Span::styled(":mode", normal),
+    ]
 }
 
 fn freeze_preferred_binding(app: &AppState, action: Action, freeze_label: &str) -> String {

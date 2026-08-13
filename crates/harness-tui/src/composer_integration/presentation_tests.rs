@@ -147,6 +147,8 @@ fn production_wrappers_delegate_body_geometry_to_one_resolver() {
     for wrapper in [bordered, document] {
         assert!(wrapper.contains("presentation::resolve_composer("));
         assert!(!wrapper.contains("composer_viewport("));
+        assert!(wrapper.contains(".marker()"));
+        assert!(wrapper.contains(".right_label()"));
     }
     assert!(bordered.contains("collapsed::render_collapsed_composer("));
     assert!(collapsed.contains("presentation::resolve_composer("));
@@ -173,6 +175,32 @@ fn plan_surface_owns_a_distinct_presentation_tone() {
     assert_eq!(tone_for(ComposerSurface::Live), ComposerTone::Standard);
     assert_eq!(tone_for(ComposerSurface::Shell), ComposerTone::Shell);
     assert_eq!(tone_for(ComposerSurface::Plan), ComposerTone::Plan);
+}
+
+#[test]
+fn shell_surface_owns_reference_marker_and_semantic_label() {
+    assert_eq!(ComposerSurface::Shell.marker(), Some("!"));
+    assert_eq!(
+        ComposerSurface::Shell.right_label(),
+        Some("Run shell command")
+    );
+    assert_eq!(ComposerSurface::Live.marker(), None);
+    assert_eq!(ComposerSurface::Plan.right_label(), None);
+}
+
+#[test]
+fn compact_draft_hint_priority_keeps_submit_newline_and_mode() {
+    use crate::keybindings::Action;
+
+    assert_eq!(
+        super::compact_draft_hint_priority(false),
+        &[
+            Action::SubmitPrompt,
+            Action::InsertNewline,
+            Action::VariantCycle,
+            Action::Help,
+        ]
+    );
 }
 
 #[test]

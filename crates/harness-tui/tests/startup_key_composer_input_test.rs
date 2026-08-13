@@ -689,7 +689,7 @@ fn live_composer_wraps_against_its_inset_width() {
 }
 
 #[test]
-fn live_composer_badges_preserve_border_corners_and_prompt_position() {
+fn shell_composer_semantics_preserve_border_corners_and_prompt_position() {
     let mut app = AppState::new_live(None, false, None);
     app.set_launch_metadata(
         LaunchMetadata::from_model_ref(
@@ -716,12 +716,15 @@ fn live_composer_badges_preserve_border_corners_and_prompt_position() {
         buffer[(composer.right() - 1, composer.bottom() - 1)].symbol(),
         "╯"
     );
-    assert_eq!(buffer[(composer.x + 2, composer.y + 1)].symbol(), "❯");
+    assert_eq!(buffer[(composer.x + 2, composer.y + 1)].symbol(), "!");
     let bottom_border = (composer.x..composer.right())
         .map(|x| buffer[(x, composer.bottom() - 1)].symbol())
         .collect::<String>();
-    assert!(bottom_border.contains("queued 7"), "{bottom_border:?}");
-    assert!(bottom_border.contains("shell"), "{bottom_border:?}");
+    assert!(
+        bottom_border.contains("Run shell command"),
+        "{bottom_border:?}"
+    );
+    assert!(!bottom_border.contains("queued 7"), "{bottom_border:?}");
 }
 
 #[test]

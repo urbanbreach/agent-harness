@@ -10,11 +10,18 @@ pub(crate) enum ComposerMetadataTone {
 pub(crate) fn composer_metadata_line(
     app: &AppState,
     dock: &crate::view_model::ControlDockViewModel,
+    semantic_label: Option<&'static str>,
     _disclosure_visible: bool,
     max_width: usize,
     theme: &Theme,
     surface: Color,
 ) -> Line<'static> {
+    if let Some(label) = semantic_label {
+        return Line::from(Span::styled(
+            label,
+            Style::default().fg(composer_input_muted(theme)).bg(surface),
+        ));
+    }
     let candidates = composer_metadata_candidates(app, dock);
     let segments = candidates
         .iter()

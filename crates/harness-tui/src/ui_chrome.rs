@@ -255,41 +255,36 @@ pub(super) fn render_footer(
                 app.runtime_state().kind,
                 crate::app::RuntimeStateKind::Sending | crate::app::RuntimeStateKind::Streaming
             );
-        footer_hints.hints = vec![
-            crate::view_model::FooterHint {
-                action: crate::keybindings::Action::SubmitPrompt,
-                label: if active_turn { ":queue" } else { ":send" },
-            },
-            crate::view_model::FooterHint {
-                action: crate::keybindings::Action::VariantCycle,
-                label: ":mode",
-            },
-        ];
-        if active_turn {
-            footer_hints.hints.insert(
-                1,
-                crate::view_model::FooterHint {
-                    action: crate::keybindings::Action::InsertNewline,
-                    label: ":newline",
+        footer_hints.hints = crate::composer_integration::compact_draft_hint_priority(active_turn)
+            .iter()
+            .copied()
+            .map(|action| crate::view_model::FooterHint {
+                action,
+                label: match action {
+                    crate::keybindings::Action::SubmitPrompt if active_turn => ":queue",
+                    crate::keybindings::Action::SubmitPrompt => ":send",
+                    crate::keybindings::Action::InsertNewline => ":newline",
+                    crate::keybindings::Action::VariantCycle => ":mode",
+                    crate::keybindings::Action::DismissModal => ":cancel",
+                    crate::keybindings::Action::Help => ":shortcuts",
+                    _ => "",
                 },
-            );
-            footer_hints.hints.extend([crate::view_model::FooterHint {
-                action: crate::keybindings::Action::DismissModal,
-                label: ":cancel",
-            }]);
-        }
-        footer_hints.hints.push(crate::view_model::FooterHint {
-            action: crate::keybindings::Action::Help,
-            label: ":shortcuts",
-        });
+            })
+            .collect();
     }
+    let compact_draft = !app.composer.prompt_buffer.is_empty()
+        && !matches!(
+            plan.session_contract.footer_mode,
+            SessionFooterMode::Standard
+        );
     match plan.session_contract.footer_mode {
         SessionFooterMode::Standard => {}
         SessionFooterMode::Reduced => {
             footer_hints.hints = compact_footer_hints(&footer_hints.hints, 4);
         }
         SessionFooterMode::Minimal => {
-            footer_hints.hints = compact_footer_hints(&footer_hints.hints, 2);
+            footer_hints.hints =
+                compact_footer_hints(&footer_hints.hints, if compact_draft { 3 } else { 2 });
             footer_hints.prefix = None;
         }
     }
@@ -310,7 +305,7 @@ pub(super) fn render_footer(
         if i > 0 {
             hint_spans.push(Span::styled("  │  ", dim_style));
         }
-        let key_str = app.keymap.get_binding_str(hint.action);
+        let key_str = composer_footer_binding(app, hint.action);
         if key_str != "-" {
             hint_spans.push(Span::styled(key_str, key_style));
             hint_spans.push(Span::styled(hint.label.to_string(), label_style));
@@ -348,7 +343,7 @@ pub(super) fn render_footer(
             live_footer_status_candidates(app, usize::from(text_area.width), theme);
         let cluster_spans = footer_status_cluster_text(app, theme);
 
-        if cluster_spans.is_empty() {
+        if compact_draft || cluster_spans.is_empty() {
             frame.render_widget(
                 Paragraph::new(Line::from(hint_spans)).style(style),
                 text_area,
@@ -367,6 +362,18 @@ pub(super) fn render_footer(
                 Line::from(hint_spans),
             );
         }
+    }
+}
+
+fn composer_footer_binding(app: &AppState, action: crate::keybindings::Action) -> String {
+    if action == crate::keybindings::Action::InsertNewline {
+        app.keymap
+            .get_binding_strs(action)
+            .into_iter()
+            .find(|binding| binding == "Alt+Enter")
+            .unwrap_or_else(|| app.keymap.get_binding_str(action))
+    } else {
+        app.keymap.get_binding_str(action)
     }
 }
 

@@ -9,6 +9,7 @@ mod hit_map;
 mod presentation;
 mod presentation_adapter;
 mod presentation_error;
+mod presentation_policy;
 mod slice;
 mod submission;
 mod view_helpers;
@@ -22,6 +23,7 @@ pub use presentation::{
     ComposerSurface, ComposerTone,
 };
 pub use presentation_error::ComposerPresentationError;
+pub(crate) use presentation_policy::compact_draft_hint_priority;
 pub use slice::{AttachmentEntry, ComposerSlice, ComposerSliceError};
 pub use submission::{ComposerUiIntent, SubmissionAttachment, SubmissionError, UiIntent};
 pub use view_model::{
