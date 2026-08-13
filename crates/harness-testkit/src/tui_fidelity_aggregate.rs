@@ -10,7 +10,9 @@ use crate::tui_fidelity_compare::{
 use crate::tui_fidelity_runner::{CleanupReceipt, PresentationMetricsKind};
 
 mod helpers;
+mod input_visibility;
 use helpers::{evidence, find_unique, read_json, summarize, verify_artifact};
+use input_visibility::{visible_send_timestamps, Native, NativeAcknowledgementOutcome};
 
 const RUN_COUNT: usize = 5;
 
@@ -124,30 +126,6 @@ struct Artifact {
     sha256: String,
 }
 
-#[derive(Deserialize)]
-struct Native {
-    aggregates: NativeAggregates,
-    acknowledgements: Vec<NativeAcknowledgement>,
-}
-
-#[derive(Deserialize)]
-struct NativeAcknowledgement {
-    outcome: NativeAcknowledgementOutcome,
-}
-
-#[derive(Clone, Copy, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-enum NativeAcknowledgementOutcome {
-    CompletedWrite,
-    FailedWrite,
-    ResyncRequired,
-}
-
-#[derive(Deserialize)]
-struct NativeAggregates {
-    idle_redraws: u64,
-}
-
 pub fn aggregate(run_roots: &[PathBuf]) -> Result<AggregateSummary, AggregateError> {
     aggregate_with_profile(run_roots, AcceptanceProfile::FullParity)
 }
@@ -241,11 +219,15 @@ fn read_run(root: &Path, profile: AcceptanceProfile) -> Result<Run, AggregateErr
                 .last()
                 .and_then(|send| send.sent_at),
         );
-    let candidate_send_timestamps = external
-        .actual_input_sends
-        .iter()
-        .filter_map(|send| send.sent_at)
-        .collect();
+    let candidate_send_timestamps = if profile == AcceptanceProfile::Packet2Scheduling {
+        visible_send_timestamps(&external.actual_input_sends, native, root)?
+    } else {
+        external
+            .actual_input_sends
+            .iter()
+            .filter_map(|send| send.sent_at)
+            .collect()
+    };
     let reference_order = reference_external
         .actual_input_sends
         .iter()

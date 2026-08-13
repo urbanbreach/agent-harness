@@ -10,6 +10,9 @@ use harness_testkit::tui_fidelity_aggregate::{aggregate, aggregate_with_profile,
 use harness_testkit::tui_fidelity_compare::AcceptanceProfile;
 use sha2::{Digest, Sha256};
 
+#[path = "support/tui_fidelity_no_visible_gap.rs"]
+mod tui_fidelity_no_visible_gap;
+
 #[test]
 fn five_matching_fresh_runs_aggregate() {
     // Given: exactly five fresh passing run roots with one shared authority and input order.
@@ -395,6 +398,13 @@ impl AggregateFixture {
                 value["runtimes"][1]["presentation"]["scheduling_sidecar"] = serde_json::json!({
                     "path":scheduling,"sha256":digest(&scheduling)
                 });
+                for runtime in value["runtimes"].as_array_mut().expect("runtimes") {
+                    let sends = runtime["presentation"]["external"]["actual_input_sends"]
+                        .as_array_mut()
+                        .expect("sends");
+                    sends[0]["sent_at"] = serde_json::json!(1);
+                    sends[1]["sent_at"] = serde_json::json!(201);
+                }
             });
             mutate_json(&root.join("comparison.json"), |value| {
                 value["acceptance_profile"] = serde_json::json!("packet2_scheduling");
@@ -443,7 +453,11 @@ fn write_run(root: &Path) {
              "presentation_binding":binding},
             {"adapter":"harness","binary":{"sha256":"2".repeat(64)},
              "presentation":{"kind":"harness_native","external":external(&harness_artifacts),
-                "native":{"aggregates":{"idle_redraws":0},"acknowledgements":[{"outcome":"completed_write"}]},
+                "native":{"aggregates":{"idle_redraws":0},"acknowledgements":[{"outcome":"completed_write"}],
+                    "causes":[
+                        {"interaction_id":"scenario:action:0","resulting_revision":1,"outcome":"visible_change"},
+                        {"interaction_id":"scenario:action:1","resulting_revision":2,"outcome":"visible_change"}
+                    ]},
                 "native_trace_artifact":{"path":native_sidecar,"sha256":digest(&native_sidecar)}},
              "presentation_binding":binding}
         ]
