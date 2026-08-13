@@ -45,10 +45,7 @@ pub(super) fn startup_surface_projects_clipboard_capability() {
     app.set_launch_metadata(
         app::LaunchMetadata::from_model_ref("worker", "mock:model-1").with_mode_label("Demo"),
     );
-    crate::runtime::apply_startup_capability_notice(
-        &mut app,
-        crate::runtime::TerminalCapabilityState::absent(),
-    );
+    crate::runtime::apply_startup_capability_notice(&mut app, true);
 
     for (width, height) in [(80, 24), (100, 30), (120, 40)] {
         let buffer = render_live_cells(&app, width, height);

@@ -168,11 +168,17 @@ impl TerminalCapabilityState {
 
 pub(crate) fn apply_startup_capability_notice(
     app: &mut AppState,
-    capabilities: TerminalCapabilityState,
+    clipboard_warning_required: bool,
 ) {
-    if app.startup_shell_visible() && !capabilities.osc52_clipboard && app.status_banner.is_none() {
+    if app.startup_shell_visible() && clipboard_warning_required && app.status_banner.is_none() {
         app.set_status_banner(Some("Clipboard may be unreachable.".to_owned()));
     }
+}
+
+fn is_ssh_session() -> bool {
+    ["SSH_CONNECTION", "SSH_TTY", "SSH_CLIENT"]
+        .iter()
+        .any(|name| std::env::var_os(name).is_some())
 }
 
 fn truecolor_from_colorterm(value: Option<&str>) -> bool {
@@ -551,7 +557,12 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         );
     }
 
-    apply_startup_capability_notice(&mut app, capabilities);
+    let clipboard_warning_required =
+        crate::terminal::startup_diagnostics::clipboard_warning_required(
+            terminal_session.context,
+            is_ssh_session(),
+        );
+    apply_startup_capability_notice(&mut app, clipboard_warning_required);
 
     app.set_color_level(crate::theme::detect_color_level(
         std::env::var("NO_COLOR").ok().as_deref(),
