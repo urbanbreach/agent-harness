@@ -18,6 +18,7 @@ pub mod key;
 pub mod lifecycle;
 pub mod multiplexer;
 pub mod presenter;
+pub(crate) mod startup_diagnostics;
 pub mod unicode_width;
 pub mod writer;
 
