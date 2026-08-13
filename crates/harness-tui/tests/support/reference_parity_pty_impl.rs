@@ -965,6 +965,36 @@ pub(crate) fn pty_helper_live_thinking() {
     }
     let mut events = question_turn_events();
     events.truncate(3);
+    events.insert(
+        0,
+        parity_envelope(
+            0,
+            Some("req_question_pty"),
+            EventV1::TaskScheduled(TaskScheduledEvent {
+                task_id: "task_thinking_parity".to_string().into(),
+                state: TaskScheduleState::Started,
+                queue_key: Some("provider_model:mock:model-tx".to_string()),
+            }),
+        ),
+    );
+    events.push(parity_envelope(
+        4,
+        Some("req_question_pty"),
+        EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+            request_id: "req_question_pty".into(),
+            finish_reason: "done".to_string(),
+            output_digest: Some("digest-out-thinking".to_string()),
+            usage: Some(parity_completion_usage(1_430)),
+            metadata: None,
+        }),
+    ));
+    for (index, event) in events.iter_mut().enumerate() {
+        event.seq = u64::try_from(index).unwrap_or(u64::MAX).saturating_add(1);
+        event.event_id = format!("evt_thinking_parity_{:04}", event.seq);
+    }
+    if let Some(finished) = events.last_mut() {
+        finished.mono_ms = 5_400;
+    }
     run_live_with_historical_events(events);
 }
 
