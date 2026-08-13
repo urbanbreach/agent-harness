@@ -595,7 +595,7 @@ impl AppState {
     }
 
     pub(crate) fn set_starting_session_seed(&mut self, visible: bool) {
-        self.starting_session_seed = visible;
+        self.starting_session_seed = visible && !self.active_turn_in_progress();
     }
 
     /// Whether the shell currently requests animation ticks (evidence / tests).

@@ -1033,6 +1033,8 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                         true
                     }
                 };
+                let input_presentation =
+                    input_presentation.for_turn_start(stream_active, app.active_turn_in_progress());
                 let cause_id = if event_changed {
                     input_presentation.request(true, &mut presenter, &mut pacer, Instant::now());
                     presentation_session.as_mut().map(|session| {
@@ -1622,6 +1624,43 @@ mod tests {
             }
         );
         assert_eq!(app.session_history_entries, vec![entry]);
+    }
+
+    #[test]
+    fn run_started_clears_the_new_session_bootstrap_status() {
+        // Given: new-live bootstrap posted a transient status before runtime events arrived.
+        let (tx, rx) = live_update_channel();
+        tx.send(LiveUpdate::Status("starting new session".to_string()))
+            .unwrap_or_abort();
+        tx.send(LiveUpdate::Event(Box::new(EventEnvelopeV1 {
+            schema_version: harness_core::event::SCHEMA_VERSION,
+            event_id: "evt-bootstrap-started".to_string(),
+            seq: 1,
+            run_id: "run-bootstrap-started".into(),
+            mono_ms: 1,
+            ts: None,
+            actor: harness_core::event::EventActor::new(
+                harness_core::event::ActorKind::System,
+                Some("coordinator".to_string()),
+            ),
+            correlation_id: None,
+            causation_id: None,
+            stream_key: Some("run:run-bootstrap-started".to_string()),
+            payload: harness_core::event::EventV1::RunStarted(
+                harness_core::event::RunStartedEvent {
+                    run_name: "bootstrap started".into(),
+                    workspace_root: "/workspace".to_string(),
+                },
+            ),
+        })))
+        .unwrap_or_abort();
+        let mut app = AppState::new_live(None, false, None);
+
+        // When: the live-update quantum applies the bootstrap status and first runtime event.
+        drain_live_updates(&mut app, &rx);
+
+        // Then: the transient bootstrap banner no longer overrides live turn state.
+        assert_eq!(app.status_banner, None);
     }
 
     #[test]

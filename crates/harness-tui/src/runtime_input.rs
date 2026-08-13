@@ -44,6 +44,14 @@ impl InputPresentation {
             Self::Coalesced => pacer.request_flush(),
         }
     }
+
+    pub(crate) const fn for_turn_start(self, was_active: bool, is_active: bool) -> Self {
+        if !was_active && is_active {
+            Self::Immediate
+        } else {
+            self
+        }
+    }
 }
 
 pub(crate) const fn should_apply_live_update(
@@ -77,6 +85,21 @@ mod tests {
             row: 8,
             modifiers: KeyModifiers::NONE,
         })
+    }
+
+    #[test]
+    fn submit_key_requests_an_immediate_pre_provider_frame() {
+        // Given: a prompt submission that synchronously enters the waiting state.
+        let event = TuiEvent::Key(crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::Enter,
+            KeyModifiers::NONE,
+        ));
+
+        // When: input presentation classifies the submit key.
+        let presentation = InputPresentation::for_event(&event).for_turn_start(false, true);
+
+        // Then: the waiting frame is not coalesced with the first provider update.
+        assert_eq!(presentation, InputPresentation::Immediate);
     }
 
     #[test]

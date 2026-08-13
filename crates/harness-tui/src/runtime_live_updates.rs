@@ -243,7 +243,7 @@ fn apply_operator_notice(app: &mut AppState, message: String, level: OperatorNot
 
 fn transient_live_status_banner(status: &str) -> bool {
     let lower = status.to_ascii_lowercase();
-    lower.contains("lagged") || lower.contains("replaying")
+    lower == "starting new session" || lower.contains("lagged") || lower.contains("replaying")
 }
 
 fn is_auth_backend_failure_summary(message: &str) -> bool {

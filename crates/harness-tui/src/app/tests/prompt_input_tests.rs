@@ -189,6 +189,28 @@ pub(super) fn live_bootstrap_auto_submit_echoes_and_emits_first_prompt() {
     );
 }
 
+pub(super) fn startup_auto_submit_owns_status_over_empty_session_seed() {
+    // Given: the startup handoff auto-submits the first prompt before any runtime event exists.
+    let mut app = AppState::new();
+    app.apply_pending_live_prompt(PendingLivePrompt {
+        text: "boot prompt".to_string(),
+        auto_submit: true,
+    });
+
+    // When: the empty-history live shell applies its startup seed presentation state.
+    app.set_starting_session_seed(true);
+
+    // Then: the active turn keeps ownership of the bottom-left live status.
+    assert!(!app.starting_session_seed_visible());
+    assert!(app.has_live_turn_activity());
+    assert!(crate::layout::FrameLayoutPlan::for_app(
+        &app,
+        ratatui::layout::Rect::new(0, 0, 120, 40),
+    )
+    .status
+    .is_some());
+}
+
 pub(super) fn first_esc_on_nonempty_idle_prompt_shows_press_again_hint_without_clearing() {
     let mut app = AppState::new_live(None, false, None);
     app.focus = Focus::Prompt;
