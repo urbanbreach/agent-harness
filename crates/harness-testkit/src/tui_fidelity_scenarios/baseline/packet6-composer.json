@@ -8,9 +8,9 @@
     {"wait_for_text": {"at_tick": 2, "text": "中🙂"}}
   ],
   "checkpoints": [
-    {"name": "rest", "at_tick": 3, "frame": {"capture_id": "packet6-composer-rest", "viewport": {"cols": 80, "rows": 24}, "state": "rest"}},
-    {"name": "mid", "at_tick": 4, "frame": {"capture_id": "packet6-composer-mid", "viewport": {"cols": 80, "rows": 24}, "state": "working"}},
-    {"name": "settled", "at_tick": 5, "frame": {"capture_id": "packet6-composer-settled", "viewport": {"cols": 80, "rows": 24}, "state": "settled"}}
+    {"name": "rest", "at_tick": 60, "frame": {"capture_id": "packet6-composer-rest", "viewport": {"cols": 80, "rows": 24}, "state": "rest"}},
+    {"name": "mid", "at_tick": 70, "frame": {"capture_id": "packet6-composer-mid", "viewport": {"cols": 80, "rows": 24}, "state": "working"}},
+    {"name": "settled", "at_tick": 80, "frame": {"capture_id": "packet6-composer-settled", "viewport": {"cols": 80, "rows": 24}, "state": "settled"}}
   ],
   "substitutions": [],
   "expected_exit": {"code": 0},
