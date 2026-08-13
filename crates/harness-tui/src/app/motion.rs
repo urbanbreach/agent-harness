@@ -142,18 +142,19 @@ impl AppState {
 
     fn streaming_wait_motion_active(&self) -> bool {
         !self.replay_mode
-            && !self.interrupt_requested()
-            && self.active_permission().is_none()
-            && self.activities.iter().any(|activity| {
-                activity.status == ActivityStatus::Streaming
-                    && !activity.tool_calls.iter().any(|tool| {
-                        matches!(
-                            tool.status,
-                            ToolCallDisplayStatus::Queued
-                                | ToolCallDisplayStatus::PendingPermission
-                                | ToolCallDisplayStatus::Running
-                        )
-                    })
-            })
+            && (self
+                .active_permission_view()
+                .is_some_and(|permission| permission.kind.eq_ignore_ascii_case("question"))
+                || self.activities.iter().any(|activity| {
+                    activity.status == ActivityStatus::Streaming
+                        && !activity.tool_calls.iter().any(|tool| {
+                            matches!(
+                                tool.status,
+                                ToolCallDisplayStatus::Queued
+                                    | ToolCallDisplayStatus::PendingPermission
+                                    | ToolCallDisplayStatus::Running
+                            )
+                        })
+                }))
     }
 }

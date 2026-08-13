@@ -228,4 +228,5 @@ fn orphan_question_permission_becomes_pending_ask_tool_row() {
         rendered.contains("Waiting on answers for Pick one"),
         "orphan question should project Waiting on answers footer\n{rendered}"
     );
+    assert!(app.has_active_animations_for_evidence());
 }

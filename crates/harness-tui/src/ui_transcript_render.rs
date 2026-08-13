@@ -1639,20 +1639,21 @@ fn pack_waiting_on_answers_footer_line(
     content_width: u16,
 ) -> Line<'static> {
     let marker = theme.live_shell.transcript_glyphs.tool_marker;
-    let left = if waiting.starts_with("Run ") {
+    let label = if waiting.starts_with("Run ") {
         match turn.header.duration_ms {
-            Some(duration_ms) => format!(
-                "{marker} {waiting} {}",
-                format_thought_duration_ms(duration_ms)
-            ),
-            None => format!("{marker} {waiting}"),
+            Some(duration_ms) => {
+                format!("{waiting} {}", format_thought_duration_ms(duration_ms))
+            }
+            None => waiting.to_string(),
         }
     } else {
-        format!("{marker} {waiting}")
+        waiting.to_string()
     };
     let right = waiting_status_right_meta(turn);
     let target = assistant_footer_available_width(content_width);
-    let left_width = display_width(&left);
+    let left_width = display_width(marker)
+        .saturating_add(1)
+        .saturating_add(display_width(&label));
     let right_width = display_width(&right);
     let gap = target
         .saturating_sub(left_width)
@@ -1661,7 +1662,11 @@ fn pack_waiting_on_answers_footer_line(
 
     let mut spans = vec![
         Span::raw(TRANSCRIPT_ASSISTANT_BODY_PREFIX.to_string()),
-        Span::styled(left, Style::default().fg(theme.text.secondary)),
+        Span::styled(
+            format!("{marker} "),
+            Style::default().fg(pending_diamond_color(theme, turn.animation_phase)),
+        ),
+        Span::styled(label, Style::default().fg(theme.text.secondary)),
     ];
     if gap > 0 {
         spans.push(Span::raw(" ".repeat(gap)));

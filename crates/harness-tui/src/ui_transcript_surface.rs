@@ -135,17 +135,71 @@ fn apply_surface_animation_phase(
         }
         let absolute_row = local_scroll.saturating_add(local_row);
         apply_tool_header_motion_color(line, surface, absolute_row, animation_phase);
-        if surface.kind == TranscriptRenderSurfaceKind::User {
+        if matches!(
+            surface.kind,
+            TranscriptRenderSurfaceKind::User | TranscriptRenderSurfaceKind::AssistantFooter
+        ) {
             if let Some(marker) = line
                 .spans
                 .iter_mut()
-                .find(|span| span.content.as_ref() == "◆")
+                .find(|span| span.content.trim() == "◆")
             {
                 marker.style = marker
                     .style
                     .fg(pending_diamond_color(theme, animation_phase));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod animation_phase_tests {
+    use super::apply_surface_animation_phase;
+    use crate::theme::Theme;
+    use crate::ui::ui_transcript::{TranscriptBlockPlacement, TranscriptRenderSurfaceKind};
+    use crate::ui::ui_transcript_layout::MeasuredTranscriptSurface;
+    use ratatui::{style::Style, text::Span};
+
+    #[test]
+    fn cached_assistant_footer_rehydrates_the_pending_diamond_phase() {
+        // Given: a cached waiting footer with independently styled marker and label spans.
+        let theme = Theme::default();
+        let surface = MeasuredTranscriptSurface {
+            kind: TranscriptRenderSurfaceKind::AssistantFooter,
+            leading_gap_rows: 0,
+            placement: TranscriptBlockPlacement::Flow,
+            top_offset: 0,
+            height: 1,
+            width: 80,
+            show_outer_rail: false,
+            rail_glyph: " ",
+            rail_color: theme.text.secondary,
+            surface: theme.surface.canvas,
+            lines: vec![ratatui::text::Line::from(vec![
+                Span::raw("    "),
+                Span::styled("◆ ", Style::default().fg(theme.text.secondary)),
+                Span::styled(
+                    "Waiting on answers",
+                    Style::default().fg(theme.text.secondary),
+                ),
+            ])],
+            interaction_rows: None,
+            selection_rows: None,
+            diff_hunk_offsets: Vec::new(),
+            selected_rail: false,
+            tool_rail_motion: None,
+        };
+
+        // When: cached lines are rehydrated at two runtime animation phases.
+        let mut first = surface.lines.clone();
+        apply_surface_animation_phase(&mut first, &surface, 0, 0, &theme);
+        let mut later = surface.lines.clone();
+        apply_surface_animation_phase(&mut later, &surface, 0, 10, &theme);
+
+        // Then: the marker changes color while the waiting label remains muted.
+        assert_ne!(first[0].spans[1].style.fg, later[0].spans[1].style.fg);
+        assert_eq!(first[0].spans[2].style.fg, Some(theme.text.secondary));
+        assert_eq!(later[0].spans[2].style.fg, Some(theme.text.secondary));
     }
 }
 
