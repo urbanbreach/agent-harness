@@ -212,8 +212,8 @@ fn resp_80x24_idle_shell_keeps_bordered_composer() {
         "RESP-80x24: exactly one bordered box (composer)\n{rendered}"
     );
     assert!(
-        !rendered.contains("Shift+Tab:mode") && !rendered.contains("Ctrl+x:shortcuts"),
-        "RESP-80x24: idle footer must collapse\n{rendered}"
+        rendered.contains("Shift+Tab:mode") && rendered.contains("Ctrl+x:shortcuts"),
+        "RESP-80x24: idle keybind footer must remain visible\n{rendered}"
     );
     assert!(
         !rendered.contains("New worktree") && !rendered.contains("New session"),
@@ -245,8 +245,8 @@ fn resp_79x24_idle_shell_keeps_bordered_composer() {
         "RESP-79x24: exactly one bordered box (composer)\n{rendered}"
     );
     assert!(
-        !rendered.contains("Shift+Tab:mode") && !rendered.contains("Ctrl+x:shortcuts"),
-        "RESP-79x24: idle footer must collapse\n{rendered}"
+        rendered.contains("Shift+Tab:mode") && rendered.contains("Ctrl+x:shortcuts"),
+        "RESP-79x24: idle keybind footer must remain visible\n{rendered}"
     );
     assert!(
         !rendered.contains("Enter:send"),
@@ -274,8 +274,8 @@ fn resp_100x30_idle_shell_keeps_bordered_composer() {
         "RESP-100x30: exactly one bordered box (composer)\n{rendered}"
     );
     assert!(
-        !rendered.contains("Shift+Tab:mode") && !rendered.contains("Ctrl+x:shortcuts"),
-        "RESP-100x30: idle footer must collapse\n{rendered}"
+        rendered.contains("Shift+Tab:mode") && rendered.contains("Ctrl+x:shortcuts"),
+        "RESP-100x30: idle keybind footer must remain visible\n{rendered}"
     );
     assert!(
         !rendered.contains("Enter:send"),
@@ -303,8 +303,8 @@ fn resp_120x40_idle_shell_keeps_bordered_composer() {
         "RESP-120x40: exactly one bordered box (composer)\n{rendered}"
     );
     assert!(
-        !rendered.contains("Shift+Tab:mode") && !rendered.contains("Ctrl+x:shortcuts"),
-        "RESP-120x40: idle footer must collapse\n{rendered}"
+        rendered.contains("Shift+Tab:mode") && rendered.contains("Ctrl+x:shortcuts"),
+        "RESP-120x40: idle keybind footer must remain visible\n{rendered}"
     );
     assert!(
         !rendered.contains("Enter:send"),
@@ -332,8 +332,8 @@ fn resp_60x20_idle_shell_keeps_bordered_composer() {
         "RESP-60x20: exactly one bordered box (composer)\n{rendered}"
     );
     assert!(
-        !rendered.contains("Shift+Tab:mode") && !rendered.contains("Ctrl+x:shortcuts"),
-        "RESP-60x20: idle footer must collapse\n{rendered}"
+        rendered.contains("Shift+Tab:mode") && rendered.contains("Ctrl+x:shortcuts"),
+        "RESP-60x20: idle keybind footer must remain visible\n{rendered}"
     );
     assert!(
         !rendered.contains("Enter:send"),
@@ -361,8 +361,8 @@ fn resp_120x50_idle_shell_keeps_bordered_composer() {
         "RESP-120x50: exactly one bordered box (composer)\n{rendered}"
     );
     assert!(
-        !rendered.contains("Shift+Tab:mode") && !rendered.contains("Ctrl+x:shortcuts"),
-        "RESP-120x50: idle footer must collapse\n{rendered}"
+        rendered.contains("Shift+Tab:mode") && rendered.contains("Ctrl+x:shortcuts"),
+        "RESP-120x50: idle keybind footer must remain visible\n{rendered}"
     );
     assert!(
         !rendered.contains("Enter:send"),
@@ -390,8 +390,8 @@ fn resp_wide_140x40_idle_shell_keeps_bordered_composer() {
         "RESP-WIDE: exactly one bordered box (composer)\n{rendered}"
     );
     assert!(
-        !rendered.contains("Shift+Tab:mode") && !rendered.contains("Ctrl+x:shortcuts"),
-        "RESP-WIDE: idle footer must collapse\n{rendered}"
+        rendered.contains("Shift+Tab:mode") && rendered.contains("Ctrl+x:shortcuts"),
+        "RESP-WIDE: idle keybind footer must remain visible\n{rendered}"
     );
     assert!(
         !rendered.contains("Enter:send"),
@@ -420,8 +420,8 @@ fn boundary_59_60_61_columns_keep_bordered_composer_and_footer() {
             "boundary {width}x20: exactly one bordered box\n{rendered}"
         );
         assert!(
-            !rendered.contains("Shift+Tab:mode") && !rendered.contains("Ctrl+x:shortcuts"),
-            "boundary {width}x20: idle footer must collapse\n{rendered}"
+            rendered.contains("Shift+Tab:mode") && rendered.contains("Ctrl+x:shortcuts"),
+            "boundary {width}x20: idle keybind footer must remain visible\n{rendered}"
         );
     }
 }
@@ -443,8 +443,8 @@ fn boundary_79_80_81_columns_keep_bordered_composer_and_footer() {
             "boundary {width}x24: exactly one bordered box\n{rendered}"
         );
         assert!(
-            !rendered.contains("Shift+Tab:mode") && !rendered.contains("Ctrl+x:shortcuts"),
-            "boundary {width}x24: idle footer must collapse\n{rendered}"
+            rendered.contains("Shift+Tab:mode") && rendered.contains("Ctrl+x:shortcuts"),
+            "boundary {width}x24: idle keybind footer must remain visible\n{rendered}"
         );
     }
 }
@@ -466,8 +466,8 @@ fn boundary_99_100_101_columns_keep_bordered_composer_and_footer() {
             "boundary {width}x30: exactly one bordered box\n{rendered}"
         );
         assert!(
-            !rendered.contains("Shift+Tab:mode") && !rendered.contains("Ctrl+x:shortcuts"),
-            "boundary {width}x30: idle footer must collapse\n{rendered}"
+            rendered.contains("Shift+Tab:mode") && rendered.contains("Ctrl+x:shortcuts"),
+            "boundary {width}x30: idle keybind footer must remain visible\n{rendered}"
         );
     }
 }
@@ -489,8 +489,8 @@ fn boundary_119_120_121_columns_keep_bordered_composer_and_footer() {
             "boundary {width}x32: exactly one bordered box\n{rendered}"
         );
         assert!(
-            !rendered.contains("Shift+Tab:mode") && !rendered.contains("Ctrl+x:shortcuts"),
-            "boundary {width}x32: idle footer must collapse\n{rendered}"
+            rendered.contains("Shift+Tab:mode") && rendered.contains("Ctrl+x:shortcuts"),
+            "boundary {width}x32: idle keybind footer must remain visible\n{rendered}"
         );
     }
 }
@@ -508,8 +508,8 @@ fn boundary_120_col_tall_heights_keep_bordered_composer_and_footer() {
             "120x{height}: exactly one bordered box\n{rendered}"
         );
         assert!(
-            !rendered.contains("Shift+Tab:mode") && !rendered.contains("Ctrl+x:shortcuts"),
-            "120x{height}: idle footer must collapse\n{rendered}"
+            rendered.contains("Shift+Tab:mode") && rendered.contains("Ctrl+x:shortcuts"),
+            "120x{height}: idle keybind footer must remain visible\n{rendered}"
         );
     }
 }
@@ -596,13 +596,14 @@ fn characterization_current_live_shell_geometry_is_full_width_and_bottom_safe() 
         assert_eq!(transcript.width, plan.shell.width);
         assert_eq!(composer.x, plan.shell.x + inset);
         assert_eq!(composer.width, plan.shell.width.saturating_sub(inset * 2));
-        assert!(composer.y + composer.height <= plan.shell.y + plan.shell.height);
-        assert_eq!(plan.disclosure, None);
+        let disclosure = plan
+            .disclosure
+            .unwrap_or_else(|| panic!("disclosure at {width}x{height}"));
+        assert_eq!(composer.bottom(), disclosure.y);
+        assert_eq!(disclosure.bottom(), plan.shell.bottom());
     }
 }
 
-/// Regression: the pinned idle `120x40` frame keeps a three-row composer at
-/// rows 34..=36, one blank row, then its disclosure at row 38.
 #[test]
 fn resp_120x40_matches_reference_dock_rhythm() {
     use harness_tui::FrameLayoutPlan;
@@ -613,8 +614,8 @@ fn resp_120x40_matches_reference_dock_rhythm() {
     let composer = plan.composer.expect("composer at 120x40");
     assert_eq!(
         composer,
-        Rect::new(2, 37, 116, 3),
-        "idle 120x40 composer must retain the pinned three-row dock"
+        Rect::new(2, 36, 116, 3),
+        "idle 120x40 composer must retain the persistent keybind dock"
     );
-    assert_eq!(plan.disclosure, None);
+    assert_eq!(plan.disclosure, Some(Rect::new(2, 39, 116, 1)));
 }

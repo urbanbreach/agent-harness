@@ -215,15 +215,15 @@ fn live_shell_collapses_chrome_while_startup_reserves_footer() {
         );
         assert_eq!(
             startup_plan.footer.height,
-            2,
-            "{}: startup shell reserves a 2-row footer",
+            1,
+            "{}: startup shell reserves a 1-row footer",
             id.behavior_id()
         );
     }
 }
 
 #[test]
-fn idle_live_dock_collapses_irrelevant_disclosure_and_unfocused_empty_composer() {
+fn idle_live_dock_keeps_keybind_disclosure_and_unfocused_empty_composer() {
     // arrange
     let mut live = idle_live_app();
     live.focus = harness_tui::app::Focus::List;
@@ -240,7 +240,7 @@ fn idle_live_dock_collapses_irrelevant_disclosure_and_unfocused_empty_composer()
             "{cols}x{rows}: status must stay fused into the composer band; got {:?}",
             live_plan.status
         );
-        assert!(live_plan.disclosure.is_none());
+        assert_eq!(live_plan.disclosure.map(|area| area.height), Some(1));
         assert_eq!(live_plan.composer.unwrap_or_abort().height, 1);
     }
 
@@ -692,7 +692,7 @@ fn startup_shell_renders_border_chrome_with_footer_band() {
         rendered.contains('╭') && rendered.contains('╰'),
         "startup shell renders bordered composer chrome\n{rendered}"
     );
-    assert_eq!(plan.footer.height, 2, "startup footer band is reserved");
+    assert_eq!(plan.footer.height, 1, "startup footer band is reserved");
     assert_eq!(dock.composer.height, 3, "empty startup composer is 3 rows");
     assert!(
         dock.shell.y.saturating_add(dock.shell.height)
@@ -732,8 +732,14 @@ fn permission_dock_attaches_fixed_tray_above_stable_composer() {
         .expect("permission dock must reserve an attached status tray");
     assert_eq!(status.height, 11, "permission tray uses the freeze height");
     assert_eq!(
-        plan.composer, idle_composer,
-        "permission tray must not move or resize the composer"
+        plan.composer.map(|area| area.y),
+        idle_composer.map(|area| area.y.saturating_add(1)),
+        "suppressing the idle keybind row moves the permission composer down one row"
+    );
+    assert_eq!(
+        plan.composer.map(|area| (area.width, area.height)),
+        idle_composer.map(|area| (area.width, area.height)),
+        "permission tray must not resize the composer"
     );
     assert!(
         dock.composer.width > 0,

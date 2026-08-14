@@ -145,19 +145,22 @@ pub(super) fn layout_plan_primary_geometry_docks_live_details_sidebar() {
     assert_eq!(plan.shell, ratatui::layout::Rect::new(0, 0, 100, 30));
     assert_eq!(
         plan.transcript,
-        Some(ratatui::layout::Rect::new(0, 0, 100, 27))
+        Some(ratatui::layout::Rect::new(0, 0, 100, 26))
     );
     assert_eq!(plan.operator_sidebar, None);
     assert_eq!(
         plan.details_overlay,
-        Some(ratatui::layout::Rect::new(58, 0, 42, 27))
+        Some(ratatui::layout::Rect::new(58, 0, 42, 26))
     );
     assert_eq!(plan.status, None);
     assert_eq!(
         plan.composer,
-        Some(ratatui::layout::Rect::new(2, 27, 96, 3))
+        Some(ratatui::layout::Rect::new(2, 26, 96, 3))
     );
-    assert_eq!(plan.disclosure, None);
+    assert_eq!(
+        plan.disclosure,
+        Some(ratatui::layout::Rect::new(2, 29, 96, 1))
+    );
 }
 
 pub(super) fn layout_plan_minimum_geometry_stacks_live_details_drawer() {
@@ -170,18 +173,21 @@ pub(super) fn layout_plan_minimum_geometry_stacks_live_details_drawer() {
     assert_eq!(plan.shell, ratatui::layout::Rect::new(0, 0, 80, 24));
     assert_eq!(
         plan.transcript,
-        Some(ratatui::layout::Rect::new(0, 0, 80, 21))
+        Some(ratatui::layout::Rect::new(0, 0, 80, 20))
     );
     assert_eq!(
         plan.details_overlay,
-        Some(ratatui::layout::Rect::new(38, 0, 42, 21))
+        Some(ratatui::layout::Rect::new(38, 0, 42, 20))
     );
     assert_eq!(plan.status, None);
     assert_eq!(
         plan.composer,
-        Some(ratatui::layout::Rect::new(2, 21, 76, 3))
+        Some(ratatui::layout::Rect::new(2, 20, 76, 3))
     );
-    assert_eq!(plan.disclosure, None);
+    assert_eq!(
+        plan.disclosure,
+        Some(ratatui::layout::Rect::new(2, 23, 76, 1))
+    );
 }
 
 pub(super) fn live_session_shell_removes_tab_chrome_and_debug_drawer() {
@@ -315,6 +321,6 @@ pub(super) fn replay_and_completed_states_preserve_read_only_and_session_preserv
     ));
 
     let completed_render = render_live_lines(&completed, 100, 30);
-    assert!(!completed_render.contains("Shift+Tab:mode"));
-    assert!(!completed_render.contains("Ctrl+x:shortcuts"));
+    assert!(completed_render.contains("Shift+Tab:mode"));
+    assert!(completed_render.contains("Ctrl+x:shortcuts"));
 }

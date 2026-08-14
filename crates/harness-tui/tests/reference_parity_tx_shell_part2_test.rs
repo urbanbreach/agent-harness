@@ -308,12 +308,12 @@ fn shell_fail_dock_matches_freeze_vertical_ladder() {
 
     assert_eq!(
         status,
-        Rect::new(2, 35, 116, 1),
+        Rect::new(2, 36, 116, 1),
         "SHELL-FAIL freeze ladder: one status row sits immediately above the composer"
     );
     assert_eq!(
-        dock.composer.y, 36,
-        "SHELL-FAIL compact ladder: composer top y=36; got y={}",
+        dock.composer.y, 37,
+        "SHELL-FAIL compact ladder: composer top y=37; got y={}",
         dock.composer.y
     );
     assert_eq!(
@@ -327,8 +327,8 @@ fn shell_fail_dock_matches_freeze_vertical_ladder() {
         disclosure.y
     );
     assert_eq!(
-        dock.shell.height, 5,
-        "SHELL-FAIL compact ladder uses status+composer+gap+disclosure+bottom; got {}",
+        dock.shell.height, 4,
+        "SHELL-FAIL compact ladder uses status+composer+disclosure+bottom; got {}",
         dock.shell.height
     );
     assert_eq!(
@@ -647,8 +647,8 @@ fn shell_scroll_freeze_viewport_packs_f39_to_f55_at_120x32() {
         "SCROLL freeze sticky user: first user row packs 'all names' + wall clock\n{packed}"
     );
     assert!(
-        packed.contains("54. f54.txt"),
-        "compact viewport packing requires f54 still visible\n{packed}"
+        packed.contains("53. f53.txt"),
+        "persistent keybind row leaves f53 visible in the compact viewport\n{packed}"
     );
     assert!(
         packed.contains('▼'),
