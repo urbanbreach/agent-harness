@@ -24,6 +24,7 @@ fn grammar_user_prompt_and_assistant_body_preserve_compact_cjk_rows() {
             TranscriptBlockPlacement::StickyPromptCandidate
         );
         assert!(!user.show_outer_rail);
+        assert!(!body.show_outer_rail);
         assert!(body.selection_rows.is_some());
     }
 }
@@ -203,7 +204,7 @@ fn grammar_reasoning_ascii_preserves_row_count() {
         build_transcript_render_surfaces(&turn, &unicode_theme, 80, unicode_theme.surface.shell);
     let ascii =
         build_transcript_render_surfaces(&turn, &ascii_theme, 80, ascii_theme.surface.shell);
-    let reasoning_rows = |surfaces: &[TranscriptRenderSurface]| {
+    let reasoning_rows = |surfaces: &[ResolvedTranscriptVisualEntryDraft]| {
         surfaces
             .iter()
             .find(|surface| surface.kind == TranscriptRenderSurfaceKind::AssistantReasoning)

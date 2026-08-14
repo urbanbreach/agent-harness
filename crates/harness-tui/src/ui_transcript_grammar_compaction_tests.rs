@@ -59,6 +59,11 @@ fn grammar_branch_summary_preserves_order_and_anchor() {
         grammar_compaction_part(TranscriptCompactionKind::BranchSummary, "branch summary"),
         grammar_tool("after", "read", ToolCallPresentationStatus::Succeeded),
     ];
+    turn.assistant_part_source_ids = vec![
+        TranscriptAssistantPartSourceId(100),
+        TranscriptAssistantPartSourceId(101),
+        TranscriptAssistantPartSourceId(102),
+    ];
     let specs = normalize_turn_blocks(&turn);
     let roles = specs.iter().map(|spec| spec.role).collect::<Vec<_>>();
     let index = roles
