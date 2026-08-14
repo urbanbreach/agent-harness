@@ -1034,9 +1034,18 @@ fn question_mouse_click_preserves_shell_state_and_emits_only_answer_intent() {
     assert_eq!(app.composer.prompt_buffer, "preserved question draft");
     assert_eq!(app.transcript_view.transcript_scroll, 4);
     assert!(!app.transcript_view.follow_mode);
+    let composer_after = FrameLayoutPlan::for_app(&app, frame_area).composer;
     assert_eq!(
-        FrameLayoutPlan::for_app(&app, frame_area).composer,
-        composer_before
+        composer_after.map(|area| area.y),
+        composer_before.map(|area| area.y.saturating_add(1))
+    );
+    assert_eq!(
+        composer_after.map(|area| area.height),
+        composer_before.map(|area| area.height)
+    );
+    assert_eq!(
+        composer_after.map(|area| area.width),
+        composer_before.map(|area| area.width)
     );
 }
 

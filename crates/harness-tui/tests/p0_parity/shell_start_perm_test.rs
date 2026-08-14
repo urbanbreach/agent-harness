@@ -65,7 +65,7 @@ fn canonical_viewports_allocate_full_width_transcript_and_bottom_composer() {
         );
 
         let dock_bottom = match plan.disclosure {
-            Some(disclosure) => disclosure.y + disclosure.height + u16::from(width > 60),
+            Some(disclosure) => disclosure.y + disclosure.height,
             None => composer.y + composer.height,
         };
         assert_eq!(

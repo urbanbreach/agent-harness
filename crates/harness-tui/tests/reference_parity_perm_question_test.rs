@@ -243,8 +243,14 @@ fn shell_perm_preempts_composer_preserves_draft_full_width() {
         "SHELL-PERM: full-width shell (no operator sidebar)"
     );
     assert_eq!(
-        plan.composer, live_plan.composer,
-        "SHELL-PERM: permission interaction must not move or resize the composer"
+        plan.composer.map(|area| area.y),
+        live_plan.composer.map(|area| area.y.saturating_add(1)),
+        "SHELL-PERM: suppressing idle keybinds moves the permission composer down one row"
+    );
+    assert_eq!(
+        plan.composer.map(|area| (area.width, area.height)),
+        live_plan.composer.map(|area| (area.width, area.height)),
+        "SHELL-PERM: permission interaction must not resize the composer"
     );
     if let (Some(transcript), Some(composer)) = (plan.transcript, plan.composer) {
         assert_eq!(
@@ -348,8 +354,14 @@ fn shell_question_parses_prompts_preserves_draft_no_allow_chrome() {
         "SHELL-QUESTION: full-width shell (no operator sidebar)"
     );
     assert_eq!(
-        plan.composer, live_plan.composer,
-        "SHELL-QUESTION: question interaction must not move or resize the composer"
+        plan.composer.map(|area| area.y),
+        live_plan.composer.map(|area| area.y.saturating_add(1)),
+        "SHELL-QUESTION: suppressing idle keybinds moves the question composer down one row"
+    );
+    assert_eq!(
+        plan.composer.map(|area| (area.width, area.height)),
+        live_plan.composer.map(|area| (area.width, area.height)),
+        "SHELL-QUESTION: question interaction must not resize the composer"
     );
     assert!(
         rendered.contains(draft),
