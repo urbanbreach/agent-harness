@@ -653,7 +653,9 @@ fn paint_command_palette_panel_titled(
     }
 
     let surface = ui_chrome::command_palette_surface(theme);
-    let border_style = Style::default().fg(theme.border.subtle).bg(surface);
+    let border_style = Style::default()
+        .fg(theme.reference_terminal.muted)
+        .bg(surface);
     let title_style = Style::default()
         .fg(ui_chrome::command_palette_title(theme))
         .bg(surface)

@@ -33,7 +33,11 @@ pub(super) fn render_new_worktree_dialog(
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(theme.border.subtle).bg(surface))
+        .border_style(
+            Style::default()
+                .fg(theme.reference_terminal.muted)
+                .bg(surface),
+        )
         .style(Style::default().bg(surface));
     let inner = block.inner(dialog);
     frame.render_widget(Clear, dialog);

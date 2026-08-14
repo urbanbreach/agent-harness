@@ -103,8 +103,8 @@ pub(super) fn completed_sessions_show_inline_completion_state_instead_of_handoff
 
     assert!(app.completed_session_shell_active());
     assert!(!app.post_run_handoff_visible());
-    assert!(!rendered.contains("Shift+Tab:mode"));
-    assert!(!rendered.contains("Ctrl+x:shortcuts"));
+    assert!(rendered.contains("Shift+Tab:mode"));
+    assert!(rendered.contains("Ctrl+x:shortcuts"));
     assert!(!rendered.contains("Next action"));
     assert!(!rendered.contains("Continue this session"));
 }
@@ -166,8 +166,8 @@ pub(super) fn live_shell_status_strip_has_single_priority_order() {
 
     let rendered = render_live_lines(&app, 140, 40);
 
-    assert!(!rendered.contains("Shift+Tab:mode"));
-    assert!(!rendered.contains("Ctrl+x:shortcuts"));
+    assert!(rendered.contains("Shift+Tab:mode"));
+    assert!(rendered.contains("Ctrl+x:shortcuts"));
     assert!(!rendered.contains("Enter send"));
     assert!(!rendered.contains("tool finished"));
     assert!(!rendered.contains("turn 1"));

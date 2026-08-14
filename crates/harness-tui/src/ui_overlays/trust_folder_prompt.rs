@@ -43,7 +43,9 @@ pub fn render_trust_folder_prompt_overlay(
     let accent = theme.text.accent;
     let muted = theme.text.secondary;
     let text = theme.text.primary;
-    let border = Style::default().fg(theme.border.subtle).bg(surface);
+    let border = Style::default()
+        .fg(theme.reference_terminal.muted)
+        .bg(surface);
 
     let title = "Folder Trust";
     let block = Block::default()
