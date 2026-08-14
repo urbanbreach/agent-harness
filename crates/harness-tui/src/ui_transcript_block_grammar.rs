@@ -17,6 +17,7 @@ mod content;
 
 #[path = "ui_transcript_block_grammar_tool.rs"]
 mod tool;
+pub(in crate::ui::ui_transcript) use tool::tool_family;
 
 #[path = "ui_transcript_block_grammar_compaction.rs"]
 mod compaction;
@@ -70,7 +71,7 @@ pub(in crate::ui) fn validate_block_spec(
             || group != policy.group_class.is_some()
             || group != (policy.member_count > 1)
             || policy.visible_start > policy.member_count
-            || (*family == TranscriptToolFamily::Subagent) != subagent.is_some()
+            || (*family == TranscriptToolFamily::Task) != subagent.is_some()
         {
             return Err(TranscriptGrammarError::InvalidGrouping);
         }

@@ -16,11 +16,15 @@ pub(in crate::ui) enum TranscriptBlockRole {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::ui) enum TranscriptToolFamily {
-    Generic,
+    Unknown,
     Group,
-    Shell,
-    Diff,
-    Subagent,
+    Read,
+    Search,
+    List,
+    Execute,
+    Edit,
+    Web,
+    Task,
     Permission,
     Question,
 }

@@ -45,9 +45,7 @@ fn block_has_visible_accent(spec: &TranscriptBlockSpec) -> bool {
         TranscriptBlockContent::Tool { policy, .. } => {
             matches!(
                 policy.status,
-                TranscriptToolStatus::Queued
-                    | TranscriptToolStatus::Running
-                    | TranscriptToolStatus::Waiting
+                TranscriptToolStatus::Running | TranscriptToolStatus::Waiting
             ) || spec.motion != TranscriptBlockMotionDemand::None
         }
         TranscriptBlockContent::Footer { .. } => false,

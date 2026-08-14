@@ -170,3 +170,5 @@ mod prompt_reasoning;
 mod shell_diff;
 #[path = "ui_transcript_grammar_subagent_tests.rs"]
 mod subagent;
+#[path = "ui_transcript_grammar_tool_family_tests.rs"]
+mod tool_family;

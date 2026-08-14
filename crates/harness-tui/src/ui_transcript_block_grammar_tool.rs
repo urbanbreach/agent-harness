@@ -15,12 +15,20 @@ pub(super) fn group_policy(summary: &TranscriptToolGroupSummary) -> TranscriptTo
             0
         },
         disclosure: match summary.disclosure {
+            TranscriptToolDisclosureMode::Collapsed
+                if summary.kind == TranscriptToolGroupKind::Context
+                    && (summary.running_count > 0
+                        || summary.queued_count > 0
+                        || summary.waiting_count > 0) =>
+            {
+                TranscriptToolDisclosure::Preview
+            }
             TranscriptToolDisclosureMode::Collapsed => TranscriptToolDisclosure::Collapsed,
             TranscriptToolDisclosureMode::Preview => TranscriptToolDisclosure::Preview,
             TranscriptToolDisclosureMode::Expanded => TranscriptToolDisclosure::Expanded,
         },
         status: group_status(summary),
-        motion: if summary.running_count > 0 || summary.queued_count > 0 {
+        motion: if summary.running_count > 0 {
             TranscriptBlockMotionDemand::Active
         } else {
             TranscriptBlockMotionDemand::None
@@ -30,21 +38,13 @@ pub(super) fn group_policy(summary: &TranscriptToolGroupSummary) -> TranscriptTo
 }
 
 pub(super) fn apply_tool_policy(spec: &mut TranscriptBlockSpec) {
-    let TranscriptBlockContent::Tool { family, policy, .. } = spec.content else {
+    let TranscriptBlockContent::Tool { policy, .. } = spec.content else {
         return;
     };
-    let active = matches!(
-        policy.status,
-        TranscriptToolStatus::Queued | TranscriptToolStatus::Running
-    );
+    let active = policy.status == TranscriptToolStatus::Running;
     spec.chrome = TranscriptBlockChrome {
-        accent: active
-            || policy.motion != TranscriptBlockMotionDemand::None
-            || matches!(policy.status, TranscriptToolStatus::Failed),
-        rail: matches!(
-            family,
-            TranscriptToolFamily::Shell | TranscriptToolFamily::Diff
-        ),
+        accent: active || policy.motion != TranscriptBlockMotionDemand::None,
+        rail: false,
     };
     spec.interaction = TranscriptBlockInteraction {
         selectable: false,
@@ -60,23 +60,38 @@ pub(super) fn apply_tool_policy(spec: &mut TranscriptBlockSpec) {
     spec.motion = policy.motion;
 }
 
-pub(super) fn tool_family(tool: &TranscriptToolCallSection) -> TranscriptToolFamily {
+pub(in crate::ui::ui_transcript) fn tool_family(
+    tool: &TranscriptToolCallSection,
+) -> TranscriptToolFamily {
     if tool
         .detail_blocks
         .iter()
         .any(|block| matches!(block, TranscriptToolCallDetailBlock::StructuredDiff { .. }))
     {
-        return TranscriptToolFamily::Diff;
+        return TranscriptToolFamily::Edit;
     }
     match tool.header.tool_id.as_str() {
-        "question" => TranscriptToolFamily::Question,
-        "bash" | "shell.run" => TranscriptToolFamily::Shell,
+        "question" | "user.question" => TranscriptToolFamily::Question,
+        "bash" | "shell.run" => TranscriptToolFamily::Execute,
+        "apply_patch"
+        | "edit"
+        | "write"
+        | "fs.write"
+        | "edit.hashline_apply"
+        | "ast_grep_replace"
+        | "lsp.rename" => TranscriptToolFamily::Edit,
+        "task" | "agent.spawn" | "background_output" | "background_cancel" => {
+            TranscriptToolFamily::Task
+        }
+        "fs.read" | "read" | "session_read" => TranscriptToolFamily::Read,
+        "fs.glob" | "glob" | "fs.grep" | "grep" | "search.code" | "session_search"
+        | "ast_grep_search" => TranscriptToolFamily::Search,
+        "fs.ls" | "list" | "session_list" => TranscriptToolFamily::List,
+        "web.fetch" | "search.web" => TranscriptToolFamily::Web,
         _ if tool.header.presentation.status == ToolCallPresentationStatus::Waiting => {
             TranscriptToolFamily::Permission
         }
-        "apply_patch" | "edit" | "write" | "fs.write" => TranscriptToolFamily::Diff,
-        "task" | "agent.spawn" => TranscriptToolFamily::Subagent,
-        _ => TranscriptToolFamily::Generic,
+        _ => TranscriptToolFamily::Unknown,
     }
 }
 
@@ -97,11 +112,18 @@ pub(super) fn tool_policy(tool: &TranscriptToolCallSection) -> TranscriptToolPol
         },
         status: tool_status(tool.header.presentation.status),
         motion: match tool.rail_motion {
-            ToolRailMotion::Running { .. } => TranscriptBlockMotionDemand::Active,
-            ToolRailMotion::FinishFlash { .. } => TranscriptBlockMotionDemand::Finish,
-            ToolRailMotion::Waiting | ToolRailMotion::Queued | ToolRailMotion::Settled => {
-                TranscriptBlockMotionDemand::None
-            }
+            ToolRailMotion::Running { .. } => match tool.header.presentation.status {
+                ToolCallPresentationStatus::Running => TranscriptBlockMotionDemand::Active,
+                ToolCallPresentationStatus::Queued
+                | ToolCallPresentationStatus::Waiting
+                | ToolCallPresentationStatus::Succeeded
+                | ToolCallPresentationStatus::Failed
+                | ToolCallPresentationStatus::Cancelled => TranscriptBlockMotionDemand::None,
+            },
+            ToolRailMotion::FinishFlash { .. }
+            | ToolRailMotion::Waiting
+            | ToolRailMotion::Queued
+            | ToolRailMotion::Settled => TranscriptBlockMotionDemand::None,
         },
         trailing_gap_cells: 0,
     }
@@ -110,7 +132,7 @@ pub(super) fn tool_policy(tool: &TranscriptToolCallSection) -> TranscriptToolPol
 pub(super) fn subagent_policy(
     tool: &TranscriptToolCallSection,
 ) -> Option<TranscriptSubagentPolicy> {
-    (tool_family(tool) == TranscriptToolFamily::Subagent).then(|| TranscriptSubagentPolicy {
+    (tool_family(tool) == TranscriptToolFamily::Task).then(|| TranscriptSubagentPolicy {
         mode: if tool.subagent_background {
             TranscriptSubagentMode::Background
         } else {
