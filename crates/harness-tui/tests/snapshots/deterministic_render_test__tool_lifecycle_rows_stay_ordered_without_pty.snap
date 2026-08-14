@@ -3,17 +3,17 @@ source: crates/harness-tui/tests/deterministic_render_test.rs
 expression: trim_trailing_snapshot_whitespace(&rendered)
 ---
 
-   dev ~/Projects/agent-harness/crates/harness-tui
+   test-workspace /workspace/agent-harness
 
 
      ❯ Inspect tool activity
 
 
-  ┃  ◆ Read 1 file
-  ┃  ◆ Edit ui.rs crates/harness-tui/src  ▸
-  ┃    · Researcher Task — audit tool lifecycle parity  ▸
-  ┃      Found the whole-tool parity path.
-  ┃
+     ◆ Read 1 file
+     ◆ Edit ui.rs crates/harness-tui/src  ▸
+       · Researcher Task — audit tool lifecycle parity  ▸
+         Found the whole-tool parity path.
+
   ┃  ◆ Run cargo test -p harness-tui · Failed  ▸
   ┃    $ cargo test -p harness-tui
   ┃
@@ -22,8 +22,8 @@ expression: trim_trailing_snapshot_whitespace(&rendered)
 
      Tool summaries are now easier to scan, and edits stay inline.
 
-     Worked for 0.0s.
 
+     Worked for 0.0s.
 
 
 

@@ -804,7 +804,7 @@ fn grouped_last_finisher_flashes_then_settles_to_failure_semantics() {
     }
     let settled = rail_colors(&render_buffer(&grouped, 120, 40));
 
-    // Then: the group flashed and its settled rail uses the failed semantic color.
+    // Then: the group flashed and its internal rail uses the failed semantic color.
     assert_ne!(flash, settled);
     assert!(!settled.is_empty());
     assert!(settled
