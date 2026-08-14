@@ -434,8 +434,8 @@ pub(super) fn transcript_shell_remains_scannable_without_bubble_cards() {
         .collect::<Vec<_>>();
     assert_eq!(
         rail_rows,
-        vec![tool_row],
-        "only the just-finished tool may own the bounded accent rail\n{rendered}"
+        Vec::<usize>::new(),
+        "settled transcript entries must not retain an accent rail\n{rendered}"
     );
     assert!(!lines[body_row].contains('┃'));
     assert!(!rendered.contains("Composer ·"));

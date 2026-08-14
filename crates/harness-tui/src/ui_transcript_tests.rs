@@ -1521,7 +1521,7 @@ fn assistant_tool_surfaces_keep_same_trailing_gap_as_text_boxes() {
 }
 
 #[test]
-fn command_group_counts_all_members_and_discloses_output_only_when_expanded() {
+fn command_group_auto_expands_failure_and_preserves_explicit_member_folds() {
     // arrange
     let mut activity =
         transcript_section_model_test_activity("request-command-group", ActivityStatus::Done, "");
@@ -1570,17 +1570,21 @@ fn command_group_counts_all_members_and_discloses_output_only_when_expanded() {
     // assert
     assert!(collapsed
         .iter()
-        .any(|line| line.contains("Ran 2 commands · 1 failed") && line.contains('▸')));
+        .any(|line| line.contains("Ran 2 commands · 1 failed") && line.contains('▾')));
     assert!(!collapsed
         .iter()
         .any(|line| line.contains("successful output")));
+    assert!(collapsed.iter().any(|line| line.contains("command failed")));
     assert!(expanded
         .iter()
         .any(|line| line.contains("Ran 2 commands · 1 failed") && line.contains('▾')));
     assert!(expanded
         .iter()
         .any(|line| line.contains("successful output")));
-    assert!(!expanded.iter().any(|line| line == "command failed"));
+    assert!(
+        !expanded.iter().any(|line| line.contains("command failed")),
+        "explicitly collapsed failed member leaked output: {expanded:#?}"
+    );
 }
 
 #[test]
