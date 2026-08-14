@@ -20,8 +20,9 @@ expression: normalize_volatile_branch(&trim_trailing_snapshot_whitespace(&render
 
 
 
+
+
   ╭──────────────────────────────────────────────────────────────────────────────────────────────╮
   │ ❯ Explain deterministic TUI tests                                                            │
   ╰───────────────────────────────────────────────────────────────────────────── model-1 · Demo ─╯
-
   Enter:send  │  Shift+Tab:mode  │  Ctrl+x:shortcuts
