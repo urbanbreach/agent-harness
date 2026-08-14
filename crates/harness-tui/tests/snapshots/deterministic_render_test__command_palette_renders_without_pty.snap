@@ -35,7 +35,6 @@ expression: snapshot.as_str()
                               │  ◆ Hooks                                       /hooks   █│
                               │  ◆ Plugins                                   /plugins   █│
                               │  ◆ Marketplace                           /marketplace   █│
-                              │                                                          │
                               │          ↑/↓ nav  |  Enter select  |  Esc close          │
                               └──────────────────────────────────────────────────────────┘
 
