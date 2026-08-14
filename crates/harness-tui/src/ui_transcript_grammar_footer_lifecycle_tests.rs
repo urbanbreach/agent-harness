@@ -62,7 +62,7 @@ fn grammar_prompt_copy_independent_pin_preserves_geometry() {
         ToolCallPresentationStatus::Waiting,
     )];
     let spec = normalized_footer_spec(&turn);
-    let surface = TranscriptRenderSurface {
+    let surface = TranscriptVisualEntryDraft {
         kind: TranscriptRenderSurfaceKind::AssistantFooter,
         leading_gap_rows: 0,
         placement: TranscriptBlockPlacement::Flow,

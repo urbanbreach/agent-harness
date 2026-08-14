@@ -35,7 +35,7 @@ fn transcript_grammar_synthetic_extension_is_exhaustive_and_resolvable() {
     };
     assert_eq!((role_name, content_value), ("synthetic", "extension"));
 
-    let surface = TranscriptRenderSurface {
+    let surface = TranscriptVisualEntryDraft {
         kind: TranscriptRenderSurfaceKind::AssistantBody,
         leading_gap_rows: 0,
         placement: TranscriptBlockPlacement::Flow,

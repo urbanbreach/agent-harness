@@ -80,11 +80,15 @@ fn transcript_grammar_characterizes_selection_rows_backgrounds_and_motion() {
             .selection_rows
             .is_none_or(|rows| rows <= surface.line_rows)
     }));
-    assert!(grammar_contract_has_background_transition(&contract));
-    assert!(grammar_contract_has_motion(
-        &contract,
-        GrammarMotion::Running
-    ));
+    assert!(!grammar_contract_has_background_transition(&contract));
+    assert!(
+        contract
+            .iter()
+            .filter(|surface| surface.motion.is_some())
+            .count()
+            <= 1,
+        "only the selected or active semantic entry may retain rail motion"
+    );
 }
 
 #[test]
