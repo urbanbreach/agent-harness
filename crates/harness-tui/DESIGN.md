@@ -252,6 +252,7 @@ Evidence owners are final comparison boards `05`, `12`, and `14`–`16`, plus `q
 | Foreground primary / secondary | `#e1e1e1` / `#6c6c6c` | GrokNight source and final truecolor captures |
 | Question accent / selected surface | `#c8c8c8` / `#363636` | GrokNight source and question captures |
 | Focused composer border | `#505058` | GrokNight `prompt_border_active`; native 256-color capture quantizes to xterm 239 |
+| Welcome panel border | `#333333` | GrokNight `gray_dim` blended 45% over `bg_base`, matching `welcome/hero_box.rs` |
 | Active-thinking user surface | `#262626` | Native synchronized motion captures |
 | Error / diff roles | Tokenized in `Theme::GROK_TERMINAL_COLORS` | Tool/diff and failure-state captures |
 
@@ -310,6 +311,7 @@ from `harness-dark`. The mapping is locked exhaustively by
 | `scrollbar.track` | `scrollbar_bg` | `#111111` |
 | `scrollbar.thumb` | `scrollbar_fg` | `#242424` |
 | `scrollbar.thumb_active` | `prompt_border_active` | `#505058` |
+| `reference_terminal.welcome_border` | `blend(bg_base, gray_dim, 0.45)` | `#333333` |
 | `reference_terminal.diff_added`, `diff_added_gutter` | `diff_insert_bg` | `#063806` |
 | `reference_terminal.diff_removed`, `diff_removed_gutter` | `diff_delete_bg` | `#420e14` |
 | `reference_terminal.diff_added_highlight` | `diff_insert_fg` | `#9ece6a` |
