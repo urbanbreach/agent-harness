@@ -427,10 +427,17 @@ pub(super) fn transcript_shell_remains_scannable_without_bubble_cards() {
     assert!(prompt_row < thinking_row);
     assert!(thinking_row < tool_row);
     assert!(tool_row < body_row);
-    assert!(
-        lines[tool_row].contains('┃') && !lines[body_row].contains('┃'),
-        "tool details should keep their nested rail while the assistant body remains rail-free\n{rendered}"
+    let rail_rows = lines
+        .iter()
+        .enumerate()
+        .filter_map(|(index, line)| line.contains('┃').then_some(index))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        rail_rows,
+        vec![tool_row],
+        "only the just-finished tool may own the bounded accent rail\n{rendered}"
     );
+    assert!(!lines[body_row].contains('┃'));
     assert!(!rendered.contains("Composer ·"));
     assert!(!rendered.contains("Ask Harness to inspect, edit, or explain…"));
     assert!(!rendered.contains("Current runtime: default · model-1"));

@@ -36,17 +36,16 @@ pub(super) fn transcript_turn_sections_render_open_rail_surfaces() {
     assert!(assistant_body < assistant_footer);
 
     let user_body_rail = first_non_whitespace_column(lines[user_body]);
-    let assistant_body_rail = first_non_whitespace_column(lines[assistant_body]);
     let user_body_column = first_alphanumeric_column(lines[user_body]);
     let assistant_body_column = first_alphanumeric_column(lines[assistant_body]);
 
     assert!(
-        assistant_body_rail >= user_body_rail,
-        "assistant prose should start at or after the user prompt rail (reference gutter packing)\n{rendered}"
+        !lines[user_body].contains('┃') && !lines[assistant_body].contains('┃'),
+        "completed semantic entries must not be connected by an outer rail\n{rendered}"
     );
     assert!(
-        user_body_column.abs_diff(assistant_body_column) <= 2,
-        "top-level turn bodies should stay nearly aligned with user text after marker\n{rendered}"
+        user_body_column.abs_diff(assistant_body_column) <= 3,
+        "independent top-level entries should preserve the compact prompt-marker offset\n{rendered}"
     );
     assert_eq!(
         user_body_column.saturating_sub(user_body_rail),
@@ -109,7 +108,7 @@ pub(super) fn transcript_turn_sections_render_open_rail_surfaces() {
     );
     assert!(user_body_bgs[user_body_column..user_body_column + 4]
         .iter()
-        .all(|color| *color == theme.surface.selected_card));
+        .all(|color| *color == theme.surface.shell));
     assert!(
         assistant_footer_bgs[assistant_body_column..assistant_body_column + 9]
             .iter()
