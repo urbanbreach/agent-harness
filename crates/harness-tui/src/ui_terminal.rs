@@ -72,11 +72,11 @@ fn terminal_panel_title(app: &AppState, command_count: usize, theme: &Theme) -> 
 fn terminal_panel_empty_lines(theme: &Theme, surface: Color) -> Vec<Line<'static>> {
     vec![
         Line::from(Span::styled(
-            "No shell commands have run in this session.",
+            "No interactive PTY is attached.",
             Style::default().fg(theme.text.secondary).bg(surface),
         )),
         Line::from(Span::styled(
-            "When bash or shell commands execute, their command, status, stdout, stderr, exit code, and timing appear here.",
+            "Non-interactive command output remains in its transcript tool block.",
             Style::default().fg(theme.text.tertiary).bg(surface),
         )),
     ]

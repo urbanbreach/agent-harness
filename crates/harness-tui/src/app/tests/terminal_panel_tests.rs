@@ -85,7 +85,7 @@ pub(super) fn terminal_panel_stays_hidden_for_live_bash_until_explicit_toggle() 
     );
 }
 
-pub(super) fn terminal_panel_extracts_successful_bash_command_output() {
+pub(super) fn terminal_panel_ignores_non_interactive_bash_output() {
     let mut app = AppState::new_live(None, false, None);
     for event in shell_test_events(
         ToolCallStatus::Succeeded,
@@ -102,22 +102,39 @@ pub(super) fn terminal_panel_extracts_successful_bash_command_output() {
         app.ingest_event(event);
     }
 
-    let entries = app.terminal_panel_entries();
-    assert_eq!(entries.len(), 1);
-    assert_eq!(entries[0].command, "cargo test -p harness-tui");
-    assert_eq!(entries[0].stdout.as_deref(), Some("ok\nall tests passed\n"));
-    assert_eq!(entries[0].stderr, None);
-    assert_eq!(entries[0].exit_code, Some(0));
-    assert_eq!(entries[0].duration_ms, Some(250));
+    assert!(app.terminal_panel_entries().is_empty());
 
     assert!(!app.terminal_panel_visible());
     app.handle_key(key(KeyCode::Char('4')));
     assert!(app.terminal_panel_visible());
     let debug = render_debug(&app, 140, 40);
     assert!(debug.contains("Terminal"));
-    assert!(debug.contains("$ cargo test -p harness-tui"));
-    assert!(debug.contains("stdout> ok"));
-    assert!(debug.contains("exit 0"));
+    assert!(debug.contains("No interactive PTY is attached"));
+}
+
+pub(super) fn terminal_panel_extracts_explicit_interactive_pty_output() {
+    let mut app = AppState::new_live(None, false, None);
+    for event in shell_test_events(
+        ToolCallStatus::Succeeded,
+        serde_json::json!({
+            "command": "cargo test -p harness-tui",
+            "workdir": ".",
+            "status": 0,
+            "success": true,
+            "stdout": "ok\nall tests passed\n",
+            "stderr": "",
+            "truncated": false,
+            "pty": {"interactive": true}
+        }),
+    ) {
+        app.ingest_event(event);
+    }
+
+    let entries = app.terminal_panel_entries();
+
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].command, "cargo test -p harness-tui");
+    assert_eq!(entries[0].stdout.as_deref(), Some("ok\nall tests passed\n"));
 }
 
 pub(super) fn terminal_panel_renders_failed_command_stderr_and_exit_status() {
@@ -131,6 +148,7 @@ pub(super) fn terminal_panel_renders_failed_command_stderr_and_exit_status() {
             "stdout": "",
             "stderr": "test failed\nassertion failed\n",
             "truncated": true,
+            "pty": {"interactive": true},
             "output_artifact": {"path": "artifacts/toolcalls/tc_shell_panel/shell.output.txt"}
         }),
     ) {
@@ -159,7 +177,8 @@ pub(super) fn terminal_panel_extracts_shell_run_direct_command_schema() {
             "success": true,
             "stdout": "shell-run",
             "stderr": "",
-            "truncated": false
+            "truncated": false,
+            "pty": {"interactive": true}
         }),
     ) {
         app.ingest_event(event);
@@ -185,7 +204,8 @@ pub(super) fn terminal_panel_replay_reconstructs_from_events_without_execution()
                 "success": true,
                 "stdout": "replay\n",
                 "stderr": "",
-                "truncated": false
+                "truncated": false,
+                "pty": {"interactive": true}
             }),
         ),
     );

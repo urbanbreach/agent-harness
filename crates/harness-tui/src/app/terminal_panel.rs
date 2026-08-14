@@ -149,7 +149,7 @@ pub(in crate::app) fn terminal_panel_event_is_shell(payload: &EventV1) -> bool {
 }
 
 fn terminal_panel_entry_from_tool_call(tool_call: &ToolCallEntry) -> Option<TerminalPanelEntry> {
-    if !is_shell_tool_call(tool_call) {
+    if !is_shell_tool_call(tool_call) || !tool_call_owns_interactive_pty(tool_call) {
         return None;
     }
 
@@ -184,6 +184,16 @@ fn terminal_panel_entry_from_tool_call(tool_call: &ToolCallEntry) -> Option<Term
         first_seq: tool_call.first_seq,
         last_seq: tool_call.last_seq,
     })
+}
+
+fn tool_call_owns_interactive_pty(tool_call: &ToolCallEntry) -> bool {
+    tool_call
+        .output_json
+        .as_ref()
+        .and_then(|output| output.get("pty"))
+        .and_then(|pty| pty.get("interactive"))
+        .and_then(Value::as_bool)
+        == Some(true)
 }
 
 fn is_shell_tool_call(tool_call: &ToolCallEntry) -> bool {
