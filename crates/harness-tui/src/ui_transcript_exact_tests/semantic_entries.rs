@@ -327,8 +327,16 @@ fn assert_semantic_entry_viewport(width: u16, height: u16) {
             .iter()
             .filter(|entry| entry.show_outer_rail || entry.selected_rail)
             .count(),
-        1,
-        "the selected semantic entry must own the only settled accent rail at {width}x{height}"
+        0,
+        "settled semantic entries must not retain an accent rail at {width}x{height}"
+    );
+    assert_eq!(
+        settled_entries
+            .iter()
+            .filter(|entry| entry.metadata.accent != TranscriptVisualEntryAccent::Hidden)
+            .count(),
+        0,
+        "settled semantic entries must not retain motion accent ownership at {width}x{height}"
     );
     assert!(
         settled_entries.iter().all(|entry| {

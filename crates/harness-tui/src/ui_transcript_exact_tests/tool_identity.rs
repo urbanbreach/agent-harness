@@ -69,7 +69,10 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_reference_timestamps_a
     );
     assert_eq!(native_read_section.header.subtitle, None);
     assert_eq!(alias_read_section.header.subtitle, None);
-    assert_eq!(alias_read_section.header.disclosure_state, None);
+    assert_eq!(
+        alias_read_section.header.disclosure_state,
+        Some(TranscriptToolCallDisclosureState::Collapsed)
+    );
     assert!(alias_read_section
         .detail_blocks
         .iter()
@@ -78,6 +81,22 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_reference_timestamps_a
             TranscriptToolCallDetailBlock::Message { text, .. }
                 if text.contains("Compat alias ·")
         )));
+
+    let expanded_read = build_transcript_tool_call_section(
+        &native_read,
+        &AppState::default(),
+        None,
+        true,
+        false,
+        true,
+        false,
+        None,
+    );
+    let expanded_read_text = transcript_test_line_texts(
+        append_tool_call_section_lines(&expanded_read, &theme, 120, theme.surface.panel).lines,
+    )
+    .join("\n");
+    assert!(expanded_read_text.contains("24 lines read from src/ui.rs"));
 
     let mut task_call = transcript_section_model_test_tool_call("tc-task", "task");
     task_call.resolved_tool_identity = Some(harness_core::event::ResolvedToolIdentity {
@@ -309,8 +328,8 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_reference_timestamps_a
     }
     let fetch_text = transcript_test_line_texts(fetch_lines).join("\n");
     assert!(
-        fetch_text.contains("WebFetch https://example.test/report.pdf")
-            || fetch_text.contains("◆ WebFetch")
+        fetch_text.contains("Fetch https://example.test/report.pdf")
+            || fetch_text.contains("◆ Fetch")
     );
     assert!(!fetch_text.contains("report ready"));
     assert!(!fetch_text.contains("stored inline artifact"));

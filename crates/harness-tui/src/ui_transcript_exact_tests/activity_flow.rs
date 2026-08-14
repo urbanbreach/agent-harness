@@ -96,7 +96,7 @@ pub(crate) fn exact_test_transcript_section_model_keeps_nested_tool_and_error_bl
             hovered_target: None,
             header: TranscriptToolCallHeader {
                 tool_id: "shell.run".to_string(),
-                title: "Shell".to_string(),
+                title: "Run false".to_string(),
                 subtitle: Some("Failed".to_string()),
                 path_metadata: None,
                 icon: None,
@@ -105,7 +105,7 @@ pub(crate) fn exact_test_transcript_section_model_keeps_nested_tool_and_error_bl
                 ),
                 visual_style: TranscriptToolCallVisualStyle::Block,
                 struck_out: false,
-                disclosure_state: Some(TranscriptToolCallDisclosureState::Collapsed),
+                disclosure_state: Some(TranscriptToolCallDisclosureState::Expanded),
             },
             detail_blocks: vec![TranscriptToolCallDetailBlock::BashPanel {
                 command: "false".to_string(),
@@ -115,9 +115,9 @@ pub(crate) fn exact_test_transcript_section_model_keeps_nested_tool_and_error_bl
                 tone: TranscriptToolCallDetailTone::Error,
             }],
             details_collapsed_by_default: true,
-            details_preview_visible: true,
+            details_preview_visible: false,
             animation_phase: 0,
-            expanded: false,
+            expanded: true,
             rail_motion: ToolRailMotion::Settled,
         }
     );

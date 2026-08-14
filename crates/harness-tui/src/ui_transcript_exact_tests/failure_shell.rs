@@ -1130,7 +1130,8 @@ fn running_shell_without_output_metadata_uses_stable_command_surface() {
         section.header.visual_style,
         TranscriptToolCallVisualStyle::Block
     );
-    assert_eq!(section.header.icon, Some("$"));
+    assert_eq!(section.header.icon, None);
+    assert_eq!(section.header.title, "Run sleep 1");
     assert!(section.detail_blocks.is_empty());
 }
 
