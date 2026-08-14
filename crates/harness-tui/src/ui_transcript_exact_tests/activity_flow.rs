@@ -1060,7 +1060,7 @@ fn inline_metadata_collapse_removes_terminal_controls() {
     );
 }
 
-fn surface_line_text(surface: &MeasuredTranscriptSurface) -> String {
+fn surface_line_text(surface: &TranscriptVisualEntry) -> String {
     surface
         .lines
         .iter()

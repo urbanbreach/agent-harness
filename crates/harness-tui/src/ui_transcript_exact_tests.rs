@@ -23,6 +23,8 @@ mod failure_shell;
 mod layout_permissions;
 #[path = "ui_transcript_exact_tests/markdown_tables.rs"]
 mod markdown_tables;
+#[path = "ui_transcript_exact_tests/semantic_entries.rs"]
+mod semantic_entries;
 #[path = "ui_transcript_exact_tests/task_rows.rs"]
 mod task_rows;
 #[path = "ui_transcript_exact_tests/tool_identity.rs"]
@@ -33,5 +35,6 @@ pub(crate) use edit_diffs::*;
 pub(crate) use failure_shell::*;
 pub(crate) use layout_permissions::*;
 pub(crate) use markdown_tables::*;
+pub(crate) use semantic_entries::*;
 pub(crate) use task_rows::*;
 pub(crate) use tool_identity::*;
