@@ -5,7 +5,6 @@ expression: rendered
 
    test-workspace /workspace/agent-harness
 
-
      ❯ question 10
 
 
@@ -26,3 +25,4 @@ expression: rendered
   ╭──────────────────────────────────────────────────────────────────────────╮
   │ ❯                                                                        │
   ╰─────────────────────────────────────────────────────────── gpt-5.4-mini ─╯
+  Shift+Tab:mode  │  Ctrl+x:shortcuts
