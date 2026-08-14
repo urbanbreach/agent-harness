@@ -39,6 +39,8 @@ pub(super) fn mouse_click_toggles_transcript_tool_disclosure() {
         }),
     ));
 
+    assert!(tool_output_is_expanded(&app, "tc_shell_toggle"));
+
     let (column, row) = transcript_click_position(&app, "false");
     app.handle_mouse(
         MouseEvent {
@@ -52,10 +54,7 @@ pub(super) fn mouse_click_toggles_transcript_tool_disclosure() {
         None,
         None,
     );
-    assert!(app
-        .transcript_view
-        .expanded_tool_outputs
-        .contains("tc_shell_toggle"));
+    assert!(!tool_output_is_expanded(&app, "tc_shell_toggle"));
 
     app.handle_mouse(
         MouseEvent {
@@ -69,10 +68,122 @@ pub(super) fn mouse_click_toggles_transcript_tool_disclosure() {
         None,
         None,
     );
-    assert!(!app
-        .transcript_view
-        .expanded_tool_outputs
-        .contains("tc_shell_toggle"));
+    assert!(tool_output_is_expanded(&app, "tc_shell_toggle"));
+}
+
+pub(super) fn palette_turn_result_commands_override_failed_output_default() {
+    let mut app = failed_tool_disclosure_app("req_palette_toggle", "tc_palette_toggle");
+    assert!(tool_output_is_expanded(&app, "tc_palette_toggle"));
+
+    crate::app::palette_controller::dispatch_palette_command(
+        &mut app,
+        "harness.collapse_turn_results",
+    );
+    assert!(!tool_output_is_expanded(&app, "tc_palette_toggle"));
+
+    crate::app::palette_controller::dispatch_palette_command(
+        &mut app,
+        "harness.expand_turn_results",
+    );
+    assert!(tool_output_is_expanded(&app, "tc_palette_toggle"));
+}
+
+pub(super) fn transcript_enter_toggles_effective_failed_output_state() {
+    let mut app = failed_tool_disclosure_app("req_enter_toggle", "tc_enter_toggle");
+    app.focus = Focus::Details;
+    assert!(tool_output_is_expanded(&app, "tc_enter_toggle"));
+
+    app.handle_key(key(KeyCode::Enter));
+    assert!(!tool_output_is_expanded(&app, "tc_enter_toggle"));
+
+    app.handle_key(key(KeyCode::Enter));
+    assert!(tool_output_is_expanded(&app, "tc_enter_toggle"));
+}
+
+fn tool_output_is_expanded(app: &AppState, tool_call_id: &str) -> bool {
+    app.activities
+        .iter()
+        .flat_map(|activity| activity.tool_calls.iter())
+        .find(|tool_call| tool_call.tool_call_id == tool_call_id)
+        .is_some_and(|tool_call| app.tool_output_expanded(tool_call))
+}
+
+fn failed_tool_disclosure_app(request_id: &str, tool_call_id: &str) -> AppState {
+    let mut app = AppState::new_live(None, false, None);
+    app.ingest_event(envelope(
+        1,
+        request_id,
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: request_id.into(),
+            provider_id: "openai".to_string(),
+            model_id: "gpt-5-codex".to_string(),
+            prompt_summary: "Toggle failed tool output".to_string(),
+            request_digest: format!("digest-{request_id}"),
+            metadata: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        2,
+        request_id,
+        EventV1::ToolCallRequested(ToolCallRequestedEvent {
+            tool_call_id: tool_call_id.into(),
+            tool_id: "shell.run".to_string(),
+            args_summary: r#"{"cmd":"false"}"#.to_string(),
+            args_digest: format!("digest-{tool_call_id}-args"),
+            metadata: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        3,
+        request_id,
+        EventV1::ToolCallFinished(ToolCallFinishedEvent {
+            tool_call_id: tool_call_id.into(),
+            status: ToolCallStatus::Failed,
+            output_summary: Some("exit code: 1\nstderr: nope".to_string()),
+            output_digest: None,
+            output_json: None,
+            metadata: None,
+        }),
+    ));
+    app
+}
+
+pub(super) fn explicit_tool_disclosure_survives_replay_replacement() {
+    let events = shell_test_events(
+        ToolCallStatus::Succeeded,
+        serde_json::json!({
+            "command": "printf replay",
+            "status": 0,
+            "success": true,
+            "stdout": "replay output\n",
+            "stderr": "",
+            "truncated": false
+        }),
+    );
+    let mut app = AppState::new_live(None, false, None);
+    for event in events.iter().cloned() {
+        app.ingest_event(event);
+    }
+    app.activate_transcript_mouse_target(TranscriptMouseTarget::Tool {
+        tool_call_id: "tc_shell_panel".to_string(),
+    });
+    let expanded = app
+        .activities
+        .iter()
+        .flat_map(|activity| activity.tool_calls.iter())
+        .find(|tool_call| tool_call.tool_call_id == "tc_shell_panel")
+        .expect("shell tool call");
+    assert!(app.tool_output_expanded(expanded));
+
+    app.replace_events(events);
+
+    let replayed = app
+        .activities
+        .iter()
+        .flat_map(|activity| activity.tool_calls.iter())
+        .find(|tool_call| tool_call.tool_call_id == "tc_shell_panel")
+        .expect("replayed shell tool call");
+    assert!(app.tool_output_expanded(replayed));
 }
 
 pub(super) fn context_group_disclosure_preserves_detached_anchor() {

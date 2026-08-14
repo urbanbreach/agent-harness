@@ -92,11 +92,9 @@ impl AppState {
         self.transcript_view
             .tool_motion
             .sync_running_ids(running_tool_ids, now);
-        self.transcript_view.tool_motion.sync_terminal_ids(
-            terminal_tool_ids,
-            animate_tool_transitions && !self.replay_mode,
-            now,
-        );
+        self.transcript_view
+            .tool_motion
+            .sync_terminal_ids(terminal_tool_ids);
         let lifecycle = if self.active_turn_in_progress() {
             QueueLifecycle::Streaming
         } else {
@@ -518,6 +516,9 @@ impl AppState {
         for tool_call_id in &self.transcript_view.expanded_tool_outputs {
             tool_call_id.hash(hasher);
         }
+        for tool_call_id in &self.transcript_view.collapsed_tool_outputs {
+            tool_call_id.hash(hasher);
+        }
         for file_key in &self.transcript_view.expanded_patch_file_outputs {
             file_key.hash(hasher);
         }
@@ -534,22 +535,11 @@ impl AppState {
     }
 
     pub(crate) fn advance_transcript_animation_phase(&mut self) {
-        self.advance_transcript_animation_phase_with_motion(!self.reduced_motion);
-    }
-
-    fn advance_transcript_animation_phase_with_motion(&mut self, motion_enabled: bool) {
         self.transcript_view.transcript_animation_phase = self
             .transcript_view
             .transcript_animation_phase
             .wrapping_add(1);
         let now = self.now();
-        if self
-            .transcript_view
-            .tool_motion
-            .advance(now, motion_enabled)
-        {
-            self.bump_transcript_render_epoch();
-        }
         self.clear_expired_interrupt_confirmation();
         self.refresh_toast_motion(now);
         #[cfg(test)]
@@ -575,10 +565,6 @@ impl AppState {
         let now = self.now() + elapsed;
         self.now_fn = std::sync::Arc::new(move || now);
         self.advance_transcript_animation_phase();
-    }
-
-    pub fn advance_animation_tick_with_motion_for_evidence(&mut self, motion_enabled: bool) {
-        self.advance_transcript_animation_phase_with_motion(motion_enabled);
     }
 
     /// Current transcript animation phase for evidence metadata.
@@ -615,12 +601,6 @@ impl AppState {
         motion_enabled
             .then(|| self.motion_plan().cadence().interval())
             .flatten()
-    }
-
-    pub(crate) fn tool_finish_flash_elapsed(&self, tool_call_id: &str) -> Option<Duration> {
-        self.transcript_view
-            .tool_motion
-            .finish_flash_elapsed(tool_call_id, self.now())
     }
 
     pub(crate) fn tool_running_elapsed(&self, tool_call_id: &str) -> Duration {
@@ -703,6 +683,13 @@ impl AppState {
     }
 
     pub(crate) fn tool_output_expanded(&self, tool_call: &ToolCallEntry) -> bool {
+        if self
+            .transcript_view
+            .collapsed_tool_outputs
+            .contains(&tool_call.tool_call_id)
+        {
+            return false;
+        }
         self.transcript_view
             .expanded_tool_outputs
             .contains(&tool_call.tool_call_id)
@@ -711,6 +698,16 @@ impl AppState {
                 .expanded_patch_file_outputs
                 .iter()
                 .any(|key| key.starts_with(&format!("{}\u{1f}", tool_call.tool_call_id)))
+            || (tool_call.status == ToolCallDisplayStatus::Failed
+                && (tool_call
+                    .output_summary
+                    .as_deref()
+                    .is_some_and(crate::text::has_trimmed_content)
+                    || tool_call
+                        .truncated_output
+                        .as_deref()
+                        .is_some_and(crate::text::has_trimmed_content)
+                    || tool_call.output_json.is_some()))
     }
 
     pub(crate) fn patch_file_output_expanded(&self, tool_call_id: &str, file_path: &str) -> bool {
@@ -751,20 +748,18 @@ impl AppState {
         format!("{tool_call_id}\u{1f}{file_path}")
     }
 
-    fn toggle_tool_output(&mut self, tool_call_id: &str) {
-        if !self
-            .transcript_view
-            .expanded_tool_outputs
-            .insert(tool_call_id.to_string())
-        {
-            self.transcript_view
-                .expanded_tool_outputs
-                .remove(tool_call_id);
-        }
+    pub(in crate::app) fn toggle_tool_output(&mut self, tool_call_id: &str) {
+        let expanded = self
+            .tool_call_entry(tool_call_id)
+            .is_some_and(|tool_call| self.tool_output_expanded(tool_call));
+        self.set_tool_output_expanded(tool_call_id, !expanded);
     }
 
     fn set_tool_output_expanded(&mut self, tool_call_id: &str, expanded: bool) {
         if expanded {
+            self.transcript_view
+                .collapsed_tool_outputs
+                .remove(tool_call_id);
             self.transcript_view
                 .expanded_tool_outputs
                 .insert(tool_call_id.to_string());
@@ -772,6 +767,9 @@ impl AppState {
             self.transcript_view
                 .expanded_tool_outputs
                 .remove(tool_call_id);
+            self.transcript_view
+                .collapsed_tool_outputs
+                .insert(tool_call_id.to_string());
         }
     }
 
@@ -798,7 +796,7 @@ impl AppState {
         }
     }
 
-    fn tool_call_entry(&self, tool_call_id: &str) -> Option<&ToolCallEntry> {
+    pub(in crate::app) fn tool_call_entry(&self, tool_call_id: &str) -> Option<&ToolCallEntry> {
         self.activities
             .iter()
             .flat_map(|activity| activity.tool_calls.iter())
@@ -854,9 +852,8 @@ impl AppState {
             TranscriptMouseTarget::ToolGroup { tool_call_ids } => {
                 let expand_group = tool_call_ids.iter().any(|tool_call_id| {
                     !self
-                        .transcript_view
-                        .expanded_tool_outputs
-                        .contains(tool_call_id)
+                        .tool_call_entry(tool_call_id)
+                        .is_some_and(|tool_call| self.tool_output_expanded(tool_call))
                 });
                 self.set_tool_group_outputs_expanded(&tool_call_ids, expand_group);
             }
@@ -910,15 +907,7 @@ impl AppState {
 
     pub(in crate::app) fn set_selected_activity_expandable_outputs(&mut self, expanded: bool) {
         for tool_call_id in self.selected_activity_expandable_tool_ids() {
-            if expanded {
-                self.transcript_view
-                    .expanded_tool_outputs
-                    .insert(tool_call_id);
-            } else {
-                self.transcript_view
-                    .expanded_tool_outputs
-                    .remove(&tool_call_id);
-            }
+            self.set_tool_output_expanded(&tool_call_id, expanded);
         }
     }
 }

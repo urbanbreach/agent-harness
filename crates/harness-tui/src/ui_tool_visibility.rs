@@ -48,19 +48,7 @@ pub(super) fn tool_call_has_transcript_disclosure(tool_call: &ToolCallEntry) -> 
         return false;
     }
 
-    if matches!(
-        tool_call.effective_tool_id(),
-        "fs.read"
-            | "read"
-            | "fs.glob"
-            | "glob"
-            | "fs.grep"
-            | "grep"
-            | "fs.ls"
-            | "list"
-            | "skill"
-            | "skill.load"
-    ) {
+    if matches!(tool_call.effective_tool_id(), "skill" | "skill.load") {
         return false;
     }
 

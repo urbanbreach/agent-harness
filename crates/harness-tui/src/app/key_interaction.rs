@@ -1579,9 +1579,8 @@ impl AppState {
                 } else {
                     let expand = tool_call_ids.iter().any(|tool_call_id| {
                         !self
-                            .transcript_view
-                            .expanded_tool_outputs
-                            .contains(tool_call_id)
+                            .tool_call_entry(tool_call_id)
+                            .is_some_and(|tool_call| self.tool_output_expanded(tool_call))
                     });
                     self.set_tool_group_outputs_expanded(&tool_call_ids, expand);
                     true
