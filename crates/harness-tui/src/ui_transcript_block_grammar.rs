@@ -30,7 +30,9 @@ pub(super) use normalize::{normalize_turn_blocks, normalized_part_spec};
 #[path = "ui_transcript_block_grammar_resolve.rs"]
 mod resolve;
 pub(in crate::ui) use resolve::resolve_block_surface;
+#[cfg(test)]
 pub(super) use resolve::resolve_compatibility_surfaces;
+pub(super) use resolve::resolve_entry_surfaces;
 
 pub(in crate::ui) fn validate_block_spec(
     spec: &TranscriptBlockSpec,
@@ -107,6 +109,7 @@ const fn footer_placement(lifecycle: TranscriptFooterLifecycle) -> TranscriptBlo
     }
 }
 
+#[cfg(test)]
 fn role_for_surface(kind: TranscriptRenderSurfaceKind) -> TranscriptBlockRole {
     match kind {
         TranscriptRenderSurfaceKind::User => TranscriptBlockRole::UserPrompt,

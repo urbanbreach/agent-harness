@@ -12,7 +12,7 @@ pub(in crate::ui) fn normalize_turn_blocks(
     if let Some(user) = &turn.user_message {
         specs.push(base_spec(
             turn,
-            0,
+            None,
             TranscriptBlockRole::UserPrompt,
             TranscriptBlockContent::UserMessage {
                 text: user.text.clone(),
@@ -29,8 +29,6 @@ pub(in crate::ui) fn normalize_turn_blocks(
                         .any(|part| matches!(part, TranscriptAssistantPart::ToolCall(_)))
                 {
                     TranscriptPromptState::ActiveThinking
-                } else if turn.header.is_selected {
-                    TranscriptPromptState::Selected
                 } else {
                     TranscriptPromptState::Idle
                 },
@@ -58,7 +56,7 @@ pub(in crate::ui) fn normalize_turn_blocks(
                 .collect();
             let mut spec = base_spec(
                 turn,
-                index.saturating_add(1),
+                Some(index),
                 TranscriptBlockRole::Tool,
                 TranscriptBlockContent::Tool {
                     family: TranscriptToolFamily::Group,
@@ -76,7 +74,7 @@ pub(in crate::ui) fn normalize_turn_blocks(
             grouped_until = index + group.span_len;
         }
         let (role, content) = content_for_part(turn, index, &turn.assistant_parts[index]);
-        let mut spec = base_spec(turn, index.saturating_add(1), role, content);
+        let mut spec = base_spec(turn, Some(index), role, content);
         apply_reasoning_policy(&mut spec);
         apply_tool_policy(&mut spec);
         apply_compaction_policy(&mut spec);
@@ -87,7 +85,7 @@ pub(in crate::ui) fn normalize_turn_blocks(
         let lifecycle = footer_lifecycle(turn);
         let mut footer = base_spec(
             turn,
-            turn.assistant_parts.len().saturating_add(1),
+            None,
             TranscriptBlockRole::Footer,
             TranscriptBlockContent::Footer {
                 lifecycle,
@@ -107,7 +105,7 @@ pub(in crate::ui) fn normalized_part_spec(
     part_index: usize,
 ) -> TranscriptBlockSpec {
     let (role, content) = content_for_part(turn, part_index, &turn.assistant_parts[part_index]);
-    let mut spec = base_spec(turn, part_index.saturating_add(1), role, content);
+    let mut spec = base_spec(turn, Some(part_index), role, content);
     let previous_role = part_index
         .checked_sub(1)
         .map(|index| content_for_part(turn, index, &turn.assistant_parts[index]).0)
@@ -125,13 +123,13 @@ pub(in crate::ui) fn normalized_part_spec(
 
 fn base_spec(
     turn: &TranscriptTurnSection,
-    index: usize,
+    part_index: Option<usize>,
     role: TranscriptBlockRole,
     content: TranscriptBlockContent,
 ) -> TranscriptBlockSpec {
     let tool = role == TranscriptBlockRole::Tool;
     TranscriptBlockSpec {
-        id: TranscriptBlockId(format!("{}:{index}", turn.request_id)),
+        id: source_derived_block_id(turn, part_index, role, &content),
         role,
         content,
         chrome: TranscriptBlockChrome {
@@ -171,6 +169,71 @@ fn base_spec(
         },
         motion: TranscriptBlockMotionDemand::None,
     }
+}
+
+fn source_derived_block_id(
+    turn: &TranscriptTurnSection,
+    part_index: Option<usize>,
+    role: TranscriptBlockRole,
+    content: &TranscriptBlockContent,
+) -> TranscriptBlockId {
+    let role_label = match role {
+        TranscriptBlockRole::UserPrompt => "user",
+        TranscriptBlockRole::AssistantBody => "body",
+        TranscriptBlockRole::Reasoning => "reasoning",
+        TranscriptBlockRole::Tool => "tool",
+        TranscriptBlockRole::Footer => "footer",
+        TranscriptBlockRole::Error => "error",
+        TranscriptBlockRole::Compaction => "compaction",
+        #[cfg(test)]
+        TranscriptBlockRole::Synthetic => "synthetic",
+    };
+    if matches!(
+        role,
+        TranscriptBlockRole::UserPrompt | TranscriptBlockRole::Footer
+    ) {
+        return TranscriptBlockId(format!(
+            "{}:{role_label}:{}",
+            turn.request_id, turn.activity_first_seq
+        ));
+    }
+    if let TranscriptBlockContent::Tool { ids, .. } = content {
+        return TranscriptBlockId(format!(
+            "{}:{role_label}:{:016x}",
+            turn.request_id,
+            super::super::ui_transcript_entry::semantic_key(ids.iter().map(String::as_str))
+        ));
+    }
+    let source_seq = (turn.assistant_part_source_ids.len() == turn.assistant_parts.len())
+        .then(|| part_index.and_then(|index| turn.assistant_part_source_ids.get(index)))
+        .flatten()
+        .map(|source| source.0);
+    if let Some(source_seq) = source_seq {
+        return TranscriptBlockId(format!(
+            "{}:{role_label}:event:{source_seq}",
+            turn.request_id
+        ));
+    }
+    TranscriptBlockId(format!(
+        "{}:{role_label}:fixture:{:016x}",
+        turn.request_id,
+        fallback_content_key(content)
+    ))
+}
+
+fn fallback_content_key(content: &TranscriptBlockContent) -> u64 {
+    let value = match content {
+        TranscriptBlockContent::AssistantBody { text, .. }
+        | TranscriptBlockContent::Reasoning { text, .. } => text.as_str(),
+        TranscriptBlockContent::Error { message } => message.as_str(),
+        TranscriptBlockContent::Compaction { summary, .. } => summary.as_str(),
+        #[cfg(test)]
+        TranscriptBlockContent::Synthetic { value } => value.as_str(),
+        TranscriptBlockContent::UserMessage { .. }
+        | TranscriptBlockContent::Tool { .. }
+        | TranscriptBlockContent::Footer { .. } => "",
+    };
+    super::super::ui_transcript_entry::semantic_key([value])
 }
 
 #[cfg(test)]
