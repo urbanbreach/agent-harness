@@ -3,6 +3,7 @@ use super::ui_diff::structured_diff_stats;
 use super::ui_tool_delegation::agent_spawn_is_background;
 use super::ui_tool_paths::tool_id_matches;
 use super::ui_tool_visibility::tool_call_has_transcript_disclosure;
+use super::ui_transcript_block_grammar::{tool_family, TranscriptToolFamily};
 use super::*;
 
 const HARNESS_GENERIC_OUTPUT_LINE_CLAMP: usize = 3;
@@ -44,7 +45,14 @@ pub(super) fn build_tool_call_section(
         stacked_diffs,
         session_path,
     );
-    section.details_preview_visible |= show_tool_details;
+    section.details_preview_visible |= show_tool_details
+        && !section.detail_blocks.is_empty()
+        && (matches!(
+            tool_family(&section),
+            TranscriptToolFamily::Edit
+                | TranscriptToolFamily::Task
+                | TranscriptToolFamily::Question
+        ) || matches!(tool_call.effective_tool_id(), "todo.write" | "todowrite"));
     Some(section)
 }
 
@@ -111,7 +119,12 @@ pub(super) fn build_transcript_tool_call_section(
                 | ToolCallDisplayStatus::Succeeded
                 | ToolCallDisplayStatus::Failed => Some("→"),
             };
-            (title, icon, TranscriptToolCallVisualStyle::Inline, false)
+            (
+                title,
+                icon,
+                generic_tool_visual_style(tool_call, generic_output_visible),
+                true,
+            )
         }
         "fs.glob" | "glob" => (
             format!(
@@ -120,8 +133,8 @@ pub(super) fn build_transcript_tool_call_section(
                     .unwrap_or_else(|| "*".to_string()),
             ),
             Some("✱"),
-            TranscriptToolCallVisualStyle::Inline,
-            false,
+            generic_tool_visual_style(tool_call, generic_output_visible),
+            true,
         ),
         "fs.grep" | "grep" => (
             format!(
@@ -130,14 +143,14 @@ pub(super) fn build_transcript_tool_call_section(
                     .unwrap_or_else(|| "pattern".to_string()),
             ),
             Some("✱"),
-            TranscriptToolCallVisualStyle::Inline,
-            false,
+            generic_tool_visual_style(tool_call, generic_output_visible),
+            true,
         ),
         "fs.ls" | "list" => (
             completed_list_tool_title(tool_call),
             Some("→"),
-            TranscriptToolCallVisualStyle::Inline,
-            false,
+            generic_tool_visual_style(tool_call, generic_output_visible),
+            true,
         ),
         "shell.run" | "bash" => {
             let cmd = shell_tool_command(tool_call).unwrap_or_else(|| "Shell".to_string());
@@ -157,15 +170,15 @@ pub(super) fn build_transcript_tool_call_section(
                     },
                 );
                 (
-                    "Shell".to_string(),
+                    format!("Run {cmd}"),
                     None,
                     TranscriptToolCallVisualStyle::Block,
                     true,
                 )
             } else {
                 (
-                    cmd.clone(),
-                    Some("$"),
+                    format!("Run {cmd}"),
+                    None,
                     TranscriptToolCallVisualStyle::Block,
                     false,
                 )
@@ -431,7 +444,7 @@ pub(super) fn build_transcript_tool_call_section(
         }
         "web.fetch" => (
             format!(
-                "WebFetch {}",
+                "Fetch {}",
                 tool_summary_string(&tool_call.args_summary, &["url"])
                     .unwrap_or_else(|| "url".to_string())
             ),
@@ -624,11 +637,6 @@ pub(super) fn build_transcript_tool_call_section(
     };
     let rail_motion = if app.replay_mode {
         ToolRailMotion::Settled
-    } else if let Some(elapsed) = app.tool_finish_flash_elapsed(&tool_call.tool_call_id) {
-        ToolRailMotion::FinishFlash {
-            elapsed,
-            sampled_phase: app.transcript_animation_phase(),
-        }
     } else {
         match tool_call.status {
             ToolCallDisplayStatus::Running => ToolRailMotion::Running {

@@ -3,9 +3,10 @@ use ratatui::{
     text::Span,
 };
 
+use super::ui_transcript::ToolRailMotion;
 use super::ui_transcript_surface::{
     append_user_surface_text_block_with_first_line_reserve, append_user_surface_wrapped_line,
-    line_has_tool_rail, tool_finish_flash_brightness, wave_brightness,
+    line_has_tool_rail, tool_rail_motion_color, wave_brightness,
 };
 use std::time::Duration;
 
@@ -29,14 +30,16 @@ fn running_tool_wave_is_spatially_continuous_and_time_based() {
 }
 
 #[test]
-fn finish_flash_decays_by_elapsed_time_and_ends_at_four_hundred_ms() {
-    let start = tool_finish_flash_brightness(Duration::ZERO);
-    let middle = tool_finish_flash_brightness(Duration::from_millis(200));
-    let finished = tool_finish_flash_brightness(Duration::from_millis(400));
+fn finish_flash_motion_is_inert_for_terminal_rows() {
+    let motion = Some(ToolRailMotion::FinishFlash {
+        elapsed: Duration::ZERO,
+        sampled_phase: 0,
+    });
+    let at_start = tool_rail_motion_color(Color::Black, Color::Green, motion, 0, 0);
+    let after_legacy_window = tool_rail_motion_color(Color::Black, Color::Green, motion, 0, 12);
 
-    assert!(start > middle);
-    assert!(middle > finished);
-    assert!(finished.abs() <= f32::EPSILON);
+    assert_eq!(at_start, Color::Green);
+    assert_eq!(after_legacy_window, at_start);
 }
 
 #[test]

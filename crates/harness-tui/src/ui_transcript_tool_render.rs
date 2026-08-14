@@ -84,10 +84,9 @@ fn tool_call_marker_style(
     inactive_color: Color,
 ) -> Style {
     let edit = tool_call.header.title == "edit" || tool_call.header.title.starts_with("edit ");
-    let color = if matches!(
-        tool_call.rail_motion,
-        ToolRailMotion::Running { .. } | ToolRailMotion::FinishFlash { .. }
-    ) {
+    let color = if tool_call.header.presentation.status == ToolCallPresentationStatus::Running
+        && matches!(tool_call.rail_motion, ToolRailMotion::Running { .. })
+    {
         super::ui_transcript_surface::tool_rail_motion_color(
             theme.surface.shell,
             inactive_color,
