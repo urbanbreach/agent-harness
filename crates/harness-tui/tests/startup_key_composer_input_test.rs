@@ -337,6 +337,45 @@ fn render_p0_start_01_welcome_panel_bordered() {
     assert_eq!(view.focus_owner(), "composer");
 }
 
+#[test]
+fn startup_box_borders_use_grok_build_colors() {
+    let app = startup_app();
+    let area = Rect::new(0, 0, W, H);
+    let layout = FrameLayoutPlan::for_app(&app, area);
+    let composer = layout
+        .dock
+        .expect("startup shell must include a dock")
+        .composer;
+    let buffer = render_to_buffer(&app, area, |app, frame, _area| {
+        ui::render_app(frame, app);
+    });
+    let welcome_corner = buffer
+        .content
+        .iter()
+        .find(|cell| cell.symbol() == "╭")
+        .expect("startup welcome border must be rendered");
+
+    assert_eq!(welcome_corner.fg, Color::Rgb(51, 51, 51));
+    assert_eq!(buffer[(composer.x, composer.y)].fg, Color::Rgb(80, 80, 88));
+}
+
+#[test]
+fn new_worktree_dialog_border_uses_grok_modal_color() {
+    let mut app = startup_app();
+    app.handle_key(ctrl_w());
+    let area = Rect::new(0, 0, W, H);
+    let buffer = render_to_buffer(&app, area, |app, frame, _area| {
+        ui::render_app(frame, app);
+    });
+    let dialog_corner = buffer
+        .content
+        .iter()
+        .find(|cell| cell.symbol() == "╭" && cell.fg == Color::Rgb(88, 88, 88))
+        .expect("new worktree dialog border must use Grok gray_dim");
+
+    assert_eq!(dialog_corner.fg, Color::Rgb(88, 88, 88));
+}
+
 /// P0-START-02: breadcrumb and clipboard warning visible at startup.
 #[test]
 fn render_p0_start_02_breadcrumb_and_warning() {

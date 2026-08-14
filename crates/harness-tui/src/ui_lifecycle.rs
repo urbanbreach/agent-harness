@@ -620,14 +620,14 @@ fn render_welcome_panel(frame: &mut Frame, app: &AppState, area: Rect, theme: &T
     let layout = app.welcome_layout(area);
     if let Some(panel) = layout.panel_rect.map(rect_from_tuple) {
         let surface = theme.surface.canvas;
-        let border_color = match app.welcome_state().focus() {
-            WelcomeFocus::Prompt => theme.border.focus,
-            WelcomeFocus::Menu(_) | WelcomeFocus::StatusBar => theme.border.subtle,
-        };
         let block = Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(border_color).bg(surface))
+            .border_style(
+                Style::default()
+                    .fg(theme.reference_terminal.welcome_border)
+                    .bg(surface),
+            )
             .style(Style::default().bg(surface));
         let inner = inset_rect(block.inner(panel), 1, 0);
         frame.render_widget(block, panel);
@@ -675,7 +675,9 @@ fn render_trust_folder_prompt_overlay(frame: &mut Frame, area: Rect, theme: &The
     let accent = theme.text.accent;
     let muted = theme.text.secondary;
     let text = theme.text.primary;
-    let border = Style::default().fg(theme.border.subtle).bg(surface);
+    let border = Style::default()
+        .fg(theme.reference_terminal.muted)
+        .bg(surface);
 
     let block = Block::default()
         .borders(Borders::ALL)
