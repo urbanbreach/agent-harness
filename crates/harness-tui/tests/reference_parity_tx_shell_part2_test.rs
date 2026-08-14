@@ -265,7 +265,6 @@ fn shell_fail_keeps_error_in_full_width_transcript_with_composer() {
     }
 }
 
-/// SHELL-FAIL freeze ladder (run1-stream-probe @120x40): composer L35, disclosure L39, empty L40.
 #[test]
 fn shell_fail_dock_matches_freeze_vertical_ladder() {
     // arrange
@@ -308,12 +307,12 @@ fn shell_fail_dock_matches_freeze_vertical_ladder() {
 
     assert_eq!(
         status,
-        Rect::new(2, 36, 116, 1),
+        Rect::new(2, 37, 116, 1),
         "SHELL-FAIL freeze ladder: one status row sits immediately above the composer"
     );
     assert_eq!(
-        dock.composer.y, 37,
-        "SHELL-FAIL compact ladder: composer top y=37; got y={}",
+        dock.composer.y, 38,
+        "SHELL-FAIL compact ladder: composer top y=38; got y={}",
         dock.composer.y
     );
     assert_eq!(
@@ -322,24 +321,24 @@ fn shell_fail_dock_matches_freeze_vertical_ladder() {
         dock.composer.height
     );
     assert_eq!(
-        disclosure.y, 38,
-        "SHELL-FAIL freeze ladder: disclosure y=38 (L39); got y={}",
+        disclosure.y, 39,
+        "SHELL-FAIL freeze ladder: disclosure y=39 (L40); got y={}",
         disclosure.y
     );
     assert_eq!(
-        dock.shell.height, 4,
-        "SHELL-FAIL compact ladder uses status+composer+disclosure+bottom; got {}",
+        dock.shell.height, 3,
+        "SHELL-FAIL compact ladder uses status+composer+disclosure; got {}",
         dock.shell.height
     );
     assert_eq!(
         dock.shell.y + dock.shell.height,
         H,
-        "SHELL-FAIL freeze ladder: dock remains bottom-anchored with empty L40 margin"
+        "SHELL-FAIL freeze ladder: dock remains bottom-anchored"
     );
     assert_eq!(
-        disclosure.y + disclosure.height + 1,
+        disclosure.y + disclosure.height,
         H,
-        "SHELL-FAIL freeze ladder: one empty row below disclosure"
+        "SHELL-FAIL freeze ladder: disclosure occupies the final row"
     );
 }
 

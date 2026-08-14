@@ -58,26 +58,20 @@ fn live_session_composer_is_bottom_anchored() {
 }
 
 #[test]
-fn live_single_line_composer_rect_tracks_semantic_disclosure_state() {
+fn live_single_line_composer_stays_anchored_across_disclosure_states() {
     let idle = AppState::new_live(None, false, None);
     let mut draft = AppState::new_live(None, false, None);
     draft.composer.prompt_buffer = "single-line draft".to_string();
     draft.composer.prompt_cursor = draft.composer.prompt_buffer.chars().count();
     let streaming = live_session_app();
 
-    for (width, height, idle_expected, draft_expected) in [
-        (120, 40, Rect::new(2, 36, 116, 3), Rect::new(2, 35, 116, 3)),
-        (60, 20, Rect::new(1, 16, 58, 3), Rect::new(1, 16, 58, 3)),
+    for (width, height, expected) in [
+        (120, 40, Rect::new(2, 36, 116, 3)),
+        (60, 20, Rect::new(1, 16, 58, 3)),
     ] {
-        assert_eq!(plan_for(&idle, width, height).composer, Some(idle_expected));
-        assert_eq!(
-            plan_for(&streaming, width, height).composer,
-            Some(idle_expected)
-        );
-        assert_eq!(
-            plan_for(&draft, width, height).composer,
-            Some(draft_expected)
-        );
+        assert_eq!(plan_for(&idle, width, height).composer, Some(expected));
+        assert_eq!(plan_for(&streaming, width, height).composer, Some(expected));
+        assert_eq!(plan_for(&draft, width, height).composer, Some(expected));
     }
 }
 

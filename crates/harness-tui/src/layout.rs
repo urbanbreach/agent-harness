@@ -54,7 +54,6 @@ const STARTUP_BORDERED_COMPOSER_CHROME_ROWS: u16 = 2;
 const STARTUP_COMPOSER_SPACER_ROWS: u16 = 0;
 const STARTUP_FOOTER_ROWS: u16 = 1;
 const SUBAGENT_FOOTER_ROWS: u16 = 3;
-const LIVE_POST_TURN_BOTTOM_MARGIN_ROWS: u16 = 1;
 /// Spacer between the composer bottom border and the disclosure/footer row.
 /// Present at all viewports wider than the dense (60-col) compact cutoff;
 /// suppressed at ultra-compact sizes to maximize transcript space.
@@ -789,15 +788,6 @@ fn live_dock_rhythm(
     terminal_height: u16,
 ) -> LiveDockRhythm {
     let disclosure_rows = control_dock_disclosure_rows(app, contract);
-    let rich_disclosure = app.interrupt_hint_visible()
-        || !app.composer.prompt_buffer.is_empty()
-        || matches!(
-            app.runtime_state().kind,
-            crate::app::RuntimeStateKind::Failure
-                | crate::app::RuntimeStateKind::Cancelled
-                | crate::app::RuntimeStateKind::Degraded
-                | crate::app::RuntimeStateKind::Disconnected
-        );
     let active_permission = app.active_permission_view();
     let runtime_kind = app.runtime_state().kind;
     let status_rows = if let Some(permission) = active_permission.as_ref() {
@@ -820,14 +810,9 @@ fn live_dock_rhythm(
     } else {
         0
     };
-    let compact_dock = width <= DENSE_SESSION_MAX_WIDTH || terminal_height <= 20;
     let composer_footer_spacer_rows = 0;
     let status_composer_spacer_rows = 0;
-    let bottom_margin_rows = if rich_disclosure && !compact_dock {
-        LIVE_POST_TURN_BOTTOM_MARGIN_ROWS
-    } else {
-        0
-    };
+    let bottom_margin_rows = 0;
 
     LiveDockRhythm {
         status_rows,
