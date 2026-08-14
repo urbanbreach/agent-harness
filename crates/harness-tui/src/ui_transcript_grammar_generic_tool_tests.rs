@@ -104,7 +104,7 @@ fn grammar_generic_tool_rejects_cross_kind_group() {
         "read",
         ToolCallPresentationStatus::Succeeded,
     )];
-    let mut spec = normalized_tool_spec(&turn, TranscriptToolFamily::Generic);
+    let mut spec = normalized_tool_spec(&turn, TranscriptToolFamily::Read);
     let TranscriptBlockContent::Tool { policy, .. } = &mut spec.content else {
         panic!("tool")
     };

@@ -49,29 +49,29 @@ fn grammar_shell_preserves_status_disclosure_and_motion_policy() {
         ),
     ] {
         turn.assistant_parts = vec![grammar_tool("shell", "bash", status)];
-        let spec = normalized_tool_spec(&turn, TranscriptToolFamily::Shell);
+        let spec = normalized_tool_spec(&turn, TranscriptToolFamily::Execute);
         let TranscriptBlockContent::Tool { policy, .. } = spec.content else {
             panic!("shell")
         };
         assert_eq!(policy.status, expected);
-        assert!(spec.chrome.rail);
+        assert!(!spec.chrome.rail);
     }
-    let mut finish = grammar_tool(
+    let mut settled = grammar_tool(
         "shell-finish",
         "bash",
         ToolCallPresentationStatus::Succeeded,
     );
-    let TranscriptAssistantPart::ToolCall(tool) = &mut finish else {
+    let TranscriptAssistantPart::ToolCall(tool) = &mut settled else {
         panic!("shell")
     };
     tool.rail_motion = ToolRailMotion::FinishFlash {
         elapsed: std::time::Duration::from_millis(20),
         sampled_phase: 1,
     };
-    turn.assistant_parts = vec![finish];
+    turn.assistant_parts = vec![settled];
     assert_eq!(
-        normalized_tool_spec(&turn, TranscriptToolFamily::Shell).motion,
-        TranscriptBlockMotionDemand::Finish
+        normalized_tool_spec(&turn, TranscriptToolFamily::Execute).motion,
+        TranscriptBlockMotionDemand::None
     );
 }
 
@@ -84,7 +84,7 @@ fn grammar_diff_preserves_hunk_offsets_at_contract_widths() {
         "--- src/a.rs\n+++ src/a.rs\n@@ -1 +1 @@\n-old\n+new\n",
     )];
     assert!(
-        normalized_tool_spec(&turn, TranscriptToolFamily::Diff)
+        !normalized_tool_spec(&turn, TranscriptToolFamily::Edit)
             .chrome
             .rail
     );

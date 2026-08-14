@@ -11,7 +11,7 @@ fn grammar_subagent_lifecycle_preserves_identity_and_child_target() {
     tool.subagent_background = false;
     tool.header.visual_style = TranscriptToolCallVisualStyle::TaskInline;
     turn.assistant_parts = vec![part];
-    let running = normalized_tool_spec(&turn, TranscriptToolFamily::Subagent);
+    let running = normalized_tool_spec(&turn, TranscriptToolFamily::Task);
     let TranscriptBlockContent::Tool { subagent, .. } = &running.content else {
         panic!("task spec")
     };
@@ -39,7 +39,7 @@ fn grammar_subagent_lifecycle_preserves_identity_and_child_target() {
         panic!("task")
     };
     tool.header.presentation.status = ToolCallPresentationStatus::Succeeded;
-    let completed = normalized_tool_spec(&turn, TranscriptToolFamily::Subagent);
+    let completed = normalized_tool_spec(&turn, TranscriptToolFamily::Task);
     let TranscriptBlockContent::Tool { subagent, .. } = &completed.content else {
         panic!("task spec")
     };
@@ -65,7 +65,7 @@ fn grammar_subagent_background_and_truncated_result_policy() {
     }];
     tool.expanded = true;
     turn.assistant_parts = vec![part];
-    let spec = normalized_tool_spec(&turn, TranscriptToolFamily::Subagent);
+    let spec = normalized_tool_spec(&turn, TranscriptToolFamily::Task);
     let TranscriptBlockContent::Tool { subagent, .. } = spec.content else {
         panic!("task spec")
     };
@@ -108,7 +108,7 @@ fn grammar_subagent_all_lifecycle_states_are_exhaustive() {
         ),
     ] {
         turn.assistant_parts = vec![grammar_tool("task-state", "task", status)];
-        let spec = normalized_tool_spec(&turn, TranscriptToolFamily::Subagent);
+        let spec = normalized_tool_spec(&turn, TranscriptToolFamily::Task);
         let TranscriptBlockContent::Tool { subagent, .. } = spec.content else {
             panic!("task spec")
         };
@@ -124,7 +124,7 @@ fn grammar_subagent_missing_child_id_fails_closed() {
         "task",
         ToolCallPresentationStatus::Succeeded,
     )];
-    let spec = normalized_tool_spec(&turn, TranscriptToolFamily::Subagent);
+    let spec = normalized_tool_spec(&turn, TranscriptToolFamily::Task);
     let TranscriptBlockContent::Tool { subagent, .. } = spec.content else {
         panic!("task spec")
     };
@@ -144,7 +144,7 @@ fn grammar_subagent_replay_read_only_fails_closed() {
     tool.child_session_id = Some("child-replay".into());
     tool.replay_read_only = true;
     turn.assistant_parts = vec![part];
-    let spec = normalized_tool_spec(&turn, TranscriptToolFamily::Subagent);
+    let spec = normalized_tool_spec(&turn, TranscriptToolFamily::Task);
     let TranscriptBlockContent::Tool { subagent, .. } = spec.content else {
         panic!("task spec")
     };
