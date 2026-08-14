@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use crate::scheduling::{MotionDemand, MotionPlan};
 
-use super::{ActivityStatus, AppState, ToolCallDisplayStatus, TOOL_FINISH_FLASH_DURATION};
+use super::{ActivityStatus, AppState, ToolCallDisplayStatus};
 
 const FAST_CADENCE: Duration = Duration::from_millis(33);
 const STREAM_CADENCE: Duration = Duration::from_millis(133);
@@ -12,9 +12,6 @@ const BACKGROUND_CADENCE: Duration = Duration::from_millis(264);
 impl AppState {
     pub(crate) fn set_reduced_motion(&mut self, reduced_motion: bool) {
         self.reduced_motion = reduced_motion;
-        if reduced_motion {
-            self.transcript_view.tool_motion.clear_finish_flashes();
-        }
     }
 
     pub(crate) const fn transcript_motion_enabled(&self) -> bool {
@@ -23,16 +20,8 @@ impl AppState {
 
     pub(crate) fn refresh_motion_state(&mut self) -> bool {
         let now = self.now();
-        let mut changed = self
-            .transcript_view
-            .tool_motion
-            .advance(now, !self.reduced_motion);
-        if changed {
-            self.bump_transcript_render_epoch();
-        }
         self.clear_expired_interrupt_confirmation();
-        changed |= self.refresh_toast_motion(now);
-        changed
+        self.refresh_toast_motion(now)
     }
 
     pub(crate) fn motion_plan(&self) -> MotionPlan {
@@ -47,16 +36,6 @@ impl AppState {
         }
         if let Some(deadline) = self.interrupt_confirm_deadline {
             plan = plan.merge(MotionDemand::until(deadline.saturating_duration_since(now)));
-        }
-        if let Some(remaining) = self
-            .transcript_view
-            .tool_motion
-            .earliest_finish_flash_remaining(now, TOOL_FINISH_FLASH_DURATION)
-        {
-            plan = plan.merge(MotionDemand::until(remaining));
-            if !self.reduced_motion && self.transcript_view.visible_running_tool_motion.get() {
-                plan = plan.merge(MotionDemand::fast(FAST_CADENCE));
-            }
         }
         if !self.reduced_motion {
             plan = if self.fast_visible_motion_active() {

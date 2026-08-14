@@ -167,7 +167,6 @@ mod tool_output;
 mod transcript_cache;
 mod transcript_state;
 mod transcript_view;
-pub(crate) use transcript_view::TOOL_FINISH_FLASH_DURATION;
 mod transcript_viewport;
 mod workspace_display;
 mod worktree_picker;
@@ -1488,7 +1487,6 @@ impl AppState {
         self.question_prompt.answers.clear();
         self.question_prompt.custom.clear();
         self.question_prompt.editing = false;
-        self.transcript_view.expanded_tool_outputs.clear();
         self.transcript_view.expanded_patch_file_outputs.clear();
         self.transcript_view.expanded_reasoning_requests.clear();
         self.transcript_view.tool_motion = Default::default();
@@ -3645,23 +3643,17 @@ impl AppState {
 
     /// Toggle the expansion state of a single tool output by id.
     pub fn toggle_tool_output_for_test(&mut self, tool_call_id: &str) {
-        if !self
-            .transcript_view
-            .expanded_tool_outputs
-            .insert(tool_call_id.to_string())
-        {
-            self.transcript_view
-                .expanded_tool_outputs
-                .remove(tool_call_id);
-        }
+        self.toggle_tool_output(tool_call_id);
         self.bump_transcript_render_epoch();
     }
 
     /// Check whether a tool output is expanded.
     pub fn is_tool_output_expanded_for_test(&self, tool_call_id: &str) -> bool {
-        self.transcript_view
-            .expanded_tool_outputs
-            .contains(tool_call_id)
+        self.activities
+            .iter()
+            .flat_map(|activity| activity.tool_calls.iter())
+            .find(|tool_call| tool_call.tool_call_id == tool_call_id)
+            .is_some_and(|tool_call| self.tool_output_expanded(tool_call))
     }
 
     pub fn set_generic_tool_output_visible_for_test(&mut self, visible: bool) {

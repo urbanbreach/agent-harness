@@ -619,7 +619,7 @@ fn queued_and_replayed_tools_remain_static_without_redraw_demand() {
 }
 
 #[test]
-fn restored_terminal_tools_do_not_replay_finish_flash() {
+fn restored_terminal_tools_remain_static() {
     // Given: a completed tool reconstructed as live-session history.
     let mut app = AppState::new_live(Some(PathBuf::from("/tmp/run_anim_restore")), false, None);
     for event in tool_running_events("src/restored.rs") {
@@ -660,47 +660,37 @@ fn restored_terminal_tools_do_not_replay_finish_flash() {
 }
 
 #[test]
-fn replacing_history_clears_motion_state_and_allows_reused_tool_ids_to_flash() {
-    // Given: a live completion with an active finish flash.
-    let mut app = tool_finished_app();
+fn replacing_history_clears_motion_state_and_allows_reused_tool_ids_to_run() {
+    // Given: a live tool with active running motion.
+    let mut app = tool_running_app();
     assert!(app.has_active_animations_for_evidence());
 
-    // When: the event history is replaced and the same tool id completes again live.
+    // When: the event history is replaced and the same tool id starts again live.
     app.replace_events(Vec::new());
 
-    // Then: replacement parks stale motion and the reused id can transition normally.
+    // Then: replacement parks stale motion and the reused id can run normally.
     assert!(!app.has_active_animations_for_evidence());
     for event in tool_running_events("src/reused.rs") {
         app.ingest_event(event);
     }
-    app.ingest_event(envelope(
-        5,
-        Some("req-anim-tool"),
-        EventV1::ToolCallFinished(ToolCallFinishedEvent {
-            tool_call_id: "tool-anim-read".into(),
-            status: ToolCallStatus::Succeeded,
-            output_summary: Some("reused output".to_string()),
-            output_digest: Some("digest-anim-reused-output".to_string()),
-            output_json: None,
-            metadata: None,
-        }),
-    ));
+    app.record_visible_running_tool_motion_for_evidence(true);
     assert!(app.has_active_animations_for_evidence());
 }
 
 #[test]
-fn reduced_motion_renders_one_finish_transition_then_parks() {
-    // Given: a just-finished tool with a visible completion transition.
+fn reduced_motion_keeps_completed_tools_static() {
+    // Given: a completed tool rendered with reduced motion.
     let mut app = tool_finished_app();
-    let transition = rail_colors(&render_buffer(&app, 120, 40));
-    assert!(app.has_active_animations_with_motion_for_evidence(false));
+    app.set_reduced_motion_for_evidence(true);
+    let before = rail_colors(&render_buffer(&app, 120, 40));
 
-    // When: reduced motion advances its single deterministic transition tick.
-    app.advance_animation_tick_with_motion_for_evidence(false);
-    let settled = rail_colors(&render_buffer(&app, 120, 40));
+    // When: a deterministic animation tick advances.
+    app.advance_animation_tick_for_evidence();
+    let after = rail_colors(&render_buffer(&app, 120, 40));
 
-    // Then: cells settle immediately and no timer remains armed.
-    assert_ne!(transition, settled);
+    // Then: the completed tool remains rail-free and no timer is armed.
+    assert!(before.is_empty());
+    assert_eq!(before, after);
     assert!(!app.has_active_animations_with_motion_for_evidence(false));
     assert_eq!(
         app.animation_tick_interval_with_motion_for_evidence(false),
@@ -742,27 +732,18 @@ fn offscreen_running_tool_parks_and_wide_text_geometry_stays_stable() {
 }
 
 #[test]
-fn finished_tool_flashes_once_then_settles_without_idle_redraws() {
+fn completed_tool_never_arms_motion_or_paints_a_rail() {
     // Given: a tool and provider that just completed successfully.
     let mut app = tool_finished_app();
 
-    // When: the completion frame is painted and its bounded flash expires.
-    let flash = rail_colors(&render_buffer(&app, 100, 24));
-    assert!(
-        app.has_active_animations_for_evidence(),
-        "finish flash must request ticks"
-    );
-    for _ in 0..finish_flash_frames().saturating_add(2) {
-        app.advance_animation_tick_for_evidence();
-    }
-    let settled = rail_colors(&render_buffer(&app, 100, 24));
+    // When: the completion frame and a later frame are painted.
+    let completed = rail_colors(&render_buffer(&app, 100, 24));
+    app.advance_animation_tick_for_evidence();
+    let later = rail_colors(&render_buffer(&app, 100, 24));
 
-    // Then: the semantic success rail is static and the scheduler can park.
-    assert!(!flash.is_empty(), "finish transition must paint a rail");
-    assert_ne!(
-        flash, settled,
-        "finish flash must settle to its semantic color"
-    );
+    // Then: completion is static, rail-free, and requests no idle redraws.
+    assert!(completed.is_empty());
+    assert_eq!(completed, later);
     assert!(
         !app.has_active_animations_for_evidence(),
         "settled UI must request zero idle redraws"
@@ -770,46 +751,40 @@ fn finished_tool_flashes_once_then_settles_without_idle_redraws() {
 }
 
 #[test]
-fn every_finish_flash_frame_is_visually_distinct_from_the_settled_rail() {
-    // Given: the static success rail after the bounded finish transition.
-    let mut settled_app = tool_finished_app();
-    for _ in 0..finish_flash_frames().saturating_add(2) {
-        settled_app.advance_animation_tick_for_evidence();
-    }
-    let settled = rail_colors(&render_buffer(&settled_app, 100, 24));
-    let mut flashing_app = tool_finished_app();
+fn completed_tool_stays_static_across_the_legacy_finish_window() {
+    // Given: a completed tool with no active motion ownership.
+    let mut app = tool_finished_app();
+    let settled = rail_colors(&render_buffer(&app, 100, 24));
 
-    // When: every token-owned finish frame is rendered.
-    let flash_frames = (0..finish_flash_frames())
+    // When: every former finish-flash frame is rendered.
+    let later_frames = (0..finish_flash_frames())
         .map(|_| {
-            let colors = rail_colors(&render_buffer(&flashing_app, 100, 24));
-            flashing_app.advance_animation_tick_for_evidence();
-            colors
+            app.advance_animation_tick_for_evidence();
+            rail_colors(&render_buffer(&app, 100, 24))
         })
         .collect::<Vec<_>>();
 
-    // Then: no in-flight flash frame is visually identical to the settled rail.
-    assert!(flash_frames.iter().all(|frame| frame != &settled));
+    // Then: no legacy frame introduces a settled rail or visual transition.
+    assert!(settled.is_empty());
+    assert!(later_frames.iter().all(|frame| frame == &settled));
 }
 
 #[test]
-fn grouped_last_finisher_flashes_then_settles_to_failure_semantics() {
+fn grouped_last_finisher_never_paints_a_group_wide_motion_rail() {
     // Given: a successful command followed later by a failed command in one group.
     let mut grouped = grouped_mixed_app();
     let flash = rail_colors(&render_buffer(&grouped, 120, 40));
 
-    // When: the newest member's bounded finish transition expires.
+    // When: the former finish-transition window elapses.
     for _ in 0..finish_flash_frames().saturating_add(2) {
         grouped.advance_animation_tick_for_evidence();
     }
     let settled = rail_colors(&render_buffer(&grouped, 120, 40));
 
-    // Then: the group flashed and its internal rail uses the failed semantic color.
-    assert_ne!(flash, settled);
-    assert!(!settled.is_empty());
-    assert!(settled
-        .iter()
-        .all(|color| *color == Theme::default().status.error));
+    // Then: member state remains visible in the rows without animating the
+    // synthetic group across its full height.
+    assert!(flash.is_empty());
+    assert!(settled.is_empty());
 }
 
 #[test]

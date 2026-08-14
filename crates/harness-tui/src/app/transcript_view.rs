@@ -8,8 +8,6 @@ use super::{AppState, TranscriptScrollbarDragState};
 use crate::transcript_scroll::PageFlipState;
 use crate::ui::{TranscriptContentAnchor, TranscriptMouseTarget, TranscriptSelection};
 
-pub(crate) const TOOL_FINISH_FLASH_DURATION: Duration = Duration::from_millis(400);
-
 pub(super) const fn active_turn_motion_demand(
     has_active_tool: bool,
     has_running_tool: bool,
@@ -24,9 +22,7 @@ pub(super) const fn active_turn_motion_demand(
 
 #[derive(Debug, Default)]
 pub(crate) struct ToolMotionTracker {
-    seen_terminal: BTreeSet<String>,
     running_since: BTreeMap<String, Instant>,
-    finish_flashes: BTreeMap<String, Instant>,
 }
 
 impl ToolMotionTracker {
@@ -43,41 +39,10 @@ impl ToolMotionTracker {
         }
     }
 
-    pub(crate) fn sync_terminal_ids(
-        &mut self,
-        terminal_ids: impl IntoIterator<Item = String>,
-        animate_new_terminal: bool,
-        now: Instant,
-    ) {
+    pub(crate) fn sync_terminal_ids(&mut self, terminal_ids: impl IntoIterator<Item = String>) {
         for tool_call_id in terminal_ids {
             self.running_since.remove(&tool_call_id);
-            if self.seen_terminal.insert(tool_call_id.clone()) && animate_new_terminal {
-                self.finish_flashes.insert(tool_call_id, now);
-            }
         }
-    }
-
-    pub(crate) fn advance(&mut self, now: Instant, motion_enabled: bool) -> bool {
-        if !motion_enabled {
-            let changed = !self.finish_flashes.is_empty();
-            self.finish_flashes.clear();
-            return changed;
-        }
-        let previous_len = self.finish_flashes.len();
-        self.finish_flashes.retain(|_, started_at| {
-            now.saturating_duration_since(*started_at) < TOOL_FINISH_FLASH_DURATION
-        });
-        self.finish_flashes.len() != previous_len
-    }
-
-    pub(crate) fn finish_flash_elapsed(
-        &self,
-        tool_call_id: &str,
-        now: Instant,
-    ) -> Option<Duration> {
-        self.finish_flashes
-            .get(tool_call_id)
-            .map(|started_at| now.saturating_duration_since(*started_at))
     }
 
     pub(crate) fn running_elapsed(&self, tool_call_id: &str, now: Instant) -> Duration {
@@ -86,25 +51,6 @@ impl ToolMotionTracker {
             .map_or(Duration::ZERO, |started_at| {
                 now.saturating_duration_since(*started_at)
             })
-    }
-
-    pub(crate) fn has_finish_flash(&self) -> bool {
-        !self.finish_flashes.is_empty()
-    }
-
-    pub(crate) fn clear_finish_flashes(&mut self) {
-        self.finish_flashes.clear();
-    }
-
-    pub(crate) fn earliest_finish_flash_remaining(
-        &self,
-        now: Instant,
-        duration: Duration,
-    ) -> Option<Duration> {
-        self.finish_flashes
-            .values()
-            .map(|started_at| duration.saturating_sub(now.saturating_duration_since(*started_at)))
-            .min()
     }
 }
 
@@ -128,6 +74,7 @@ pub(crate) struct TranscriptViewState {
     pub(crate) stacked_transcript_diffs: bool,
     pub(crate) expanded_reasoning_requests: BTreeSet<String>,
     pub(crate) expanded_tool_outputs: BTreeSet<String>,
+    pub(crate) collapsed_tool_outputs: BTreeSet<String>,
     pub(crate) expanded_patch_file_outputs: BTreeSet<String>,
     pub(crate) transcript_cache: TranscriptRenderCache,
     pub(crate) transcript_animation_phase: usize,
@@ -162,6 +109,7 @@ impl Default for TranscriptViewState {
             stacked_transcript_diffs: false,
             expanded_reasoning_requests: BTreeSet::new(),
             expanded_tool_outputs: BTreeSet::new(),
+            collapsed_tool_outputs: BTreeSet::new(),
             expanded_patch_file_outputs: BTreeSet::new(),
             transcript_cache: TranscriptRenderCache::default(),
             transcript_animation_phase: 0,
@@ -191,14 +139,24 @@ mod tests {
     }
 
     #[test]
-    fn reduced_motion_finish_flash_settles_after_one_transition_tick() {
+    fn terminal_tool_clears_running_elapsed_without_completion_motion() {
+        // Given: a tool that has accumulated running time.
         let mut tracker = ToolMotionTracker::default();
-        let now = std::time::Instant::now();
-        tracker.sync_terminal_ids(["tool-finished".to_string()], true, now);
-        assert!(tracker.has_finish_flash());
+        let started_at = std::time::Instant::now();
+        tracker.sync_running_ids(["tool-finished".to_string()], started_at);
+        let finished_at = started_at + std::time::Duration::from_secs(1);
+        assert_eq!(
+            tracker.running_elapsed("tool-finished", finished_at),
+            std::time::Duration::from_secs(1)
+        );
 
-        tracker.advance(now, false);
+        // When: the tool becomes terminal.
+        tracker.sync_terminal_ids(["tool-finished".to_string()]);
 
-        assert!(!tracker.has_finish_flash());
+        // Then: terminal state carries no remaining running-motion clock.
+        assert_eq!(
+            tracker.running_elapsed("tool-finished", finished_at),
+            std::time::Duration::ZERO
+        );
     }
 }

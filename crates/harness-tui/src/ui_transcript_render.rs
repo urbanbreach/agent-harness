@@ -848,7 +848,7 @@ fn build_assistant_part_render_surface(
                 } => (*family, *policy, subagent.as_ref()),
                 _ => return Err(TranscriptGrammarError::InvalidGrouping),
             };
-            let kind = if family == TranscriptToolFamily::Shell {
+            let kind = if family == TranscriptToolFamily::Execute {
                 TranscriptRenderSurfaceKind::AssistantCommandTool
             } else {
                 TranscriptRenderSurfaceKind::AssistantTool
@@ -921,7 +921,7 @@ fn build_assistant_part_render_surface(
     };
     let tool_rail_motion = match part {
         TranscriptAssistantPart::ToolCall(tool_call) => match tool_call.rail_motion {
-            ToolRailMotion::Settled => None,
+            ToolRailMotion::Queued | ToolRailMotion::Settled => None,
             motion => Some(motion),
         },
         TranscriptAssistantPart::Reasoning(_)
@@ -1307,7 +1307,14 @@ fn build_context_tool_group_render_surface(
     } else {
         base_surface
     };
-    let tool_rail_motion = tool_group_rail_motion(tool_calls);
+    let tool_rail_motion = tool_calls.iter().rev().find_map(|tool_call| {
+        matches!(
+            tool_call.header.presentation.status,
+            ToolCallPresentationStatus::Running
+        )
+        .then_some(tool_call.rail_motion)
+        .filter(|motion| matches!(motion, ToolRailMotion::Running { .. }))
+    });
     let aggregate_status = dominant_tool_group_status(tool_calls);
     let rail_color = if tool_calls.is_empty() {
         theme.border.subtle
@@ -1422,11 +1429,7 @@ fn build_context_tool_group_render_surface(
         summary.push(Span::styled(disclosure, muted_meta_style(theme)));
     }
 
-    let summary_prefix = if command_group {
-        format!("{}  ", theme.live_shell.transcript_glyphs.rail)
-    } else {
-        TRANSCRIPT_ASSISTANT_BODY_PREFIX.to_string()
-    };
+    let summary_prefix = TRANSCRIPT_ASSISTANT_BODY_PREFIX.to_string();
     append_surface_row(
         &mut lines,
         &summary_prefix,
@@ -1436,11 +1439,7 @@ fn build_context_tool_group_render_surface(
     );
 
     if command_group || group_preview_visible || group_expanded {
-        let detail_prefix = if command_group {
-            format!("{}  ", theme.live_shell.transcript_glyphs.rail)
-        } else {
-            format!("{TRANSCRIPT_ASSISTANT_BODY_PREFIX}  ")
-        };
+        let detail_prefix = format!("{TRANSCRIPT_ASSISTANT_BODY_PREFIX}  ");
         let preview_index = context_group_preview_index(tool_calls);
         let dense_start = policy.visible_start;
         if dense_start > 0 {
@@ -1580,58 +1579,6 @@ fn context_group_preview_index(tool_calls: &[&TranscriptToolCallSection]) -> usi
         }
     }
     0
-}
-
-fn tool_group_rail_motion(tool_calls: &[&TranscriptToolCallSection]) -> Option<ToolRailMotion> {
-    if tool_calls
-        .iter()
-        .any(|tool_call| tool_call.rail_motion == ToolRailMotion::Waiting)
-    {
-        return Some(ToolRailMotion::Waiting);
-    }
-    if let Some((elapsed, sampled_phase)) = tool_calls
-        .iter()
-        .filter_map(|tool_call| match tool_call.rail_motion {
-            ToolRailMotion::Running {
-                elapsed,
-                sampled_phase,
-            } => Some((elapsed, sampled_phase)),
-            ToolRailMotion::Waiting
-            | ToolRailMotion::Queued
-            | ToolRailMotion::FinishFlash { .. }
-            | ToolRailMotion::Settled => None,
-        })
-        .max_by_key(|(elapsed, _)| *elapsed)
-    {
-        return Some(ToolRailMotion::Running {
-            elapsed,
-            sampled_phase,
-        });
-    }
-    if tool_calls
-        .iter()
-        .any(|tool_call| tool_call.rail_motion == ToolRailMotion::Queued)
-    {
-        return Some(ToolRailMotion::Queued);
-    }
-    tool_calls
-        .iter()
-        .filter_map(|tool_call| match tool_call.rail_motion {
-            ToolRailMotion::FinishFlash {
-                elapsed,
-                sampled_phase,
-            } => Some((elapsed, sampled_phase)),
-            ToolRailMotion::Running { .. }
-            | ToolRailMotion::Waiting
-            | ToolRailMotion::Queued
-            | ToolRailMotion::Settled => None,
-        })
-        .min_by_key(|(elapsed, _)| *elapsed)
-        .map(|(elapsed, sampled_phase)| ToolRailMotion::FinishFlash {
-            elapsed,
-            sampled_phase,
-        })
-        .or_else(|| tool_calls.first().map(|_| ToolRailMotion::Settled))
 }
 
 fn dominant_tool_group_status(

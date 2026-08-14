@@ -625,8 +625,20 @@ mod tool_group_tests {
     }
 
     #[test]
-    fn finish_acknowledgement_duration_matches_design_contract() {
-        assert_eq!(crate::app::TOOL_FINISH_FLASH_DURATION.as_millis(), 400);
+    fn completed_tool_sections_default_to_settled_motion() {
+        let part = tool_part(
+            "completed",
+            "read",
+            ToolCallDisplayStatus::Succeeded,
+            false,
+            false,
+        );
+
+        assert!(matches!(
+            part,
+            TranscriptAssistantPart::ToolCall(section)
+                if section.rail_motion == ToolRailMotion::Settled
+        ));
     }
 
     #[test]
@@ -669,11 +681,15 @@ mod tool_group_tests {
         };
 
         let families = [
-            TranscriptToolFamily::Generic,
+            TranscriptToolFamily::Unknown,
             TranscriptToolFamily::Group,
-            TranscriptToolFamily::Shell,
-            TranscriptToolFamily::Diff,
-            TranscriptToolFamily::Subagent,
+            TranscriptToolFamily::Read,
+            TranscriptToolFamily::Search,
+            TranscriptToolFamily::List,
+            TranscriptToolFamily::Execute,
+            TranscriptToolFamily::Edit,
+            TranscriptToolFamily::Web,
+            TranscriptToolFamily::Task,
             TranscriptToolFamily::Permission,
             TranscriptToolFamily::Question,
         ];
@@ -739,7 +755,7 @@ mod tool_group_tests {
         ];
         specs.extend(families.into_iter().map(|family| {
             let grouped = family == TranscriptToolFamily::Group;
-            let subagent = family == TranscriptToolFamily::Subagent;
+            let subagent = family == TranscriptToolFamily::Task;
             let mut spec = test_spec(
                 TranscriptBlockRole::Tool,
                 TranscriptBlockContent::Tool {

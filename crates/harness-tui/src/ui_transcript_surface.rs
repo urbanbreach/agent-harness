@@ -323,12 +323,6 @@ pub(super) fn wave_brightness(elapsed: Duration, row: usize, wave_rows: usize) -
         .powi(2)
 }
 
-pub(super) fn tool_finish_flash_brightness(elapsed: Duration) -> f32 {
-    let progress = (elapsed.as_secs_f32() / crate::app::TOOL_FINISH_FLASH_DURATION.as_secs_f32())
-        .clamp(0.0, 1.0);
-    (1.0 - progress).powi(2)
-}
-
 pub(super) fn tool_rail_motion_color(
     surface: Color,
     accent: Color,
@@ -346,11 +340,8 @@ pub(super) fn tool_rail_motion_color(
                 TOOL_RAIL_MIN_BRIGHTNESS + brightness * TOOL_RAIL_BRIGHTNESS_RANGE,
             )
         }
-        Some(ToolRailMotion::FinishFlash { .. }) => {
-            let elapsed = motion_elapsed(motion, animation_phase);
-            blend_color(accent, Color::White, tool_finish_flash_brightness(elapsed))
-        }
-        Some(ToolRailMotion::Waiting)
+        Some(ToolRailMotion::FinishFlash { .. })
+        | Some(ToolRailMotion::Waiting)
         | Some(ToolRailMotion::Queued)
         | Some(ToolRailMotion::Settled)
         | None => accent,
@@ -360,10 +351,6 @@ pub(super) fn tool_rail_motion_color(
 fn motion_elapsed(motion: Option<ToolRailMotion>, animation_phase: usize) -> Duration {
     let (elapsed, sampled_phase) = match motion {
         Some(ToolRailMotion::Running {
-            elapsed,
-            sampled_phase,
-        })
-        | Some(ToolRailMotion::FinishFlash {
             elapsed,
             sampled_phase,
         }) => (elapsed, sampled_phase),
