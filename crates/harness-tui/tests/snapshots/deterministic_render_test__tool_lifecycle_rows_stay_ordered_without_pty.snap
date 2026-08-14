@@ -9,16 +9,16 @@ expression: trim_trailing_snapshot_whitespace(&rendered)
      ❯ Inspect tool activity
 
 
-     ◆ Read 1 file
+     ◆ Read 1 file  ▸
      ◆ Edit ui.rs crates/harness-tui/src  ▸
        · Researcher Task — audit tool lifecycle parity  ▸
          Found the whole-tool parity path.
 
-  ┃  ◆ Run cargo test -p harness-tui · Failed  ▸
-  ┃    $ cargo test -p harness-tui
-  ┃
-  ┃    exit code: 1
-  ┃    stderr: snapshot mismatch
+     ◆ Run cargo test -p harness-tui · Failed  ▾
+       $ cargo test -p harness-tui
+
+       exit code: 1
+       stderr: snapshot mismatch
 
      Tool summaries are now easier to scan, and edits stay inline.
 
