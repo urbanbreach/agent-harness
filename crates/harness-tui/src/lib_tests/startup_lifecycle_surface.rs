@@ -80,7 +80,7 @@ pub(super) fn startup_surface_projects_clipboard_capability() {
         loading_rows
             .iter()
             .position(|row| row.iter().any(|cell| cell.symbol() == "╭")),
-        Some(6)
+        Some(7)
     );
     assert!(loading
         .content
@@ -97,7 +97,7 @@ pub(super) fn startup_surface_projects_clipboard_capability() {
         ready_rows
             .iter()
             .position(|row| row.iter().any(|cell| cell.symbol() == "╭")),
-        Some(6)
+        Some(7)
     );
     assert_eq!(loading, ready);
     let ready_warning_row = ready_rows
@@ -248,8 +248,8 @@ pub(super) fn post_run_failure_handoff_renders_recovery_actions() {
     assert!(app.completed_session_shell_active());
 
     let rendered = render_live_lines(&app, 100, 24);
-    assert!(!rendered.contains("Shift+Tab:mode"));
-    assert!(!rendered.contains("Ctrl+x:shortcuts"));
+    assert!(rendered.contains("Shift+Tab:mode"));
+    assert!(rendered.contains("Ctrl+x:shortcuts"));
     assert!(!rendered.contains("Next action"));
     assert!(!rendered.contains("Continue this session"));
 }
@@ -636,8 +636,8 @@ pub(super) fn lifecycle_shell_snapshots_preserve_startup_and_handoff_contracts()
 
     let fallback_render = render_live_lines(&fallback, 100, 24);
     assert!(!fallback_render.contains("Run complete"));
-    assert!(!fallback_render.contains("Shift+Tab:mode"));
-    assert!(!fallback_render.contains("Ctrl+x:shortcuts"));
+    assert!(fallback_render.contains("Shift+Tab:mode"));
+    assert!(fallback_render.contains("Ctrl+x:shortcuts"));
     assert!(!fallback_render.contains("Composer"));
     assert!(!fallback_render.contains("Next action"));
     insta::with_settings!({ prepend_module_to_snapshot => false, snapshot_path => "../snapshots" }, {

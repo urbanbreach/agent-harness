@@ -60,7 +60,7 @@ fn primary_startup_uses_measured_vertical_order_at_120x32() {
 
     assert_eq!(
         (breadcrumb, warning, welcome_top, composer, footer),
-        (Some(1), Some(4), Some(7), Some(27), Some(30)),
+        (Some(1), Some(4), Some(8), Some(29), Some(31)),
         "startup rows must follow breadcrumb, warning, welcome, composer, footer\n{rendered}"
     );
 }

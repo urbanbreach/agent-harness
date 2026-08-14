@@ -164,8 +164,8 @@ pub(super) fn live_shell_orchestration_status_strip_snapshot() {
     let app = orchestration_status_strip_fixture();
     let rendered = render_live_lines(&app, 160, 30);
 
-    assert!(!rendered.contains("Shift+Tab:mode"));
-    assert!(!rendered.contains("Ctrl+x:shortcuts"));
+    assert!(rendered.contains("Shift+Tab:mode"));
+    assert!(rendered.contains("Ctrl+x:shortcuts"));
 }
 
 pub(super) fn live_status_strip_orchestration_summary_truncates_warning_last() {

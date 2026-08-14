@@ -168,8 +168,8 @@ pub(super) fn live_composer_disclosure_keeps_compact_summary_and_commands() {
         ready.ingest_event(event);
     }
     let rendered = render_live_lines(&ready, 100, 24);
-    assert!(!rendered.contains("Shift+Tab:mode"));
-    assert!(!rendered.contains("Ctrl+x:shortcuts"));
+    assert!(rendered.contains("Shift+Tab:mode"));
+    assert!(rendered.contains("Ctrl+x:shortcuts"));
     assert!(!rendered.contains("live ctx"));
     assert!(!rendered.contains("Enter send"));
     assert!(!rendered.contains("tool finished"));
