@@ -126,6 +126,7 @@ fn harness_chat_maps_terminal_and_diff_roles_to_groknight_truecolor() {
             colors.primary,
             colors.secondary,
             colors.muted,
+            colors.welcome_border,
             colors.prompt_border,
             colors.prompt_border_active,
             colors.prompt_accent,
@@ -147,6 +148,7 @@ fn harness_chat_maps_terminal_and_diff_roles_to_groknight_truecolor() {
             Color::Rgb(225, 225, 225),
             Color::Rgb(108, 108, 108),
             Color::Rgb(88, 88, 88),
+            Color::Rgb(51, 51, 51),
             Color::Rgb(50, 50, 55),
             Color::Rgb(80, 80, 88),
             Color::Rgb(200, 200, 200),
@@ -164,6 +166,18 @@ fn harness_chat_maps_terminal_and_diff_roles_to_groknight_truecolor() {
             Color::Rgb(122, 162, 247),
         ]
     );
+}
+
+#[test]
+fn welcome_border_quantizes_from_the_grok_blended_color() {
+    let truecolor = Theme::harness_chat().reference_terminal.welcome_border;
+    let ansi256 = Theme::harness_chat()
+        .for_color_level(harness_tui::theme::ColorLevel::Ansi256)
+        .reference_terminal
+        .welcome_border;
+
+    assert_eq!(truecolor, Color::Rgb(51, 51, 51));
+    assert_eq!(ansi256, Color::Indexed(236));
 }
 
 #[test]
