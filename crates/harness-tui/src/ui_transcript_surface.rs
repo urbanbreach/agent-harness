@@ -6,13 +6,16 @@ use ratatui::{
     widgets::{Block, Paragraph},
     Frame,
 };
+use std::borrow::Borrow;
 use std::time::Duration;
 
 use crate::theme::Theme;
 
 use super::ui_chrome::{display_width, panel_style};
-use super::ui_transcript::{ToolRailMotion, TranscriptRenderSurface, TranscriptRenderSurfaceKind};
-use super::ui_transcript_layout::MeasuredTranscriptSurface;
+use super::ui_transcript::{
+    ToolRailMotion, TranscriptRenderSurfaceKind, TranscriptVisualEntryDraft,
+};
+use super::ui_transcript_layout::TranscriptVisualEntry;
 use super::ui_transcript_style::{
     blend_color, pending_diamond_color, transcript_streaming_spinner_frame,
 };
@@ -25,7 +28,7 @@ pub(super) const TRANSCRIPT_RAIL_GLYPH: &str = " ";
 
 pub(super) fn render_transcript_surface(
     frame: &mut Frame,
-    surface: &MeasuredTranscriptSurface,
+    surface: &TranscriptVisualEntry,
     area: Rect,
     local_scroll: usize,
     animation_phase: usize,
@@ -42,11 +45,7 @@ pub(super) fn render_transcript_surface(
 
     let tool_rail_overlay = surface.tool_rail_motion.is_some();
     let rail_visible = surface.show_outer_rail || tool_rail_overlay;
-    let rail_width = if surface.show_outer_rail && !tool_rail_overlay {
-        area.width.min(TRANSCRIPT_SURFACE_RAIL_WIDTH)
-    } else {
-        0
-    };
+    let rail_width = 0;
     if rail_visible && !tool_rail_overlay {
         let rail_rect = Rect::new(
             area.x,
@@ -118,7 +117,7 @@ pub(super) fn render_transcript_surface(
 
 fn apply_surface_animation_phase(
     lines: &mut [Line<'static>],
-    surface: &MeasuredTranscriptSurface,
+    surface: &TranscriptVisualEntry,
     local_scroll: usize,
     animation_phase: usize,
     theme: &Theme,
@@ -156,15 +155,24 @@ fn apply_surface_animation_phase(
 mod animation_phase_tests {
     use super::apply_surface_animation_phase;
     use crate::theme::Theme;
-    use crate::ui::ui_transcript::{TranscriptBlockPlacement, TranscriptRenderSurfaceKind};
-    use crate::ui::ui_transcript_layout::MeasuredTranscriptSurface;
+    use crate::ui::ui_transcript::{
+        TranscriptBlockPlacement, TranscriptRenderSurfaceKind, TranscriptVisualEntryDisplayMode,
+        TranscriptVisualEntryHitRegion, TranscriptVisualEntryMetadata,
+    };
+    use crate::ui::ui_transcript_layout::TranscriptVisualEntry;
     use ratatui::{style::Style, text::Span};
 
     #[test]
     fn cached_assistant_footer_rehydrates_the_pending_diamond_phase() {
         // Given: a cached waiting footer with independently styled marker and label spans.
         let theme = Theme::default();
-        let surface = MeasuredTranscriptSurface {
+        let surface = TranscriptVisualEntry {
+            metadata: TranscriptVisualEntryMetadata::settled(
+                0,
+                0,
+                TranscriptRenderSurfaceKind::AssistantFooter,
+                TranscriptVisualEntryDisplayMode::Flow,
+            ),
             kind: TranscriptRenderSurfaceKind::AssistantFooter,
             leading_gap_rows: 0,
             placement: TranscriptBlockPlacement::Flow,
@@ -188,6 +196,7 @@ mod animation_phase_tests {
             diff_hunk_offsets: Vec::new(),
             selected_rail: false,
             tool_rail_motion: None,
+            hit_region: TranscriptVisualEntryHitRegion::new(0, 80, 1),
         };
 
         // When: cached lines are rehydrated at two runtime animation phases.
@@ -205,7 +214,7 @@ mod animation_phase_tests {
 
 fn apply_tool_header_motion_color(
     line: &mut Line<'static>,
-    surface: &MeasuredTranscriptSurface,
+    surface: &TranscriptVisualEntry,
     absolute_row: usize,
     animation_phase: usize,
 ) {
@@ -257,7 +266,7 @@ pub(super) fn apply_reasoning_spinner_phase(line: &mut Line<'static>, animation_
 }
 
 fn transcript_surface_rail_lines_for_motion(
-    surface: &MeasuredTranscriptSurface,
+    surface: &TranscriptVisualEntry,
     local_scroll: usize,
     visible_height: usize,
     animation_phase: usize,
@@ -369,7 +378,7 @@ fn motion_elapsed(motion: Option<ToolRailMotion>, animation_phase: usize) -> Dur
 }
 
 pub(super) fn visible_surface_lines(
-    surface: &MeasuredTranscriptSurface,
+    surface: &TranscriptVisualEntry,
     local_scroll: usize,
     visible_height: usize,
 ) -> Vec<Line<'static>> {
@@ -386,26 +395,17 @@ pub(super) fn visible_surface_lines(
         .collect()
 }
 
-pub(super) fn render_transcript_surface_lines(
-    surfaces: &[TranscriptRenderSurface],
-) -> Vec<Line<'static>> {
+pub(super) fn render_transcript_surface_lines<Entry>(surfaces: &[Entry]) -> Vec<Line<'static>>
+where
+    Entry: Borrow<TranscriptVisualEntryDraft>,
+{
     let mut lines = Vec::new();
-    for surface in surfaces {
+    for entry in surfaces {
+        let surface = entry.borrow();
         for _ in 0..surface.leading_gap_rows {
             lines.push(Line::default());
         }
-        if surface.show_outer_rail {
-            lines.extend(surface.lines.iter().cloned().map(|line| {
-                prepend_transcript_surface_rail(
-                    line,
-                    surface.rail_glyph,
-                    surface.rail_color,
-                    surface.surface,
-                )
-            }));
-        } else {
-            lines.extend(surface.lines.iter().cloned());
-        }
+        lines.extend(surface.lines.iter().cloned());
     }
     lines
 }

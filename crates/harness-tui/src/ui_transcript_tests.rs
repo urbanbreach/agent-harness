@@ -389,17 +389,29 @@ fn transcript_layout_cache_invalidates_when_theme_changes() {
     app.transcript_view.selected_activity_index = 0;
 
     let initial_layout = build_measured_transcript_layout_for_width(&app, app.theme(), 80);
-    let initial_surface = initial_layout.sections[0].surfaces[0].surface;
+    let initial_color = initial_layout.sections[0].surfaces[0]
+        .lines
+        .iter()
+        .flat_map(|line| &line.spans)
+        .find(|span| span.content.contains("theme-sensitive"))
+        .and_then(|span| span.style.fg)
+        .expect("prompt text color");
 
     let mut alternate_theme = *app.theme();
-    alternate_theme.surface.selected_card = Color::Rgb(0x22, 0x33, 0x44);
+    alternate_theme.text.primary = Color::Rgb(0x22, 0x33, 0x44);
     app.set_theme_for_test(alternate_theme);
 
     let updated_layout = build_measured_transcript_layout_for_width(&app, app.theme(), 80);
-    let updated_surface = updated_layout.sections[0].surfaces[0].surface;
+    let updated_color = updated_layout.sections[0].surfaces[0]
+        .lines
+        .iter()
+        .flat_map(|line| &line.spans)
+        .find(|span| span.content.contains("theme-sensitive"))
+        .and_then(|span| span.style.fg)
+        .expect("updated prompt text color");
 
-    assert_ne!(initial_surface, updated_surface);
-    assert_eq!(updated_surface, alternate_theme.surface.selected_card);
+    assert_ne!(initial_color, updated_color);
+    assert_eq!(updated_color, alternate_theme.text.primary);
 }
 
 #[test]
@@ -722,6 +734,15 @@ fn pending_question_turn_renders_waiting_on_answers_footer() {
         80,
     ));
     let rendered = lines.join("\n");
+    let narrow_lines = transcript_test_line_texts(build_transcript_lines_for_width(
+        &app,
+        &Theme::default(),
+        57,
+    ));
+    let narrow_footer = narrow_lines
+        .iter()
+        .find(|line| line.contains("Waiting on answers"))
+        .unwrap_or_abort();
 
     assert!(
         rendered.contains("Ask Which color?"),
@@ -742,6 +763,10 @@ fn pending_question_turn_renders_waiting_on_answers_footer() {
     assert!(
         rendered.contains("[stop]"),
         "waiting footer should pack stop affordance on the right\n{rendered}"
+    );
+    assert!(
+        display_width(narrow_footer) <= 57 && narrow_footer.contains("[stop]"),
+        "narrow waiting footer must preserve the complete stop affordance within its measured width\n{narrow_footer}"
     );
     assert!(
         !rendered.contains("Worked for"),

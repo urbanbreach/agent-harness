@@ -36,7 +36,7 @@ pub(super) fn build_transcript_render_surfaces(
     theme: &Theme,
     width: u16,
     base_surface: Color,
-) -> Vec<TranscriptRenderSurface> {
+) -> Vec<ResolvedTranscriptVisualEntryDraft> {
     match try_build_transcript_render_surfaces(section, theme, width, base_surface) {
         Ok(surfaces) => surfaces,
         Err(_) => Vec::new(),
@@ -48,7 +48,7 @@ pub(in crate::ui) fn try_build_transcript_render_surfaces(
     theme: &Theme,
     width: u16,
     base_surface: Color,
-) -> Result<Vec<TranscriptRenderSurface>, TranscriptGrammarError> {
+) -> Result<Vec<ResolvedTranscriptVisualEntryDraft>, TranscriptGrammarError> {
     let specs = super::ui_transcript_block_grammar::normalize_turn_blocks(section);
     try_build_transcript_render_surfaces_with_specs(section, &specs, theme, width, base_surface)
 }
@@ -59,9 +59,157 @@ pub(in crate::ui) fn try_build_transcript_render_surfaces_with_specs(
     theme: &Theme,
     width: u16,
     base_surface: Color,
-) -> Result<Vec<TranscriptRenderSurface>, TranscriptGrammarError> {
+) -> Result<Vec<ResolvedTranscriptVisualEntryDraft>, TranscriptGrammarError> {
+    let planned_specs = plan_visual_entry_specs(section, specs)?;
     let surfaces = build_turn_render_surfaces(section, theme, width, base_surface)?;
-    super::ui_transcript_block_grammar::resolve_compatibility_surfaces(&specs, surfaces)
+    let mut entries = super::ui_transcript_block_grammar::resolve_entry_surfaces(
+        section.activity_first_seq,
+        &planned_specs,
+        surfaces,
+    )?;
+    normalize_semantic_entry_chrome(&mut entries, base_surface);
+    Ok(entries)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AssistantVisualEntryPlan {
+    Part { index: usize },
+    ToolGroup { start: usize, len: usize },
+    Footer,
+}
+
+fn assistant_visual_entry_plan(turn: &TranscriptTurnSection) -> Vec<AssistantVisualEntryPlan> {
+    let mut plan = Vec::with_capacity(turn.assistant_parts.len().saturating_add(1));
+    let mut index = 0;
+    while index < turn.assistant_parts.len() {
+        let group_len = match &turn.assistant_parts[index] {
+            TranscriptAssistantPart::ToolCall(_) => {
+                TranscriptToolGroupSummary::from_adjacent(&turn.assistant_parts[index..])
+                    .filter(|summary| summary.member_count > 1)
+                    .map_or(0, |summary| summary.span_len)
+            }
+            TranscriptAssistantPart::Reasoning(_)
+            | TranscriptAssistantPart::Body(_)
+            | TranscriptAssistantPart::Error(_)
+            | TranscriptAssistantPart::Compaction(_) => 0,
+        };
+        if group_len > 1
+            && !context_tool_group_uses_individual_rows(
+                &turn.assistant_parts[index..index + group_len],
+            )
+        {
+            plan.push(AssistantVisualEntryPlan::ToolGroup {
+                start: index,
+                len: group_len,
+            });
+            index += group_len;
+        } else {
+            plan.push(AssistantVisualEntryPlan::Part { index });
+            index += 1;
+        }
+    }
+    if turn.show_footer {
+        plan.push(AssistantVisualEntryPlan::Footer);
+    }
+    plan
+}
+
+fn plan_visual_entry_specs(
+    turn: &TranscriptTurnSection,
+    specs: &[TranscriptBlockSpec],
+) -> Result<Vec<TranscriptBlockSpec>, TranscriptGrammarError> {
+    let mut planned = Vec::with_capacity(specs.len());
+    if turn.user_message.is_some() {
+        planned.push(
+            specs
+                .iter()
+                .find(|spec| spec.role == TranscriptBlockRole::UserPrompt)
+                .cloned()
+                .ok_or(TranscriptGrammarError::InvalidPlacement)?,
+        );
+    }
+    for entry in assistant_visual_entry_plan(turn) {
+        let spec = match entry {
+            AssistantVisualEntryPlan::Part { index } => {
+                let expected =
+                    super::ui_transcript_block_grammar::normalized_part_spec(turn, index);
+                specs
+                    .iter()
+                    .find(|spec| {
+                        spec.id == expected.id
+                            && spec.role == expected.role
+                            && spec.content == expected.content
+                    })
+                    .cloned()
+            }
+            AssistantVisualEntryPlan::ToolGroup { start, len } => {
+                let ids = turn.assistant_parts[start..start + len]
+                    .iter()
+                    .filter_map(|part| match part {
+                        TranscriptAssistantPart::ToolCall(tool) => Some(tool.tool_call_id.as_str()),
+                        TranscriptAssistantPart::Reasoning(_)
+                        | TranscriptAssistantPart::Body(_)
+                        | TranscriptAssistantPart::Error(_)
+                        | TranscriptAssistantPart::Compaction(_) => None,
+                    })
+                    .collect::<Vec<_>>();
+                specs
+                    .iter()
+                    .find(|spec| {
+                        matches!(
+                            &spec.content,
+                            TranscriptBlockContent::Tool {
+                                family: TranscriptToolFamily::Group,
+                                ids: candidate_ids,
+                                ..
+                            } if candidate_ids.iter().map(String::as_str).eq(ids.iter().copied())
+                        )
+                    })
+                    .cloned()
+            }
+            AssistantVisualEntryPlan::Footer => specs
+                .iter()
+                .find(|spec| spec.role == TranscriptBlockRole::Footer)
+                .cloned(),
+        }
+        .ok_or(TranscriptGrammarError::InvalidGrouping)?;
+        planned.push(spec);
+    }
+    Ok(planned)
+}
+
+fn normalize_semantic_entry_chrome(
+    entries: &mut [ResolvedTranscriptVisualEntryDraft],
+    base_surface: Color,
+) {
+    let accented_entry = entries
+        .iter()
+        .rposition(|entry| entry.selected_rail)
+        .or_else(|| entries.iter().rposition(|entry| entry.show_outer_rail))
+        .or_else(|| {
+            entries
+                .iter()
+                .rposition(|entry| entry.tool_rail_motion.is_some())
+        });
+    for (index, entry) in entries.iter_mut().enumerate() {
+        let previous_surface = entry.surface;
+        if previous_surface != base_surface {
+            for span in entry.lines.iter_mut().flat_map(|line| &mut line.spans) {
+                if span.style.bg == Some(previous_surface) {
+                    span.style.bg = Some(base_surface);
+                }
+            }
+        }
+        entry.surface = base_surface;
+        if Some(index) != accented_entry {
+            entry.show_outer_rail = false;
+            entry.selected_rail = false;
+            entry.tool_rail_motion = None;
+            entry.metadata.accent = TranscriptVisualEntryAccent::Hidden;
+        } else {
+            entry.show_outer_rail = true;
+        }
+    }
 }
 
 fn build_turn_render_surfaces(
@@ -69,7 +217,7 @@ fn build_turn_render_surfaces(
     theme: &Theme,
     width: u16,
     base_surface: Color,
-) -> Result<Vec<TranscriptRenderSurface>, TranscriptGrammarError> {
+) -> Result<Vec<TranscriptVisualEntryDraft>, TranscriptGrammarError> {
     let mut surfaces = Vec::with_capacity(3);
     if turn.user_message.is_some() {
         surfaces.push(build_user_render_surface(turn, theme, width, base_surface)?);
@@ -88,7 +236,7 @@ fn build_user_render_surface(
     theme: &Theme,
     width: u16,
     _base_surface: Color,
-) -> Result<TranscriptRenderSurface, TranscriptGrammarError> {
+) -> Result<TranscriptVisualEntryDraft, TranscriptGrammarError> {
     let spec = super::ui_transcript_block_grammar::normalize_turn_blocks(turn)
         .into_iter()
         .find(|spec| spec.role == TranscriptBlockRole::UserPrompt)
@@ -125,7 +273,7 @@ fn build_user_render_surface(
         body_style,
     );
 
-    let raw = TranscriptRenderSurface {
+    let raw = TranscriptVisualEntryDraft {
         kind: TranscriptRenderSurfaceKind::User,
         leading_gap_rows: 0,
         placement: TranscriptBlockPlacement::StickyPromptCandidate,
@@ -140,7 +288,7 @@ fn build_user_render_surface(
         selected_rail: false,
         tool_rail_motion: None,
     };
-    super::ui_transcript_block_grammar::resolve_block_surface(&spec, raw)
+    Ok(raw)
 }
 
 pub(super) const fn user_prompt_surface(
@@ -390,7 +538,7 @@ fn build_assistant_render_surfaces(
     theme: &Theme,
     width: u16,
     base_surface: Color,
-) -> Result<Vec<TranscriptRenderSurface>, TranscriptGrammarError> {
+) -> Result<Vec<TranscriptVisualEntryDraft>, TranscriptGrammarError> {
     let agent_accent = theme.agent_accent(&turn.header.profile_label);
     let (assistant_icon, assistant_color, assistant_status) = match turn.header.status {
         ActivityStatus::Queued => (
@@ -415,75 +563,52 @@ fn build_assistant_render_surfaces(
     };
 
     let mut surfaces = Vec::new();
-    let footer_target = assistant_footer_target_index(turn);
-    let mut index = 0;
-
-    while index < turn.assistant_parts.len() {
-        let part = &turn.assistant_parts[index];
-        let group_len = match part {
-            TranscriptAssistantPart::ToolCall(_) => {
-                TranscriptToolGroupSummary::from_adjacent(&turn.assistant_parts[index..])
-                    .filter(|summary| summary.member_count > 1)
-                    .map_or(0, |summary| summary.span_len)
+    for entry in assistant_visual_entry_plan(turn) {
+        match entry {
+            AssistantVisualEntryPlan::ToolGroup { start, len } => {
+                let tool_calls = turn.assistant_parts[start..start + len]
+                    .iter()
+                    .filter_map(|part| match part {
+                        TranscriptAssistantPart::ToolCall(tool_call) => Some(tool_call.as_ref()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>();
+                surfaces.push(build_context_tool_group_render_surface(
+                    turn,
+                    &tool_calls,
+                    theme,
+                    width,
+                    base_surface,
+                    false,
+                    assistant_icon,
+                    assistant_color,
+                    assistant_status,
+                )?);
             }
-            _ => 0,
-        };
-
-        if group_len > 1
-            && !context_tool_group_uses_individual_rows(
-                &turn.assistant_parts[index..index + group_len],
-            )
-        {
-            let tool_calls = turn.assistant_parts[index..index + group_len]
-                .iter()
-                .filter_map(|part| match part {
-                    TranscriptAssistantPart::ToolCall(tool_call) => Some(tool_call.as_ref()),
-                    _ => None,
-                })
-                .collect::<Vec<_>>();
-            surfaces.push(build_context_tool_group_render_surface(
+            AssistantVisualEntryPlan::Part { index } => {
+                surfaces.push(build_assistant_part_render_surface(
+                    turn,
+                    &turn.assistant_parts[index],
+                    index,
+                    theme,
+                    width,
+                    base_surface,
+                    false,
+                    assistant_icon,
+                    assistant_color,
+                    assistant_status,
+                )?)
+            }
+            AssistantVisualEntryPlan::Footer => surfaces.push(build_footer_only_render_surface(
                 turn,
-                &tool_calls,
                 theme,
-                width,
                 base_surface,
-                footer_target
-                    .map(|target| target >= index && target < index + group_len)
-                    .unwrap_or(false),
+                width,
                 assistant_icon,
                 assistant_color,
                 assistant_status,
-            )?);
-            index += group_len;
-            continue;
+            )?),
         }
-
-        let append_footer = footer_target == Some(index);
-        surfaces.push(build_assistant_part_render_surface(
-            turn,
-            part,
-            index,
-            theme,
-            width,
-            base_surface,
-            append_footer,
-            assistant_icon,
-            assistant_color,
-            assistant_status,
-        )?);
-        index += 1;
-    }
-
-    if footer_target == Some(turn.assistant_parts.len()) {
-        surfaces.push(build_footer_only_render_surface(
-            turn,
-            theme,
-            base_surface,
-            width,
-            assistant_icon,
-            assistant_color,
-            assistant_status,
-        )?);
     }
     let paint_selected = turn.header.is_selected
         && matches!(turn.header.status, ActivityStatus::Streaming)
@@ -501,25 +626,7 @@ fn build_assistant_render_surfaces(
     Ok(surfaces)
 }
 
-fn assistant_footer_target_index(turn: &TranscriptTurnSection) -> Option<usize> {
-    if !turn.show_footer {
-        return None;
-    }
-    if turn.assistant_parts.is_empty() {
-        return Some(0);
-    }
-    if pending_permission_tool_waiting(turn).is_some()
-        || waiting_on_answers_label(turn).is_some()
-        || retry_attempt(turn).is_some()
-        || (matches!(turn.header.status, ActivityStatus::Streaming)
-            && turn.header.total_tokens.is_some_and(|tokens| tokens > 0))
-    {
-        return Some(turn.assistant_parts.len());
-    }
-    Some(turn.assistant_parts.len() - 1)
-}
-
-fn apply_preferred_selected_rail(surfaces: &mut [TranscriptRenderSurface], is_selected: bool) {
+fn apply_preferred_selected_rail(surfaces: &mut [TranscriptVisualEntryDraft], is_selected: bool) {
     for surface in surfaces.iter_mut() {
         surface.selected_rail = false;
     }
@@ -643,7 +750,7 @@ fn build_assistant_part_render_surface(
     assistant_icon: &str,
     assistant_color: Color,
     assistant_status: &str,
-) -> Result<TranscriptRenderSurface, TranscriptGrammarError> {
+) -> Result<TranscriptVisualEntryDraft, TranscriptGrammarError> {
     let mut lines = Vec::new();
     let mut body_prefix_rows = 0;
     let (
@@ -866,7 +973,7 @@ fn build_assistant_part_render_surface(
     }
 
     let spec = super::ui_transcript_block_grammar::normalized_part_spec(turn, part_index);
-    Ok(TranscriptRenderSurface {
+    Ok(TranscriptVisualEntryDraft {
         kind,
         leading_gap_rows: spec.spacing.leading_gap_rows,
         placement: spec.placement,
@@ -970,12 +1077,12 @@ fn build_footer_only_render_surface(
     assistant_icon: &str,
     assistant_color: Color,
     assistant_status: &str,
-) -> Result<TranscriptRenderSurface, TranscriptGrammarError> {
+) -> Result<TranscriptVisualEntryDraft, TranscriptGrammarError> {
     let spec = super::ui_transcript_block_grammar::normalize_turn_blocks(turn)
         .into_iter()
         .find(|spec| spec.role == TranscriptBlockRole::Footer)
         .ok_or(TranscriptGrammarError::InvalidPlacement)?;
-    Ok(TranscriptRenderSurface {
+    Ok(TranscriptVisualEntryDraft {
         kind: TranscriptRenderSurfaceKind::AssistantFooter,
         leading_gap_rows: spec.spacing.leading_gap_rows,
         placement: spec.placement,
@@ -1162,7 +1269,7 @@ fn build_context_tool_group_render_surface(
     assistant_icon: &str,
     assistant_color: Color,
     assistant_status: &str,
-) -> Result<TranscriptRenderSurface, TranscriptGrammarError> {
+) -> Result<TranscriptVisualEntryDraft, TranscriptGrammarError> {
     let mut lines = Vec::new();
     let ids = tool_calls
         .iter()
@@ -1441,7 +1548,7 @@ fn build_context_tool_group_render_surface(
         ));
     }
 
-    let raw = TranscriptRenderSurface {
+    let raw = TranscriptVisualEntryDraft {
         kind: TranscriptRenderSurfaceKind::AssistantTool,
         leading_gap_rows: 0,
         placement: TranscriptBlockPlacement::Flow,
@@ -1456,7 +1563,7 @@ fn build_context_tool_group_render_surface(
         selected_rail: false,
         tool_rail_motion,
     };
-    super::ui_transcript_block_grammar::resolve_block_surface(&spec, raw)
+    Ok(raw)
 }
 
 fn context_group_preview_index(tool_calls: &[&TranscriptToolCallSection]) -> usize {
@@ -1651,14 +1758,19 @@ fn pack_waiting_on_answers_footer_line(
     };
     let right = waiting_status_right_meta(turn);
     let target = assistant_footer_available_width(content_width);
-    let left_width = display_width(marker)
-        .saturating_add(1)
-        .saturating_add(display_width(&label));
+    let marker_width = display_width(marker).saturating_add(1);
     let right_width = display_width(&right);
+    let minimum_gap = usize::from(!right.is_empty());
+    let label_width = target
+        .saturating_sub(marker_width)
+        .saturating_sub(right_width)
+        .saturating_sub(minimum_gap);
+    let label = truncate_plain_text(&label, label_width);
+    let left_width = marker_width.saturating_add(display_width(&label));
     let gap = target
         .saturating_sub(left_width)
         .saturating_sub(right_width)
-        .max(if right.is_empty() { 0 } else { 1 });
+        .max(minimum_gap);
 
     let mut spans = vec![
         Span::raw(TRANSCRIPT_ASSISTANT_BODY_PREFIX.to_string()),
@@ -1906,6 +2018,7 @@ mod tests {
             assistant_parts: vec![super::super::TranscriptAssistantPart::ToolCall(Box::new(
                 tool,
             ))],
+            assistant_part_source_ids: vec![super::super::TranscriptAssistantPartSourceId(1)],
         }
     }
 
@@ -2274,6 +2387,10 @@ mod tests {
                 super::super::TranscriptAssistantPart::ToolCall(Box::new(succeeded)),
                 super::super::TranscriptAssistantPart::ToolCall(Box::new(failed)),
             ],
+            assistant_part_source_ids: vec![
+                super::super::TranscriptAssistantPartSourceId(1),
+                super::super::TranscriptAssistantPartSourceId(2),
+            ],
         };
 
         // When: the mixed-status group is rendered.
@@ -2398,6 +2515,11 @@ mod tests {
                     super::super::TranscriptBodyBlock::RichText("between tools".to_string()),
                 ),
                 super::super::TranscriptAssistantPart::ToolCall(Box::new(shell)),
+            ],
+            assistant_part_source_ids: vec![
+                super::super::TranscriptAssistantPartSourceId(1),
+                super::super::TranscriptAssistantPartSourceId(2),
+                super::super::TranscriptAssistantPartSourceId(3),
             ],
         };
 
