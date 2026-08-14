@@ -9,7 +9,9 @@ use crate::app::{AppState, Focus, Tab};
 use crate::layout::FrameLayoutPlan;
 use crate::text::has_trimmed_content;
 
-use super::ui_transcript_layout::{MeasuredTranscriptLayout, TranscriptViewportRows};
+use super::ui_transcript_layout::{
+    transcript_visual_entry_viewport_placement, MeasuredTranscriptLayout, TranscriptViewportRows,
+};
 use super::ui_transcript_surface::{append_nested_surface_row, append_surface_row};
 use super::WheelTarget;
 
@@ -80,19 +82,23 @@ impl<'a> TranscriptViewportHitMap<'a> {
             return None;
         }
 
-        let absolute_row = self
-            .rows
-            .absolute_row(usize::from(row.saturating_sub(self.viewport.y)))?;
-        for section in &self.layout.sections {
-            let section_content_top = section.top_row.saturating_add(section.leading_gap_height);
-            for surface in &section.surfaces {
-                let surface_top = section_content_top.saturating_add(surface.top_offset);
-                let surface_bottom = surface_top.saturating_add(surface.height);
-                if absolute_row < surface_top || absolute_row >= surface_bottom {
+        for (section_idx, section) in self.layout.sections.iter().enumerate().rev() {
+            for (surface_idx, surface) in section.surfaces.iter().enumerate().rev() {
+                let Some(placement) = transcript_visual_entry_viewport_placement(
+                    self.layout,
+                    self.viewport,
+                    self.rows.body_scroll_top(),
+                    section_idx,
+                    surface_idx,
+                ) else {
+                    continue;
+                };
+                if !rect_contains(placement.rect, column, row) {
                     continue;
                 }
-
-                let local_row = absolute_row.saturating_sub(surface_top);
+                let local_row = placement
+                    .local_scroll
+                    .saturating_add(usize::from(row.saturating_sub(placement.rect.y)));
                 if let Some(interaction) = surface
                     .interaction_rows
                     .as_ref()
@@ -100,7 +106,7 @@ impl<'a> TranscriptViewportHitMap<'a> {
                     .cloned()
                     .flatten()
                 {
-                    let local_column = column.saturating_sub(self.viewport.x);
+                    let local_column = column.saturating_sub(placement.rect.x);
                     if local_column >= interaction.hit_start
                         && local_column
                             < interaction.hit_start.saturating_add(interaction.hit_width)

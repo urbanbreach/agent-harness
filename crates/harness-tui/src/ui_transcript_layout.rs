@@ -11,7 +11,11 @@ use ratatui::{
 use crate::theme::Theme;
 
 use super::ui_transcript::{
-    ToolRailMotion, TranscriptBlockPlacement, TranscriptRenderSurface, TranscriptRenderSurfaceKind,
+    IntoResolvedTranscriptVisualEntryDraft, ResolvedTranscriptVisualEntryDraft, ToolRailMotion,
+    TranscriptBlockPlacement, TranscriptRenderSurfaceKind, TranscriptVisualEntryAccent,
+    TranscriptVisualEntryDisplayMode, TranscriptVisualEntryDraft, TranscriptVisualEntryGroup,
+    TranscriptVisualEntryHitRegion, TranscriptVisualEntryId, TranscriptVisualEntryLifecycle,
+    TranscriptVisualEntryMetadata,
 };
 use super::ui_transcript_interaction::TranscriptInteractionRow;
 use super::ui_transcript_selection::{
@@ -30,7 +34,7 @@ pub(super) struct MeasuredTranscriptSection {
     pub(super) top_row: usize,
     pub(super) leading_gap_height: usize,
     pub(super) content_height: usize,
-    pub(super) surfaces: Vec<MeasuredTranscriptSurface>,
+    pub(super) surfaces: Vec<TranscriptVisualEntry>,
     pub(super) lines: Vec<Line<'static>>,
 }
 
@@ -49,8 +53,7 @@ pub(super) struct MeasuredTranscriptLayout {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct TranscriptContentAnchor {
     activity_first_seq: u64,
-    surface_kind: TranscriptRenderSurfaceKind,
-    surface_ordinal: usize,
+    entry_id: TranscriptVisualEntryId,
     logical_line: usize,
     display_column: usize,
     row_within_surface: usize,
@@ -90,6 +93,16 @@ impl TranscriptViewportRows {
                 .saturating_add(local_row.saturating_sub(self.sticky_height)),
         )
     }
+
+    pub(super) const fn body_scroll_top(self) -> usize {
+        self.body_scroll_top
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct TranscriptVisualEntryViewportPlacement {
+    pub(super) rect: Rect,
+    pub(super) local_scroll: usize,
 }
 
 pub(super) fn transcript_viewport_rows(
@@ -190,10 +203,6 @@ impl MeasuredTranscriptLayout {
         let row_within_surface = point
             .saturating_sub(surface_top)
             .min(surface.height.saturating_sub(1));
-        let surface_ordinal = section.surfaces[..surface_index]
-            .iter()
-            .filter(|candidate| candidate.kind == surface.kind)
-            .count();
         let logical_position = surface
             .selection_rows
             .as_ref()
@@ -204,8 +213,7 @@ impl MeasuredTranscriptLayout {
             });
         Some(TranscriptContentAnchor {
             activity_first_seq: section.activity_first_seq,
-            surface_kind: surface.kind,
-            surface_ordinal,
+            entry_id: surface.metadata.id,
             logical_line,
             display_column,
             row_within_surface,
@@ -236,8 +244,7 @@ impl MeasuredTranscriptLayout {
         let surface = section
             .surfaces
             .iter()
-            .filter(|surface| surface.kind == anchor.surface_kind)
-            .nth(anchor.surface_ordinal)?;
+            .find(|surface| surface.metadata.id == anchor.entry_id)?;
         let (row_within_surface, column) = if anchor.selection_backed {
             surface.selection_rows.as_ref().and_then(|rows| {
                 cell_for_logical_position(rows, anchor.logical_line, anchor.display_column)
@@ -332,7 +339,8 @@ fn selection_row_column(row: &TranscriptSelectionRow, column: usize) -> usize {
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct MeasuredTranscriptSurface {
+pub(super) struct TranscriptVisualEntry {
+    pub(super) metadata: TranscriptVisualEntryMetadata,
     pub(super) kind: TranscriptRenderSurfaceKind,
     pub(super) leading_gap_rows: usize,
     pub(super) placement: TranscriptBlockPlacement,
@@ -349,17 +357,21 @@ pub(super) struct MeasuredTranscriptSurface {
     pub(super) diff_hunk_offsets: Vec<usize>,
     pub(super) selected_rail: bool,
     pub(super) tool_rail_motion: Option<ToolRailMotion>,
+    pub(super) hit_region: TranscriptVisualEntryHitRegion,
 }
 
-pub(super) fn measure_transcript_layout<Section>(
+pub(super) fn measure_transcript_layout<Section, Entry>(
     sections: &[Section],
     theme: &Theme,
     width: u16,
     base_surface: Color,
     mut activity_first_seq: impl FnMut(&Section) -> u64,
     mut cached_section: impl FnMut(usize, &Section) -> Option<Rc<MeasuredTranscriptSection>>,
-    mut render_surfaces: impl FnMut(&Section, &Theme, u16, Color) -> Vec<TranscriptRenderSurface>,
-) -> MeasuredTranscriptLayout {
+    mut render_surfaces: impl FnMut(&Section, &Theme, u16, Color) -> Vec<Entry>,
+) -> MeasuredTranscriptLayout
+where
+    Entry: IntoResolvedTranscriptVisualEntryDraft,
+{
     let mut top_row = 0;
     let mut measured_sections = Vec::with_capacity(sections.len());
 
@@ -373,21 +385,28 @@ pub(super) fn measure_transcript_layout<Section>(
             measured_sections.push(measured);
             continue;
         }
-        let surfaces = render_surfaces(section, theme, width, base_surface);
+        let activity_first_seq = activity_first_seq(section);
+        let surfaces = render_surfaces(section, theme, width, base_surface)
+            .into_iter()
+            .enumerate()
+            .map(|(ordinal, entry)| entry.into_resolved(activity_first_seq, ordinal))
+            .collect::<Vec<_>>();
         let lines = render_transcript_surface_lines(&surfaces);
         let mut content_height = 0usize;
         let mut measured_surfaces = Vec::with_capacity(surfaces.len());
-        for surface in surfaces.into_iter() {
+        for surface in surfaces {
+            let ResolvedTranscriptVisualEntryDraft {
+                metadata,
+                draft: surface,
+            } = surface;
             let leading_gap_rows = surface.leading_gap_rows;
             let top_offset = content_height + leading_gap_rows;
             let render_width = transcript_surface_render_width(width, surface.kind);
-            let content_width = usize::from(transcript_surface_content_width(
-                render_width,
-                surface.show_outer_rail,
-            ));
+            let content_width = usize::from(transcript_surface_content_width(render_width, false));
             let height = transcript_visual_rows(&surface.lines, content_width);
             content_height = top_offset + height;
-            measured_surfaces.push(MeasuredTranscriptSurface {
+            measured_surfaces.push(TranscriptVisualEntry {
+                metadata,
                 kind: surface.kind,
                 leading_gap_rows,
                 placement: surface.placement,
@@ -404,10 +423,16 @@ pub(super) fn measure_transcript_layout<Section>(
                 diff_hunk_offsets: surface.diff_hunk_offsets,
                 selected_rail: surface.selected_rail,
                 tool_rail_motion: surface.tool_rail_motion,
+                hit_region: TranscriptVisualEntryHitRegion {
+                    top_row: top_row + leading_gap_height + top_offset,
+                    left_column: 0,
+                    width: render_width,
+                    height,
+                },
             });
         }
         let measured_section = MeasuredTranscriptSection {
-            activity_first_seq: activity_first_seq(section),
+            activity_first_seq,
             top_row,
             leading_gap_height,
             content_height,
@@ -457,107 +482,33 @@ pub(super) fn render_transcript_layout_surfaces(
         return;
     }
 
-    // Reference permission state: pin pending-permission Run Write footer to viewport bottom above dock.
-    let footer_pin = typed_footer_pin_delta(layout, viewport_height, scroll_top);
-    // Reference scroll state: keep the latest turn's user prompt sticky at the top while body scrolls.
-    // The measured surface gap already supplies the single blank row under a sticky user.
-    let viewport_rows = transcript_viewport_rows(layout, viewport_height, scroll_top);
-    let sticky_user = sticky_user_surface(layout, scroll_top, viewport_height);
-    let sticky_height = Some(viewport_rows.sticky_height).filter(|height| *height > 0);
-    let sticky_block_height = sticky_height;
-
-    if let Some((_, _, user_surface)) = sticky_user {
-        let sticky_h = sticky_height.unwrap_or(0);
-        if sticky_h > 0 {
-            let local_scroll = user_surface.height.saturating_sub(sticky_h);
-            let surface_rect = Rect::new(
-                area.x,
-                area.y,
-                user_surface.width.min(area.width),
-                u16::try_from(sticky_h).unwrap_or(u16::MAX),
-            );
-            render_transcript_surface(
-                frame,
-                user_surface,
-                surface_rect,
-                local_scroll,
-                animation_phase,
-                theme,
-            );
-        }
-    }
-
-    let body_area = if let Some(block_h) = sticky_block_height.filter(|h| *h > 0) {
-        let h = u16::try_from(block_h).unwrap_or(u16::MAX);
-        Rect::new(
-            area.x,
-            area.y.saturating_add(h),
-            area.width,
-            area.height.saturating_sub(h),
-        )
-    } else {
-        area
-    };
-    let body_viewport_height = usize::from(body_area.height);
-    if body_viewport_height == 0 {
-        return;
-    }
-
-    let viewport_bottom = scroll_top.saturating_add(body_viewport_height);
-    let sticky_section = sticky_user.map(|(s_idx, _, _)| s_idx);
-    let sticky_surface_idx = sticky_user.map(|(_, surf_idx, _)| surf_idx);
-
     for (section_idx, section) in layout.sections.iter().enumerate() {
-        let section_content_top = section.top_row.saturating_add(section.leading_gap_height);
         for (surface_idx, surface) in section.surfaces.iter().enumerate() {
-            if sticky_section == Some(section_idx) && sticky_surface_idx == Some(surface_idx) {
+            let Some(placement) = transcript_visual_entry_viewport_placement(
+                layout,
+                area,
+                scroll_top,
+                section_idx,
+                surface_idx,
+            ) else {
                 continue;
-            }
-            let mut surface_top = section_content_top.saturating_add(surface.top_offset);
-            if let Some((s_idx, f_idx, delta)) = footer_pin {
-                if s_idx == section_idx && f_idx == surface_idx {
-                    surface_top = surface_top.saturating_add(delta);
-                }
-            }
-            let surface_bottom = surface_top.saturating_add(surface.height);
-            if surface_bottom <= scroll_top || surface_top >= viewport_bottom {
-                continue;
-            }
-
-            let visible_top = surface_top.max(scroll_top);
-            let visible_bottom = surface_bottom.min(viewport_bottom);
-            let local_scroll = visible_top.saturating_sub(surface_top);
-            let y_offset = visible_top.saturating_sub(scroll_top);
-            let visible_height = visible_bottom.saturating_sub(visible_top);
-            // Freeze PERM Run Write / Waiting footer uses lead=4 while body tools use lead=5.
-            let footer_outdent = typed_footer_outdent(surface);
-            let surface_rect = Rect::new(
-                body_area.x.saturating_sub(footer_outdent),
-                body_area
-                    .y
-                    .saturating_add(u16::try_from(y_offset).unwrap_or(u16::MAX)),
-                surface
-                    .width
-                    .min(body_area.width)
-                    .saturating_add(footer_outdent),
-                u16::try_from(visible_height).unwrap_or(u16::MAX),
-            );
+            };
             render_transcript_surface(
                 frame,
                 surface,
-                surface_rect,
-                local_scroll,
+                placement.rect,
+                placement.local_scroll,
                 animation_phase,
                 theme,
             );
             if surface.selected_rail
                 && surface.tool_rail_motion.is_none()
-                && local_scroll == 0
-                && surface_rect.height > 0
+                && placement.local_scroll == 0
+                && placement.rect.height > 0
             {
                 paint_selected_rail_glyph(
                     frame,
-                    surface_rect,
+                    placement.rect,
                     surface.rail_color,
                     surface.rail_glyph,
                 );
@@ -566,11 +517,90 @@ pub(super) fn render_transcript_layout_surfaces(
     }
 }
 
+pub(super) fn transcript_visual_entry_viewport_placement(
+    layout: &MeasuredTranscriptLayout,
+    area: Rect,
+    scroll_top: usize,
+    section_idx: usize,
+    surface_idx: usize,
+) -> Option<TranscriptVisualEntryViewportPlacement> {
+    let viewport_height = usize::from(area.height);
+    if viewport_height == 0 || area.width == 0 {
+        return None;
+    }
+    let section = layout.sections.get(section_idx)?;
+    let surface = section.surfaces.get(surface_idx)?;
+    let sticky_user = sticky_user_surface(layout, scroll_top, viewport_height);
+    if sticky_user.is_some_and(|(sticky_section, sticky_surface, _)| {
+        sticky_section == section_idx && sticky_surface == surface_idx
+    }) {
+        let height = surface.height.min(viewport_height);
+        return (height > 0).then(|| TranscriptVisualEntryViewportPlacement {
+            rect: Rect::new(
+                area.x,
+                area.y,
+                surface.width.min(area.width),
+                u16::try_from(height).unwrap_or(u16::MAX),
+            ),
+            local_scroll: surface.height.saturating_sub(height),
+        });
+    }
+
+    let sticky_height = sticky_user
+        .map(|(_, _, sticky_surface)| sticky_surface.height.min(viewport_height))
+        .unwrap_or(0);
+    let sticky_height_u16 = u16::try_from(sticky_height).unwrap_or(u16::MAX);
+    let body_area = Rect::new(
+        area.x,
+        area.y.saturating_add(sticky_height_u16),
+        area.width,
+        area.height.saturating_sub(sticky_height_u16),
+    );
+    let body_viewport_height = usize::from(body_area.height);
+    if body_viewport_height == 0 {
+        return None;
+    }
+    let section_content_top = section.top_row.saturating_add(section.leading_gap_height);
+    let mut surface_top = section_content_top.saturating_add(surface.top_offset);
+    if let Some((pin_section, pin_surface, delta)) =
+        typed_footer_pin_delta(layout, viewport_height, scroll_top)
+    {
+        if pin_section == section_idx && pin_surface == surface_idx {
+            surface_top = surface_top.saturating_add(delta);
+        }
+    }
+    let surface_bottom = surface_top.saturating_add(surface.height);
+    let viewport_bottom = scroll_top.saturating_add(body_viewport_height);
+    if surface_bottom <= scroll_top || surface_top >= viewport_bottom {
+        return None;
+    }
+    let visible_top = surface_top.max(scroll_top);
+    let visible_bottom = surface_bottom.min(viewport_bottom);
+    let local_scroll = visible_top.saturating_sub(surface_top);
+    let y_offset = visible_top.saturating_sub(scroll_top);
+    let visible_height = visible_bottom.saturating_sub(visible_top);
+    let footer_outdent = typed_footer_outdent(surface);
+    Some(TranscriptVisualEntryViewportPlacement {
+        rect: Rect::new(
+            body_area.x.saturating_sub(footer_outdent),
+            body_area
+                .y
+                .saturating_add(u16::try_from(y_offset).unwrap_or(u16::MAX)),
+            surface
+                .width
+                .min(body_area.width)
+                .saturating_add(footer_outdent),
+            u16::try_from(visible_height).unwrap_or(u16::MAX),
+        ),
+        local_scroll,
+    })
+}
+
 fn sticky_user_surface<'a>(
     layout: &'a MeasuredTranscriptLayout,
     scroll_top: usize,
     viewport_height: usize,
-) -> Option<(usize, usize, &'a MeasuredTranscriptSurface)> {
+) -> Option<(usize, usize, &'a TranscriptVisualEntry)> {
     if scroll_top == 0 || viewport_height == 0 {
         return None;
     }
@@ -644,7 +674,7 @@ fn typed_footer_pin_delta(
     Some((section_idx, surface_idx, delta))
 }
 
-fn typed_footer_outdent(surface: &MeasuredTranscriptSurface) -> u16 {
+fn typed_footer_outdent(surface: &TranscriptVisualEntry) -> u16 {
     if let TranscriptBlockPlacement::PinnedFooter { outdent_cells } = surface.placement {
         return outdent_cells;
     }
@@ -707,6 +737,49 @@ mod pin_tests {
     use ratatui::style::Color;
     use ratatui::text::Span;
 
+    fn test_metadata(
+        kind: TranscriptRenderSurfaceKind,
+        ordinal: usize,
+    ) -> TranscriptVisualEntryMetadata {
+        TranscriptVisualEntryMetadata {
+            id: match kind {
+                TranscriptRenderSurfaceKind::User => TranscriptVisualEntryId::User {
+                    activity_first_seq: 0,
+                },
+                TranscriptRenderSurfaceKind::AssistantFooter => TranscriptVisualEntryId::Footer {
+                    activity_first_seq: 0,
+                },
+                TranscriptRenderSurfaceKind::AssistantReasoning
+                | TranscriptRenderSurfaceKind::AssistantBody
+                | TranscriptRenderSurfaceKind::AssistantTool
+                | TranscriptRenderSurfaceKind::AssistantCommandTool
+                | TranscriptRenderSurfaceKind::AssistantError
+                | TranscriptRenderSurfaceKind::Compaction => TranscriptVisualEntryId::Part {
+                    activity_first_seq: 0,
+                    semantic_key: u64::try_from(ordinal).unwrap_or(u64::MAX),
+                },
+            },
+            kind,
+            group: TranscriptVisualEntryGroup::Standalone,
+            display_mode: TranscriptVisualEntryDisplayMode::Flow,
+            lifecycle: TranscriptVisualEntryLifecycle::Settled,
+            accent: TranscriptVisualEntryAccent::Hidden,
+        }
+    }
+
+    fn test_hit_region(
+        top_row: usize,
+        width: u16,
+        height: usize,
+    ) -> TranscriptVisualEntryHitRegion {
+        TranscriptVisualEntryHitRegion {
+            top_row,
+            left_column: 0,
+            width,
+            height,
+        }
+    }
+
     fn run_write_layout(total_content_rows: usize) -> MeasuredTranscriptLayout {
         let body_height = total_content_rows.saturating_sub(1).max(1);
         MeasuredTranscriptLayout {
@@ -716,7 +789,8 @@ mod pin_tests {
                 leading_gap_height: 0,
                 content_height: total_content_rows,
                 surfaces: vec![
-                    MeasuredTranscriptSurface {
+                    TranscriptVisualEntry {
+                        metadata: test_metadata(TranscriptRenderSurfaceKind::AssistantTool, 0),
                         kind: TranscriptRenderSurfaceKind::AssistantTool,
                         leading_gap_rows: 0,
                         placement: TranscriptBlockPlacement::Flow,
@@ -733,8 +807,10 @@ mod pin_tests {
                         diff_hunk_offsets: Vec::new(),
                         selected_rail: false,
                         tool_rail_motion: None,
+                        hit_region: test_hit_region(0, 120, body_height),
                     },
-                    MeasuredTranscriptSurface {
+                    TranscriptVisualEntry {
+                        metadata: test_metadata(TranscriptRenderSurfaceKind::AssistantFooter, 1),
                         kind: TranscriptRenderSurfaceKind::AssistantFooter,
                         leading_gap_rows: 0,
                         placement: TranscriptBlockPlacement::PinnedFooter { outdent_cells: 1 },
@@ -751,6 +827,7 @@ mod pin_tests {
                         diff_hunk_offsets: Vec::new(),
                         selected_rail: false,
                         tool_rail_motion: None,
+                        hit_region: test_hit_region(body_height, 120, 1),
                     },
                 ],
                 lines: vec![
@@ -789,6 +866,49 @@ mod pin_tests {
         let layout = run_write_layout(20);
         // When/Then: no pin
         assert_eq!(typed_footer_pin_delta(&layout, 20, 0), None);
+    }
+
+    #[test]
+    fn footer_anchor_keeps_footer_identity_when_entry_is_inserted_before_it() {
+        let before = run_write_layout(2);
+        let anchor = before
+            .capture_content_anchor(1)
+            .expect("footer content anchor");
+        assert!(matches!(
+            anchor.entry_id,
+            TranscriptVisualEntryId::Footer { .. }
+        ));
+
+        let original = before.sections[0].as_ref();
+        let body = original.surfaces[0].clone();
+        let mut inserted = body.clone();
+        inserted.metadata.id = TranscriptVisualEntryId::Part {
+            activity_first_seq: 0,
+            semantic_key: 99,
+        };
+        inserted.top_offset = 1;
+        inserted.lines = vec![Line::from("new entry")];
+        inserted.hit_region = test_hit_region(1, 120, 1);
+        let mut footer = original.surfaces[1].clone();
+        footer.top_offset = 2;
+        footer.hit_region = test_hit_region(2, 120, 1);
+        let after = MeasuredTranscriptLayout {
+            sections: vec![Rc::new(MeasuredTranscriptSection {
+                activity_first_seq: 0,
+                top_row: 0,
+                leading_gap_height: 0,
+                content_height: 3,
+                surfaces: vec![body, inserted, footer],
+                lines: vec![
+                    Line::from("Creating demo.txt"),
+                    Line::from("new entry"),
+                    Line::from("     ◆ Run Write `demo.txt` 19s"),
+                ],
+            })],
+            total_height: 3,
+        };
+
+        assert_eq!(after.resolve_content_anchor(anchor), Some(2));
     }
 
     #[test]
@@ -893,8 +1013,8 @@ mod pin_tests {
     fn test_render_surface(
         leading_gap_rows: usize,
         interaction_rows: Option<Vec<Option<TranscriptInteractionRow>>>,
-    ) -> TranscriptRenderSurface {
-        TranscriptRenderSurface {
+    ) -> TranscriptVisualEntryDraft {
+        TranscriptVisualEntryDraft {
             kind: TranscriptRenderSurfaceKind::AssistantBody,
             leading_gap_rows,
             placement: TranscriptBlockPlacement::Flow,
@@ -920,7 +1040,8 @@ mod pin_tests {
                 leading_gap_height: 0,
                 content_height,
                 surfaces: vec![
-                    MeasuredTranscriptSurface {
+                    TranscriptVisualEntry {
+                        metadata: test_metadata(TranscriptRenderSurfaceKind::User, 0),
                         kind: TranscriptRenderSurfaceKind::User,
                         leading_gap_rows: 0,
                         placement: TranscriptBlockPlacement::StickyPromptCandidate,
@@ -939,8 +1060,10 @@ mod pin_tests {
                         diff_hunk_offsets: Vec::new(),
                         selected_rail: false,
                         tool_rail_motion: None,
+                        hit_region: test_hit_region(0, 120, user_height),
                     },
-                    MeasuredTranscriptSurface {
+                    TranscriptVisualEntry {
+                        metadata: test_metadata(TranscriptRenderSurfaceKind::AssistantBody, 1),
                         kind: TranscriptRenderSurfaceKind::AssistantBody,
                         leading_gap_rows: 0,
                         placement: TranscriptBlockPlacement::Flow,
@@ -959,6 +1082,7 @@ mod pin_tests {
                         diff_hunk_offsets: Vec::new(),
                         selected_rail: false,
                         tool_rail_motion: None,
+                        hit_region: test_hit_region(user_height, 120, body_height),
                     },
                 ],
                 lines: (0..user_height)
