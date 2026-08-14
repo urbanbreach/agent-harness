@@ -27,8 +27,8 @@ Buffer {
         "                                                                                ",
         "                                                                                ",
         "                                                                                ",
-        "                                                                                ",
         "  â¯ Build anything                                                              ",
+        "  Shift+Tab:mode  â  Ctrl+x:shortcuts                                           ",
     ],
     styles: [
         x: 0, y: 0, fg: Reset, bg: Rgb(20, 20, 20), underline: Reset, modifier: NONE,
@@ -42,8 +42,14 @@ Buffer {
         x: 5, y: 5, fg: Rgb(108, 108, 108), bg: Rgb(20, 20, 20), underline: Reset, modifier: NONE,
         x: 21, y: 5, fg: Rgb(225, 225, 225), bg: Rgb(20, 20, 20), underline: Reset, modifier: NONE,
         x: 78, y: 5, fg: Reset, bg: Rgb(20, 20, 20), underline: Reset, modifier: NONE,
-        x: 2, y: 23, fg: Rgb(88, 88, 88), bg: Rgb(20, 20, 20), underline: Reset, modifier: NONE,
-        x: 4, y: 23, fg: Rgb(78, 78, 78), bg: Rgb(20, 20, 20), underline: Reset, modifier: NONE,
-        x: 18, y: 23, fg: Reset, bg: Rgb(20, 20, 20), underline: Reset, modifier: NONE,
+        x: 2, y: 22, fg: Rgb(88, 88, 88), bg: Rgb(20, 20, 20), underline: Reset, modifier: NONE,
+        x: 4, y: 22, fg: Rgb(78, 78, 78), bg: Rgb(20, 20, 20), underline: Reset, modifier: NONE,
+        x: 18, y: 22, fg: Reset, bg: Rgb(20, 20, 20), underline: Reset, modifier: NONE,
+        x: 2, y: 23, fg: Rgb(225, 225, 225), bg: Rgb(20, 20, 20), underline: Reset, modifier: BOLD,
+        x: 11, y: 23, fg: Rgb(108, 108, 108), bg: Rgb(20, 20, 20), underline: Reset, modifier: NONE,
+        x: 16, y: 23, fg: Rgb(108, 108, 108), bg: Rgb(20, 20, 20), underline: Reset, modifier: DIM,
+        x: 21, y: 23, fg: Rgb(225, 225, 225), bg: Rgb(20, 20, 20), underline: Reset, modifier: BOLD,
+        x: 27, y: 23, fg: Rgb(108, 108, 108), bg: Rgb(20, 20, 20), underline: Reset, modifier: NONE,
+        x: 37, y: 23, fg: Reset, bg: Rgb(20, 20, 20), underline: Reset, modifier: NONE,
     ]
 }
