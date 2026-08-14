@@ -1,7 +1,7 @@
 use super::*;
 use crate::UnwrapOrAbort;
 
-pub(super) fn live_shell_omits_irrelevant_idle_shortcuts() {
+pub(super) fn live_shell_keeps_idle_keybinds_visible() {
     let mut live = app::AppState::new_live(None, false, None);
     live.set_launch_metadata(
         app::LaunchMetadata::from_model_ref("deep", "proxy:gpt-5.4").with_mode_label("continued"),
@@ -9,10 +9,8 @@ pub(super) fn live_shell_omits_irrelevant_idle_shortcuts() {
 
     let primary_render = render_live_lines(&live, 100, 30);
     assert!(!primary_render.contains("q quit"));
-    assert!(
-        !primary_render.contains("Shift+Tab:mode") && !primary_render.contains("Ctrl+x:shortcuts"),
-        "idle live shell must leave transcript space to the conversation\n{primary_render}"
-    );
+    assert!(primary_render.contains("Shift+Tab:mode"));
+    assert!(primary_render.contains("Ctrl+x:shortcuts"));
     assert!(
         !primary_render.contains("live ctx"),
         "live idle disclosure must not show live-ctx cluster\n{primary_render}"
@@ -20,13 +18,13 @@ pub(super) fn live_shell_omits_irrelevant_idle_shortcuts() {
 
     let reduced_render = render_live_lines(&live, 80, 24);
     assert!(!reduced_render.contains("q quit"));
-    assert!(!reduced_render.contains("Shift+Tab:mode"));
-    assert!(!reduced_render.contains("Ctrl+x:shortcuts"));
+    assert!(reduced_render.contains("Shift+Tab:mode"));
+    assert!(reduced_render.contains("Ctrl+x:shortcuts"));
 
     let minimal_render = render_live_lines(&live, 60, 18);
     assert!(!minimal_render.contains("q quit"));
-    assert!(!minimal_render.contains("Shift+Tab:mode"));
-    assert!(!minimal_render.contains("Ctrl+x:shortcuts"));
+    assert!(minimal_render.contains("Shift+Tab:mode"));
+    assert!(minimal_render.contains("Ctrl+x:shortcuts"));
 
     let replay =
         app::AppState::new_replay(PathBuf::from("/tmp/replay-session"), session_view_events());
@@ -42,7 +40,7 @@ pub(super) fn live_shell_omits_irrelevant_idle_shortcuts() {
     assert!(!replay_footer_row.contains("/status"));
 }
 
-pub(super) fn live_post_turn_disclosure_appears_only_for_a_draft() {
+pub(super) fn live_post_turn_disclosure_stays_visible_without_a_draft() {
     // Given: live post-turn shell (not startup), empty draft — freeze run1-stream-probe footer
     let mut app = app::AppState::new_live(None, false, None);
     for event in session_view_events() {
@@ -52,8 +50,8 @@ pub(super) fn live_post_turn_disclosure_appears_only_for_a_draft() {
 
     // When: shell is rendered at freeze-primary geometry
     let rendered = render_live_lines(&app, 120, 40);
-    assert!(!rendered.contains("Shift+Tab:mode"));
-    assert!(!rendered.contains("Ctrl+x:shortcuts"));
+    assert!(rendered.contains("Shift+Tab:mode"));
+    assert!(rendered.contains("Ctrl+x:shortcuts"));
 
     // Given: same shell with a non-empty draft — freeze run1-draft footer
     for ch in "Browser QA draft".chars() {

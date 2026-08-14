@@ -27,7 +27,7 @@ pub(crate) use ui_chrome_exact_tests::{
     exact_test_live_composer_disclosure_summarizes_compaction_metrics,
     exact_test_live_composer_metadata_omits_success_without_variant,
     exact_test_live_composer_reserves_right_gap,
-    exact_test_live_control_dock_collapses_disclosure_before_status,
+    exact_test_live_control_dock_keeps_compact_disclosure,
     exact_test_live_control_dock_renders_shared_surface,
     exact_test_retry_summary_segment_prioritizes_retry_indicator,
     exact_test_startup_disclosure_matches_harness_hint_row,

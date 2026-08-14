@@ -66,8 +66,8 @@ fn live_single_line_composer_rect_tracks_semantic_disclosure_state() {
     let streaming = live_session_app();
 
     for (width, height, idle_expected, draft_expected) in [
-        (120, 40, Rect::new(2, 37, 116, 3), Rect::new(2, 34, 116, 3)),
-        (60, 20, Rect::new(1, 17, 58, 3), Rect::new(1, 16, 58, 3)),
+        (120, 40, Rect::new(2, 36, 116, 3), Rect::new(2, 35, 116, 3)),
+        (60, 20, Rect::new(1, 16, 58, 3), Rect::new(1, 16, 58, 3)),
     ] {
         assert_eq!(plan_for(&idle, width, height).composer, Some(idle_expected));
         assert_eq!(
@@ -87,12 +87,7 @@ fn startup_idle_and_first_streaming_frames_share_composer_geometry_at_home_width
     let idle = AppState::new_live(None, false, None);
     let streaming = live_session_app();
 
-    for (width, height, expected) in [
-        (80, 24, Rect::new(2, 18, 76, 3)),
-        (90, 24, Rect::new(2, 18, 86, 3)),
-        (100, 30, Rect::new(2, 24, 96, 3)),
-        (120, 32, Rect::new(2, 26, 116, 3)),
-    ] {
+    for (width, height) in [(80, 24), (90, 24), (100, 30), (120, 32)] {
         let startup_composer = plan_for(&startup, width, height)
             .composer
             .expect("startup composer");
@@ -103,9 +98,10 @@ fn startup_idle_and_first_streaming_frames_share_composer_geometry_at_home_width
             .composer
             .expect("streaming composer");
 
-        assert_eq!(startup_composer, expected);
-        assert_eq!(idle_composer.bottom(), height);
-        assert_eq!(streaming_composer.bottom(), height);
+        assert_eq!(startup_composer, idle_composer);
+        assert_eq!(idle_composer, streaming_composer);
+        assert_eq!(idle_composer.bottom().saturating_add(1), height);
+        assert_eq!(streaming_composer.bottom().saturating_add(1), height);
         assert_eq!(idle_composer.height, 3);
         assert_eq!(streaming_composer.height, 3);
         assert_eq!(
@@ -335,7 +331,7 @@ fn assert_composer_bottom_anchored(plan: &FrameLayoutPlan, width: u16, height: u
     });
 
     let dock_bottom = match plan.disclosure {
-        Some(disclosure) => disclosure.y + disclosure.height + 1,
+        Some(disclosure) => disclosure.y + disclosure.height,
         None => composer.y + composer.height,
     };
 
@@ -497,7 +493,6 @@ fn boundary_viewports_never_clip_composer_or_disclosure() {
     }
 }
 
-/// Boundary viewport 59/60/61: composer-footer spacer is 0 at ≤60, 1 at >60.
 #[test]
 fn boundary_spacer_transitions_at_60_column_cutoff() {
     let app = live_session_app();
@@ -506,16 +501,17 @@ fn boundary_spacer_transitions_at_60_column_cutoff() {
     for &height in &[20u16, 24, 30, 40] {
         let plan = plan_for(&app, 60, height);
         let composer = plan.composer.expect("composer at 60 cols");
-        assert_eq!(composer.bottom(), height);
-        assert_eq!(plan.disclosure, None);
+        let disclosure = plan.disclosure.expect("disclosure at 60 cols");
+        assert_eq!(composer.bottom(), disclosure.y);
+        assert_eq!(disclosure.bottom(), height);
     }
 
-    // At 61 columns: spacer present
     for &height in &[20u16, 24, 30, 40] {
         let plan = plan_for(&app, 61, height);
         let composer = plan.composer.expect("composer at 61 cols");
-        assert_eq!(composer.bottom(), height);
-        assert_eq!(plan.disclosure, None);
+        let disclosure = plan.disclosure.expect("disclosure at 61 cols");
+        assert_eq!(composer.bottom(), disclosure.y);
+        assert_eq!(disclosure.bottom(), height);
     }
 }
 
@@ -638,11 +634,6 @@ fn all_required_viewports_produce_valid_layout_plan() {
 // Seam-level regression: composer→disclosure spacer gap at every required viewport
 // ---------------------------------------------------------------------------
 
-/// The composer→disclosure spacer gap must be 0 at ultra-compact (≤60 cols)
-/// and exactly 1 row at every wider required viewport. This locks the
-/// centralized `composer_footer_spacer_rows` contract via the public
-/// `FrameLayoutPlan` seam across all eight required viewports, preventing
-/// the missing-spacer regression from recurring.
 #[test]
 fn composer_disclosure_spacer_gap_matches_centralized_contract_at_all_viewports() {
     let app = live_session_app();
@@ -663,8 +654,11 @@ fn composer_disclosure_spacer_gap_matches_centralized_contract_at_all_viewports(
         let composer = plan
             .composer
             .unwrap_or_else(|| panic!("composer at {width}x{height}"));
-        assert_eq!(composer.bottom(), height);
-        assert_eq!(plan.disclosure, None);
+        let disclosure = plan
+            .disclosure
+            .unwrap_or_else(|| panic!("disclosure at {width}x{height}"));
+        assert_eq!(composer.bottom(), disclosure.y);
+        assert_eq!(disclosure.bottom(), height);
     }
 }
 

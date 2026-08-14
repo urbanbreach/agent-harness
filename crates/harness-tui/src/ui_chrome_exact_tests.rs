@@ -215,11 +215,15 @@ pub(crate) fn exact_test_live_control_dock_renders_shared_surface() {
     let dock = plan.dock.unwrap_or_abort();
     let status = dock.status.unwrap_or_abort();
     let composer = dock.composer;
+    let disclosure = dock.disclosure.unwrap_or_abort();
 
-    assert_eq!(dock.shell.height, composer.height.saturating_add(1));
     assert_eq!(dock.shell.y, status.y);
     assert_eq!(composer.y, status.y.saturating_add(1));
-    assert_eq!(dock.disclosure, None);
+    assert_eq!(disclosure.height, 1);
+    assert!(
+        disclosure.y >= composer.y.saturating_add(composer.height),
+        "keybind hints must remain beneath the live composer"
+    );
 
     let backend = TestBackend::new(width, height);
     let mut terminal = Terminal::new(backend).unwrap_or_abort();
@@ -228,6 +232,13 @@ pub(crate) fn exact_test_live_control_dock_renders_shared_surface() {
         .unwrap_or_abort();
 
     let buffer = terminal.backend().buffer().clone();
+    let disclosure_row = (disclosure.x..disclosure.x.saturating_add(disclosure.width))
+        .map(|x| buffer[(x, disclosure.y)].symbol())
+        .collect::<String>();
+    assert!(
+        disclosure_row.contains("shortcuts"),
+        "live composer must keep its keybind row visible: {disclosure_row:?}"
+    );
     let right_edge = dock
         .shell
         .x
@@ -255,7 +266,7 @@ pub(crate) fn exact_test_live_control_dock_renders_shared_surface() {
 }
 
 #[cfg(test)]
-pub(crate) fn exact_test_live_control_dock_collapses_disclosure_before_status() {
+pub(crate) fn exact_test_live_control_dock_keeps_compact_disclosure() {
     use ratatui::{backend::TestBackend, Terminal};
 
     let mut app = AppState::new_live(None, false, None);
@@ -265,7 +276,7 @@ pub(crate) fn exact_test_live_control_dock_collapses_disclosure_before_status() 
         app.ingest_event(event);
     }
     let width = 60;
-    let height = 18;
+    let height = 16;
 
     let backend = TestBackend::new(width, height);
     let mut terminal = Terminal::new(backend).unwrap_or_abort();
@@ -281,8 +292,7 @@ pub(crate) fn exact_test_live_control_dock_collapses_disclosure_before_status() 
         .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
         .collect::<Vec<_>>()
         .join("\n");
-    assert!(!rendered.contains("↑/↓ history"));
-    assert!(!rendered.contains("q quit"));
+    assert!(rendered.contains("shortcuts"), "{rendered}");
 }
 
 #[cfg(test)]
@@ -788,8 +798,8 @@ fn shell_composer_renders_semantic_marker_and_label_without_model_identity() {
     assert!(!rendered.contains("❯ printf safe-shell"), "{rendered}");
     assert_eq!(
         terminal.backend().buffer()[(composer.x, composer.y)].fg,
-        Color::Indexed(15),
-        "focused Shell border must encode ANSI bright white index 15"
+        Color::Rgb(80, 80, 88),
+        "focused Shell border must match GrokNight prompt_border_active"
     );
 }
 
