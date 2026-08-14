@@ -13,6 +13,8 @@ expression: rendered.as_str()
                                                                                                     
                                                                                                     
                                                                                                     
+                                                                                                    
+                                                                                                    
   ┃                                                                                                 
   ┃  Allow Edit to demo.txt?                                                                        
   ┃  Draft preserved · keep this draft                                                              
@@ -26,6 +28,4 @@ expression: rendered.as_str()
                                                                                                     
   ╭──────────────────────────────────────────────────────────────────────────────────────────────╮  
   │ ❯ keep this draft                                                                            │  
-  ╰──────────────────────────────────────────────────────────────────────────────────── unknown ─╯  
-                                                                                                    
-  Enter:send  │  Shift+Tab:mode  │  Ctrl+x:shortcuts
+  ╰──────────────────────────────────────────────────────────────────────────────────── unknown ─╯
