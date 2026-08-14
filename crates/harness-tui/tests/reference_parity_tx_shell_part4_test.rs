@@ -335,8 +335,8 @@ fn tx_diff_tool_details_project_removed_and_added_versions() {
         "TX-DIFF: added line must project in tool details\n{rendered}"
     );
     assert!(
-        rendered.contains('┃'),
-        "TX-DIFF: grouped edit details retain the semantic tool rail\n{rendered}"
+        !rendered.contains('┃'),
+        "TX-DIFF: settled grouped edit details must remain rail-free\n{rendered}"
     );
     let _ = Focus::Prompt; // keep Focus import meaningful for future state asserts
 }
