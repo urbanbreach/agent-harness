@@ -584,9 +584,10 @@ fn operator_sidebar_selection_test_app() -> AppState {
 fn transcript_selection_text_position(app: &AppState, needle: &str) -> (u16, u16) {
     let snapshot = transcript_selection_debug_snapshot(app, TEST_FRAME_AREA).unwrap_or_abort();
     for (row_idx, row) in snapshot.rows.iter().enumerate() {
-        if let Some(column_idx) = row.find(needle) {
+        if let Some(byte_index) = row.find(needle) {
+            let display_column = ratatui::text::Line::from(&row[..byte_index]).width();
             return (
-                snapshot.viewport.x + u16::try_from(column_idx).unwrap_or_abort(),
+                snapshot.viewport.x + u16::try_from(display_column).unwrap_or_abort(),
                 snapshot.viewport.y + u16::try_from(row_idx).unwrap_or_abort(),
             );
         }

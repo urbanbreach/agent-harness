@@ -75,7 +75,7 @@ use super::ui_transcript_layout::{
     measure_transcript_layout, render_transcript_layout_surfaces,
     transcript_diff_hunk_rows_for_layout, transcript_layout_has_visible_running_tool,
     transcript_layout_lines, transcript_viewport_rows, MeasuredTranscriptLayout,
-    MeasuredTranscriptSurface,
+    TranscriptVisualEntry,
 };
 use super::ui_transcript_page_flip::{transcript_scroll_position, TranscriptScrollPosition};
 use super::ui_transcript_scrollbar::{
@@ -109,6 +109,9 @@ use super::ui_transcript_surface::{
 #[path = "ui_transcript_types.rs"]
 mod ui_transcript_types;
 
+#[path = "ui_transcript_entry.rs"]
+pub(in crate::ui) mod ui_transcript_entry;
+
 #[path = "ui_transcript_block_grammar.rs"]
 pub(in crate::ui) mod ui_transcript_block_grammar;
 
@@ -132,6 +135,12 @@ mod ui_transcript_compaction;
 
 pub(in crate::ui) use ui_transcript_block_grammar::TranscriptBlockPlacement;
 use ui_transcript_block_grammar::{normalize_turn_blocks, TranscriptBlockSpec};
+pub(super) use ui_transcript_entry::{
+    IntoResolvedTranscriptVisualEntryDraft, ResolvedTranscriptVisualEntryDraft,
+    TranscriptVisualEntryAccent, TranscriptVisualEntryDisplayMode, TranscriptVisualEntryGroup,
+    TranscriptVisualEntryHitRegion, TranscriptVisualEntryId, TranscriptVisualEntryLifecycle,
+    TranscriptVisualEntryMetadata,
+};
 use ui_transcript_render::build_transcript_render_surfaces;
 use ui_transcript_sections::build_transcript_sections;
 #[cfg(test)]
@@ -142,8 +151,8 @@ use ui_transcript_tool_sections::{
 };
 use ui_transcript_types::*;
 pub(super) use ui_transcript_types::{
-    ToolRailMotion, TranscriptRenderSurface, TranscriptRenderSurfaceKind,
-    TranscriptToolCallDetailBlock, TranscriptToolCallDetailTone,
+    ToolRailMotion, TranscriptRenderSurfaceKind, TranscriptToolCallDetailBlock,
+    TranscriptToolCallDetailTone, TranscriptVisualEntryDraft,
 };
 
 #[cfg(test)]
@@ -844,33 +853,27 @@ fn transcript_selection_rows(
 }
 
 fn transcript_surface_selection_rows(
-    surface: &MeasuredTranscriptSurface,
+    surface: &TranscriptVisualEntry,
 ) -> Vec<TranscriptSelectionRow> {
     if let Some(rows) = surface.selection_rows.clone() {
         return rows;
     }
 
     let surface_width = usize::from(surface.width.max(1));
-    let content_width = usize::from(transcript_surface_content_width(
-        surface.width,
-        surface.show_outer_rail,
-    ))
-    .max(1);
+    let content_width = usize::from(transcript_surface_content_width(surface.width, false)).max(1);
     let mut rows = Vec::new();
 
     for line in &surface.lines {
         let content_rows = transcript_selection_line_rows(line, content_width);
         if surface.show_outer_rail {
             rows.extend(content_rows.into_iter().enumerate().map(|(idx, mut row)| {
-                let mut full = Vec::with_capacity(surface_width);
-                full.push(surface.rail_glyph.to_string());
-                full.append(&mut row);
-                full.truncate(surface_width);
-                if full.len() < surface_width {
-                    full.resize(surface_width, " ".to_string());
+                if let Some(first) = row.first_mut() {
+                    *first = surface.rail_glyph.to_string();
                 }
+                row.truncate(surface_width);
+                row.resize(surface_width, " ".to_string());
                 TranscriptSelectionRow {
-                    cells: full,
+                    cells: row,
                     continues_previous: idx > 0,
                     copy_offset: 1,
                 }
