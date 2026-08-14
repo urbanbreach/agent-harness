@@ -1,3 +1,4 @@
+use harness_tui::theme::Theme;
 use harness_tui::transcript_block_viewer::{render_surface, render_to_buffer};
 use harness_tui::transcript_block_viewer::{
     ViewerBlockContent, ViewerCloseReason, ViewerMode, ViewerReturnSnapshot, ViewerState,
@@ -198,7 +199,7 @@ fn wrapped_and_raw_render_surfaces_highlight_current_match_and_selection() -> Te
     // When: both rendering modes are materialized into a terminal buffer.
     let wrapped = render_surface(&viewer, area);
     let mut buffer = Buffer::empty(area);
-    render_to_buffer(&mut buffer, area, &wrapped);
+    render_to_buffer(&mut buffer, area, &wrapped, &Theme::harness_chat());
     viewer.toggle_mode()?;
     let raw = viewer.render_surface(area);
 
@@ -208,5 +209,6 @@ fn wrapped_and_raw_render_surfaces_highlight_current_match_and_selection() -> Te
     assert!(wrapped.lines[0].current_match);
     assert_eq!(raw.mode, ViewerMode::Raw);
     assert!(buffer.content.iter().any(|cell| cell.symbol() == "b"));
+    assert_eq!(buffer[(0, 0)].fg, ratatui::style::Color::Rgb(88, 88, 88));
     Ok(())
 }

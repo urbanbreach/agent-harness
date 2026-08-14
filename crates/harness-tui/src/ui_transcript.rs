@@ -290,7 +290,7 @@ fn transcript_assistant_parts_cache_match(
 pub(super) fn render_transcript_pane(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
     if let Some(viewer) = app.transcript_viewer() {
         let surface = viewer.render_surface(area);
-        crate::transcript_block_viewer::render_to_buffer(frame.buffer_mut(), area, &surface);
+        crate::transcript_block_viewer::render_to_buffer(frame.buffer_mut(), area, &surface, theme);
         return;
     }
     let context = transcript_pane_context(app, area, theme);

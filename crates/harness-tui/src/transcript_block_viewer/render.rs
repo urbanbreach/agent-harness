@@ -5,6 +5,8 @@ use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::widgets::{Block, Borders, Paragraph, Widget, Wrap};
 
+use crate::theme::Theme;
+
 use super::state::ViewerState;
 use super::ViewerMode;
 
@@ -87,9 +89,15 @@ pub fn render_surface(state: &ViewerState, _area: Rect) -> ViewerRenderSurface {
     }
 }
 
-pub fn render_to_buffer(buffer: &mut Buffer, area: Rect, surface: &ViewerRenderSurface) {
+pub fn render_to_buffer(
+    buffer: &mut Buffer,
+    area: Rect,
+    surface: &ViewerRenderSurface,
+    theme: &Theme,
+) {
     let block = Block::default()
         .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.reference_terminal.muted))
         .title(surface.title.clone());
     let inner = block.inner(area);
     block.render(area, buffer);
