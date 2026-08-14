@@ -196,7 +196,7 @@ pub(crate) fn connect_waiting_owns_input(app: &AppState) -> bool {
 
 pub(super) const fn live_composer_border_color(theme: &Theme, focused: bool) -> Color {
     if focused {
-        Color::Indexed(15)
+        theme.reference_terminal.prompt_border_active
     } else {
         theme.reference_terminal.prompt_border
     }
@@ -227,7 +227,10 @@ mod active_thinking_color_tests {
     fn live_composer_border_matches_the_groknight_active_prompt() {
         let theme = Theme::harness_chat();
 
-        assert_eq!(live_composer_border_color(&theme, true), Color::Indexed(15));
+        assert_eq!(
+            live_composer_border_color(&theme, true),
+            Color::Rgb(80, 80, 88)
+        );
         assert_eq!(
             live_composer_border_color(&theme, false),
             Color::Rgb(50, 50, 55)
