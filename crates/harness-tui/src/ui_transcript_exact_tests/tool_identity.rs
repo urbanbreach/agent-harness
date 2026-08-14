@@ -170,7 +170,13 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_reference_timestamps_a
             top_row: 0,
             leading_gap_height: 0,
             content_height: task_render.lines.len(),
-            surfaces: vec![MeasuredTranscriptSurface {
+            surfaces: vec![TranscriptVisualEntry {
+                metadata: TranscriptVisualEntryMetadata::settled(
+                    0,
+                    0,
+                    TranscriptRenderSurfaceKind::AssistantTool,
+                    TranscriptVisualEntryDisplayMode::Compact,
+                ),
                 kind: TranscriptRenderSurfaceKind::AssistantTool,
                 leading_gap_rows: 0,
                 placement: TranscriptBlockPlacement::Flow,
@@ -187,6 +193,7 @@ pub(crate) fn exact_test_native_tool_transcript_rows_show_reference_timestamps_a
                 diff_hunk_offsets: Vec::new(),
                 selected_rail: false,
                 tool_rail_motion: None,
+                hit_region: TranscriptVisualEntryHitRegion::new(0, 120, task_render.lines.len()),
             }],
             lines: task_render.lines.clone(),
         })],
