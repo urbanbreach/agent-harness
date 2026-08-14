@@ -3,7 +3,7 @@ source: crates/harness-tui/tests/deterministic_render_test.rs
 expression: trim_trailing_snapshot_whitespace(&rendered)
 ---
 
-   test-workspace /workspace/agent-harness
+   dev ~/Projects/agent-harness/crates/harness-tui
 
 
      ❯ Inspect tool activity
@@ -34,7 +34,7 @@ expression: trim_trailing_snapshot_whitespace(&rendered)
 
 
 
-
   ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
   │ ❯                                                                                                                                                                            │
   ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── model-1 ─╯
+  Shift+Tab:mode  │  Ctrl+x:shortcuts

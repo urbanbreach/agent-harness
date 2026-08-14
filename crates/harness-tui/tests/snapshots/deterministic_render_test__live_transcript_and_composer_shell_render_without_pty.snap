@@ -3,7 +3,7 @@ source: crates/harness-tui/tests/deterministic_render_test.rs
 expression: trim_trailing_snapshot_whitespace(&rendered)
 ---
 
-   test-workspace /workspace/agent-harness
+   dev ~/Projects/agent-harness/crates/harness-tui
 
 
      ❯ Inspect deterministic sidebar
@@ -28,7 +28,7 @@ expression: trim_trailing_snapshot_whitespace(&rendered)
 
 
 
-
   ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
   │ ❯                                                                                                                                                        │
   ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── gpt-5.4-mini ─╯
+  Shift+Tab:mode  │  Ctrl+x:shortcuts
