@@ -3,7 +3,7 @@ use super::ui_transcript_tool_sections::{build_tool_call_section, successful_edi
 use super::*;
 
 pub(super) fn build_transcript_sections(app: &AppState) -> Vec<TranscriptTurnSection> {
-    let motion_enabled = app.transcript_motion_enabled();
+    let motion_enabled = app.transcript_motion_enabled() && !app.replay_mode;
     let hidden_child_request_ids = hidden_delegated_child_request_ids(app);
     let visible_activities = app
         .activities
@@ -90,6 +90,8 @@ fn inject_compaction_events(
             if let Some(turn) = turn_sections.get_mut(turn_index) {
                 turn.assistant_parts
                     .push(TranscriptAssistantPart::Compaction(compaction_section));
+                turn.assistant_part_source_ids
+                    .push(TranscriptAssistantPartSourceId(event.seq));
             }
         }
     }
@@ -221,7 +223,10 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
             text: cancel_error_display_text(text, activity.duration_ms())
                 .unwrap_or_else(|| text.clone()),
         });
-    let assistant_parts = build_ordered_assistant_parts(
+    let BuiltTranscriptAssistantParts {
+        parts: assistant_parts,
+        source_ids: assistant_part_source_ids,
+    } = build_ordered_assistant_parts(
         activity,
         app,
         thinking_visible,
@@ -289,6 +294,7 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
                 .map(|(started, _)| activity.last_mono_ms.saturating_sub(started)),
         },
         assistant_parts,
+        assistant_part_source_ids,
     }
 }
 
@@ -328,7 +334,7 @@ fn build_ordered_assistant_parts(
     body_blocks: Vec<TranscriptBodyBlock>,
     ordered_tool_calls: Vec<TranscriptOrderedToolCallSection>,
     error: Option<TranscriptErrorSection>,
-) -> Vec<TranscriptAssistantPart> {
+) -> BuiltTranscriptAssistantParts {
     let mut event_parts = build_ordered_assistant_parts_from_events(
         activity,
         app,
@@ -337,31 +343,55 @@ fn build_ordered_assistant_parts(
     );
     if event_parts.is_empty() {
         let mut fallback_parts = Vec::new();
+        let mut next_index = 0;
         if let Some(thinking) = thinking {
-            fallback_parts.push(TranscriptAssistantPart::Reasoning(thinking));
+            fallback_parts.push(SequencedTranscriptAssistantPart {
+                seq: activity.first_seq,
+                index: next_index,
+                part: TranscriptAssistantPart::Reasoning(thinking),
+            });
+            next_index += 1;
         }
-        fallback_parts.extend(body_blocks.into_iter().map(TranscriptAssistantPart::Body));
-        fallback_parts.extend(
-            ordered_tool_calls
-                .into_iter()
-                .map(|tool_call| TranscriptAssistantPart::ToolCall(Box::new(tool_call.section))),
-        );
+        for body in body_blocks {
+            fallback_parts.push(SequencedTranscriptAssistantPart {
+                seq: activity.last_seq,
+                index: next_index,
+                part: TranscriptAssistantPart::Body(body),
+            });
+            next_index += 1;
+        }
+        for tool_call in ordered_tool_calls {
+            fallback_parts.push(SequencedTranscriptAssistantPart {
+                seq: tool_call.first_seq,
+                index: next_index,
+                part: TranscriptAssistantPart::ToolCall(Box::new(tool_call.section)),
+            });
+            next_index += 1;
+        }
         if let Some(error) = error {
-            fallback_parts.push(TranscriptAssistantPart::Error(error));
+            fallback_parts.push(SequencedTranscriptAssistantPart {
+                seq: activity.last_seq,
+                index: next_index,
+                part: TranscriptAssistantPart::Error(error),
+            });
         }
-        return fallback_parts;
+        return BuiltTranscriptAssistantParts::from_sequenced(fallback_parts);
     }
 
     sync_reasoning_parts_with_activity(&mut event_parts, activity, thinking_visible);
     ensure_completed_thought_header(&mut event_parts, activity, thinking_visible);
     if let Some(error) = error {
-        event_parts.push(TranscriptAssistantPart::Error(error));
+        event_parts.push(SequencedTranscriptAssistantPart {
+            seq: activity.last_seq,
+            index: event_parts.len(),
+            part: TranscriptAssistantPart::Error(error),
+        });
     }
-    event_parts
+    BuiltTranscriptAssistantParts::from_sequenced(event_parts)
 }
 
 fn ensure_completed_thought_header(
-    parts: &mut Vec<TranscriptAssistantPart>,
+    parts: &mut Vec<SequencedTranscriptAssistantPart>,
     activity: &ActivityEntry,
     thinking_visible: bool,
 ) {
@@ -384,26 +414,30 @@ fn ensure_completed_thought_header(
     }
     if parts
         .iter()
-        .any(|part| matches!(part, TranscriptAssistantPart::Reasoning(_)))
+        .any(|part| matches!(part.part, TranscriptAssistantPart::Reasoning(_)))
     {
         return;
     }
     parts.insert(
         0,
-        TranscriptAssistantPart::Reasoning(TranscriptLabeledTextSection {
-            label: THINKING_TRACE_LABEL,
-            text: activity.thinking_text.clone(),
-        }),
+        SequencedTranscriptAssistantPart {
+            seq: activity.first_seq,
+            index: 0,
+            part: TranscriptAssistantPart::Reasoning(TranscriptLabeledTextSection {
+                label: THINKING_TRACE_LABEL,
+                text: activity.thinking_text.clone(),
+            }),
+        },
     );
 }
 
 fn sync_reasoning_parts_with_activity(
-    parts: &mut Vec<TranscriptAssistantPart>,
+    parts: &mut Vec<SequencedTranscriptAssistantPart>,
     activity: &ActivityEntry,
     thinking_visible: bool,
 ) {
     if !thinking_visible {
-        parts.retain(|part| !matches!(part, TranscriptAssistantPart::Reasoning(_)));
+        parts.retain(|part| !matches!(part.part, TranscriptAssistantPart::Reasoning(_)));
         return;
     }
 
@@ -412,7 +446,7 @@ fn sync_reasoning_parts_with_activity(
     if !has_reasoning {
         // No reasoning events or thinking text — remove reasoning parts
         // (pinned reference freeze does not show Thought for turns without reasoning).
-        parts.retain(|part| !matches!(part, TranscriptAssistantPart::Reasoning(_)));
+        parts.retain(|part| !matches!(part.part, TranscriptAssistantPart::Reasoning(_)));
         return;
     }
 
@@ -420,7 +454,7 @@ fn sync_reasoning_parts_with_activity(
         .iter()
         .enumerate()
         .filter_map(|(index, part)| {
-            matches!(part, TranscriptAssistantPart::Reasoning(_)).then_some(index)
+            matches!(part.part, TranscriptAssistantPart::Reasoning(_)).then_some(index)
         })
         .collect::<Vec<_>>();
 
@@ -429,7 +463,7 @@ fn sync_reasoning_parts_with_activity(
     };
 
     if reasoning_indices.len() == 1 {
-        parts[first_reasoning_index] =
+        parts[first_reasoning_index].part =
             TranscriptAssistantPart::Reasoning(TranscriptLabeledTextSection {
                 label: THINKING_TRACE_LABEL,
                 text: activity.thinking_text.clone(),
@@ -439,7 +473,7 @@ fn sync_reasoning_parts_with_activity(
 
     let rendered = reasoning_indices
         .iter()
-        .filter_map(|index| match parts.get(*index) {
+        .filter_map(|index| match parts.get(*index).map(|part| &part.part) {
             Some(TranscriptAssistantPart::Reasoning(reasoning)) => Some(reasoning.text.as_str()),
             _ => None,
         })
@@ -453,8 +487,9 @@ fn sync_reasoning_parts_with_activity(
             return;
         }
         if let Some(last_reasoning_index) = reasoning_indices.last().copied() {
-            if let Some(TranscriptAssistantPart::Reasoning(reasoning)) =
-                parts.get_mut(last_reasoning_index)
+            if let Some(TranscriptAssistantPart::Reasoning(reasoning)) = parts
+                .get_mut(last_reasoning_index)
+                .map(|part| &mut part.part)
             {
                 reasoning.text.push_str(remainder);
             }
@@ -469,12 +504,32 @@ struct SequencedTranscriptAssistantPart {
     part: TranscriptAssistantPart,
 }
 
+struct BuiltTranscriptAssistantParts {
+    parts: Vec<TranscriptAssistantPart>,
+    source_ids: Vec<TranscriptAssistantPartSourceId>,
+}
+
+impl BuiltTranscriptAssistantParts {
+    fn from_sequenced(parts: Vec<SequencedTranscriptAssistantPart>) -> Self {
+        let mut assistant_parts = Vec::with_capacity(parts.len());
+        let mut source_ids = Vec::with_capacity(parts.len());
+        for part in parts {
+            source_ids.push(TranscriptAssistantPartSourceId(part.seq));
+            assistant_parts.push(part.part);
+        }
+        Self {
+            parts: assistant_parts,
+            source_ids,
+        }
+    }
+}
+
 fn build_ordered_assistant_parts_from_events(
     activity: &ActivityEntry,
     app: &AppState,
     ordered_tool_calls: &[TranscriptOrderedToolCallSection],
     thinking_visible: bool,
-) -> Vec<TranscriptAssistantPart> {
+) -> Vec<SequencedTranscriptAssistantPart> {
     let mut parts = Vec::new();
     let mut next_index = 0usize;
     let mut saw_turn_event = false;
@@ -650,7 +705,7 @@ fn build_ordered_assistant_parts_from_events(
     }
 
     parts.sort_by_key(|part| (part.seq, part.index));
-    parts.into_iter().map(|part| part.part).collect()
+    parts
 }
 
 fn flush_pending_pre_tool_stream(

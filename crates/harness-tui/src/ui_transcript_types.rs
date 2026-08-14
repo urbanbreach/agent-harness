@@ -28,7 +28,7 @@ pub(super) struct TranscriptLayoutCacheEntry {
 }
 
 #[derive(Debug, Clone)]
-pub(in crate::ui) struct TranscriptRenderSurface {
+pub(in crate::ui) struct TranscriptVisualEntryDraft {
     pub(in crate::ui) kind: TranscriptRenderSurfaceKind,
     pub(in crate::ui) leading_gap_rows: usize,
     pub(in crate::ui) placement: TranscriptBlockPlacement,
@@ -242,6 +242,9 @@ pub(super) struct TranscriptOrderedToolCallSection {
     pub(super) section: TranscriptToolCallSection,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(super) struct TranscriptAssistantPartSourceId(pub(super) u64);
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct TranscriptTurnSection {
     pub(super) activity_first_seq: u64,
@@ -254,6 +257,7 @@ pub(super) struct TranscriptTurnSection {
     pub(super) reasoning_expanded: bool,
     pub(super) header: TranscriptTurnHeader,
     pub(super) assistant_parts: Vec<TranscriptAssistantPart>,
+    pub(super) assistant_part_source_ids: Vec<TranscriptAssistantPartSourceId>,
 }
 
 impl TranscriptTurnSection {
@@ -792,7 +796,7 @@ mod tool_group_tests {
                 state: TranscriptPromptState::Idle,
             },
         );
-        let surface = TranscriptRenderSurface {
+        let surface = TranscriptVisualEntryDraft {
             kind: TranscriptRenderSurfaceKind::User,
             leading_gap_rows: 0,
             placement: TranscriptBlockPlacement::StickyPromptCandidate,
