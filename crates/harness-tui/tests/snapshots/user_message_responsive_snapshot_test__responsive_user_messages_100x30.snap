@@ -1,0 +1,158 @@
+---
+source: crates/harness-tui/tests/user_message_responsive_snapshot_test.rs
+expression: "viewport_snapshot(width, height)"
+---
+--- one line ---
+
+   [workspace]
+
+
+     › Ship the elevated user-message band.                                               12:34 PM
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    ⠋ Waiting for response… 0.0s                                                              0.0s
+
+  ╭──────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ ❯                                                                                            │
+  ╰───────────────────────────────────────────────────────────────────────────────────────────  ─╯
+
+  Shift+Tab:mode  │  Ctrl+c:cancel  │  Ctrl+x:shortcuts
+
+--- wrapped ---
+
+   [workspace]
+
+
+     › Explain how responsive transcript messages preserve readable wrapping while the    12:34 PM
+       available width changes.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    ⠋ Waiting for response… 0.0s                                                              0.0s
+
+  ╭──────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ ❯                                                                                            │
+  ╰───────────────────────────────────────────────────────────────────────────────────────────  ─╯
+
+  Shift+Tab:mode  │  Ctrl+c:cancel  │  Ctrl+x:shortcuts
+
+--- multiline ---
+
+   [workspace]
+
+
+     › Check the renderer.                                                                12:34 PM
+       Keep this hard line break.
+       验 证  CJK 宽 度 。
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    ⠋ Waiting for response… 0.0s                                                              0.0s
+
+  ╭──────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ ❯                                                                                            │
+  ╰───────────────────────────────────────────────────────────────────────────────────────────  ─╯
+
+  Shift+Tab:mode  │  Ctrl+c:cancel  │  Ctrl+x:shortcuts
+
+--- selected ---
+
+   [workspace]
+
+
+     › This prompt is selected.                                                           12:34 PM
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    ⠋ Waiting for response… 0.0s                                                              0.0s
+
+  ❯ Build anything
+
+  Shift+Tab:mode  │  Ctrl+c:cancel  │  Ctrl+x:shortcuts
+
+--- long collapsed ---
+
+   [workspace]
+
+
+     › This deliberately long prompt must collapse after three visual rows while          12:34 PM
+       preserving grapheme boundaries, CJK width correctness, timestamps, selection geometry, copy
+       behavior, mouse targeting, and replay-safe text projection. This deliberately long prompt …
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    ⠋ Waiting for response… 0.0s                                                              0.0s
+
+  ╭──────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ ❯                                                                                            │
+  ╰───────────────────────────────────────────────────────────────────────────────────────────  ─╯
+
+  Shift+Tab:mode  │  Ctrl+c:cancel  │  Ctrl+x:shortcuts
