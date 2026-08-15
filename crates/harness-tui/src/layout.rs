@@ -48,6 +48,7 @@ const DENSE_SESSION_MAX_WIDTH: u16 = 60;
 const DENSE_SESSION_MAX_HEIGHT: u16 = 18;
 const COMPACT_SESSION_MAX_WIDTH: u16 = 80;
 const COMPACT_SESSION_MAX_HEIGHT: u16 = 24;
+const LIVE_DOCK_AUTO_COMPACT_MAX_HEIGHT: u16 = 20;
 const DENSE_SESSION_PALETTE_MAX_WIDTH: u16 = 46;
 const STARTUP_COMPOSER_INSET_X: u16 = 2;
 const STARTUP_BORDERED_COMPOSER_CHROME_ROWS: u16 = 2;
@@ -88,19 +89,36 @@ pub(crate) fn breadcrumb_reserve_rows(width: u16) -> u16 {
     breadcrumb_top_margin(width).saturating_add(1)
 }
 
-/// Composer→disclosure spacer: 1 row at viewports wider than the dense cutoff,
-/// 0 at ultra-compact (≤60 cols) to match freeze run1-resp-60x20 (gap=0).
-pub(crate) fn composer_footer_spacer_rows(width: u16) -> u16 {
-    if width <= DENSE_SESSION_MAX_WIDTH {
+/// Optional live-dock spacer: 0 while the pinned reference auto-compacts at
+/// 20 rows or fewer, otherwise the canonical composer/footer spacer token.
+pub(crate) fn composer_footer_spacer_rows(terminal_height: u16) -> u16 {
+    if terminal_height <= LIVE_DOCK_AUTO_COMPACT_MAX_HEIGHT {
         0
     } else {
         DESIGN_TOKENS
             .breakpoints
             .all
             .iter()
-            .find(|breakpoint| breakpoint.width > DENSE_SESSION_MAX_WIDTH)
-            .map_or(0, |breakpoint| breakpoint.composer_footer_spacer)
+            .map(|breakpoint| breakpoint.composer_footer_spacer)
+            .max()
+            .unwrap_or(0)
     }
+}
+
+pub(crate) fn live_turn_status_content_area(area: Rect, theme: &Theme) -> Rect {
+    let inset = theme
+        .token_families()
+        .live_shell
+        .spacing
+        .rhythm
+        .transcript_gutter_x
+        .min(area.width);
+    Rect::new(
+        area.x.saturating_add(inset),
+        area.y,
+        area.width.saturating_sub(inset),
+        area.height,
+    )
 }
 
 pub(crate) fn composer_horizontal_inset(width: u16) -> u16 {
@@ -789,7 +807,6 @@ fn live_dock_rhythm(
 ) -> LiveDockRhythm {
     let disclosure_rows = control_dock_disclosure_rows(app, contract);
     let active_permission = app.active_permission_view();
-    let runtime_kind = app.runtime_state().kind;
     let status_rows = if let Some(permission) = active_permission.as_ref() {
         permission_prompt_block_height(
             app,
@@ -797,29 +814,19 @@ fn live_dock_rhythm(
             terminal_height,
             permission,
         )
-    } else if matches!(
-        runtime_kind,
-        crate::app::RuntimeStateKind::Sending
-            | crate::app::RuntimeStateKind::Streaming
-            | crate::app::RuntimeStateKind::Failure
-            | crate::app::RuntimeStateKind::Cancelled
-            | crate::app::RuntimeStateKind::Degraded
-            | crate::app::RuntimeStateKind::Disconnected
-    ) {
+    } else if app.live_turn_status_visible() {
         status_row_height
     } else {
         0
     };
-    let composer_footer_spacer_rows = 0;
-    let status_composer_spacer_rows = 0;
-    let bottom_margin_rows = 0;
+    let outer_spacer_rows = composer_footer_spacer_rows(terminal_height);
 
     LiveDockRhythm {
         status_rows,
-        status_composer_spacer_rows,
-        composer_footer_spacer_rows,
+        status_composer_spacer_rows: outer_spacer_rows,
+        composer_footer_spacer_rows: outer_spacer_rows,
         disclosure_rows,
-        bottom_margin_rows,
+        bottom_margin_rows: outer_spacer_rows,
     }
 }
 
@@ -917,6 +924,7 @@ fn live_prompt_block_height(
     if app.focus != crate::app::Focus::Prompt
         && app.composer.prompt_buffer.is_empty()
         && app.active_permission_view().is_none()
+        && !app.completed_session_shell_active()
     {
         return 1.min(max_block_height);
     }
@@ -1066,6 +1074,14 @@ fn centered_live_shell_area(area: Rect, shell: LiveShellLayout) -> Rect {
     let x = area.x.saturating_add(area.width.saturating_sub(width) / 2);
     Rect::new(x, area.y, width, area.height)
 }
+
+#[cfg(test)]
+#[path = "layout_live_dock_test_fixtures.rs"]
+mod live_dock_test_fixtures;
+
+#[cfg(test)]
+#[path = "layout_live_dock_tests.rs"]
+mod live_dock_tests;
 
 #[cfg(test)]
 mod tests {

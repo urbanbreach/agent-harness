@@ -703,9 +703,7 @@ fn monitor_still_running_row(
     theme: &Theme,
     surface: Color,
 ) -> Vec<Span<'static>> {
-    const FRAMES: [&str; 4] = ["○", "◎", "◉", "◎"];
-    const FRAME_TICK_DIVISOR: usize = 8;
-    let frame = FRAMES[(animation_phase / FRAME_TICK_DIVISOR) % FRAMES.len()];
+    let frame = super::ui_transcript_style::monitor_pulse_frame(animation_phase);
     let noun = if count == 1 { "task" } else { "tasks" };
     vec![
         Span::styled(

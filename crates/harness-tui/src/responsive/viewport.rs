@@ -142,7 +142,7 @@ pub struct ViewportPlan {
     pub welcome_panel_visible: bool,
     /// Breadcrumb top-margin rows (0 at ultra-compact ≤60 cols, 1 elsewhere).
     pub breadcrumb_top_margin: u16,
-    /// Composer→disclosure spacer rows (0 at ultra-compact ≤60 cols, 1 elsewhere).
+    /// Composer→disclosure spacer rows (0 at auto-compact ≤20 rows, 1 elsewhere).
     pub composer_footer_spacer: u16,
 }
 
@@ -161,8 +161,7 @@ impl ViewportPlan {
             welcome_panel_visible: false,
             // Breadcrumb top margin: 0 at ultra-compact (≤60 cols), 1 elsewhere.
             breadcrumb_top_margin: crate::layout::breadcrumb_top_margin(cols),
-            // Composer→footer spacer: 0 at ultra-compact (≤60 cols), 1 elsewhere.
-            composer_footer_spacer: crate::layout::composer_footer_spacer_rows(cols),
+            composer_footer_spacer: crate::layout::composer_footer_spacer_rows(rows),
         }
     }
 

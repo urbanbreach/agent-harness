@@ -64,14 +64,21 @@ fn canonical_viewports_allocate_full_width_transcript_and_bottom_composer() {
             "P0-GEOM-01: transcript must sit above composer at {width}x{height}; transcript={transcript:?} composer={composer:?}"
         );
 
-        let dock_bottom = match plan.disclosure {
-            Some(disclosure) => disclosure.y + disclosure.height,
-            None => composer.y + composer.height,
-        };
+        let disclosure = plan
+            .disclosure
+            .unwrap_or_else(|| panic!("P0-GEOM-01: disclosure rect required at {width}x{height}"));
+        let outer_spacer = disclosure.y.saturating_sub(composer.bottom());
+        if let Some(status) = plan.status {
+            assert_eq!(
+                composer.y.saturating_sub(status.bottom()),
+                outer_spacer,
+                "P0-GEOM-01: status/composer and composer/footer gaps must match at {width}x{height}"
+            );
+        }
         assert_eq!(
-            dock_bottom,
+            disclosure.bottom().saturating_add(outer_spacer),
             plan.shell.y + plan.shell.height,
-            "P0-GEOM-01: composer dock must be bottom-anchored at {width}x{height}"
+            "P0-GEOM-01: composer dock plus its contract margin must be bottom-anchored at {width}x{height}"
         );
     }
 }

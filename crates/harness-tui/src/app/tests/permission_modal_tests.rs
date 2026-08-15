@@ -774,19 +774,19 @@ fn permission_mouse_hit_regions_match_the_rendered_option_rows() {
         vec![
             (
                 PermissionPointerTarget::Decision(PermissionModalSelection::AllowAlways),
-                Rect::new(5, 29, 112, 1),
+                Rect::new(5, 26, 112, 1),
             ),
             (
                 PermissionPointerTarget::Decision(PermissionModalSelection::AllowSession),
-                Rect::new(5, 30, 112, 1),
+                Rect::new(5, 27, 112, 1),
             ),
             (
                 PermissionPointerTarget::Decision(PermissionModalSelection::AllowOnce),
-                Rect::new(5, 31, 112, 1),
+                Rect::new(5, 28, 112, 1),
             ),
             (
                 PermissionPointerTarget::Decision(PermissionModalSelection::Reject),
-                Rect::new(5, 32, 112, 1),
+                Rect::new(5, 29, 112, 1),
             ),
         ]
     );
@@ -797,11 +797,11 @@ fn permission_mouse_hit_regions_match_the_rendered_option_rows() {
         vec![
             (
                 PermissionPointerTarget::Confirm(PermissionConfirmSelection::Confirm),
-                Rect::new(5, 29, 11, 1),
+                Rect::new(5, 26, 11, 1),
             ),
             (
                 PermissionPointerTarget::Confirm(PermissionConfirmSelection::Cancel),
-                Rect::new(17, 29, 10, 1),
+                Rect::new(17, 26, 10, 1),
             ),
         ]
     );
@@ -823,15 +823,15 @@ fn question_mouse_hit_regions_match_the_rendered_option_rows() {
         vec![
             (
                 PermissionPointerTarget::QuestionChoice(0),
-                Rect::new(5, 27, 111, 1),
+                Rect::new(5, 24, 111, 1),
             ),
             (
                 PermissionPointerTarget::QuestionChoice(1),
-                Rect::new(5, 28, 111, 1),
+                Rect::new(5, 25, 111, 1),
             ),
             (
                 PermissionPointerTarget::QuestionChoice(2),
-                Rect::new(5, 29, 111, 1),
+                Rect::new(5, 26, 111, 1),
             ),
         ]
     );

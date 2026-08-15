@@ -599,8 +599,12 @@ fn characterization_current_live_shell_geometry_is_full_width_and_bottom_safe() 
         let disclosure = plan
             .disclosure
             .unwrap_or_else(|| panic!("disclosure at {width}x{height}"));
-        assert_eq!(composer.bottom(), disclosure.y);
-        assert_eq!(disclosure.bottom(), plan.shell.bottom());
+        let outer_spacer = if height <= 20 { 0 } else { 1 };
+        assert_eq!(composer.bottom().saturating_add(outer_spacer), disclosure.y);
+        assert_eq!(
+            disclosure.bottom().saturating_add(outer_spacer),
+            plan.shell.bottom()
+        );
     }
 }
 
@@ -614,8 +618,12 @@ fn resp_120x40_matches_reference_dock_rhythm() {
     let composer = plan.composer.expect("composer at 120x40");
     assert_eq!(
         composer,
-        Rect::new(2, 36, 116, 3),
+        Rect::new(2, 34, 116, 3),
         "idle 120x40 composer must retain the persistent keybind dock"
     );
-    assert_eq!(plan.disclosure, Some(Rect::new(2, 39, 116, 1)));
+    assert_eq!(plan.disclosure, Some(Rect::new(2, 38, 116, 1)));
+    assert_eq!(
+        plan.disclosure.expect("disclosure at 120x40").bottom() + 1,
+        plan.shell.bottom()
+    );
 }

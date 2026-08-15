@@ -66,7 +66,7 @@ fn live_single_line_composer_stays_anchored_across_disclosure_states() {
     let streaming = live_session_app();
 
     for (width, height, expected) in [
-        (120, 40, Rect::new(2, 36, 116, 3)),
+        (120, 40, Rect::new(2, 34, 116, 3)),
         (60, 20, Rect::new(1, 16, 58, 3)),
     ] {
         assert_eq!(plan_for(&idle, width, height).composer, Some(expected));
@@ -76,7 +76,7 @@ fn live_single_line_composer_stays_anchored_across_disclosure_states() {
 }
 
 #[test]
-fn startup_idle_and_first_streaming_frames_share_composer_geometry_at_home_widths() {
+fn startup_idle_and_first_streaming_frames_share_composer_anatomy_at_home_widths() {
     let startup = AppState::new_startup(Vec::new(), None);
     let idle = AppState::new_live(None, false, None);
     let streaming = live_session_app();
@@ -92,10 +92,18 @@ fn startup_idle_and_first_streaming_frames_share_composer_geometry_at_home_width
             .composer
             .expect("streaming composer");
 
-        assert_eq!(startup_composer, idle_composer);
         assert_eq!(idle_composer, streaming_composer);
-        assert_eq!(idle_composer.bottom().saturating_add(1), height);
-        assert_eq!(streaming_composer.bottom().saturating_add(1), height);
+        assert_eq!(startup_composer.x, idle_composer.x);
+        assert_eq!(startup_composer.width, idle_composer.width);
+        let disclosure = plan_for(&idle, width, height)
+            .disclosure
+            .expect("idle disclosure");
+        let outer_spacer = if height <= 20 { 0 } else { 1 };
+        assert_eq!(
+            idle_composer.bottom().saturating_add(outer_spacer),
+            disclosure.y
+        );
+        assert_eq!(disclosure.bottom().saturating_add(outer_spacer), height);
         assert_eq!(idle_composer.height, 3);
         assert_eq!(streaming_composer.height, 3);
         assert_eq!(
@@ -324,15 +332,22 @@ fn assert_composer_bottom_anchored(plan: &FrameLayoutPlan, width: u16, height: u
         panic!("live session shell must keep a composer rect at {width}x{height}")
     });
 
-    let dock_bottom = match plan.disclosure {
-        Some(disclosure) => disclosure.y + disclosure.height,
-        None => composer.y + composer.height,
-    };
+    let disclosure = plan.disclosure.unwrap_or_else(|| {
+        panic!("live session shell must keep a disclosure rect at {width}x{height}")
+    });
+    let outer_spacer = disclosure.y.saturating_sub(composer.bottom());
+    if let Some(status) = plan.status {
+        assert_eq!(
+            composer.y.saturating_sub(status.bottom()),
+            outer_spacer,
+            "status/composer and composer/disclosure gaps must match at {width}x{height}"
+        );
+    }
 
     assert_eq!(
-        dock_bottom,
+        disclosure.bottom().saturating_add(outer_spacer),
         plan.shell.y + plan.shell.height,
-        "composer dock stack must be bottom-anchored in the live shell at {width}x{height}; composer={composer:?} disclosure={:?} shell={:?}",
+        "composer dock stack plus its contract margin must be bottom-anchored in the live shell at {width}x{height}; composer={composer:?} disclosure={:?} shell={:?}",
         plan.disclosure,
         plan.shell
     );
@@ -488,24 +503,21 @@ fn boundary_viewports_never_clip_composer_or_disclosure() {
 }
 
 #[test]
-fn boundary_spacer_transitions_at_60_column_cutoff() {
+fn boundary_spacer_transitions_at_20_row_cutoff() {
     let app = live_session_app();
 
-    // At 60 columns: no spacer (ultra-compact)
-    for &height in &[20u16, 24, 30, 40] {
-        let plan = plan_for(&app, 60, height);
-        let composer = plan.composer.expect("composer at 60 cols");
-        let disclosure = plan.disclosure.expect("disclosure at 60 cols");
-        assert_eq!(composer.bottom(), disclosure.y);
-        assert_eq!(disclosure.bottom(), height);
-    }
-
-    for &height in &[20u16, 24, 30, 40] {
-        let plan = plan_for(&app, 61, height);
-        let composer = plan.composer.expect("composer at 61 cols");
-        let disclosure = plan.disclosure.expect("disclosure at 61 cols");
-        assert_eq!(composer.bottom(), disclosure.y);
-        assert_eq!(disclosure.bottom(), height);
+    for width in [60u16, 61] {
+        for height in [20u16, 21, 24, 30, 40] {
+            let plan = plan_for(&app, width, height);
+            let composer = plan.composer.expect("composer at row cutoff");
+            let disclosure = plan.disclosure.expect("disclosure at row cutoff");
+            let expected_spacer = if height <= 20 { 0 } else { 1 };
+            assert_eq!(
+                disclosure.y.saturating_sub(composer.bottom()),
+                expected_spacer
+            );
+            assert_eq!(height.saturating_sub(disclosure.bottom()), expected_spacer);
+        }
     }
 }
 
@@ -651,8 +663,12 @@ fn composer_disclosure_spacer_gap_matches_centralized_contract_at_all_viewports(
         let disclosure = plan
             .disclosure
             .unwrap_or_else(|| panic!("disclosure at {width}x{height}"));
-        assert_eq!(composer.bottom(), disclosure.y);
-        assert_eq!(disclosure.bottom(), height);
+        let expected_spacer = if height <= 20 { 0 } else { 1 };
+        assert_eq!(
+            composer.bottom().saturating_add(expected_spacer),
+            disclosure.y
+        );
+        assert_eq!(disclosure.bottom().saturating_add(expected_spacer), height);
     }
 }
 
