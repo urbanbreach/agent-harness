@@ -244,6 +244,7 @@ pub(in crate::coord) struct AgentTurnTaskScheduledEventArgs<'a> {
     pub(in crate::coord) request_id: &'a str,
     pub(in crate::coord) queue_key: &'a ConcurrencyKey,
     pub(in crate::coord) state: TaskScheduleState,
+    pub(in crate::coord) child_task: Option<&'a ChildTaskTurnState>,
 }
 
 pub(in crate::coord) struct ScheduleAgentTurnArgs {
@@ -346,6 +347,7 @@ where
                 request_id: &request_id,
                 queue_key: &queue_key,
                 state: TaskScheduleState::Queued,
+                child_task: child_task.as_ref(),
             },
         )?;
 
@@ -380,6 +382,7 @@ where
                     request_id: &request_id,
                     queue_key: &queue_key,
                     state: TaskScheduleState::Started,
+                    child_task: child_task.as_ref(),
                 },
             )?;
 
@@ -420,6 +423,7 @@ where
                     request_id: &request_id,
                     queue_key: &queue_key,
                     state: TaskScheduleState::Queued,
+                    child_task: child_task.as_ref(),
                 },
             )?;
 
@@ -457,6 +461,7 @@ where
         request_id,
         queue_key,
         state,
+        child_task,
     } = args;
 
     append_payload_event_with_correlation(
@@ -470,6 +475,16 @@ where
             task_id: task_id.into(),
             state,
             queue_key: Some(queue_key.queue_key()),
+            metadata: child_task.map(|child_task| TaskScheduleMetadata {
+                lineage: Some(TaskLineageMetadata {
+                    parent_tool_call_id: Some(child_task.parent_tool_call_id.clone()),
+                    parent_request_id: None,
+                    parent_session_id: Some(child_task.parent_session_id.to_string()),
+                    child_session_id: Some(child_task.child_session_id.to_string()),
+                    child_request_id: Some(child_task.child_request_id.clone()),
+                    ..TaskLineageMetadata::default()
+                }),
+            }),
         }),
     )
 }

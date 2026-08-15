@@ -40,8 +40,8 @@ use crate::event::{
     ProviderRequestFinishedMetadata, ProviderRequestRetryMetadata, ProviderRequestStartedMetadata,
     RunFailedEvent, RunFinishedEvent, RunStartedEvent, SessionTitleUpdatedEvent,
     StaleDetectedEvent, TaskCancelledEvent, TaskCompletedEvent, TaskCompletionMetadata,
-    TaskLineageMetadata, TaskResultLateEvent, TaskScheduleState, TaskScheduledEvent,
-    TaskTerminalScope, ToolCallMetadata, ToolCallStatus, ToolIdentityMetadata,
+    TaskLineageMetadata, TaskResultLateEvent, TaskScheduleMetadata, TaskScheduleState,
+    TaskScheduledEvent, TaskTerminalScope, ToolCallMetadata, ToolCallStatus, ToolIdentityMetadata,
     UserMessageSubmittedEvent,
 };
 use crate::perm::{

@@ -217,6 +217,14 @@ pub struct TaskScheduledEvent {
     pub state: TaskScheduleState,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub queue_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<TaskScheduleMetadata>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct TaskScheduleMetadata {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lineage: Option<TaskLineageMetadata>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

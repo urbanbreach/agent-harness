@@ -230,6 +230,27 @@ async fn background_task_completion_after_tool_result_wakes_parent_in_followup_t
         events.iter().any(|event| {
             matches!(
                 &event.payload,
+                EventV1::TaskScheduled(data)
+                    if event.correlation_id.as_deref() == Some(child_request_id.as_str())
+                        && data
+                            .metadata
+                            .as_ref()
+                            .and_then(|metadata| metadata.lineage.as_ref())
+                            .is_some_and(|lineage| {
+                                lineage.parent_tool_call_id.as_deref()
+                                    == Some("toolcall_parent_task")
+                                    && lineage.child_request_id.as_deref()
+                                        == Some(child_request_id.as_str())
+                            })
+            )
+        })
+    })
+    .await;
+
+    wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
                 EventV1::BackgroundTaskNotification(data)
                     if data.child_request_id == child_request_id
             )

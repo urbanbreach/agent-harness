@@ -1130,6 +1130,14 @@ where
     let queue_key = ConcurrencyKey::Tool {
         tool_id: tool_id.clone(),
     };
+    let schedule_metadata =
+        matches!(tool_id.as_str(), "task" | "agent.spawn").then(|| TaskScheduleMetadata {
+            lineage: Some(tool_task_lineage_metadata(
+                &tool_call_id,
+                request_correlation_id.as_deref(),
+                None,
+            )),
+        });
 
     append_payload_event_with_correlation(
         clock,
@@ -1142,6 +1150,7 @@ where
             task_id: task_id.clone().into(),
             state: TaskScheduleState::Started,
             queue_key: Some(queue_key.queue_key()),
+            metadata: schedule_metadata,
         }),
     )?;
 

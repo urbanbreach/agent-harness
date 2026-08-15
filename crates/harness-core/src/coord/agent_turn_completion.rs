@@ -364,6 +364,7 @@ impl Coordinator {
                         request_id: &queued.request_id,
                         queue_key: &queued.queue_key,
                         state: TaskScheduleState::Started,
+                        child_task: queued.child_task.as_ref(),
                     },
                 )?;
 
@@ -742,6 +743,7 @@ impl Coordinator {
                         request_id: &queued.request_id,
                         queue_key: &queued.queue_key,
                         state: TaskScheduleState::Started,
+                        child_task: queued.child_task.as_ref(),
                     },
                 )?;
 
