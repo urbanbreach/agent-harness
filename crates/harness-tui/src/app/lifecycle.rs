@@ -100,6 +100,21 @@ pub enum SessionMode {
     AlwaysApprove,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InterruptReason {
+    User,
+    SendNow,
+}
+
+impl InterruptReason {
+    pub const fn coordinator_reason(self) -> &'static str {
+        match self {
+            Self::User => "interrupted",
+            Self::SendNow => "send_now",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UiIntent {
     ResolvePermission {
@@ -146,6 +161,7 @@ pub enum UiIntent {
     },
     InterruptSession {
         task_ids: Vec<String>,
+        reason: InterruptReason,
     },
     ForkSession {
         source_run_dir: PathBuf,
@@ -282,6 +298,30 @@ impl AppState {
         self.activities
             .iter()
             .any(|activity| activity.status == ActivityStatus::Streaming)
+    }
+
+    pub(crate) fn live_turn_status_visible(&self) -> bool {
+        if self.replay_mode
+            || self.startup_shell_visible()
+            || self.active_permission_view().is_some()
+        {
+            return false;
+        }
+
+        let foreground_work = self.live_turn_stop_available();
+        let background_work = self.active_background_task_count() > 0;
+        let actionable_work = self.has_live_turn_activity() || foreground_work || background_work;
+        match self.runtime_state().kind {
+            RuntimeStateKind::Sending | RuntimeStateKind::Streaming => true,
+            RuntimeStateKind::Degraded | RuntimeStateKind::Disconnected => actionable_work,
+            RuntimeStateKind::Ready | RuntimeStateKind::Success => {
+                foreground_work || background_work
+            }
+            RuntimeStateKind::Failure
+            | RuntimeStateKind::Cancelled
+            | RuntimeStateKind::PermissionBlocked
+            | RuntimeStateKind::PermissionPending => false,
+        }
     }
 
     pub fn new_live(
@@ -792,13 +832,25 @@ impl AppState {
             .any(|activity| activity.status == ActivityStatus::Streaming)
     }
 
-    fn active_interrupt_task_id(&self) -> Option<&str> {
-        self.projection.active_turn_task_id()
+    fn has_active_interrupt_task(&self) -> bool {
+        !self.active_interrupt_task_ids().is_empty()
     }
 
     pub(in crate::app) fn active_interrupt_task_ids(&self) -> BTreeSet<String> {
+        let hidden_child_request_ids = self.hidden_delegated_child_request_ids_in_current_view();
         self.projection
-            .active_turn_task_ids()
+            .active_turn_task_ids_excluding(&hidden_child_request_ids)
+            .into_iter()
+            .map(str::to_string)
+            .collect()
+    }
+
+    pub(in crate::app) fn active_interrupt_task_ids_for_request(
+        &self,
+        request_id: &str,
+    ) -> BTreeSet<String> {
+        self.projection
+            .active_turn_task_ids_for_request(request_id)
             .into_iter()
             .map(str::to_string)
             .collect()
@@ -810,7 +862,7 @@ impl AppState {
             && !self.startup_shell_visible()
             && !self.composer_disabled()
             && !self.slash_visible
-            && self.active_interrupt_task_id().is_some()
+            && self.has_active_interrupt_task()
             && !self
                 .activities
                 .iter()
@@ -819,7 +871,7 @@ impl AppState {
     }
 
     pub(crate) fn live_turn_stop_available(&self) -> bool {
-        !self.replay_mode && self.active_interrupt_task_id().is_some()
+        !self.replay_mode && self.has_active_interrupt_task()
     }
 
     pub(crate) fn interrupt_requested(&self) -> bool {
@@ -837,6 +889,29 @@ impl AppState {
 
     pub(crate) fn live_turn_stop_hovered(&self) -> bool {
         self.hovered_live_turn_stop
+    }
+
+    pub(crate) fn live_turn_background_hovered(&self) -> bool {
+        self.hovered_live_turn_background
+    }
+
+    pub(crate) fn live_turn_background_available(&self) -> bool {
+        !self.replay_mode && self.live_turn_demote_handle_id().is_some()
+    }
+
+    pub(in crate::app) fn live_turn_demote_handle_id(&self) -> Option<String> {
+        let activity = self
+            .runtime_state_activity()
+            .filter(|activity| activity.status == ActivityStatus::Streaming)?;
+        self.projection.live_turn_demote_handle_id(activity)
+    }
+
+    pub(in crate::app) fn background_live_turn_child(&mut self) -> bool {
+        let Some(handle_id) = self.live_turn_demote_handle_id() else {
+            return false;
+        };
+        self.emit_ui_intent(UiIntent::DemoteForegroundChildTask { handle_id });
+        true
     }
 
     pub(crate) fn interrupt_confirmation_pending(&self) -> bool {
@@ -900,6 +975,7 @@ impl AppState {
         }
         self.emit_ui_intent(UiIntent::InterruptSession {
             task_ids: task_ids.iter().cloned().collect(),
+            reason: InterruptReason::User,
         });
         self.interrupt_requested_task_ids = task_ids;
         self.reset_interrupt_confirmation();

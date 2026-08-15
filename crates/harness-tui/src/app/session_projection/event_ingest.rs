@@ -404,6 +404,19 @@ impl SessionProjection {
                 });
 
                 if let Some(request_id) = event.correlation_id.as_deref() {
+                    if should_mark_done {
+                        self.completed_turn_request_ids
+                            .insert(request_id.to_string());
+                        if let Some(elapsed_ms) = data
+                            .metadata
+                            .as_ref()
+                            .and_then(|metadata| metadata.timing.as_ref())
+                            .and_then(|timing| timing.elapsed_ms)
+                        {
+                            self.terminal_elapsed_ms
+                                .insert(request_id.to_string(), elapsed_ms);
+                        }
+                    }
                     if let Some(index) = self.activity_index_or_local_echo(request_id, event.seq) {
                         if let Some(entry) = self.activities.get_mut(index) {
                             if should_mark_done {
@@ -444,6 +457,12 @@ impl SessionProjection {
                     }
                 }
                 self.update_orchestration_task(event, data.task_id.as_str(), |row| {
+                    merge_orchestration_task_lineage(
+                        row,
+                        data.metadata
+                            .as_ref()
+                            .and_then(|metadata| metadata.lineage.as_ref()),
+                    );
                     if let Some(queue_key) = data.queue_key.as_ref() {
                         row.queue_key = Some(queue_key.clone());
                     }
@@ -462,6 +481,7 @@ impl SessionProjection {
                 });
             }
             EventV1::TaskCancelled(data) => {
+                let send_now = data.reason == "send_now";
                 let should_mark_error =
                     self.is_turn_level_task_cancellation(data.task_id.as_str(), data);
                 self.update_orchestration_task(event, data.task_id.as_str(), |row| {
@@ -474,16 +494,21 @@ impl SessionProjection {
                         if let Some(index) = self.activity_index_for_request(request_id) {
                             if let Some(entry) = self.activities.get_mut(index) {
                                 entry.status = ActivityStatus::Error;
-                                let reason = non_empty_preserved_string(&data.reason);
-                                entry.error_message = match (reason, entry.error_message.take()) {
-                                    (Some(reason), Some(existing))
-                                        if !existing.contains(&reason) =>
+                                if send_now {
+                                    entry.error_message = None;
+                                } else {
+                                    let reason = non_empty_preserved_string(&data.reason);
+                                    entry.error_message = match (reason, entry.error_message.take())
                                     {
-                                        Some(format!("{reason} · {existing}"))
-                                    }
-                                    (Some(reason), _) => Some(reason),
-                                    (None, existing) => existing,
-                                };
+                                        (Some(reason), Some(existing))
+                                            if !existing.contains(&reason) =>
+                                        {
+                                            Some(format!("{reason} · {existing}"))
+                                        }
+                                        (Some(reason), _) => Some(reason),
+                                        (None, existing) => existing,
+                                    };
+                                }
                                 mark_activity_event(entry, event.seq, event.mono_ms);
                             }
                         }

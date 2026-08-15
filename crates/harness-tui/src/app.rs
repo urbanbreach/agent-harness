@@ -29,8 +29,8 @@ use harness_core::edit_attribution::EditAttributionSummary;
 use harness_core::event::{
     ActorKind, EventActor, EventArtifactRef, EventEnvelopeV1, EventV1, ExecutionTimingMetadata,
     ProviderRequestStartedEvent, ResolvedToolIdentity, RunFinishedEvent, TaskCompletionMetadata,
-    TaskLineageMetadata, ToolCallLifecycleState, ToolCallMetadata, ToolCallStatus,
-    UserMessageSubmittedEvent, SCHEMA_VERSION,
+    TaskLineageMetadata, TaskScheduleMetadata, ToolCallLifecycleState, ToolCallMetadata,
+    ToolCallStatus, UserMessageSubmittedEvent, SCHEMA_VERSION,
 };
 use harness_core::extension_manifest::{
     ExtensionDiscoverSummary, ExtensionLoadOutcome, ExtensionManifestSummary,
@@ -176,7 +176,8 @@ pub(crate) use self::activity::{
 };
 pub(in crate::app) use self::activity::{
     mark_activity_event, merge_orchestration_task_completion_metadata,
-    merge_orchestration_task_event, new_streaming_activity_entry, NewStreamingActivityEntryArgs,
+    merge_orchestration_task_event, merge_orchestration_task_lineage, new_streaming_activity_entry,
+    tool_call_is_foreground_child_wait, NewStreamingActivityEntryArgs,
 };
 pub use self::activity::{
     ActiveContextUsage, ActivityCacheUsage, ActivityEntry, ActivityStatus, ActivityUsage,
@@ -188,8 +189,9 @@ pub use self::auth_dialog::{ConnectDialogState, ConnectProviderOption};
 use self::auth_display::auth_status_banner;
 use self::composer::ComposerState;
 pub use self::lifecycle::{
-    default_shell_registry, Focus, LifecycleShellState, MemoryCaps, PostRunHandoffAction,
-    ReviewSurface, SessionMode, ShellDescriptor, ShellKind, StartupLauncherAction, Tab, UiIntent,
+    default_shell_registry, Focus, InterruptReason, LifecycleShellState, MemoryCaps,
+    PostRunHandoffAction, ReviewSurface, SessionMode, ShellDescriptor, ShellKind,
+    StartupLauncherAction, Tab, UiIntent,
 };
 use self::new_worktree_dialog::NewWorktreeDialogState;
 use self::permission_prompt::PermissionPromptState;
@@ -199,6 +201,7 @@ use self::permissions::{
 use self::prompt_stash::{PromptStashEntry, PromptStashState};
 use self::question_prompt::QuestionPromptState;
 pub use self::session_history::SessionHistoryEntry;
+pub(crate) use self::session_projection::LiveTurnWatchers;
 use self::session_projection::SessionProjection;
 use self::session_stack::SessionNavigationSnapshot;
 use self::terminal_panel::terminal_panel_event_is_shell;
@@ -358,6 +361,7 @@ pub struct AppState {
     pub(crate) hovered_subagent_footer_target: Option<SubagentFooterTarget>,
     pub(crate) pending_subagent_footer_target: Option<SubagentFooterTarget>,
     pub(crate) hovered_live_turn_stop: bool,
+    pub(crate) hovered_live_turn_background: bool,
     error_details_visible: bool,
     pub startup_mode: bool,
     starting_session_seed: bool,
@@ -670,6 +674,7 @@ impl Default for AppState {
             hovered_subagent_footer_target: None,
             pending_subagent_footer_target: None,
             hovered_live_turn_stop: false,
+            hovered_live_turn_background: false,
             error_details_visible: false,
             startup_mode: false,
             starting_session_seed: false,

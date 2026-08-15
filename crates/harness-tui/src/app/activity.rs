@@ -172,6 +172,24 @@ impl ActivityEntry {
             .map(|first_delta| self.last_mono_ms.saturating_sub(first_delta))
     }
 
+    pub(crate) fn is_sendable_wait(&self) -> bool {
+        self.tool_calls
+            .iter()
+            .rev()
+            .find(|tool| tool.status == ToolCallDisplayStatus::Running)
+            .is_some_and(|tool| {
+                tool_call_is_parked_wait(tool) || tool_call_is_foreground_child_wait(tool)
+            })
+    }
+
+    pub(crate) fn is_parked_wait(&self) -> bool {
+        self.tool_calls
+            .iter()
+            .rev()
+            .find(|tool| tool.status == ToolCallDisplayStatus::Running)
+            .is_some_and(tool_call_is_parked_wait)
+    }
+
     pub(in crate::app) fn note_thinking_mono(&mut self, mono_ms: u64) {
         if self.thinking_first_mono_ms.is_none() {
             self.thinking_first_mono_ms = Some(mono_ms);
@@ -187,6 +205,29 @@ impl ActivityEntry {
 
     pub(in crate::app) fn bump_revision(&mut self) {
         self.revision = self.revision.saturating_add(1);
+    }
+}
+
+fn tool_boolean_arg(tool: &ToolCallEntry, key: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(&tool.args_summary)
+        .ok()
+        .as_ref()
+        .and_then(|value| value.get(key))
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
+}
+
+pub(in crate::app) fn tool_call_is_parked_wait(tool: &ToolCallEntry) -> bool {
+    tool.effective_tool_id() == "background_output" && tool_boolean_arg(tool, "block")
+}
+
+pub(in crate::app) fn tool_call_is_foreground_child_wait(tool: &ToolCallEntry) -> bool {
+    match tool.effective_tool_id() {
+        "task" => !tool_boolean_arg(tool, "run_in_background"),
+        "agent.spawn" => {
+            !tool_boolean_arg(tool, "background") && !tool_boolean_arg(tool, "run_in_background")
+        }
+        _ => false,
     }
 }
 
@@ -350,7 +391,7 @@ pub(in crate::app) fn merge_orchestration_task_event(
     }
 }
 
-fn merge_orchestration_task_lineage(
+pub(in crate::app) fn merge_orchestration_task_lineage(
     row: &mut OrchestrationTaskRow,
     lineage: Option<&TaskLineageMetadata>,
 ) {

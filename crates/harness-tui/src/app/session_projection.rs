@@ -12,12 +12,13 @@ use harness_core::event::{
 use super::permissions::PendingPermission;
 use super::{
     mark_activity_event, merge_orchestration_task_completion_metadata,
-    merge_orchestration_task_event, merge_resolved_tool_identity, merge_tool_call_metadata,
-    new_streaming_activity_entry, task_child_request_id_from_output,
+    merge_orchestration_task_event, merge_orchestration_task_lineage, merge_resolved_tool_identity,
+    merge_tool_call_metadata, new_streaming_activity_entry, task_child_request_id_from_output,
     task_child_session_id_from_output, task_completed_updates_assistant_transcript,
-    ActiveContextUsage, ActivityCacheUsage, ActivityEntry, ActivityStatus, ActivityUsage, AppState,
-    CompactionState, CompactionStatus, CompactionUsageMetrics, EditDisplayStatus, EditEntry, Focus,
-    MemoryCaps, NewStreamingActivityEntryArgs, OrchestrationOwnerLabels, OrchestrationSummary,
+    tool_call_is_foreground_child_wait, ActiveContextUsage, ActivityCacheUsage, ActivityEntry,
+    ActivityStatus, ActivityUsage, AppState, CompactionState, CompactionStatus,
+    CompactionUsageMetrics, EditDisplayStatus, EditEntry, Focus, MemoryCaps,
+    NewStreamingActivityEntryArgs, OrchestrationOwnerLabels, OrchestrationSummary,
     OrchestrationTaskRow, OrchestrationTaskState, ToolCallDisplayStatus, ToolCallEntry,
     TOOL_OUTPUT_DISPLAY_MAX_CHARS,
 };
@@ -43,6 +44,21 @@ pub(crate) enum ProjectionDelta {
     ReplayPending,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct LiveTurnWatchers {
+    pub(crate) commands: usize,
+    pub(crate) monitors: usize,
+    pub(crate) loops: usize,
+    pub(crate) subagents: usize,
+    pub(crate) workflows: usize,
+}
+
+impl LiveTurnWatchers {
+    pub(crate) const fn total(self) -> usize {
+        self.commands + self.monitors + self.loops + self.subagents + self.workflows
+    }
+}
+
 #[derive(Default)]
 pub struct SessionProjection {
     pub(crate) events: Vec<EventEnvelopeV1>,
@@ -57,6 +73,8 @@ pub struct SessionProjection {
     agent_profiles: BTreeMap<String, String>,
     child_agent_ids: BTreeSet<String>,
     child_request_agents: BTreeMap<String, String>,
+    completed_turn_request_ids: BTreeSet<String>,
+    terminal_elapsed_ms: BTreeMap<String, u64>,
     fallback_profile_label: String,
     seen_seqs: BTreeSet<u64>,
     pub(crate) pending_permissions: BTreeMap<String, PendingPermission>,
@@ -76,6 +94,8 @@ impl SessionProjection {
         self.agent_profiles.clear();
         self.child_agent_ids.clear();
         self.child_request_agents.clear();
+        self.completed_turn_request_ids.clear();
+        self.terminal_elapsed_ms.clear();
         self.seen_seqs.clear();
         self.pending_permissions.clear();
         self.run_terminal_seen = false;
@@ -91,6 +111,14 @@ impl SessionProjection {
 
     pub(crate) fn has_seen_seq(&self, seq: u64) -> bool {
         self.seen_seqs.contains(&seq)
+    }
+
+    pub(crate) fn terminal_elapsed_ms(&self, request_id: &str) -> Option<u64> {
+        self.terminal_elapsed_ms.get(request_id).copied()
+    }
+
+    pub(crate) fn turn_completion_seen(&self, request_id: &str) -> bool {
+        self.completed_turn_request_ids.contains(request_id)
     }
 
     fn profile_label_for_event(&self, event: &EventEnvelopeV1) -> String {
@@ -812,27 +840,124 @@ impl SessionProjection {
         })
     }
 
-    pub(super) fn active_turn_task_ids(&self) -> Vec<&str> {
+    pub(super) fn active_turn_task_ids_excluding(
+        &self,
+        excluded_request_ids: &BTreeSet<&str>,
+    ) -> Vec<&str> {
         self.orchestration_tasks
             .values()
-            .filter(|row| !row.state.is_terminal() && Self::task_row_is_turn_level(row))
+            .filter(|row| {
+                !row.state.is_terminal()
+                    && Self::task_row_is_turn_level(row)
+                    && row
+                        .effective_child_request_id()
+                        .is_none_or(|request_id| !excluded_request_ids.contains(request_id))
+            })
             .map(|row| row.task_id.as_str())
             .collect()
     }
 
-    pub(super) fn active_turn_task_id(&self) -> Option<&str> {
+    pub(super) fn active_turn_task_ids_for_request(&self, request_id: &str) -> Vec<&str> {
         self.orchestration_tasks
             .values()
-            .filter(|row| !row.state.is_terminal() && Self::task_row_is_turn_level(row))
-            .max_by_key(|row| (row.last_seq, row.first_seq))
+            .filter(|row| {
+                !row.state.is_terminal()
+                    && Self::task_row_is_turn_level(row)
+                    && (row.effective_child_request_id() == Some(request_id)
+                        || row.request_id.as_deref() == Some(request_id))
+            })
             .map(|row| row.task_id.as_str())
+            .collect()
     }
 
     pub(crate) fn active_background_task_count(&self) -> usize {
+        self.live_turn_watchers().total()
+    }
+
+    pub(crate) fn live_turn_watchers(&self) -> LiveTurnWatchers {
+        let mut watchers = LiveTurnWatchers::default();
+        let child_request_by_parent_tool = self
+            .orchestration_tasks
+            .values()
+            .filter(|row| !row.state.is_terminal())
+            .filter_map(|row| {
+                Some((
+                    row.parent_tool_call_id.as_deref()?,
+                    row.child_request_id.as_deref()?,
+                ))
+            })
+            .collect::<BTreeMap<_, _>>();
+        let mut subagent_identities = BTreeSet::new();
+        for row in self
+            .orchestration_tasks
+            .values()
+            .filter(|row| !row.state.is_terminal())
+        {
+            let queue_key = row.queue_key.as_deref().unwrap_or_default();
+            if Self::task_row_is_turn_level(row) {
+                if row.owner_kind == ActorKind::Worker {
+                    let request_id = row
+                        .parent_tool_call_id
+                        .as_deref()
+                        .and_then(|id| child_request_by_parent_tool.get(id).copied())
+                        .or_else(|| row.effective_child_request_id());
+                    let identity =
+                        request_id.map_or(("task", row.task_id.as_str()), |id| ("request", id));
+                    subagent_identities.insert(identity);
+                }
+                continue;
+            }
+
+            match queue_key.strip_prefix("tool:") {
+                Some("task" | "agent.spawn") => {
+                    let request_id = row
+                        .parent_tool_call_id
+                        .as_deref()
+                        .and_then(|id| child_request_by_parent_tool.get(id).copied());
+                    let identity =
+                        request_id.map_or(("task", row.task_id.as_str()), |id| ("request", id));
+                    subagent_identities.insert(identity);
+                }
+                Some("batch") => {
+                    watchers.workflows = watchers.workflows.saturating_add(1);
+                }
+                Some("monitor") => {
+                    watchers.monitors = watchers.monitors.saturating_add(1);
+                }
+                Some(_) | None => {
+                    watchers.commands = watchers.commands.saturating_add(1);
+                }
+            }
+        }
+        watchers.subagents = subagent_identities.len();
+        watchers
+    }
+
+    pub(crate) fn live_turn_demote_handle_id(&self, activity: &ActivityEntry) -> Option<String> {
+        let running_task_tool_call_ids = activity
+            .tool_calls
+            .iter()
+            .filter(|tool| {
+                tool.status == ToolCallDisplayStatus::Running
+                    && tool_call_is_foreground_child_wait(tool)
+            })
+            .map(|tool| tool.tool_call_id.as_str())
+            .collect::<BTreeSet<_>>();
+        if running_task_tool_call_ids.is_empty() {
+            return None;
+        }
+
         self.orchestration_tasks
             .values()
-            .filter(|row| !row.state.is_terminal() && !Self::task_row_is_turn_level(row))
-            .count()
+            .filter(|row| !row.state.is_terminal())
+            .filter(|row| {
+                row.parent_tool_call_id
+                    .as_deref()
+                    .is_some_and(|id| running_task_tool_call_ids.contains(id))
+            })
+            .filter_map(|row| row.child_request_id.as_deref().map(|id| (row.last_seq, id)))
+            .max_by_key(|(last_seq, _)| *last_seq)
+            .map(|(_, id)| id.to_string())
     }
 
     fn task_row_is_turn_level(row: &OrchestrationTaskRow) -> bool {
@@ -850,14 +975,14 @@ impl SessionProjection {
         task_id: &str,
         data: &harness_core::event::TaskCompletedEvent,
     ) -> bool {
-        self.orchestration_tasks
-            .get(task_id)
-            .map(Self::task_row_is_turn_level)
+        data.metadata
+            .as_ref()
+            .and_then(|metadata| metadata.task_scope)
+            .map(Self::task_scope_is_turn_level)
             .or_else(|| {
-                data.metadata
-                    .as_ref()
-                    .and_then(|metadata| metadata.task_scope)
-                    .map(Self::task_scope_is_turn_level)
+                self.orchestration_tasks
+                    .get(task_id)
+                    .map(Self::task_row_is_turn_level)
             })
             .unwrap_or_else(|| task_completed_updates_assistant_transcript(data))
     }
@@ -867,10 +992,13 @@ impl SessionProjection {
         task_id: &str,
         data: &harness_core::event::TaskCancelledEvent,
     ) -> bool {
-        self.orchestration_tasks
-            .get(task_id)
-            .map(Self::task_row_is_turn_level)
-            .or_else(|| data.task_scope.map(Self::task_scope_is_turn_level))
+        data.task_scope
+            .map(Self::task_scope_is_turn_level)
+            .or_else(|| {
+                self.orchestration_tasks
+                    .get(task_id)
+                    .map(Self::task_row_is_turn_level)
+            })
             .unwrap_or(false)
     }
 
