@@ -6,10 +6,11 @@
 
 use harness_core::event::{
     ActorKind, AgentSpawnedEvent, AgentStoppedEvent, EventActor, EventEnvelopeV1, EventV1,
-    PermissionRequestedEvent, ProviderReasoningDeltaEvent, ProviderRequestFinishedEvent,
-    ProviderRequestRetryMetadata, ProviderRequestStartedEvent, ProviderRequestStartedMetadata,
-    ProviderStreamDeltaEvent, RunStartedEvent, SessionCompactionEvent, TaskCompletedEvent,
-    TaskScheduleState, TaskScheduledEvent, ToolCallFinishedEvent, ToolCallRequestedEvent,
+    ExecutionTimingMetadata, PermissionRequestedEvent, ProviderReasoningDeltaEvent,
+    ProviderRequestFinishedEvent, ProviderRequestRetryMetadata, ProviderRequestStartedEvent,
+    ProviderRequestStartedMetadata, ProviderStreamDeltaEvent, RunStartedEvent,
+    SessionCompactionEvent, TaskCompletedEvent, TaskCompletionMetadata, TaskScheduleState,
+    TaskScheduledEvent, TaskTerminalScope, ToolCallFinishedEvent, ToolCallRequestedEvent,
     ToolCallStartedEvent, ToolCallStatus, UserMessageSubmittedEvent, SCHEMA_VERSION,
 };
 use harness_core::proj::{RunStatus, SessionCatalogEntry, SessionModeSource};
@@ -43,8 +44,11 @@ const TYPE_FIRST_STARTUP_SCENARIO: &str = "type_first_startup";
 const IDLE_SHELL_SCENARIO: &str = "idle_shell";
 const LIVE_DRAFT_SCENARIO: &str = "live_draft";
 const LIVE_STREAM_SCENARIO: &str = "live_stream";
+const LIVE_PARKED_SCENARIO: &str = "live_parked";
+const LIVE_WATCHER_SCENARIO: &str = "live_watcher";
 const LIVE_FAIL_SCENARIO: &str = "live_fail";
 const LIVE_COMPLETE_SCENARIO: &str = "live_complete";
+const LIVE_WRAPPED_USER_SCENARIO: &str = "live_wrapped_user";
 const LIVE_CANCEL_SCENARIO: &str = "live_cancel";
 const LIVE_RECOVER_SCENARIO: &str = "live_recover";
 const LIVE_TOOL_SCENARIO: &str = "live_tool";
@@ -76,6 +80,8 @@ const TYPE_FIRST_STARTUP_HELPER: &str = "reference_parity_pty_helper_type_first_
 const IDLE_SHELL_HELPER: &str = "pty_helper_idle_shell";
 const LIVE_DRAFT_HELPER: &str = "pty_helper_live_draft";
 const LIVE_STREAM_HELPER: &str = "pty_helper_live_stream";
+const LIVE_PARKED_HELPER: &str = "pty_helper_live_parked";
+const LIVE_WATCHER_HELPER: &str = "pty_helper_live_watcher";
 const LIVE_FAIL_HELPER: &str = "pty_helper_live_fail";
 const LIVE_COMPLETE_HELPER: &str = "pty_helper_live_complete";
 const LIVE_MARKDOWN_HELPER: &str = "pty_helper_live_markdown";
@@ -101,6 +107,8 @@ const QUESTION_DRAFT: &str = "keep draft under question";
 const FAIL_USER_TEXT: &str = "fail the parity probe";
 const COMPLETE_USER_TEXT: &str = "complete the parity probe";
 const COMPLETE_ASSISTANT_TEXT: &str = "parity turn complete stream final response rendered cleanly under the shell composer parity turn complete stream final response rendered cleanly under the shell composer parity turn complete stream final response rendered cleanly under the shell composer";
+const WRAPPED_USER_TEXT: &str = "Verify this user message wraps beneath its body while the compact marker and right-aligned clock stay visible at every width.";
+const WRAPPED_ASSISTANT_TEXT: &str = "Wrapped message rendered cleanly.";
 const MARKDOWN_ASSISTANT_TEXT: &str = "# Release notes\n\n- [x] Theme roles\n- [ ] Visual review\n\n```rust\nlet answer = 42;\n```\n\n> Semantic colors stay capability-safe.";
 // Reference cancellation state (run1-shell-cancel-pinned-v1): empty transcript + draft in composer.
 const CANCEL_USER_TEXT: &str = "cancel the parity probe";
@@ -473,8 +481,8 @@ pub(crate) fn shell_complete_pty() {
         "SHELL-COMPLETE PTY: completed turn must project\n{screen}"
     );
     assert!(
-        screen.contains("Worked for 2.3s"),
-        "SHELL-COMPLETE PTY: Worked for must pack freeze-aligned 2.3s duration\n{screen}"
+        !screen.contains("Worked for"),
+        "SHELL-COMPLETE PTY: settled metadata must not create a standalone row\n{screen}"
     );
     assert!(
         screen.contains('❯'),
@@ -945,6 +953,20 @@ pub(crate) fn pty_helper_live_stream() {
     run_live_with_historical_events(stream_events());
 }
 
+pub(crate) fn pty_helper_live_parked() {
+    if std::env::var(HELPER_SCENARIO_ENV).as_deref() != Ok(LIVE_PARKED_SCENARIO) {
+        return;
+    }
+    run_live_with_historical_events(parked_events());
+}
+
+pub(crate) fn pty_helper_live_watcher() {
+    if std::env::var(HELPER_SCENARIO_ENV).as_deref() != Ok(LIVE_WATCHER_SCENARIO) {
+        return;
+    }
+    run_live_with_historical_events(watcher_events());
+}
+
 pub(crate) fn pty_helper_live_perm_stream() {
     if std::env::var(HELPER_SCENARIO_ENV).as_deref() != Ok(LIVE_PERM_STREAM_SCENARIO) {
         return;
@@ -974,6 +996,7 @@ pub(crate) fn pty_helper_live_thinking() {
                 task_id: "task_thinking_parity".to_string().into(),
                 state: TaskScheduleState::Started,
                 queue_key: Some("provider_model:mock:model-tx".to_string()),
+                metadata: None,
             }),
         ),
     );
@@ -1103,6 +1126,16 @@ pub(crate) fn pty_helper_live_complete() {
         return;
     }
     run_live_with_historical_events(complete_events());
+}
+
+pub(crate) fn pty_helper_live_wrapped_user() {
+    if std::env::var(HELPER_SCENARIO_ENV).as_deref() != Ok(LIVE_WRAPPED_USER_SCENARIO) {
+        return;
+    }
+    run_live_with_historical_events(complete_events_with_text(
+        WRAPPED_USER_TEXT,
+        WRAPPED_ASSISTANT_TEXT,
+    ));
 }
 
 pub(crate) fn pty_helper_live_markdown() {
@@ -1916,6 +1949,7 @@ fn block_grammar_events() -> Vec<EventEnvelopeV1> {
                 task_id: "packet3-subagent-task".to_string().into(),
                 state: TaskScheduleState::Started,
                 queue_key: Some("agent:packet3-subagent".to_string()),
+                metadata: None,
             }),
         ),
         parity_envelope(
@@ -2002,6 +2036,7 @@ fn stream_events() -> Vec<EventEnvelopeV1> {
                 task_id: "task_stream_parity".to_string().into(),
                 state: TaskScheduleState::Started,
                 queue_key: Some("provider_model:mock:model-tx".to_string()),
+                metadata: None,
             }),
         ),
         parity_envelope(
@@ -2043,6 +2078,55 @@ fn stream_events() -> Vec<EventEnvelopeV1> {
     events
 }
 
+fn parked_events() -> Vec<EventEnvelopeV1> {
+    let request_id = "req_parked_pty";
+    vec![
+        parity_envelope(
+            1,
+            Some(request_id),
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: request_id.into(),
+                provider_id: "mock".to_string(),
+                model_id: "model-tx".to_string(),
+                prompt_summary: "wait for background output".to_string(),
+                request_digest: "digest-parked".to_string(),
+                metadata: None,
+            }),
+        ),
+        parity_envelope(
+            2,
+            Some(request_id),
+            EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                tool_call_id: "tool-background-output".into(),
+                tool_id: "background_output".to_string(),
+                args_summary: r#"{"task_id":"bg-1","block":true}"#.to_string(),
+                args_digest: "digest-background-output".to_string(),
+                metadata: None,
+            }),
+        ),
+        parity_envelope(
+            3,
+            Some(request_id),
+            EventV1::ToolCallStarted(ToolCallStartedEvent {
+                tool_call_id: "tool-background-output".into(),
+            }),
+        ),
+    ]
+}
+
+fn watcher_events() -> Vec<EventEnvelopeV1> {
+    vec![parity_envelope(
+        1,
+        Some("req-watcher-pty"),
+        EventV1::TaskScheduled(TaskScheduledEvent {
+            task_id: "task-watcher".into(),
+            state: TaskScheduleState::Started,
+            queue_key: Some("background:analysis".to_string()),
+            metadata: None,
+        }),
+    )]
+}
+
 fn perm_stream_events() -> Vec<EventEnvelopeV1> {
     let request_id = "req_perm_stream_pty";
     // SHELL-PERM reference freeze (run4-shell-perm-pinned-v4): tool-in-flight
@@ -2057,6 +2141,7 @@ fn perm_stream_events() -> Vec<EventEnvelopeV1> {
                 task_id: "task_perm_stream_parity".to_string().into(),
                 state: TaskScheduleState::Started,
                 queue_key: Some("provider_model:mock:model-tx".to_string()),
+                metadata: None,
             }),
         ),
         parity_envelope(
@@ -2116,6 +2201,7 @@ fn question_stream_events() -> Vec<EventEnvelopeV1> {
                 task_id: "task_question_stream_parity".to_string().into(),
                 state: TaskScheduleState::Started,
                 queue_key: Some("provider_model:mock:model-tx".to_string()),
+                metadata: None,
             }),
         ),
         parity_envelope(
@@ -2173,6 +2259,7 @@ fn fail_events() -> Vec<EventEnvelopeV1> {
                 task_id: "task_fail_parity".to_string().into(),
                 state: TaskScheduleState::Started,
                 queue_key: Some("provider_model:mock:model-tx".to_string()),
+                metadata: None,
             }),
         ),
         parity_envelope(
@@ -2233,15 +2320,39 @@ fn fail_events() -> Vec<EventEnvelopeV1> {
 }
 
 fn complete_events() -> Vec<EventEnvelopeV1> {
+    let mut events = complete_events_with_text(COMPLETE_USER_TEXT, COMPLETE_ASSISTANT_TEXT);
+    let mut completion = parity_envelope(
+        5,
+        Some("req_complete_pty"),
+        EventV1::TaskCompleted(TaskCompletedEvent {
+            task_id: "task_complete_pty".into(),
+            result_summary: COMPLETE_ASSISTANT_TEXT.to_string(),
+            result_digest: "digest-complete-task".to_string(),
+            metadata: Some(TaskCompletionMetadata {
+                task_scope: Some(TaskTerminalScope::AgentTurn),
+                timing: Some(ExecutionTimingMetadata {
+                    started_mono_ms: Some(100),
+                    finished_mono_ms: Some(2_400),
+                    elapsed_ms: Some(2_300),
+                }),
+                ..TaskCompletionMetadata::default()
+            }),
+        }),
+    );
+    completion.mono_ms = 2_400;
+    events.push(completion);
+    events
+}
+
+fn complete_events_with_text(user_text: &str, assistant_text: &str) -> Vec<EventEnvelopeV1> {
     let request_id = "req_complete_pty";
-    // Reference completed state (run1-shell-complete-pinned-v1): Worked for 2.3s.
     let mut events = vec![
         parity_envelope(
             1,
             Some(request_id),
             EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
                 request_id: request_id.into(),
-                text: COMPLETE_USER_TEXT.to_string(),
+                text: user_text.to_string(),
             }),
         ),
         parity_envelope(
@@ -2251,7 +2362,7 @@ fn complete_events() -> Vec<EventEnvelopeV1> {
                 request_id: request_id.into(),
                 provider_id: "mock".to_string(),
                 model_id: "model-tx".to_string(),
-                prompt_summary: COMPLETE_USER_TEXT.to_string(),
+                prompt_summary: user_text.to_string(),
                 request_digest: "digest-complete".to_string(),
                 metadata: None,
             }),
@@ -2261,7 +2372,7 @@ fn complete_events() -> Vec<EventEnvelopeV1> {
             Some(request_id),
             EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
                 request_id: request_id.into(),
-                delta: COMPLETE_ASSISTANT_TEXT.to_string(),
+                delta: assistant_text.to_string(),
             }),
         ),
         parity_envelope(
@@ -2276,7 +2387,6 @@ fn complete_events() -> Vec<EventEnvelopeV1> {
             }),
         ),
     ];
-    // first mono non-zero; span 100→2400 = 2.3s Worked for.
     for (event, mono) in events.iter_mut().zip([100_u64, 200, 1000, 2400]) {
         event.mono_ms = mono;
     }
@@ -2297,6 +2407,7 @@ fn recover_events() -> Vec<EventEnvelopeV1> {
                 task_id: "task_recover_parity".to_string().into(),
                 state: TaskScheduleState::Started,
                 queue_key: Some("provider_model:mock:model-tx".to_string()),
+                metadata: None,
             }),
         ),
         parity_envelope(
@@ -2367,6 +2478,7 @@ fn tool_events() -> Vec<EventEnvelopeV1> {
                 task_id: "task_tool_parity".to_string().into(),
                 state: TaskScheduleState::Started,
                 queue_key: Some("provider_model:mock:model-tx".to_string()),
+                metadata: None,
             }),
         ),
         parity_envelope(
@@ -2468,6 +2580,7 @@ fn diff_events() -> Vec<EventEnvelopeV1> {
                 task_id: "task_diff_parity".to_string().into(),
                 state: TaskScheduleState::Started,
                 queue_key: Some("provider_model:mock:model-tx".to_string()),
+                metadata: None,
             }),
         ),
         parity_envelope(
@@ -2569,6 +2682,7 @@ fn scroll_events() -> Vec<EventEnvelopeV1> {
                 task_id: "task_scroll_parity".to_string().into(),
                 state: TaskScheduleState::Started,
                 queue_key: Some("provider_model:mock:model-tx".to_string()),
+                metadata: None,
             }),
         ),
         parity_envelope(

@@ -279,6 +279,16 @@ fn pty_helper_live_stream() {
 }
 
 #[test]
+fn pty_helper_live_parked() {
+    reference_parity_pty_impl::pty_helper_live_parked();
+}
+
+#[test]
+fn pty_helper_live_watcher() {
+    reference_parity_pty_impl::pty_helper_live_watcher();
+}
+
+#[test]
 fn pty_helper_live_perm_stream() {
     // arrange
     // act
@@ -300,6 +310,11 @@ fn pty_helper_live_complete() {
     // act
     // assert
     reference_parity_pty_impl::pty_helper_live_complete();
+}
+
+#[test]
+fn pty_helper_live_wrapped_user() {
+    reference_parity_pty_impl::pty_helper_live_wrapped_user();
 }
 
 #[test]
