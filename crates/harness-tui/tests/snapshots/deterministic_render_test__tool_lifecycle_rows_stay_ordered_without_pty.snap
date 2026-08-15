@@ -6,7 +6,7 @@ expression: trim_trailing_snapshot_whitespace(&rendered)
    test-workspace /workspace/agent-harness
 
 
-     ❯ Inspect tool activity
+     › Inspect tool activity
 
 
      ◆ Read 1 file  ▸
@@ -23,8 +23,6 @@ expression: trim_trailing_snapshot_whitespace(&rendered)
      Tool summaries are now easier to scan, and edits stay inline.
 
 
-     Worked for 0.0s.
-
 
 
 
@@ -37,4 +35,5 @@ expression: trim_trailing_snapshot_whitespace(&rendered)
   ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
   │ ❯                                                                                                                                                                            │
   ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── model-1 ─╯
+
   Shift+Tab:mode  │  Ctrl+x:shortcuts

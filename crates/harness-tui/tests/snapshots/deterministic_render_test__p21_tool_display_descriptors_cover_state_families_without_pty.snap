@@ -6,7 +6,7 @@ expression: trim_trailing_snapshot_whitespace(&rendered)
    test-workspace /workspace/agent-harness
 
 
-     ❯ Inspect P2.1 tool display descriptors
+     › Inspect P2.1 tool display descriptors
 
 
      ◆ List session  ▸
@@ -21,8 +21,6 @@ expression: trim_trailing_snapshot_whitespace(&rendered)
 
      P2.1 tool display descriptors cover all state families.
 
-
-     Worked for 0.0s.
 
 
 
@@ -41,4 +39,5 @@ expression: trim_trailing_snapshot_whitespace(&rendered)
   ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
   │ ❯                                                                                                                                                                            │
   ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── model-1 ─╯
+
   Shift+Tab:mode  │  Ctrl+x:shortcuts
