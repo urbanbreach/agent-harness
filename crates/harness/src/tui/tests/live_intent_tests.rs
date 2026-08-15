@@ -225,6 +225,7 @@ fn live_ui_router_forwards_interrupt_intent_without_switching_workflow() {
 
     sink(UiIntent::InterruptSession {
         task_ids: vec!["task_active".to_string()],
+        reason: harness_tui::app::InterruptReason::User,
     });
 
     assert!(recover_mutex_lock(&selected_workflow).is_none());
@@ -232,6 +233,7 @@ fn live_ui_router_forwards_interrupt_intent_without_switching_workflow() {
         intent_rx.try_recv().ok(),
         Some(UiIntent::InterruptSession {
             task_ids: vec!["task_active".to_string()],
+            reason: harness_tui::app::InterruptReason::User,
         })
     );
 }

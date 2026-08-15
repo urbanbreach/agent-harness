@@ -213,9 +213,12 @@ pub(super) async fn handle_ui_intents(
                     live_update_tx.clone(),
                 );
             }
-            UiIntent::InterruptSession { task_ids } => {
+            UiIntent::InterruptSession { task_ids, reason } => {
                 for task_id in task_ids {
-                    if let Err(err) = coordinator.cancel_task(task_id, "interrupted").await {
+                    if let Err(err) = coordinator
+                        .cancel_task(task_id, reason.coordinator_reason())
+                        .await
+                    {
                         let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
                             message: format!("interrupt failed: {err}"),
                             level: OperatorNoticeLevel::Error,
