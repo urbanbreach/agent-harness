@@ -19,11 +19,7 @@ fn replay_cli_prints_json_summary() {
             envelope(
                 "run_replay_json",
                 2,
-                EventV1::TaskScheduled(TaskScheduledEvent {
-                    task_id: "task_123".to_string().into(),
-                    state: TaskScheduleState::Queued,
-                    queue_key: Some("deep/default:gpt-5.4-mini".to_string()),
-                }),
+                EventV1::TaskScheduled(TaskScheduledEvent { task_id: "task_123".to_string().into(), state: TaskScheduleState::Queued, queue_key: Some("deep/default:gpt-5.4-mini".to_string()), metadata: None }),
             ),
             envelope(
                 "run_replay_json",

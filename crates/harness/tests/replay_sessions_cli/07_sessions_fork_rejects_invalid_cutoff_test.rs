@@ -21,11 +21,7 @@ fn sessions_fork_rejects_invalid_cutoff() {
             envelope(
                 "run_unstable_source",
                 2,
-                EventV1::TaskScheduled(TaskScheduledEvent {
-                    task_id: "task_in_flight".to_string().into(),
-                    state: TaskScheduleState::Started,
-                    queue_key: Some("provider_model:default:gpt-5.4-mini".to_string()),
-                }),
+                EventV1::TaskScheduled(TaskScheduledEvent { task_id: "task_in_flight".to_string().into(), state: TaskScheduleState::Started, queue_key: Some("provider_model:default:gpt-5.4-mini".to_string()), metadata: None }),
             ),
             envelope(
                 "run_unstable_source",

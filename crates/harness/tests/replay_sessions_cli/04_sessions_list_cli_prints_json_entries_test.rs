@@ -186,11 +186,7 @@ fn sessions_reopen_json_surfaces_prompt_context_child_sessions_and_artifacts() {
         "run_resume_fixture",
         9,
         EventActor::new(ActorKind::Worker, Some("agent_000002".to_string())),
-        EventV1::TaskScheduled(TaskScheduledEvent {
-            task_id: "task_000001".to_string().into(),
-            state: TaskScheduleState::Started,
-            queue_key: Some("provider_model:default:gpt-4o-mini".to_string()),
-        }),
+        EventV1::TaskScheduled(TaskScheduledEvent { task_id: "task_000001".to_string().into(), state: TaskScheduleState::Started, queue_key: Some("provider_model:default:gpt-4o-mini".to_string()), metadata: None }),
     ));
     events.push(envelope_with_actor(
         "run_resume_fixture",
