@@ -373,7 +373,7 @@ pub(super) fn transcript_selection_hit_testing_reuses_cached_snapshot_during_dra
     assert_eq!(transcript_selection_cache_build_count_for_test(), 1);
 }
 
-pub(super) fn transcript_selection_snapshot_uses_transcript_rail_for_user_rows() {
+pub(super) fn transcript_selection_snapshot_preserves_user_card_marker() {
     let app = transcript_selection_test_app();
     let snapshot = transcript_selection_debug_snapshot(&app, TEST_FRAME_AREA).unwrap_or_abort();
     let user_row = snapshot
@@ -383,8 +383,8 @@ pub(super) fn transcript_selection_snapshot_uses_transcript_rail_for_user_rows()
         .unwrap_or_abort();
 
     assert!(
-        user_row.trim_start().starts_with("❯ Select this"),
-        "user selection row should preserve the transcript marker and padding\n{:#?}",
+        user_row.trim_start().starts_with("› Select this"),
+        "user selection row should preserve the stable card marker and padding\n{:#?}",
         snapshot.rows
     );
     assert!(

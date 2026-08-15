@@ -236,7 +236,7 @@ fn chrome_style_card_has_overlay_bg_and_subtle_border() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn prompt_glyph_is_angular_bracket() {
+fn composer_user_marker_is_reference_arrow() {
     let theme = Theme::default();
     assert_eq!(theme.live_shell.transcript_glyphs.user_marker, "❯");
 }

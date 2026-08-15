@@ -195,10 +195,11 @@ fn shell_fail_keeps_error_in_full_width_transcript_with_composer() {
         "SHELL-FAIL: runtime must be Failure; got {:?}",
         runtime.kind
     );
-    assert!(failed_dock.composer.height < streaming_dock.composer.height);
+    assert_eq!(failed_dock.composer.height, streaming_dock.composer.height);
+    assert_eq!(failed_dock.composer.height, 3);
     assert!(
-        failed_dock.status.is_some(),
-        "SHELL-FAIL: failed state must preserve the live status band"
+        failed_dock.status.is_none(),
+        "SHELL-FAIL: terminal failure must release the live-only status band"
     );
     assert!(
         rendered.contains("ping"),
@@ -266,7 +267,7 @@ fn shell_fail_keeps_error_in_full_width_transcript_with_composer() {
 }
 
 #[test]
-fn shell_fail_dock_matches_freeze_vertical_ladder() {
+fn shell_fail_dock_releases_status_row_and_stays_bottom_anchored() {
     // arrange
     // act
     // assert
@@ -302,32 +303,27 @@ fn shell_fail_dock_matches_freeze_vertical_ladder() {
 
     let plan = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, W, H));
     let dock = plan.dock.expect("live fail shell keeps a dock");
-    let status = dock.status.expect("live fail shell keeps a status band");
     let disclosure = dock.disclosure.expect("live fail shell keeps disclosure");
 
+    assert!(dock.status.is_none());
     assert_eq!(
-        status,
-        Rect::new(2, 37, 116, 1),
-        "SHELL-FAIL freeze ladder: one status row sits immediately above the composer"
-    );
-    assert_eq!(
-        dock.composer.y, 38,
-        "SHELL-FAIL compact ladder: composer top y=38; got y={}",
+        dock.composer.y, 34,
+        "SHELL-FAIL dock ladder: composer top y=34; got y={}",
         dock.composer.y
     );
     assert_eq!(
-        dock.composer.height, 1,
-        "SHELL-FAIL collapses an empty unfocused composer; got {}",
+        dock.composer.height, 3,
+        "SHELL-FAIL preserves the bordered composer; got {}",
         dock.composer.height
     );
     assert_eq!(
-        disclosure.y, 39,
-        "SHELL-FAIL freeze ladder: disclosure y=39 (L40); got y={}",
+        disclosure.y, 38,
+        "SHELL-FAIL dock ladder: disclosure y=38 (L39); got y={}",
         disclosure.y
     );
     assert_eq!(
-        dock.shell.height, 3,
-        "SHELL-FAIL compact ladder uses status+composer+disclosure; got {}",
+        dock.shell.height, 7,
+        "SHELL-FAIL dock ladder includes three outer spacers; got {}",
         dock.shell.height
     );
     assert_eq!(
@@ -336,9 +332,9 @@ fn shell_fail_dock_matches_freeze_vertical_ladder() {
         "SHELL-FAIL freeze ladder: dock remains bottom-anchored"
     );
     assert_eq!(
-        disclosure.y + disclosure.height,
+        disclosure.bottom().saturating_add(1),
         H,
-        "SHELL-FAIL freeze ladder: disclosure occupies the final row"
+        "SHELL-FAIL dock ladder: disclosure leaves the final margin row"
     );
 }
 
@@ -554,7 +550,7 @@ fn shell_recover_after_failure_keeps_composer_and_accepts_draft() {
 
 /// SHELL-SCROLL: settle inventory window to freeze band f39–f55 (loop15 packing).
 #[test]
-fn shell_scroll_freeze_viewport_packs_f39_to_f55_at_120x32() {
+fn shell_scroll_freeze_viewport_packs_visible_inventory_at_120x32() {
     // arrange
     // act
     // assert
@@ -614,7 +610,7 @@ fn shell_scroll_freeze_viewport_packs_f39_to_f55_at_120x32() {
     let after_pages = render_at(&app, W, SCROLL_FREEZE_H);
     let first_after_pages = first_inventory_line(&after_pages);
     assert!(
-        first_after_pages.is_some_and(|n| (35..=41).contains(&n)),
+        first_after_pages.is_some_and(|n| (35..=42).contains(&n)),
         "PageUp should land near freeze mid-band; first inventory={first_after_pages:?}\n{after_pages}"
     );
 
@@ -640,14 +636,14 @@ fn shell_scroll_freeze_viewport_packs_f39_to_f55_at_120x32() {
         "SCROLL freeze sticky user: user prompt must remain visible at top while f39 band shows\n{packed}"
     );
     assert!(
-        packed.lines().any(|line| line.contains('❯')
+        packed.lines().any(|line| line.contains("› ")
             && line.contains("all names")
             && line.contains("5:54 AM")),
         "SCROLL freeze sticky user: first user row packs 'all names' + wall clock\n{packed}"
     );
     assert!(
-        packed.contains("53. f53.txt"),
-        "persistent keybind row leaves f53 visible in the compact viewport\n{packed}"
+        packed.contains("50. f50.txt"),
+        "corrected dock rhythm leaves f50 visible in the compact viewport\n{packed}"
     );
     assert!(
         packed.contains('▼'),

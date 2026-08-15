@@ -921,7 +921,7 @@ pub(super) fn append_assistant_error_box(
     base_surface: Color,
 ) {
     let surface = base_surface;
-    let style = Style::default().fg(theme.reference_terminal.assistant_error);
+    let style = Style::default().fg(theme.status.error);
     let trimmed = text.trim_end();
     let display = format_assistant_error_display(trimmed);
     for row in display.lines() {

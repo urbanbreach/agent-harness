@@ -22,7 +22,8 @@ pub(super) fn build_transcript_sections(app: &AppState) -> Vec<TranscriptTurnSec
             activity,
             queued_user_message: pending_assistant_index
                 .is_some_and(|pending| visible_index > pending),
-            is_selected: *activity_index == app.transcript_view.selected_activity_index,
+            is_selected: transcript_surface_focused(app)
+                && *activity_index == app.transcript_view.selected_activity_index,
             is_latest: false,
             thinking_visible: app.transcript_thinking_visible(),
             timestamps_visible: app.transcript_timestamps_visible(),
@@ -37,7 +38,7 @@ pub(super) fn build_transcript_sections(app: &AppState) -> Vec<TranscriptTurnSec
 
     if let Some(latest_assistant_footer_index) = turn_sections
         .iter()
-        .rposition(turn_supports_assistant_footer)
+        .rposition(|turn| turn_supports_assistant_footer(turn, app))
     {
         let original_activity_index = visible_activities[latest_assistant_footer_index].0;
         if let Some(turn) = turn_sections.get_mut(latest_assistant_footer_index) {
@@ -97,11 +98,9 @@ fn inject_compaction_events(
     }
 }
 
-fn turn_supports_assistant_footer(turn: &TranscriptTurnSection) -> bool {
-    matches!(
-        turn.header.status,
-        ActivityStatus::Streaming | ActivityStatus::Done
-    )
+fn turn_supports_assistant_footer(turn: &TranscriptTurnSection, app: &AppState) -> bool {
+    matches!(turn.header.status, ActivityStatus::Streaming)
+        || app.turn_completion_seen(&turn.request_id)
 }
 
 fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
@@ -240,7 +239,9 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
         activity_first_seq,
         request_id: activity.request_id.clone(),
         user_message,
-        show_footer: is_latest && !matches!(activity.status, ActivityStatus::Error),
+        show_footer: is_latest
+            && (matches!(activity.status, ActivityStatus::Streaming)
+                || app.turn_completion_seen(&activity.request_id)),
         footer_timestamp: activity
             .user_timestamp
             .as_deref()
@@ -279,7 +280,9 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
                 == Some(true),
             profile_label: activity.profile_label.clone(),
             model_id: activity.model_id.clone(),
-            duration_ms: activity.duration_ms(),
+            duration_ms: app
+                .terminal_elapsed_ms(&activity.request_id)
+                .or_else(|| activity.duration_ms()),
             thinking_duration_ms: activity.thinking_duration_ms(),
             responding_duration_ms: activity.responding_duration_ms(),
             total_tokens: activity.usage.map(|usage| usage.total_tokens),

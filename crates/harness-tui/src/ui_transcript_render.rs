@@ -108,7 +108,7 @@ fn assistant_visual_entry_plan(turn: &TranscriptTurnSection) -> Vec<AssistantVis
             index += 1;
         }
     }
-    if turn.show_footer {
+    if turn.show_footer && !matches!(turn.header.status, ActivityStatus::Error) {
         plan.push(AssistantVisualEntryPlan::Footer);
     }
     plan
@@ -193,14 +193,17 @@ fn normalize_semantic_entry_chrome(
         });
     for (index, entry) in entries.iter_mut().enumerate() {
         let previous_surface = entry.surface;
-        if previous_surface != base_surface {
+        let preserve_user_surface = entry.kind == TranscriptRenderSurfaceKind::User;
+        if previous_surface != base_surface && !preserve_user_surface {
             for span in entry.lines.iter_mut().flat_map(|line| &mut line.spans) {
                 if span.style.bg == Some(previous_surface) {
                     span.style.bg = Some(base_surface);
                 }
             }
         }
-        entry.surface = base_surface;
+        if !preserve_user_surface {
+            entry.surface = base_surface;
+        }
         if Some(index) != accented_entry {
             entry.show_outer_rail = false;
             entry.selected_rail = false;
@@ -250,11 +253,12 @@ fn build_user_render_surface(
     else {
         return Err(TranscriptGrammarError::InvalidPlacement);
     };
-    let surface = match state {
-        TranscriptPromptState::ActiveThinking => theme.reference_terminal.active_prompt_surface,
-        TranscriptPromptState::Selected => theme.surface.selected_card,
-        TranscriptPromptState::Idle => theme.surface.card,
+    let prompt_state = if turn.header.is_selected {
+        TranscriptPromptState::Selected
+    } else {
+        *state
     };
+    let surface = user_prompt_surface(theme, prompt_state);
     let render_width = transcript_surface_render_width(width, TranscriptRenderSurfaceKind::User);
     let content_width = transcript_surface_content_width(render_width, false);
     let agent_accent = theme.agent_accent(&turn.header.profile_label);
@@ -291,17 +295,11 @@ fn build_user_render_surface(
     Ok(raw)
 }
 
-pub(super) const fn user_prompt_surface(
-    theme: &Theme,
-    selected: bool,
-    active_thinking: bool,
-) -> Color {
-    if active_thinking {
-        theme.reference_terminal.active_prompt_surface
-    } else if selected {
-        theme.surface.selected_card
-    } else {
-        theme.surface.card
+pub(super) const fn user_prompt_surface(theme: &Theme, state: TranscriptPromptState) -> Color {
+    match state {
+        TranscriptPromptState::ActiveThinking => theme.reference_terminal.active_prompt_surface,
+        TranscriptPromptState::Selected => theme.surface.selected_card,
+        TranscriptPromptState::Idle => theme.surface.card,
     }
 }
 
@@ -394,7 +392,11 @@ fn assemble_user_surface_lines(
     ));
 
     if lines.len() > 1 {
-        let marker_prefix = format!("   {} ", theme.live_shell.transcript_glyphs.user_marker);
+        let marker = match theme.glyph_mode() {
+            crate::theme::GlyphMode::Preferred => "›",
+            crate::theme::GlyphMode::Ascii => ">",
+        };
+        let marker_prefix = format!("   {marker} ");
         lines[1].spans[0] = surface_span(
             marker_prefix,
             Style::default().fg(theme.text.primary),
@@ -1648,24 +1650,25 @@ fn build_assistant_footer_line(
         return Line::default();
     }
 
+    if matches!(turn.header.status, ActivityStatus::Done) {
+        let message = turn.header.duration_ms.map_or_else(
+            || "Turn completed.".to_string(),
+            |duration_ms| {
+                format!(
+                    "Worked for {}",
+                    super::ui_live_turn_status::format_elapsed_ms(duration_ms)
+                )
+            },
+        );
+        spans.push(Span::styled(message, muted_meta_style(theme)));
+        return Line::from(spans);
+    }
+
     if !assistant_icon.is_empty() {
         spans.push(Span::styled(
             format!("{assistant_icon} "),
             Style::default().fg(assistant_color),
         ));
-    }
-
-    if matches!(
-        turn.header.status,
-        ActivityStatus::Done | ActivityStatus::Error
-    ) {
-        if let Some(duration_ms) = turn.header.duration_ms {
-            spans.push(Span::styled(
-                format!("Worked for {}.", format_thought_duration_ms(duration_ms)),
-                muted_meta_style(theme),
-            ));
-            return Line::from(spans);
-        }
     }
 
     if has_trimmed_content(&turn.header.model_id) {
@@ -1967,6 +1970,56 @@ mod tests {
             ))],
             assistant_part_source_ids: vec![super::super::TranscriptAssistantPartSourceId(1)],
         }
+    }
+
+    fn selected_user_turn() -> super::super::TranscriptTurnSection {
+        super::super::TranscriptTurnSection {
+            activity_first_seq: 1,
+            request_id: "request-selected-user".to_string(),
+            user_message: Some(super::super::TranscriptUserMessageSection {
+                text: "Selected prompt".to_string(),
+                queued: false,
+                wall_clock: None,
+            }),
+            show_footer: false,
+            footer_timestamp: None,
+            animation_phase: 0,
+            motion_enabled: false,
+            reasoning_expanded: false,
+            header: super::super::TranscriptTurnHeader {
+                status: ActivityStatus::Done,
+                is_selected: true,
+                provider_request_open: false,
+                profile_label: "default".to_string(),
+                model_id: "model-selected-user".to_string(),
+                duration_ms: None,
+                thinking_duration_ms: None,
+                responding_duration_ms: None,
+                total_tokens: None,
+                retry: None,
+                retry_elapsed_ms: None,
+            },
+            assistant_parts: Vec::new(),
+            assistant_part_source_ids: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn selected_user_prompt_uses_temporary_semantic_highlight() {
+        let theme = Theme::default();
+        let surfaces = build_transcript_render_surfaces(
+            &selected_user_turn(),
+            &theme,
+            80,
+            theme.surface.shell,
+        );
+
+        assert_eq!(surfaces[0].surface, theme.surface.selected_card);
+        assert!(surfaces[0]
+            .lines
+            .iter()
+            .flat_map(|line| &line.spans)
+            .all(|span| span.style.bg == Some(theme.surface.selected_card)));
     }
 
     #[test]
@@ -2501,7 +2554,7 @@ mod tests {
     }
 
     #[test]
-    fn flat_assistant_error_surface_uses_themed_base_surface() {
+    fn settled_provider_failure_uses_error_role_on_themed_base_surface() {
         let mut app = AppState::default();
         let mut entry = super::super::transcript_section_model_test_activity(
             "request-transparent-assistant-error",
@@ -2530,6 +2583,19 @@ mod tests {
             error.surface,
             ratatui::style::Color::Rgb(1, 2, 3),
             "flat retry text must use the themed base surface"
+        );
+        let foregrounds = error
+            .lines
+            .iter()
+            .flat_map(|line| line.spans.iter())
+            .filter_map(|span| span.style.fg)
+            .collect::<Vec<_>>();
+        assert!(!foregrounds.is_empty());
+        assert!(
+            foregrounds
+                .iter()
+                .all(|foreground| *foreground == Theme::default().status.error),
+            "{foregrounds:?}"
         );
     }
 

@@ -415,10 +415,9 @@ fn shell_idle_stays_composer_ready_after_failed_tool_call() {
     assert!(app.overlay_stack().top().is_none());
 }
 
-/// TX-USER: user message chrome uses `❯` marker, flat padding, no outer rail / You header.
-/// Freeze capture: run1-stream-probe (`❯ ping`).
+/// TX-USER: user messages use the elevated Grok band with a stable `›` marker.
 #[test]
-fn tx_user_message_chrome_is_flat_marker_without_legacy_rail() {
+fn tx_user_message_chrome_is_elevated_band_without_legacy_rail() {
     // arrange
     let mut app = live_app();
     ingest_completed_turn(
@@ -438,38 +437,29 @@ fn tx_user_message_chrome_is_flat_marker_without_legacy_rail() {
 
     // assert
     assert!(
-        lines[user_idx].contains('❯'),
-        "TX-USER: user body must use ❯ marker\n{rendered}"
+        lines[user_idx]
+            .trim_start()
+            .starts_with("› Explain shell parity"),
+        "TX-USER: user body must use the stable compact marker\n{rendered}"
     );
     assert!(
         !lines[user_idx].contains('┃'),
         "TX-USER: no legacy outer rail on user body\n{rendered}"
     );
     assert!(
-        !rendered.contains("❯ You") && !rendered.contains("› You") && !rendered.contains("You ·"),
-        "TX-USER: no synthetic You header label\n{rendered}"
+        !rendered.contains("You  "),
+        "TX-USER: the rejected width-dependent label must not return\n{rendered}"
     );
     if user_idx > 0 {
         let prev = lines[user_idx - 1];
         assert!(
-            !prev.contains('┃') && !prev.contains("You"),
-            "TX-USER: flat top padding without rail/header\nprev={prev:?}\n{rendered}"
+            !prev.contains('┃') && prev.trim().is_empty(),
+            "TX-USER: the band must retain a blank top-padding row\nprev={prev:?}\n{rendered}"
         );
     }
-    let marker_col = lines[user_idx].find('❯').expect("marker");
-    let after = &lines[user_idx][marker_col + '❯'.len_utf8()..];
     assert!(
-        after.starts_with(' ') && after.contains("Explain shell parity"),
-        "TX-USER: ❯ then space then body text\nline={}\n{rendered}",
-        lines[user_idx]
-    );
-    // Marker sits in the left gutter; body text is marker + one space (2-col prefix pattern)
-    let user_text_col = first_alphanumeric_column(lines[user_idx]);
-    let user_rail_col = first_non_whitespace_column(lines[user_idx]);
-    assert_eq!(
-        user_text_col.saturating_sub(user_rail_col),
-        2,
-        "TX-USER: marker plus one-column space before body text\n{rendered}"
+        !lines[user_idx].contains('❯') && !lines[user_idx].contains('╭'),
+        "TX-USER: elevated band must remain borderless\n{rendered}"
     );
 }
 
@@ -515,10 +505,10 @@ fn tx_user_submit_page_flips_new_prompt_to_viewport_top() {
         .position(|line| line.contains("new turn page flip"))
         .expect("submitted prompt row");
 
-    // Then: the prompt starts at the first transcript content row and the preceding tail is above it.
+    // Then: the band starts at the first transcript row and its content follows the top pad.
     assert_eq!(
         new_prompt_row, 4,
-        "TX-USER: submitted prompt must land at the transcript top, row={new_prompt_row}\n{rendered}"
+        "TX-USER: submitted prompt content must follow the pinned band top, row={new_prompt_row}\n{rendered}"
     );
     assert!(
         !rendered.contains("turn-5-tail"),
@@ -726,10 +716,10 @@ fn tx_user_first_manual_scroll_moves_from_the_preserved_viewport() {
     );
 }
 
-/// TX-ASSISTANT: assistant prose is rail-free, inset vs user rail, footer without box.
+/// TX-ASSISTANT: assistant prose is rail-free and aligns with the user marker column.
 /// Freeze capture: TBD.
 #[test]
-fn tx_assistant_message_chrome_is_rail_free_with_footer() {
+fn tx_assistant_message_chrome_is_rail_free_without_settled_footer() {
     // arrange
     let mut app = live_app();
     ingest_completed_turn(
@@ -750,28 +740,12 @@ fn tx_assistant_message_chrome_is_rail_free_with_footer() {
         .iter()
         .position(|line| line.contains("Assistant answers cleanly."))
         .expect("assistant");
-    let footer_idx = lines
-        .iter()
-        .enumerate()
-        .skip(asst_idx + 1)
-        .find_map(|(i, line)| {
-            (line.contains("Worked for")
-                || line.contains("model-tx")
-                || line.contains("Assistant")
-                || line.contains("▪"))
-            .then_some(i)
-        })
-        .expect("assistant footer");
 
     // assert — order + no rails
-    assert!(user_idx < asst_idx && asst_idx < footer_idx);
+    assert!(user_idx < asst_idx);
     assert!(
         !lines[asst_idx].contains('┃'),
         "TX-ASSISTANT: no outer rail on assistant body\n{rendered}"
-    );
-    assert!(
-        !lines[footer_idx].contains('┃'),
-        "TX-ASSISTANT: no outer rail on footer\n{rendered}"
     );
 
     // Reference completed state packs Thought plus a dedicated wall-clock row between user and body.
@@ -782,25 +756,26 @@ fn tx_assistant_message_chrome_is_rail_free_with_footer() {
         asst_idx - user_idx
     );
 
-    let asst_region = lines[asst_idx..=footer_idx].join("\n");
+    let asst_region = lines[asst_idx].to_string();
     assert!(
         !asst_region.contains('╭') && !asst_region.contains('╰'),
-        "TX-ASSISTANT: message body/footer must not use rounded card borders\n{asst_region}\n{rendered}"
+        "TX-ASSISTANT: message body must not use rounded card borders\n{asst_region}\n{rendered}"
     );
 
-    let user_rail = first_non_whitespace_column(lines[user_idx]);
-    let asst_rail = first_non_whitespace_column(lines[asst_idx]);
+    let user_marker = first_non_whitespace_column(lines[user_idx]);
+    let asst_body = first_non_whitespace_column(lines[asst_idx]);
     assert_eq!(
-        asst_rail, user_rail,
-        "TX-ASSISTANT: assistant body lead must match user lead (reference packing)\nuser={user_rail} asst={asst_rail}\n{rendered}"
+        asst_body,
+        user_marker,
+        "TX-ASSISTANT: assistant body aligns with the user marker column\nuser={user_marker} asst={asst_body}\n{rendered}"
     );
     assert!(
         !rendered.contains("Thought for"),
         "TX-ASSISTANT: completed turns without reasoning must not render Thought for header\n{rendered}"
     );
     assert!(
-        rendered.contains("Worked for"),
-        "TX-ASSISTANT: completed turns render Worked for footer\n{rendered}"
+        !rendered.contains("Worked for"),
+        "TX-ASSISTANT: completed turns must not render standalone lifecycle prose\n{rendered}"
     );
 }
 
@@ -1017,6 +992,7 @@ fn shell_stream_keeps_full_width_body_and_bordered_composer() {
             task_id: "task_stream_parity".to_string().into(),
             state: TaskScheduleState::Started,
             queue_key: Some("provider_model:mock:model-tx".to_string()),
+            metadata: None,
         }),
     ));
     app.ingest_event(envelope(
