@@ -25,6 +25,7 @@ pub(super) fn orchestration_projection_resolves_owner_labels() {
             task_id: "task_worker".to_string().into(),
             state: harness_core::event::TaskScheduleState::Queued,
             queue_key: Some("agent:queued".to_string()),
+            metadata: None,
         }),
     ));
     app.ingest_event(envelope_with_actor(
@@ -35,6 +36,7 @@ pub(super) fn orchestration_projection_resolves_owner_labels() {
             task_id: "task_supervisor".to_string().into(),
             state: harness_core::event::TaskScheduleState::Started,
             queue_key: Some("agent:supervisor".to_string()),
+            metadata: None,
         }),
     ));
     app.ingest_event(envelope_with_actor(
@@ -48,6 +50,7 @@ pub(super) fn orchestration_projection_resolves_owner_labels() {
             task_id: "task_system".to_string().into(),
             state: harness_core::event::TaskScheduleState::Queued,
             queue_key: Some("tool:shell.run".to_string()),
+            metadata: None,
         }),
     ));
 
@@ -130,6 +133,7 @@ pub(super) fn orchestration_projection_ignores_duplicate_seq_events() {
             task_id: "task_dup".to_string().into(),
             state: harness_core::event::TaskScheduleState::Started,
             queue_key: Some("agent:running".to_string()),
+            metadata: None,
         }),
     ));
     app.ingest_event(envelope_with_actor(
@@ -184,6 +188,7 @@ pub(super) fn orchestration_projection_ignores_duplicate_seq_events() {
             task_id: "task_dup".to_string().into(),
             state: harness_core::event::TaskScheduleState::Queued,
             queue_key: Some("agent:queued".to_string()),
+            metadata: None,
         }),
     ));
     app.ingest_event(envelope_with_actor(
@@ -418,6 +423,7 @@ pub(super) fn operator_sidebar_shows_running_child_turn_before_task_tool_finishe
             task_id: "task_child_turn".to_string().into(),
             state: harness_core::event::TaskScheduleState::Started,
             queue_key: Some("provider_model:mock:model-1".to_string()),
+            metadata: None,
         }),
     ));
     app.ingest_event(envelope_with_actor(

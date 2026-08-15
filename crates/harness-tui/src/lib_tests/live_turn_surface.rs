@@ -339,26 +339,22 @@ pub(super) fn narrow_transcript_wrapped_top_level_turns_keep_alignment() {
         .take(assistant_first.saturating_sub(user_first + 1))
         .find_map(|(index, line)| line.chars().any(char::is_alphanumeric).then_some(index))
         .unwrap_or_abort();
-    let assistant_footer = find_line_containing_from(&lines, assistant_first + 1, "Worked for")
-        .or_else(|| find_line_containing_from(&lines, assistant_first + 1, "model-1"))
-        .or_else(|| find_line_containing_from(&lines, assistant_first + 1, "▪"))
-        .unwrap_or_abort();
     let assistant_continuation = lines
         .iter()
         .enumerate()
         .skip(assistant_first + 1)
-        .take(assistant_footer.saturating_sub(assistant_first + 1))
+        .take(4)
         .find_map(|(index, line)| line.chars().any(char::is_alphanumeric).then_some(index))
         .unwrap_or_abort();
 
     assert_eq!(
         first_alphanumeric_column(lines[user_continuation]),
         first_alphanumeric_column(lines[user_first]),
-        "wrapped user continuations should align with the boxed user text column\n{rendered}"
+        "wrapped user continuations should align with the elevated card text column\n{rendered}"
     );
     assert!(!lines[user_first].contains('┃'));
     assert!(!lines[user_continuation].contains('┃'));
-    assert!(lines[user_first].contains('❯'));
+    assert!(lines[user_first].contains('›'));
     assert_eq!(
         first_alphanumeric_column(lines[assistant_first]),
         first_alphanumeric_column(lines[assistant_continuation]),

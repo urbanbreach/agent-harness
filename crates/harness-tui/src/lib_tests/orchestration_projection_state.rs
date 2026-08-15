@@ -24,6 +24,7 @@ pub(super) fn orchestration_projection_tracks_queued_started_completed_counts() 
             task_id: "task_worker_primary".to_string().into(),
             state: harness_core::event::TaskScheduleState::Queued,
             queue_key: Some("agent:queued:primary".to_string()),
+            metadata: None,
         }),
     ));
 
@@ -64,6 +65,7 @@ pub(super) fn orchestration_projection_tracks_queued_started_completed_counts() 
             task_id: "task_worker_primary".to_string().into(),
             state: harness_core::event::TaskScheduleState::Started,
             queue_key: Some("agent:running:primary".to_string()),
+            metadata: None,
         }),
     ));
 
@@ -104,6 +106,7 @@ pub(super) fn orchestration_projection_tracks_queued_started_completed_counts() 
             task_id: "task_worker_secondary".to_string().into(),
             state: harness_core::event::TaskScheduleState::Queued,
             queue_key: Some("agent:queued:secondary".to_string()),
+            metadata: None,
         }),
     ));
 
@@ -190,6 +193,7 @@ pub(super) fn orchestration_projection_tracks_queued_started_completed_counts() 
             task_id: "task_supervisor_only".to_string().into(),
             state: harness_core::event::TaskScheduleState::Started,
             queue_key: Some("agent:supervisor".to_string()),
+            metadata: None,
         }),
     ));
 
@@ -228,6 +232,7 @@ pub(super) fn orchestration_projection_tracks_stale_then_late_result() {
             task_id: "task_stale".to_string().into(),
             state: harness_core::event::TaskScheduleState::Started,
             queue_key: Some("agent:running:stale".to_string()),
+            metadata: None,
         }),
     ));
 
@@ -390,6 +395,7 @@ pub(super) fn orchestration_projection_retains_only_recent_terminal_rows() {
             task_id: "task_live_stale".to_string().into(),
             state: harness_core::event::TaskScheduleState::Started,
             queue_key: Some("agent:running:live".to_string()),
+            metadata: None,
         }),
     ));
     app.ingest_event(envelope(
@@ -407,6 +413,7 @@ pub(super) fn orchestration_projection_retains_only_recent_terminal_rows() {
             task_id: "task_live_queued".to_string().into(),
             state: harness_core::event::TaskScheduleState::Queued,
             queue_key: Some("agent:queued:live".to_string()),
+            metadata: None,
         }),
     ));
 
@@ -417,6 +424,7 @@ pub(super) fn orchestration_projection_retains_only_recent_terminal_rows() {
             task_id: "task_terminal_1".to_string().into(),
             state: harness_core::event::TaskScheduleState::Queued,
             queue_key: Some("terminal:q1".to_string()),
+            metadata: None,
         }),
     ));
     app.ingest_event(envelope(
@@ -436,6 +444,7 @@ pub(super) fn orchestration_projection_retains_only_recent_terminal_rows() {
             task_id: "task_terminal_2".to_string().into(),
             state: harness_core::event::TaskScheduleState::Started,
             queue_key: Some("terminal:q2".to_string()),
+            metadata: None,
         }),
     ));
     app.ingest_event(envelope(
@@ -454,6 +463,7 @@ pub(super) fn orchestration_projection_retains_only_recent_terminal_rows() {
             task_id: "task_terminal_3".to_string().into(),
             state: harness_core::event::TaskScheduleState::Started,
             queue_key: Some("terminal:q3".to_string()),
+            metadata: None,
         }),
     ));
     app.ingest_event(envelope(
@@ -479,6 +489,7 @@ pub(super) fn orchestration_projection_retains_only_recent_terminal_rows() {
             task_id: "task_terminal_4".to_string().into(),
             state: harness_core::event::TaskScheduleState::Queued,
             queue_key: Some("terminal:q4".to_string()),
+            metadata: None,
         }),
     ));
     app.ingest_event(envelope(
@@ -498,6 +509,7 @@ pub(super) fn orchestration_projection_retains_only_recent_terminal_rows() {
             task_id: "task_terminal_5".to_string().into(),
             state: harness_core::event::TaskScheduleState::Queued,
             queue_key: Some("terminal:q5".to_string()),
+            metadata: None,
         }),
     ));
     app.ingest_event(envelope(
@@ -516,6 +528,7 @@ pub(super) fn orchestration_projection_retains_only_recent_terminal_rows() {
             task_id: "task_terminal_6".to_string().into(),
             state: harness_core::event::TaskScheduleState::Started,
             queue_key: Some("terminal:q6".to_string()),
+            metadata: None,
         }),
     ));
     app.ingest_event(envelope(

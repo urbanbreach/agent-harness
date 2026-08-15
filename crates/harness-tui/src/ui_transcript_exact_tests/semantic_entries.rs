@@ -270,8 +270,8 @@ fn assert_semantic_entry_viewport(width: u16, height: u16) {
         .find(|entry| entry.kind == TranscriptRenderSurfaceKind::User)
         .expect("user entry");
     assert_eq!(
-        user.surface, theme.surface.shell,
-        "ordinary user composition must not paint a card background at {width}x{height}"
+        user.surface, theme.surface.card,
+        "ordinary user composition must paint the elevated card surface at {width}x{height}"
     );
     assert_eq!(
         streaming_entries
@@ -341,9 +341,11 @@ fn assert_semantic_entry_viewport(width: u16, height: u16) {
     assert!(
         settled_entries.iter().all(|entry| {
             entry.surface == theme.surface.shell
+                || (entry.kind == TranscriptRenderSurfaceKind::User
+                    && entry.surface == theme.surface.card)
                 || entry.kind == TranscriptRenderSurfaceKind::Compaction
         }),
-        "settled user/tool/assistant entries must share the base surface at {width}x{height}"
+        "settled user entries must stay elevated while tool and assistant entries use the base surface at {width}x{height}"
     );
 }
 
@@ -510,8 +512,8 @@ fn concurrent_active_entries_keep_lifecycle_but_share_one_selected_accent() {
     );
     assert_eq!(
         entries.iter().filter(|entry| entry.selected_rail).count(),
-        1,
-        "preferred assistant selection must survive exact spec resolution"
+        0,
+        "prompt-focused transcripts must not claim a selected assistant rail"
     );
     assert_eq!(
         entries

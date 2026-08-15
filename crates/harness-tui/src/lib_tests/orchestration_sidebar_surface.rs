@@ -58,6 +58,7 @@ pub(super) fn operator_sidebar_dedupes_running_task_tool_against_child_orchestra
             task_id: "task_child_sidebar".to_string().into(),
             state: harness_core::event::TaskScheduleState::Started,
             queue_key: Some("agent:running:explore".to_string()),
+            metadata: None,
         }),
     ));
 
@@ -145,21 +146,21 @@ pub(super) fn layout_plan_primary_geometry_docks_live_details_sidebar() {
     assert_eq!(plan.shell, ratatui::layout::Rect::new(0, 0, 100, 30));
     assert_eq!(
         plan.transcript,
-        Some(ratatui::layout::Rect::new(0, 0, 100, 26))
+        Some(ratatui::layout::Rect::new(0, 0, 100, 22))
     );
     assert_eq!(plan.operator_sidebar, None);
     assert_eq!(
         plan.details_overlay,
-        Some(ratatui::layout::Rect::new(58, 0, 42, 26))
+        Some(ratatui::layout::Rect::new(58, 0, 42, 22))
     );
-    assert_eq!(plan.status, None);
+    assert_eq!(plan.status, Some(ratatui::layout::Rect::new(2, 22, 96, 1)));
     assert_eq!(
         plan.composer,
-        Some(ratatui::layout::Rect::new(2, 26, 96, 3))
+        Some(ratatui::layout::Rect::new(2, 24, 96, 3))
     );
     assert_eq!(
         plan.disclosure,
-        Some(ratatui::layout::Rect::new(2, 29, 96, 1))
+        Some(ratatui::layout::Rect::new(2, 28, 96, 1))
     );
 }
 
@@ -173,20 +174,20 @@ pub(super) fn layout_plan_minimum_geometry_stacks_live_details_drawer() {
     assert_eq!(plan.shell, ratatui::layout::Rect::new(0, 0, 80, 24));
     assert_eq!(
         plan.transcript,
-        Some(ratatui::layout::Rect::new(0, 0, 80, 20))
+        Some(ratatui::layout::Rect::new(0, 0, 80, 17))
     );
     assert_eq!(
         plan.details_overlay,
-        Some(ratatui::layout::Rect::new(38, 0, 42, 20))
+        Some(ratatui::layout::Rect::new(38, 0, 42, 17))
     );
     assert_eq!(plan.status, None);
     assert_eq!(
         plan.composer,
-        Some(ratatui::layout::Rect::new(2, 20, 76, 3))
+        Some(ratatui::layout::Rect::new(2, 18, 76, 3))
     );
     assert_eq!(
         plan.disclosure,
-        Some(ratatui::layout::Rect::new(2, 23, 76, 1))
+        Some(ratatui::layout::Rect::new(2, 22, 76, 1))
     );
 }
 

@@ -216,14 +216,24 @@ pub(crate) fn exact_test_live_control_dock_renders_shared_surface() {
     let status = dock.status.unwrap_or_abort();
     let composer = dock.composer;
     let disclosure = dock.disclosure.unwrap_or_abort();
+    let spacer = crate::layout::composer_footer_spacer_rows(height);
 
     assert_eq!(dock.shell.y, status.y);
-    assert_eq!(composer.y, status.y.saturating_add(1));
+    assert_eq!(composer.y, status.bottom().saturating_add(spacer));
     assert_eq!(disclosure.height, 1);
-    assert!(
-        disclosure.y >= composer.y.saturating_add(composer.height),
-        "keybind hints must remain beneath the live composer"
+    assert_eq!(
+        disclosure.y,
+        composer.bottom().saturating_add(spacer),
+        "keybind hints must retain the measured composer spacer"
     );
+    assert_eq!(
+        dock.shell.bottom().saturating_sub(disclosure.bottom()),
+        spacer,
+        "live dock must retain the measured bottom margin"
+    );
+    let status_content = crate::layout::live_turn_status_content_area(status, app.theme());
+    assert_eq!(status_content.x, composer.x.saturating_add(2));
+    assert_eq!(status_content.right(), status.right());
 
     let backend = TestBackend::new(width, height);
     let mut terminal = Terminal::new(backend).unwrap_or_abort();

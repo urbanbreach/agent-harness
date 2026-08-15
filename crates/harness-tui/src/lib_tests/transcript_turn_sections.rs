@@ -25,15 +25,11 @@ pub(super) fn transcript_turn_sections_render_open_rail_surfaces() {
         .unwrap_or_else(|| panic!("user body line\n{rendered}"));
     let assistant_body = find_line_containing_from(&lines, user_body + 1, "Grouped response")
         .unwrap_or_else(|| panic!("assistant body line\n{rendered}"));
-    let assistant_footer = find_line_containing_from(&lines, assistant_body + 1, "Worked for")
-        .or_else(|| find_line_containing_from(&lines, assistant_body + 1, "gpt-5"))
-        .unwrap_or_else(|| panic!("assistant footer\n{rendered}"));
-
     assert!(
         user_body < assistant_body,
         "assistant turn should remain ordered after the user turn content\n{rendered}"
     );
-    assert!(assistant_body < assistant_footer);
+    assert!(!rendered.contains("Worked for"));
 
     let user_body_rail = first_non_whitespace_column(lines[user_body]);
     let user_body_column = first_alphanumeric_column(lines[user_body]);
@@ -48,26 +44,26 @@ pub(super) fn transcript_turn_sections_render_open_rail_surfaces() {
         "independent top-level entries should preserve the compact prompt-marker offset\n{rendered}"
     );
     assert_eq!(
-        user_body_column.saturating_sub(user_body_rail),
-        2,
-        "user message text should keep the marker plus one-column space\n{rendered}"
+        user_body_column,
+        user_body_rail + 2,
+        "user body should follow the stable marker and one separating cell\n{rendered}"
     );
     assert!(
         user_body > 0
             && !lines[user_body - 1].contains('┃')
-            && !lines[user_body - 1].contains("You"),
-        "user message should use flat top padding without a synthetic header label\n{rendered}"
+            && lines[user_body - 1].trim().is_empty(),
+        "user message should retain a blank elevated top-padding row\n{rendered}"
     );
-    assert!(lines[user_body].contains('❯'));
+    assert!(lines[user_body].contains("› Group these turns"));
     assert!(
         user_body == 0 || !lines[user_body - 1].contains("Group these turns"),
         "user message should not duplicate the body above the boxed row\n{rendered}"
     );
     let (user_body_row, user_body_fgs, user_body_bgs) =
         row_at(&buffer, 80, user_body).unwrap_or_abort();
-    let (assistant_footer_row, assistant_footer_fgs, assistant_footer_bgs) =
-        row_at(&buffer, 80, assistant_footer).unwrap_or_abort();
-    let user_marker_column = user_body_row.find('❯').unwrap_or_abort();
+    let (assistant_body_row, assistant_body_fgs, assistant_body_bgs) =
+        row_at(&buffer, 80, assistant_body).unwrap_or_abort();
+    let user_marker_column = user_body_row.find('›').unwrap_or_abort();
     assert_eq!(user_body_fgs[user_marker_column], theme.text.primary);
 
     let mut plan_app = app::AppState::new_live(None, false, None);
@@ -93,24 +89,24 @@ pub(super) fn transcript_turn_sections_render_open_rail_surfaces() {
         .unwrap_or_else(|| panic!("plan user body line\n{plan_rendered}"));
     let (plan_user_body_row, plan_user_body_fgs, _) =
         row_at(&render_live_cells(&plan_app, 80, 24), 80, plan_user_body).unwrap_or_abort();
-    let plan_user_marker_column = plan_user_body_row.find('❯').unwrap_or_abort();
+    let plan_user_marker_column = plan_user_body_row.find('›').unwrap_or_abort();
     assert_eq!(
         plan_user_body_fgs[plan_user_marker_column],
         theme.text.primary
     );
-    assert!(!assistant_footer_row.contains('┃'));
-    let footer_fg = assistant_footer_fgs[first_alphanumeric_column(lines[assistant_footer])];
+    assert!(!assistant_body_row.contains('┃'));
+    let assistant_fg = assistant_body_fgs[assistant_body_column];
     assert!(
-        footer_fg == theme.text.primary
-            || footer_fg == theme.text.secondary
-            || footer_fg == theme.text.tertiary,
-        "assistant footer should use primary or muted meta color, got {footer_fg:?}"
+        assistant_fg == theme.text.primary
+            || assistant_fg == theme.text.secondary
+            || assistant_fg == theme.text.tertiary,
+        "assistant body should use primary or muted text color, got {assistant_fg:?}"
     );
     assert!(user_body_bgs[user_body_column..user_body_column + 4]
         .iter()
-        .all(|color| *color == theme.surface.shell));
+        .all(|color| *color == theme.surface.card));
     assert!(
-        assistant_footer_bgs[assistant_body_column..assistant_body_column + 9]
+        assistant_body_bgs[assistant_body_column..assistant_body_column + 9]
             .iter()
             .all(|color| *color == theme.surface.shell)
     );

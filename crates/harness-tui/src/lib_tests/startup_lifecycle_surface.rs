@@ -311,6 +311,7 @@ pub(super) fn double_escape_does_not_interrupt_active_live_turn() {
             task_id: "task_active".to_string().into(),
             state: harness_core::event::TaskScheduleState::Started,
             queue_key: Some("provider_model:default:model-1".to_string()),
+            metadata: None,
         }),
     ));
     app.ingest_event(envelope_with_actor(
@@ -324,11 +325,12 @@ pub(super) fn double_escape_does_not_interrupt_active_live_turn() {
             task_id: "task_sibling".to_string().into(),
             state: harness_core::event::TaskScheduleState::Started,
             queue_key: Some("provider_model:default:model-2".to_string()),
+            metadata: None,
         }),
     ));
 
     assert!(app.interrupt_hint_visible());
-    assert!(render_live_lines(&app, 100, 24).contains("ctrl+c interrupt"));
+    assert!(render_live_lines(&app, 100, 24).contains("[stop]"));
 
     app.handle_key(key(crossterm::event::KeyCode::Esc));
     app.handle_key(key(crossterm::event::KeyCode::Esc));
@@ -362,6 +364,7 @@ pub(super) fn ctrl_c_interrupts_current_active_turn_set() {
             task_id: "task_old".to_string().into(),
             state: harness_core::event::TaskScheduleState::Started,
             queue_key: Some("provider_model:default:model-1".to_string()),
+            metadata: None,
         }),
     ));
 
@@ -385,6 +388,7 @@ pub(super) fn ctrl_c_interrupts_current_active_turn_set() {
             task_id: "task_new".to_string().into(),
             state: harness_core::event::TaskScheduleState::Started,
             queue_key: Some("provider_model:default:model-1".to_string()),
+            metadata: None,
         }),
     ));
 
@@ -397,6 +401,7 @@ pub(super) fn ctrl_c_interrupts_current_active_turn_set() {
         &*intents.lock().unwrap_or_abort(),
         &[UiIntent::InterruptSession {
             task_ids: vec!["task_new".to_string()],
+            reason: app::InterruptReason::User,
         }]
     );
 }

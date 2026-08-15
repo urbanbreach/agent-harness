@@ -508,7 +508,7 @@ fn streaming_assistant_footer_reserves_blank_geometry_for_live_status() {
 }
 
 #[test]
-fn only_latest_turn_renders_footer_metadata() {
+fn completed_turns_omit_standalone_footer_metadata() {
     // arrange
     // act
     // assert
@@ -596,27 +596,14 @@ fn only_latest_turn_renders_footer_metadata() {
     ));
 
     assert!(lines.iter().all(|line| !line.contains("gpt-old")));
-    let latest_footer_count = lines
-        .iter()
-        .filter(|line| {
-            line.contains("gpt-new") || line.contains("Worked for") || line.contains('▪')
-        })
-        .count();
-    assert_eq!(
-        latest_footer_count, 1,
-        "only the latest turn should render footer metadata\n{lines:#?}"
-    );
-    assert!(
-        lines.iter().any(|line| {
-            line.contains("gpt-new") || line.contains("Worked for") || line.contains('▪')
-        }),
-        "latest turn footer missing\n{lines:#?}"
-    );
+    assert!(lines.iter().all(|line| !line.contains("gpt-new")));
+    assert!(lines.iter().all(|line| !line.contains("Worked for")));
+    assert!(lines.iter().any(|line| line.contains("second reply")));
     assert!(lines.iter().all(|line| !line.contains("09:44")));
 }
 
 #[test]
-fn tool_only_turns_render_standalone_assistant_footer() {
+fn tool_only_turns_omit_standalone_assistant_footer() {
     // arrange
     // act
     // assert
@@ -662,12 +649,8 @@ fn tool_only_turns_render_standalone_assistant_footer() {
     ));
 
     assert!(lines.iter().any(|line| line.contains("Read 1 file")));
-    assert!(
-        lines.iter().any(|line| line.contains("Worked for")
-            || line.contains("gpt-5.4-mini")
-            || line.contains("▪")),
-        "tool-only completed turns should still render an assistant footer\n{lines:#?}"
-    );
+    assert!(lines.iter().all(|line| !line.contains("Worked for")));
+    assert!(lines.iter().all(|line| !line.contains("gpt-5.4-mini")));
 }
 
 #[test]
@@ -895,19 +878,16 @@ fn completed_latest_turn_keeps_footer_after_streaming_finishes() {
         80,
     ));
 
-    assert!(
-        completed_lines.iter().any(|line| {
-            line.contains("Worked for") || line.contains("gpt-5.4-mini") || line.contains('▪')
-        }),
-        "completed turns should keep a footer (Worked for / model / marker)\n{completed_lines:#?}"
-    );
+    assert!(completed_lines
+        .iter()
+        .all(|line| !line.contains("Worked for")));
     assert!(completed_lines
         .iter()
         .all(|line| !line.contains("⠋ Assistant")));
 }
 
 #[test]
-fn latest_completed_footer_follows_rendered_assistant_parts() {
+fn latest_completed_turn_keeps_rendered_assistant_parts_without_a_footer() {
     // arrange
     // act
     // assert
@@ -984,16 +964,11 @@ fn latest_completed_footer_follows_rendered_assistant_parts() {
     assert!(lines
         .iter()
         .any(|line| line.contains("assistant reply from ordered events")));
-    assert!(
-        lines.iter().any(|line| {
-            line.contains("Worked for") || line.contains("gpt-5.4-mini") || line.contains('▪')
-        }),
-        "completed event-projected turns should keep a footer\n{lines:#?}"
-    );
+    assert!(lines.iter().all(|line| !line.contains("Worked for")));
 }
 
 #[test]
-fn user_message_surface_keeps_timestamp_in_latest_footer_only() {
+fn user_message_surface_omits_standalone_settled_footer() {
     // arrange
     // act
     // assert
@@ -1054,12 +1029,7 @@ fn user_message_surface_keeps_timestamp_in_latest_footer_only() {
     assert!(lines
         .iter()
         .all(|line| !(line.starts_with('┃') && line.contains("09:45"))));
-    assert!(
-        lines.iter().any(|line| {
-            line.contains("Worked for") || line.contains("gpt-5.4-mini") || line.contains('▪')
-        }),
-        "latest completed turn should keep a footer\n{lines:#?}"
-    );
+    assert!(lines.iter().all(|line| !line.contains("Worked for")));
     assert!(lines.iter().any(|line| line.contains("hello")));
     assert!(lines.iter().any(|line| line.contains("reply")));
 }
@@ -1112,8 +1082,8 @@ fn user_row_wall_clock_right_aligned_matches_freeze_geometry() {
     // Then: user marker row carries freeze-style wall clock (right-aligned on same line)
     let user_row = lines
         .iter()
-        .find(|line| line.contains('❯') && line.contains("ping"))
-        .unwrap_or_else(|| panic!("missing user marker row; lines={lines:?}"));
+        .find(|line| line.contains("› ping"))
+        .unwrap_or_else(|| panic!("missing card user row; lines={lines:?}"));
     assert!(
         user_row.contains("9:33 AM"),
         "user row must include freeze-style wall clock; got {user_row:?}"
@@ -1174,17 +1144,17 @@ fn user_row_packs_all_names_with_wall_clock_at_scroll_geometry() {
         .find(|surface| {
             transcript_test_line_texts(surface.lines.clone())
                 .iter()
-                .any(|line| line.contains('❯') && line.contains("List every"))
+                .any(|line| line.contains("› List every"))
         })
         .expect("user surface");
     let lines = transcript_test_line_texts(user_surface.lines.clone());
     let first_content = lines
         .iter()
-        .find(|line| line.contains('❯'))
-        .expect("user marker row");
+        .find(|line| line.contains("› "))
+        .expect("marked user row");
 
     // Then: freeze packs the wall clock on the first user row and wraps overflow
-    // to the next row. With the 3-char transcript content indent, "all names" no
+    // to the next row. With the 5-cell marker prefix, "all names" no
     // longer fits on the first row, so the clock stays on row 1 and "names" wraps.
     assert!(
         first_content.contains("all") && first_content.contains("5:54 AM"),
@@ -1870,10 +1840,7 @@ fn completed_reasoning_header_renders_thinking_with_title() {
         !rendered.contains("body text"),
         "finished reasoning should default to collapsed\n{rendered}"
     );
-    assert!(
-        rendered.contains("Worked for 1.5s."),
-        "completed turn footer should show Worked for duration\n{rendered}"
-    );
+    assert!(!rendered.contains("Worked for"));
 }
 
 #[test]
@@ -1914,10 +1881,7 @@ fn completed_reasoning_header_without_title_renders_thinking() {
         !rendered.contains("simple reasoning"),
         "finished reasoning should default to collapsed\n{rendered}"
     );
-    assert!(
-        rendered.contains("Worked for 1.5s."),
-        "completed turn footer should show Worked for duration\n{rendered}"
-    );
+    assert!(!rendered.contains("Worked for"));
 }
 
 #[test]
@@ -2117,8 +2081,6 @@ fn completed_turn_without_thinking_text_still_renders_thought_for() {
     ));
     let rendered = lines.join("\n");
 
-    // assert — pinned reference freeze does NOT show Thought for completed
-    // turns without reasoning deltas; only Worked for + body text.
     assert!(
         !rendered.contains("Thought for"),
         "completed turns without reasoning must not render Thought for\n{rendered}"
@@ -2127,10 +2089,7 @@ fn completed_turn_without_thinking_text_still_renders_thought_for() {
         !rendered.contains("Thinking"),
         "completed empty reasoning must not use streaming Thinking label\n{rendered}"
     );
-    assert!(
-        rendered.contains("Worked for 2.5s."),
-        "completed turn footer should still show Worked for duration\n{rendered}"
-    );
+    assert!(!rendered.contains("Worked for"));
     assert!(
         rendered.contains("Final answer only"),
         "body text should still render\n{rendered}"

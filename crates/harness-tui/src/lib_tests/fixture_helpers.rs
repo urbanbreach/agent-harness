@@ -95,6 +95,7 @@ pub(crate) fn session_view_events() -> Vec<harness_core::event::EventEnvelopeV1>
                 task_id: "tool_call_1".to_string().into(),
                 state: harness_core::event::TaskScheduleState::Queued,
                 queue_key: Some("tool:fs.read".to_string()),
+                metadata: None,
             }),
         ),
         envelope(
@@ -171,6 +172,7 @@ pub(super) fn orchestration_details_drawer_events(
                 task_id: "task_stale".to_string().into(),
                 state: harness_core::event::TaskScheduleState::Started,
                 queue_key: Some("scan".to_string()),
+                metadata: None,
             }),
         ),
         envelope_with_actor(
@@ -193,6 +195,7 @@ pub(super) fn orchestration_details_drawer_events(
                 task_id: "task_run".to_string().into(),
                 state: harness_core::event::TaskScheduleState::Started,
                 queue_key: None,
+                metadata: None,
             }),
         ),
         envelope_with_actor(
@@ -206,6 +209,7 @@ pub(super) fn orchestration_details_drawer_events(
                 task_id: "task_queue".to_string().into(),
                 state: harness_core::event::TaskScheduleState::Queued,
                 queue_key: Some("tool:read".to_string()),
+                metadata: None,
             }),
         ),
         envelope_with_actor(
@@ -219,6 +223,7 @@ pub(super) fn orchestration_details_drawer_events(
                 task_id: "task_done".to_string().into(),
                 state: harness_core::event::TaskScheduleState::Started,
                 queue_key: Some("tool:done".to_string()),
+                metadata: None,
             }),
         ),
         envelope_with_actor(
@@ -251,6 +256,7 @@ pub(super) fn orchestration_details_drawer_events(
                 task_id: task_id.clone().into(),
                 state: harness_core::event::TaskScheduleState::Started,
                 queue_key: Some(format!("tail:{index}")),
+                metadata: None,
             }),
         ));
         seq += 1;
@@ -565,6 +571,7 @@ pub(super) fn orchestration_status_strip_fixture() -> app::AppState {
             task_id: "task_queued".to_string().into(),
             state: harness_core::event::TaskScheduleState::Queued,
             queue_key: Some("agent:queued:alpha".to_string()),
+            metadata: None,
         }),
     ));
     app.ingest_event(envelope_with_actor(
@@ -578,6 +585,7 @@ pub(super) fn orchestration_status_strip_fixture() -> app::AppState {
             task_id: "task_running".to_string().into(),
             state: harness_core::event::TaskScheduleState::Started,
             queue_key: Some("agent:running:beta".to_string()),
+            metadata: None,
         }),
     ));
     app.ingest_event(envelope_with_actor(
@@ -591,6 +599,7 @@ pub(super) fn orchestration_status_strip_fixture() -> app::AppState {
             task_id: "task_stale".to_string().into(),
             state: harness_core::event::TaskScheduleState::Started,
             queue_key: Some("agent:running:alpha".to_string()),
+            metadata: None,
         }),
     ));
     app.ingest_event(envelope_with_actor(

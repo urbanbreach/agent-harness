@@ -221,7 +221,7 @@ pub(crate) fn exact_test_transcript_user_and_reasoning_match_reference_entry_bod
     ));
     let rendered = lines.join("\n");
 
-    assert!(rendered.contains("❯ Explain transcript parity"));
+    assert!(rendered.contains("› Explain transcript parity"));
     assert!(!rendered.contains("█Explain transcript parity"));
     assert!(!rendered.contains("┃  Explain transcript parity"));
     assert!(rendered.contains("Thinking: comparing reference entry body"));
@@ -290,18 +290,13 @@ pub(crate) fn exact_test_latest_assistant_footer_stays_after_trailing_tool_rows(
         .iter()
         .position(|line| line.contains("Read 1 file"))
         .unwrap_or_abort();
-    let footer_row = lines
-        .iter()
-        .position(|line| line.contains("Worked for") || line.contains("gpt-5.4-mini"))
-        .unwrap_or_abort();
-
     assert!(
         body_row < tool_row,
         "tool row should render after the assistant prose\n{lines:#?}"
     );
     assert!(
-        tool_row < footer_row,
-        "assistant footer should stay pinned after trailing tool rows\n{lines:#?}"
+        lines.iter().all(|line| !line.contains("Worked for")),
+        "settled tool turns must not append standalone lifecycle prose\n{lines:#?}"
     );
     assert!(
         lines[tool_row.saturating_sub(1)].trim().is_empty(),

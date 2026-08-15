@@ -67,8 +67,9 @@ fn transcript_grammar_characterizes_permission_question_lifecycle_and_compaction
 
     assert_eq!(contract[10].family, GrammarFamily::Error);
     assert_eq!(contract[11].family, GrammarFamily::Compaction);
-    assert_eq!(contract[12].placement, GrammarPlacement::PinnedFooter);
-    assert_eq!(contract[12].family, GrammarFamily::Footer);
+    assert!(contract
+        .iter()
+        .all(|surface| surface.family != GrammarFamily::Footer));
 }
 
 #[test]
@@ -80,7 +81,7 @@ fn transcript_grammar_characterizes_selection_rows_backgrounds_and_motion() {
             .selection_rows
             .is_none_or(|rows| rows <= surface.line_rows)
     }));
-    assert!(!grammar_contract_has_background_transition(&contract));
+    assert!(grammar_contract_has_background_transition(&contract));
     assert!(
         contract
             .iter()
@@ -116,7 +117,7 @@ fn transcript_grammar_characterizes_cancel_and_retry_lifecycle() {
 
     assert_eq!(
         surfaces.last().map(|surface| surface.kind),
-        Some(TranscriptRenderSurfaceKind::AssistantFooter)
+        Some(TranscriptRenderSurfaceKind::Compaction)
     );
     assert!(surfaces
         .iter()
@@ -143,7 +144,7 @@ fn transcript_grammar_characterizes_recovery_completion_and_cache_reuse() {
             .surfaces
             .last()
             .map(|surface| surface.kind),
-        Some(TranscriptRenderSurfaceKind::AssistantFooter)
+        Some(TranscriptRenderSurfaceKind::AssistantError)
     );
 }
 
@@ -166,9 +167,9 @@ fn transcript_grammar_rejects_controlled_rail_defect() {
 #[test]
 fn transcript_grammar_rejects_controlled_placement_defect() {
     let mut changed = canonical_contract(80);
-    changed.last_mut().expect("footer exists").placement = GrammarPlacement::Flow;
+    changed.first_mut().expect("prompt exists").placement = GrammarPlacement::Flow;
 
-    assert_grammar_contract_error(&changed, "footer placement drift");
+    assert_grammar_contract_error(&changed, "sticky prompt placement drift");
 }
 
 #[test]

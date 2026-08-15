@@ -75,7 +75,9 @@ fn transcript_grammar_synthetic_extension_is_exhaustive_and_resolvable() {
 
 #[test]
 fn transcript_grammar_all_families_are_exhaustive() {
-    let roles = normalize_turn_blocks(&canonical_turn())
+    let mut turn = canonical_turn();
+    turn.show_footer = true;
+    let roles = normalize_turn_blocks(&turn)
         .into_iter()
         .map(|spec| spec.role)
         .collect::<Vec<_>>();

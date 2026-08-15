@@ -446,6 +446,7 @@ pub(super) fn replay_mode_does_not_render_orchestration_summary() {
                 task_id: "task_replay_orch".to_string().into(),
                 state: harness_core::event::TaskScheduleState::Queued,
                 queue_key: Some("agent:queued:replay".to_string()),
+                metadata: None,
             }),
         ),
         envelope_with_actor(

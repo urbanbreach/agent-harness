@@ -137,7 +137,7 @@ pub(crate) enum GrammarFamily {
     Compaction,
 }
 
-pub(crate) const GRAMMAR_ALL_FAMILIES: [GrammarFamily; 13] = [
+pub(crate) const GRAMMAR_ALL_FAMILIES: [GrammarFamily; 12] = [
     GrammarFamily::User,
     GrammarFamily::Reasoning,
     GrammarFamily::Body,
@@ -150,7 +150,6 @@ pub(crate) const GRAMMAR_ALL_FAMILIES: [GrammarFamily; 13] = [
     GrammarFamily::Tool,
     GrammarFamily::Error,
     GrammarFamily::Compaction,
-    GrammarFamily::Footer,
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -189,10 +188,15 @@ pub(crate) fn validate_grammar_contract(
     if first.placement != GrammarPlacement::StickyPrompt || first.leading_gap != 0 {
         return Err("sticky prompt placement drift");
     }
-    let footer = contract.last().ok_or("missing footer")?;
-    if footer.family != GrammarFamily::Footer || footer.placement != GrammarPlacement::PinnedFooter
+    if let Some((footer_index, footer)) = contract
+        .iter()
+        .enumerate()
+        .find(|(_, surface)| surface.family == GrammarFamily::Footer)
     {
-        return Err("footer placement drift");
+        if footer_index + 1 != contract.len() || footer.placement != GrammarPlacement::PinnedFooter
+        {
+            return Err("footer placement drift");
+        }
     }
     for surface in contract {
         if surface.family == GrammarFamily::Reasoning && surface.rail {
