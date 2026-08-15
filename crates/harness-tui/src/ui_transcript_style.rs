@@ -7,6 +7,8 @@ use super::ui_chrome::elevated_card_surface;
 
 const TRANSCRIPT_BRAILLE_SPINNER_FRAMES: [&str; 8] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧"];
 const TRANSCRIPT_SPINNER_TICK_DIVISOR: usize = 4;
+const MONITOR_PULSE_FRAMES: [&str; 4] = ["○", "◎", "◉", "◎"];
+const MONITOR_PULSE_TICK_DIVISOR: usize = 8;
 const TRANSCRIPT_TOOL_WAVE_SPEED: f32 = 0.15;
 const USER_WAITING_PULSE_SPEED: f32 = 0.08;
 const ANIMATION_PHASE_WRAP: usize = 65_536;
@@ -18,6 +20,11 @@ fn animation_phase_f32(animation_phase: usize) -> f32 {
 
 pub(super) fn transcript_streaming_spinner_frame(animation_phase: usize) -> &'static str {
     transcript_streaming_spinner_frame_with_motion(animation_phase, true)
+}
+
+pub(super) fn monitor_pulse_frame(animation_phase: usize) -> &'static str {
+    let frame = animation_phase / MONITOR_PULSE_TICK_DIVISOR;
+    MONITOR_PULSE_FRAMES[frame % MONITOR_PULSE_FRAMES.len()]
 }
 
 pub(super) fn transcript_streaming_spinner_frame_with_motion(
