@@ -587,6 +587,7 @@ async fn wait_for_prompt_completion_subscribes_once_and_streams_new_events() {
                 task_id: "task_000001".to_string().into(),
                 state: TaskScheduleState::Started,
                 queue_key: Some("provider_model:default:gpt-4o-mini".to_string()),
+                metadata: None,
             }),
             Some("req_000001"),
         ))
@@ -1666,6 +1667,7 @@ fn provider_task_scheduled_event(task_id: &str, request_id: &str) -> EventEnvelo
             task_id: task_id.to_string().into(),
             state: TaskScheduleState::Started,
             queue_key: Some("provider_model:default:gpt-4o-mini".to_string()),
+            metadata: None,
         }),
         Some(request_id),
     )
@@ -1821,10 +1823,8 @@ async fn run_prompt_with_tool_call_bypass_permissions_allows_edit() {
 }
 
 #[tokio::test]
-async fn run_prompt_with_tool_call_readonly_sandbox_denies_edit() {
+async fn run_prompt_readonly_sandbox_rejects_unadvertised_edit() -> Result<(), String> {
     // arrange
-    // act
-    // assert
     let temp = tempfile::tempdir().unwrap_or_abort();
     std::fs::write(temp.path().join("test.txt"), "hello").unwrap_or_abort();
 
@@ -1862,23 +1862,22 @@ async fn run_prompt_with_tool_call_readonly_sandbox_denies_edit() {
     )
     .unwrap_or_abort();
 
+    // act
     let mut stdout = std::io::sink();
-    let outcome = run_prompt(&cmd, &settings, "edit test.txt", &mut stdout)
-        .await
-        .unwrap_or_abort();
+    let error = match run_prompt(&cmd, &settings, "edit test.txt", &mut stdout).await {
+        Ok(_) => return Err("readonly prompt unexpectedly accepted unadvertised edit".to_string()),
+        Err(error) => error,
+    };
 
-    let events_body = std::fs::read_to_string(&outcome.events_path).unwrap_or_abort();
+    // assert
     assert!(
-        events_body.contains("permission_resolved"),
-        "expected permission_resolved event: {events_body}"
-    );
-    assert!(
-        events_body.contains("\"decision\":\"deny\""),
-        "expected deny decision: {events_body}"
+        error.contains("provider emitted unmapped tool function `edit`"),
+        "expected fail-closed unmapped-tool error: {error}"
     );
 
     let file_content = std::fs::read_to_string(temp.path().join("test.txt")).unwrap_or_abort();
     assert_eq!(file_content, "hello", "expected file to be unmodified");
+    Ok(())
 }
 
 #[tokio::test]
