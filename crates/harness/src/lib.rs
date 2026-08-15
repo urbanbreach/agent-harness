@@ -49,6 +49,7 @@ mod tui;
 mod worktree_cmd;
 
 mod agent_stdio_cmd;
+mod attribution_cmd;
 mod code_graph_cmd;
 mod cron_cmd;
 mod dashboard_cmd;
@@ -69,6 +70,7 @@ use run::RunCommand;
 use sessions::SessionsCommand;
 use worktree_cmd::WorktreeCommand;
 
+use attribution_cmd::AttributionCommand;
 use code_graph_cmd::CodeGraphCommand;
 use cron_cmd::CronCommand;
 use plugin_cmd::PluginCommand;
@@ -221,6 +223,8 @@ enum Commands {
     Memory(MemoryCommand),
     /// List, select-remove, or clean up Harness session worktrees.
     Worktree(WorktreeCommand),
+    /// Inspect agent edit attribution for workspace paths.
+    Attribution(AttributionCommand),
     /// Durable session-local prompt queue enqueue/list/dequeue/interject surface.
     PromptQueue(PromptQueueCommand),
     /// Evaluate and fire due cron schedules at a civil time with a durable journal.
@@ -870,6 +874,7 @@ fn execute_cli(cli: Cli, io: &mut CliIo<'_>, deps: CliDeps) -> i32 {
         },
         Commands::Memory(command) => memory_cmd::execute_with_io(command, io, &deps),
         Commands::Worktree(command) => worktree_cmd::execute_with_io(command, io, &deps),
+        Commands::Attribution(command) => attribution_cmd::execute_with_io(command, io, &deps),
         Commands::PromptQueue(command) => prompt_queue_cmd::execute_with_io(command, io, &deps),
         Commands::Cron(command) => cron_cmd::execute_with_io(command, io, &deps),
         Commands::Team(command) => team_cmd::execute_with_io(command, io, &deps),
