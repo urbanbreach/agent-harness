@@ -160,6 +160,7 @@ fn pre_provider_runtime_events_keep_the_dock_waiting_status_visible() {
             task_id: "task_pre_provider".into(),
             state: TaskScheduleState::Started,
             queue_key: Some("provider_model:mock:model-pre-response".to_string()),
+            metadata: None,
         }),
     ));
 
@@ -244,6 +245,7 @@ fn cancelling_turn_keeps_spinner_and_uses_error_accent() {
             task_id: "task_cancelling".into(),
             state: TaskScheduleState::Started,
             queue_key: Some("provider_model:mock:model-pre-response".to_string()),
+            metadata: None,
         }),
     ));
     app.ingest_event(envelope(

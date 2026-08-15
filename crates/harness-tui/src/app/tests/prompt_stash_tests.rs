@@ -226,6 +226,7 @@ pub(super) fn queued_prompt_count_tracks_queued_activities() {
             task_id: "task_queued".to_string().into(),
             state: TaskScheduleState::Queued,
             queue_key: Some("provider_model:default:gpt-5.4-mini".to_string()),
+            metadata: None,
         }),
     ));
 
@@ -284,6 +285,7 @@ pub(super) fn queued_prompt_indicator_renders_when_count_positive() {
             task_id: "task_queued".to_string().into(),
             state: TaskScheduleState::Queued,
             queue_key: Some("provider_model:default:gpt-5.4-mini".to_string()),
+            metadata: None,
         }),
     ));
 

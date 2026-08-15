@@ -150,6 +150,7 @@ pub(crate) fn queued_turn_schedule_keeps_activity_queued_until_provider_starts()
             task_id: "task_queued".to_string().into(),
             state: TaskScheduleState::Queued,
             queue_key: Some("provider_model:default:gpt-5.4-mini".to_string()),
+            metadata: None,
         }),
     ));
 

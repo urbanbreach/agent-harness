@@ -208,6 +208,7 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
             task_id: "task_orphan_running".to_string().into(),
             state: harness_core::event::TaskScheduleState::Started,
             queue_key: Some("agent:running:orphan".to_string()),
+            metadata: None,
         }),
     ));
     app.ingest_event(operator_rail_test_event_with_correlation(
@@ -218,6 +219,7 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
             task_id: "task_orphan_queued".to_string().into(),
             state: harness_core::event::TaskScheduleState::Queued,
             queue_key: Some("agent:queued:queued".to_string()),
+            metadata: None,
         }),
     ));
 

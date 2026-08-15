@@ -55,6 +55,7 @@ pub(crate) fn parent_transcript_hides_child_prompt_before_task_tool_finishes() {
             task_id: "task_child_turn".to_string().into(),
             state: TaskScheduleState::Queued,
             queue_key: Some("provider_model:default:model-child".to_string()),
+            metadata: None,
         }),
     ));
     app.ingest_event(envelope_with_actor(

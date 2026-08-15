@@ -84,6 +84,7 @@ fn marker(id: &str, seq: u64, kind: Marker) -> EventEnvelopeV1 {
             task_id: format!("task_{id}").into(),
             state: TaskScheduleState::Queued,
             queue_key: None,
+            metadata: None,
         }),
         Marker::Finished => EventV1::RunFinished(RunFinishedEvent {
             summary: "done".to_string(),

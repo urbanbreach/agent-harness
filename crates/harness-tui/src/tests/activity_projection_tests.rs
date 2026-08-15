@@ -546,6 +546,7 @@ pub(super) fn task_scheduled_queued_does_not_reuse_tool_call_id_as_task_id() {
             task_id: "tc_001".to_string().into(),
             state: TaskScheduleState::Queued,
             queue_key: Some("tool:fs.read".to_string()),
+            metadata: None,
         }),
     ));
 

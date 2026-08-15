@@ -114,6 +114,7 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
             task_id: "task_child".to_string().into(),
             state: harness_core::event::TaskScheduleState::Started,
             queue_key: Some("agent:running:researcher".to_string()),
+            metadata: None,
         }),
     ));
     app.ingest_event(event(

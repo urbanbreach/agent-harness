@@ -44,6 +44,7 @@ pub(crate) fn operator_rail_test_app() -> AppState {
             task_id: "task_queue".to_string().into(),
             state: harness_core::event::TaskScheduleState::Queued,
             queue_key: Some("tool:fs.read".to_string()),
+            metadata: None,
         }),
     ));
     app.ingest_event(operator_rail_test_event(

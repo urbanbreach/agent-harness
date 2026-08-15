@@ -148,6 +148,7 @@ pub(crate) fn disk_backed_child_navigation_stays_in_live_tui_stack() {
                 task_id: "task_000001".to_string().into(),
                 state: TaskScheduleState::Started,
                 queue_key: None,
+                metadata: None,
             }),
         ),
     ];

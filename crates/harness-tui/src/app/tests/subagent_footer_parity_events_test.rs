@@ -49,6 +49,7 @@ pub(super) fn subagent_events(state: TaskFixtureState) -> Vec<EventEnvelopeV1> {
                 task_id: "task_child".to_string().into(),
                 state: TaskScheduleState::Started,
                 queue_key: Some("agent:running:researcher".to_string()),
+                metadata: None,
             }),
         ),
         envelope_with_actor(

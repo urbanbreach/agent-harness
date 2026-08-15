@@ -171,6 +171,7 @@ pub(crate) fn exact_test_subagent_footer_status_uses_running_and_cancelled_icons
             task_id: "task_child".to_string().into(),
             state: harness_core::event::TaskScheduleState::Started,
             queue_key: Some("agent:running:researcher".to_string()),
+            metadata: None,
         }),
     );
     let running_app = AppState::new_replay(

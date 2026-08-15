@@ -191,6 +191,7 @@ pub(super) fn provider_request_finished_keeps_activity_streaming_until_turn_task
             task_id: "task_turn_task".to_string().into(),
             state: TaskScheduleState::Started,
             queue_key: Some("provider_model:default:gpt-5.4-mini".to_string()),
+            metadata: None,
         }),
     ));
     app.ingest_event(envelope(
@@ -298,6 +299,7 @@ pub(super) fn task_cancelled_marks_matching_activity_as_error() {
             task_id: "task_cancelled_turn".to_string().into(),
             state: TaskScheduleState::Started,
             queue_key: Some("provider_model:default:gpt-5.4-mini".to_string()),
+            metadata: None,
         }),
     ));
     app.ingest_event(envelope(
@@ -422,6 +424,7 @@ pub(super) fn child_tool_task_completed_does_not_finish_parent_turn_activity() {
             task_id: "task_parent_turn".to_string().into(),
             state: TaskScheduleState::Started,
             queue_key: Some("provider_model:default:gpt-5.4-mini".to_string()),
+            metadata: None,
         }),
     ));
     app.ingest_event(envelope(
@@ -443,6 +446,7 @@ pub(super) fn child_tool_task_completed_does_not_finish_parent_turn_activity() {
             task_id: "task_child_tool".to_string().into(),
             state: TaskScheduleState::Started,
             queue_key: Some("tool:read".to_string()),
+            metadata: None,
         }),
     ));
     app.ingest_event(envelope(
@@ -480,6 +484,7 @@ pub(super) fn child_tool_task_cancelled_does_not_mark_parent_turn_activity_error
             task_id: "task_parent_turn".to_string().into(),
             state: TaskScheduleState::Started,
             queue_key: Some("provider_model:default:gpt-5.4-mini".to_string()),
+            metadata: None,
         }),
     ));
     app.ingest_event(envelope(
@@ -501,6 +506,7 @@ pub(super) fn child_tool_task_cancelled_does_not_mark_parent_turn_activity_error
             task_id: "task_child_tool".to_string().into(),
             state: TaskScheduleState::Started,
             queue_key: Some("tool:read".to_string()),
+            metadata: None,
         }),
     ));
     app.ingest_event(envelope(
