@@ -95,6 +95,7 @@ fn resume_plan_reconstructs_sequence_and_id_watermarks() {
                     task_id: "task_000004".to_string().into(),
                     state: TaskScheduleState::Started,
                     queue_key: Some("tool:shell.run".to_string()),
+                    metadata: None,
                 }),
             ),
             envelope(
@@ -297,6 +298,7 @@ fn replay_old_loop_events_without_provider_metadata() {
                     task_id: "task_000001".to_string().into(),
                     state: TaskScheduleState::Started,
                     queue_key: None,
+                    metadata: None,
                 }),
             ),
             envelope(
@@ -367,6 +369,7 @@ fn replay_new_loop_metadata_is_non_semantic_for_run_summary() {
                 task_id: "task_000001".to_string().into(),
                 state: TaskScheduleState::Started,
                 queue_key: Some("tool:shell.run".to_string()),
+                metadata: None,
             }),
         ),
         envelope(
@@ -448,6 +451,7 @@ fn replay_new_loop_metadata_is_non_semantic_for_run_summary() {
                 task_id: "task_000001".to_string().into(),
                 state: TaskScheduleState::Started,
                 queue_key: Some("tool:shell.run".to_string()),
+                metadata: None,
             }),
         ),
         envelope(

@@ -79,6 +79,7 @@ async fn resume_existing_run_restores_sequence_and_ids() {
                     task_id: "task_000009".to_string().into(),
                     state: TaskScheduleState::Started,
                     queue_key: Some("tool:shell.run".to_string()),
+                    metadata: None,
                 }),
             ),
             resume_fixture_event(

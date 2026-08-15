@@ -126,6 +126,7 @@ fn replay_suppresses_hooks_but_preserves_hook_history() {
                     task_id: "task_000401".to_string().into(),
                     state: TaskScheduleState::Started,
                     queue_key: Some("provider_model:mock:model-hook".to_string()),
+                    metadata: None,
                 }),
             ),
             resume_fixture_event_with_actor_and_correlation(

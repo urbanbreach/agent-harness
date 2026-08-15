@@ -367,6 +367,7 @@ fn resume_plan_rejects_sessions_with_tasks_in_flight() {
                     task_id: "task_000001".to_string().into(),
                     state: TaskScheduleState::Started,
                     queue_key: Some("tool:shell.run".to_string()),
+                    metadata: None,
                 }),
             ),
             envelope(

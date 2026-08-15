@@ -135,6 +135,7 @@ fn live_snapshot_with_open_state(run_id: &str) -> Vec<EventEnvelopeV1> {
                 task_id: "task_000001".to_string().into(),
                 state: TaskScheduleState::Started,
                 queue_key: Some("tool:edit".to_string()),
+                metadata: None,
             }),
         ),
         envelope(

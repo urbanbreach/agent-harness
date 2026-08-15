@@ -661,6 +661,7 @@ fn write_resumable_multi_turn_history_fixture(session_dir: &Path, run_id: &str) 
                 task_id: "task_000001".to_string().into(),
                 state: TaskScheduleState::Started,
                 queue_key: Some("provider_model:mock:model-1".to_string()),
+                metadata: None,
             }),
         ),
         resume_fixture_event_with_actor_and_correlation(
@@ -709,6 +710,7 @@ fn write_resumable_multi_turn_history_fixture(session_dir: &Path, run_id: &str) 
                 task_id: "task_000002".to_string().into(),
                 state: TaskScheduleState::Started,
                 queue_key: Some("tool:edit.hashline_apply".to_string()),
+                metadata: None,
             }),
         ),
         resume_fixture_event_with_actor_and_correlation(

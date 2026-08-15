@@ -49,6 +49,7 @@ fn projects_task_lineage_and_child_session_metadata() {
                 task_id: "task_000777".to_string().into(),
                 state: TaskScheduleState::Started,
                 queue_key: Some("provider_model:default:gpt-5".to_string()),
+                metadata: None,
             }),
         ),
         envelope(

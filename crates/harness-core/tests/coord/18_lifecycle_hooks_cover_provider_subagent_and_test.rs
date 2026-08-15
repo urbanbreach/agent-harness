@@ -403,6 +403,7 @@ fn replay_reconstructs_parallel_child_sessions_and_timings() {
                     task_id: "task_000301".to_string().into(),
                     state: TaskScheduleState::Started,
                     queue_key: Some("provider_model:mock:model-a".to_string()),
+                    metadata: None,
                 }),
             ),
             resume_fixture_event_with_actor_and_correlation(
@@ -449,6 +450,7 @@ fn replay_reconstructs_parallel_child_sessions_and_timings() {
                     task_id: "task_000302".to_string().into(),
                     state: TaskScheduleState::Started,
                     queue_key: Some("provider_model:mock:model-b".to_string()),
+                    metadata: None,
                 }),
             ),
             resume_fixture_event_with_actor_and_correlation(

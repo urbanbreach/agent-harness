@@ -248,6 +248,7 @@ fn session_lineage_rejects_in_flight_prefix() {
                 task_id: "task_000001".to_string().into(),
                 state: TaskScheduleState::Started,
                 queue_key: Some("provider_model:default:gpt-5".to_string()),
+                metadata: None,
             }),
         ),
         envelope(

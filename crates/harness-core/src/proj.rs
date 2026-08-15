@@ -163,6 +163,7 @@ mod tests {
                     task_id: "task_1".to_string().into(),
                     state: TaskScheduleState::Started,
                     queue_key: None,
+                    metadata: None,
                 }),
             ),
             envelope(
@@ -264,6 +265,7 @@ mod tests {
                     task_id: "task_000001".to_string().into(),
                     state: TaskScheduleState::Started,
                     queue_key: Some("provider_model:mock:model-1".to_string()),
+                    metadata: None,
                 }),
             ),
             envelope_with_actor(
@@ -354,6 +356,7 @@ mod tests {
                     task_id: "task_000001".to_string().into(),
                     state: TaskScheduleState::Started,
                     queue_key: Some("provider_model:mock:model-1".to_string()),
+                    metadata: None,
                 }),
             ),
             envelope(
@@ -434,6 +437,7 @@ mod tests {
                     task_id: "task_000001".to_string().into(),
                     state: TaskScheduleState::Queued,
                     queue_key: Some("provider_model:mock:model-1".to_string()),
+                    metadata: None,
                 }),
             ),
         ];
@@ -469,6 +473,7 @@ mod tests {
                     task_id: "task_000001".to_string().into(),
                     state: TaskScheduleState::Started,
                     queue_key: Some("provider_model:mock:model-1".to_string()),
+                    metadata: None,
                 }),
             ),
             envelope_with_actor(
@@ -479,6 +484,7 @@ mod tests {
                     task_id: "task_000002".to_string().into(),
                     state: TaskScheduleState::Started,
                     queue_key: Some("provider_model:mock:model-1".to_string()),
+                    metadata: None,
                 }),
             ),
         ];
@@ -519,6 +525,7 @@ mod tests {
                     task_id: "task_000001".to_string().into(),
                     state: TaskScheduleState::Started,
                     queue_key: Some("provider_model:mock:model-1".to_string()),
+                    metadata: None,
                 }),
             ),
             envelope_with_actor(
@@ -585,6 +592,7 @@ mod tests {
                     task_id: "task_000001".to_string().into(),
                     state: TaskScheduleState::Started,
                     queue_key: Some("provider_model:mock:model-1".to_string()),
+                    metadata: None,
                 }),
             ),
             envelope_with_actor(
@@ -595,6 +603,7 @@ mod tests {
                     task_id: "task_000002".to_string().into(),
                     state: TaskScheduleState::Started,
                     queue_key: Some("tool:read".to_string()),
+                    metadata: None,
                 }),
             ),
             envelope_with_actor(

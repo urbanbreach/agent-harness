@@ -82,6 +82,7 @@ pub(super) fn write_resume_acceptance_fixture() -> ResumeAcceptanceFixture {
                     task_id: "task_000001".to_string().into(),
                     state: TaskScheduleState::Started,
                     queue_key: Some("provider_model:mock:model-1".to_string()),
+                    metadata: None,
                 }),
             ),
             resume_fixture_event_with_actor_and_correlation(
@@ -289,6 +290,7 @@ pub(super) fn write_resume_acceptance_fixture() -> ResumeAcceptanceFixture {
                     task_id: "task_000002".to_string().into(),
                     state: TaskScheduleState::Started,
                     queue_key: Some("tool:shell.run".to_string()),
+                    metadata: None,
                 }),
             ),
             resume_fixture_event_with_actor_and_correlation(
@@ -442,6 +444,7 @@ pub(super) fn write_resume_acceptance_fixture() -> ResumeAcceptanceFixture {
                     task_id: "task_000003".to_string().into(),
                     state: TaskScheduleState::Started,
                     queue_key: Some("provider_model:mock:model-1".to_string()),
+                    metadata: None,
                 }),
             ),
             resume_fixture_event_with_actor_and_correlation(

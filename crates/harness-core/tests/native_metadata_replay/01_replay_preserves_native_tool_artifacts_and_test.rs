@@ -282,6 +282,7 @@ async fn legacy_sessions_remain_loadable_after_native_metadata_extension() {
                     task_id: "task_000001".to_string().into(),
                     state: TaskScheduleState::Started,
                     queue_key: Some("tool:shell.run".to_string()),
+                    metadata: None,
                 }),
             ),
             envelope(
