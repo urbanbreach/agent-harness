@@ -151,7 +151,7 @@ Events are the source of truth. All state is derived from events.
 - `AgentSpawned` / `AgentStopped`
 
 **Task Management**
-- `TaskScheduled` - Includes state: queued or started
+- `TaskScheduled` - Includes `task_id`, `state` (queued or started), optional `queue_key`, and optional typed `metadata`; child agent turns record parent-tool/child-request lineage in `metadata.lineage` when scheduled so active lifecycle projections do not depend on terminal events
 - `TaskCancelled` - Best-effort cancellation
 - `TaskCompleted` - Normal completion
 - `TaskResultLate` - Result arrived after cancellation
@@ -160,6 +160,7 @@ Events are the source of truth. All state is derived from events.
 **Progress and Staleness**
 - `StaleDetected` - Task exceeded staleness timeout
 - `UserMessageSubmitted` - User prompt accepted into the event stream
+- `PromptAttachmentsSubmitted` - Prompt attachment metadata accepted into the event stream
 
 Background child-task completion wakeups are coordinator-owned. The child terminal
 `TaskCompleted` / `TaskCancelled` event is written first, then the coordinator appends one

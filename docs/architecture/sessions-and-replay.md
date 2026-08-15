@@ -79,6 +79,8 @@ turn starts.
 
 `tree` is a replay-derived view of parent/child lineage. `fork` materializes a child session at a stable source cutoff so in-flight provider/tool work is not copied. `clone` copies the latest stable prefix. Summaries, artifacts, and restored context keep their source cutoff semantics: existing artifact references stay tied to the source session, summaries describe the retained prefix, and new child events append only after the materialized boundary.
 
+Active child lineage is replay-visible before completion. Coordinator-owned `TaskScheduled` events may carry typed `metadata.lineage`; child agent-turn schedules include the exact `parent_tool_call_id` and `child_request_id` allocated for that turn. Live and replay projections use those schedule-time ids for parent demotion and watcher deduplication while child tasks are still queued or running. Older logs without `metadata` deserialize with no schedule lineage and retain their existing terminal-metadata fallback behavior.
+
 Fork/clone behavior is intentionally conservative. If the source cutoff is unstable or artifacts are missing, the command reports the failure instead of executing tools or providers during replay.
 
 Lineage materialization follows the implementation contract in `harness_core::session_lineage`:
