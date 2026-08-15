@@ -293,6 +293,7 @@ pub(super) fn esc_while_turn_running_does_not_cancel_on_single_press() {
             task_id: "task_active".to_string().into(),
             state: TaskScheduleState::Started,
             queue_key: Some("provider_model:default:model-1".to_string()),
+            metadata: None,
         }),
     ));
 
@@ -332,6 +333,7 @@ pub(super) fn double_esc_while_turn_running_does_not_emit_interrupt() {
             task_id: "task_active".to_string().into(),
             state: TaskScheduleState::Started,
             queue_key: Some("provider_model:default:model-1".to_string()),
+            metadata: None,
         }),
     ));
 
@@ -376,6 +378,7 @@ pub(super) fn ctrl_c_clears_draft_then_cancels_running_turn() {
             task_id: "task_active".to_string().into(),
             state: TaskScheduleState::Started,
             queue_key: Some("provider_model:default:model-1".to_string()),
+            metadata: None,
         }),
     ));
 
@@ -401,8 +404,99 @@ pub(super) fn ctrl_c_clears_draft_then_cancels_running_turn() {
         intents.lock().unwrap_or_abort().as_slice(),
         &[UiIntent::InterruptSession {
             task_ids: vec!["task_active".to_string()],
+            reason: InterruptReason::User,
         }]
     );
+}
+
+fn app_waiting_on_background_output(block: bool) -> (AppState, Arc<Mutex<Vec<UiIntent>>>) {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().unwrap_or_abort().push(intent);
+        })
+    };
+    let mut app = AppState::new_live(None, false, Some(sink));
+    app.focus = Focus::Prompt;
+    app.ingest_event(envelope(
+        1,
+        "req_send_now",
+        EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+            request_id: "req_send_now".into(),
+            text: "wait for the background task".to_string(),
+        }),
+    ));
+    app.ingest_event(envelope(
+        2,
+        "req_send_now",
+        EventV1::TaskScheduled(TaskScheduledEvent {
+            task_id: "task_send_now".into(),
+            state: TaskScheduleState::Started,
+            queue_key: Some("provider_model:default:model-1".to_string()),
+            metadata: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        3,
+        "req_send_now",
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "req_send_now".into(),
+            provider_id: "default".to_string(),
+            model_id: "model-1".to_string(),
+            prompt_summary: "wait for the background task".to_string(),
+            request_digest: "digest-send-now".to_string(),
+            metadata: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        4,
+        "req_send_now",
+        EventV1::ToolCallRequested(ToolCallRequestedEvent {
+            tool_call_id: "tool_send_now".into(),
+            tool_id: "background_output".to_string(),
+            args_summary: format!(r#"{{"task_id":"bg_1","block":{block}}}"#),
+            args_digest: "digest-send-now-tool".to_string(),
+            metadata: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        5,
+        "req_send_now",
+        EventV1::ToolCallStarted(ToolCallStartedEvent {
+            tool_call_id: "tool_send_now".into(),
+        }),
+    ));
+    app.queued_prompt_count = 1;
+    (app, intents)
+}
+
+pub(super) fn empty_enter_promotes_queued_prompt_during_sendable_wait() {
+    // Given: a queued prompt while background_output is blocking the active turn.
+    let (mut app, intents) = app_waiting_on_background_output(true);
+
+    // When: Enter is pressed with an empty composer.
+    app.handle_key(key(KeyCode::Enter));
+
+    // Then: Harness interrupts the active turn specifically to promote the queue.
+    assert_eq!(
+        intents.lock().unwrap_or_abort().as_slice(),
+        &[UiIntent::InterruptSession {
+            task_ids: vec!["task_send_now".to_string()],
+            reason: InterruptReason::SendNow,
+        }]
+    );
+}
+
+pub(super) fn empty_enter_does_not_promote_during_nonblocking_background_poll() {
+    // Given: a queued prompt while background_output is performing an instant poll.
+    let (mut app, intents) = app_waiting_on_background_output(false);
+
+    // When: Enter is pressed with an empty composer.
+    app.handle_key(key(KeyCode::Enter));
+
+    // Then: the instant poll is not interrupted or mistaken for a parked wait.
+    assert!(intents.lock().unwrap_or_abort().is_empty());
 }
 
 pub(super) fn submit_prompt_while_turn_streams_echoes_as_queued_and_emits_intent() {

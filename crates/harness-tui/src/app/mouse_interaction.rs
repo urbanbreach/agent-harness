@@ -645,6 +645,7 @@ impl AppState {
             self.transcript_view.transcript_selection_dragging = false;
             self.hovered_subagent_footer_target = None;
             self.hovered_live_turn_stop = false;
+            self.hovered_live_turn_background = false;
             self.pending_subagent_footer_target = None;
             self.secondary_surfaces.selection_dragging = false;
             self.secondary_surfaces.pending_click = None;
@@ -706,12 +707,14 @@ impl AppState {
             || self.transcript_view.hovered_transcript_target.is_some()
             || self.hovered_subagent_footer_target.is_some()
             || self.hovered_live_turn_stop
+            || self.hovered_live_turn_background
             || self.transcript_view.transcript_selection.is_some()
             || self.secondary_surfaces.selection.is_some();
         self.transcript_view.transcript_scrollbar_drag = None;
         self.transcript_view.hovered_transcript_target = None;
         self.hovered_subagent_footer_target = None;
         self.hovered_live_turn_stop = false;
+        self.hovered_live_turn_background = false;
         self.pending_subagent_footer_target = None;
         self.clear_transcript_selection();
         self.clear_operator_sidebar_selection();
@@ -908,6 +911,22 @@ impl AppState {
         self.set_frame_area(frame_area);
 
         if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
+            && ui::live_turn_watching_rect(self, frame_area)
+                .is_some_and(|area| rect_contains(area, mouse.column, mouse.row))
+        {
+            self.open_status_dashboard_at(frame_area);
+            return true;
+        }
+
+        if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
+            && ui::live_turn_background_rect(self, frame_area)
+                .is_some_and(|area| rect_contains(area, mouse.column, mouse.row))
+        {
+            self.hovered_live_turn_background = true;
+            return self.background_live_turn_child();
+        }
+
+        if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
             && ui::live_turn_stop_rect(self, frame_area)
                 .is_some_and(|area| rect_contains(area, mouse.column, mouse.row))
         {
@@ -943,6 +962,8 @@ impl AppState {
                 let welcome_hover_changed = self.welcome.set_hovered_action(hovered_welcome_action);
                 let hovered_live_turn_stop = ui::live_turn_stop_rect(self, frame_area)
                     .is_some_and(|area| rect_contains(area, mouse.column, mouse.row));
+                let hovered_live_turn_background = ui::live_turn_background_rect(self, frame_area)
+                    .is_some_and(|area| rect_contains(area, mouse.column, mouse.row));
                 let hovered_subagent_footer_target =
                     ui::subagent_footer_target_at(self, frame_area, mouse.column, mouse.row);
                 let hovered_transcript_target = if hovered_subagent_footer_target.is_none() {
@@ -953,10 +974,12 @@ impl AppState {
                 let changed = welcome_hover_changed
                     || self.transcript_view.hovered_transcript_target != hovered_transcript_target
                     || self.hovered_subagent_footer_target != hovered_subagent_footer_target
-                    || self.hovered_live_turn_stop != hovered_live_turn_stop;
+                    || self.hovered_live_turn_stop != hovered_live_turn_stop
+                    || self.hovered_live_turn_background != hovered_live_turn_background;
                 self.transcript_view.hovered_transcript_target = hovered_transcript_target;
                 self.hovered_subagent_footer_target = hovered_subagent_footer_target;
                 self.hovered_live_turn_stop = hovered_live_turn_stop;
+                self.hovered_live_turn_background = hovered_live_turn_background;
                 changed
             }
             MouseEventKind::Down(MouseButton::Right) => {
@@ -1088,10 +1111,12 @@ impl AppState {
             MouseEventKind::Drag(MouseButton::Left) => {
                 let hover_changed = self.transcript_view.hovered_transcript_target.is_some()
                     || self.hovered_subagent_footer_target.is_some()
-                    || self.hovered_live_turn_stop;
+                    || self.hovered_live_turn_stop
+                    || self.hovered_live_turn_background;
                 self.transcript_view.hovered_transcript_target = None;
                 self.hovered_subagent_footer_target = None;
                 self.hovered_live_turn_stop = false;
+                self.hovered_live_turn_background = false;
                 if self.transcript_view.transcript_scrollbar_drag.is_some() {
                     self.update_transcript_scrollbar_drag(mouse.row);
                     return true;

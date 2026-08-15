@@ -127,7 +127,9 @@ use ui_lifecycle::{
     live_empty_state_visible, live_transcript_area_with_breadcrumb, render_live_breadcrumb,
     render_live_empty_state, startup_shell_visible,
 };
-pub(crate) use ui_live_turn_status::live_turn_stop_rect;
+pub(crate) use ui_live_turn_status::{
+    live_turn_background_rect, live_turn_stop_rect, live_turn_watching_rect,
+};
 use ui_overlays::render_overlays;
 pub(crate) use ui_secondary::{
     operator_sidebar_keyboard_targets, operator_sidebar_section_hit_target,

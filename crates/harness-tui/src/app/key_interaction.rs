@@ -821,6 +821,9 @@ impl AppState {
                         }
                         return;
                     }
+                    if self.send_queued_prompt_now() {
+                        return;
+                    }
                     self.submit_prompt();
                     return;
                 }
@@ -828,7 +831,10 @@ impl AppState {
                     let task_ids: Vec<String> =
                         self.active_interrupt_task_ids().into_iter().collect();
                     if !task_ids.is_empty() {
-                        self.emit_ui_intent(UiIntent::InterruptSession { task_ids });
+                        self.emit_ui_intent(UiIntent::InterruptSession {
+                            task_ids,
+                            reason: InterruptReason::User,
+                        });
                     }
                     self.submit_prompt();
                     return;

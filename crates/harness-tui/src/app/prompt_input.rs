@@ -3,6 +3,42 @@ use super::prompt_history::PromptHistoryDraft;
 use super::*;
 
 impl AppState {
+    pub(crate) fn queued_prompt_send_now_available(&self) -> bool {
+        let visible_activity = self
+            .runtime_state_activity()
+            .filter(|activity| activity.status == ActivityStatus::Streaming);
+        !self.replay_mode
+            && self.queued_prompt_count > 0
+            && self.composer.prompt_buffer.trim().is_empty()
+            && visible_activity.is_some_and(ActivityEntry::is_sendable_wait)
+            && visible_activity.is_some_and(|activity| {
+                !self
+                    .active_interrupt_task_ids_for_request(&activity.request_id)
+                    .is_empty()
+            })
+    }
+
+    pub(in crate::app) fn send_queued_prompt_now(&mut self) -> bool {
+        if !self.queued_prompt_send_now_available() {
+            return false;
+        }
+
+        let Some(request_id) = self
+            .runtime_state_activity()
+            .filter(|activity| activity.status == ActivityStatus::Streaming)
+            .map(|activity| activity.request_id.clone())
+        else {
+            return false;
+        };
+        let task_ids = self.active_interrupt_task_ids_for_request(&request_id);
+        self.emit_ui_intent(UiIntent::InterruptSession {
+            task_ids: task_ids.iter().cloned().collect(),
+            reason: InterruptReason::SendNow,
+        });
+        self.interrupt_requested_task_ids = task_ids;
+        true
+    }
+
     pub(in crate::app) fn prompt_char_count(&self) -> usize {
         self.composer.prompt_buffer.chars().count()
     }

@@ -58,9 +58,43 @@ fn cancellable_live_app(intents: Arc<Mutex<Vec<UiIntent>>>) -> AppState {
             task_id: "task_stop".into(),
             state: TaskScheduleState::Started,
             queue_key: Some("provider_model:default:gpt-5.4-mini".to_string()),
+            metadata: None,
         }),
     ));
     app.ingest_event(provider_started(2, "req_stop", "default", "gpt-5.4-mini"));
+    app
+}
+
+fn demotable_live_app(intents: Arc<Mutex<Vec<UiIntent>>>) -> AppState {
+    let mut app = cancellable_live_app(intents);
+    app.ingest_event(envelope(
+        3,
+        "req_stop",
+        EventV1::ToolCallRequested(ToolCallRequestedEvent {
+            tool_call_id: "tool_foreground_child".into(),
+            tool_id: "task".to_string(),
+            args_summary: r#"{"description":"foreground child"}"#.to_string(),
+            args_digest: "digest-foreground-child".to_string(),
+            metadata: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        4,
+        "req_stop",
+        EventV1::ToolCallStarted(ToolCallStartedEvent {
+            tool_call_id: "tool_foreground_child".into(),
+        }),
+    ));
+    app.ingest_event(envelope(
+        5,
+        "req_child_demote",
+        EventV1::AgentSpawned(AgentSpawnedEvent {
+            agent_id: "agent_child_demote".to_string(),
+            profile: "explore".to_string(),
+            parent_agent_id: Some("default".to_string()),
+        }),
+    ));
+    super::live_turn_watcher_interaction_tests::ingest_demotable_child_turn(&mut app);
     app
 }
 
@@ -296,6 +330,7 @@ pub(super) fn clicking_stop_affordance_interrupts_active_task() {
             .unwrap_or_else(|poisoned| poisoned.into_inner()),
         vec![UiIntent::InterruptSession {
             task_ids: vec!["task_stop".to_string()],
+            reason: InterruptReason::User,
         }]
     );
     let screen = render_text(&app, 140, 40);
@@ -329,6 +364,36 @@ pub(super) fn clicking_stop_affordance_interrupts_active_task() {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .len(),
         2
+    );
+}
+
+pub(super) fn foreground_child_status_control_demotes_the_active_handle() {
+    let intents = Arc::new(Mutex::new(Vec::new()));
+    let mut app = demotable_live_app(Arc::clone(&intents));
+    let screen = render_text(&app, 140, 40);
+    assert!(
+        status_row(&screen, "Waiting on subagent…").contains("[↓]"),
+        "{screen}"
+    );
+    let target = crate::ui::live_turn_background_rect(&app, TEST_FRAME_AREA)
+        .expect("foreground child must expose the background control");
+
+    let handled = app.handle_mouse(
+        mouse_at(MouseEventKind::Down(MouseButton::Left), target.x, target.y),
+        TEST_FRAME_AREA,
+        None,
+        None,
+        None,
+    );
+
+    assert!(handled);
+    assert_eq!(
+        *intents
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()),
+        vec![UiIntent::DemoteForegroundChildTask {
+            handle_id: "req_child_demote".to_string(),
+        }]
     );
 }
 
