@@ -323,9 +323,10 @@ semantic fallbacks, and no-color mode uses the terminal-native reset palette;
 those modes preserve role distinctions without claiming RGB identity.
 
 Terminal capability negotiation also selects glyph and motion fallbacks. A
-Unicode-capable terminal keeps the preferred `❯`, `◆`, `●`, and `✗` glyphs;
-the compact/legacy width profile uses the semantic ASCII alternatives `>`,
-`*`, `o`, and `x`. Setting `HARNESS_TUI_REDUCED_MOTION` to `1`, `true`, `yes`,
+Unicode-capable terminal keeps the preferred composer `❯` plus `◆`, `●`, and
+`✗` status glyphs; the compact/legacy capability profile uses the semantic
+ASCII alternatives `>`, `*`, `o`, and `x`. Transcript user rows use the stable
+`›` marker and elevated-band contract in section 14. Setting `HARNESS_TUI_REDUCED_MOTION` to `1`, `true`, `yes`,
 or `on` selects the scheduler's immediate-settle path: status distinctions
 remain visible, but continuous animation deadlines are not armed. Capability
 evidence labels record color, glyph, and motion modes and must not describe a
@@ -415,7 +416,7 @@ Structural owners: `crates/harness-tui/tests/reference_parity_tx_shell_test.rs` 
 
 | Region | Contract |
 |--------|----------|
-| User rows | Flat `❯` marker; no legacy left rail `┃`; no outer card chrome |
+| User rows | Full-width elevated band inside the transcript gutters: `surface.card` when idle, `surface.selected_card` when selected, and the active-thinking semantic surface while live; one blank surface row above and below the message vertically centers a single-line prompt; the content row starts with three cells of inset, the stable `› ` marker, then body text; wrapped rows align under the body; the wall clock packs against the right edge of the first content row; no `You` label, legacy left rail `┃`, synthetic header, border, corner, or mid-rule at any measured width |
 | Assistant rows | Rail-free body; footer/meta may show model/status on shell surface |
 | Shared | No sharp corners / card mid-rules as primary transcript chrome |
 
