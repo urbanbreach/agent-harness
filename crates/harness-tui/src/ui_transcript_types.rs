@@ -295,6 +295,8 @@ pub(super) struct TranscriptUserMessageSection {
     pub(super) text: String,
     pub(super) queued: bool,
     pub(super) wall_clock: Option<String>,
+    pub(super) expanded_wall_clock: Option<String>,
+    pub(super) wall_clock_hovered: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

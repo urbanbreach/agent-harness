@@ -37,6 +37,37 @@ pub(crate) fn wall_clock_12h(timestamp: &str) -> String {
     format!("{hour12}:{mins} {meridiem}")
 }
 
+pub(crate) fn wall_clock_hover_detail(timestamp: &str) -> String {
+    const MONTHS: [&str; 12] = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+
+    let trimmed = timestamp.trim();
+    let Some(date_time) = trimmed.get(..19) else {
+        return trimmed.to_string();
+    };
+    let bytes = date_time.as_bytes();
+    if bytes.get(4) != Some(&b'-')
+        || bytes.get(7) != Some(&b'-')
+        || bytes.get(10) != Some(&b'T')
+        || bytes.get(13) != Some(&b':')
+        || bytes.get(16) != Some(&b':')
+    {
+        return trimmed.to_string();
+    }
+    let Ok(month) = date_time[5..7].parse::<usize>() else {
+        return trimmed.to_string();
+    };
+    let Some(month_name) = month.checked_sub(1).and_then(|index| MONTHS.get(index)) else {
+        return trimmed.to_string();
+    };
+    format!(
+        "{} | {month_name} {}",
+        &date_time[11..19],
+        &date_time[8..10]
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -80,5 +111,13 @@ mod tests {
         assert_eq!(wall_clock_12h("2026-03-19T12:00:00Z"), "12:00 PM");
         assert_eq!(wall_clock_12h("2026-03-19T21:45:00Z"), "9:45 PM");
         assert_eq!(wall_clock_12h(" already local "), "already local");
+    }
+
+    #[test]
+    fn wall_clock_hover_detail_formats_reference_overlay() {
+        assert_eq!(
+            wall_clock_hover_detail("2026-08-14T12:34:56Z"),
+            "12:34:56 | Aug 14"
+        );
     }
 }

@@ -827,6 +827,7 @@ impl AppState {
         target: TranscriptMouseTarget,
     ) {
         match target {
+            TranscriptMouseTarget::UserTimestamp { .. } => {}
             TranscriptMouseTarget::Reasoning { request_id } => {
                 self.toggle_reasoning_expansion(&request_id);
             }

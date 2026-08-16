@@ -103,7 +103,7 @@ impl Default for TranscriptViewState {
             selected_diff_hunk_row: None,
             hovered_transcript_target: None,
             show_transcript_thinking: true,
-            show_transcript_timestamps: false,
+            show_transcript_timestamps: true,
             show_tool_details: true,
             show_generic_tool_output: false,
             stacked_transcript_diffs: false,

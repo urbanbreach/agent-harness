@@ -17,6 +17,9 @@ use super::WheelTarget;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum TranscriptMouseTarget {
+    UserTimestamp {
+        request_id: String,
+    },
     Reasoning {
         request_id: String,
     },

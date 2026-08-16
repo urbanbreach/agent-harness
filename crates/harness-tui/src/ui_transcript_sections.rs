@@ -120,18 +120,23 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
         app,
     } = args;
 
-    let user_message =
-        activity
-            .user_message
-            .as_ref()
-            .map(|user_msg| TranscriptUserMessageSection {
-                text: user_msg.text.clone(),
-                queued: queued_user_message,
-                wall_clock: activity
-                    .user_timestamp
-                    .as_deref()
-                    .map(crate::time_format::wall_clock_12h),
-            });
+    let user_message = activity.user_message.as_ref().map(|user_msg| {
+        let timestamp = activity
+            .user_timestamp
+            .as_deref()
+            .filter(|_| timestamps_visible);
+        TranscriptUserMessageSection {
+            text: user_msg.text.clone(),
+            queued: queued_user_message,
+            wall_clock: timestamp.map(crate::time_format::wall_clock_12h),
+            expanded_wall_clock: timestamp.map(crate::time_format::wall_clock_hover_detail),
+            wall_clock_hovered: matches!(
+                app.hovered_transcript_target(),
+                Some(TranscriptMouseTarget::UserTimestamp { request_id })
+                    if request_id == &activity.request_id
+            ),
+        }
+    });
 
     let thinking = thinking_visible
         .then(|| {
