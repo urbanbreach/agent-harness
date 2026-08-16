@@ -1082,7 +1082,7 @@ fn user_row_wall_clock_right_aligned_matches_freeze_geometry() {
     // Then: user marker row carries freeze-style wall clock (right-aligned on same line)
     let user_row = lines
         .iter()
-        .find(|line| line.contains("› ping"))
+        .find(|line| line.contains("❯ ping"))
         .unwrap_or_else(|| panic!("missing card user row; lines={lines:?}"));
     assert!(
         user_row.contains("9:33 AM"),
@@ -1097,7 +1097,53 @@ fn user_row_wall_clock_right_aligned_matches_freeze_geometry() {
 }
 
 #[test]
-fn user_row_packs_all_names_with_wall_clock_at_scroll_geometry() {
+fn user_row_wall_clock_expands_without_reflow_when_hovered() {
+    let request_id = "request-user-wall-clock-hover";
+    let mut activity = transcript_section_model_test_activity(request_id, ActivityStatus::Done, "");
+    activity.user_message = Some(UserMessageSubmittedEvent {
+        request_id: request_id.into(),
+        text: "A prompt whose body geometry remains stable on timestamp hover.".to_string(),
+    });
+    activity.user_timestamp = Some("2026-08-14T12:34:56Z".to_string());
+    let mut app = AppState::default();
+    app.transcript_view.show_transcript_timestamps = true;
+    app.activities.push_back(activity);
+
+    let resting = transcript_test_line_texts(build_transcript_lines_for_width(
+        &app,
+        &Theme::default(),
+        80,
+    ));
+    app.transcript_view.hovered_transcript_target = Some(TranscriptMouseTarget::UserTimestamp {
+        request_id: request_id.to_string(),
+    });
+    let hovered = transcript_test_line_texts(build_transcript_lines_for_width(
+        &app,
+        &Theme::default(),
+        80,
+    ));
+
+    let resting_row = resting
+        .iter()
+        .find(|line| line.contains("❯ A prompt"))
+        .expect("resting user row");
+    let hovered_row = hovered
+        .iter()
+        .find(|line| line.contains("❯ A prompt"))
+        .expect("hovered user row");
+    assert!(
+        resting_row.ends_with("  12:34 PM"),
+        "unexpected resting user row: {resting_row:?}"
+    );
+    assert!(
+        hovered_row.ends_with("  12:34:56 | Aug 14"),
+        "unexpected hovered user row: {hovered_row:?}"
+    );
+    assert_eq!(resting.len(), hovered.len(), "hover must not reflow rows");
+}
+
+#[test]
+fn user_row_keeps_reference_clock_padding_at_scroll_geometry() {
     // arrange
     // act
     // assert
@@ -1144,25 +1190,26 @@ fn user_row_packs_all_names_with_wall_clock_at_scroll_geometry() {
         .find(|surface| {
             transcript_test_line_texts(surface.lines.clone())
                 .iter()
-                .any(|line| line.contains("› List every"))
+                .any(|line| line.contains("❯ List every"))
         })
         .expect("user surface");
     let lines = transcript_test_line_texts(user_surface.lines.clone());
     let first_content = lines
         .iter()
-        .find(|line| line.contains("› "))
+        .find(|line| line.contains("❯ "))
         .expect("marked user row");
 
-    // Then: freeze packs the wall clock on the first user row and wraps overflow
-    // to the next row. With the 5-cell marker prefix, "all names" no
-    // longer fits on the first row, so the clock stays on row 1 and "names" wraps.
+    // Then: Grok's two-cell right pad keeps the clock inset and wraps "all names"
+    // together onto the continuation row.
     assert!(
-        first_content.contains("all") && first_content.contains("5:54 AM"),
-        "SCROLL freeze packs 'all' + wall clock on first user row; got {first_content:?}\nlines={lines:?}"
+        first_content.contains("inventory of")
+            && !first_content.contains("all")
+            && first_content.contains("5:54 AM"),
+        "SCROLL freeze keeps the inset clock on row 1; got {first_content:?}\nlines={lines:?}"
     );
     assert!(
-        lines.iter().any(|line| line.contains("names one per")),
-        "overflow after 'all' must wrap to the next row; got {first_content:?}\nlines={lines:?}"
+        lines.iter().any(|line| line.contains("all names one per")),
+        "'all names' must wrap together after applying the right pad; got {first_content:?}\nlines={lines:?}"
     );
 }
 

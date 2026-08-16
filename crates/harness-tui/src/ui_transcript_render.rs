@@ -17,6 +17,9 @@ use crate::composer_atoms::split_graphemes;
 use harness_core::event::ProviderRequestRetryMetadata;
 
 const USER_MESSAGE_COLLAPSED_MAX_LINES: usize = 3;
+const USER_TIMESTAMP_RESERVED_WIDTH: u16 = 10;
+const USER_TIMESTAMP_RIGHT_PADDING_WIDTH: u16 =
+    super::super::ui_transcript_surface::TRANSCRIPT_SURFACE_TRAILING_GAP_WIDTH;
 const DENSE_GROUP_VISIBLE_MEMBERS: usize = 10;
 
 fn dense_group_start(member_count: usize, command_group: bool, expanded: bool) -> usize {
@@ -267,6 +270,14 @@ fn build_user_render_surface(
         text: text.clone(),
         queued: *queued,
         wall_clock: wall_clock.clone(),
+        expanded_wall_clock: turn
+            .user_message
+            .as_ref()
+            .and_then(|message| message.expanded_wall_clock.clone()),
+        wall_clock_hovered: turn
+            .user_message
+            .as_ref()
+            .is_some_and(|message| message.wall_clock_hovered),
     };
     let lines = build_user_surface_lines(
         &user_msg,
@@ -277,6 +288,23 @@ fn build_user_render_surface(
         body_style,
     );
 
+    let interaction_rows = user_msg.wall_clock.as_ref().map(|_| {
+        let mut rows = vec![None; lines.len()];
+        let timestamp_end = content_width.saturating_sub(USER_TIMESTAMP_RIGHT_PADDING_WIDTH);
+        if timestamp_end > USER_TIMESTAMP_RESERVED_WIDTH.saturating_add(1) {
+            if let Some(row) = rows.get_mut(1) {
+                *row = Some(TranscriptInteractionRow {
+                    target: TranscriptMouseTarget::UserTimestamp {
+                        request_id: turn.request_id.clone(),
+                    },
+                    hit_start: timestamp_end.saturating_sub(USER_TIMESTAMP_RESERVED_WIDTH),
+                    hit_width: USER_TIMESTAMP_RESERVED_WIDTH,
+                });
+            }
+        }
+        rows
+    });
+
     let raw = TranscriptVisualEntryDraft {
         kind: TranscriptRenderSurfaceKind::User,
         leading_gap_rows: 0,
@@ -286,7 +314,7 @@ fn build_user_render_surface(
         rail_color: agent_accent,
         surface,
         lines,
-        interaction_rows: None,
+        interaction_rows,
         selection_rows: None,
         diff_hunk_offsets: Vec::new(),
         selected_rail: false,
@@ -303,9 +331,6 @@ pub(super) const fn user_prompt_surface(theme: &Theme, state: TranscriptPromptSt
     }
 }
 
-/// Reference scroll state packs max text on the first user row, then right-aligns the
-/// wall clock into remaining space. Prefer full-width wrap + pack; only re-wrap
-/// with a first-line reserve when the clock cannot fit on the first content row.
 fn build_user_surface_lines(
     user_msg: &TranscriptUserMessageSection,
     theme: &Theme,
@@ -314,44 +339,34 @@ fn build_user_surface_lines(
     agent_accent: Color,
     body_style: Style,
 ) -> Vec<Line<'static>> {
-    let clock = user_msg.wall_clock.as_deref();
-    let reserve = clock
-        .map(|value| display_width(value).saturating_add(1))
-        .unwrap_or(0);
-    let mut lines = assemble_user_surface_lines(
+    let text_width = if user_msg.wall_clock.is_some() {
+        content_width
+            .saturating_sub(
+                USER_TIMESTAMP_RESERVED_WIDTH.saturating_add(USER_TIMESTAMP_RIGHT_PADDING_WIDTH),
+            )
+            .max(1)
+    } else {
+        content_width
+    };
+    assemble_user_surface_lines(
         user_msg,
         theme,
         content_width,
+        text_width,
         surface,
         agent_accent,
         body_style,
-        0,
-    );
-    if let Some(clock) = clock {
-        if user_row_has_wall_clock(&lines, clock) {
-            return lines;
-        }
-        lines = assemble_user_surface_lines(
-            user_msg,
-            theme,
-            content_width,
-            surface,
-            agent_accent,
-            body_style,
-            reserve,
-        );
-    }
-    lines
+    )
 }
 
 fn assemble_user_surface_lines(
     user_msg: &TranscriptUserMessageSection,
     theme: &Theme,
     content_width: u16,
+    text_width: u16,
     surface: Color,
     agent_accent: Color,
     body_style: Style,
-    first_line_reserve: usize,
 ) -> Vec<Line<'static>> {
     let mut lines = vec![user_surface_line(
         TRANSCRIPT_USER_BODY_PREFIX,
@@ -360,16 +375,15 @@ fn assemble_user_surface_lines(
         surface,
     )];
     let body_start = lines.len();
-    append_user_surface_text_block_with_first_line_reserve(
+    append_user_surface_text_block(
         &mut lines,
         &user_msg.text,
         theme.text.primary,
         TRANSCRIPT_USER_BODY_PREFIX,
-        content_width,
+        text_width,
         surface,
-        first_line_reserve,
     );
-    collapse_user_surface_body(&mut lines, body_start, content_width, surface, body_style);
+    collapse_user_surface_body(&mut lines, body_start, text_width, surface, body_style);
     if user_msg.queued {
         lines.push(user_surface_line(
             TRANSCRIPT_USER_BODY_PREFIX,
@@ -393,7 +407,7 @@ fn assemble_user_surface_lines(
 
     if lines.len() > 1 {
         let marker = match theme.glyph_mode() {
-            crate::theme::GlyphMode::Preferred => "›",
+            crate::theme::GlyphMode::Preferred => "❯",
             crate::theme::GlyphMode::Ascii => ">",
         };
         let marker_prefix = format!("   {marker} ");
@@ -403,7 +417,18 @@ fn assemble_user_surface_lines(
             surface,
         );
         if let Some(clock) = user_msg.wall_clock.as_deref() {
-            append_user_row_wall_clock(&mut lines[1], clock, content_width, theme, surface);
+            let displayed_clock = if user_msg.wall_clock_hovered {
+                user_msg.expanded_wall_clock.as_deref().unwrap_or(clock)
+            } else {
+                clock
+            };
+            append_user_row_wall_clock(
+                &mut lines[1],
+                displayed_clock,
+                content_width,
+                theme,
+                surface,
+            );
         }
     }
     lines
@@ -474,12 +499,6 @@ fn take_grapheme_width_prefix(text: &str, max_width: usize) -> String {
     prefix
 }
 
-fn user_row_has_wall_clock(lines: &[Line<'static>], clock: &str) -> bool {
-    lines
-        .get(1)
-        .is_some_and(|line| line.spans.iter().any(|span| span.content.as_ref() == clock))
-}
-
 fn append_user_row_wall_clock(
     line: &mut Line<'static>,
     clock: &str,
@@ -494,27 +513,51 @@ fn append_user_row_wall_clock(
     } else {
         theme.text.secondary
     };
+    let timestamp = format!("  {clock}");
+    let clock_width = display_width(&timestamp);
+    let target = usize::from(content_width.saturating_sub(USER_TIMESTAMP_RIGHT_PADDING_WIDTH));
+    if clock_width == 0 || target <= clock_width.saturating_add(1) {
+        return;
+    }
+    let timestamp_start = target.saturating_sub(clock_width);
+    truncate_line_to_width(line, timestamp_start);
     let used = line
         .spans
         .iter()
         .map(|span| display_width(span.content.as_ref()))
         .sum::<usize>();
-    let clock_width = display_width(clock);
-    // content_width is the full user-surface content band (includes prefix).
-    let target = usize::from(content_width);
-    if clock_width == 0 || used.saturating_add(clock_width) > target {
-        return;
-    }
-    let pad = target.saturating_sub(used).saturating_sub(clock_width);
+    let pad = timestamp_start.saturating_sub(used);
     if pad > 0 {
         line.spans
             .push(surface_span(" ".repeat(pad), Style::default(), surface));
     }
     line.spans.push(surface_span(
-        clock.to_string(),
+        timestamp,
         Style::default().fg(clock_color),
         surface,
     ));
+}
+
+fn truncate_line_to_width(line: &mut Line<'static>, width: usize) {
+    let mut remaining = width;
+    let mut clipped = Vec::with_capacity(line.spans.len());
+    for span in &line.spans {
+        if remaining == 0 {
+            break;
+        }
+        let span_width = display_width(span.content.as_ref());
+        if span_width <= remaining {
+            clipped.push(span.clone());
+            remaining = remaining.saturating_sub(span_width);
+            continue;
+        }
+        let prefix = take_grapheme_width_prefix(span.content.as_ref(), remaining);
+        if !prefix.is_empty() {
+            clipped.push(Span::styled(prefix, span.style));
+        }
+        break;
+    }
+    line.spans = clipped;
 }
 
 fn right_aligned_wall_clock_line(clock: &str, content_width: u16, theme: &Theme) -> Line<'static> {
@@ -1853,7 +1896,7 @@ fn format_thought_duration_ms(duration_ms: u64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_transcript_render_surfaces, reasoning_summary};
+    use super::{build_transcript_render_surfaces, build_user_surface_lines, reasoning_summary};
     use crate::{
         app::{ActivityStatus, ActivityUsage, AppState, ToolCallDisplayStatus},
         theme::Theme,
@@ -1980,6 +2023,8 @@ mod tests {
                 text: "Selected prompt".to_string(),
                 queued: false,
                 wall_clock: None,
+                expanded_wall_clock: None,
+                wall_clock_hovered: false,
             }),
             show_footer: false,
             footer_timestamp: None,
@@ -2020,6 +2065,57 @@ mod tests {
             .iter()
             .flat_map(|line| &line.spans)
             .all(|span| span.style.bg == Some(theme.surface.selected_card)));
+    }
+
+    #[test]
+    fn narrow_user_row_suppresses_timestamp_without_overflow() {
+        let theme = Theme::default();
+        let width = 11;
+        let lines = build_user_surface_lines(
+            &super::super::TranscriptUserMessageSection {
+                text: "界".to_string(),
+                queued: false,
+                wall_clock: Some("12:34 PM".to_string()),
+                expanded_wall_clock: Some("12:34:56 | Aug 14".to_string()),
+                wall_clock_hovered: false,
+            },
+            &theme,
+            width,
+            theme.surface.card,
+            theme.text.accent,
+            ratatui::style::Style::default().fg(theme.text.primary),
+        );
+
+        assert!(lines.iter().all(|line| line.width() <= usize::from(width)));
+        assert!(lines
+            .iter()
+            .all(|line| !line.spans.iter().any(|span| span.content.contains("12:34"))));
+    }
+
+    #[test]
+    fn user_row_timestamp_keeps_reference_right_padding() {
+        let theme = Theme::default();
+        let width = 40;
+        let lines = build_user_surface_lines(
+            &super::super::TranscriptUserMessageSection {
+                text: "Ship the padding fix.".to_string(),
+                queued: false,
+                wall_clock: Some("12:34 PM".to_string()),
+                expanded_wall_clock: Some("12:34:56 | Aug 14".to_string()),
+                wall_clock_hovered: false,
+            },
+            &theme,
+            width,
+            theme.surface.card,
+            theme.text.accent,
+            ratatui::style::Style::default().fg(theme.text.primary),
+        );
+
+        let right_padding = usize::from(width).saturating_sub(lines[1].width());
+        assert_eq!(
+            right_padding,
+            usize::from(super::super::ui_transcript_surface::TRANSCRIPT_SURFACE_TRAILING_GAP_WIDTH)
+        );
     }
 
     #[test]

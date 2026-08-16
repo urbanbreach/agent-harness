@@ -102,9 +102,9 @@ use super::ui_transcript_style::{
 use super::ui_transcript_surface::{
     append_nested_surface_row, append_prebuilt_nested_surface_lines, append_prebuilt_surface_lines,
     append_prefixed_wrapped_spans_line, append_surface_row, append_user_surface_text_block,
-    append_user_surface_text_block_with_first_line_reserve, nested_surface_prefix_width,
-    surface_prefix_width, surface_span, transcript_surface_content_width,
-    transcript_surface_render_width, user_surface_line, wrap_surface_spans, TRANSCRIPT_RAIL_GLYPH,
+    nested_surface_prefix_width, surface_prefix_width, surface_span,
+    transcript_surface_content_width, transcript_surface_render_width, user_surface_line,
+    wrap_surface_spans, TRANSCRIPT_RAIL_GLYPH,
 };
 #[path = "ui_transcript_types.rs"]
 mod ui_transcript_types;
@@ -217,6 +217,7 @@ fn transcript_section_cache_matches(
 ) -> bool {
     candidate.activity_first_seq == section.activity_first_seq
         && candidate.request_id == section.request_id
+        && candidate.user_message == section.user_message
         && candidate_specs == normalize_turn_blocks(section)
         && candidate.show_footer == section.show_footer
         && candidate.footer_timestamp == section.footer_timestamp
