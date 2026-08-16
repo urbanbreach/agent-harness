@@ -7,7 +7,7 @@ expression: "viewport_snapshot(width, height)"
    [workspace]
 
 
-     › Ship the elevated user-message band.                                                                   12:34 PM
+     ❯ Ship the elevated user-message band.                                                                 12:34 PM
 
 
 
@@ -48,7 +48,7 @@ expression: "viewport_snapshot(width, height)"
    [workspace]
 
 
-     › Explain how responsive transcript messages preserve readable wrapping while the available width        12:34 PM
+     ❯ Explain how responsive transcript messages preserve readable wrapping while the available width      12:34 PM
        changes.
 
 
@@ -89,7 +89,7 @@ expression: "viewport_snapshot(width, height)"
    [workspace]
 
 
-     › Check the renderer.                                                                                    12:34 PM
+     ❯ Check the renderer.                                                                                  12:34 PM
        Keep this hard line break.
        验 证  CJK 宽 度 。
 
@@ -130,7 +130,7 @@ expression: "viewport_snapshot(width, height)"
    [workspace]
 
 
-     › This prompt is selected.                                                                               12:34 PM
+     ❯ This prompt is selected.                                                                             12:34 PM
 
 
 
@@ -166,14 +166,55 @@ expression: "viewport_snapshot(width, height)"
 
   Shift+Tab:mode  │  Ctrl+c:cancel  │  Ctrl+x:shortcuts
 
+--- timestamps hidden ---
+
+   [workspace]
+
+
+     ❯ This prompt hides its timestamp.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    ⠋ Waiting for response… 0.0s                                                                                  0.0s
+
+  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ ❯                                                                                                                │
+  ╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────  ─╯
+
+  Shift+Tab:mode  │  Ctrl+c:cancel  │  Ctrl+x:shortcuts
+
 --- long collapsed ---
 
    [workspace]
 
 
-     › This deliberately long prompt must collapse after three visual rows while preserving grapheme          12:34 PM
-       boundaries, CJK width correctness, timestamps, selection geometry, copy behavior, mouse targeting, and
-       replay-safe text projection. This deliberately long prompt must collapse after three visual rows while …
+     ❯ This deliberately long prompt must collapse after three visual rows while preserving grapheme        12:34 PM
+       boundaries, CJK width correctness, timestamps, selection geometry, copy behavior, mouse targeting,
+       and replay-safe text projection. This deliberately long prompt must collapse after three visual …
 
 
 

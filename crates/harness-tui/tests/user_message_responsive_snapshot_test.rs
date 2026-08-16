@@ -56,6 +56,23 @@ fn render(app: &AppState, width: u16, height: u16) -> ratatui::buffer::Buffer {
     })
 }
 
+fn toggle_timestamps(app: &mut AppState) {
+    app.handle_key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Char('p'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+    for character in "timestamps".chars() {
+        app.handle_key(crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::Char(character),
+            crossterm::event::KeyModifiers::NONE,
+        ));
+    }
+    app.handle_key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Enter,
+        crossterm::event::KeyModifiers::NONE,
+    ));
+}
+
 fn trim_trailing_whitespace(rendered: &str) -> String {
     rendered
         .lines()
@@ -77,11 +94,15 @@ fn viewport_snapshot(width: u16, height: u16) -> String {
         ("wrapped", WRAPPED_PROMPT),
         ("multiline", MULTILINE_PROMPT),
         ("selected", "This prompt is selected."),
+        ("timestamps hidden", "This prompt hides its timestamp."),
         ("long collapsed", LONG_PROMPT),
     ];
     let mut sections = Vec::with_capacity(states.len());
     for (label, prompt) in states {
-        let app = user_message_app(prompt, label == "selected");
+        let mut app = user_message_app(prompt, label == "selected");
+        if label == "timestamps hidden" {
+            toggle_timestamps(&mut app);
+        }
         if label == "selected" {
             assert_eq!(app.focus, Focus::Details);
             assert_eq!(app.active_tab, Tab::Run);
@@ -157,13 +178,45 @@ fn viewport_snapshot(width: u16, height: u16) -> String {
             .unwrap_or_default()
             .trim_start();
         assert!(
-            visible_prompt.starts_with("› "),
+            visible_prompt.starts_with("❯ "),
             "{width}x{height} {label}: every user message must use the compact Grok marker"
         );
         assert!(
             !visible_prompt.starts_with("You  "),
             "{width}x{height} {label}: the rejected width-dependent label must not return"
         );
+        if label == "timestamps hidden" {
+            assert!(
+                !visible_prompt.contains("12:34 PM"),
+                "{width}x{height}: the timestamps setting must hide the user-row clock"
+            );
+        } else {
+            assert!(
+                visible_prompt.contains("12:34 PM"),
+                "{width}x{height} {label}: timestamps are visible by default"
+            );
+        }
+        if label == "wrapped" {
+            let first_body_column = rendered
+                .lines()
+                .nth(prompt_row)
+                .and_then(|line| line.chars().position(|character| character == '❯'))
+                .map(|column| column.saturating_add(2))
+                .unwrap_or_default();
+            if let Some(continuation) = rendered
+                .lines()
+                .nth(prompt_row.saturating_add(1))
+                .filter(|line| !line.trim().is_empty())
+            {
+                let continuation_column = continuation
+                    .len()
+                    .saturating_sub(continuation.trim_start().len());
+                assert_eq!(
+                    continuation_column, first_body_column,
+                    "{width}x{height}: wrapped rows align under the body after the prompt marker"
+                );
+            }
+        }
         sections.push(format!(
             "--- {label} ---\n{}",
             trim_trailing_whitespace(&rendered)
