@@ -323,10 +323,10 @@ semantic fallbacks, and no-color mode uses the terminal-native reset palette;
 those modes preserve role distinctions without claiming RGB identity.
 
 Terminal capability negotiation also selects glyph and motion fallbacks. A
-Unicode-capable terminal keeps the preferred composer `❯` plus `◆`, `●`, and
+Unicode-capable terminal keeps the preferred composer and transcript prompt `❯` plus `◆`, `●`, and
 `✗` status glyphs; the compact/legacy capability profile uses the semantic
 ASCII alternatives `>`, `*`, `o`, and `x`. Transcript user rows use the stable
-`›` marker and elevated-band contract in section 14. Setting `HARNESS_TUI_REDUCED_MOTION` to `1`, `true`, `yes`,
+`❯` marker and elevated-band contract in section 14. Setting `HARNESS_TUI_REDUCED_MOTION` to `1`, `true`, `yes`,
 or `on` selects the scheduler's immediate-settle path: status distinctions
 remain visible, but continuous animation deadlines are not armed. Capability
 evidence labels record color, glyph, and motion modes and must not describe a
@@ -416,7 +416,7 @@ Structural owners: `crates/harness-tui/tests/reference_parity_tx_shell_test.rs` 
 
 | Region | Contract |
 |--------|----------|
-| User rows | Full-width elevated band inside the transcript gutters: `surface.card` when idle, `surface.selected_card` when selected, and the active-thinking semantic surface while live; one blank surface row above and below the message vertically centers a single-line prompt; the content row starts with three cells of inset, the stable `› ` marker, then body text; wrapped rows align under the body; the wall clock packs against the right edge of the first content row; no `You` label, legacy left rail `┃`, synthetic header, border, corner, or mid-rule at any measured width |
+| User rows | Full-width elevated band inside the transcript gutters: `surface.card` when idle, `surface.selected_card` when selected, and the active-thinking semantic surface while live; one blank surface row above and below the message vertically centers a single-line prompt; the content row starts with three cells of inset, the stable `❯ ` marker, then body text; wrapped rows align under the body; timestamps are visible by default, reserve the rightmost 10 cells before wrapping, end two cells before the band's right edge, show `h:mm AM/PM` at rest, expand leftward to `HH:mm:ss | Mon DD` when that 10-cell hit region is hovered, suppress safely when the row cannot fit, and disappear when the timestamps setting is disabled; no `You` label, legacy left rail `┃`, synthetic header, border, corner, or mid-rule at any measured width |
 | Assistant rows | Rail-free body; footer/meta may show model/status on shell surface |
 | Shared | No sharp corners / card mid-rules as primary transcript chrome |
 
