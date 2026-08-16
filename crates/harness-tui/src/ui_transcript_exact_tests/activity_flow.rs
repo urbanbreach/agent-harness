@@ -221,7 +221,7 @@ pub(crate) fn exact_test_transcript_user_and_reasoning_match_reference_entry_bod
     ));
     let rendered = lines.join("\n");
 
-    assert!(rendered.contains("› Explain transcript parity"));
+    assert!(rendered.contains("❯ Explain transcript parity"));
     assert!(!rendered.contains("█Explain transcript parity"));
     assert!(!rendered.contains("┃  Explain transcript parity"));
     assert!(rendered.contains("Thinking: comparing reference entry body"));

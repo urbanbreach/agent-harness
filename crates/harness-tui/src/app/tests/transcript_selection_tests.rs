@@ -383,7 +383,7 @@ pub(super) fn transcript_selection_snapshot_preserves_user_card_marker() {
         .unwrap_or_abort();
 
     assert!(
-        user_row.trim_start().starts_with("› Select this"),
+        user_row.trim_start().starts_with("❯ Select this"),
         "user selection row should preserve the stable card marker and padding\n{:#?}",
         snapshot.rows
     );

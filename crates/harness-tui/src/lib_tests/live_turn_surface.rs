@@ -354,7 +354,7 @@ pub(super) fn narrow_transcript_wrapped_top_level_turns_keep_alignment() {
     );
     assert!(!lines[user_first].contains('┃'));
     assert!(!lines[user_continuation].contains('┃'));
-    assert!(lines[user_first].contains('›'));
+    assert!(lines[user_first].contains('❯'));
     assert_eq!(
         first_alphanumeric_column(lines[assistant_first]),
         first_alphanumeric_column(lines[assistant_continuation]),

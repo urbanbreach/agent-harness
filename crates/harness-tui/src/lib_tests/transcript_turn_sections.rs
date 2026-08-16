@@ -54,7 +54,7 @@ pub(super) fn transcript_turn_sections_render_open_rail_surfaces() {
             && lines[user_body - 1].trim().is_empty(),
         "user message should retain a blank elevated top-padding row\n{rendered}"
     );
-    assert!(lines[user_body].contains("› Group these turns"));
+    assert!(lines[user_body].contains("❯ Group these turns"));
     assert!(
         user_body == 0 || !lines[user_body - 1].contains("Group these turns"),
         "user message should not duplicate the body above the boxed row\n{rendered}"
@@ -63,7 +63,7 @@ pub(super) fn transcript_turn_sections_render_open_rail_surfaces() {
         row_at(&buffer, 80, user_body).unwrap_or_abort();
     let (assistant_body_row, assistant_body_fgs, assistant_body_bgs) =
         row_at(&buffer, 80, assistant_body).unwrap_or_abort();
-    let user_marker_column = user_body_row.find('›').unwrap_or_abort();
+    let user_marker_column = user_body_row.find('❯').unwrap_or_abort();
     assert_eq!(user_body_fgs[user_marker_column], theme.text.primary);
 
     let mut plan_app = app::AppState::new_live(None, false, None);
@@ -89,7 +89,7 @@ pub(super) fn transcript_turn_sections_render_open_rail_surfaces() {
         .unwrap_or_else(|| panic!("plan user body line\n{plan_rendered}"));
     let (plan_user_body_row, plan_user_body_fgs, _) =
         row_at(&render_live_cells(&plan_app, 80, 24), 80, plan_user_body).unwrap_or_abort();
-    let plan_user_marker_column = plan_user_body_row.find('›').unwrap_or_abort();
+    let plan_user_marker_column = plan_user_body_row.find('❯').unwrap_or_abort();
     assert_eq!(
         plan_user_body_fgs[plan_user_marker_column],
         theme.text.primary
