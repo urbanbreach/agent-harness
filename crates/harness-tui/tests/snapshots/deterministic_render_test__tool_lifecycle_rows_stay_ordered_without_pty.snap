@@ -6,7 +6,7 @@ expression: trim_trailing_snapshot_whitespace(&rendered)
    test-workspace /workspace/agent-harness
 
 
-     › Inspect tool activity
+     ❯ Inspect tool activity
 
 
      ◆ Read 1 file  ▸

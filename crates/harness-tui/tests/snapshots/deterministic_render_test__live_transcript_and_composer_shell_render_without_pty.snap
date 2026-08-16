@@ -6,7 +6,7 @@ expression: trim_trailing_snapshot_whitespace(&rendered)
    test-workspace /workspace/agent-harness
 
 
-     › Inspect deterministic sidebar
+     ❯ Inspect deterministic sidebar
 
 
      Assistant verified the rendered shell.

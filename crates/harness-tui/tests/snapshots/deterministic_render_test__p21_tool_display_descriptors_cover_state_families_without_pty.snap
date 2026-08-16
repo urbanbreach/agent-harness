@@ -6,7 +6,7 @@ expression: trim_trailing_snapshot_whitespace(&rendered)
    test-workspace /workspace/agent-harness
 
 
-     › Inspect P2.1 tool display descriptors
+     ❯ Inspect P2.1 tool display descriptors
 
 
      ◆ List session  ▸
