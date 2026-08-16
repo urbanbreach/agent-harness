@@ -636,10 +636,17 @@ fn shell_scroll_freeze_viewport_packs_visible_inventory_at_120x32() {
         "SCROLL freeze sticky user: user prompt must remain visible at top while f39 band shows\n{packed}"
     );
     assert!(
-        packed.lines().any(|line| line.contains("› ")
-            && line.contains("all names")
+        packed.lines().any(|line| line.contains("❯ ")
+            && line.contains("inventory of all")
+            && !line.contains("all names")
             && line.contains("5:54 AM")),
-        "SCROLL freeze sticky user: first user row packs 'all names' + wall clock\n{packed}"
+        "SCROLL freeze sticky user: first user row keeps the inset wall clock after 'all'\n{packed}"
+    );
+    assert!(
+        packed
+            .lines()
+            .any(|line| line.contains("names one per line.")),
+        "SCROLL freeze sticky user: 'names one per line.' wraps together\n{packed}"
     );
     assert!(
         packed.contains("50. f50.txt"),

@@ -415,7 +415,7 @@ fn shell_idle_stays_composer_ready_after_failed_tool_call() {
     assert!(app.overlay_stack().top().is_none());
 }
 
-/// TX-USER: user messages use the elevated Grok band with a stable `›` marker.
+/// TX-USER: user messages use the elevated Grok band with a stable `❯` marker.
 #[test]
 fn tx_user_message_chrome_is_elevated_band_without_legacy_rail() {
     // arrange
@@ -439,7 +439,7 @@ fn tx_user_message_chrome_is_elevated_band_without_legacy_rail() {
     assert!(
         lines[user_idx]
             .trim_start()
-            .starts_with("› Explain shell parity"),
+            .starts_with("❯ Explain shell parity"),
         "TX-USER: user body must use the stable compact marker\n{rendered}"
     );
     assert!(
@@ -458,7 +458,7 @@ fn tx_user_message_chrome_is_elevated_band_without_legacy_rail() {
         );
     }
     assert!(
-        !lines[user_idx].contains('❯') && !lines[user_idx].contains('╭'),
+        !lines[user_idx].contains('╭') && !lines[user_idx].contains('╮'),
         "TX-USER: elevated band must remain borderless\n{rendered}"
     );
 }
