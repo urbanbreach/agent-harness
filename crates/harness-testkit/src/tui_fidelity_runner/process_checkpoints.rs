@@ -71,6 +71,6 @@ const fn packet3_stream_marker(checkpoint: CheckpointName) -> &'static str {
     match checkpoint {
         CheckpointName::Rest => crate::tui_fidelity_fixture::PACKET3_STREAM_REST,
         CheckpointName::Mid => crate::tui_fidelity_fixture::PACKET3_STREAM_MID,
-        CheckpointName::Settled => crate::tui_fidelity_fixture::PACKET3_STREAM_SETTLED,
+        CheckpointName::Settled => "requested work is finished.",
     }
 }

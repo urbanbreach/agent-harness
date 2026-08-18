@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::Path;
 
-use harness_testkit::tui_fidelity::{Scenario, ScenarioAction, Viewport};
+use harness_testkit::tui_fidelity::{KeyCode, Scenario, ScenarioAction, Viewport};
 use harness_testkit::tui_fidelity_runner::RunnerError;
 use serde::Deserialize;
 
@@ -100,6 +100,9 @@ pub(super) fn load_packet3(scenario_id: &str, repo_root: &Path) -> Result<Scenar
             })?;
     let mut scenario = load(baseline_id, repo_root)?;
     scenario.id.0 = scenario_id.to_owned();
+    if scenario_id.starts_with("packet3-baseline-resize--") {
+        scenario.viewport = Viewport { cols: 80, rows: 24 };
+    }
     let mut actions = Vec::with_capacity(scenario.actions.len() + 2);
     for action in std::mem::take(&mut scenario.actions) {
         match action {
@@ -117,7 +120,7 @@ pub(super) fn load_packet3(scenario_id: &str, repo_root: &Path) -> Result<Scenar
         }
     }
     scenario.actions = actions;
-    if !scenario_id.starts_with("packet3-baseline-stream--") {
+    if submits_prompt(&scenario) && !scenario_id.starts_with("packet3-baseline-stream--") {
         let settle_tick = scenario
             .actions
             .last()
@@ -132,6 +135,15 @@ pub(super) fn load_packet3(scenario_id: &str, repo_root: &Path) -> Result<Scenar
         ));
     }
     Ok(scenario)
+}
+
+fn submits_prompt(scenario: &Scenario) -> bool {
+    scenario.actions.iter().any(|action| {
+        matches!(
+            action,
+            ScenarioAction::TimedKey(key) if key.key.code == KeyCode::Enter
+        )
+    })
 }
 
 fn read_registry(path: &Path) -> Result<Registry, RunnerError> {
@@ -179,6 +191,40 @@ mod tests {
             action,
             ScenarioAction::WaitForText(wait) if wait.text == "Packet 3 recovery complete"
         )));
+    }
+
+    #[test]
+    fn packet3_composer_only_scenarios_do_not_wait_for_recovery_text() {
+        // Given: the Packet 3 scroll scenario edits a multiline composer without submitting it.
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+
+        // When: the Packet 3 dual-runtime variant is loaded.
+        let scenario = load_packet3("packet3-baseline-scroll--wide-120x40", &repo_root)
+            .expect("Packet 3 scroll baseline");
+
+        // Then: the runner does not require response text that the scenario cannot produce.
+        assert!(!scenario
+            .actions
+            .iter()
+            .any(|action| matches!(action, ScenarioAction::WaitForText(_))));
+    }
+
+    #[test]
+    fn packet3_resize_starts_before_the_selected_viewport_transition() {
+        // Given: the Packet 3 resize scenario selects the minimum viewport.
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+
+        // When: the dual-runtime variant is loaded.
+        let scenario = load_packet3("packet3-baseline-resize--minimum-60x20", &repo_root)
+            .expect("Packet 3 resize baseline");
+
+        // Then: the PTY starts at 80x24 and performs a real resize to 60x20.
+        assert_eq!((scenario.viewport.cols, scenario.viewport.rows), (80, 24));
+        assert!(matches!(
+            &scenario.actions[0],
+            ScenarioAction::Resize(action)
+                if (action.viewport.cols, action.viewport.rows) == (60, 20)
+        ));
     }
 
     #[test]

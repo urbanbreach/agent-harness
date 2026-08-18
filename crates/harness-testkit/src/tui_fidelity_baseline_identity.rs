@@ -30,7 +30,7 @@ pub(super) fn add(scenario: &mut Scenario, viewport: Viewport) {
                 scope: IdentityScope::ProviderName,
                 rectangle: harness_testkit::tui_fidelity::CellRect {
                     col: viewport.cols - 51,
-                    row: 26,
+                    row: viewport.rows - 4,
                     cols: 46,
                     rows: 1,
                 },

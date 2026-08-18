@@ -590,7 +590,7 @@ fn real_packet2_fixture(label: &str) -> Fixture {
     let reference = repo.join("inspirations/grok-build/target/debug/xai-grok-pager");
     fixture.config.repo_root = repo.clone();
     fixture.config.reference =
-        RuntimeBinary::from_path(&reference, "be713136d2a69080743a3f6b3c72077057e5948f")
+        RuntimeBinary::from_path(&reference, "eb267feff13129e568df38fb6fdf0ceb65f735d6")
             .expect("reference binary");
     fixture.config.harness = RuntimeBinary::from_path(&harness, &revision).expect("Harness binary");
     fixture.config.candidate_binding.candidate_sha = revision;

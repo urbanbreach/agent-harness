@@ -24,21 +24,7 @@ fn click_bytes(col: u16, row: u16) -> Result<Vec<u8>, RunnerError> {
 }
 
 pub(super) fn find_text(frame: &SemanticFrame, text: &str) -> Option<CellPoint> {
-    (0..frame.rows).find_map(|row| {
-        let mut rendered = String::new();
-        let mut columns = Vec::new();
-        for cell in frame
-            .cells
-            .iter()
-            .filter(|cell| cell.row == row && !cell.continuation)
-        {
-            columns.push((rendered.len(), cell.col));
-            rendered.push_str(&cell.grapheme);
-        }
-        let byte = rendered.find(text)?;
-        let col = columns.iter().rev().find(|(start, _)| *start <= byte)?.1;
-        Some(CellPoint { col, row })
-    })
+    (0..frame.rows).find_map(|row| find_text_in_row(frame, text, row))
 }
 
 pub(super) fn find_text_nearest_row(
@@ -60,7 +46,11 @@ fn find_text_in_row(frame: &SemanticFrame, text: &str, row: u16) -> Option<CellP
         .filter(|cell| cell.row == row && !cell.continuation)
     {
         columns.push((rendered.len(), cell.col));
-        rendered.push_str(&cell.grapheme);
+        if cell.grapheme.is_empty() {
+            rendered.push(' ');
+        } else {
+            rendered.push_str(&cell.grapheme);
+        }
     }
     let byte = rendered.find(text)?;
     let col = columns.iter().rev().find(|(start, _)| *start <= byte)?.1;
@@ -74,5 +64,25 @@ pub(super) fn click_point_bytes(point: CellPoint) -> Result<Vec<u8>, RunnerError
 fn missing(text: &str) -> RunnerError {
     RunnerError::SemanticTargetMissing {
         text: text.to_owned(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parity::semantic_frame_from_vt100_screen;
+
+    #[test]
+    fn find_text_preserves_blank_cells_between_cursor_positioned_words() {
+        // Given: a terminal row whose visual space is an untouched blank cell.
+        let mut parser = vt100::Parser::new(4, 40, 0);
+        parser.process(b"\x1b[2;1Hstream\x1b[2;8Hprobe");
+        let frame = semantic_frame_from_vt100_screen(parser.screen());
+
+        // When: semantic text lookup searches for the visually rendered phrase.
+        let point = find_text(&frame, "stream probe");
+
+        // Then: the phrase resolves at its first terminal column.
+        assert_eq!(point, Some(CellPoint { col: 0, row: 1 }));
     }
 }
