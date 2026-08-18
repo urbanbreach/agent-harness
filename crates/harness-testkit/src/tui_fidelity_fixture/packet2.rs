@@ -60,6 +60,7 @@ enum FixtureStream {
 struct HttpRequest {
     path: String,
     body: String,
+    auxiliary: bool,
 }
 
 impl Packet2FixtureServer {
@@ -192,20 +193,34 @@ fn serve_packet3_stream(
     trace: &Arc<Mutex<Packet2FixtureTrace>>,
     stop: &AtomicBool,
 ) -> Result<(), Packet2FixtureError> {
+    let mut foreground_served = false;
     loop {
         let Some(mut stream) = accept(&listener, stop)? else {
             return Ok(());
         };
-        let request = read_request(&mut stream)?;
+        let request = match read_request(&mut stream) {
+            Err(Packet2FixtureError::Protocol(detail))
+                if stop.load(Ordering::Acquire) && detail == "incomplete HTTP request" =>
+            {
+                return Ok(());
+            }
+            result => result?,
+        };
         update_trace(trace, |value| {
             value.request_paths.push(request.path.clone())
         });
-        if is_generation_path(&request.path) && is_packet3_stream_request(&request.body) {
+        if is_generation_path(&request.path)
+            && !request.auxiliary
+            && !foreground_served
+            && is_packet3_stream_request(&request.body)
+        {
             update_trace(trace, |value| value.request_count = 1);
-            return send_packet3_stream(&mut stream, trace, request.path.ends_with("/responses"));
+            send_packet3_stream(&mut stream, trace, request.path.ends_with("/responses"))?;
+            foreground_served = true;
+            continue;
         }
         if is_generation_path(&request.path) {
-            send_simple_stream(&mut stream, request.path.ends_with("/responses"))?;
+            send_auxiliary_stream(&mut stream, request.path.ends_with("/responses"))?;
         } else {
             write_json_response(&mut stream)?;
         }
@@ -234,10 +249,11 @@ fn send_packet3_stream(
     .into_iter()
     .enumerate()
     {
+        let separator = if ordinal < 2 { " " } else { "" };
         let chunk = if responses_api {
-            serde_json::json!({"type":"response.output_text.delta","sequence_number":ordinal + 1,"item_id":"packet3-stream-message","output_index":0,"content_index":0,"delta":format!("{text}\n")})
+            serde_json::json!({"type":"response.output_text.delta","sequence_number":ordinal + 1,"item_id":"packet3-stream-message","output_index":0,"content_index":0,"delta":format!("{text}{separator}")})
         } else {
-            serde_json::json!({"id":"packet3-stream","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":format!("{text}\n")},"finish_reason":null}]})
+            serde_json::json!({"id":"packet3-stream","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":format!("{text}{separator}")},"finish_reason":null}]})
         };
         write_sse(stream, &chunk.to_string())?;
         let elapsed = started.elapsed().as_micros();
@@ -251,8 +267,7 @@ fn send_packet3_stream(
         }
     }
     if responses_api {
-        let text =
-            format!("{PACKET3_STREAM_REST}\n{PACKET3_STREAM_MID}\n{PACKET3_STREAM_SETTLED}\n");
+        let text = format!("{PACKET3_STREAM_REST} {PACKET3_STREAM_MID} {PACKET3_STREAM_SETTLED}");
         let output = vec![
             serde_json::json!({"type":"message","id":"packet3-stream-message","role":"assistant","status":"completed","content":[{"type":"output_text","text":text,"annotations":[]}]}),
         ];
@@ -261,7 +276,7 @@ fn send_packet3_stream(
             &response_completed_at("packet3-stream", 4, output).to_string(),
         )?;
     }
-    write_sse(stream, "[DONE]")
+    ignore_client_disconnect(write_sse(stream, "[DONE]"))
 }
 
 fn send_packet3_settled(
@@ -358,6 +373,26 @@ fn send_simple_stream(
     let chunk = serde_json::json!({"id":"packet2-bootstrap","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"Packet 2"},"finish_reason":"stop"}]});
     write_sse(stream, &chunk.to_string())?;
     write_sse(stream, "[DONE]")
+}
+
+fn send_auxiliary_stream(
+    stream: &mut TcpStream,
+    responses_api: bool,
+) -> Result<(), Packet2FixtureError> {
+    ignore_client_disconnect(send_simple_stream(stream, responses_api))
+}
+
+fn ignore_client_disconnect(
+    result: Result<(), Packet2FixtureError>,
+) -> Result<(), Packet2FixtureError> {
+    match result {
+        Err(Packet2FixtureError::Io(detail))
+            if detail.contains("Broken pipe") || detail.contains("Connection reset") =>
+        {
+            Ok(())
+        }
+        result => result,
+    }
 }
 
 fn send_tool_call(
@@ -517,13 +552,43 @@ fn read_request(stream: &mut TcpStream) -> Result<HttpRequest, Packet2FixtureErr
                     .and_then(|line| line.split_ascii_whitespace().nth(1))
                     .unwrap_or_default()
                     .to_owned();
-                return Ok(HttpRequest { path, body });
+                let auxiliary = is_auxiliary_request(&headers, &body);
+                return Ok(HttpRequest {
+                    path,
+                    body,
+                    auxiliary,
+                });
             }
         }
     }
     Err(Packet2FixtureError::Protocol(
         "incomplete HTTP request".into(),
     ))
+}
+
+fn has_nonempty_header(headers: &str, name: &str) -> bool {
+    headers.lines().any(|line| {
+        line.split_once(':')
+            .is_some_and(|(key, value)| key.eq_ignore_ascii_case(name) && !value.trim().is_empty())
+    })
+}
+
+fn is_auxiliary_request(headers: &str, body: &str) -> bool {
+    if has_nonempty_header(headers, "x-grok-turn-idx") {
+        return false;
+    }
+    if has_nonempty_header(headers, "x-grok-req-id") {
+        return true;
+    }
+    let foreground_by_tools = serde_json::from_str::<serde_json::Value>(body)
+        .ok()
+        .is_some_and(|value| {
+            value
+                .get("tools")
+                .and_then(serde_json::Value::as_array)
+                .is_some_and(|tools| tools.len() >= 2)
+        });
+    !foreground_by_tools
 }
 
 fn is_generation_path(path: &str) -> bool {

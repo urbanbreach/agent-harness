@@ -6,7 +6,8 @@ use std::path::PathBuf;
 
 use harness_testkit::parity::{CursorState, SemanticFrame};
 use harness_testkit::tui_fidelity_fixture::{
-    Packet2FixtureServer, DELTA_COUNT, DISCLOSURE_BODY, DISCLOSURE_SENTINEL, STREAM_SENTINEL,
+    Packet2FixtureServer, DELTA_COUNT, DISCLOSURE_BODY, DISCLOSURE_SENTINEL, PACKET3_STREAM_MID,
+    PACKET3_STREAM_REST, PACKET3_STREAM_SETTLED, STREAM_SENTINEL,
 };
 use harness_testkit::tui_fidelity_runner::{semantic_click_bytes, RunnerError};
 
@@ -54,6 +55,55 @@ fn failed_tool_then_paced_stream_is_protocol_complete() {
 }
 
 #[test]
+fn packet3_stream_ignores_auxiliary_requests_around_foreground_turn() {
+    // Given: Grok sends auxiliary requests around the foreground turn.
+    let server = Packet2FixtureServer::start_packet3("packet3-baseline-stream--wide-120x40")
+        .expect("fixture starts");
+    let authority = server
+        .base_url()
+        .trim_start_matches("http://")
+        .trim_end_matches("/v1")
+        .to_owned();
+
+    // When: both requests contain the prompt but only the second has a turn index.
+    let auxiliary = request_path_with_headers(
+        &authority,
+        "/v1/responses",
+        serde_json::json!({"input":[{"content":"stream probe"}]}),
+        "",
+    );
+    let foreground = request_path_with_headers(
+        &authority,
+        "/v1/responses",
+        serde_json::json!({"input":[{"content":"stream probe"}]}),
+        "X-Grok-Req-Id: turn-request\r\nX-Grok-Turn-Idx: 1\r\n",
+    );
+    let trailing_auxiliary = request_path_with_headers(
+        &authority,
+        "/v1/responses",
+        serde_json::json!({"input":[{"content":"stream probe"}]}),
+        "X-Grok-Req-Id: trailing-title-request\r\n",
+    );
+    drop(TcpStream::connect(&authority).expect("connect abandoned auxiliary request"));
+    let trace = server.finish().expect("fixture completes");
+
+    // Then: auxiliary traffic gets a simple response and the turn gets Packet 3.
+    assert!(auxiliary.contains("Packet 2"));
+    assert!(!auxiliary.contains(PACKET3_STREAM_REST));
+    assert!(foreground.contains(PACKET3_STREAM_REST));
+    assert!(foreground.contains(PACKET3_STREAM_MID));
+    assert!(foreground.contains(PACKET3_STREAM_SETTLED));
+    assert!(trailing_auxiliary.contains("Packet 2"));
+    assert!(!trailing_auxiliary.contains(PACKET3_STREAM_REST));
+    assert_eq!(trace.request_count, 1);
+    assert_eq!(trace.delta_count, 3);
+    assert_eq!(
+        trace.request_paths,
+        ["/v1/responses", "/v1/responses", "/v1/responses"]
+    );
+}
+
+#[test]
 fn click_text_fails_when_sentinel_is_absent() {
     let frame = SemanticFrame::new(20, 4, CursorState::hidden(0, 0));
     let mut mouse_bytes = Vec::new();
@@ -88,9 +138,22 @@ fn click_text_resolves_current_cell_and_emits_sgr_down_up() {
 }
 
 fn request(authority: &str, body: serde_json::Value) -> String {
+    request_path(authority, "/v1/chat/completions", body)
+}
+
+fn request_path(authority: &str, path: &str, body: serde_json::Value) -> String {
+    request_path_with_headers(authority, path, body, "")
+}
+
+fn request_path_with_headers(
+    authority: &str,
+    path: &str,
+    body: serde_json::Value,
+    extra_headers: &str,
+) -> String {
     let body = serde_json::to_vec(&body).expect("request JSON");
     let mut stream = TcpStream::connect(authority).expect("connect fixture");
-    write!(stream, "POST /v1/chat/completions HTTP/1.1\r\nHost: {authority}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len()).expect("headers");
+    write!(stream, "POST {path} HTTP/1.1\r\nHost: {authority}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n{extra_headers}\r\n", body.len()).expect("headers");
     stream.write_all(&body).expect("body");
     stream.flush().expect("flush");
     let mut response = String::new();
