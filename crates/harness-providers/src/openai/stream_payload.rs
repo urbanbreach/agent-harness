@@ -12,6 +12,8 @@ pub(super) struct OpenAiResponsesEvent {
     #[serde(default)]
     pub(super) item_id: Option<String>,
     #[serde(default)]
+    pub(super) summary_index: Option<usize>,
+    #[serde(default)]
     pub(super) item: Option<OpenAiResponsesOutputItem>,
     #[serde(default)]
     pub(super) response: Option<OpenAiResponsesResponsePayload>,

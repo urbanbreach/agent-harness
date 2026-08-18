@@ -37,6 +37,8 @@ pub(super) async fn consume_responses_sse_stream(
     let mut body = response.body;
     let mut sse_buffer = Vec::new();
     let mut tool_calls = ResponsesToolCallState::default();
+    let mut reasoning_summary_key: Option<(Option<String>, usize)> = None;
+    let mut reasoning_trailing_newlines = 0usize;
 
     loop {
         let event = match next_sse_event(&mut body, &mut sse_buffer).await {
@@ -103,7 +105,38 @@ pub(super) async fn consume_responses_sse_stream(
 
         match parsed.event_type.as_str() {
             "response.reasoning_summary_text.delta" => {
-                if let Some(delta) = parsed.delta {
+                if let Some(mut delta) = parsed.delta {
+                    if let Some(summary_index) = parsed.summary_index {
+                        let next_key = (parsed.item_id.clone(), summary_index);
+                        let starts_new_summary = reasoning_summary_key
+                            .as_ref()
+                            .is_some_and(|current_key| current_key != &next_key);
+                        reasoning_summary_key = Some(next_key);
+                        if starts_new_summary {
+                            let leading_newlines = delta
+                                .chars()
+                                .take_while(|character| *character == '\n')
+                                .take(2)
+                                .count();
+                            let missing_newlines = 2usize
+                                .saturating_sub(reasoning_trailing_newlines + leading_newlines);
+                            match missing_newlines {
+                                2 => delta.insert_str(0, "\n\n"),
+                                1 => delta.insert(0, '\n'),
+                                _ => {}
+                            }
+                        }
+                    }
+                    reasoning_trailing_newlines =
+                        delta
+                            .chars()
+                            .fold(reasoning_trailing_newlines, |count, character| {
+                                if character == '\n' {
+                                    count.saturating_add(1).min(2)
+                                } else {
+                                    0
+                                }
+                            });
                     if !delta.is_empty()
                         && tx
                             .send(ProviderStreamEvent::ReasoningDelta(delta))

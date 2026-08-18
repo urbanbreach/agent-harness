@@ -113,6 +113,72 @@ async fn openai_responses_sse_parser_handles_multibyte_utf8_split_across_chunks(
 }
 
 #[tokio::test]
+async fn openai_responses_separates_distinct_reasoning_summary_parts() {
+    let transcript = concat!(
+        "data: {\"type\":\"response.reasoning_summary_text.delta\",\"item_id\":\"reasoning_1\",\"summary_index\":0,\"delta\":\"Planning worktree \"}\n\n",
+        "data: {\"type\":\"response.reasoning_summary_text.delta\",\"item_id\":\"reasoning_1\",\"summary_index\":0,\"delta\":\"inspection and diff analysis\"}\n\n",
+        "data: {\"type\":\"response.reasoning_summary_text.delta\",\"item_id\":\"reasoning_1\",\"summary_index\":1,\"delta\":\"Inspecting uncommitted TUI feature changes\"}\n\n",
+        "data: {\"type\":\"response.reasoning_summary_text.delta\",\"item_id\":\"reasoning_1\",\"summary_index\":2,\"delta\":\"\\n\\nVerifying the rendered transcript\"}\n\n",
+        "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"total_tokens\":2}}}\n\n",
+    );
+    let transport =
+        ScriptedOpenAiTransport::new([ScriptedOpenAiResponse::sse(transcript.to_string())]);
+    let provider = provider_for_transport_with_mode(
+        Arc::clone(&transport),
+        "test-secret-key",
+        OpenAiApiMode::Responses,
+    );
+
+    let events = collect_events(&provider, basic_request("gpt-5.5")).await;
+    let reasoning = events
+        .iter()
+        .filter_map(|event| match event {
+            ProviderStreamEvent::ReasoningDelta(delta) => Some(delta.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        reasoning,
+        vec![
+            "Planning worktree ",
+            "inspection and diff analysis",
+            "\n\nInspecting uncommitted TUI feature changes",
+            "\n\nVerifying the rendered transcript",
+        ]
+    );
+}
+
+#[tokio::test]
+async fn openai_responses_preserves_a_summary_separator_split_across_deltas() {
+    let transcript = concat!(
+        "data: {\"type\":\"response.reasoning_summary_text.delta\",\"item_id\":\"reasoning_1\",\"summary_index\":0,\"delta\":\"first\\n\"}\n\n",
+        "data: {\"type\":\"response.reasoning_summary_text.delta\",\"item_id\":\"reasoning_1\",\"summary_index\":0,\"delta\":\"\\n\"}\n\n",
+        "data: {\"type\":\"response.reasoning_summary_text.delta\",\"item_id\":\"reasoning_1\",\"summary_index\":1,\"delta\":\"second\"}\n\n",
+        "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"total_tokens\":2}}}\n\n",
+    );
+    let transport =
+        ScriptedOpenAiTransport::new([ScriptedOpenAiResponse::sse(transcript.to_string())]);
+    let provider = provider_for_transport_with_mode(
+        Arc::clone(&transport),
+        "test-secret-key",
+        OpenAiApiMode::Responses,
+    );
+
+    let events = collect_events(&provider, basic_request("gpt-5.5")).await;
+    let reasoning = events
+        .iter()
+        .filter_map(|event| match event {
+            ProviderStreamEvent::ReasoningDelta(delta) => Some(delta.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(reasoning, vec!["first\n", "\n", "second"]);
+    assert_eq!(reasoning.concat(), "first\n\nsecond");
+}
+
+#[tokio::test]
 async fn openai_compatible_request_uses_stable_clamped_prompt_cache_key() {
     // arrange
     // act
