@@ -1,12 +1,12 @@
 {
   "schema_version": "harness.tui-fidelity.reference-binary-receipt.v1",
-  "observed_at": "2026-08-13T03:31:40+03:00",
+  "observed_at": "2026-08-17T03:16:38+03:00",
   "source": {
     "canonical_checkout": "inspirations/grok-build",
-    "revision": "be713136d2a69080743a3f6b3c72077057e5948f",
-    "tree": "ee8039b440cd38a62c1e007b5cd55c6bbe366aa4",
+    "revision": "eb267feff13129e568df38fb6fdf0ceb65f735d6",
+    "tree": "eaa84c2e1e8b7792eee8fa8c13ddeffee6aa38d6",
     "clean": true,
-    "cargo_lock_sha256": "21e0cd14ac78d43ed48a5ce1e08e7281af19525e80566dcc4b7e1bdd357f7af8",
+    "cargo_lock_sha256": "507ae10388a85e485d9c0071070fc2cddf8e0b889ac29e031cc2b15ca2719d72",
     "rust_toolchain_sha256": "32a47ba7c3bcc9063bd056b833d12d51b628a38862b499fb4388d22c58cd64ca",
     "cargo_config_sha256": "f4f52cf64a78df5636460fcfc7430a58b9906e11a199a4b7fe897e223b61af14"
   },
@@ -18,13 +18,13 @@
   },
   "binary": {
     "path": "inspirations/grok-build/target/debug/xai-grok-pager",
-    "sha256": "14fc3307626aec7ff9cd0738bd1b011ff194b527c5cc15eb9589b5ca34f60b67",
-    "version": "grok 1.0.1 (be71313) [alpha]",
-    "mtime": "2026-08-12T17:09:24.921509359+03:00"
+    "sha256": "8ff869cf2db0dea1ee29ee0d7028b180f37ac8ac108c601452fa00d28125ad08",
+    "version": "grok 1.0.3 (eb267fe)",
+    "mtime": "2026-08-17T03:16:24.385269922+03:00"
   },
   "provenance": {
-    "packet": "G003-packet-2-input-first-runtime-schedul",
-    "prior_evidence": ".omo/evidence/ulw/019ff589-0d50-7d11-9225-c3a7b48f69e5/G003-packet-2-input-first-runtime-schedul/a1/manual-qa/reference-binary-receipt.json",
-    "rebuild_performed_during_reconciliation": false
+    "packet": "reference-authority-replacement-20260817",
+    "prior_evidence": "artifacts/qa-evidence/20260817-reference-authority-replacement/reference-binary-receipt.json",
+    "rebuild_performed_during_reconciliation": true
   }
 }

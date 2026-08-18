@@ -1059,7 +1059,7 @@ run_signoff_packet2() {
       fail_count=$((fail_count + 1))
       return 2
     fi
-    if [[ "$(git -C "$reference_root" rev-parse HEAD 2>/dev/null)" != "be713136d2a69080743a3f6b3c72077057e5948f" ]]; then
+    if [[ "$(git -C "$reference_root" rev-parse HEAD 2>/dev/null)" != "eb267feff13129e568df38fb6fdf0ceb65f735d6" ]]; then
       printf 'signoff-packet2 preflight: reference revision mismatch\n' >&2
       fail_count=$((fail_count + 1))
       return 2

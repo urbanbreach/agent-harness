@@ -766,7 +766,7 @@ artifacts land under `target/test-suite-overhaul/` when those stages run.
 `scripts/test-lanes.sh signoff-packet2` is the real dual-runtime owner for
 `packet2-sustained-stream`. It requires absolute `--reference-bin`,
 `--reference-receipt`, and `--reference-root` inputs pinned to
-`be713136d2a69080743a3f6b3c72077057e5948f`. The lane builds a clean-worktree candidate, then runs
+`eb267feff13129e568df38fb6fdf0ceb65f735d6`. The lane builds a clean-worktree candidate, then runs
 exactly five comparisons sequentially and aggregates them with `--profile packet2-scheduling`.
 Each adapter gets an isolated loopback SSE server and workspace; every cleanup receipt must report
 zero survivors.

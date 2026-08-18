@@ -4,9 +4,9 @@
   "reference": {
     "canonical_checkout": "inspirations/grok-build",
     "executable": "inspirations/grok-build/target/debug/xai-grok-pager",
-    "source_revision": "be713136d2a69080743a3f6b3c72077057e5948f",
-    "binary_sha256": "14fc3307626aec7ff9cd0738bd1b011ff194b527c5cc15eb9589b5ca34f60b67",
-    "binary_version": "grok 1.0.1 (be71313) [alpha]",
+    "source_revision": "eb267feff13129e568df38fb6fdf0ceb65f735d6",
+    "binary_sha256": "8ff869cf2db0dea1ee29ee0d7028b180f37ac8ac108c601452fa00d28125ad08",
+    "binary_version": "grok 1.0.3 (eb267fe)",
     "receipt_path": "configs/tui-fidelity-reference-binary-receipt.json"
   },
   "active_revision_sources": [
@@ -45,7 +45,6 @@
     "configs/tui-fidelity-closure-contract.json",
     "configs/tui-fidelity-requirement-inventory.json",
     "configs/tui-fidelity-coverage-manifest.json",
-    "grok-build-ui-difference-catalog.md",
     "docs/reference/grok-build-parity-loop-contract.md",
     "docs/reference/tui-reference-parity-manifest.v1.json",
     "crates/harness-testkit/src/tui_fidelity_scenarios/baseline/registry.json"
@@ -59,6 +58,14 @@
       "acceptance_eligible": false,
       "status": "superseded_binary_epoch",
       "provenance": "Packet 0 isolated canonical build; superseded by the Packet 2 canonical executable epoch at the same source revision"
+    },
+    {
+      "source_revision": "be713136d2a69080743a3f6b3c72077057e5948f",
+      "binary_sha256": "14fc3307626aec7ff9cd0738bd1b011ff194b527c5cc15eb9589b5ca34f60b67",
+      "binary_version": "grok 1.0.1 (be71313) [alpha]",
+      "acceptance_eligible": false,
+      "status": "superseded_binary_epoch",
+      "provenance": "Prior active authority; superseded by the 2026-08-17 replacement ceremony after the recorded executable became unavailable and could not be reproduced from its incomplete build receipt"
     }
   ],
   "historical_non_acceptance": {

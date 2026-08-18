@@ -128,7 +128,7 @@ fn signoff_packet2_is_pinned_sequential_exactly_five_and_fail_closed() {
 
     // Then: it requires pinned inputs, runs five sequential captures, and aggregates once.
     assert!(script.contains("signoff-packet2"));
-    assert!(body.contains("be713136d2a69080743a3f6b3c72077057e5948f"));
+    assert!(body.contains("eb267feff13129e568df38fb6fdf0ceb65f735d6"));
     assert!(body.contains("for ordinal in 1 2 3 4 5"));
     assert_eq!(body.matches("for ordinal in 1 2 3 4 5").count(), 2);
     assert!(body.contains("packet2-sustained-stream"));

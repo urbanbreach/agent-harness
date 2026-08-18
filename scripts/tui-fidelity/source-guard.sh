@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly PINNED_REVISION="be713136d2a69080743a3f6b3c72077057e5948f"
+readonly PINNED_REVISION="eb267feff13129e568df38fb6fdf0ceb65f735d6"
 
 fail() {
   printf 'source-guard: %s\n' "$1" >&2
