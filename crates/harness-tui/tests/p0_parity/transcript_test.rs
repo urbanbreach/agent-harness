@@ -416,7 +416,7 @@ fn transcript_scroll_selection_and_tool_detail_toggle_under_full_width_shell() {
         "P0-TX-03: second activity body must remain structured\n{rendered}"
     );
     assert!(
-        rendered.contains("read"),
-        "P0-TX-03: tool identity must remain visible for expand/select surface\n{rendered}"
+        rendered.contains("Reading 1 file"),
+        "P0-TX-03: semantic tool identity must remain visible for expand/select surface\n{rendered}"
     );
 }

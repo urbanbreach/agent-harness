@@ -40,6 +40,7 @@ const PTY_SIGNOFF_ENV: &str = "HARNESS_TUI_PTY_SIGNOFF";
 const PARITY_STRICT_ENV: &str = "HARNESS_TUI_PARITY_STRICT";
 const HELPER_SCENARIO_ENV: &str = "HARNESS_TUI_PTY_HELPER_SCENARIO";
 const HELPER_INJECT_DELAY_MS_ENV: &str = "HARNESS_TUI_PTY_HELPER_INJECT_DELAY_MS";
+const LIVE_THINKING_TEXT_ENV: &str = "HARNESS_TUI_PTY_THINKING_TEXT";
 const TYPE_FIRST_STARTUP_SCENARIO: &str = "type_first_startup";
 const IDLE_SHELL_SCENARIO: &str = "idle_shell";
 const LIVE_DRAFT_SCENARIO: &str = "live_draft";
@@ -480,9 +481,10 @@ pub(crate) fn shell_complete_pty() {
         screen.contains(COMPLETE_USER_TEXT) && screen.contains("parity turn complete stream"),
         "SHELL-COMPLETE PTY: completed turn must project\n{screen}"
     );
-    assert!(
-        !screen.contains("Worked for"),
-        "SHELL-COMPLETE PTY: settled metadata must not create a standalone row\n{screen}"
+    assert_eq!(
+        screen.matches("Worked for 2.3s").count(),
+        1,
+        "SHELL-COMPLETE PTY: completed turn must render exactly one completion marker\n{screen}"
     );
     assert!(
         screen.contains('❯'),
@@ -635,18 +637,30 @@ pub(crate) fn tx_tool_pty() {
     let mut helper = spawn_helper(LIVE_TOOL_HELPER, LIVE_TOOL_SCENARIO);
     helper.wait_for(TOOL_PATH_TEXT);
     helper.wait_for("Ctrl+c:cancel");
+    let tail_screen = helper.screen_text();
+    assert!(
+        tail_screen.contains(TOOL_PATH_TEXT),
+        "TX-TOOL PTY: echo tool row required\n{tail_screen}"
+    );
+    assert!(
+        tail_screen.contains("Ctrl+c:cancel"),
+        "TX-TOOL PTY: active cancel affordance required\n{tail_screen}"
+    );
+    assert!(
+        !tail_screen.contains("Responding"),
+        "TX-TOOL PTY: transcript must not duplicate the active lifecycle status\n{tail_screen}"
+    );
+    for _ in 0..4 {
+        send_bytes(helper.writer.as_mut(), b"\x1b[5~").unwrap_or_abort();
+        thread::sleep(READ_POLL_TIMEOUT);
+        if helper.screen_text().contains("Ran 10 commands") {
+            break;
+        }
+    }
     let screen = helper.screen_text();
     assert!(
-        screen.contains(TOOL_PATH_TEXT),
-        "TX-TOOL PTY: echo tool row required\n{screen}"
-    );
-    assert!(
-        screen.contains("Ran 10 commands") && screen.contains("Ctrl+c:cancel"),
-        "TX-TOOL PTY: active tool summary and cancel affordance required\n{screen}"
-    );
-    assert!(
-        !screen.contains("Responding"),
-        "TX-TOOL PTY: transcript must not duplicate the active lifecycle status\n{screen}"
+        screen.contains("Ran 10 commands"),
+        "TX-TOOL PTY: command group summary required above the live tail\n{screen}"
     );
     assert!(
         screen.contains('◈') || screen.contains('◆'),
@@ -987,6 +1001,15 @@ pub(crate) fn pty_helper_live_thinking() {
     }
     let mut events = question_turn_events();
     events.truncate(3);
+    if let Ok(text) = std::env::var(LIVE_THINKING_TEXT_ENV) {
+        if let Some(EventEnvelopeV1 {
+            payload: EventV1::ProviderReasoningDelta(data),
+            ..
+        }) = events.get_mut(2)
+        {
+            data.delta = text;
+        }
+    }
     events.insert(
         0,
         parity_envelope(
@@ -1096,10 +1119,10 @@ pub(crate) fn pty_helper_live_block_grammar() {
     for marker in [
         BLOCK_GRAMMAR_PROMPT,
         "PACKET3_BODY",
-        "Gathered context",
+        "Read 2 files",
         "Ran 10 commands",
         "PACKET3_RUNNING_SHELL",
-        "PACKET3_SUBAGENT",
+        "Ran 1 subagent",
         "packet3.txt",
         "Which color?",
         "fail the parity probe",
@@ -1883,6 +1906,37 @@ fn block_grammar_events() -> Vec<EventEnvelopeV1> {
     recovery.retain(|event| !matches!(event.payload, EventV1::TaskScheduled(_)));
     events.extend(recovery);
     events.extend([
+        parity_envelope(
+            1,
+            Some(request_id),
+            EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                tool_call_id: "tc_packet3_generic_before_reasoning".into(),
+                tool_id: "custom.tool".to_string(),
+                args_summary: r#"{"label":"before reasoning"}"#.to_string(),
+                args_digest: "digest-packet3-generic-before-reasoning".to_string(),
+                metadata: None,
+            }),
+        ),
+        parity_envelope(
+            2,
+            Some(request_id),
+            EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                tool_call_id: "tc_packet3_generic_before_reasoning".into(),
+                status: ToolCallStatus::Succeeded,
+                output_summary: None,
+                output_digest: Some("digest-packet3-generic-before-reasoning-output".to_string()),
+                output_json: None,
+                metadata: None,
+            }),
+        ),
+        parity_envelope(
+            1,
+            Some(request_id),
+            EventV1::ProviderReasoningDelta(ProviderReasoningDeltaEvent {
+                request_id: request_id.into(),
+                delta: "PACKET3_HIDDEN_REASONING between grouped tools".to_string(),
+            }),
+        ),
         parity_envelope(
             1,
             Some(request_id),

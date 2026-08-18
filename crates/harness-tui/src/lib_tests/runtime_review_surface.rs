@@ -243,7 +243,10 @@ pub(super) fn review_surfaces_are_command_driven_without_tab_contract() {
         .any(|c| c == "harness.open_event_log"));
     live.handle_key(key(crossterm::event::KeyCode::Esc));
 
-    live.handle_key(key(crossterm::event::KeyCode::Char('h')));
+    live.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('x'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
     assert_eq!(live.review_surface(), Some(app::ReviewSurface::Help));
     let live_help_debug = render_live_buffer(&live, 80, 24);
     assert!(live_help_debug.contains("Keyboard Shortcuts"));
@@ -271,7 +274,10 @@ pub(super) fn review_surfaces_are_command_driven_without_tab_contract() {
         .any(|c| c == "harness.open_event_log"));
     replay.handle_key(key(crossterm::event::KeyCode::Esc));
 
-    replay.handle_key(key(crossterm::event::KeyCode::Char('h')));
+    replay.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('x'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
     assert_eq!(replay.review_surface(), Some(app::ReviewSurface::Help));
     let replay_help_debug = render_live_buffer(&replay, 80, 24);
     assert!(replay_help_debug.contains("Keyboard Shortcuts"));
@@ -289,14 +295,17 @@ pub(super) fn review_surfaces_restore_panel_chrome() {
     }
     live.focus = app::Focus::List;
 
-    live.handle_key(key(crossterm::event::KeyCode::Char('h')));
+    live.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('x'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
     let help_rendered = render_live_lines(&live, 100, 30);
     assert!(
         help_rendered.contains("Keyboard Shortcuts") || help_rendered.contains("Essentials"),
         "help surface restores freeze-aligned keyboard shortcuts chrome\n{help_rendered}"
     );
     assert!(
-        help_rendered.contains("Enter open"),
+        help_rendered.contains("Enter details"),
         "help footer must render its final action completely at 100 columns\n{help_rendered}"
     );
     assert!(!help_rendered.contains("Allow Edit"));

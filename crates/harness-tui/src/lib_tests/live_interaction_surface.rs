@@ -225,7 +225,10 @@ pub(super) fn replay_secondary_surfaces_remain_reachable_after_live_shell_refact
         .any(|c| c == "harness.open_event_log"));
     replay.handle_key(key(crossterm::event::KeyCode::Esc));
 
-    replay.handle_key(key(crossterm::event::KeyCode::Char('h')));
+    replay.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('x'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
     assert_eq!(replay.review_surface(), Some(app::ReviewSurface::Help));
     let replay_help_debug = render_live_buffer(&replay, 80, 24);
     assert!(!replay_help_debug.contains("Tabs"));

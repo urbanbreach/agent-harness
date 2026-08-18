@@ -254,7 +254,13 @@ pub(super) fn replay_read_only_composer_matches_quiet_contract() {
     let app =
         app::AppState::new_replay(PathBuf::from("/tmp/replay-session"), session_view_events());
 
-    assert_replay_read_only_composer_contract(&app, 100, 24, "Replay · read-only", "h shortcuts");
+    assert_replay_read_only_composer_contract(
+        &app,
+        100,
+        24,
+        "Replay · read-only",
+        "ctrl+x shortcuts",
+    );
 
     let rendered = render_live_lines(&app, 100, 24);
     assert!(!rendered.contains("Replay archive · read-only"));
@@ -265,9 +271,27 @@ pub(super) fn replay_read_only_quiet_contract_survives_primary_compact_and_dense
     let app =
         app::AppState::new_replay(PathBuf::from("/tmp/replay-session"), session_view_events());
 
-    assert_replay_read_only_composer_contract(&app, 100, 30, "Replay · read-only", "h shortcuts");
-    assert_replay_read_only_composer_contract(&app, 90, 36, "Replay · read-only", "h shortcuts");
-    assert_replay_read_only_composer_contract(&app, 80, 24, "Replay · read-only", "h shortcuts");
+    assert_replay_read_only_composer_contract(
+        &app,
+        100,
+        30,
+        "Replay · read-only",
+        "ctrl+x shortcuts",
+    );
+    assert_replay_read_only_composer_contract(
+        &app,
+        90,
+        36,
+        "Replay · read-only",
+        "ctrl+x shortcuts",
+    );
+    assert_replay_read_only_composer_contract(
+        &app,
+        80,
+        24,
+        "Replay · read-only",
+        "ctrl+x shortcuts",
+    );
     assert_replay_read_only_composer_contract(&app, 60, 18, "Replay · read-only", "q quit");
 }
 

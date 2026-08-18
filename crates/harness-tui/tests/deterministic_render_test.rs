@@ -113,7 +113,7 @@ fn tool_lifecycle_rows_stay_ordered_without_pty() {
         "Inspect tool activity",
         "Read 1 file",
         "Edit ui.rs",
-        "Researcher Task — audit tool lifecycle parity",
+        "Ran 1 subagent",
         "Run cargo test -p harness-tui",
         "snapshot mismatch",
         "Tool summaries are now easier to scan, and edits stay inline.",
@@ -137,8 +137,8 @@ fn p21_tool_display_descriptors_cover_state_families_without_pty() {
 
     // assert
     insta::assert_snapshot!(trim_trailing_snapshot_whitespace(&rendered));
-    // S1: completed — session_list Harness-only tool has intentional title
-    assert_markers_in_order(&rendered, &["List session"]);
+    // S1: completed — session_list folds into the semantic list bucket
+    assert_markers_in_order(&rendered, &["Listed 1 dir"]);
     // S2: running — lsp tool shows operation and path
     assert_markers_in_order(&rendered, &["LSP diagnostics", "src/main.rs"]);
     // S3: failed — ast_grep_search shows intentional title

@@ -548,14 +548,14 @@ fn running_tool_rail_advances_while_waiting_rail_stays_paused() {
 }
 
 #[test]
-fn running_tool_marker_and_label_share_their_rail_row_wave_sample() {
+fn running_context_group_animates_marker_but_keeps_label_muted() {
     let buffer = render_buffer(&tool_running_app(), 100, 24);
     let width = usize::from(buffer.area.width);
     let marker_index = buffer
         .content
         .iter()
-        .position(|cell| cell.symbol() == "◆")
-        .expect("running tool marker");
+        .position(|cell| cell.symbol() == "◈")
+        .expect("running context group marker");
     let row_start = marker_index / width * width;
     let rail = buffer.content[row_start..row_start + width]
         .iter()
@@ -565,7 +565,7 @@ fn running_tool_marker_and_label_share_their_rail_row_wave_sample() {
     let label = &buffer.content[marker_index + 2];
 
     assert_eq!(marker.fg, rail.fg);
-    assert_eq!(label.fg, rail.fg);
+    assert_ne!(label.fg, rail.fg);
 }
 
 #[test]
@@ -770,7 +770,7 @@ fn completed_tool_stays_static_across_the_legacy_finish_window() {
 }
 
 #[test]
-fn grouped_last_finisher_never_paints_a_group_wide_motion_rail() {
+fn grouped_last_finisher_keeps_a_static_error_rail_without_motion() {
     // Given: a successful command followed later by a failed command in one group.
     let mut grouped = grouped_mixed_app();
     let flash = rail_colors(&render_buffer(&grouped, 120, 40));
@@ -781,10 +781,12 @@ fn grouped_last_finisher_never_paints_a_group_wide_motion_rail() {
     }
     let settled = rail_colors(&render_buffer(&grouped, 120, 40));
 
-    // Then: member state remains visible in the rows without animating the
-    // synthetic group across its full height.
-    assert!(flash.is_empty());
-    assert!(settled.is_empty());
+    // Then: the failed group keeps its state rail without animating it.
+    assert!(!flash.is_empty());
+    assert!(flash
+        .iter()
+        .all(|color| *color == Theme::default().status.error));
+    assert_eq!(flash, settled);
 }
 
 #[test]
