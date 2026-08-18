@@ -34,7 +34,7 @@ fn transcript_grammar_characterizes_prompt_reasoning_body_and_empty_content() {
     assert_eq!(contract[0].placement, GrammarPlacement::StickyPrompt);
     assert!(!contract[1].rail);
     assert_eq!(contract[2].leading_gap, 1);
-    assert_eq!(contract[3].leading_gap, 0);
+    assert_eq!(contract[3].leading_gap, 1);
     assert!(!turn.reasoning_expanded);
     assert_eq!(
         empty_surfaces
@@ -50,7 +50,7 @@ fn transcript_grammar_characterizes_generic_shell_diff_and_subagent_blocks() {
     let contract = canonical_contract(80);
     let tools = &contract[4..10];
 
-    assert_eq!(tools[1].family, GrammarFamily::Command);
+    assert_eq!(tools[1].family, GrammarFamily::Tool);
     assert_eq!(
         tools
             .iter()
@@ -87,8 +87,8 @@ fn transcript_grammar_characterizes_selection_rows_backgrounds_and_motion() {
             .iter()
             .filter(|surface| surface.motion.is_some())
             .count()
-            <= 1,
-        "only the selected or active semantic entry may retain rail motion"
+            <= 2,
+        "independently active semantic groups may each retain rail motion"
     );
 }
 

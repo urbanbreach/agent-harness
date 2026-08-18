@@ -99,7 +99,9 @@ fn active_reasoning_turn(text: &str) -> TranscriptTurnSection {
 #[test]
 fn grammar_reasoning_active_completed_fold_and_motion() {
     let theme = Theme::default();
-    let mut turn = active_reasoning_turn("**Plan**\n\nfirst\nsecond\nthird\nfourth");
+    let mut turn = active_reasoning_turn(
+        "**Plan**\n\nfirst paragraph\n\nsecond paragraph\n\nthird paragraph\n\nfourth paragraph",
+    );
     let collapsed = build_transcript_render_surfaces(&turn, &theme, 80, theme.surface.shell);
     let collapsed_reasoning = collapsed
         .iter()

@@ -166,9 +166,17 @@ mod footer_lifecycle;
 mod generic_tool;
 #[path = "ui_transcript_grammar_prompt_reasoning_tests.rs"]
 mod prompt_reasoning;
+#[path = "ui_transcript_reasoning_parity_tests.rs"]
+mod reasoning_parity;
+#[path = "ui_transcript_reasoning_selection_tests.rs"]
+mod reasoning_selection;
 #[path = "ui_transcript_grammar_shell_diff_tests.rs"]
 mod shell_diff;
+#[path = "ui_transcript_grammar_spacing_tests.rs"]
+mod spacing;
 #[path = "ui_transcript_grammar_subagent_tests.rs"]
 mod subagent;
 #[path = "ui_transcript_grammar_tool_family_tests.rs"]
 mod tool_family;
+#[path = "ui_transcript_grammar_visibility_tests.rs"]
+mod visibility;

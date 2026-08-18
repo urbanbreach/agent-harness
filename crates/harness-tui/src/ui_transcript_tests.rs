@@ -1648,7 +1648,7 @@ fn command_group_stays_coalesced_while_latest_member_is_running() {
 }
 
 #[test]
-fn reasoning_to_answer_transition_uses_two_blank_rows() {
+fn reasoning_to_answer_transition_uses_one_blank_row() {
     // arrange
     // act
     // assert
@@ -1679,15 +1679,14 @@ fn reasoning_to_answer_transition_uses_two_blank_rows() {
 
     assert_eq!(
         answer_row,
-        reasoning_row + 3,
-        "reasoning and answer should be separated by 2 blank rows (surface gap + prepend gap)\n{lines:#?}"
+        reasoning_row + 2,
+        "reasoning and answer should be separated by the layout gap only\n{lines:#?}"
     );
     assert!(lines[reasoning_row + 1].is_empty());
-    assert!(lines[reasoning_row + 2].is_empty());
 }
 
 #[test]
-fn streaming_reasoning_header_renders_spinner_and_thinking_label() {
+fn streaming_reasoning_header_renders_diamond_and_thinking_label() {
     // arrange
     // act
     // assert
@@ -1708,9 +1707,10 @@ fn streaming_reasoning_header_renders_spinner_and_thinking_label() {
     ));
     let rendered = lines.join("\n");
     assert!(
-        rendered.contains("⠋ Thinking"),
-        "streaming reasoning should show a spinner + Thinking header\n{rendered}"
+        rendered.contains("◆ Thinking…"),
+        "streaming reasoning should show the Grok diamond + Thinking header\n{rendered}"
     );
+    assert!(!rendered.contains('⠋'));
     assert!(
         rendered.contains("analyzing the problem"),
         "body text should still render\n{rendered}"
@@ -1818,7 +1818,7 @@ fn streaming_reasoning_stops_spinner_when_tool_call_arrives() {
 }
 
 #[test]
-fn streaming_reasoning_header_with_title_renders_thinking_colon_title() {
+fn streaming_reasoning_header_with_title_keeps_the_grok_header() {
     // arrange
     // act
     // assert
@@ -1839,7 +1839,7 @@ fn streaming_reasoning_header_with_title_renders_thinking_colon_title() {
     ));
     let rendered = lines.join("\n");
     assert!(
-        rendered.contains("⠋ Thinking…"),
+        rendered.contains("◆ Thinking…"),
         "streaming reasoning keeps the quiet reference header\n{rendered}"
     );
     assert!(rendered.contains("Planning approach"));
@@ -1932,33 +1932,41 @@ fn completed_reasoning_header_without_title_renders_thinking() {
 }
 
 #[test]
-fn streaming_reasoning_defaults_to_last_three_lines() {
-    // Given: a running reasoning trace longer than the reference preview.
+fn streaming_reasoning_defaults_to_last_three_wrapped_rows() {
+    // Given: a running reasoning paragraph longer than the reference preview.
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
         "request-streaming-reasoning-preview",
         ActivityStatus::Streaming,
         "",
     );
-    entry.thinking_text = "line one\nline two\nline three\nline four\nline five".to_string();
+    entry.thinking_text = "PREVIEW_START alpha beta gamma delta epsilon zeta eta theta iota \
+        kappa lambda mu nu xi omicron pi rho sigma tau upsilon phi chi psi omega PREVIEW_TAIL"
+        .to_string();
     app.activities = std::collections::VecDeque::from(vec![entry]);
     app.transcript_view.selected_activity_index = 0;
 
     // When: the trace is rendered without deliberate expansion.
-    let rendered = transcript_test_line_texts(build_transcript_lines_for_width(
+    let lines = transcript_test_line_texts(build_transcript_lines_for_width(
         &app,
         &Theme::default(),
-        80,
-    ))
-    .join("\n");
+        32,
+    ));
+    let rendered = lines.join("\n");
 
-    // Then: only the final three lines remain visible behind an ellipsis.
-    assert!(!rendered.contains("line one"));
-    assert!(!rendered.contains("line two"));
-    assert!(rendered.contains('…'));
-    assert!(rendered.contains("line three\n"));
-    assert!(rendered.contains("line four\n"));
-    assert!(rendered.contains("line five"));
+    // Then: only the final three wrapped rows remain visible behind an ellipsis.
+    assert!(!rendered.contains("PREVIEW_START"), "{rendered}");
+    assert!(rendered.contains('…'), "{rendered}");
+    assert!(rendered.contains("PREVIEW_TAIL"), "{rendered}");
+    let ellipsis_row = lines
+        .iter()
+        .position(|line| line.trim() == "…")
+        .expect("truncated reasoning ellipsis");
+    let visible_rows = lines[ellipsis_row + 1..]
+        .iter()
+        .filter(|line| !line.trim().is_empty())
+        .count();
+    assert_eq!(visible_rows, 3, "{lines:#?}");
 }
 
 #[test]
@@ -2042,7 +2050,7 @@ fn ctrl_e_expands_selected_finished_reasoning_from_transcript_focus() {
 }
 
 #[test]
-fn running_reasoning_active_marker_advances_with_shared_phase() {
+fn running_reasoning_text_stays_stable_across_shared_phase() {
     // Given: an active reasoning trace on the first shared animation frame.
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
@@ -2075,8 +2083,9 @@ fn running_reasoning_active_marker_advances_with_shared_phase() {
     .find(|line| line.contains("Thinking…"))
     .unwrap_or_abort();
 
-    // Then: the one-cell active marker moves without a provider delta.
-    assert_ne!(before, after);
+    // Then: the color wave does not mutate transcript text without a provider delta.
+    assert_eq!(before, after);
+    assert!(before.contains("◆ Thinking…"));
 }
 
 #[test]

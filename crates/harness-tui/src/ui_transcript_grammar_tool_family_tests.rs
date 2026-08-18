@@ -86,7 +86,7 @@ fn grammar_queued_only_group_does_not_request_active_motion() {
 }
 
 #[test]
-fn rendered_singleton_queued_tool_has_no_outer_rail() {
+fn rendered_singleton_queued_tool_has_state_rail_without_motion() {
     let theme = Theme::default();
     let mut turn = canonical_turn();
     turn.assistant_parts = vec![grammar_tool(
@@ -104,7 +104,7 @@ fn rendered_singleton_queued_tool_has_no_outer_rail() {
         })
         .expect("queued tool surface");
 
-    assert!(!tool.show_outer_rail);
+    assert!(tool.show_outer_rail);
     assert_eq!(tool.tool_rail_motion, None);
 }
 
