@@ -257,6 +257,11 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
         header: TranscriptTurnHeader {
             status: activity.status,
             is_selected,
+            is_hovered: matches!(
+                app.hovered_transcript_target(),
+                Some(TranscriptMouseTarget::Reasoning { request_id })
+                    if request_id == &activity.request_id
+            ),
             provider_request_open: app
                 .events
                 .iter()

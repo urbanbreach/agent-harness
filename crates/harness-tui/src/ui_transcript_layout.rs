@@ -22,8 +22,8 @@ use super::ui_transcript_selection::{
     compact_selection_row, TranscriptSelectionCell, TranscriptSelectionRow,
 };
 use super::ui_transcript_surface::{
-    apply_reasoning_spinner_phase, render_transcript_surface, render_transcript_surface_lines,
-    transcript_surface_content_width, transcript_surface_render_width,
+    render_transcript_surface, render_transcript_surface_lines, transcript_surface_content_width,
+    transcript_surface_render_width,
 };
 
 const TRANSCRIPT_SECTION_GAP_HEIGHT: usize = 2;
@@ -451,13 +451,10 @@ where
 
 pub(super) fn transcript_layout_lines(
     layout: &MeasuredTranscriptLayout,
-    animation_phase: usize,
+    _animation_phase: usize,
     theme: &Theme,
 ) -> Vec<Line<'static>> {
     let mut lines = layout.rendered_lines();
-    for line in &mut lines {
-        apply_reasoning_spinner_phase(line, animation_phase);
-    }
 
     if lines.is_empty() {
         lines.push(Line::from(Span::styled(

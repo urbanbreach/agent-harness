@@ -46,24 +46,6 @@ pub(super) fn render_transcript_surface(
     let tool_rail_overlay = surface.tool_rail_motion.is_some();
     let rail_visible = surface.show_outer_rail || tool_rail_overlay;
     let rail_width = 0;
-    if rail_visible && !tool_rail_overlay {
-        let rail_rect = Rect::new(
-            area.x,
-            area.y,
-            area.width.min(TRANSCRIPT_SURFACE_RAIL_WIDTH),
-            area.height,
-        );
-        frame.render_widget(
-            Paragraph::new(transcript_surface_rail_lines_for_motion(
-                surface,
-                local_scroll,
-                usize::from(area.height),
-                animation_phase,
-            ))
-            .style(Style::default().bg(surface.surface)),
-            rail_rect,
-        );
-    }
 
     if area.width <= rail_width {
         return;
@@ -84,18 +66,10 @@ pub(super) fn render_transcript_surface(
         animation_phase,
         theme,
     );
-    if surface.kind == TranscriptRenderSurfaceKind::AssistantReasoning
-        && surface.show_outer_rail
-        && local_scroll == 0
-    {
-        if let Some(line) = visible_lines.first_mut() {
-            apply_reasoning_spinner_phase(line, animation_phase);
-        }
-    }
     let paragraph = Paragraph::new(Text::from(visible_lines))
         .style(panel_style(surface.surface, theme.text.primary));
     frame.render_widget(paragraph, content_rect);
-    if tool_rail_overlay {
+    if rail_visible {
         let rail_rect = Rect::new(
             area.x,
             area.y,
@@ -123,7 +97,6 @@ fn apply_surface_animation_phase(
     theme: &Theme,
 ) {
     for (local_row, line) in lines.iter_mut().enumerate() {
-        apply_reasoning_spinner_phase(line, animation_phase);
         for span in &mut line.spans {
             if matches!(
                 span.content.as_ref(),
@@ -153,14 +126,59 @@ fn apply_surface_animation_phase(
 
 #[cfg(test)]
 mod animation_phase_tests {
-    use super::apply_surface_animation_phase;
+    use super::{apply_surface_animation_phase, render_transcript_surface};
     use crate::theme::Theme;
     use crate::ui::ui_transcript::{
-        TranscriptBlockPlacement, TranscriptRenderSurfaceKind, TranscriptVisualEntryDisplayMode,
-        TranscriptVisualEntryHitRegion, TranscriptVisualEntryMetadata,
+        ToolRailMotion, TranscriptBlockPlacement, TranscriptRenderSurfaceKind,
+        TranscriptVisualEntryDisplayMode, TranscriptVisualEntryHitRegion,
+        TranscriptVisualEntryMetadata,
     };
     use crate::ui::ui_transcript_layout::TranscriptVisualEntry;
-    use ratatui::{style::Style, text::Span};
+    use ratatui::{backend::TestBackend, layout::Rect, style::Style, text::Span, Terminal};
+
+    fn reasoning_surface(
+        theme: &Theme,
+        marker: &str,
+        motion: Option<ToolRailMotion>,
+    ) -> TranscriptVisualEntry {
+        TranscriptVisualEntry {
+            metadata: TranscriptVisualEntryMetadata::settled(
+                0,
+                0,
+                TranscriptRenderSurfaceKind::AssistantReasoning,
+                TranscriptVisualEntryDisplayMode::Flow,
+            ),
+            kind: TranscriptRenderSurfaceKind::AssistantReasoning,
+            leading_gap_rows: 0,
+            placement: TranscriptBlockPlacement::Flow,
+            top_offset: 0,
+            height: 1,
+            width: 80,
+            show_outer_rail: true,
+            rail_glyph: "┃",
+            rail_color: theme.text.tertiary,
+            surface: theme.surface.canvas,
+            lines: vec![ratatui::text::Line::from(vec![
+                Span::raw("  "),
+                Span::styled(
+                    format!("{marker} "),
+                    Style::default().fg(theme.text.tertiary),
+                ),
+                Span::styled(
+                    "Thinking…",
+                    Style::default()
+                        .fg(theme.text.secondary)
+                        .add_modifier(ratatui::style::Modifier::BOLD),
+                ),
+            ])],
+            interaction_rows: None,
+            selection_rows: None,
+            diff_hunk_offsets: Vec::new(),
+            selected_rail: false,
+            tool_rail_motion: motion,
+            hit_region: TranscriptVisualEntryHitRegion::new(0, 80, 1),
+        }
+    }
 
     #[test]
     fn cached_assistant_footer_rehydrates_the_pending_diamond_phase() {
@@ -210,6 +228,66 @@ mod animation_phase_tests {
         assert_eq!(first[0].spans[2].style.fg, Some(theme.text.secondary));
         assert_eq!(later[0].spans[2].style.fg, Some(theme.text.secondary));
     }
+
+    #[test]
+    fn active_reasoning_wave_animates_only_the_diamond() {
+        let theme = Theme::default();
+        let surface = reasoning_surface(
+            &theme,
+            "◆",
+            Some(ToolRailMotion::Running {
+                elapsed: std::time::Duration::ZERO,
+                sampled_phase: 0,
+            }),
+        );
+
+        let mut first = surface.lines.clone();
+        apply_surface_animation_phase(&mut first, &surface, 0, 0, &theme);
+        let mut later = surface.lines.clone();
+        apply_surface_animation_phase(&mut later, &surface, 0, 10, &theme);
+
+        assert_ne!(first[0].spans[1].style.fg, later[0].spans[1].style.fg);
+        assert_eq!(first[0].spans[2].style.fg, Some(theme.text.secondary));
+        assert_eq!(later[0].spans[2].style.fg, Some(theme.text.secondary));
+    }
+
+    #[test]
+    fn active_reasoning_wave_animates_the_ascii_marker() {
+        let theme = Theme::default();
+        let surface = reasoning_surface(
+            &theme,
+            "*",
+            Some(ToolRailMotion::Running {
+                elapsed: std::time::Duration::ZERO,
+                sampled_phase: 0,
+            }),
+        );
+
+        let mut first = surface.lines.clone();
+        apply_surface_animation_phase(&mut first, &surface, 0, 0, &theme);
+        let mut later = surface.lines.clone();
+        apply_surface_animation_phase(&mut later, &surface, 0, 10, &theme);
+
+        assert_ne!(first[0].spans[1].style.fg, later[0].spans[1].style.fg);
+        assert_eq!(first[0].spans[2].style.fg, Some(theme.text.secondary));
+        assert_eq!(later[0].spans[2].style.fg, Some(theme.text.secondary));
+    }
+
+    #[test]
+    fn static_reasoning_rail_is_painted_after_content() {
+        let theme = Theme::default();
+        let surface = reasoning_surface(&theme, "◆", None);
+        let backend = TestBackend::new(20, 1);
+        let mut terminal = Terminal::new(backend).expect("test terminal");
+
+        terminal
+            .draw(|frame| {
+                render_transcript_surface(frame, &surface, Rect::new(0, 0, 20, 1), 0, 0, &theme);
+            })
+            .expect("render reasoning surface");
+
+        assert_eq!(terminal.backend().buffer()[(0, 0)].symbol(), "┃");
+    }
 }
 
 fn apply_tool_header_motion_color(
@@ -221,15 +299,51 @@ fn apply_tool_header_motion_color(
     let Some(motion) = surface.tool_rail_motion else {
         return;
     };
-    let is_tool_header = line.spans.iter().any(|span| {
+    if surface.kind == TranscriptRenderSurfaceKind::AssistantReasoning {
+        if absolute_row == 0 {
+            let color = tool_rail_motion_color(
+                surface.surface,
+                surface.rail_color,
+                Some(motion),
+                absolute_row,
+                animation_phase,
+            );
+            if let Some(marker) = line
+                .spans
+                .iter_mut()
+                .find(|span| !span.content.trim().is_empty())
+            {
+                marker.style = marker.style.fg(color);
+            }
+        }
+        return;
+    }
+    let semantic_group_surface = surface.lines.first().is_some_and(|header| {
+        let marker_index = header
+            .spans
+            .iter()
+            .position(|span| span.content.trim_start().starts_with('◈'));
+        marker_index.is_some_and(|marker_index| {
+            header
+                .spans
+                .iter()
+                .skip(marker_index + 1)
+                .find(|span| !span.content.trim().is_empty())
+                .is_some_and(|span| span.content.as_ref() != "Ran ")
+        })
+    });
+    if semantic_group_surface && absolute_row != 0 {
+        return;
+    }
+    let marker_index = line.spans.iter().position(|span| {
         matches!(
             span.content.trim_start().chars().next(),
             Some('◆' | '◇' | '◈')
         )
     });
-    if !is_tool_header {
+    let Some(marker_index) = marker_index else {
         return;
-    }
+    };
     let color = tool_rail_motion_color(
         surface.surface,
         surface.rail_color,
@@ -237,32 +351,13 @@ fn apply_tool_header_motion_color(
         absolute_row,
         animation_phase,
     );
-    for span in &mut line.spans {
-        span.style = span.style.fg(color);
+    if semantic_group_surface {
+        line.spans[marker_index].style = line.spans[marker_index].style.fg(color);
+    } else {
+        for span in &mut line.spans {
+            span.style = span.style.fg(color);
+        }
     }
-}
-
-pub(super) fn apply_reasoning_spinner_phase(line: &mut Line<'static>, animation_phase: usize) {
-    let Some(marker_index) = line
-        .spans
-        .iter()
-        .position(|span| span.content.as_ref() == "⠋")
-    else {
-        return;
-    };
-    let Some(marker) = line.spans.get_mut(marker_index) else {
-        return;
-    };
-    let content = marker.content.to_mut();
-    let prefix_len = content.len().saturating_sub(content.trim_start().len());
-    let Some(first) = content[prefix_len..].chars().next() else {
-        return;
-    };
-    let end = prefix_len.saturating_add(first.len_utf8());
-    content.replace_range(
-        prefix_len..end,
-        transcript_streaming_spinner_frame(animation_phase),
-    );
 }
 
 fn transcript_surface_rail_lines_for_motion(
@@ -415,6 +510,7 @@ pub(super) fn transcript_surface_render_width(
         // with dual gutter + scrollbar needs content_width >= 108).
         TranscriptRenderSurfaceKind::User => width.max(1),
         TranscriptRenderSurfaceKind::AssistantCommandTool
+        | TranscriptRenderSurfaceKind::AssistantTool
         | TranscriptRenderSurfaceKind::Compaction => width
             .saturating_sub(TRANSCRIPT_SURFACE_TRAILING_GAP_WIDTH)
             .max(1),

@@ -121,6 +121,9 @@ mod ui_transcript_render;
 #[path = "ui_reasoning_markdown.rs"]
 mod ui_reasoning_markdown;
 
+#[path = "ui_reasoning_markdown/body.rs"]
+mod ui_reasoning_markdown_body;
+
 #[path = "ui_transcript_tool_render.rs"]
 mod ui_transcript_tool_render;
 

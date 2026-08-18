@@ -1,5 +1,6 @@
 // allow: SIZE_OK — TUI transcript rendering (indivisible view model)
 use super::super::ui_transcript_selection::selection_rows_for_rich_text_block;
+use super::ui_reasoning_markdown_body::ReasoningSelectionMetadata;
 use super::ui_streaming_markdown::append_streaming_rich_text_block;
 use super::ui_transcript_block_grammar::{
     TranscriptBlockContent, TranscriptBlockRole, TranscriptBlockSpec, TranscriptGrammarError,
@@ -15,6 +16,7 @@ use super::*;
 use crate::app::ToolCallPresentationStatus;
 use crate::composer_atoms::split_graphemes;
 use harness_core::event::ProviderRequestRetryMetadata;
+use std::time::Duration;
 
 const USER_MESSAGE_COLLAPSED_MAX_LINES: usize = 3;
 const USER_TIMESTAMP_RESERVED_WIDTH: u16 = 10;
@@ -88,7 +90,7 @@ fn assistant_visual_entry_plan(turn: &TranscriptTurnSection) -> Vec<AssistantVis
         let group_len = match &turn.assistant_parts[index] {
             TranscriptAssistantPart::ToolCall(_) => {
                 TranscriptToolGroupSummary::from_adjacent(&turn.assistant_parts[index..])
-                    .filter(|summary| summary.member_count > 1)
+                    .filter(TranscriptToolGroupSummary::folds_as_group)
                     .map_or(0, |summary| summary.span_len)
             }
             TranscriptAssistantPart::Reasoning(_)
@@ -96,7 +98,7 @@ fn assistant_visual_entry_plan(turn: &TranscriptTurnSection) -> Vec<AssistantVis
             | TranscriptAssistantPart::Error(_)
             | TranscriptAssistantPart::Compaction(_) => 0,
         };
-        if group_len > 1
+        if group_len > 0
             && !context_tool_group_uses_individual_rows(
                 &turn.assistant_parts[index..index + group_len],
             )
@@ -188,12 +190,12 @@ fn normalize_semantic_entry_chrome(
     let accented_entry = entries
         .iter()
         .rposition(|entry| entry.selected_rail)
-        .or_else(|| entries.iter().rposition(|entry| entry.show_outer_rail))
         .or_else(|| {
             entries
                 .iter()
                 .rposition(|entry| entry.tool_rail_motion.is_some())
-        });
+        })
+        .or_else(|| entries.iter().rposition(|entry| entry.show_outer_rail));
     for (index, entry) in entries.iter_mut().enumerate() {
         let previous_surface = entry.surface;
         let preserve_user_surface = entry.kind == TranscriptRenderSurfaceKind::User;
@@ -207,7 +209,9 @@ fn normalize_semantic_entry_chrome(
         if !preserve_user_surface {
             entry.surface = base_surface;
         }
-        if Some(index) != accented_entry {
+        let persistent_group_rail = entry.show_outer_rail
+            && matches!(entry.metadata.id, TranscriptVisualEntryId::ToolGroup { .. });
+        if Some(index) != accented_entry && !persistent_group_rail {
             entry.show_outer_rail = false;
             entry.selected_rail = false;
             entry.tool_rail_motion = None;
@@ -806,6 +810,7 @@ fn build_assistant_part_render_surface(
         interaction_rows,
         selection_rows,
         diff_hunk_offsets,
+        tool_rail_motion,
     ) = match part {
         TranscriptAssistantPart::Reasoning(_) => {
             let content_start = lines.len();
@@ -835,19 +840,21 @@ fn build_assistant_part_render_surface(
                     #[cfg(test)]
                     TranscriptBlockContent::Synthetic { .. } => ("", false, false, None, false),
                 };
-            append_reasoning_block(
+            let block_layout = append_reasoning_block(
                 &mut lines,
                 reasoning_text,
-                theme,
-                transcript_surface_content_width(width, false),
-                reasoning_active,
-                turn.animation_phase,
-                base_surface,
-                duration_ms,
-                expanded,
-                motion_enabled,
-                !reasoning_active,
+                ReasoningBlockContext {
+                    theme,
+                    width: transcript_surface_content_width(width, false),
+                    surface: base_surface,
+                    duration_ms,
+                    active: reasoning_active,
+                    expanded,
+                    selected: turn.header.is_selected,
+                    hovered: turn.header.is_hovered,
+                },
             );
+            let selection_rows = reasoning_selection_rows(&lines, width, block_layout);
             let mut interaction_rows = vec![None; lines.len()];
             if lines.len() > content_start {
                 interaction_rows[content_start] = Some(full_width_interaction_row(
@@ -858,12 +865,20 @@ fn build_assistant_part_render_surface(
             }
             (
                 TranscriptRenderSurfaceKind::AssistantReasoning,
-                reasoning_active,
-                theme.border.subtle,
+                reasoning_active || expanded,
+                theme.text.tertiary,
                 base_surface,
                 Some(interaction_rows),
-                None,
+                Some(selection_rows),
                 Vec::new(),
+                (reasoning_active && motion_enabled).then_some(ToolRailMotion::Running {
+                    elapsed: Duration::from_millis(
+                        u64::try_from(turn.animation_phase)
+                            .unwrap_or(u64::MAX)
+                            .saturating_mul(crate::scheduling::active_animation_period_ms()),
+                    ),
+                    sampled_phase: turn.animation_phase,
+                }),
             )
         }
         TranscriptAssistantPart::Body(_) => {
@@ -880,6 +895,7 @@ fn build_assistant_part_render_surface(
                 None,
                 content.selection_rows,
                 Vec::new(),
+                None,
             )
         }
         TranscriptAssistantPart::ToolCall(tool_call) => {
@@ -931,6 +947,10 @@ fn build_assistant_part_render_surface(
                 Some(render.interaction_rows),
                 None,
                 render.diff_hunk_offsets,
+                match tool_call.rail_motion {
+                    ToolRailMotion::Queued | ToolRailMotion::Settled => None,
+                    motion => Some(motion),
+                },
             )
         }
         TranscriptAssistantPart::Error(error) => {
@@ -943,6 +963,7 @@ fn build_assistant_part_render_surface(
                 None,
                 None,
                 Vec::new(),
+                None,
             )
         }
         TranscriptAssistantPart::Compaction(compaction) => {
@@ -961,18 +982,9 @@ fn build_assistant_part_render_surface(
                 None,
                 None,
                 Vec::new(),
+                None,
             )
         }
-    };
-    let tool_rail_motion = match part {
-        TranscriptAssistantPart::ToolCall(tool_call) => match tool_call.rail_motion {
-            ToolRailMotion::Queued | ToolRailMotion::Settled => None,
-            motion => Some(motion),
-        },
-        TranscriptAssistantPart::Reasoning(_)
-        | TranscriptAssistantPart::Body(_)
-        | TranscriptAssistantPart::Error(_)
-        | TranscriptAssistantPart::Compaction(_) => None,
     };
 
     let mut interaction_rows = interaction_rows;
@@ -1023,7 +1035,9 @@ fn build_assistant_part_render_surface(
         leading_gap_rows: spec.spacing.leading_gap_rows,
         placement: spec.placement,
         show_outer_rail,
-        rail_glyph: if tool_rail_motion.is_some() {
+        rail_glyph: if tool_rail_motion.is_some()
+            || (kind == TranscriptRenderSurfaceKind::AssistantReasoning && show_outer_rail)
+        {
             theme.live_shell.transcript_glyphs.rail
         } else {
             TRANSCRIPT_RAIL_GLYPH
@@ -1155,109 +1169,170 @@ fn build_footer_only_render_surface(
     })
 }
 
-pub(super) fn append_reasoning_block(
-    lines: &mut Vec<Line<'static>>,
-    thinking_text: &str,
-    theme: &Theme,
+struct ReasoningBlockContext<'a> {
+    theme: &'a Theme,
     width: u16,
-    spinner_active: bool,
-    animation_phase: usize,
     surface: Color,
     duration_ms: Option<u64>,
+    active: bool,
     expanded: bool,
-    motion_enabled: bool,
-    force_completed: bool,
-) {
+    selected: bool,
+    hovered: bool,
+}
+
+#[derive(Clone, Default)]
+struct ReasoningBlockLayout {
+    body_start: Option<usize>,
+    selection_rows: Vec<Option<ReasoningSelectionMetadata>>,
+}
+
+fn append_reasoning_block(
+    lines: &mut Vec<Line<'static>>,
+    thinking_text: &str,
+    context: ReasoningBlockContext<'_>,
+) -> ReasoningBlockLayout {
+    let ReasoningBlockContext {
+        theme,
+        width,
+        surface,
+        duration_ms,
+        active,
+        expanded,
+        selected,
+        hovered,
+    } = context;
     let header_color = thinking_header_color(theme, surface);
-    let header_style = Style::default().fg(header_color);
-    let label_style = header_style.add_modifier(Modifier::BOLD);
+    let muted_style = |color| {
+        let style = Style::default().fg(color);
+        if color == Color::Reset {
+            style.add_modifier(Modifier::DIM)
+        } else {
+            style
+        }
+    };
+    let prefix_style = Style::default().fg(header_color);
+    let header_style = muted_style(header_color);
+    let label_style = if selected {
+        Style::default()
+            .fg(theme.text.primary)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        muted_style(header_color).add_modifier(Modifier::BOLD)
+    };
 
     let (title, body) = reasoning_summary(thinking_text);
-    // Reference question state shows Thought for while Waiting on answers (thinking phase done).
-    let completed = force_completed || !spinner_active;
     if title.is_none() && body.trim().is_empty() {
-        return;
+        return ReasoningBlockLayout::default();
     }
 
-    let active = spinner_active && !completed;
-    let marker = if active {
+    let completed = !active;
+    let marker = if (selected || hovered) && !expanded {
         if theme.glyph_mode() == crate::theme::GlyphMode::Ascii {
-            theme.live_shell.glyphs.streaming
+            ">"
         } else {
-            transcript_streaming_spinner_frame_with_motion(animation_phase, motion_enabled)
+            "›"
         }
     } else {
         theme.live_shell.transcript_glyphs.tool_marker
     };
-    let marker_style = Style::default().fg(if active {
-        theme.text.accent
+    let marker_color = if active {
+        theme.text.tertiary
+    } else if expanded {
+        super::ui_transcript_style::blend_color(surface, theme.text.primary, 0.5)
     } else {
         header_color
-    });
-    let disclosure = if expanded {
-        theme.live_shell.transcript_glyphs.disclosure_open
-    } else {
-        theme.live_shell.transcript_glyphs.disclosure_closed
     };
+    let marker_style = Style::default().fg(marker_color);
     let header_spans = if completed {
-        let mut spans = vec![Span::styled(format!("{marker} Thought"), label_style)];
+        let mut spans = vec![
+            Span::styled(format!("{marker} "), marker_style),
+            Span::styled("Thought", label_style),
+        ];
         if let Some(duration_ms) = duration_ms {
             spans.push(Span::styled(
                 format!(" for {}", format_thought_duration_ms(duration_ms)),
                 header_style,
             ));
         }
-        spans.push(Span::styled(format!(" {disclosure}"), header_style));
         spans
     } else {
         vec![
             Span::styled(format!("{marker} "), marker_style),
             Span::styled("Thinking…", label_style),
-            Span::styled(format!(" {disclosure}"), header_style),
         ]
     };
-    append_prefixed_wrapped_spans_line(
-        lines,
-        if completed {
-            TRANSCRIPT_REASONING_HEADER_PREFIX
-        } else {
-            "  "
-        },
-        header_style,
-        header_spans,
-        width,
-    );
+    let content_prefix = if active || expanded { "   " } else { "  " };
+    append_prefixed_wrapped_spans_line(lines, content_prefix, prefix_style, header_spans, width);
 
     if completed && !expanded {
-        return;
+        return ReasoningBlockLayout::default();
     }
 
     let body = reference_reasoning_body_text(thinking_text);
     if body.trim().is_empty() {
-        return;
+        return ReasoningBlockLayout::default();
     }
 
     let mut body_lines = Vec::new();
-    super::ui_reasoning_markdown::append_reasoning_body_lines(
+    let mut body_selection = super::ui_reasoning_markdown_body::append_reasoning_body_lines(
         &mut body_lines,
         &body,
         theme,
         surface,
-        "  ",
+        content_prefix,
         width,
     );
-    if !completed && !expanded && body_lines.len() > 3 {
+    let preview_inserted = !completed && !expanded && body_lines.len() > 3;
+    let selection_rows = if preview_inserted {
         let preview_start = body_lines.len() - 3;
-        let mut preview = vec![Line::from(Span::styled(
-            "  …",
-            Style::default().fg(theme.text.secondary),
-        ))];
+        let mut preview = vec![Line::from(vec![
+            Span::raw(content_prefix.to_string()),
+            Span::styled("…", muted_style(theme.text.secondary)),
+        ])];
         preview.extend(body_lines.drain(preview_start..));
         body_lines = preview;
-    }
+        let mut preview_selection = vec![None];
+        preview_selection.extend(body_selection.drain(preview_start..).map(Some));
+        preview_selection
+    } else {
+        body_selection.into_iter().map(Some).collect()
+    };
     lines.push(Line::default());
+    let body_start = lines.len();
     lines.extend(body_lines);
-    lines.push(Line::default());
+    ReasoningBlockLayout {
+        body_start: Some(body_start),
+        selection_rows,
+    }
+}
+
+fn reasoning_selection_rows(
+    lines: &[Line<'static>],
+    width: u16,
+    layout: ReasoningBlockLayout,
+) -> Vec<TranscriptSelectionRow> {
+    lines
+        .iter()
+        .enumerate()
+        .map(|(index, line)| {
+            let Some(metadata) = layout
+                .body_start
+                .and_then(|start| index.checked_sub(start))
+                .and_then(|body_index| layout.selection_rows.get(body_index))
+                .copied()
+                .flatten()
+            else {
+                return blank_selection_row(width);
+            };
+            let mut row = selection_rows_for_rendered_line(line, width)
+                .into_iter()
+                .next()
+                .unwrap_or_else(|| blank_selection_row(width));
+            row.continues_previous = metadata.continues_previous;
+            row.copy_offset = metadata.copy_offset;
+            row
+        })
+        .collect()
 }
 
 fn reference_reasoning_body_text(raw: &str) -> String {
@@ -1347,12 +1422,18 @@ fn build_context_tool_group_render_surface(
         }
     };
     let command_group = policy.group_class == Some(TranscriptToolGroupClass::Commands);
+    let kind = TranscriptRenderSurfaceKind::AssistantTool;
+    let width =
+        transcript_surface_render_width(width.saturating_sub(policy.trailing_gap_cells), kind);
+    let single_command = command_group && tool_calls.len() == 1;
+    let group_summary = TranscriptToolGroupSummary::from_tool_calls(tool_calls)
+        .ok_or(TranscriptGrammarError::InvalidGrouping)?;
     let surface = if command_group {
         theme.reference_terminal.canvas
     } else {
         base_surface
     };
-    let tool_rail_motion = tool_calls.iter().rev().find_map(|tool_call| {
+    let mut tool_rail_motion = tool_calls.iter().rev().find_map(|tool_call| {
         matches!(
             tool_call.header.presentation.status,
             ToolCallPresentationStatus::Running
@@ -1360,9 +1441,31 @@ fn build_context_tool_group_render_surface(
         .then_some(tool_call.rail_motion)
         .filter(|motion| matches!(motion, ToolRailMotion::Running { .. }))
     });
-    let aggregate_status = dominant_tool_group_status(tool_calls);
+    let aggregate_status = if command_group {
+        dominant_tool_group_status(tool_calls)
+    } else if group_summary.failed_count > 0 {
+        ToolCallPresentationStatus::Failed
+    } else if group_summary.running_count > 0 {
+        ToolCallPresentationStatus::Running
+    } else if group_summary.queued_count > 0 {
+        ToolCallPresentationStatus::Queued
+    } else if group_summary.cancelled_count > 0 {
+        ToolCallPresentationStatus::Cancelled
+    } else {
+        ToolCallPresentationStatus::Succeeded
+    };
+    if !command_group && aggregate_status == ToolCallPresentationStatus::Failed {
+        tool_rail_motion = None;
+    }
     let rail_color = if tool_calls.is_empty() {
         theme.border.subtle
+    } else if !command_group
+        && matches!(
+            aggregate_status,
+            ToolCallPresentationStatus::Succeeded | ToolCallPresentationStatus::Cancelled
+        )
+    {
+        blend_color(base_surface, theme.text.accent, 0.5)
     } else {
         tool_rail_color(aggregate_status, theme)
     };
@@ -1375,38 +1478,6 @@ fn build_context_tool_group_render_surface(
     } else {
         Some(TranscriptToolCallDisclosureState::Collapsed)
     };
-    let (reads, searches, lists, skills, busy, failed_commands) = tool_calls.iter().fold(
-        (0usize, 0usize, 0usize, 0usize, false, 0usize),
-        |(reads, searches, lists, skills, busy, failed_commands), tool_call| {
-            let (reads, searches, lists, skills) = match tool_call.header.tool_id.as_str() {
-                "fs.read" | "read" => (reads + 1, searches, lists, skills),
-                "fs.glob" | "glob" | "fs.grep" | "grep" => (reads, searches + 1, lists, skills),
-                "fs.ls" | "list" => (reads, searches, lists + 1, skills),
-                "skill" | "skill.load" => (reads, searches, lists, skills + 1),
-                _ => (reads, searches, lists, skills),
-            };
-            let failed_commands = failed_commands
-                + usize::from(
-                    command_group
-                        && tool_call.header.presentation.status
-                            == ToolCallPresentationStatus::Failed,
-                );
-            (
-                reads,
-                searches,
-                lists,
-                skills,
-                busy || !matches!(
-                    tool_call.header.presentation.status,
-                    ToolCallPresentationStatus::Succeeded
-                        | ToolCallPresentationStatus::Failed
-                        | ToolCallPresentationStatus::Cancelled
-                ),
-                failed_commands,
-            )
-        },
-    );
-
     let mut summary = if command_group {
         vec![
             Span::styled(
@@ -1429,43 +1500,35 @@ fn build_context_tool_group_render_surface(
             ),
         ]
     } else {
-        vec![Span::styled(
-            if busy {
-                "Gathering context".to_string()
-            } else {
-                "Gathered context".to_string()
-            },
-            Style::default().fg(theme.text.primary),
-        )]
+        let marker_color = if matches!(
+            aggregate_status,
+            ToolCallPresentationStatus::Running
+                | ToolCallPresentationStatus::Queued
+                | ToolCallPresentationStatus::Failed
+        ) {
+            rail_color
+        } else {
+            theme.reference_terminal.secondary
+        };
+        vec![
+            Span::styled(
+                format!("{} ", theme.live_shell.transcript_glyphs.group_marker),
+                Style::default().fg(marker_color),
+            ),
+            Span::styled(
+                group_summary.semantic_core_label(),
+                Style::default()
+                    .fg(theme.reference_terminal.secondary)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]
     };
     let mut counts = Vec::new();
-    if command_group && failed_commands > 0 {
-        counts.push(format!("{failed_commands} failed"));
-    }
-    if !command_group && reads > 0 {
-        counts.push(format!("{reads} read{}", if reads == 1 { "" } else { "s" }));
-    }
-    if !command_group && searches > 0 {
-        counts.push(format!(
-            "{searches} search{}",
-            if searches == 1 { "" } else { "es" }
-        ));
-    }
-    if !command_group && lists > 0 {
-        counts.push(format!("{lists} list{}", if lists == 1 { "" } else { "s" }));
-    }
-    if !command_group && skills > 0 {
-        counts.push(format!(
-            "{skills} skill{}",
-            if skills == 1 { "" } else { "s" }
-        ));
+    if group_summary.failed_count > 0 {
+        counts.push(format!("{} failed", group_summary.failed_count));
     }
     if !counts.is_empty() {
-        let count_style = if command_group {
-            Style::default().fg(theme.reference_terminal.error)
-        } else {
-            muted_meta_style(theme)
-        };
+        let count_style = Style::default().fg(theme.reference_terminal.error);
         summary.push(Span::styled(" · ", count_style));
         summary.push(Span::styled(counts.join(" · "), count_style));
     }
@@ -1475,16 +1538,22 @@ fn build_context_tool_group_render_surface(
     }
 
     let summary_prefix = TRANSCRIPT_ASSISTANT_BODY_PREFIX.to_string();
-    append_surface_row(
-        &mut lines,
-        &summary_prefix,
-        surface,
-        summary,
-        transcript_surface_content_width(width, false),
-    );
+    if !single_command {
+        append_surface_row(
+            &mut lines,
+            &summary_prefix,
+            surface,
+            summary,
+            transcript_surface_content_width(width, false),
+        );
+    }
 
     if command_group || group_preview_visible || group_expanded {
-        let detail_prefix = format!("{TRANSCRIPT_ASSISTANT_BODY_PREFIX}  ");
+        let detail_prefix = if command_group && !single_command {
+            format!("{TRANSCRIPT_ASSISTANT_BODY_PREFIX}  ")
+        } else {
+            TRANSCRIPT_ASSISTANT_BODY_PREFIX.to_string()
+        };
         let preview_index = context_group_preview_index(tool_calls);
         let dense_start = policy.visible_start;
         if dense_start > 0 {
@@ -1508,24 +1577,45 @@ fn build_context_tool_group_render_surface(
             let mut spans = Vec::new();
             let member_accent = inline_tool_color(tool_call.header.presentation.status, theme);
             if command_group {
+                let command_style = if single_command {
+                    Style::default()
+                        .fg(theme.reference_terminal.secondary)
+                        .add_modifier(Modifier::DIM)
+                } else {
+                    Style::default().fg(theme.reference_terminal.secondary)
+                };
+                let command = command_group_member_command(tool_call);
+                let command = if single_command {
+                    let fixed_width = surface_prefix_width(&detail_prefix)
+                        .saturating_add(display_width(
+                            theme.live_shell.transcript_glyphs.tool_marker,
+                        ))
+                        .saturating_add(display_width(" Run "));
+                    truncate_plain_text(&command, usize::from(width).saturating_sub(fixed_width))
+                } else {
+                    command
+                };
                 spans.push(Span::styled(
                     format!("{} ", theme.live_shell.transcript_glyphs.tool_marker),
                     Style::default().fg(member_accent),
                 ));
                 spans.push(Span::styled(
                     "Run ",
-                    Style::default()
-                        .fg(theme.reference_terminal.secondary)
-                        .add_modifier(Modifier::BOLD),
+                    if single_command {
+                        command_style
+                    } else {
+                        command_style.add_modifier(Modifier::BOLD)
+                    },
                 ));
-                spans.push(Span::styled(
-                    command_group_member_command(tool_call),
-                    Style::default().fg(theme.reference_terminal.secondary),
-                ));
+                spans.push(Span::styled(command, command_style));
             } else {
                 spans.push(Span::styled(
+                    format!("{} ", theme.live_shell.transcript_glyphs.tool_marker),
+                    Style::default().fg(member_accent),
+                ));
+                spans.push(Span::styled(
                     tool_call.header.title.clone(),
-                    Style::default().fg(theme.text.primary),
+                    Style::default().fg(theme.reference_terminal.secondary),
                 ));
             }
             if let Some(subtitle) = tool_call.header.subtitle.as_deref() {
@@ -1547,21 +1637,62 @@ fn build_context_tool_group_render_surface(
                     }
                 }
             }
-            if command_group && group_expanded && tool_call.details_visible() {
-                let mut detail_render = ToolSectionRender {
-                    lines: Vec::new(),
-                    interaction_rows: Vec::new(),
-                    diff_hunk_offsets: Vec::new(),
-                };
-                super::ui_transcript_tool_render::append_tool_call_detail_blocks(
-                    &mut detail_render,
-                    tool_call,
-                    theme,
-                    width,
-                    surface,
-                    None,
-                );
-                lines.extend(detail_render.lines);
+            if group_expanded && tool_call.details_visible() {
+                let single_command_body = single_command.then(|| {
+                    tool_call
+                        .detail_blocks
+                        .iter()
+                        .find_map(|detail| match detail {
+                            TranscriptToolCallDetailBlock::BashPanel {
+                                output,
+                                expand_hint,
+                                ..
+                            } => Some((output.as_str(), expand_hint.as_deref())),
+                            _ => None,
+                        })
+                });
+                if let Some(Some((output, expand_hint))) = single_command_body {
+                    let body_prefix = format!("{detail_prefix}    ");
+                    for row in output.trim().lines() {
+                        append_surface_row(
+                            &mut lines,
+                            &body_prefix,
+                            surface,
+                            vec![Span::styled(
+                                row.to_string(),
+                                Style::default().fg(theme.text.primary),
+                            )],
+                            transcript_surface_content_width(width, false),
+                        );
+                    }
+                    if let Some(hint) = expand_hint.filter(|hint| has_trimmed_content(hint)) {
+                        append_surface_row(
+                            &mut lines,
+                            &body_prefix,
+                            surface,
+                            vec![Span::styled(
+                                hint.trim().to_string(),
+                                muted_meta_style(theme),
+                            )],
+                            transcript_surface_content_width(width, false),
+                        );
+                    }
+                } else {
+                    let mut detail_render = ToolSectionRender {
+                        lines: Vec::new(),
+                        interaction_rows: Vec::new(),
+                        diff_hunk_offsets: Vec::new(),
+                    };
+                    super::ui_transcript_tool_render::append_tool_call_detail_blocks(
+                        &mut detail_render,
+                        tool_call,
+                        theme,
+                        width,
+                        surface,
+                        None,
+                    );
+                    lines.extend(detail_render.lines);
+                }
             }
         }
     }
@@ -1582,22 +1713,39 @@ fn build_context_tool_group_render_surface(
 
     let mut interaction_rows = vec![None; lines.len()];
     if !interaction_rows.is_empty() {
-        interaction_rows[0] = Some(full_width_interaction_row(
+        let target = if !command_group && tool_calls.len() == 1 {
+            let tool_call = tool_calls[0];
+            if tool_call.replay_read_only {
+                TranscriptMouseTarget::ToolGroup {
+                    tool_call_ids: vec![tool_call.tool_call_id.clone()],
+                }
+            } else {
+                tool_call.child_session_id.as_ref().map_or_else(
+                    || TranscriptMouseTarget::ToolGroup {
+                        tool_call_ids: vec![tool_call.tool_call_id.clone()],
+                    },
+                    |session_id| TranscriptMouseTarget::SubagentSession {
+                        session_id: session_id.clone(),
+                    },
+                )
+            }
+        } else {
             TranscriptMouseTarget::ToolGroup {
                 tool_call_ids: tool_calls
                     .iter()
                     .map(|tool_call| tool_call.tool_call_id.clone())
                     .collect(),
-            },
-        ));
+            }
+        };
+        interaction_rows[0] = Some(full_width_interaction_row(target));
     }
 
     let raw = TranscriptVisualEntryDraft {
-        kind: TranscriptRenderSurfaceKind::AssistantTool,
+        kind,
         leading_gap_rows: 0,
         placement: TranscriptBlockPlacement::Flow,
-        show_outer_rail: false,
-        rail_glyph: theme.live_shell.transcript_glyphs.rail,
+        show_outer_rail: true,
+        rail_glyph: context_group_rail_glyph(aggregate_status, theme),
         rail_color,
         surface,
         lines,
@@ -1608,6 +1756,21 @@ fn build_context_tool_group_render_surface(
         tool_rail_motion,
     };
     Ok(raw)
+}
+
+fn context_group_rail_glyph(status: ToolCallPresentationStatus, theme: &Theme) -> &'static str {
+    if theme.glyph_mode() == crate::theme::GlyphMode::Ascii {
+        "|"
+    } else if matches!(
+        status,
+        ToolCallPresentationStatus::Running
+            | ToolCallPresentationStatus::Queued
+            | ToolCallPresentationStatus::Failed
+    ) {
+        "┃"
+    } else {
+        "❙"
+    }
 }
 
 fn context_group_preview_index(tool_calls: &[&TranscriptToolCallSection]) -> usize {
@@ -1998,6 +2161,7 @@ mod tests {
             header: super::super::TranscriptTurnHeader {
                 status: ActivityStatus::Done,
                 is_selected: false,
+                is_hovered: false,
                 provider_request_open: false,
                 profile_label: "default".to_string(),
                 model_id: "model-ui10".to_string(),
@@ -2034,6 +2198,7 @@ mod tests {
             header: super::super::TranscriptTurnHeader {
                 status: ActivityStatus::Done,
                 is_selected: true,
+                is_hovered: false,
                 provider_request_open: false,
                 profile_label: "default".to_string(),
                 model_id: "model-selected-user".to_string(),
@@ -2469,6 +2634,7 @@ mod tests {
             header: super::super::TranscriptTurnHeader {
                 status: ActivityStatus::Done,
                 is_selected: false,
+                is_hovered: false,
                 provider_request_open: false,
                 profile_label: "default".to_string(),
                 model_id: "model".to_string(),
@@ -2595,6 +2761,7 @@ mod tests {
             header: super::super::TranscriptTurnHeader {
                 status: ActivityStatus::Done,
                 is_selected: false,
+                is_hovered: false,
                 provider_request_open: false,
                 profile_label: "default".to_string(),
                 model_id: "model".to_string(),

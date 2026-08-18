@@ -93,6 +93,7 @@ pub(super) fn build_transcript_tool_call_section(
     let (mut title, icon, visual_style, uses_generic_output_visibility) = match display_tool_id {
         "fs.read" | "read" => {
             let path = tool_path_display(tool_call);
+            header_path_metadata = path.clone();
             let title = match tool_call.status {
                 ToolCallDisplayStatus::Succeeded => {
                     completed_read_tool_title(tool_call, path.as_deref())

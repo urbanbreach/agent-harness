@@ -178,10 +178,10 @@ impl TranscriptVisualEntryMetadata {
                 TranscriptToolStatus::Queued
                 | TranscriptToolStatus::Running
                 | TranscriptToolStatus::Waiting => TranscriptVisualEntryLifecycle::Active,
-                TranscriptToolStatus::Failed | TranscriptToolStatus::Cancelled => {
-                    TranscriptVisualEntryLifecycle::Failed
+                TranscriptToolStatus::Failed => TranscriptVisualEntryLifecycle::Failed,
+                TranscriptToolStatus::Succeeded | TranscriptToolStatus::Cancelled => {
+                    TranscriptVisualEntryLifecycle::Settled
                 }
-                TranscriptToolStatus::Succeeded => TranscriptVisualEntryLifecycle::Settled,
             },
             TranscriptBlockContent::Footer { state, .. } => match state {
                 TranscriptLifecycleState::Queued
@@ -203,6 +203,10 @@ impl TranscriptVisualEntryMetadata {
         };
         let accent = if draft.selected_rail {
             TranscriptVisualEntryAccent::Selected
+        } else if lifecycle == TranscriptVisualEntryLifecycle::Settled
+            && matches!(&id, TranscriptVisualEntryId::ToolGroup { .. })
+        {
+            TranscriptVisualEntryAccent::Hidden
         } else if let Some(motion) = draft.tool_rail_motion {
             TranscriptVisualEntryAccent::Animated(motion)
         } else if draft.show_outer_rail {
