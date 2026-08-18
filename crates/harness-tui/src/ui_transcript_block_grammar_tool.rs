@@ -15,16 +15,13 @@ pub(super) fn group_policy(summary: &TranscriptToolGroupSummary) -> TranscriptTo
             0
         },
         disclosure: match summary.disclosure {
-            TranscriptToolDisclosureMode::Collapsed
-                if summary.kind == TranscriptToolGroupKind::Context
-                    && (summary.running_count > 0
-                        || summary.queued_count > 0
-                        || summary.waiting_count > 0) =>
+            TranscriptToolDisclosureMode::Collapsed => TranscriptToolDisclosure::Collapsed,
+            TranscriptToolDisclosureMode::Preview
+                if summary.kind == TranscriptToolGroupKind::Commands =>
             {
                 TranscriptToolDisclosure::Preview
             }
-            TranscriptToolDisclosureMode::Collapsed => TranscriptToolDisclosure::Collapsed,
-            TranscriptToolDisclosureMode::Preview => TranscriptToolDisclosure::Preview,
+            TranscriptToolDisclosureMode::Preview => TranscriptToolDisclosure::Collapsed,
             TranscriptToolDisclosureMode::Expanded => TranscriptToolDisclosure::Expanded,
         },
         status: group_status(summary),

@@ -66,28 +66,92 @@ pub(super) enum TranscriptToolVerb {
     Search,
     List,
     Skill,
+    WebFetch,
+    WebSearch,
+    Subagent,
 }
 
 impl TranscriptToolVerb {
     pub(super) fn from_tool_id(tool_id: &str) -> Option<Self> {
         match tool_id {
             "shell.run" | "bash" => Some(Self::Run),
-            "fs.read" | "read" => Some(Self::Read),
-            "fs.glob" | "glob" | "fs.grep" | "grep" => Some(Self::Search),
-            "fs.ls" | "list" => Some(Self::List),
+            "fs.read" | "read" | "session_read" => Some(Self::Read),
+            "fs.glob" | "glob" | "fs.grep" | "grep" | "search.code" | "codesearch"
+            | "session_search" | "ast_grep_search" => Some(Self::Search),
+            "fs.ls" | "list" | "session_list" => Some(Self::List),
             "skill" | "skill.load" => Some(Self::Skill),
+            "web.fetch" | "webfetch" => Some(Self::WebFetch),
+            "search.web" | "websearch" => Some(Self::WebSearch),
+            "agent.spawn" | "task" => Some(Self::Subagent),
             _ => None,
+        }
+    }
+
+    fn from_tool_call(tool_call: &TranscriptToolCallSection) -> Option<Self> {
+        let verb = Self::from_tool_id(&tool_call.header.tool_id)?;
+        if verb == Self::Read
+            && tool_call
+                .header
+                .path_metadata
+                .as_deref()
+                .is_some_and(|path| path.rsplit('/').next() == Some("SKILL.md"))
+        {
+            Some(Self::Skill)
+        } else {
+            Some(verb)
         }
     }
 
     pub(super) const fn group_kind(self) -> TranscriptToolGroupKind {
         match self {
             Self::Run => TranscriptToolGroupKind::Commands,
-            Self::Read | Self::Search | Self::List | Self::Skill => {
-                TranscriptToolGroupKind::Context
-            }
+            Self::Read
+            | Self::Search
+            | Self::List
+            | Self::Skill
+            | Self::WebFetch
+            | Self::WebSearch
+            | Self::Subagent => TranscriptToolGroupKind::Context,
         }
     }
+
+    const fn verb(self, running: bool) -> &'static str {
+        let (settled, active) = match self {
+            Self::Run | Self::Subagent => ("Ran", "Running"),
+            Self::Read | Self::Skill => ("Read", "Reading"),
+            Self::Search | Self::WebSearch => ("Searched", "Searching"),
+            Self::List => ("Listed", "Listing"),
+            Self::WebFetch => ("Fetched", "Fetching"),
+        };
+        if running {
+            active
+        } else {
+            settled
+        }
+    }
+
+    const fn noun(self, count: usize) -> &'static str {
+        let (singular, plural) = match self {
+            Self::Run => ("command", "commands"),
+            Self::Read => ("file", "files"),
+            Self::Search => ("pattern", "patterns"),
+            Self::List => ("dir", "dirs"),
+            Self::Skill => ("skill", "skills"),
+            Self::WebFetch | Self::WebSearch => ("website", "websites"),
+            Self::Subagent => ("subagent", "subagents"),
+        };
+        if count == 1 {
+            singular
+        } else {
+            plural
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TranscriptToolVerbCount {
+    verb: TranscriptToolVerb,
+    count: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -109,6 +173,7 @@ pub(super) struct TranscriptToolGroupSummary {
     pub(super) span_len: usize,
     pub(super) member_count: usize,
     pub(super) verbs: Vec<TranscriptToolVerb>,
+    verb_counts: Vec<TranscriptToolVerbCount>,
     pub(super) queued_count: usize,
     pub(super) running_count: usize,
     pub(super) waiting_count: usize,
@@ -123,23 +188,7 @@ pub(super) struct TranscriptToolGroupSummary {
 impl TranscriptToolGroupSummary {
     pub(super) fn from_adjacent(parts: &[TranscriptAssistantPart]) -> Option<Self> {
         let first = parts.first()?.tool_call()?;
-        let first_verb = TranscriptToolVerb::from_tool_id(&first.header.tool_id)?;
-        let kind = first_verb.group_kind();
-        let mut summary = Self {
-            kind,
-            span_len: 0,
-            member_count: 0,
-            verbs: Vec::new(),
-            queued_count: 0,
-            running_count: 0,
-            waiting_count: 0,
-            succeeded_count: 0,
-            failed_count: 0,
-            cancelled_count: 0,
-            disclosure: TranscriptToolDisclosureMode::Collapsed,
-            duration_ms: None,
-            result_count: None,
-        };
+        let mut summary = Self::empty(first)?;
 
         for part in parts {
             if matches!(part, TranscriptAssistantPart::Reasoning(_)) && summary.member_count > 0 {
@@ -149,54 +198,133 @@ impl TranscriptToolGroupSummary {
             let Some(tool_call) = part.tool_call() else {
                 break;
             };
-            let Some(verb) = TranscriptToolVerb::from_tool_id(&tool_call.header.tool_id) else {
-                break;
-            };
-            if verb.group_kind() != kind {
+            if !summary.push(tool_call) {
                 break;
             }
-
             summary.span_len = summary.span_len.saturating_add(1);
-            summary.member_count += 1;
-            if !summary.verbs.contains(&verb) {
-                summary.verbs.push(verb);
-            }
-            match tool_call.header.presentation.status {
-                ToolCallPresentationStatus::Queued => summary.queued_count += 1,
-                ToolCallPresentationStatus::Running => summary.running_count += 1,
-                ToolCallPresentationStatus::Waiting => summary.waiting_count += 1,
-                ToolCallPresentationStatus::Succeeded => summary.succeeded_count += 1,
-                ToolCallPresentationStatus::Failed => summary.failed_count += 1,
-                ToolCallPresentationStatus::Cancelled => summary.cancelled_count += 1,
-            }
-            summary.disclosure = if tool_call.expanded {
-                TranscriptToolDisclosureMode::Expanded
-            } else if summary.disclosure != TranscriptToolDisclosureMode::Expanded
-                && tool_call.details_preview_visible
-            {
-                TranscriptToolDisclosureMode::Preview
-            } else {
-                summary.disclosure
-            };
-            if let Some(duration_ms) = tool_call.header.presentation.duration_ms {
-                summary.duration_ms = Some(
-                    summary
-                        .duration_ms
-                        .unwrap_or_default()
-                        .saturating_add(duration_ms),
-                );
-            }
-            if let Some(result_count) = tool_call.header.presentation.result_count {
-                summary.result_count = Some(
-                    summary
-                        .result_count
-                        .unwrap_or_default()
-                        .saturating_add(result_count),
-                );
-            }
         }
 
         (summary.member_count > 0).then_some(summary)
+    }
+
+    pub(super) fn from_tool_calls(tool_calls: &[&TranscriptToolCallSection]) -> Option<Self> {
+        let first = *tool_calls.first()?;
+        let mut summary = Self::empty(first)?;
+        for tool_call in tool_calls {
+            if !summary.push(tool_call) {
+                break;
+            }
+            summary.span_len = summary.span_len.saturating_add(1);
+        }
+        (summary.member_count > 0).then_some(summary)
+    }
+
+    fn empty(first: &TranscriptToolCallSection) -> Option<Self> {
+        let first_verb = TranscriptToolVerb::from_tool_call(first)?;
+        Some(Self {
+            kind: first_verb.group_kind(),
+            span_len: 0,
+            member_count: 0,
+            verbs: Vec::new(),
+            verb_counts: Vec::new(),
+            queued_count: 0,
+            running_count: 0,
+            waiting_count: 0,
+            succeeded_count: 0,
+            failed_count: 0,
+            cancelled_count: 0,
+            disclosure: TranscriptToolDisclosureMode::Collapsed,
+            duration_ms: None,
+            result_count: None,
+        })
+    }
+
+    fn push(&mut self, tool_call: &TranscriptToolCallSection) -> bool {
+        if tool_call.header.presentation.status == ToolCallPresentationStatus::Waiting {
+            return false;
+        }
+        let Some(verb) = TranscriptToolVerb::from_tool_call(tool_call) else {
+            return false;
+        };
+        if verb.group_kind() != self.kind {
+            return false;
+        }
+
+        self.member_count += 1;
+        if let Some(bucket) = self
+            .verb_counts
+            .iter_mut()
+            .find(|bucket| bucket.verb == verb)
+        {
+            bucket.count += 1;
+        } else {
+            self.verbs.push(verb);
+            self.verb_counts
+                .push(TranscriptToolVerbCount { verb, count: 1 });
+        }
+        match tool_call.header.presentation.status {
+            ToolCallPresentationStatus::Queued => self.queued_count += 1,
+            ToolCallPresentationStatus::Running => self.running_count += 1,
+            ToolCallPresentationStatus::Waiting => return false,
+            ToolCallPresentationStatus::Succeeded => self.succeeded_count += 1,
+            ToolCallPresentationStatus::Failed => self.failed_count += 1,
+            ToolCallPresentationStatus::Cancelled => self.cancelled_count += 1,
+        }
+        self.disclosure = if tool_call.expanded {
+            TranscriptToolDisclosureMode::Expanded
+        } else if self.disclosure != TranscriptToolDisclosureMode::Expanded
+            && tool_call.details_preview_visible
+        {
+            TranscriptToolDisclosureMode::Preview
+        } else {
+            self.disclosure
+        };
+        if let Some(duration_ms) = tool_call.header.presentation.duration_ms {
+            self.duration_ms = Some(
+                self.duration_ms
+                    .unwrap_or_default()
+                    .saturating_add(duration_ms),
+            );
+        }
+        if let Some(result_count) = tool_call.header.presentation.result_count {
+            self.result_count = Some(
+                self.result_count
+                    .unwrap_or_default()
+                    .saturating_add(result_count),
+            );
+        }
+        true
+    }
+
+    pub(super) const fn folds_as_group(&self) -> bool {
+        match self.kind {
+            TranscriptToolGroupKind::Commands => self.member_count > 0,
+            TranscriptToolGroupKind::Context => self.member_count > 0,
+        }
+    }
+
+    pub(super) fn semantic_label(&self) -> String {
+        let mut label = self.semantic_core_label();
+        if self.failed_count > 0 {
+            label.push_str(&format!(" · {} failed", self.failed_count));
+        }
+        label
+    }
+
+    pub(super) fn semantic_core_label(&self) -> String {
+        let running = self.running_count > 0 || self.queued_count > 0;
+        self.verb_counts
+            .iter()
+            .map(|bucket| {
+                format!(
+                    "{} {} {}",
+                    bucket.verb.verb(running),
+                    bucket.count,
+                    bucket.verb.noun(bucket.count)
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
     }
 }
 
@@ -303,6 +431,7 @@ pub(super) struct TranscriptUserMessageSection {
 pub(super) struct TranscriptTurnHeader {
     pub(super) status: ActivityStatus,
     pub(super) is_selected: bool,
+    pub(super) is_hovered: bool,
     pub(super) provider_request_open: bool,
     pub(super) profile_label: String,
     pub(super) model_id: String,
@@ -538,6 +667,22 @@ mod tool_group_tests {
     }
 
     #[test]
+    fn single_command_folds_as_command_group() {
+        let parts = vec![tool_part(
+            "command",
+            "bash",
+            ToolCallDisplayStatus::Succeeded,
+            false,
+            false,
+        )];
+
+        let summary = TranscriptToolGroupSummary::from_adjacent(&parts).expect("command group");
+
+        assert_eq!(summary.kind, TranscriptToolGroupKind::Commands);
+        assert!(summary.folds_as_group());
+    }
+
+    #[test]
     fn adjacent_group_stops_at_typed_group_boundary() {
         let parts = vec![
             tool_part(
@@ -571,6 +716,137 @@ mod tool_group_tests {
             summary.verbs,
             vec![TranscriptToolVerb::Read, TranscriptToolVerb::Search]
         );
+    }
+
+    #[test]
+    fn context_group_label_uses_first_seen_order_and_grok_nouns() {
+        let parts = vec![
+            tool_part(
+                "read",
+                "read",
+                ToolCallDisplayStatus::Succeeded,
+                false,
+                false,
+            ),
+            tool_part(
+                "list",
+                "list",
+                ToolCallDisplayStatus::Succeeded,
+                false,
+                false,
+            ),
+            tool_part(
+                "search",
+                "grep",
+                ToolCallDisplayStatus::Succeeded,
+                false,
+                false,
+            ),
+        ];
+
+        let summary = TranscriptToolGroupSummary::from_adjacent(&parts).expect("context group");
+
+        assert_eq!(
+            summary.semantic_label(),
+            "Read 1 file, Listed 1 dir, Searched 1 pattern"
+        );
+    }
+
+    #[test]
+    fn context_group_label_uses_present_tense_for_every_bucket_while_running() {
+        let parts = vec![
+            tool_part(
+                "read",
+                "session_read",
+                ToolCallDisplayStatus::Succeeded,
+                false,
+                false,
+            ),
+            tool_part(
+                "search",
+                "ast_grep_search",
+                ToolCallDisplayStatus::Running,
+                false,
+                false,
+            ),
+        ];
+
+        let summary = TranscriptToolGroupSummary::from_adjacent(&parts).expect("context group");
+
+        assert_eq!(
+            summary.semantic_label(),
+            "Reading 1 file, Searching 1 pattern"
+        );
+    }
+
+    #[test]
+    fn context_group_label_appends_failed_member_count() {
+        let parts = vec![
+            tool_part(
+                "failed",
+                "web.fetch",
+                ToolCallDisplayStatus::Failed,
+                false,
+                false,
+            ),
+            tool_part(
+                "succeeded",
+                "search.web",
+                ToolCallDisplayStatus::Succeeded,
+                false,
+                false,
+            ),
+        ];
+
+        let summary = TranscriptToolGroupSummary::from_adjacent(&parts).expect("context group");
+
+        assert_eq!(
+            summary.semantic_label(),
+            "Fetched 1 website, Searched 1 website · 1 failed"
+        );
+    }
+
+    #[test]
+    fn skill_file_read_uses_the_skill_bucket() {
+        let mut part = tool_part(
+            "skill-read",
+            "read",
+            ToolCallDisplayStatus::Succeeded,
+            false,
+            false,
+        );
+        let TranscriptAssistantPart::ToolCall(tool) = &mut part else {
+            panic!("tool")
+        };
+        tool.header.path_metadata = Some(".agent-harness/skills/harness-qa/SKILL.md".into());
+
+        let summary = TranscriptToolGroupSummary::from_adjacent(&[part]).expect("context group");
+
+        assert_eq!(summary.semantic_label(), "Read 1 skill");
+    }
+
+    #[test]
+    fn waiting_context_tool_stays_outside_verb_group() {
+        let parts = vec![
+            tool_part(
+                "read",
+                "read",
+                ToolCallDisplayStatus::Succeeded,
+                false,
+                false,
+            ),
+            tool_part(
+                "waiting",
+                "grep",
+                ToolCallDisplayStatus::PendingPermission,
+                false,
+                false,
+            ),
+        ];
+
+        let summary = TranscriptToolGroupSummary::from_adjacent(&parts).expect("context group");
+
+        assert_eq!(summary.member_count, 1);
     }
 
     #[test]

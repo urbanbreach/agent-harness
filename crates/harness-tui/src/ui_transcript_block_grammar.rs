@@ -22,6 +22,9 @@ pub(in crate::ui::ui_transcript) use tool::tool_family;
 #[path = "ui_transcript_block_grammar_compaction.rs"]
 mod compaction;
 
+#[path = "ui_transcript_block_grammar_build.rs"]
+mod build;
+
 #[path = "ui_transcript_block_grammar_normalize.rs"]
 mod normalize;
 #[cfg(test)]
@@ -69,7 +72,8 @@ pub(in crate::ui) fn validate_block_spec(
         let group = *family == TranscriptToolFamily::Group;
         if ids.is_empty()
             || group != policy.group_class.is_some()
-            || group != (policy.member_count > 1)
+            || (group && policy.member_count == 0)
+            || (!group && policy.member_count != 1)
             || policy.visible_start > policy.member_count
             || (*family == TranscriptToolFamily::Task) != subagent.is_some()
         {
@@ -80,21 +84,40 @@ pub(in crate::ui) fn validate_block_spec(
 }
 
 fn grammar_leading_gap(
-    previous: Option<TranscriptBlockRole>,
-    current: TranscriptBlockRole,
+    previous: Option<&TranscriptBlockSpec>,
+    current: &TranscriptBlockSpec,
 ) -> usize {
-    match (previous, current) {
-        (None, _) => 0,
-        (
-            Some(TranscriptBlockRole::Tool),
-            TranscriptBlockRole::Tool | TranscriptBlockRole::Reasoning,
+    previous.map_or(0, |previous| {
+        usize::from(
+            !(block_is_groupable(previous)
+                && block_is_groupable(current)
+                && block_is_collapsed(previous)
+                && block_is_collapsed(current)),
         )
-        | (Some(TranscriptBlockRole::Reasoning), TranscriptBlockRole::Tool)
-        | (
-            Some(TranscriptBlockRole::AssistantBody),
-            TranscriptBlockRole::Reasoning | TranscriptBlockRole::AssistantBody,
-        ) => 0,
-        (Some(_), _) => 1,
+    })
+}
+
+fn block_is_groupable(spec: &TranscriptBlockSpec) -> bool {
+    matches!(
+        spec.role,
+        TranscriptBlockRole::Reasoning | TranscriptBlockRole::Tool
+    )
+}
+
+fn block_is_collapsed(spec: &TranscriptBlockSpec) -> bool {
+    match &spec.content {
+        TranscriptBlockContent::Reasoning { expanded, .. } => !expanded,
+        TranscriptBlockContent::Tool { policy, .. } => matches!(
+            policy.disclosure,
+            TranscriptToolDisclosure::None | TranscriptToolDisclosure::Collapsed
+        ),
+        TranscriptBlockContent::UserMessage { .. }
+        | TranscriptBlockContent::AssistantBody { .. }
+        | TranscriptBlockContent::Footer { .. }
+        | TranscriptBlockContent::Error { .. }
+        | TranscriptBlockContent::Compaction { .. } => false,
+        #[cfg(test)]
+        TranscriptBlockContent::Synthetic { .. } => false,
     }
 }
 

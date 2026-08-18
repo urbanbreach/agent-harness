@@ -75,18 +75,17 @@ pub(in crate::ui) fn resolve_entry_surfaces(
         return Err(TranscriptGrammarError::RowMismatch);
     }
     specs.iter().try_for_each(validate_block_spec)?;
-    let mut previous_role = None;
+    let mut previous_spec = None;
     specs
         .iter()
         .zip(surfaces)
-        .map(|(spec, surface)| {
-            let mut spec = spec.clone();
-            let role = spec.role;
-            spec.spacing.leading_gap_rows = grammar_leading_gap(previous_role, role);
+        .map(|(source_spec, surface)| {
+            let mut spec = source_spec.clone();
+            spec.spacing.leading_gap_rows = grammar_leading_gap(previous_spec, source_spec);
             if let TranscriptBlockContent::Footer { lifecycle, .. } = &spec.content {
                 spec.placement = footer_placement(*lifecycle);
             }
-            previous_role = Some(role);
+            previous_spec = Some(source_spec);
             resolve_block_surface_for_activity(activity_first_seq, &spec, surface)
         })
         .collect()
