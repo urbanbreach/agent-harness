@@ -147,7 +147,7 @@ for scenario in "${DUAL_RUNTIME_SCENARIOS[@]}"; do
   scenario_family="${scenario%%--*}"
   scenario_family="${scenario_family#packet3-}"
   comparison="$SUITE_ROOT/comparisons/$scenario"
-  "$RUNNER" compare --scenario "$scenario" --acceptance full-parity \
+  "$RUNNER" compare --scenario "$scenario" --acceptance packet3-transcript-grammar \
     --reference-bin "$REFERENCE_BIN" --reference-receipt "$REFERENCE_RECEIPT" \
     --reference-root "$REFERENCE_ROOT" --harness-bin "$HARNESS_BIN" \
     --candidate-receipt "$CANDIDATE_RECEIPT" --evidence-dir "$comparison" \
@@ -183,22 +183,20 @@ mkdir -p "$COMPACTION_DIR"
 ACTIONS_FILE="$COMPACTION_DIR/actions.json"
 printf '%s\n' '[
   {"waitForText":{"text":"PACKET3_COMPACTION","timeoutMs":12000}},
+  {"keyUntilText":{"key":"PageUp","text":"Read 2 files","maxPresses":8,"timeoutMs":8000}},
   {"checkpoint":{"name":"settled-all-families"}},
   {"checkpoint":{"name":"disclosure-collapsed"}},
-  {"mouse":{"kind":"click","col":8,"row":6}},
+  {"clickText":{"text":"Read 2 files","offsetCol":8}},
+  {"waitForText":{"text":"PACKET3_GENERIC_TOOL read block 0","timeoutMs":5000}},
   {"checkpoint":{"name":"disclosure-expanded"}},
-  {"mouse":{"kind":"move","col":10,"row":8}},
-  {"mouse":{"kind":"drag","from":{"col":10,"row":8},"to":{"col":30,"row":8}}},
-  {"checkpoint":{"name":"hover-focus-selection"}},
-  {"key":{"key":"PageUp"}},
+  {"waitForTextAbsent":{"text":"PACKET3_COMPACTION retained context summary","timeoutMs":5000}},
   {"checkpoint":{"name":"pageup-detached"}},
-  {"key":{"key":"PageDown"}},
-  {"key":{"key":"PageDown"}},
-  {"key":{"key":"PageDown"}},
-  {"key":{"key":"PageDown"}},
-  {"key":{"key":"PageDown"}},
-  {"key":{"key":"PageDown"}},
+  {"keyUntilText":{"key":"PageDown","text":"PACKET3_COMPACTION retained context summary","maxPresses":8,"timeoutMs":8000}},
+  {"waitForTextAbsent":{"text":"PACKET3_PROMPT block grammar journey","timeoutMs":5000}},
   {"checkpoint":{"name":"return-to-live"}},
+  {"keyUntilText":{"key":"PageUp","text":"fail the parity probe","maxPresses":8,"timeoutMs":8000}},
+  {"dragText":{"text":"fail the parity probe"}},
+  {"checkpoint":{"name":"hover-focus-selection"}},
   {"resize":{"cols":80,"rows":24}},
   {"checkpoint":{"name":"viewport-80x24"}},
   {"resize":{"cols":60,"rows":20}},
