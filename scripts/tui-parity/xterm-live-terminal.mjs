@@ -194,6 +194,15 @@ html,body{margin:0;padding:0;background:#141414}
     const rect = document.querySelector('.xterm-screen').getBoundingClientRect();
     return { left: rect.left, top: rect.top, width: rect.width, height: rect.height, cols: term.cols, rows: term.rows };
   };
+  window.__findTextCell = (text) => {
+    const buffer = term.buffer.active;
+    for (let row = 0; row < buffer.length; row += 1) {
+      const line = buffer.getLine(row);
+      const col = line ? line.translateToString(true).indexOf(text) : -1;
+      if (col >= 0) return { col: col + 1, row: row + 1 };
+    }
+    return null;
+  };
   window.__terminalCursor = () => {
     const buffer = term.buffer.active;
     const focused = document.activeElement === term.textarea;
@@ -285,6 +294,36 @@ async function settleFrame(page) {
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 }
 
+async function waitForResizeSettle(
+  sample,
+  expected,
+  previousScreenText,
+  { timeoutMs = 3000, pollMs = 25, previousOutputLength, stableSamplesRequired = 6 } = {},
+) {
+  const deadline = Date.now() + timeoutMs;
+  let lastSample;
+  let stableSamples = 0;
+  while (Date.now() <= deadline) {
+    const current = await sample();
+    const ready = current.cols === expected.cols
+      && current.rows === expected.rows
+      && current.screenText !== previousScreenText
+      && (previousOutputLength === undefined || current.outputLength > previousOutputLength);
+    if (ready) {
+      stableSamples = current.screenText === lastSample?.screenText
+        && current.outputLength === lastSample?.outputLength
+        ? stableSamples + 1
+        : 1;
+      if (stableSamples >= stableSamplesRequired) return current;
+    } else {
+      stableSamples = 0;
+    }
+    lastSample = current;
+    await delay(pollMs);
+  }
+  throw new Error(`terminal did not settle after resize to ${expected.cols}x${expected.rows}`);
+}
+
 async function captureFrame(page, rawStream, redactStream, restore) {
   const masked = redactStream ? redactStream(rawStream) : rawStream;
   const changed = masked !== rawStream;
@@ -302,7 +341,7 @@ async function captureFrame(page, rawStream, redactStream, restore) {
   return { pngBuffer, screenText, rawStream, dimensions, cursor };
 }
 
-async function driveActions({ page, ptyProc, actions, pauseWrites, resumeWrites, redactStream, capabilities }) {
+async function driveActions({ page, ptyProc, ptyOutputLength, actions, pauseWrites, resumeWrites, redactStream, capabilities }) {
   const startedAt = Date.now();
   const timeline = [];
   const checkpoints = [];
@@ -313,6 +352,22 @@ async function driveActions({ page, ptyProc, actions, pauseWrites, resumeWrites,
     const startedAtMillis = Date.now() - startedAt;
     if (type === "waitForText") {
       await page.waitForFunction((text) => window.__screenText().includes(text), { timeout: payload.timeoutMs, polling: 20 }, payload.text);
+    } else if (type === "waitForTextAbsent") {
+      await page.waitForFunction((text) => !window.__screenText().includes(text), { timeout: payload.timeoutMs, polling: 20 }, payload.text);
+    } else if (type === "keyUntilText") {
+      const deadline = Date.now() + payload.timeoutMs;
+      let found = await page.evaluate((text) => window.__screenText().includes(text), payload.text);
+      for (let press = 0; !found && press < payload.maxPresses && Date.now() <= deadline; press += 1) {
+        const before = await page.evaluate(() => window.__screenText());
+        await pressKey(page, payload.key, payload.modifiers);
+        await page.waitForFunction(
+          ({ before, text }) => window.__screenText() !== before || window.__screenText().includes(text),
+          { timeout: Math.max(1, Math.min(750, deadline - Date.now())), polling: 20 },
+          { before, text: payload.text },
+        ).catch(() => {});
+        found = await page.evaluate((text) => window.__screenText().includes(text), payload.text);
+      }
+      if (!found) throw new Error(`terminal text not found after ${payload.maxPresses} ${payload.key} presses: ${payload.text}`);
     } else if (type === "wait") {
       await delay(payload.ms);
     } else if (type === "input") {
@@ -322,9 +377,40 @@ async function driveActions({ page, ptyProc, actions, pauseWrites, resumeWrites,
     } else if (type === "key") {
       await pressKey(page, payload.key, payload.modifiers);
     } else if (type === "resize") {
+      const previousScreenText = await page.evaluate(() => window.__screenText());
+      const previousOutputLength = ptyOutputLength?.();
       await page.setViewport({ width: payload.cols * 10 + 40, height: payload.rows * 20 + 40, deviceScaleFactor: 2 });
       await page.evaluate(({ cols, rows }) => window.__resizeTerm(cols, rows), payload);
       if (ptyProc) ptyProc.resize(payload.cols, payload.rows);
+      await waitForResizeSettle(
+        async () => {
+          const state = await page.evaluate(() => {
+            const geometry = window.__terminalGeometry();
+            return { cols: geometry.cols, rows: geometry.rows, screenText: window.__screenText() };
+          });
+          return { ...state, outputLength: ptyOutputLength?.() };
+        },
+        payload,
+        previousScreenText,
+        { previousOutputLength },
+      );
+    } else if (type === "clickText") {
+      const target = await page.evaluate((text) => window.__findTextCell(text), payload.text);
+      if (!target) throw new Error(`click text not found: ${payload.text}`);
+      await driveMouse(page, {
+        kind: "click",
+        col: target.col + (payload.offsetCol || 0),
+        row: target.row,
+      });
+    } else if (type === "dragText") {
+      const target = await page.evaluate((text) => window.__findTextCell(text), payload.text);
+      if (!target) throw new Error(`drag text not found: ${payload.text}`);
+      const startCol = target.col + (payload.offsetCol || 0);
+      await driveMouse(page, {
+        kind: "drag",
+        from: { col: startCol, row: target.row },
+        to: { col: startCol + payload.text.length - 1, row: target.row },
+      });
     } else if (type === "mouse") {
       await driveMouse(page, payload);
     } else {
@@ -435,7 +521,16 @@ async function captureLive(options) {
       await page.focus("#t");
     }
 
-    const actionResult = await driveActions({ page, ptyProc, actions, pauseWrites, resumeWrites, redactStream, capabilities });
+    const actionResult = await driveActions({
+      page,
+      ptyProc,
+      ptyOutputLength: () => rawStream.length,
+      actions,
+      pauseWrites,
+      resumeWrites,
+      redactStream,
+      capabilities,
+    });
     if (ptyProc && inputs.length) await driveInput(page, inputs, keyDelayMs);
     if (ptyProc) await delay(dwellMs);
     const snapshot = await pauseWrites();
@@ -477,4 +572,4 @@ async function captureRawPty(options) {
   };
 }
 
-export { captureLive, captureRawPty };
+export { captureLive, captureRawPty, waitForResizeSettle };

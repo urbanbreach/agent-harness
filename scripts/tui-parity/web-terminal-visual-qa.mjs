@@ -9,7 +9,7 @@
 import { createRequire } from "node:module";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
-import { captureLive, captureRawPty } from "./xterm-live-terminal.mjs";
+import { captureLive, captureRawPty, waitForResizeSettle } from "./xterm-live-terminal.mjs";
 import { BUILT_IN_REDACTION_RULE_COUNT, compileRedactions, redactEvidence } from "./web-terminal-redaction.mjs";
 import { stripAnsi } from "./strip-ansi.mjs";
 
@@ -56,7 +56,9 @@ Inputs:
   --no-browser           Skip xterm.js/Chrome; capture the raw pty stream only (no PNG). For chrome-less CI.
 
 Action objects:
-  {"waitForText":{"text":"Ready","timeoutMs":5000}}  {"wait":{"ms":100}}  {"input":{"text":"hello"}}
+  {"waitForText":{"text":"Ready","timeoutMs":5000}}  {"waitForTextAbsent":{"text":"Busy","timeoutMs":5000}}
+  {"keyUntilText":{"key":"PageUp","text":"Earlier row","maxPresses":8,"timeoutMs":5000}}
+  {"clickText":{"text":"Ran 10 commands"}}  {"wait":{"ms":100}}  {"input":{"text":"hello"}}
   {"key":{"key":"Enter","modifiers":{"shift":true,"alt":false,"ctrl":false}}}  {"resize":{"cols":80,"rows":24}}
   {"mouse":{"kind":"move","col":4,"row":2}}  {"mouse":{"kind":"click","col":4,"row":2}}
   {"mouse":{"kind":"wheel","deltaY":-100}}
@@ -98,9 +100,17 @@ function parseAction(value, source) {
     if (typeof payload.name !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(payload.name)) {
       throw new Error("checkpoint name must be a safe relative leaf name");
     }
-  } else if (tag === "waitForText") {
+  } else if (tag === "waitForText" || tag === "waitForTextAbsent") {
     if (typeof payload.text !== "string" || payload.text.length === 0) throw new Error("waitForText.text must be non-empty");
     parsePositiveInt("waitForText.timeoutMs", payload.timeoutMs);
+  } else if (tag === "keyUntilText") {
+    if (typeof payload.key !== "string" || payload.key.length === 0) throw new Error("keyUntilText.key must be non-empty");
+    if (typeof payload.text !== "string" || payload.text.length === 0) throw new Error("keyUntilText.text must be non-empty");
+    parsePositiveInt("keyUntilText.maxPresses", payload.maxPresses);
+    parsePositiveInt("keyUntilText.timeoutMs", payload.timeoutMs);
+  } else if (tag === "clickText" || tag === "dragText") {
+    if (typeof payload.text !== "string" || payload.text.length === 0) throw new Error(`${tag}.text must be non-empty`);
+    if (payload.offsetCol !== undefined && !Number.isInteger(payload.offsetCol)) throw new Error(`${tag}.offsetCol must be an integer`);
   } else if (tag === "wait") {
     if (!Number.isInteger(payload.ms) || payload.ms < 0) throw new Error("wait.ms must be a non-negative integer");
   } else if (tag === "input") {
@@ -306,6 +316,29 @@ async function selfTest() {
   if (safeOsc52.includes("U0VDUkVU") || !safeOsc52.includes("[REDACTED]")) {
     throw new Error("OSC52 payload redaction failed");
   }
+  const resizeSamples = [
+    { cols: 80, rows: 24, screenText: "xterm reflow", outputLength: 10 },
+    { cols: 80, rows: 24, screenText: "xterm reflow", outputLength: 10 },
+    { cols: 80, rows: 24, screenText: "intermediate write", outputLength: 15 },
+    { cols: 80, rows: 24, screenText: "intermediate write", outputLength: 15 },
+    { cols: 80, rows: 24, screenText: "application repaint", outputLength: 20 },
+    { cols: 80, rows: 24, screenText: "application repaint", outputLength: 20 },
+    { cols: 80, rows: 24, screenText: "application repaint", outputLength: 20 },
+    { cols: 80, rows: 24, screenText: "application repaint", outputLength: 20 },
+    { cols: 80, rows: 24, screenText: "application repaint", outputLength: 20 },
+    { cols: 80, rows: 24, screenText: "application repaint", outputLength: 20 },
+  ];
+  let resizeSampleIndex = 0;
+  const settled = await waitForResizeSettle(
+    async () => resizeSamples[Math.min(resizeSampleIndex++, resizeSamples.length - 1)],
+    { cols: 80, rows: 24 },
+    "before",
+    { timeoutMs: 100, pollMs: 0, previousOutputLength: 10 },
+  );
+  if (settled.screenText !== "application repaint") throw new Error("resize settle accepted xterm-only reflow");
+  parseAction({ waitForTextAbsent: { text: "gone", timeoutMs: 1 } }, "self-test");
+  parseAction({ keyUntilText: { key: "PageUp", text: "earlier", maxPresses: 8, timeoutMs: 1 } }, "self-test");
+  parseAction({ clickText: { text: "Ran 10 commands" } }, "self-test");
   process.stdout.write("self-test PASS: xterm assets resolve; node-pty emits true-color ANSI + CJK\n");
 }
 
