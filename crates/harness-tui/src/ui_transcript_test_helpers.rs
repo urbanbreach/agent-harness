@@ -143,7 +143,7 @@ pub(crate) const GRAMMAR_ALL_FAMILIES: [GrammarFamily; 12] = [
     GrammarFamily::Body,
     GrammarFamily::Body,
     GrammarFamily::Tool,
-    GrammarFamily::Command,
+    GrammarFamily::Tool,
     GrammarFamily::Tool,
     GrammarFamily::Tool,
     GrammarFamily::Tool,

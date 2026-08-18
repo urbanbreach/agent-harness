@@ -278,16 +278,16 @@ fn assert_semantic_entry_viewport(width: u16, height: u16) {
             .iter()
             .filter(|entry| entry.show_outer_rail || entry.selected_rail)
             .count(),
-        1,
-        "only the active semantic entry may own an accent rail at {width}x{height}"
+        3,
+        "settled and independently active semantic group rails must remain visible at {width}x{height}"
     );
     assert_eq!(
         streaming_entries
             .iter()
             .filter(|entry| entry.metadata.accent != TranscriptVisualEntryAccent::Hidden)
             .count(),
-        1,
-        "semantic accent ownership must match painted rail ownership at {width}x{height}"
+        2,
+        "independently active semantic groups must retain distinct accent ownership at {width}x{height}"
     );
 
     let streaming_document =
@@ -327,16 +327,16 @@ fn assert_semantic_entry_viewport(width: u16, height: u16) {
             .iter()
             .filter(|entry| entry.show_outer_rail || entry.selected_rail)
             .count(),
-        0,
-        "settled semantic entries must not retain an accent rail at {width}x{height}"
+        2,
+        "settled semantic groups must retain their dim state rails at {width}x{height}"
     );
     assert_eq!(
         settled_entries
             .iter()
             .filter(|entry| entry.metadata.accent != TranscriptVisualEntryAccent::Hidden)
             .count(),
-        0,
-        "settled semantic entries must not retain motion accent ownership at {width}x{height}"
+        1,
+        "settled semantic entries retain only the selected accent owner at {width}x{height}"
     );
     assert!(
         settled_entries.iter().all(|entry| {
@@ -419,7 +419,7 @@ fn retained_assistant_entries_keep_source_ids_after_earlier_insertion_and_replay
 }
 
 #[test]
-fn concurrent_active_entries_keep_lifecycle_but_share_one_selected_accent() {
+fn concurrent_active_entries_keep_independent_semantic_group_rails() {
     let theme = Theme::default();
     let mut app = AppState::new_live(None, false, None);
     for envelope in [
@@ -499,16 +499,16 @@ fn concurrent_active_entries_keep_lifecycle_but_share_one_selected_accent() {
             .iter()
             .filter(|entry| entry.metadata.accent != TranscriptVisualEntryAccent::Hidden)
             .count(),
-        1,
-        "only one active entry owns the visible accent"
+        2,
+        "the active context group and command entry both own visible state rails"
     );
     assert_eq!(
         entries
             .iter()
             .filter(|entry| entry.tool_rail_motion.is_some())
             .count(),
-        1,
-        "non-winning active entries must not paint motion rails"
+        2,
+        "both active semantic entries must paint their motion rails"
     );
     assert_eq!(
         entries.iter().filter(|entry| entry.selected_rail).count(),

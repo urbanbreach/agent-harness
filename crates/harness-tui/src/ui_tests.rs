@@ -661,9 +661,9 @@ fn help_surface_lists_active_bindings() {
     let debug = render_debug(&app, 100, 30);
     assert!(debug.contains("Keyboard Shortcuts"));
     assert!(debug.contains("Essentials"));
-    assert!(debug.contains("Send"));
+    assert!(debug.contains("Submit prompt"));
     assert!(debug.contains("Ctrl+s"));
-    assert!(debug.contains("Cycle mode"));
+    assert!(debug.contains("Cycle reasoning preset"));
     assert!(debug.contains("Shift+Tab"));
     assert!(debug.contains("Command palette"));
     assert!(debug.contains('?'));

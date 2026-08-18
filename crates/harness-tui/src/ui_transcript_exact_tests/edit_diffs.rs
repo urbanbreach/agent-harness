@@ -742,10 +742,10 @@ pub(crate) fn exact_test_transcript_harness_tool_progress_indicators() {
     ));
     let initial_rendered = initial_lines.join("\n");
     assert!(
-        initial_rendered.contains("Gathering context · 2 reads"),
+        initial_rendered.contains("◈ Reading 2 files"),
         "missing mixed context summary\n{initial_rendered}"
     );
-    assert!(initial_lines
+    assert!(!initial_lines
         .iter()
         .any(|line| line.contains("Read src/lib.rs [offset=3, limit=8]")));
     assert!(initial_lines.iter().any(|line| line.contains("Edit")));
@@ -758,7 +758,7 @@ pub(crate) fn exact_test_transcript_harness_tool_progress_indicators() {
         &Theme::default(),
         120,
     ));
-    assert!(updated_lines
+    assert!(!updated_lines
         .iter()
         .any(|line| line.contains("Read src/lib.rs [offset=3, limit=8]")));
 
@@ -787,13 +787,12 @@ pub(crate) fn exact_test_transcript_harness_tool_progress_indicators() {
     ))
     .join("\n");
     assert!(
-        mixed_context_rendered.contains("Gathering context · 1 read · 1 search"),
+        mixed_context_rendered.contains("◈ Reading 1 file, Searching 1 pattern"),
         "mixed context tools should stay grouped\n{mixed_context_rendered}"
     );
     assert!(
-        mixed_context_rendered.contains("◆ Glob")
-            || mixed_context_rendered.contains("Glob \"*.rs\""),
-        "preview should show the active running member\n{mixed_context_rendered}"
+        !mixed_context_rendered.contains("Glob \"*.rs\""),
+        "collapsed verb group should hide member rows\n{mixed_context_rendered}"
     );
 }
 

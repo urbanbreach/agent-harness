@@ -403,10 +403,11 @@ pub(crate) fn exact_test_transcript_task_rows_show_child_status_duration_and_cou
         120,
     ))
     .join("\n");
+    assert!(parent_transcript_text.contains("Ran 1 subagent"));
     assert!(
-        parent_transcript_text.contains("Researcher Task (background) — audit transcript parity")
+        !parent_transcript_text.contains("Researcher Task (background) — audit transcript parity")
     );
-    assert!(parent_transcript_text.contains("↳ 2 toolcalls · 1.6s"));
+    assert!(!parent_transcript_text.contains("↳ 2 toolcalls · 1.6s"));
     assert!(!parent_transcript_text.contains("background_output("));
     assert!(!parent_transcript_text.contains("task(task_id=\"agent_worker\")"));
     assert!(!parent_transcript_text.contains("view subagents"));
@@ -443,9 +444,12 @@ pub(crate) fn exact_test_transcript_task_rows_match_reference_inline_title_and_n
     let rendered = lines.join("\n");
 
     assert!(
-        rendered.contains("◆ Researcher Task — audit transcript parity")
-            || rendered.contains("Researcher Task — audit transcript parity"),
-        "task row should use Harness task title shape\n{rendered}"
+        rendered.contains("◈ Running 1 subagent"),
+        "task row should use the semantic subagent group header\n{rendered}"
+    );
+    assert!(
+        !rendered.contains("Researcher Task — audit transcript parity"),
+        "collapsed semantic groups must hide their member rows\n{rendered}"
     );
     assert!(
         !rendered.contains("audit transcript parity · Researcher Agent"),
