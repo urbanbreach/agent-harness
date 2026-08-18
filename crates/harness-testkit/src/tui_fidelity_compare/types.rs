@@ -30,6 +30,7 @@ pub const COMPARISON_RECEIPT_SCHEMA: &str = "harness.tui-fidelity.comparison.v2"
 pub enum AcceptanceProfile {
     FullParity,
     Packet2Scheduling,
+    Packet3TranscriptGrammar,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

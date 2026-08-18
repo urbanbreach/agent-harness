@@ -54,6 +54,9 @@ pub(super) fn summarize(
                     check_gap(&run.metrics.candidate, run.candidate_active_window)?;
                 }
             }
+            AcceptanceProfile::Packet3TranscriptGrammar => {
+                check_gap(&run.metrics.candidate, run.candidate_active_window)?;
+            }
         }
     }
     let native = runs

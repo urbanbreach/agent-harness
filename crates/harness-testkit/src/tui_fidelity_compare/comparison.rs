@@ -1,6 +1,7 @@
 mod presentation;
 mod provenance;
 mod semantic_pixels;
+mod transcript_grammar;
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -60,12 +61,39 @@ pub fn compare_capture_with_profile(
     record_gate(&mut gates, "checkpoint", compare_checkpoints(capture));
     record_gate(&mut gates, "exit", compare_exits(scenario, capture));
     record_gate(&mut gates, "cleanup", compare_cleanup(cleanup));
+    match profile {
+        AcceptanceProfile::Packet3TranscriptGrammar => record_gate(
+            &mut gates,
+            "transcript_grammar",
+            transcript_grammar::compare(scenario, capture),
+        ),
+        AcceptanceProfile::FullParity | AcceptanceProfile::Packet2Scheduling => {}
+    }
+    match profile {
+        AcceptanceProfile::Packet3TranscriptGrammar => record_gate(
+            &mut gates,
+            "transcript_motion",
+            transcript_grammar::compare_motion(scenario, capture),
+        ),
+        AcceptanceProfile::FullParity | AcceptanceProfile::Packet2Scheduling => {}
+    }
     let capture_succeeded = gates.get("presentation").is_some_and(|gate| gate.passed);
     let comparison_passed = capture_succeeded
         && match profile {
             AcceptanceProfile::FullParity => gates.values().all(|gate| gate.passed),
             AcceptanceProfile::Packet2Scheduling => [
                 "presentation",
+                "provenance",
+                "checkpoint",
+                "exit",
+                "cleanup",
+            ]
+            .iter()
+            .all(|name| gates.get(*name).is_some_and(|gate| gate.passed)),
+            AcceptanceProfile::Packet3TranscriptGrammar => [
+                "presentation",
+                "transcript_grammar",
+                "transcript_motion",
                 "provenance",
                 "checkpoint",
                 "exit",
