@@ -199,7 +199,7 @@ impl DashboardInputRouter {
                 action: "search".to_string(),
             },
             ShortcutEntry {
-                key: "h".to_string(),
+                key: self.keymap.get_binding_str(Action::Help),
                 action: "help".to_string(),
             },
         ];

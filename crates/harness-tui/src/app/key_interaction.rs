@@ -7,6 +7,7 @@ const QUIT_CONFIRMATION_BANNER: &str = "Press Ctrl+Q again to quit";
 
 impl AppState {
     pub fn handle_key(&mut self, key: KeyEvent) {
+        self.modal_interaction.invalidate();
         if self.handle_pending_quit_confirmation(&key) {
             self.maybe_auto_exit();
             return;
@@ -184,6 +185,12 @@ impl AppState {
         }
 
         if self.handle_navigation_overlay_key(&key) {
+            self.maybe_auto_exit();
+            return;
+        }
+
+        if self.active_review_surface == Some(ReviewSurface::Help) {
+            self.handle_help_browser_key(key);
             self.maybe_auto_exit();
             return;
         }
@@ -425,6 +432,9 @@ impl AppState {
     pub(in crate::app) fn open_review_surface(&mut self, surface: ReviewSurface) {
         self.active_tab = Tab::Run;
         self.active_review_surface = Some(surface);
+        if surface == ReviewSurface::Help {
+            self.help_browser.reset();
+        }
         if !self.replay_mode {
             self.live_details_drawer_open = false;
         }

@@ -649,6 +649,7 @@ impl AppState {
             self.pending_subagent_footer_target = None;
             self.secondary_surfaces.selection_dragging = false;
             self.secondary_surfaces.pending_click = None;
+            self.modal_interaction.invalidate();
         }
         self.last_frame_area = Some(area);
         if let Some(dashboard) = self.dashboard.as_mut() {
@@ -869,6 +870,10 @@ impl AppState {
         clicked_operator_sidebar_section: Option<OperatorSidebarSection>,
         transcript_scrollbar_hit: Option<TranscriptScrollbarHit>,
     ) -> bool {
+        if let Some(changed) = self.handle_top_modal_mouse(mouse, frame_area) {
+            let cleared = self.clear_blocked_pointer_state();
+            return changed || cleared;
+        }
         if self.handle_connect_dialog_mouse(mouse, frame_area) {
             return true;
         }

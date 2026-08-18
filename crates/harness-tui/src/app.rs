@@ -119,11 +119,13 @@ mod exact_tests;
 mod file_mentions;
 pub mod footer_state;
 mod foreign_import;
+mod help_browser;
 pub mod interaction_reducer;
 mod key_interaction;
 mod lifecycle;
 mod lineage;
 mod memory_browser;
+mod modal_interaction;
 mod model_favorites;
 mod model_metadata;
 mod model_switcher;
@@ -188,10 +190,14 @@ pub use self::activity::{
 pub use self::auth_dialog::{ConnectDialogState, ConnectProviderOption};
 use self::auth_display::auth_status_banner;
 use self::composer::ComposerState;
+pub(crate) use self::help_browser::{HelpBrowserState, HelpMode, HelpRow};
 pub use self::lifecycle::{
     default_shell_registry, Focus, InterruptReason, LifecycleShellState, MemoryCaps,
     PostRunHandoffAction, ReviewSurface, SessionMode, ShellDescriptor, ShellKind,
     StartupLauncherAction, Tab, UiIntent,
+};
+pub(crate) use self::modal_interaction::{
+    ModalAction, ModalInteractionState, ModalSurfaceKey, ModalTarget, ModalViewKey,
 };
 use self::new_worktree_dialog::NewWorktreeDialogState;
 use self::permission_prompt::PermissionPromptState;
@@ -342,6 +348,7 @@ pub struct AppState {
     pub(crate) terminal_panel: TerminalPanelState,
     last_frame_area: Option<Rect>,
     pub(crate) secondary_surfaces: SecondarySurfaceState,
+    pub(crate) modal_interaction: ModalInteractionState,
     dashboard: Option<DashboardIntegration>,
     dashboard_return_focus: Option<Focus>,
     pub(crate) transcript_view: TranscriptViewState,
@@ -565,6 +572,7 @@ pub struct AppState {
     auto_theme_resolver: AutoResolver,
     theme_color_level: ColorLevel,
     welcome: WelcomeState,
+    pub(crate) help_browser: HelpBrowserState,
     pub model_options: Vec<ModelOption>,
     pub model_filtered: Vec<usize>,
     pub model_selected: usize,
@@ -655,6 +663,8 @@ impl Default for AppState {
             terminal_panel: TerminalPanelState::default(),
             last_frame_area: None,
             secondary_surfaces: SecondarySurfaceState::default(),
+            help_browser: HelpBrowserState::default(),
+            modal_interaction: ModalInteractionState::default(),
             dashboard: None,
             dashboard_return_focus: None,
             transcript_view: TranscriptViewState::default(),
