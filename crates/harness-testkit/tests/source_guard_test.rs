@@ -7,7 +7,7 @@ mod repo_root;
 
 use repo_root::repo_root;
 
-const PINNED_REVISION: &str = "be713136d2a69080743a3f6b3c72077057e5948f";
+const PINNED_REVISION: &str = "eb267feff13129e568df38fb6fdf0ceb65f735d6";
 
 #[test]
 fn source_guard_accepts_clean_pinned_reference() {

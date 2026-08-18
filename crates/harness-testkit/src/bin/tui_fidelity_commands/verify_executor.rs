@@ -13,7 +13,7 @@ use harness_testkit::tui_fidelity_verify::VerificationProfile;
 
 use super::verify::VerifyArgs;
 
-const REFERENCE_REVISION: &str = "be713136d2a69080743a3f6b3c72077057e5948f";
+const REFERENCE_REVISION: &str = "eb267feff13129e568df38fb6fdf0ceb65f735d6";
 
 pub(super) struct VerifyExecutor {
     repo_root: PathBuf,

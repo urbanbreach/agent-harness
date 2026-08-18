@@ -23,7 +23,7 @@ use harness_testkit::tui_fidelity_runner::{
 const STARTUP_SMOKE: &str = include_str!("../../tests/fixtures/tui_fidelity/startup-smoke.json");
 const PACKET2_SUSTAINED_STREAM: &str =
     include_str!("../../tests/fixtures/tui_fidelity/packet2-sustained-stream.json");
-const REFERENCE_REVISION: &str = "be713136d2a69080743a3f6b3c72077057e5948f";
+const REFERENCE_REVISION: &str = "eb267feff13129e568df38fb6fdf0ceb65f735d6";
 
 struct CompareArgs {
     scenario: String,
@@ -224,7 +224,7 @@ fn prepare_compare(
 fn parse_compare(arguments: Vec<OsString>) -> Result<CompareArgs, String> {
     let mut values = arguments.into_iter();
     if values.next().as_deref() != Some(std::ffi::OsStr::new("compare")) {
-        return Err("usage: tui-fidelity compare --scenario ID --reference-bin PATH --reference-receipt PATH --reference-root PATH --harness-bin PATH --candidate-receipt PATH --evidence-dir PATH [--acceptance full-parity|packet2-scheduling] [--browser-bin PATH] [--font-family NAME] [--node-modules PATH] [--timeout-ms N]".to_owned());
+        return Err("usage: tui-fidelity compare --scenario ID --reference-bin PATH --reference-receipt PATH --reference-root PATH --harness-bin PATH --candidate-receipt PATH --evidence-dir PATH [--acceptance full-parity|packet2-scheduling|packet3-transcript-grammar] [--browser-bin PATH] [--font-family NAME] [--node-modules PATH] [--timeout-ms N]".to_owned());
     }
     let mut scenario = None;
     let mut reference_bin = None;
@@ -264,6 +264,9 @@ fn parse_compare(arguments: Vec<OsString>) -> Result<CompareArgs, String> {
                 acceptance_profile = match value.to_str() {
                     Some("full-parity") => AcceptanceProfile::FullParity,
                     Some("packet2-scheduling") => AcceptanceProfile::Packet2Scheduling,
+                    Some("packet3-transcript-grammar") => {
+                        AcceptanceProfile::Packet3TranscriptGrammar
+                    }
                     _ => return Err("invalid --acceptance profile".to_owned()),
                 };
             }
