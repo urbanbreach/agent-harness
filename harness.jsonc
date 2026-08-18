@@ -65,6 +65,29 @@
             },
           },
         },
+        "gpt-5.6-luna": {
+          "name": "GPT 5.6 Luna",
+          "limit": {
+            "context": 1050000,
+            "input": 1050000,
+            "output": 128000,
+          },
+          "modalities": {
+            "input": ["text", "image", "pdf"],
+            "output": ["text"],
+          },
+          "options": { "serviceTier": "priority" },
+          "variants": {
+            "low": {
+              "name": "Low",
+              "metadata": { "reasoningEffort": "low" },
+            },
+            "max": {
+              "name": "Max",
+              "metadata": { "reasoningEffort": "max" },
+            },
+          },
+        },
         "gpt-5.4": {
           "name": "GPT 5.4 (272k)",
           "limit": { "context": 272000, "input": 272000, "output": 128000 },
@@ -394,22 +417,26 @@
   },
 
   // Default primary model and smaller model used by internal runtime operations.
-  "model": "umans-ai-coding-plan/umans-kimi-k2.7",
+  "model": "openai-codex/gpt-5.6-luna",
   "small_model": "umans-ai-coding-plan/umans-flash",
 
   // One generic parent plus named subagents for bounded task delegation.
   "agent": {
     "default": {
-      "model": "umans-ai-coding-plan/umans-kimi-k2.7",
+      "model": "openai-codex/gpt-5.6-luna",
+      "variant": "max",
     },
     "general": {
-      "model": "umans-ai-coding-plan/umans-kimi-k2.7",
+      "model": "openai-codex/gpt-5.6-luna",
+      "variant": "max",
     },
     "explore": {
-      "model": "umans-ai-coding-plan/umans-flash",
+      "model": "openai-codex/gpt-5.6-luna",
+      "variant": "low",
     },
     "librarian": {
-      "model": "umans-ai-coding-plan/umans-flash",
+      "model": "openai-codex/gpt-5.6-luna",
+      "variant": "low",
     },
   },
 

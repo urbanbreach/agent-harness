@@ -176,7 +176,7 @@ fn umans_provider_has_api_key_env_without_auth_provider() {
 }
 
 #[test]
-fn dogfood_agents_use_umans_models() {
+fn dogfood_agents_use_gpt_56_luna_requested_variants() {
     // arrange
     let (_config_temp, config_path) = copy_harness_jsonc_to_temp();
 
@@ -184,14 +184,15 @@ fn dogfood_agents_use_umans_models() {
     let config = load_config_from_file(&config_path).unwrap_or_abort();
 
     // assert
-    for (agent_name, agent) in &config.agents {
-        let uses_umans_provider = agent.model_ref.starts_with("umans-ai-coding-plan/")
-            || agent.model_ref.starts_with("umans-ai-coding-plan:");
-        assert!(
-            uses_umans_provider,
-            "agent `{agent_name}` must dogfood Umans models, got `{}`",
-            agent.model_ref
-        );
+    for agent_name in ["default", "general"] {
+        let agent = config.agents.get(agent_name).unwrap_or_abort();
+        assert_eq!(agent.model_ref, "openai-codex/gpt-5.6-luna");
+        assert_eq!(agent.variant.as_deref(), Some("max"));
+    }
+    for agent_name in ["explore", "librarian"] {
+        let agent = config.agents.get(agent_name).unwrap_or_abort();
+        assert_eq!(agent.model_ref, "openai-codex/gpt-5.6-luna");
+        assert_eq!(agent.variant.as_deref(), Some("low"));
     }
 }
 
