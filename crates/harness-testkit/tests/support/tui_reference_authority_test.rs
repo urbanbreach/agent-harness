@@ -5,10 +5,10 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 pub const AUTHORITY_PATH: &str = "configs/tui-fidelity-reference-authority.json";
-pub const ACTIVE_REVISION: &str = "be713136d2a69080743a3f6b3c72077057e5948f";
+pub const ACTIVE_REVISION: &str = "eb267feff13129e568df38fb6fdf0ceb65f735d6";
 pub const ACTIVE_BINARY_SHA256: &str =
-    "14fc3307626aec7ff9cd0738bd1b011ff194b527c5cc15eb9589b5ca34f60b67";
-pub const ACTIVE_VERSION: &str = "grok 1.0.1 (be71313) [alpha]";
+    "8ff869cf2db0dea1ee29ee0d7028b180f37ac8ac108c601452fa00d28125ad08";
+pub const ACTIVE_VERSION: &str = "grok 1.0.3 (eb267fe)";
 const HISTORICAL_REVISION_PREFIX: &str = "c1b5909ec707c069f1d21a93917af044";
 const HISTORICAL_REVISION_SUFFIX: &str = "e71da0d7";
 const RETIRED_REVISION_PREFIX: &str = "500129c714ad1b10e6095481f4a8387a";

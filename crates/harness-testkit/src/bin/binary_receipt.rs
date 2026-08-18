@@ -2,7 +2,7 @@ use harness_testkit::binary_receipt::{read_receipt, ReceiptExpectations, BINARY_
 use std::env;
 use std::path::PathBuf;
 
-const REFERENCE_REVISION: &str = "be713136d2a69080743a3f6b3c72077057e5948f";
+const REFERENCE_REVISION: &str = "eb267feff13129e568df38fb6fdf0ceb65f735d6";
 const REFERENCE_PACKAGE: &str = "xai-grok-pager-bin";
 const REFERENCE_EXECUTABLE: &str = "xai-grok-pager";
 

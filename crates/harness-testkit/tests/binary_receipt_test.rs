@@ -6,7 +6,7 @@ use harness_testkit::UnwrapOrAbort;
 use std::path::Path;
 use std::process::Command;
 
-const REFERENCE_REVISION: &str = "be713136d2a69080743a3f6b3c72077057e5948f";
+const REFERENCE_REVISION: &str = "eb267feff13129e568df38fb6fdf0ceb65f735d6";
 const HARNESS_REVISION: &str = "harness-test-revision";
 
 #[test]
