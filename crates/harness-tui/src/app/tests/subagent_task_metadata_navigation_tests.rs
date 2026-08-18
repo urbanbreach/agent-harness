@@ -71,7 +71,7 @@ pub(crate) fn mouse_click_on_task_row_uses_harness_session_metadata() {
         }),
     ));
 
-    let (column, row) = transcript_click_position(&app, "Plan Task — Smoke test subagent dispatch");
+    let (column, row) = transcript_click_position(&app, "Ran 1 subagent");
     assert_eq!(
         transcript_mouse_target(&app, TEST_FRAME_AREA, column, row),
         Some(TranscriptMouseTarget::SubagentSession {

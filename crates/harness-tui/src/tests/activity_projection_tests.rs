@@ -321,8 +321,8 @@ pub(super) fn tool_call_requested_renders_pending_status() {
 
     let debug = format!("{:?}", terminal.backend().buffer());
     assert!(
-        debug.contains("Read test.txt"),
-        "transcript must show tool title"
+        debug.contains("Reading 1 file"),
+        "transcript must show the queued semantic tool header"
     );
 }
 
@@ -372,8 +372,8 @@ pub(super) fn tool_call_started_renders_running_status() {
 
     let debug = format!("{:?}", terminal.backend().buffer());
     assert!(
-        debug.contains("Read test.txt"),
-        "transcript must show tool title"
+        debug.contains("Reading 1 file"),
+        "transcript must show the running semantic tool header"
     );
 }
 

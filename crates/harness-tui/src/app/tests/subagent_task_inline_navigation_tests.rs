@@ -39,7 +39,7 @@ pub(crate) fn mouse_click_on_task_inline_row_opens_subagent_session() {
         }),
     ));
 
-    let (column, row) = transcript_click_position(&app, "inspect child");
+    let (column, row) = transcript_click_position(&app, "Running 1 subagent");
     assert_eq!(
         transcript_mouse_target(&app, TEST_FRAME_AREA, column, row),
         Some(TranscriptMouseTarget::SubagentSession {
@@ -152,7 +152,7 @@ pub(crate) fn mouse_click_on_task_inline_row_uses_task_row_child_session() {
         }),
     ));
 
-    let (column, row) = transcript_click_position(&app, "Explore Task — inspect child");
+    let (column, row) = transcript_click_position(&app, "Running 1 subagent");
     assert_eq!(
         transcript_mouse_target(&app, TEST_FRAME_AREA, column, row),
         Some(TranscriptMouseTarget::SubagentSession {

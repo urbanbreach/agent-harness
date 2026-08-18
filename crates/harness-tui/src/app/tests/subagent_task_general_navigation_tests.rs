@@ -101,7 +101,7 @@ pub(crate) fn mouse_up_on_completed_general_task_row_opens_child_session() {
         }),
     ));
 
-    let (column, row) = transcript_click_position(&app, "Task — Subagent functionality smoke test");
+    let (column, row) = transcript_click_position(&app, "Ran 1 subagent");
     assert_eq!(
         transcript_mouse_target(&app, TEST_FRAME_AREA, column, row),
         Some(TranscriptMouseTarget::SubagentSession {
