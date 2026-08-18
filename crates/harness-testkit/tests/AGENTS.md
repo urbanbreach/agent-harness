@@ -1,67 +1,52 @@
 # AGENTS: crates/harness-testkit/tests
 
 ## OVERVIEW
-Workflow-heavy E2E tests for deterministic PTY evidence, env-gated live-proxy signoff, native screenshot signoff, simulation validation, focus regions, secret scanning, and artifact provenance. Runtime-independent helpers belong in `crates/harness-testkit/src/`.
+Owner tests for deterministic simulation/parity, TUI fidelity and PTY evidence, env-gated live/native signoff, receipts, source guards, secret scanning, and artifact provenance.
 
-Read root `AGENTS.md` first. Testkit helper rules live in `crates/harness-testkit/AGENTS.md`; TUI shell contracts live in `crates/harness-tui/AGENTS.md`.
-
-## STRUCTURE
-```text
-tests/
-├── pty_e2e.rs             # offline deterministic PTY lane; custom test target
-├── live_proxy_e2e.rs      # ignored/env-gated live proxy preflight/signoff wrappers
-├── native_visual_e2e.rs   # ignored local display/capture screenshot signoff lane
-├── simulation_validator_test.rs
-├── secretscan_test.rs
-├── focus_region_test.rs
-├── README.live-proxy.md
-└── support/               # repo root, simulation validator, focus region helpers
-```
+Read `../AGENTS.md` first. TUI shell/render contracts live in `../../harness-tui/AGENTS.md` and `../../harness-tui/tests/AGENTS.md`.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |------|----------|-------|
-| Offline UI regression | `pty_e2e.rs` | Single-threaded deterministic PTY evidence and manifest artifact copies. |
-| Live proxy setup | `README.live-proxy.md`, `live_proxy_e2e.rs` | Env/config preflight; behavior assertions mostly live in deterministic owners. |
-| Native screenshots | `native_visual_e2e.rs` | Local display/capture helper checks, manifest-backed screenshots. |
-| Simulation validation | `simulation_validator_test.rs`, `support/simulation_validator.rs` | Checks `docs/testing/simulation-matrix.json`. |
-| Secret hygiene | `secretscan_test.rs` | Scans simulation/cassette artifacts when env points at them. |
-| Focus regions | `focus_region_test.rs`, `support/focus_region.rs` | Screenshot focus metadata and region calculations. |
-| Repo helpers | `support/repo_root.rs` | Keep local to test-only path resolution. |
+| Offline PTY | `pty_e2e.rs` | Custom target; single-threaded deterministic evidence and manifest copies. |
+| Live proxy | `README.live-proxy.md`, `live_proxy_e2e.rs` | Ignored, env-gated preflight and narrow live signoff wrappers. |
+| Native visual | `native_visual_e2e.rs` | Ignored local display/capture signoff; screenshot provenance only. |
+| Simulation | `simulation_validator_test.rs`, `support/simulation_validator.rs` | Validates the matrix, events, reports, and expected artifacts. |
+| Semantic parity | `parity_*_test.rs` | Cells, artifact schema, differential proof, motion/timing, scenarios, scheduler. |
+| Fidelity scenarios | `tui_fidelity_{scenario,scenario_rejection,baseline}_test.rs` | Scenario schema, rejection paths, and pinned baseline identity. |
+| Fidelity execution | `tui_fidelity_runner_test.rs`, `tui_fidelity_pty_observer_test.rs`, `support/tui_fidelity_runner.rs` | Dual-runtime PTY fixture, observer, cleanup, and presentation receipts. |
+| Compare/aggregate | `tui_fidelity_{compare,aggregate,presentation_receipt}_test.rs` | Per-run gates, physical evidence, no-visible-gap, pinned multi-run aggregate. |
+| Closure/verify | `tui_fidelity_{closure,matrix,task_gate,verify}_test.rs`, `support/tui_fidelity_verify_*.rs` | Small test targets delegate detailed cases to support modules. |
+| Packet contracts | `packet2_fixture_server_test.rs`, `tui_fidelity_packet6_contract_test.rs`, `fixtures/tui_fidelity/` | Fixture server, sustained stream, and packet contracts. |
+| Authority receipts | `binary_receipt_test.rs`, `reference_authority_receipt_test.rs`, `source_guard_test.rs` | Binary identity, pinned authority, mutation and source-guard failures. |
+| Dependency/secret/focus | `tui_dependency_audit_test.rs`, `secretscan_test.rs`, `focus_region_test.rs` | Dependency inventory, artifact scanning, focus-region math. |
+| Shared support | `support/` | Repo roots, fixtures, lifecycle cases, verification obligations, staging helpers. |
 
-## LANE ORDER
-- PTY fallback: `RUST_TEST_THREADS=1 cargo nextest run -p harness-testkit --test pty_e2e --test-threads 1`.
-- Live CLI: `live_proxy_preflight_requires_live_env` -> `live_proxy_prompt_parity_signoff`.
-- Live TUI: `live_proxy_preflight_requires_live_env` -> `live_proxy_e2e_tui_parity_signoff`.
-- Native screenshots: ignored native tests, single-threaded, local signoff only.
-- Simulation: run through `scripts/test-lanes.sh simulation` so replay/evidence/secret-scan stages stay coupled.
-
-## ENV CONTRACT
-- Live gates: `HARNESS_LIVE_PROXY`, `HARNESS_LIVE_PROXY_CONFIG`, `HARNESS_LIVE_PROXY_PROVIDER`, `HARNESS_LIVE_PROXY_MODEL`, optional `HARNESS_LIVE_PROXY_VARIANT`.
-- Native gates: `HARNESS_NATIVE_VISUAL`, `DISPLAY`, optional font/capture helper variables.
-- Visual artifact root: `HARNESS_VISUAL_ARTIFACT_DIR`.
-- Simulation scan: `HARNESS_SECRETS_SCAN_ARTIFACTS`, `HARNESS_SIMULATION_ARTIFACT_DIR`.
-- Live/native signoff variables should be explicit in the lane artifact env file; do not infer them from the developer shell after the fact.
-
-## CONVENTIONS
-- Treat PTY as the deterministic CI/headless oracle and fallback lane.
-- Treat live proxy wrappers as explicit env-gated signoff names, not broad live behavioral coverage.
-- Treat native screenshots as provenance-checked local visual signoff, not a portable hash oracle.
-- Manifest-backed screenshots plus PTY/live artifacts are the verification record; report artifact paths when claiming success.
-- When `HARNESS_NATIVE_VISUAL=1`, missing `DISPLAY` is a hard failure, not a skip.
-- `tests/snapshots/` is not the active committed TUI snapshot home; check `crates/harness-tui` snapshot folders before assuming snapshot ownership.
+## LANE AND ENV CONTRACT
+- Simulation runs through `scripts/test-lanes.sh simulation` so replay, evidence, validation, and secret scan stay coupled.
+- PTY/native lanes are single-threaded; live/native tests remain ignored unless their explicit gates are set.
+- Live gates: `HARNESS_LIVE_PROXY`, config/provider/model variables, optional variant.
+- Native gates: `HARNESS_NATIVE_VISUAL`, `DISPLAY`, visual artifact/capture variables.
+- Fidelity evidence/cache gates include `HARNESS_PACKET1_EVIDENCE_DIR`, `HARNESS_PACKET2_EVIDENCE_DIR`, `PACKET2_FIXTURE_EVIDENCE`, `TUI_FIDELITY_REFERENCE_CACHE` plus key, presentation trace, interaction queue, and run root.
+- Lane artifact env files are authoritative; do not infer signoff inputs from the developer shell afterward.
 
 ## COMMANDS
 ```bash
-RUST_TEST_THREADS=1 cargo nextest run -p harness-testkit --test pty_e2e --test-threads 1
-HARNESS_LIVE_PROXY=1 HARNESS_LIVE_PROXY_CONFIG=harness.jsonc HARNESS_LIVE_PROXY_PROVIDER=umans-ai-coding-plan HARNESS_LIVE_PROXY_MODEL=umans-kimi-k2.7 cargo nextest run -p harness-testkit live_proxy_preflight_requires_live_env -- --ignored --exact
-HARNESS_NATIVE_VISUAL=1 cargo nextest run -p harness-testkit --test native_visual_e2e --test-threads 1 -- --ignored
-cargo nextest run -p harness-testkit --test simulation_validator_test
+scripts/test-lanes.sh simulation
+scripts/test-lanes.sh signoff-pty
+scripts/test-lanes.sh signoff-parity
+scripts/test-lanes.sh signoff-packet2
 ```
 
+## CONVENTIONS
+- PTY is the deterministic headless fallback; live wrappers do not replace deterministic behavior owners.
+- Native screenshots are provenance-checked local evidence, not portable pixel hashes.
+- Delegator tests using `#[path]` keep detailed cases in `support/`; add cases to the owning support module.
+- `tests/fixtures/tui_fidelity/` is testkit-owned; top-level `fixtures/` may be consumed across crates.
+- Report artifact paths when claiming signoff; missing required display, authority, receipt, or cache inputs fail closed.
+
 ## ANTI-PATTERNS
-- Do not parallelize PTY/native visual lanes or remove determinism env guards.
-- Do not assume run ids or screenshot paths are stable across executions.
-- Do not claim provider/tool-flow behavior from slim live wrappers alone.
-- Do not edit renderer defaults or capture settings unless the task is visual fidelity and you rerun the matching lane.
-- Do not treat generated `target/pty-visual-artifacts/` copies as source fixtures.
+- Do not parallelize PTY/native lanes or remove determinism/env guards.
+- Do not assume run ids, cache paths, screenshot paths, or temporary roots are stable.
+- Do not claim provider/tool-flow behavior from slim live wrappers or one fidelity layer alone.
+- Do not edit renderer defaults, generated receipts, or artifact copies to make a lane pass.

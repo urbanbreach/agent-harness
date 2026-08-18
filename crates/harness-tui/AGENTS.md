@@ -1,23 +1,25 @@
 # AGENTS: crates/harness-tui
 
 ## OVERVIEW
-Ratatui interface crate for startup, live, replay, overlays, geometry, transcript rendering, and terminal-visual verification.
+Ratatui interface crate for startup, live, replay, overlays, geometry, transcript rendering, terminal capability, and terminal-visual verification.
 
-Read root `AGENTS.md` first. E2E lane details live in `crates/harness-testkit/tests/AGENTS.md`.
+Read root `AGENTS.md` first. E2E lane details live in `crates/harness-testkit/tests/AGENTS.md`. Owner-test suites live in `tests/AGENTS.md`.
 
 ## WHERE TO LOOK
 | Task | Location | Notes |
 |------|----------|-------|
-| Runtime entrypoints | `src/lib.rs`, `src/runtime.rs` | Startup/live/replay wiring and exact-name shell contract tests. |
-| App state | `src/app.rs`, `src/app/`, `src/app/AGENTS.md` | Event ingestion, overlays, permissions, session navigation; prefer submodule extraction over widening `app.rs`. |
-| Rendering | `src/ui.rs`, `src/ui_*.rs`, `src/ui_transcript.rs`, `src/ui_transcript_*` | Main surface, chrome, overlays, transcript sections, secondary views. |
-| Render test helpers | `src/lib_tests/`, `src/lib_tests.rs`, `src/overlay_tests.rs` | Deterministic shell/view fixtures and overlay regression helpers. |
-| Geometry | `src/layout.rs` | Breakpoints, frame plan, pane sizing, wheel hit areas. |
-| Theme tokens | `src/theme.rs` | Color/token system and shell geometry defaults. |
-| Keybindings | `src/keybindings.rs` | Action map and palette command labels. |
-| View models | `src/view_model.rs` | Presentation shaping before rendering. |
-| Model/session flows | `tests/model_switcher/`, `tests/session_navigation_keybindings_test.rs`, `src/app/session_navigation.rs` | Provider/model switcher and replay/session navigation behavior. |
-| Snapshots/signoff | `src/snapshots/`, `tests/snapshots/`, `tests/tui_signoff_manifest_test.rs` | Deterministic render expectations and required signoff manifest. |
+| Runtime | `src/lib.rs`, `src/runtime.rs`, `src/runtime_*.rs`, `src/event.rs`, `src/mouse.rs`, `src/gestures/`, `src/input/` | Startup/live/replay wiring, event decode, input ingress and scroll normalization. |
+| App state | `src/app.rs`, `src/app/`, `src/app/AGENTS.md` | `AppState`, event ingestion, projection, permissions, composer, sessions, host/operator probe state. |
+| Rendering | `src/ui.rs`, `src/ui_chrome.rs`, `src/ui_*.rs`, `src/ui_composer/`, `src/ui_secondary.rs`, `src/ui_secondary_events_tab.rs` | Main surface, chrome, composer, secondary views, live-turn status. |
+| Transcript | `src/ui_transcript.rs`, `src/ui_transcript_*.rs`, `src/transcript_blocks/`, `src/transcript_block_viewer/`, `src/transcript_identity/`, `src/transcript_integration/`, `src/transcript_pager/`, `src/transcript_scroll/`, `src/transcript_selection/`, `src/transcript_timeline/` | Sections, entries, grammar blocks, selection, scroll, pager, timeline, media. |
+| Overlays/secondary | `src/overlay.rs`, `src/ui_overlays.rs`, `src/ui_overlays/`, `src/ui_overlays/AGENTS.md` | `OverlayKind`/stack, modal/palette/dialog render owners. |
+| Layout/responsive/theme | `src/layout.rs`, `src/layout/`, `src/responsive.rs`, `src/responsive/`, `src/shell_geometry/`, `src/theme.rs`, `src/theme/`, `src/theme_system/`, `src/theme_family/`, `src/theme_leaf.rs` | Frame plan, breakpoints, cursor/hit maps, tokens, family resolution. |
+| Keybindings/slash/leaf | `src/keybindings.rs`, `src/keybindings/`, `src/slash.rs`, `src/slash/`, `src/leaf_actions.rs`, `src/leaf_actions/`, `src/leaf_views.rs`, `src/leaf_views/` | Action map, palette model, slash commands, deterministic leaf helpers. |
+| Terminal | `src/terminal.rs`, `src/terminal/`, `src/terminal_title/`, `src/terminal_notifications/` | Capability probe, decode, frame clock, title/notifications, output. |
+| Dashboard | `src/dashboard/`, `src/dashboard_controls/`, `src/dashboard_details/`, `src/dashboard_dispatch/`, `src/dashboard_integration/`, `src/dashboard_peek/`, `src/dashboard_roster/` | Session dashboard read model, eligibility, peek, dispatch, controls. |
+| Presentation | `src/presentation.rs`, `src/presentation/`, `src/view_model.rs` | Render demand/cause tracking and presentation shaping. |
+| Snapshots/signoff | `src/snapshots/`, `src/ui_overlays/snapshots/`, `tests/snapshots/`, `tests/tui_signoff_manifest_test.rs` | Deterministic render expectations and required signoff manifest. |
+| Render test helpers | `src/lib_tests/`, `src/lib_tests.rs`, `src/overlay_tests.rs`, `src/render_test.rs` | Deterministic shell/view fixtures and overlay regression helpers. |
 
 ## SHELL CONTRACT
 - Compose-first home screen: entry point is the composer, not a replay browser.
@@ -29,7 +31,7 @@ Read root `AGENTS.md` first. E2E lane details live in `crates/harness-testkit/te
 
 ## RENDERING RULES
 - Keep layout math in `src/layout.rs` and `src/theme.rs`, not scattered through render helpers.
-- Transcript rendering is split across `ui_transcript.rs` and `ui_transcript_*`; keep measured layout, cache keys, and the character-cell selection model coherent across those files.
+- Transcript rendering is split across `src/ui_transcript.rs` and `src/ui_transcript_*`; keep measured layout, cache keys, and the character-cell selection model coherent across those files.
 - Approved rendering stack: `syntect` for syntax highlighting, `imara-diff` for diff visualization.
 - Keep tool/transcript/orchestration states structured; do not render opaque text dumps as canonical state.
 - Native visual screenshots are local provenance signoff; PTY snapshots are deterministic safety net.
@@ -44,7 +46,7 @@ cargo nextest run -p harness-tui --test tui_signoff_manifest_test
 cargo nextest run -p harness-tui --test pty_e2e
 RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 cargo nextest run -p harness-tui --test pty_e2e --test-threads 1
 ```
-Use `cargo insta review -p harness-tui --accept` only after intentionally updating snapshots.
+Owner-suite commands and conventions live in `tests/AGENTS.md`. Use `cargo insta review -p harness-tui --accept` only after intentionally updating snapshots.
 
 ## ANTI-PATTERNS
 - Do not hardcode geometry assumptions outside layout/theme contracts.

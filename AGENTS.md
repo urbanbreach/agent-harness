@@ -1,7 +1,7 @@
 # PROJECT KNOWLEDGE BASE
 
-**Generated:** 2026-06-27
-**Commit:** `bf28ab0e`
+**Generated:** 2026-08-17
+**Commit:** `3b5d1256`
 **Branch:** `dev`
 
 ## OVERVIEW
@@ -10,12 +10,12 @@ Rust workspace for an event-sourced agent harness: CLI entrypoint, coordinator/r
 ## STRUCTURE
 ```text
 agent-harness/
-├── crates/harness/           # CLI binary/library: auth, config, doctor, models, prompt, run, replay, sessions, TUI handoff
-├── crates/harness-core/      # coordinator, events, permissions, config, projections, lineage, hashline edits
-├── crates/harness-providers/ # provider trait, OpenAI-compatible transport, mock provider, cassettes
-├── crates/harness-tools/     # native tools: fs/edit/bash/task/web/code/lsp/mcp/session/control plane
-├── crates/harness-tui/       # Ratatui app state, layout, overlays, transcript renderer, terminal signoff
-├── crates/harness-testkit/   # deterministic fakes, workspaces, simulation, PTY/live/native evidence helpers
+├── crates/harness/           # CLI binary/library: bootstrap, auth, run/replay/sessions, worktree/team/plugin/dashboard, TUI handoff
+├── crates/harness-core/      # coordinator, events/stores, permissions, config, projections, memory, worktrees, integrations
+├── crates/harness-providers/ # provider protocol, OpenAI/Anthropic transports, schema/attachment compatibility, mocks/cassettes
+├── crates/harness-tools/     # native tools: fs/edit/shell/task/web/GitHub/AST/LSP/MCP/session/control plane
+├── crates/harness-tui/       # Ratatui runtime, app state, overlays, transcript, commands, themes, terminal signoff
+├── crates/harness-testkit/   # deterministic fakes, simulation, parity/fidelity, receipts, PTY/live/native evidence
 ├── configs/                  # generated schemas, starter examples, provider catalogs
 ├── docs/                     # public architecture/config/testing/tool/session/release documentation
 ├── scripts/                  # lane runner, static gates, perf/coverage/stress helpers
@@ -26,13 +26,18 @@ agent-harness/
 | Task | Location | Notes |
 |------|----------|-------|
 | CLI behavior | `crates/harness/AGENTS.md` | `main.rs` stays a thin shim; command tests use `CliIo`/`CliDeps`. |
+| CLI owner tests | `crates/harness/tests/AGENTS.md` | Numbered command suites, `CliHarness`, drift guards, binary/PTY owners. |
 | Runtime invariants | `crates/harness-core/AGENTS.md` | Read before changing events, coordinator, permissions, config, replay, lineage, or compaction. |
 | Coordinator internals | `crates/harness-core/src/coord/AGENTS.md` | Turn phases, task lifecycle, permissions, hooks, compaction, child sessions. |
 | Config internals | `crates/harness-core/src/config/AGENTS.md` | Public contract, aliases, discovery, schema generation, registries. |
+| Core owner tests | `crates/harness-core/tests/AGENTS.md` | Coordinator fan-in, fixtures, replay/projection, permission, integration, and perf owners. |
 | Provider protocol | `crates/harness-providers/AGENTS.md` | Read before changing `ProviderStreamEvent`, request metadata, cassettes, or transport code. |
 | Native tools | `crates/harness-tools/AGENTS.md` | Read before changing tool ids, schemas, path safety, bash, MCP, LSP, task/session tools. |
+| Tool owner tests | `crates/harness-tools/tests/AGENTS.md` | Registry parity, execution surfaces, common fixtures, and per-family suites. |
 | TUI shell | `crates/harness-tui/AGENTS.md` | Read before touching app state, layout, transcript rendering, overlays, keybindings, or snapshots. |
 | TUI app state | `crates/harness-tui/src/app/AGENTS.md` | AppState, session projection/stack, permissions, composer, model switcher. |
+| TUI overlays | `crates/harness-tui/src/ui_overlays/AGENTS.md` | Modal/status/dashboard rendering, focus/geometry, and exact-render ownership. |
+| TUI owner tests | `crates/harness-tui/tests/AGENTS.md` | Deterministic render, reference parity, PTY, topology, snapshots, provenance helpers. |
 | Test helpers and signoff | `crates/harness-testkit/AGENTS.md`, `crates/harness-testkit/tests/AGENTS.md` | Deterministic fakes, simulation, PTY/live/native evidence, artifact provenance. |
 | Runtime prompt assets | `.agent-harness/AGENTS.md` | Generic runtime prompt, prompt-family fragments, and skill packages. |
 | Public docs | `docs/AGENTS.md` | Architecture, config, testing, tool catalog, session/replay, release evidence. |
@@ -40,15 +45,15 @@ agent-harness/
 | Build/test scripts | `scripts/AGENTS.md` | Lane runner, static gates, coverage/perf/stress scripts. |
 
 ## CODE MAP
-| Area | Role | High-value tests |
-|------|------|------------------|
-| `harness-core::coord` | Single scheduling/event/permission/hook/lifecycle authority | `cargo nextest run -p harness-core --test coord_test` |
-| `harness-core::event` | Event schema v1 and append-only envelopes | `cargo nextest run -p harness --test event_docs_reference_test` |
-| `harness-core::config` | Runtime/TUI config loading, validation, public schema shape | `cargo nextest run -p harness --test config_schema_cli_test` |
-| `harness-providers` | Streaming provider boundary, redacted metadata, cassette replay | `cargo nextest run -p harness-providers` |
-| `harness-tools` | Built-in native tool surface and schema parity | `cargo nextest run -p harness-tools --test native_tool_parity_matrix_test` |
-| `harness-tui` | App state, view models, renderer, shell geometry | `cargo nextest run -p harness-tui --test deterministic_render_test` |
-| `harness-testkit` | Fakes, simulation evidence, visual/PTY helpers | `cargo nextest run -p harness-testkit --test simulation_validator_test` |
+| Symbol | Type | Location | Refs | Role |
+|--------|------|----------|------|------|
+| `execute_cli` | function | `crates/harness/src/lib.rs` | 2 | Central Clap dispatch; routes all command families through injectable IO/deps. |
+| `spawn_coordinator` | function | `crates/harness-core/src/coord.rs` | 100+ | Shared runtime entry for headless, prompt, TUI, tools, and owner tests. |
+| `Provider` | trait | `crates/harness-providers/src/lib.rs` | 270 | Streaming provider boundary implemented by live, cassette, mock, and test providers. |
+| `coordinator_registry` | function | `crates/harness-tools/src/lib.rs` | 100+ | Installs the typed native tool surface consumed by runtime entrypoints. |
+| `AppState` | struct | `crates/harness-tui/src/app.rs` | 2,036 | Aggregate TUI state; delegates event truth to `SessionProjection`. |
+| `SessionProjection` | struct | `crates/harness-tui/src/app/session_projection.rs` | 22 | Replay/live event projection for activities, permissions, tasks, and transcript deltas. |
+| `validate_matrix_file` | function | `crates/harness-testkit/src/simulation.rs` | 2 | Entry for the simulation evidence contract and validator binary. |
 
 ## FIRST-PARTY SEARCH SCOPE
 - Include by default: `crates/`, `configs/`, `docs/`, `scripts/`, `.agent-harness/agents/`, `.agent-harness/prompt-families/`, `.agent-harness/skills/`, root manifests.
@@ -104,6 +109,7 @@ RUST_TEST_THREADS=1 cargo nextest run -p harness-testkit --test pty_e2e --test-t
 | Provider model catalog | `configs/provider-catalog.generated.json`, `configs/provider-catalog.reference.jsonc`, generated catalog docs/tests |
 | Runtime prompt assets or shipped skills | `.agent-harness/AGENTS.md`, bootstrap/profile/skill discovery tests, prompt snapshots |
 | Starter config defaults | `configs/harness.example.jsonc`, `configs/tui.example.jsonc`, README quick start |
+| TUI fidelity evidence contract | `scripts/tui-fidelity/`, `scripts/tui-parity/`, `configs/tui-fidelity-*.json`, `docs/reference/`, owner signoff tests |
 
 ## INVARIANTS
 - Events are the source of truth; replay is side-effect free and derives from JSONL in contiguous `seq` order.
