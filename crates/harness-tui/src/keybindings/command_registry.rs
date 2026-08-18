@@ -1,6 +1,43 @@
 // allow: SIZE_OK — keybinding data and command registry (palette entries)
 //! Command and palette registries for TUI keybindings.
 
+use super::Action;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) enum HelpCategory {
+    Essentials,
+    Input,
+    ConversationNavigation,
+    ConversationActions,
+    Panels,
+    Session,
+    Dashboard,
+}
+
+impl HelpCategory {
+    pub(crate) const ALL: [Self; 7] = [
+        Self::Essentials,
+        Self::Input,
+        Self::ConversationNavigation,
+        Self::ConversationActions,
+        Self::Panels,
+        Self::Session,
+        Self::Dashboard,
+    ];
+
+    pub(crate) const fn label(self) -> &'static str {
+        match self {
+            Self::Essentials => "Essentials",
+            Self::Input => "Input",
+            Self::ConversationNavigation => "Conversation Navigation",
+            Self::ConversationActions => "Conversation Actions",
+            Self::Panels => "Panels",
+            Self::Session => "Session",
+            Self::Dashboard => "Dashboard",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum PaletteCommandSection {
     Suggested,
@@ -43,6 +80,11 @@ pub(super) struct CommandMetadata {
 }
 
 const COMMAND_METADATA: &[CommandMetadata] = &[
+    CommandMetadata {
+        id: "palette",
+        label: "Command palette",
+        description: "Browse and run available commands",
+    },
     CommandMetadata {
         id: "new_session",
         label: "New session",
@@ -252,6 +294,101 @@ const COMMAND_METADATA: &[CommandMetadata] = &[
         id: "revert_workspace",
         label: "Revert workspace",
         description: "Revert workspace to the most recent snapshot",
+    },
+    CommandMetadata {
+        id: "scroll_up",
+        label: "Scroll up",
+        description: "Scroll the active transcript or detail surface up",
+    },
+    CommandMetadata {
+        id: "scroll_down",
+        label: "Scroll down",
+        description: "Scroll the active transcript or detail surface down",
+    },
+    CommandMetadata {
+        id: "half_page_down",
+        label: "Half page down",
+        description: "Scroll the transcript down by half a viewport",
+    },
+    CommandMetadata {
+        id: "cursor_left",
+        label: "Cursor left",
+        description: "Move the composer cursor one character left",
+    },
+    CommandMetadata {
+        id: "cursor_right",
+        label: "Cursor right",
+        description: "Move the composer cursor one character right",
+    },
+    CommandMetadata {
+        id: "backspace",
+        label: "Backspace",
+        description: "Delete the character before the composer cursor",
+    },
+    CommandMetadata {
+        id: "delete",
+        label: "Delete",
+        description: "Delete the character after the composer cursor",
+    },
+    CommandMetadata {
+        id: "toggle_prompt_focus",
+        label: "Toggle prompt focus",
+        description: "Switch focus between the composer and transcript",
+    },
+    CommandMetadata {
+        id: "toggle_tasks",
+        label: "Toggle tasks",
+        description: "Show or hide the task and operator details surface",
+    },
+    CommandMetadata {
+        id: "open_theme_dialog",
+        label: "Theme",
+        description: "Open the theme selector",
+    },
+    CommandMetadata {
+        id: "open_model_switcher",
+        label: "Switch model",
+        description: "Open the model selector",
+    },
+    CommandMetadata {
+        id: "first_message",
+        label: "First message",
+        description: "Jump to the first transcript message",
+    },
+    CommandMetadata {
+        id: "last_message",
+        label: "Last message",
+        description: "Jump to the last transcript message",
+    },
+    CommandMetadata {
+        id: "next_message",
+        label: "Next message",
+        description: "Jump to the next transcript message",
+    },
+    CommandMetadata {
+        id: "previous_message",
+        label: "Previous message",
+        description: "Jump to the previous transcript message",
+    },
+    CommandMetadata {
+        id: "copy_message",
+        label: "Copy message",
+        description: "Copy the selected transcript message",
+    },
+    CommandMetadata {
+        id: "export_session",
+        label: "Export session",
+        description: "Export the current session transcript",
+    },
+    CommandMetadata {
+        id: "open_error_details",
+        label: "Error details",
+        description: "Open details for the selected failed activity",
+    },
+    CommandMetadata {
+        id: "open_session_history",
+        label: "Session history",
+        description: "Browse saved sessions",
     },
     CommandMetadata {
         id: "slash_new",
@@ -502,6 +639,92 @@ const COMMAND_METADATA: &[CommandMetadata] = &[
 
 pub(super) fn command_metadata(id: &str) -> Option<&'static CommandMetadata> {
     COMMAND_METADATA.iter().find(|entry| entry.id == id)
+}
+
+pub(super) const fn help_category(action: Action) -> Option<HelpCategory> {
+    match action {
+        Action::SubmitPrompt
+        | Action::FocusNext
+        | Action::Palette
+        | Action::Help
+        | Action::OpenStatusDialog
+        | Action::VariantCycle
+        | Action::Quit => Some(HelpCategory::Essentials),
+        Action::InsertNewline
+        | Action::ClearPrompt
+        | Action::HistoryUp
+        | Action::HistoryDown
+        | Action::CursorLeft
+        | Action::CursorRight
+        | Action::Backspace
+        | Action::Delete
+        | Action::SelectCharLeft
+        | Action::SelectCharRight
+        | Action::SelectWordLeft
+        | Action::SelectWordRight
+        | Action::SelectLine
+        | Action::SelectAll
+        | Action::MoveWordLeft
+        | Action::MoveWordRight
+        | Action::MoveLineStart
+        | Action::MoveLineEnd
+        | Action::MoveBufferStart
+        | Action::MoveBufferEnd
+        | Action::DeleteWordForward
+        | Action::DeleteWordBackward
+        | Action::DeleteLine
+        | Action::KillToLineStart
+        | Action::KillToLineEnd
+        | Action::Undo
+        | Action::Redo => Some(HelpCategory::Input),
+        Action::MoveDown
+        | Action::MoveUp
+        | Action::ScrollUp
+        | Action::ScrollDown
+        | Action::HalfPageDown
+        | Action::TogglePromptFocus
+        | Action::FocusPrev
+        | Action::ToggleFollow
+        | Action::FirstMessage
+        | Action::LastMessage
+        | Action::NextMessage
+        | Action::PreviousMessage
+        | Action::DiffHunkNext
+        | Action::DiffHunkPrevious => Some(HelpCategory::ConversationNavigation),
+        Action::CloseReviewSurface
+        | Action::Reload
+        | Action::CopyMessage
+        | Action::ExportSession
+        | Action::RevertWorkspace => Some(HelpCategory::ConversationActions),
+        Action::ToggleTerminalPanel
+        | Action::OpenThemeDialog
+        | Action::OpenModelSwitcher
+        | Action::OpenErrorDetails
+        | Action::PromptStash
+        | Action::PromptStashPop
+        | Action::PromptStashList
+        | Action::OpenSettings
+        | Action::OpenViewPlan
+        | Action::OpenMemoryBrowser
+        | Action::OpenWorktreePicker => Some(HelpCategory::Panels),
+        Action::SessionChildFirst
+        | Action::SessionChildCycle
+        | Action::SessionChildCycleReverse
+        | Action::SessionParent
+        | Action::SessionBackground
+        | Action::OpenSessionHistory
+        | Action::OpenLineageBrowser => Some(HelpCategory::Session),
+        Action::ToggleTasks => Some(HelpCategory::Dashboard),
+        Action::InterjectPrompt
+        | Action::ToggleMultiline
+        | Action::OpenEventLog
+        | Action::AllowPermission
+        | Action::AlwaysApprovePermission
+        | Action::DenyPermission
+        | Action::DismissModal
+        | Action::Char(_)
+        | Action::ToggleScrollbar => None,
+    }
 }
 
 const SLASH_COMMANDS: [SlashCommand; 26] = [

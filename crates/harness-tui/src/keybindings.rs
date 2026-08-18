@@ -5,7 +5,7 @@
 
 use crate::UnwrapOrAbort;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::str::FromStr;
 
 pub mod action_dispatch;
@@ -15,6 +15,7 @@ pub mod palette_model;
 pub mod parity_matrix;
 
 use command_registry::command_metadata;
+pub(crate) use command_registry::HelpCategory;
 pub use command_registry::{
     slash_command_aliases, slash_command_description, slash_commands, PaletteCommand,
     PaletteCommandSection, SlashCommand,
@@ -140,7 +141,7 @@ impl Action {
             Action::FocusNext => Some("focus_next"),
             Action::TogglePromptFocus => Some("toggle_prompt_focus"),
             Action::FocusPrev => Some("focus_prev"),
-            Action::Palette => None,
+            Action::Palette => Some("palette"),
             Action::Help => Some("help"),
             Action::OpenStatusDialog => Some("open_status_dialog"),
             Action::ToggleTerminalPanel => Some("toggle_terminal_panel"),
@@ -151,9 +152,9 @@ impl Action {
             Action::InsertNewline => Some("insert_newline"),
             Action::ToggleMultiline => Some("toggle_multiline"),
             Action::ClearPrompt => Some("clear_prompt"),
-            Action::ScrollUp => None,
-            Action::ScrollDown => None,
-            Action::HalfPageDown => None,
+            Action::ScrollUp => Some("scroll_up"),
+            Action::ScrollDown => Some("scroll_down"),
+            Action::HalfPageDown => Some("half_page_down"),
             Action::CloseReviewSurface => Some("close_review_surface"),
             Action::OpenEventLog => Some("open_event_log"),
             Action::MoveDown => Some("move_down"),
@@ -172,10 +173,10 @@ impl Action {
             Action::DismissModal => Some("dismiss_modal"),
             Action::HistoryUp => Some("history_up"),
             Action::HistoryDown => Some("history_down"),
-            Action::CursorLeft => None,
-            Action::CursorRight => None,
-            Action::Backspace => None,
-            Action::Delete => None,
+            Action::CursorLeft => Some("cursor_left"),
+            Action::CursorRight => Some("cursor_right"),
+            Action::Backspace => Some("backspace"),
+            Action::Delete => Some("delete"),
             Action::Char(_) => None,
             Action::SelectCharLeft => Some("select_char_left"),
             Action::SelectCharRight => Some("select_char_right"),
@@ -196,7 +197,7 @@ impl Action {
             Action::KillToLineEnd => Some("kill_to_line_end"),
             Action::Undo => Some("undo"),
             Action::Redo => Some("redo"),
-            Action::RevertWorkspace => None,
+            Action::RevertWorkspace => Some("revert_workspace"),
             Action::OpenThemeDialog => Some("open_theme_dialog"),
             Action::OpenModelSwitcher => Some("open_model_switcher"),
             Action::FirstMessage => Some("first_message"),
@@ -232,6 +233,10 @@ impl Action {
             .and_then(command_metadata)
             .map(|metadata| metadata.description)
             .unwrap_or("")
+    }
+
+    pub(crate) const fn help_category(self) -> Option<HelpCategory> {
+        command_registry::help_category(self)
     }
 
     fn grouped_palette_commands() -> &'static [PaletteCommand] {
@@ -677,14 +682,6 @@ impl KeyMap {
             Action::Palette,
         );
         keymap.bind(
-            KeyBinding::new(KeyCode::Char('h'), KeyModifiers::NONE),
-            Action::Help,
-        );
-        keymap.bind(
-            KeyBinding::new(KeyCode::F(1), KeyModifiers::NONE),
-            Action::Help,
-        );
-        keymap.bind(
             KeyBinding::new(KeyCode::Char('p'), KeyModifiers::CONTROL),
             Action::Palette,
         );
@@ -899,10 +896,6 @@ impl KeyMap {
                 KeyCode::Char('z'),
                 KeyModifiers::CONTROL | KeyModifiers::SHIFT,
             ),
-            Action::Redo,
-        );
-        keymap.bind(
-            KeyBinding::new(KeyCode::Char('.'), KeyModifiers::CONTROL),
             Action::Redo,
         );
 
@@ -1132,9 +1125,25 @@ impl KeyMap {
     }
 
     pub fn get_binding_strs(&self, action: Action) -> Vec<String> {
-        self.get_bindings(action)
+        let mut bindings = self
+            .get_bindings(action)
             .into_iter()
             .map(format_key_binding)
+            .collect::<Vec<_>>();
+        bindings.sort();
+        bindings.dedup();
+        bindings
+    }
+
+    /// Return every action that currently has at least one active binding.
+    pub fn bound_actions(&self) -> Vec<Action> {
+        self.reverse
+            .keys()
+            .chain(self.session_reverse.keys())
+            .chain(self.leader_sequences.values())
+            .copied()
+            .collect::<BTreeSet<_>>()
+            .into_iter()
             .collect()
     }
 
