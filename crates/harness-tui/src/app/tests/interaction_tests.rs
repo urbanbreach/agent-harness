@@ -246,6 +246,372 @@ pub(super) fn resize_invalidates_geometry_dependent_pointer_state() {
     assert!(!app.hovered_live_turn_stop);
 }
 
+pub(super) fn command_palette_mouse_hover_moves_keyboard_selection() {
+    // Given: a rendered command palette with at least two selectable rows.
+    let mut app = AppState::new_live(None, false, None);
+    app.open_palette();
+    let (column, row) = modal_target_position(&app, TEST_FRAME_AREA, ModalTarget::Row(1));
+    let initial = app.palette_selected;
+
+    // When: the pointer moves onto a different command row.
+    let handled = app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Moved,
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        },
+        TEST_FRAME_AREA,
+        None,
+        None,
+        None,
+    );
+
+    // Then: Grok's picker contract moves the keyboard selection with hover.
+    assert!(handled);
+    assert_ne!(app.palette_selected, initial);
+}
+
+pub(super) fn command_palette_mouse_down_activates_row_without_release() {
+    // Given: the command palette points at the settings command.
+    let mut app = AppState::new_live(None, false, None);
+    app.open_palette();
+    for character in "settings".chars() {
+        app.handle_key(KeyEvent::new(KeyCode::Char(character), KeyModifiers::NONE));
+    }
+    let (column, row) = modal_target_position(&app, TEST_FRAME_AREA, ModalTarget::Row(0));
+
+    // When: the left button is pressed on the row, without a matching Up event.
+    let handled = app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        },
+        TEST_FRAME_AREA,
+        None,
+        None,
+        None,
+    );
+
+    // Then: the row activates immediately, matching Grok picker behavior.
+    assert!(handled);
+    assert!(app.settings_editor_visible);
+}
+
+pub(super) fn command_palette_outside_mouse_down_dismisses_top_overlay() {
+    // Given: the command palette is the current top overlay.
+    let mut app = AppState::new_live(None, false, None);
+    app.open_palette();
+    assert_eq!(app.overlay_stack().top(), Some(OverlayKind::CommandPalette));
+
+    // When: the pointer is pressed outside the popup bounds.
+    let handled = app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 0,
+            row: 0,
+            modifiers: KeyModifiers::NONE,
+        },
+        TEST_FRAME_AREA,
+        None,
+        None,
+        None,
+    );
+
+    // Then: only the top modal closes and the event is consumed.
+    assert!(handled);
+    assert!(!app.palette_visible);
+}
+
+pub(super) fn command_palette_wheel_scrolls_three_rows_without_changing_selection() {
+    // Given: a compact command palette whose command list exceeds the viewport.
+    let area = Rect::new(0, 0, 60, 20);
+    let mut app = AppState::new_live(None, false, None);
+    app.open_palette();
+    app.palette_selected = 0;
+    let before = render_text(&app, area.width, area.height);
+
+    // When: one wheel-down event is delivered over the list.
+    let handled = app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::ScrollDown,
+            column: area.width / 2,
+            row: area.height / 2,
+            modifiers: KeyModifiers::NONE,
+        },
+        area,
+        None,
+        None,
+        None,
+    );
+    let after = render_text(&app, area.width, area.height);
+
+    // Then: the visual offset advances by Grok's three-row wheel step while
+    // keyboard selection remains unchanged.
+    assert!(handled);
+    assert_eq!(app.palette_selected, 0);
+    assert_ne!(after, before);
+}
+
+pub(super) fn top_modal_preempts_pointer_targets_from_lower_overlays() {
+    // Given: a theme dialog rendered above an already-open command palette.
+    let mut app = AppState::new_live(None, false, None);
+    app.open_palette();
+    let palette_target = modal_target_position(&app, TEST_FRAME_AREA, ModalTarget::Row(1));
+    app.theme_dialog_visible = true;
+    let initial_palette_selection = app.palette_selected;
+
+    // When: the pointer moves where the lower palette row was rendered.
+    let handled = app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Moved,
+            column: palette_target.0,
+            row: palette_target.1,
+            modifiers: KeyModifiers::NONE,
+        },
+        TEST_FRAME_AREA,
+        None,
+        None,
+        None,
+    );
+
+    // Then: the top modal consumes routing and the lower selection is untouched.
+    assert!(handled);
+    assert_eq!(app.palette_selected, initial_palette_selection);
+    assert_eq!(app.overlay_stack().top(), Some(OverlayKind::ThemeDialog));
+}
+
+pub(super) fn modal_resize_invalidates_stale_close_hover_geometry() {
+    // Given: the palette close button is hovered in the current frame.
+    let mut app = AppState::new_live(None, false, None);
+    app.open_palette();
+    app.set_frame_area(TEST_FRAME_AREA);
+    let (column, row) = modal_target_position(&app, TEST_FRAME_AREA, ModalTarget::Close);
+    app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Moved,
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        },
+        TEST_FRAME_AREA,
+        None,
+        None,
+        None,
+    );
+    assert!(app.modal_close_hovered_for_test());
+
+    // When: frame geometry changes before another pointer event arrives.
+    app.set_frame_area(Rect::new(0, 0, 80, 24));
+
+    // Then: stale chrome hover cannot survive the resize generation.
+    assert!(!app.modal_close_hovered_for_test());
+}
+
+pub(super) fn first_modal_pointer_contact_preserves_keyboard_derived_scroll() {
+    // Given: keyboard selection has moved below the command palette viewport.
+    let area = Rect::new(0, 0, 60, 20);
+    let mut app = AppState::new_live(None, false, None);
+    app.open_palette();
+    app.palette_selected = app.palette_filtered.len().saturating_sub(1);
+    let model = crate::ui::ui_overlays::modal_surface_model(&app, area)
+        .expect("command palette surface model");
+    assert!(model.max_scroll > 0);
+    let (column, row) = modal_target_position(&app, area, ModalTarget::Close);
+
+    // When: the first pointer event lands on chrome rather than a row.
+    app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Moved,
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        },
+        area,
+        None,
+        None,
+        None,
+    );
+
+    // Then: binding pointer state keeps the viewport that keyboard selection rendered.
+    let offset = app.modal_visual_offset(
+        ModalSurfaceKey::Overlay {
+            kind: OverlayKind::CommandPalette,
+            view: ModalViewKey::Primary,
+        },
+        0,
+        model.max_scroll,
+    );
+    assert!(offset > 0);
+}
+
+pub(super) fn toggles_wheel_offset_drives_rendered_rows() {
+    // Given: a compact toggles menu with more visual rows than its viewport.
+    let area = Rect::new(0, 0, 60, 20);
+    let mut app = AppState::new_live(None, false, None);
+    app.open_toggles_menu();
+    let model = crate::ui::ui_overlays::modal_surface_model(&app, area)
+        .expect("toggles modal surface model");
+    assert!(model.max_scroll > 0);
+    let before = render_text(&app, area.width, area.height);
+
+    // When: the wheel advances the shared modal viewport.
+    let handled = app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::ScrollDown,
+            column: area.width / 2,
+            row: area.height / 2,
+            modifiers: KeyModifiers::NONE,
+        },
+        area,
+        None,
+        None,
+        None,
+    );
+    let after = render_text(&app, area.width, area.height);
+
+    // Then: the rendered rows move with the pointer-owned hit model.
+    assert!(handled);
+    assert_ne!(after, before);
+}
+
+pub(super) fn modal_keyboard_input_invalidates_pointer_owned_state() {
+    // Given: pointer state is bound to an open command palette.
+    let mut app = AppState::new_live(None, false, None);
+    app.open_palette();
+    let (column, row) = modal_target_position(&app, TEST_FRAME_AREA, ModalTarget::Close);
+    app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Moved,
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        },
+        TEST_FRAME_AREA,
+        None,
+        None,
+        None,
+    );
+    assert!(app.modal_close_hovered_for_test());
+
+    // When: keyboard navigation becomes the active modal interaction source.
+    app.handle_key(KeyEvent::new(KeyCode::End, KeyModifiers::NONE));
+
+    // Then: stale hover and wheel ownership cannot survive that generation.
+    assert!(!app.modal_close_hovered_for_test());
+}
+
+pub(super) fn yolo_footer_targets_match_visible_action_spans() {
+    // Given: the nested YOLO confirmation footer is visible.
+    let mut app = AppState::new_live(None, false, None);
+    app.open_toggles_menu();
+    app.toggles_yolo_confirm_visible = true;
+    let model = crate::ui::ui_overlays::modal_surface_model(&app, TEST_FRAME_AREA)
+        .expect("YOLO confirmation surface model");
+
+    // When: confirm and cancel target geometry is read from the shared model.
+    let confirm = model
+        .regions
+        .iter()
+        .find(|region| region.target == ModalTarget::Footer(ModalAction::Activate))
+        .expect("confirm target");
+    let cancel = model
+        .regions
+        .iter()
+        .find(|region| region.target == ModalTarget::Footer(ModalAction::Cancel))
+        .expect("cancel target");
+
+    // Then: each target covers only its rendered label, not the whole footer.
+    assert_eq!(
+        (confirm.area, cancel.area),
+        (
+            Rect::new(
+                model.popup.x.saturating_add(2),
+                model.popup.bottom() - 2,
+                13,
+                1
+            ),
+            Rect::new(
+                model.popup.x.saturating_add(18),
+                model.popup.bottom() - 2,
+                10,
+                1
+            ),
+        )
+    );
+}
+
+pub(super) fn yolo_footer_remains_visible_when_filter_shrinks_parent() {
+    // Given: the toggles menu is filtered to the single YOLO entry.
+    let mut app = AppState::new_live(None, false, None);
+    app.open_toggles_menu();
+    for character in "yolo".chars() {
+        app.handle_key(KeyEvent::new(KeyCode::Char(character), KeyModifiers::NONE));
+    }
+
+    // When: the selected entry opens its confirmation dialog.
+    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    let rendered = render_text(&app, 100, 30);
+
+    // Then: the exact pointer-action footer remains visibly rendered.
+    assert!(rendered.contains("Enter confirm   Esc cancel"));
+}
+
+pub(super) fn error_footer_targets_match_visible_action_spans() {
+    // Given: error details renders its fallback message and footer actions.
+    let mut app = AppState::new_live(None, false, None);
+    app.error_details_visible = true;
+    let model = crate::ui::ui_overlays::modal_surface_model(&app, TEST_FRAME_AREA)
+        .expect("error details surface model");
+
+    // When: close and resubmit target geometry is read from the shared model.
+    let close = model
+        .regions
+        .iter()
+        .find(|region| region.target == ModalTarget::Footer(ModalAction::Cancel))
+        .expect("footer close target");
+    let resubmit = model
+        .regions
+        .iter()
+        .find(|region| region.target == ModalTarget::Footer(ModalAction::Resubmit))
+        .expect("resubmit target");
+
+    // Then: the targets follow the rendered fallback footer rather than a fixed bottom row.
+    assert_eq!(
+        (close.area, resubmit.area),
+        (
+            Rect::new(
+                model.popup.x.saturating_add(1),
+                model.popup.y.saturating_add(5),
+                9,
+                1
+            ),
+            Rect::new(
+                model.popup.x.saturating_add(15),
+                model.popup.y.saturating_add(5),
+                10,
+                1
+            ),
+        )
+    );
+}
+
+fn modal_target_position(app: &AppState, area: Rect, target: ModalTarget) -> (u16, u16) {
+    let model =
+        crate::ui::ui_overlays::modal_surface_model(app, area).expect("active modal surface model");
+    let region = model
+        .regions
+        .iter()
+        .find(|region| region.target == target)
+        .expect("target region");
+    (
+        region.area.x.saturating_add(region.area.width / 2),
+        region.area.y.saturating_add(region.area.height / 2),
+    )
+}
+
 pub(super) fn pointer_drag_suppresses_stale_hover_feedback() {
     // Given: a hover affordance was active before a pointer drag began.
     let mut app = AppState::new_live(None, false, None);
