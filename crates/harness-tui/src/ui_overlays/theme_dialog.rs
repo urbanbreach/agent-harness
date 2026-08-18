@@ -6,17 +6,22 @@ pub(super) fn render_theme_dialog_overlay(
     theme: &Theme,
     root: Rect,
 ) {
-    let dialog_width = 44u16.min(root.width.saturating_sub(4));
-    let dialog_height = 8u16.min(root.height.saturating_sub(4));
-    if dialog_width < 32 || dialog_height < 6 {
+    let Some(dialog_area) = theme_dialog_area(root) else {
         return;
-    }
-    let dialog_x = root.x + (root.width.saturating_sub(dialog_width)) / 2;
-    let dialog_y = root.y + (root.height.saturating_sub(dialog_height)) / 2;
-    let dialog_area = Rect::new(dialog_x, dialog_y, dialog_width, dialog_height);
+    };
 
     render_overlay_dim_backdrop(frame, root);
-    if !super::paint_command_palette_panel_titled(frame, theme, dialog_area, "Themes") {
+    if !super::paint_modal_panel(
+        frame,
+        app,
+        theme,
+        dialog_area,
+        ModalSurfaceKey::Overlay {
+            kind: OverlayKind::ThemeDialog,
+            view: ModalViewKey::Primary,
+        },
+        "Themes",
+    ) {
         return;
     }
 
@@ -31,6 +36,43 @@ pub(super) fn render_theme_dialog_overlay(
         .split(content);
     render_command_palette_header(frame, theme, chunks[0], "Themes");
     render_theme_dialog_body(frame, app, theme, chunks[1]);
+}
+
+pub(super) fn theme_dialog_area(root: Rect) -> Option<Rect> {
+    let width = 44u16.min(root.width.saturating_sub(4));
+    let height = 8u16.min(root.height.saturating_sub(4));
+    (width >= 32 && height >= 6).then(|| {
+        Rect::new(
+            root.x + (root.width.saturating_sub(width)) / 2,
+            root.y + (root.height.saturating_sub(height)) / 2,
+            width,
+            height,
+        )
+    })
+}
+
+pub(super) fn theme_dialog_row_areas(dialog_area: Rect) -> Vec<Rect> {
+    let content = inset_rect(dialog_area, 2.min(dialog_area.width.saturating_sub(1)), 1);
+    if content.width == 0 || content.height == 0 {
+        return Vec::new();
+    }
+    let body = Rect::new(
+        content.x,
+        content.y.saturating_add(1),
+        content.width,
+        content.height.saturating_sub(1),
+    );
+    Theme::available_theme_names()
+        .iter()
+        .enumerate()
+        .filter_map(|(index, _)| {
+            let y = body
+                .y
+                .saturating_add(1)
+                .saturating_add(u16::try_from(index).unwrap_or(u16::MAX));
+            (y < body.bottom()).then_some(Rect::new(body.x, y, body.width, 1))
+        })
+        .collect()
 }
 
 fn render_theme_dialog_body(frame: &mut Frame, app: &AppState, theme: &Theme, area: Rect) {

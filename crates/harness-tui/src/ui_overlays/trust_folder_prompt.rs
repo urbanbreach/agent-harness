@@ -2,8 +2,6 @@
 //!
 //! Renders a centered dialog prompting the operator to trust or deny
 //! repository-local executable execution for the current workspace.
-//! The overlay is display-only; the actual trust decision is persisted
-//! through `harness_core::folder_trust` when the operator confirms.
 
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Color, Style, Stylize};
@@ -73,11 +71,10 @@ pub fn render_trust_folder_prompt_overlay(
     .alignment(Alignment::Left);
     frame.render_widget(body, chunks[1]);
 
-    let footer = Paragraph::new(vec![Line::from(vec![
-        Span::styled("[y] Allow  ", Style::default().fg(accent).bg(surface)),
-        Span::styled("[n] Deny  ", Style::default().fg(muted).bg(surface)),
-        Span::styled("[Esc] Cancel", Style::default().fg(muted).bg(surface)),
-    ])])
+    let footer = Paragraph::new(vec![Line::from(vec![Span::styled(
+        "[Esc] Cancel",
+        Style::default().fg(muted).bg(surface),
+    )])])
     .alignment(Alignment::Center);
     frame.render_widget(footer, chunks[2]);
 }

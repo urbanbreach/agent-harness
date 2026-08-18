@@ -27,7 +27,17 @@ pub(super) fn render_worktree_picker_overlay(
     let text_style = Style::default().fg(theme.text.primary).bg(surface);
     let muted_style = Style::default().fg(theme.text.secondary).bg(surface);
 
-    if !paint_command_palette_panel(frame, theme, overlay) {
+    if !paint_modal_panel(
+        frame,
+        app,
+        theme,
+        overlay,
+        ModalSurfaceKey::Overlay {
+            kind: OverlayKind::WorktreePicker,
+            view: ModalViewKey::Primary,
+        },
+        "Commands",
+    ) {
         return;
     }
     let inner = inset_rect(overlay, 1.min(overlay.width.saturating_sub(1)), 1);
@@ -78,11 +88,24 @@ pub(super) fn render_worktree_picker_overlay(
         }
         return;
     }
-    for row_index in 0..usize::from(list_height) {
+    let visible_rows = usize::from(list_height);
+    let default_scroll = app
+        .worktree_picker
+        .selected
+        .saturating_sub(visible_rows.saturating_sub(1));
+    let scroll = app.modal_visual_offset(
+        ModalSurfaceKey::Overlay {
+            kind: OverlayKind::WorktreePicker,
+            view: ModalViewKey::Primary,
+        },
+        default_scroll,
+        entries.len().saturating_sub(visible_rows),
+    );
+    for (visible_index, row_index) in (scroll..entries.len()).take(visible_rows).enumerate() {
         let Some(entry) = entries.get(row_index) else {
             break;
         };
-        let y = list_y.saturating_add(u16::try_from(row_index).unwrap_or(u16::MAX));
+        let y = list_y.saturating_add(u16::try_from(visible_index).unwrap_or(u16::MAX));
         let area = Rect::new(inner.x, y, inner.width, 1);
         let is_selected = row_index == app.worktree_picker.selected;
         let style = if is_selected {

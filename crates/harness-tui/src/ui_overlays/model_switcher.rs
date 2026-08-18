@@ -113,7 +113,15 @@ fn render_model_switcher_list(frame: &mut Frame, app: &AppState, theme: &Theme, 
         .iter()
         .position(|row| matches!(row, ModelSwitcherRow::Option { filtered_index, .. } if *filtered_index == selected))
         .unwrap_or(0);
-    let scroll = selected_row.saturating_sub(visible_rows.saturating_sub(1));
+    let default_scroll = selected_row.saturating_sub(visible_rows.saturating_sub(1));
+    let scroll = app.modal_visual_offset(
+        ModalSurfaceKey::Overlay {
+            kind: OverlayKind::CommandPalette,
+            view: ModalViewKey::ModelSwitcher,
+        },
+        default_scroll,
+        rows.len().saturating_sub(visible_rows),
+    );
 
     for (row_index, row) in rows.iter().enumerate().skip(scroll).take(visible_rows) {
         let row_y = area
@@ -265,7 +273,7 @@ fn model_switcher_row(
     Line::from(spans)
 }
 
-enum ModelSwitcherRow {
+pub(super) enum ModelSwitcherRow {
     Spacer,
     Category(String),
     Option {
@@ -274,7 +282,7 @@ enum ModelSwitcherRow {
     },
 }
 
-fn model_switcher_rows(app: &AppState) -> Vec<ModelSwitcherRow> {
+pub(super) fn model_switcher_rows(app: &AppState) -> Vec<ModelSwitcherRow> {
     if !has_trimmed_content(&app.palette_input) {
         let mut rows = Vec::new();
         let mut previous_category: Option<String> = None;

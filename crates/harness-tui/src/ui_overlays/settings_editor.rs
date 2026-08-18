@@ -28,7 +28,17 @@ pub(super) fn render_settings_editor_overlay(
     let muted_style = Style::default().fg(theme.text.secondary).bg(surface);
     let text_style = Style::default().fg(theme.text.primary).bg(surface);
 
-    if !paint_command_palette_panel(frame, theme, overlay) {
+    if !paint_modal_panel(
+        frame,
+        app,
+        theme,
+        overlay,
+        ModalSurfaceKey::Overlay {
+            kind: OverlayKind::SettingsEditor,
+            view: ModalViewKey::Primary,
+        },
+        "Commands",
+    ) {
         return;
     }
     let inner = inset_rect(overlay, 1.min(overlay.width.saturating_sub(1)), 1);
@@ -84,7 +94,15 @@ pub(super) fn render_settings_editor_overlay(
     let selected = app
         .settings_editor_selected_index()
         .min(rows.len().saturating_sub(1));
-    let scroll = selected.saturating_sub(visible_rows.saturating_sub(1));
+    let default_scroll = selected.saturating_sub(visible_rows.saturating_sub(1));
+    let scroll = app.modal_visual_offset(
+        ModalSurfaceKey::Overlay {
+            kind: OverlayKind::SettingsEditor,
+            view: ModalViewKey::Primary,
+        },
+        default_scroll,
+        rows.len().saturating_sub(visible_rows),
+    );
 
     for (row, entry) in rows.iter().enumerate().skip(scroll).take(visible_rows) {
         let row_y = list_y + u16::try_from(row - scroll).unwrap_or(u16::MAX);

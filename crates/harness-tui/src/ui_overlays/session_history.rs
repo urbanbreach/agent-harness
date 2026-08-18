@@ -96,7 +96,15 @@ fn render_lineage_browser_list(frame: &mut Frame, app: &AppState, theme: &Theme,
 
     let selected = vm.rows.iter().position(|row| row.selected).unwrap_or(0);
     let visible_rows = usize::from(list_area.height);
-    let scroll = selected.saturating_sub(visible_rows.saturating_sub(1));
+    let default_scroll = selected.saturating_sub(visible_rows.saturating_sub(1));
+    let scroll = app.modal_visual_offset(
+        ModalSurfaceKey::Overlay {
+            kind: OverlayKind::LineageBrowser,
+            view: ModalViewKey::Lineage,
+        },
+        default_scroll,
+        vm.rows.len().saturating_sub(visible_rows),
+    );
     for (row_index, row) in vm.rows.iter().enumerate().skip(scroll).take(visible_rows) {
         let row_area = Rect::new(
             list_area.x,
@@ -225,7 +233,15 @@ pub(super) fn render_fork_selector_list(
 
     let selected = vm.rows.iter().position(|row| row.selected).unwrap_or(0);
     let visible_rows = usize::from(list_area.height);
-    let scroll = selected.saturating_sub(visible_rows.saturating_sub(1));
+    let default_scroll = selected.saturating_sub(visible_rows.saturating_sub(1));
+    let scroll = app.modal_visual_offset(
+        ModalSurfaceKey::Overlay {
+            kind: OverlayKind::ForkSelector,
+            view: ModalViewKey::ForkSelector,
+        },
+        default_scroll,
+        vm.rows.len().saturating_sub(visible_rows),
+    );
     for (row_index, row) in vm.rows.iter().enumerate().skip(scroll).take(visible_rows) {
         let row_area = Rect::new(
             list_area.x,
@@ -491,7 +507,15 @@ fn render_session_history_list(frame: &mut Frame, app: &AppState, theme: &Theme,
         .position(|row| matches!(row, SessionHistoryVisualRow::Entry { selected: true, .. }))
         .unwrap_or(0);
     let visible_rows = usize::from(area.height).max(1);
-    let scroll = selected_row.saturating_sub(visible_rows.saturating_sub(1));
+    let default_scroll = selected_row.saturating_sub(visible_rows.saturating_sub(1));
+    let scroll = app.modal_visual_offset(
+        ModalSurfaceKey::Overlay {
+            kind: OverlayKind::CommandPalette,
+            view: ModalViewKey::SessionHistory,
+        },
+        default_scroll,
+        rows.len().saturating_sub(visible_rows),
+    );
     let surface = ui_chrome::command_palette_surface(theme);
     frame.render_widget(Block::default().style(Style::default().bg(surface)), area);
 
@@ -551,13 +575,13 @@ pub(super) fn session_history_overlay_title(app: &AppState) -> String {
     }
 }
 
-enum SessionHistoryVisualRow {
+pub(super) enum SessionHistoryVisualRow {
     Gap,
     Header(String),
     Entry { entry_index: usize, selected: bool },
 }
 
-fn session_history_visual_rows(app: &AppState) -> Vec<SessionHistoryVisualRow> {
+pub(super) fn session_history_visual_rows(app: &AppState) -> Vec<SessionHistoryVisualRow> {
     let mut rows = Vec::new();
     let mut previous_category: Option<String> = None;
     let selected = app

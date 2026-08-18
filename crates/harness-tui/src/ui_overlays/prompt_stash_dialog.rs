@@ -28,7 +28,17 @@ pub(super) fn render_prompt_stash_list_overlay(
     let muted_style = Style::default().fg(theme.text.secondary).bg(surface);
     let text_style = Style::default().fg(theme.text.primary).bg(surface);
 
-    if !paint_command_palette_panel(frame, theme, overlay) {
+    if !paint_modal_panel(
+        frame,
+        app,
+        theme,
+        overlay,
+        ModalSurfaceKey::Overlay {
+            kind: OverlayKind::PromptStashList,
+            view: ModalViewKey::Primary,
+        },
+        "Commands",
+    ) {
         return;
     }
     let inner = inset_rect(overlay, 1.min(overlay.width.saturating_sub(1)), 1);
@@ -64,7 +74,15 @@ pub(super) fn render_prompt_stash_list_overlay(
             .prompt_stash
             .list_selected
             .min(app.prompt_stash.entries.len().saturating_sub(1));
-        let scroll = selected.saturating_sub(visible_rows.saturating_sub(1));
+        let default_scroll = selected.saturating_sub(visible_rows.saturating_sub(1));
+        let scroll = app.modal_visual_offset(
+            ModalSurfaceKey::Overlay {
+                kind: OverlayKind::PromptStashList,
+                view: ModalViewKey::Primary,
+            },
+            default_scroll,
+            app.prompt_stash.entries.len().saturating_sub(visible_rows),
+        );
 
         for (row, entry) in app
             .prompt_stash

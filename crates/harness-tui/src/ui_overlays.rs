@@ -1,5 +1,6 @@
 // allow: SIZE_OK — TUI overlay rendering (indivisible view model)
 use super::*;
+use crate::app::{ModalSurfaceKey, ModalTarget, ModalViewKey};
 
 #[path = "ui_overlays/auth_dialog.rs"]
 mod auth_dialog;
@@ -7,6 +8,8 @@ mod auth_dialog;
 mod foreign_import_picker;
 #[path = "ui_overlays/memory_browser.rs"]
 mod memory_browser;
+#[path = "ui_overlays/modal_interaction.rs"]
+mod modal_interaction;
 #[path = "ui_overlays/model_switcher.rs"]
 mod model_switcher;
 #[path = "ui_overlays/new_worktree_dialog.rs"]
@@ -34,6 +37,7 @@ use auth_dialog::render_auth_dialog_overlay;
 pub(crate) use auth_dialog::waiting_authorization_detail_at;
 use foreign_import_picker::render_foreign_import_picker_overlay;
 use memory_browser::render_memory_browser_overlay;
+pub(crate) use modal_interaction::{modal_surface_model, ModalSurfaceModel};
 use model_switcher::{model_switcher_overlay_title, render_model_switcher_overlay};
 use new_worktree_dialog::render_new_worktree_dialog;
 pub(super) use permission_modal::{
@@ -312,9 +316,32 @@ fn render_command_palette_overlay(
     } else {
         "Commands".to_string()
     };
+    let surface_key = ModalSurfaceKey::Overlay {
+        kind: app
+            .overlay_stack()
+            .top()
+            .unwrap_or(OverlayKind::CommandPalette),
+        view: if app.session_rename_visible {
+            ModalViewKey::SessionRename
+        } else if app.session_history_visible {
+            ModalViewKey::SessionHistory
+        } else if app.model_switcher_visible {
+            ModalViewKey::ModelSwitcher
+        } else if app.toggles_yolo_confirmation_visible() {
+            ModalViewKey::YoloConfirm
+        } else if app.toggles_menu_visible {
+            ModalViewKey::Toggles
+        } else if app.lineage_browser_visible {
+            ModalViewKey::Lineage
+        } else if app.fork_selector_visible {
+            ModalViewKey::ForkSelector
+        } else {
+            ModalViewKey::Primary
+        },
+    };
 
     if app.session_history_visible {
-        if !paint_command_palette_panel_titled(frame, theme, overlay, &title) {
+        if !paint_modal_panel(frame, app, theme, overlay, surface_key, &title) {
             return;
         }
         render_session_history_overlay(frame, app, theme, overlay, &title);
@@ -322,12 +349,12 @@ fn render_command_palette_overlay(
             render_session_rename_dialog(frame, app, theme, overlay);
         }
     } else if app.model_switcher_visible {
-        if !paint_command_palette_panel_titled(frame, theme, overlay, &title) {
+        if !paint_modal_panel(frame, app, theme, overlay, surface_key, &title) {
             return;
         }
         render_model_switcher_overlay(frame, app, theme, overlay, &title);
     } else if app.toggles_menu_visible {
-        if !paint_command_palette_panel_titled(frame, theme, overlay, &title) {
+        if !paint_modal_panel(frame, app, theme, overlay, surface_key, &title) {
             return;
         }
         let Some((_header, input, list)) = command_palette_dialog_layout(overlay) else {
@@ -339,7 +366,7 @@ fn render_command_palette_overlay(
             render_yolo_warning_popup(frame, theme, overlay);
         }
     } else if app.lineage_browser_visible {
-        if !paint_command_palette_panel_titled(frame, theme, overlay, &title) {
+        if !paint_modal_panel(frame, app, theme, overlay, surface_key, &title) {
             return;
         }
         let Some(inner) = command_palette_bordered_inner(overlay) else {
@@ -347,7 +374,7 @@ fn render_command_palette_overlay(
         };
         render_lineage_browser_overlay(frame, app, theme, inner, &title);
     } else if app.fork_selector_visible {
-        if !paint_command_palette_panel_titled(frame, theme, overlay, &title) {
+        if !paint_modal_panel(frame, app, theme, overlay, surface_key, &title) {
             return;
         }
         let Some((_header, input, list)) = command_palette_dialog_layout(overlay) else {
@@ -355,7 +382,7 @@ fn render_command_palette_overlay(
         };
         render_fork_selector_input(frame, app, theme, input);
         render_fork_selector_list(frame, app, theme, list);
-    } else if !paint_command_palette_panel_titled(frame, theme, overlay, &title) {
+    } else if !paint_modal_panel(frame, app, theme, overlay, surface_key, &title) {
         return;
     } else {
         let Some((_header, input, list)) = command_palette_dialog_layout(overlay) else {
@@ -639,7 +666,24 @@ fn render_command_palette_surface(frame: &mut Frame, theme: &Theme, overlay: Rec
 }
 
 fn paint_command_palette_panel(frame: &mut Frame, theme: &Theme, overlay: Rect) -> bool {
-    paint_command_palette_panel_titled(frame, theme, overlay, "Commands")
+    paint_command_palette_panel_titled(frame, theme, overlay, "Commands", false)
+}
+
+pub(super) fn paint_modal_panel(
+    frame: &mut Frame,
+    app: &AppState,
+    theme: &Theme,
+    overlay: Rect,
+    key: ModalSurfaceKey,
+    title: &str,
+) -> bool {
+    paint_command_palette_panel_titled(
+        frame,
+        theme,
+        overlay,
+        title,
+        app.modal_target_hovered(key, ModalTarget::Close),
+    )
 }
 
 fn paint_command_palette_panel_titled(
@@ -647,6 +691,7 @@ fn paint_command_palette_panel_titled(
     theme: &Theme,
     overlay: Rect,
     title: &str,
+    close_hovered: bool,
 ) -> bool {
     if overlay.width == 0 || overlay.height == 0 {
         return false;
@@ -660,7 +705,11 @@ fn paint_command_palette_panel_titled(
         .fg(ui_chrome::command_palette_title(theme))
         .bg(surface)
         .add_modifier(Modifier::BOLD);
-    let close_style = border_style;
+    let close_style = if close_hovered {
+        ui_chrome::overlay_focus_row_style(theme).add_modifier(Modifier::BOLD)
+    } else {
+        border_style
+    };
     frame.render_widget(Clear, overlay);
     let block = Block::default()
         .borders(Borders::ALL)
@@ -684,7 +733,7 @@ fn paint_command_palette_panel_titled(
     true
 }
 
-fn command_palette_dialog_layout(overlay: Rect) -> Option<(Rect, Rect, Rect)> {
+pub(super) fn command_palette_dialog_layout(overlay: Rect) -> Option<(Rect, Rect, Rect)> {
     if overlay.width <= 8 || overlay.height <= 6 {
         return None;
     }
@@ -932,7 +981,16 @@ fn render_command_palette_list(frame: &mut Frame, app: &AppState, theme: &Theme,
         .iter()
         .position(|row| matches!(row, PaletteOverlayRow::Command { is_selected, .. } if *is_selected == selected))
         .unwrap_or(0);
-    let scroll = selected_row.saturating_sub(visible_rows.saturating_sub(1));
+    let default_scroll = selected_row.saturating_sub(visible_rows.saturating_sub(1));
+    let max_scroll = rows.len().saturating_sub(visible_rows);
+    let scroll = app.modal_visual_offset(
+        ModalSurfaceKey::Overlay {
+            kind: OverlayKind::CommandPalette,
+            view: ModalViewKey::Primary,
+        },
+        default_scroll,
+        max_scroll,
+    );
 
     for (row, palette_row) in rows.iter().enumerate().skip(scroll).take(visible_rows) {
         let row_y = list_area
@@ -1232,11 +1290,8 @@ fn render_error_details_overlay(frame: &mut Frame, app: &AppState, theme: &Theme
 
     render_overlay_dim_backdrop(frame, root);
 
-    let overlay_width = root.width.clamp(40, 80);
-    let overlay_height = root.height.clamp(8, 20);
-    let overlay_x = root.x + (root.width.saturating_sub(overlay_width)) / 2;
-    let overlay_y = root.y + (root.height.saturating_sub(overlay_height)) / 2;
-    let overlay = Rect::new(overlay_x, overlay_y, overlay_width, overlay_height);
+    let layout = modal_interaction::error_details_layout(app, root);
+    let overlay = layout.popup;
 
     let surface = ui_chrome::elevated_card_surface(theme);
     let border = theme.status.error;
@@ -1249,10 +1304,10 @@ fn render_error_details_overlay(frame: &mut Frame, app: &AppState, theme: &Theme
         title_color,
         ui_chrome::ChromeFrame::Frame,
     );
-    let inner = block.inner(overlay);
     frame.render_widget(Clear, overlay);
     frame.render_widget(block, overlay);
 
+    let inner = layout.inner;
     if inner.width == 0 || inner.height == 0 {
         return;
     }

@@ -31,7 +31,15 @@ pub(super) fn render_toggles_menu_list(
         .iter()
         .position(|row| matches!(row, TogglesOverlayRow::Toggle(toggle) if toggle.selected))
         .unwrap_or(0);
-    let scroll = selected_row.saturating_sub(visible_rows.saturating_sub(1));
+    let default_scroll = selected_row.saturating_sub(visible_rows.saturating_sub(1));
+    let scroll = app.modal_visual_offset(
+        ModalSurfaceKey::Overlay {
+            kind: OverlayKind::TogglesMenu,
+            view: ModalViewKey::Toggles,
+        },
+        default_scroll,
+        rows.len().saturating_sub(visible_rows),
+    );
 
     for (row, toggle_row) in rows.iter().enumerate().skip(scroll).take(visible_rows) {
         let row_y = list_area
@@ -73,13 +81,13 @@ pub(super) fn render_toggles_menu_list(
     }
 }
 
-enum TogglesOverlayRow {
+pub(super) enum TogglesOverlayRow {
     Spacer,
     Section(&'static str),
     Toggle(crate::app::ToggleMenuRow),
 }
 
-fn toggles_overlay_rows(app: &AppState) -> Vec<TogglesOverlayRow> {
+pub(super) fn toggles_overlay_rows(app: &AppState) -> Vec<TogglesOverlayRow> {
     let mut rows = Vec::new();
     let mut last_section = None;
     for toggle in app.toggle_menu_rows() {
@@ -162,26 +170,51 @@ fn split_title_meta_row(
     ])
 }
 
-pub(super) fn render_yolo_warning_popup(frame: &mut Frame, theme: &Theme, overlay: Rect) {
+pub(super) struct YoloWarningLayout {
+    pub(super) popup: Rect,
+    pub(super) inner: Rect,
+    pub(super) confirm: Rect,
+    pub(super) cancel: Rect,
+}
+
+pub(super) fn yolo_warning_layout(overlay: Rect) -> Option<YoloWarningLayout> {
     let width = 54.min(overlay.width.saturating_sub(4));
-    let height = 7.min(overlay.height.saturating_sub(2));
+    let height = 7.min(overlay.height);
     if width < 32 || height < 5 {
-        return;
+        return None;
     }
-    let area = Rect::new(
+    let popup = Rect::new(
         overlay.x + overlay.width.saturating_sub(width) / 2,
         overlay.y + overlay.height.saturating_sub(height) / 2,
         width,
         height,
     );
-    if !paint_command_palette_panel(frame, theme, area) {
+    let inner = inset_rect(popup, 2.min(popup.width.saturating_sub(1)), 1);
+    if inner.width == 0 || inner.height == 0 {
+        return None;
+    }
+    let footer_y = inner.y.saturating_add(4);
+    Some(YoloWarningLayout {
+        popup,
+        inner,
+        confirm: Rect::new(inner.x, footer_y, 13.min(inner.width), 1),
+        cancel: Rect::new(
+            inner.x.saturating_add(16.min(inner.width)),
+            footer_y,
+            10.min(inner.width.saturating_sub(16)),
+            1,
+        ),
+    })
+}
+
+pub(super) fn render_yolo_warning_popup(frame: &mut Frame, theme: &Theme, overlay: Rect) {
+    let Some(layout) = yolo_warning_layout(overlay) else {
+        return;
+    };
+    if !paint_command_palette_panel(frame, theme, layout.popup) {
         return;
     }
     let surface = ui_chrome::command_palette_surface(theme);
-    let inner = inset_rect(area, 2.min(area.width.saturating_sub(1)), 1);
-    if inner.width == 0 || inner.height == 0 {
-        return;
-    }
     let text = Text::from(vec![
         Line::from(Span::styled(
             "Confirm YOLO mode",
@@ -208,6 +241,6 @@ pub(super) fn render_yolo_warning_popup(frame: &mut Frame, theme: &Theme, overla
         Paragraph::new(text)
             .style(Style::default().bg(surface))
             .wrap(Wrap { trim: true }),
-        inner,
+        layout.inner,
     );
 }
