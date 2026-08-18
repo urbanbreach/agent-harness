@@ -22,6 +22,6 @@ Replay · read-only · run run_fixture · 2 ev
                                                                                                     
                                                                                                     
  ▎ Replay is read-only.                                                                             
-   h shortcuts  ·  tab focus  ·  ctrl+q quit                                                        
+   ctrl+x shortcuts  ·  tab focus  ·  ctrl+q quit                                                   
                                                                                                     
                                                            HARNESS 0.1.0

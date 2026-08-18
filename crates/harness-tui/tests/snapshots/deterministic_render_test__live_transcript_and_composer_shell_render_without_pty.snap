@@ -12,7 +12,7 @@ expression: trim_trailing_snapshot_whitespace(&rendered)
      Assistant verified the rendered shell.
 
 
-     ◆ Web Search "harness sidebar"  ▸
+  ❙  ◈ Searched 1 website  ▸
      ◆ LSP goto_definition src/ui_secondary.rs  ▸
 
 
