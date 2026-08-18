@@ -7,27 +7,27 @@ use crate::UnwrapOrAbort;
 
 use super::*;
 
-const REASONING_OPACITY: f32 = 0.6;
+const REASONING_OPACITY: f32 = 0.7;
 
 pub(super) struct ReasoningMarkdownColors {
-    base: Color,
-    heading: Color,
-    link: Color,
-    link_text: Color,
-    code: Color,
-    emph: Color,
-    strong: Color,
-    strikethrough: Color,
-    block_quote: Color,
-    list_marker: Color,
-    list_enum: Color,
-    rule: Color,
+    pub(super) base: Color,
+    pub(super) heading: Color,
+    pub(super) link: Color,
+    pub(super) link_text: Color,
+    pub(super) code: Color,
+    pub(super) emph: Color,
+    pub(super) strong: Color,
+    pub(super) strikethrough: Color,
+    pub(super) block_quote: Color,
+    pub(super) list_marker: Color,
+    pub(super) list_enum: Color,
+    pub(super) rule: Color,
 }
 
 pub(super) fn reasoning_markdown_colors(theme: &Theme, surface: Color) -> ReasoningMarkdownColors {
     let blend = |overlay: Color| blend_color(surface, overlay, REASONING_OPACITY);
     ReasoningMarkdownColors {
-        base: theme.text.secondary,
+        base: blend(theme.markdown.text),
         heading: blend(theme.markdown.heading_h1),
         link: blend(theme.markdown.link),
         link_text: blend(theme.markdown.link_text),
@@ -42,111 +42,6 @@ pub(super) fn reasoning_markdown_colors(theme: &Theme, surface: Color) -> Reason
     }
 }
 
-pub(super) fn append_reasoning_body_lines(
-    lines: &mut Vec<Line<'static>>,
-    body: &str,
-    theme: &Theme,
-    surface: Color,
-    prefix: &str,
-    width: u16,
-) {
-    let colors = reasoning_markdown_colors(theme, surface);
-    let base_style = Style::default().fg(colors.base);
-
-    for row in body.lines() {
-        if row.is_empty() {
-            append_prefixed_wrapped_spans_line(lines, prefix, base_style, Vec::new(), width);
-            continue;
-        }
-
-        let trimmed = row.trim_start();
-        let indent = &row[..row.len() - trimmed.len()];
-
-        if let Some(heading_text) = markdown_heading_text(trimmed) {
-            let heading_style = Style::default()
-                .fg(colors.heading)
-                .add_modifier(Modifier::BOLD);
-            let spans = parse_reasoning_inline_spans(heading_text, &colors);
-            append_prefixed_wrapped_spans_line(
-                lines,
-                &format!("{prefix}{indent}"),
-                heading_style,
-                spans,
-                width,
-            );
-            continue;
-        }
-
-        if markdown_rule(trimmed) {
-            let content_width = usize::from(width).saturating_sub(prefix.len()).max(1);
-            append_prefixed_wrapped_spans_line(
-                lines,
-                prefix,
-                base_style,
-                vec![Span::styled(
-                    "─".repeat(content_width),
-                    Style::default().fg(colors.rule),
-                )],
-                width,
-            );
-            continue;
-        }
-
-        if let Some(text) = trimmed.strip_prefix("> ") {
-            let quote_style = Style::default()
-                .fg(colors.block_quote)
-                .add_modifier(Modifier::ITALIC);
-            let spans = parse_reasoning_inline_spans(text, &colors);
-            append_prefixed_wrapped_spans_line(
-                lines,
-                &format!("{prefix}{indent}▍ "),
-                quote_style,
-                spans,
-                width,
-            );
-            continue;
-        }
-
-        if let Some((marker, text, is_enum)) = parse_list_prefix(trimmed) {
-            let marker_color = if is_enum {
-                colors.list_enum
-            } else {
-                colors.list_marker
-            };
-            let marker_style = Style::default()
-                .fg(marker_color)
-                .add_modifier(Modifier::BOLD);
-            let spans = parse_reasoning_inline_spans(text, &colors);
-            append_prefixed_wrapped_spans_line(
-                lines,
-                &format!("{prefix}{indent}{marker}"),
-                marker_style,
-                spans,
-                width,
-            );
-            continue;
-        }
-
-        let spans = parse_reasoning_inline_spans(trimmed, &colors);
-        append_prefixed_wrapped_spans_line(lines, prefix, base_style, spans, width);
-    }
-}
-
-fn parse_list_prefix(line: &str) -> Option<(String, &str, bool)> {
-    for marker in ["- ", "* ", "+ "] {
-        if let Some(text) = line.strip_prefix(marker) {
-            return Some(("• ".to_string(), text, false));
-        }
-    }
-    let digits = line.chars().take_while(|ch| ch.is_ascii_digit()).count();
-    if digits > 0 {
-        if let Some(text) = line[digits..].strip_prefix(". ") {
-            return Some((format!("{}. ", &line[..digits]), text, true));
-        }
-    }
-    None
-}
-
 fn is_flanking_pair(prev: Option<char>, content: &str, after_close: &str) -> bool {
     !content.is_empty()
         && !prev.is_some_and(char::is_alphanumeric)
@@ -158,7 +53,7 @@ fn is_flanking_pair(prev: Option<char>, content: &str, after_close: &str) -> boo
             .is_some_and(char::is_alphanumeric)
 }
 
-fn parse_reasoning_inline_spans(
+pub(super) fn parse_reasoning_inline_spans(
     text: &str,
     colors: &ReasoningMarkdownColors,
 ) -> Vec<Span<'static>> {
@@ -468,14 +363,23 @@ mod tests {
     }
 
     #[test]
-    fn blended_colors_differ_from_raw_theme_colors() {
+    fn reasoning_colors_match_groks_seventy_percent_background_blend() {
         // arrange
         // act
         // assert
         let theme = Theme::default();
         let colors = reasoning_markdown_colors(&theme, theme.surface.shell);
-        assert_ne!(colors.heading, theme.markdown.heading_h1);
-        assert_ne!(colors.code, theme.markdown.code);
-        assert_eq!(colors.base, theme.text.secondary);
+        assert_eq!(
+            colors.base,
+            blend_color(theme.surface.shell, theme.markdown.text, 0.7)
+        );
+        assert_eq!(
+            colors.heading,
+            blend_color(theme.surface.shell, theme.markdown.heading_h1, 0.7)
+        );
+        assert_eq!(
+            colors.code,
+            blend_color(theme.surface.shell, theme.markdown.code, 0.7)
+        );
     }
 }
