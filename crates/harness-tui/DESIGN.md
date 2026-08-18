@@ -427,10 +427,21 @@ Structural owners: `crates/harness-tui/tests/reference_parity_tx_shell_test.rs` 
 | Region | Contract |
 |--------|----------|
 | Group summary | Flat `◈` summary row (`Ran N commands` plus failure suffix); no card border or per-command body expansion |
+| Context verb group | Consecutive non-destructive context activity folds from its first member into one source-ordered `◈` header such as `Read 1 file, Searched 2 patterns, Listed 1 dir`; any running member changes every bucket to present tense, and `· N failed` is the only error suffix |
 | Command row | Flat `◆ Run …` row. Failed rows use the error accent/left accent state, without an extra `command failed` body line in collapsed mode |
 | Edit/diff row | Flat `◆ edit`/path summary in collapsed mode; disclosure is represented by the fold indicator, not an always-expanded inline diff card |
 | Running accent | The active entry has a one-cell animated accent rail; finished siblings retain their settled accent state |
 | Fold state | Collapsed is the default transcript presentation; expansion is an explicit interaction and must preserve scroll/selection anchors |
+| Context rail | Running and failed context groups use a one-cell heavy `┃` rail; running samples the shared elapsed-time wave, failed is static error, and settled/cancelled groups use a dim `❙`. The rail and `◈` share state color while the bold label remains muted |
+
+Context verb-group nouns and boundaries follow the pinned reference vocabulary:
+file/files, skill/skills, pattern/patterns, dir/dirs, website/websites,
+and subagent/subagents. Reads of `SKILL.md` use the skill bucket. Read,
+search, list, skill, web-fetch, web-search, and subagent rows may share one
+source-ordered group; commands, edits, ordinary MCP dispatch, unknown tools,
+and pending-user-input rows break it. A single context member folds immediately
+to avoid a second-call layout jump. Collapsed groups hide members; expansion
+keeps the header in place and reveals every member below it.
 
 Measured owners: pinned `run1-tx-tool-pinned-v1` and
 `run1-tx-diff-pinned-v1` captures under the parity reference freeze, plus

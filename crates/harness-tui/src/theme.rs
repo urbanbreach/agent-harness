@@ -824,7 +824,7 @@ pub struct StatusColors {
 ///
 /// Each field corresponds to an Harness markdown syntax token (e.g.
 /// `markdownHeading`, `markdownCode`). When rendering reasoning bodies these
-/// colors are blended at `thinkingOpacity` (0.6) over the surface color to
+/// colors are blended at `thinkingOpacity` (0.7) over the surface color to
 /// produce the subtle syntax-highlighted look from `generateSubtleSyntax`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MarkdownColors {
