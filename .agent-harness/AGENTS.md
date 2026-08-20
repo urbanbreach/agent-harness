@@ -20,7 +20,7 @@ Read root `AGENTS.md` first. This file is about runtime assets, not project codi
 | Task | Location | Notes |
 |------|----------|-------|
 | Generic prompt | `agents/default.md` | Used by interactive runs. |
-| Named subagents | `agents/explore.md`, `agents/general.md`, `agents/librarian.md` | Selected with `task(subagent_type=...)`; follow the Pi extension model rather than primary-role switching. |
+| Named subagents | `agents/explore.md`, `agents/general.md`, `agents/librarian.md` | Selected with `task(subagent_type=...)`; follow the bounded child-profile model rather than primary-role switching. |
 | Family prompt fragments | `prompt-families/anthropic.md`, `prompt-families/gemini.md`, `prompt-families/kimi.md`, `prompt-families/trinity.md` | Loaded by model-family prompt composition and drift-tested against snapshots. |
 | Config-defined profile metadata | `../configs/harness.example.jsonc`, `../harness.jsonc` | Model, variant, hidden flag, tools, permissions, skill policy. |
 | Shipped skills | `skills/*/SKILL.md` | Runtime-loadable skill packages with V1 frontmatter. |

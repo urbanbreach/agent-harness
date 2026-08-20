@@ -273,7 +273,6 @@ for those settings instead of mixing them into runtime config.
 | `instructions` | Optional inline instructions or instruction file paths prepended before agent prompts. |
 | `lsp` | Upstream-compatible LSP setting; `false` disables harness LSP overrides, object values map to harness LSP servers when possible. |
 | `mcp` | MCP server definitions keyed by server name. |
-| `mode` | Unsupported role-map compatibility surface; active entries are rejected. |
 | `model` | Default full-capability model reference. |
 | `model_profile` | Named model selectors that resolve to configured provider/model targets plus optional fallback metadata; runtime profile resolution selects the primary target in V1. |
 | `permission` | Default permission policy for the supported tool subset plus optional shell allowlist. Supports scalar `allow`/`ask`/`deny` or per-tool maps (ruleset-compatible pattern rules). Catch-all deny hides tools from the model; last matching pattern wins. |

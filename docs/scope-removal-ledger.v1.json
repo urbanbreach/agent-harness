@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "retired_families": [
+    {
+      "family_id": "marketplace-hosted-share-media",
+      "removed_items": [
+        "hosted marketplace discovery",
+        "hosted share uploads",
+        "hosted media generation",
+        "billing and paywall surfaces"
+      ],
+      "persisted_records_to_audit": [
+        "legacy marketplace installation records",
+        "legacy hosted-share receipts"
+      ],
+      "required_retained_behavior": "Retain local plugin descriptors, transcript export, support trace bundles, and inline media presentation without hosted marketplace or billing calls."
+    },
+    {
+      "family_id": "telemetry-announcements",
+      "removed_items": [
+        "telemetry event delivery",
+        "analytics reporting",
+        "hosted announcements"
+      ],
+      "persisted_records_to_audit": [
+        "legacy telemetry receipts",
+        "legacy analytics preferences"
+      ],
+      "required_retained_behavior": "Startup, doctor, and local support workflows make no network call for telemetry, analytics, or announcements."
+    }
+  ]
+}

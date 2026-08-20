@@ -54,7 +54,7 @@
     {
       "id": "global.scope.must_have.identity",
       "source_line": 37,
-      "title": "Preserve Harness product identity and authority. The scenario schema permits exactly two substitution categories: `identity_text` and `truthful_dynamic_text` (auth/model/workspace/session/provider values). Every span records field kind, both values, provenance, exact cell rectangle, style, and wrap contract. Regex, row, component, and region masks are forbidden; all other cells and pixels compare exactly.",
+      "title": "Preserve Harness product identity and authority. The scenario schema permits exactly two substitution categories: `identity_text` and `truthful_dynamic_text` (auth/model/workspace/session/provider values). Every span records field kind, canonical placeholder, explicit reference and candidate values, separate reference and candidate provenance, exact cell rectangle, style, and wrap contract. Both captured placements must match before masking. Regex, row, component, and region masks are forbidden; all other cells and pixels compare exactly.",
       "obligation": {
         "type": "dual_capture"
       }
@@ -220,7 +220,7 @@
     {
       "id": "global.verification.exact_settled",
       "source_line": 78,
-      "title": "Exact settled gate: semantic cells and PNG pixels are identical outside enumerated `identity_text` and `truthful_dynamic_text` spans. Each span must retain exact rectangles, styles, and wrapping and carry source provenance. No geometry, component, cursor, focus, color, regex, row, component, region, or whole-surface mask is permitted.",
+      "title": "Exact settled gate: semantic cells and PNG pixels are identical outside enumerated `identity_text` and `truthful_dynamic_text` spans whose captured reference and candidate placements match their declared values. Each span must retain exact rectangles, styles, wrapping, canonical placeholder, and separate reference and candidate provenance. No geometry, component, cursor, focus, color, regex, row, component, region, or whole-surface mask is permitted.",
       "obligation": {
         "type": "static_gate",
         "key": "fidelity-static-contract"
@@ -3694,7 +3694,7 @@
     {
       "id": "todo.58.acceptance",
       "source_line": 588,
-      "title": "Acceptance criteria: two preliminary inventory reviewers approve before any Todo 53-57 dispatch, and final F1/F4 revalidate those receipts; tracked closure contract in the frozen Git commit anchors reviewed plan SHA, requirement inventory hash, coverage manifest hash, and recovery run ID outside mutable `.omo` state; runner call graph reaches every comparator; receipts record capture separately from comparison; CLI exits nonzero for every injected defect. `closure-verify` validates the Git-anchored contract, live plan, revocation record, ordered completion, zero disconnected inventory, fresh executable digests, every comparator/lane, and authoritative OpenCode/Codex spawn/session provenance with timestamps, parent edges, roles, run ID, plan SHA, candidate SHA, evidence hash, one-use nonce, and anti-replay checks. The rebuilt installed `dist/cli.js` consumer must fail closed for direct `status=completed` in works or mirror state, works/mirror divergence, missing/malformed Boulder, missing plan/contract/revocation, removed session receipt, checkbox-only completion, and missing/mismatched/replayed/consumed receipt. If source and installed hook cannot both be patched and end-to-end tested, recovery execution stops before Todo 53.",
+      "title": "Acceptance criteria: two preliminary inventory reviewers approve before any Todo 53-57 dispatch, and final F1/F4 revalidate those receipts; tracked closure contract in the frozen Git commit anchors reviewed plan SHA, requirement inventory hash, coverage manifest hash, and recovery run ID outside mutable `.omo` state; runner call graph reaches every comparator; receipts record capture separately from comparison; CLI exits nonzero for every injected defect. `closure-verify` validates the Git-anchored contract, live plan, revocation record, ordered completion, zero disconnected inventory, fresh executable digests, every comparator/lane, and authoritative parent/child spawn and session provenance with timestamps, parent edges, roles, run ID, plan SHA, candidate SHA, evidence hash, one-use nonce, and anti-replay checks. The rebuilt installed `dist/cli.js` consumer must fail closed for direct `status=completed` in works or mirror state, works/mirror divergence, missing/malformed Boulder, missing plan/contract/revocation, removed session receipt, checkbox-only completion, and missing/mismatched/replayed/consumed receipt. If source and installed hook cannot both be patched and end-to-end tested, recovery execution stops before Todo 53.",
       "obligation": {
         "type": "static_gate",
         "key": "fidelity-static-contract"
@@ -3877,7 +3877,7 @@
     {
       "id": "global.success.parity",
       "source_line": 709,
-      "title": "Every required state, transition, viewport, theme, input persona, terminal tier, and failure path has exact semantic-cell and same-renderer pixel parity outside the enumerated identity text spans; those spans preserve rectangles, styles, and wrapping.",
+      "title": "Every required state, transition, viewport, theme, input persona, terminal tier, and failure path has exact semantic-cell and same-renderer pixel parity outside enumerated `identity_text` and `truthful_dynamic_text` spans; those spans preserve rectangles, styles, wrapping, field kind, canonical placeholder, explicit reference and candidate values, and separate source provenance for both runtimes, verified against captured cells before masking.",
       "obligation": {
         "type": "dual_capture"
       }

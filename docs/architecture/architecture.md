@@ -41,7 +41,7 @@ Core runtime and domain logic:
 
 Interactive agent runtime settings come from structured config, while the prompt body is resolved separately from the shipped asset and project instructions:
 
-- `.agent-harness/agents/default.md` supplies the Pi-style generic coding prompt.
+- `.agent-harness/agents/default.md` supplies the generic coding prompt.
 - inline `agent.system_prompt` replaces the shipped body.
 - `AGENTS.md` is loaded as a separate project-instruction layer and composed into the final runtime system prompt.
 
@@ -54,8 +54,10 @@ Reference prompt-system behavior is adopted only as user-observable Harness beha
 | Reference pattern | Harness seam | V1 status |
 |---|---|---|
 | Generic coding prompt | `.agent-harness/agents/default.md`, `crates/harness/src/bootstrap.rs`, and `crates/harness/src/dynamic_prompt.rs` | Used by interactive execution without primary-role switching |
-| Named subagents | `.agent-harness/agents/{explore,general,librarian}.md` and the `task(subagent_type=...)` contract | Preserved as bounded Pi-style extension profiles |
-| Structured delegation reminder | `crates/harness/src/dynamic_prompt.rs`, `docs/operations/generic-agent-and-tasks.md`, and the `task` native tool contract | Shipped as named subagent guidance |
+| Intent-gate before tool use | `crates/harness/src/dynamic_prompt.rs` (`intent_gate`) | Shipped for ambiguous requests before tool use |
+| Named subagents | `.agent-harness/agents/{explore,general,librarian}.md` and the `task(subagent_type=...)` contract | Preserved as bounded child profiles |
+| Structured delegation reminder | `crates/harness/src/dynamic_prompt.rs` (`delegation_reminder`), `docs/operations/generic-agent-and-tasks.md`, and the `task` native tool contract | Shipped as named subagent guidance |
+| Category-specific routing and prompt appends | `harness_core::agent_catalog` and named profile configuration | Shipped as bounded named profiles, not a category router |
 | Markdown-defined skills with progressive disclosure | `harness-tools::skill_catalog`, `.agent-harness/skills/*/SKILL.md`, and `docs/configuration/starter-skills.md` | Shipped for the V1 built-in skill set |
 | Disableable built-in capabilities | `skills.disabled` config shape, `SkillCatalogStatus::Disabled`, doctor skill catalog metadata, `harness-core::extension_manifest`, `configs/extension-manifest.v1.schema.json`, and `docs/operations/extension-strategy.md` | Skills ship as runtime capabilities; typed extension manifests ship as descriptor-only metadata with runtime hosting post-V1 |
 | Command/hook lifecycle maps | `docs/operations/extension-strategy.md` command/hook seam | Native lifecycle hooks ship; markdown command files and extension command-hook execution remain unsupported/post-V1 |
@@ -491,11 +493,12 @@ V1 compaction contract:
   model input window, clamped between 2,000 and 8,000 tokens. Manual `/compact` preserves the latest
   completed turn verbatim; overflow/failed-response compaction may use summary-only or split-tail
   boundaries only when that safely reduces provider context.
-- File/tool/skill/todo context: checkpoint operational memory stores event-derived read-file and
-  modified-file facts, generic tool operation facts, skill loads, and todo updates from compacted
-  turns. These facts are redacted and capped before persistence.
-- Todo bridging: todo updates (`todowrite`/`todoread`) are summarized as compact operation facts so a
-  resumed agent can continue without guessing which checklist was active.
+- File/tool/skill/todo/plan context: checkpoint operational memory stores event-derived read-file
+  and modified-file facts, generic tool operation facts, skill loads, todo updates, and plan-handoff
+  references from compacted turns. These facts are redacted and capped before persistence.
+- Todo/plan bridging: todo updates (`todowrite`/`todoread`) and plan-handoff references are
+  summarized as compact operation facts so a resumed agent can continue without guessing which
+  checklist or handoff was active.
 - Post-compaction restoration hints: checkpoint summaries include source facts, relevant
   files/artifacts, operational memory, tail-boundary metadata, and a reminder that preserved recent turns plus the live user prompt take precedence over the lossy recap.
 

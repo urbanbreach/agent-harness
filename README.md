@@ -83,7 +83,10 @@ For a one-shot headless prompt instead, use:
 "$HARNESS_BIN" run "Summarize the current workspace"
 ```
 
-Use one live `run` or interactive turn to prove provider authentication and transport. If that fails, start with [`doctor`](docs/operations/troubleshooting.md) and the [provider support guide](docs/configuration/provider-support.md).
+For a real provider first run, the `openai-codex` starter uses `authProvider: "codex"` with the `OPENAI_API_KEY` fallback. Its Codex OAuth-backed request
+path resolves stored OAuth credentials before environment or inline API-key fallbacks. Use one live `run` or interactive turn to prove provider authentication and transport: doctor does not prove live provider authentication or transport health. If the live turn fails, start with [`doctor`](docs/operations/troubleshooting.md) and the [provider support guide](docs/configuration/provider-support.md).
+
+When a `task` call includes `load_skills`, duplicate names load once at their first occurrence. Missing, denied, disabled, malformed, or symlink-unsafe skills fail the task call before child spawn. Skill catalog output reports `body_loaded: false` until a loadable skill is explicitly activated.
 
 ## Configure the harness
 

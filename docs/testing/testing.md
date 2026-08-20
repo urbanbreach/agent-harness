@@ -57,9 +57,9 @@ python3 scripts/check-test-suite-gates.py --self-test
 ```
 
 The gates cover deterministic-test sleeps, process-global env/cwd mutation, subprocess and
-real-world dependency usage, widened test-file focus, T5 tree-total line budget, arrange/act/assert
+real-world dependency usage, widened test-file focus, T5 signoff-file line budget, arrange/act/assert
 conventions, cassette secret hygiene, committed snapshot orphans, and test taxonomy. Any residual
-arrange/act/assert debt is stored as SHA-256 keys in `docs/test-suite-conventions-baseline.json`;
+arrange/act/assert debt is stored as SHA-256 keys in `docs/testing/test-suite-conventions-baseline.json`;
 the gate fails on new or stale debt without storing source-brand terms in docs. The baseline is
 currently empty (Wave 3 Packet 3.5 fixed all 81 listed tests by adding arrange/act/assert
 sections and removed every exemption); re-adding entries requires explicit approval and a
@@ -436,9 +436,9 @@ scripts/test-lanes.sh signoff-parity --dry-run
 
 Ownership:
 
-- **Owns:** dual-binary cells/pixels acceptance against
-  [`docs/reference/tui-reference-parity-manifest.v1.json`](../reference/tui-reference-parity-manifest.v1.json) (independent
-  of the older signoff manifest).
+- **Owns:** active dual-binary cells/pixels verification. The frozen
+  [`docs/reference/tui-reference-parity-manifest.v1.json`](../reference/tui-reference-parity-manifest.v1.json)
+  supplies historical scenario/evidence rows but has no completion authority.
 - **Does not own:** [`docs/testing/tui-signoff-manifest.v1.json`](tui-signoff-manifest.v1.json) flow
   coverage — that remains with `signoff-pty` / `tui_signoff_manifest_test` and is not a dual-binary
   cells/pixels gate.
@@ -517,9 +517,14 @@ Current fail-closed stages (no `|| true`):
   match the rows owning that capture. Any missing, stale, copied, or mismatched artifact fails
   the lane.
 - Aggregate `parity-lane-verdict.txt` under the lane artifact tree, including an explicit
-  `stages=` list of the owners that ran and `parity_complete=true|false` derived from the
-  independent manifest rows. A lane `verdict=PASS` proves every required stage passed; it does
-  not turn manifest rows still marked `incomplete` or `blocked` into parity claims.
+  `stages=` list of the owners that ran. The frozen
+  `docs/reference/tui-reference-parity-manifest.v1.json` is historical non-acceptance evidence and
+  never derives `parity_complete`. Final `verdict=PASS` and `parity_complete=true` require
+  `TUI_FIDELITY_ACTIVE_VERIFICATION_RECEIPT` to identify an active sealed `verify --profile all`
+  receipt for the current candidate. The receipt and its seal must account for every key as passed
+  with zero failed, cancelled, or skipped records. The verdict binds the SHA-256 values of the
+  active reference authority, requirement inventory, coverage manifest, and verification receipt.
+  Dry runs always retain `parity_complete=false` and do not synthesize a verification receipt.
 
 Ordinary `cargo nextest` runs do not set `HARNESS_TUI_PARITY_STRICT`, so the env-gated strict
 provenance test stays inert and the suite passes from a clean checkout without signoff artifacts.
@@ -555,8 +560,20 @@ frame. The pinned reference emits no native fields, so its valid evidence varian
 | interaction `scenario-id:action:ordinal` | both binaries | Content-free runner identifier. Receipts do not retain raw input or provider content. |
 | native cause `trace-id:cause:sequence` | Harness only | Content-free causal join key for native trace coverage. |
 
-The receipt schemas are `harness.tui-fidelity.runner.v3`,
-`harness.tui-fidelity.comparison.v1`, and `harness.tui-fidelity.cleanup.v3`. The runner receipt
+The receipt schemas are `harness.tui-fidelity.runner.v4`,
+`harness.tui-fidelity.comparison.v3`, and `harness.tui-fidelity.cleanup.v3`. Scenario inputs use
+`tui-fidelity-scenario-v2`: every substitution explicitly declares `kind` as exactly
+`identity_text` or `truthful_dynamic_text`, an enumerated `field`, its canonical field placeholder,
+separate nonempty reference and candidate provenance, both explicit runtime text placements, and an
+exact cell rectangle. Identity fields remain limited to product logo and title; workspace, home,
+release version/date, provider/model/account, session, and auth fields are truthful dynamic text.
+Before semantic or pixel masking, captured reference and candidate cells must exactly match their
+declared values, styles, wrapping, and padding. Duplicate fields at one checkpoint, legacy `scope`,
+missing metadata, unknown kinds or fields, copied reference/candidate values, and
+row/component/region-shaped masks fail closed. The comparison receipt copies every successfully
+verified and applied typed span, including both values and both provenance fields, into
+`applied_substitutions`; undeclared or mismatched path/version/logo-like text is compared exactly and
+is never heuristically masked. The runner receipt
 uses a tagged evidence variant: `external_only` is valid only for the pinned reference;
 `harness_native` requires the shared external evidence, the complete native trace, its artifact
 digest, and ordered byte-digest links. `receipt.json` carries the adapter identity, scenario,
@@ -571,6 +588,18 @@ order, other than exactly one acknowledgement per accepted native frame, a visib
 completed frame, an unmatched native byte digest, a missing artifact digest, or non-clean idle and
 cleanup accounting. Freshness checks bind action schedules, motion contracts, the observer version,
 terminal identity, reference identity, and artifact bytes to the current run.
+
+Candidate acceptance additionally requires `harness.tui-fidelity.candidate-binding.v2`. The
+binding records the canonical repository and target roots, Git HEAD and tree, clean state, exact
+tracked-source and diagnostic dirty/untracked content digests, Cargo lock/toolchain/config digests,
+all three candidate binary digests, active authority/reference-receipt identities, and the
+`harness.tui-fidelity.source-guard.v2` digest. The comparator re-hashes those current bytes and
+requires byte-identical source guards before the reference capture and after the candidate capture.
+The default build refuses dirty source. `--diagnostic-non-release` may bind immutable dirty content
+with `receipt_kind=diagnostic_non_release`, `clean_release=false`, and `release_eligible=false`.
+Its independently bound `parity_acceptance_eligible=true` allows the sealed comparator to accept
+exact frozen dirty bytes when every source/diff/untracked, binary, authority, and guard digest
+re-verifies. This never makes the evidence eligible for a clean release lane.
 
 Scenario `motion_capture` is an ordered contract, not a checkpoint guess. It names the applicable
 `MotionFamily` values and ordered markers with a boundary, observation rule, phase, and repeat
@@ -725,7 +754,7 @@ Current invariant owners:
 | Deterministic UI content rendering, transcript layout, and navigation | `cargo nextest run -p harness-tui --test deterministic_render_test`; `cargo nextest run -p harness-tui --test lineage_view_model_test`; `cargo nextest run -p harness-tui --test model_switcher_metadata_test`; `cargo nextest run -p harness-tui --test session_navigation_keybindings_test`; `cargo nextest run -p harness-tui --test pty_e2e` as the fail-closed helper lane |
 | TUI signoff manifest and visual/provenance flow coverage | `cargo nextest run -p harness-tui --test deterministic_render_test tui_signoff_manifest_covers_required_release_flows`; `env RUST_TEST_THREADS=1 cargo nextest run -p harness-testkit --test pty_e2e --test-threads 1 pty_signoff_manifest_declares_required_flow_artifacts`; `scripts/test-lanes.sh signoff-pty` |
 | Live, PTY, native visual provenance contracts | `scripts/test-lanes.sh signoff-pty`; `scripts/test-lanes.sh signoff-live`; `scripts/test-lanes.sh signoff-native` as opt-in T5 lanes only |
-| Dual-binary TUI reference parity (cells/pixels) | `scripts/test-lanes.sh signoff-parity` (strict fail-closed; owns `docs/tui-reference-parity-manifest.v1.json`). Does **not** use `tui-signoff-manifest.v1.json`. |
+| Dual-binary TUI reference parity (cells/pixels) | `scripts/test-lanes.sh signoff-parity` (strict fail-closed; historical manifest rows cannot authorize completion; only an active sealed verify-all receipt can). Does **not** use `tui-signoff-manifest.v1.json`. |
 | A-JOURNEYS scaffolding (config CLI + worktree owner doc) | `scripts/test-lanes.sh signoff-journeys` (strict fail-closed; owns `crates/harness/tests/journey_signoff_test.rs`). Rows stay `incomplete` until full L1–L6. |
 
 Retired harness-tui PTY helper scenario owners:
@@ -760,6 +789,30 @@ Retired harness-testkit T5 scenario owners:
 
 The acceptance owner map above is the source of truth for the test-suite overhaul. Concrete lane
 artifacts land under `target/test-suite-overhaul/` when those stages run.
+
+## Complete fidelity matrix execution
+
+The `tui-fidelity matrix --suite complete` command executes the active coverage contract as a
+row/trial bijection. The checked-in 547-row manifest declares exactly five trials per row, so a
+complete run schedules 2,735 independent comparisons; the 452 shared capture keys are reporting
+metadata and never deduplicate row obligations. Every invocation binds the row's action path,
+viewport, terminal tier, persona, theme mode, media mode, failure path, and trial ordinal into the
+comparison evidence. The baseline registry must resolve every active scenario and viewport.
+Registered canary, Packet 6, cancel, and fail families remain explicit non-acceptance families
+until a future coverage manifest adds real rows for them.
+
+Matrix execution requires explicit reference authority, reference checkout, reference receipt,
+reference binary, candidate receipt, and candidate binary inputs. Its evidence root must be a
+fresh path. Each comparison receives a new full per-trial deadline; there is no shared global
+matrix timeout. A failed capture or comparison is retained in `matrix-receipt.json` with both
+booleans false where applicable, the command exits nonzero, and no `matrix-completion.json` is
+written. Full-parity comparisons require presentation, semantic-cell, pixel, motion, timing,
+provenance, checkpoint, exit, and cleanup gates.
+
+The browser renderer uses the exact direct versions recorded in
+`scripts/tui-parity/package-lock.json`. Checkpoint metadata binds Node, xterm.js, Unicode 11,
+node-pty, pngjs, and Puppeteer versions, and the Rust renderer validator rejects drift from those
+pins before accepting the capture.
 
 ## Packet 2 scheduling signoff
 

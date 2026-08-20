@@ -3,7 +3,7 @@
   "invariants": [
     {
       "invariant_id": "INV-001",
-      "description": "Deterministic golden_path runs finish with the expected event vocabulary and replay status.",
+      "description": "Deterministic golden_path runs finish with the expected event vocabulary, provider request digests, and replay status.",
       "behavioral": true
     },
     {
@@ -95,27 +95,25 @@
       ],
       "expected_predicates": {
         "event_kind_counts": {
-          "agent_spawned": 2,
+          "agent_spawned": 1,
           "artifact_written": 2,
-          "assistant_message_finished": 2,
           "edit_applied": 1,
           "edit_proposed": 1,
           "permission_requested": 1,
           "permission_resolved": 1,
-          "provider_request_finished": 2,
-          "provider_request_started": 2,
-          "provider_stream_delta": 2,
+          "provider_request_finished": 1,
+          "provider_request_started": 1,
           "run_finished": 1,
           "run_started": 1,
-          "task_completed": 3,
-          "task_scheduled": 3,
+          "task_cancelled": 1,
+          "task_completed": 1,
+          "task_scheduled": 2,
           "tool_call_finished": 1,
           "tool_call_requested": 1,
           "tool_call_started": 1
         },
         "provider_request_digests": [
-          "dfb50b246393",
-          "7a919f295090"
+          "45273de0fde2"
         ],
         "edit_artifact_links": {
           "artifact_digest": "5a0337d1b44806cc0ae095412f6d42e5fe725124c445f279db0f85f08a4adff6",
@@ -138,7 +136,7 @@
           "artifact_count": 2,
           "pending_permissions": 0,
           "tasks_in_flight": 0,
-          "total_events": 27
+          "total_events": 18
         },
         "tool_artifacts": [
           {

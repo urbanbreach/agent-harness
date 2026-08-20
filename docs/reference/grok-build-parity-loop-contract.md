@@ -4,8 +4,8 @@
 > ordered autonomous loop or its `.omo` Boulder state. Completion claims from
 > that loop were revoked after stale/disconnected evidence and aggregate
 > verification collapse. Use
-> [`grok-build-ui-difference-catalog.md`](../../grok-build-ui-difference-catalog.md)
-> for bounded UI discrepancy packets. The only active reference authority is
+> the bounded UI discrepancy catalog preserved in the retired internal evidence
+> area for historical UI discrepancy packets. The only active reference authority is
 > [`configs/tui-fidelity-reference-authority.json`](../../configs/tui-fidelity-reference-authority.json).
 > Section 2 and the old parity manifest are historical, non-acceptance records.
 

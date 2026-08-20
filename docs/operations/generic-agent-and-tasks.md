@@ -1,6 +1,6 @@
 # Generic agent and tasks
 
-Harness uses one Pi-style generic coding prompt for interactive turns. There is no selectable primary role, category router, or planning agent. Named subagents remain as bounded extension-style profiles: `explore` for local codebase research, `general` for focused implementation or research, and `librarian` for external documentation and repository research.
+Harness uses one generic coding prompt for interactive turns. There is no selectable primary role, category router, or planning agent. Named subagents remain as bounded extension-style profiles: `explore` for local codebase research, `general` for focused implementation or research, and `librarian` for external documentation and repository research.
 
 Session title generation and provider-context compaction are coordinator-owned internal operations. Their dedicated prompts are not agents, are not configurable through `agent`, do not receive tools, and do not appear in the interactive runtime catalog.
 

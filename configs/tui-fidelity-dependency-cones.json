@@ -4,7 +4,7 @@
     {
       "paths": [
         "crates/harness-tui/src/leaf_views/startup.rs",
-        "crates/harness-tui/src/ui_startup_logo.rs"
+        "crates/harness-tui/src/startup_logo.rs"
       ],
       "obligations": ["scenario:baseline-startup"]
     },
@@ -51,7 +51,7 @@
     {
       "paths": [
         "crates/harness-tui/src/leaf_actions/group_d_dashboard.rs",
-        "crates/harness-tui/src/app/dashboard.rs"
+        "crates/harness-tui/src/dashboard/mod.rs"
       ],
       "obligations": ["scenario:baseline-dashboard"]
     },
