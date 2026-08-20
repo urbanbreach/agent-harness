@@ -1,7 +1,6 @@
 #![allow(clippy::expect_used, reason = "protocol fixture tests fail fast")]
 
 use std::io::{Read, Write};
-use std::net::TcpStream;
 use std::path::PathBuf;
 
 use harness_testkit::parity::{CursorState, SemanticFrame};
@@ -11,8 +10,12 @@ use harness_testkit::tui_fidelity_fixture::{
 };
 use harness_testkit::tui_fidelity_runner::{semantic_click_bytes, RunnerError};
 
+#[path = "support/harness_bin.rs"]
+mod harness_bin;
+
 #[test]
 fn failed_tool_then_paced_stream_is_protocol_complete() {
+    // arrange
     let server = Packet2FixtureServer::start().expect("fixture starts");
     let authority = server
         .base_url()
@@ -20,6 +23,7 @@ fn failed_tool_then_paced_stream_is_protocol_complete() {
         .trim_end_matches("/v1")
         .to_owned();
 
+    // act
     let first = request(
         &authority,
         serde_json::json!({
@@ -28,6 +32,7 @@ fn failed_tool_then_paced_stream_is_protocol_complete() {
             "tools":[{"type":"function","function":{"name":"shell_command","parameters":{"type":"object"}}}]
         }),
     );
+    // assert
     assert!(first.contains("packet2-call"));
     assert!(first.contains("shell_command"));
 
@@ -56,7 +61,7 @@ fn failed_tool_then_paced_stream_is_protocol_complete() {
 
 #[test]
 fn packet3_stream_ignores_auxiliary_requests_around_foreground_turn() {
-    // Given: Grok sends auxiliary requests around the foreground turn.
+    // arrange: Grok sends auxiliary requests around the foreground turn.
     let server = Packet2FixtureServer::start_packet3("packet3-baseline-stream--wide-120x40")
         .expect("fixture starts");
     let authority = server
@@ -65,7 +70,7 @@ fn packet3_stream_ignores_auxiliary_requests_around_foreground_turn() {
         .trim_end_matches("/v1")
         .to_owned();
 
-    // When: both requests contain the prompt but only the second has a turn index.
+    // act: both requests contain the prompt but only the second has a turn index.
     let auxiliary = request_path_with_headers(
         &authority,
         "/v1/responses",
@@ -84,10 +89,10 @@ fn packet3_stream_ignores_auxiliary_requests_around_foreground_turn() {
         serde_json::json!({"input":[{"content":"stream probe"}]}),
         "X-Grok-Req-Id: trailing-title-request\r\n",
     );
-    drop(TcpStream::connect(&authority).expect("connect abandoned auxiliary request"));
+    drop(harness_bin::connect(&authority).expect("connect abandoned auxiliary request"));
     let trace = server.finish().expect("fixture completes");
 
-    // Then: auxiliary traffic gets a simple response and the turn gets Packet 3.
+    // assert: auxiliary traffic gets a simple response and the turn gets Packet 3.
     assert!(auxiliary.contains("Packet 2"));
     assert!(!auxiliary.contains(PACKET3_STREAM_REST));
     assert!(foreground.contains(PACKET3_STREAM_REST));
@@ -105,12 +110,15 @@ fn packet3_stream_ignores_auxiliary_requests_around_foreground_turn() {
 
 #[test]
 fn click_text_fails_when_sentinel_is_absent() {
+    // arrange
     let frame = SemanticFrame::new(20, 4, CursorState::hidden(0, 0));
     let mut mouse_bytes = Vec::new();
 
+    // act
     let result =
         semantic_click_bytes(&frame, DISCLOSURE_SENTINEL, 0).map(|bytes| mouse_bytes.extend(bytes));
 
+    // assert
     assert!(matches!(
         result,
         Err(RunnerError::SemanticTargetMissing { .. })
@@ -121,6 +129,7 @@ fn click_text_fails_when_sentinel_is_absent() {
 
 #[test]
 fn click_text_resolves_current_cell_and_emits_sgr_down_up() {
+    // arrange
     let mut frame = SemanticFrame::new(30, 4, CursorState::hidden(0, 0));
     for (offset, character) in "TARGET".chars().enumerate() {
         let col = 5 + u16::try_from(offset).expect("short target");
@@ -132,8 +141,10 @@ fn click_text_resolves_current_cell_and_emits_sgr_down_up() {
             .expect("target cell");
     }
 
+    // act
     let bytes = semantic_click_bytes(&frame, "TARGET", 2).expect("target resolves");
 
+    // assert
     assert_eq!(bytes, b"\x1b[<0;8;3M\x1b[<0;8;3m");
 }
 
@@ -152,7 +163,7 @@ fn request_path_with_headers(
     extra_headers: &str,
 ) -> String {
     let body = serde_json::to_vec(&body).expect("request JSON");
-    let mut stream = TcpStream::connect(authority).expect("connect fixture");
+    let mut stream = harness_bin::connect(authority).expect("connect fixture");
     write!(stream, "POST {path} HTTP/1.1\r\nHost: {authority}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n{extra_headers}\r\n", body.len()).expect("headers");
     stream.write_all(&body).expect("body");
     stream.flush().expect("flush");

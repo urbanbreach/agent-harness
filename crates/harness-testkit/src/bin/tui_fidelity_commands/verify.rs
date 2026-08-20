@@ -3,6 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use harness_testkit::tui_fidelity_compare::hash_bytes;
 use harness_testkit::tui_fidelity_deadline::{
     CommandSpec, CommandStatus, DeadlineRunner, InterruptFlag, ResourceLimits,
 };
@@ -37,6 +38,12 @@ pub(super) fn execute(arguments: Vec<OsString>, repo_root: &Path) -> Result<(), 
             .args([format!("{}^{{commit}}", args.head_sha)])
             .cwd(repo_root),
     )?;
+    let inventory_bytes = fs::read(&args.inventory)
+        .map_err(|error| format!("{}: {error}", args.inventory.display()))?;
+    let manifest_bytes = fs::read(&args.manifest)
+        .map_err(|error| format!("{}: {error}", args.manifest.display()))?;
+    let authority_bytes = fs::read(&args.reference_authority)
+        .map_err(|error| format!("{}: {error}", args.reference_authority.display()))?;
     let (inventory, manifest, _) = read_coverage_documents(&args.inventory, &args.manifest)
         .map_err(|error| error.to_string())?;
     let changed = if args.profile == VerificationProfile::Changed {
@@ -84,6 +91,9 @@ pub(super) fn execute(arguments: Vec<OsString>, repo_root: &Path) -> Result<(), 
     let receipt = execute_plan(
         &VerifyConfig {
             candidate_sha,
+            authority_sha256: hash_bytes(&authority_bytes).map_err(|error| error.to_string())?,
+            inventory_sha256: hash_bytes(&inventory_bytes).map_err(|error| error.to_string())?,
+            coverage_sha256: hash_bytes(&manifest_bytes).map_err(|error| error.to_string())?,
             attempt_id: args.attempt_id,
             evidence_root: args.evidence_root,
             workers: args.workers,
@@ -112,6 +122,9 @@ pub(super) struct VerifyArgs {
     pub cones: PathBuf,
     pub evidence_root: PathBuf,
     pub reference_bin: PathBuf,
+    pub reference_root: PathBuf,
+    pub reference_receipt: PathBuf,
+    pub reference_authority: PathBuf,
     pub harness_bin: PathBuf,
     pub candidate_receipt: PathBuf,
     pub browser_bin: Option<PathBuf>,
@@ -125,7 +138,7 @@ fn parse(arguments: Vec<OsString>, repo_root: &Path) -> Result<VerifyArgs, Strin
     let mut values = arguments.into_iter();
     if values.next().as_deref() != Some(OsStr::new("verify")) {
         return Err(
-            "usage: verify --profile changed|all|motion --base-sha SHA --head-sha SHA --reference-bin PATH --harness-bin PATH".to_owned(),
+            "usage: verify --profile changed|all|motion --base-sha SHA --head-sha SHA --reference-authority PATH --reference-bin PATH --reference-root PATH --reference-receipt PATH --harness-bin PATH --candidate-receipt PATH".to_owned(),
         );
     }
     let mut profile = None;
@@ -136,6 +149,9 @@ fn parse(arguments: Vec<OsString>, repo_root: &Path) -> Result<VerifyArgs, Strin
     let mut cones = repo_root.join("configs/tui-fidelity-dependency-cones.json");
     let mut evidence_root = repo_root.join(".omo/evidence");
     let mut reference_bin = None;
+    let mut reference_root = None;
+    let mut reference_receipt = None;
+    let mut reference_authority = None;
     let mut harness_bin = None;
     let mut candidate_receipt = None;
     let mut browser_bin = None;
@@ -160,6 +176,9 @@ fn parse(arguments: Vec<OsString>, repo_root: &Path) -> Result<VerifyArgs, Strin
             Some("--dependency-cones") => cones = value.into(),
             Some("--evidence-root") => evidence_root = value.into(),
             Some("--reference-bin") => reference_bin = Some(value.into()),
+            Some("--reference-root") => reference_root = Some(value.into()),
+            Some("--reference-receipt") => reference_receipt = Some(value.into()),
+            Some("--reference-authority") => reference_authority = Some(value.into()),
             Some("--harness-bin") => harness_bin = Some(value.into()),
             Some("--candidate-receipt") => candidate_receipt = Some(value.into()),
             Some("--browser-bin") => browser_bin = Some(value.into()),
@@ -190,6 +209,9 @@ fn parse(arguments: Vec<OsString>, repo_root: &Path) -> Result<VerifyArgs, Strin
         cones,
         evidence_root,
         reference_bin: reference_bin.ok_or("missing --reference-bin")?,
+        reference_root: reference_root.ok_or("missing --reference-root")?,
+        reference_receipt: reference_receipt.ok_or("missing --reference-receipt")?,
+        reference_authority: reference_authority.ok_or("missing --reference-authority")?,
         harness_bin: harness_bin.ok_or("missing --harness-bin")?,
         candidate_receipt: candidate_receipt.ok_or("missing --candidate-receipt")?,
         browser_bin,
@@ -225,6 +247,7 @@ mod tests {
 
     #[test]
     fn verify_parser_accepts_all_typed_profiles_with_revision_bounds() {
+        // arrange
         for profile in ["changed", "all", "motion"] {
             let arguments = vec![
                 OsString::from("verify"),
@@ -240,12 +263,22 @@ mod tests {
                 OsString::from("harness"),
                 OsString::from("--candidate-receipt"),
                 OsString::from("candidate-receipt"),
+                OsString::from("--reference-root"),
+                OsString::from("reference-root"),
+                OsString::from("--reference-receipt"),
+                OsString::from("reference-receipt"),
+                OsString::from("--reference-authority"),
+                OsString::from("reference-authority"),
             ];
 
+            // act
             let parsed = parse(arguments, Path::new("/repo")).expect("typed profile arguments");
+            // assert
             assert_eq!(parsed.base_sha, "base");
             assert_eq!(parsed.head_sha, "head");
             assert_eq!(parsed.profile.to_string(), profile);
+            assert_eq!(parsed.reference_root, PathBuf::from("reference-root"));
+            assert_eq!(parsed.reference_receipt, PathBuf::from("reference-receipt"));
         }
     }
 }

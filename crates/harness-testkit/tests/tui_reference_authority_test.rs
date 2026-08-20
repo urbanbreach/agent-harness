@@ -11,6 +11,8 @@ use serde_json::Value;
 
 #[path = "support/tui_reference_authority_test.rs"]
 mod authority_support;
+#[path = "support/harness_bin.rs"]
+mod harness_bin;
 
 use authority_support::{
     authority_defects, check_field, read_json, repo_root, ACTIVE_BINARY_SHA256, ACTIVE_REVISION,
@@ -19,19 +21,23 @@ use authority_support::{
 
 #[test]
 fn active_reference_authority_agrees_with_all_declared_sources() {
+    // arrange
     // Given
     let root = repo_root();
     let authority = read_json(&root.join(AUTHORITY_PATH));
 
     // When
+    // act
     let defects = authority_defects(&root, &authority);
 
     // Then
+    // assert
     assert!(defects.is_empty(), "{}", defects.join("\n"));
 }
 
 #[test]
 fn active_reference_binary_receipt_agrees_with_authority() {
+    // arrange
     // Given
     let root = repo_root();
     let authority = read_json(&root.join(AUTHORITY_PATH));
@@ -41,6 +47,7 @@ fn active_reference_binary_receipt_agrees_with_authority() {
     let receipt = read_json(&root.join(receipt_path));
 
     // When
+    // act
     let mut defects = Vec::new();
     for (pointer, expected) in [
         (
@@ -66,11 +73,13 @@ fn active_reference_binary_receipt_agrees_with_authority() {
     }
 
     // Then
+    // assert
     assert!(defects.is_empty(), "{}", defects.join("\n"));
 }
 
 #[test]
 fn active_reference_authority_rejects_copied_revision_mutation() {
+    // arrange
     // Given
     let root = repo_root();
     let temporary = tempfile::tempdir().expect("temporary authority directory");
@@ -85,6 +94,7 @@ fn active_reference_authority_rejects_copied_revision_mutation() {
     .expect("write mutated authority fixture");
 
     // When
+    // act
     let mut defects = Vec::new();
     check_field(
         &read_json(&copied),
@@ -94,6 +104,7 @@ fn active_reference_authority_rejects_copied_revision_mutation() {
     );
 
     // Then
+    // assert
     assert!(
         defects
             .iter()
@@ -105,6 +116,7 @@ fn active_reference_authority_rejects_copied_revision_mutation() {
 #[test]
 #[ignore = "manual canonical reference binary provenance check"]
 fn canonical_reference_binary_matches_active_authority() {
+    // arrange
     // Given
     let root = repo_root();
     let authority = read_json(&root.join(AUTHORITY_PATH));
@@ -115,10 +127,12 @@ fn canonical_reference_binary_matches_active_authority() {
     );
 
     // When
-    let digest = command_text(Command::new("sha256sum").arg(&binary));
-    let version = command_text(Command::new(&binary).arg("--version"));
+    let digest = command_text(harness_bin::command("sha256sum").arg(&binary));
+    // act
+    let version = command_text(harness_bin::command(&binary).arg("--version"));
 
     // Then
+    // assert
     assert_eq!(digest.split_whitespace().next(), Some(ACTIVE_BINARY_SHA256));
     assert_eq!(version.trim(), ACTIVE_VERSION);
 }

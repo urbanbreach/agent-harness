@@ -116,18 +116,22 @@ fn check_gap(
     metrics: &PresentationTimingMetrics,
     active_window: Option<(u64, u64)>,
 ) -> Result<(), AggregateError> {
-    if metrics.external_cadence_micros > 0
-        && metrics
+    let has_gap = if let Some((start, end)) = active_window {
+        metrics
             .external_observation_timestamps_micros
             .windows(2)
-            .filter(|window| {
-                active_window.is_none_or(|(start, end)| window[0] >= start && window[1] <= end)
-            })
+            .filter(|window| window[0] >= start && window[1] <= end)
             .any(|window| {
                 window[1].saturating_sub(window[0])
                     > metrics.external_cadence_micros.saturating_mul(2)
             })
-    {
+    } else {
+        metrics
+            .external_observation_intervals_micros
+            .iter()
+            .any(|gap| *gap > metrics.external_cadence_micros.saturating_mul(2))
+    };
+    if metrics.external_cadence_micros > 0 && has_gap {
         return Err(AggregateError::Threshold(
             "gap exceeds twice cadence".into(),
         ));

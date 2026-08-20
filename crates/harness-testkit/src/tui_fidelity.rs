@@ -14,7 +14,7 @@ pub use error::{
 };
 pub use types::*;
 
-pub const SCENARIO_SCHEMA_VERSION: &str = "tui-fidelity-scenario-v1";
+pub const SCENARIO_SCHEMA_VERSION: &str = "tui-fidelity-scenario-v2";
 
 impl Scenario {
     pub fn from_json(input: &str) -> Result<Self, ScenarioError> {

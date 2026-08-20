@@ -15,36 +15,45 @@ use harness_testkit::tui_fidelity_compare::hash_bytes;
 
 #[test]
 fn closure_validation_rejects_direct_completed_state() {
+    // arrange
     let boulder = boulder_json("completed", "completed");
     let receipt = valid_receipt();
 
+    // act
     let error = validate_boulder_for_completion(&boulder, &receipt)
         .expect_err("direct completed state must not be accepted");
 
+    // assert
     assert!(error.to_string().contains("active-to-completed transition"));
 }
 
 #[test]
 fn closure_validation_rejects_works_mirror_divergence() {
+    // arrange
     let boulder = boulder_json("active", "paused");
     let receipt = valid_receipt();
 
+    // act
     let error = validate_boulder_for_completion(&boulder, &receipt)
         .expect_err("works and mirror divergence must fail closed");
 
+    // assert
     assert!(error.to_string().contains("works/mirror divergence"));
 }
 
 #[test]
 fn closure_verify_rejects_mismatched_contract_plan_sha() {
+    // arrange
     let mut fixture = closure_fixture();
     let mut contract: serde_json::Value =
         serde_json::from_str(&fixture.contract_json).expect("fixture contract JSON");
     contract["reviewed_plan_sha256"] = serde_json::Value::String("f".repeat(64));
     fixture.contract_json = serde_json::to_string(&contract).expect("fixture contract JSON");
 
+    // act
     let error = verify_closure(fixture.input()).expect_err("stale contract must fail closed");
 
+    // assert
     assert!(error
         .to_string()
         .contains("contract plan digest differs from live plan"));
@@ -52,11 +61,14 @@ fn closure_verify_rejects_mismatched_contract_plan_sha() {
 
 #[test]
 fn closure_verify_rejects_missing_preliminary_reviews() {
+    // arrange
     let mut fixture = closure_fixture();
     fixture.review_receipts.clear();
 
+    // act
     let error = verify_closure(fixture.input()).expect_err("missing reviews must fail closed");
 
+    // assert
     assert!(error
         .to_string()
         .contains("exactly two preliminary reviews are required"));
@@ -64,6 +76,7 @@ fn closure_verify_rejects_missing_preliminary_reviews() {
 
 #[test]
 fn closure_complete_rejects_replayed_receipt() {
+    // arrange
     let directory = tempfile::tempdir().expect("temporary closure directory");
     let boulder_path = directory.path().join("boulder.json");
     let mut boulder: serde_json::Value =
@@ -75,9 +88,11 @@ fn closure_complete_rejects_replayed_receipt() {
     )
     .expect("write Boulder fixture");
 
+    // act
     let error = complete_boulder_atomically(&boulder_path, &valid_receipt())
         .expect_err("a consumed receipt must not be replayed");
 
+    // assert
     assert!(error
         .to_string()
         .contains("closure receipt has already been consumed"));
@@ -85,13 +100,16 @@ fn closure_complete_rejects_replayed_receipt() {
 
 #[test]
 fn closure_complete_rejects_works_mirror_divergence() {
+    // arrange
     let directory = tempfile::tempdir().expect("temporary closure directory");
     let boulder_path = directory.path().join("boulder.json");
     fs::write(&boulder_path, boulder_json("active", "paused")).expect("write Boulder fixture");
 
+    // act
     let error = complete_boulder_atomically(&boulder_path, &valid_receipt())
         .expect_err("divergent works and mirror must fail closed");
 
+    // assert
     assert!(error.to_string().contains("works/mirror divergence"));
 }
 
@@ -220,7 +238,7 @@ fn boulder_json(works_status: &str, mirror_status: &str) -> String {
         "active_plan": ".omo/plans/plan.md",
         "plan_name": "plan",
         "status": works_status,
-        "session_ids": ["opencode:session"],
+        "session_ids": ["agent:session"],
     });
     serde_json::json!({
         "schema_version": 2,
@@ -229,7 +247,7 @@ fn boulder_json(works_status: &str, mirror_status: &str) -> String {
         "active_plan": ".omo/plans/plan.md",
         "plan_name": "plan",
         "status": mirror_status,
-        "session_ids": ["opencode:session"],
+        "session_ids": ["agent:session"],
     })
     .to_string()
 }

@@ -45,19 +45,34 @@ impl IdentityPixelSpan {
     pub fn from_cell_rect(
         name: impl Into<String>,
         rectangle: crate::tui_fidelity::CellRect,
-        cell_width: u32,
-        cell_height: u32,
+        image_width: u32,
+        image_height: u32,
+        viewport_cols: u16,
+        viewport_rows: u16,
     ) -> Self {
+        let x0 = proportional_boundary(rectangle.col, image_width, viewport_cols);
+        let x1 = proportional_boundary(
+            rectangle.col.saturating_add(rectangle.cols),
+            image_width,
+            viewport_cols,
+        );
+        let y0 = proportional_boundary(rectangle.row, image_height, viewport_rows);
+        let y1 = proportional_boundary(
+            rectangle.row.saturating_add(rectangle.rows),
+            image_height,
+            viewport_rows,
+        );
         Self::new(
             name,
-            PixelRect::new(
-                u32::from(rectangle.col).saturating_mul(cell_width),
-                u32::from(rectangle.row).saturating_mul(cell_height),
-                u32::from(rectangle.cols).saturating_mul(cell_width),
-                u32::from(rectangle.rows).saturating_mul(cell_height),
-            ),
+            PixelRect::new(x0, y0, x1.saturating_sub(x0), y1.saturating_sub(y0)),
         )
     }
+}
+
+const fn proportional_boundary(cell: u16, pixels: u32, cells: u16) -> u32 {
+    let cells = cells as u32;
+    let cell = cell as u32;
+    pixels / cells * cell + pixels % cells * cell / cells
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -144,4 +159,33 @@ fn validate_spans(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{IdentityPixelSpan, PixelRect};
+    use crate::tui_fidelity::CellRect;
+
+    #[test]
+    fn typed_identity_rect_uses_proportional_boundaries_without_changing_divisible_projection() {
+        // arrange
+        let rectangle = CellRect {
+            col: 44,
+            row: 29,
+            cols: 1,
+            rows: 1,
+        };
+
+        // act
+        let fractional = IdentityPixelSpan::from_cell_rect("typed", rectangle, 1806, 1081, 100, 30);
+        let divisible = IdentityPixelSpan::from_cell_rect("typed", rectangle, 1800, 1080, 100, 30);
+
+        // assert
+        assert_eq!(fractional.rectangle, PixelRect::new(794, 1044, 18, 37));
+        assert!(!fractional.rectangle.contains(793, 1044));
+        assert!(fractional.rectangle.contains(810, 1044));
+        assert!(fractional.rectangle.contains(811, 1080));
+        assert!(!fractional.rectangle.contains(812, 1080));
+        assert_eq!(divisible.rectangle, PixelRect::new(792, 1044, 18, 36));
+    }
 }

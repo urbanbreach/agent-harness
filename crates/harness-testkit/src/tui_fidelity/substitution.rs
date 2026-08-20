@@ -1,11 +1,11 @@
 use super::error::{ScenarioError, SubstitutionError};
-use super::types::{CellRect, Checkpoint, IdentitySubstitution, TextPlacement, Viewport, Wrapping};
+use super::types::{CellRect, Checkpoint, TextPlacement, TextSubstitution, Viewport, Wrapping};
 
 pub(super) fn validate_substitutions(
-    substitutions: &[IdentitySubstitution],
+    substitutions: &[TextSubstitution],
     checkpoints: &[Checkpoint],
 ) -> Result<(), ScenarioError> {
-    let mut seen_scopes = Vec::new();
+    let mut seen_fields = Vec::new();
     for substitution in substitutions {
         let Some(checkpoint) = checkpoints
             .iter()
@@ -15,51 +15,96 @@ pub(super) fn validate_substitutions(
                 SubstitutionError::RectangleGeometry,
             ));
         };
-        if seen_scopes.contains(&(substitution.checkpoint, substitution.scope)) {
+        if seen_fields.contains(&(substitution.checkpoint, substitution.field)) {
             return Err(ScenarioError::InvalidSubstitution(
-                SubstitutionError::DuplicateScope {
+                SubstitutionError::DuplicateField {
                     checkpoint: substitution.checkpoint,
                 },
             ));
         }
-        seen_scopes.push((substitution.checkpoint, substitution.scope));
+        seen_fields.push((substitution.checkpoint, substitution.field));
+        if !substitution.field.permits(substitution.kind) {
+            return Err(ScenarioError::InvalidSubstitution(
+                SubstitutionError::FieldKindMismatch,
+            ));
+        }
+        if substitution.reference_provenance.trim().is_empty() {
+            return Err(ScenarioError::InvalidSubstitution(
+                SubstitutionError::MissingReferenceProvenance,
+            ));
+        }
+        if substitution.candidate_provenance.trim().is_empty() {
+            return Err(ScenarioError::InvalidSubstitution(
+                SubstitutionError::MissingCandidateProvenance,
+            ));
+        }
+        if substitution
+            .reference_provenance
+            .chars()
+            .any(char::is_control)
+        {
+            return Err(ScenarioError::InvalidSubstitution(
+                SubstitutionError::ControlReferenceProvenance,
+            ));
+        }
+        if substitution
+            .candidate_provenance
+            .chars()
+            .any(char::is_control)
+        {
+            return Err(ScenarioError::InvalidSubstitution(
+                SubstitutionError::ControlCandidateProvenance,
+            ));
+        }
         validate_rectangle(substitution.rectangle, checkpoint.frame.viewport)?;
-        validate_placement(&substitution.source, substitution.rectangle)?;
-        validate_placement(&substitution.target, substitution.rectangle)?;
-        if substitution.source.text.is_empty() || substitution.target.text.is_empty() {
+        validate_placement(&substitution.reference, substitution.rectangle)?;
+        validate_placement(&substitution.candidate, substitution.rectangle)?;
+        if substitution.reference.text.is_empty() || substitution.candidate.text.is_empty() {
             return Err(ScenarioError::InvalidSubstitution(
                 SubstitutionError::EmptyText,
             ));
         }
-        if substitution.source.text.chars().any(char::is_control)
-            || substitution.target.text.chars().any(char::is_control)
+        if substitution
+            .reference
+            .text
+            .chars()
+            .any(invalid_text_control)
+            || substitution
+                .candidate
+                .text
+                .chars()
+                .any(invalid_text_control)
         {
             return Err(ScenarioError::InvalidSubstitution(
                 SubstitutionError::ControlText,
             ));
         }
-        if substitution.source.text == substitution.target.text {
+        if substitution.reference.text == substitution.candidate.text {
             return Err(ScenarioError::InvalidSubstitution(
                 SubstitutionError::SameText,
             ));
         }
-        if substitution.target.text != substitution.scope.placeholder() {
+        if substitution.canonical_placeholder != substitution.field.placeholder() {
             return Err(ScenarioError::InvalidSubstitution(
-                SubstitutionError::NonIdentityReplacement,
+                SubstitutionError::NonCanonicalPlaceholder,
             ));
         }
-        if substitution.source.style != substitution.target.style {
+        if substitution.reference.style != substitution.candidate.style {
             return Err(ScenarioError::InvalidSubstitution(
                 SubstitutionError::StyleMismatch,
             ));
         }
-        if substitution.source.wrapping != substitution.target.wrapping {
+        if substitution.reference.wrapping != substitution.candidate.wrapping {
             return Err(ScenarioError::InvalidSubstitution(
                 SubstitutionError::WrappingMismatch,
             ));
         }
     }
     Ok(())
+}
+
+fn invalid_text_control(character: char) -> bool {
+    character.is_control() && character != '\n'
 }
 
 fn validate_rectangle(rectangle: CellRect, viewport: Viewport) -> Result<(), ScenarioError> {
@@ -76,6 +121,7 @@ fn validate_rectangle(rectangle: CellRect, viewport: Viewport) -> Result<(), Sce
     let viewport_area = u32::from(viewport.cols) * u32::from(viewport.rows);
     if rectangle.cols == viewport.cols
         || rectangle.rows == viewport.rows
+        || u32::from(rectangle.cols).saturating_mul(4) >= u32::from(viewport.cols).saturating_mul(3)
         || area.saturating_mul(4) >= viewport_area
     {
         return Err(ScenarioError::InvalidSubstitution(
@@ -86,13 +132,19 @@ fn validate_rectangle(rectangle: CellRect, viewport: Viewport) -> Result<(), Sce
 }
 
 fn validate_placement(placement: &TextPlacement, rectangle: CellRect) -> Result<(), ScenarioError> {
+    let wrapping_matches = match placement.wrapping {
+        Wrapping::NoWrap => rectangle.rows == 1 && !placement.text.contains('\n'),
+        Wrapping::HardWrap => placement.text.split('\n').count() == usize::from(rectangle.rows),
+    };
+    if !wrapping_matches {
+        return Err(ScenarioError::InvalidSubstitution(
+            SubstitutionError::WrappingMismatch,
+        ));
+    }
     let width = u32::from(placement.cell_width)
         + u32::from(placement.padding_left)
         + u32::from(placement.padding_right);
-    if placement.cell_width == 0
-        || width != u32::from(rectangle.cols)
-        || matches!(placement.wrapping, Wrapping::NoWrap) && rectangle.rows != 1
-    {
+    if placement.cell_width == 0 || width != u32::from(rectangle.cols) {
         return Err(ScenarioError::InvalidSubstitution(
             SubstitutionError::PaddingMismatch,
         ));

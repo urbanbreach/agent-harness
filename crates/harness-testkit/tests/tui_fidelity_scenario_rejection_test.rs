@@ -5,9 +5,10 @@
     reason = "owner rejection tests use fail-fast fixture mutation assertions"
 )]
 
-use harness_testkit::tui_fidelity::{Scenario, ScenarioError};
+use harness_testkit::tui_fidelity::{Scenario, ScenarioError, SubstitutionError};
 
 const STARTUP_SMOKE: &str = include_str!("fixtures/tui_fidelity/startup-smoke.json");
+const TYPED_STARTUP: &str = include_str!("../src/tui_fidelity_scenarios/baseline/startup.json");
 
 fn mutated_scenario(
     mutate: impl FnOnce(&mut serde_json::Value),
@@ -17,67 +18,75 @@ fn mutated_scenario(
     Scenario::from_json(&value.to_string())
 }
 
+fn mutated_substitution_scenario(
+    mutate: impl FnOnce(&mut serde_json::Value),
+) -> Result<Scenario, ScenarioError> {
+    let mut value: serde_json::Value = serde_json::from_str(TYPED_STARTUP).expect("fixture JSON");
+    mutate(&mut value);
+    Scenario::from_json(&value.to_string())
+}
+
 #[test]
 fn unknown_action_kind_is_rejected_as_deserialization_error() {
-    // Given: an action object with an unsupported closed-enum variant.
+    // arrange: an action object with an unsupported closed-enum variant.
     let result = mutated_scenario(|value| {
         let action = value["actions"][0].as_object_mut().expect("action object");
         let payload = action.remove("timed_key").expect("timed key");
         action.insert("unsupported_action".to_owned(), payload);
     });
 
-    // When: the malformed scenario crosses the serde boundary.
+    // act: the malformed scenario crosses the serde boundary.
     let error = result.expect_err("unknown action must fail");
 
-    // Then: it fails as a typed parse error without executing the payload.
+    // assert: it fails as a typed parse error without executing the payload.
     assert!(matches!(error, ScenarioError::Deserialize(_)));
 }
 
 #[test]
 fn unknown_fields_are_rejected_at_the_scenario_boundary() {
-    // Given: a valid fixture with an unrecognized top-level field.
+    // arrange: a valid fixture with an unrecognized top-level field.
     let result = mutated_scenario(|value| {
         value["unexpected"] = serde_json::json!(true);
     });
 
-    // When: the scenario is parsed.
+    // act: the scenario is parsed.
     let error = result.expect_err("unknown fields must fail");
 
-    // Then: serde reports a typed deserialization error.
+    // assert: serde reports a typed deserialization error.
     assert!(matches!(error, ScenarioError::Deserialize(_)));
 }
 
 #[test]
 fn unknown_checkpoint_name_is_rejected_at_the_scenario_boundary() {
-    // Given: a checkpoint name outside the exact closed set.
+    // arrange: a checkpoint name outside the exact closed set.
     let result = mutated_scenario(|value| {
         value["checkpoints"][0]["name"] = serde_json::json!("early");
     });
 
-    // When: the scenario is parsed.
+    // act: the scenario is parsed.
     let error = result.expect_err("unknown checkpoint must fail");
 
-    // Then: the name cannot bypass the typed checkpoint enum.
+    // assert: the name cannot bypass the typed checkpoint enum.
     assert!(matches!(error, ScenarioError::Deserialize(_)));
 }
 
 #[test]
 fn duplicate_checkpoint_names_are_rejected() {
-    // Given: two captures with the same checkpoint name.
+    // arrange: two captures with the same checkpoint name.
     let result = mutated_scenario(|value| {
         value["checkpoints"][1]["name"] = serde_json::json!("rest");
     });
 
-    // When: the checkpoint sequence is validated.
+    // act: the checkpoint sequence is validated.
     let error = result.expect_err("duplicate checkpoint must fail");
 
-    // Then: duplicate identity is a typed checkpoint error.
+    // assert: duplicate identity is a typed checkpoint error.
     assert!(matches!(error, ScenarioError::InvalidCheckpoint(_)));
 }
 
 #[test]
 fn missing_mid_checkpoint_is_rejected() {
-    // Given: the required mid capture is absent.
+    // arrange: the required mid capture is absent.
     let result = mutated_scenario(|value| {
         value["checkpoints"]
             .as_array_mut()
@@ -85,16 +94,16 @@ fn missing_mid_checkpoint_is_rejected() {
             .retain(|checkpoint| checkpoint["name"] != "mid");
     });
 
-    // When: the exact capture set is validated.
+    // act: the exact capture set is validated.
     let error = result.expect_err("missing mid checkpoint must fail");
 
-    // Then: the missing capture is reported as a typed checkpoint error.
+    // assert: the missing capture is reported as a typed checkpoint error.
     assert!(matches!(error, ScenarioError::InvalidCheckpoint(_)));
 }
 
 #[test]
 fn missing_settled_frame_is_rejected() {
-    // Given: the settled checkpoint has no frame payload.
+    // arrange: the settled checkpoint has no frame payload.
     let result = mutated_scenario(|value| {
         value["checkpoints"][2]
             .as_object_mut()
@@ -102,164 +111,247 @@ fn missing_settled_frame_is_rejected() {
             .remove("frame");
     });
 
-    // When: the malformed capture crosses the serde boundary.
+    // act: the malformed capture crosses the serde boundary.
     let error = result.expect_err("missing settled frame must fail");
 
-    // Then: a frame cannot be omitted from a typed checkpoint.
+    // assert: a frame cannot be omitted from a typed checkpoint.
     assert!(matches!(error, ScenarioError::Deserialize(_)));
 }
 
 #[test]
 fn broad_identity_rectangle_is_rejected() {
-    // Given: an identity rectangle that covers the full checkpoint row.
-    let result = mutated_scenario(|value| {
+    // arrange: an identity rectangle that covers the full checkpoint row.
+    let result = mutated_substitution_scenario(|value| {
         value["substitutions"][0]["rectangle"]["col"] = serde_json::json!(0);
         value["substitutions"][0]["rectangle"]["cols"] = serde_json::json!(100);
-        value["substitutions"][0]["source"]["padding_right"] = serde_json::json!(99);
-        value["substitutions"][0]["target"]["padding_right"] = serde_json::json!(94);
+        value["substitutions"][0]["reference"]["padding_right"] = serde_json::json!(99);
+        value["substitutions"][0]["candidate"]["padding_right"] = serde_json::json!(81);
     });
 
-    // When: substitution geometry is validated.
+    // act: substitution geometry is validated.
     let error = result.expect_err("broad identity rectangle must fail");
 
-    // Then: broad masks are rejected by the typed substitution contract.
+    // assert: broad masks are rejected by the typed substitution contract.
     assert!(matches!(error, ScenarioError::InvalidSubstitution(_)));
 }
 
 #[test]
 fn whole_height_identity_rectangle_is_rejected() {
-    // Given: an identity rectangle spanning the full checkpoint height.
-    let result = mutated_scenario(|value| {
+    // arrange: an identity rectangle spanning the full checkpoint height.
+    let result = mutated_substitution_scenario(|value| {
         value["substitutions"][0]["rectangle"]["col"] = serde_json::json!(0);
         value["substitutions"][0]["rectangle"]["rows"] = serde_json::json!(30);
     });
 
-    // When: substitution geometry is validated.
+    // act: substitution geometry is validated.
     let error = result.expect_err("whole-height identity rectangle must fail");
 
-    // Then: whole-region masks are rejected fail-closed.
+    // assert: whole-region masks are rejected fail-closed.
     assert!(matches!(error, ScenarioError::InvalidSubstitution(_)));
 }
 
 #[test]
-fn non_identity_replacement_is_rejected() {
-    // Given: a product-title substitution with functional replacement text.
-    let result = mutated_scenario(|value| {
-        value["substitutions"][1]["target"]["text"] = serde_json::json!("send");
+fn noncanonical_field_placeholder_is_rejected() {
+    // arrange: a typed substitution with a functional canonical placeholder.
+    let result = mutated_substitution_scenario(|value| {
+        value["substitutions"][1]["canonical_placeholder"] = serde_json::json!("send");
     });
 
-    // When: identity scope is validated.
-    let error = result.expect_err("functional replacement must fail");
+    // act: the field placeholder is validated.
+    let error = result.expect_err("functional placeholder must fail");
 
-    // Then: only the canonical identity placeholder is accepted.
+    // assert: only the canonical field placeholder is accepted.
     assert!(matches!(error, ScenarioError::InvalidSubstitution(_)));
+}
+
+#[test]
+fn unknown_substitution_field_is_rejected_at_the_serde_boundary() {
+    // arrange
+    let result = mutated_substitution_scenario(|value| {
+        value["substitutions"][0]["field"] = serde_json::json!("home_directory");
+    });
+
+    // act
+    // assert
+    assert!(matches!(result, Err(ScenarioError::Deserialize(_))));
+}
+
+#[test]
+fn duplicate_home_path_field_is_rejected_per_checkpoint() {
+    // arrange
+    let result = mutated_substitution_scenario(|value| {
+        let mut home = value["substitutions"][0].clone();
+        home["field"] = serde_json::json!("home_path");
+        home["canonical_placeholder"] = serde_json::json!("[HOME]");
+        value["substitutions"]
+            .as_array_mut()
+            .expect("substitutions array")
+            .extend([home.clone(), home]);
+    });
+
+    // act
+    // assert
+    assert!(matches!(
+        result,
+        Err(ScenarioError::InvalidSubstitution(
+            SubstitutionError::DuplicateField { .. }
+        ))
+    ));
 }
 
 #[test]
 fn zero_action_tick_is_rejected() {
-    // Given: a timed action with an invalid zero tick.
+    // arrange: a timed action with an invalid zero tick.
     let result = mutated_scenario(|value| {
         value["actions"][0]["timed_key"]["at_tick"] = serde_json::json!(0);
     });
 
-    // When: action timing is validated.
+    // act: action timing is validated.
     let error = result.expect_err("zero tick must fail");
 
-    // Then: timing failure is typed.
+    // assert: timing failure is typed.
     assert!(matches!(error, ScenarioError::InvalidTiming(_)));
 }
 
 #[test]
 fn out_of_order_action_ticks_are_rejected() {
-    // Given: the second action is moved before the first action's tick.
+    // arrange: the second action is moved before the first action's tick.
     let result = mutated_scenario(|value| {
         value["actions"][1]["paste"]["at_tick"] = serde_json::json!(1);
     });
 
-    // When: action ordering is validated.
+    // act: action ordering is validated.
     let error = result.expect_err("out-of-order ticks must fail");
 
-    // Then: the timeline cannot contain ambiguous ordering.
+    // assert: the timeline cannot contain ambiguous ordering.
+    assert!(matches!(error, ScenarioError::InvalidTiming(_)));
+}
+
+#[test]
+fn action_and_checkpoint_tick_streams_may_interleave() {
+    // arrange: rest is captured between action ticks while both streams remain ordered.
+    let result = mutated_scenario(|value| {
+        value["checkpoints"][0]["at_tick"] = serde_json::json!(3);
+    });
+
+    // act
+    // assert: independent ordered streams form one deterministic timeline.
+    assert!(
+        result.is_ok(),
+        "interleaved streams must validate: {result:?}"
+    );
+}
+
+#[test]
+fn equal_action_and_checkpoint_ticks_are_valid_action_first_boundaries() {
+    // arrange: the final action and rest checkpoint share tick 26.
+    let result = mutated_scenario(|value| {
+        value["checkpoints"][0]["at_tick"] = serde_json::json!(26);
+    });
+
+    // act
+    // assert: the runner contract orders the action before the checkpoint.
+    assert!(
+        result.is_ok(),
+        "equal tick boundary must validate: {result:?}"
+    );
+}
+
+#[test]
+fn out_of_order_checkpoint_ticks_are_rejected_with_interleaved_actions() {
+    // arrange: checkpoint ordering regresses even though action order is valid.
+    let result = mutated_scenario(|value| {
+        value["checkpoints"][0]["at_tick"] = serde_json::json!(7);
+        value["checkpoints"][1]["at_tick"] = serde_json::json!(6);
+    });
+
+    // act
+    let error = result.expect_err("out-of-order checkpoint ticks must fail");
+
+    // assert
     assert!(matches!(error, ScenarioError::InvalidTiming(_)));
 }
 
 #[test]
 fn zero_viewport_dimension_is_rejected() {
-    // Given: a scenario viewport with no columns.
+    // arrange: a scenario viewport with no columns.
     let result = mutated_scenario(|value| {
         value["viewport"]["cols"] = serde_json::json!(0);
     });
 
-    // When: scenario geometry is validated.
+    // act: scenario geometry is validated.
     let error = result.expect_err("zero columns must fail");
 
-    // Then: geometry failure is typed.
+    // assert: geometry failure is typed.
     assert!(matches!(error, ScenarioError::InvalidGeometry(_)));
 }
 
 #[test]
 fn out_of_bounds_mouse_point_is_rejected() {
-    // Given: a mouse point outside the pre-resize viewport.
+    // arrange: a mouse point outside the pre-resize viewport.
     let result = mutated_scenario(|value| {
         value["actions"][2]["mouse"]["point"]["col"] = serde_json::json!(80);
     });
 
-    // When: action geometry is validated.
+    // act: action geometry is validated.
     let error = result.expect_err("out-of-bounds mouse point must fail");
 
-    // Then: the point cannot escape the declared viewport.
+    // assert: the point cannot escape the declared viewport.
     assert!(matches!(error, ScenarioError::InvalidGeometry(_)));
 }
 
 #[test]
 fn negative_expected_exit_code_is_rejected() {
-    // Given: an impossible negative process exit code.
+    // arrange: an impossible negative process exit code.
     let result = mutated_scenario(|value| {
         value["expected_exit"]["code"] = serde_json::json!(-1);
     });
 
-    // When: expected exit metadata is validated.
+    // act: expected exit metadata is validated.
     let error = result.expect_err("negative exit code must fail");
 
-    // Then: exit failure is typed.
+    // assert: exit failure is typed.
     assert!(matches!(error, ScenarioError::InvalidExitCode(_)));
 }
 
 #[test]
 fn cleanup_must_restore_workspace_and_preserve_evidence() {
-    // Given: cleanup expectations that discard the workspace.
+    // arrange: cleanup expectations that discard the workspace.
     let result = mutated_scenario(|value| {
         value["cleanup"]["restore_workspace"] = serde_json::json!(false);
     });
 
-    // When: cleanup metadata is validated.
+    // act: cleanup metadata is validated.
     let error = result.expect_err("non-restoring cleanup must fail");
 
-    // Then: cleanup failure is typed and fail-closed.
+    // assert: cleanup failure is typed and fail-closed.
     assert!(matches!(error, ScenarioError::InvalidCleanup(_)));
 }
 
 #[test]
 fn cleanup_paths_must_be_relative_and_traversal_free() {
-    // Given: a cleanup path that escapes the scenario workspace.
+    // arrange: a cleanup path that escapes the scenario workspace.
     let result = mutated_scenario(|value| {
         value["cleanup"]["temporary_paths"][0] = serde_json::json!("../outside");
     });
 
-    // When: cleanup paths are validated.
+    // act: cleanup paths are validated.
     let error = result.expect_err("escaping cleanup path must fail");
 
-    // Then: path failure is typed.
+    // assert: path failure is typed.
     assert!(matches!(error, ScenarioError::InvalidCleanup(_)));
 }
 
 #[test]
 fn rejects_invalid_motion_capture_contract() {
+    // arrange
     let source = include_str!("../src/tui_fidelity_scenarios/baseline/cancel.json");
     let mut value: serde_json::Value = serde_json::from_str(source).expect("fixture JSON");
     value["motion_capture"]["markers"][1]["boundary"]["after_action"]["ordinal"] = 99.into();
+    // act
     let error = harness_testkit::tui_fidelity::Scenario::from_json(&value.to_string())
         .expect_err("out-of-range marker rejected");
+    // assert
     assert!(matches!(
         error,
         harness_testkit::tui_fidelity::ScenarioError::InvalidMotionCapture(_)
@@ -268,28 +360,28 @@ fn rejects_invalid_motion_capture_contract() {
 
 #[test]
 fn empty_adapter_selection_is_rejected() {
-    // Given: a scenario with no selected adapter.
+    // arrange: a scenario with no selected adapter.
     let result = mutated_scenario(|value| {
         value["adapters"] = serde_json::json!([]);
     });
 
-    // When: adapter selection is validated.
+    // act: adapter selection is validated.
     let error = result.expect_err("empty adapter selection must fail");
 
-    // Then: malformed selection is typed.
+    // assert: malformed selection is typed.
     assert!(matches!(error, ScenarioError::NoAdapters));
 }
 
 #[test]
 fn unknown_adapter_kind_is_rejected_at_the_scenario_boundary() {
-    // Given: an adapter value outside the closed enum.
+    // arrange: an adapter value outside the closed enum.
     let result = mutated_scenario(|value| {
         value["adapters"] = serde_json::json!(["unknown"]);
     });
 
-    // When: the scenario is parsed.
+    // act: the scenario is parsed.
     let error = result.expect_err("unknown adapter must fail");
 
-    // Then: serde rejects unsupported adapter input as typed parse failure.
+    // assert: serde rejects unsupported adapter input as typed parse failure.
     assert!(matches!(error, ScenarioError::Deserialize(_)));
 }

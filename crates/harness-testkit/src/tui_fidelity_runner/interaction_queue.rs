@@ -11,6 +11,7 @@ enum InteractionEventClass {
     Key,
     Paste,
     Mouse,
+    Wheel,
     Resize,
 }
 
@@ -42,6 +43,13 @@ pub(super) fn append(
     queue.flush()
 }
 
+pub(super) fn expected_receipt_count(
+    action: &ScenarioAction,
+    coalesced_type_text: bool,
+) -> Option<u16> {
+    expected_receipts(action, coalesced_type_text).map(|(_, count)| count)
+}
+
 fn expected_receipts(
     action: &ScenarioAction,
     coalesced_type_text: bool,
@@ -61,9 +69,9 @@ fn expected_receipts(
         ScenarioAction::WaitForText(_) => None,
         ScenarioAction::Mouse(_) => Some((InteractionEventClass::Mouse, 1)),
         ScenarioAction::Drag(_) => Some((InteractionEventClass::Mouse, 3)),
-        ScenarioAction::Wheel(action) => Some((InteractionEventClass::Mouse, action.amount)),
+        ScenarioAction::Wheel(action) => Some((InteractionEventClass::Wheel, action.amount)),
         ScenarioAction::Resize(_) => Some((InteractionEventClass::Resize, 1)),
-        ScenarioAction::TerminalReply(_) => None,
+        ScenarioAction::TerminalReply(_) => Some((InteractionEventClass::Key, 1)),
         ScenarioAction::WaitForSemanticState(_) => None,
     }
 }

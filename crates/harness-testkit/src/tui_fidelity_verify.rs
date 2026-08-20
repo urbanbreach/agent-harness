@@ -12,6 +12,9 @@ use crate::tui_fidelity_obligation::{
 use crate::tui_fidelity_scheduler::{BoundedScheduler, SchedulerError, SchedulerReport};
 use crate::tui_fidelity_staging::{AttemptPolicy, JobIsolation, StagingArea, StagingError};
 
+mod completion;
+pub use completion::{validate_active_completion, ActiveCompletion, CompletionBindings};
+
 pub const ALL_DEADLINE: Duration = Duration::from_secs(120);
 pub const CHANGED_DEADLINE: Duration = Duration::from_secs(90);
 
@@ -81,6 +84,9 @@ pub struct VerificationPlan {
 #[derive(Clone, Debug)]
 pub struct VerifyConfig {
     pub candidate_sha: String,
+    pub authority_sha256: String,
+    pub inventory_sha256: String,
+    pub coverage_sha256: String,
     pub attempt_id: String,
     pub evidence_root: PathBuf,
     pub workers: Option<usize>,
@@ -99,6 +105,9 @@ pub struct VerificationReceipt {
     pub status: VerificationStatus,
     pub profile: VerificationProfile,
     pub candidate_sha: String,
+    pub authority_sha256: String,
+    pub inventory_sha256: String,
+    pub coverage_sha256: String,
     pub obligation_count: usize,
     pub key_count: usize,
     pub duration_millis: u128,
@@ -203,6 +212,9 @@ where
         status: VerificationStatus::Passed,
         profile,
         candidate_sha,
+        authority_sha256: config.authority_sha256.clone(),
+        inventory_sha256: config.inventory_sha256.clone(),
+        coverage_sha256: config.coverage_sha256.clone(),
         obligation_count,
         key_count,
         duration_millis: started.elapsed().as_millis(),

@@ -23,7 +23,7 @@ pub use super::timing::{
 
 pub type CompareResult = Result<(), ComparatorError>;
 
-pub const COMPARISON_RECEIPT_SCHEMA: &str = "harness.tui-fidelity.comparison.v2";
+pub const COMPARISON_RECEIPT_SCHEMA: &str = "harness.tui-fidelity.comparison.v3";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -31,6 +31,44 @@ pub enum AcceptanceProfile {
     FullParity,
     Packet2Scheduling,
     Packet3TranscriptGrammar,
+}
+
+impl AcceptanceProfile {
+    pub const fn required_gates(self) -> &'static [&'static str] {
+        match self {
+            Self::FullParity => &[
+                "presentation",
+                "semantic_cell",
+                "pixel",
+                "motion",
+                "timing",
+                "provenance",
+                "checkpoint",
+                "exit",
+                "cleanup",
+            ],
+            Self::Packet2Scheduling => &[
+                "presentation",
+                "semantic_cell",
+                "pixel",
+                "motion",
+                "timing",
+                "provenance",
+                "checkpoint",
+                "exit",
+                "cleanup",
+            ],
+            Self::Packet3TranscriptGrammar => &[
+                "presentation",
+                "transcript_grammar",
+                "transcript_motion",
+                "provenance",
+                "checkpoint",
+                "exit",
+                "cleanup",
+            ],
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -45,6 +83,7 @@ pub struct ComparisonReceipt {
     pub acceptance_profile: AcceptanceProfile,
     pub capture_succeeded: bool,
     pub comparison_passed: bool,
+    pub applied_substitutions: Vec<crate::tui_fidelity::TextSubstitution>,
     pub gates: std::collections::BTreeMap<String, GateReceipt>,
     pub presentation: Option<PresentationComparisonMetrics>,
 }

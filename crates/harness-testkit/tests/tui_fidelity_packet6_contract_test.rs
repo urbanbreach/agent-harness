@@ -9,8 +9,11 @@ const COMPOSER: &str = include_str!("../src/tui_fidelity_scenarios/baseline/pack
 
 #[test]
 fn composer_journey_uses_identical_natural_input_for_both_adapters() {
+    // arrange
+    // act
     let scenario = Scenario::from_json(COMPOSER).expect("Packet 6 composer scenario");
 
+    // assert
     assert!(scenario.validate_for_adapter(AdapterKind::Grok).is_ok());
     assert!(scenario.validate_for_adapter(AdapterKind::Harness).is_ok());
     assert_eq!(
@@ -28,13 +31,16 @@ fn composer_journey_uses_identical_natural_input_for_both_adapters() {
 
 #[test]
 fn capability_receipt_labels_unavailable_process_variants_without_parity() {
+    // arrange
     let temp = tempfile::tempdir().expect("tempdir");
     let input = capability_input(temp.path(), false);
 
     let receipt = build_capability_receipt(&input, temp.path(), "a".repeat(64).as_str())
         .expect("unsupported capability receipt");
+    // act
     let value: serde_json::Value = serde_json::from_str(&receipt).expect("receipt JSON");
 
+    // assert
     assert_eq!(value["comparison_claimed"], false);
     assert_eq!(value["rows"][0]["status"], "supported_by_both");
     assert_eq!(value["rows"][5]["status"], "harness_only");
@@ -42,11 +48,13 @@ fn capability_receipt_labels_unavailable_process_variants_without_parity() {
 
 #[test]
 fn capability_receipt_fails_closed_on_missing_or_forged_process_proof() {
+    // arrange
     let temp = tempfile::tempdir().expect("tempdir");
     let mut input: serde_json::Value =
         serde_json::from_str(&capability_input(temp.path(), true)).expect("input JSON");
     input["rows"][0]["reference"]["evidence_sha256"] = serde_json::json!("0".repeat(64));
 
+    // act
     let error = build_capability_receipt(
         &serde_json::to_string(&input).expect("mutation JSON"),
         temp.path(),
@@ -54,16 +62,19 @@ fn capability_receipt_fails_closed_on_missing_or_forged_process_proof() {
     )
     .expect_err("forged proof must fail");
 
+    // assert
     assert!(error.to_string().contains("digest"), "{error}");
 }
 
 #[test]
 fn capability_receipt_rejects_duplicate_variant_with_missing_peer() {
+    // arrange
     let temp = tempfile::tempdir().expect("tempdir");
     let mut input: serde_json::Value =
         serde_json::from_str(&capability_input(temp.path(), false)).expect("input JSON");
     input["rows"][6]["capability"] = serde_json::json!("truecolor");
 
+    // act
     let error = build_capability_receipt(
         &serde_json::to_string(&input).expect("mutation JSON"),
         temp.path(),
@@ -71,23 +82,28 @@ fn capability_receipt_rejects_duplicate_variant_with_missing_peer() {
     )
     .expect_err("duplicate capability must fail");
 
+    // assert
     assert!(error.to_string().contains("seven unique"), "{error}");
 }
 
 #[test]
 fn capability_receipt_rejects_non_authority_digest() {
+    // arrange
     let temp = tempfile::tempdir().expect("tempdir");
     let input = capability_input(temp.path(), false);
 
+    // act
     let error = build_capability_receipt(&input, temp.path(), "b".repeat(64).as_str())
         .expect_err("retired authority digest must fail");
 
+    // assert
     assert!(error.to_string().contains("authority binary"), "{error}");
 }
 
 #[cfg(unix)]
 #[test]
 fn capability_receipt_rejects_symlink_escape() {
+    // arrange
     use std::os::unix::fs::symlink;
 
     let temp = tempfile::tempdir().expect("tempdir");
@@ -96,9 +112,11 @@ fn capability_receipt_rejects_symlink_escape() {
     symlink(outside.path(), temp.path().join("process-proof.json")).expect("proof symlink");
     let input = capability_input_for_existing_proof(temp.path(), false);
 
+    // act
     let error = build_capability_receipt(&input, temp.path(), "a".repeat(64).as_str())
         .expect_err("symlink escape must fail");
 
+    // assert
     assert!(
         error.to_string().contains("escapes evidence root"),
         "{error}"

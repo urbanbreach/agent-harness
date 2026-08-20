@@ -23,13 +23,7 @@ pub(super) fn validate_scenario(scenario: &Scenario) -> Result<(), ScenarioError
     validate_adapters(&scenario.adapters)?;
     validate_viewport(&scenario.viewport, GeometrySubject::ScenarioViewport)?;
     let final_viewport = validate_actions(scenario)?;
-    let last_action_tick = scenario
-        .actions
-        .last()
-        .map(ScenarioAction::at_tick)
-        .map(|tick| tick.0)
-        .unwrap_or(0);
-    validate_checkpoints(&scenario.checkpoints, final_viewport, last_action_tick)?;
+    validate_checkpoints(&scenario.checkpoints, final_viewport)?;
     super::motion_validation::validate(scenario)?;
     validate_substitutions(&scenario.substitutions, &scenario.checkpoints)?;
     validate_exit_code(scenario.expected_exit.code)?;
@@ -171,7 +165,6 @@ fn validate_viewport(viewport: &Viewport, subject: GeometrySubject) -> Result<()
 fn validate_checkpoints(
     checkpoints: &[Checkpoint],
     active_viewport: Viewport,
-    last_action_tick: u64,
 ) -> Result<(), ScenarioError> {
     if checkpoints.len() != REQUIRED_CHECKPOINTS.len() {
         return Err(ScenarioError::InvalidCheckpoint(CheckpointError::Count {
@@ -179,7 +172,7 @@ fn validate_checkpoints(
         }));
     }
     let mut names = BTreeSet::new();
-    let mut previous_tick = last_action_tick;
+    let mut previous_tick = 0;
     for (index, checkpoint) in checkpoints.iter().enumerate() {
         if !names.insert(checkpoint.name) {
             return Err(ScenarioError::InvalidCheckpoint(

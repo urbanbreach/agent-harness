@@ -2,38 +2,47 @@ use super::*;
 
 #[test]
 fn type_text_gap_uses_linked_native_inter_byte_cadence() {
+    // arrange
+    // act
     let fixture = AggregateFixture::new_packet2();
     configure_linked_type_gap(&fixture);
 
     aggregate_with_profile(&fixture.roots, AcceptanceProfile::Packet2Scheduling)
         .expect("67ms linked TypeText gap is within twice the declared 45ms cadence");
+    // assert
 }
 
 #[test]
 fn type_text_gap_without_clock_bridge_fails_closed() {
+    // arrange
     let fixture = AggregateFixture::new_packet2();
     configure_linked_type_gap(&fixture);
     mutate_json(&fixture.roots[0].join("receipt.json"), |receipt| {
         receipt["runtimes"][1]["presentation"]["links"] = serde_json::json!([]);
     });
 
+    // act
     let error = aggregate_with_profile(&fixture.roots, AcceptanceProfile::Packet2Scheduling)
         .expect_err("missing observation-to-frame bridge rejected");
 
+    // assert
     assert!(error.to_string().contains("33 ms cadence"));
 }
 
 #[test]
 fn duplicate_digest_at_different_stream_offset_fails_closed() {
+    // arrange
     let fixture = AggregateFixture::new_packet2();
     configure_linked_type_gap(&fixture);
     mutate_json(&fixture.roots[0].join("receipt.json"), |receipt| {
         receipt["runtimes"][1]["presentation"]["links"][1]["stream_offset"] = serde_json::json!(0);
     });
 
+    // act
     let error = aggregate_with_profile(&fixture.roots, AcceptanceProfile::Packet2Scheduling)
         .expect_err("same digest at the wrong stream offset rejected");
 
+    // assert
     assert!(error.to_string().contains("33 ms cadence"));
 }
 

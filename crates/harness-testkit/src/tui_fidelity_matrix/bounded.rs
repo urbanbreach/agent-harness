@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, VecDeque};
 use std::fs;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -26,7 +26,7 @@ where
         path: evidence_root.to_path_buf(),
         detail: error.to_string(),
     })?;
-    let mut execution_by_key = BTreeMap::<String, TrialResult>::new();
+    let mut execution_by_key = BTreeMap::<(String, u8), TrialResult>::new();
     for task in planned_tasks(&manifest, evidence_root)? {
         let value = match execute_trial(task.execution) {
             Ok(value) => value,
@@ -86,7 +86,7 @@ where
                     };
                     results.push((task.key, value));
                 }
-                Ok::<Vec<(String, TrialResult)>, MatrixError>(results)
+                Ok::<Vec<((String, u8), TrialResult)>, MatrixError>(results)
             }));
         }
         handles
@@ -103,7 +103,7 @@ where
 }
 
 struct MatrixTask {
-    key: String,
+    key: (String, u8),
     execution: MatrixExecution,
 }
 
@@ -111,18 +111,20 @@ fn planned_tasks(
     manifest: &CoverageManifest,
     evidence_root: &Path,
 ) -> Result<Vec<MatrixTask>, MatrixError> {
-    let mut seen = BTreeSet::new();
-    let mut tasks = Vec::new();
+    let mut tasks = Vec::with_capacity(manifest.rows.len() * 5);
     for row in &manifest.rows {
-        let key = CaptureKey::from_row(row)
+        CaptureKey::from_row(row)
             .canonical_json()
             .map_err(|error| MatrixError::Invalid(error.to_string()))?;
-        if seen.insert(key.clone()) {
+        for trial in 1..=row.trials {
             tasks.push(MatrixTask {
-                key,
+                key: (row.row_id.clone(), trial),
                 execution: MatrixExecution {
                     row: row.clone(),
-                    evidence_dir: evidence_root.join(&row.row_id).join("trial-1"),
+                    trial,
+                    evidence_dir: evidence_root
+                        .join(&row.row_id)
+                        .join(format!("trial-{trial}")),
                 },
             });
         }
@@ -135,16 +137,16 @@ fn finish_matrix(
     report: CoverageReport,
     suite: &str,
     evidence_root: &Path,
-    execution_by_key: BTreeMap<String, TrialResult>,
+    execution_by_key: BTreeMap<(String, u8), TrialResult>,
 ) -> Result<MatrixReceipt, MatrixError> {
     let mut rows = Vec::with_capacity(manifest.rows.len());
     let mut capture_succeeded = true;
     let mut comparison_passed = true;
-    if execution_by_key.len() != report.capture_key_count {
+    if execution_by_key.len() != report.execution_count {
         return Err(MatrixError::Execution(format!(
-            "matrix executed {} keys but coverage requires {}",
+            "matrix executed {} row/trials but coverage requires {}",
             execution_by_key.len(),
-            report.capture_key_count
+            report.execution_count
         )));
     }
     for (captured, compared, _) in execution_by_key.values() {
@@ -155,36 +157,53 @@ fn finish_matrix(
         let key = CaptureKey::from_row(&row)
             .canonical_json()
             .map_err(|error| MatrixError::Invalid(error.to_string()))?;
-        let result = execution_by_key.get(&key).ok_or_else(|| {
-            MatrixError::Execution(format!("missing matrix result for row {}", row.row_id))
-        })?;
-        rows.push(MatrixRowReceipt {
-            row_id: row.row_id,
-            requirement_id: row.requirement_id,
-            execution: MatrixExecutionReceipt {
-                capture_key: key,
+        let mut executions = Vec::with_capacity(usize::from(row.trials));
+        for trial in 1..=row.trials {
+            let result = execution_by_key
+                .get(&(row.row_id.clone(), trial))
+                .ok_or_else(|| {
+                    MatrixError::Execution(format!(
+                        "missing matrix result for row {} trial {trial}",
+                        row.row_id
+                    ))
+                })?;
+            executions.push(MatrixExecutionReceipt {
+                trial,
+                capture_key: key.clone(),
                 capture_succeeded: result.0,
                 comparison_passed: result.1,
                 detail: result.2.clone(),
-            },
+            });
+        }
+        rows.push(MatrixRowReceipt {
+            row_id: row.row_id,
+            requirement_id: row.requirement_id,
+            executions,
         });
     }
+    let passed = capture_succeeded && comparison_passed;
     let receipt = MatrixReceipt {
-        schema_version: "harness.tui-fidelity.matrix.v2".to_owned(),
+        schema_version: "harness.tui-fidelity.matrix.v3".to_owned(),
         suite: suite.to_owned(),
+        status: if passed { "complete" } else { "failed" }.to_owned(),
         capture_succeeded,
-        comparison_passed: capture_succeeded && comparison_passed,
+        comparison_passed: passed,
         report,
         rows,
     };
     let receipt_path = evidence_root.join("matrix-receipt.json");
     let bytes = serde_json::to_vec_pretty(&receipt)
         .map_err(|error| MatrixError::Json(error.to_string()))?;
-    fs::write(&receipt_path, bytes).map_err(|error| MatrixError::Io {
+    fs::write(&receipt_path, &bytes).map_err(|error| MatrixError::Io {
         path: receipt_path,
         detail: error.to_string(),
     })?;
     if receipt.comparison_passed {
+        let completion_path = evidence_root.join("matrix-completion.json");
+        fs::write(&completion_path, &bytes).map_err(|error| MatrixError::Io {
+            path: completion_path,
+            detail: error.to_string(),
+        })?;
         Ok(receipt)
     } else {
         Err(MatrixError::Execution(

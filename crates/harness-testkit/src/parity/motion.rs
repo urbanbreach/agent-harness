@@ -808,9 +808,12 @@ mod tests {
 
     #[test]
     fn synthetic_passing_trace_validates_every_family() {
+        // arrange
+        // act
         let trace =
             synthetic_passing_trace(TraceSource::Reference).expect("synthetic trace builds");
         for family in MotionFamily::all() {
+            // assert
             assert!(
                 validate_family(&trace, *family).is_empty(),
                 "family {family} rejected the synthetic baseline: {:?}",
@@ -821,9 +824,12 @@ mod tests {
 
     #[test]
     fn synthetic_cancellation_trace_validates_cancellation_family() {
+        // arrange
         let trace =
             synthetic_cancellation_trace(TraceSource::Reference).expect("synthetic trace builds");
+        // act
         let defects = validate_family(&trace, MotionFamily::CancellationOrdering);
+        // assert
         assert!(
             defects.is_empty(),
             "cancellation family rejected the cancellation baseline: {defects:?}"

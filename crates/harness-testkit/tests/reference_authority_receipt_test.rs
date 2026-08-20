@@ -1,22 +1,25 @@
 #![allow(clippy::expect_used, reason = "test fixture setup fails fast")]
 
-use std::process::Command;
-
 use harness_testkit::reference_authority_receipt::ReferenceAuthorityReceipt;
 use sha2::{Digest, Sha256};
 
+#[path = "support/harness_bin.rs"]
+mod harness_bin;
+
 #[test]
 fn compare_accepts_active_reference_receipt_before_candidate_preflight() {
-    // Given: the active Packet 0 receipt and pinned binary, but no candidate receipt.
+    // arrange: the active Packet 0 receipt and pinned binary, but no candidate receipt.
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let evidence = tempfile::tempdir().expect("evidence tempdir");
 
-    // When: compare advances through reference authority validation.
-    let output = Command::new(env!("CARGO_BIN_EXE_tui-fidelity"))
+    // act: compare advances through reference authority validation.
+    let output = harness_bin::tui_fidelity_command()
         .args(["compare", "--scenario", "startup-smoke", "--reference-bin"])
         .arg(root.join("inspirations/grok-build/target/debug/xai-grok-pager"))
         .arg("--reference-receipt")
         .arg(root.join("configs/tui-fidelity-reference-binary-receipt.json"))
+        .arg("--reference-authority")
+        .arg(root.join("configs/tui-fidelity-reference-authority.json"))
         .arg("--reference-root")
         .arg(root.join("inspirations/grok-build"))
         .arg("--harness-bin")
@@ -29,7 +32,7 @@ fn compare_accepts_active_reference_receipt_before_candidate_preflight() {
         .expect("run compare preflight");
     let stderr = String::from_utf8_lossy(&output.stderr);
 
-    // Then: failure is at the intentionally missing candidate, not the active receipt schema.
+    // assert: failure is at the intentionally missing candidate, not the active receipt schema.
     assert!(!output.status.success());
     assert!(!stderr.contains("unknown field `observed_at`"), "{stderr}");
     assert!(
@@ -51,7 +54,7 @@ fn reference_receipt_mutations_fail_closed() {
         ToolchainDigestFormat,
     }
 
-    // Given: independently forged authority fields derived from the active receipt.
+    // arrange: independently forged authority fields derived from the active receipt.
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let active_path = root.join("configs/tui-fidelity-reference-binary-receipt.json");
     let active: serde_json::Value =
@@ -93,7 +96,7 @@ fn reference_receipt_mutations_fail_closed() {
         )
         .expect("write mutation");
 
-        // When: the typed boundary reads and verifies the forged receipt.
+        // act: the typed boundary reads and verifies the forged receipt.
         let result = ReferenceAuthorityReceipt::read(&path).and_then(|receipt| {
             receipt.verify(
                 &root,
@@ -102,7 +105,7 @@ fn reference_receipt_mutations_fail_closed() {
             )
         });
 
-        // Then: every mutation is rejected without a compatibility fallback.
+        // assert: every mutation is rejected without a compatibility fallback.
         assert!(result.is_err(), "mutation {mutation:?} must fail closed");
     }
 }
@@ -112,7 +115,7 @@ fn reference_receipt_mutations_fail_closed() {
 fn version_probe_accepts_no_newline_and_rejects_stderr() {
     use std::os::unix::fs::PermissionsExt as _;
 
-    // Given: a receipt-bound executable whose version has no trailing newline.
+    // arrange: a receipt-bound executable whose version has no trailing newline.
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let active_path = root.join("configs/tui-fidelity-reference-binary-receipt.json");
     let mut value: serde_json::Value =
@@ -149,9 +152,11 @@ fn version_probe_accepts_no_newline_and_rejects_stderr() {
         serde_json::to_vec(&value).expect("serialize receipt"),
     )
     .expect("rewrite receipt");
+    // act
     let error = ReferenceAuthorityReceipt::read(&receipt_path)
         .and_then(|receipt| receipt.verify(&root, &binary, &active_revision))
         .expect_err("stderr must fail closed");
+    // assert
     assert!(error.to_string().contains("stderr"), "{error}");
 
     fn write_probe(path: &std::path::Path, body: &str) {

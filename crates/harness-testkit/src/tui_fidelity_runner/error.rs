@@ -1,7 +1,7 @@
 use std::fmt;
 use std::path::PathBuf;
 
-use crate::tui_fidelity::{AdapterKind, CheckpointName, ScenarioError};
+use crate::tui_fidelity::{AdapterKind, CheckpointName, ScenarioError, SemanticState};
 
 #[derive(Debug)]
 pub enum RunnerError {
@@ -103,6 +103,10 @@ pub enum RunnerError {
     },
     SemanticTargetMissing {
         text: String,
+    },
+    SemanticStateMissing {
+        adapter: AdapterKind,
+        state: SemanticState,
     },
     DisclosureTransitionMissing {
         transition: &'static str,
@@ -242,6 +246,12 @@ impl fmt::Display for RunnerError {
             Self::SemanticTargetMissing { text } => {
                 write!(formatter, "semantic target missing: {text}")
             }
+            Self::SemanticStateMissing { adapter, state } => write!(
+                formatter,
+                "{} semantic state missing: {}",
+                adapter.as_str(),
+                state.as_str()
+            ),
             Self::DisclosureTransitionMissing { transition } => {
                 write!(formatter, "disclosure transition missing: {transition}")
             }

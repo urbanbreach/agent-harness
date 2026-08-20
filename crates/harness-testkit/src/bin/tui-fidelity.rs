@@ -12,7 +12,7 @@ mod tui_fidelity_baseline;
 mod tui_fidelity_commands;
 
 use harness_testkit::reference_authority_receipt::ReferenceAuthorityReceipt;
-use harness_testkit::tui_fidelity::{AdapterKind, Scenario};
+use harness_testkit::tui_fidelity::{AdapterKind, Scenario, Viewport};
 use harness_testkit::tui_fidelity_cache::ReferenceCache;
 use harness_testkit::tui_fidelity_compare::AcceptanceProfile;
 use harness_testkit::tui_fidelity_runner::{
@@ -28,6 +28,7 @@ const REFERENCE_REVISION: &str = "eb267feff13129e568df38fb6fdf0ceb65f735d6";
 struct CompareArgs {
     scenario: String,
     reference_bin: PathBuf,
+    reference_authority: PathBuf,
     reference_receipt: PathBuf,
     reference_root: PathBuf,
     harness_bin: PathBuf,
@@ -38,6 +39,20 @@ struct CompareArgs {
     node_modules: Option<PathBuf>,
     timeout: Duration,
     acceptance_profile: AcceptanceProfile,
+    coverage: Option<CoverageInvocation>,
+}
+
+#[derive(serde::Serialize)]
+struct CoverageInvocation {
+    row_id: String,
+    action_path: String,
+    viewport: Viewport,
+    terminal_tier: String,
+    persona: String,
+    theme_mode: String,
+    media_mode: String,
+    failure_path: String,
+    trial: u8,
 }
 
 fn main() -> ExitCode {
@@ -58,6 +73,8 @@ fn execute(arguments: Vec<OsString>) -> Result<(), RunnerError> {
     }
     let args = parse_compare(arguments).map_err(|detail| RunnerError::Arguments { detail })?;
     let (scenario, reference, harness, candidate_binding) = prepare_compare(&args, &repo_root)
+        .map_err(|error| record_cli_preflight_failure(&args.evidence_dir, error))?;
+    validate_coverage_invocation(&args, &scenario)
         .map_err(|error| record_cli_preflight_failure(&args.evidence_dir, error))?;
     let browser_program = args
         .browser_bin
@@ -113,12 +130,29 @@ fn execute(arguments: Vec<OsString>) -> Result<(), RunnerError> {
         })?
         .flatten();
     let cache_hit = cached.is_some();
-    let receipt = run_compare_with_cached_reference_and_profile(
+    let result = run_compare_with_cached_reference_and_profile(
         &scenario,
         &config,
         cached,
         args.acceptance_profile,
-    )?;
+    );
+    if let Some(coverage) = &args.coverage {
+        fs::create_dir_all(&config.evidence_dir).map_err(|error| RunnerError::Io {
+            path: config.evidence_dir.clone(),
+            detail: error.to_string(),
+        })?;
+        let bytes =
+            serde_json::to_vec_pretty(coverage).map_err(|error| RunnerError::Arguments {
+                detail: format!("coverage execution receipt: {error}"),
+            })?;
+        fs::write(config.evidence_dir.join("coverage-execution.json"), bytes).map_err(|error| {
+            RunnerError::Io {
+                path: config.evidence_dir.join("coverage-execution.json"),
+                detail: error.to_string(),
+            }
+        })?;
+    }
+    let receipt = result?;
     if !cache_hit {
         if let Some((cache, key)) = &cache {
             let reference = receipt
@@ -157,6 +191,13 @@ fn prepare_compare(
         }
         other => tui_fidelity_baseline::load(other, repo_root)?,
     };
+    let reference_path = absolute_path(repo_root, &args.reference_bin);
+    if !is_executable(&reference_path) {
+        return Err(RunnerError::MissingBinary {
+            adapter: AdapterKind::Grok,
+            path: reference_path,
+        });
+    }
     let receipt_path = absolute_path(repo_root, &args.reference_receipt);
     let receipt = ReferenceAuthorityReceipt::read(&receipt_path).map_err(|error| {
         RunnerError::BinaryReceipt {
@@ -164,11 +205,10 @@ fn prepare_compare(
             detail: error.to_string(),
         }
     })?;
-    let reference_path = absolute_path(repo_root, &args.reference_bin);
     receipt
         .verify(repo_root, &reference_path, REFERENCE_REVISION)
         .map_err(|error| RunnerError::BinaryReceipt {
-            path: receipt_path,
+            path: receipt_path.clone(),
             detail: error.to_string(),
         })?;
     let reference = checked_binary(ExpectedBinary {
@@ -180,12 +220,12 @@ fn prepare_compare(
     let candidate_sha = current_revision(repo_root)?;
     let candidate_receipt_path = absolute_path(repo_root, &args.candidate_receipt);
     let candidate_binding = read_candidate_binding(&candidate_receipt_path)?;
-    if candidate_binding.candidate_sha != candidate_sha {
+    if candidate_binding.repository.head != candidate_sha {
         return Err(RunnerError::CandidateBinding {
             path: args.harness_bin.clone(),
             detail: format!(
                 "candidate receipt SHA {} does not match current Git HEAD {}",
-                candidate_binding.candidate_sha, candidate_sha
+                candidate_binding.repository.head, candidate_sha
             ),
         });
     }
@@ -208,13 +248,48 @@ fn prepare_compare(
             path: harness_path.clone(),
             detail: format!("cannot resolve candidate target directory: {error}"),
         })?;
-    if candidate_binding.candidate_binary_sha256 != harness.sha256
-        || candidate_binding.runner_sha256 != runner.sha256
+    if candidate_binding.binaries.harness_sha256 != harness.sha256
+        || candidate_binding.binaries.runner_sha256 != runner.sha256
         || candidate_binding.target_dir != target_dir
     {
         return Err(RunnerError::CandidateBinding {
             path: harness_path,
             detail: "candidate receipt does not match fresh binary, runner, or target directory"
+                .to_owned(),
+        });
+    }
+    let reference_authority_path =
+        fs::canonicalize(absolute_path(repo_root, &args.reference_authority)).map_err(|error| {
+            RunnerError::CandidateBinding {
+                path: args.reference_authority.clone(),
+                detail: format!("cannot resolve reference authority: {error}"),
+            }
+        })?;
+    let bound_authority_path =
+        fs::canonicalize(&candidate_binding.authority.path).map_err(|error| {
+            RunnerError::CandidateBinding {
+                path: candidate_binding.authority.path.clone(),
+                detail: format!("cannot resolve bound reference authority: {error}"),
+            }
+        })?;
+    let supplied_receipt_path =
+        fs::canonicalize(&receipt_path).map_err(|error| RunnerError::CandidateBinding {
+            path: receipt_path.clone(),
+            detail: format!("cannot resolve supplied reference receipt: {error}"),
+        })?;
+    let bound_receipt_path =
+        fs::canonicalize(&candidate_binding.reference_receipt.path).map_err(|error| {
+            RunnerError::CandidateBinding {
+                path: candidate_binding.reference_receipt.path.clone(),
+                detail: format!("cannot resolve bound reference receipt: {error}"),
+            }
+        })?;
+    if reference_authority_path != bound_authority_path
+        || supplied_receipt_path != bound_receipt_path
+    {
+        return Err(RunnerError::CandidateBinding {
+            path: candidate_receipt_path,
+            detail: "reference authority or receipt argument differs from candidate binding"
                 .to_owned(),
         });
     }
@@ -224,10 +299,11 @@ fn prepare_compare(
 fn parse_compare(arguments: Vec<OsString>) -> Result<CompareArgs, String> {
     let mut values = arguments.into_iter();
     if values.next().as_deref() != Some(std::ffi::OsStr::new("compare")) {
-        return Err("usage: tui-fidelity compare --scenario ID --reference-bin PATH --reference-receipt PATH --reference-root PATH --harness-bin PATH --candidate-receipt PATH --evidence-dir PATH [--acceptance full-parity|packet2-scheduling|packet3-transcript-grammar] [--browser-bin PATH] [--font-family NAME] [--node-modules PATH] [--timeout-ms N]".to_owned());
+        return Err("usage: tui-fidelity compare --scenario ID --reference-authority PATH --reference-bin PATH --reference-receipt PATH --reference-root PATH --harness-bin PATH --candidate-receipt PATH --evidence-dir PATH [--acceptance full-parity|packet2-scheduling|packet3-transcript-grammar] [--browser-bin PATH] [--font-family NAME] [--node-modules PATH] [--timeout-ms N]".to_owned());
     }
     let mut scenario = None;
     let mut reference_bin = None;
+    let mut reference_authority = None;
     let mut reference_receipt = None;
     let mut reference_root = None;
     let mut harness_bin = None;
@@ -238,6 +314,15 @@ fn parse_compare(arguments: Vec<OsString>) -> Result<CompareArgs, String> {
     let mut node_modules = None;
     let mut timeout = Duration::from_secs(20);
     let mut acceptance_profile = AcceptanceProfile::FullParity;
+    let mut coverage_row_id = None;
+    let mut coverage_action_path = None;
+    let mut coverage_viewport = None;
+    let mut coverage_terminal_tier = None;
+    let mut coverage_persona = None;
+    let mut coverage_theme_mode = None;
+    let mut coverage_media_mode = None;
+    let mut coverage_failure_path = None;
+    let mut coverage_trial = None;
     while let Some(flag) = values.next() {
         let value = values
             .next()
@@ -245,6 +330,7 @@ fn parse_compare(arguments: Vec<OsString>) -> Result<CompareArgs, String> {
         match flag.to_str() {
             Some("--scenario") => scenario = Some(value.to_string_lossy().into_owned()),
             Some("--reference-bin") => reference_bin = Some(PathBuf::from(value)),
+            Some("--reference-authority") => reference_authority = Some(PathBuf::from(value)),
             Some("--reference-receipt") => reference_receipt = Some(PathBuf::from(value)),
             Some("--reference-root") => reference_root = Some(PathBuf::from(value)),
             Some("--harness-bin") => harness_bin = Some(PathBuf::from(value)),
@@ -270,12 +356,73 @@ fn parse_compare(arguments: Vec<OsString>) -> Result<CompareArgs, String> {
                     _ => return Err("invalid --acceptance profile".to_owned()),
                 };
             }
+            Some("--coverage-row-id") => {
+                coverage_row_id = Some(value.to_string_lossy().into_owned())
+            }
+            Some("--coverage-action-path") => {
+                coverage_action_path = Some(value.to_string_lossy().into_owned())
+            }
+            Some("--coverage-viewport") => {
+                coverage_viewport = Some(parse_viewport(&value.to_string_lossy())?)
+            }
+            Some("--coverage-terminal-tier") => {
+                coverage_terminal_tier = Some(value.to_string_lossy().into_owned())
+            }
+            Some("--coverage-persona") => {
+                coverage_persona = Some(value.to_string_lossy().into_owned())
+            }
+            Some("--coverage-theme-mode") => {
+                coverage_theme_mode = Some(value.to_string_lossy().into_owned())
+            }
+            Some("--coverage-media-mode") => {
+                coverage_media_mode = Some(value.to_string_lossy().into_owned())
+            }
+            Some("--coverage-failure-path") => {
+                coverage_failure_path = Some(value.to_string_lossy().into_owned())
+            }
+            Some("--coverage-trial") => {
+                coverage_trial = Some(
+                    value
+                        .to_string_lossy()
+                        .parse::<u8>()
+                        .map_err(|error| format!("invalid coverage trial: {error}"))?,
+                )
+            }
             _ => return Err(format!("unknown argument: {}", flag.to_string_lossy())),
         }
     }
+    let coverage_values_present = [
+        coverage_row_id.is_some(),
+        coverage_action_path.is_some(),
+        coverage_viewport.is_some(),
+        coverage_terminal_tier.is_some(),
+        coverage_persona.is_some(),
+        coverage_theme_mode.is_some(),
+        coverage_media_mode.is_some(),
+        coverage_failure_path.is_some(),
+        coverage_trial.is_some(),
+    ];
+    let coverage = if coverage_values_present.iter().all(|present| *present) {
+        Some(CoverageInvocation {
+            row_id: coverage_row_id.ok_or("missing --coverage-row-id")?,
+            action_path: coverage_action_path.ok_or("missing --coverage-action-path")?,
+            viewport: coverage_viewport.ok_or("missing --coverage-viewport")?,
+            terminal_tier: coverage_terminal_tier.ok_or("missing --coverage-terminal-tier")?,
+            persona: coverage_persona.ok_or("missing --coverage-persona")?,
+            theme_mode: coverage_theme_mode.ok_or("missing --coverage-theme-mode")?,
+            media_mode: coverage_media_mode.ok_or("missing --coverage-media-mode")?,
+            failure_path: coverage_failure_path.ok_or("missing --coverage-failure-path")?,
+            trial: coverage_trial.ok_or("missing --coverage-trial")?,
+        })
+    } else if coverage_values_present.iter().any(|present| *present) {
+        return Err("coverage execution flags must be provided together".to_owned());
+    } else {
+        None
+    };
     Ok(CompareArgs {
         scenario: scenario.ok_or("missing --scenario")?,
         reference_bin: reference_bin.ok_or("missing --reference-bin")?,
+        reference_authority: reference_authority.ok_or("missing --reference-authority")?,
         reference_receipt: reference_receipt.ok_or("missing --reference-receipt")?,
         reference_root: reference_root.ok_or("missing --reference-root")?,
         harness_bin: harness_bin.ok_or("missing --harness-bin")?,
@@ -286,7 +433,50 @@ fn parse_compare(arguments: Vec<OsString>) -> Result<CompareArgs, String> {
         node_modules,
         timeout,
         acceptance_profile,
+        coverage,
     })
+}
+
+fn parse_viewport(value: &str) -> Result<Viewport, String> {
+    let (cols, rows) = value
+        .split_once('x')
+        .ok_or("coverage viewport must be COLSxROWS")?;
+    Ok(Viewport {
+        cols: cols
+            .parse()
+            .map_err(|error| format!("invalid coverage viewport columns: {error}"))?,
+        rows: rows
+            .parse()
+            .map_err(|error| format!("invalid coverage viewport rows: {error}"))?,
+    })
+}
+
+fn validate_coverage_invocation(
+    args: &CompareArgs,
+    scenario: &Scenario,
+) -> Result<(), RunnerError> {
+    let Some(coverage) = &args.coverage else {
+        return Ok(());
+    };
+    if coverage.viewport != scenario.viewport
+        || !(1..=5).contains(&coverage.trial)
+        || [
+            coverage.row_id.as_str(),
+            coverage.action_path.as_str(),
+            coverage.terminal_tier.as_str(),
+            coverage.persona.as_str(),
+            coverage.theme_mode.as_str(),
+            coverage.media_mode.as_str(),
+            coverage.failure_path.as_str(),
+        ]
+        .iter()
+        .any(|value| value.trim().is_empty())
+    {
+        return Err(RunnerError::Arguments {
+            detail: "coverage execution dimensions do not match the resolved scenario".to_owned(),
+        });
+    }
+    Ok(())
 }
 
 fn read_candidate_binding(path: &Path) -> Result<CandidateBinding, RunnerError> {

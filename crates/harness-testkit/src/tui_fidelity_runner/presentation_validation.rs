@@ -3,7 +3,8 @@ use std::collections::HashSet;
 use crate::tui_fidelity::AdapterKind;
 
 use super::presentation_receipt::{
-    DecoderState, ExternalPresentationEvidence, PresentationEvidence,
+    ActionExecutionKind, ActionExecutionResult, DecoderState, ExternalPresentationEvidence,
+    PresentationEvidence,
 };
 
 mod native;
@@ -32,6 +33,14 @@ pub enum PresentationValidationError {
     VisibleCauseUnpresented { cause_id: String },
     #[error("runner interaction {interaction_id} has no native terminal receipt cause")]
     ExternalInteractionUnlinked { interaction_id: String },
+    #[error(
+        "runner interaction {interaction_id} expected {expected} native causes, observed {observed}"
+    )]
+    NativeInteractionCardinality {
+        interaction_id: String,
+        expected: u16,
+        observed: usize,
+    },
     #[error("disclosure transition missing: {transition}")]
     DisclosureTransitionMissing { transition: &'static str },
 }
@@ -114,21 +123,35 @@ pub fn validate_presentation_evidence(
                 }
             }
             let external_interactions = external
-                .actual_input_sends
+                .action_receipts
                 .iter()
-                .map(|send| &send.interaction_id)
+                .filter_map(|receipt| {
+                    receipt
+                        .expected_native_cause_count
+                        .map(|count| (&receipt.interaction_id, count))
+                })
+                .collect::<Vec<_>>();
+            let external_interaction_ids = external_interactions
+                .iter()
+                .map(|(interaction_id, _)| *interaction_id)
                 .collect::<HashSet<_>>();
-            for interaction_id in &external_interactions {
-                let linked = native.causes.iter().any(|cause| {
-                    cause.interaction_id.as_ref() == Some(interaction_id)
-                        && matches!(
-                            cause.kind.as_str(),
-                            "terminal_input" | "wheel" | "resize" | "focus"
-                        )
-                });
-                if !linked {
-                    return Err(PresentationValidationError::ExternalInteractionUnlinked {
+            for (interaction_id, expected) in external_interactions {
+                let observed = native
+                    .causes
+                    .iter()
+                    .filter(|cause| {
+                        cause.interaction_id.as_ref() == Some(interaction_id)
+                            && matches!(
+                                cause.kind.as_str(),
+                                "terminal_input" | "mouse" | "wheel" | "resize" | "focus"
+                            )
+                    })
+                    .count();
+                if observed != usize::from(expected) {
+                    return Err(PresentationValidationError::NativeInteractionCardinality {
                         interaction_id: interaction_id.0.clone(),
+                        expected,
+                        observed,
                     });
                 }
             }
@@ -136,7 +159,7 @@ pub fn validate_presentation_evidence(
                 cause
                     .interaction_id
                     .as_ref()
-                    .is_some_and(|id| !external_interactions.contains(id))
+                    .is_some_and(|id| !external_interaction_ids.contains(id))
             }) {
                 return Err(PresentationValidationError::UnresolvedReference {
                     detail: "native cause interaction".to_owned(),
@@ -168,6 +191,7 @@ fn link_matches_frame(
 fn validate_external(
     evidence: &ExternalPresentationEvidence,
 ) -> Result<(), PresentationValidationError> {
+    require_nonempty("action_receipts", &evidence.action_receipts)?;
     require_nonempty("actual_input_sends", &evidence.actual_input_sends)?;
     require_nonempty("raw_reads", &evidence.raw_reads)?;
     require_nonempty("observations", &evidence.observations)?;
@@ -176,12 +200,20 @@ fn validate_external(
         &evidence.interaction_observations,
     )?;
     monotonic(
+        "action_receipts",
+        evidence
+            .action_receipts
+            .iter()
+            .map(|receipt| receipt.started_at.0),
+    )?;
+    monotonic(
         "actual_input_sends",
         evidence
             .actual_input_sends
             .iter()
             .map(|send| send.sent_at.0),
     )?;
+    validate_action_receipts(evidence)?;
     monotonic(
         "raw_reads",
         evidence
@@ -220,6 +252,61 @@ fn validate_external(
                 detail: format!("observation for {}", mapping.interaction_id.0),
             });
         }
+    }
+    Ok(())
+}
+
+fn validate_action_receipts(
+    evidence: &ExternalPresentationEvidence,
+) -> Result<(), PresentationValidationError> {
+    let sends = evidence
+        .actual_input_sends
+        .iter()
+        .map(|send| &send.interaction_id)
+        .collect::<HashSet<_>>();
+    let mut ids = HashSet::new();
+    for (ordinal, receipt) in evidence.action_receipts.iter().enumerate() {
+        if receipt.action_ordinal != ordinal
+            || !ids.insert(&receipt.interaction_id)
+            || receipt.scheduled_at > receipt.started_at
+            || receipt.started_at > receipt.ended_at
+        {
+            return Err(PresentationValidationError::UnresolvedReference {
+                detail: format!("action receipt {}", receipt.interaction_id.0),
+            });
+        }
+        let sent = sends.contains(&receipt.interaction_id);
+        match (receipt.kind, &receipt.result, sent) {
+            (
+                ActionExecutionKind::Observer,
+                ActionExecutionResult::ObservedState { state },
+                false,
+            ) if receipt.semantic_post.states.contains(state) => {}
+            (ActionExecutionKind::Observer, ActionExecutionResult::ObservedText, false) => {}
+            (
+                ActionExecutionKind::Input
+                | ActionExecutionKind::Resize
+                | ActionExecutionKind::TerminalReply,
+                ActionExecutionResult::Applied,
+                true,
+            ) => {}
+            _ => {
+                return Err(PresentationValidationError::UnresolvedReference {
+                    detail: format!("action receipt result {}", receipt.interaction_id.0),
+                });
+            }
+        }
+    }
+    if sends.len()
+        != evidence
+            .action_receipts
+            .iter()
+            .filter(|receipt| receipt.kind != ActionExecutionKind::Observer)
+            .count()
+    {
+        return Err(PresentationValidationError::UnresolvedReference {
+            detail: "action send cardinality".to_owned(),
+        });
     }
     Ok(())
 }

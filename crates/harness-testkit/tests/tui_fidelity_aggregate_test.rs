@@ -10,20 +10,20 @@ use harness_testkit::tui_fidelity_aggregate::{aggregate, aggregate_with_profile,
 use harness_testkit::tui_fidelity_compare::AcceptanceProfile;
 use sha2::{Digest, Sha256};
 
-#[path = "support/tui_fidelity_no_visible_gap.rs"]
+#[path = "support/tui_fidelity_no_visible_gap_support.rs"]
 mod tui_fidelity_no_visible_gap;
-#[path = "support/tui_fidelity_packet2_physical.rs"]
+#[path = "support/tui_fidelity_packet2_physical_support.rs"]
 mod tui_fidelity_packet2_physical;
 
 #[test]
 fn five_matching_fresh_runs_aggregate() {
-    // Given: exactly five fresh passing run roots with one shared authority and input order.
+    // arrange: exactly five fresh passing run roots with one shared authority and input order.
     let fixture = AggregateFixture::new();
 
-    // When: the typed five-run aggregator consumes the evidence.
+    // act: the typed five-run aggregator consumes the evidence.
     let summary = aggregate(&fixture.roots).expect("five-run aggregate");
 
-    // Then: aggregate thresholds and zero-idle accounting are emitted as typed JSON data.
+    // assert: aggregate thresholds and zero-idle accounting are emitted as typed JSON data.
     assert_eq!(summary.run_count, 5);
     assert_eq!(summary.reference_external_p95_micros, 100);
     assert_eq!(summary.candidate_external_p95_micros, 105);
@@ -33,60 +33,91 @@ fn five_matching_fresh_runs_aggregate() {
 }
 
 #[test]
+fn five_run_cadence_uses_only_derived_continuous_epoch_intervals() {
+    // arrange: persisted timestamps include an idle action boundary omitted from epoch intervals.
+    let fixture = AggregateFixture::new();
+    for root in &fixture.roots {
+        mutate_json(&root.join("comparison.json"), |value| {
+            value["presentation"]["reference"]["external_observation_timestamps_micros"] =
+                serde_json::json!([1, 101, 100_101]);
+            value["presentation"]["candidate"]["external_observation_timestamps_micros"] =
+                serde_json::json!([1, 101, 100_101]);
+        });
+    }
+
+    // act
+    let summary = aggregate(&fixture.roots).expect("idle boundary is not cadence");
+
+    // assert
+    assert_eq!(summary.candidate_interval_max_micros, 100);
+}
+
+#[test]
 fn fewer_than_five_and_malformed_evidence_fail_closed() {
-    // Given: four otherwise valid roots and one run with malformed comparison JSON.
+    // arrange: four otherwise valid roots and one run with malformed comparison JSON.
     let fixture = AggregateFixture::new();
 
-    // When: count and persisted JSON boundaries are evaluated.
+    // act: count and persisted JSON boundaries are evaluated.
     let count_error = aggregate(&fixture.roots[..4]).expect_err("four runs rejected");
     std::fs::write(fixture.roots[4].join("comparison.json"), b"{").expect("malform comparison");
     let malformed_error = aggregate(&fixture.roots).expect_err("malformed run rejected");
 
-    // Then: both failures are typed and no summary is emitted.
+    // assert: both failures are typed and no summary is emitted.
     assert!(matches!(count_error, AggregateError::RunCount(4)));
     assert!(matches!(malformed_error, AggregateError::Evidence { .. }));
 }
 
 #[test]
 fn mixed_authority_and_stale_artifact_fail_closed() {
-    // Given: one candidate digest from another authority and one hash-bound artifact mutation.
+    // arrange: one candidate digest from another authority and one hash-bound artifact mutation.
     let fixture = AggregateFixture::new();
     mutate_json(&fixture.roots[4].join("receipt.json"), |value| {
         value["runtimes"][1]["binary"]["sha256"] = serde_json::json!("9".repeat(64));
     });
 
-    // When: authority and artifact freshness are checked independently.
+    // act: authority and artifact freshness are checked independently.
     let mixed_error = aggregate(&fixture.roots).expect_err("mixed authority rejected");
     let fresh_fixture = AggregateFixture::new();
     std::fs::write(fresh_fixture.roots[3].join("harness.raw"), b"tampered")
         .expect("tamper artifact");
     let stale_error = aggregate(&fresh_fixture.roots).expect_err("stale artifact rejected");
 
-    // Then: the aggregate rejects both disconnected and stale evidence.
+    // assert: the aggregate rejects both disconnected and stale evidence.
     assert!(matches!(mixed_error, AggregateError::MixedAuthority(_)));
     assert!(matches!(stale_error, AggregateError::Evidence { .. }));
 }
 
 #[test]
-fn packet2_profile_keeps_visual_failures_diagnostic() {
+fn packet2_profile_rejects_semantic_pixel_and_motion_failures() {
+    // arrange: five Packet2 receipts retain red semantic, pixel, and motion gates.
     let fixture = AggregateFixture::new_packet2();
+    for root in &fixture.roots {
+        mutate_json(&root.join("comparison.json"), |value| {
+            for gate in ["semantic_cell", "pixel", "motion"] {
+                value["gates"][gate]["passed"] = serde_json::json!(false);
+                value["gates"][gate]["detail"] = serde_json::json!("controlled defect");
+            }
+        });
+    }
 
-    let summary = aggregate_with_profile(&fixture.roots, AcceptanceProfile::Packet2Scheduling)
-        .expect("scheduling profile passes");
-    let full = aggregate(&fixture.roots).expect_err("full parity rejects the same visual defects");
+    // act: the Packet2 aggregate recomputes acceptance from persisted gate receipts.
+    let error = aggregate_with_profile(&fixture.roots, AcceptanceProfile::Packet2Scheduling)
+        .expect_err("Packet2 rejects every red required gate");
 
-    assert_eq!(summary.run_count, 5);
-    assert!(matches!(full, AggregateError::Evidence { .. }));
+    // assert: visual failures cannot be downgraded to Packet2 diagnostics.
+    assert!(matches!(error, AggregateError::Evidence { .. }));
     let comparison: serde_json::Value = serde_json::from_slice(
         &std::fs::read(fixture.roots[0].join("comparison.json")).expect("comparison"),
     )
     .expect("comparison JSON");
     assert_eq!(comparison["gates"]["semantic_cell"]["passed"], false);
     assert_eq!(comparison["gates"]["pixel"]["passed"], false);
+    assert_eq!(comparison["gates"]["motion"]["passed"], false);
 }
 
 #[test]
 fn packet2_profile_rejects_missing_digest_and_reordered_input() {
+    // arrange
     let missing = AggregateFixture::new_packet2();
     mutate_json(&missing.roots[0].join("receipt.json"), |value| {
         value["runtimes"][1]["presentation"]
@@ -121,10 +152,12 @@ fn packet2_profile_rejects_missing_digest_and_reordered_input() {
         .expect_err("forged sidecar digest rejected");
 
     for forged_maximum in [1, 3] {
+        // act
         let mismatch = AggregateFixture::new_packet2();
         mutate_sidecar(&mismatch.roots[0], |value| {
             value["maximum_backlog_depth"] = serde_json::json!(forged_maximum);
         });
+        // assert
         assert!(
             aggregate_with_profile(&mismatch.roots, AcceptanceProfile::Packet2Scheduling)
                 .expect_err("maximum backlog mismatch rejected")
@@ -157,7 +190,7 @@ fn packet2_profile_rejects_missing_digest_and_reordered_input() {
 
 #[test]
 fn packet2_profile_recomputes_required_gate_verdict_and_rejects_gate_shape_drift() {
-    // Given: four receipts whose persisted top-level pass boolean remains true.
+    // arrange: four receipts whose persisted top-level pass boolean remains true.
     let missing = AggregateFixture::new_packet2();
     mutate_json(&missing.roots[0].join("comparison.json"), |value| {
         value["gates"]
@@ -183,21 +216,62 @@ fn packet2_profile_recomputes_required_gate_verdict_and_rejects_gate_shape_drift
     );
     std::fs::write(&duplicate_path, text).expect("duplicate gate fixture");
 
-    // When: the Packet 2 aggregate validates each persisted run.
+    // act: the Packet 2 aggregate validates each persisted run.
     let results = [missing, failed, extra, duplicate]
         .into_iter()
         .map(|fixture| aggregate_with_profile(&fixture.roots, AcceptanceProfile::Packet2Scheduling))
         .collect::<Vec<_>>();
 
-    // Then: missing, failed, extra, and duplicate gate evidence all fail closed.
+    // assert: missing, failed, extra, and duplicate gate evidence all fail closed.
     assert!(results.iter().all(Result::is_err));
 }
 
 #[test]
+fn packet2_profile_rejects_each_red_or_missing_required_gate() {
+    // arrange: each of the nine Packet2 gates is independently red or absent once.
+    let required = [
+        "presentation",
+        "semantic_cell",
+        "pixel",
+        "motion",
+        "timing",
+        "provenance",
+        "checkpoint",
+        "exit",
+        "cleanup",
+    ];
+
+    // act: aggregate acceptance is recomputed for all eighteen controlled defects.
+    let results = required.into_iter().flat_map(|gate| {
+        let red = AggregateFixture::new_packet2();
+        mutate_json(&red.roots[0].join("comparison.json"), |value| {
+            value["gates"][gate]["passed"] = serde_json::json!(false);
+        });
+        let missing = AggregateFixture::new_packet2();
+        mutate_json(&missing.roots[0].join("comparison.json"), |value| {
+            value["gates"]
+                .as_object_mut()
+                .expect("gate map")
+                .remove(gate);
+        });
+        [
+            aggregate_with_profile(&red.roots, AcceptanceProfile::Packet2Scheduling),
+            aggregate_with_profile(&missing.roots, AcceptanceProfile::Packet2Scheduling),
+        ]
+    });
+
+    // assert: no red or missing required gate can produce an aggregate summary.
+    assert!(results.into_iter().all(|result| result.is_err()));
+}
+
+#[test]
 fn packet2_profile_rejects_run_count_timing_idle_backlog_and_native_proof_defects() {
+    // arrange
     let six = AggregateFixture::new_packet2();
+    // act
     let mut six_roots = six.roots.clone();
     six_roots.push(six.roots[0].clone());
+    // assert
     assert!(matches!(
         aggregate_with_profile(&six_roots, AcceptanceProfile::Packet2Scheduling),
         Err(AggregateError::RunCount(6))
@@ -349,6 +423,7 @@ fn configure_packet2_semantic_gap(fixture: &AggregateFixture, gap_micros: u64) {
 
 #[test]
 fn packet2_profile_rejects_every_mixed_authority_binding() {
+    // arrange
     for field in [
         "scenario_id",
         "receipt_schema",
@@ -360,8 +435,10 @@ fn packet2_profile_rejects_every_mixed_authority_binding() {
         "observer_version",
         "terminal_identity",
     ] {
+        // act
         let fixture = AggregateFixture::new_packet2();
         mutate_authority(&fixture.roots[4], field);
+        // assert
         assert!(
             matches!(
                 aggregate_with_profile(&fixture.roots, AcceptanceProfile::Packet2Scheduling),
@@ -426,9 +503,9 @@ impl AggregateFixture {
                     "checkpoint":{"passed":true,"detail":"passed"},
                     "exit":{"passed":true,"detail":"passed"},
                     "cleanup":{"passed":true,"detail":"passed"},
-                    "semantic_cell":{"passed":false,"detail":"diagnostic"},
-                    "pixel":{"passed":false,"detail":"diagnostic"},
-                    "motion":{"passed":false,"detail":"diagnostic"}
+                    "semantic_cell":{"passed":true,"detail":"passed"},
+                    "pixel":{"passed":true,"detail":"passed"},
+                    "motion":{"passed":true,"detail":"passed"}
                 });
             });
         }
@@ -494,7 +571,8 @@ fn write_run(root: &Path) {
         })
     };
     let comparison = serde_json::json!({
-        "schema_version":"comparison.v1","acceptance_profile":"full_parity","capture_succeeded":true,"comparison_passed":true,
+        "schema_version":"harness.tui-fidelity.comparison.v3","acceptance_profile":"full_parity","capture_succeeded":true,"comparison_passed":true,
+        "applied_substitutions":[],
         "gates":{
             "presentation":{"passed":true,"detail":"passed"},
             "semantic_cell":{"passed":true,"detail":"passed"},

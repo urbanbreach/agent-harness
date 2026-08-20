@@ -22,7 +22,7 @@ pub(super) fn run(
         .current_dir(&config.repo_root);
     let output = bounded_command::run(
         &mut command,
-        Duration::from_secs(10),
+        Duration::from_secs(10).max(config.timing.scenario_timeout),
         config.timing.cleanup_timeout,
     )
     .map_err(|failure| {

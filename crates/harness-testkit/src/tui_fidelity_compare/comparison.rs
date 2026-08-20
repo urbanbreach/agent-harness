@@ -1,6 +1,10 @@
 mod presentation;
 mod provenance;
+#[cfg(test)]
+mod receipt_tests;
 mod semantic_pixels;
+#[cfg(test)]
+mod semantic_pixels_tests;
 mod transcript_grammar;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -40,21 +44,23 @@ pub fn compare_capture_with_profile(
         "presentation",
         presentation::validate(scenario, capture),
     );
-    record_gate(
-        &mut gates,
-        "semantic_cell",
-        semantic_pixels::semantic(scenario, capture),
-    );
+    let semantic_result = semantic_pixels::semantic(scenario, capture);
+    let substitutions_verified = semantic_result.is_ok();
+    record_gate(&mut gates, "semantic_cell", semantic_result);
     record_gate(
         &mut gates,
         "pixel",
         semantic_pixels::pixels(scenario, capture),
     );
-    record_gate(
-        &mut gates,
-        "motion",
-        presentation::motion(scenario, capture),
-    );
+    let motion_result = if substitutions_verified {
+        presentation::motion(scenario, capture)
+    } else {
+        Err(ComparatorError::Invalid {
+            detail: "substitution values were not verified; motion masks are unavailable"
+                .to_owned(),
+        })
+    };
+    record_gate(&mut gates, "motion", motion_result);
     let presentation = presentation::metrics(capture).ok();
     record_gate(&mut gates, "timing", presentation::timing(capture));
     record_gate(&mut gates, "provenance", provenance::compare(capture));
@@ -79,34 +85,40 @@ pub fn compare_capture_with_profile(
     }
     let capture_succeeded = gates.get("presentation").is_some_and(|gate| gate.passed);
     let comparison_passed = capture_succeeded
-        && match profile {
-            AcceptanceProfile::FullParity => gates.values().all(|gate| gate.passed),
-            AcceptanceProfile::Packet2Scheduling => [
-                "presentation",
-                "provenance",
-                "checkpoint",
-                "exit",
-                "cleanup",
-            ]
+        && profile
+            .required_gates()
             .iter()
-            .all(|name| gates.get(*name).is_some_and(|gate| gate.passed)),
-            AcceptanceProfile::Packet3TranscriptGrammar => [
-                "presentation",
-                "transcript_grammar",
-                "transcript_motion",
-                "provenance",
-                "checkpoint",
-                "exit",
-                "cleanup",
-            ]
-            .iter()
-            .all(|name| gates.get(*name).is_some_and(|gate| gate.passed)),
-        };
-    ComparisonReceipt {
-        schema_version: COMPARISON_RECEIPT_SCHEMA.to_owned(),
-        acceptance_profile: profile,
+            .all(|name| gates.get(*name).is_some_and(|gate| gate.passed));
+    build_receipt(
+        scenario,
+        profile,
         capture_succeeded,
         comparison_passed,
+        gates,
+        presentation,
+        substitutions_verified,
+    )
+}
+
+fn build_receipt(
+    scenario: &Scenario,
+    acceptance_profile: AcceptanceProfile,
+    capture_succeeded: bool,
+    comparison_passed: bool,
+    gates: BTreeMap<String, GateReceipt>,
+    presentation: Option<super::types::PresentationComparisonMetrics>,
+    substitutions_verified: bool,
+) -> ComparisonReceipt {
+    ComparisonReceipt {
+        schema_version: COMPARISON_RECEIPT_SCHEMA.to_owned(),
+        acceptance_profile,
+        capture_succeeded,
+        comparison_passed,
+        applied_substitutions: if substitutions_verified {
+            scenario.substitutions.clone()
+        } else {
+            Vec::new()
+        },
         gates,
         presentation,
     }

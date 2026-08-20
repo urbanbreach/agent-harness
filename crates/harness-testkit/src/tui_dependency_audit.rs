@@ -232,6 +232,7 @@ fn rationale(name: &str) -> Option<(&'static str, &'static str)> {
     Some(match name {
         "anyhow" => ("lifecycle error propagation", "small"),
         "crossterm" => ("interaction/lifecycle/viewport events", "medium"),
+        "crossbeam-channel" => ("runtime input, live-update, and frame delivery", "small"),
         "fuzzy-matcher" => ("surface command/dashboard navigation", "small"),
         "harness-core" => ("lifecycle state/render transitions", "workspace"),
         "imara-diff" => ("visual-behavior diff visualization", "medium"),
@@ -249,6 +250,7 @@ fn rationale(name: &str) -> Option<(&'static str, &'static str)> {
         "portable-pty" => ("viewport terminal lifecycle capture", "medium"),
         "sha2" => ("visual-behavior artifact integrity", "small"),
         "tempfile" => ("lifecycle cleanup/evidence isolation", "small"),
+        "thiserror" => ("typed runtime and presentation errors", "small"),
         "vt100" => ("interaction/viewport terminal emulation", "medium"),
         _ => return None,
     })

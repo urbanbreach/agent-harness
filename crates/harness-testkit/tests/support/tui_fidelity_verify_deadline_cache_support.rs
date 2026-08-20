@@ -13,7 +13,7 @@ use harness_testkit::tui_fidelity_deadline::{
 
 #[test]
 fn deadline_kills_process_group_and_reports_no_surviving_descendants() {
-    // Given: a command whose child process outlives the deadline.
+    // arrange: a command whose child process outlives the deadline.
     let runner = DeadlineRunner::new(
         Duration::from_millis(50),
         Duration::from_secs(1),
@@ -22,10 +22,10 @@ fn deadline_kills_process_group_and_reports_no_surviving_descendants() {
     );
     let command = CommandSpec::new("/bin/sh").args(["-c", "sleep 30 & wait"]);
 
-    // When: the isolated process group exceeds its deadline.
+    // act: the isolated process group exceeds its deadline.
     let receipt = runner.run(&command).expect("bounded command receipt");
 
-    // Then: timeout is explicit and descendant cleanup is complete.
+    // assert: timeout is explicit and descendant cleanup is complete.
     assert_eq!(receipt.status, CommandStatus::TimedOut);
     assert!(receipt.cleanup.forced_termination);
     assert!(receipt.cleanup.surviving_pids.is_empty());
@@ -34,7 +34,7 @@ fn deadline_kills_process_group_and_reports_no_surviving_descendants() {
 
 #[test]
 fn reference_cache_publishes_one_digest_valid_entry_under_concurrency() {
-    // Given: two writers targeting the same content-addressed Grok key.
+    // arrange: two writers targeting the same content-addressed Grok key.
     let root = tempfile::tempdir().expect("cache root");
     let source = tempfile::tempdir().expect("capture source");
     std::fs::write(source.path().join("receipt.json"), b"reference").expect("source receipt");
@@ -43,7 +43,7 @@ fn reference_cache_publishes_one_digest_valid_entry_under_concurrency() {
         .digest()
         .expect("cache key");
 
-    // When: both writers publish concurrently.
+    // act: both writers publish concurrently.
     let handles = (0..2)
         .map(|_| {
             let cache = Arc::clone(&cache);
@@ -56,7 +56,7 @@ fn reference_cache_publishes_one_digest_valid_entry_under_concurrency() {
         handle.join().expect("cache writer").expect("cache publish");
     }
 
-    // Then: the sole published entry validates its artifact digests.
+    // assert: the sole published entry validates its artifact digests.
     let entry = cache
         .load(&key)
         .expect("cache lookup")
@@ -66,7 +66,7 @@ fn reference_cache_publishes_one_digest_valid_entry_under_concurrency() {
 
 #[test]
 fn reference_binary_cache_stages_distinct_worker_launch_paths() {
-    // Given: one immutable executable shared by concurrently starting workers.
+    // arrange: one immutable executable shared by concurrently starting workers.
     let root = tempfile::tempdir().expect("reference root");
     let source = root.path().join("reference-bin");
     std::fs::write(&source, b"#!/bin/sh\nprintf '%s\\n' worker\n").expect("source binary");
@@ -80,7 +80,7 @@ fn reference_binary_cache_stages_distinct_worker_launch_paths() {
     ));
     let barrier = Arc::new(Barrier::new(4));
 
-    // When: workers stage and launch the same reference at the same time.
+    // act: workers stage and launch the same reference at the same time.
     let handles = (0..4)
         .map(|index| {
             let cache = Arc::clone(&cache);
@@ -92,7 +92,7 @@ fn reference_binary_cache_stages_distinct_worker_launch_paths() {
                 let staged = cache
                     .stage_for_worker(&worker_root)
                     .expect("worker-local reference");
-                let output = std::process::Command::new(&staged)
+                let output = crate::harness_bin::command(&staged)
                     .output()
                     .expect("staged reference launch");
                 assert!(output.status.success());
@@ -105,7 +105,7 @@ fn reference_binary_cache_stages_distinct_worker_launch_paths() {
         .map(|handle| handle.join().expect("worker launch"))
         .collect::<BTreeSet<_>>();
 
-    // Then: every launch uses a separate path while retaining identical content.
+    // assert: every launch uses a separate path while retaining identical content.
     assert_eq!(paths.len(), 4);
     assert!(paths.iter().all(|path| {
         hash_bytes(&std::fs::read(path).expect("staged bytes")).expect("staged digest")

@@ -18,39 +18,16 @@ pub(super) fn valid(comparison: &ComparisonReceipt, profile: AcceptanceProfile) 
         "exit",
         "cleanup",
     ];
-    const PACKET2_REQUIRED: [&str; 5] = [
-        "presentation",
-        "provenance",
-        "checkpoint",
-        "exit",
-        "cleanup",
-    ];
-    const PACKET3_REQUIRED: [&str; 7] = [
-        "presentation",
-        "transcript_grammar",
-        "transcript_motion",
-        "provenance",
-        "checkpoint",
-        "exit",
-        "cleanup",
-    ];
     let expected_len = match profile {
         AcceptanceProfile::FullParity | AcceptanceProfile::Packet2Scheduling => ALL.len(),
         AcceptanceProfile::Packet3TranscriptGrammar => ALL.len() + 2,
     };
     comparison.gates.len() == expected_len
         && ALL.iter().all(|name| comparison.gates.contains_key(*name))
-        && match profile {
-            AcceptanceProfile::FullParity => ALL
-                .iter()
-                .all(|name| comparison.gates.get(*name).is_some_and(|gate| gate.passed)),
-            AcceptanceProfile::Packet2Scheduling => PACKET2_REQUIRED
-                .iter()
-                .all(|name| comparison.gates.get(*name).is_some_and(|gate| gate.passed)),
-            AcceptanceProfile::Packet3TranscriptGrammar => PACKET3_REQUIRED
-                .iter()
-                .all(|name| comparison.gates.get(*name).is_some_and(|gate| gate.passed)),
-        }
+        && profile
+            .required_gates()
+            .iter()
+            .all(|name| comparison.gates.get(*name).is_some_and(|gate| gate.passed))
 }
 
 #[derive(Deserialize)]

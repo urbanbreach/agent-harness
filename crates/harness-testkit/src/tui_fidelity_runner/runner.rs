@@ -12,6 +12,13 @@ use super::RUNNER_RECEIPT_SCHEMA;
 use crate::tui_fidelity::{AdapterKind, Scenario};
 use crate::tui_fidelity_compare::{compare_capture_with_profile, AcceptanceProfile};
 
+pub fn run_capture(
+    scenario: &Scenario,
+    config: &RunnerConfig,
+) -> Result<DualRuntimeReceipt, RunnerError> {
+    run(scenario, config, None, None)
+}
+
 pub fn run_compare(
     scenario: &Scenario,
     config: &RunnerConfig,
@@ -38,6 +45,26 @@ pub fn run_compare_with_cached_reference_and_profile(
     cached_reference: Option<AdapterReceipt>,
     profile: AcceptanceProfile,
 ) -> Result<DualRuntimeReceipt, RunnerError> {
+    run(scenario, config, cached_reference, Some(profile))
+}
+
+fn run(
+    scenario: &Scenario,
+    config: &RunnerConfig,
+    cached_reference: Option<AdapterReceipt>,
+    profile: Option<AcceptanceProfile>,
+) -> Result<DualRuntimeReceipt, RunnerError> {
+    let mut normalized_config = config.clone();
+    if normalized_config.evidence_dir.is_relative() {
+        let repo_root = std::fs::canonicalize(&normalized_config.repo_root).map_err(|error| {
+            RunnerError::Io {
+                path: normalized_config.repo_root.clone(),
+                detail: format!("cannot resolve repository root for relative evidence: {error}"),
+            }
+        })?;
+        normalized_config.evidence_dir = repo_root.join(&normalized_config.evidence_dir);
+    }
+    let config = &normalized_config;
     let evidence = EvidenceSession::initialize(&config.evidence_dir)?;
     let mut tracker = CleanupTracker::default();
     if evidence.is_stale() {
@@ -52,6 +79,10 @@ pub fn run_compare_with_cached_reference_and_profile(
     if let Err(error) = prepare(scenario, config, &mut tracker) {
         return finish(&evidence, &tracker, Err(error));
     }
+    let before = match source_guard::run(config, "source-guard-before.json", &mut tracker) {
+        Ok(before) => before,
+        Err(error) => return finish(&evidence, &tracker, Err(error)),
+    };
     let relative_base = scenario
         .cleanup
         .temporary_paths
@@ -65,12 +96,29 @@ pub fn run_compare_with_cached_reference_and_profile(
                 return finish(&evidence, &tracker, Err(error));
             }
         };
-    let result = run_inner(scenario, config, &workspace, &mut tracker, cached_reference);
+    let result = capture_runtimes(scenario, config, &workspace, &mut tracker, cached_reference);
     match workspace.cleanup() {
         Ok(path) => tracker.record_removed(&path),
         Err(error) => tracker.record_error(error.to_string()),
     }
+    let result = result.and_then(|(reference_receipt, harness_receipt)| {
+        let after = source_guard::run(config, "source-guard-after.json", &mut tracker)?;
+        Ok(DualRuntimeReceipt {
+            schema_version: RUNNER_RECEIPT_SCHEMA.to_owned(),
+            scenario_id: scenario.id.0.clone(),
+            terminal_type: scenario.terminal_type.as_str().to_owned(),
+            runtimes: vec![reference_receipt, harness_receipt],
+            candidate_binding: config.candidate_binding.clone(),
+            source_guard_before: before,
+            source_guard_after: after,
+            comparison: None,
+        })
+    });
     let result = result.and_then(|mut receipt| {
+        let Some(profile) = profile else {
+            write_json(&config.evidence_dir.join("receipt.json"), &receipt)?;
+            return Ok(receipt);
+        };
         let cleanup = tracker.receipt(None);
         let comparison = compare_capture_with_profile(scenario, &receipt, &cleanup, profile);
         write_json(&config.evidence_dir.join("comparison.json"), &comparison)?;
@@ -92,31 +140,20 @@ pub fn run_compare_with_cached_reference_and_profile(
     finish(&evidence, &tracker, result)
 }
 
-fn run_inner(
+fn capture_runtimes(
     scenario: &Scenario,
     config: &RunnerConfig,
     workspace: &OwnedRuntimeWorkspace,
     tracker: &mut CleanupTracker,
     cached_reference: Option<AdapterReceipt>,
-) -> Result<DualRuntimeReceipt, RunnerError> {
-    let before = source_guard::run(config, "source-guard-before.json", tracker)?;
+) -> Result<(AdapterReceipt, AdapterReceipt), RunnerError> {
     let reference_receipt = match cached_reference {
         Some(receipt) => validate_cached_reference(receipt, scenario, config)?,
         None => capture_adapter(scenario, config, workspace, tracker, AdapterKind::Grok)?,
     };
-    let after = source_guard::run(config, "source-guard-after.json", tracker)?;
     let harness_receipt =
         capture_adapter(scenario, config, workspace, tracker, AdapterKind::Harness)?;
-    Ok(DualRuntimeReceipt {
-        schema_version: RUNNER_RECEIPT_SCHEMA.to_owned(),
-        scenario_id: scenario.id.0.clone(),
-        terminal_type: scenario.terminal_type.as_str().to_owned(),
-        runtimes: vec![reference_receipt, harness_receipt],
-        candidate_binding: config.candidate_binding.clone(),
-        source_guard_before: before,
-        source_guard_after: after,
-        comparison: None,
-    })
+    Ok((reference_receipt, harness_receipt))
 }
 
 fn capture_adapter(

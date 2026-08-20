@@ -4,33 +4,41 @@ use harness_testkit::binary_receipt::{
 };
 use harness_testkit::UnwrapOrAbort;
 use std::path::Path;
-use std::process::Command;
+
+#[path = "support/harness_bin.rs"]
+mod harness_bin;
 
 const REFERENCE_REVISION: &str = "eb267feff13129e568df38fb6fdf0ceb65f735d6";
 const HARNESS_REVISION: &str = "harness-test-revision";
 
 #[test]
 fn binary_receipt_accepts_matching_repeat_identity() {
+    // arrange
     // Given
     let receipt = fixture_receipt();
 
     // When
+    // act
     let result = receipt.verify(&fixture_expectations());
 
     // Then
+    // assert
     assert!(result.is_ok(), "matching receipt rejected: {result:?}");
 }
 
 #[test]
 fn binary_receipt_rejects_wrong_reference_revision() {
+    // arrange
     // Given
     let mut receipt = fixture_receipt();
     receipt.reference.source_revision = "wrong-revision".to_owned();
 
     // When
+    // act
     let result = receipt.verify(&fixture_expectations());
 
     // Then
+    // assert
     assert!(matches!(
         result,
         Err(BinaryReceiptError::Mismatch { field, .. }) if field == "reference.source_revision"
@@ -39,14 +47,17 @@ fn binary_receipt_rejects_wrong_reference_revision() {
 
 #[test]
 fn binary_receipt_rejects_repeat_digest_drift() {
+    // arrange
     // Given
     let mut receipt = fixture_receipt();
     receipt.reference_repeat.second.binary_sha256 = "f".repeat(64);
 
     // When
+    // act
     let result = receipt.verify(&fixture_expectations());
 
     // Then
+    // assert
     assert!(matches!(
         result,
         Err(BinaryReceiptError::InvalidField { field, .. }) if field == "reference_repeat.matching"
@@ -55,6 +66,7 @@ fn binary_receipt_rejects_repeat_digest_drift() {
 
 #[test]
 fn binary_receipt_rejects_mutated_binary_digest() {
+    // arrange
     // Given
     let temporary = tempfile::tempdir().unwrap_or_abort();
     let binary = temporary.path().join("harness");
@@ -64,9 +76,11 @@ fn binary_receipt_rejects_mutated_binary_digest() {
     receipt.reference.sha256 = "0".repeat(64);
 
     // When
+    // act
     let result = receipt.verify_binary_digests();
 
     // Then
+    // assert
     assert!(matches!(
         result,
         Err(BinaryReceiptError::DigestMismatch { field, .. }) if field == "reference.sha256"
@@ -75,6 +89,7 @@ fn binary_receipt_rejects_mutated_binary_digest() {
 
 #[test]
 fn binary_receipt_rejects_mutated_repeat_binary_digest() {
+    // arrange
     // Given
     let temporary = tempfile::tempdir().unwrap_or_abort();
     let reference_first = temporary.path().join("reference-first");
@@ -105,9 +120,11 @@ fn binary_receipt_rejects_mutated_repeat_binary_digest() {
     std::fs::write(&reference_second, b"mutated repeat binary").unwrap_or_abort();
 
     // When
+    // act
     let result = receipt.verify_binary_digests();
 
     // Then
+    // assert
     assert!(matches!(
         result,
         Err(BinaryReceiptError::DigestMismatch { field, .. })
@@ -227,7 +244,7 @@ fn format_digest(byte: char) -> String {
 }
 
 fn sha256sum(path: &Path) -> String {
-    let output = Command::new("sha256sum")
+    let output = harness_bin::command("sha256sum")
         .arg(path)
         .output()
         .unwrap_or_abort();

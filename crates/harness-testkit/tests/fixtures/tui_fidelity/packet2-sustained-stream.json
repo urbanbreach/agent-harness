@@ -1,5 +1,5 @@
 {
-  "schema_version":"tui-fidelity-scenario-v1",
+  "schema_version":"tui-fidelity-scenario-v2",
   "id":"packet2-sustained-stream",
   "adapters":["grok","harness"],
   "viewport":{"cols":120,"rows":40},

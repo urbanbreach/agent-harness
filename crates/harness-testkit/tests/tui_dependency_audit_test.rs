@@ -1,8 +1,10 @@
 use std::collections::BTreeSet;
 use std::error::Error;
-use std::process::Command;
 
 use harness_testkit::tui_dependency_audit::audit_workspace;
+
+#[path = "support/harness_bin.rs"]
+mod harness_bin;
 
 const TASK_SIX_GAP_MAPPING: &[(&str, &str)] = &[
     (
@@ -26,18 +28,21 @@ const TASK_SIX_GAP_MAPPING: &[(&str, &str)] = &[
 
 #[test]
 fn ratatui_and_crossterm_lock_versions_preserve_baseline() -> Result<(), Box<dyn Error>> {
+    // arrange
     let report = audit_workspace()?;
     let ratatui = report
         .justifications
         .iter()
         .find(|record| record.crate_name == "ratatui")
         .ok_or("ratatui justification is missing")?;
+    // act
     let crossterm = report
         .justifications
         .iter()
         .find(|record| record.crate_name == "crossterm")
         .ok_or("crossterm justification is missing")?;
 
+    // assert
     assert!(version_at_least(&ratatui.version, [0, 30, 1]));
     assert!(version_at_least(&crossterm.version, [0, 29, 0]));
     Ok(())
@@ -45,7 +50,9 @@ fn ratatui_and_crossterm_lock_versions_preserve_baseline() -> Result<(), Box<dyn
 
 #[test]
 fn every_harness_tui_direct_dependency_has_a_typed_justification() -> Result<(), Box<dyn Error>> {
+    // arrange
     let report = audit_workspace()?;
+    // act
     let justified: BTreeSet<&str> = report
         .justifications
         .iter()
@@ -53,6 +60,7 @@ fn every_harness_tui_direct_dependency_has_a_typed_justification() -> Result<(),
         .collect();
 
     for dependency in &report.direct_dependencies {
+        // assert
         assert!(
             justified.contains(dependency.crate_name.as_str()),
             "missing justification for {}",
@@ -68,6 +76,7 @@ fn every_harness_tui_direct_dependency_has_a_typed_justification() -> Result<(),
 
 #[test]
 fn task_six_gap_mapping_stub_is_recorded() -> Result<(), Box<dyn Error>> {
+    // arrange
     let report = audit_workspace()?;
 
     if std::env::var_os("HARNESS_TUI_DEPENDENCY_AUDIT_REPORT").is_some() {
@@ -78,11 +87,13 @@ fn task_six_gap_mapping_stub_is_recorded() -> Result<(), Box<dyn Error>> {
     }
 
     for (gap, capability) in TASK_SIX_GAP_MAPPING {
+        // act
         let mapping = report
             .baseline_gap_mappings
             .iter()
             .find(|mapping| mapping.gap == *gap)
             .ok_or_else(|| format!("missing task-6 mapping for {gap}"))?;
+        // assert
         assert_eq!(mapping.capability, *capability);
     }
     for record in &report.justifications {
@@ -102,11 +113,14 @@ fn task_six_gap_mapping_stub_is_recorded() -> Result<(), Box<dyn Error>> {
 
 #[test]
 fn locked_workspace_build_succeeds() -> Result<(), Box<dyn Error>> {
+    // arrange
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let status = Command::new("cargo")
+    // act
+    let status = harness_bin::command("cargo")
         .args(["build", "--workspace", "--locked"])
         .current_dir(root)
         .status()?;
+    // assert
     assert!(status.success(), "cargo build --workspace --locked failed");
     Ok(())
 }

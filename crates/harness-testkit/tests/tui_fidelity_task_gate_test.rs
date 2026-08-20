@@ -13,9 +13,12 @@ use harness_testkit::tui_fidelity_task_gate::{self, TaskGateInput};
 
 #[test]
 fn task_gate_admits_verifies_and_completes_only_once() {
+    // arrange
     let fixture = Fixture::new();
 
+    // act
     let admission = tui_fidelity_task_gate::admit(&fixture.input()).expect("task admission");
+    // assert
     assert_eq!(admission, fixture.admission_receipt);
 
     fixture.write_verification_inputs();
@@ -78,6 +81,7 @@ fn task_gate_admits_verifies_and_completes_only_once() {
 
 #[test]
 fn task_gate_rejects_worker_spawn_bootstrap() {
+    // arrange
     let fixture = Fixture::new();
     let mut boulder: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&fixture.boulder).expect("Boulder"))
@@ -89,13 +93,16 @@ fn task_gate_rejects_worker_spawn_bootstrap() {
     )
     .expect("mutated Boulder");
 
+    // act
     let error = tui_fidelity_task_gate::admit(&fixture.input())
         .expect_err("worker-spawning bootstrap must fail closed");
+    // assert
     assert!(error.to_string().contains("worker spawning"));
 }
 
 #[test]
 fn task_gate_rejects_divergent_active_work_completion_mirror() {
+    // arrange
     let fixture = Fixture::new();
     let mut boulder: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&fixture.boulder).expect("Boulder"))
@@ -108,13 +115,16 @@ fn task_gate_rejects_divergent_active_work_completion_mirror() {
     )
     .expect("mutated Boulder");
 
+    // act
     let error = tui_fidelity_task_gate::admit(&fixture.input())
         .expect_err("divergent active-work mirror must fail closed");
+    // assert
     assert!(error.to_string().contains("mirror divergence"));
 }
 
 #[test]
 fn task_gate_finalization_failure_rolls_back_all_published_state() {
+    // arrange
     let fixture = Fixture::new();
     tui_fidelity_task_gate::admit(&fixture.input()).expect("task admission");
     fixture.write_verification_inputs();
@@ -122,9 +132,11 @@ fn task_gate_finalization_failure_rolls_back_all_published_state() {
 
     let mut input = fixture.input();
     input.finalize_closure = true;
+    // act
     let error = tui_fidelity_task_gate::complete(&input)
         .expect_err("missing closure receipt must fail closed");
 
+    // assert
     assert!(error.to_string().contains("closure receipt"));
     assert!(fs::read_to_string(&fixture.plan)
         .expect("rolled-back plan")

@@ -1,62 +1,25 @@
-#![allow(
-    clippy::expect_used,
-    reason = "test fixtures fail fast when the scheduler source is unavailable"
-)]
+#![allow(clippy::expect_used, reason = "contract-owner fixtures fail fast")]
 
-use std::path::PathBuf;
+use harness_testkit::tui_fidelity_scheduler::BoundedScheduler;
 
-fn scheduler_source() -> String {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .join("scripts/parity_task_qa.py");
-    std::fs::read_to_string(path).expect("scheduler source is readable")
+#[test]
+fn scheduler_rejects_worker_counts_outside_the_typed_contract() {
+    // arrange
+    // act
+    let zero = BoundedScheduler::new(0);
+    let above_hard_cap = BoundedScheduler::new(17);
+    // assert
+    assert!(zero.is_err());
+    assert!(above_hard_cap.is_err());
 }
 
 #[test]
-fn scheduler_declares_all_required_mutations() {
+fn scheduler_reserves_capacity_and_never_exceeds_the_request() {
     // arrange
-    let source = scheduler_source();
-
     // act
-    let declared = [
-        "dependency-incomplete",
-        "reservation-overlap",
-        "out-of-write-set",
-        "duplicate-patch-application",
-        "omitted-task-key",
-    ];
-
+    let default = BoundedScheduler::with_default_workers();
+    let requested = BoundedScheduler::new(8).expect("valid worker request");
     // assert
-    for mutation in declared {
-        assert!(
-            source.contains(mutation),
-            "missing scheduler mutation: {mutation}"
-        );
-    }
-}
-
-#[test]
-fn scheduler_declares_complete_task_catalog_and_receipt_schema() {
-    // arrange
-    let source = scheduler_source();
-
-    // act
-    let task_declarations = (1..=42).map(|task| format!("TaskSpec({task},"));
-
-    // assert
-    for declaration in task_declarations {
-        assert!(
-            source.contains(&declaration),
-            "missing task QA declaration: {declaration}"
-        );
-    }
-    for field in [
-        "expected_external_postcondition",
-        "observed_external_postcondition",
-        "dependency_receipts",
-        "qa_passed",
-        "result",
-    ] {
-        assert!(source.contains(field), "missing receipt field: {field}");
-    }
+    assert!((1..=8).contains(&default.workers()));
+    assert!((1..=8).contains(&requested.workers()));
 }

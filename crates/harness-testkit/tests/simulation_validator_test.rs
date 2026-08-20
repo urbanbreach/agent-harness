@@ -1,7 +1,7 @@
 use harness_testkit::simulation::{
-    behavior_delta, compare_normalized_summaries, scan_simulation_artifact_root, summary_text,
-    validate_artifact_index, validate_matrix_value, validate_report, validate_simulation_events,
-    RedactionSummary, SummaryInput, ARTIFACT_INDEX_SCHEMA_VERSION,
+    behavior_delta, compare_normalized_summaries, invariant_results, scan_simulation_artifact_root,
+    summary_text, validate_artifact_index, validate_matrix_value, validate_report,
+    validate_simulation_events, RedactionSummary, SummaryInput, ARTIFACT_INDEX_SCHEMA_VERSION,
 };
 use harness_testkit::UnwrapOrAbort;
 use serde_json::json;
@@ -308,6 +308,32 @@ fn behavior_delta_classifies_predicate_changes() {
     assert_delta_status(&deltas, "added-predicate", "added");
     assert_delta_status(&deltas, "removed-predicate", "removed");
     assert_delta_status(&deltas, "changed-predicate", "changed");
+}
+
+#[test]
+fn invariant_results_reject_provider_request_digest_drift() {
+    // arrange
+    let mut matrix = matrix();
+    matrix.scenario.expected_predicates = json!({
+        "event_kind_counts": {"run_started": 1},
+        "provider_request_digests": ["expected-digest"],
+    });
+    let normalized = json!({
+        "event_kind_counts": {"run_started": 1},
+        "provider_request_digests": ["observed-digest"],
+    });
+
+    // act
+    let results = invariant_results(&matrix, &normalized, "pass");
+
+    // assert
+    assert_eq!(
+        results
+            .iter()
+            .find(|result| result["invariant_id"] == "INV-001")
+            .and_then(|result| result["status"].as_str()),
+        Some("fail")
+    );
 }
 
 #[test]

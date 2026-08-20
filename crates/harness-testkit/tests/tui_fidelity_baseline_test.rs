@@ -1,11 +1,6 @@
-#![allow(
-    clippy::expect_used,
-    clippy::panic,
-    clippy::unwrap_used,
-    reason = "owner tests use fail-fast fixture assertions"
-)]
+#![allow(clippy::expect_used, reason = "baseline owner fixtures fail fast")]
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -13,8 +8,11 @@ use harness_testkit::tui_fidelity::Scenario;
 use serde::Deserialize;
 
 const REGISTRY_RELATIVE: &str = "src/tui_fidelity_scenarios/baseline/registry.json";
-const EVIDENCE_RELATIVE: &str = ".omo/evidence/task-6-grok-build-tui-experiential-parity";
-const REQUIRED_STATES: [&str; 22] = [
+const REQUIRED_STATES: [&str; 26] = [
+    "natural-composer-draft",
+    "canary-static-terminal-query",
+    "canary-dynamic-resize",
+    "canary-reduced-terminal",
     "startup",
     "draft",
     "idle",
@@ -64,74 +62,14 @@ struct ScenarioSpec {
     owner_source_paths: Vec<String>,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-struct LedgerRow {
-    scenario_id: String,
-    viewport: Viewport,
-    state: String,
-    status: LedgerStatus,
-    owner_source_paths: Vec<String>,
-    reference_artifacts: Vec<ArtifactRef>,
-    candidate_artifacts: Vec<ArtifactRef>,
-    exact_diff_summary: String,
-    receipt: LedgerReceipt,
-}
-
-#[derive(Debug, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-enum LedgerStatus {
-    Pass,
-    Different,
-    Missing,
-}
-
-#[derive(Debug, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-struct Viewport {
-    cols: u16,
-    rows: u16,
-}
-
-#[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-struct ArtifactRef {
-    path: String,
-    sha256: String,
-}
-
-#[derive(Debug, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-struct LedgerReceipt {
-    schema_version: String,
-    path: String,
-    reference_binary: ArtifactRef,
-    candidate_binary: ArtifactRef,
-    reference_artifacts: Vec<ArtifactRef>,
-    candidate_artifacts: Vec<ArtifactRef>,
-}
-
 fn repo_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .canonicalize()
-        .expect("repository root")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
 fn registry() -> Registry {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(REGISTRY_RELATIVE);
     let input = fs::read_to_string(&path).expect("baseline registry exists");
     serde_json::from_str(&input).expect("baseline registry has no unknown fields")
-}
-
-fn ledger() -> Vec<LedgerRow> {
-    let path = repo_root().join(EVIDENCE_RELATIVE).join("ledger.jsonl");
-    let input = fs::read_to_string(&path).expect("baseline ledger exists");
-    input
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .map(|line| serde_json::from_str(line).expect("ledger row has no unknown fields"))
-        .collect()
 }
 
 fn source_path_is_owned(path: &str) -> bool {
@@ -142,29 +80,25 @@ fn source_path_is_owned(path: &str) -> bool {
 }
 
 #[test]
-fn baseline_registry_parses_scenarios_without_contract_bypasses() {
+fn baseline_registry_parses_every_strict_scenario() {
+    // arrange
     let registry = registry();
-
+    // act
+    let states = registry
+        .scenarios
+        .iter()
+        .map(|scenario| scenario.state.as_str())
+        .collect::<BTreeSet<_>>();
+    // assert
     assert_eq!(
         registry.schema_version,
         "harness.tui-fidelity.baseline-registry.v1"
     );
-    assert_eq!(registry.viewports.len(), 7);
+    assert_eq!(registry.viewports.len(), 21);
     assert_eq!(registry.scenarios.len(), REQUIRED_STATES.len());
-
-    let mut states = BTreeSet::new();
+    assert_eq!(states.len(), REQUIRED_STATES.len());
+    assert!(REQUIRED_STATES.iter().all(|state| states.contains(state)));
     for scenario_spec in &registry.scenarios {
-        assert!(
-            states.insert(scenario_spec.state.as_str()),
-            "duplicate state"
-        );
-        assert!(REQUIRED_STATES.contains(&scenario_spec.state.as_str()));
-        assert!(!scenario_spec.owner_source_paths.is_empty());
-        assert!(scenario_spec
-            .owner_source_paths
-            .iter()
-            .all(|path| source_path_is_owned(path)));
-
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(&scenario_spec.path);
         let input = fs::read_to_string(path).expect("scenario fixture exists");
         let scenario = Scenario::from_json(&input).expect("scenario satisfies strict contract");
@@ -172,123 +106,75 @@ fn baseline_registry_parses_scenarios_without_contract_bypasses() {
         assert_eq!(scenario.adapters.len(), 2);
         assert_eq!(scenario.checkpoints.len(), 3);
     }
-    assert_eq!(states.len(), REQUIRED_STATES.len());
 }
 
 #[test]
-fn baseline_ledger_covers_every_state_and_viewport() {
+fn baseline_registry_declares_unique_viewports_and_scenario_capture_keys() {
+    // arrange
     let registry = registry();
-    let rows = ledger();
-    let viewports: BTreeSet<(u16, u16)> = registry
+    // act
+    let viewports = registry
         .viewports
         .iter()
-        .map(|viewport| (viewport.cols, viewport.rows))
-        .collect();
-    assert_eq!(viewports.len(), 7);
-
-    let expected: BTreeSet<(String, (u16, u16))> = registry
+        .map(|viewport| (viewport.id.as_str(), viewport.cols, viewport.rows))
+        .collect::<BTreeSet<_>>();
+    let capture_keys = registry
         .scenarios
         .iter()
         .flat_map(|scenario| {
-            registry.viewports.iter().map(|viewport| {
-                (
-                    format!("{}--{}", scenario.id, viewport.id),
-                    (viewport.cols, viewport.rows),
-                )
-            })
+            registry
+                .viewports
+                .iter()
+                .map(move |viewport| (scenario.id.as_str(), viewport.id.as_str()))
         })
-        .collect();
-    let actual: BTreeSet<(String, (u16, u16))> = rows
-        .iter()
-        .map(|row| {
-            (
-                row.scenario_id.clone(),
-                (row.viewport.cols, row.viewport.rows),
-            )
-        })
-        .collect();
-
-    assert_eq!(rows.len(), expected.len());
-    assert_eq!(actual, expected);
-    for state in REQUIRED_STATES {
-        assert!(rows.iter().any(|row| row.state == state));
-        for viewport in &viewports {
-            assert!(rows.iter().any(|row| {
-                row.state == state && (row.viewport.cols, row.viewport.rows) == *viewport
-            }));
-        }
-    }
+        .collect::<BTreeSet<_>>();
+    // assert
+    assert_eq!(viewports.len(), registry.viewports.len());
+    assert_eq!(
+        capture_keys.len(),
+        registry.scenarios.len() * registry.viewports.len()
+    );
 }
 
 #[test]
-fn baseline_ledger_binds_harness_owners_and_exact_diffs() {
+fn baseline_registry_binds_existing_first_party_owners() {
+    // arrange
     let registry = registry();
-    let owners: BTreeMap<&str, &Vec<String>> = registry
+    // act
+    let owner_paths = registry
         .scenarios
         .iter()
-        .map(|scenario| (scenario.id.as_str(), &scenario.owner_source_paths))
-        .collect();
-
-    for row in ledger() {
-        assert!(!row.owner_source_paths.is_empty());
-        assert!(row
-            .owner_source_paths
-            .iter()
-            .all(|path| source_path_is_owned(path)));
-        assert!(row
-            .owner_source_paths
-            .iter()
-            .all(|path| repo_root().join(path).is_file()));
-        let scenario_ref = row
-            .scenario_id
-            .rsplit_once("--")
-            .map_or(row.scenario_id.as_str(), |(base, _)| base);
-        let declared = owners.get(scenario_ref).expect("ledger scenario owner");
-        assert_eq!(&row.owner_source_paths, *declared);
-        assert!(!row.exact_diff_summary.trim().is_empty());
-        assert!(Path::new(&row.receipt.path).is_file());
-        assert_eq!(row.receipt.reference_binary.sha256.len(), 64);
-        assert_eq!(row.receipt.candidate_binary.sha256.len(), 64);
-        match row.status {
-            LedgerStatus::Pass | LedgerStatus::Different => {
-                assert_eq!(row.receipt.schema_version, "harness.tui-fidelity.runner.v1");
-                assert!(!row.reference_artifacts.is_empty());
-                assert!(!row.candidate_artifacts.is_empty());
-                assert_eq!(row.reference_artifacts, row.receipt.reference_artifacts);
-                assert_eq!(row.candidate_artifacts, row.receipt.candidate_artifacts);
-            }
-            LedgerStatus::Missing => {
-                assert_eq!(
-                    row.receipt.schema_version,
-                    "harness.tui-fidelity.cleanup.v3"
-                );
-                assert!(row.reference_artifacts.is_empty());
-                assert!(row.candidate_artifacts.is_empty());
-            }
-        }
-        if row.status == LedgerStatus::Pass {
-            assert_eq!(row.reference_artifacts.len(), row.candidate_artifacts.len());
-            assert!(row
-                .reference_artifacts
-                .iter()
-                .zip(&row.candidate_artifacts)
-                .all(|(reference, candidate)| reference.sha256 == candidate.sha256));
-        }
-    }
+        .flat_map(|scenario| scenario.owner_source_paths.iter())
+        .collect::<Vec<_>>();
+    // assert
+    assert!(!owner_paths.is_empty());
+    assert!(owner_paths.iter().all(|path| source_path_is_owned(path)));
+    assert!(owner_paths
+        .iter()
+        .all(|path| repo_root().join(path).is_file()));
 }
 
 #[test]
-fn baseline_ledger_never_passes_without_matching_dual_runtime_artifacts() {
-    for row in ledger() {
-        if row.status != LedgerStatus::Pass {
-            continue;
+fn baseline_registry_contains_no_acceptance_or_evidence_claims() {
+    // arrange
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(REGISTRY_RELATIVE);
+    let value: serde_json::Value =
+        serde_json::from_slice(&fs::read(path).expect("baseline registry exists"))
+            .expect("registry JSON");
+    // act
+    let scenarios = value["scenarios"].as_array().expect("scenario array");
+    // assert
+    for scenario in scenarios {
+        for forbidden in [
+            "status",
+            "receipt",
+            "reference_artifacts",
+            "candidate_artifacts",
+        ] {
+            assert!(
+                scenario.get(forbidden).is_none(),
+                "unexpected field {forbidden}"
+            );
         }
-        assert!(!row.reference_artifacts.is_empty());
-        assert!(!row.candidate_artifacts.is_empty());
-        assert_eq!(row.receipt.schema_version, "harness.tui-fidelity.runner.v1");
-        assert_eq!(row.reference_artifacts, row.receipt.reference_artifacts);
-        assert_eq!(row.candidate_artifacts, row.receipt.candidate_artifacts);
-        assert!(row.receipt.reference_binary.sha256 != row.receipt.candidate_binary.sha256);
-        assert!(row.receipt.path.ends_with("/receipt.json"));
     }
 }

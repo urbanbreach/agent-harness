@@ -146,7 +146,7 @@
       "state": "startup",
       "owner_source_paths": [
         "crates/harness-tui/src/leaf_views/startup.rs",
-        "crates/harness-tui/src/ui_startup_logo.rs"
+        "crates/harness-tui/src/startup_logo.rs"
       ]
     },
     {

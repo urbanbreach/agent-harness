@@ -1,6 +1,6 @@
 use harness_testkit::tui_fidelity::{
-    CheckpointName, IdentityScope, IdentitySubstitution, Rgb, Scenario, TextPlacement, TextStyle,
-    Viewport, Wrapping,
+    CheckpointName, Rgb, Scenario, SubstitutionField, SubstitutionKind, TextPlacement, TextStyle,
+    TextSubstitution, Viewport, Wrapping,
 };
 
 pub(super) fn add(scenario: &mut Scenario, viewport: Viewport) {
@@ -12,30 +12,38 @@ pub(super) fn add(scenario: &mut Scenario, viewport: Viewport) {
         CheckpointName::Mid,
         CheckpointName::Settled,
     ] {
-        scenario.substitutions.push(IdentitySubstitution {
+        scenario.substitutions.push(TextSubstitution {
             checkpoint,
-            scope: IdentityScope::WorkspacePath,
+            kind: SubstitutionKind::TruthfulDynamicText,
+            field: SubstitutionField::WorkspacePath,
+            canonical_placeholder: SubstitutionField::WorkspacePath.placeholder().to_owned(),
+            reference_provenance: "reference-runtime:workspace-header".to_owned(),
+            candidate_provenance: "candidate-runtime:workspace-header".to_owned(),
             rectangle: harness_testkit::tui_fidelity::CellRect {
                 col: 2,
                 row: 1,
-                cols: viewport.cols - 2,
+                cols: 19,
                 rows: 1,
             },
-            source: workspace_source(viewport.cols - 2),
-            target: workspace_target(viewport.cols - 2),
+            reference: workspace_reference(),
+            candidate: workspace_candidate(),
         });
         if viewport.rows > 26 && viewport.cols >= 51 {
-            scenario.substitutions.push(IdentitySubstitution {
+            scenario.substitutions.push(TextSubstitution {
                 checkpoint,
-                scope: IdentityScope::ProviderName,
+                kind: SubstitutionKind::TruthfulDynamicText,
+                field: SubstitutionField::ProviderName,
+                canonical_placeholder: SubstitutionField::ProviderName.placeholder().to_owned(),
+                reference_provenance: "reference-runtime:status-provider".to_owned(),
+                candidate_provenance: "candidate-runtime:status-provider".to_owned(),
                 rectangle: harness_testkit::tui_fidelity::CellRect {
                     col: viewport.cols - 51,
                     row: viewport.rows - 4,
                     cols: 46,
                     rows: 1,
                 },
-                source: provider_source(),
-                target: provider_target(),
+                reference: provider_reference(),
+                candidate: provider_candidate(),
             });
         }
     }
@@ -61,10 +69,21 @@ fn identity_style(dim: bool) -> TextStyle {
     }
 }
 
-fn workspace_source(width: u16) -> TextPlacement {
+fn workspace_reference() -> TextPlacement {
+    TextPlacement {
+        text: "<grok-workspace>".to_owned(),
+        cell_width: 16,
+        padding_left: 0,
+        padding_right: 3,
+        style: identity_style(true),
+        wrapping: Wrapping::NoWrap,
+    }
+}
+
+fn workspace_candidate() -> TextPlacement {
     TextPlacement {
         text: "<harness-workspace>".to_owned(),
-        cell_width: width,
+        cell_width: 19,
         padding_left: 0,
         padding_right: 0,
         style: identity_style(true),
@@ -72,18 +91,7 @@ fn workspace_source(width: u16) -> TextPlacement {
     }
 }
 
-fn workspace_target(width: u16) -> TextPlacement {
-    TextPlacement {
-        text: IdentityScope::WorkspacePath.placeholder().to_owned(),
-        cell_width: 10,
-        padding_left: 0,
-        padding_right: width - 10,
-        style: identity_style(true),
-        wrapping: Wrapping::NoWrap,
-    }
-}
-
-fn provider_source() -> TextPlacement {
+fn provider_reference() -> TextPlacement {
     TextPlacement {
         text: "GPT 5.6 Luna (CLIProxy) (low) · always-approve".to_owned(),
         cell_width: 46,
@@ -94,12 +102,12 @@ fn provider_source() -> TextPlacement {
     }
 }
 
-fn provider_target() -> TextPlacement {
+fn provider_candidate() -> TextPlacement {
     TextPlacement {
-        text: IdentityScope::ProviderName.placeholder().to_owned(),
-        cell_width: 10,
-        padding_left: 0,
-        padding_right: 36,
+        text: "Harness Demo provider".to_owned(),
+        cell_width: 21,
+        padding_left: 25,
+        padding_right: 0,
         style: identity_style(false),
         wrapping: Wrapping::NoWrap,
     }

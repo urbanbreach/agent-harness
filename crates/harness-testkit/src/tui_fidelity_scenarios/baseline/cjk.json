@@ -1,5 +1,5 @@
 {
-  "schema_version": "tui-fidelity-scenario-v1",
+  "schema_version": "tui-fidelity-scenario-v2",
   "id": "baseline-cjk",
   "adapters": ["grok", "harness"],
   "viewport": {"cols": 80, "rows": 24},

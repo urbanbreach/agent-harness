@@ -16,12 +16,65 @@ pub struct RuntimeBinary {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CandidateBinding {
-    pub candidate_sha: String,
-    pub candidate_binary_sha256: String,
-    pub runner_sha256: String,
+    pub schema_version: String,
+    pub receipt_kind: CandidateReceiptKind,
+    pub repository: CandidateRepositoryBinding,
+    pub binaries: CandidateBinaryBinding,
     pub target_dir: PathBuf,
-    pub freshness_relation: String,
+    pub authority: CandidateAuthorityBinding,
+    pub reference_receipt: CandidateFileBinding,
+    pub source_guard_receipt_sha256: String,
+    pub parity_acceptance_eligible: bool,
+    pub release_eligible: bool,
+    pub clean_release: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CandidateReceiptKind {
+    Release,
+    DiagnosticNonRelease,
+    Fixture,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CandidateRepositoryBinding {
+    pub canonical_path: PathBuf,
+    pub head: String,
+    pub tree: String,
+    pub clean: bool,
+    pub tracked_source_sha256: String,
+    pub dirty_diff_sha256: String,
+    pub untracked_manifest_sha256: String,
+    pub cargo_lock_sha256: String,
+    pub toolchain_sha256: String,
+    pub cargo_config_sha256: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CandidateBinaryBinding {
+    pub harness_sha256: String,
+    pub runner_sha256: String,
+    pub aggregate_sha256: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CandidateAuthorityBinding {
+    pub path: PathBuf,
+    pub revision: String,
+    pub sha256: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CandidateFileBinding {
+    pub path: PathBuf,
+    pub sha256: String,
 }
 
 impl RuntimeBinary {

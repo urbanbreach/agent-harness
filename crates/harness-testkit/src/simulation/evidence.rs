@@ -227,14 +227,22 @@ pub fn invariant_results(
         "permission_lifecycle": normalized.get("permission_lifecycle").cloned().unwrap_or(Value::Null),
         "edit_artifact_links": normalized.get("edit_artifact_links").cloned().unwrap_or(Value::Null),
     });
+    let expected_event_behavior = json!({
+        "event_kind_counts": expected.get("event_kind_counts").cloned().unwrap_or(Value::Null),
+        "provider_request_digests": expected.get("provider_request_digests").cloned().unwrap_or(Value::Null),
+    });
+    let observed_event_behavior = json!({
+        "event_kind_counts": normalized.get("event_kind_counts").cloned().unwrap_or(Value::Null),
+        "provider_request_digests": normalized.get("provider_request_digests").cloned().unwrap_or(Value::Null),
+    });
 
     vec![
         invariant_result(
             "INV-001",
-            expected.get("event_kind_counts"),
-            normalized.get("event_kind_counts"),
+            Some(&expected_event_behavior),
+            Some(&observed_event_behavior),
             "invariant",
-            "event vocabulary matches expected predicates",
+            "event vocabulary and provider request digests match expected predicates",
         ),
         invariant_result(
             "INV-002",

@@ -74,15 +74,15 @@ mod tests {
 
     #[test]
     fn find_text_preserves_blank_cells_between_cursor_positioned_words() {
-        // Given: a terminal row whose visual space is an untouched blank cell.
+        // arrange: a terminal row whose visual space is an untouched blank cell.
         let mut parser = vt100::Parser::new(4, 40, 0);
         parser.process(b"\x1b[2;1Hstream\x1b[2;8Hprobe");
         let frame = semantic_frame_from_vt100_screen(parser.screen());
 
-        // When: semantic text lookup searches for the visually rendered phrase.
+        // act: semantic text lookup searches for the visually rendered phrase.
         let point = find_text(&frame, "stream probe");
 
-        // Then: the phrase resolves at its first terminal column.
+        // assert: the phrase resolves at its first terminal column.
         assert_eq!(point, Some(CellPoint { col: 0, row: 1 }));
     }
 }

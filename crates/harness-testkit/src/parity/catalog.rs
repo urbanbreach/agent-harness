@@ -591,6 +591,9 @@ mod tests {
 
     #[test]
     fn catalog_has_eight_scenarios() {
+        // arrange
+        // act
+        // assert
         assert_eq!(
             CORE_SCENARIOS.len(),
             8,
@@ -600,7 +603,10 @@ mod tests {
 
     #[test]
     fn five_scenarios_have_complete_references() {
+        // arrange
+        // act
         let complete = complete_scenarios();
+        // assert
         assert_eq!(
             complete.len(),
             5,
@@ -610,7 +616,10 @@ mod tests {
 
     #[test]
     fn find_scenario_by_id() {
+        // arrange
+        // act
         let scenario = find_scenario("startup-welcome-120x32");
+        // assert
         assert!(scenario.is_some());
         assert_eq!(scenario.unwrap().cols, 120);
         assert_eq!(scenario.unwrap().rows, 32);
@@ -618,15 +627,21 @@ mod tests {
 
     #[test]
     fn unknown_scenario_returns_none() {
+        // arrange
+        // act
+        // assert
         assert!(find_scenario("nonexistent").is_none());
     }
 
     #[test]
     fn frame_from_ansi_produces_valid_frame() {
+        // arrange
         // Simple ANSI: write "Hi" at top-left with default colors.
         let ansi = b"Hi";
+        // act
         let frame = frame_from_ansi(ansi, 10, 5).expect("parse");
         frame.validate().expect("valid");
+        // assert
         assert_eq!(frame.cols, 10);
         assert_eq!(frame.rows, 5);
         let cell = frame.cell(0, 0).expect("cell");
@@ -635,22 +650,31 @@ mod tests {
 
     #[test]
     fn identity_substitution_normalizes_product_title() {
+        // arrange
+        // act
         let sub = default_identity_substitution();
+        // assert
         assert_eq!(sub.normalize("Harness"), "[PRODUCT]");
         assert_eq!(sub.normalize("harness"), "[PRODUCT]");
     }
 
     #[test]
     fn identity_substitution_normalizes_version() {
+        // arrange
+        // act
         let sub = default_identity_substitution();
+        // assert
         assert_eq!(sub.normalize("0.1.220-alpha.4"), "[VERSION]");
         assert_eq!(sub.normalize("v1.2.3"), "[VERSION]");
     }
 
     #[test]
     fn identity_substitution_preserves_functional_text() {
+        // arrange
+        // act
         let sub = default_identity_substitution();
         // Functional text must not be rewritten.
+        // assert
         assert_eq!(sub.normalize("New worktree"), "New worktree");
         assert_eq!(sub.normalize("❯"), "❯");
         assert_eq!(sub.normalize("Changelog"), "Changelog");
@@ -658,6 +682,7 @@ mod tests {
 
     #[test]
     fn normalize_frame_identity_rewrites_product_cells() {
+        // arrange
         let mut frame = SemanticFrame::new(10, 1, CursorState::visible_block(0, 0));
         frame
             .set_cell(SemanticCell::blank(0, 0).with_grapheme("H", 1))
@@ -687,30 +712,39 @@ mod tests {
         frame2
             .set_cell(SemanticCell::blank(0, 0).with_grapheme("Harness", 1))
             .expect("set");
+        // act
         let normalized = normalize_frame_identity(&frame2);
+        // assert
         assert_eq!(normalized.cell(0, 0).expect("cell").grapheme, "[PRODUCT]");
     }
 
     #[test]
     fn reference_fixture_receipt_validates() {
+        // arrange
         let root = workspace_root();
         let scenario = find_scenario("startup-welcome-120x32").expect("scenario");
+        // act
         let receipt = load_receipt(&root, scenario).expect("load receipt");
         validate_receipt(&receipt).expect("receipt validates against pinned reference");
+        // assert
     }
 
     #[test]
     fn reference_frame_loads_and_validates() {
+        // arrange
         let root = workspace_root();
         let scenario = find_scenario("startup-welcome-120x32").expect("scenario");
+        // act
         let frame = load_reference_frame(&root, scenario).expect("load");
         frame.validate().expect("valid");
+        // assert
         assert_eq!(frame.cols, scenario.cols);
         assert_eq!(frame.rows, scenario.rows);
     }
 
     #[test]
     fn candidate_from_reference_ansi_matches_reference_cells() {
+        // arrange
         let root = workspace_root();
         let scenario = find_scenario("startup-welcome-120x32").expect("scenario");
         let _reference = load_reference_frame(&root, scenario).expect("load reference");
@@ -718,6 +752,7 @@ mod tests {
             candidate_from_reference_ansi(&root, scenario).expect("build candidate from ANSI");
         // The candidate built from the reference ANSI should match the
         // reference cells.json when compared with strict (no identity) mode.
+        // act
         let outcome = compare_candidate_strict(&root, scenario, &candidate).expect("compare");
         match outcome {
             ComparisonOutcome::Match => {}
@@ -736,5 +771,6 @@ mod tests {
                 panic!("reference should be complete");
             }
         }
+        // assert
     }
 }

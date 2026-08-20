@@ -168,23 +168,46 @@ impl fmt::Display for CheckpointError {
 impl fmt::Display for SubstitutionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::EmptyText => f.write_str("identity text is empty"),
-            Self::ControlText => f.write_str("identity text contains a control character"),
-            Self::SameText => f.write_str("identity substitution does not change text"),
-            Self::NonIdentityReplacement => {
-                f.write_str("replacement is not a canonical identity placeholder")
+            Self::EmptyText => f.write_str("substitution text is empty"),
+            Self::ControlText => f.write_str("substitution text contains a control character"),
+            Self::MissingReferenceProvenance => {
+                f.write_str("substitution reference provenance is empty")
             }
-            Self::RectangleGeometry => f.write_str("identity rectangle geometry is invalid"),
-            Self::BroadRegion => f.write_str("identity rectangle is a broad or whole-region mask"),
+            Self::MissingCandidateProvenance => {
+                f.write_str("substitution candidate provenance is empty")
+            }
+            Self::ControlReferenceProvenance => {
+                f.write_str("substitution reference provenance contains a control character")
+            }
+            Self::ControlCandidateProvenance => {
+                f.write_str("substitution candidate provenance contains a control character")
+            }
+            Self::FieldKindMismatch => {
+                f.write_str("substitution field is not valid for its text kind")
+            }
+            Self::SameText => {
+                f.write_str("substitution reference and candidate text are identical")
+            }
+            Self::NonCanonicalPlaceholder => {
+                f.write_str("substitution placeholder is not canonical for its field")
+            }
+            Self::RectangleGeometry => f.write_str("substitution rectangle geometry is invalid"),
+            Self::BroadRegion => {
+                f.write_str("substitution rectangle is a broad or whole-region mask")
+            }
             Self::PaddingMismatch => {
-                f.write_str("identity text is not padded to the exact rectangle")
+                f.write_str("substitution text is not padded to the exact rectangle")
             }
-            Self::StyleMismatch => f.write_str("identity source and target styles differ"),
-            Self::WrappingMismatch => f.write_str("identity source and target wrapping differ"),
-            Self::DuplicateScope { checkpoint } => {
+            Self::StyleMismatch => {
+                f.write_str("substitution reference and candidate styles differ")
+            }
+            Self::WrappingMismatch => {
+                f.write_str("substitution reference and candidate wrapping differ")
+            }
+            Self::DuplicateField { checkpoint } => {
                 write!(
                     f,
-                    "identity scope is duplicated at checkpoint {}",
+                    "substitution field is duplicated at checkpoint {}",
                     checkpoint.as_str()
                 )
             }

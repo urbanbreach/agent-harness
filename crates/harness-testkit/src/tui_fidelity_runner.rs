@@ -23,6 +23,7 @@ mod renderer;
 mod renderer_command;
 mod runner;
 mod runtime_workspace;
+mod scenario_state_predicates;
 mod semantic_actions;
 mod source_guard;
 mod types;
@@ -38,13 +39,17 @@ pub use presentation_validation::{
 pub use process_io::PtyRead;
 pub use pty_observation::{PtyObservationError, PtyObserver};
 pub use runner::{
-    run_compare, run_compare_with_cached_reference, run_compare_with_cached_reference_and_profile,
+    run_capture, run_compare, run_compare_with_cached_reference,
+    run_compare_with_cached_reference_and_profile,
 };
+pub use scenario_state_predicates::{semantic_state_matches, semantic_state_observed};
 pub use semantic_actions::semantic_click_bytes;
 pub use types::{
-    AdapterReceipt, ArtifactDigest, BrowserCapabilities, CandidateBinding, CheckpointReceipt,
-    CleanupReceipt, DualRuntimeReceipt, PresentationCaptureBinding, RendererConfig, RunnerConfig,
-    RunnerTiming, RuntimeBinary, SourceGuardConfig,
+    AdapterReceipt, ArtifactDigest, BrowserCapabilities, CandidateAuthorityBinding,
+    CandidateBinaryBinding, CandidateBinding, CandidateFileBinding, CandidateReceiptKind,
+    CandidateRepositoryBinding, CheckpointReceipt, CleanupReceipt, DualRuntimeReceipt,
+    PresentationCaptureBinding, RendererConfig, RunnerConfig, RunnerTiming, RuntimeBinary,
+    SourceGuardConfig,
 };
 
 pub const RUNNER_RECEIPT_SCHEMA: &str = "harness.tui-fidelity.runner.v4";

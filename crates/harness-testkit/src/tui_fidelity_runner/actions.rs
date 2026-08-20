@@ -57,22 +57,11 @@ pub(super) fn apply_action_with_frame(
             let grok_disclosure = adapter == AdapterKind::Grok
                 && action.text == crate::tui_fidelity_fixture::DISCLOSURE_SENTINEL;
             if harness_disclosure {
-                let marker =
-                    super::semantic_actions::find_text(frame, &action.text).ok_or_else(|| {
-                        RunnerError::SemanticTargetMissing {
-                            text: action.text.clone(),
-                        }
-                    })?;
-                let point = ["▸", "▾"]
-                    .into_iter()
-                    .filter_map(|glyph| {
-                        super::semantic_actions::find_text_nearest_row(frame, glyph, marker.row)
-                    })
-                    .min_by_key(|point| point.row.abs_diff(marker.row))
-                    .ok_or_else(|| RunnerError::SemanticTargetMissing {
-                        text: "▸ or ▾".to_owned(),
-                    })?;
-                let bytes = super::semantic_actions::click_point_bytes(point)?;
+                let bytes = super::semantic_actions::semantic_click_bytes(
+                    frame,
+                    &action.text,
+                    action.offset_col,
+                )?;
                 return write_bytes(writer, &bytes, adapter);
             }
             if grok_disclosure
@@ -307,18 +296,21 @@ mod tests {
 
     #[test]
     fn grok_exit_starts_with_ctrl_u_without_escape_toggle() {
-        // Given: the Grok composer remains active after the themes scenario's Esc.
-        // When: the runner requests normal exit.
+        // arrange: the Grok composer remains active after the themes scenario's Esc.
+        // act: the runner requests normal exit.
         let steps = normal_exit_steps(AdapterKind::Grok);
 
-        // Then: the first byte clears the composer without toggling Esc state.
+        // assert: the first byte clears the composer without toggling Esc state.
         assert_eq!(steps[0].bytes, b"\x15");
     }
 
     #[test]
     fn active_grok_exit_cancels_before_clearing_and_exiting() {
+        // arrange
+        // act
         let steps = normal_exit_steps_for_state(AdapterKind::Grok, true);
 
+        // assert
         assert_eq!(steps[0].bytes, b"\x11");
         assert_eq!(steps[1].bytes, b"\x11");
     }

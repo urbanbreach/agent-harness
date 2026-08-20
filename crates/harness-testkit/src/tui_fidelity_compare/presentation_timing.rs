@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, HashSet};
 
 use crate::tui_fidelity_runner::{
     NativeAckOutcome, NativeCauseOutcome, PresentationEvidence, PresentationTimestamp,
@@ -72,18 +73,26 @@ pub(crate) fn derive_presentation_timing_excluding(
             "external latency",
         )?);
     }
+    let scenario_epoch = scenario_epoch(external)?;
     let timestamps = external
         .observations
         .iter()
+        .filter(|observation| {
+            observation.kind != crate::tui_fidelity_runner::ObservationKind::StableRepeat
+                && observation.observed_at >= scenario_epoch
+        })
         .map(|observation| observation.observed_at.0)
         .collect::<Vec<_>>();
-    let observation_intervals = intervals(&timestamps);
+    let observation_intervals =
+        external_epoch_intervals(external, excluded_action_ordinals, scenario_epoch);
     Ok(PresentationTimingMetrics {
         external_send_to_changed_observation_micros: samples,
         external_observation_timestamps_micros: timestamps,
         external_cadence_micros: median_nonzero(&observation_intervals),
         external_observation_intervals_micros: observation_intervals,
-        native: native.map(|trace| derive_native(trace)).transpose()?,
+        native: native
+            .map(|trace| derive_native(trace, external, excluded_action_ordinals))
+            .transpose()?,
     })
 }
 
@@ -126,41 +135,15 @@ fn no_visible_action_ordinals(presentation: &PresentationEvidence) -> Vec<usize>
 
 fn derive_native(
     trace: &crate::tui_fidelity_runner::NativePresentationTrace,
+    external: &crate::tui_fidelity_runner::ExternalPresentationEvidence,
+    excluded_action_ordinals: &[usize],
 ) -> Result<NativeTimingMetrics, ComparatorError> {
     let successful = trace
         .acknowledgements
         .iter()
         .filter(|ack| ack.outcome == NativeAckOutcome::CompletedWrite)
         .collect::<Vec<_>>();
-    let mut receive = Vec::new();
-    for cause in trace
-        .causes
-        .iter()
-        .filter(|cause| cause.outcome == NativeCauseOutcome::VisibleChange)
-    {
-        let revision = cause
-            .resulting_revision
-            .ok_or_else(|| ComparatorError::Invalid {
-                detail: format!("visible cause {} has no revision", cause.cause_id),
-            })?;
-        let ack = successful
-            .iter()
-            .filter(|ack| ack.revision >= revision)
-            .filter(|ack| {
-                trace.frames.iter().any(|frame| {
-                    frame.sequence == ack.sequence && frame.cause_ids.contains(&cause.cause_id)
-                })
-            })
-            .min_by_key(|ack| ack.write_ended_at)
-            .ok_or_else(|| ComparatorError::Invalid {
-                detail: format!("visible cause {} has no successful flush", cause.cause_id),
-            })?;
-        receive.push(delta(
-            ack.write_ended_at,
-            cause.received_at,
-            "native receive-to-flush",
-        )?);
-    }
+    let receive = native_input_latencies(trace, external, excluded_action_ordinals, &successful)?;
     let completed = successful
         .iter()
         .map(|ack| ack.write_ended_at.0)
@@ -182,10 +165,11 @@ fn derive_native(
             )
         })
         .collect::<Result<Vec<_>, _>>()?;
+    let completed_intervals = native_epoch_intervals(trace, &successful);
     Ok(NativeTimingMetrics {
         receive_to_successful_flush_micros: receive,
         request_to_successful_flush_micros: request,
-        completed_write_intervals_micros: intervals(&completed),
+        completed_write_intervals_micros: completed_intervals,
         completed_write_timestamps_micros: completed,
         coalesced_requests: trace.aggregates.coalesced_requests,
         queue_saturation: trace.aggregates.queue_saturation,
@@ -194,6 +178,194 @@ fn derive_native(
         bytes_written: trace.aggregates.bytes_written,
         idle_redraws: trace.aggregates.idle_redraws,
     })
+}
+
+fn external_epoch_intervals(
+    external: &crate::tui_fidelity_runner::ExternalPresentationEvidence,
+    excluded_action_ordinals: &[usize],
+    scenario_epoch: PresentationTimestamp,
+) -> Vec<u64> {
+    let observations = external
+        .observations
+        .iter()
+        .filter(|observation| {
+            observation.kind != crate::tui_fidelity_runner::ObservationKind::StableRepeat
+                && observation.observed_at >= scenario_epoch
+        })
+        .collect::<Vec<_>>();
+    observations
+        .windows(2)
+        .filter(|window| {
+            !external.actual_input_sends.iter().any(|send| {
+                !excluded_action_ordinals.contains(&send.action_ordinal)
+                    && send.sent_at > window[0].observed_at
+                    && send.sent_at <= window[1].observed_at
+            })
+        })
+        .map(|window| {
+            window[1]
+                .observed_at
+                .0
+                .saturating_sub(window[0].observed_at.0)
+        })
+        .collect()
+}
+
+fn scenario_epoch(
+    external: &crate::tui_fidelity_runner::ExternalPresentationEvidence,
+) -> Result<PresentationTimestamp, ComparatorError> {
+    let first = external
+        .action_receipts
+        .first()
+        .ok_or_else(|| ComparatorError::Invalid {
+            detail: "external timing requires action receipts".to_owned(),
+        })?;
+    let mut interaction_ids = HashSet::new();
+    let mut previous_scheduled_at = None;
+    for (ordinal, receipt) in external.action_receipts.iter().enumerate() {
+        if receipt.action_ordinal != ordinal
+            || !interaction_ids.insert(&receipt.interaction_id)
+            || receipt.scheduled_at > receipt.started_at
+            || receipt.started_at > receipt.ended_at
+            || previous_scheduled_at.is_some_and(|previous| previous > receipt.scheduled_at)
+        {
+            return Err(ComparatorError::Invalid {
+                detail: format!(
+                    "external timing action receipt {} is malformed",
+                    receipt.interaction_id.0
+                ),
+            });
+        }
+        previous_scheduled_at = Some(receipt.scheduled_at);
+    }
+    Ok(first.scheduled_at)
+}
+
+fn native_input_latencies(
+    trace: &crate::tui_fidelity_runner::NativePresentationTrace,
+    external: &crate::tui_fidelity_runner::ExternalPresentationEvidence,
+    excluded_action_ordinals: &[usize],
+    successful: &[&crate::tui_fidelity_runner::NativeFrameAck],
+) -> Result<Vec<u64>, ComparatorError> {
+    let mut samples = Vec::new();
+    for send in external
+        .actual_input_sends
+        .iter()
+        .filter(|send| !excluded_action_ordinals.contains(&send.action_ordinal))
+    {
+        let causes = trace
+            .causes
+            .iter()
+            .filter(|cause| cause.interaction_id.as_ref() == Some(&send.interaction_id))
+            .filter(|cause| cause.outcome == NativeCauseOutcome::VisibleChange)
+            .collect::<Vec<_>>();
+        if causes.is_empty() {
+            continue;
+        }
+        let received_at = causes
+            .iter()
+            .map(|cause| cause.received_at)
+            .max()
+            .ok_or_else(|| ComparatorError::Invalid {
+                detail: format!(
+                    "interaction {} has no native receive",
+                    send.interaction_id.0
+                ),
+            })?;
+        let final_cause_ids = causes
+            .iter()
+            .filter(|cause| cause.received_at == received_at)
+            .map(|cause| cause.cause_id.as_str())
+            .collect::<Vec<_>>();
+        let ack = successful
+            .iter()
+            .filter(|ack| {
+                ack.write_ended_at >= received_at
+                    && trace.frames.iter().any(|frame| {
+                        frame.sequence == ack.sequence
+                            && final_cause_ids.iter().any(|cause_id| {
+                                frame.cause_ids.iter().any(|frame_id| frame_id == cause_id)
+                            })
+                    })
+            })
+            .min_by_key(|ack| ack.write_ended_at)
+            .ok_or_else(|| ComparatorError::Invalid {
+                detail: format!(
+                    "interaction {} has no successful causal flush",
+                    send.interaction_id.0
+                ),
+            })?;
+        samples.push(delta(
+            ack.write_ended_at,
+            received_at,
+            "native input receive-to-flush",
+        )?);
+    }
+    Ok(samples)
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum NativeEpoch {
+    Animation,
+    LiveUpdate,
+    Interaction(String),
+    Other(String),
+}
+
+fn native_epoch_intervals(
+    trace: &crate::tui_fidelity_runner::NativePresentationTrace,
+    successful: &[&crate::tui_fidelity_runner::NativeFrameAck],
+) -> Vec<u64> {
+    let causes = trace
+        .causes
+        .iter()
+        .map(|cause| (cause.cause_id.as_str(), cause))
+        .collect::<BTreeMap<_, _>>();
+    let samples = successful
+        .iter()
+        .filter_map(|ack| {
+            let frame = trace
+                .frames
+                .iter()
+                .find(|frame| frame.sequence == ack.sequence)?;
+            let frame_causes = frame
+                .cause_ids
+                .iter()
+                .filter_map(|cause_id| causes.get(cause_id.as_str()).copied())
+                .collect::<Vec<_>>();
+            let epoch = frame_causes
+                .iter()
+                .find_map(|cause| cause.interaction_id.as_ref())
+                .map(|interaction_id| NativeEpoch::Interaction(interaction_id.0.clone()))
+                .or_else(|| {
+                    (!frame_causes.is_empty()
+                        && frame_causes
+                            .iter()
+                            .all(|cause| cause.kind == "animation_timer"))
+                    .then_some(NativeEpoch::Animation)
+                })
+                .or_else(|| {
+                    (!frame_causes.is_empty()
+                        && frame_causes.iter().all(|cause| cause.kind == "live_update"))
+                    .then_some(NativeEpoch::LiveUpdate)
+                })
+                .unwrap_or_else(|| {
+                    NativeEpoch::Other(
+                        frame_causes
+                            .first()
+                            .map_or_else(|| "unattributed".to_owned(), |cause| cause.kind.clone()),
+                    )
+                });
+            Some((epoch, ack.write_ended_at.0))
+        })
+        .collect::<Vec<_>>();
+    let mut samples = samples;
+    samples.sort_by_key(|sample| sample.1);
+    samples
+        .windows(2)
+        .filter(|window| window[0].0 == window[1].0)
+        .map(|window| window[1].1.saturating_sub(window[0].1))
+        .collect()
 }
 
 fn delta(

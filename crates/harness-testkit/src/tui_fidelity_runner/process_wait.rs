@@ -8,7 +8,7 @@ use super::actions::normal_exit_steps_for_state;
 use super::error::RunnerError;
 use super::process_io::PtyRead;
 use super::process_tree::descendants;
-use crate::tui_fidelity::{AdapterKind, Viewport};
+use crate::tui_fidelity::{AdapterKind, SemanticState, Viewport};
 
 type PtyChild = Box<dyn portable_pty::Child + Send + Sync>;
 
@@ -172,6 +172,52 @@ pub(super) fn wait_for_text(
             return Err(RunnerError::SemanticTargetMissing {
                 text: text.to_owned(),
             });
+        }
+        thread::sleep(Duration::from_millis(5));
+    }
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "semantic-state readiness observes one PTY lifecycle boundary"
+)]
+pub(super) fn wait_for_semantic_state(
+    state: SemanticState,
+    viewport: Viewport,
+    minimum_stream_len: Option<usize>,
+    deadline: Instant,
+    adapter: AdapterKind,
+    child: &mut PtyChild,
+    output: &Receiver<PtyRead>,
+    stream: &mut Vec<u8>,
+    observed: &mut BTreeSet<u32>,
+    pid: u32,
+) -> Result<crate::parity::SemanticFrame, RunnerError> {
+    loop {
+        drain(output, stream);
+        collect_descendants(pid, observed);
+        if let Some(status) = child
+            .try_wait()
+            .map_err(|error| process_error(adapter, "poll semantic state", error))?
+        {
+            return Err(RunnerError::PrematureExit {
+                adapter,
+                code: i32::try_from(status.exit_code()).unwrap_or(i32::MAX),
+            });
+        }
+        let frame = semantic_frame(stream, viewport);
+        if super::scenario_state_predicates::semantic_state_observed(
+            state,
+            &frame,
+            viewport.cols,
+            viewport.rows,
+            stream.len(),
+            minimum_stream_len,
+        ) {
+            return Ok(frame);
+        }
+        if Instant::now() >= deadline {
+            return Err(RunnerError::SemanticStateMissing { adapter, state });
         }
         thread::sleep(Duration::from_millis(5));
     }
@@ -386,6 +432,9 @@ mod tests {
 
     #[test]
     fn grok_welcome_prompt_waits_for_startup_footer() {
+        // arrange
+        // act
+        // assert
         assert!(!prompt_is_ready(
             AdapterKind::Grok,
             "Grok Build Beta  0.2.114\n❯\nStarting session…",

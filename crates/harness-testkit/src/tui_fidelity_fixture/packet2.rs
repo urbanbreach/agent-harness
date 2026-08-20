@@ -645,15 +645,15 @@ mod tests {
 
     #[test]
     fn packet3_stream_is_text_only_and_tool_modes_share_command_payload() {
-        // Given: Packet 3 stream and tool-family scenario identities.
+        // arrange: Packet 3 stream and tool-family scenario identities.
         let stream = packet3_stream_mode("packet3-baseline-stream--wide-120x40");
         let tool = packet3_stream_mode("packet3-baseline-tool--wide-120x40");
 
-        // When: fixture modes and adapter tool dialects are resolved.
+        // act: fixture modes and adapter tool dialects are resolved.
         let grok_command = fixture_command("run_terminal_command", tool);
         let harness_command = fixture_command("bash", tool);
 
-        // Then: stream bypasses tools and tool-family payloads are byte-identical.
+        // assert: stream bypasses tools and tool-family payloads are byte-identical.
         assert!(matches!(stream, FixtureStream::Packet3Stream));
         assert!(matches!(tool, FixtureStream::Packet3Settled));
         assert_eq!(grok_command, ISOLATED_COMMAND);

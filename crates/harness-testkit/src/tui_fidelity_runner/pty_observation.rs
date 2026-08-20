@@ -22,7 +22,7 @@ pub struct PtyObserver {
     raw_reads: Vec<RawPtyRead>,
     observations: Vec<TimedSemanticObservation>,
     stream: Vec<u8>,
-    delimiter_scan: Vec<u8>,
+    scan_cursor: usize,
     synchronized: bool,
     last_frame: Option<SemanticFrame>,
 }
@@ -34,7 +34,7 @@ impl PtyObserver {
             raw_reads: Vec::new(),
             observations: Vec::new(),
             stream: Vec::new(),
-            delimiter_scan: Vec::new(),
+            scan_cursor: 0,
             synchronized: false,
             last_frame: None,
         }
@@ -43,32 +43,58 @@ impl PtyObserver {
     pub fn observe(&mut self, read: &PtyRead) {
         let read_ordinal = self.raw_reads.len();
         self.stream.extend_from_slice(&read.bytes);
-        self.delimiter_scan.extend_from_slice(&read.bytes);
-        let sync_started = contains(&self.delimiter_scan, SYNC_START);
-        let sync_ended = contains(&self.delimiter_scan, SYNC_END);
-        if sync_started {
-            self.synchronized = true;
+        let mut capture_ends = Vec::new();
+        let mut saw_delimiter = false;
+        while self.scan_cursor < self.stream.len() {
+            let remaining = &self.stream[self.scan_cursor..];
+            if remaining.starts_with(SYNC_START) {
+                self.synchronized = true;
+                self.scan_cursor += SYNC_START.len();
+                saw_delimiter = true;
+            } else if remaining.starts_with(SYNC_END) {
+                if self.synchronized {
+                    self.synchronized = false;
+                    capture_ends.push(self.scan_cursor + SYNC_END.len());
+                }
+                self.scan_cursor += SYNC_END.len();
+                saw_delimiter = true;
+            } else if partial_prefix(remaining, SYNC_START) || partial_prefix(remaining, SYNC_END) {
+                break;
+            } else {
+                self.scan_cursor += 1;
+            }
         }
-        if self.synchronized && sync_ended {
-            self.synchronized = false;
-        }
-        let state = decoder_state(&self.stream, &self.delimiter_scan, self.synchronized);
+        let state = decoder_state(
+            &self.stream,
+            &self.stream[self.scan_cursor..],
+            self.synchronized,
+        );
         self.raw_reads.push(RawPtyRead {
             read_completed_at: PresentationTimestamp(read.completed_at_micros),
             byte_len: read.bytes.len(),
             sha256: hex_digest(&read.bytes),
             decoder_state: state,
         });
-        if sync_ended {
+        for stream_end in capture_ends.iter().copied() {
             self.capture(
                 read,
                 read_ordinal,
                 ObservationKind::SynchronizedUpdateComplete,
+                stream_end,
             );
-        } else if !self.synchronized && !sync_started && state == DecoderState::Complete {
-            self.capture(read, read_ordinal, ObservationKind::ReadCompletionDecode);
         }
-        retain_delimiter_suffix(&mut self.delimiter_scan);
+        if capture_ends.is_empty()
+            && !self.synchronized
+            && !saw_delimiter
+            && state == DecoderState::Complete
+        {
+            self.capture(
+                read,
+                read_ordinal,
+                ObservationKind::ReadCompletionDecode,
+                self.stream.len(),
+            );
+        }
     }
 
     pub fn finish(
@@ -76,8 +102,11 @@ impl PtyObserver {
         stable_repeats: u8,
     ) -> Result<(Vec<RawPtyRead>, Vec<TimedSemanticObservation>), PtyObservationError> {
         if self.synchronized
-            || decoder_state(&self.stream, &self.delimiter_scan, self.synchronized)
-                != DecoderState::Complete
+            || decoder_state(
+                &self.stream,
+                &self.stream[self.scan_cursor..],
+                self.synchronized,
+            ) != DecoderState::Complete
         {
             return Err(PtyObservationError::TruncatedStream);
         }
@@ -100,9 +129,15 @@ impl PtyObserver {
         Ok((self.raw_reads, self.observations))
     }
 
-    fn capture(&mut self, read: &PtyRead, ordinal: usize, kind: ObservationKind) {
+    fn capture(
+        &mut self,
+        read: &PtyRead,
+        ordinal: usize,
+        kind: ObservationKind,
+        stream_end: usize,
+    ) {
         let mut parser = vt100::Parser::new(self.viewport.rows, self.viewport.cols, 0);
-        parser.process(&self.stream);
+        parser.process(&self.stream[..stream_end]);
         let frame = semantic_frame_from_vt100_screen(parser.screen());
         if self.last_frame.as_ref() == Some(&frame) {
             return;
@@ -131,20 +166,12 @@ fn decoder_state(stream: &[u8], scan: &[u8], synchronized: bool) -> DecoderState
     }
 }
 
-fn contains(haystack: &[u8], needle: &[u8]) -> bool {
-    haystack
-        .windows(needle.len())
-        .any(|window| window == needle)
-}
 fn partial(bytes: &[u8], delimiter: &[u8]) -> bool {
     (1..delimiter.len()).any(|length| bytes.ends_with(&delimiter[..length]))
 }
 
-fn retain_delimiter_suffix(scan: &mut Vec<u8>) {
-    let retain = SYNC_START.len().max(SYNC_END.len()).saturating_sub(1);
-    if scan.len() > retain {
-        scan.drain(..scan.len() - retain);
-    }
+fn partial_prefix(bytes: &[u8], delimiter: &[u8]) -> bool {
+    bytes.len() < delimiter.len() && delimiter.starts_with(bytes)
 }
 
 fn hex_digest(bytes: &[u8]) -> String {

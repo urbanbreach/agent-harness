@@ -11,7 +11,7 @@ use super::fixture::{synthetic_fixture, synthetic_keys};
 
 #[test]
 fn staging_resume_resets_interrupted_and_required_cancelled_keys() {
-    // Given: an interrupted development attempt with running and cancelled keys.
+    // arrange: an interrupted development attempt with running and cancelled keys.
     let root = tempfile::tempdir().expect("evidence root");
     let keys = synthetic_keys();
     let staging = StagingArea::open(
@@ -25,7 +25,7 @@ fn staging_resume_resets_interrupted_and_required_cancelled_keys() {
     staging.mark_running(&keys[0]).expect("running state");
     staging.mark_cancelled(&keys[1]).expect("cancelled state");
 
-    // When: the same attempt is resumed.
+    // act: the same attempt is resumed.
     let resumed = StagingArea::open(
         root.path(),
         &"a".repeat(40),
@@ -35,7 +35,7 @@ fn staging_resume_resets_interrupted_and_required_cancelled_keys() {
     )
     .expect("resumed staging area");
 
-    // Then: required interrupted work is pending again.
+    // assert: required interrupted work is pending again.
     assert_eq!(
         resumed.state(&keys[0]).expect("first state"),
         KeyState::Pending
@@ -48,7 +48,7 @@ fn staging_resume_resets_interrupted_and_required_cancelled_keys() {
 
 #[test]
 fn final_all_rejects_resume_after_one_genuine_failure() {
-    // Given: a final-all attempt with one failed key.
+    // arrange: a final-all attempt with one failed key.
     let root = tempfile::tempdir().expect("evidence root");
     let keys = synthetic_keys();
     let staging = StagingArea::open(
@@ -64,7 +64,7 @@ fn final_all_rejects_resume_after_one_genuine_failure() {
         .mark_failed(&keys[0], "genuine mismatch")
         .expect("failed state");
 
-    // When: final-all resume is attempted.
+    // act: final-all resume is attempted.
     let error = StagingArea::open(
         root.path(),
         &"b".repeat(40),
@@ -74,13 +74,13 @@ fn final_all_rejects_resume_after_one_genuine_failure() {
     )
     .expect_err("final failure must be terminal");
 
-    // Then: the retry guard identifies the genuine final failure.
+    // assert: the retry guard identifies the genuine final failure.
     assert!(error.to_string().contains("final-all failure"));
 }
 
 #[test]
 fn development_resume_stops_retrying_after_two_genuine_failures() {
-    // Given: a development key that has failed twice across resumed attempts.
+    // arrange: a development key that has failed twice across resumed attempts.
     let root = tempfile::tempdir().expect("evidence root");
     let keys = synthetic_keys();
     let candidate = "d".repeat(40);
@@ -108,7 +108,7 @@ fn development_resume_stops_retrying_after_two_genuine_failures() {
         .mark_failed(&keys[0], "second")
         .expect("second failure");
 
-    // When: development resume is requested after the retry cap.
+    // act: development resume is requested after the retry cap.
     let capped = StagingArea::open(
         root.path(),
         &candidate,
@@ -118,7 +118,7 @@ fn development_resume_stops_retrying_after_two_genuine_failures() {
     )
     .expect("capped attempt");
 
-    // Then: the failed key remains terminal instead of becoming pending.
+    // assert: the failed key remains terminal instead of becoming pending.
     assert_eq!(
         capped.state(&keys[0]).expect("capped state"),
         KeyState::Failed
@@ -127,7 +127,7 @@ fn development_resume_stops_retrying_after_two_genuine_failures() {
 
 #[test]
 fn scheduler_executes_each_deduplicated_key_once_with_bounded_isolation() {
-    // Given: three deduplicated jobs and a two-worker staging attempt.
+    // arrange: three deduplicated jobs and a two-worker staging attempt.
     let root = tempfile::tempdir().expect("evidence root");
     let keys = synthetic_keys();
     let staging = StagingArea::open(
@@ -141,7 +141,7 @@ fn scheduler_executes_each_deduplicated_key_once_with_bounded_isolation() {
     let scheduler = BoundedScheduler::new(2).expect("scheduler");
     let executed = Arc::new(std::sync::Mutex::new(BTreeSet::new()));
 
-    // When: all keys are dispatched through isolated job directories.
+    // act: all keys are dispatched through isolated job directories.
     let report = scheduler
         .run(&keys, &staging, {
             let executed = Arc::clone(&executed);
@@ -157,7 +157,7 @@ fn scheduler_executes_each_deduplicated_key_once_with_bounded_isolation() {
         })
         .expect("scheduled verification");
 
-    // Then: exactly three jobs passed and no key executed twice.
+    // assert: exactly three jobs passed and no key executed twice.
     assert_eq!(report.passed, 3);
     assert_eq!(executed.lock().expect("executed keys").len(), 3);
     assert!(keys
@@ -167,7 +167,7 @@ fn scheduler_executes_each_deduplicated_key_once_with_bounded_isolation() {
 
 #[test]
 fn synthetic_fixture_executes_and_publishes_each_profile() {
-    // Given: one synthetic plan for each profile.
+    // arrange: one synthetic plan for each profile.
     let (inventory, manifest) = synthetic_fixture();
     let changed = inventory
         .requirements
@@ -180,7 +180,7 @@ fn synthetic_fixture_executes_and_publishes_each_profile() {
         (VerificationProfile::Motion, None),
     ];
 
-    // When: every plan runs through scheduling, staging, and publication.
+    // act: every plan runs through scheduling, staging, and publication.
     for (index, (profile, selected)) in profiles.into_iter().enumerate() {
         let plan = build_plan(
             PlanSelection {
@@ -195,6 +195,9 @@ fn synthetic_fixture_executes_and_publishes_each_profile() {
         let receipt = execute_plan(
             &VerifyConfig {
                 candidate_sha: format!("{:040}", index + 1),
+                authority_sha256: "a".repeat(64),
+                inventory_sha256: "b".repeat(64),
+                coverage_sha256: "c".repeat(64),
                 attempt_id: format!("profile-{index}"),
                 evidence_root: root.path().to_path_buf(),
                 workers: Some(2),
@@ -208,7 +211,7 @@ fn synthetic_fixture_executes_and_publishes_each_profile() {
         )
         .expect("profile execution");
 
-        // Then: final all seals once; development profiles retain staging evidence.
+        // assert: final all seals once; development profiles retain staging evidence.
         assert_eq!(receipt.sealed, profile == VerificationProfile::All);
         assert!(std::path::Path::new(&receipt.evidence_path).is_dir());
     }
@@ -216,7 +219,7 @@ fn synthetic_fixture_executes_and_publishes_each_profile() {
 
 #[test]
 fn failed_development_plan_publishes_fail_closed_receipt_before_returning_error() {
-    // Given: a development plan whose first verification key fails and cancels the rest.
+    // arrange: a development plan whose first verification key fails and cancels the rest.
     let (inventory, manifest) = synthetic_fixture();
     let selected = inventory
         .requirements
@@ -234,10 +237,13 @@ fn failed_development_plan_publishes_fail_closed_receipt_before_returning_error(
     .expect("changed plan");
     let root = tempfile::tempdir().expect("failure evidence");
 
-    // When: execution fails before all required keys can run.
+    // act: execution fails before all required keys can run.
     let error = execute_plan(
         &VerifyConfig {
             candidate_sha: "e".repeat(40),
+            authority_sha256: "a".repeat(64),
+            inventory_sha256: "b".repeat(64),
+            coverage_sha256: "c".repeat(64),
             attempt_id: "failed-attempt".to_owned(),
             evidence_root: root.path().to_path_buf(),
             workers: Some(1),
@@ -247,7 +253,7 @@ fn failed_development_plan_publishes_fail_closed_receipt_before_returning_error(
     )
     .expect_err("failed plan must not report success");
 
-    // Then: the failed state is durable and names the cancelled required work.
+    // assert: the failed state is durable and names the cancelled required work.
     assert!(error.to_string().contains("failed and"));
     let staging_root = root
         .path()

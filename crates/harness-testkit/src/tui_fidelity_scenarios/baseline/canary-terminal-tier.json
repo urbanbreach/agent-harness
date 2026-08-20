@@ -1,5 +1,5 @@
 {
-  "schema_version": "tui-fidelity-scenario-v1",
+  "schema_version": "tui-fidelity-scenario-v2",
   "id": "canary-terminal-tier",
   "adapters": ["grok", "harness"],
   "viewport": {"cols": 40, "rows": 2},
@@ -17,11 +17,7 @@
     {"name": "mid", "at_tick": 7, "frame": {"capture_id": "canary-terminal-tier-mid", "viewport": {"cols": 40, "rows": 2}, "state": "working"}},
     {"name": "settled", "at_tick": 8, "frame": {"capture_id": "canary-terminal-tier-settled", "viewport": {"cols": 40, "rows": 2}, "state": "settled"}}
   ],
-  "substitutions": [
-    {"checkpoint": "rest", "scope": "workspace_path", "rectangle": {"col": 0, "row": 0, "cols": 1, "rows": 1}, "source": {"text": "~", "cell_width": 1, "padding_left": 0, "padding_right": 0, "style": {"foreground": {"r": 216, "g": 216, "b": 216}, "background": {"r": 18, "g": 18, "b": 18}, "bold": false, "dim": true, "italic": false, "underline": false, "inverse": false}, "wrapping": "no_wrap"}, "target": {"text": "[WORKSPACE]", "cell_width": 1, "padding_left": 0, "padding_right": 0, "style": {"foreground": {"r": 216, "g": 216, "b": 216}, "background": {"r": 18, "g": 18, "b": 18}, "bold": false, "dim": true, "italic": false, "underline": false, "inverse": false}, "wrapping": "no_wrap"}},
-    {"checkpoint": "mid", "scope": "workspace_path", "rectangle": {"col": 0, "row": 0, "cols": 1, "rows": 1}, "source": {"text": "~", "cell_width": 1, "padding_left": 0, "padding_right": 0, "style": {"foreground": {"r": 216, "g": 216, "b": 216}, "background": {"r": 18, "g": 18, "b": 18}, "bold": false, "dim": true, "italic": false, "underline": false, "inverse": false}, "wrapping": "no_wrap"}, "target": {"text": "[WORKSPACE]", "cell_width": 1, "padding_left": 0, "padding_right": 0, "style": {"foreground": {"r": 216, "g": 216, "b": 216}, "background": {"r": 18, "g": 18, "b": 18}, "bold": false, "dim": true, "italic": false, "underline": false, "inverse": false}, "wrapping": "no_wrap"}},
-    {"checkpoint": "settled", "scope": "workspace_path", "rectangle": {"col": 0, "row": 0, "cols": 1, "rows": 1}, "source": {"text": "~", "cell_width": 1, "padding_left": 0, "padding_right": 0, "style": {"foreground": {"r": 216, "g": 216, "b": 216}, "background": {"r": 18, "g": 18, "b": 18}, "bold": false, "dim": true, "italic": false, "underline": false, "inverse": false}, "wrapping": "no_wrap"}, "target": {"text": "[WORKSPACE]", "cell_width": 1, "padding_left": 0, "padding_right": 0, "style": {"foreground": {"r": 216, "g": 216, "b": 216}, "background": {"r": 18, "g": 18, "b": 18}, "bold": false, "dim": true, "italic": false, "underline": false, "inverse": false}, "wrapping": "no_wrap"}}
-  ],
+  "substitutions": [],
   "expected_exit": {"code": 0},
   "cleanup": {"restore_workspace": true, "preserve_evidence": true, "temporary_paths": ["tmp/tui-fidelity"]},
   "motion_capture": {"families":["ordered_motion","settle_dwell"],"markers":[{"phase":"startup","boundary":{"before_action":{"ordinal":0}},"observation":"first_changed","repeat_count":1},{"phase":"finish_flash","boundary":{"checkpoint":{"name":"mid"}},"observation":"last_changed_before_stable","repeat_count":1},{"phase":"settle_repeat","boundary":{"checkpoint":{"name":"settled"}},"observation":"stable_repeat","repeat_count":3}]}

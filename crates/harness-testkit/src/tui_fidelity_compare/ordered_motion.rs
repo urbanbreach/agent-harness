@@ -18,7 +18,12 @@ pub fn normalize_ordered_motion(
     };
     let mut frames = Vec::new();
     let mut cursor = 0;
-    for marker in &scenario.motion_capture.markers {
+    for (marker_index, marker) in scenario.motion_capture.markers.iter().enumerate() {
+        let maximum = scenario
+            .motion_capture
+            .markers
+            .get(marker_index + 1)
+            .and_then(|next| boundary_time(next.boundary, external));
         let selected = match marker.observation {
             MotionObservationRule::StableRepeat => external
                 .observations
@@ -31,62 +36,37 @@ pub fn normalize_ordered_motion(
                 .into_iter()
                 .rev()
                 .collect::<Vec<_>>(),
-            MotionObservationRule::LastChangedBeforeStable => external
-                .observations
-                .iter()
-                .enumerate()
-                .filter(|(_, item)| item.kind != ObservationKind::StableRepeat)
-                .next_back()
-                .into_iter()
-                .collect(),
+            MotionObservationRule::LastChangedBeforeStable => {
+                let minimum = boundary_time(marker.boundary, external).unwrap_or_default();
+                last_changed_before_stable(external, cursor, minimum, maximum)
+                    .into_iter()
+                    .collect()
+            }
             MotionObservationRule::FirstChanged => match marker.boundary {
                 MotionBoundary::BeforeAction { ordinal } => {
                     let boundary = action_time(ordinal, external).unwrap_or(u64::MAX);
-                    external
-                        .observations
-                        .iter()
-                        .enumerate()
-                        .filter(|(_, item)| {
-                            item.kind != ObservationKind::StableRepeat
-                                && item.observed_at.0 <= boundary
-                        })
-                        .next_back()
+                    changed_in_window(external, cursor, 0, Some(boundary))
+                        .last()
                         .into_iter()
                         .collect()
                 }
                 MotionBoundary::AfterAction { ordinal } => {
                     let boundary = action_time(ordinal, external).unwrap_or_default();
-                    external
-                        .observations
-                        .iter()
-                        .enumerate()
-                        .skip(cursor)
-                        .find(|(_, item)| {
-                            item.kind != ObservationKind::StableRepeat
-                                && item.observed_at.0 >= boundary
-                        })
+                    changed_in_window(external, cursor, boundary, maximum)
+                        .next()
                         .into_iter()
                         .collect()
                 }
-                MotionBoundary::Checkpoint { .. } => external
-                    .observations
-                    .iter()
-                    .enumerate()
-                    .skip(cursor)
-                    .find(|(_, item)| item.kind != ObservationKind::StableRepeat)
-                    .into_iter()
-                    .collect(),
+                MotionBoundary::Checkpoint { .. } => {
+                    changed_in_window(external, cursor, 0, maximum)
+                        .next()
+                        .into_iter()
+                        .collect()
+                }
             },
             MotionObservationRule::EachChanged => {
                 let minimum = boundary_time(marker.boundary, external).unwrap_or_default();
-                external
-                    .observations
-                    .iter()
-                    .enumerate()
-                    .skip(cursor)
-                    .filter(|(_, item)| {
-                        item.kind != ObservationKind::StableRepeat && item.observed_at.0 >= minimum
-                    })
+                changed_in_window(external, cursor, minimum, maximum)
                     .take(usize::from(marker.repeat_count))
                     .collect()
             }
@@ -165,6 +145,55 @@ fn action_time(
         .iter()
         .find(|send| send.action_ordinal == ordinal)
         .map(|send| send.sent_at.0)
+        .or_else(|| {
+            evidence
+                .action_receipts
+                .iter()
+                .find(|receipt| receipt.action_ordinal == ordinal)
+                .map(|receipt| receipt.started_at.0)
+        })
+}
+
+fn last_changed_before_stable(
+    evidence: &crate::tui_fidelity_runner::ExternalPresentationEvidence,
+    cursor: usize,
+    minimum: u64,
+    maximum: Option<u64>,
+) -> Option<(usize, &crate::tui_fidelity_runner::TimedSemanticObservation)> {
+    let window = evidence
+        .observations
+        .iter()
+        .enumerate()
+        .skip(cursor)
+        .filter(|(_, item)| item.observed_at.0 >= minimum)
+        .take_while(|(_, item)| maximum.is_none_or(|limit| item.observed_at.0 < limit));
+    let mut last_changed = None;
+    for (ordinal, observation) in window {
+        if observation.kind == ObservationKind::StableRepeat {
+            if last_changed.is_some() {
+                break;
+            }
+        } else {
+            last_changed = Some((ordinal, observation));
+        }
+    }
+    last_changed
+}
+
+fn changed_in_window(
+    evidence: &crate::tui_fidelity_runner::ExternalPresentationEvidence,
+    cursor: usize,
+    minimum: u64,
+    maximum: Option<u64>,
+) -> impl Iterator<Item = (usize, &crate::tui_fidelity_runner::TimedSemanticObservation)> {
+    evidence
+        .observations
+        .iter()
+        .enumerate()
+        .skip(cursor)
+        .filter(move |(_, item)| item.observed_at.0 >= minimum)
+        .take_while(move |(_, item)| maximum.is_none_or(|limit| item.observed_at.0 < limit))
+        .filter(|(_, item)| item.kind != ObservationKind::StableRepeat)
 }
 
 fn boundary_time(
@@ -198,6 +227,6 @@ fn masks(scenario: &Scenario) -> IdentityMaskRegistry {
                         .map(move |col| (row, col))
                 })
                 .collect();
-            masks.with_field(substitution.scope.placeholder(), cells)
+            masks.with_field(substitution.field.mask_label(substitution.kind), cells)
         })
 }

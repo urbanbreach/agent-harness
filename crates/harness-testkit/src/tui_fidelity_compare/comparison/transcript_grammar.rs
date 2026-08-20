@@ -264,6 +264,7 @@ mod tests {
 
     #[test]
     fn canonical_tokens_accept_wrapping_and_clock_suffix_differences() {
+        // arrange
         let reference = frame(&[
             (1, 2, "❯"),
             (1, 4, "go"),
@@ -281,33 +282,38 @@ mod tests {
             (8, 0, "╭"),
         ]);
 
-        assert_eq!(
-            canonical_tokens(&reference).expect("reference tokens"),
-            canonical_tokens(&candidate).expect("candidate tokens")
-        );
+        // act
+        let reference = canonical_tokens(&reference).expect("reference tokens");
+        let candidate = canonical_tokens(&candidate).expect("candidate tokens");
+        // assert
+        assert_eq!(reference, candidate);
     }
 
     #[test]
     fn canonical_tokens_reject_rail_glyph_mutation() {
+        // arrange
         let reference = frame(&[(1, 2, "❯"), (3, 2, "┃ command"), (8, 0, "╭")]);
         let candidate = frame(&[(1, 2, "❯"), (3, 2, "❙ command"), (8, 0, "╭")]);
 
-        assert_ne!(
-            canonical_tokens(&reference).expect("reference tokens"),
-            canonical_tokens(&candidate).expect("candidate tokens")
-        );
+        // act
+        let reference = canonical_tokens(&reference).expect("reference tokens");
+        let candidate = canonical_tokens(&candidate).expect("candidate tokens");
+        // assert
+        assert_ne!(reference, candidate);
     }
 
     #[test]
     fn canonical_tokens_reject_rail_style_mutation() {
+        // arrange
         let reference = frame(&[(1, 2, "❯"), (3, 2, "┃ command"), (8, 0, "╭")]);
         let mut candidate = reference.clone();
         candidate.cell_mut(3, 2).expect("rail cell").modifiers.dim = true;
 
-        assert_ne!(
-            canonical_tokens(&reference).expect("reference tokens"),
-            canonical_tokens(&candidate).expect("candidate tokens")
-        );
+        // act
+        let reference = canonical_tokens(&reference).expect("reference tokens");
+        let candidate = canonical_tokens(&candidate).expect("candidate tokens");
+        // assert
+        assert_ne!(reference, candidate);
     }
 
     fn frame(entries: &[(u16, u16, &str)]) -> SemanticFrame {
@@ -328,8 +334,14 @@ mod tests {
 
     #[test]
     fn default_colors_match_blank_fixture_cells() {
+        // arrange
+        let expected = (
+            ResolvedRgb::from_array(DEFAULT_FG),
+            ResolvedRgb::from_array(DEFAULT_BG),
+        );
+        // act
         let cell = SemanticCell::blank(0, 0);
-        assert_eq!(cell.fg, ResolvedRgb::from_array(DEFAULT_FG));
-        assert_eq!(cell.bg, ResolvedRgb::from_array(DEFAULT_BG));
+        // assert
+        assert_eq!((cell.fg, cell.bg), expected);
     }
 }

@@ -19,6 +19,8 @@ pub(super) struct VerifyExecutor {
     repo_root: PathBuf,
     executable: PathBuf,
     reference_bin: PathBuf,
+    reference_root: PathBuf,
+    reference_receipt: PathBuf,
     harness_bin: PathBuf,
     candidate_receipt: PathBuf,
     browser_bin: Option<PathBuf>,
@@ -41,6 +43,7 @@ impl VerifyExecutor {
         args: &VerifyArgs,
         interrupt: InterruptFlag,
     ) -> Result<Self, String> {
+        validate_authority_args(repo_root, args)?;
         let reference_digest = hash_file(&args.reference_bin)?;
         let source_digest =
             hash_bytes(REFERENCE_REVISION.as_bytes()).map_err(|error| error.to_string())?;
@@ -54,6 +57,8 @@ impl VerifyExecutor {
             repo_root: repo_root.to_path_buf(),
             executable: std::env::current_exe().map_err(|error| error.to_string())?,
             reference_bin: args.reference_bin.clone(),
+            reference_root: args.reference_root.clone(),
+            reference_receipt: args.reference_receipt.clone(),
             harness_bin: args.harness_bin.clone(),
             candidate_receipt: args.candidate_receipt.clone(),
             browser_bin: args.browser_bin.clone(),
@@ -113,13 +118,9 @@ impl VerifyExecutor {
                 "--reference-bin".into(),
                 self.reference_bin.as_os_str().to_owned(),
                 "--reference-receipt".into(),
-                self.repo_root
-                    .join(".omo/evidence/task-2-grok-build-tui-experiential-parity/receipt.json")
-                    .into_os_string(),
+                self.reference_receipt.as_os_str().to_owned(),
                 "--reference-root".into(),
-                self.repo_root
-                    .join("inspirations/grok-build")
-                    .into_os_string(),
+                self.reference_root.as_os_str().to_owned(),
                 "--harness-bin".into(),
                 self.harness_bin.as_os_str().to_owned(),
                 "--candidate-receipt".into(),
@@ -188,6 +189,52 @@ impl VerifyExecutor {
         } else {
             Err(format!("command {:?}: {}", receipt.status, receipt.stderr))
         }
+    }
+}
+
+fn validate_authority_args(repo_root: &Path, args: &VerifyArgs) -> Result<(), String> {
+    let input = fs::read(&args.reference_authority)
+        .map_err(|error| format!("{}: {error}", args.reference_authority.display()))?;
+    let authority: serde_json::Value =
+        serde_json::from_slice(&input).map_err(|error| error.to_string())?;
+    let reference = authority
+        .get("reference")
+        .and_then(serde_json::Value::as_object)
+        .ok_or("reference authority has no reference object")?;
+    if authority.get("status").and_then(serde_json::Value::as_str) != Some("active") {
+        return Err("reference authority is not active".to_owned());
+    }
+    let expected = [
+        ("executable", &args.reference_bin),
+        ("canonical_checkout", &args.reference_root),
+        ("receipt_path", &args.reference_receipt),
+    ];
+    for (field, actual) in expected {
+        let declared = reference
+            .get(field)
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| format!("reference authority has no {field}"))?;
+        if absolute(repo_root, Path::new(declared)) != absolute(repo_root, actual) {
+            return Err(format!(
+                "reference authority {field} differs from verify input"
+            ));
+        }
+    }
+    if reference
+        .get("source_revision")
+        .and_then(serde_json::Value::as_str)
+        != Some(REFERENCE_REVISION)
+    {
+        return Err("reference authority source revision differs".to_owned());
+    }
+    Ok(())
+}
+
+fn absolute(repo_root: &Path, path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        repo_root.join(path)
     }
 }
 

@@ -1,6 +1,6 @@
 use std::fs;
 use std::path::Path;
-use std::process::{Command, Output};
+use std::process::Output;
 use std::time::Duration;
 
 use harness_testkit::tui_fidelity::Scenario;
@@ -10,21 +10,25 @@ use super::support::{Fixture, STARTUP_SMOKE};
 
 #[test]
 fn preflight_failures_write_cleanup_receipts() {
+    // arrange
     let scenario = Scenario::from_json(STARTUP_SMOKE).expect("scenario");
     let mut browser = Fixture::new("normal", "normal", "normal");
     browser.config.renderer.browser_program = browser.root().join("missing-browser");
+    // act
     let mut font = Fixture::new("normal", "normal", "normal");
     font.config.renderer.font_family = "Definitely Missing Lifecycle Font".to_owned();
 
     run_compare(&scenario, &browser.config).expect_err("missing browser");
     run_compare(&scenario, &font.config).expect_err("missing font");
 
+    // assert
     assert!(browser.config.evidence_dir.join("cleanup.json").is_file());
     assert!(font.config.evidence_dir.join("cleanup.json").is_file());
 }
 
 #[test]
 fn stale_evidence_is_preserved_and_receives_attempt_cleanup() {
+    // arrange
     let fixture = Fixture::new("normal", "normal", "normal");
     fs::create_dir_all(&fixture.config.evidence_dir).expect("evidence dir");
     let sentinel = fixture.config.evidence_dir.join("sentinel.txt");
@@ -33,6 +37,7 @@ fn stale_evidence_is_preserved_and_receives_attempt_cleanup() {
 
     run_compare(&scenario, &fixture.config).expect_err("stale evidence");
 
+    // act
     let cleanup_attempt = fs::read_dir(&fixture.config.evidence_dir)
         .expect("read evidence")
         .filter_map(Result::ok)
@@ -42,20 +47,24 @@ fn stale_evidence_is_preserved_and_receives_attempt_cleanup() {
                 .to_string_lossy()
                 .starts_with("cleanup-attempt-")
         });
+    // assert
     assert!(sentinel.is_file());
     assert!(cleanup_attempt, "stale failure needs append-only cleanup");
 }
 
 #[test]
 fn preexisting_runtime_root_and_sentinel_are_preserved() {
+    // arrange
     let fixture = Fixture::new("normal", "normal", "normal");
     let sentinel = fixture.root().join("tmp/tui-fidelity/sentinel.txt");
     fs::create_dir_all(sentinel.parent().expect("sentinel parent")).expect("runtime base");
     fs::write(&sentinel, "owned").expect("sentinel");
+    // act
     let scenario = Scenario::from_json(STARTUP_SMOKE).expect("scenario");
 
     run_compare(&scenario, &fixture.config).expect("normal compare");
 
+    // assert
     assert_eq!(
         fs::read_to_string(sentinel).expect("preserved sentinel"),
         "owned"
@@ -64,12 +73,15 @@ fn preexisting_runtime_root_and_sentinel_are_preserved() {
 
 #[test]
 fn cleanup_failure_retains_primary_error_and_writes_receipt() {
+    // arrange
     let fixture = Fixture::new("cleanup-failure", "normal", "normal");
     let scenario = Scenario::from_json(STARTUP_SMOKE).expect("scenario");
 
     let error = run_compare(&scenario, &fixture.config).expect_err("cleanup must fail");
 
+    // act
     let message = error.to_string();
+    // assert
     assert!(message.contains("primary") && message.contains("cleanup"));
     assert!(fixture.config.evidence_dir.join("cleanup.json").is_file());
     let sabotaged = fixture.root().join("tmp/tui-fidelity");
@@ -80,6 +92,7 @@ fn cleanup_failure_retains_primary_error_and_writes_receipt() {
 
 #[test]
 fn detected_child_pids_are_recorded_separately_from_survivors() {
+    // arrange
     let fixture = Fixture::new("survivor", "normal", "normal");
     let scenario = Scenario::from_json(STARTUP_SMOKE).expect("scenario");
 
@@ -92,9 +105,11 @@ fn detected_child_pids_are_recorded_separately_from_survivors() {
     let detected = cleanup["detected_child_pids"]
         .as_array()
         .expect("detected child pids");
+    // act
     let surviving = cleanup["surviving_pids"]
         .as_array()
         .expect("surviving pids");
+    // assert
     assert!(
         !detected.is_empty(),
         "unexpected child PIDs must be recorded"
@@ -110,13 +125,16 @@ fn detected_child_pids_are_recorded_separately_from_survivors() {
 
 #[test]
 fn hanging_renderer_times_out_and_is_reaped_repeatedly() {
+    // arrange
     let scenario = Scenario::from_json(STARTUP_SMOKE).expect("scenario");
     for _ in 0..3 {
         let mut fixture = Fixture::new("normal", "normal", "hang");
         fixture.config.timing.cleanup_timeout = Duration::from_millis(100);
 
+        // act
         let error = run_compare(&scenario, &fixture.config).expect_err("renderer timeout");
 
+        // assert
         assert!(error.to_string().contains("renderer timed out"));
         let pid_path = fixture.config.evidence_dir.join("grok/rest/renderer.pid");
         let pid = fs::read_to_string(pid_path).expect("renderer pid");
@@ -126,6 +144,7 @@ fn hanging_renderer_times_out_and_is_reaped_repeatedly() {
 
 #[test]
 fn cli_preflight_failures_report_typed_errors_and_write_cleanup_receipts() {
+    // arrange
     let fixture = Fixture::new("normal", "normal", "normal");
     let unknown_evidence = fixture.root().join("unknown-evidence");
     let missing_evidence = fixture.root().join("missing-reference-evidence");
@@ -139,7 +158,9 @@ fn cli_preflight_failures_report_typed_errors_and_write_cleanup_receipts() {
     );
     let missing = run_cli(&fixture, "startup-smoke", &missing, &missing_evidence);
 
+    // act
     let missing_stderr = String::from_utf8_lossy(&missing.stderr);
+    // assert
     assert!(!unknown.status.success());
     assert!(unknown_evidence.join("cleanup.json").is_file());
     assert!(!missing.status.success());
@@ -151,9 +172,11 @@ fn cli_preflight_failures_report_typed_errors_and_write_cleanup_receipts() {
 }
 
 fn run_cli(fixture: &Fixture, scenario: &str, reference: &Path, evidence: &Path) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_tui-fidelity"))
+    crate::harness_bin::tui_fidelity_command()
         .args(["compare", "--scenario", scenario, "--reference-bin"])
         .arg(reference)
+        .arg("--reference-authority")
+        .arg(&fixture.config.candidate_binding.authority.path)
         .arg("--reference-receipt")
         .arg(".omo/evidence/task-2-grok-build-tui-experiential-parity/receipt.json")
         .arg("--reference-root")

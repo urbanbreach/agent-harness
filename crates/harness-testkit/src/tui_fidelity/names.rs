@@ -15,6 +15,13 @@ impl SemanticState {
             Self::Rest => "rest",
             Self::PromptReady => "prompt_ready",
             Self::Working => "working",
+            Self::StartupReady => "startup_ready",
+            Self::Streaming => "streaming",
+            Self::ToolRunning => "tool_running",
+            Self::ToolDone => "tool_done",
+            Self::PermissionOpen => "permission_open",
+            Self::QuestionOpen => "question_open",
+            Self::Resized => "resized",
             Self::Settled => "settled",
         }
     }

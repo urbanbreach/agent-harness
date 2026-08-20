@@ -13,10 +13,10 @@ use super::interaction_queue;
 use super::lifecycle_diagnostics::write_failure;
 use super::process_checkpoints::capture as capture_checkpoints;
 use super::process_io::{configure_environment, pty_size, spawn_reader};
-use super::process_readiness::{wait_for_readiness, wait_for_stable_frame};
+use super::process_readiness::wait_for_readiness;
 use super::process_wait::{
     collect_descendants, drain, process_error, request_normal_exit, semantic_frame, wait_for_text,
-    wait_for_text_absent, wait_for_text_pair, wait_until,
+    wait_for_text_absent, wait_until,
 };
 use super::pty_child::PtyChildGuard;
 use super::types::{RunnerTiming, RuntimeBinary};
@@ -55,54 +55,6 @@ fn wait_for_literal_backlog(
             return Err(RunnerError::Io {
                 path: path.to_path_buf(),
                 detail: "timed out waiting for fresh literal live backlog".to_owned(),
-            });
-        }
-        thread::sleep(Duration::from_millis(1));
-    }
-}
-
-#[expect(
-    clippy::too_many_arguments,
-    reason = "combined scheduling and semantic readiness is one PTY boundary"
-)]
-fn wait_for_literal_backlog_and_text_pair(
-    path: &Path,
-    last_sample_sequence: &mut Option<u64>,
-    first: &str,
-    second: &str,
-    viewport: Viewport,
-    deadline: Instant,
-    adapter: AdapterKind,
-    child: &mut Box<dyn portable_pty::Child + Send + Sync>,
-    output: &std::sync::mpsc::Receiver<super::process_io::PtyRead>,
-    stream: &mut Vec<u8>,
-    observed: &mut std::collections::BTreeSet<u32>,
-    pid: u32,
-) -> Result<crate::parity::SemanticFrame, RunnerError> {
-    loop {
-        drain(output, stream);
-        collect_descendants(pid, observed);
-        if let Some(status) = child
-            .try_wait()
-            .map_err(|error| process_error(adapter, "poll combined readiness", error))?
-        {
-            return Err(RunnerError::PrematureExit {
-                adapter,
-                code: i32::try_from(status.exit_code()).unwrap_or(i32::MAX),
-            });
-        }
-        let frame = semantic_frame(stream, viewport);
-        let text_ready = super::semantic_actions::find_text(&frame, first).is_some()
-            && super::semantic_actions::find_text(&frame, second).is_some();
-        if text_ready && readiness_sample(path, last_sample_sequence)? {
-            return Ok(frame);
-        }
-        if Instant::now() >= deadline {
-            return Err(RunnerError::Io {
-                path: path.to_path_buf(),
-                detail: format!(
-                    "timed out waiting for fresh literal backlog with {first} and {second}"
-                ),
             });
         }
         thread::sleep(Duration::from_millis(1));
@@ -165,6 +117,7 @@ pub(super) struct ProcessCapture {
     pub raw_reads: Vec<super::presentation_receipt::RawPtyRead>,
     pub observations: Vec<super::presentation_receipt::TimedSemanticObservation>,
     pub action_sends: Vec<super::presentation_receipt::ActualInputSend>,
+    pub action_receipts: Vec<super::presentation_receipt::ActionExecutionReceipt>,
     pub pty_stream: Vec<u8>,
 }
 
@@ -292,6 +245,7 @@ pub(super) fn execute(
         let deadline = process_start + timing.scenario_timeout;
         let mut inputs = Vec::new();
         let mut action_sends = Vec::new();
+        let mut action_receipts = Vec::with_capacity(scenario.actions.len());
         let mut interaction_queue = if adapter == AdapterKind::Harness {
             std::fs::create_dir_all(evidence_dir).map_err(|error| RunnerError::Io {
                 path: evidence_dir.to_path_buf(),
@@ -346,7 +300,34 @@ pub(super) fn execute(
         let mut action_viewport = scenario.viewport;
         let mut disclosure_open = false;
         let mut readiness_sample_sequence = None;
+        let mut resize_stream_boundary = None;
+        let mut checkpoints = Vec::new();
+        let mut next_checkpoint = 0;
+        let mut click_observation = None;
         for (ordinal, action) in scenario.actions.iter().enumerate() {
+            let prior_observation = click_observation.take();
+            let checkpoint_end = super::process_checkpoints::checkpoint_end_before_action(
+                &scenario.checkpoints,
+                next_checkpoint,
+                action.at_tick(),
+            );
+            if checkpoint_end > next_checkpoint {
+                let (child, observed) = guard.parts_mut(adapter)?;
+                checkpoints.extend(capture_checkpoints(
+                    scenario,
+                    next_checkpoint..checkpoint_end,
+                    timing.tick,
+                    start,
+                    deadline,
+                    adapter,
+                    child,
+                    &output,
+                    &mut stream,
+                    observed,
+                    pid,
+                )?);
+                next_checkpoint = checkpoint_end;
+            }
             let interaction_id = format!("{}:action:{ordinal}", scenario.id.0);
             let (child, observed) = guard.parts_mut(adapter)?;
             wait_until(
@@ -368,17 +349,20 @@ pub(super) fn execute(
                     &mut readiness_sample_sequence,
                 )?;
             }
-            if matches!(
-                action,
-                crate::tui_fidelity::ScenarioAction::WaitForSemanticState(_)
-            ) {
-                let viewport = scenario
-                    .checkpoints
-                    .first()
-                    .map_or(scenario.viewport, |checkpoint| checkpoint.frame.viewport);
+            drain(&output, &mut stream);
+            let scheduled_at = start.duration_since(process_start)
+                + timing
+                    .tick
+                    .saturating_mul(u32::try_from(action.at_tick().0).unwrap_or(u32::MAX));
+            let started_at = process_start.elapsed();
+            let semantic_pre = semantic_snapshot(&stream, action_viewport);
+            let mut execution_result = super::presentation_receipt::ActionExecutionResult::Applied;
+            if let crate::tui_fidelity::ScenarioAction::WaitForSemanticState(wait) = action {
                 let (child, observed) = guard.parts_mut(adapter)?;
-                wait_for_stable_frame(
-                    viewport,
+                super::process_wait::wait_for_semantic_state(
+                    wait.state,
+                    action_viewport,
+                    resize_stream_boundary,
                     deadline,
                     adapter,
                     child,
@@ -387,9 +371,16 @@ pub(super) fn execute(
                     observed,
                     pid,
                 )?;
+                if wait.state == crate::tui_fidelity::SemanticState::Resized {
+                    resize_stream_boundary = None;
+                }
+                execution_result =
+                    super::presentation_receipt::ActionExecutionResult::ObservedState {
+                        state: wait.state,
+                    };
             } else if let crate::tui_fidelity::ScenarioAction::WaitForText(wait) = action {
                 let (child, observed) = guard.parts_mut(adapter)?;
-                wait_for_text(
+                let frame = wait_for_text(
                     &wait.text,
                     action_viewport,
                     deadline,
@@ -400,31 +391,47 @@ pub(super) fn execute(
                     observed,
                     pid,
                 )?;
+                click_observation = Some(frame);
+                execution_result = super::presentation_receipt::ActionExecutionResult::ObservedText;
             } else {
-                let prepared_frame = if adapter == AdapterKind::Harness {
+                let prepared_frame =
                     if let crate::tui_fidelity::ScenarioAction::ClickText(click) = action {
-                        let disclosure = if disclosure_open { "▾" } else { "▸" };
-                        let (child, observed) = guard.parts_mut(adapter)?;
-                        Some(wait_for_literal_backlog_and_text_pair(
-                            &scheduling_readiness_path,
-                            &mut readiness_sample_sequence,
-                            &click.text,
-                            disclosure,
-                            action_viewport,
-                            deadline,
-                            adapter,
-                            child,
-                            &output,
-                            &mut stream,
-                            observed,
-                            pid,
-                        )?)
+                        if adapter == AdapterKind::Harness && packet2_scheduling {
+                            if let Some(frame) = prior_observation.filter(|frame| {
+                                super::semantic_actions::find_text(frame, &click.text).is_some()
+                            }) {
+                                Some(frame)
+                            } else {
+                                let (child, observed) = guard.parts_mut(adapter)?;
+                                Some(wait_for_text(
+                                    &click.text,
+                                    action_viewport,
+                                    deadline,
+                                    adapter,
+                                    child,
+                                    &output,
+                                    &mut stream,
+                                    observed,
+                                    pid,
+                                )?)
+                            }
+                        } else {
+                            let (child, observed) = guard.parts_mut(adapter)?;
+                            Some(wait_for_text(
+                                &click.text,
+                                action_viewport,
+                                deadline,
+                                adapter,
+                                child,
+                                &output,
+                                &mut stream,
+                                observed,
+                                pid,
+                            )?)
+                        }
                     } else {
                         None
-                    }
-                } else {
-                    None
-                };
+                    };
                 if let Some(queue) = interaction_queue.as_mut() {
                     interaction_queue::append(
                         queue,
@@ -447,6 +454,9 @@ pub(super) fn execute(
                         if click.text == crate::tui_fidelity_fixture::DISCLOSURE_SENTINEL
                 );
                 let sent_at = process_start.elapsed();
+                if matches!(action, crate::tui_fidelity::ScenarioAction::Resize(_)) {
+                    resize_stream_boundary = Some(stream.len());
+                }
                 if scenario.id.0.starts_with("packet3-baseline-") {
                     if let crate::tui_fidelity::ScenarioAction::TypeText(typed) = action {
                         super::actions::write_input(
@@ -489,32 +499,17 @@ pub(super) fn execute(
                 }
                 if disclosure_click && disclosure_open {
                     let (child, observed) = guard.parts_mut(adapter)?;
-                    if adapter == AdapterKind::Harness {
-                        wait_for_text_pair(
-                            crate::tui_fidelity_fixture::DISCLOSURE_SENTINEL,
-                            "▸",
-                            action_viewport,
-                            deadline,
-                            adapter,
-                            child,
-                            &output,
-                            &mut stream,
-                            observed,
-                            pid,
-                        )?;
-                    } else {
-                        wait_for_text_absent(
-                            crate::tui_fidelity_fixture::DISCLOSURE_BODY,
-                            action_viewport,
-                            deadline,
-                            adapter,
-                            child,
-                            &output,
-                            &mut stream,
-                            observed,
-                            pid,
-                        )?;
-                    }
+                    wait_for_text_absent(
+                        crate::tui_fidelity_fixture::DISCLOSURE_BODY,
+                        action_viewport,
+                        deadline,
+                        adapter,
+                        child,
+                        &output,
+                        &mut stream,
+                        observed,
+                        pid,
+                    )?;
                 }
                 if disclosure_click {
                     disclosure_open = !disclosure_open;
@@ -526,14 +521,11 @@ pub(super) fn execute(
                     action,
                     crate::tui_fidelity::ScenarioAction::WaitForSemanticState(_)
                         | crate::tui_fidelity::ScenarioAction::WaitForText(_)
-                        | crate::tui_fidelity::ScenarioAction::TerminalReply(_)
                 ) {
-                    let scheduled_at = start.duration_since(process_start)
-                        + timing
-                            .tick
-                            .saturating_mul(u32::try_from(action.at_tick().0).unwrap_or(u32::MAX));
                     action_sends.push(super::presentation_receipt::ActualInputSend {
-                        interaction_id: super::presentation_receipt::InteractionId(interaction_id),
+                        interaction_id: super::presentation_receipt::InteractionId(
+                            interaction_id.clone(),
+                        ),
                         action_ordinal: ordinal,
                         scheduled_at: super::presentation_receipt::PresentationTimestamp(
                             u64::try_from(scheduled_at.as_micros()).unwrap_or(u64::MAX),
@@ -545,6 +537,23 @@ pub(super) fn execute(
                     });
                 }
             }
+            drain(&output, &mut stream);
+            let ended_at = process_start.elapsed();
+            action_receipts.push(super::presentation_receipt::ActionExecutionReceipt {
+                interaction_id: super::presentation_receipt::InteractionId(interaction_id),
+                action_ordinal: ordinal,
+                kind: action_execution_kind(action),
+                scheduled_at: timestamp(scheduled_at),
+                started_at: timestamp(started_at),
+                ended_at: timestamp(ended_at),
+                result: execution_result,
+                semantic_pre,
+                semantic_post: semantic_snapshot(&stream, action_viewport),
+                expected_native_cause_count: interaction_queue::expected_receipt_count(
+                    action,
+                    scenario.id.0.starts_with("packet3-baseline-"),
+                ),
+            });
             action_timeline.push(serde_json::json!({
                 "kind": action.kind_name(),
                 "at_tick": action.at_tick().0,
@@ -556,8 +565,9 @@ pub(super) fn execute(
             stream.clear();
         }
         let (child, observed) = guard.parts_mut(adapter)?;
-        let checkpoints = capture_checkpoints(
+        checkpoints.extend(capture_checkpoints(
             scenario,
+            next_checkpoint..scenario.checkpoints.len(),
             timing.tick,
             start,
             deadline,
@@ -567,7 +577,7 @@ pub(super) fn execute(
             &mut stream,
             observed,
             pid,
-        )?;
+        )?);
         lifecycle_phase = "checkpoints_complete";
         if adapter == AdapterKind::Grok && String::from_utf8_lossy(&stream).contains("Skipped") {
             return Err(RunnerError::SkippedReference);
@@ -654,6 +664,7 @@ pub(super) fn execute(
             raw_reads,
             observations,
             action_sends,
+            action_receipts,
             pty_stream,
         })
     })();
@@ -680,6 +691,73 @@ pub(super) fn execute(
         });
     }
     result
+}
+
+fn timestamp(duration: Duration) -> super::presentation_receipt::PresentationTimestamp {
+    super::presentation_receipt::PresentationTimestamp(
+        u64::try_from(duration.as_micros()).unwrap_or(u64::MAX),
+    )
+}
+
+fn action_execution_kind(
+    action: &crate::tui_fidelity::ScenarioAction,
+) -> super::presentation_receipt::ActionExecutionKind {
+    match action {
+        crate::tui_fidelity::ScenarioAction::Resize(_) => {
+            super::presentation_receipt::ActionExecutionKind::Resize
+        }
+        crate::tui_fidelity::ScenarioAction::TerminalReply(_) => {
+            super::presentation_receipt::ActionExecutionKind::TerminalReply
+        }
+        crate::tui_fidelity::ScenarioAction::WaitForSemanticState(_)
+        | crate::tui_fidelity::ScenarioAction::WaitForText(_) => {
+            super::presentation_receipt::ActionExecutionKind::Observer
+        }
+        crate::tui_fidelity::ScenarioAction::TimedKey(_)
+        | crate::tui_fidelity::ScenarioAction::Paste(_)
+        | crate::tui_fidelity::ScenarioAction::TypeText(_)
+        | crate::tui_fidelity::ScenarioAction::ClickText(_)
+        | crate::tui_fidelity::ScenarioAction::Mouse(_)
+        | crate::tui_fidelity::ScenarioAction::Drag(_)
+        | crate::tui_fidelity::ScenarioAction::Wheel(_) => {
+            super::presentation_receipt::ActionExecutionKind::Input
+        }
+    }
+}
+
+fn semantic_snapshot(
+    stream: &[u8],
+    viewport: Viewport,
+) -> super::presentation_receipt::SemanticSnapshot {
+    let frame = semantic_frame(stream, viewport);
+    let states = [
+        crate::tui_fidelity::SemanticState::Rest,
+        crate::tui_fidelity::SemanticState::PromptReady,
+        crate::tui_fidelity::SemanticState::Working,
+        crate::tui_fidelity::SemanticState::StartupReady,
+        crate::tui_fidelity::SemanticState::Streaming,
+        crate::tui_fidelity::SemanticState::ToolRunning,
+        crate::tui_fidelity::SemanticState::ToolDone,
+        crate::tui_fidelity::SemanticState::PermissionOpen,
+        crate::tui_fidelity::SemanticState::QuestionOpen,
+        crate::tui_fidelity::SemanticState::Resized,
+        crate::tui_fidelity::SemanticState::Settled,
+    ]
+    .into_iter()
+    .filter(|state| {
+        super::scenario_state_predicates::semantic_state_matches(
+            *state,
+            &frame,
+            viewport.cols,
+            viewport.rows,
+        )
+    })
+    .collect();
+    super::presentation_receipt::SemanticSnapshot {
+        cols: frame.cols,
+        rows: frame.rows,
+        states,
+    }
 }
 
 fn write_packet2_config(
@@ -733,7 +811,7 @@ mod readiness_scope_tests {
 
     #[test]
     fn baseline_harness_actions_do_not_require_packet2_backlog() {
-        // Given: an ordinary Harness input action outside the Packet 2 fixture.
+        // arrange: an ordinary Harness input action outside the Packet 2 fixture.
         let action = ScenarioAction::TimedKey(TimedKeyAction {
             at_tick: Tick(1),
             key: KeySpec {
@@ -747,10 +825,10 @@ mod readiness_scope_tests {
             },
         });
 
-        // When: the action's scheduling handshake scope is selected.
+        // act: the action's scheduling handshake scope is selected.
         let baseline = action_requires_literal_backlog(AdapterKind::Harness, false, &action);
 
-        // Then: only Harness actions backed by the Packet 2 fixture require backlog.
+        // assert: only Harness actions backed by the Packet 2 fixture require backlog.
         assert!(!baseline);
         assert!(action_requires_literal_backlog(
             AdapterKind::Harness,

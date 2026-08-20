@@ -2,38 +2,48 @@ use super::*;
 
 #[test]
 fn no_visible_send_does_not_create_input_response_tail() {
+    // arrange
+    // act
     let fixture = AggregateFixture::new_packet2();
     configure_gap(&fixture, "no_visible_change", None);
 
     aggregate_with_profile(&fixture.roots, AcceptanceProfile::Packet2Scheduling)
         .expect("60ms semantic gap is not relabeled as an input response tail");
+    // assert
 }
 
 #[test]
 fn visible_send_external_tail_uses_native_physical_latency() {
+    // arrange
+    // act
     let fixture = AggregateFixture::new_packet2();
     configure_gap(&fixture, "visible_change", Some(1));
 
     aggregate_with_profile(&fixture.roots, AcceptanceProfile::Packet2Scheduling)
         .expect("external transport tail is not the physical input endpoint");
+    // assert
 }
 
 #[test]
 fn missing_native_interaction_linkage_fails_closed() {
+    // arrange
     let fixture = AggregateFixture::new_packet2();
     configure_gap(&fixture, "no_visible_change", None);
     mutate_json(&fixture.roots[0].join("receipt.json"), |receipt| {
         receipt["runtimes"][1]["presentation"]["native"]["causes"] = serde_json::json!([]);
     });
 
+    // act
     let error = aggregate_with_profile(&fixture.roots, AcceptanceProfile::Packet2Scheduling)
         .expect_err("missing native cause linkage rejected");
 
+    // assert
     assert!(error.to_string().contains("interaction linkage"));
 }
 
 #[test]
 fn mixed_native_outcomes_remain_visible() {
+    // arrange
     let fixture = AggregateFixture::new_packet2();
     configure_gap(&fixture, "no_visible_change", None);
     for root in &fixture.roots {
@@ -53,14 +63,17 @@ fn mixed_native_outcomes_remain_visible() {
         });
     }
 
+    // act
     let error = aggregate_with_profile(&fixture.roots, AcceptanceProfile::Packet2Scheduling)
         .expect_err("mixed outcome send remains visible");
 
+    // assert
     assert!(error.to_string().contains("32000 microseconds"));
 }
 
 #[test]
 fn visible_send_without_timestamp_fails_closed() {
+    // arrange
     let fixture = AggregateFixture::new_packet2();
     configure_gap(&fixture, "visible_change", Some(1));
     mutate_json(&fixture.roots[0].join("receipt.json"), |receipt| {
@@ -70,9 +83,11 @@ fn visible_send_without_timestamp_fails_closed() {
             .remove("sent_at");
     });
 
+    // act
     let error = aggregate_with_profile(&fixture.roots, AcceptanceProfile::Packet2Scheduling)
         .expect_err("visible send timestamp required");
 
+    // assert
     assert!(error.to_string().contains("timestamp missing"));
 }
 

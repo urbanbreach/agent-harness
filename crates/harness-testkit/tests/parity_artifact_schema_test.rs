@@ -141,9 +141,12 @@ fn fixture_receipt() -> ArtifactReceipt {
 
 #[test]
 fn happy_complete_fixture_passes_validation() {
+    // arrange
     let receipt = fixture_receipt();
+    // act
     let result = receipt.validate();
 
+    // assert
     assert_eq!(result.outcome, ValidationOutcome::Pass);
     assert!(result.required_fields_missing.is_empty());
     assert!(result.rejected_fields.is_empty());
@@ -152,12 +155,15 @@ fn happy_complete_fixture_passes_validation() {
 
 #[test]
 fn happy_validator_produces_machine_readable_json() {
+    // arrange
     let receipt = fixture_receipt();
     let result = receipt.validate();
     let json = result.to_json_string().expect("to_json_string");
 
     // The JSON must be parseable and contain the expected outcome.
+    // act
     let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
+    // assert
     assert_eq!(parsed["outcome"], "pass");
     assert!(parsed["required_fields_missing"]
         .as_array()
@@ -168,6 +174,7 @@ fn happy_validator_produces_machine_readable_json() {
 
 #[test]
 fn happy_journey_receipt_wraps_artifact_receipt() {
+    // arrange
     let artifact = fixture_receipt();
     let journey = JourneyReceipt {
         journey_id: "journey-001".to_owned(),
@@ -175,8 +182,10 @@ fn happy_journey_receipt_wraps_artifact_receipt() {
         auth_mode: AuthMode::None,
         artifact: artifact.clone(),
     };
+    // act
     let result = journey.validate();
 
+    // assert
     assert_eq!(result.outcome, ValidationOutcome::Pass);
     assert!(result.secret_scan_clean);
 }
@@ -356,10 +365,13 @@ fn comparison_rejects_self_comparison() {
 
 #[test]
 fn reject_missing_binary_digest() {
+    // arrange
     let mut receipt = fixture_receipt();
     receipt.binary_digest.clear();
+    // act
     let result = receipt.validate();
 
+    // assert
     assert_eq!(result.outcome, ValidationOutcome::Fail);
     assert!(
         result
@@ -373,10 +385,13 @@ fn reject_missing_binary_digest() {
 
 #[test]
 fn reject_missing_source_revision() {
+    // arrange
     let mut receipt = fixture_receipt();
     receipt.source_revision.clear();
+    // act
     let result = receipt.validate();
 
+    // assert
     assert_eq!(result.outcome, ValidationOutcome::Fail);
     assert!(
         result
@@ -390,10 +405,13 @@ fn reject_missing_source_revision() {
 
 #[test]
 fn reject_missing_command_field_in_receipt() {
+    // arrange
     let mut receipt = fixture_receipt();
     receipt.command.clear();
+    // act
     let result = receipt.validate();
 
+    // assert
     assert_eq!(result.outcome, ValidationOutcome::Fail);
     assert!(
         result
@@ -407,12 +425,15 @@ fn reject_missing_command_field_in_receipt() {
 
 #[test]
 fn reject_missing_provider_mode_via_default_marker() {
+    // arrange
     let mut receipt = fixture_receipt();
     // ProviderMode is an enum; simulate "missing" by setting it to an
     // explicit Unknown marker that the validator must reject.
     receipt.provider_mode = ProviderMode::Unknown;
+    // act
     let result = receipt.validate();
 
+    // assert
     assert_eq!(result.outcome, ValidationOutcome::Fail);
     assert!(
         result
@@ -426,10 +447,13 @@ fn reject_missing_provider_mode_via_default_marker() {
 
 #[test]
 fn reject_missing_auth_mode_via_default_marker() {
+    // arrange
     let mut receipt = fixture_receipt();
     receipt.auth_mode = AuthMode::Unknown;
+    // act
     let result = receipt.validate();
 
+    // assert
     assert_eq!(result.outcome, ValidationOutcome::Fail);
     assert!(
         result
@@ -443,10 +467,13 @@ fn reject_missing_auth_mode_via_default_marker() {
 
 #[test]
 fn reject_missing_workspace_before_state() {
+    // arrange
     let mut receipt = fixture_receipt();
     receipt.workspace_before.digest.clear();
+    // act
     let result = receipt.validate();
 
+    // assert
     assert_eq!(result.outcome, ValidationOutcome::Fail);
     assert!(
         result
@@ -460,10 +487,13 @@ fn reject_missing_workspace_before_state() {
 
 #[test]
 fn reject_missing_workspace_after_state() {
+    // arrange
     let mut receipt = fixture_receipt();
     receipt.workspace_after.digest.clear();
+    // act
     let result = receipt.validate();
 
+    // assert
     assert_eq!(result.outcome, ValidationOutcome::Fail);
     assert!(
         result
@@ -477,13 +507,16 @@ fn reject_missing_workspace_after_state() {
 
 #[test]
 fn reject_missing_teardown_receipt() {
+    // arrange
     let mut receipt = fixture_receipt();
     // Simulate missing teardown by clearing the removed_paths and marking
     // workspace_restored=false; the validator must reject an empty teardown.
     receipt.teardown.removed_paths.clear();
     receipt.teardown.workspace_restored = false;
+    // act
     let result = receipt.validate();
 
+    // assert
     assert_eq!(result.outcome, ValidationOutcome::Fail);
     assert!(
         result
@@ -497,10 +530,13 @@ fn reject_missing_teardown_receipt() {
 
 #[test]
 fn reject_missing_isolation_root() {
+    // arrange
     let mut receipt = fixture_receipt();
     receipt.isolation_root.clear();
+    // act
     let result = receipt.validate();
 
+    // assert
     assert_eq!(result.outcome, ValidationOutcome::Fail);
     assert!(
         result
@@ -514,12 +550,15 @@ fn reject_missing_isolation_root() {
 
 #[test]
 fn reject_missing_secret_scan() {
+    // arrange
     let mut receipt = fixture_receipt();
     // Simulate missing secret scan by clearing patterns_checked — the
     // validator must reject a scan that checked zero patterns.
     receipt.secret_scan.patterns_checked.clear();
+    // act
     let result = receipt.validate();
 
+    // assert
     assert_eq!(result.outcome, ValidationOutcome::Fail);
     assert!(
         result
@@ -533,6 +572,7 @@ fn reject_missing_secret_scan() {
 
 #[test]
 fn reject_failed_secret_scan() {
+    // arrange
     let mut receipt = fixture_receipt();
     receipt.secret_scan.clean = false;
     receipt
@@ -543,323 +583,13 @@ fn reject_failed_secret_scan() {
             pattern: "api_key".to_owned(),
             snippet: "api_key=sk-test123".to_owned(),
         });
+    // act
     let result = receipt.validate();
 
+    // assert
     assert_eq!(result.outcome, ValidationOutcome::Fail);
     assert!(!result.secret_scan_clean);
 }
 
-// ---------------------------------------------------------------------------
-// Stale-root rejection
-// ---------------------------------------------------------------------------
-
-#[test]
-fn reject_stale_root_path_in_receipt() {
-    let mut receipt = fixture_receipt();
-    // A stale root is one that does not match the expected isolation root
-    // prefix pattern. The validator rejects isolation roots that are not
-    // absolute paths under /tmp or a configured workspace root.
-    receipt.isolation_root = "relative/path/without/abs/root".to_owned();
-    let result = receipt.validate();
-
-    assert_eq!(result.outcome, ValidationOutcome::Fail);
-    assert!(
-        result.rejected_fields.iter().any(|f| f == "isolation_root"),
-        "expected isolation_root in rejected fields: {:?}",
-        result.rejected_fields
-    );
-}
-
-// ---------------------------------------------------------------------------
-// Secret-bearing value rejection
-// ---------------------------------------------------------------------------
-
-#[test]
-fn reject_secret_in_binary_digest() {
-    let mut receipt = fixture_receipt();
-    receipt.binary_digest = "api_key=sk-secret123".to_owned();
-    let result = receipt.validate();
-
-    assert_eq!(result.outcome, ValidationOutcome::Fail);
-    assert!(
-        result.rejected_fields.iter().any(|f| f == "binary_digest"),
-        "expected binary_digest in rejected fields: {:?}",
-        result.rejected_fields
-    );
-}
-
-#[test]
-fn reject_secret_in_command() {
-    let mut receipt = fixture_receipt();
-    receipt.command = "OPENAI_API_KEY=sk-test run harness".to_owned();
-    let result = receipt.validate();
-
-    assert_eq!(result.outcome, ValidationOutcome::Fail);
-    assert!(
-        result.rejected_fields.iter().any(|f| f == "command"),
-        "expected command in rejected fields: {:?}",
-        result.rejected_fields
-    );
-}
-
-#[test]
-fn reject_secret_in_source_revision() {
-    let mut receipt = fixture_receipt();
-    receipt.source_revision = "bearer=token123".to_owned();
-    let result = receipt.validate();
-
-    assert_eq!(result.outcome, ValidationOutcome::Fail);
-    assert!(
-        result
-            .rejected_fields
-            .iter()
-            .any(|f| f == "source_revision"),
-        "expected source_revision in rejected fields: {:?}",
-        result.rejected_fields
-    );
-}
-
-#[test]
-fn reject_secret_in_isolation_root() {
-    let mut receipt = fixture_receipt();
-    receipt.isolation_root = "/tmp/password=hunter2".to_owned();
-    let result = receipt.validate();
-
-    assert_eq!(result.outcome, ValidationOutcome::Fail);
-    assert!(
-        result.rejected_fields.iter().any(|f| f == "isolation_root"),
-        "expected isolation_root in rejected fields: {:?}",
-        result.rejected_fields
-    );
-}
-
-#[test]
-fn reject_secret_in_workspace_before_digest() {
-    let mut receipt = fixture_receipt();
-    receipt.workspace_before.digest = "secret=abc123".to_owned();
-    let result = receipt.validate();
-
-    assert_eq!(result.outcome, ValidationOutcome::Fail);
-    assert!(
-        result
-            .rejected_fields
-            .iter()
-            .any(|f| f == "workspace_before"),
-        "expected workspace_before in rejected fields: {:?}",
-        result.rejected_fields
-    );
-}
-
-#[test]
-fn reject_secret_in_workspace_after_digest() {
-    let mut receipt = fixture_receipt();
-    receipt.workspace_after.digest = "authorization=bearer".to_owned();
-    let result = receipt.validate();
-
-    assert_eq!(result.outcome, ValidationOutcome::Fail);
-    assert!(
-        result
-            .rejected_fields
-            .iter()
-            .any(|f| f == "workspace_after"),
-        "expected workspace_after in rejected fields: {:?}",
-        result.rejected_fields
-    );
-}
-
-// ---------------------------------------------------------------------------
-// Teardown failure rejection
-// ---------------------------------------------------------------------------
-
-#[test]
-fn reject_teardown_nonzero_exit() {
-    let mut receipt = fixture_receipt();
-    receipt.teardown.exit_code = 1;
-    let result = receipt.validate();
-
-    assert_eq!(result.outcome, ValidationOutcome::Fail);
-    assert!(
-        result.rejected_fields.iter().any(|f| f == "teardown"),
-        "expected teardown in rejected fields: {:?}",
-        result.rejected_fields
-    );
-}
-
-// ---------------------------------------------------------------------------
-// Multiple simultaneous failures
-// ---------------------------------------------------------------------------
-
-#[test]
-fn reject_multiple_missing_fields_reports_all() {
-    let mut receipt = fixture_receipt();
-    receipt.binary_digest.clear();
-    receipt.source_revision.clear();
-    receipt.command.clear();
-    receipt.isolation_root.clear();
-    let result = receipt.validate();
-
-    assert_eq!(result.outcome, ValidationOutcome::Fail);
-    assert!(result
-        .required_fields_missing
-        .iter()
-        .any(|f| f == "binary_digest"));
-    assert!(result
-        .required_fields_missing
-        .iter()
-        .any(|f| f == "source_revision"));
-    assert!(result
-        .required_fields_missing
-        .iter()
-        .any(|f| f == "command"));
-    assert!(result
-        .required_fields_missing
-        .iter()
-        .any(|f| f == "isolation_root"));
-    assert_eq!(result.required_fields_missing.len(), 4);
-}
-
-// ---------------------------------------------------------------------------
-// Epoch binding rejection
-// ---------------------------------------------------------------------------
-
-#[test]
-fn reject_missing_product_epoch() {
-    let mut receipt = fixture_receipt();
-    receipt.epoch.product_epoch.clear();
-    let result = receipt.validate();
-
-    assert_eq!(result.outcome, ValidationOutcome::Fail);
-    assert!(result
-        .required_fields_missing
-        .iter()
-        .any(|f| f == "epoch.product_epoch"));
-}
-
-#[test]
-fn reject_missing_reference_epoch() {
-    let mut receipt = fixture_receipt();
-    receipt.epoch.reference_epoch.clear();
-    let result = receipt.validate();
-
-    assert_eq!(result.outcome, ValidationOutcome::Fail);
-    assert!(result
-        .required_fields_missing
-        .iter()
-        .any(|f| f == "epoch.reference_epoch"));
-}
-
-// ---------------------------------------------------------------------------
-// Reference identity rejection
-// ---------------------------------------------------------------------------
-
-#[test]
-fn reject_missing_reference_identity() {
-    let mut receipt = fixture_receipt();
-    receipt.reference.path.clear();
-    receipt.reference.sha256.clear();
-    let result = receipt.validate();
-
-    assert_eq!(result.outcome, ValidationOutcome::Fail);
-    assert!(result
-        .required_fields_missing
-        .iter()
-        .any(|f| f == "reference.path"));
-    assert!(result
-        .required_fields_missing
-        .iter()
-        .any(|f| f == "reference.sha256"));
-}
-
-#[test]
-fn reject_relative_reference_path() {
-    let mut receipt = fixture_receipt();
-    receipt.reference.path = "relative/path/binary".to_owned();
-    let result = receipt.validate();
-
-    assert_eq!(result.outcome, ValidationOutcome::Fail);
-    assert!(result.rejected_fields.iter().any(|f| f == "reference"));
-}
-
-#[test]
-fn reject_secret_in_reference_path() {
-    let mut receipt = fixture_receipt();
-    receipt.reference.path = "/tmp/api_key=leak".to_owned();
-    let result = receipt.validate();
-
-    assert_eq!(result.outcome, ValidationOutcome::Fail);
-    assert!(result.rejected_fields.iter().any(|f| f == "reference"));
-}
-
-// ---------------------------------------------------------------------------
-// Proof dimension rejection
-// ---------------------------------------------------------------------------
-
-#[test]
-fn reject_empty_proof_dimensions() {
-    let mut receipt = fixture_receipt();
-    receipt.proof_dimensions.clear();
-    let result = receipt.validate();
-
-    assert_eq!(result.outcome, ValidationOutcome::Fail);
-    assert!(result
-        .required_fields_missing
-        .iter()
-        .any(|f| f == "proof_dimensions"));
-}
-
-#[test]
-fn pass_status_with_dimensions_rejects_incomplete_dimensions() {
-    let receipt = fixture_receipt();
-    let applicable = applicable_dimensions_for("visual");
-    let mut present = applicable.clone();
-    present.remove(&ProofDimension::P6);
-    let completeness = check_dimension_completeness(&applicable, &present);
-
-    let result = validate_pass_status_with_dimensions(&completeness, &receipt);
-    assert!(
-        result.is_err(),
-        "pass status must reject incomplete proof dimensions"
-    );
-}
-
-#[test]
-fn pass_status_with_dimensions_accepts_complete_dimensions() {
-    let receipt = fixture_receipt();
-    let applicable = applicable_dimensions_for("visual");
-    let present = applicable.clone();
-    let completeness = check_dimension_completeness(&applicable, &present);
-
-    let result = validate_pass_status_with_dimensions(&completeness, &receipt);
-    assert!(
-        result.is_ok(),
-        "pass status must accept complete proof dimensions: {result:?}"
-    );
-}
-
-#[test]
-fn receipt_v2_json_migrates_with_defaults_but_fails_validation() {
-    let receipt = fixture_receipt();
-    let mut value = serde_json::to_value(&receipt).expect("serialize");
-    let obj = value.as_object_mut().expect("object");
-    obj.remove("reference");
-    obj.remove("epoch");
-    obj.remove("proof_dimensions");
-
-    let migrated: ArtifactReceipt =
-        serde_json::from_value(value).expect("v2 JSON deserializes with defaults");
-    let result = migrated.validate();
-
-    assert_eq!(result.outcome, ValidationOutcome::Fail);
-    assert!(result
-        .required_fields_missing
-        .iter()
-        .any(|f| f == "epoch.product_epoch"));
-    assert!(result
-        .required_fields_missing
-        .iter()
-        .any(|f| f == "reference.path"));
-    assert!(result
-        .required_fields_missing
-        .iter()
-        .any(|f| f == "proof_dimensions"));
-}
+#[path = "support/parity_artifact_schema_rejections_support.rs"]
+mod artifact_schema_rejections;

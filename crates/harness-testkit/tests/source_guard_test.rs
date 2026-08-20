@@ -1,7 +1,9 @@
 use harness_testkit::UnwrapOrAbort;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::Output;
 
+#[path = "support/harness_bin.rs"]
+mod harness_bin;
 #[path = "support/repo_root.rs"]
 mod repo_root;
 
@@ -11,34 +13,42 @@ const PINNED_REVISION: &str = "eb267feff13129e568df38fb6fdf0ceb65f735d6";
 
 #[test]
 fn source_guard_accepts_clean_pinned_reference() {
+    // arrange
     // Given
     let reference = canonical_reference();
 
     // When
+    // act
     let output = verify(&reference, PINNED_REVISION, &[]);
 
     // Then
     assert_success(&output);
+    // assert
 }
 
 #[test]
 fn source_guard_accepts_relative_canonical_reference() {
+    // arrange
     // Given
     let reference = PathBuf::from("inspirations/grok-build");
 
     // When
+    // act
     let output = verify(&reference, PINNED_REVISION, &[]);
 
     // Then
     assert_success(&output);
+    // assert
 }
 
 #[test]
 fn source_guard_accepts_current_manifest_input() {
+    // arrange
     // Given
     let reference = canonical_reference();
 
     // When
+    // act
     let output = verify(
         &reference,
         PINNED_REVISION,
@@ -47,15 +57,18 @@ fn source_guard_accepts_current_manifest_input() {
 
     // Then
     assert_success(&output);
+    // assert
 }
 
 #[test]
 fn source_guard_accepts_current_code_input() {
+    // arrange
     // Given
     let reference = canonical_reference();
     let source = repo_root().join("crates/harness-testkit/tests/source_guard_test.rs");
 
     // When
+    // act
     let output = verify(
         &reference,
         PINNED_REVISION,
@@ -64,10 +77,12 @@ fn source_guard_accepts_current_code_input() {
 
     // Then
     assert_success(&output);
+    // assert
 }
 
 #[test]
 fn source_guard_accepts_fresh_runtime_output() {
+    // arrange
     // Given
     let reference = canonical_reference();
     let evidence_root = repo_root().join(".omo/evidence/task-1-grok-build-tui-experiential-parity");
@@ -75,6 +90,7 @@ fn source_guard_accepts_fresh_runtime_output() {
     let output_root = tempfile::tempdir_in(&evidence_root).unwrap_or_abort();
 
     // When
+    // act
     let output = verify(
         &reference,
         PINNED_REVISION,
@@ -86,27 +102,33 @@ fn source_guard_accepts_fresh_runtime_output() {
 
     // Then
     assert_success(&output);
+    // assert
 }
 
 #[test]
 fn source_guard_rejects_wrong_revision() {
+    // arrange
     // Given
     let reference = canonical_reference();
 
     // When
+    // act
     let output = verify(&reference, "0000000000000000000000000000000000000000", &[]);
 
     // Then
     assert_failure(&output, "revision");
+    // assert
 }
 
 #[test]
 fn source_guard_rejects_unapproved_input_root() {
+    // arrange
     // Given
     let reference = canonical_reference();
     let unapproved = tempfile::tempdir().unwrap_or_abort();
 
     // When
+    // act
     let output = verify(
         &reference,
         PINNED_REVISION,
@@ -118,16 +140,19 @@ fn source_guard_rejects_unapproved_input_root() {
 
     // Then
     assert_failure(&output, "input root");
+    // assert
 }
 
 #[test]
 fn source_guard_rejects_excluded_target_input() {
+    // arrange
     // Given
     let reference = canonical_reference();
     let target = repo_root().join("target");
     std::fs::create_dir_all(&target).unwrap_or_abort();
 
     // When
+    // act
     let output = verify(
         &reference,
         PINNED_REVISION,
@@ -136,37 +161,47 @@ fn source_guard_rejects_excluded_target_input() {
 
     // Then
     assert_failure(&output, "excluded input root");
+    // assert
 }
 
 #[test]
 fn source_guard_rejects_nested_target_directory_input() {
+    // arrange
     // Given
+    // act
     let (_temporary, target) = temporary_input("crates/harness-testkit", "target");
     std::fs::create_dir_all(&target).unwrap_or_abort();
 
     // When / Then
     assert_rejected_input(target);
+    // assert
 }
 
 #[test]
 fn source_guard_rejects_nested_target_generated_file_input() {
+    // arrange
     // Given
+    // act
     let (_temporary, generated) =
         temporary_input("crates/harness-testkit", "target/debug/generated.rs");
     std::fs::write(&generated, b"generated\n").unwrap_or_abort();
 
     // When / Then
     assert_rejected_input(generated);
+    // assert
 }
 
 #[test]
 fn source_guard_rejects_nested_node_modules_input() {
+    // arrange
     // Given
+    // act
     let (_temporary, node_modules) = temporary_input("scripts", "tui-parity/node_modules");
     std::fs::create_dir_all(&node_modules).unwrap_or_abort();
 
     // When / Then
     assert_rejected_input(node_modules);
+    // assert
 }
 
 fn temporary_input(root: &str, relative: &str) -> (tempfile::TempDir, PathBuf) {
@@ -187,11 +222,13 @@ fn assert_rejected_input(input: PathBuf) {
 
 #[test]
 fn source_guard_rejects_reference_metadata_input() {
+    // arrange
     // Given
     let reference = canonical_reference();
     let metadata = reference.join(".git");
 
     // When
+    // act
     let output = verify(
         &reference,
         PINNED_REVISION,
@@ -200,10 +237,12 @@ fn source_guard_rejects_reference_metadata_input() {
 
     // Then
     assert_failure(&output, "unapproved input root");
+    // assert
 }
 
 #[test]
 fn source_guard_rejects_unresolved_symlink() {
+    // arrange
     // Given
     let reference = canonical_reference();
     let temporary = tempfile::tempdir().unwrap_or_abort();
@@ -211,6 +250,7 @@ fn source_guard_rejects_unresolved_symlink() {
     std::os::unix::fs::symlink("absent", &unresolved).unwrap_or_abort();
 
     // When
+    // act
     let output = verify(
         &reference,
         PINNED_REVISION,
@@ -219,10 +259,12 @@ fn source_guard_rejects_unresolved_symlink() {
 
     // Then
     assert_failure(&output, "resolve");
+    // assert
 }
 
 #[test]
 fn source_guard_rejects_dirty_reference_worktree() {
+    // arrange
     // Given
     let reference = canonical_reference();
     let temporary = tempfile::tempdir().unwrap_or_abort();
@@ -231,16 +273,19 @@ fn source_guard_rejects_dirty_reference_worktree() {
     std::fs::write(checkout.join("unapproved-input.txt"), b"mutation\n").unwrap_or_abort();
 
     // When
+    // act
     let output = verify(&checkout, PINNED_REVISION, &[]);
 
     // Then
     std::fs::remove_file(checkout.join("unapproved-input.txt")).unwrap_or_abort();
     remove_reference_worktree(&reference, &checkout);
     assert_failure(&output, "dirty");
+    // assert
 }
 
 #[test]
 fn source_guard_rejects_reference_source_mutation() {
+    // arrange
     // Given
     let reference = canonical_reference();
     let temporary = tempfile::tempdir().unwrap_or_abort();
@@ -253,16 +298,19 @@ fn source_guard_rejects_reference_source_mutation() {
     std::fs::write(&manifest, mutated).unwrap_or_abort();
 
     // When
+    // act
     let output = verify(&checkout, PINNED_REVISION, &[]);
 
     // Then
     std::fs::write(&manifest, original).unwrap_or_abort();
     remove_reference_worktree(&reference, &checkout);
     assert_failure(&output, "source mutation");
+    // assert
 }
 
 #[test]
 fn source_guard_rejects_stale_receipt() {
+    // arrange
     // Given
     let reference = canonical_reference();
     let temporary = tempfile::tempdir().unwrap_or_abort();
@@ -279,6 +327,7 @@ fn source_guard_rejects_stale_receipt() {
     std::fs::write(&receipt, stale).unwrap_or_abort();
 
     // When
+    // act
     let output = verify(
         &reference,
         PINNED_REVISION,
@@ -287,10 +336,11 @@ fn source_guard_rejects_stale_receipt() {
 
     // Then
     assert_failure(&output, "receipt");
+    // assert
 }
 
 fn canonical_reference() -> PathBuf {
-    let output = Command::new("git")
+    let output = harness_bin::command("git")
         .args(["rev-parse", "--path-format=absolute", "--git-common-dir"])
         .current_dir(repo_root())
         .env("GIT_MASTER", "1")
@@ -308,7 +358,8 @@ fn canonical_reference() -> PathBuf {
 fn verify(reference: &Path, revision: &str, extra: &[std::ffi::OsString]) -> Output {
     let receipt_dir = tempfile::tempdir().unwrap_or_abort();
     let uses_explicit_receipt = extra.iter().any(|value| value == "--receipt");
-    let mut command = Command::new(repo_root().join("scripts/tui-fidelity/source-guard.sh"));
+    let mut command =
+        harness_bin::command(repo_root().join("scripts/tui-fidelity/source-guard.sh"));
     command
         .arg("verify")
         .arg("--reference")
@@ -326,7 +377,7 @@ fn verify(reference: &Path, revision: &str, extra: &[std::ffi::OsString]) -> Out
 }
 
 fn add_reference_worktree(reference: &Path, checkout: &Path) {
-    let output = Command::new("git")
+    let output = harness_bin::command("git")
         .args(["worktree", "add", "--detach"])
         .arg(checkout)
         .arg(PINNED_REVISION)
@@ -338,7 +389,7 @@ fn add_reference_worktree(reference: &Path, checkout: &Path) {
 }
 
 fn remove_reference_worktree(reference: &Path, checkout: &Path) {
-    let output = Command::new("git")
+    let output = harness_bin::command("git")
         .args(["worktree", "remove"])
         .arg(checkout)
         .current_dir(reference)

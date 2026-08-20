@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::parity::SemanticFrame;
+use crate::tui_fidelity::SemanticState;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -31,6 +32,46 @@ pub struct ActualInputSend {
     pub scheduled_at: PresentationTimestamp,
     pub sent_at: PresentationTimestamp,
     pub transport_drained_at: Option<PresentationTimestamp>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ActionExecutionKind {
+    Input,
+    Resize,
+    TerminalReply,
+    Observer,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ActionExecutionResult {
+    Applied,
+    ObservedState { state: SemanticState },
+    ObservedText,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SemanticSnapshot {
+    pub cols: u16,
+    pub rows: u16,
+    pub states: Vec<SemanticState>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ActionExecutionReceipt {
+    pub interaction_id: InteractionId,
+    pub action_ordinal: usize,
+    pub kind: ActionExecutionKind,
+    pub scheduled_at: PresentationTimestamp,
+    pub started_at: PresentationTimestamp,
+    pub ended_at: PresentationTimestamp,
+    pub result: ActionExecutionResult,
+    pub semantic_pre: SemanticSnapshot,
+    pub semantic_post: SemanticSnapshot,
+    pub expected_native_cause_count: Option<u16>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -88,6 +129,7 @@ pub enum PresentationMetricsKind {
 #[serde(deny_unknown_fields)]
 pub struct ExternalPresentationEvidence {
     pub clock: PresentationClock,
+    pub action_receipts: Vec<ActionExecutionReceipt>,
     pub actual_input_sends: Vec<ActualInputSend>,
     pub raw_reads: Vec<RawPtyRead>,
     pub observations: Vec<TimedSemanticObservation>,

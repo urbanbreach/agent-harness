@@ -74,6 +74,13 @@ pub enum SemanticState {
     Rest,
     PromptReady,
     Working,
+    StartupReady,
+    Streaming,
+    ToolRunning,
+    ToolDone,
+    PermissionOpen,
+    QuestionOpen,
+    Resized,
     Settled,
 }
 

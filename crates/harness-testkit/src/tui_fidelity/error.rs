@@ -101,14 +101,19 @@ pub enum CheckpointError {
 pub enum SubstitutionError {
     EmptyText,
     ControlText,
+    MissingReferenceProvenance,
+    MissingCandidateProvenance,
+    ControlReferenceProvenance,
+    ControlCandidateProvenance,
+    FieldKindMismatch,
     SameText,
-    NonIdentityReplacement,
+    NonCanonicalPlaceholder,
     RectangleGeometry,
     BroadRegion,
     PaddingMismatch,
     StyleMismatch,
     WrappingMismatch,
-    DuplicateScope { checkpoint: CheckpointName },
+    DuplicateField { checkpoint: CheckpointName },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

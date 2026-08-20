@@ -1,5 +1,5 @@
 {
-  "schema_version": "tui-fidelity-scenario-v1",
+  "schema_version": "tui-fidelity-scenario-v2",
   "id": "startup-smoke",
   "adapters": ["grok", "harness"],
   "viewport": {"cols": 80, "rows": 24},
@@ -13,10 +13,10 @@
         }
       }
     },
-    {"paste": {"at_tick": 2, "text": "arness"}},
+    {"paste": {"at_tick": 20, "text": "arness"}},
     {
       "mouse": {
-        "at_tick": 3,
+        "at_tick": 21,
         "button": "left",
         "phase": "down",
         "point": {"col": 2, "row": 3}
@@ -24,7 +24,7 @@
     },
     {
       "drag": {
-        "at_tick": 4,
+        "at_tick": 22,
         "button": "left",
         "from": {"col": 2, "row": 3},
         "to": {"col": 12, "row": 3}
@@ -32,19 +32,19 @@
     },
     {
       "wheel": {
-        "at_tick": 5,
+        "at_tick": 23,
         "direction": "down",
         "amount": 1,
         "point": {"col": 20, "row": 5}
       }
     },
-    {"resize": {"at_tick": 6, "viewport": {"cols": 100, "rows": 30}}},
+    {"resize": {"at_tick": 24, "viewport": {"cols": 100, "rows": 30}}},
     {
-      "wait_for_semantic_state": {"at_tick": 7, "state": "prompt_ready"}
+      "wait_for_semantic_state": {"at_tick": 25, "state": "prompt_ready"}
     },
     {
       "terminal_reply": {
-        "at_tick": 8,
+        "at_tick": 26,
         "query": "device_attributes",
         "response": "\u001b[?1;2c"
       }
@@ -53,7 +53,7 @@
   "checkpoints": [
     {
       "name": "rest",
-      "at_tick": 9,
+      "at_tick": 27,
       "frame": {
         "capture_id": "startup-rest",
         "viewport": {"cols": 100, "rows": 30},
@@ -62,7 +62,7 @@
     },
     {
       "name": "mid",
-      "at_tick": 10,
+      "at_tick": 28,
       "frame": {
         "capture_id": "startup-mid",
         "viewport": {"cols": 100, "rows": 30},
@@ -71,7 +71,7 @@
     },
     {
       "name": "settled",
-      "at_tick": 11,
+      "at_tick": 29,
       "frame": {
         "capture_id": "startup-settled",
         "viewport": {"cols": 100, "rows": 30},
@@ -79,230 +79,7 @@
       }
     }
   ],
-  "substitutions": [
-    {
-      "checkpoint": "rest",
-      "scope": "workspace_path",
-      "rectangle": {"col": 2, "row": 1, "cols": 98, "rows": 1},
-      "source": {
-        "text": "<harness-workspace>",
-        "cell_width": 98,
-        "padding_left": 0,
-        "padding_right": 0,
-        "style": {
-          "foreground": {"r": 216, "g": 216, "b": 216},
-          "background": {"r": 18, "g": 18, "b": 18},
-          "bold": false,
-          "dim": true,
-          "italic": false,
-          "underline": false,
-          "inverse": false
-        },
-        "wrapping": "no_wrap"
-      },
-      "target": {
-        "text": "[WORKSPACE]",
-        "cell_width": 10,
-        "padding_left": 0,
-        "padding_right": 88,
-        "style": {
-          "foreground": {"r": 216, "g": 216, "b": 216},
-          "background": {"r": 18, "g": 18, "b": 18},
-          "bold": false,
-          "dim": true,
-          "italic": false,
-          "underline": false,
-          "inverse": false
-        },
-        "wrapping": "no_wrap"
-      }
-    },
-    {
-      "checkpoint": "rest",
-      "scope": "provider_name",
-      "rectangle": {"col": 49, "row": 26, "cols": 46, "rows": 1},
-      "source": {
-        "text": "GPT 5.6 Luna (CLIProxy) (low) · always-approve",
-        "cell_width": 46,
-        "padding_left": 0,
-        "padding_right": 0,
-        "style": {
-          "foreground": {"r": 216, "g": 216, "b": 216},
-          "background": {"r": 18, "g": 18, "b": 18},
-          "bold": false,
-          "dim": false,
-          "italic": false,
-          "underline": false,
-          "inverse": false
-        },
-        "wrapping": "no_wrap"
-      },
-      "target": {
-        "text": "[PROVIDER]",
-        "cell_width": 10,
-        "padding_left": 0,
-        "padding_right": 36,
-        "style": {
-          "foreground": {"r": 216, "g": 216, "b": 216},
-          "background": {"r": 18, "g": 18, "b": 18},
-          "bold": false,
-          "dim": false,
-          "italic": false,
-          "underline": false,
-          "inverse": false
-        },
-        "wrapping": "no_wrap"
-      }
-    },
-    {
-      "checkpoint": "mid",
-      "scope": "workspace_path",
-      "rectangle": {"col": 2, "row": 1, "cols": 98, "rows": 1},
-      "source": {
-        "text": "<harness-workspace>",
-        "cell_width": 98,
-        "padding_left": 0,
-        "padding_right": 0,
-        "style": {
-          "foreground": {"r": 216, "g": 216, "b": 216},
-          "background": {"r": 18, "g": 18, "b": 18},
-          "bold": false,
-          "dim": true,
-          "italic": false,
-          "underline": false,
-          "inverse": false
-        },
-        "wrapping": "no_wrap"
-      },
-      "target": {
-        "text": "[WORKSPACE]",
-        "cell_width": 10,
-        "padding_left": 0,
-        "padding_right": 88,
-        "style": {
-          "foreground": {"r": 216, "g": 216, "b": 216},
-          "background": {"r": 18, "g": 18, "b": 18},
-          "bold": false,
-          "dim": true,
-          "italic": false,
-          "underline": false,
-          "inverse": false
-        },
-        "wrapping": "no_wrap"
-      }
-    },
-    {
-      "checkpoint": "mid",
-      "scope": "provider_name",
-      "rectangle": {"col": 49, "row": 26, "cols": 46, "rows": 1},
-      "source": {
-        "text": "GPT 5.6 Luna (CLIProxy) (low) · always-approve",
-        "cell_width": 46,
-        "padding_left": 0,
-        "padding_right": 0,
-        "style": {
-          "foreground": {"r": 216, "g": 216, "b": 216},
-          "background": {"r": 18, "g": 18, "b": 18},
-          "bold": false,
-          "dim": false,
-          "italic": true,
-          "underline": false,
-          "inverse": false
-        },
-        "wrapping": "no_wrap"
-      },
-      "target": {
-        "text": "[PROVIDER]",
-        "cell_width": 10,
-        "padding_left": 0,
-        "padding_right": 36,
-        "style": {
-          "foreground": {"r": 216, "g": 216, "b": 216},
-          "background": {"r": 18, "g": 18, "b": 18},
-          "bold": false,
-          "dim": false,
-          "italic": true,
-          "underline": false,
-          "inverse": false
-        },
-        "wrapping": "no_wrap"
-      }
-    },
-    {
-      "checkpoint": "settled",
-      "scope": "workspace_path",
-      "rectangle": {"col": 2, "row": 1, "cols": 98, "rows": 1},
-      "source": {
-        "text": "<harness-workspace>",
-        "cell_width": 98,
-        "padding_left": 0,
-        "padding_right": 0,
-        "style": {
-          "foreground": {"r": 216, "g": 216, "b": 216},
-          "background": {"r": 18, "g": 18, "b": 18},
-          "bold": false,
-          "dim": false,
-          "italic": false,
-          "underline": false,
-          "inverse": false
-        },
-        "wrapping": "no_wrap"
-      },
-      "target": {
-        "text": "[WORKSPACE]",
-        "cell_width": 10,
-        "padding_left": 0,
-        "padding_right": 88,
-        "style": {
-          "foreground": {"r": 216, "g": 216, "b": 216},
-          "background": {"r": 18, "g": 18, "b": 18},
-          "bold": false,
-          "dim": false,
-          "italic": false,
-          "underline": false,
-          "inverse": false
-        },
-        "wrapping": "no_wrap"
-      }
-    },
-    {
-      "checkpoint": "settled",
-      "scope": "provider_name",
-      "rectangle": {"col": 49, "row": 26, "cols": 46, "rows": 1},
-      "source": {
-        "text": "GPT 5.6 Luna (CLIProxy) (low) · always-approve",
-        "cell_width": 46,
-        "padding_left": 0,
-        "padding_right": 0,
-        "style": {
-          "foreground": {"r": 216, "g": 216, "b": 216},
-          "background": {"r": 18, "g": 18, "b": 18},
-          "bold": false,
-          "dim": false,
-          "italic": false,
-          "underline": false,
-          "inverse": false
-        },
-        "wrapping": "no_wrap"
-      },
-      "target": {
-        "text": "[PROVIDER]",
-        "cell_width": 10,
-        "padding_left": 0,
-        "padding_right": 36,
-        "style": {
-          "foreground": {"r": 216, "g": 216, "b": 216},
-          "background": {"r": 18, "g": 18, "b": 18},
-          "bold": false,
-          "dim": false,
-          "italic": false,
-          "underline": false,
-          "inverse": false
-        },
-        "wrapping": "no_wrap"
-      }
-    }
-  ],
+  "substitutions": [],
   "expected_exit": {"code": 0},
   "cleanup": {
     "restore_workspace": true,

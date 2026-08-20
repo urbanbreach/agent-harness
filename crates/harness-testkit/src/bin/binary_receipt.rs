@@ -88,10 +88,15 @@ mod tests {
 
     #[test]
     fn required_path_rejects_unexpected_flag() {
+        // arrange
         let mut args = ["--unexpected", "/tmp/receipt"]
             .into_iter()
             .map(OsString::from);
 
-        assert!(required_path(&mut args, "--receipt").is_err());
+        // act
+        let result = required_path(&mut args, "--receipt");
+
+        // assert
+        assert!(result.is_err());
     }
 }

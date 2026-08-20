@@ -1,8 +1,10 @@
 mod bounded;
 mod documents;
+mod registry;
 
 pub use bounded::{execute_matrix, execute_matrix_bounded};
 pub use documents::read_coverage_documents;
+pub use registry::{validate_scenario_registry, ScenarioRegistryReport};
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -57,8 +59,7 @@ pub struct CoverageRow {
     pub theme_mode: String,
     pub media_mode: String,
     pub failure_path: String,
-    #[serde(rename = "trials", default, skip_serializing)]
-    pub legacy_trial_hint: u8,
+    pub trials: u8,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -66,10 +67,12 @@ pub struct CoverageReport {
     pub requirement_count: usize,
     pub row_count: usize,
     pub capture_key_count: usize,
+    pub execution_count: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MatrixExecutionReceipt {
+    pub trial: u8,
     pub capture_key: String,
     pub capture_succeeded: bool,
     pub comparison_passed: bool,
@@ -80,13 +83,14 @@ pub struct MatrixExecutionReceipt {
 pub struct MatrixRowReceipt {
     pub row_id: String,
     pub requirement_id: String,
-    pub execution: MatrixExecutionReceipt,
+    pub executions: Vec<MatrixExecutionReceipt>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MatrixReceipt {
     pub schema_version: String,
     pub suite: String,
+    pub status: String,
     pub capture_succeeded: bool,
     pub comparison_passed: bool,
     pub report: CoverageReport,
@@ -96,6 +100,7 @@ pub struct MatrixReceipt {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MatrixExecution {
     pub row: CoverageRow,
+    pub trial: u8,
     pub evidence_dir: PathBuf,
 }
 
@@ -190,6 +195,30 @@ fn validate_coverage(
                 row.row_id
             ));
         }
+        if row.scenario_id.contains('*') || row.action_path.contains('*') {
+            defects.push(format!(
+                "row {} uses a grouped wildcard instead of an exact scenario and action",
+                row.row_id
+            ));
+        }
+        if [
+            row.terminal_tier.as_str(),
+            row.persona.as_str(),
+            row.theme_mode.as_str(),
+            row.media_mode.as_str(),
+            row.failure_path.as_str(),
+        ]
+        .iter()
+        .any(|value| value.trim().is_empty())
+        {
+            defects.push(format!(
+                "row {} has an empty coverage dimension",
+                row.row_id
+            ));
+        }
+        if row.trials != 5 {
+            defects.push(format!("row {} must declare exactly 5 trials", row.row_id));
+        }
         if row.requirement_id.starts_with("global.module-tier.")
             && row.path_classification != "native_path"
             && row.path_classification != "fallback_path"
@@ -223,6 +252,7 @@ fn validate_coverage(
         requirement_count: inventory.requirements.len(),
         row_count: manifest.rows.len(),
         capture_key_count: capture_keys.len(),
+        execution_count: manifest.rows.len() * 5,
     })
 }
 

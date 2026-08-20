@@ -1,7 +1,9 @@
 use std::path::Path;
 
-use crate::parity::{IdentityMaskRegistry, SemanticFrame};
-use crate::tui_fidelity::{CheckpointName, IdentitySubstitution, Scenario};
+use crate::parity::{IdentityMaskRegistry, SemanticCell, SemanticFrame};
+use crate::tui_fidelity::{
+    CheckpointName, Scenario, TextPlacement, TextStyle, TextSubstitution, Wrapping,
+};
 use crate::tui_fidelity_runner::{AdapterReceipt, DualRuntimeReceipt};
 
 use super::super::error::ComparatorError;
@@ -14,7 +16,7 @@ pub fn semantic(scenario: &Scenario, capture: &DualRuntimeReceipt) -> Result<(),
     for checkpoint in required_checkpoints() {
         let expected = read_snapshot(reference, checkpoint)?;
         let actual = read_snapshot(candidate, checkpoint)?;
-        let masks = masks_for_frames(scenario, checkpoint, &expected.frame, &actual.frame);
+        let masks = verified_masks_for(scenario, checkpoint, &expected.frame, &actual.frame)?;
         if let Err(error) = super::super::cells::compare_cells(&expected, &actual, &masks) {
             errors.push(error.to_string());
         }
@@ -30,20 +32,15 @@ pub fn pixels(scenario: &Scenario, capture: &DualRuntimeReceipt) -> Result<(), C
         let candidate_png = artifact_path(candidate, checkpoint, "terminal.png")?;
         let reference_bytes = read_file(&reference_png)?;
         let candidate_bytes = read_file(&candidate_png)?;
-        let reference_frame = read_snapshot(reference, checkpoint)?.frame;
-        let candidate_frame = read_snapshot(candidate, checkpoint)?.frame;
-        let mut spans = pixel_spans(scenario, checkpoint, &reference_bytes)?;
-        let image = image::load_from_memory_with_format(&reference_bytes, image::ImageFormat::Png)
-            .map_err(|error| ComparatorError::PngDecode {
-                side: "reference".to_owned(),
-                detail: error.to_string(),
-            })?;
-        spans.extend(super::super::dynamic::dynamic_identity_pixel_spans(
-            &reference_frame,
-            &candidate_frame,
-            image.width(),
-            image.height(),
-        ));
+        let reference_cells = read_snapshot(reference, checkpoint)?;
+        let candidate_cells = read_snapshot(candidate, checkpoint)?;
+        verify_substitution_values(
+            scenario,
+            checkpoint,
+            &reference_cells.frame,
+            &candidate_cells.frame,
+        )?;
+        let spans = pixel_spans(scenario, checkpoint, &reference_bytes)?;
         if let Err(error) =
             super::super::pixels::compare_png_bytes(&reference_bytes, &candidate_bytes, &spans)
         {
@@ -111,8 +108,14 @@ fn read_snapshot(
     })
 }
 
-fn masks_for(scenario: &Scenario, checkpoint: CheckpointName) -> IdentityMaskRegistry {
-    scenario
+pub(super) fn verified_masks_for(
+    scenario: &Scenario,
+    checkpoint: CheckpointName,
+    reference: &SemanticFrame,
+    candidate: &SemanticFrame,
+) -> Result<IdentityMaskRegistry, ComparatorError> {
+    verify_substitution_values(scenario, checkpoint, reference, candidate)?;
+    Ok(scenario
         .substitutions
         .iter()
         .filter(|item| item.checkpoint == checkpoint)
@@ -124,25 +127,154 @@ fn masks_for(scenario: &Scenario, checkpoint: CheckpointName) -> IdentityMaskReg
                         .map(move |col| (row, col))
                 })
                 .collect::<Vec<_>>();
-            Some((substitution.scope.placeholder(), cells))
+            Some((substitution.field.mask_label(substitution.kind), cells))
         })
         .fold(IdentityMaskRegistry::new(), |masks, (field, cells)| {
             masks.with_field(field, cells)
-        })
+        }))
 }
 
-fn masks_for_frames(
+fn verify_substitution_values(
     scenario: &Scenario,
     checkpoint: CheckpointName,
     reference: &SemanticFrame,
     candidate: &SemanticFrame,
-) -> IdentityMaskRegistry {
-    let dynamic_cells = super::super::dynamic::dynamic_identity_cells(reference, candidate);
-    if dynamic_cells.is_empty() {
-        masks_for(scenario, checkpoint)
-    } else {
-        masks_for(scenario, checkpoint).with_field("dynamic_identity", dynamic_cells)
+) -> Result<(), ComparatorError> {
+    for substitution in scenario
+        .substitutions
+        .iter()
+        .filter(|item| item.checkpoint == checkpoint)
+    {
+        verify_placement(
+            reference,
+            substitution,
+            &substitution.reference,
+            "reference",
+        )?;
+        verify_placement(
+            candidate,
+            substitution,
+            &substitution.candidate,
+            "candidate",
+        )?;
     }
+    Ok(())
+}
+
+fn verify_placement(
+    frame: &SemanticFrame,
+    substitution: &TextSubstitution,
+    placement: &TextPlacement,
+    side: &str,
+) -> Result<(), ComparatorError> {
+    let lines = match placement.wrapping {
+        Wrapping::NoWrap => vec![placement.text.as_str()],
+        Wrapping::HardWrap => placement.text.split('\n').collect(),
+    };
+    if lines.len() != usize::from(substitution.rectangle.rows) {
+        return placement_error(
+            substitution,
+            side,
+            "declared line count does not match rectangle",
+        );
+    }
+    for (row_offset, declared_line) in lines.into_iter().enumerate() {
+        let row = substitution
+            .rectangle
+            .row
+            .saturating_add(
+                u16::try_from(row_offset).map_err(|_| ComparatorError::Invalid {
+                    detail: "substitution row offset exceeds u16".to_owned(),
+                })?,
+            );
+        let content_start = substitution
+            .rectangle
+            .col
+            .saturating_add(placement.padding_left);
+        let content_end = content_start.saturating_add(placement.cell_width);
+        let mut observed_line = String::new();
+        for col in substitution.rectangle.col
+            ..substitution
+                .rectangle
+                .col
+                .saturating_add(substitution.rectangle.cols)
+        {
+            let cell = frame
+                .cell(row, col)
+                .ok_or_else(|| ComparatorError::Invalid {
+                    detail: format!(
+                        "{} {} substitution rectangle is outside the {side} frame",
+                        substitution.kind.as_str(),
+                        substitution.field.as_str()
+                    ),
+                })?;
+            verify_style(cell, placement.style, substitution, side)?;
+            if col < content_start || col >= content_end {
+                if !cell.grapheme.is_empty() || cell.continuation {
+                    return placement_error(substitution, side, "captured padding is not blank");
+                }
+            } else if !cell.continuation {
+                if cell.grapheme.is_empty() {
+                    observed_line.push(' ');
+                } else {
+                    observed_line.push_str(&cell.grapheme);
+                }
+            }
+        }
+        if observed_line != declared_line {
+            return placement_error(
+                substitution,
+                side,
+                &format!(
+                    "captured text {observed_line:?} does not equal declared value {declared_line:?}"
+                ),
+            );
+        }
+    }
+    Ok(())
+}
+
+fn verify_style(
+    cell: &SemanticCell,
+    style: TextStyle,
+    substitution: &TextSubstitution,
+    side: &str,
+) -> Result<(), ComparatorError> {
+    let matches = cell.fg.r == style.foreground.r
+        && cell.fg.g == style.foreground.g
+        && cell.fg.b == style.foreground.b
+        && cell.bg.r == style.background.r
+        && cell.bg.g == style.background.g
+        && cell.bg.b == style.background.b
+        && cell.modifiers.bold == style.bold
+        && cell.modifiers.dim == style.dim
+        && cell.modifiers.italic == style.italic
+        && cell.modifiers.underline == style.underline
+        && cell.modifiers.inverse == style.inverse
+        && cell.hyperlink.is_none();
+    if matches {
+        Ok(())
+    } else {
+        placement_error(
+            substitution,
+            side,
+            "captured style does not equal declared style",
+        )
+    }
+}
+
+fn placement_error<T>(
+    substitution: &TextSubstitution,
+    side: &str,
+    detail: &str,
+) -> Result<T, ComparatorError> {
+    Err(ComparatorError::Invalid {
+        detail: format!(
+            "{} {} {side} placement: {detail}",
+            substitution.kind.as_str(),
+            substitution.field.as_str()
+        ),
+    })
 }
 
 fn pixel_spans(
@@ -176,13 +308,15 @@ fn pixel_spans(
         .substitutions
         .iter()
         .filter(|item| item.checkpoint == checkpoint)
-        .filter_map(|item: &IdentitySubstitution| {
+        .filter_map(|item: &TextSubstitution| {
             let rectangle = clipped_rectangle(item.rectangle, scenario, checkpoint)?;
             Some(super::super::pixels::IdentityPixelSpan::from_cell_rect(
-                item.scope.placeholder(),
+                &item.field.mask_label(item.kind),
                 rectangle,
-                cell_width,
-                cell_height,
+                image.width(),
+                image.height(),
+                viewport.cols,
+                viewport.rows,
             ))
         })
         .collect())

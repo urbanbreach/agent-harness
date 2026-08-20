@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::Path;
 
-use harness_testkit::tui_fidelity::{KeyCode, Scenario, ScenarioAction, Viewport};
+use harness_testkit::tui_fidelity::{KeyCode, Scenario, ScenarioAction, SemanticState, Viewport};
 use harness_testkit::tui_fidelity_runner::RunnerError;
 use serde::Deserialize;
 
@@ -116,11 +116,26 @@ pub(super) fn load_packet3(scenario_id: &str, repo_root: &Path) -> Result<Scenar
                 ));
             }
             ScenarioAction::TerminalReply(_) => {}
+            ScenarioAction::WaitForSemanticState(mut wait)
+                if scenario_id.starts_with("packet3-baseline-startup--") =>
+            {
+                wait.state = SemanticState::StartupReady;
+                actions.push(ScenarioAction::WaitForSemanticState(wait));
+            }
             action => actions.push(action),
         }
     }
     scenario.actions = actions;
-    if submits_prompt(&scenario) && !scenario_id.starts_with("packet3-baseline-stream--") {
+    if let Some(state) = packet3_semantic_probe(scenario_id) {
+        if !scenario.actions.iter().any(|action| {
+            matches!(action, ScenarioAction::WaitForSemanticState(wait) if wait.state == state)
+        }) {
+            let at_tick = next_action_tick(&scenario);
+            scenario.actions.push(ScenarioAction::WaitForSemanticState(
+                harness_testkit::tui_fidelity::WaitForSemanticStateAction { at_tick, state },
+            ));
+        }
+    } else if submits_prompt(&scenario) {
         let settle_tick = scenario
             .actions
             .last()
@@ -135,6 +150,31 @@ pub(super) fn load_packet3(scenario_id: &str, repo_root: &Path) -> Result<Scenar
         ));
     }
     Ok(scenario)
+}
+
+fn next_action_tick(scenario: &Scenario) -> harness_testkit::tui_fidelity::Tick {
+    scenario
+        .actions
+        .last()
+        .map_or(harness_testkit::tui_fidelity::Tick(1), |action| {
+            harness_testkit::tui_fidelity::Tick(action.at_tick().0.saturating_add(1))
+        })
+}
+
+fn packet3_semantic_probe(scenario_id: &str) -> Option<SemanticState> {
+    [
+        ("packet3-baseline-startup--", SemanticState::StartupReady),
+        ("packet3-baseline-stream--", SemanticState::Streaming),
+        ("packet3-baseline-tool--", SemanticState::ToolDone),
+        (
+            "packet3-baseline-permission--",
+            SemanticState::PermissionOpen,
+        ),
+        ("packet3-baseline-question--", SemanticState::QuestionOpen),
+        ("packet3-baseline-resize--", SemanticState::Resized),
+    ]
+    .into_iter()
+    .find_map(|(prefix, state)| scenario_id.starts_with(prefix).then_some(state))
 }
 
 fn submits_prompt(scenario: &Scenario) -> bool {
@@ -174,14 +214,14 @@ mod tests {
 
     #[test]
     fn packet3_suite_uses_key_streams_for_native_interaction_receipts() {
-        // Given: the Packet 3 stream scenario resolved through the baseline registry.
+        // arrange: the Packet 3 stream scenario resolved through the baseline registry.
         let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
 
-        // When: the Packet 3 dual-runtime variant is loaded.
+        // act: the Packet 3 dual-runtime variant is loaded.
         let scenario = load_packet3("packet3-baseline-stream--wide-120x40", &repo_root)
             .expect("Packet 3 baseline");
 
-        // Then: pasted fixture text is expressed as typed keys and terminal replies remain typed separately.
+        // assert: pasted fixture text is expressed as typed keys and terminal replies remain typed separately.
         assert!(matches!(scenario.actions[0], ScenarioAction::TypeText(_)));
         assert!(!scenario
             .actions
@@ -195,14 +235,14 @@ mod tests {
 
     #[test]
     fn packet3_composer_only_scenarios_do_not_wait_for_recovery_text() {
-        // Given: the Packet 3 scroll scenario edits a multiline composer without submitting it.
+        // arrange: the Packet 3 scroll scenario edits a multiline composer without submitting it.
         let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
 
-        // When: the Packet 3 dual-runtime variant is loaded.
+        // act: the Packet 3 dual-runtime variant is loaded.
         let scenario = load_packet3("packet3-baseline-scroll--wide-120x40", &repo_root)
             .expect("Packet 3 scroll baseline");
 
-        // Then: the runner does not require response text that the scenario cannot produce.
+        // assert: the runner does not require response text that the scenario cannot produce.
         assert!(!scenario
             .actions
             .iter()
@@ -211,14 +251,14 @@ mod tests {
 
     #[test]
     fn packet3_resize_starts_before_the_selected_viewport_transition() {
-        // Given: the Packet 3 resize scenario selects the minimum viewport.
+        // arrange: the Packet 3 resize scenario selects the minimum viewport.
         let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
 
-        // When: the dual-runtime variant is loaded.
+        // act: the dual-runtime variant is loaded.
         let scenario = load_packet3("packet3-baseline-resize--minimum-60x20", &repo_root)
             .expect("Packet 3 resize baseline");
 
-        // Then: the PTY starts at 80x24 and performs a real resize to 60x20.
+        // assert: the PTY starts at 80x24 and performs a real resize to 60x20.
         assert_eq!((scenario.viewport.cols, scenario.viewport.rows), (80, 24));
         assert!(matches!(
             &scenario.actions[0],
@@ -228,7 +268,57 @@ mod tests {
     }
 
     #[test]
+    fn packet3_named_state_scenarios_end_with_typed_semantic_probes() {
+        // arrange: the six baseline scenarios whose captures require named runtime states.
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let cases = [
+            (
+                "startup",
+                harness_testkit::tui_fidelity::SemanticState::StartupReady,
+            ),
+            (
+                "stream",
+                harness_testkit::tui_fidelity::SemanticState::Streaming,
+            ),
+            (
+                "tool",
+                harness_testkit::tui_fidelity::SemanticState::ToolDone,
+            ),
+            (
+                "permission",
+                harness_testkit::tui_fidelity::SemanticState::PermissionOpen,
+            ),
+            (
+                "question",
+                harness_testkit::tui_fidelity::SemanticState::QuestionOpen,
+            ),
+            (
+                "resize",
+                harness_testkit::tui_fidelity::SemanticState::Resized,
+            ),
+        ];
+
+        // act: each scenario is routed through the Packet 3 dual-runtime loader.
+        let observed = cases.map(|(name, expected)| {
+            let scenario =
+                load_packet3(&format!("packet3-baseline-{name}--wide-120x40"), &repo_root)
+                    .expect("Packet 3 named-state baseline");
+            let state = scenario.actions.iter().find_map(|action| match action {
+                ScenarioAction::WaitForSemanticState(wait) => Some(wait.state),
+                _ => None,
+            });
+            (state, expected)
+        });
+
+        // assert: no scenario can capture by waiting only for generic frame stability.
+        assert!(observed
+            .into_iter()
+            .all(|(state, expected)| state == Some(expected)));
+    }
+
+    #[test]
     fn packet6_composer_loads_all_required_viewports() {
+        // arrange
         let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let cases = [
             ("minimum-60x20", (60, 20)),
@@ -239,8 +329,10 @@ mod tests {
         ];
 
         for (label, expected) in cases {
+            // act
             let scenario = load(&format!("packet6-composer--{label}"), &repo_root)
                 .expect("Packet 6 composer viewport");
+            // assert
             assert_eq!((scenario.viewport.cols, scenario.viewport.rows), expected);
             assert_eq!(scenario.adapters.len(), 2);
         }

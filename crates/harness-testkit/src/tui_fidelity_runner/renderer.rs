@@ -17,6 +17,7 @@ struct RendererMetadata {
     browser_capture: String,
     dimensions: RendererDimensions,
     capabilities: BrowserCapabilities,
+    renderer_binding: RendererBinding,
 }
 
 #[derive(Deserialize)]
@@ -25,6 +26,28 @@ struct RendererDimensions {
     cols: u16,
     rows: u16,
     font_family: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RendererBinding {
+    node: String,
+    xterm: String,
+    unicode11: String,
+    node_pty: String,
+    pngjs: String,
+    puppeteer_core: String,
+}
+
+impl RendererBinding {
+    fn is_pinned(&self) -> bool {
+        self.node.starts_with('v')
+            && self.xterm == "6.0.0"
+            && self.unicode11 == "0.9.0"
+            && self.node_pty == "1.1.0"
+            && self.pngjs == "7.0.0"
+            && self.puppeteer_core == "24.43.1"
+    }
 }
 
 pub(super) struct RenderContext<'a> {
@@ -142,7 +165,8 @@ fn validate_metadata(
         && metadata.capabilities.unicode_version == "11"
         && metadata.capabilities.font_loaded
         && metadata.capabilities.device_pixel_ratio > 0.0
-        && !metadata.capabilities.browser.is_empty();
+        && !metadata.capabilities.browser.is_empty()
+        && metadata.renderer_binding.is_pinned();
     if valid {
         Ok(())
     } else {
@@ -185,5 +209,38 @@ const fn checkpoint_name(checkpoint: CheckpointName) -> &'static str {
         CheckpointName::Rest => "rest",
         CheckpointName::Mid => "mid",
         CheckpointName::Settled => "settled",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RendererBinding;
+
+    #[test]
+    fn renderer_binding_rejects_dependency_version_drift() {
+        // arrange
+        let pinned = RendererBinding {
+            node: "v24.0.0".to_owned(),
+            xterm: "6.0.0".to_owned(),
+            unicode11: "0.9.0".to_owned(),
+            node_pty: "1.1.0".to_owned(),
+            pngjs: "7.0.0".to_owned(),
+            puppeteer_core: "24.43.1".to_owned(),
+        };
+        let mut drifted = RendererBinding {
+            node: pinned.node.clone(),
+            xterm: pinned.xterm.clone(),
+            unicode11: pinned.unicode11.clone(),
+            node_pty: pinned.node_pty.clone(),
+            pngjs: pinned.pngjs.clone(),
+            puppeteer_core: pinned.puppeteer_core.clone(),
+        };
+        drifted.xterm = "6.0.1".to_owned();
+
+        // act
+        let verdicts = (pinned.is_pinned(), drifted.is_pinned());
+
+        // assert
+        assert_eq!(verdicts, (true, false));
     }
 }

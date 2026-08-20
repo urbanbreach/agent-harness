@@ -13,14 +13,29 @@ use harness_testkit::parity::{
 };
 use harness_testkit::tui_fidelity_compare::{
     compare_cells, compare_motion, compare_png_bytes, compare_presentation_timing, compare_timing,
-    hash_artifacts, reject_self_comparison, scan_artifacts, verify_freshness, ArtifactInputs,
-    ArtifactRoots, CellSnapshot, ComparatorError, FocusState, IdentityPixelSpan, MotionTrace,
-    NativeTimingMetrics, PixelRect, PresentationTimingMetrics, TimingPhase, TimingTrace,
-    ZOrderEntry,
+    hash_artifacts, reject_self_comparison, scan_artifacts, verify_freshness, AcceptanceProfile,
+    ArtifactInputs, ArtifactRoots, CellSnapshot, ComparatorError, FocusState, IdentityPixelSpan,
+    MotionTrace, NativeTimingMetrics, PixelRect, PresentationTimingMetrics, TimingPhase,
+    TimingTrace, ZOrderEntry,
 };
 
 #[test]
+fn packet2_required_gates_include_timing_without_weakening_full_parity() {
+    // arrange
+    let full = AcceptanceProfile::FullParity.required_gates();
+    // act
+    let packet2 = AcceptanceProfile::Packet2Scheduling.required_gates();
+    // assert
+    assert_eq!(full.len(), 9);
+    assert!(packet2.contains(&"timing"));
+    assert!(full
+        .iter()
+        .all(|gate| packet2.contains(gate) || ["semantic_cell", "pixel", "motion"].contains(gate)));
+}
+
+#[test]
 fn rejects_one_cell_glyph_style_cursor_focus_and_z_order_difference() {
+    // arrange
     let expected = cell_snapshot();
     let mut changed = expected.clone();
     changed.frame.cells[0].grapheme = "x".to_owned();
@@ -32,68 +47,82 @@ fn rejects_one_cell_glyph_style_cursor_focus_and_z_order_difference() {
     changed.focus = Some(FocusState::new(0, 1));
     changed.z_order[0].depth = 1;
 
+    // act
     let error = compare_cells(&expected, &changed, &Default::default())
         .expect_err("every exact semantic difference must be rejected");
 
+    // assert
     assert!(matches!(error, ComparatorError::Cells { diffs, .. } if diffs.len() >= 5));
 }
 
 #[test]
 fn rejects_one_pixel_difference_outside_identity_span() {
+    // arrange
     let expected = png(&[[10, 20, 30, 255], [40, 50, 60, 255]]);
     let actual = png(&[[10, 20, 30, 255], [41, 50, 60, 255]]);
     let identity = [IdentityPixelSpan::new("title", PixelRect::new(0, 0, 1, 1))];
 
+    // act
     let error = compare_png_bytes(&expected, &actual, &identity)
         .expect_err("an unmasked pixel must be rejected");
 
+    // assert
     assert!(matches!(error, ComparatorError::Pixels { diffs, .. } if diffs.len() == 1));
 }
 
 #[test]
 fn rejects_missing_motion_checkpoint() {
+    // arrange
     let reference = motion_trace(TraceSource::Reference);
     let mut candidate = motion_trace(TraceSource::Harness);
     candidate
         .checkpoints
         .retain(|checkpoint| checkpoint != "mid");
 
+    // act
     let error = compare_motion(&reference, &candidate).expect_err("mid checkpoint is required");
 
+    // assert
     assert!(matches!(error, ComparatorError::Motion { .. }));
 }
 
 #[test]
 fn rejects_timestamp_drift_over_one_frame() {
+    // arrange
     let reference = TimingTrace::new(vec![0, 33, 66], vec![10, 10, 10]);
     let candidate = TimingTrace::new(vec![0, 50, 66], vec![10, 10, 10]);
 
+    // act
     let error = compare_timing(&reference, &candidate)
         .expect_err("timestamp drift greater than one frame must be rejected");
 
+    // assert
     assert!(matches!(error, ComparatorError::Timing { .. }));
 }
 
 #[test]
 fn rejects_gross_p95_smoothness_defect() {
+    // arrange
     let reference = TimingTrace::new(vec![0, 33, 66], vec![10, 10, 10]);
     let candidate = TimingTrace::new(vec![0, 33, 66], vec![20, 20, 20]);
 
+    // act
     let error = compare_timing(&reference, &candidate)
         .expect_err("gross p95 timing regression must be rejected");
 
+    // assert
     assert!(matches!(error, ComparatorError::Timing { .. }));
 }
 
 #[test]
 fn accepts_declared_75ms_phase_cadence() {
-    // Given: both adapters preserve the three observed phases at the runner's 75ms cadence.
+    // arrange: both adapters preserve the three observed phases at the runner's 75ms cadence.
     let trace = TimingTrace::new(vec![0, 75, 150], vec![10, 10, 10]);
 
-    // When: the timing comparator evaluates the declared cadence.
+    // act: the timing comparator evaluates the declared cadence.
     let result = compare_timing(&trace, &trace);
 
-    // Then: a cadence matching the execution contract is accepted.
+    // assert: a cadence matching the execution contract is accepted.
     assert!(
         result.is_ok(),
         "75ms phase cadence must not hit a fixed 67ms bound"
@@ -102,27 +131,35 @@ fn accepts_declared_75ms_phase_cadence() {
 
 #[test]
 fn rejects_p95_above_exact_relative_limit() {
-    // Given: the candidate exceeds the common-boundary p95 by more than 10%.
+    // arrange: the candidate exceeds the common-boundary p95 by more than 10%.
     let reference = TimingTrace::new(vec![0, 75, 150], vec![100, 100, 100]);
     let candidate = TimingTrace::new(vec![0, 75, 150], vec![111, 111, 111]);
 
-    // When: the timing comparator evaluates p95 latency.
+    // act: the timing comparator evaluates p95 latency.
     let result = compare_timing(&reference, &candidate);
 
-    // Then: no absolute jitter bypass weakens the 110% contract.
+    // assert: no absolute jitter bypass weakens the 110% contract.
     assert!(result.is_err());
 }
 
 #[test]
 fn packet2_timing_accepts_110_and_32ms_but_rejects_111_and_33ms() {
+    // arrange
     let reference = presentation_metrics(100_000, 16_000, 32_000);
     let exact = presentation_metrics(110_000, 16_000, 32_000);
     let p95_over = presentation_metrics(111_000, 16_000, 32_000);
     let gap_over = presentation_metrics(110_000, 16_000, 33_000);
 
-    assert!(compare_presentation_timing(&reference, &exact).is_ok());
-    assert!(compare_presentation_timing(&reference, &p95_over).is_err());
-    assert!(compare_presentation_timing(&reference, &gap_over).is_err());
+    // act
+    let results = [
+        compare_presentation_timing(&reference, &exact),
+        compare_presentation_timing(&reference, &p95_over),
+        compare_presentation_timing(&reference, &gap_over),
+    ];
+    // assert
+    assert!(results[0].is_ok());
+    assert!(results[1].is_err());
+    assert!(results[2].is_err());
 }
 
 fn presentation_metrics(latency: u64, cadence: u64, gap: u64) -> PresentationTimingMetrics {
@@ -148,6 +185,7 @@ fn presentation_metrics(latency: u64, cadence: u64, gap: u64) -> PresentationTim
 
 #[test]
 fn rejects_reversed_timing_phase_order() {
+    // arrange
     let reference = TimingTrace::with_phase_order(
         vec![0, 75, 150],
         vec![10, 10, 10],
@@ -159,8 +197,10 @@ fn rejects_reversed_timing_phase_order() {
         vec![TimingPhase::Rest, TimingPhase::Settled, TimingPhase::Mid],
     );
 
+    // act
     let error = compare_timing(&reference, &candidate).expect_err("reversed phase must fail");
 
+    // assert
     assert!(
         matches!(error, ComparatorError::Timing { defects, .. } if defects.iter().any(|defect| defect.reason == "phase_order"))
     );
@@ -168,6 +208,7 @@ fn rejects_reversed_timing_phase_order() {
 
 #[test]
 fn rejects_missing_timing_phase() {
+    // arrange
     let reference = TimingTrace::with_phase_order(
         vec![0, 75, 150],
         vec![10, 10, 10],
@@ -179,8 +220,10 @@ fn rejects_missing_timing_phase() {
         vec![TimingPhase::Rest, TimingPhase::Mid],
     );
 
+    // act
     let error = compare_timing(&reference, &candidate).expect_err("missing phase must fail");
 
+    // assert
     assert!(
         matches!(error, ComparatorError::Timing { defects, .. } if defects.iter().any(|defect| defect.reason == "phase_order" || defect.reason == "phase_count"))
     );
@@ -188,6 +231,7 @@ fn rejects_missing_timing_phase() {
 
 #[test]
 fn rejects_excessive_adapter_phase_window() {
+    // arrange
     let reference = TimingTrace::with_phase_order(
         vec![0, 75, 150],
         vec![10, 10, 10],
@@ -199,8 +243,10 @@ fn rejects_excessive_adapter_phase_window() {
         vec![TimingPhase::Rest, TimingPhase::Mid, TimingPhase::Settled],
     );
 
+    // act
     let error = compare_timing(&reference, &candidate).expect_err("excessive phase must fail");
 
+    // assert
     assert!(
         matches!(error, ComparatorError::Timing { defects, .. } if defects.iter().any(|defect| defect.reason == "phase_window"))
     );
@@ -208,24 +254,32 @@ fn rejects_excessive_adapter_phase_window() {
 
 #[test]
 fn rejects_stale_hash_after_source_edit() {
+    // arrange
     let baseline = hash_artifacts(&artifact_inputs(b"source-v1")).expect("baseline hashes");
     let current = hash_artifacts(&artifact_inputs(b"source-v2")).expect("current hashes");
 
+    // act
     let error = verify_freshness(&baseline, &current).expect_err("edited source is stale");
 
+    // assert
     assert!(matches!(error, ComparatorError::Hashing { .. }));
 }
 
 #[test]
 fn rejects_same_binary_on_both_sides() {
-    let error = reject_self_comparison("a".repeat(64).as_str(), "a".repeat(64).as_str())
+    // arrange
+    let digest = "a".repeat(64);
+    // act
+    let error = reject_self_comparison(&digest, &digest)
         .expect_err("identical binary digests must be rejected");
 
+    // assert
     assert!(matches!(error, ComparatorError::SelfComparison { .. }));
 }
 
 #[test]
 fn rejects_secret_tokens_in_candidate_or_reference_artifacts() {
+    // arrange
     let temp = tempfile::tempdir().expect("temporary artifact root");
     let reference = temp.path().join("reference");
     let candidate = temp.path().join("candidate");
@@ -238,16 +292,22 @@ fn rejects_secret_tokens_in_candidate_or_reference_artifacts() {
     .expect("candidate artifact");
     let roots = ArtifactRoots::new(reference, candidate);
 
+    // act
     let error = scan_artifacts(&roots).expect_err("secret-bearing artifacts must be rejected");
 
+    // assert
     assert!(matches!(error, ComparatorError::Secrets { .. }));
 }
 
 #[test]
 fn passes_exact_independent_fixtures_for_every_dimension() {
+    // arrange
     let expected = cell_snapshot();
     let actual = cell_snapshot();
-    assert!(compare_cells(&expected, &actual, &Default::default()).is_ok());
+    // act
+    let cells = compare_cells(&expected, &actual, &Default::default());
+    // assert
+    assert!(cells.is_ok());
 
     let bytes = png(&[[10, 20, 30, 255], [40, 50, 60, 255]]);
     assert!(compare_png_bytes(&bytes, &bytes, &[]).is_ok());

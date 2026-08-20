@@ -36,6 +36,7 @@ pub fn build(
             unit: super::presentation_receipt::ClockUnit::MonotonicMicroseconds,
             epoch_id: format!("{}:{}", scenario.id.0, adapter.as_str()),
         },
+        action_receipts: capture.action_receipts.clone(),
         actual_input_sends: capture.action_sends.clone(),
         raw_reads: capture.raw_reads.clone(),
         observations: capture.observations.clone(),
@@ -85,11 +86,26 @@ fn interaction_mappings(capture: &ProcessCapture) -> Vec<InteractionObservation>
     capture
         .action_sends
         .iter()
-        .map(|send| {
+        .enumerate()
+        .map(|(send_index, send)| {
+            let next_send_at = capture
+                .action_sends
+                .get(send_index + 1)
+                .map(|next| next.sent_at);
+            let baseline = capture
+                .observations
+                .iter()
+                .rev()
+                .find(|observation| observation.observed_at < send.sent_at)
+                .map(|observation| &observation.frame);
             let first = capture
                 .observations
                 .iter()
-                .find(|observation| observation.observed_at >= send.sent_at)
+                .find(|observation| {
+                    observation.observed_at >= send.sent_at
+                        && next_send_at.is_none_or(|next| observation.observed_at < next)
+                        && baseline != Some(&observation.frame)
+                })
                 .map(|observation| observation.observation_ordinal);
             InteractionObservation {
                 interaction_id: send.interaction_id.clone(),
@@ -152,4 +168,71 @@ fn hex_digest(bytes: &[u8]) -> String {
             let _ = write!(output, "{byte:02x}");
             output
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use crate::parity::{CursorState, SemanticFrame};
+
+    use super::super::presentation_receipt::{
+        ActualInputSend, DecoderState, InteractionId, ObservationKind, PresentationTimestamp,
+        TimedSemanticObservation,
+    };
+    use super::{interaction_mappings, ProcessCapture};
+
+    #[test]
+    fn changed_observation_is_bounded_by_the_next_input_send() {
+        // arrange
+        let unchanged = SemanticFrame::new(1, 1, CursorState::hidden(0, 0));
+        let mut changed = unchanged.clone();
+        changed.cells[0].grapheme = "x".into();
+        let capture = ProcessCapture {
+            exit_code: 0,
+            input_timestamps: Vec::<Duration>::new(),
+            checkpoints: Vec::new(),
+            raw_reads: Vec::new(),
+            observations: vec![
+                observation(0, 5, unchanged.clone()),
+                observation(1, 12, unchanged),
+                observation(2, 25, changed),
+            ],
+            action_sends: vec![send("click", 0, 10), send("escape", 1, 20)],
+            action_receipts: Vec::new(),
+            pty_stream: Vec::new(),
+        };
+
+        // act
+        let mappings = interaction_mappings(&capture);
+
+        // assert
+        assert_eq!(mappings[0].first_changed_observation, None);
+        assert_eq!(mappings[1].first_changed_observation, Some(2));
+    }
+
+    fn send(id: &str, action_ordinal: usize, at: u64) -> ActualInputSend {
+        ActualInputSend {
+            interaction_id: InteractionId(id.into()),
+            action_ordinal,
+            scheduled_at: PresentationTimestamp(at),
+            sent_at: PresentationTimestamp(at),
+            transport_drained_at: None,
+        }
+    }
+
+    fn observation(
+        observation_ordinal: usize,
+        at: u64,
+        frame: SemanticFrame,
+    ) -> TimedSemanticObservation {
+        TimedSemanticObservation {
+            observation_ordinal,
+            observed_at: PresentationTimestamp(at),
+            kind: ObservationKind::ReadCompletionDecode,
+            decoder_state: DecoderState::Complete,
+            raw_read_ordinals: vec![observation_ordinal],
+            frame,
+        }
+    }
 }
