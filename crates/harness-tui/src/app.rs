@@ -3670,7 +3670,6 @@ impl AppState {
     /// Toggle the expansion state of a single tool output by id.
     pub fn toggle_tool_output_for_test(&mut self, tool_call_id: &str) {
         self.toggle_tool_output(tool_call_id);
-        self.bump_transcript_render_epoch();
     }
 
     /// Check whether a tool output is expanded.
@@ -3705,11 +3704,13 @@ impl AppState {
                     .insert(tc.tool_call_id.clone());
             }
         }
+        self.bump_transcript_render_epoch();
     }
 
     /// Collapse all tool-call outputs.
     pub fn collapse_all_tool_outputs_for_test(&mut self) {
         self.transcript_view.expanded_tool_outputs.clear();
+        self.bump_transcript_render_epoch();
     }
 }
 

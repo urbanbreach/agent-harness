@@ -6,6 +6,7 @@ static NEXT_TRANSCRIPT_CACHE_INSTANCE_ID: AtomicU64 = AtomicU64::new(1);
 #[cfg(test)]
 thread_local! {
     static TRANSCRIPT_RENDER_KEY_BUILD_COUNT: Cell<usize> = const { Cell::new(0) };
+    static TRANSCRIPT_RENDER_EXPANSION_HASH_COUNT: Cell<usize> = const { Cell::new(0) };
 }
 
 #[derive(Debug)]
@@ -78,10 +79,22 @@ impl TranscriptRenderCache {
     #[cfg(test)]
     pub(in crate::app) fn reset_build_metrics_for_test() {
         TRANSCRIPT_RENDER_KEY_BUILD_COUNT.with(|count| count.set(0));
+        TRANSCRIPT_RENDER_EXPANSION_HASH_COUNT.with(|count| count.set(0));
     }
 
     #[cfg(test)]
     pub(in crate::app) fn build_count_for_test() -> usize {
         TRANSCRIPT_RENDER_KEY_BUILD_COUNT.with(Cell::get)
+    }
+
+    #[cfg(test)]
+    pub(in crate::app) fn note_expansion_hash_for_test() {
+        TRANSCRIPT_RENDER_EXPANSION_HASH_COUNT
+            .with(|count| count.set(count.get().saturating_add(1)));
+    }
+
+    #[cfg(test)]
+    pub(in crate::app) fn expansion_hash_count_for_test() -> usize {
+        TRANSCRIPT_RENDER_EXPANSION_HASH_COUNT.with(Cell::get)
     }
 }

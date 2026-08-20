@@ -373,7 +373,6 @@ impl AppState {
         let mut hasher = DefaultHasher::new();
 
         self.hash_transcript_render_settings(&mut hasher);
-        self.hash_transcript_render_expansions(&mut hasher);
 
         hasher.finish()
     }
@@ -382,7 +381,6 @@ impl AppState {
         let mut hasher = DefaultHasher::new();
 
         self.hash_transcript_measure_settings(&mut hasher);
-        self.hash_transcript_render_expansions(&mut hasher);
 
         hasher.finish()
     }
@@ -510,6 +508,9 @@ impl AppState {
     }
 
     fn hash_transcript_render_expansions(&self, hasher: &mut impl Hasher) {
+        #[cfg(test)]
+        TranscriptRenderCache::note_expansion_hash_for_test();
+
         for request_id in &self.transcript_view.expanded_reasoning_requests {
             request_id.hash(hasher);
         }
@@ -532,6 +533,11 @@ impl AppState {
     #[cfg(test)]
     pub(crate) fn transcript_render_key_build_count_for_test() -> usize {
         TranscriptRenderCache::build_count_for_test()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn transcript_render_expansion_hash_count_for_test() -> usize {
+        TranscriptRenderCache::expansion_hash_count_for_test()
     }
 
     pub(crate) fn advance_transcript_animation_phase(&mut self) {
@@ -673,6 +679,7 @@ impl AppState {
                 .expanded_reasoning_requests
                 .remove(request_id);
         }
+        self.bump_transcript_render_epoch();
     }
 
     pub(crate) fn generic_tool_output_visible(&self) -> bool {
@@ -772,6 +779,7 @@ impl AppState {
                 .collapsed_tool_outputs
                 .insert(tool_call_id.to_string());
         }
+        self.bump_transcript_render_epoch();
     }
 
     fn toggle_patch_file_output(&mut self, tool_call_id: &str, file_path: &str) {
@@ -785,6 +793,7 @@ impl AppState {
                 .expanded_patch_file_outputs
                 .remove(&disclosure_key);
         }
+        self.bump_transcript_render_epoch();
     }
 
     pub(super) fn set_tool_group_outputs_expanded(
@@ -821,6 +830,7 @@ impl AppState {
                 .expanded_patch_file_outputs
                 .remove(&disclosure_key);
         }
+        self.bump_transcript_render_epoch();
     }
 
     pub(in crate::app) fn activate_transcript_mouse_target(

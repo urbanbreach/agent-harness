@@ -185,6 +185,35 @@ fn transcript_render_key_reuses_content_hash_across_animation_frames() {
     // assert
     assert_eq!(app.transcript_render_cache_key(), initial_key);
     assert_eq!(AppState::transcript_render_key_build_count_for_test(), 1);
+    assert_eq!(
+        AppState::transcript_render_expansion_hash_count_for_test(),
+        1
+    );
+}
+
+#[test]
+fn transcript_render_key_changes_after_tool_output_expansion() {
+    // Given: a transcript whose tool output has not been expanded.
+    let mut activity = transcript_section_model_test_activity(
+        "request-tool-cache",
+        ActivityStatus::Done,
+        "assistant reply",
+    );
+    activity
+        .tool_calls
+        .push(transcript_section_model_test_tool_call(
+            "tool-cache",
+            "fs.read",
+        ));
+    let mut app = AppState::default();
+    app.activities = std::collections::VecDeque::from([activity]);
+    let collapsed_key = app.transcript_render_cache_key();
+
+    // When: the tool output expansion changes.
+    app.toggle_tool_output_for_test("tool-cache");
+
+    // Then: generation-based invalidation rebuilds the render key.
+    assert_ne!(app.transcript_render_cache_key(), collapsed_key);
 }
 
 #[test]
