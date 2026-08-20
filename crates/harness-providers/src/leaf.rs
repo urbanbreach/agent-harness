@@ -279,23 +279,38 @@ mod tests {
 
     #[test]
     fn build_provider_constructs_openai_compatible() {
+        // arrange
         let params = ProviderLeafParams::OpenAiCompatible(openai_params());
+
+        // act
         let provider = build_provider(params);
+
+        // assert
         assert!(provider.is_ok(), "openai_compatible should construct");
     }
 
     #[test]
     fn build_provider_constructs_anthropic_messages() {
+        // arrange
         let params = ProviderLeafParams::AnthropicMessages(anthropic_params());
+
+        // act
         let provider = build_provider(params);
+
+        // assert
         assert!(provider.is_ok(), "anthropic_messages should construct");
     }
 
     #[test]
     fn build_provider_rejects_empty_base_url_for_openai() {
+        // arrange
         let mut params = openai_params();
         params.base_url = "  ".to_string();
+
+        // act
         let result = build_provider(ProviderLeafParams::OpenAiCompatible(params));
+
+        // assert
         assert!(matches!(
             result,
             Err(ProviderError::InvalidConfig {
@@ -307,9 +322,14 @@ mod tests {
 
     #[test]
     fn build_provider_rejects_empty_base_url_for_anthropic() {
+        // arrange
         let mut params = anthropic_params();
         params.base_url = String::new();
+
+        // act
         let result = build_provider(ProviderLeafParams::AnthropicMessages(params));
+
+        // assert
         assert!(matches!(
             result,
             Err(ProviderError::InvalidConfig {
@@ -321,19 +341,28 @@ mod tests {
 
     #[test]
     fn resolve_protocol_accepts_supported_tags() {
-        assert_eq!(
-            resolve_protocol("openai_compatible").unwrap(),
-            ProviderProtocol::OpenAiCompatible
-        );
-        assert_eq!(
-            resolve_protocol("anthropic_messages").unwrap(),
-            ProviderProtocol::AnthropicMessages
-        );
+        // arrange
+        let openai_tag = "openai_compatible";
+        let anthropic_tag = "anthropic_messages";
+
+        // act
+        let openai = resolve_protocol(openai_tag).unwrap();
+        let anthropic = resolve_protocol(anthropic_tag).unwrap();
+
+        // assert
+        assert_eq!(openai, ProviderProtocol::OpenAiCompatible);
+        assert_eq!(anthropic, ProviderProtocol::AnthropicMessages);
     }
 
     #[test]
     fn resolve_protocol_rejects_unsupported_tag() {
-        let result = resolve_protocol("google_gemini");
+        // arrange
+        let tag = "google_gemini";
+
+        // act
+        let result = resolve_protocol(tag);
+
+        // assert
         assert!(matches!(
             result,
             Err(ProviderError::UnsupportedProtocol { tag, .. }) if tag == "google_gemini"
@@ -342,7 +371,13 @@ mod tests {
 
     #[test]
     fn resolve_protocol_rejects_empty_tag() {
-        let result = resolve_protocol("");
+        // arrange
+        let tag = "";
+
+        // act
+        let result = resolve_protocol(tag);
+
+        // assert
         assert!(matches!(
             result,
             Err(ProviderError::UnsupportedProtocol { .. })
@@ -351,16 +386,31 @@ mod tests {
 
     #[test]
     fn provider_protocol_type_tag_roundtrip() {
-        for protocol in ProviderProtocol::SUPPORTED {
+        // arrange
+        let supported = ProviderProtocol::SUPPORTED;
+
+        // act
+        let roundtrips = supported.map(|protocol| {
             let tag = protocol.as_type_tag();
-            assert_eq!(ProviderProtocol::from_type_tag(tag), Some(protocol));
+            (protocol, ProviderProtocol::from_type_tag(tag))
+        });
+
+        // assert
+        for (protocol, resolved) in roundtrips {
+            assert_eq!(resolved, Some(protocol));
         }
     }
 
     #[test]
     fn unsupported_protocol_error_lists_supported_protocols() {
-        let err = resolve_protocol("bedrock").unwrap_err();
+        // arrange
+        let tag = "bedrock";
+
+        // act
+        let err = resolve_protocol(tag).unwrap_err();
         let message = err.to_string();
+
+        // assert
         assert!(
             message.contains("openai_compatible"),
             "error should list supported protocols"

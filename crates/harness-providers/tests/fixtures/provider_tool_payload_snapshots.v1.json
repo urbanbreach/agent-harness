@@ -4,7 +4,7 @@
     {
       "profile": "default",
       "category": "default",
-      "completion_request_digest": "345e5c92832fefd326414a9adfbf606d81585bf94c1ed454a040c7120e8537a4",
+      "completion_request_digest": "2cb0e5a58feea88709559afda69a6d45c010dc2d8caa61cad64f05f3404e4652",
       "tools": [
         {
           "canonical_id": "apply_patch",
@@ -44,7 +44,7 @@
         {
           "canonical_id": "shell.run",
           "provider_function_name": "shell_run",
-          "description_digest": "b8bab68aa8034880334acea62855730eed3091e44727c6b9167776ab41006479",
+          "description_digest": "f34d5b1c0bce4060eb9e28a6ec3e1bc8108e6bbd72fe63663c4e19c0d4ba6647",
           "parameters_digest": "1b1e8dd12d98ff3f6e2015aea2a3b6b69c578f3b4ef2c8ea05f771f1d21e29a2",
           "parameters_type": "object"
         }
@@ -54,7 +54,7 @@
           "api_mode": "chat_completions",
           "endpoint_path": "/v1/chat/completions",
           "bearer_token": "<redacted>",
-          "request_body_digest": "00c4fd04f19328dcba5db50c0eb66bd1b3308657edd77fe70685613a98efcfda",
+          "request_body_digest": "c19817697abe77b825e58f3d806d47617bb4327799eb95e2745c249c5b5bc3d5",
           "tool_function_names": [
             "apply_patch",
             "bash",
@@ -68,7 +68,7 @@
           "api_mode": "responses",
           "endpoint_path": "/v1/responses",
           "bearer_token": "<redacted>",
-          "request_body_digest": "e170b6bf31f932a2d5e3ec3992ad8aeb26e07f965681b0d57444cfb819a66c0b",
+          "request_body_digest": "05d39c38103b482f300759d1edbc88d2141d75a41a2b8f77bb996817821c197e",
           "tool_function_names": [
             "apply_patch",
             "bash",
@@ -126,7 +126,7 @@
           "api_mode": "chat_completions",
           "endpoint_path": "/v1/chat/completions",
           "bearer_token": "<redacted>",
-          "request_body_digest": "afc86a8c8eb68e3a9505a22f35979e128a315dc6d961eabede60673bd3726dec",
+          "request_body_digest": "ce50511f963a6182208d07785b3d623b1b82ef8bbbf91e3ce4b36d94fd89648f",
           "tool_function_names": [
             "glob",
             "grep",
@@ -139,7 +139,7 @@
           "api_mode": "responses",
           "endpoint_path": "/v1/responses",
           "bearer_token": "<redacted>",
-          "request_body_digest": "a263e905e97039297d80fe31009ce53380e327f34ea2a5427e9259606a4df063",
+          "request_body_digest": "54fb1791af8720a722117d22c8ea9841939319770395c9ea5252090a3c8943d2",
           "tool_function_names": [
             "glob",
             "grep",
@@ -189,7 +189,7 @@
           "api_mode": "chat_completions",
           "endpoint_path": "/v1/chat/completions",
           "bearer_token": "<redacted>",
-          "request_body_digest": "c20502b68456cf4966f6e70628add35e1bfcca3384a7e2e6ec5bb84403fe1fdb",
+          "request_body_digest": "07bd5cd66b6957fb73a3d8e8d6fc542a7b3d7f2f985fe2be6cfb3ccd24da93b1",
           "tool_function_names": [
             "background_output",
             "skill",
@@ -201,7 +201,7 @@
           "api_mode": "responses",
           "endpoint_path": "/v1/responses",
           "bearer_token": "<redacted>",
-          "request_body_digest": "7ab402fb10ae3259b1d47f774a1e5bc7e7f16d6740361ab3ec20dc9ae518506e",
+          "request_body_digest": "1253c5bd39c05be05a5ba32952a394d19193de63eaa986d7d512fe472a2a6eee",
           "tool_function_names": [
             "background_output",
             "skill",
@@ -236,7 +236,7 @@
           "api_mode": "chat_completions",
           "endpoint_path": "/v1/chat/completions",
           "bearer_token": "<redacted>",
-          "request_body_digest": "535a9abc6f24a3749b29e7be0c04d455092aa23c50aea0c4c5d344232ca96962",
+          "request_body_digest": "ae861930e9bafb4cc4e96e0513fb8d16a4cfc0a011fec7fd575f35b6320b0595",
           "tool_function_names": [
             "mcp_docs_rs_tool_call",
             "mcp_docs_rs_tools_list"
@@ -246,7 +246,7 @@
           "api_mode": "responses",
           "endpoint_path": "/v1/responses",
           "bearer_token": "<redacted>",
-          "request_body_digest": "f4356828e2e9b39804369e89a20c274b5ca85d7fae799832489704ebe44e8478",
+          "request_body_digest": "d6d253058896774bba12498b0ca743d1377622a7789909a672d7d79345376e57",
           "tool_function_names": [
             "mcp_docs_rs_tool_call",
             "mcp_docs_rs_tools_list"

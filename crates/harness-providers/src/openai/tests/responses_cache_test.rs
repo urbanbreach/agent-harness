@@ -114,6 +114,7 @@ async fn openai_responses_sse_parser_handles_multibyte_utf8_split_across_chunks(
 
 #[tokio::test]
 async fn openai_responses_separates_distinct_reasoning_summary_parts() {
+    // arrange
     let transcript = concat!(
         "data: {\"type\":\"response.reasoning_summary_text.delta\",\"item_id\":\"reasoning_1\",\"summary_index\":0,\"delta\":\"Planning worktree \"}\n\n",
         "data: {\"type\":\"response.reasoning_summary_text.delta\",\"item_id\":\"reasoning_1\",\"summary_index\":0,\"delta\":\"inspection and diff analysis\"}\n\n",
@@ -129,6 +130,7 @@ async fn openai_responses_separates_distinct_reasoning_summary_parts() {
         OpenAiApiMode::Responses,
     );
 
+    // act
     let events = collect_events(&provider, basic_request("gpt-5.5")).await;
     let reasoning = events
         .iter()
@@ -138,6 +140,7 @@ async fn openai_responses_separates_distinct_reasoning_summary_parts() {
         })
         .collect::<Vec<_>>();
 
+    // assert
     assert_eq!(
         reasoning,
         vec![
@@ -151,6 +154,7 @@ async fn openai_responses_separates_distinct_reasoning_summary_parts() {
 
 #[tokio::test]
 async fn openai_responses_preserves_a_summary_separator_split_across_deltas() {
+    // arrange
     let transcript = concat!(
         "data: {\"type\":\"response.reasoning_summary_text.delta\",\"item_id\":\"reasoning_1\",\"summary_index\":0,\"delta\":\"first\\n\"}\n\n",
         "data: {\"type\":\"response.reasoning_summary_text.delta\",\"item_id\":\"reasoning_1\",\"summary_index\":0,\"delta\":\"\\n\"}\n\n",
@@ -165,6 +169,7 @@ async fn openai_responses_preserves_a_summary_separator_split_across_deltas() {
         OpenAiApiMode::Responses,
     );
 
+    // act
     let events = collect_events(&provider, basic_request("gpt-5.5")).await;
     let reasoning = events
         .iter()
@@ -174,6 +179,7 @@ async fn openai_responses_preserves_a_summary_separator_split_across_deltas() {
         })
         .collect::<Vec<_>>();
 
+    // assert
     assert_eq!(reasoning, vec!["first\n", "\n", "second"]);
     assert_eq!(reasoning.concat(), "first\n\nsecond");
 }

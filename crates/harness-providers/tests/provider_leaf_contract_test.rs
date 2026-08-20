@@ -43,8 +43,13 @@ fn anthropic_params() -> AnthropicLeafParams {
 
 #[test]
 fn openai_compatible_is_config_reachable() {
+    // arrange
     let params = ProviderLeafParams::OpenAiCompatible(openai_params());
+
+    // act
     let provider = build_provider(params);
+
+    // assert
     assert!(
         provider.is_ok(),
         "openai_compatible should be config-reachable"
@@ -53,8 +58,13 @@ fn openai_compatible_is_config_reachable() {
 
 #[test]
 fn anthropic_messages_is_config_reachable() {
+    // arrange
     let params = ProviderLeafParams::AnthropicMessages(anthropic_params());
+
+    // act
     let provider = build_provider(params);
+
+    // assert
     assert!(
         provider.is_ok(),
         "anthropic_messages should be config-reachable"
@@ -63,11 +73,17 @@ fn anthropic_messages_is_config_reachable() {
 
 #[test]
 fn leaf_params_report_correct_protocol() {
+    // arrange
     let openai = ProviderLeafParams::OpenAiCompatible(openai_params());
-    assert_eq!(openai.protocol(), ProviderProtocol::OpenAiCompatible);
-
     let anthropic = ProviderLeafParams::AnthropicMessages(anthropic_params());
-    assert_eq!(anthropic.protocol(), ProviderProtocol::AnthropicMessages);
+
+    // act
+    let openai_protocol = openai.protocol();
+    let anthropic_protocol = anthropic.protocol();
+
+    // assert
+    assert_eq!(openai_protocol, ProviderProtocol::OpenAiCompatible);
+    assert_eq!(anthropic_protocol, ProviderProtocol::AnthropicMessages);
 }
 
 // ---------------------------------------------------------------------------
@@ -76,7 +92,13 @@ fn leaf_params_report_correct_protocol() {
 
 #[test]
 fn unsupported_protocol_tag_is_rejected() {
-    let result = resolve_protocol("google_gemini");
+    // arrange
+    let tag = "google_gemini";
+
+    // act
+    let result = resolve_protocol(tag);
+
+    // assert
     assert!(
         matches!(&result, Err(ProviderError::UnsupportedProtocol { tag, .. }) if tag == "google_gemini"),
         "unsupported protocol should be rejected with UnsupportedProtocol, got: {result:?}"
@@ -85,8 +107,14 @@ fn unsupported_protocol_tag_is_rejected() {
 
 #[test]
 fn unsupported_protocol_error_lists_supported_protocols() {
-    let err = resolve_protocol("bedrock").unwrap_err();
+    // arrange
+    let tag = "bedrock";
+
+    // act
+    let err = resolve_protocol(tag).unwrap_err();
     let message = err.to_string();
+
+    // assert
     assert!(
         message.contains("openai_compatible"),
         "error message should list supported protocols"
@@ -99,7 +127,13 @@ fn unsupported_protocol_error_lists_supported_protocols() {
 
 #[test]
 fn empty_protocol_tag_is_rejected() {
-    let result = resolve_protocol("");
+    // arrange
+    let tag = "";
+
+    // act
+    let result = resolve_protocol(tag);
+
+    // assert
     assert!(
         matches!(result, Err(ProviderError::UnsupportedProtocol { .. })),
         "empty tag should be rejected"
@@ -108,9 +142,14 @@ fn empty_protocol_tag_is_rejected() {
 
 #[test]
 fn invalid_config_rejects_empty_base_url() {
+    // arrange
     let mut params = openai_params();
     params.base_url = String::new();
+
+    // act
     let result = build_provider(ProviderLeafParams::OpenAiCompatible(params));
+
+    // assert
     assert!(
         matches!(
             result,
@@ -135,12 +174,16 @@ const TEST_ANTHROPIC_KEY: &str = "sk-ant-test-redaction-1234567890";
 
 #[test]
 fn provider_stream_event_error_does_not_leak_api_key() {
+    // arrange
     let event = ProviderStreamEvent::categorized_error(
         "request failed with status 401",
         ProviderErrorCategory::InvalidCredentials,
     );
 
+    // act
     let serialized = serde_json::to_string(&event).expect("event should serialize");
+
+    // assert
     assert!(
         !serialized.contains(TEST_API_KEY),
         "serialized ProviderStreamEvent must not contain the API key"
@@ -153,12 +196,16 @@ fn provider_stream_event_error_does_not_leak_api_key() {
 
 #[test]
 fn provider_credential_error_does_not_leak_token() {
+    // arrange
     let error = ProviderCredentialError::new(
         ProviderErrorCategory::InvalidCredentials,
         "credential validation failed",
     );
 
+    // act
     let message = error.to_string();
+
+    // assert
     assert!(
         !message.contains(TEST_API_KEY),
         "ProviderCredentialError message must not contain the API key"
@@ -167,6 +214,7 @@ fn provider_credential_error_does_not_leak_token() {
 
 #[test]
 fn completion_request_does_not_serialize_api_key() {
+    // arrange
     let request = CompletionRequest {
         provider_id: Some("default".to_string()),
         model_id: "gpt-5.4-mini".to_string(),
@@ -190,7 +238,10 @@ fn completion_request_does_not_serialize_api_key() {
         stream: true,
     };
 
+    // act
     let serialized = serde_json::to_string(&request).expect("request should serialize");
+
+    // assert
     assert!(
         !serialized.contains(TEST_API_KEY),
         "serialized CompletionRequest must not contain the API key"
@@ -205,6 +256,7 @@ fn completion_request_does_not_serialize_api_key() {
 fn provider_stream_finished_metadata_does_not_leak_secrets() {
     use harness_providers::ProviderStreamFinishedMetadata;
 
+    // arrange
     let metadata = ProviderStreamFinishedMetadata {
         provider_response_id: Some("resp_123".to_string()),
         provider_session_id: Some("sess_456".to_string()),
@@ -216,7 +268,10 @@ fn provider_stream_finished_metadata_does_not_leak_secrets() {
         thinking: None,
     };
 
+    // act
     let serialized = serde_json::to_string(&metadata).expect("metadata should serialize");
+
+    // assert
     assert!(
         !serialized.contains(TEST_API_KEY),
         "serialized ProviderStreamFinishedMetadata must not contain the API key"
@@ -229,6 +284,7 @@ fn provider_stream_finished_metadata_does_not_leak_secrets() {
 
 #[test]
 fn provider_bearer_token_kind_is_typed_not_string() {
+    // arrange
     // ProviderCredentialKind is an enum, not a string — this test verifies
     // that credential kind is type-safe and does not leak token values.
     let kinds = [
@@ -238,8 +294,11 @@ fn provider_bearer_token_kind_is_typed_not_string() {
         ProviderCredentialKind::InlineApiKey,
     ];
 
-    for kind in kinds {
-        let serialized = serde_json::to_string(&kind).expect("kind should serialize");
+    // act
+    let serialized = kinds.map(|kind| serde_json::to_string(&kind).expect("kind should serialize"));
+
+    // assert
+    for serialized in serialized {
         // The serialized form should be a snake_case string tag, not a token value
         assert!(
             serialized.len() < 30,
@@ -254,6 +313,7 @@ fn provider_bearer_token_kind_is_typed_not_string() {
 
 #[test]
 fn provider_error_messages_do_not_leak_credentials() {
+    // arrange
     let errors = [
         ProviderError::UnsupportedProtocol {
             tag: "bedrock".to_string(),
@@ -272,8 +332,11 @@ fn provider_error_messages_do_not_leak_credentials() {
         },
     ];
 
-    for error in &errors {
-        let message = error.to_string();
+    // act
+    let messages = errors.map(|error| error.to_string());
+
+    // assert
+    for message in messages {
         assert!(
             !message.contains(TEST_API_KEY),
             "ProviderError message must not contain API key: {message}"
@@ -287,13 +350,17 @@ fn provider_error_messages_do_not_leak_credentials() {
 
 #[test]
 fn completion_usage_serializes_without_secrets() {
+    // arrange
     let usage = CompletionUsage {
         prompt_tokens: 100,
         completion_tokens: 50,
         total_tokens: 150,
     };
 
+    // act
     let serialized = serde_json::to_string(&usage).expect("usage should serialize");
+
+    // assert
     assert!(
         !serialized.contains(TEST_API_KEY),
         "CompletionUsage must not contain API key"
@@ -302,27 +369,41 @@ fn completion_usage_serializes_without_secrets() {
 
 #[test]
 fn provider_protocol_supported_list_is_complete() {
+    // arrange
+    let supported = ProviderProtocol::SUPPORTED;
+
+    // act
+    let supported_count = supported.len();
+
+    // assert
     // The SUPPORTED list must contain exactly the wired protocols.
     assert_eq!(
-        ProviderProtocol::SUPPORTED.len(),
-        2,
+        supported_count, 2,
         "exactly two protocols should be supported"
     );
     assert!(
-        ProviderProtocol::SUPPORTED.contains(&ProviderProtocol::OpenAiCompatible),
+        supported.contains(&ProviderProtocol::OpenAiCompatible),
         "openai_compatible must be in SUPPORTED"
     );
     assert!(
-        ProviderProtocol::SUPPORTED.contains(&ProviderProtocol::AnthropicMessages),
+        supported.contains(&ProviderProtocol::AnthropicMessages),
         "anthropic_messages must be in SUPPORTED"
     );
 }
 
 #[test]
 fn provider_protocol_type_tag_roundtrip_is_exhaustive() {
-    for protocol in ProviderProtocol::SUPPORTED {
+    // arrange
+    let supported = ProviderProtocol::SUPPORTED;
+
+    // act
+    let roundtrips = supported.map(|protocol| {
         let tag = protocol.as_type_tag();
-        let resolved = ProviderProtocol::from_type_tag(tag);
+        (protocol, ProviderProtocol::from_type_tag(tag))
+    });
+
+    // assert
+    for (protocol, resolved) in roundtrips {
         assert_eq!(
             resolved,
             Some(protocol),

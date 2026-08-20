@@ -32,8 +32,10 @@ fn strict_openai_compatible_accepts_real_default_and_explore_tools() {
 
 #[test]
 fn openai_compatible_canonicalizes_nested_native_schema_extensions() {
+    // arrange
     let tools = real_tools("explore");
 
+    // act
     let prepared =
         prepare_tools_for_family(ProviderSchemaFamily::OpenAiCompatible, tools).unwrap_or_abort();
     let question = prepared
@@ -41,6 +43,7 @@ fn openai_compatible_canonicalizes_nested_native_schema_extensions() {
         .find(|tool| tool.tool_id == "question")
         .unwrap_or_abort();
 
+    // assert
     assert!(has_no_unsupported_openai_keywords(&question.parameters));
     assert_eq!(
         question.parameters["properties"]["questions"]["items"]["type"],
@@ -50,24 +53,30 @@ fn openai_compatible_canonicalizes_nested_native_schema_extensions() {
 
 #[test]
 fn openai_compatible_rejects_unresolved_refs_instead_of_widening_schema() {
+    // arrange
     let mut tools = real_tools("explore");
     tools[0].parameters["properties"]["broken"] = json!({"$ref": "#/$defs/Missing"});
 
+    // act
     let result = prepare_tools_for_family(ProviderSchemaFamily::OpenAiCompatible, tools);
 
+    // assert
     assert!(result.is_err());
 }
 
 #[test]
 fn openai_compatible_rejects_heterogeneous_tuple_items() {
+    // arrange
     let mut tools = real_tools("explore");
     tools[0].parameters["properties"]["tuple"] = json!({
         "type": "array",
         "items": [{"type": "string"}, {"type": "number"}],
     });
 
+    // act
     let result = prepare_tools_for_family(ProviderSchemaFamily::OpenAiCompatible, tools);
 
+    // assert
     assert!(result.is_err());
 }
 
