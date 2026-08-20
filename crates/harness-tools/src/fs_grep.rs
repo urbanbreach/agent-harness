@@ -105,7 +105,7 @@ struct GrepSearch<'a> {
 }
 
 enum Utf8FileLines {
-    Lines(Vec<String>),
+    Text(String),
     NonUtf8,
 }
 
@@ -346,13 +346,14 @@ fn collect_grep_matches(
     let head_limit = search.head_limit.filter(|&n| n > 0);
 
     for file in files {
-        let lines = match read_utf8_lines(&file.path)? {
-            Utf8FileLines::Lines(lines) => lines,
+        let text = match read_utf8_lines(&file.path)? {
+            Utf8FileLines::Text(text) => text,
             Utf8FileLines::NonUtf8 => continue,
         };
-        if lines.is_empty() {
+        if text.is_empty() {
             continue;
         }
+        let lines = text.lines().collect::<Vec<_>>();
 
         let remaining_limit = if head_limit.is_some_and(|limit| files_returned >= limit) {
             0
@@ -416,15 +417,15 @@ fn collect_grep_file_paths(
     let head_limit = search.head_limit.filter(|&n| n > 0);
 
     for file in files {
-        let lines = match read_utf8_lines(&file.path)? {
-            Utf8FileLines::Lines(lines) => lines,
+        let text = match read_utf8_lines(&file.path)? {
+            Utf8FileLines::Text(text) => text,
             Utf8FileLines::NonUtf8 => continue,
         };
-        if lines.is_empty() {
+        if text.is_empty() {
             continue;
         }
 
-        let has_match = lines.iter().any(|line| regex.is_match(line));
+        let has_match = text.lines().any(|line| regex.is_match(line));
         if !has_match {
             continue;
         }
@@ -459,15 +460,15 @@ fn collect_grep_counts(
     let head_limit = search.head_limit.filter(|&n| n > 0);
 
     for file in files {
-        let lines = match read_utf8_lines(&file.path)? {
-            Utf8FileLines::Lines(lines) => lines,
+        let text = match read_utf8_lines(&file.path)? {
+            Utf8FileLines::Text(text) => text,
             Utf8FileLines::NonUtf8 => continue,
         };
-        if lines.is_empty() {
+        if text.is_empty() {
             continue;
         }
 
-        let file_count = lines.iter().filter(|line| regex.is_match(line)).count();
+        let file_count = text.lines().filter(|line| regex.is_match(line)).count();
         if file_count == 0 {
             continue;
         }
@@ -529,7 +530,7 @@ fn collect_sorted_grep_files(
 
 fn select_file_matches(
     regex: &Regex,
-    lines: &[String],
+    lines: &[&str],
     remaining_limit: usize,
 ) -> FileMatchSelection {
     let mut selected_line_indexes = Vec::new();
@@ -602,7 +603,7 @@ fn append_grep_entries(
     output: &mut Vec<GrepOutputEntry>,
     workspace_root: &Path,
     relative_path: &str,
-    lines: &[String],
+    lines: &[&str],
     match_line_indexes: &[usize],
     context: usize,
 ) {
@@ -636,11 +637,11 @@ fn context_line_indexes(
     line_indexes
 }
 
-fn grep_output_entry(path: &str, lines: &[String], line_idx: usize) -> GrepOutputEntry {
+fn grep_output_entry(path: &str, lines: &[&str], line_idx: usize) -> GrepOutputEntry {
     GrepOutputEntry {
         path: path.to_string(),
         line_number: line_idx + 1,
-        text: lines[line_idx].clone(),
+        text: lines[line_idx].to_string(),
     }
 }
 
@@ -696,9 +697,7 @@ fn read_utf8_lines(path: &Path) -> Result<Utf8FileLines, ToolError> {
         return Ok(Utf8FileLines::NonUtf8);
     };
 
-    Ok(Utf8FileLines::Lines(
-        text.lines().map(str::to_owned).collect(),
-    ))
+    Ok(Utf8FileLines::Text(text))
 }
 
 #[cfg(test)]
@@ -716,7 +715,8 @@ mod tests {
     use serde_json::{json, Value};
 
     use super::{
-        collect_grep_matches, FsGrepTool, GrepOutputMode, GrepSearch, MAX_GREP_RENDER_BYTES,
+        collect_grep_matches, read_utf8_lines, FsGrepTool, GrepOutputMode, GrepSearch,
+        Utf8FileLines, MAX_GREP_RENDER_BYTES,
     };
 
     fn grep_search(pattern: &str) -> GrepSearch<'_> {
@@ -758,6 +758,19 @@ mod tests {
 
     fn write_file(root: &Path, path: &str, contents: impl AsRef<[u8]>) {
         fs::write(root.join(path), contents).unwrap_or_abort();
+    }
+
+    #[test]
+    fn read_utf8_lines_retains_one_owned_text_buffer() {
+        let tempdir = tempfile::tempdir().unwrap_or_abort();
+        write_file(tempdir.path(), "lines.txt", "alpha\nbeta\n");
+
+        let contents = read_utf8_lines(&tempdir.path().join("lines.txt")).unwrap_or_abort();
+
+        let Utf8FileLines::Text(text) = contents else {
+            panic!("UTF-8 input should remain in one text buffer");
+        };
+        assert_eq!(text, "alpha\nbeta\n");
     }
 
     #[test]
