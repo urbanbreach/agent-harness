@@ -246,6 +246,7 @@ impl EditAttributionJournal {
             })?;
         let abs = self.workspace_root.join(&path_key);
         ensure_parent_for_write(&abs)?;
+        self.ensure_revert_target_is_contained(&path_key, &abs)?;
         write_bytes(&abs, &snapshot)?;
         let entry = self.record_agent_tool_edit(&path_key, &snapshot, None)?;
         Ok(RevertAttributionResult {
@@ -298,6 +299,37 @@ impl EditAttributionJournal {
         let seq = self.next_seq;
         self.next_seq = self.next_seq.saturating_add(1);
         seq
+    }
+
+    fn ensure_revert_target_is_contained(
+        &self,
+        path_key: &str,
+        target: &Path,
+    ) -> Result<(), EditAttributionError> {
+        if target
+            .symlink_metadata()
+            .is_ok_and(|metadata| metadata.file_type().is_symlink())
+        {
+            return Err(EditAttributionError::InvalidPath {
+                path: path_key.to_string(),
+            });
+        }
+        let workspace =
+            self.workspace_root
+                .canonicalize()
+                .map_err(|_| EditAttributionError::InvalidPath {
+                    path: path_key.to_string(),
+                })?;
+        let parent = target
+            .parent()
+            .and_then(|parent| parent.canonicalize().ok())
+            .filter(|parent| parent.starts_with(&workspace));
+        if parent.is_none() {
+            return Err(EditAttributionError::InvalidPath {
+                path: path_key.to_string(),
+            });
+        }
+        Ok(())
     }
 }
 

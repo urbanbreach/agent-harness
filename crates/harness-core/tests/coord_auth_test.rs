@@ -133,6 +133,7 @@ async fn worker_tool_auth_uses_profile_name_not_caller_category() {
 
 #[tokio::test]
 async fn supervisor_tool_auth_ignores_caller_category_for_permission_routing() {
+    // arrange
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let policy = allow_all_permission_policy()
         .with_profile_override(
@@ -174,7 +175,9 @@ async fn supervisor_tool_auth_ignores_caller_category_for_permission_routing() {
     wait_for_tool_call_finish(&run.events_path, &tool_call_id).await;
     coordinator.stop_run().await.unwrap_or_abort();
 
+    // act
     let events = load_events(&run.events_path);
+    // assert
     assert!(events.iter().any(|event| matches!(
         &event.payload,
         EventV1::ToolCallFinished(data) if data.tool_call_id.as_str() == tool_call_id

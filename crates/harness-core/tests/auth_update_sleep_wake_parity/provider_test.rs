@@ -43,7 +43,7 @@ fn request(model_id: &str, reasoning_effort: &str) -> CompletionRequest {
 
 #[tokio::test]
 async fn provider_model_effort_streaming_and_protocol_errors_are_observable() {
-    // Given: a public request containing a tool result and a scripted provider stream.
+    // arrange — a public request containing a tool result and a scripted provider stream.
     let selected = request("gpt-5.5", "high");
     let switched = request("gpt-5.4-mini", "low");
     let mut scripts = BTreeMap::new();
@@ -64,14 +64,14 @@ async fn provider_model_effort_streaming_and_protocol_errors_are_observable() {
         ],
     );
 
-    // When: the selected request is streamed.
+    // act — the selected request is streamed.
     let events: Vec<_> = MockProvider::new(scripts)
         .stream_completion(selected)
         .await
         .collect()
         .await;
 
-    // Then: model/effort switching changes the provider shape and stream semantics remain typed.
+    // assert — model/effort switching changes the provider shape and stream semantics remain typed.
     assert_ne!(
         request_digest(&switched),
         request_digest(&request("gpt-5.5", "high"))

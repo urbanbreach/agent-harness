@@ -5,6 +5,7 @@ use harness_core::team_registry::TeamRegistryError;
 
 #[test]
 fn recurring_schedule_deduplicates_after_restart() {
+    // arrange
     let temp = tempfile::tempdir().unwrap_or_abort();
     let mut schedules = CronScheduleRegistry::new();
     schedules
@@ -16,7 +17,9 @@ fn recurring_schedule_deduplicates_after_restart() {
         })
         .unwrap_or_abort();
     let now = CronCivilTime::new(0, 9, 15, 7, 3).unwrap_or_abort();
+    // act
     let mut executor = CronExecutor::with_journal_dir(temp.path());
+    // assert
     assert_eq!(
         executor
             .fire_due(&schedules, now)
@@ -40,6 +43,7 @@ fn recurring_schedule_deduplicates_after_restart() {
 
 #[test]
 fn durable_team_child_progress_completion_and_mailbox_survive_restart() {
+    // arrange
     let temp = tempfile::tempdir().unwrap_or_abort();
     let mut teams = DurableTeamRegistry::open(temp.path()).unwrap_or_abort();
     let team = teams.create_team("delivery").unwrap_or_abort();
@@ -58,9 +62,11 @@ fn durable_team_child_progress_completion_and_mailbox_survive_restart() {
         )
         .unwrap_or_abort();
     let mut restarted = DurableTeamRegistry::open(temp.path()).unwrap_or_abort();
+    // act
     let receipts = restarted
         .deliver_messages(&team.team_id, "lead")
         .unwrap_or_abort();
+    // assert
     assert_eq!(receipts[0].body, "progress: complete");
     restarted.cancel_team(&team.team_id).unwrap_or_abort();
     assert!(matches!(

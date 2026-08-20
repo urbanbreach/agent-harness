@@ -101,7 +101,14 @@ mod tests {
 
     #[test]
     fn windows_power_constants_distinguish_suspend_and_resume() {
-        assert_ne!(SUSPEND, RESUME_SUSPEND);
-        assert_ne!(RESUME_SUSPEND, RESUME_AUTOMATIC);
+        // arrange
+        let suspend = SUSPEND;
+
+        // act
+        let resume = RESUME_SUSPEND;
+
+        // assert
+        assert_ne!(suspend, resume);
+        assert_ne!(resume, RESUME_AUTOMATIC);
     }
 }

@@ -921,8 +921,10 @@ mod generic_profile_tests {
 
     #[test]
     fn legacy_role_profile_binding_disables_resume() {
+        // arrange
         let known_profiles = BTreeSet::from(["build".to_string()]);
 
+        // act
         let reason = resume_plan_disabled_reason(
             1,
             LifecycleSegmentStatus::Finished,
@@ -933,6 +935,7 @@ mod generic_profile_tests {
             Some("mock/model-1"),
         );
 
+        // assert
         assert_eq!(
             reason.as_deref(),
             Some("legacy unsupported profile binding cannot be resumed")
@@ -941,6 +944,7 @@ mod generic_profile_tests {
 
     #[test]
     fn supported_named_subagent_profile_bindings_remain_resumable() {
+        // arrange
         let known_profiles = BTreeSet::from([
             "default".to_string(),
             "explore".to_string(),
@@ -948,6 +952,7 @@ mod generic_profile_tests {
             "librarian".to_string(),
         ]);
 
+        // act
         let reason = resume_plan_disabled_reason(
             1,
             LifecycleSegmentStatus::Finished,
@@ -958,6 +963,7 @@ mod generic_profile_tests {
             Some("mock/model-1"),
         );
 
+        // assert
         assert_eq!(reason, None);
     }
 }

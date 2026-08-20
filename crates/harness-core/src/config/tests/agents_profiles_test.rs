@@ -3,7 +3,7 @@ use crate::UnwrapOrAbort;
 
 #[test]
 fn public_agent_config_materializes_primary_and_named_subagents() {
-    // Given
+    // arrange
     let cfg = r#"
         {
           provider: {
@@ -41,11 +41,11 @@ fn public_agent_config_materializes_primary_and_named_subagents() {
         }
         "#;
 
-    // When
+    // act
     let parsed = load_config_from_str(cfg)
         .unwrap_or_else(|error| panic!("agent config should load: {error}"));
 
-    // Then
+    // assert
     assert_eq!(
         parsed.agents.keys().map(String::as_str).collect::<Vec<_>>(),
         ["default", "explore", "general", "librarian"]
@@ -87,7 +87,7 @@ fn public_agent_config_materializes_primary_and_named_subagents() {
 
 #[test]
 fn public_agent_config_rejects_role_shaped_config() {
-    // Given
+    // arrange
     let cfg = r#"
         {
           provider: {
@@ -110,16 +110,16 @@ fn public_agent_config_rejects_role_shaped_config() {
         }
         "#;
 
-    // When
+    // act
     let error = load_config_from_str(cfg).expect_err("role-shaped agent config must fail");
 
-    // Then
+    // assert
     assert!(error.to_string().contains("unknown field `build`"));
 }
 
 #[test]
 fn public_agent_config_rejects_removed_selection_and_toggle_keys() {
-    // Given
+    // arrange
     for removed in [
         r#"default_agent: "default","#,
         r#"disabled_agents: ["explore"],"#,
@@ -144,17 +144,17 @@ fn public_agent_config_rejects_removed_selection_and_toggle_keys() {
             "#
         );
 
-        // When
+        // act
         let error = load_config_from_str(&cfg).expect_err("removed key must fail");
 
-        // Then
+        // assert
         assert!(error.to_string().contains("unknown top-level config keys"));
     }
 }
 
 #[test]
 fn shipped_primary_uses_generic_task_tools_without_plan_transitions() {
-    // Given
+    // arrange
     let cfg = r#"
         {
           provider: {
@@ -172,10 +172,10 @@ fn shipped_primary_uses_generic_task_tools_without_plan_transitions() {
         }
         "#;
 
-    // When
+    // act
     let parsed = load_config_from_str(cfg).unwrap_or_abort();
 
-    // Then
+    // assert
     let tools = &parsed.agents["default"].tools;
     assert!(tools.iter().any(|tool| tool == "task"));
     assert!(!tools.iter().any(|tool| tool == "plan_enter"));

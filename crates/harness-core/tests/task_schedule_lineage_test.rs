@@ -3,7 +3,7 @@ use harness_core::UnwrapOrAbort;
 
 #[test]
 fn old_task_scheduled_event_deserializes_without_lineage_metadata() {
-    // Given: a task-scheduled payload written before schedule metadata existed.
+    // arrange — a task-scheduled payload written before schedule metadata existed.
     let json = r#"{
         "event_type":"task_scheduled",
         "data":{
@@ -13,10 +13,10 @@ fn old_task_scheduled_event_deserializes_without_lineage_metadata() {
         }
     }"#;
 
-    // When: the old payload is deserialized through the current event contract.
+    // act — the old payload is deserialized through the current event contract.
     let event: EventV1 = serde_json::from_str(json).unwrap_or_abort();
 
-    // Then: legacy fields survive and absent metadata defaults to none.
+    // assert — legacy fields survive and absent metadata defaults to none.
     let EventV1::TaskScheduled(scheduled) = event else {
         panic!("expected task_scheduled event");
     };

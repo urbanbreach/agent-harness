@@ -211,7 +211,6 @@ fn trace_bumps_timestamp_without_changing_value() {
     let original_ts = entry.updated_at_unix_ms;
 
     // act — trace the entry
-    std::thread::sleep(std::time::Duration::from_millis(10));
     let traced = store.trace("tracked").unwrap_or_abort();
 
     // assert — value unchanged, timestamp bumped

@@ -65,6 +65,7 @@ pub mod transcript_projection;
 pub mod vcs;
 pub mod workspace;
 pub mod workspace_hub;
+mod workspace_hub_compat;
 pub mod workspace_hub_local;
 pub mod workspace_leaf;
 pub mod worktree;

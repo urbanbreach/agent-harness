@@ -11,6 +11,8 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::redact::{DefaultRedactor, Redactor};
+
 /// Relative path under a session dir for the durable prompt queue.
 pub const PROMPT_QUEUE_RELATIVE_PATH: &str = "tui/prompt-queue.json";
 
@@ -131,7 +133,7 @@ impl DurablePromptQueue {
         }
         let entry = PromptQueueEntry {
             id: id.into(),
-            text: trimmed.to_string(),
+            text: redact_prompt_text(trimmed),
             enqueued_at_unix_ms,
             is_interjection: false,
         };
@@ -160,7 +162,7 @@ impl DurablePromptQueue {
         }
         let entry = PromptQueueEntry {
             id: id.into(),
-            text: trimmed.to_string(),
+            text: redact_prompt_text(trimmed),
             enqueued_at_unix_ms,
             is_interjection: true,
         };
@@ -236,7 +238,7 @@ impl DurablePromptQueue {
             .iter()
             .position(|e| e.id == id)
             .ok_or(PromptQueueError::OutOfBounds { index: 0, len })?;
-        doc.entries[pos].text = trimmed.to_string();
+        doc.entries[pos].text = redact_prompt_text(trimmed);
         let result = doc.entries[pos].clone();
         self.store(&doc)?;
         Ok(result)
@@ -337,6 +339,10 @@ impl DurablePromptQueue {
         })?;
         Ok(())
     }
+}
+
+fn redact_prompt_text(text: &str) -> String {
+    DefaultRedactor::default().redact_text(text)
 }
 
 #[cfg(test)]

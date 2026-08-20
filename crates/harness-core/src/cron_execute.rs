@@ -255,7 +255,12 @@ impl CronExecutor {
         let mut fired = Vec::new();
         let mut skipped = 0usize;
         for schedule in registry.list() {
-            if schedule_is_due(schedule, now)? {
+            let civil = CronFireCivil::from(now);
+            let already_fired = self
+                .fires
+                .iter()
+                .any(|fire| fire.schedule_id == schedule.id.as_str() && fire.civil == civil);
+            if schedule_is_due(schedule, now)? && !already_fired {
                 let record = self.record_fire(schedule, now)?;
                 fired.push(record);
             } else {

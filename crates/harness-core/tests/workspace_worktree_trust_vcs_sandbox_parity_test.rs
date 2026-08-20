@@ -4,7 +4,7 @@ mod workspace_worktree_trust_vcs_sandbox_parity_support;
 
 use std::fs;
 use std::path::Path;
-use std::process::Command;
+use std::process::Command as GitFixtureCommand;
 
 use harness_core::edit_attribution::{EditAttributionError, EditAttributionJournal, EditSource};
 use harness_core::folder_trust::{
@@ -38,7 +38,7 @@ fn init_git_repo(path: &Path) {
 }
 
 fn run_git(cwd: &Path, args: &[&str]) {
-    let output = Command::new("git")
+    let output = GitFixtureCommand::new("git")
         .args(args)
         .current_dir(cwd)
         .env("GIT_TERMINAL_PROMPT", "0")
@@ -62,38 +62,33 @@ fn create_worktree<'a>(repo: &'a Path, slug: &'a str) -> harness_core::worktree:
 }
 
 #[test]
-fn trust_precedes_local_mutation_and_allowed_path_command_runs() {
-    // Given: a workspace without a trust decision.
+fn trust_precedes_local_mutation_and_allowed_path_command_is_authorized() {
+    // arrange — a workspace without a trust decision.
     let temp = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp.path().join("workspace");
     fs::create_dir_all(&workspace).unwrap_or_abort();
 
-    // When: a repository-local executable is gated before trust.
+    // act — a repository-local executable is gated before trust.
     let before_trust = gate_repository_local_executable_from_store("./scripts/mutate", &workspace)
         .unwrap_or_abort();
 
-    // Then: it is denied before a spawn can mutate the workspace.
+    // assert — it is denied before a spawn can mutate the workspace.
     assert!(before_trust.is_denied());
 
-    // When: trust is persisted and the fresh store gates again.
+    // act — trust is persisted and the fresh store gates again.
     FolderTrustStore::for_workspace(&workspace)
         .set(&workspace, FolderTrustDecision::Allow)
         .unwrap_or_abort();
     let after_trust = gate_repository_local_executable_from_store("./scripts/mutate", &workspace)
         .unwrap_or_abort();
 
-    // Then: local execution is allowed, while a PATH command actually runs.
+    // assert — the deterministic policy result authorizes local execution.
     assert_eq!(after_trust, LocalExecutableGate::Allowed);
-    let output = Command::new("git")
-        .arg("--version")
-        .output()
-        .unwrap_or_abort();
-    assert!(output.status.success());
 }
 
 #[test]
 fn worktrees_are_selectable_isolated_and_safe_to_cleanup() {
-    // Given: a real repository with two linked session worktrees.
+    // arrange — a real repository with two linked session worktrees.
     let temp = tempfile::tempdir().unwrap_or_abort();
     let repo = temp.path().join("repo");
     fs::create_dir_all(&repo).unwrap_or_abort();
@@ -101,7 +96,7 @@ fn worktrees_are_selectable_isolated_and_safe_to_cleanup() {
     let left = create_worktree(&repo, "left-session");
     let right = create_worktree(&repo, "right-session");
 
-    // When: each session writes a local file and selects itself from the managed listing.
+    // act — each session writes a local file and selects itself from the managed listing.
     fs::write(left.path.join("left.txt"), "left\n").unwrap_or_abort();
     fs::write(right.path.join("right.txt"), "right\n").unwrap_or_abort();
     let session_root = temp.path().join("sessions");
@@ -127,7 +122,7 @@ fn worktrees_are_selectable_isolated_and_safe_to_cleanup() {
         .find(|entry| entry.slug.as_deref() == Some("right-session"))
         .expect("right worktree is listed");
 
-    // Then: roots and local file state remain isolated.
+    // assert — roots and local file state remain isolated.
     assert_ne!(left.path, right.path);
     assert_eq!(selected.path, right.path);
     assert!(!left.path.join("right.txt").exists());
@@ -144,7 +139,7 @@ fn worktrees_are_selectable_isolated_and_safe_to_cleanup() {
         left.path
     );
 
-    // When: a cleanup target escapes the managed parent.
+    // act — a cleanup target escapes the managed parent.
     let err = remove_session_worktree(RemoveWorktreeOptions {
         repository_root: &repo,
         path: &repo,
@@ -154,7 +149,7 @@ fn worktrees_are_selectable_isolated_and_safe_to_cleanup() {
     })
     .expect_err("primary worktree must be protected");
 
-    // Then: cleanup fails closed and selected worktree cleanup only removes that session.
+    // assert — cleanup fails closed and selected worktree cleanup only removes that session.
     assert!(matches!(err, WorktreeError::PrimaryWorktree { .. }));
     remove_session_worktree(RemoveWorktreeOptions {
         repository_root: &repo,
@@ -170,7 +165,7 @@ fn worktrees_are_selectable_isolated_and_safe_to_cleanup() {
 
 #[test]
 fn git_jujutsu_checkpoint_and_path_safety_are_structured() {
-    // Given: a Git workspace with a tracked change and a Jujutsu marker.
+    // arrange — a Git workspace with a tracked change and a Jujutsu marker.
     let temp = tempfile::tempdir().unwrap_or_abort();
     let repo = temp.path().join("repo");
     fs::create_dir_all(&repo).unwrap_or_abort();
@@ -179,11 +174,11 @@ fn git_jujutsu_checkpoint_and_path_safety_are_structured() {
     run_git(&repo, &["add", "checkpoint.txt"]);
     fs::create_dir_all(repo.join(".jj")).unwrap_or_abort();
 
-    // When: VCS checkpoint/status and optional Jujutsu status are inspected.
+    // act — VCS checkpoint/status and optional Jujutsu status are inspected.
     let checkpoint = collect_vcs_snapshot(&repo).unwrap_or_abort();
     let jj = jj_status(&repo);
 
-    // Then: Git exposes the change, while Jujutsu remains honest if unavailable.
+    // assert — Git exposes the change, while Jujutsu remains honest if unavailable.
     assert!(!checkpoint.status.is_clean());
     assert!(checkpoint.diff.files_changed > 0);
     assert!(detect_jujutsu_workspace(&repo).is_repo());
@@ -192,16 +187,16 @@ fn git_jujutsu_checkpoint_and_path_safety_are_structured() {
         JujutsuWorkflowResult::Ok { .. } | JujutsuWorkflowResult::Unavailable { .. }
     ));
 
-    // When: an inspection path attempts to escape the workspace.
+    // act — an inspection path attempts to escape the workspace.
     let err = collect_vcs_diff(&repo, Some("../outside")).expect_err("traversal must fail");
 
-    // Then: the inspection boundary rejects it before invoking Git on the path.
+    // assert — the inspection boundary rejects it before invoking Git on the path.
     assert!(matches!(err, VcsError::PathTraversal { .. }));
 }
 
 #[test]
 fn attribution_survives_restart_supports_blame_and_revert() {
-    // Given: an agent edit recorded in a workspace journal.
+    // arrange — an agent edit recorded in a workspace journal.
     let temp = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp.path().join("workspace");
     let path = workspace.join("src/lib.rs");
@@ -213,13 +208,13 @@ fn attribution_survives_restart_supports_blame_and_revert() {
         .unwrap_or_abort();
     fs::write(&path, "external\n").unwrap_or_abort();
 
-    // When: a reopened journal inspects drift and restores its checkpoint.
+    // act — a reopened journal inspects drift and restores its checkpoint.
     let mut reopened = EditAttributionJournal::open(&workspace).unwrap_or_abort();
     let diff = reopened.diff("src/lib.rs").unwrap_or_abort();
     let blame = reopened.blame("src/lib.rs").unwrap_or_abort();
     let reverted = reopened.revert_path("src/lib.rs").unwrap_or_abort();
 
-    // Then: attribution survives restart and revert restores the agent snapshot.
+    // assert — attribution survives restart and revert restores the agent snapshot.
     assert!(diff.drifted);
     assert_eq!(blame.external_lines, 1);
     assert_eq!(reverted.bytes_written, b"agent\n".len());
@@ -233,7 +228,7 @@ fn attribution_survives_restart_supports_blame_and_revert() {
 #[cfg(unix)]
 #[test]
 fn attribution_revert_rejects_symlink_that_escapes_workspace() {
-    // Given: a journal path whose final component is a symlink to an external file.
+    // arrange — a journal path whose final component is a symlink to an external file.
     use std::os::unix::fs::symlink;
 
     let temp = tempfile::tempdir().unwrap_or_abort();
@@ -249,19 +244,19 @@ fn attribution_revert_rejects_symlink_that_escapes_workspace() {
     fs::write(&outside, "outside\n").unwrap_or_abort();
     symlink(&outside, workspace.join("src/escape.rs")).unwrap_or_abort();
 
-    // When: a revert targets the symlink.
+    // act — a revert targets the symlink.
     let err = journal
         .revert_path("src/escape.rs")
         .expect_err("symlink escape must be rejected");
 
-    // Then: the external target is never followed or overwritten.
+    // assert — the external target is never followed or overwritten.
     assert!(matches!(err, EditAttributionError::InvalidPath { .. }));
     assert_eq!(fs::read(&outside).unwrap_or_abort(), b"outside\n");
 }
 
 #[test]
 fn sandbox_profiles_and_network_status_are_truthful_on_every_platform() {
-    // Given: explicit roots and every supported platform surface.
+    // arrange — explicit roots and every supported platform surface.
     let temp = tempfile::tempdir().unwrap_or_abort();
     let roots = SandboxPathRoots {
         workspace_root: temp.path().join("workspace"),
@@ -269,7 +264,7 @@ fn sandbox_profiles_and_network_status_are_truthful_on_every_platform() {
         temp_dir: temp.path().join("temporary"),
     };
 
-    // When: sandbox profiles and deny-network readiness are evaluated.
+    // act — sandbox profiles and deny-network readiness are evaluated.
     for platform in [
         SandboxPlatform::Linux,
         SandboxPlatform::Macos,
@@ -287,7 +282,7 @@ fn sandbox_profiles_and_network_status_are_truthful_on_every_platform() {
         reason: "contract probe".to_string(),
     };
 
-    // Then: non-Linux and unsupported Linux never claim deny-network enforcement.
+    // assert — non-Linux and unsupported Linux never claim deny-network enforcement.
     assert!(matches!(
         evaluate_network_confinement_with_landlock(
             &SandboxNetworkPolicy::DenyAll,

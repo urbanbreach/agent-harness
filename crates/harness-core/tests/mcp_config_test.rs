@@ -229,55 +229,20 @@ fn integrations_mcp_rejects_invalid_server_ids() {
     let err = load_config_from_str(
         r#"
         {
-          providers: {
-            default: {
-              type: "openai_compatible",
-              base_url: "http://127.0.0.1:8317/v1",
-              api_key: "test-key",
-              api_mode: "responses",
-              timeout_ms: 60000,
+          provider: {
+            test: {
+              type: "anthropic_messages",
+              apiKey: "test-key",
               models: {
-                "gpt-5.4-mini": {
-                  display_name: "GPT-5.4 Mini",
-                },
+                model: { name: "Test Model" },
               },
             },
           },
-          agents: {
-            deep: {
-              description: "Deep work",
-              model_ref: "default:gpt-5.4-mini",
-              tools: ["fs.read"],
-            },
-          },
-          permissions: {
-            defaults: {
-              edit: "ask",
-              shell: "ask",
-              network: "deny",
-            },
-          },
-          runtime: {
-            background_tasks: {
-              default_concurrency: 2,
-              provider_concurrency: 2,
-              model_concurrency: 2,
-              stale_timeout_ms: 15000,
-              message_staleness_timeout_ms: 5000,
-            },
-            session_dir: ".agent-harness/sessions",
-          },
-          integrations: {
-            remote_search: {
-              endpoint: "https://mcp.exa.ai/mcp",
-            },
-            mcp: {
-              servers: {
-                "bad.name": {
-                  transport: "http",
-                  endpoint: "https://example.test/mcp",
-                },
-              },
+          model: "test/model",
+          mcp: {
+            "bad.name": {
+              transport: "http",
+              endpoint: "https://example.test/mcp",
             },
           },
         }
@@ -285,5 +250,8 @@ fn integrations_mcp_rejects_invalid_server_ids() {
     )
     .expect_err("invalid MCP server ids should fail validation");
 
-    assert!(err.to_string().contains("invalid server id"));
+    assert!(
+        err.to_string().contains("invalid server id"),
+        "unexpected validation error: {err}"
+    );
 }

@@ -141,6 +141,7 @@ fn resume_plan_reconstructs_sequence_and_id_watermarks() {
 
 #[test]
 fn resume_plan_accepts_supported_named_subagent_bindings() {
+    // arrange
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_dir = temp_dir.path().join("run_resume_supported_subagent");
     write_events(
@@ -189,8 +190,10 @@ fn resume_plan_accepts_supported_named_subagent_bindings() {
         ],
     );
 
+    // act
     let plan = inspect_resume_plan(&run_dir);
 
+    // assert
     assert!(plan.is_resumable, "{:?}", plan.resume_disabled_reason);
     assert_eq!(plan.resume_disabled_reason, None);
 }

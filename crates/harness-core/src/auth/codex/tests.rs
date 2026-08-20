@@ -191,7 +191,7 @@ async fn codex_device_flow_polls_pending_then_exchanges_and_stores_credential() 
             serde_json::json!({
                 "device_auth_id": "device-123",
                 "user_code": "USER-123",
-                "interval": 1
+                "interval": "1"
             })
             .to_string(),
         ),

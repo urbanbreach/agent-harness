@@ -38,7 +38,7 @@ fn envelope(seq: u64, payload: EventV1) -> EventEnvelopeV1 {
 
 #[test]
 fn attachment_event_round_trips_without_raw_content_or_path() {
-    // Given: attachment bytes and a workspace path that must never enter the event.
+    // arrange — attachment bytes and a workspace path that must never enter the event.
     let path = std::path::Path::new("/workspace/private/secret.png");
     let first = metadata("first", Some(path), b"secret-pixels");
     let second = metadata("second", None, b"more-secret-pixels");
@@ -47,11 +47,11 @@ fn attachment_event_round_trips_without_raw_content_or_path() {
         attachments: vec![first.clone(), second.clone()],
     });
 
-    // When: the event is serialized and restored through the public schema.
+    // act — the event is serialized and restored through the public schema.
     let encoded = serde_json::to_string(&event).expect("attachment event serializes");
     let decoded: EventV1 = serde_json::from_str(&encoded).expect("attachment event restores");
 
-    // Then: metadata and submission order survive, while source details do not.
+    // assert — metadata and submission order survive, while source details do not.
     assert!(!encoded.contains("secret-pixels"));
     assert!(!encoded.contains("/workspace/private/secret.png"));
     assert_eq!(decoded, event);
@@ -63,7 +63,7 @@ fn attachment_event_round_trips_without_raw_content_or_path() {
 
 #[test]
 fn checkpoint_and_projection_preserve_submission_order() {
-    // Given: a prompt followed by a stable, ordered attachment event.
+    // arrange — a prompt followed by a stable, ordered attachment event.
     let first = metadata("z-last", None, b"z");
     let second = metadata("a-first", None, b"a");
     let events = vec![
@@ -83,7 +83,7 @@ fn checkpoint_and_projection_preserve_submission_order() {
         ),
     ];
 
-    // When: replay derives both a checkpoint and a transcript projection.
+    // act — replay derives both a checkpoint and a transcript projection.
     let checkpoint = checkpoint_attachments(&events, 2);
     let projection = project_transcript(&events).expect("attachment projection succeeds");
     let projected_user = projection
@@ -92,7 +92,7 @@ fn checkpoint_and_projection_preserve_submission_order() {
         .find(|message| message.role == ProjectedMessageRole::User)
         .expect("user message is projected");
 
-    // Then: the original submission order is retained at every replay surface.
+    // assert — the original submission order is retained at every replay surface.
     let checkpoint_ids: Vec<_> = checkpoint
         .for_request("req-1")
         .expect("request checkpoint")
@@ -114,7 +114,7 @@ fn checkpoint_and_projection_preserve_submission_order() {
 
 #[test]
 fn replay_checkpoint_does_not_read_deleted_source_files() {
-    // Given: metadata was created before its source file was removed.
+    // arrange — metadata was created before its source file was removed.
     let directory = tempfile::tempdir().expect("temporary directory");
     let path = directory.path().join("removed.png");
     fs::write(&path, b"source bytes").expect("source file writes");
@@ -128,10 +128,10 @@ fn replay_checkpoint_does_not_read_deleted_source_files() {
         }),
     )];
 
-    // When: replay reads only the append-only metadata checkpoint.
+    // act — replay reads only the append-only metadata checkpoint.
     let checkpoint = checkpoint_attachments(&events, 1);
 
-    // Then: replay remains deterministic after the source disappears.
+    // assert — replay remains deterministic after the source disappears.
     assert_eq!(
         checkpoint.for_request("req-1"),
         Some(&[attachment] as &[AttachmentMetadata])

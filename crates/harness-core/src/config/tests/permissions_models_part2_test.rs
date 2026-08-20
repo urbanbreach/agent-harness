@@ -3,7 +3,7 @@ use crate::UnwrapOrAbort;
 
 #[test]
 fn legacy_provider_name_and_options_normalize_to_runtime_shape() {
-    // Given
+    // arrange
     let cfg = r#"
         {
           provider: {
@@ -24,10 +24,10 @@ fn legacy_provider_name_and_options_normalize_to_runtime_shape() {
         }
         "#;
 
-    // When
+    // act
     let parsed = load_config_from_str(cfg).unwrap_or_abort();
 
-    // Then
+    // assert
     let ProviderConfig::OpenAiCompatible(provider) = &parsed.providers["default"] else {
         panic!("expected OpenAiCompatible");
     };

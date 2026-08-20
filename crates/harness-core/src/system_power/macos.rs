@@ -216,7 +216,14 @@ mod tests {
 
     #[test]
     fn dark_wake_has_cpu_without_video() {
-        assert_eq!(classify_capabilities(CAPABILITY_CPU), PowerState::DarkWake);
+        // arrange
+        let cpu_only = CAPABILITY_CPU;
+
+        // act
+        let state = classify_capabilities(cpu_only);
+
+        // assert
+        assert_eq!(state, PowerState::DarkWake);
         assert_eq!(
             classify_capabilities(CAPABILITY_CPU | CAPABILITY_VIDEO),
             PowerState::FullWake
@@ -226,7 +233,13 @@ mod tests {
 
     #[test]
     fn idle_sleep_and_cancelled_sleep_map_to_gate_transitions() {
-        assert_eq!(map_message(CAN_SLEEP), (Some(PowerEvent::WillSleep), true));
+        // arrange
+
+        // act
+        let idle_sleep = map_message(CAN_SLEEP);
+
+        // assert
+        assert_eq!(idle_sleep, (Some(PowerEvent::WillSleep), true));
         assert_eq!(
             map_message(WILL_NOT_SLEEP),
             (Some(PowerEvent::DidWake), false)

@@ -6,6 +6,7 @@ mod parity_contracts {
 
     #[tokio::test]
     async fn permission_approval_precedes_execution_and_run_grant_is_remembered() {
+        // arrange
         let temp = tempfile::tempdir().unwrap_or_abort();
         let coordinator = test_agent_tool_coordinator(
             temp.path(),
@@ -74,6 +75,7 @@ mod parity_contracts {
         common::wait_for_tool_call_finish(&run.events_path, &second).await;
         coordinator.stop_run().await.unwrap_or_abort();
 
+        // act
         let events = load_events(&run.events_path);
         let requested = events
             .iter()
@@ -97,6 +99,7 @@ mod parity_contracts {
                 EventV1::PermissionResolved(data) if data.decision == EventPermissionDecision::Allow
             )
         });
+        // assert
         assert_eq!(requested, 1, "the run-scoped shell grant must be reused");
         assert!(requested_seq.unwrap_or_abort().seq < resolved_seq.unwrap_or_abort().seq);
         assert!(resolved_seq.unwrap_or_abort().seq < first_finished.unwrap_or_abort().seq);
@@ -104,6 +107,7 @@ mod parity_contracts {
 
     #[tokio::test]
     async fn question_answer_routes_through_permission_resolution() {
+        // arrange
         let temp = tempfile::tempdir().unwrap_or_abort();
         let coordinator = test_coordinator(temp.path());
         let run = coordinator
@@ -131,6 +135,7 @@ mod parity_contracts {
                 .any(|event| matches!(&event.payload, EventV1::PermissionRequested(_)))
         })
         .await;
+        // act
         let permission_id = events
             .iter()
             .find_map(|event| match &event.payload {
@@ -146,6 +151,7 @@ mod parity_contracts {
             )
             .await
             .unwrap_or_abort();
+        // assert
         assert_eq!(
             answer_task.await.unwrap_or_abort().unwrap_or_abort(),
             vec![vec!["Yes"]]
@@ -156,6 +162,7 @@ mod parity_contracts {
     #[tokio::test]
     async fn foreground_child_can_demote_then_cancel_with_owner_receipt_and_no_redelegation_bypass()
     {
+        // arrange
         let temp = tempfile::tempdir().unwrap_or_abort();
         let coordinator = test_agent_coordinator(temp.path(), Duration::from_millis(250));
         let run = coordinator
@@ -197,6 +204,7 @@ mod parity_contracts {
             ))
         })
         .await;
+        // act
         let task_id = events
             .iter()
             .find_map(|event| match &event.payload {
@@ -208,6 +216,7 @@ mod parity_contracts {
                 _ => None,
             })
             .unwrap_or_abort();
+        // assert
         assert_eq!(
             coordinator
                 .background_foreground_child_tasks()
@@ -246,6 +255,6 @@ mod parity_contracts {
 
     mod recurring_and_team {
         use super::*;
-        include!("orchestration_scheduler_permission_parity/recurring_and_team.rs");
+        include!("orchestration_scheduler_permission_parity/recurring_and_team_test.rs");
     }
 }

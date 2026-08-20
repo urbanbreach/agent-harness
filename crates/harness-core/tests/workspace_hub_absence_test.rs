@@ -30,6 +30,7 @@ use tempfile::tempdir;
 /// probe_workspace_hub_product, walk_workspace_hub_*) are removed.
 #[test]
 fn workspace_hub_module_has_no_remote_public_surface() {
+    // arrange
     // The module still exists (aggregator lib.rs still declares it until
     // Task 17 removes the declaration), but it must not export any remote
     // types or functions. We verify absence by checking that the source file
@@ -63,7 +64,9 @@ fn workspace_hub_module_has_no_remote_public_surface() {
         "DEFAULT_WORKSPACE_HUB_RECOVER_PROBES",
     ];
 
+    // act
     for symbol in &remote_symbols {
+        // assert
         assert!(
             !source.contains(symbol),
             "remote workspace hub symbol `{symbol}` must be absent from workspace_hub.rs"
@@ -75,6 +78,7 @@ fn workspace_hub_module_has_no_remote_public_surface() {
 /// network process-spawning code.
 #[test]
 fn workspace_hub_module_has_no_curl_or_network_code() {
+    // arrange
     let source = include_str!("../src/workspace_hub.rs");
 
     let forbidden_patterns = [
@@ -90,7 +94,9 @@ fn workspace_hub_module_has_no_curl_or_network_code() {
         "UdpSocket",
     ];
 
+    // act
     for pattern in &forbidden_patterns {
+        // assert
         assert!(
             !source.contains(pattern),
             "network/curl pattern `{pattern}` must be absent from workspace_hub.rs"

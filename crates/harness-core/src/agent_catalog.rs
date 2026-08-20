@@ -291,7 +291,7 @@ mod tests {
 
     #[test]
     fn catalog_contains_primary_and_named_subagents() {
-        // Given
+        // arrange
         let config = load_config_from_str(
             r#"
             {
@@ -318,10 +318,10 @@ mod tests {
         )
         .unwrap_or_abort();
 
-        // When
+        // act
         let catalog = resolve_agent_catalog(&config);
 
-        // Then
+        // assert
         assert_eq!(
             catalog
                 .entries

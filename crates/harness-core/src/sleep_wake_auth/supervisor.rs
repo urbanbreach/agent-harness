@@ -458,7 +458,7 @@ fn emit_refresh_result(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
     use super::*;
     use crate::sleep_wake_auth::HookSleepWakeEventSource;
@@ -476,6 +476,7 @@ mod tests {
     struct BlockingRefresher {
         started: tokio::sync::Notify,
         release: tokio::sync::Notify,
+        completed: AtomicBool,
     }
 
     #[async_trait]
@@ -483,6 +484,7 @@ mod tests {
         async fn refresh_near_expiry(&self, _leeway: Duration) -> CredentialRefreshResult {
             self.started.notify_one();
             self.release.notified().await;
+            self.completed.store(true, Ordering::SeqCst);
             CredentialRefreshResult::Completed
         }
     }
@@ -504,6 +506,7 @@ mod tests {
 
     #[tokio::test]
     async fn dark_wake_does_not_start_credential_refresh() {
+        // arrange
         let (source, injector) = HookSleepWakeEventSource::open();
         let refresher = Arc::new(CountingRefresher(AtomicUsize::new(0)));
         let mut supervisor = SleepWakeSupervisor::start_with_source(
@@ -512,10 +515,12 @@ mod tests {
             config(PowerState::DarkWake),
         )
         .unwrap();
+        // act
         let mut events = supervisor.subscribe();
         injector
             .inject(super::super::SleepWakeHostEvent::Wake)
             .unwrap();
+        // assert
         assert_eq!(
             events.recv().await.unwrap(),
             SleepWakeSupervisorEvent::WakeDark
@@ -526,6 +531,7 @@ mod tests {
 
     #[tokio::test]
     async fn unknown_power_state_preserves_wake_refresh_behavior() {
+        // arrange
         let (source, injector) = HookSleepWakeEventSource::open();
         let refresher = Arc::new(CountingRefresher(AtomicUsize::new(0)));
         let mut supervisor = SleepWakeSupervisor::start_with_source(
@@ -534,10 +540,12 @@ mod tests {
             config(PowerState::Unknown),
         )
         .unwrap();
+        // act
         let mut events = supervisor.subscribe();
         injector
             .inject(super::super::SleepWakeHostEvent::Wake)
             .unwrap();
+        // assert
         assert_eq!(
             events.recv().await.unwrap(),
             SleepWakeSupervisorEvent::WakeUnknown
@@ -556,14 +564,17 @@ mod tests {
 
     #[tokio::test]
     async fn shutdown_releases_process_registration_for_the_next_supervisor() {
+        // arrange
         let (source, _injector) = HookSleepWakeEventSource::open();
         let refresher = Arc::new(CountingRefresher(AtomicUsize::new(0)));
+        // act
         let mut first = SleepWakeSupervisor::start_with_source(
             Box::new(source),
             refresher_source(&refresher),
             config(PowerState::FullWake),
         )
         .unwrap();
+        // assert
         assert!(matches!(
             SleepWakeSupervisor::start_with_source(
                 Box::new(HookSleepWakeEventSource::open().0),
@@ -585,10 +596,12 @@ mod tests {
 
     #[tokio::test]
     async fn sleep_gate_waits_only_for_the_platform_budget_then_preserves_refresh_completion() {
+        // arrange
         let (source, injector) = HookSleepWakeEventSource::open();
         let refresher = Arc::new(BlockingRefresher {
             started: tokio::sync::Notify::new(),
             release: tokio::sync::Notify::new(),
+            completed: AtomicBool::new(false),
         });
         let mut supervisor = SleepWakeSupervisor::start_with_source(
             Box::new(source),
@@ -596,10 +609,12 @@ mod tests {
             config(PowerState::FullWake),
         )
         .unwrap();
+        // act
         let mut events = supervisor.subscribe();
         injector
             .inject(super::super::SleepWakeHostEvent::Wake)
             .unwrap();
+        // assert
         assert_eq!(
             events.recv().await.unwrap(),
             SleepWakeSupervisorEvent::WakeFull
@@ -630,10 +645,12 @@ mod tests {
 
     #[tokio::test]
     async fn shutdown_cancels_a_refresh_that_cannot_finish_within_its_budget() {
+        // arrange
         let (source, injector) = HookSleepWakeEventSource::open();
         let refresher = Arc::new(BlockingRefresher {
             started: tokio::sync::Notify::new(),
             release: tokio::sync::Notify::new(),
+            completed: AtomicBool::new(false),
         });
         let mut supervisor = SleepWakeSupervisor::start_with_source(
             Box::new(source),
@@ -645,14 +662,22 @@ mod tests {
             .inject(super::super::SleepWakeHostEvent::Wake)
             .unwrap();
         refresher.started.notified().await;
+
+        // act
         supervisor.shutdown().await;
+
+        // assert
+        assert!(!refresher.completed.load(Ordering::SeqCst));
     }
 
     #[test]
     fn supervisor_events_do_not_include_credential_material() {
-        assert_eq!(
-            format!("{:?}", SleepWakeSupervisorEvent::RefreshFailed),
-            "RefreshFailed"
-        );
+        // arrange
+
+        // act
+        let rendered = format!("{:?}", SleepWakeSupervisorEvent::RefreshFailed);
+
+        // assert
+        assert_eq!(rendered, "RefreshFailed");
     }
 }

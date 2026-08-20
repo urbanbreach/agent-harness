@@ -244,6 +244,9 @@ pub(super) async fn static_deny_overrides_permission_grant() {
             ..ProfilePermissions::default()
         },
     );
+    config
+        .agent_profiles
+        .insert("locked".to_string(), test_agent_profile("locked"));
 
     let handle = spawn_coordinator(
         config,
@@ -252,6 +255,10 @@ pub(super) async fn static_deny_overrides_permission_grant() {
     );
     let run = handle
         .start_run("static_deny", temp_dir.path())
+        .await
+        .unwrap_or_abort();
+    let locked_agent_id = handle
+        .spawn_agent_idle(EventActor::new(ActorKind::Supervisor, None), "locked", None)
         .await
         .unwrap_or_abort();
 
@@ -307,8 +314,8 @@ pub(super) async fn static_deny_overrides_permission_grant() {
 
     let denied = handle
         .request_tool_call(
-            actor,
-            Some("locked".to_string()),
+            EventActor::new(ActorKind::Supervisor, Some(locked_agent_id)),
+            None,
             "shell.run",
             json!({"cmd": "echo durable"}),
         )

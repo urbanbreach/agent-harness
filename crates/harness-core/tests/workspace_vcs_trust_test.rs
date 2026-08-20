@@ -99,17 +99,17 @@ fn managed_slugs(repo: &Path) -> Vec<String> {
 
 #[test]
 fn isolated_real_git_worktree_create_list_remove_cleanup_journey() {
-    // Given: a real git repo
+    // arrange — a real git repo
     let temp = tempfile::tempdir().unwrap_or_abort();
     let repo = temp.path().join("repo");
     fs::create_dir_all(&repo).unwrap_or_abort();
     init_git_repo(&repo);
 
-    // When: create two isolated worktrees
+    // act — create two isolated worktrees
     let alpha = create_slug(&repo, "iso-alpha");
     let beta = create_slug(&repo, "iso-beta");
 
-    // Then: both exist with distinct paths and branches
+    // assert — both exist with distinct paths and branches
     assert!(alpha.join("README.md").is_file());
     assert!(beta.join("README.md").is_file());
     assert_ne!(alpha, beta);
@@ -123,13 +123,13 @@ fn isolated_real_git_worktree_create_list_remove_cleanup_journey() {
     ));
     assert_eq!(managed_slugs(&repo), vec!["iso-alpha", "iso-beta"]);
 
-    // When: list via VCS status on one worktree
+    // act — list via VCS status on one worktree
     fs::write(alpha.join("new-file.txt"), "content\n").unwrap_or_abort();
     let status = collect_vcs_status(&alpha).unwrap_or_abort();
     assert!(!status.is_clean());
     assert!(status.entries.iter().any(|e| e.path == "new-file.txt"));
 
-    // When: remove one worktree by slug
+    // act — remove one worktree by slug
     remove_session_worktree(RemoveWorktreeOptions {
         repository_root: &repo,
         path: &alpha,
@@ -139,7 +139,7 @@ fn isolated_real_git_worktree_create_list_remove_cleanup_journey() {
     })
     .unwrap_or_abort();
 
-    // Then: only beta remains
+    // assert — only beta remains
     assert!(!alpha.exists());
     assert!(!branch_exists(
         &repo,
@@ -147,7 +147,7 @@ fn isolated_real_git_worktree_create_list_remove_cleanup_journey() {
     ));
     assert_eq!(managed_slugs(&repo), vec!["iso-beta"]);
 
-    // When: cleanup all remaining
+    // act — cleanup all remaining
     let listed = list_session_worktrees(&repo, None).unwrap_or_abort();
     for entry in listed.iter().filter(|e| e.harness_managed) {
         remove_session_worktree(RemoveWorktreeOptions {
@@ -160,7 +160,7 @@ fn isolated_real_git_worktree_create_list_remove_cleanup_journey() {
         .unwrap_or_abort();
     }
 
-    // Then: nothing managed remains
+    // assert — nothing managed remains
     assert!(managed_slugs(&repo).is_empty());
     assert!(!beta.exists());
 }
@@ -171,16 +171,16 @@ fn isolated_real_git_worktree_create_list_remove_cleanup_journey() {
 
 #[test]
 fn collision_rollback_on_path_and_branch_conflicts() {
-    // Given
+    // arrange
     let temp = tempfile::tempdir().unwrap_or_abort();
     let repo = temp.path().join("repo");
     fs::create_dir_all(&repo).unwrap_or_abort();
     init_git_repo(&repo);
 
-    // When: create first worktree
+    // act — create first worktree
     create_slug(&repo, "collision-test");
 
-    // Then: second create with same slug fails with PathCollision
+    // assert — second create with same slug fails with PathCollision
     let err = create_session_worktree(CreateWorktreeOptions {
         repository_root: &repo,
         worktree_parent: None,
@@ -190,7 +190,7 @@ fn collision_rollback_on_path_and_branch_conflicts() {
     .expect_err("path collision should fail");
     assert!(matches!(err, WorktreeError::PathCollision { .. }));
 
-    // When: pre-existing branch collision
+    // act — pre-existing branch collision
     run_git(
         &repo,
         &["branch", &format!("{WORKTREE_BRANCH_PREFIX}preexist")],
@@ -211,13 +211,13 @@ fn collision_rollback_on_path_and_branch_conflicts() {
 
 #[test]
 fn collision_rollback_on_invalid_start_point() {
-    // Given
+    // arrange
     let temp = tempfile::tempdir().unwrap_or_abort();
     let repo = temp.path().join("repo");
     fs::create_dir_all(&repo).unwrap_or_abort();
     init_git_repo(&repo);
 
-    // When: create with invalid start_point
+    // act — create with invalid start_point
     let err = create_session_worktree(CreateWorktreeOptions {
         repository_root: &repo,
         worktree_parent: None,
@@ -226,7 +226,7 @@ fn collision_rollback_on_invalid_start_point() {
     })
     .expect_err("invalid start_point should roll back");
 
-    // Then: rolled back, no partial state
+    // assert — rolled back, no partial state
     assert!(matches!(err, WorktreeError::RolledBack { .. }));
     assert!(!repo
         .join(DEFAULT_WORKTREE_RELATIVE_BASE)
@@ -244,7 +244,7 @@ fn collision_rollback_on_invalid_start_point() {
 
 #[test]
 fn cow_fast_path_returns_structured_availability_with_safe_fallback() {
-    // Given
+    // arrange
     let temp = tempfile::tempdir().unwrap_or_abort();
     let repo = temp.path().join("repo");
     fs::create_dir_all(&repo).unwrap_or_abort();
@@ -252,14 +252,14 @@ fn cow_fast_path_returns_structured_availability_with_safe_fallback() {
     fs::write(repo.join(".harness-cow-overlay"), b"cow-payload\n").unwrap_or_abort();
     let created = create_slug(&repo, "cow-test");
 
-    // When: apply COW fastpath
+    // act — apply COW fastpath
     let report = cow_worktree::apply_cow_worktree_fastpath(
         &repo,
         &created,
         &[".harness-cow-overlay", "absent.bin"],
     );
 
-    // Then: structured availability (never panics), missing overlay is unavailable
+    // assert — structured availability (never panics), missing overlay is unavailable
     assert!(report.availability.is_available() || report.availability.is_unavailable());
     assert_eq!(report.overlays.len(), 2);
     assert!(report.overlays[1].is_unavailable());
@@ -278,7 +278,7 @@ fn cow_fast_path_returns_structured_availability_with_safe_fallback() {
 
 #[test]
 fn vcs_status_reports_modified_untracked_and_deleted_files() {
-    // Given
+    // arrange
     let temp = tempfile::tempdir().unwrap_or_abort();
     let repo = temp.path().join("repo");
     fs::create_dir_all(&repo).unwrap_or_abort();
@@ -287,14 +287,14 @@ fn vcs_status_reports_modified_untracked_and_deleted_files() {
     run_git(&repo, &["add", "tracked.txt"]);
     run_git(&repo, &["commit", "-m", "add tracked"]);
 
-    // When: modify tracked, add untracked, delete a file
+    // act — modify tracked, add untracked, delete a file
     fs::write(repo.join("tracked.txt"), "modified\n").unwrap_or_abort();
     fs::write(repo.join("untracked.txt"), "new\n").unwrap_or_abort();
     fs::remove_file(repo.join("README.md")).unwrap_or_abort();
 
     let status = collect_vcs_status(&repo).unwrap_or_abort();
 
-    // Then
+    // assert
     assert!(!status.is_clean());
     let paths: Vec<&str> = status.entries.iter().map(|e| e.path.as_str()).collect();
     assert!(paths.contains(&"tracked.txt"));
@@ -307,7 +307,7 @@ fn vcs_status_reports_modified_untracked_and_deleted_files() {
 
 #[test]
 fn vcs_diff_reports_insertions_and_deletions() {
-    // Given
+    // arrange
     let temp = tempfile::tempdir().unwrap_or_abort();
     let repo = temp.path().join("repo");
     fs::create_dir_all(&repo).unwrap_or_abort();
@@ -316,13 +316,13 @@ fn vcs_diff_reports_insertions_and_deletions() {
     run_git(&repo, &["add", "src.rs"]);
     run_git(&repo, &["commit", "-m", "add src"]);
 
-    // When: modify and stage
+    // act — modify and stage
     fs::write(repo.join("src.rs"), "fn new() {}\nfn extra() {}\n").unwrap_or_abort();
     run_git(&repo, &["add", "src.rs"]);
 
     let diff = collect_vcs_diff(&repo, Some("src.rs")).unwrap_or_abort();
 
-    // Then
+    // assert
     assert!(!diff.is_empty());
     assert_eq!(diff.path, "src.rs");
     assert!(diff.insertions > 0);
@@ -331,7 +331,7 @@ fn vcs_diff_reports_insertions_and_deletions() {
 
 #[test]
 fn vcs_snapshot_combines_status_and_diff() {
-    // Given
+    // arrange
     let temp = tempfile::tempdir().unwrap_or_abort();
     let repo = temp.path().join("repo");
     fs::create_dir_all(&repo).unwrap_or_abort();
@@ -339,25 +339,25 @@ fn vcs_snapshot_combines_status_and_diff() {
     fs::write(repo.join("changed.rs"), "pub fn x() {}\n").unwrap_or_abort();
     run_git(&repo, &["add", "changed.rs"]);
 
-    // When
+    // act
     let snapshot = collect_vcs_snapshot(&repo).unwrap_or_abort();
 
-    // Then
+    // assert
     assert!(!snapshot.status.is_clean());
     assert!(snapshot.diff.files_changed > 0);
 }
 
 #[test]
 fn vcs_status_fails_closed_on_non_git_repository() {
-    // Given
+    // arrange
     let temp = tempfile::tempdir().unwrap_or_abort();
     let not_a_repo = temp.path().join("plain");
     fs::create_dir_all(&not_a_repo).unwrap_or_abort();
 
-    // When
+    // act
     let err = collect_vcs_status(&not_a_repo).expect_err("non-git should fail");
 
-    // Then
+    // assert
     assert!(matches!(err, VcsError::NotAGitRepository { .. }));
 }
 
@@ -367,35 +367,35 @@ fn vcs_status_fails_closed_on_non_git_repository() {
 
 #[test]
 fn vcs_diff_rejects_path_traversal_attempts() {
-    // Given
+    // arrange
     let temp = tempfile::tempdir().unwrap_or_abort();
     let repo = temp.path().join("repo");
     fs::create_dir_all(&repo).unwrap_or_abort();
     init_git_repo(&repo);
 
-    // When: attempt traversal via relative path
+    // act — attempt traversal via relative path
     let err = collect_vcs_diff(&repo, Some("../etc/passwd")).expect_err("traversal must fail");
 
-    // Then
+    // assert
     assert!(matches!(err, VcsError::PathTraversal { .. }));
 
-    // When: attempt absolute path
+    // act — attempt absolute path
     let err = collect_vcs_diff(&repo, Some("/etc/passwd")).expect_err("absolute path must fail");
 
-    // Then
+    // assert
     assert!(matches!(err, VcsError::PathTraversal { .. }));
 }
 
 #[test]
 fn worktree_remove_rejects_paths_outside_session_parent() {
-    // Given
+    // arrange
     let temp = tempfile::tempdir().unwrap_or_abort();
     let repo = temp.path().join("repo");
     fs::create_dir_all(&repo).unwrap_or_abort();
     init_git_repo(&repo);
     create_slug(&repo, "safe-slug");
 
-    // When: attempt to remove a path outside the worktree parent
+    // act — attempt to remove a path outside the worktree parent
     let outside = temp.path().join("outside");
     fs::create_dir_all(&outside).unwrap_or_abort();
     let err = remove_session_worktree(RemoveWorktreeOptions {
@@ -407,19 +407,19 @@ fn worktree_remove_rejects_paths_outside_session_parent() {
     })
     .expect_err("outside parent must be refused");
 
-    // Then
+    // assert
     assert!(matches!(err, WorktreeError::UnsafeRemovePath { .. }));
 }
 
 #[test]
 fn worktree_remove_refuses_primary_worktree() {
-    // Given
+    // arrange
     let temp = tempfile::tempdir().unwrap_or_abort();
     let repo = temp.path().join("repo");
     fs::create_dir_all(&repo).unwrap_or_abort();
     init_git_repo(&repo);
 
-    // When: attempt to remove the primary worktree
+    // act — attempt to remove the primary worktree
     let err = remove_session_worktree(RemoveWorktreeOptions {
         repository_root: &repo,
         path: &repo,
@@ -429,7 +429,7 @@ fn worktree_remove_refuses_primary_worktree() {
     })
     .expect_err("primary worktree must be refused");
 
-    // Then
+    // assert
     assert!(matches!(err, WorktreeError::PrimaryWorktree { .. }));
 }
 
@@ -439,29 +439,29 @@ fn worktree_remove_refuses_primary_worktree() {
 
 #[test]
 fn folder_trust_persists_allow_and_deny_across_reopen() {
-    // Given
+    // arrange
     let temp = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp.path().join("project");
     fs::create_dir_all(&workspace).unwrap_or_abort();
 
-    // When: set Allow
+    // act — set Allow
     FolderTrustStore::for_workspace(&workspace)
         .set(&workspace, FolderTrustDecision::Allow)
         .unwrap_or_abort();
 
-    // Then: reopen reads Allow
+    // assert — reopen reads Allow
     let reopened = FolderTrustStore::for_workspace(&workspace);
     assert_eq!(
         reopened.get(&workspace).unwrap_or_abort(),
         Some(FolderTrustDecision::Allow)
     );
 
-    // When: change to Deny
+    // act — change to Deny
     reopened
         .set(&workspace, FolderTrustDecision::Deny)
         .unwrap_or_abort();
 
-    // Then: reopen reads Deny
+    // assert — reopen reads Deny
     let again = FolderTrustStore::for_workspace(&workspace);
     assert_eq!(
         again.get(&workspace).unwrap_or_abort(),
@@ -481,15 +481,15 @@ fn folder_trust_persists_allow_and_deny_across_reopen() {
 
 #[test]
 fn deny_before_spawn_blocks_repo_local_executable_without_trust() {
-    // Given: workspace with no trust entry
+    // arrange — workspace with no trust entry
     let temp = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp.path().join("ws");
     fs::create_dir_all(&workspace).unwrap_or_abort();
 
-    // When: gate a repo-local executable without trust
+    // act — gate a repo-local executable without trust
     let gate = gate_repository_local_executable("./scripts/tool.sh", &workspace, None);
 
-    // Then: denied before any spawn
+    // assert — denied before any spawn
     assert!(gate.is_denied());
     match gate {
         LocalExecutableGate::Denied { reason } => {
@@ -502,7 +502,7 @@ fn deny_before_spawn_blocks_repo_local_executable_without_trust() {
 
 #[test]
 fn deny_before_spawn_allows_when_trust_allow_persisted() {
-    // Given: workspace with Allow trust persisted
+    // arrange — workspace with Allow trust persisted
     let temp = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp.path().join("ws");
     fs::create_dir_all(&workspace).unwrap_or_abort();
@@ -510,17 +510,17 @@ fn deny_before_spawn_allows_when_trust_allow_persisted() {
         .set(&workspace, FolderTrustDecision::Allow)
         .unwrap_or_abort();
 
-    // When: gate through a fresh store instance (durable)
+    // act — gate through a fresh store instance (durable)
     let gate =
         gate_repository_local_executable_from_store("./bin/helper", &workspace).unwrap_or_abort();
 
-    // Then: allowed
+    // assert — allowed
     assert_eq!(gate, LocalExecutableGate::Allowed);
 }
 
 #[test]
 fn deny_before_spawn_blocks_when_trust_deny_persisted() {
-    // Given: workspace with Deny trust persisted
+    // arrange — workspace with Deny trust persisted
     let temp = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp.path().join("ws");
     fs::create_dir_all(&workspace).unwrap_or_abort();
@@ -528,20 +528,23 @@ fn deny_before_spawn_blocks_when_trust_deny_persisted() {
         .set(&workspace, FolderTrustDecision::Deny)
         .unwrap_or_abort();
 
-    // When: gate through a fresh store instance
+    // act — gate through a fresh store instance
     let gate =
         gate_repository_local_executable_from_store("./release/tool", &workspace).unwrap_or_abort();
 
-    // Then: denied
+    // assert — denied
     assert!(gate.is_denied());
 }
 
 #[test]
 fn bare_path_commands_are_not_gated_by_folder_trust() {
-    // Given
+    // arrange
+    // arrange
     let workspace = Path::new("/tmp/ws");
 
-    // When/Then: PATH-only commands are NotApplicable
+    // act
+    // act — /Then: PATH-only commands are NotApplicable
+    // assert
     assert_eq!(
         gate_repository_local_executable("git", workspace, None),
         LocalExecutableGate::NotApplicable
@@ -558,17 +561,17 @@ fn bare_path_commands_are_not_gated_by_folder_trust() {
 
 #[test]
 fn concurrent_worktrees_have_isolated_paths_branches_and_file_state() {
-    // Given
+    // arrange
     let temp = tempfile::tempdir().unwrap_or_abort();
     let repo = temp.path().join("repo");
     fs::create_dir_all(&repo).unwrap_or_abort();
     init_git_repo(&repo);
 
-    // When: create two concurrent worktrees
+    // act — create two concurrent worktrees
     let left = create_slug(&repo, "conc-left");
     let right = create_slug(&repo, "conc-right");
 
-    // Then: distinct paths and branches
+    // assert — distinct paths and branches
     assert_ne!(left, right);
     assert_ne!(
         format!("{WORKTREE_BRANCH_PREFIX}conc-left"),
@@ -588,7 +591,7 @@ fn concurrent_worktrees_have_isolated_paths_branches_and_file_state() {
 
 #[test]
 fn attribution_drift_detected_when_external_modification_after_agent_edit() {
-    // Given: agent writes a file
+    // arrange — agent writes a file
     let temp = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp.path().join("ws");
     fs::create_dir_all(&workspace).unwrap_or_abort();
@@ -600,12 +603,12 @@ fn attribution_drift_detected_when_external_modification_after_agent_edit() {
     fs::create_dir_all(workspace.join("src")).unwrap_or_abort();
     fs::write(workspace.join("src/main.rs"), b"fn main() { modified }\n").unwrap_or_abort();
 
-    // When: observe external change
+    // act — observe external change
     let observed = journal
         .observe_external("src/main.rs", b"fn main() { modified }\n", None)
         .unwrap_or_abort();
 
-    // Then: drift detected
+    // assert — drift detected
     assert_eq!(observed.source, EditSource::External);
     assert!(journal.tracker().is_drifted("src/main.rs"));
 
@@ -622,7 +625,7 @@ fn attribution_drift_detected_when_external_modification_after_agent_edit() {
 
 #[test]
 fn attribution_revert_restores_agent_snapshot_content() {
-    // Given: agent wrote content, then external modified it
+    // arrange — agent wrote content, then external modified it
     let temp = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp.path().join("ws");
     fs::create_dir_all(&workspace).unwrap_or_abort();
@@ -640,10 +643,10 @@ fn attribution_revert_restores_agent_snapshot_content() {
         .observe_external("src/lib.rs", external_content, None)
         .unwrap_or_abort();
 
-    // When: revert to agent snapshot
+    // act — revert to agent snapshot
     let result = journal.revert_path("src/lib.rs").unwrap_or_abort();
 
-    // Then: file content restored to agent version
+    // assert — file content restored to agent version
     let restored = fs::read(workspace.join("src/lib.rs")).unwrap_or_abort();
     assert_eq!(restored, agent_content);
     assert!(result.bytes_written > 0);
@@ -656,7 +659,7 @@ fn attribution_revert_restores_agent_snapshot_content() {
 
 #[test]
 fn attribution_journal_persists_across_reopen() {
-    // Given: journal with agent edit
+    // arrange — journal with agent edit
     let temp = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp.path().join("ws");
     fs::create_dir_all(&workspace).unwrap_or_abort();
@@ -667,10 +670,10 @@ fn attribution_journal_persists_across_reopen() {
             .unwrap_or_abort();
     }
 
-    // When: reopen the journal
+    // act — reopen the journal
     let reopened = EditAttributionJournal::open(&workspace).unwrap_or_abort();
 
-    // Then: the agent edit is still there
+    // assert — the agent edit is still there
     let entry = reopened.tracker().get("src/a.rs").expect("entry exists");
     assert_eq!(entry.source, EditSource::AgentTool);
     assert!(workspace.join(EDIT_ATTRIBUTION_JOURNAL_REL).is_file());
@@ -682,7 +685,7 @@ fn attribution_journal_persists_across_reopen() {
 
 #[test]
 fn cleanup_removes_all_managed_worktrees_and_branches() {
-    // Given: repo with three managed worktrees
+    // arrange — repo with three managed worktrees
     let temp = tempfile::tempdir().unwrap_or_abort();
     let repo = temp.path().join("repo");
     fs::create_dir_all(&repo).unwrap_or_abort();
@@ -693,7 +696,7 @@ fn cleanup_removes_all_managed_worktrees_and_branches() {
         .collect();
     assert_eq!(managed_slugs(&repo).len(), 3);
 
-    // When: cleanup all managed worktrees
+    // act — cleanup all managed worktrees
     let listed = list_session_worktrees(&repo, None).unwrap_or_abort();
     for entry in listed.iter().filter(|e| e.harness_managed) {
         remove_session_worktree(RemoveWorktreeOptions {
@@ -706,7 +709,7 @@ fn cleanup_removes_all_managed_worktrees_and_branches() {
         .unwrap_or_abort();
     }
 
-    // Then: all paths and branches are gone
+    // assert — all paths and branches are gone
     for path in &paths {
         assert!(!path.exists(), "path should be removed: {}", path.display());
     }
@@ -725,7 +728,7 @@ fn cleanup_removes_all_managed_worktrees_and_branches() {
 
 #[test]
 fn worktree_select_by_slug_removes_only_named_worktree() {
-    // Given: two worktrees
+    // arrange — two worktrees
     let temp = tempfile::tempdir().unwrap_or_abort();
     let repo = temp.path().join("repo");
     fs::create_dir_all(&repo).unwrap_or_abort();
@@ -733,7 +736,7 @@ fn worktree_select_by_slug_removes_only_named_worktree() {
     let alpha = create_slug(&repo, "select-alpha");
     let beta = create_slug(&repo, "select-beta");
 
-    // When: remove only beta by selecting its path from the list
+    // act — remove only beta by selecting its path from the list
     let listed = list_session_worktrees(&repo, None).unwrap_or_abort();
     let beta_entry = listed
         .iter()
@@ -748,7 +751,7 @@ fn worktree_select_by_slug_removes_only_named_worktree() {
     })
     .unwrap_or_abort();
 
-    // Then: alpha survives, beta is gone
+    // assert — alpha survives, beta is gone
     assert!(alpha.exists());
     assert!(!beta.exists());
     assert_eq!(managed_slugs(&repo), vec!["select-alpha"]);
@@ -760,14 +763,14 @@ fn worktree_select_by_slug_removes_only_named_worktree() {
 
 #[test]
 fn worktree_remove_unknown_slug_fails_closed() {
-    // Given
+    // arrange
     let temp = tempfile::tempdir().unwrap_or_abort();
     let repo = temp.path().join("repo");
     fs::create_dir_all(&repo).unwrap_or_abort();
     init_git_repo(&repo);
     let alpha = create_slug(&repo, "unknown-test");
 
-    // When: remove a non-existent slug path
+    // act — remove a non-existent slug path
     let ghost_path = repo.join(DEFAULT_WORKTREE_RELATIVE_BASE).join("ghost");
     let err = remove_session_worktree(RemoveWorktreeOptions {
         repository_root: &repo,
@@ -778,7 +781,7 @@ fn worktree_remove_unknown_slug_fails_closed() {
     })
     .expect_err("unknown slug should fail");
 
-    // Then: fails closed, existing worktree untouched
+    // assert — fails closed, existing worktree untouched
     assert!(matches!(err, WorktreeError::NotFound { .. }));
     assert!(alpha.exists());
 }

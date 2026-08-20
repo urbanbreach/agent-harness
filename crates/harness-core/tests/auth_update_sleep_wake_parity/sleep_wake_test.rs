@@ -23,7 +23,7 @@ impl SleepWakeCredentialRefresher for CountingRefresher {
 
 #[tokio::test]
 async fn process_supervisor_gates_sleep_dark_wake_and_refreshes_one_full_wake_once() {
-    // Given: a process-scoped supervisor whose power state transitions through sleep and dark wake.
+    // arrange — a process-scoped supervisor whose power state transitions through sleep and dark wake.
     let (source, injector) = HookSleepWakeEventSource::open();
     let state = Arc::new(Mutex::new(PowerState::DarkWake));
     let state_query = Arc::clone(&state);
@@ -40,7 +40,7 @@ async fn process_supervisor_gates_sleep_dark_wake_and_refreshes_one_full_wake_on
     .unwrap_or_abort();
     let mut events = supervisor.subscribe();
 
-    // When: sleep, dark wake, then one full wake are injected.
+    // act — sleep, dark wake, then one full wake are injected.
     injector.inject(SleepWakeHostEvent::Sleep).unwrap_or_abort();
     assert_eq!(
         events.recv().await.unwrap_or_abort(),
@@ -54,7 +54,7 @@ async fn process_supervisor_gates_sleep_dark_wake_and_refreshes_one_full_wake_on
     *state.lock().unwrap_or_abort() = PowerState::FullWake;
     injector.inject(SleepWakeHostEvent::Wake).unwrap_or_abort();
 
-    // Then: no unsafe refresh runs while sleeping/dark, exactly one wake refresh occurs, and a second monitor is refused.
+    // assert — no unsafe refresh runs while sleeping/dark, exactly one wake refresh occurs, and a second monitor is refused.
     assert_eq!(
         events.recv().await.unwrap_or_abort(),
         SleepWakeSupervisorEvent::WakeFull

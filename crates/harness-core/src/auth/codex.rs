@@ -566,6 +566,10 @@ pub enum CodexOAuthError {
 impl CodexOAuthError {
     pub fn category(&self) -> ProviderErrorCategory {
         match self {
+            Self::HttpStatus {
+                status: 401 | 403, ..
+            } => ProviderErrorCategory::InvalidCredentials,
+            Self::HttpStatus { status: 429, .. } => ProviderErrorCategory::RateLimited,
             Self::Http { .. } | Self::HttpStatus { .. } | Self::Json { .. } => {
                 ProviderErrorCategory::TransportFailure
             }
@@ -630,7 +634,7 @@ fn form_headers() -> BTreeMap<String, String> {
         ),
         (
             "User-Agent".to_string(),
-            concat!("opencode/", env!("CARGO_PKG_VERSION")).to_string(),
+            concat!("agent-harness/", env!("CARGO_PKG_VERSION")).to_string(),
         ),
     ])
 }
@@ -640,7 +644,7 @@ fn json_headers() -> BTreeMap<String, String> {
         ("Content-Type".to_string(), "application/json".to_string()),
         (
             "User-Agent".to_string(),
-            concat!("opencode/", env!("CARGO_PKG_VERSION")).to_string(),
+            concat!("agent-harness/", env!("CARGO_PKG_VERSION")).to_string(),
         ),
     ])
 }

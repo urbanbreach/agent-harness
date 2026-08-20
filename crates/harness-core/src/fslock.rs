@@ -109,7 +109,7 @@ fn process_exists(_pid: u32) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
+    use std::sync::{mpsc, Arc};
     use tempfile::tempdir;
 
     #[test]
@@ -121,15 +121,22 @@ mod tests {
         // act — first holder keeps the lock, a second thread waits, then the
         // first drops and the second acquires
         let first = FileLock::acquire(&path).expect("first acquire");
+        let (attempting_tx, attempting_rx) = mpsc::channel();
+        let (acquired_tx, acquired_rx) = mpsc::channel();
         let waiter_path = path.clone();
-        let waiter =
-            thread::spawn(move || FileLock::acquire(&waiter_path).expect("second acquire"));
-        thread::sleep(BACKOFF * 4);
+        let waiter = thread::spawn(move || {
+            attempting_tx.send(()).expect("report acquisition attempt");
+            let lock = FileLock::acquire(&waiter_path).expect("second acquire");
+            acquired_tx.send(()).expect("report successful acquisition");
+            lock
+        });
+        attempting_rx.recv().expect("waiter begins acquisition");
         assert!(
             first.path.exists(),
             "lock file must exist while first holds it"
         );
         drop(first);
+        acquired_rx.recv().expect("waiter acquires after release");
 
         // assert — the waiter acquires only after release and cleans up on drop
         let second = waiter.join().expect("waiter joins");

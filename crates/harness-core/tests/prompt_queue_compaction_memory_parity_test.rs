@@ -8,7 +8,7 @@ include!("common/coord_fixtures.rs");
 
 #[test]
 fn prompt_queue_contract_preserves_interjection_reconciliation_and_post_turn_drain() {
-    // Given: an active session with an immutable event history and a running turn.
+    // arrange — an active session with an immutable event history and a running turn.
     let dir = tempfile::tempdir().unwrap();
     let session_dir = dir.path().join("session");
     std::fs::create_dir_all(&session_dir).unwrap();
@@ -22,7 +22,7 @@ fn prompt_queue_contract_preserves_interjection_reconciliation_and_post_turn_dra
         .interject_mid_turn("urgent", "send this now", 3, true)
         .unwrap();
 
-    // When: the process restarts, reconciles the mid-turn interjection, then
+    // act — the process restarts, reconciles the mid-turn interjection, then
     // sends the next queued prompt immediately and drains the completed turn.
     let resumed = DurablePromptQueue::for_session(&session_dir);
     let listed = resumed.list().unwrap();
@@ -31,7 +31,7 @@ fn prompt_queue_contract_preserves_interjection_reconciliation_and_post_turn_dra
     let post_turn_drain = resumed.drain().unwrap();
     let after_drain_restart = DurablePromptQueue::for_session(&session_dir);
 
-    // Then: queue order survives restart, interjection state stays separate,
+    // assert — queue order survives restart, interjection state stays separate,
     // send-now selects the FIFO head, and the post-turn drain empties storage.
     assert!(interjection.turn_was_running);
     assert!(!interjection.mutates_conversation_events);
@@ -63,7 +63,7 @@ fn prompt_queue_contract_preserves_interjection_reconciliation_and_post_turn_dra
 
 #[test]
 fn local_memory_contract_flushes_scopes_and_returns_stable_search_order_after_restart() {
-    // Given: local entries in each durable memory scope.
+    // arrange — local entries in each durable memory scope.
     let dir = tempfile::tempdir().unwrap();
     let store = DurableMemoryStore::for_workspace(dir.path());
     store
@@ -80,7 +80,7 @@ fn local_memory_contract_flushes_scopes_and_returns_stable_search_order_after_re
         .put_scoped("alpha.session", "current turn detail", MemoryScope::Session)
         .unwrap();
 
-    // When: local memory is flushed and the store is reopened after restart.
+    // act — local memory is flushed and the store is reopened after restart.
     store.flush_existing().unwrap();
     let resumed = DurableMemoryStore::for_workspace(dir.path());
     let all_matches = resumed.search_scoped("alpha", None).unwrap();
@@ -89,7 +89,7 @@ fn local_memory_contract_flushes_scopes_and_returns_stable_search_order_after_re
         .unwrap();
     let grouped = resumed.list_by_scope().unwrap();
 
-    // Then: BTree-backed search ordering, scope filtering, and TUI grouping are
+    // assert — BTree-backed search ordering, scope filtering, and TUI grouping are
     // durable and deterministic without reducing entries to plain key/value data.
     assert_eq!(
         all_matches
@@ -107,7 +107,7 @@ fn local_memory_contract_flushes_scopes_and_returns_stable_search_order_after_re
 
 #[tokio::test]
 async fn near_threshold_compaction_appends_checkpoint_and_projects_it_without_rewriting_history() {
-    // Given: two completed large turns, session-local memory, and a coordinator
+    // arrange — two completed large turns, session-local memory, and a coordinator
     // configured to compact before an oversized third prompt.
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp_dir.path().join("workspace");
@@ -161,7 +161,7 @@ async fn near_threshold_compaction_appends_checkpoint_and_projects_it_without_re
     }
     let immutable_prefix = std::fs::read(&run.events_path).unwrap();
 
-    // When: the next prompt crosses the configured context threshold.
+    // act — the next prompt crosses the configured context threshold.
     let third_request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id, &"C".repeat(12_000))
         .await
@@ -180,8 +180,8 @@ async fn near_threshold_compaction_appends_checkpoint_and_projects_it_without_re
     let events = load_events(&run.events_path);
     let transcript = project_transcript(&events).unwrap_or_abort();
 
-    // Then: compaction is an append-only, replayable checkpoint; its summary is
-    // TUI-projectable, and the durable session memory has been flushed by scope.
+    // assert — compaction is an append-only, replayable checkpoint; its summary is
+    // TUI-projectable, and typed durable memory retains its original scope.
     assert!(std::fs::read(&run.events_path)
         .unwrap()
         .starts_with(&immutable_prefix));
@@ -211,6 +211,6 @@ async fn near_threshold_compaction_appends_checkpoint_and_projects_it_without_re
             .unwrap()
             .unwrap()
             .scope,
-        MemoryScope::Workspace
+        MemoryScope::Session
     );
 }

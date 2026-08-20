@@ -624,6 +624,16 @@ impl PermissionPolicy {
         }) {
             return false;
         }
+        if profile
+            .and_then(|profile| self.profile_overrides.get(profile))
+            .is_some_and(|permissions| {
+                profile_rules_for_kind(&permissions.rules, kind)
+                    .iter()
+                    .any(|rule| rule.mode != PermissionMode::Deny)
+            })
+        {
+            return false;
+        }
         self.evaluate(profile, kind) == PolicyDecision::Deny
     }
 
@@ -642,6 +652,26 @@ impl PermissionPolicy {
             PermissionKind::ExternalDirectory => &self.defaults.external_directory,
             PermissionKind::DoomLoop => &self.defaults.doom_loop,
         }
+    }
+}
+
+fn profile_rules_for_kind(
+    rules: &PermissionRuleSet,
+    kind: PermissionKind,
+) -> &[PermissionSelectorRule] {
+    match kind {
+        PermissionKind::Shell => &rules.shell,
+        PermissionKind::EditFs => &rules.edit,
+        PermissionKind::Task => &rules.task,
+        PermissionKind::Read => &rules.read,
+        PermissionKind::ExternalDirectory => &rules.external_directory,
+        PermissionKind::Network
+        | PermissionKind::Question
+        | PermissionKind::WebFetch
+        | PermissionKind::WebSearch
+        | PermissionKind::CodeSearch
+        | PermissionKind::Lsp
+        | PermissionKind::DoomLoop => &[],
     }
 }
 

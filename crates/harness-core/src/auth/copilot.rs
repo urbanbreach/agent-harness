@@ -364,6 +364,10 @@ pub enum CopilotOAuthError {
 impl CopilotOAuthError {
     pub fn category(&self) -> ProviderErrorCategory {
         match self {
+            Self::HttpStatus {
+                status: 401 | 403, ..
+            } => ProviderErrorCategory::InvalidCredentials,
+            Self::HttpStatus { status: 429, .. } => ProviderErrorCategory::RateLimited,
             Self::Http { .. } | Self::HttpStatus { .. } | Self::Json { .. } => {
                 ProviderErrorCategory::TransportFailure
             }

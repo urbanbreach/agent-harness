@@ -212,10 +212,6 @@ mod tests {
               },
               model: "anthropic/claude",
               small_model: "anthropic/claude",
-              agent: {
-                build: { system_prompt: "Build" },
-                plan: { system_prompt: "Plan" },
-              },
               permission: {
                 edit: "allow", bash: "allow", question: "allow",
                 task: "allow", webfetch: "allow", websearch: "allow",

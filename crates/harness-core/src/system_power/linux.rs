@@ -92,12 +92,23 @@ mod tests {
 
     #[test]
     fn linux_adapter_reports_unknown_without_a_dark_wake_api() {
-        assert_eq!(current_power_state(), PowerState::Unknown);
+        // arrange
+
+        // act
+        let state = current_power_state();
+
+        // assert
+        assert_eq!(state, PowerState::Unknown);
     }
 
     #[test]
     fn linux_adapter_missing_logind_is_an_honest_registration_failure() {
+        // arrange
+
+        // act
         let listener = Listener::start(Box::new(|_| {}));
+
+        // assert
         if let Some(listener) = listener {
             assert!(std::mem::size_of_val(&listener) == 0);
         }

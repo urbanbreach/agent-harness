@@ -164,7 +164,7 @@ impl DurableMemoryStore {
             .entries
             .get_mut(&key)
             .ok_or(MemoryError::NotFound { key: key.clone() })?;
-        record.updated_at_unix_ms = now_unix_ms();
+        record.updated_at_unix_ms = now_unix_ms().max(record.updated_at_unix_ms.saturating_add(1));
         let result = ScopedMemoryEntry {
             key: key.clone(),
             value: record.value.clone(),
@@ -209,5 +209,28 @@ impl DurableMemoryStore {
             grouped.entry(entry.scope).or_default().push(entry);
         }
         Ok(grouped)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{DurableMemoryStore, MemoryScope};
+    use crate::UnwrapOrAbort;
+
+    #[test]
+    fn trace_advances_timestamp_without_wall_clock_delay() {
+        // arrange
+        let temp = tempfile::tempdir().unwrap_or_abort();
+        let store = DurableMemoryStore::for_workspace(temp.path());
+        let original = store
+            .put_scoped("tracked", "original", MemoryScope::Workspace)
+            .unwrap_or_abort();
+
+        // act
+        let traced = store.trace("tracked").unwrap_or_abort();
+
+        // assert
+        assert_eq!(traced.value, "original");
+        assert!(traced.updated_at_unix_ms > original.updated_at_unix_ms);
     }
 }

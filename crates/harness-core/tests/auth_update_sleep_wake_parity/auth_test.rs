@@ -63,7 +63,7 @@ impl CopilotAuthHttpClient for CopilotHttp {
 
 #[tokio::test]
 async fn public_codex_login_refresh_and_manifest_are_secret_safe() {
-    // Given: a public loopback authorization callback and expired OAuth credential.
+    // arrange — a public loopback authorization callback and expired OAuth credential.
     let temp = tempfile::tempdir().unwrap_or_abort();
     let store = CredentialStore::new(temp.path());
     let login = CodexOAuthClient::new(Arc::new(CodexHttp(Mutex::new(VecDeque::from([
@@ -79,7 +79,7 @@ async fn public_codex_login_refresh_and_manifest_are_secret_safe() {
         "https://issuer.test",
     );
 
-    // When: login completes and resolution refreshes its expired credential.
+    // act — login completes and resolution refreshes its expired credential.
     login
         .complete_loopback_callback(&session, "?code=code&state=state", &store)
         .await
@@ -105,7 +105,7 @@ async fn public_codex_login_refresh_and_manifest_are_secret_safe() {
         .await
         .unwrap_or_abort();
 
-    // Then: refreshed credentials are usable while the persisted manifest is redacted.
+    // assert — refreshed credentials are usable while the persisted manifest is redacted.
     assert_eq!(resolved.token, "access-new");
     let manifest =
         serde_json::to_string(&store.manifest_entries([ProviderId::codex()])).unwrap_or_abort();
@@ -130,7 +130,7 @@ async fn public_codex_login_refresh_and_manifest_are_secret_safe() {
 
 #[tokio::test]
 async fn public_copilot_and_api_key_credentials_are_typed_and_http_errors_are_categorized() {
-    // Given: the public Copilot device flow and a stored API key.
+    // arrange — the public Copilot device flow and a stored API key.
     let temp = tempfile::tempdir().unwrap_or_abort();
     let store = CredentialStore::new(temp.path());
     let client = CopilotOAuthClient::new(Arc::new(CopilotHttp(Mutex::new(VecDeque::from([
@@ -138,7 +138,7 @@ async fn public_copilot_and_api_key_credentials_are_typed_and_http_errors_are_ca
         AuthHttpResponse { status: 200, body: r#"{"access_token":"copilot-secret"}"#.to_string() },
     ])))));
 
-    // When: the public device flow completes and API-key resolution runs.
+    // act — the public device flow completes and API-key resolution runs.
     let copilot = client
         .complete_device_flow(&CopilotDeployment::public(), &store, 1)
         .await
@@ -157,7 +157,7 @@ async fn public_copilot_and_api_key_credentials_are_typed_and_http_errors_are_ca
             .await
             .unwrap_or_abort();
 
-    // Then: both public credential sources resolve, and auth failures have actionable categories.
+    // assert — both public credential sources resolve, and auth failures have actionable categories.
     assert_eq!(copilot.provider, ProviderId::github_copilot());
     assert_eq!(api.source, ResolvedCredentialSource::StoredApiKey);
     assert_eq!(

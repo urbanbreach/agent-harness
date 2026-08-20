@@ -91,18 +91,39 @@ mod tests {
 
     #[test]
     fn power_events_are_distinct_and_copyable() {
+        // arrange
         let event = PowerEvent::WillSleep;
-        assert_eq!(event, PowerEvent::WillSleep);
-        assert_ne!(event, PowerEvent::DidWake);
+
+        // act
+        let copied = event;
+
+        // assert
+        assert_eq!(copied, PowerEvent::WillSleep);
+        assert_ne!(copied, PowerEvent::DidWake);
     }
 
     #[test]
     fn current_state_query_never_panics() {
-        let _state = current_power_state();
+        // arrange
+
+        // act
+        let state = current_power_state();
+
+        // assert
+        assert!(matches!(
+            state,
+            PowerState::FullWake | PowerState::DarkWake | PowerState::Unknown
+        ));
     }
 
     #[test]
     fn unavailable_diagnostic_is_operator_safe() {
-        assert!(!native_platform_diagnostic().is_empty());
+        // arrange
+
+        // act
+        let diagnostic = native_platform_diagnostic();
+
+        // assert
+        assert!(!diagnostic.is_empty());
     }
 }
