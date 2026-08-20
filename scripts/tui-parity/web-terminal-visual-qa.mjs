@@ -18,6 +18,14 @@ const require = createRequire(
     ? join(process.env.TUI_FIDELITY_NODE_MODULES, "package.json")
     : import.meta.url,
 );
+const RENDERER_BINDING = Object.freeze({
+  node: process.version,
+  xterm: require("@xterm/xterm/package.json").version,
+  unicode11: require("@xterm/addon-unicode11/package.json").version,
+  nodePty: require("node-pty/package.json").version,
+  pngjs: require("pngjs/package.json").version,
+  puppeteerCore: require("puppeteer-core/package.json").version,
+});
 
 const HELP = `web-terminal-visual-qa
 
@@ -266,6 +274,7 @@ async function run(args) {
       cursor: checkpoint.cursor,
       capabilities: checkpoint.capabilities,
       terminalProfile,
+      rendererBinding: RENDERER_BINDING,
       cleanup: cap.cleanup,
       cleanupReceipt: cap.cleanupReceipt,
       files: { ...files, metadata: path },
@@ -285,6 +294,7 @@ async function run(args) {
     timeline: cap.timeline || [],
     checkpoints: checkpointMetadata,
     terminalProfile,
+    rendererBinding: RENDERER_BINDING,
     redaction: { builtInRules: BUILT_IN_REDACTION_RULE_COUNT, literalRules: args.redactions.length, regexRules: args.redactRegexes.length },
     dimensions: {
       cols: cap.dimensions?.cols || args.cols,
