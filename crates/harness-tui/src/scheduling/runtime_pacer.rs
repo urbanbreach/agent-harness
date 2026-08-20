@@ -32,7 +32,14 @@ impl RuntimePacer {
     }
 
     pub const fn with_reduced_motion(reduced_motion: bool) -> Self {
-        Self::with_wheel_events_per_step(reduced_motion, 1)
+        Self::with_wheel_events_per_step(reduced_motion, 1, super::FLUSH_DEADLINE_MS)
+    }
+
+    pub const fn with_reduced_motion_and_flush_interval_ms(
+        reduced_motion: bool,
+        flush_interval_ms: u64,
+    ) -> Self {
+        Self::with_wheel_events_per_step(reduced_motion, 1, flush_interval_ms)
     }
 
     pub const fn with_terminal_wheel_profile(
@@ -43,12 +50,20 @@ impl RuntimePacer {
         Self::with_wheel_events_per_step(
             reduced_motion,
             terminal_wheel_events_per_step(terminal, multiplexer),
+            super::FLUSH_DEADLINE_MS,
         )
     }
 
-    const fn with_wheel_events_per_step(reduced_motion: bool, events_per_step: u8) -> Self {
+    const fn with_wheel_events_per_step(
+        reduced_motion: bool,
+        events_per_step: u8,
+        flush_interval_ms: u64,
+    ) -> Self {
         Self {
-            scheduler: FrameScheduler::with_reduced_motion(reduced_motion),
+            scheduler: FrameScheduler::with_reduced_motion_and_flush_interval_ms(
+                reduced_motion,
+                flush_interval_ms,
+            ),
             flush_requested: false,
             wheel: WheelAccumulator::new(events_per_step),
             suppressed_periodic: None,

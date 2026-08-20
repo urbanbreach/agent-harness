@@ -37,8 +37,9 @@ use crate::runtime_scheduling::{
 };
 use crate::runtime_wait_set::{FrameRuntimeEvent, RuntimeWaitSet, RuntimeWake};
 use crate::scheduling::{
-    BatchBudget, FairnessTurn, FrameNow, MotionPlan, RuntimeArbiter, RuntimeDecision, RuntimePacer,
-    RuntimePacerAction, RuntimeReady, WheelBatch, WheelDirection, WheelSample,
+    runtime_flush_interval_ms, BatchBudget, FairnessTurn, FrameNow, MotionPlan, RuntimeArbiter,
+    RuntimeDecision, RuntimePacer, RuntimePacerAction, RuntimeReady, WheelBatch, WheelDirection,
+    WheelSample,
 };
 use crate::terminal::{
     FrameKind, FrameOutput, FrameOutputBackend, FrameSubmission, Presenter,
@@ -65,7 +66,7 @@ fn record_scheduling_decision(
             cause_id,
             live,
             fairness_yield,
-            Some(crate::scheduling::FLUSH_DEADLINE_MS),
+            Some(runtime_flush_interval_ms()),
         );
     }
 }
@@ -625,7 +626,10 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
 
     let mut run_result = (|| -> Result<()> {
         let pacing_epoch = Instant::now();
-        let mut pacer = RuntimePacer::with_reduced_motion(reduced_motion);
+        let mut pacer = RuntimePacer::with_reduced_motion_and_flush_interval_ms(
+            reduced_motion,
+            runtime_flush_interval_ms(),
+        );
         let scroll_mode = std::env::var("HARNESS_TUI_SCROLL_MODE").ok();
         let scroll_lines = std::env::var("HARNESS_TUI_SCROLL_LINES").ok();
         let scroll_speed = std::env::var("HARNESS_TUI_SCROLL_SPEED").ok();

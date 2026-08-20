@@ -6,6 +6,7 @@
 mod coalesce;
 mod decision;
 mod dual_clock;
+mod frame_cadence;
 mod motion_demand;
 mod runtime_arbiter;
 mod runtime_pacer;
@@ -16,6 +17,8 @@ mod scheduler_deadlines;
 pub use coalesce::RedrawCoalescer;
 pub use decision::{FrameDecision, FrameReason};
 pub use dual_clock::{DualClock, FrameNow};
+pub(crate) use frame_cadence::runtime_flush_interval_ms;
+pub use frame_cadence::MIN_DRAW_INTERVAL_ENV;
 pub use motion_demand::{MotionCadence, MotionDemand, MotionPlan};
 pub use runtime_arbiter::{
     ArbiterClock, BatchBudget, DeferredLiveUpdate, FairnessTurn, RuntimeArbiter, RuntimeDecision,
