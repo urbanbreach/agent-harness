@@ -2,6 +2,7 @@ use crate::design_contract::{MotionKind, DESIGN_TOKENS};
 
 use super::coalesce::RedrawCoalescer;
 use super::decision::{FrameDecision, FrameReason};
+use super::frame_cadence::clamp_flush_interval_ms;
 use super::{FrameNow, MotionPlan, ANIMATION_PERIOD_MS, FLUSH_DEADLINE_MS};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -51,6 +52,7 @@ pub struct FrameScheduler {
     pub(super) until_deadline: Option<u64>,
     pub(super) flush_deadline: Option<u64>,
     pub(super) redraw_coalescer: RedrawCoalescer,
+    pub(super) flush_interval_ms: u64,
     pub(super) settled: bool,
     pub(super) reduced_motion: bool,
 }
@@ -63,6 +65,7 @@ impl FrameScheduler {
             until_deadline: None,
             flush_deadline: None,
             redraw_coalescer: RedrawCoalescer::new(),
+            flush_interval_ms: FLUSH_DEADLINE_MS,
             settled: true,
             reduced_motion: false,
         }
@@ -71,6 +74,24 @@ impl FrameScheduler {
     pub const fn with_reduced_motion(reduced_motion: bool) -> Self {
         Self {
             reduced_motion,
+            ..Self::new()
+        }
+    }
+
+    pub const fn with_flush_interval_ms(flush_interval_ms: u64) -> Self {
+        Self {
+            flush_interval_ms: clamp_flush_interval_ms(flush_interval_ms),
+            ..Self::new()
+        }
+    }
+
+    pub const fn with_reduced_motion_and_flush_interval_ms(
+        reduced_motion: bool,
+        flush_interval_ms: u64,
+    ) -> Self {
+        Self {
+            reduced_motion,
+            flush_interval_ms: clamp_flush_interval_ms(flush_interval_ms),
             ..Self::new()
         }
     }
@@ -150,7 +171,7 @@ impl FrameScheduler {
             self.settled = false;
             self.redraw_coalescer.request();
             self.flush_deadline
-                .get_or_insert(now.flush_ms.saturating_add(FLUSH_DEADLINE_MS));
+                .get_or_insert(now.flush_ms.saturating_add(self.flush_interval_ms));
         }
 
         let cadence_due = self
