@@ -24,7 +24,7 @@ use harness_core::coord::{
 use harness_core::event::{
     EventV1, PermissionDecision as EventPermissionDecision, TaskTerminalScope, ToolCallStatus,
 };
-use harness_core::perm::PermissionPolicy;
+use harness_core::perm::{PermissionAction, PermissionPolicy, PermissionRule};
 use harness_core::redact::DefaultRedactor;
 use harness_providers::{
     CompletionRequest, CompletionUsage, Provider, ProviderEventStream, ProviderStreamEvent,
@@ -520,6 +520,52 @@ fn fixture_mcp_config(script_path: &Path) -> McpConfig {
 
 async fn spawn_run(workspace: &Path) -> (CoordinatorHandle, RunInfo, String) {
     spawn_run_with_provider(workspace, Arc::new(StaticProvider)).await
+}
+
+async fn spawn_run_with_partial_shell_permissions(
+    workspace: &Path,
+) -> (CoordinatorHandle, RunInfo, String) {
+    let mut default_profile = worker_profile(&[
+        "task",
+        "background_output",
+        "background_cancel",
+        "batch",
+        "read",
+        "bash",
+    ]);
+    default_profile.permission_ruleset = vec![
+        PermissionRule {
+            permission: "bash".to_string(),
+            pattern: "*".to_string(),
+            action: PermissionAction::Allow,
+        },
+        PermissionRule {
+            permission: "bash".to_string(),
+            pattern: "ls".to_string(),
+            action: PermissionAction::Deny,
+        },
+    ];
+
+    spawn_run_with_provider_and_profiles(
+        workspace,
+        Arc::new(StaticProvider),
+        BTreeMap::from([
+            ("default".to_string(), default_profile),
+            (
+                "explore".to_string(),
+                named_worker_profile("explore", &["read", "glob", "grep", "list"]),
+            ),
+            (
+                "general".to_string(),
+                named_worker_profile("general", &["read", "bash"]),
+            ),
+            (
+                "librarian".to_string(),
+                named_worker_profile("librarian", &["read"]),
+            ),
+        ]),
+    )
+    .await
 }
 
 async fn spawn_run_with_provider(

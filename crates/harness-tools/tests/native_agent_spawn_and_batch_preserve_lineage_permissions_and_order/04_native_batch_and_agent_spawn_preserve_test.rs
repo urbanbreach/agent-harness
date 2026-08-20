@@ -9,7 +9,7 @@ async fn native_batch_and_agent_spawn_preserve_child_lineage_permissions_and_ord
     write_numbered_fixture(&workspace);
     write_skill_fixture(&workspace, "rust-best-practices");
 
-    let (handle, run, worker_id) = spawn_run(&workspace).await;
+    let (handle, run, worker_id) = spawn_run_with_partial_shell_permissions(&workspace).await;
 
     let native_spawn_tool_call_id = handle
         .request_tool_call(

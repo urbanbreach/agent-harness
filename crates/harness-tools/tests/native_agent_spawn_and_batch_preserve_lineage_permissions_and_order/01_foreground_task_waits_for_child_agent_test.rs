@@ -2,6 +2,7 @@ use harness_tools::UnwrapOrAbort;
 
 #[tokio::test]
 async fn foreground_task_waits_for_child_agent_turn_after_child_tool_result() {
+    // arrange
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     write_fixture(&workspace);
@@ -10,6 +11,7 @@ async fn foreground_task_waits_for_child_agent_turn_after_child_tool_result() {
     let provider_clone = Arc::clone(&provider);
     let (handle, run, worker_id) = spawn_run_with_provider(&workspace, provider_clone).await;
 
+    // act
     let task_tool_call_id = handle
         .request_tool_call(
             worker_actor(&worker_id),
@@ -31,6 +33,7 @@ async fn foreground_task_waits_for_child_agent_turn_after_child_tool_result() {
     let events = read_events(&run.events_path);
     let finished = find_finished(&events, &task_tool_call_id);
 
+    // assert
     assert_eq!(finished.status, ToolCallStatus::Succeeded);
     assert!(finished
         .output_summary
@@ -101,6 +104,7 @@ async fn foreground_task_waits_for_child_agent_turn_after_child_tool_result() {
 
 #[tokio::test]
 async fn generic_task_inherits_parent_turn_model_when_subagent_model_is_implicit() {
+    // arrange
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let session_dir = workspace.join("sessions");
@@ -126,6 +130,7 @@ async fn generic_task_inherits_parent_turn_model_when_subagent_model_is_implicit
         ("general".to_string(), general),
     ]);
 
+    // act
     let handle = spawn_coordinator(
         config,
         Arc::new(RealClock::new()),
@@ -158,6 +163,8 @@ async fn generic_task_inherits_parent_turn_model_when_subagent_model_is_implicit
 
     wait_for_request_terminal(&run.events_path, &request_id).await;
     let requests = provider.requests().await;
+
+    // assert
     assert!(requests.len() >= 2);
     assert_eq!(requests[0].model_id, "parent-model");
     assert_eq!(requests[1].model_id, "parent-model");
@@ -169,6 +176,7 @@ async fn generic_task_inherits_parent_turn_model_when_subagent_model_is_implicit
 
 #[tokio::test]
 async fn generic_task_keeps_explicit_subagent_model_over_parent_turn_model() {
+    // arrange
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let session_dir = workspace.join("sessions");
@@ -194,6 +202,7 @@ async fn generic_task_keeps_explicit_subagent_model_over_parent_turn_model() {
         ("general".to_string(), general),
     ]);
 
+    // act
     let handle = spawn_coordinator(
         config,
         Arc::new(RealClock::new()),
@@ -226,6 +235,8 @@ async fn generic_task_keeps_explicit_subagent_model_over_parent_turn_model() {
 
     wait_for_request_terminal(&run.events_path, &request_id).await;
     let requests = provider.requests().await;
+
+    // assert
     assert!(requests.len() >= 2);
     assert_eq!(requests[0].model_id, "parent-model");
     assert_eq!(requests[1].model_id, "generic-child");

@@ -100,6 +100,7 @@ for raw in sys.stdin:
 
 #[tokio::test]
 async fn mcp_boundary_e2e_generic_registry_exposes_and_calls_echo_tool() {
+    // arrange
     // Given: a workspace with a fake MCP server
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
@@ -108,6 +109,7 @@ async fn mcp_boundary_e2e_generic_registry_exposes_and_calls_echo_tool() {
     let registry =
         coordinator_registry_with_mcp(ShellAllowlist::default(), fake_mcp_config(&script_path));
 
+    // act
     // When: the echo tool is called
     let tool = registry.get("mcp.fixture.echo").unwrap_or_abort();
     let result = tool
@@ -118,12 +120,14 @@ async fn mcp_boundary_e2e_generic_registry_exposes_and_calls_echo_tool() {
         .await
         .unwrap_or_abort();
 
+    // assert
     // Then: the tool returns the echoed text
     assert!(result.display_text.contains("hello boundary"));
 }
 
 #[test]
 fn mcp_bad_input_invalid_server_id_rejected_by_config_validation() {
+    // arrange
     // Given: a config with an MCP server id containing invalid characters
     let raw = r#"
         {
@@ -148,9 +152,11 @@ fn mcp_bad_input_invalid_server_id_rejected_by_config_validation() {
         }
     "#;
 
+    // act
     // When: loaded from string
     let err = load_config_from_str(raw).expect_err("invalid server id must fail");
 
+    // assert
     // Then: config validation rejects it
     let msg = err.to_string();
     assert!(
@@ -161,6 +167,7 @@ fn mcp_bad_input_invalid_server_id_rejected_by_config_validation() {
 
 #[tokio::test]
 async fn mcp_permission_denial_disabled_server_does_not_register_tools() {
+    // arrange
     // Given: a workspace with a fake MCP server that is disabled
     let temp_dir = setup_workspace();
     let script_path = temp_dir.path().join("fake_mcp_server.py");
@@ -179,9 +186,11 @@ async fn mcp_permission_denial_disabled_server_does_not_register_tools() {
     };
     let registry = coordinator_registry_with_mcp(ShellAllowlist::default(), disabled_config);
 
+    // act
     // When: the echo tool is looked up
     let tool = registry.get("mcp.fixture.echo");
 
+    // assert
     // Then: the tool is not registered (disabled server = permission denied at config boundary)
     assert!(
         tool.is_none(),
@@ -191,6 +200,7 @@ async fn mcp_permission_denial_disabled_server_does_not_register_tools() {
 
 #[tokio::test]
 async fn mcp_process_failure_crashing_server_returns_tool_error() {
+    // arrange
     // Given: a workspace with a crashing MCP server
     let temp_dir = setup_workspace();
     let script_path = temp_dir.path().join("crashing_mcp_server.py");
@@ -198,9 +208,11 @@ async fn mcp_process_failure_crashing_server_returns_tool_error() {
     let registry =
         coordinator_registry_with_mcp(ShellAllowlist::default(), fake_mcp_config(&script_path));
 
+    // act
     // When: the echo tool is looked up (server crashes on startup, no tools registered)
     let tool = registry.get("mcp.fixture.echo");
 
+    // assert
     // Then: the tool is not registered (process failure prevents tool registration)
     assert!(
         tool.is_none(),
@@ -210,6 +222,7 @@ async fn mcp_process_failure_crashing_server_returns_tool_error() {
 
 #[tokio::test]
 async fn mcp_cancellation_restart_slow_server_succeeds_after_initialization() {
+    // arrange
     // Given: a workspace with a slow MCP server that initializes successfully
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
@@ -218,6 +231,7 @@ async fn mcp_cancellation_restart_slow_server_succeeds_after_initialization() {
     let registry =
         coordinator_registry_with_mcp(ShellAllowlist::default(), fake_mcp_config(&script_path));
 
+    // act
     // When: the slow_echo tool is called (server was slow to start but recovered)
     let tool = registry.get("mcp.fixture.slow_echo").unwrap_or_abort();
     let result = tool
@@ -227,6 +241,7 @@ async fn mcp_cancellation_restart_slow_server_succeeds_after_initialization() {
         )
         .await;
 
+    // assert
     // Then: the tool call succeeds (server recovered after slow start)
     assert!(result.is_ok(), "slow MCP server must eventually succeed");
     let output = result.unwrap_or_abort();
@@ -235,6 +250,7 @@ async fn mcp_cancellation_restart_slow_server_succeeds_after_initialization() {
 
 #[tokio::test]
 async fn mcp_redaction_tool_result_does_not_contain_secret_patterns() {
+    // arrange
     // Given: a workspace with a fake MCP server
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
@@ -243,6 +259,7 @@ async fn mcp_redaction_tool_result_does_not_contain_secret_patterns() {
     let registry =
         coordinator_registry_with_mcp(ShellAllowlist::default(), fake_mcp_config(&script_path));
 
+    // act
     // When: the echo tool is called with a secret-like input
     let tool = registry.get("mcp.fixture.echo").unwrap_or_abort();
     let result = tool
@@ -253,6 +270,7 @@ async fn mcp_redaction_tool_result_does_not_contain_secret_patterns() {
         .await
         .unwrap_or_abort();
 
+    // assert
     // Then: the structured result does not contain secret-like patterns
     let json = serde_json::to_string(&result.structured_json).unwrap_or_default();
     assert!(!json.contains("Bearer "), "must not contain bearer tokens");
@@ -289,6 +307,7 @@ fn config_with_lsp_json(lsp_json: &str) -> String {
 
 #[test]
 fn lsp_boundary_e2e_valid_config_with_custom_server_loads_successfully() {
+    // arrange
     // Given: a valid LSP config with a custom server
     let raw = config_with_lsp_json(
         r#"{
@@ -301,9 +320,11 @@ fn lsp_boundary_e2e_valid_config_with_custom_server_loads_successfully() {
     }"#,
     );
 
+    // act
     // When: loaded from string
     let config = load_config_from_str(&raw).expect("valid LSP config");
 
+    // assert
     // Then: the config is accepted with the LSP server registered
     assert!(config.lsp.servers.contains_key("custom-lang"));
     let server = &config.lsp.servers["custom-lang"];
@@ -313,6 +334,7 @@ fn lsp_boundary_e2e_valid_config_with_custom_server_loads_successfully() {
 
 #[test]
 fn lsp_bad_input_custom_server_without_command_rejected_by_config_validation() {
+    // arrange
     // Given: an LSP config with a custom server missing the command field
     let raw = config_with_lsp_json(
         r#"{
@@ -322,9 +344,11 @@ fn lsp_bad_input_custom_server_without_command_rejected_by_config_validation() {
     }"#,
     );
 
+    // act
     // When: loaded from string
     let err = load_config_from_str(&raw).expect_err("missing command must fail");
 
+    // assert
     // Then: config validation rejects it
     let msg = err.to_string();
     assert!(
@@ -335,6 +359,7 @@ fn lsp_bad_input_custom_server_without_command_rejected_by_config_validation() {
 
 #[test]
 fn lsp_bad_input_custom_server_without_extensions_rejected_by_config_validation() {
+    // arrange
     // Given: an LSP config with a custom server missing the extensions field
     let raw = config_with_lsp_json(
         r#"{
@@ -344,9 +369,11 @@ fn lsp_bad_input_custom_server_without_extensions_rejected_by_config_validation(
     }"#,
     );
 
+    // act
     // When: loaded from string
     let err = load_config_from_str(&raw).expect_err("missing extensions must fail");
 
+    // assert
     // Then: config validation rejects it
     let msg = err.to_string();
     assert!(
@@ -357,6 +384,7 @@ fn lsp_bad_input_custom_server_without_extensions_rejected_by_config_validation(
 
 #[test]
 fn lsp_permission_denial_disabled_lsp_config_does_not_register_servers() {
+    // arrange
     // Given: an LSP config with disabled=true
     let config = LspConfig {
         disabled: true,
@@ -372,7 +400,10 @@ fn lsp_permission_denial_disabled_lsp_config_does_not_register_servers() {
         )]),
     };
 
+    // act
     // When: the config is checked
+
+    // assert
     // Then: the LSP is globally disabled, so servers are not active
     assert!(config.disabled);
     assert!(
@@ -383,12 +414,15 @@ fn lsp_permission_denial_disabled_lsp_config_does_not_register_servers() {
 
 #[test]
 fn lsp_process_failure_registry_without_lsp_returns_no_lsp_tool() {
+    // arrange
     // Given: a coordinator registry without LSP config
     let registry = harness_tools::coordinator_registry(ShellAllowlist::default());
 
+    // act
     // When: the LSP tool is looked up
     let tool = registry.get("lsp");
 
+    // assert
     // Then: the LSP tool may be absent or present but returns errors for unavailable servers
     if let Some(tool) = tool {
         let _cap = tool.capability();
@@ -397,6 +431,7 @@ fn lsp_process_failure_registry_without_lsp_returns_no_lsp_tool() {
 
 #[test]
 fn lsp_cancellation_restart_config_can_be_updated_and_reloaded() {
+    // arrange
     // Given: an initial LSP config with one server
     let config1 = LspConfig {
         disabled: false,
@@ -412,6 +447,7 @@ fn lsp_cancellation_restart_config_can_be_updated_and_reloaded() {
         )]),
     };
 
+    // act
     // When: the config is updated to add a second server (restart/reload)
     let config2 = LspConfig {
         disabled: false,
@@ -431,6 +467,7 @@ fn lsp_cancellation_restart_config_can_be_updated_and_reloaded() {
         },
     };
 
+    // assert
     // Then: the updated config has both servers
     assert_eq!(config1.servers.len(), 1);
     assert_eq!(config2.servers.len(), 2);
@@ -440,6 +477,7 @@ fn lsp_cancellation_restart_config_can_be_updated_and_reloaded() {
 
 #[test]
 fn lsp_redaction_config_does_not_contain_secret_patterns() {
+    // arrange
     // Given: an LSP config with env vars that might contain secrets
     let config = LspConfig {
         disabled: false,
@@ -458,9 +496,11 @@ fn lsp_redaction_config_does_not_contain_secret_patterns() {
         )]),
     };
 
+    // act
     // When: the config is serialized
     let json = serde_json::to_string(&config).expect("serialize");
 
+    // assert
     // Then: the serialized config contains the env var but the test verifies
     // that the LSP config surface itself does not add secret patterns beyond
     // what the operator configured (the redaction layer handles env var redaction

@@ -265,6 +265,11 @@ async fn child_session_permission_inheritance_isolated_by_task() {
         inherited_output.pointer("/permissions/scope_relation"),
         Some(&json!("isolated_by_child_profile"))
     );
+    assert_eq!(inherited_output.pointer("/child_toolset"), Some(&json!([])));
+    assert_eq!(
+        inherited_output.pointer("/child_runtime/permission_posture/bash"),
+        Some(&json!("deny_by_toolset"))
+    );
 
     let inherited_shell = handle
         .request_tool_call(
@@ -306,6 +311,14 @@ async fn child_session_permission_inheritance_isolated_by_task() {
         Some(&json!("isolated_by_child_profile"))
     );
     assert_eq!(restricted_output.get("status"), Some(&json!("scheduled")));
+    assert_eq!(
+        restricted_output.pointer("/child_toolset"),
+        Some(&json!([]))
+    );
+    assert_eq!(
+        restricted_output.pointer("/child_runtime/permission_posture/bash"),
+        Some(&json!("deny_by_toolset"))
+    );
 
     let restricted_shell = handle
         .request_tool_call(
@@ -327,11 +340,19 @@ async fn child_session_permission_inheritance_isolated_by_task() {
     handle.stop_run().await.unwrap_or_abort();
     let events = read_events(&run.events_path);
 
-    assert!(events.iter().any(|event| {
-        matches!(
-            &event.payload,
-            EventV1::PermissionResolved(data)
-                if data.reason.as_deref() == Some("policy denied request (shell)")
-        )
-    }));
+    let denied_child_ids = events
+        .iter()
+        .filter_map(|event| match &event.payload {
+            EventV1::PolicyViolationDetected(data)
+                if data.policy == "tool_not_in_toolset" && data.detail.contains("tool `bash`") =>
+            {
+                event.actor.agent_id.as_deref()
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        denied_child_ids,
+        vec![inherited_child_session, restricted_child_session]
+    );
 }

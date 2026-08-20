@@ -1,6 +1,7 @@
 // allow: SIZE_OK — shell execution (process spawning + output capture)
 use crate::UnwrapOrAbort;
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -15,6 +16,9 @@ use harness_core::ToolResultExt;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
+
+#[cfg(unix)]
+use rustix::process::{kill_process_group, Pid, Signal};
 
 use crate::shell_safety::ShellSafety;
 use crate::text::trimmed_non_empty;
@@ -477,12 +481,68 @@ async fn run_shell_process(
     mut command: tokio::process::Command,
     timeout_ms: u64,
 ) -> Result<ShellProcessOutput, ToolError> {
-    let output = tokio::time::timeout(Duration::from_millis(timeout_ms), command.output())
+    command
+        .kill_on_drop(true)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    configure_shell_process_group(&mut command);
+    let child = command.spawn().tool_err("failed to execute command")?;
+    await_child_output(child, timeout_ms).await
+}
+
+fn configure_shell_process_group(command: &mut tokio::process::Command) {
+    #[cfg(unix)]
+    command.process_group(0);
+}
+
+async fn await_child_output(
+    child: tokio::process::Child,
+    timeout_ms: u64,
+) -> Result<ShellProcessOutput, ToolError> {
+    let mut process_group = ShellProcessGroupGuard::new(&child)?;
+    let output = tokio::time::timeout(Duration::from_millis(timeout_ms), child.wait_with_output())
         .await
         .map_err(|_| ToolError::Execution(format!("command timed out after {timeout_ms} ms")))?
         .tool_err("failed to execute command")?;
+    process_group.disarm();
 
     Ok(output.into())
+}
+
+struct ShellProcessGroupGuard {
+    #[cfg(unix)]
+    process_group: Pid,
+    armed: bool,
+}
+
+impl ShellProcessGroupGuard {
+    fn new(child: &tokio::process::Child) -> Result<Self, ToolError> {
+        #[cfg(unix)]
+        let process_group = child
+            .id()
+            .and_then(|pid| i32::try_from(pid).ok())
+            .and_then(Pid::from_raw)
+            .ok_or_else(|| ToolError::Execution("spawned shell has no process id".to_string()))?;
+        Ok(Self {
+            #[cfg(unix)]
+            process_group,
+            armed: true,
+        })
+    }
+
+    const fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for ShellProcessGroupGuard {
+    fn drop(&mut self) {
+        #[cfg(unix)]
+        if self.armed {
+            let _ = kill_process_group(self.process_group, Signal::KILL);
+        }
+    }
 }
 
 fn build_shell_run_result(

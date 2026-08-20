@@ -7,20 +7,73 @@
 
 #![cfg(unix)]
 
+use std::path::Path;
 use std::time::Duration;
 
 use common::{expect_execution_error, test_context};
 use harness_core::config::ShellAllowlist;
 use harness_core::tool::Tool;
 use harness_tools::{coordinator_registry, UnwrapOrAbort};
+use rustix::io::Errno;
+use rustix::process::{test_kill_process, Pid};
 use serde_json::json;
 
 mod common;
 
+async fn started_process(pid_path: &Path) -> Pid {
+    tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            if let Ok(raw_pid) = std::fs::read_to_string(pid_path) {
+                if let Ok(raw_pid) = raw_pid.trim().parse::<i32>() {
+                    if let Some(pid) = Pid::from_raw(raw_pid) {
+                        return pid;
+                    }
+                }
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap_or_abort()
+}
+
+async fn assert_process_exited(process: Pid) {
+    tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            match test_kill_process(process) {
+                Err(Errno::SRCH) => return,
+                Err(error) => {
+                    assert_eq!(error, Errno::SRCH, "failed to inspect shell process");
+                    return;
+                }
+                Ok(()) if process_is_zombie(process) => return,
+                Ok(()) => tokio::task::yield_now().await,
+            }
+        }
+    })
+    .await
+    .unwrap_or_abort();
+}
+
+#[cfg(target_os = "linux")]
+fn process_is_zombie(process: Pid) -> bool {
+    let stat_path = format!("/proc/{}/stat", process.as_raw_pid());
+    std::fs::read_to_string(stat_path).ok().is_some_and(|stat| {
+        stat.rsplit_once(')')
+            .is_some_and(|(_, state)| state.trim_start().starts_with('Z'))
+    })
+}
+
+#[cfg(not(target_os = "linux"))]
+const fn process_is_zombie(_process: Pid) -> bool {
+    false
+}
+
 #[tokio::test]
-async fn shell_timeout_terminates_command_before_delayed_marker_write() {
+async fn shell_timeout_terminates_started_command() {
     // arrange
     let temp = tempfile::tempdir().unwrap_or_abort();
+    let pid_path = temp.path().join("shell-process.pid");
     let bash = coordinator_registry(ShellAllowlist::default())
         .get("bash")
         .unwrap_or_abort();
@@ -35,7 +88,7 @@ async fn shell_timeout_terminates_command_before_delayed_marker_write() {
                 "toolcall-shell-timeout",
             ),
             json!({
-                "command": "sleep 1; touch late-marker.txt",
+                "command": "python3 -c 'import os,pathlib; pathlib.Path(\"shell-process.pid\").write_text(str(os.getppid()))'; sleep 60; touch late-marker.txt",
                 "workdir": ".",
                 "timeout": 200,
             }),
@@ -43,6 +96,7 @@ async fn shell_timeout_terminates_command_before_delayed_marker_write() {
         .await
         .expect_err("sleeping command must time out");
     let elapsed = started.elapsed();
+    let process = started_process(&pid_path).await;
 
     // assert
     expect_execution_error(error, "timed out");
@@ -50,19 +104,18 @@ async fn shell_timeout_terminates_command_before_delayed_marker_write() {
         elapsed < Duration::from_millis(800),
         "tool call ran past the configured timeout: {elapsed:?}"
     );
-    // Wait longer than the sleep so a survivor would have created its marker
-    // by now.
-    tokio::time::sleep(Duration::from_millis(1_500)).await;
+    assert_process_exited(process).await;
     assert!(
         !temp.path().join("late-marker.txt").exists(),
-        "timed-out command tree must not create a delayed marker"
+        "timed-out shell must not create its delayed marker"
     );
 }
 
 #[tokio::test]
-async fn shell_cancellation_racing_timeout_terminates_command_tree() {
+async fn shell_cancellation_terminates_command_after_process_start() {
     // arrange
     let temp = tempfile::tempdir().unwrap_or_abort();
+    let pid_path = temp.path().join("shell-process.pid");
     let bash = coordinator_registry(ShellAllowlist::default())
         .get("bash")
         .unwrap_or_abort();
@@ -73,44 +126,30 @@ async fn shell_cancellation_racing_timeout_terminates_command_tree() {
     );
 
     // act
-    // The external cancellation deliberately races the internal 400ms deadline.
     let spawned = tokio::spawn(async move {
         bash.call(
             context,
             json!({
-                "command": "sleep 2; touch cancel-marker.txt",
+                "command": "python3 -c 'import os,pathlib; pathlib.Path(\"shell-process.pid\").write_text(str(os.getppid()))'; sleep 60; touch cancel-marker.txt",
                 "workdir": ".",
-                "timeout": 400,
+                "timeout": 5_000,
             }),
         )
         .await
     });
-    tokio::time::sleep(Duration::from_millis(380)).await;
-    let cancelling = !spawned.is_finished();
-    if cancelling {
-        spawned.abort();
-    }
+    let process = started_process(&pid_path).await;
+    spawned.abort();
     let join = spawned.await;
 
     // assert
-    if cancelling {
-        assert!(
-            join.expect_err("aborted tool call must not finish normally")
-                .is_cancelled(),
-            "cancellation must drop the tool future, not panic"
-        );
-    } else {
-        expect_execution_error(
-            join.unwrap_or_abort()
-                .expect_err("sleep must outlive the configured timeout"),
-            "timed out",
-        );
-    }
-    // Wait longer than the sleep so a survivor would have created its marker
-    // by now.
-    tokio::time::sleep(Duration::from_millis(2_500)).await;
+    assert!(
+        join.expect_err("aborted tool call must not finish normally")
+            .is_cancelled(),
+        "cancellation must drop the tool future, not panic"
+    );
+    assert_process_exited(process).await;
     assert!(
         !temp.path().join("cancel-marker.txt").exists(),
-        "command tree must be terminated on both timeout and cancellation"
+        "cancelled shell must not create its delayed marker"
     );
 }

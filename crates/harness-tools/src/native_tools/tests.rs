@@ -129,7 +129,11 @@ fn skill_args_match_harness_name_only_schema() {
 
 #[test]
 fn task_args_reject_role_selector_fields() {
-    for field in ["category", "agent", "profile", "profileName"] {
+    // arrange
+    let fields = ["category", "agent", "profile", "profileName"];
+
+    // act
+    let errors = fields.map(|field| {
         let mut value = json!({
             "prompt": "Find auth flow",
             "subagent_type": "explore",
@@ -138,16 +142,23 @@ fn task_args_reject_role_selector_fields() {
         });
         value[field] = json!("explore");
 
-        let error = serde_json::from_value::<TaskArgs>(value)
-            .expect_err("generic task args must reject role selectors");
+        serde_json::from_value::<TaskArgs>(value)
+            .expect_err("generic task args must reject role selectors")
+    });
 
+    // assert
+    for error in errors {
         assert!(error.to_string().contains("unknown field"));
     }
 }
 
 #[test]
 fn task_args_require_background_choice_and_skill_list() {
-    for missing_field in ["subagent_type", "run_in_background", "load_skills"] {
+    // arrange
+    let required_fields = ["subagent_type", "run_in_background", "load_skills"];
+
+    // act
+    let errors = required_fields.map(|missing_field| {
         let mut value = json!({
             "prompt": "Find auth flow",
             "subagent_type": "explore",
@@ -161,14 +172,22 @@ fn task_args_require_background_choice_and_skill_list() {
 
         let error = serde_json::from_value::<TaskArgs>(value)
             .expect_err("generic task args must require explicit execution inputs");
+        (missing_field, error)
+    });
 
+    // assert
+    for (missing_field, error) in errors {
         assert!(error.to_string().contains(missing_field));
     }
 }
 
 #[test]
 fn task_args_accept_only_prompt_and_explicit_execution_inputs() {
-    for subagent_type in ["explore", "general", "librarian"] {
+    // arrange
+    let subagent_types = ["explore", "general", "librarian"];
+
+    // act
+    let parsed = subagent_types.map(|subagent_type| {
         let args: TaskArgs = serde_json::from_value(json!({
             "prompt": "Find auth flow",
             "subagent_type": subagent_type,
@@ -176,7 +195,11 @@ fn task_args_accept_only_prompt_and_explicit_execution_inputs() {
             "load_skills": []
         }))
         .unwrap_or_abort();
+        (subagent_type, args)
+    });
 
+    // assert
+    for (subagent_type, args) in parsed {
         assert_eq!(args.description, None);
         assert_eq!(args.subagent_type.as_str(), subagent_type);
         assert!(!args.run_in_background);
@@ -186,14 +209,19 @@ fn task_args_accept_only_prompt_and_explicit_execution_inputs() {
 
 #[test]
 fn task_args_reject_unknown_subagent_type() {
-    let error = serde_json::from_value::<TaskArgs>(json!({
+    // arrange
+    let value = json!({
         "prompt": "Find auth flow",
         "subagent_type": "quick",
         "run_in_background": false,
         "load_skills": []
-    }))
-    .expect_err("task must reject removed category profiles");
+    });
 
+    // act
+    let error = serde_json::from_value::<TaskArgs>(value)
+        .expect_err("task must reject removed category profiles");
+
+    // assert
     assert!(error.to_string().contains("unknown variant `quick`"));
 }
 
