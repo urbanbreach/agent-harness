@@ -93,24 +93,24 @@ fn root_runtime_example_uses_canonical_public_keys() {
     let parsed: PublicRuntimeConfig =
         json5::from_str(&root_example).unwrap_or_abort();
 
-    assert_eq!(parsed.model.as_deref(), Some("umans-ai-coding-plan/umans-kimi-k2.7"));
+    assert_eq!(parsed.model.as_deref(), Some("openai-codex/gpt-5.6-luna"));
     assert_eq!(parsed.small_model.as_deref(), Some("umans-ai-coding-plan/umans-flash"));
     assert!(parsed.provider.contains_key("umans-ai-coding-plan"));
     assert_eq!(
         parsed.agent.default.model.as_deref(),
-        Some("umans-ai-coding-plan/umans-kimi-k2.7")
+        Some("openai-codex/gpt-5.6-luna")
     );
     assert_eq!(
         parsed.agent.explore.model.as_deref(),
-        Some("umans-ai-coding-plan/umans-flash")
+        Some("openai-codex/gpt-5.6-luna")
     );
     assert_eq!(
         parsed.agent.general.model.as_deref(),
-        Some("umans-ai-coding-plan/umans-kimi-k2.7")
+        Some("openai-codex/gpt-5.6-luna")
     );
     assert_eq!(
         parsed.agent.librarian.model.as_deref(),
-        Some("umans-ai-coding-plan/umans-flash")
+        Some("openai-codex/gpt-5.6-luna")
     );
     assert!(!root_example.contains("\"base_url\""));
     assert!(!root_example.contains("\"api_key\""));

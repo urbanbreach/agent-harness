@@ -81,7 +81,8 @@ fn legacy_setting_ids_resolve_through_compat_migrations() {
     // arrange
     let migrations = settings_compat_migrations();
 
-    // act/assert
+    // act
+    // assert
     assert!(
         !migrations.is_empty(),
         "at least one legacy migration must exist"
@@ -217,7 +218,8 @@ fn explain_setting_reports_project_write_support_for_editable_bool_settings() {
         "runtime.deterministic.enabled",
     ];
 
-    // act/assert
+    // act
+    // assert
     for setting_id in editable_bool_ids {
         let explanation = explain_setting(setting_id).unwrap_or_abort();
         assert_eq!(

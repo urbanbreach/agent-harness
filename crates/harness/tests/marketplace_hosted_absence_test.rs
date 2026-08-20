@@ -39,7 +39,6 @@ const ABSENT_CLI_TERMS: &[&str] = &[
 ];
 
 const ABSENT_CONFIG_KEYS: &[&str] = &[
-    "autoshare",
     "marketplace",
     "telemetry",
     "billing",
@@ -130,8 +129,11 @@ fn collect_dirs_recursive(dir: &Path, out: &mut BTreeSet<String>) {
 
 #[test]
 fn no_marketplace_or_telemetry_source_directory_exists() {
+    // arrange
     let root = repo_root();
     let dirs = collect_rust_source_dirs(&root);
+    // act
+    // assert
     for absent in ABSENT_SOURCE_DIRS {
         assert!(
             !dirs.iter().any(|d| d == *absent),
@@ -142,9 +144,12 @@ fn no_marketplace_or_telemetry_source_directory_exists() {
 
 #[test]
 fn no_hosted_dependency_in_cargo_lock() {
+    // arrange
     let root = repo_root();
     let lock = fs::read_to_string(cargo_lock_path(&root)).unwrap_or_abort();
     let lower = lock.to_lowercase();
+    // act
+    // assert
     for substr in ABSENT_DEP_SUBSTRINGS {
         assert!(
             !lower.contains(substr),
@@ -155,6 +160,7 @@ fn no_hosted_dependency_in_cargo_lock() {
 
 #[test]
 fn config_schema_has_no_marketplace_telemetry_or_billing_keys() {
+    // arrange
     let root = repo_root();
     let schema_raw = fs::read_to_string(config_schema_path(&root)).unwrap_or_abort();
     let schema: Value = serde_json::from_str(&schema_raw).unwrap_or_abort();
@@ -175,6 +181,8 @@ fn config_schema_has_no_marketplace_telemetry_or_billing_keys() {
     let mut all_keys = BTreeSet::new();
     collect_keys(&schema, &mut all_keys);
 
+    // act
+    // assert
     for absent in ABSENT_CONFIG_KEYS {
         assert!(
             !all_keys.iter().any(|k| k == *absent),
@@ -185,17 +193,20 @@ fn config_schema_has_no_marketplace_telemetry_or_billing_keys() {
 
 #[test]
 fn scope_removal_ledger_covers_marketplace_and_telemetry_families() {
+    // arrange
     let root = repo_root();
     let raw = fs::read_to_string(scope_removal_ledger_path(&root)).unwrap_or_abort();
     let ledger: Value = serde_json::from_str(&raw).unwrap_or_abort();
 
     let families = ledger["retired_families"].as_array().unwrap_or_abort();
 
+    // act
     let family_ids: BTreeSet<&str> = families
         .iter()
         .filter_map(|f| f["family_id"].as_str())
         .collect();
 
+    // assert
     assert!(
         family_ids.contains("marketplace-hosted-share-media"),
         "scope-removal ledger missing family `marketplace-hosted-share-media`"
@@ -236,6 +247,7 @@ fn scope_removal_ledger_covers_marketplace_and_telemetry_families() {
 
 #[test]
 fn capability_inventory_has_no_marketplace_or_telemetry_rows() {
+    // arrange
     let root = repo_root();
     let inventory_path = root.join("docs/reference/capability-inventory.v1.json");
     let raw = fs::read_to_string(&inventory_path).unwrap_or_abort();
@@ -259,6 +271,8 @@ fn capability_inventory_has_no_marketplace_or_telemetry_rows() {
         "managed_connectors.",
     ];
 
+    // act
+    // assert
     for row in rows {
         let cap_id = row["capability_id"].as_str().unwrap_or_abort();
         for prefix in &removed_prefixes {
@@ -272,6 +286,7 @@ fn capability_inventory_has_no_marketplace_or_telemetry_rows() {
 
 #[test]
 fn no_imagine_or_billing_command_in_cli_enum() {
+    // arrange
     // Verify the CLI Commands enum source does not contain removed command
     // variants. This is a source-level check because the binary may not
     // compile due to unrelated Task 9 copilot.rs work in progress.
@@ -280,6 +295,8 @@ fn no_imagine_or_billing_command_in_cli_enum() {
     let source = fs::read_to_string(&lib_rs).unwrap_or_abort();
     let lower = source.to_lowercase();
 
+    // act
+    // assert
     for term in &[
         "imagine",
         "billing",
@@ -300,10 +317,13 @@ fn no_imagine_or_billing_command_in_cli_enum() {
 
 #[test]
 fn retained_local_commands_still_present_in_cli_enum() {
+    // arrange
     let root = repo_root();
     let lib_rs = root.join("crates/harness/src/lib.rs");
     let source = fs::read_to_string(&lib_rs).unwrap_or_abort();
 
+    // act
+    // assert
     for cmd in RETAINED_CLI_COMMANDS {
         let lower = source.to_lowercase();
         assert!(
@@ -315,11 +335,14 @@ fn retained_local_commands_still_present_in_cli_enum() {
 
 #[test]
 fn retained_local_config_keys_still_present() {
+    // arrange
     let root = repo_root();
     let schema_raw = fs::read_to_string(config_schema_path(&root)).unwrap_or_abort();
     let schema: Value = serde_json::from_str(&schema_raw).unwrap_or_abort();
     let props = schema["properties"].as_object().unwrap_or_abort();
 
+    // act
+    // assert
     for key in RETAINED_CONFIG_KEYS {
         assert!(
             props.contains_key(*key),
@@ -330,8 +353,11 @@ fn retained_local_config_keys_still_present() {
 
 #[test]
 fn local_plugin_descriptor_lifecycle_still_present() {
+    // arrange
     let root = repo_root();
+    // act
     let plugin_cmd = root.join("crates/harness/src/plugin_cmd.rs");
+    // assert
     assert!(
         plugin_cmd.is_file(),
         "local plugin command module must exist"
@@ -350,8 +376,11 @@ fn local_plugin_descriptor_lifecycle_still_present() {
 
 #[test]
 fn local_transcript_export_still_present() {
+    // arrange
     let root = repo_root();
+    // act
     let dashboard_cmd = root.join("crates/harness/src/dashboard_cmd.rs");
+    // assert
     assert!(
         dashboard_cmd.is_file(),
         "dashboard_cmd module (containing export) must exist"
@@ -365,9 +394,12 @@ fn local_transcript_export_still_present() {
 
 #[test]
 fn local_support_trace_still_present() {
+    // arrange
     let root = repo_root();
     let dashboard_cmd = root.join("crates/harness/src/dashboard_cmd.rs");
+    // act
     let source = fs::read_to_string(&dashboard_cmd).unwrap_or_abort();
+    // assert
     assert!(
         source.contains("TraceCommand"),
         "local support trace command must be present"
@@ -381,9 +413,12 @@ fn local_support_trace_still_present() {
 
 #[test]
 fn local_update_pipeline_still_present() {
+    // arrange
     let root = repo_root();
     let lib_rs = root.join("crates/harness/src/lib.rs");
+    // act
     let source = fs::read_to_string(&lib_rs).unwrap_or_abort();
+    // assert
     assert!(
         source.contains("UpdateCommand") || source.contains("Update("),
         "local update pipeline command must be present in CLI enum"

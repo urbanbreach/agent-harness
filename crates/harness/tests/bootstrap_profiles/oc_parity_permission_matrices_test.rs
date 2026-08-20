@@ -40,9 +40,12 @@ fn assert_policy_deny(
 
 #[test]
 fn default_agent_keeps_general_runtime_capabilities() {
+    // arrange
     let (config, coordinator) = load_example_coordinator();
     let policy = &coordinator.permission_policy;
 
+    // act
+    // assert
     assert_policy_allow(policy, "default", PermissionKind::Shell, "bash");
     assert_policy_allow(policy, "default", PermissionKind::EditFs, "edit");
     assert_policy_allow(policy, "default", PermissionKind::WebFetch, "webfetch");
@@ -70,8 +73,11 @@ fn default_agent_keeps_general_runtime_capabilities() {
 
 #[test]
 fn named_subagents_cannot_redelegate() {
+    // arrange
     let (_config, coordinator) = load_example_coordinator();
 
+    // act
+    // assert
     for profile_name in ["explore", "general", "librarian"] {
         assert_policy_deny(
             &coordinator.permission_policy,
@@ -90,10 +96,13 @@ fn named_subagents_cannot_redelegate() {
 
 #[test]
 fn explore_is_read_only_but_can_search() {
+    // arrange
     let (_config, coordinator) = load_example_coordinator();
     let policy = &coordinator.permission_policy;
     let explore = &coordinator.agent_profiles["explore"];
 
+    // act
+    // assert
     for tool_id in ["bash", "read", "glob", "grep", "list", "webfetch", "websearch"] {
         assert!(
             explore.toolset.iter().any(|tool| tool == tool_id),
@@ -110,9 +119,12 @@ fn explore_is_read_only_but_can_search() {
 
 #[test]
 fn librarian_is_read_only_and_can_research_externally() {
+    // arrange
     let (_config, coordinator) = load_example_coordinator();
     let policy = &coordinator.permission_policy;
 
+    // act
+    // assert
     assert_policy_allow(policy, "librarian", PermissionKind::WebFetch, "webfetch");
     assert_policy_allow(policy, "librarian", PermissionKind::WebSearch, "websearch");
     assert_policy_deny(policy, "librarian", PermissionKind::EditFs, "edit");
@@ -121,9 +133,12 @@ fn librarian_is_read_only_and_can_research_externally() {
 
 #[test]
 fn example_config_uses_allow_scalar_without_ask_all() {
+    // arrange
     let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let example_path = repo_root.join("configs/harness.example.jsonc");
+    // act
     let raw = fs::read_to_string(&example_path).unwrap_or_abort();
+    // assert
     assert!(raw.contains(r#""permission": "allow""#));
 
     let (config, _) = load_example_coordinator();

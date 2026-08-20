@@ -897,7 +897,7 @@ fn execute_cli(cli: Cli, io: &mut CliIo<'_>, deps: CliDeps) -> i32 {
         Commands::Agent { command } => agent_stdio_cmd::execute_with_io(command, io),
         Commands::Share(command) => execute_share(command, io),
         Commands::Setup(command) => execute_setup(command, io),
-        Commands::Wrap(command) => execute_wrap(command, io),
+        Commands::Wrap(command) => execute_wrap(command, io, &deps),
         Commands::Mcp { command } => execute_mcp(command, io),
     }
 }
@@ -1146,19 +1146,43 @@ fn execute_setup(command: SetupCommand, io: &mut CliIo<'_>) -> i32 {
     0
 }
 
-fn execute_wrap(command: WrapCommand, io: &mut CliIo<'_>) -> i32 {
+fn execute_wrap(command: WrapCommand, io: &mut CliIo<'_>, deps: &CliDeps) -> i32 {
     let output = command
         .output
         .unwrap_or_else(|| PathBuf::from("workspace.wrap.tar.gz"));
-    let _ = writeln!(io.stderr, "wrapping workspace into {}...", output.display());
+    let workspace = match deps.current_dir() {
+        Ok(path) => path,
+        Err(err) => {
+            let _ = writeln!(io.stderr, "failed to resolve workspace: {err}");
+            return 2;
+        }
+    };
+    if let Some(parent) = output.parent() {
+        if let Err(err) = std::fs::create_dir_all(parent) {
+            let _ = writeln!(io.stderr, "failed to create {}: {err}", parent.display());
+            return 2;
+        }
+    }
+    let archive = match build_session_tar(&workspace) {
+        Ok(archive) => archive,
+        Err(err) => {
+            let _ = writeln!(io.stderr, "failed to build workspace archive: {err}");
+            return 2;
+        }
+    };
+    if let Err(err) = std::fs::write(&output, &archive) {
+        let _ = writeln!(io.stderr, "failed to write {}: {err}", output.display());
+        return 2;
+    }
     if command.with_sessions {
         let _ = writeln!(io.stderr, "including session artifacts...");
     }
-    let _ = writeln!(
-        io.stdout,
-        "{{\"status\": \"wrapped\", \"output\": \"{}\"}}",
-        output.display()
-    );
+    let result = serde_json::json!({
+        "status": "wrapped",
+        "output": output.display().to_string(),
+        "bytes": archive.len(),
+    });
+    let _ = writeln!(io.stdout, "{result}");
     0
 }
 
@@ -1178,11 +1202,18 @@ fn execute_mcp(command: McpCommand, io: &mut CliIo<'_>) -> i32 {
             0
         }
         McpCommand::Health { server_id } => {
+            if server_id.trim().is_empty() {
+                let _ = writeln!(io.stderr, "server_id must not be empty");
+                return 2;
+            }
             let _ = writeln!(io.stderr, "checking health of MCP server: {server_id}");
-            let _ = writeln!(
-                io.stdout,
-                "{{\"server_id\": \"{server_id}\", \"status\": \"healthy\"}}"
-            );
+            let result = serde_json::json!({
+                "server_id": server_id,
+                "configured": false,
+                "enabled": false,
+                "status": "not_configured",
+            });
+            let _ = writeln!(io.stdout, "{result}");
             0
         }
     }

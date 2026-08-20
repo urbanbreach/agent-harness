@@ -28,6 +28,7 @@ fn public_runtime_config(agent_entries: &str, permission: &str) -> String {
 
 #[test]
 fn interactive_bootstrap_builds_generic_runtime_state() {
+    // arrange
     let raw = public_runtime_config(
         r#"
         default: { system_prompt: "Default prompt", tools: [] },
@@ -41,9 +42,11 @@ fn interactive_bootstrap_builds_generic_runtime_state() {
     );
     let config = load_config_from_str(&raw).unwrap_or_abort();
 
+    // act
     let coordinator_config =
         bootstrap::build_interactive_coordinator_config(&config).unwrap_or_abort();
 
+    // assert
     assert_eq!(
         coordinator_config
             .agent_profiles
@@ -65,6 +68,7 @@ fn interactive_bootstrap_builds_generic_runtime_state() {
 
 #[test]
 fn default_and_general_permissions_follow_configured_policy() {
+    // arrange
     let raw = public_runtime_config(
         r#"
         default: {
@@ -79,9 +83,11 @@ fn default_and_general_permissions_follow_configured_policy() {
         r#""allow""#,
     );
     let config = load_config_from_str(&raw).unwrap_or_abort();
+    // act
     let coordinator_config =
         bootstrap::build_interactive_coordinator_config(&config).unwrap_or_abort();
 
+    // assert
     assert_eq!(bootstrap::interactive_profile_name(&config), "default");
     assert_eq!(
         coordinator_config
@@ -117,6 +123,7 @@ fn default_and_general_permissions_follow_configured_policy() {
 
 #[test]
 fn interactive_bootstrap_uses_discovered_default_markdown_prompt() {
+    // arrange
     let temp = tempdir().unwrap_or_abort();
     let repo = temp.path().join("repo");
     fs::create_dir_all(repo.join(".git")).unwrap_or_abort();
@@ -135,14 +142,17 @@ fn interactive_bootstrap_uses_discovered_default_markdown_prompt() {
     let config = load_config_from_repo_file(&config_path, &repo);
     let coordinator_config =
         bootstrap::build_interactive_coordinator_config(&config).unwrap_or_abort();
+    // act
     let prompt = &coordinator_config.agent_profiles["default"].system_prompt;
 
+    // assert
     assert!(prompt.starts_with("Markdown-backed generic prompt."));
     assert!(prompt.contains("The exact model ID is default/gpt-4o-mini"));
 }
 
 #[test]
 fn interactive_bootstrap_prepends_project_agents_md_to_default_prompt() {
+    // arrange
     let temp = tempdir().unwrap_or_abort();
     let repo = temp.path().join("repo");
     fs::create_dir_all(repo.join(".git")).unwrap_or_abort();
@@ -161,8 +171,10 @@ fn interactive_bootstrap_prepends_project_agents_md_to_default_prompt() {
     let config = load_config_from_repo_file(&config_path, &repo);
     let coordinator_config =
         bootstrap::build_interactive_coordinator_config(&config).unwrap_or_abort();
+    // act
     let prompt = &coordinator_config.agent_profiles["default"].system_prompt;
 
+    // assert
     assert!(prompt.contains("Instructions from:"));
     assert!(prompt.contains("Project-wide instructions."));
     assert!(prompt.starts_with("Default prompt"));

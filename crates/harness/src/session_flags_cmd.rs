@@ -202,7 +202,10 @@ mod tests {
 
     #[test]
     fn resume_returns_meaningful_failure_directing_to_sessions_resume() {
+        // arrange
+        // act
         let (code, stdout, stderr) = run_resume("sess-123");
+        // assert
         assert_eq!(code, 2);
         assert!(stdout.is_empty());
         assert!(stderr.contains("not available"));
@@ -211,7 +214,10 @@ mod tests {
 
     #[test]
     fn fork_returns_meaningful_failure_directing_to_sessions_fork() {
+        // arrange
+        // act
         let (code, stdout, stderr) = run_fork("src-sess");
+        // assert
         assert_eq!(code, 2);
         assert!(stdout.is_empty());
         assert!(stderr.contains("not available"));
@@ -220,7 +226,10 @@ mod tests {
 
     #[test]
     fn worktree_returns_meaningful_failure_directing_to_worktree() {
+        // arrange
+        // act
         let (code, stdout, stderr) = run_worktree("sess-wt");
+        // assert
         assert_eq!(code, 2);
         assert!(stdout.is_empty());
         assert!(stderr.contains("not available"));
@@ -229,7 +238,10 @@ mod tests {
 
     #[test]
     fn session_returns_meaningful_failure_directing_to_sessions_rename() {
+        // arrange
+        // act
         let (code, stdout, stderr) = run_session("sess-flags");
+        // assert
         assert_eq!(code, 2);
         assert!(stdout.is_empty());
         assert!(stderr.contains("not available"));

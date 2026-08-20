@@ -268,7 +268,11 @@ fn write_download(io: &mut CliIo<'_>, result: &BinaryUpdateDownload) -> i32 {
     match serde_json::to_string_pretty(&output) {
         Ok(json) => {
             let _ = writeln!(io.stdout, "{json}");
-            0
+            if result.is_downloaded() {
+                0
+            } else {
+                2
+            }
         }
         Err(err) => {
             let _ = writeln!(
@@ -288,7 +292,11 @@ fn write_apply(io: &mut CliIo<'_>, result: &BinaryUpdateApply) -> i32 {
     match serde_json::to_string_pretty(&output) {
         Ok(json) => {
             let _ = writeln!(io.stdout, "{json}");
-            0
+            if result.is_applied() {
+                0
+            } else {
+                2
+            }
         }
         Err(err) => {
             let _ = writeln!(io.stderr, "update apply: failed to serialize JSON: {err}");
@@ -472,7 +480,7 @@ mod tests {
         let (code, stdout, _stderr) = run_cli(ws, &["download", "--url", ""]);
 
         // assert — unavailable
-        assert_eq!(code, 0);
+        assert_eq!(code, 2);
         let output: serde_json::Value = serde_json::from_str(stdout.trim()).expect("valid JSON");
         assert_eq!(
             output["download"]["status"].as_str(),
@@ -551,7 +559,7 @@ mod tests {
         );
 
         // assert — unavailable (sha256 mismatch)
-        assert_eq!(code, 0);
+        assert_eq!(code, 2);
         let output: serde_json::Value = serde_json::from_str(stdout.trim()).expect("valid JSON");
         assert_eq!(
             output["download"]["status"].as_str(),
@@ -618,7 +626,7 @@ mod tests {
         );
 
         // assert — failed, target unchanged
-        assert_eq!(code, 0);
+        assert_eq!(code, 2);
         let output: serde_json::Value = serde_json::from_str(stdout.trim()).expect("valid JSON");
         assert_eq!(
             output["apply"]["status"].as_str(),

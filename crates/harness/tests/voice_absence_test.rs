@@ -271,51 +271,75 @@ fn check_old_voice_config_key_rejected(root: &Path) {
 
 #[test]
 fn voice_absent_from_source() {
+    // arrange
     let root = repo_root();
+    // act
+    // assert
     check_no_voice_in_source(&root);
 }
 
 #[test]
 fn whisper_absent_from_source() {
+    // arrange
     let root = repo_root();
+    // act
+    // assert
     check_no_whisper_in_source(&root);
 }
 
 #[test]
 fn voice_absent_from_capability_inventory() {
+    // arrange
     let root = repo_root();
+    // act
+    // assert
     check_no_voice_in_capability_inventory(&root);
 }
 
 #[test]
 fn voice_absent_from_cargo_manifests() {
+    // arrange
     let root = repo_root();
+    // act
+    // assert
     check_no_voice_in_cargo_manifests(&root);
 }
 
 #[test]
 fn voice_absent_from_config_examples() {
+    // arrange
     let root = repo_root();
+    // act
+    // assert
     check_no_voice_in_config_examples(&root);
 }
 
 #[test]
 fn voice_absent_from_generated_schema() {
+    // arrange
     let root = repo_root();
+    // act
+    // assert
     check_no_voice_in_generated_schema(&root);
 }
 
 #[test]
 fn old_voice_config_key_is_rejected_by_serde_deny_unknown_fields() {
+    // arrange
     let root = repo_root();
+    // act
+    // assert
     check_old_voice_config_key_rejected(&root);
 }
 
 #[test]
 fn voice_absent_from_tui_leaf_actions() {
+    // arrange
     let root = repo_root();
     let group_e = root.join("crates/harness-tui/src/leaf_actions/group_e_media.rs");
+    // act
     let content = std::fs::read_to_string(&group_e).unwrap_or_abort();
+    // assert
     assert!(
         !content.contains("voice"),
         "voice reference still in group_e_media.rs"
@@ -328,9 +352,12 @@ fn voice_absent_from_tui_leaf_actions() {
 
 #[test]
 fn voice_absent_from_tui_cross_group_ownership_test() {
+    // arrange
     let root = repo_root();
     let test_file = root.join("crates/harness-tui/tests/cross_group_ownership_test.rs");
+    // act
     let content = std::fs::read_to_string(&test_file).unwrap_or_abort();
+    // assert
     assert!(
         !content.contains("voice_affordances"),
         "tui.voice_affordances still in cross-group ownership test"

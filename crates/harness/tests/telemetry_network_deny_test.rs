@@ -204,9 +204,12 @@ fn cargo_lock_path(root: &Path) -> PathBuf {
 
 #[test]
 fn no_telemetry_or_analytics_network_patterns_in_source() {
+    // arrange
     let root = repo_root();
     let files = collect_rust_files(&root);
 
+    // act
+    // assert
     for file in &files {
         let source = fs::read_to_string(file).unwrap_or_default();
         for pattern in ABSENT_NETWORK_PATTERNS {
@@ -221,9 +224,12 @@ fn no_telemetry_or_analytics_network_patterns_in_source() {
 
 #[test]
 fn no_telemetry_or_analytics_endpoint_literals_in_source() {
+    // arrange
     let root = repo_root();
     let files = collect_rust_files(&root);
 
+    // act
+    // assert
     for file in &files {
         let source = fs::read_to_string(file).unwrap_or_default();
         let lower = source.to_lowercase();
@@ -239,8 +245,11 @@ fn no_telemetry_or_analytics_endpoint_literals_in_source() {
 
 #[test]
 fn no_telemetry_or_analytics_dependency_in_cargo_lock() {
+    // arrange
     let root = repo_root();
     let lock = fs::read_to_string(cargo_lock_path(&root)).unwrap_or_abort();
+    // act
+    // assert
     for package in [
         "telemetry",
         "analytics",
@@ -260,6 +269,7 @@ fn no_telemetry_or_analytics_dependency_in_cargo_lock() {
 
 #[test]
 fn config_schema_has_no_telemetry_or_analytics_keys() {
+    // arrange
     let root = repo_root();
     let schema_raw = fs::read_to_string(config_schema_path(&root)).unwrap_or_abort();
     let schema: Value = serde_json::from_str(&schema_raw).unwrap_or_abort();
@@ -280,6 +290,8 @@ fn config_schema_has_no_telemetry_or_analytics_keys() {
     let mut all_keys = BTreeSet::new();
     collect_keys(&schema, &mut all_keys);
 
+    // act
+    // assert
     for absent in ABSENT_CONFIG_KEYS {
         assert!(
             !all_keys.iter().any(|k| k == *absent),
@@ -294,8 +306,11 @@ fn config_schema_has_no_telemetry_or_analytics_keys() {
 
 #[test]
 fn doctor_command_is_explicitly_offline() {
+    // arrange
     let root = repo_root();
+    // act
     let doctor_src = root.join("crates/harness/src/doctor.rs");
+    // assert
     assert!(doctor_src.is_file(), "doctor module must exist");
     let source = fs::read_to_string(&doctor_src).unwrap_or_abort();
     assert!(
@@ -314,12 +329,15 @@ fn doctor_command_is_explicitly_offline() {
 
 #[test]
 fn bootstrap_path_makes_no_telemetry_http_calls() {
+    // arrange
     let root = repo_root();
     let bootstrap_src = root.join("crates/harness/src/bootstrap.rs");
     let source = fs::read_to_string(&bootstrap_src).unwrap_or_abort();
 
     // Bootstrap may use HTTP for provider auth/transport, but must not
     // contain telemetry/analytics patterns.
+    // act
+    // assert
     for pattern in ABSENT_NETWORK_PATTERNS {
         assert!(
             !source.contains(pattern),
@@ -343,6 +361,7 @@ fn bootstrap_path_makes_no_telemetry_http_calls() {
 
 #[test]
 fn no_hosted_telemetry_url_constants_in_source() {
+    // arrange
     let root = repo_root();
     let files = collect_rust_files(&root);
 
@@ -356,6 +375,8 @@ fn no_hosted_telemetry_url_constants_in_source() {
         "https://events.",
     ];
 
+    // act
+    // assert
     for file in &files {
         let source = fs::read_to_string(file).unwrap_or_default();
         for pattern in &hosted_patterns {
@@ -374,6 +395,7 @@ fn no_hosted_telemetry_url_constants_in_source() {
 
 #[test]
 fn scope_removal_ledger_documents_telemetry_family() {
+    // arrange
     let root = repo_root();
     let ledger_path = root.join("docs/scope-removal-ledger.v1.json");
     let raw = fs::read_to_string(&ledger_path).unwrap_or_abort();
@@ -381,11 +403,13 @@ fn scope_removal_ledger_documents_telemetry_family() {
 
     let families = ledger["retired_families"].as_array().unwrap_or_abort();
 
+    // act
     let telemetry_family = families
         .iter()
         .find(|f| f["family_id"].as_str() == Some("telemetry-announcements"))
         .unwrap_or_abort();
 
+    // assert
     assert!(
         !telemetry_family["removed_items"]
             .as_array()
@@ -420,8 +444,11 @@ fn scope_removal_ledger_documents_telemetry_family() {
 
 #[test]
 fn local_redaction_module_still_present() {
+    // arrange
     let root = repo_root();
+    // act
     let redact_src = root.join("crates/harness-core/src/redact.rs");
+    // assert
     assert!(
         redact_src.is_file(),
         "local redaction module must exist (retained behavior)"
@@ -430,9 +457,12 @@ fn local_redaction_module_still_present() {
 
 #[test]
 fn local_support_export_still_present() {
+    // arrange
     let root = repo_root();
     // The sessions export command must still exist for local support bundles.
+    // act
     let sessions_src = root.join("crates/harness/src/sessions.rs");
+    // assert
     assert!(
         sessions_src.is_file(),
         "local sessions module must exist (retained behavior)"

@@ -403,9 +403,12 @@ mod tests {
 
     #[test]
     fn wrap_happy_creates_real_tar_gz_archive() {
+        // arrange
         let dir = tempfile::tempdir().unwrap();
         let output = dir.path().join("workspace.tar.gz");
+        // act
         let (code, stdout, stderr) = run_wrap(Some(output.to_str().unwrap()), false);
+        // assert
         assert_eq!(code, 0, "{stderr}");
         assert!(output.exists(), "archive file must exist on disk");
         let json: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
@@ -415,14 +418,20 @@ mod tests {
 
     #[test]
     fn wrap_failure_invalid_output_path_returns_error() {
+        // arrange
+        // act
         let (code, _stdout, stderr) = run_wrap(Some("/nonexistent/dir/pkg.tar.gz"), false);
+        // assert
         assert_ne!(code, 0);
         assert!(stderr.contains("failed to create") || stderr.contains("failed to write"));
     }
 
     #[test]
     fn mcp_stdio_returns_meaningful_failure_for_empty_command() {
+        // arrange
+        // act
         let (code, stdout, stderr) = run_mcp_stdio("");
+        // assert
         assert_ne!(code, 0);
         assert!(stdout.is_empty());
         assert!(stderr.contains("command must not be empty"));
@@ -430,7 +439,10 @@ mod tests {
 
     #[test]
     fn mcp_stdio_returns_meaningful_failure_directing_to_config() {
+        // arrange
+        // act
         let (code, stdout, stderr) = run_mcp_stdio("npx");
+        // assert
         assert_eq!(code, 2);
         assert!(stdout.is_empty());
         assert!(stderr.contains("requires a running server process"));
@@ -438,7 +450,10 @@ mod tests {
 
     #[test]
     fn mcp_health_invalid_empty_server_id_returns_error() {
+        // arrange
+        // act
         let (code, stdout, stderr) = run_mcp_health("");
+        // assert
         assert_ne!(code, 0);
         assert!(stdout.is_empty());
         assert!(stderr.contains("server_id must not be empty"));
@@ -446,7 +461,10 @@ mod tests {
 
     #[test]
     fn acp_server_returns_meaningful_failure_directing_to_run() {
+        // arrange
+        // act
         let (code, stdout, stderr) = run_acp_server("acp-server");
+        // assert
         assert_eq!(code, 2);
         assert!(stdout.is_empty());
         assert!(stderr.contains("not yet implemented"));

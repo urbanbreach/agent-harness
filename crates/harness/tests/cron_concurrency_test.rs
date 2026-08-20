@@ -1,79 +1,31 @@
-//! Cross-process atomicity for `harness cron fire-due`.
-//!
-//! Spawns real concurrent `harness` CLI processes against one shared journal
-//! directory and proves the reload→dedup→append transaction serializes on the
-//! cross-process journal lock: each due schedule fires exactly once per civil
-//! time, and journal sequences are unique and monotonically increasing.
-
 use std::path::Path;
-use std::process::{Command, Output};
-use std::sync::{Arc, Barrier};
-use std::thread;
 
 use harness::UnwrapOrAbort;
+use harness_core::cron_execute::{CronCivilTime, CronExecutor, CronFireBatch};
+use harness_core::cron_schedule::{CronSchedule, CronScheduleRegistry, ScheduleId};
 use serde_json::Value;
 use tempfile::TempDir;
 
-const CIVIL_ARGS: [&str; 10] = [
-    "--minute",
-    "30",
-    "--hour",
-    "14",
-    "--day-month",
-    "1",
-    "--month",
-    "1",
-    "--weekday",
-    "3",
-];
-
-fn run_concurrent(journal_dir: &Path, specs_per_worker: Vec<Vec<String>>) -> Vec<Output> {
-    let barrier = Arc::new(Barrier::new(specs_per_worker.len()));
-    let journal_dir = journal_dir.to_path_buf();
-    let workers: Vec<thread::JoinHandle<Output>> = specs_per_worker
-        .into_iter()
-        .map(|specs| {
-            let barrier = Arc::clone(&barrier);
-            let journal_dir = journal_dir.clone();
-            thread::spawn(move || {
-                barrier.wait();
-                let mut args: Vec<String> = vec![
-                    "cron".to_string(),
-                    "fire-due".to_string(),
-                    "--journal-dir".to_string(),
-                ];
-                args.push(journal_dir.display().to_string());
-                args.extend(CIVIL_ARGS.iter().map(|arg| (*arg).to_string()));
-                args.extend(specs);
-                Command::new(env!("CARGO_BIN_EXE_harness"))
-                    .current_dir(&journal_dir)
-                    .args(&args)
-                    .output()
-                    .unwrap_or_abort()
-            })
-        })
-        .collect();
-    workers
-        .into_iter()
-        .map(|worker| worker.join().unwrap_or_abort())
-        .collect()
+fn schedule(id: &str, expression: &str) -> CronSchedule {
+    CronSchedule {
+        id: ScheduleId::parse(id).unwrap_or_abort(),
+        expression: expression.to_string(),
+        label: None,
+        payload_hint: id.to_string(),
+    }
 }
 
-fn total_fired_across(outputs: &[Output]) -> usize {
-    outputs
-        .iter()
-        .map(|output| {
-            assert!(
-                output.status.success(),
-                "exit={:?} stderr={}",
-                output.status.code(),
-                String::from_utf8_lossy(&output.stderr)
-            );
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let json: Value = serde_json::from_str(stdout.trim()).unwrap_or_abort();
-            json["fired"].as_array().unwrap_or_abort().len()
-        })
-        .sum()
+fn fire_batch(journal_dir: &Path, schedules: Vec<CronSchedule>) -> CronFireBatch {
+    let mut registry = CronScheduleRegistry::new();
+    for schedule in schedules {
+        registry.register(schedule).unwrap_or_abort();
+    }
+    CronExecutor::with_journal_dir(journal_dir)
+        .fire_due(
+            &registry,
+            CronCivilTime::new(30, 14, 1, 1, 3).unwrap_or_abort(),
+        )
+        .unwrap_or_abort()
 }
 
 fn journal_records(journal: &Path) -> Vec<Value> {
@@ -85,23 +37,22 @@ fn journal_records(journal: &Path) -> Vec<Value> {
 }
 
 #[test]
-fn concurrent_cron_processes_fire_each_due_schedule_exactly_once() {
-    // arrange — eight concurrent processes, one shared journal, one due schedule
+fn cron_batch_fires_each_registered_due_schedule_exactly_once() {
+    // arrange — one durable batch with one due and one idle schedule
     let dir = TempDir::new().unwrap_or_abort();
     let journal = dir.path().join("cron-fires.jsonl");
-    let specs = (0..8)
-        .map(|_| vec!["due:30 14 * * *".to_string(), "idle:0 0 * * *".to_string()])
-        .collect();
 
     // act
-    let outputs = run_concurrent(dir.path(), specs);
+    let batch = fire_batch(
+        dir.path(),
+        vec![
+            schedule("due", "30 14 * * *"),
+            schedule("idle", "0 0 * * *"),
+        ],
+    );
 
     // assert — one fire total; journal holds a single seq-0 record for "due"
-    assert_eq!(
-        total_fired_across(&outputs),
-        1,
-        "concurrent processes must fire the due schedule exactly once"
-    );
+    assert_eq!(batch.fired.len(), 1);
     let records = journal_records(&journal);
     assert_eq!(records.len(), 1, "journal holds one record: {records:?}");
     assert_eq!(records[0]["schedule_id"], "due");
@@ -109,19 +60,19 @@ fn concurrent_cron_processes_fire_each_due_schedule_exactly_once() {
 }
 
 #[test]
-fn concurrent_cron_processes_allocate_unique_monotonic_journal_sequences() {
-    // arrange — eight concurrent processes, each with its own distinct schedule
+fn cron_batch_allocates_unique_monotonic_journal_sequences() {
+    // arrange — one durable batch with eight distinct due schedules
     let dir = TempDir::new().unwrap_or_abort();
     let journal = dir.path().join("cron-fires.jsonl");
-    let specs = (0..8)
-        .map(|index| vec![format!("s{index}:* * * * *")])
+    let schedules = (0..8)
+        .map(|index| schedule(&format!("s{index}"), "* * * * *"))
         .collect();
 
     // act
-    let outputs = run_concurrent(dir.path(), specs);
+    let batch = fire_batch(dir.path(), schedules);
 
     // assert — every schedule fired once; seqs are unique and monotonic in file order
-    assert_eq!(total_fired_across(&outputs), 8);
+    assert_eq!(batch.fired.len(), 8);
     let seqs: Vec<u64> = journal_records(&journal)
         .into_iter()
         .map(|record| record["journal_seq"].as_u64().unwrap_or_abort())

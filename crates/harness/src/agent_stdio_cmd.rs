@@ -124,7 +124,10 @@ mod tests {
 
     #[test]
     fn stdio_with_cat_succeeds_and_meets_contract() {
+        // arrange
+        // act
         let (code, stdout, stderr) = run_stdio("cat", true);
+        // assert
         assert_eq!(code, 0, "stderr: {stderr}");
         let json: serde_json::Value = serde_json::from_str(&stdout)
             .unwrap_or_else(|e| panic!("expected JSON output, got: {stdout}, parse error: {e}"));
@@ -136,13 +139,19 @@ mod tests {
 
     #[test]
     fn stdio_with_invalid_command_fails() {
+        // arrange
+        // act
         let (code, _stdout, _stderr) = run_stdio("exit 1", false);
+        // assert
         assert_ne!(code, 0);
     }
 
     #[test]
     fn stdio_with_empty_command_rejects() {
+        // arrange
+        // act
         let (code, stdout, stderr) = run_stdio("", false);
+        // assert
         assert_eq!(code, 2);
         assert!(stdout.is_empty());
         assert!(stderr.contains("must not be empty"));

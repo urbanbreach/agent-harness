@@ -100,7 +100,7 @@ fn reference_prompt_patterns_map_to_harness_seams() {
         (
             "Structured delegation reminder",
             "delegation_reminder",
-            "WS9",
+            "Shipped",
         ),
         (
             "Category-specific routing and prompt appends",
@@ -213,16 +213,13 @@ fn built_in_capability_order_and_state_policy_are_documented_and_guarded() {
 #[test]
 fn thin_v1_docs_cover_their_source_surfaces() {
     // arrange
-    let agents = read_doc("docs/operations/agents-and-subagents.md");
+    let agents = read_doc("docs/operations/generic-agent-and-tasks.md");
     let sessions = read_doc("docs/architecture/sessions-and-replay.md");
     let native = read_doc("docs/tools/native-tool-catalog.md");
     let troubleshooting = read_doc("docs/operations/troubleshooting.md");
 
     // act
-    let profiles = V1_PROMPT_PROFILES
-        .split_whitespace()
-        .chain(["title", "summary", "compaction"])
-        .collect::<Vec<_>>();
+    let profiles = SHIPPED_AGENT_PROFILES.split_whitespace().collect::<Vec<_>>();
 
     // assert
     for profile in profiles {

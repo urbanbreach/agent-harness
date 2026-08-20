@@ -6,7 +6,7 @@ use sha2::{Digest, Sha256};
 
 #[test]
 fn sessions_replay_from_different_cwd_leaves_events_unchanged() {
-    // Given: a finished session stored under a session directory
+    // arrange: a finished session stored under a session directory
     let session_dir = tempdir().unwrap_or_abort();
     let run_dir = session_dir.path().join("run_replay_purity");
     std::fs::create_dir_all(&run_dir).unwrap_or_abort();
@@ -41,7 +41,7 @@ fn sessions_replay_from_different_cwd_leaves_events_unchanged() {
     let events_path = run_dir.join("events.jsonl");
     let digest_before = sha256_hex(&fs::read(&events_path).unwrap_or_abort());
 
-    // When: replay from a different CWD (the temp root, not the session dir)
+    // act: replay from a different CWD (the temp root, not the session dir)
     let replay_output = run_harness([
         "--session-dir",
         session_dir.path().to_str().unwrap_or_abort(),
@@ -51,7 +51,7 @@ fn sessions_replay_from_different_cwd_leaves_events_unchanged() {
         "--json",
     ]);
 
-    // Then: replay succeeds and events.jsonl is byte-identical
+    // assert: replay succeeds and events.jsonl is byte-identical
     assert!(
         replay_output.status.success(),
         "stderr:\n{}",
@@ -83,7 +83,7 @@ fn sessions_replay_from_different_cwd_leaves_events_unchanged() {
 
 #[test]
 fn sessions_replay_corrupt_events_fails_closed() {
-    // Given: a session directory with a corrupt events.jsonl (invalid JSON on line 2)
+    // arrange: a session directory with a corrupt events.jsonl (invalid JSON on line 2)
     let session_dir = tempdir().unwrap_or_abort();
     let run_dir = session_dir.path().join("run_corrupt");
     std::fs::create_dir_all(&run_dir).unwrap_or_abort();
@@ -93,7 +93,7 @@ fn sessions_replay_corrupt_events_fails_closed() {
     )
     .unwrap_or_abort();
 
-    // When: replay the corrupt session
+    // act: replay the corrupt session
     let output = run_harness([
         "--session-dir",
         session_dir.path().to_str().unwrap_or_abort(),
@@ -102,7 +102,7 @@ fn sessions_replay_corrupt_events_fails_closed() {
         "run_corrupt",
     ]);
 
-    // Then: fail-closed — replay must not silently succeed on corrupt events
+    // assert: fail-closed — replay must not silently succeed on corrupt events
     assert!(
         !output.status.success(),
         "replay must fail for corrupt events.jsonl"
@@ -111,7 +111,7 @@ fn sessions_replay_corrupt_events_fails_closed() {
 
 #[test]
 fn sessions_rename_appends_title_event_preserving_existing_events() {
-    // Given: a finished session
+    // arrange: a finished session
     let session_dir = tempdir().unwrap_or_abort();
     let run_dir = session_dir.path().join("run_rename_cli");
     std::fs::create_dir_all(&run_dir).unwrap_or_abort();
@@ -137,7 +137,7 @@ fn sessions_rename_appends_title_event_preserving_existing_events() {
     );
     let events_before = fs::read(run_dir.join("events.jsonl")).unwrap_or_abort();
 
-    // When: rename via CLI
+    // act: rename via CLI
     let output = run_harness([
         "--session-dir",
         session_dir.path().to_str().unwrap_or_abort(),
@@ -148,7 +148,7 @@ fn sessions_rename_appends_title_event_preserving_existing_events() {
         "--json",
     ]);
 
-    // Then: success, event appended, existing events preserved
+    // assert: success, event appended, existing events preserved
     assert!(
         output.status.success(),
         "stderr:\n{}",
@@ -172,7 +172,7 @@ fn sessions_rename_appends_title_event_preserving_existing_events() {
 
 #[test]
 fn sessions_rename_fails_for_locked_session() {
-    // Given: a session with an active writer lock
+    // arrange: a session with an active writer lock
     let session_dir = tempdir().unwrap_or_abort();
     let run_dir = session_dir.path().join("run_rename_locked_cli");
     std::fs::create_dir_all(&run_dir).unwrap_or_abort();
@@ -189,7 +189,7 @@ fn sessions_rename_fails_for_locked_session() {
     );
     std::fs::write(run_dir.join(".writer.lock"), "pid=1\ntoken=1\n").unwrap_or_abort();
 
-    // When: rename via CLI
+    // act: rename via CLI
     let output = run_harness([
         "--session-dir",
         session_dir.path().to_str().unwrap_or_abort(),
@@ -199,7 +199,7 @@ fn sessions_rename_fails_for_locked_session() {
         "New Title",
     ]);
 
-    // Then: fail-closed — cannot rename an active session
+    // assert: fail-closed — cannot rename an active session
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("writer lock"));
@@ -207,7 +207,7 @@ fn sessions_rename_fails_for_locked_session() {
 
 #[test]
 fn sessions_rename_empty_title_fails_closed() {
-    // Given: a finished session
+    // arrange: a finished session
     let session_dir = tempdir().unwrap_or_abort();
     let run_dir = session_dir.path().join("run_rename_empty_cli");
     std::fs::create_dir_all(&run_dir).unwrap_or_abort();
@@ -222,7 +222,7 @@ fn sessions_rename_empty_title_fails_closed() {
         )],
     );
 
-    // When: rename with whitespace-only title
+    // act: rename with whitespace-only title
     let output = run_harness([
         "--session-dir",
         session_dir.path().to_str().unwrap_or_abort(),
@@ -232,14 +232,14 @@ fn sessions_rename_empty_title_fails_closed() {
         "   ",
     ]);
 
-    // Then: fail-closed
+    // assert: fail-closed
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("title must not be empty"));
 }
 
 #[test]
 fn sessions_cleanup_deletes_session_with_yes_flag() {
-    // Given: a finished session
+    // arrange: a finished session
     let session_dir = tempdir().unwrap_or_abort();
     let run_dir = session_dir.path().join("run_cleanup_cli");
     std::fs::create_dir_all(&run_dir).unwrap_or_abort();
@@ -255,7 +255,7 @@ fn sessions_cleanup_deletes_session_with_yes_flag() {
     );
     assert!(run_dir.exists());
 
-    // When: cleanup with --yes
+    // act: cleanup with --yes
     let output = run_harness([
         "--session-dir",
         session_dir.path().to_str().unwrap_or_abort(),
@@ -266,7 +266,7 @@ fn sessions_cleanup_deletes_session_with_yes_flag() {
         "--json",
     ]);
 
-    // Then: session directory removed
+    // assert: session directory removed
     assert!(
         output.status.success(),
         "stderr:\n{}",
@@ -280,7 +280,7 @@ fn sessions_cleanup_deletes_session_with_yes_flag() {
 
 #[test]
 fn sessions_cleanup_refuses_without_yes_flag() {
-    // Given: a finished session
+    // arrange: a finished session
     let session_dir = tempdir().unwrap_or_abort();
     let run_dir = session_dir.path().join("run_cleanup_noyes_cli");
     std::fs::create_dir_all(&run_dir).unwrap_or_abort();
@@ -295,7 +295,7 @@ fn sessions_cleanup_refuses_without_yes_flag() {
         )],
     );
 
-    // When: cleanup without --yes
+    // act: cleanup without --yes
     let output = run_harness([
         "--session-dir",
         session_dir.path().to_str().unwrap_or_abort(),
@@ -304,7 +304,7 @@ fn sessions_cleanup_refuses_without_yes_flag() {
         "run_cleanup_noyes_cli",
     ]);
 
-    // Then: fail-closed — armed confirmation required
+    // assert: fail-closed — armed confirmation required
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("--yes"));
     assert!(run_dir.exists(), "session must not be deleted without --yes");
@@ -312,7 +312,7 @@ fn sessions_cleanup_refuses_without_yes_flag() {
 
 #[test]
 fn sessions_cleanup_refuses_for_locked_session() {
-    // Given: a session with an active writer lock
+    // arrange: a session with an active writer lock
     let session_dir = tempdir().unwrap_or_abort();
     let run_dir = session_dir.path().join("run_cleanup_locked_cli");
     std::fs::create_dir_all(&run_dir).unwrap_or_abort();
@@ -328,7 +328,7 @@ fn sessions_cleanup_refuses_for_locked_session() {
     );
     std::fs::write(run_dir.join(".writer.lock"), "pid=1\ntoken=1\n").unwrap_or_abort();
 
-    // When: cleanup with --yes
+    // act: cleanup with --yes
     let output = run_harness([
         "--session-dir",
         session_dir.path().to_str().unwrap_or_abort(),
@@ -338,7 +338,7 @@ fn sessions_cleanup_refuses_for_locked_session() {
         "--yes",
     ]);
 
-    // Then: fail-closed — cannot delete an active session
+    // assert: fail-closed — cannot delete an active session
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("writer lock"));
     assert!(run_dir.exists(), "locked session must not be deleted");
@@ -346,7 +346,7 @@ fn sessions_cleanup_refuses_for_locked_session() {
 
 #[test]
 fn sessions_fork_rejects_invalid_cutoff_beyond_event_log() {
-    // Given: a finished session with 3 events
+    // arrange: a finished session with 3 events
     let session_dir = tempdir().unwrap_or_abort();
     let run_dir = session_dir.path().join("run_fork_bad_cutoff");
     std::fs::create_dir_all(&run_dir).unwrap_or_abort();
@@ -379,7 +379,7 @@ fn sessions_fork_rejects_invalid_cutoff_beyond_event_log() {
         ],
     );
 
-    // When: fork with cutoff beyond the event log (seq 99)
+    // act: fork with cutoff beyond the event log (seq 99)
     let output = run_harness([
         "--session-dir",
         session_dir.path().to_str().unwrap_or_abort(),
@@ -391,7 +391,7 @@ fn sessions_fork_rejects_invalid_cutoff_beyond_event_log() {
         "99",
     ]);
 
-    // Then: fail-closed — cutoff out of range
+    // assert: fail-closed — cutoff out of range
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("fork failed") || stderr.contains("out of range"));
@@ -399,7 +399,7 @@ fn sessions_fork_rejects_invalid_cutoff_beyond_event_log() {
 
 #[test]
 fn sessions_inspect_reports_corrupt_session_without_side_effects() {
-    // Given: a session with a corrupt events.jsonl
+    // arrange: a session with a corrupt events.jsonl
     let session_dir = tempdir().unwrap_or_abort();
     let run_dir = session_dir.path().join("run_inspect_corrupt");
     std::fs::create_dir_all(&run_dir).unwrap_or_abort();
@@ -409,7 +409,7 @@ fn sessions_inspect_reports_corrupt_session_without_side_effects() {
     )
     .unwrap_or_abort();
 
-    // When: inspect the corrupt session
+    // act: inspect the corrupt session
     let _output = run_harness([
         "--session-dir",
         session_dir.path().to_str().unwrap_or_abort(),
@@ -419,7 +419,7 @@ fn sessions_inspect_reports_corrupt_session_without_side_effects() {
         "--json",
     ]);
 
-    // Then: inspect handles corruption gracefully (may succeed with error fields or fail)
+    // assert: inspect handles corruption gracefully (may succeed with error fields or fail)
     // Either way, the corrupt file must not be modified
     let events_after = fs::read_to_string(run_dir.join("events.jsonl")).unwrap_or_abort();
     assert_eq!(events_after, "NOT VALID JSON\n");
@@ -427,7 +427,7 @@ fn sessions_inspect_reports_corrupt_session_without_side_effects() {
 
 #[test]
 fn sessions_crash_scan_detects_recovery_marker() {
-    // Given: a session root with one clean and one crashed session
+    // arrange: a session root with one clean and one crashed session
     let session_dir = tempdir().unwrap_or_abort();
     let clean_dir = session_dir.path().join("run_clean_scan");
     let crashed_dir = session_dir.path().join("run_crashed_scan");
@@ -437,7 +437,7 @@ fn sessions_crash_scan_detects_recovery_marker() {
     std::fs::write(crashed_dir.join("events.jsonl"), "").unwrap_or_abort();
     std::fs::write(crashed_dir.join(".writer.lock.recovering"), "pid=1\n").unwrap_or_abort();
 
-    // When: crash-scan
+    // act: crash-scan
     let output = run_harness([
         "--session-dir",
         session_dir.path().to_str().unwrap_or_abort(),
@@ -446,7 +446,7 @@ fn sessions_crash_scan_detects_recovery_marker() {
         "--json",
     ]);
 
-    // Then: scan reports the crashed session
+    // assert: scan reports the crashed session
     assert!(
         output.status.success(),
         "stderr:\n{}",
@@ -460,7 +460,7 @@ fn sessions_crash_scan_detects_recovery_marker() {
 
 #[test]
 fn sessions_discover_finds_foreign_session_markers() {
-    // Given: a scan root with a codex-style session.json marker
+    // arrange: a scan root with a codex-style session.json marker
     let root = tempdir().unwrap_or_abort();
     let foreign = root.path().join("codex-foreign");
     std::fs::create_dir_all(&foreign).unwrap_or_abort();
@@ -470,7 +470,7 @@ fn sessions_discover_finds_foreign_session_markers() {
     )
     .unwrap_or_abort();
 
-    // When: discover
+    // act: discover
     let output = run_harness([
         "sessions",
         "discover",
@@ -479,7 +479,7 @@ fn sessions_discover_finds_foreign_session_markers() {
         "--json",
     ]);
 
-    // Then: discoverable candidate found
+    // assert: discoverable candidate found
     assert!(
         output.status.success(),
         "stderr:\n{}",
@@ -493,7 +493,7 @@ fn sessions_discover_finds_foreign_session_markers() {
 
 #[test]
 fn sessions_import_events_jsonl_creates_replay_only_session() {
-    // Given: a foreign session with harness-compatible events.jsonl
+    // arrange: a foreign session with harness-compatible events.jsonl
     let root = tempdir().unwrap_or_abort();
     let foreign = root.path().join("foreign-importable");
     let session_dir = root.path().join("sessions");
@@ -520,7 +520,7 @@ fn sessions_import_events_jsonl_creates_replay_only_session() {
     );
     let source_before = fs::read(foreign.join("events.jsonl")).unwrap_or_abort();
 
-    // When: import
+    // act: import
     let output = run_harness([
         "--session-dir",
         session_dir.to_str().unwrap_or_abort(),
@@ -531,7 +531,7 @@ fn sessions_import_events_jsonl_creates_replay_only_session() {
         "--json",
     ]);
 
-    // Then: replay-only session created, source unchanged
+    // assert: replay-only session created, source unchanged
     assert!(
         output.status.success(),
         "stderr:\n{}",
@@ -550,14 +550,14 @@ fn sessions_import_events_jsonl_creates_replay_only_session() {
 
 #[test]
 fn sessions_import_unknown_format_fails_closed() {
-    // Given: a foreign session with only session.json (not events.jsonl)
+    // arrange: a foreign session with only session.json (not events.jsonl)
     let root = tempdir().unwrap_or_abort();
     let foreign = root.path().join("codex-unknown");
     let session_dir = root.path().join("sessions");
     std::fs::create_dir_all(&foreign).unwrap_or_abort();
     std::fs::write(foreign.join("session.json"), r#"{"id":"x"}"#).unwrap_or_abort();
 
-    // When: import
+    // act: import
     let output = run_harness([
         "--session-dir",
         session_dir.to_str().unwrap_or_abort(),
@@ -567,7 +567,7 @@ fn sessions_import_unknown_format_fails_closed() {
         foreign.to_str().unwrap_or_abort(),
     ]);
 
-    // Then: fail-closed — unsupported format
+    // assert: fail-closed — unsupported format
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("session import failed"));

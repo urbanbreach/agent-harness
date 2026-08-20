@@ -348,7 +348,10 @@ mod tests {
 
     #[test]
     fn export_returns_meaningful_failure_directing_to_sessions_export() {
+        // arrange
+        // act
         let (code, stdout, stderr) = run_export("sess-export");
+        // assert
         assert_eq!(code, 2);
         assert!(stdout.is_empty());
         assert!(stderr.contains("not available"));
@@ -357,7 +360,10 @@ mod tests {
 
     #[test]
     fn trace_returns_meaningful_failure_directing_to_sessions_export() {
+        // arrange
+        // act
         let (code, stdout, stderr) = run_trace("sess-trace");
+        // assert
         assert_eq!(code, 2);
         assert!(stdout.is_empty());
         assert!(stderr.contains("not available"));
@@ -366,8 +372,11 @@ mod tests {
 
     #[test]
     fn list_with_empty_session_dir_returns_zero_count() {
+        // arrange
         let dir = tempfile::tempdir().unwrap();
+        // act
         let (code, stdout, stderr) = run_list(Some(dir.path().to_path_buf()), true);
+        // assert
         assert_eq!(code, 0, "stderr: {stderr}");
         let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
         assert_eq!(json["session_count"], 0);
@@ -376,8 +385,11 @@ mod tests {
 
     #[test]
     fn status_reports_session_count_and_config_state() {
+        // arrange
         let dir = tempfile::tempdir().unwrap();
+        // act
         let (code, stdout, stderr) = run_status(Some(dir.path().to_path_buf()), true);
+        // assert
         assert_eq!(code, 0, "stderr: {stderr}");
         let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
         assert_eq!(json["session_count"], 0);

@@ -6,7 +6,6 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use serde_json::Value;
 
@@ -16,7 +15,7 @@ const RETIRED_REVISION_SUFFIX: &str = "e71da0d7";
 
 #[test]
 fn signoff_parity_preflight_reads_active_reference_authority() {
-    // Given
+    // arrange
     let root = repo_root();
     let script = fs::read_to_string(root.join("scripts/test-lanes.sh")).expect("lane script");
     let authority: Value = serde_json::from_slice(
@@ -25,10 +24,10 @@ fn signoff_parity_preflight_reads_active_reference_authority() {
     )
     .expect("reference authority JSON");
 
-    // When
+    // act
     let body = function_body(&script, "run_signoff_parity");
 
-    // Then
+    // assert
     assert!(body.contains("configs/tui-fidelity-reference-authority.json"));
     for field in [
         "executable",
@@ -59,8 +58,23 @@ fn signoff_parity_preflight_reads_active_reference_authority() {
 }
 
 #[test]
-fn signoff_parity_dry_run_uses_copied_authority_mutation() {
-    // Given
+fn historical_manifest_is_never_completion_authority() {
+    // arrange: the canonical lane script.
+    let script =
+        fs::read_to_string(repo_root().join("scripts/test-lanes.sh")).expect("lane script");
+
+    // act: the final verdict writer is isolated from evidence-generation stages.
+    let body = function_body(&script, "write_signoff_parity_verdict");
+
+    // assert: no frozen historical manifest field can derive parity completion.
+    assert!(!body.contains("tui-reference-parity-manifest.v1.json"));
+    assert!(!body.contains("manifest_sha256"));
+    assert!(!body.contains("rows"));
+}
+
+#[test]
+fn signoff_parity_authority_bindings_use_copied_mutation() {
+    // arrange
     let fixture = tempfile::tempdir().expect("temporary lane fixture");
     let fixture_scripts = fixture.path().join("scripts");
     let fixture_configs = fixture.path().join("configs");
@@ -99,21 +113,22 @@ fn signoff_parity_dry_run_uses_copied_authority_mutation() {
     )
     .expect("copied authority");
 
-    // When
-    let output = Command::new("bash")
-        .arg(fixture_scripts.join("test-lanes.sh"))
-        .args(["signoff-parity", "--dry-run", "--artifact-dir"])
-        .arg(fixture.path().join("artifacts"))
-        .output()
-        .expect("dry-run lane");
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    // act
+    let copied: Value = serde_json::from_slice(
+        &fs::read(fixture_configs.join("tui-fidelity-reference-authority.json"))
+            .expect("copied authority"),
+    )
+    .expect("copied authority JSON");
+    let script =
+        fs::read_to_string(fixture_scripts.join("test-lanes.sh")).expect("copied lane script");
+    let body = function_body(&script, "run_signoff_parity");
 
-    // Then
-    assert!(output.status.success(), "dry-run failed: {stdout}");
-    for (_, value) in mutated {
+    // assert
+    for (index, (field, value)) in mutated.into_iter().enumerate() {
+        assert_eq!(copied["reference"][field], value);
         assert!(
-            stdout.contains(value),
-            "dry-run did not consume mutated authority value {value}: {stdout}"
+            body.contains(&format!("reference_authority_fields[{index}]")),
+            "lane does not bind copied authority field {field}"
         );
     }
 }

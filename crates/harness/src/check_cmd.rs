@@ -191,7 +191,10 @@ mod tests {
 
     #[test]
     fn schema_happy_runtime_emits_real_schema_json() {
+        // arrange
+        // act
         let (code, stdout, _stderr) = run_schema(false);
+        // assert
         assert_eq!(code, 0);
         let parsed: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
         assert!(
@@ -203,7 +206,10 @@ mod tests {
 
     #[test]
     fn schema_happy_tui_emits_real_tui_schema_json() {
+        // arrange
+        // act
         let (code, stdout, _stderr) = run_schema(true);
+        // assert
         assert_eq!(code, 0);
         let parsed: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
         assert!(
@@ -215,7 +221,10 @@ mod tests {
 
     #[test]
     fn best_of_n_returns_meaningful_failure_directing_to_run() {
+        // arrange
+        // act
         let (code, stdout, stderr) = run_best_of_n("hello");
+        // assert
         assert_eq!(code, 2);
         assert!(stdout.is_empty());
         assert!(stderr.contains("not available"));
@@ -224,7 +233,10 @@ mod tests {
 
     #[test]
     fn check_returns_meaningful_failure_directing_to_doctor() {
+        // arrange
+        // act
         let (code, stdout, stderr) = run_check("config");
+        // assert
         assert_eq!(code, 2);
         assert!(stdout.is_empty());
         assert!(stderr.contains("not available"));
@@ -233,7 +245,10 @@ mod tests {
 
     #[test]
     fn output_format_returns_meaningful_failure_directing_to_flag() {
+        // arrange
+        // act
         let (code, stdout, stderr) = run_output_format("json");
+        // assert
         assert_eq!(code, 2);
         assert!(stdout.is_empty());
         assert!(stderr.contains("not available"));

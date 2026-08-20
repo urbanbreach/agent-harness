@@ -652,8 +652,11 @@ fn resolve_permission_mode_without_selection_does_not_activate() {
 
 #[test]
 fn resolve_permission_mode_rejects_removed_plan_mode() {
+    // arrange
+    // act
     let error = resolve_permission_mode(Some("plan"), false).unwrap_err();
 
+    // assert
     assert!(error.contains("unknown permission mode `plan`"));
 }
 

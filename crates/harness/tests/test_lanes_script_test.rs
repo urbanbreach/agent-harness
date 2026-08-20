@@ -20,6 +20,82 @@ fn test_lanes_exports_artifact_dir_for_performance_stage() {
 }
 
 #[test]
+fn test_lanes_ci_profile_is_defined_for_fast_and_integration() {
+    // arrange
+    let root = repo_root();
+    let script = fs::read_to_string(root.join("scripts/test-lanes.sh")).unwrap_or_abort();
+    let nextest_config = fs::read_to_string(root.join(".config/nextest.toml")).unwrap_or_abort();
+
+    // act
+    let ci_profile_is_wired = script
+        .contains("cargo nextest run --profile ci --workspace --all-features")
+        && script.contains(
+            "cargo nextest run --profile ci --workspace --all-features --partition hash:1/2",
+        )
+        && script.contains(
+            "cargo nextest run --profile ci --workspace --all-features --partition hash:2/2",
+        );
+
+    // assert
+    assert!(ci_profile_is_wired);
+    assert!(nextest_config.contains("[profile.default]"));
+    assert!(nextest_config.contains("[profile.ci]\ninherits = \"default\""));
+    assert!(nextest_config.contains("junit = { path = \"target/nextest/ci/junit.xml\" }"));
+}
+
+#[test]
+fn test_lanes_profile_allows_bounded_completion_for_reference_guard_owners() {
+    // arrange
+    let nextest_config =
+        fs::read_to_string(repo_root().join(".config/nextest.toml")).unwrap_or_abort();
+
+    // act
+    let affected_owner_selectors = [
+        "reference_receipt_mutations_fail_closed",
+        "source_guard_accepts_(clean_pinned_reference|current_code_input|current_manifest_input|fresh_runtime_output|relative_canonical_reference)",
+        "source_guard_rejects_stale_receipt",
+        "cached_reference_(requires_exact_presentation_identity|rejects_trace_or_schedule_drift|rejects_trace_artifact_drift)",
+        "compare_(writes_dual_runtime_checkpoint_and_cleanup_receipts|rejects_timeout_premature_exit_and_forced_kill_completion)",
+        "lifecycle_cases::(hanging_renderer_times_out_and_is_reaped_repeatedly|preexisting_runtime_root_and_sentinel_are_preserved)",
+        "packet1_(complete_receipt_passes_all_gates|provenance_rejects_every_bound_identity_mismatch)",
+        "presentation_trace_is_native_for_harness_and_external_for_grok",
+        "relative_evidence_path_preserves_harness_native_sidecar_across_runtime_cleanup",
+        "runner_packet::(compare_writes_explicit_capture_and_comparison_gate_receipt|packet1_controlled_defect_matrix)",
+    ];
+
+    // assert
+    assert!(
+        nextest_config
+            .matches("slow-timeout = { period = \"30s\", terminate-after = 4 }")
+            .count()
+            >= 4,
+        "the reference, source-guard, and runner overrides must permit a bounded 120 seconds"
+    );
+    for selector in affected_owner_selectors {
+        assert!(
+            nextest_config.contains(selector),
+            "the slow-timeout override must cover {selector}"
+        );
+    }
+}
+
+#[test]
+fn test_lanes_profile_serializes_tui_fidelity_runner_process_owners() {
+    // arrange
+    let nextest_config =
+        fs::read_to_string(repo_root().join(".config/nextest.toml")).unwrap_or_abort();
+
+    // act
+    let runner_process_owners = "[[profile.default.overrides]]\nfilter = 'binary(=tui_fidelity_runner_test)'\ntest-group = \"process-global-state\"";
+
+    // assert
+    assert!(
+        nextest_config.contains(runner_process_owners),
+        "the PTY/process runner owners must share the serialized process-global-state group"
+    );
+}
+
+#[test]
 fn test_lanes_declares_core_evidence_modes() {
     // arrange
     let script = fs::read_to_string(repo_root().join("scripts/test-lanes.sh")).unwrap_or_abort();
@@ -119,14 +195,42 @@ fn signoff_parity_mode_is_fail_closed() {
 }
 
 #[test]
-fn signoff_packet2_is_pinned_sequential_exactly_five_and_fail_closed() {
-    // Given: the canonical lane script.
+fn signoff_parity_completion_uses_only_active_sealed_verify_all_receipt() {
+    // arrange: the canonical lane script and its final verdict writer.
     let script = fs::read_to_string(repo_root().join("scripts/test-lanes.sh")).unwrap_or_abort();
 
-    // When: the Packet 2 function body is inspected independently of execution.
+    // act: the completion-authority seam is inspected.
+    let verdict_writer = function_body(&script, "write_signoff_parity_verdict");
+
+    // assert: historical rows cannot derive completion, and the receipt bindings are explicit.
+    assert!(!verdict_writer.contains("tui-reference-parity-manifest.v1.json"));
+    assert!(!verdict_writer.contains("row.get(\"status\")"));
+    for binding in [
+        "authority_sha256",
+        "inventory_sha256",
+        "coverage_sha256",
+        "verification_receipt_path",
+        "verification_receipt_sha256",
+    ] {
+        assert!(
+            verdict_writer.contains(binding),
+            "final verdict omits active completion binding {binding}"
+        );
+    }
+    assert!(verdict_writer.contains("profile") && verdict_writer.contains("all"));
+    assert!(verdict_writer.contains("sealed"));
+    assert!(verdict_writer.contains("skipped"));
+}
+
+#[test]
+fn signoff_packet2_is_pinned_sequential_exactly_five_and_fail_closed() {
+    // arrange: the canonical lane script.
+    let script = fs::read_to_string(repo_root().join("scripts/test-lanes.sh")).unwrap_or_abort();
+
+    // act: the Packet 2 function body is inspected independently of execution.
     let body = function_body(&script, "run_signoff_packet2");
 
-    // Then: it requires pinned inputs, runs five sequential captures, and aggregates once.
+    // assert: it requires pinned inputs, runs five sequential captures, and aggregates once.
     assert!(script.contains("signoff-packet2"));
     assert!(body.contains("eb267feff13129e568df38fb6fdf0ceb65f735d6"));
     assert!(body.contains("for ordinal in 1 2 3 4 5"));

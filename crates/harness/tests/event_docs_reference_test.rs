@@ -94,17 +94,17 @@ fn architecture_event_docs_match_event_v1_variants() {
 
 #[test]
 fn architecture_task_scheduled_fields_match_public_event_shape() {
-    // Given: the public event source and architecture contract.
+    // arrange: the public event source and architecture contract.
     let root = repo_root();
     let event_source =
         std::fs::read_to_string(root.join("crates/harness-core/src/event.rs")).unwrap_or_abort();
     let architecture_doc =
         std::fs::read_to_string(root.join("docs/architecture/architecture.md")).unwrap_or_abort();
 
-    // When: source and documented TaskScheduled fields are extracted.
+    // act: source and documented TaskScheduled fields are extracted.
     let source_fields = struct_fields(&event_source, "TaskScheduledEvent");
     let documented_fields = documented_task_scheduled_fields(&architecture_doc);
 
-    // Then: docs name every serialized top-level field exactly once.
+    // assert: docs name every serialized top-level field exactly once.
     assert_eq!(documented_fields, source_fields);
 }

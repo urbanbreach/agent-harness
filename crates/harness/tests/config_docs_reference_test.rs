@@ -13,7 +13,7 @@ mod common;
 
 use common::repo_root;
 
-const V1_PROMPT_PROFILES: &str = "build plan general explore visual-engineering artistry ultrabrain deep quick unspecified-low unspecified-high writing";
+const SHIPPED_AGENT_PROFILES: &str = "default explore general librarian";
 
 #[allow(clippy::panic, reason = "test code must panic gracefully")]
 fn documented_table_keys(doc: &str, heading: &str) -> BTreeSet<String> {

@@ -396,11 +396,11 @@ mod tests {
 
     #[test]
     fn rename_appends_title_event_and_keeps_existing_events() {
-        // Given: a finished session with two events
+        // arrange: a finished session with two events
         let (_temp, run_dir) = finished_session("run_rename");
         let events_before = std::fs::read(run_dir.join("events.jsonl")).unwrap();
 
-        // When: rename via CLI
+        // act: rename via CLI
         let (code, stdout, stderr) = run_cli(&[
             "rename".to_string(),
             run_dir.display().to_string(),
@@ -408,7 +408,7 @@ mod tests {
             "--json".to_string(),
         ]);
 
-        // Then: success, event appended, existing events preserved
+        // assert: success, event appended, existing events preserved
         assert_eq!(code, 0, "stderr: {stderr}");
         let body: serde_json::Value = serde_json::from_str(&stdout).unwrap();
         assert_eq!(body["harness_operation"], "rename");
@@ -433,46 +433,46 @@ mod tests {
 
     #[test]
     fn rename_fails_for_empty_title() {
-        // Given: a finished session
+        // arrange: a finished session
         let (_temp, run_dir) = finished_session("run_rename_empty");
 
-        // When: rename with empty title
+        // act: rename with empty title
         let (code, _stdout, stderr) = run_cli(&[
             "rename".to_string(),
             run_dir.display().to_string(),
             "  ".to_string(),
         ]);
 
-        // Then: fail-closed
+        // assert: fail-closed
         assert_eq!(code, 1);
         assert!(stderr.contains("title must not be empty"));
     }
 
     #[test]
     fn rename_fails_when_writer_lock_held() {
-        // Given: a session with an active writer lock
+        // arrange: a session with an active writer lock
         let (_temp, run_dir) = finished_session("run_rename_locked");
         std::fs::write(run_dir.join(".writer.lock"), "pid=1\ntoken=1\n").unwrap();
 
-        // When: rename via CLI
+        // act: rename via CLI
         let (code, _stdout, stderr) = run_cli(&[
             "rename".to_string(),
             run_dir.display().to_string(),
             "New Title".to_string(),
         ]);
 
-        // Then: fail-closed — cannot rename an active session
+        // assert: fail-closed — cannot rename an active session
         assert_eq!(code, 1);
         assert!(stderr.contains("writer lock held"));
     }
 
     #[test]
     fn cleanup_deletes_session_with_yes_flag() {
-        // Given: a finished session
+        // arrange: a finished session
         let (_temp, run_dir) = finished_session("run_cleanup");
         assert!(run_dir.exists());
 
-        // When: cleanup with --yes
+        // act: cleanup with --yes
         let (code, stdout, stderr) = run_cli(&[
             "cleanup".to_string(),
             run_dir.display().to_string(),
@@ -480,7 +480,7 @@ mod tests {
             "--json".to_string(),
         ]);
 
-        // Then: session directory removed
+        // assert: session directory removed
         assert_eq!(code, 0, "stderr: {stderr}");
         let body: serde_json::Value = serde_json::from_str(&stdout).unwrap();
         assert_eq!(body["harness_operation"], "cleanup");
@@ -490,15 +490,15 @@ mod tests {
 
     #[test]
     fn cleanup_refuses_without_yes_flag() {
-        // Given: a finished session
+        // arrange: a finished session
         let (_temp, run_dir) = finished_session("run_cleanup_noyes");
         assert!(run_dir.exists());
 
-        // When: cleanup without --yes
+        // act: cleanup without --yes
         let (code, _stdout, stderr) =
             run_cli(&["cleanup".to_string(), run_dir.display().to_string()]);
 
-        // Then: fail-closed — armed confirmation required
+        // assert: fail-closed — armed confirmation required
         assert_eq!(code, 1);
         assert!(stderr.contains("--yes"));
         assert!(
@@ -509,18 +509,18 @@ mod tests {
 
     #[test]
     fn cleanup_refuses_when_writer_lock_held() {
-        // Given: a session with an active writer lock
+        // arrange: a session with an active writer lock
         let (_temp, run_dir) = finished_session("run_cleanup_locked");
         std::fs::write(run_dir.join(".writer.lock"), "pid=1\ntoken=1\n").unwrap();
 
-        // When: cleanup with --yes
+        // act: cleanup with --yes
         let (code, _stdout, stderr) = run_cli(&[
             "cleanup".to_string(),
             run_dir.display().to_string(),
             "--yes".to_string(),
         ]);
 
-        // Then: fail-closed — cannot delete an active session
+        // assert: fail-closed — cannot delete an active session
         assert_eq!(code, 1);
         assert!(stderr.contains("writer lock"));
         assert!(run_dir.exists(), "session must not be deleted when locked");

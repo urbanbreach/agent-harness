@@ -72,11 +72,11 @@ fn workflow_managed_live_tuis_preserve_terminal_between_handoffs() {
 
 #[test]
 fn workflow_managed_live_tuis_preserve_configured_keybindings() {
-    // Given
+    // arrange
     let keybindings = BTreeMap::from([("submit_prompt".to_string(), "ctrl+g".to_string())]);
     let sink: UiIntentSink = Arc::new(|_| {});
 
-    // When
+    // act
     let (_tx, rx) = live_update_channel();
     let fresh = new_live_tui_options(
         PathBuf::from("/tmp/run-new"),
@@ -105,7 +105,7 @@ fn workflow_managed_live_tuis_preserve_configured_keybindings() {
         false,
     );
 
-    // Then
+    // assert
     assert_eq!(fresh.keybindings, Some(keybindings.clone()));
     assert_eq!(resumed.keybindings, Some(keybindings));
 }

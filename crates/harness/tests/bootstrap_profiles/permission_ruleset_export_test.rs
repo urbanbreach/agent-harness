@@ -1,5 +1,6 @@
 #[test]
 fn shipped_profiles_filter_provider_tools_from_permission_rulesets() {
+    // arrange
     let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let config_path = repo_root.join("configs/harness.example.jsonc");
     let config = load_config_from_repo_file(&config_path, &repo_root);
@@ -16,11 +17,13 @@ fn shipped_profiles_filter_provider_tools_from_permission_rulesets() {
         .iter()
         .map(|definition| definition.tool_id.as_str())
         .collect();
+    // act
     let default_ids: BTreeSet<&str> = default_defs
         .iter()
         .map(|definition| definition.tool_id.as_str())
         .collect();
 
+    // assert
     assert!(!explore.permission_ruleset.is_empty());
     for hidden in ["edit", "write", "task"] {
         assert!(

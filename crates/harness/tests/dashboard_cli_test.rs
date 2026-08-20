@@ -74,10 +74,12 @@ fn seed_session(session_dir: &std::path::Path, run_id: &str, workspace_root: &st
 
 #[test]
 fn dashboard_list_empty_session_dir_returns_zero_count_json() {
+    // arrange
     let temp = tempfile::tempdir().unwrap_or_abort();
     let session_dir = temp.path().join("sessions");
     fs::create_dir_all(&session_dir).unwrap_or_abort();
     let deps = CliDeps::real().with_current_dir(temp.path().to_path_buf());
+    // act
     let (code, stdout, stderr) = run_cli(
         &[
             "dashboard",
@@ -88,6 +90,7 @@ fn dashboard_list_empty_session_dir_returns_zero_count_json() {
         ],
         deps,
     );
+    // assert
     assert_eq!(code, 0, "stderr: {stderr}");
     let json: serde_json::Value = serde_json::from_str(&stdout).unwrap_or_abort();
     assert_eq!(json["session_count"], 0);
@@ -96,11 +99,13 @@ fn dashboard_list_empty_session_dir_returns_zero_count_json() {
 
 #[test]
 fn dashboard_list_finds_seeded_session() {
+    // arrange
     let temp = tempfile::tempdir().unwrap_or_abort();
     let session_dir = temp.path().join("sessions");
     fs::create_dir_all(&session_dir).unwrap_or_abort();
     seed_session(&session_dir, "run_dashboard_1", temp.path());
     let deps = CliDeps::real().with_current_dir(temp.path().to_path_buf());
+    // act
     let (code, stdout, stderr) = run_cli(
         &[
             "dashboard",
@@ -111,6 +116,7 @@ fn dashboard_list_finds_seeded_session() {
         ],
         deps,
     );
+    // assert
     assert_eq!(code, 0, "stderr: {stderr}");
     let json: serde_json::Value = serde_json::from_str(&stdout).unwrap_or_abort();
     assert_eq!(json["session_count"], 1);
@@ -120,11 +126,13 @@ fn dashboard_list_finds_seeded_session() {
 
 #[test]
 fn dashboard_list_text_mode_prints_session_info() {
+    // arrange
     let temp = tempfile::tempdir().unwrap_or_abort();
     let session_dir = temp.path().join("sessions");
     fs::create_dir_all(&session_dir).unwrap_or_abort();
     seed_session(&session_dir, "run_dashboard_text", temp.path());
     let deps = CliDeps::real().with_current_dir(temp.path().to_path_buf());
+    // act
     let (code, stdout, stderr) = run_cli(
         &[
             "dashboard",
@@ -134,6 +142,7 @@ fn dashboard_list_text_mode_prints_session_info() {
         ],
         deps,
     );
+    // assert
     assert_eq!(code, 0, "stderr: {stderr}");
     assert!(stdout.contains("sessions in"), "stdout: {stdout}");
     assert!(stdout.contains("run_dashboard_text"), "stdout: {stdout}");
@@ -141,11 +150,13 @@ fn dashboard_list_text_mode_prints_session_info() {
 
 #[test]
 fn dashboard_status_reports_session_count_and_config_state() {
+    // arrange
     let temp = tempfile::tempdir().unwrap_or_abort();
     let session_dir = temp.path().join("sessions");
     fs::create_dir_all(&session_dir).unwrap_or_abort();
     seed_session(&session_dir, "run_dash_status", temp.path());
     let deps = CliDeps::real().with_current_dir(temp.path().to_path_buf());
+    // act
     let (code, stdout, stderr) = run_cli(
         &[
             "dashboard",
@@ -156,6 +167,7 @@ fn dashboard_status_reports_session_count_and_config_state() {
         ],
         deps,
     );
+    // assert
     assert_eq!(code, 0, "stderr: {stderr}");
     let json: serde_json::Value = serde_json::from_str(&stdout).unwrap_or_abort();
     assert_eq!(json["session_count"], 1);
@@ -165,10 +177,12 @@ fn dashboard_status_reports_session_count_and_config_state() {
 
 #[test]
 fn dashboard_status_text_mode_prints_summary() {
+    // arrange
     let temp = tempfile::tempdir().unwrap_or_abort();
     let session_dir = temp.path().join("sessions");
     fs::create_dir_all(&session_dir).unwrap_or_abort();
     let deps = CliDeps::real().with_current_dir(temp.path().to_path_buf());
+    // act
     let (code, stdout, stderr) = run_cli(
         &[
             "dashboard",
@@ -178,6 +192,7 @@ fn dashboard_status_text_mode_prints_summary() {
         ],
         deps,
     );
+    // assert
     assert_eq!(code, 0, "stderr: {stderr}");
     assert!(stdout.contains("dashboard status"), "stdout: {stdout}");
     assert!(stdout.contains("session_count"), "stdout: {stdout}");
@@ -185,12 +200,14 @@ fn dashboard_status_text_mode_prints_summary() {
 
 #[test]
 fn dashboard_recent_limits_results() {
+    // arrange
     let temp = tempfile::tempdir().unwrap_or_abort();
     let session_dir = temp.path().join("sessions");
     fs::create_dir_all(&session_dir).unwrap_or_abort();
     seed_session(&session_dir, "run_recent_a", temp.path());
     seed_session(&session_dir, "run_recent_b", temp.path());
     let deps = CliDeps::real().with_current_dir(temp.path().to_path_buf());
+    // act
     let (code, stdout, stderr) = run_cli(
         &[
             "dashboard",
@@ -203,6 +220,7 @@ fn dashboard_recent_limits_results() {
         ],
         deps,
     );
+    // assert
     assert_eq!(code, 0, "stderr: {stderr}");
     let json: serde_json::Value = serde_json::from_str(&stdout).unwrap_or_abort();
     assert_eq!(json["session_count"], 1);
@@ -212,6 +230,7 @@ fn dashboard_recent_limits_results() {
 
 #[test]
 fn dashboard_recent_defaults_to_five() {
+    // arrange
     let temp = tempfile::tempdir().unwrap_or_abort();
     let session_dir = temp.path().join("sessions");
     fs::create_dir_all(&session_dir).unwrap_or_abort();
@@ -219,6 +238,7 @@ fn dashboard_recent_defaults_to_five() {
         seed_session(&session_dir, &format!("run_recent_{i}"), temp.path());
     }
     let deps = CliDeps::real().with_current_dir(temp.path().to_path_buf());
+    // act
     let (code, stdout, stderr) = run_cli(
         &[
             "dashboard",
@@ -229,6 +249,7 @@ fn dashboard_recent_defaults_to_five() {
         ],
         deps,
     );
+    // assert
     assert_eq!(code, 0, "stderr: {stderr}");
     let json: serde_json::Value = serde_json::from_str(&stdout).unwrap_or_abort();
     assert_eq!(json["session_count"], 5);
@@ -236,9 +257,11 @@ fn dashboard_recent_defaults_to_five() {
 
 #[test]
 fn dashboard_missing_session_dir_returns_error() {
+    // arrange
     let temp = tempfile::tempdir().unwrap_or_abort();
     let missing = temp.path().join("nonexistent-sessions");
     let deps = CliDeps::real().with_current_dir(temp.path().to_path_buf());
+    // act
     let (code, _stdout, stderr) = run_cli(
         &[
             "dashboard",
@@ -249,6 +272,7 @@ fn dashboard_missing_session_dir_returns_error() {
         ],
         deps,
     );
+    // assert
     assert_ne!(code, 0);
     assert!(stderr.contains("failed to read"), "stderr: {stderr}");
 }

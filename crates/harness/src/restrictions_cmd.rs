@@ -178,7 +178,10 @@ mod tests {
 
     #[test]
     fn permission_returns_meaningful_failure_directing_to_config() {
+        // arrange
+        // act
         let (code, stdout, stderr) = run_permission("bash", "deny");
+        // assert
         assert_eq!(code, 2);
         assert!(stdout.is_empty());
         assert!(stderr.contains("not available"));
@@ -187,7 +190,10 @@ mod tests {
 
     #[test]
     fn approval_returns_meaningful_failure_directing_to_config() {
+        // arrange
+        // act
         let (code, stdout, stderr) = run_approval("always");
+        // assert
         assert_eq!(code, 2);
         assert!(stdout.is_empty());
         assert!(stderr.contains("not available"));
@@ -196,7 +202,10 @@ mod tests {
 
     #[test]
     fn tool_returns_meaningful_failure_directing_to_config() {
+        // arrange
+        // act
         let (code, stdout, stderr) = run_tool("edit", "deny");
+        // assert
         assert_eq!(code, 2);
         assert!(stdout.is_empty());
         assert!(stderr.contains("not available"));
@@ -205,7 +214,10 @@ mod tests {
 
     #[test]
     fn web_returns_meaningful_failure_directing_to_config() {
+        // arrange
+        // act
         let (code, stdout, stderr) = run_web("allow", Some("*.example.com"));
+        // assert
         assert_eq!(code, 2);
         assert!(stdout.is_empty());
         assert!(stderr.contains("not available"));

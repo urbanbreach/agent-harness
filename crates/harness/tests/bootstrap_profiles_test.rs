@@ -367,6 +367,8 @@ fn shipped_named_subagent_permissions_match_runtime_toolsets() {
         coordinator_config.tool_registry.as_ref(),
         &coordinator_config.agent_profiles["default"],
     );
+    // act
+    // assert
     for subagent in ["explore", "general", "librarian"] {
         assert!(
             default_task_description.contains(&format!("- {subagent}:")),
@@ -397,6 +399,7 @@ fn shipped_generic_prompt_assets_are_distinct() {
     let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let mut distinctive_sections = std::collections::BTreeSet::new();
 
+    // act
     for profile in GENERIC_PROMPT_PROFILES.split_whitespace() {
         let body = shipped_profile_body(&repo_root, profile);
         let distinctive = body;

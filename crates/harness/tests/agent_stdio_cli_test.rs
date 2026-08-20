@@ -19,7 +19,10 @@ fn run_cli(args: &[&str]) -> (i32, String, String) {
 
 #[test]
 fn agent_stdio_with_cat_meets_agent_mode_contract_json() {
+    // arrange
+    // act
     let (code, stdout, stderr) = run_cli(&["agent", "stdio", "--command", "cat", "--json"]);
+    // assert
     assert_eq!(code, 0, "stderr: {stderr}");
     let json: serde_json::Value = serde_json::from_str(&stdout).unwrap_or_abort();
     assert_eq!(json["connected"], true, "json: {json}");
@@ -38,7 +41,10 @@ fn agent_stdio_with_cat_meets_agent_mode_contract_json() {
 
 #[test]
 fn agent_stdio_with_cat_text_mode_reports_ok() {
+    // arrange
+    // act
     let (code, stdout, stderr) = run_cli(&["agent", "stdio", "--command", "cat"]);
+    // assert
     assert_eq!(code, 0, "stderr: {stderr}");
     assert!(stdout.contains("agent stdio:"), "stdout: {stdout}");
     assert!(stdout.contains("status=ok"), "stdout: {stdout}");
@@ -46,13 +52,19 @@ fn agent_stdio_with_cat_text_mode_reports_ok() {
 
 #[test]
 fn agent_stdio_with_failing_command_exits_nonzero() {
+    // arrange
+    // act
     let (code, _stdout, _stderr) = run_cli(&["agent", "stdio", "--command", "exit 1"]);
+    // assert
     assert_ne!(code, 0);
 }
 
 #[test]
 fn agent_stdio_with_empty_command_rejects_with_usage() {
+    // arrange
+    // act
     let (code, stdout, stderr) = run_cli(&["agent", "stdio", "--command", ""]);
+    // assert
     assert_eq!(code, 2);
     assert!(stdout.is_empty());
     assert!(stderr.contains("must not be empty"), "stderr: {stderr}");
@@ -60,7 +72,10 @@ fn agent_stdio_with_empty_command_rejects_with_usage() {
 
 #[test]
 fn agent_select_subcommand_is_not_exposed() {
+    // arrange
+    // act
     let (code, stdout, stderr) = run_cli(&["agent", "select"]);
+    // assert
     assert_eq!(code, 2);
     assert!(stdout.is_empty());
     assert!(
