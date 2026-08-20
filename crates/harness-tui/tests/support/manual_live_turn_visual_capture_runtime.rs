@@ -1,6 +1,5 @@
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
-use std::thread;
-use std::time::Duration;
 
 use harness_core::event::{
     EventV1, ProviderRequestStartedEvent, TaskCancelledEvent, TaskScheduleState,
@@ -26,21 +25,19 @@ pub(crate) fn run_capture(config: CaptureScenario) -> Result<(), Box<dyn std::er
     let on_ui_intent: Option<Arc<dyn Fn(UiIntent) + Send + Sync>> =
         config.send_now_transition.then(|| {
             let transition_tx = update_tx.clone();
+            let transition_step = Arc::new(AtomicU8::new(0));
             Arc::new(move |_intent: UiIntent| {
-                let transition_tx = transition_tx.clone();
-                thread::spawn(move || {
-                    // Capture delay exposes the real cancelling frame before terminal events arrive.
-                    thread::sleep(Duration::from_millis(450));
-                    let updates = [
-                        envelope(
-                            9,
-                            ACTIVE_REQUEST_ID,
-                            EventV1::TaskCancelled(TaskCancelledEvent {
-                                task_id: ACTIVE_TASK_ID.into(),
-                                reason: "send_now".to_string(),
-                                task_scope: Some(TaskTerminalScope::AgentTurn),
-                            }),
-                        ),
+                let updates = match transition_step.fetch_add(1, Ordering::AcqRel) {
+                    0 => vec![envelope(
+                        9,
+                        ACTIVE_REQUEST_ID,
+                        EventV1::TaskCancelled(TaskCancelledEvent {
+                            task_id: ACTIVE_TASK_ID.into(),
+                            reason: "send_now".to_string(),
+                            task_scope: Some(TaskTerminalScope::AgentTurn),
+                        }),
+                    )],
+                    1 => vec![
                         envelope(
                             10,
                             QUEUED_REQUEST_ID,
@@ -63,11 +60,12 @@ pub(crate) fn run_capture(config: CaptureScenario) -> Result<(), Box<dyn std::er
                                 metadata: None,
                             }),
                         ),
-                    ];
-                    for event in updates {
-                        let _ = transition_tx.send(LiveUpdate::Event(Box::new(event)));
-                    }
-                });
+                    ],
+                    _ => Vec::new(),
+                };
+                for event in updates {
+                    let _ = transition_tx.send(LiveUpdate::Event(Box::new(event)));
+                }
             }) as Arc<dyn Fn(UiIntent) + Send + Sync>
         });
 

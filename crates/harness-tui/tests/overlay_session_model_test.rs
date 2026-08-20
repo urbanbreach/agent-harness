@@ -45,7 +45,10 @@ use ratatui::Terminal;
 /// Palette with zero entries: selection is invalid, view reports empty.
 #[test]
 fn palette_empty_catalog_selection_invalid() {
+    // arrange
+    // act
     let view = PaletteLeafView::new(true, 0, 0, 0);
+    // assert
     assert!(view.is_empty());
     assert!(!view.is_selection_valid());
     assert_eq!(view.clamped_selection(), 0);
@@ -54,7 +57,10 @@ fn palette_empty_catalog_selection_invalid() {
 /// Session list with zero entries: selection is invalid.
 #[test]
 fn session_empty_catalog_selection_invalid() {
+    // arrange
+    // act
     let view = SessionLeafView::new(true, 0, 0, false);
+    // assert
     assert!(view.is_empty());
     assert!(!view.is_selection_valid());
     assert_eq!(view.clamped_selection(), 0);
@@ -63,7 +69,10 @@ fn session_empty_catalog_selection_invalid() {
 /// Model switcher with zero providers and zero models: no provider, invalid.
 #[test]
 fn model_empty_catalog_no_provider() {
+    // arrange
+    // act
     let view = ModelLeafView::new(true, 0, 0, 0);
+    // assert
     assert!(view.is_empty());
     assert!(!view.has_provider());
     assert!(!view.is_selection_valid());
@@ -77,7 +86,10 @@ fn model_empty_catalog_no_provider() {
 /// Palette selected_index beyond entry_count is invalid and clamps to last.
 #[test]
 fn palette_invalid_selected_index_clamps() {
+    // arrange
+    // act
     let view = PaletteLeafView::new(true, 10, 3, 2);
+    // assert
     assert!(!view.is_selection_valid());
     assert_eq!(view.clamped_selection(), 2);
 }
@@ -85,7 +97,10 @@ fn palette_invalid_selected_index_clamps() {
 /// Session selected_index beyond session_count is invalid and clamps.
 #[test]
 fn session_invalid_selected_index_clamps() {
+    // arrange
+    // act
     let view = SessionLeafView::new(true, 99, 5, true);
+    // assert
     assert!(!view.is_selection_valid());
     assert_eq!(view.clamped_selection(), 4);
 }
@@ -93,7 +108,10 @@ fn session_invalid_selected_index_clamps() {
 /// Model selected_index beyond model_count is invalid and clamps.
 #[test]
 fn model_invalid_selected_index_clamps() {
+    // arrange
+    // act
     let view = ModelLeafView::new(true, 7, 2, 3);
+    // assert
     assert!(!view.is_selection_valid());
     assert_eq!(view.clamped_selection(), 2);
 }
@@ -101,13 +119,16 @@ fn model_invalid_selected_index_clamps() {
 /// Valid selected index passes validation for all three views.
 #[test]
 fn valid_selected_index_passes_for_all_views() {
+    // arrange
     let palette = PaletteLeafView::new(true, 1, 5, 3);
     assert!(palette.is_selection_valid());
 
     let session = SessionLeafView::new(true, 2, 10, true);
     assert!(session.is_selection_valid());
 
+    // act
     let model = ModelLeafView::new(true, 0, 1, 4);
+    // assert
     assert!(model.is_selection_valid());
 }
 
@@ -118,7 +139,10 @@ fn valid_selected_index_passes_for_all_views() {
 /// Model view with models but no providers: has_provider is false.
 #[test]
 fn model_missing_provider_detected() {
+    // arrange
+    // act
     let view = ModelLeafView::new(true, 0, 0, 3);
+    // assert
     assert!(!view.has_provider());
     assert!(view.is_selection_valid());
 }
@@ -126,7 +150,10 @@ fn model_missing_provider_detected() {
 /// Model view with providers but no models: selection is invalid.
 #[test]
 fn model_missing_model_detected() {
+    // arrange
+    // act
     let view = ModelLeafView::new(true, 0, 2, 0);
+    // assert
     assert!(view.has_provider());
     assert!(!view.is_selection_valid());
     assert!(view.is_empty());
@@ -139,8 +166,11 @@ fn model_missing_model_detected() {
 /// Palette view state survives resize: fields are unchanged.
 #[test]
 fn palette_resize_preserves_state() {
+    // arrange
+    // act
     let view = PaletteLeafView::new(true, 2, 5, 3);
     let resized = view.after_resize(80, 24);
+    // assert
     assert_eq!(view, resized);
     let resized2 = view.after_resize(120, 50);
     assert_eq!(view, resized2);
@@ -149,16 +179,22 @@ fn palette_resize_preserves_state() {
 /// Session view state survives resize.
 #[test]
 fn session_resize_preserves_state() {
+    // arrange
+    // act
     let view = SessionLeafView::new(true, 1, 3, true);
     let resized = view.after_resize(60, 20);
+    // assert
     assert_eq!(view, resized);
 }
 
 /// Model view state survives resize.
 #[test]
 fn model_resize_preserves_state() {
+    // arrange
+    // act
     let view = ModelLeafView::new(true, 0, 1, 4);
     let resized = view.after_resize(100, 30);
+    // assert
     assert_eq!(view, resized);
 }
 
@@ -169,21 +205,30 @@ fn model_resize_preserves_state() {
 /// CloseOverlay action restores focus to Composer.
 #[test]
 fn close_overlay_restores_focus_to_composer() {
+    // arrange
+    // act
     let action = OverlaySessionModelAction::CloseOverlay;
+    // assert
     assert_eq!(action.restored_focus(), LeafFocusOwner::Composer);
 }
 
 /// RestoreFocus action restores focus to Composer.
 #[test]
 fn restore_focus_action_restores_to_composer() {
+    // arrange
+    // act
     let action = OverlaySessionModelAction::RestoreFocus;
+    // assert
     assert_eq!(action.restored_focus(), LeafFocusOwner::Composer);
 }
 
 /// OpenPalette sets focus to Palette, not Composer.
 #[test]
 fn open_palette_sets_focus_to_palette() {
+    // arrange
+    // act
     let action = OverlaySessionModelAction::OpenPalette;
+    // assert
     assert_eq!(action.restored_focus(), LeafFocusOwner::Palette);
     assert_ne!(action.restored_focus(), LeafFocusOwner::Composer);
 }
@@ -191,19 +236,25 @@ fn open_palette_sets_focus_to_palette() {
 /// OpenModelSwitcher sets focus to Model.
 #[test]
 fn open_model_sets_focus_to_model() {
+    // arrange
+    // act
     let action = OverlaySessionModelAction::OpenModelSwitcher;
+    // assert
     assert_eq!(action.restored_focus(), LeafFocusOwner::Model);
 }
 
 /// Session actions set focus to Session.
 #[test]
 fn session_actions_set_focus_to_session() {
+    // arrange
+    // act
     for action in [
         OverlaySessionModelAction::OpenSessionHistory,
         OverlaySessionModelAction::OpenForkSelector,
         OverlaySessionModelAction::OpenLineageBrowser,
         OverlaySessionModelAction::OpenSessionRename,
     ] {
+        // assert
         assert_eq!(
             action.restored_focus(),
             LeafFocusOwner::Session,
@@ -220,6 +271,7 @@ fn session_actions_set_focus_to_session() {
 /// backend owner module and function — not a hardcoded fixture.
 #[test]
 fn open_actions_name_real_backend_owners() {
+    // arrange
     let cases: &[(OverlaySessionModelAction, &str, &str)] = &[
         (
             OverlaySessionModelAction::OpenPalette,
@@ -263,10 +315,12 @@ fn open_actions_name_real_backend_owners() {
         ),
     ];
 
+    // act
     for (action, expected_module, expected_function) in cases {
         let owner = action
             .backend_owner()
             .unwrap_or_else(|| panic!("action {action:?} must have a real backend owner"));
+        // assert
         assert_eq!(
             owner.module, *expected_module,
             "action {action:?} names wrong module"
@@ -282,6 +336,8 @@ fn open_actions_name_real_backend_owners() {
 /// CloseOverlay and RestoreFocus route to session_navigation::close_palette.
 #[test]
 fn close_and_restore_name_real_backend_owner() {
+    // arrange
+    // act
     for action in [
         OverlaySessionModelAction::CloseOverlay,
         OverlaySessionModelAction::RestoreFocus,
@@ -289,6 +345,7 @@ fn close_and_restore_name_real_backend_owner() {
         let owner = action
             .backend_owner()
             .unwrap_or_else(|| panic!("action {action:?} must have a backend owner"));
+        // assert
         assert_eq!(owner.module, "app::session_navigation");
         assert_eq!(owner.function, "close_palette");
     }
@@ -297,6 +354,7 @@ fn close_and_restore_name_real_backend_owner() {
 /// NewSession and NewWorktreeSession name real backend owners.
 #[test]
 fn new_session_actions_name_real_backend_owners() {
+    // arrange
     let new_session = OverlaySessionModelAction::NewSession;
     let owner = new_session
         .backend_owner()
@@ -304,10 +362,12 @@ fn new_session_actions_name_real_backend_owners() {
     assert_eq!(owner.module, "app::session_navigation");
     assert_eq!(owner.function, "apply_new_session_launcher_selection");
 
+    // act
     let worktree = OverlaySessionModelAction::NewWorktreeSession;
     let owner2 = worktree
         .backend_owner()
         .expect("NewWorktreeSession must have owner");
+    // assert
     assert_eq!(owner2.module, "app::session_navigation");
     assert_eq!(owner2.function, "request_new_worktree_session");
 }
@@ -316,11 +376,14 @@ fn new_session_actions_name_real_backend_owners() {
 /// a single backend owner — they are handled by the overlay's own key handler.
 #[test]
 fn navigation_actions_have_no_direct_backend_owner() {
+    // arrange
+    // act
     for action in [
         OverlaySessionModelAction::NavigateUp,
         OverlaySessionModelAction::NavigateDown,
         OverlaySessionModelAction::SelectCurrent,
     ] {
+        // assert
         assert!(
             !action.has_real_owner(),
             "action {action:?} should not have a direct backend owner"
@@ -331,7 +394,10 @@ fn navigation_actions_have_no_direct_backend_owner() {
 /// None action has no backend owner.
 #[test]
 fn none_action_has_no_backend_owner() {
+    // arrange
+    // act
     let action = OverlaySessionModelAction::None;
+    // assert
     assert!(!action.has_real_owner());
     assert!(action.backend_owner().is_none());
 }
@@ -339,8 +405,11 @@ fn none_action_has_no_backend_owner() {
 /// BackendOwner is deterministic: same action always returns same owner.
 #[test]
 fn backend_owner_is_deterministic() {
+    // arrange
+    // act
     let a = OverlaySessionModelAction::OpenForkSelector.backend_owner();
     let b = OverlaySessionModelAction::OpenForkSelector.backend_owner();
+    // assert
     assert_eq!(a, b);
 }
 
@@ -351,12 +420,15 @@ fn backend_owner_is_deterministic() {
 /// Duplicate palette entry IDs are rejected.
 #[test]
 fn duplicate_palette_entries_rejected() {
+    // arrange
+    // act
     let entries = [
         PaletteEntryLeaf::new("session.fork", "Fork"),
         PaletteEntryLeaf::new("session.clone", "Clone"),
         PaletteEntryLeaf::new("session.fork", "Fork Again"),
     ];
     let result = validate_palette_entries(&entries);
+    // assert
     assert!(result.is_err());
     match result {
         Err(PaletteValidationError::DuplicateId { id, first, second }) => {
@@ -371,29 +443,38 @@ fn duplicate_palette_entries_rejected() {
 /// Empty palette entry ID is rejected.
 #[test]
 fn empty_palette_entry_id_rejected() {
+    // arrange
+    // act
     let entries = [PaletteEntryLeaf::new("", "Empty")];
     let result = validate_palette_entries(&entries);
+    // assert
     assert_eq!(result, Err(PaletteValidationError::EmptyId { index: 0 }));
 }
 
 /// Stale palette entry (empty title) is detected.
 #[test]
 fn stale_palette_entry_detected() {
+    // arrange
     let stale = PaletteEntryLeaf::new("session.fork", "");
     assert!(stale.is_stale());
 
+    // act
     let fresh = PaletteEntryLeaf::new("session.fork", "Fork");
+    // assert
     assert!(!fresh.is_stale());
 }
 
 /// Stale entry in the list is rejected by validation.
 #[test]
 fn stale_entry_in_list_rejected() {
+    // arrange
+    // act
     let entries = [
         PaletteEntryLeaf::new("session.fork", "Fork"),
         PaletteEntryLeaf::new("session.clone", ""),
     ];
     let result = validate_palette_entries(&entries);
+    // assert
     assert!(result.is_err());
     match result {
         Err(PaletteValidationError::StaleEntry { id }) => {
@@ -406,18 +487,24 @@ fn stale_entry_in_list_rejected() {
 /// Valid palette entries with no duplicates pass validation.
 #[test]
 fn valid_palette_entries_pass() {
+    // arrange
+    // act
     let entries = [
         PaletteEntryLeaf::new("session.fork", "Fork"),
         PaletteEntryLeaf::new("session.clone", "Clone"),
         PaletteEntryLeaf::new("session.tree", "Tree"),
     ];
+    // assert
     assert!(validate_palette_entries(&entries).is_ok());
 }
 
 /// Empty palette entry list passes validation (trivially).
 #[test]
 fn empty_palette_entries_pass() {
+    // arrange
+    // act
     let entries: [PaletteEntryLeaf; 0] = [];
+    // assert
     assert!(validate_palette_entries(&entries).is_ok());
 }
 
@@ -428,6 +515,9 @@ fn empty_palette_entries_pass() {
 /// OVL-PALETTE: OpenPalette maps to OverlayKind::Palette.
 #[test]
 fn ovl_palette_semantic_structure() {
+    // arrange
+    // act
+    // assert
     assert_eq!(
         OverlaySessionModelAction::OpenPalette.overlay_kind(),
         OverlayKind::Palette
@@ -441,12 +531,15 @@ fn ovl_palette_semantic_structure() {
 /// OVL-SESSION: session actions map to OverlayKind::Session.
 #[test]
 fn ovl_session_semantic_structure() {
+    // arrange
+    // act
     for action in [
         OverlaySessionModelAction::OpenSessionHistory,
         OverlaySessionModelAction::OpenForkSelector,
         OverlaySessionModelAction::OpenLineageBrowser,
         OverlaySessionModelAction::OpenSessionRename,
     ] {
+        // assert
         assert_eq!(
             action.overlay_kind(),
             OverlayKind::Session,
@@ -458,6 +551,9 @@ fn ovl_session_semantic_structure() {
 /// OVL-MODEL: OpenModelSwitcher maps to OverlayKind::Model.
 #[test]
 fn ovl_model_semantic_structure() {
+    // arrange
+    // act
+    // assert
     assert_eq!(
         OverlaySessionModelAction::OpenModelSwitcher.overlay_kind(),
         OverlayKind::Model
@@ -467,6 +563,8 @@ fn ovl_model_semantic_structure() {
 /// Each overlay-opening action maps to exactly one OverlayKind.
 #[test]
 fn each_open_action_has_exactly_one_overlay_kind() {
+    // arrange
+    // act
     let open_actions = [
         OverlaySessionModelAction::OpenPalette,
         OverlaySessionModelAction::OpenSessionHistory,
@@ -478,6 +576,7 @@ fn each_open_action_has_exactly_one_overlay_kind() {
     ];
     for action in open_actions {
         let kind = action.overlay_kind();
+        // assert
         assert_ne!(
             kind,
             OverlayKind::None,
@@ -489,6 +588,8 @@ fn each_open_action_has_exactly_one_overlay_kind() {
 /// Non-open actions map to OverlayKind::None.
 #[test]
 fn non_open_actions_map_to_none_kind() {
+    // arrange
+    // act
     for action in [
         OverlaySessionModelAction::None,
         OverlaySessionModelAction::CloseOverlay,
@@ -497,6 +598,7 @@ fn non_open_actions_map_to_none_kind() {
         OverlaySessionModelAction::SelectCurrent,
         OverlaySessionModelAction::RestoreFocus,
     ] {
+        // assert
         assert_eq!(
             action.overlay_kind(),
             OverlayKind::None,
@@ -508,6 +610,8 @@ fn non_open_actions_map_to_none_kind() {
 /// OverlayKind variants are distinct.
 #[test]
 fn overlay_kind_variants_are_distinct() {
+    // arrange
+    // act
     let kinds = [
         OverlayKind::None,
         OverlayKind::Palette,
@@ -519,6 +623,7 @@ fn overlay_kind_variants_are_distinct() {
     for (i, a) in kinds.iter().enumerate() {
         for (j, b) in kinds.iter().enumerate() {
             if i != j {
+                // assert
                 assert_ne!(a, b, "OverlayKind variants at {i} and {j} must differ");
             }
         }
@@ -532,12 +637,15 @@ fn overlay_kind_variants_are_distinct() {
 /// All leaf views are Copy and constructible without any registry or app state.
 #[test]
 fn leaf_views_are_copy_and_stateless() {
+    // arrange
+    // act
     let palette = PaletteLeafView::new(true, 0, 1, 0);
     let session = SessionLeafView::new(true, 0, 1, true);
     let model = ModelLeafView::new(true, 0, 1, 1);
     let palette_copy = palette;
     let session_copy = session;
     let model_copy = model;
+    // assert
     assert_eq!(palette, palette_copy);
     assert_eq!(session, session_copy);
     assert_eq!(model, model_copy);
@@ -546,7 +654,10 @@ fn leaf_views_are_copy_and_stateless() {
 /// Default values are sensible (not visible, zero selection).
 #[test]
 fn leaf_view_defaults_are_inactive() {
+    // arrange
+    // act
     let palette = PaletteLeafView::default();
+    // assert
     assert!(!palette.visible);
     let session = SessionLeafView::default();
     assert!(!session.visible);
@@ -557,130 +668,13 @@ fn leaf_view_defaults_are_inactive() {
 /// Action leaf is Copy and default is None.
 #[test]
 fn action_leaf_is_copy_default_none() {
+    // arrange
+    // act
     let action = OverlaySessionModelAction::default();
+    // assert
     assert_eq!(action, OverlaySessionModelAction::None);
     let copy = action;
     assert_eq!(action, copy);
 }
 
-// ---------------------------------------------------------------------------
-// Rendering proof (not snapshot-only)
-// ---------------------------------------------------------------------------
-
-/// Render the palette overlay via Ratatui TestBackend showing the title and
-/// entry count. This is a real-surface artifact, not a snapshot.
-#[test]
-fn palette_overlay_renders_title_and_entries() {
-    let view = PaletteLeafView::new(true, 0, 3, 5);
-
-    let area = Rect::new(0, 0, 40, 10);
-    let backend = TestBackend::new(area.width, area.height);
-    let mut terminal = Terminal::new(backend).expect("terminal");
-
-    terminal
-        .draw(|frame| {
-            let lines = vec![
-                Line::from("Command Palette"),
-                Line::from(format!("Entries: {}", view.entry_count)),
-                Line::from(format!("Query length: {}", view.query_len)),
-            ];
-            let para = Paragraph::new(lines)
-                .block(Block::default().borders(Borders::ALL).title("OVL-PALETTE"));
-            frame.render_widget(para, area);
-        })
-        .expect("draw");
-
-    let buffer = terminal.backend().buffer().clone();
-    let output: String = buffer
-        .content
-        .chunks(usize::from(area.width))
-        .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    assert!(
-        output.contains("OVL-PALETTE"),
-        "missing title in:\n{output}"
-    );
-    assert!(
-        output.contains("Entries: 3"),
-        "missing entry count in:\n{output}"
-    );
-}
-
-/// Render the session overlay via Ratatui TestBackend.
-#[test]
-fn session_overlay_renders_title_and_sessions() {
-    let view = SessionLeafView::new(true, 0, 5, true);
-
-    let area = Rect::new(0, 0, 40, 10);
-    let backend = TestBackend::new(area.width, area.height);
-    let mut terminal = Terminal::new(backend).expect("terminal");
-
-    terminal
-        .draw(|frame| {
-            let lines = vec![
-                Line::from("Session Navigation"),
-                Line::from(format!("Sessions: {}", view.session_count)),
-                Line::from(format!("Lineage: {}", view.has_lineage)),
-            ];
-            let para = Paragraph::new(lines)
-                .block(Block::default().borders(Borders::ALL).title("OVL-SESSION"));
-            frame.render_widget(para, area);
-        })
-        .expect("draw");
-
-    let buffer = terminal.backend().buffer().clone();
-    let output: String = buffer
-        .content
-        .chunks(usize::from(area.width))
-        .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    assert!(
-        output.contains("OVL-SESSION"),
-        "missing title in:\n{output}"
-    );
-    assert!(
-        output.contains("Sessions: 5"),
-        "missing session count in:\n{output}"
-    );
-}
-
-/// Render the model switcher overlay via Ratatui TestBackend.
-#[test]
-fn model_overlay_renders_title_and_models() {
-    let view = ModelLeafView::new(true, 0, 2, 4);
-
-    let area = Rect::new(0, 0, 40, 10);
-    let backend = TestBackend::new(area.width, area.height);
-    let mut terminal = Terminal::new(backend).expect("terminal");
-
-    terminal
-        .draw(|frame| {
-            let lines = vec![
-                Line::from("Model Switcher"),
-                Line::from(format!("Providers: {}", view.provider_count)),
-                Line::from(format!("Models: {}", view.model_count)),
-            ];
-            let para = Paragraph::new(lines)
-                .block(Block::default().borders(Borders::ALL).title("OVL-MODEL"));
-            frame.render_widget(para, area);
-        })
-        .expect("draw");
-
-    let buffer = terminal.backend().buffer().clone();
-    let output: String = buffer
-        .content
-        .chunks(usize::from(area.width))
-        .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    assert!(output.contains("OVL-MODEL"), "missing title in:\n{output}");
-    assert!(
-        output.contains("Models: 4"),
-        "missing model count in:\n{output}"
-    );
-}
+include!("support/overlay_session_model_test_part2_test.rs");

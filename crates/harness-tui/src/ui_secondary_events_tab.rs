@@ -99,9 +99,9 @@ fn modal_inner_rects(popup: Rect) -> Option<HelpModalRects> {
     );
     let list_y = inner.y.saturating_add(3);
     let list = Rect::new(
-        content_x,
+        inner.x,
         list_y,
-        content_width,
+        inner.width,
         primary_footer.y.saturating_sub(1).saturating_sub(list_y),
     );
     (list.height > 0).then_some(HelpModalRects {

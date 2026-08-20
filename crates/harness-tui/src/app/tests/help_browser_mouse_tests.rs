@@ -23,6 +23,7 @@ pub(super) fn help_mouse_hover_preserves_keyboard_selection_and_click_opens_deta
             ModalTarget::Close
             | ModalTarget::Input
             | ModalTarget::Row(_)
+            | ModalTarget::Scrollbar
             | ModalTarget::Footer(_) => None,
         })
         .unwrap_or_abort();
@@ -41,6 +42,14 @@ pub(super) fn help_mouse_hover_preserves_keyboard_selection_and_click_opens_deta
 
     app.handle_mouse(
         mouse(MouseEventKind::Down(MouseButton::Left), area),
+        frame_area,
+        None,
+        None,
+        None,
+    );
+    assert_eq!(app.help_detail(), None);
+    app.handle_mouse(
+        mouse(MouseEventKind::Up(MouseButton::Left), area),
         frame_area,
         None,
         None,
@@ -66,6 +75,14 @@ pub(super) fn help_mouse_search_close_and_scroll_use_modal_hit_regions() {
 
     app.handle_mouse(
         mouse(MouseEventKind::Down(MouseButton::Left), search),
+        frame_area,
+        None,
+        None,
+        None,
+    );
+    assert!(!app.help_browser.search_active);
+    app.handle_mouse(
+        mouse(MouseEventKind::Up(MouseButton::Left), search),
         frame_area,
         None,
         None,
@@ -104,6 +121,14 @@ pub(super) fn help_mouse_search_close_and_scroll_use_modal_hit_regions() {
     let close = region(&model, ModalTarget::Close);
     app.handle_mouse(
         mouse(MouseEventKind::Down(MouseButton::Left), close),
+        frame_area,
+        None,
+        None,
+        None,
+    );
+    assert!(app.review_surface().is_some());
+    app.handle_mouse(
+        mouse(MouseEventKind::Up(MouseButton::Left), close),
         frame_area,
         None,
         None,

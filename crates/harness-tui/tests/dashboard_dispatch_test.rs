@@ -35,6 +35,7 @@ fn dispatcher_with(snapshot: TargetSnapshot) -> DashboardDispatch {
 
 #[test]
 fn idle_and_working_targets_emit_typed_targeted_actions() {
+    // arrange
     // Given: an idle selected session and a separate working session.
     let mut idle = dispatcher_with(target("session-a", TargetLifecycle::Idle));
     idle.insert_text("queued reply").expect("draft text");
@@ -46,6 +47,7 @@ fn idle_and_working_targets_emit_typed_targeted_actions() {
     assert_eq!(queued.target.session_id(), "session-a");
     assert_eq!(queued.action, DispatchAction::Queue);
 
+    // act
     let mut working = DashboardDispatch::new();
     working
         .register_target(target("session-b", TargetLifecycle::Working))
@@ -56,12 +58,14 @@ fn idle_and_working_targets_emit_typed_targeted_actions() {
     working.insert_text("urgent reply").expect("draft text");
     let interjected = working.interject().expect("interject intent");
 
+    // assert
     assert_eq!(interjected.target.session_id(), "session-b");
     assert_eq!(interjected.action, DispatchAction::Interject);
 }
 
 #[test]
 fn finished_failed_stale_and_removed_targets_disable_and_reject_drafts() {
+    // arrange
     // Given: each terminal dashboard state has a draft captured for dispatch.
     for lifecycle in [
         TargetLifecycle::Finished,
@@ -90,9 +94,11 @@ fn finished_failed_stale_and_removed_targets_disable_and_reject_drafts() {
         ));
     }
 
+    // act
     let mut removed = dispatcher_with(target("session-a", TargetLifecycle::Idle));
     removed.insert_text("removed target").expect("draft text");
     removed.remove_target("session-a").expect("remove target");
+    // assert
     assert!(removed.selected_composer().expect("composer").is_disabled());
     assert!(matches!(
         removed.send_now(),
@@ -104,6 +110,7 @@ fn finished_failed_stale_and_removed_targets_disable_and_reject_drafts() {
 
 #[test]
 fn drafts_remain_structured_and_independent_per_selected_target() {
+    // arrange
     // Given: two eligible dashboard sessions with independent composers.
     let mut dispatcher = DashboardDispatch::new();
     dispatcher
@@ -119,10 +126,12 @@ fn drafts_remain_structured_and_independent_per_selected_target() {
     dispatcher.select_target("session-b").expect("select b");
     dispatcher.insert_text("second").expect("draft b");
 
+    // act
     // Then: returning to either target restores only its own atom-backed draft.
     dispatcher
         .select_target("session-a")
         .expect("select a again");
+    // assert
     assert_eq!(
         dispatcher.selected_composer().expect("composer").text(),
         "first"
@@ -138,6 +147,7 @@ fn drafts_remain_structured_and_independent_per_selected_target() {
 
 #[test]
 fn completion_acceptance_reuses_the_shared_controller() {
+    // arrange
     // Given: a selected target with a slash completion trigger.
     let mut dispatcher = dispatcher_with(target("session-a", TargetLifecycle::Idle));
     dispatcher.insert_text("/mo").expect("draft text");
@@ -156,7 +166,9 @@ fn completion_acceptance_reuses_the_shared_controller() {
     // When: the shared completion controller accepts the selected result.
     dispatcher.accept_completion_keyboard().expect("completion");
 
+    // act
     // Then: the structured editor contains the completion replacement.
+    // assert
     assert_eq!(
         dispatcher.selected_composer().expect("composer").text(),
         "model"
@@ -165,6 +177,7 @@ fn completion_acceptance_reuses_the_shared_controller() {
 
 #[test]
 fn attachment_capability_is_disabled_without_reimplementing_ingestion() {
+    // arrange
     // Given: a text attachment produced by the existing lifecycle ingestor.
     let directory = tempfile::tempdir().expect("fixture directory");
     let path = directory.path().join("note.txt");
@@ -190,6 +203,7 @@ fn attachment_capability_is_disabled_without_reimplementing_ingestion() {
         Err(harness_tui::dashboard_dispatch::DispatchError::AttachmentCapability { .. })
     ));
 
+    // act
     let allowed_attachment = AttachmentIngestor::new(
         AttachmentPolicy::new(directory.path())
             .expect("fixture policy")
@@ -206,12 +220,14 @@ fn attachment_capability_is_disabled_without_reimplementing_ingestion() {
         .attach(8_u64, allowed_attachment)
         .expect("supported attachment");
     let intent = allowed.send_now().expect("attachment intent");
+    // assert
     assert_eq!(intent.attachments.len(), 1);
     assert_eq!(intent.attachments[0].metadata.mime, "text/plain");
 }
 
 #[test]
 fn queue_order_and_target_identity_are_preserved_for_coordinator_intents() {
+    // arrange
     // Given: one working target whose queue is owned by the dispatch facade.
     let mut dispatcher = dispatcher_with(target("session-a", TargetLifecycle::Working));
     dispatcher.insert_text("one").expect("first draft");
@@ -223,7 +239,9 @@ fn queue_order_and_target_identity_are_preserved_for_coordinator_intents() {
         .expect("interjection draft");
     let urgent = dispatcher.interject().expect("interject");
 
+    // act
     // Then: FIFO sequence numbers and the stable target ID survive every action.
+    // assert
     assert_eq!(first.sequence + 1, second.sequence);
     assert_eq!(urgent.sequence, second.sequence + 1);
     assert_eq!(
@@ -254,6 +272,7 @@ impl harness_tui::dashboard_dispatch::CoordinatorValidator for RecordingCoordina
 
 #[test]
 fn coordinator_validation_is_required_before_a_dispatch_is_accepted() {
+    // arrange
     // Given: a valid UI intent and a coordinator validator with no runtime bypass.
     let mut dispatcher = dispatcher_with(target("session-a", TargetLifecycle::Idle));
     dispatcher
@@ -269,7 +288,9 @@ fn coordinator_validation_is_required_before_a_dispatch_is_accepted() {
         .dispatch_with(DispatchAction::SendNow, &coordinator)
         .expect("coordinator accepts intent");
 
+    // act
     // Then: validation was invoked and the emitted intent still carries the stable target.
+    // assert
     assert_eq!(coordinator.calls.get(), 1);
     assert_eq!(intent.target.session_id(), "session-a");
 }

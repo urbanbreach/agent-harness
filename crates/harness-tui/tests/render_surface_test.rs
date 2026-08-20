@@ -379,9 +379,12 @@ fn viewport() -> Rect {
 /// (text and raster). The seam has no wall-clock/animation dependence.
 #[test]
 fn frame_capture_is_deterministic() {
+    // arrange
+    // act
     let app = live_app();
     let first = capture_semantic_frame(&app, viewport());
     let second = capture_semantic_frame(&app, viewport());
+    // assert
     assert_eq!(
         first, second,
         "repeat capture of identical state must be frame-identical"
@@ -393,8 +396,11 @@ fn frame_capture_is_deterministic() {
 /// raster must contain non-default entries. NAIVE seam (text-only) fails here.
 #[test]
 fn semantic_frame_captures_styled_cells() {
+    // arrange
+    // act
     let app = live_app();
     let frame = capture_semantic_frame(&app, viewport());
+    // assert
     assert!(
         !frame.text().trim().is_empty(),
         "captured frame must contain rendered text"
@@ -410,8 +416,11 @@ fn semantic_frame_captures_styled_cells() {
 /// text and style rasters (input-level determinism, no shared-state bleed).
 #[test]
 fn input_level_determinism_across_independent_builds() {
+    // arrange
+    // act
     let a = capture_semantic_frame(&live_app(), viewport());
     let b = capture_semantic_frame(&live_app(), viewport());
+    // assert
     assert_eq!(a.text(), b.text(), "text must be input-deterministic");
     assert_eq!(
         a.style_digest(),
@@ -424,8 +433,11 @@ fn input_level_determinism_across_independent_builds() {
 /// different frames, so equality assertions above are meaningful.
 #[test]
 fn distinct_surfaces_produce_distinct_frames() {
+    // arrange
+    // act
     let live = capture_semantic_frame(&live_app(), viewport());
     let startup = capture_semantic_frame(&startup_app(), viewport());
+    // assert
     assert_ne!(
         live.text(),
         startup.text(),
@@ -438,10 +450,13 @@ fn distinct_surfaces_produce_distinct_frames() {
 /// passive.
 #[test]
 fn observation_seam_does_not_affect_render() {
+    // arrange
+    // act
     let app = live_app();
     let mut observer = FrameObserver::new();
     let observed = observer.capture(&app, viewport());
     let direct = capture_semantic_frame(&app, viewport());
+    // assert
     assert_eq!(
         observed, direct,
         "attaching an observer must not change the captured frame (P6)"
@@ -454,6 +469,7 @@ fn observation_seam_does_not_affect_render() {
 /// captured frame is unaffected by how many hooks run.
 #[test]
 fn observer_hooks_observe_without_side_effects() {
+    // arrange
     let app = live_app();
     let seen_before = Rc::new(RefCell::new(0usize));
     let seen_dims = Rc::new(RefCell::new(Vec::<(u16, u16)>::new()));
@@ -468,8 +484,10 @@ fn observer_hooks_observe_without_side_effects() {
             dims.borrow_mut().push((frame.width, frame.height));
         });
 
+    // act
     let observed = observer.capture(&app, viewport());
 
+    // assert
     assert_eq!(*seen_before.borrow(), 1, "before-render hook ran once");
     assert_eq!(
         *seen_dims.borrow(),
@@ -488,6 +506,7 @@ fn observer_hooks_observe_without_side_effects() {
 /// and assistant delta appear in the rendered grid.
 #[test]
 fn frame_layout_matches_shell_contract() {
+    // arrange
     let app = live_app();
     let area = viewport();
     let plan = FrameLayoutPlan::for_app(&app, area);
@@ -504,7 +523,9 @@ fn frame_layout_matches_shell_contract() {
         "frame height matches the viewport"
     );
 
+    // act
     let text = frame.text();
+    // assert
     assert!(
         text.contains("Inspect the deterministic render surface"),
         "ingested user message must appear in the captured transcript\n{text}"
@@ -519,11 +540,14 @@ fn frame_layout_matches_shell_contract() {
 /// styled cells. NAIVE seam fails the raster assertion on each viewport.
 #[test]
 fn viewport_matrix_is_deterministic_and_styled() {
+    // arrange
+    // act
     for (width, height) in [(80u16, 24u16), (100, 30), (120, 40)] {
         let area = Rect::new(0, 0, width, height);
         let app = live_app();
         let first = capture_semantic_frame(&app, area);
         let second = capture_semantic_frame(&app, area);
+        // assert
         assert_eq!(
             first, second,
             "viewport {width}x{height} must be deterministic"

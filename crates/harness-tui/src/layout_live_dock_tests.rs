@@ -179,7 +179,7 @@ fn permission_suppression_keeps_dedicated_prompt_above_the_composer() {
         let permission = plan.status.expect("permission prompt band");
         let composer = plan.composer.expect("permission composer");
 
-        assert_eq!(permission.height, LIVE_PERMISSION_PROMPT_MIN_HEIGHT);
+        assert_eq!(permission.height, 9);
         assert_eq!(
             composer.y.saturating_sub(permission.bottom()),
             expected.outer_spacer,

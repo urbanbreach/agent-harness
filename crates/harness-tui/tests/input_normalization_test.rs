@@ -29,6 +29,7 @@ fn one_key(bytes: &[u8]) -> harness_tui::input::NormalizedKey {
 
 #[test]
 fn protocol_variants_share_one_canonical_key() {
+    // arrange
     let variants = [
         (b"\x1b[A".as_slice(), KeyCode::Up, KeyModifiers::NONE),
         (b"\x1bOA".as_slice(), KeyCode::Up, KeyModifiers::NONE),
@@ -46,7 +47,9 @@ fn protocol_variants_share_one_canonical_key() {
         (&[0x01], KeyCode::Char('A'), KeyModifiers::CTRL),
     ];
 
+    // act
     for (bytes, code, modifiers) in variants {
+        // assert
         assert_eq!(one_key(bytes).code, code);
         assert_eq!(one_key(bytes).modifiers, modifiers);
     }
@@ -55,11 +58,14 @@ fn protocol_variants_share_one_canonical_key() {
 
 #[test]
 fn modifier_wire_table_is_canonical_and_complete() {
+    // arrange
+    // act
     for variant in MODIFIER_VARIANTS {
         let key = harness_tui::input::NormalizedKey::from_event(KeyEvent::new(
             KeyCode::Char('x'),
             variant.modifiers,
         ));
+        // assert
         assert_eq!(key.modifiers, variant.modifiers);
         assert_eq!(ModifierVariant::from_wire(variant.wire), variant);
     }
@@ -67,12 +73,15 @@ fn modifier_wire_table_is_canonical_and_complete() {
 
 #[test]
 fn bracketed_cjk_and_emoji_paste_is_byte_exact() {
+    // arrange
+    // act
     let text = "你好，世界 👩‍💻 é";
     let mut normalizer = InputNormalizer::new();
     let output = normalizer
         .ingest_at(Duration::ZERO, TerminalInputEvent::Paste(text.to_string()))
         .unwrap();
 
+    // assert
     assert_eq!(
         output,
         vec![NormalizedInput::paste(text, PasteKind::Bracketed)]
@@ -84,7 +93,10 @@ fn bracketed_cjk_and_emoji_paste_is_byte_exact() {
 
 #[test]
 fn heuristic_paste_windows_have_explicit_boundaries() {
+    // arrange
+    // act
     let mut normalizer = InputNormalizer::new();
+    // assert
     assert!(normalizer
         .ingest_at(
             Duration::ZERO,
@@ -109,8 +121,11 @@ fn heuristic_paste_windows_have_explicit_boundaries() {
 
 #[test]
 fn resize_storm_emits_only_the_latest_after_sixteen_ms_quiet() {
+    // arrange
+    // act
     let mut normalizer = InputNormalizer::new();
     for (at, cols, rows) in [(0, 80, 24), (5, 100, 30), (10, 120, 40)] {
+        // assert
         assert!(normalizer
             .ingest_at(
                 Duration::from_millis(at),
@@ -131,6 +146,7 @@ fn resize_storm_emits_only_the_latest_after_sixteen_ms_quiet() {
 
 #[test]
 fn esc_dismisses_child_before_parent() {
+    // arrange
     let mut normalizer = InputNormalizer::new();
     normalizer.esc_mut().push(EscLayer::Modal);
     normalizer.esc_mut().push(EscLayer::ChildOverlay);
@@ -145,12 +161,14 @@ fn esc_dismisses_child_before_parent() {
         ))]
     );
 
+    // act
     let second = normalizer
         .ingest_at(
             Duration::from_millis(1),
             key_event(KeyCode::Esc, KeyModifiers::NONE),
         )
         .unwrap();
+    // assert
     assert_eq!(
         second,
         vec![NormalizedInput::Escape(EscAction::Dismiss(EscLayer::Modal))]
@@ -159,8 +177,11 @@ fn esc_dismisses_child_before_parent() {
 
 #[test]
 fn ctrl_c_is_interrupt_then_kill_for_empty_and_nonempty_input() {
+    // arrange
+    // act
     let mut normalizer = InputNormalizer::new();
     normalizer.set_composer_nonempty(false);
+    // assert
     assert_eq!(
         normalizer
             .ingest_at(
@@ -184,6 +205,8 @@ fn ctrl_c_is_interrupt_then_kill_for_empty_and_nonempty_input() {
 
 #[test]
 fn heuristic_text_has_no_character_loss_or_duplicate_action() {
+    // arrange
+    // act
     let text = "你好🌍";
     let mut normalizer = InputNormalizer::new();
     for (index, character) in text.chars().enumerate() {
@@ -193,6 +216,7 @@ fn heuristic_text_has_no_character_loss_or_duplicate_action() {
                 key_event(KeyCode::Char(character), KeyModifiers::NONE),
             )
             .unwrap();
+        // assert
         assert!(output.is_empty());
     }
     let output = normalizer.flush_at(Duration::from_millis(30)).unwrap();

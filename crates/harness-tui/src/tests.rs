@@ -92,11 +92,11 @@ fn permission_modal_snapshot_renders_request() {
 }
 
 #[test]
-fn permission_dock_packs_freeze_vertical_blanks() {
+fn permission_dock_packs_measured_content_rows() {
     // arrange
     // act
     // assert
-    permission_modal_tests::permission_dock_packs_freeze_vertical_blanks();
+    permission_modal_tests::permission_dock_packs_measured_content_rows();
 }
 
 #[test]

@@ -9,16 +9,23 @@ pub enum WelcomeFocus {
 pub enum WelcomeAction {
     NewWorktree,
     ResumeSession,
+    Changelog,
     Quit,
 }
 
 impl WelcomeAction {
-    pub const ALL: [Self; 3] = [Self::NewWorktree, Self::ResumeSession, Self::Quit];
+    pub const ALL: [Self; 4] = [
+        Self::NewWorktree,
+        Self::ResumeSession,
+        Self::Changelog,
+        Self::Quit,
+    ];
 
     pub const fn label(self) -> &'static str {
         match self {
             Self::NewWorktree => "New worktree",
             Self::ResumeSession => "Resume session",
+            Self::Changelog => "Changelog",
             Self::Quit => "Quit",
         }
     }
@@ -27,6 +34,7 @@ impl WelcomeAction {
         match self {
             Self::NewWorktree => "ctrl+w",
             Self::ResumeSession => "ctrl+s",
+            Self::Changelog => "",
             Self::Quit => "ctrl+q",
         }
     }
@@ -60,6 +68,7 @@ pub enum InputResult {
 pub struct WelcomeState {
     focus: WelcomeFocus,
     hovered_action: Option<usize>,
+    pressed_action: Option<WelcomePointerPress>,
     menu_item_count: usize,
     dismissed: bool,
     authed: bool,
@@ -67,11 +76,19 @@ pub struct WelcomeState {
     workspace_name: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WelcomePointerPress {
+    pub action_index: usize,
+    pub column: u16,
+    pub row: u16,
+}
+
 impl WelcomeState {
     pub fn new(menu_item_count: usize, authed: bool) -> Self {
         Self {
             focus: WelcomeFocus::Prompt,
             hovered_action: None,
+            pressed_action: None,
             menu_item_count,
             dismissed: false,
             authed,
@@ -116,6 +133,22 @@ impl WelcomeState {
         }
         self.hovered_action = next;
         true
+    }
+
+    pub fn begin_pointer_press(&mut self, action_index: usize, column: u16, row: u16) {
+        self.pressed_action = Some(WelcomePointerPress {
+            action_index,
+            column,
+            row,
+        });
+    }
+
+    pub fn take_pointer_press(&mut self) -> Option<WelcomePointerPress> {
+        self.pressed_action.take()
+    }
+
+    pub fn cancel_pointer_press(&mut self) -> bool {
+        self.pressed_action.take().is_some()
     }
 
     pub fn selected_action(&self) -> Option<WelcomeAction> {

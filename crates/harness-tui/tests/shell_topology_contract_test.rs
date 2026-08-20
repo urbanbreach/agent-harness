@@ -59,16 +59,19 @@ fn live_session_composer_is_bottom_anchored() {
 
 #[test]
 fn live_single_line_composer_stays_anchored_across_disclosure_states() {
+    // arrange
     let idle = AppState::new_live(None, false, None);
     let mut draft = AppState::new_live(None, false, None);
     draft.composer.prompt_buffer = "single-line draft".to_string();
     draft.composer.prompt_cursor = draft.composer.prompt_buffer.chars().count();
     let streaming = live_session_app();
 
+    // act
     for (width, height, expected) in [
         (120, 40, Rect::new(2, 34, 116, 3)),
         (60, 20, Rect::new(1, 16, 58, 3)),
     ] {
+        // assert
         assert_eq!(plan_for(&idle, width, height).composer, Some(expected));
         assert_eq!(plan_for(&streaming, width, height).composer, Some(expected));
         assert_eq!(plan_for(&draft, width, height).composer, Some(expected));
@@ -77,10 +80,12 @@ fn live_single_line_composer_stays_anchored_across_disclosure_states() {
 
 #[test]
 fn startup_idle_and_first_streaming_frames_share_composer_anatomy_at_home_widths() {
+    // arrange
     let startup = AppState::new_startup(Vec::new(), None);
     let idle = AppState::new_live(None, false, None);
     let streaming = live_session_app();
 
+    // act
     for (width, height) in [(80, 24), (90, 24), (100, 30), (120, 32)] {
         let startup_composer = plan_for(&startup, width, height)
             .composer
@@ -92,6 +97,7 @@ fn startup_idle_and_first_streaming_frames_share_composer_anatomy_at_home_widths
             .composer
             .expect("streaming composer");
 
+        // assert
         assert_eq!(idle_composer, streaming_composer);
         assert_eq!(startup_composer.x, idle_composer.x);
         assert_eq!(startup_composer.width, idle_composer.width);
@@ -434,6 +440,7 @@ fn envelope(seq: u64, correlation_id: Option<&str>, payload: EventV1) -> EventEn
 /// composer and disclosure/footer are never clipped at any boundary.
 #[test]
 fn boundary_viewports_never_clip_composer_or_disclosure() {
+    // arrange
     let app = live_session_app();
     let boundary_cases: &[(u16, u16)] = &[
         // 59/60/61 columns × required heights
@@ -488,8 +495,10 @@ fn boundary_viewports_never_clip_composer_or_disclosure() {
             );
         }
 
+        // act
         // Transcript must exist and have at least 1 row
         if let Some(transcript) = plan.transcript {
+            // assert
             assert!(
                 transcript.height >= 1,
                 "transcript must have ≥1 row at boundary {width}x{height}; got {transcript:?}"
@@ -504,14 +513,17 @@ fn boundary_viewports_never_clip_composer_or_disclosure() {
 
 #[test]
 fn boundary_spacer_transitions_at_20_row_cutoff() {
+    // arrange
     let app = live_session_app();
 
+    // act
     for width in [60u16, 61] {
         for height in [20u16, 21, 24, 30, 40] {
             let plan = plan_for(&app, width, height);
             let composer = plan.composer.expect("composer at row cutoff");
             let disclosure = plan.disclosure.expect("disclosure at row cutoff");
             let expected_spacer = if height <= 20 { 0 } else { 1 };
+            // assert
             assert_eq!(
                 disclosure.y.saturating_sub(composer.bottom()),
                 expected_spacer
@@ -524,6 +536,7 @@ fn boundary_spacer_transitions_at_20_row_cutoff() {
 /// Boundary breakpoint transitions: 79→80 (minimum), 99→100 (primary), 119→120.
 #[test]
 fn boundary_breakpoint_targets_match_theme_contract() {
+    // arrange
     use harness_tui::responsive::ViewportClassification;
 
     // 79 cols → Minimum (below 80-col minimum breakpoint)
@@ -540,7 +553,9 @@ fn boundary_breakpoint_targets_match_theme_contract() {
     // 101 cols → Primary
     assert!(ViewportClassification::from_dims(101, 30).is_primary());
 
+    // act
     // 119 cols × 32 → Primary (below 120 is not a breakpoint, but verify)
+    // assert
     assert!(ViewportClassification::from_dims(119, 32).is_primary());
     assert!(ViewportClassification::from_dims(120, 32).is_primary());
     assert!(ViewportClassification::from_dims(121, 32).is_primary());
@@ -549,6 +564,7 @@ fn boundary_breakpoint_targets_match_theme_contract() {
 /// Composer horizontal inset transitions at the 60-column boundary.
 #[test]
 fn boundary_composer_inset_transitions_at_60_columns() {
+    // arrange
     let app = live_session_app();
 
     // At ≤60 cols: the frozen 60x20 shell keeps a one-cell inset.
@@ -565,9 +581,11 @@ fn boundary_composer_inset_transitions_at_60_columns() {
         "composer must keep the measured one-cell inset on both sides at 60x20"
     );
 
+    // act
     // At >60 cols: horizontal inset of 2 (freeze-matched lead=2)
     let plan_61 = plan_for(&app, 61, 20);
     let composer_61 = plan_61.composer.expect("composer at 61x20");
+    // assert
     assert_eq!(
         composer_61.x,
         plan_61.shell.x + 2,
@@ -583,6 +601,7 @@ fn boundary_composer_inset_transitions_at_60_columns() {
 /// All required viewports produce a valid, non-clipped layout plan.
 #[test]
 fn all_required_viewports_produce_valid_layout_plan() {
+    // arrange
     let app = live_session_app();
     let required: &[(u16, u16)] = &[
         (60, 20),
@@ -621,10 +640,12 @@ fn all_required_viewports_produce_valid_layout_plan() {
             "composer must fit within shell at {width}x{height}"
         );
 
+        // act
         // Transcript must exist and be above composer
         let transcript = plan
             .transcript
             .unwrap_or_else(|| panic!("transcript at {width}x{height}"));
+        // assert
         assert!(
             transcript.height >= 1,
             "transcript must have ≥1 row at {width}x{height}"
@@ -642,6 +663,7 @@ fn all_required_viewports_produce_valid_layout_plan() {
 
 #[test]
 fn composer_disclosure_spacer_gap_matches_centralized_contract_at_all_viewports() {
+    // arrange
     let app = live_session_app();
 
     let cases: &[(u16, u16)] = &[
@@ -655,6 +677,7 @@ fn composer_disclosure_spacer_gap_matches_centralized_contract_at_all_viewports(
         (140, 40),
     ];
 
+    // act
     for &(width, height) in cases {
         let plan = plan_for(&app, width, height);
         let composer = plan
@@ -664,6 +687,7 @@ fn composer_disclosure_spacer_gap_matches_centralized_contract_at_all_viewports(
             .disclosure
             .unwrap_or_else(|| panic!("disclosure at {width}x{height}"));
         let expected_spacer = if height <= 20 { 0 } else { 1 };
+        // assert
         assert_eq!(
             composer.bottom().saturating_add(expected_spacer),
             disclosure.y
@@ -677,6 +701,7 @@ fn composer_disclosure_spacer_gap_matches_centralized_contract_at_all_viewports(
 /// `composer_horizontal_inset` contract via the public seam.
 #[test]
 fn composer_horizontal_inset_matches_centralized_contract_at_all_viewports() {
+    // arrange
     let app = live_session_app();
 
     let cases: &[(u16, u16, u16)] = &[
@@ -696,7 +721,9 @@ fn composer_horizontal_inset_matches_centralized_contract_at_all_viewports() {
             .composer
             .unwrap_or_else(|| panic!("composer at {width}x{height}"));
 
+        // act
         let actual_inset = composer.x.saturating_sub(plan.shell.x);
+        // assert
         assert_eq!(
             actual_inset, expected_inset,
             "composer inset at {width}x{height}: expected {expected_inset}, got {actual_inset}; \

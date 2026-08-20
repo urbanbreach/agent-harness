@@ -117,6 +117,8 @@ fn model() -> DashboardReadModel {
 
 #[test]
 fn status_markers_cover_every_dashboard_status() {
+    // arrange
+    // act
     for status in [
         DashboardStatus::Running,
         DashboardStatus::Queued,
@@ -127,6 +129,7 @@ fn status_markers_cover_every_dashboard_status() {
         DashboardStatus::Stale,
     ] {
         let marker = status_marker(status);
+        // assert
         assert_eq!(marker.status, status);
         assert!(!marker.preferred.is_empty());
         assert!(!marker.ascii.is_empty());
@@ -135,8 +138,11 @@ fn status_markers_cover_every_dashboard_status() {
 
 #[test]
 fn filter_matches_name_status_and_lineage_without_reordering_ids() {
+    // arrange
+    // act
     let source = model();
     let by_name = RosterFilter::new().with_query("stream child");
+    // assert
     assert_eq!(
         by_name.matching_keys(&source),
         vec![SelectionKey::new("child")]
@@ -152,12 +158,15 @@ fn filter_matches_name_status_and_lineage_without_reordering_ids() {
 
 #[test]
 fn pinned_rows_lead_their_group_and_fold_preserves_stable_selection() {
+    // arrange
+    // act
     let source = model();
     let mut state = RosterState::default();
     state.toggle_pin(SelectionKey::new("stale"));
     state.set_selected(Some(SelectionKey::new("stale")));
     let expanded = layout_for_rect(Rect::new(0, 0, 80, 24), &source, &state);
     let parent_group = DashboardGroupKey::Root(SelectionKey::new("parent"));
+    // assert
     assert_eq!(
         expanded
             .rows
@@ -180,7 +189,10 @@ fn pinned_rows_lead_their_group_and_fold_preserves_stable_selection() {
 
 #[test]
 fn narrow_layout_condenses_markers_and_clips_wide_labels() {
+    // arrange
+    // act
     let responsive = responsive_for_rect(Rect::new(0, 0, 40, 10));
+    // assert
     assert!(responsive.is_narrow() && responsive.condensed_markers());
     assert_eq!(truncate_label("成功 session", 5), "成功…");
     let layout = layout_for_rect(Rect::new(0, 0, 40, 10), &model(), &RosterState::default());
@@ -189,11 +201,14 @@ fn narrow_layout_condenses_markers_and_clips_wide_labels() {
 
 #[test]
 fn overflow_and_hit_map_cover_every_rendered_roster_region() {
+    // arrange
+    // act
     let state = RosterState {
         scroll_top: 2,
         ..RosterState::default()
     };
     let layout = layout_for_rect(Rect::new(0, 0, 32, 5), &model(), &state);
+    // assert
     assert!(!layout.overflow.is_empty());
     let hit_map = RosterHitMap::from_layout(&layout);
     assert!(hit_map.regions.iter().any(|region| {
@@ -214,6 +229,8 @@ fn overflow_and_hit_map_cover_every_rendered_roster_region() {
 
 #[test]
 fn viewport_matrix_preserves_group_filter_pin_and_hit_contracts() {
+    // arrange
+    // act
     let source = model();
     let filters = [
         RosterFilter::default(),
@@ -236,6 +253,7 @@ fn viewport_matrix_preserves_group_filter_pin_and_hit_contracts() {
                 };
                 let layout = layout_for_viewport(viewport, &source, &state);
                 let hit_map = RosterHitMap::from_layout(&layout);
+                // assert
                 assert!(hit_map.regions.iter().all(|region| {
                     hit_map.hit_test(region.rect.x, region.rect.y) == Some(region.target.clone())
                 }));

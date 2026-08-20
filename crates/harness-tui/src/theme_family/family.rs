@@ -74,6 +74,7 @@ fn is_background_role(role: ColorRole) -> bool {
             | ColorRole::PanelElevated
             | ColorRole::Overlay
             | ColorRole::Card
+            | ColorRole::ModalHover
             | ColorRole::SelectedCard
             | ColorRole::PromptActiveSurface
             | ColorRole::QuestionSurface

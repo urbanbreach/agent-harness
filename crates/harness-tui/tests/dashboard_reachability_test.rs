@@ -4,6 +4,7 @@ use harness_tui::dashboard_integration::DashboardPane;
 
 #[test]
 fn status_entry_reaches_interactive_dashboard_and_restores_focus() {
+    // arrange
     // Given: the production live shell is open.
     let mut app = AppState::new_live(None, false, None);
 
@@ -19,6 +20,8 @@ fn status_entry_reaches_interactive_dashboard_and_restores_focus() {
     assert_eq!(app.status_dashboard_focus(), Some(DashboardPane::Peek));
     app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
 
+    // act
     // Then: normal shell focus is restored and the dashboard is closed.
+    // assert
     assert!(!app.status_dashboard_is_active());
 }

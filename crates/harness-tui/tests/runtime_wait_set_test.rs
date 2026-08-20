@@ -9,6 +9,8 @@ use harness_tui::{live_update_channel, LiveUpdate};
 
 #[test]
 fn terminal_and_live_sources_wake_parked_wait() {
+    // arrange
+    // act
     let (_frame_tx, frame_rx) = bounded(1);
     let (_status_tx, status_rx) = bounded::<TerminalReaderStatus>(1);
     let (terminal_tx, terminal_rx) = bounded(1);
@@ -26,6 +28,7 @@ fn terminal_and_live_sources_wake_parked_wait() {
         terminal: &terminal_rx,
         live: Some(live_rx.receiver()),
     };
+    // assert
     assert!(matches!(wait.wait(None), RuntimeWake::Terminal(_)));
     live_tx
         .send(LiveUpdate::Status("ready".to_string()))
@@ -35,6 +38,8 @@ fn terminal_and_live_sources_wake_parked_wait() {
 
 #[test]
 fn deadline_wakes_without_periodic_polling() {
+    // arrange
+    // act
     let (_frame_tx, frame_rx) = bounded(1);
     let (_status_tx, status_rx) = bounded::<TerminalReaderStatus>(1);
     let (_terminal_tx, terminal_rx) = bounded(1);
@@ -45,6 +50,7 @@ fn deadline_wakes_without_periodic_polling() {
         terminal: &terminal_rx,
         live: Some(live_rx.receiver()),
     };
+    // assert
     assert!(matches!(
         wait.wait(Some(Instant::now() + Duration::from_millis(1))),
         RuntimeWake::Deadline
@@ -53,6 +59,7 @@ fn deadline_wakes_without_periodic_polling() {
 
 #[test]
 fn live_disconnect_is_reported_once() {
+    // arrange
     let (_frame_tx, frame_rx) = bounded(1);
     let (_status_tx, status_rx) = bounded::<TerminalReaderStatus>(1);
     let (terminal_tx, terminal_rx) = bounded(1);
@@ -69,6 +76,7 @@ fn live_disconnect_is_reported_once() {
         RuntimeWake::LiveDisconnected
     ));
 
+    // act
     terminal_tx
         .send(TerminalEnvelope::new(
             TerminalSequence::new(1),
@@ -82,5 +90,6 @@ fn live_disconnect_is_reported_once() {
         terminal: &terminal_rx,
         live: None,
     };
+    // assert
     assert!(matches!(without_live.wait(None), RuntimeWake::Terminal(_)));
 }

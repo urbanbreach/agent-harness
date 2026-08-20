@@ -19,7 +19,10 @@ fn descriptor(binary: &str) -> SubprocessDescriptor {
 
 #[test]
 fn progress_tracks_fraction_and_eta() {
+    // arrange
+    // act
     let mut progress = PlaybackProgress::new(10, 1_000);
+    // assert
     assert_eq!(progress.fraction_complete(), 0);
     assert_eq!(progress.eta_ms(), 1_000);
     progress.advance(4, 300);
@@ -32,13 +35,19 @@ fn progress_tracks_fraction_and_eta() {
 
 #[test]
 fn zero_frame_progress_is_complete_without_fraction() {
+    // arrange
+    // act
     let progress = PlaybackProgress::new(0, 500);
+    // assert
     assert_eq!(progress.fraction_complete(), 0);
     assert!(progress.is_complete());
 }
 
 #[test]
 fn frame_pacing_uses_safe_intervals_and_width_breakpoints() {
+    // arrange
+    // act
+    // assert
     assert_eq!(FramePacing::from_fps(30).frame_interval_ms, 33);
     assert_eq!(FramePacing::from_fps(0).frame_interval_ms, 1000);
     assert_eq!(FramePacing::for_width(80).target_fps, 30);
@@ -48,7 +57,10 @@ fn frame_pacing_uses_safe_intervals_and_width_breakpoints() {
 
 #[test]
 fn sanitize_args_rejects_shell_metacharacters_and_empty_values() {
+    // arrange
+    // act
     for value in [";", "|", "&", "$HOME", "`id`", "\n", "\r", ">", "<", ""] {
+        // assert
         assert!(sanitize_args(&[value.to_owned()]).is_err());
     }
     assert_eq!(
@@ -59,6 +71,9 @@ fn sanitize_args_rejects_shell_metacharacters_and_empty_values() {
 
 #[test]
 fn descriptor_validation_enforces_binary_and_media_bounds() {
+    // arrange
+    // act
+    // assert
     assert!(descriptor("ffmpeg").validate().is_ok());
     assert!(descriptor("ffprobe").validate().is_ok());
     assert_eq!(descriptor("sh").validate(), Err(ViewerError::UnknownBinary));
@@ -72,6 +87,8 @@ fn descriptor_validation_enforces_binary_and_media_bounds() {
 
 #[test]
 fn receipt_cleanup_requires_all_resources_to_be_reclaimed() {
+    // arrange
+    // act
     let descriptor = descriptor("ffmpeg");
     let clean = SubprocessReceipt {
         descriptor: descriptor.clone(),
@@ -82,6 +99,7 @@ fn receipt_cleanup_requires_all_resources_to_be_reclaimed() {
         child_pids_observed: vec![7],
         child_pids_reaped: vec![7],
     };
+    // assert
     assert!(clean.cleanup_complete());
     let dirty = SubprocessReceipt {
         temp_files_removed: Vec::new(),
@@ -93,7 +111,10 @@ fn receipt_cleanup_requires_all_resources_to_be_reclaimed() {
 
 #[test]
 fn supervisor_validates_and_simulates_cleanup() {
+    // arrange
+    // act
     let mut supervisor = SubprocessSupervisor::new();
+    // assert
     assert!(supervisor.is_empty());
     assert_eq!(supervisor.submit(descriptor("ffmpeg")).ok(), Some(0));
     assert_eq!(supervisor.len(), 1);
@@ -113,7 +134,10 @@ fn supervisor_validates_and_simulates_cleanup() {
 
 #[test]
 fn viewer_state_follows_normal_lifecycle_and_completion() {
+    // arrange
+    // act
     let mut viewer = ViewerState::default();
+    // assert
     assert_eq!(viewer.phase(), &ViewerPhase::Idle);
     assert!(viewer.open(descriptor("ffmpeg")).is_ok());
     assert!(matches!(viewer.phase(), ViewerPhase::Opening(_)));
@@ -127,9 +151,12 @@ fn viewer_state_follows_normal_lifecycle_and_completion() {
 
 #[test]
 fn viewer_cancel_error_and_cleanup_verification_are_observable() {
+    // arrange
+    // act
     let mut viewer = ViewerState::default();
     viewer.open(descriptor("ffmpeg")).ok();
     viewer.cancel();
+    // assert
     assert_eq!(viewer.phase(), &ViewerPhase::Closed);
     assert!(viewer.is_cancelled());
     viewer.report_error("decode failed".to_owned());

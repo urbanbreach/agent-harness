@@ -202,10 +202,13 @@ fn terminal_capability_source_detection_depends_on_runtime() {
 /// TERM-CAP-COLOR grounding: runtime.rs implements the COLORTERM truecolor probe.
 #[test]
 fn terminal_capability_runtime_truecolor_probe_present() {
+    // arrange
     // arrange / act
     let source = runtime_source();
 
+    // act
     // assert — the static COLORTERM probe and its truecolor/24bit detection exist
+    // assert
     assert!(
         source.contains("truecolor_from_colorterm"),
         "COLORTERM probe missing"
@@ -218,7 +221,10 @@ fn terminal_capability_runtime_truecolor_probe_present() {
 /// with the runtime probe semantics.
 #[test]
 fn terminal_capability_colorterm_matrix_is_internal_consistent() {
+    // arrange
+    // act
     // arrange / act / assert — documented COLORTERM -> truecolor behavior
+    // assert
     assert!(colorterm_is_truecolor(Some("truecolor")));
     assert!(colorterm_is_truecolor(Some("TrueColor")));
     assert!(colorterm_is_truecolor(Some("24bit")));

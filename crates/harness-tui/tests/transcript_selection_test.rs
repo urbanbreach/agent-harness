@@ -12,6 +12,7 @@ use harness_tui::transcript_selection::{
 
 #[test]
 fn wrapped_drag_selection_joins_soft_line_breaks() {
+    // arrange
     // Given: a narrow wrapped block and a drag from its first to last cell.
     let text = WrappedText::new("hello world", 5).expect("valid width");
     let start = CellPoint::new(0, 0);
@@ -22,12 +23,15 @@ fn wrapped_drag_selection_joins_soft_line_breaks() {
         .copy(text.drag(start, end))
         .expect("selection has text");
 
+    // act
     // Then: soft wrapping does not insert a spurious newline.
+    // assert
     assert_eq!(copied, "hello world");
 }
 
 #[test]
 fn cjk_and_emoji_selection_stays_on_grapheme_boundaries() {
+    // arrange
     // Given: combining text, a ZWJ emoji, and a wide CJK grapheme.
     let text = WrappedText::new("e\u{301} 👩‍💻 中", 32).expect("valid width");
 
@@ -39,13 +43,16 @@ fn cjk_and_emoji_selection_stays_on_grapheme_boundaries() {
         .copy(text.drag(CellPoint::new(0, 0), emoji.end))
         .expect("selection has text");
 
+    // act
     // Then: no combining mark, ZWJ, or wide grapheme is split.
+    // assert
     assert_eq!(emoji.text, "👩‍💻");
     assert_eq!(copied, "e\u{301} 👩‍💻");
 }
 
 #[test]
 fn word_and_line_selection_use_visible_rows() {
+    // arrange
     // Given: two explicit transcript lines.
     let text = WrappedText::new("alpha beta\ngamma", 32).expect("valid width");
 
@@ -53,13 +60,16 @@ fn word_and_line_selection_use_visible_rows() {
     let word = text.select(CellPoint::new(0, 7), SelectionMode::Word);
     let line = text.select(CellPoint::new(1, 2), SelectionMode::Line);
 
+    // act
     // Then: the semantic units are selected, not byte fragments.
+    // assert
     assert_eq!(text.copy(word).expect("word exists"), "beta");
     assert_eq!(text.copy(line).expect("line exists"), "gamma");
 }
 
 #[test]
 fn keyboard_movement_crosses_wraps_without_splitting_graphemes() {
+    // arrange
     // Given: a wrapped row ending in a wide grapheme.
     let text = WrappedText::new("a 👩‍💻 b", 4).expect("valid width");
 
@@ -68,7 +78,9 @@ fn keyboard_movement_crosses_wraps_without_splitting_graphemes() {
     let second = text.move_focus(first, NavigationKey::Right);
     let next_row = text.move_focus(second, NavigationKey::Right);
 
+    // act
     // Then: movement lands on grapheme starts and crosses the soft wrap.
+    // assert
     assert_eq!(first, CellPoint::new(0, 1));
     assert_eq!(second, CellPoint::new(0, 2));
     assert_eq!(next_row.row, 1);
@@ -76,6 +88,7 @@ fn keyboard_movement_crosses_wraps_without_splitting_graphemes() {
 
 #[test]
 fn drag_to_viewport_edge_reports_autoscroll_without_losing_focus() {
+    // arrange
     // Given: a block taller than the visible viewport.
     let text = WrappedText::new("one two three four five", 4).expect("valid width");
     let viewport = Viewport::new(0, 2);
@@ -83,13 +96,16 @@ fn drag_to_viewport_edge_reports_autoscroll_without_losing_focus() {
     // When: dragging below the viewport.
     let drag = text.drag_with_autoscroll(CellPoint::new(0, 0), CellPoint::new(4, 3), viewport);
 
+    // act
     // Then: focus remains at the requested row and scrolling is positive.
+    // assert
     assert_eq!(drag.focus, CellPoint::new(4, 3));
     assert_eq!(drag.autoscroll.lines, 3);
 }
 
 #[test]
 fn metadata_copy_includes_only_visible_fields() {
+    // arrange
     // Given: a visible block with all supported metadata.
     let metadata = CopyMetadata::new("turn-01", BlockKind::Assistant, "12:34:56");
 
@@ -104,12 +120,15 @@ fn metadata_copy_includes_only_visible_fields() {
         },
     );
 
+    // act
     // Then: only the selected visible fields precede the content.
+    // assert
     assert_eq!(copied, "[turn-01] [12:34:56]\nanswer");
 }
 
 #[test]
 fn osc52_rejects_oversized_payload_and_tmux_wraps_safe_sequence() {
+    // arrange
     // Given: a payload over the named protocol limit.
     let oversized = "x".repeat(OSC52_MAX_BYTES + 1);
 
@@ -119,13 +138,16 @@ fn osc52_rejects_oversized_payload_and_tmux_wraps_safe_sequence() {
     // Then: the typed limit error is returned before encoding.
     assert!(error.is_too_large());
 
+    // act
     let sequence = build_osc52("copy", TmuxSequence::Tmux).expect("small payload");
+    // assert
     assert!(sequence.starts_with("\x1bPtmux;\x1b"));
     assert!(sequence.ends_with("\x1b\\"));
 }
 
 #[test]
 fn denied_clipboard_is_typed_and_does_not_panic() {
+    // arrange
     // Given: no local clipboard helper succeeds.
     let result = copy_local_with_runner(
         "copy",
@@ -133,12 +155,15 @@ fn denied_clipboard_is_typed_and_does_not_panic() {
         |_command, _text| Ok(false),
     );
 
+    // act
     // When/Then: routing reports denial as a typed error.
+    // assert
     assert!(result.expect_err("clipboard is denied").is_denied());
 }
 
 #[test]
 fn hyperlink_hover_click_and_tmux_osc8_are_sanitized() {
+    // arrange
     // Given: one safe link and one control-character URL.
     let link = Hyperlink::new("docs", "https://example.com/docs", LinkRange::new(0, 2, 6))
         .expect("safe URL");
@@ -149,7 +174,9 @@ fn hyperlink_hover_click_and_tmux_osc8_are_sanitized() {
     let hovered = links.hover(point).expect("link is hovered");
     let clicked = links.click(point).expect("link is clicked");
 
+    // act
     // Then: both interactions resolve the same sanitized URL and OSC8 is tmux-safe.
+    // assert
     assert_eq!(hovered.url(), "https://example.com/docs");
     assert_eq!(clicked.url(), hovered.url());
     let sequence = hyperlink_sequence(&clicked, TmuxSequence::Tmux).expect("safe OSC8");

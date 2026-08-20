@@ -120,11 +120,28 @@ impl HelpBrowserState {
     }
 
     pub(super) fn normalize_selection(&mut self, rows: &[HelpRow]) {
+        if let Some(index) = self.return_action.take().and_then(|action| {
+            rows.iter().position(
+                |row| matches!(row, HelpRow::Shortcut { action: candidate, .. } if *candidate == action),
+            )
+        }) {
+            self.selected = index;
+            self.visual_offset = 0;
+            self.follow_selection = true;
+            return;
+        }
         self.selected = self.selected.min(rows.len().saturating_sub(1));
     }
 
     fn handle_detail_key(&mut self, key: KeyEvent, max_scroll: usize) -> HelpOutcome {
         if matches!(key.code, KeyCode::Esc | KeyCode::Left | KeyCode::Backspace) {
+            let HelpMode::Detail { action, .. } = self.mode else {
+                return HelpOutcome::Unchanged;
+            };
+            if let Some(section) = action.help_category() {
+                self.collapsed_sections.remove(&section);
+            }
+            self.return_action = Some(action);
             self.mode = HelpMode::Browse;
             return HelpOutcome::Changed;
         }

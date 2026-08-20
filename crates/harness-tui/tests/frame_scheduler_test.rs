@@ -1,7 +1,8 @@
 use harness_tui::scheduling::{DualClock, FrameInputs, FrameReason, FrameScheduler};
 
 #[test]
-fn frame_clock() {
+fn frame_clock_advances_at_fixed_cadence() {
+    // arrange
     // Given: two independent fake clock streams and an active scheduler.
     let clock = DualClock::new();
     let mut scheduler = FrameScheduler::new();
@@ -11,7 +12,9 @@ fn frame_clock() {
     clock.tick_animation();
     let frame = scheduler.schedule(clock.snapshot(), FrameInputs::active());
 
+    // act
     // Then: the design-contract cadence is 30 Hz (33 ms integer deadline).
+    // assert
     assert_eq!(clock.animation_now(), 33);
     assert_eq!(clock.flush_now(), 0);
     assert_eq!(
@@ -31,6 +34,7 @@ fn frame_clock() {
 
 #[test]
 fn animation_and_flush_deadlines_are_serviced_in_exact_order() {
+    // arrange
     // Given: animation and one coalesced input flush are armed together.
     let clock = DualClock::new();
     let mut scheduler = FrameScheduler::new();
@@ -58,7 +62,9 @@ fn animation_and_flush_deadlines_are_serviced_in_exact_order() {
     clock.tick_animation();
     let animation = scheduler.schedule(clock.snapshot(), FrameInputs::active());
 
+    // act
     // Then: animation renders second.
+    // assert
     assert_eq!(
         animation.as_ref().map(|decision| decision.reason),
         Some(FrameReason::Animation)
@@ -67,6 +73,7 @@ fn animation_and_flush_deadlines_are_serviced_in_exact_order() {
 
 #[test]
 fn flush_is_not_starved_by_continuous_animation() {
+    // arrange
     // Given: a continuously active animation cadence.
     let clock = DualClock::new();
     let mut scheduler = FrameScheduler::new();
@@ -78,7 +85,9 @@ fn flush_is_not_starved_by_continuous_animation() {
     clock.tick_flush();
     let flush = scheduler.schedule(clock.snapshot(), FrameInputs::active());
 
+    // act
     // Then: the flush is rendered even though animation remains active.
+    // assert
     assert_eq!(flush.as_ref().map(|decision| decision.render), Some(true));
     assert_eq!(
         flush.as_ref().map(|decision| decision.reason),
@@ -88,6 +97,7 @@ fn flush_is_not_starved_by_continuous_animation() {
 
 #[test]
 fn settled_scheduler_has_zero_idle_redraw() {
+    // arrange
     // Given: an animation that has rendered its final active frame.
     let clock = DualClock::new();
     let mut scheduler = FrameScheduler::new();
@@ -99,13 +109,16 @@ fn settled_scheduler_has_zero_idle_redraw() {
     let settled = scheduler.schedule(clock.snapshot(), FrameInputs::idle());
     let idle = scheduler.schedule(clock.snapshot(), FrameInputs::idle());
 
+    // act
     // Then: stale animation deadlines are disarmed and idle produces no redraw.
+    // assert
     assert_eq!(settled, None);
     assert_eq!(idle, None);
 }
 
 #[test]
 fn reduced_motion_settles_transitions_without_scheduled_frames() {
+    // arrange
     // Given: reduced motion is enabled before an active transition.
     let clock = DualClock::new();
     let mut scheduler = FrameScheduler::with_reduced_motion(true);
@@ -114,7 +127,9 @@ fn reduced_motion_settles_transitions_without_scheduled_frames() {
     let settled = scheduler.schedule(clock.snapshot(), FrameInputs::active());
     let idle = scheduler.schedule(clock.snapshot(), FrameInputs::idle());
 
+    // act
     // Then: it settles immediately and never arms a frame deadline.
+    // assert
     assert_eq!(settled.as_ref().map(|decision| decision.render), Some(true));
     assert_eq!(
         settled.as_ref().and_then(|decision| decision.deadline_ms),
@@ -129,6 +144,7 @@ fn reduced_motion_settles_transitions_without_scheduled_frames() {
 
 #[test]
 fn input_burst_is_coalesced_into_one_flush_render() {
+    // arrange
     // Given: several input events arrive before the 16 ms flush boundary.
     let clock = DualClock::new();
     let mut scheduler = FrameScheduler::new();
@@ -142,7 +158,9 @@ fn input_burst_is_coalesced_into_one_flush_render() {
     clock.advance_flush(6);
     let rendered = scheduler.schedule(clock.snapshot(), FrameInputs::idle());
 
+    // act
     // Then: all three inputs produce one render, not one render per input.
+    // assert
     assert_eq!(
         rendered.as_ref().map(|decision| decision.render),
         Some(true)

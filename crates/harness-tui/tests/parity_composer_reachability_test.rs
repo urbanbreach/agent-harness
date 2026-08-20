@@ -54,6 +54,7 @@ fn event(seq: u64, payload: EventV1) -> EventEnvelopeV1 {
 
 #[test]
 fn production_composer_reaches_keyboard_paste_completion_queue_attachment_and_submit() {
+    // arrange
     // Given: one production AppState owner and its live UI intent sink.
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let sink = {
@@ -124,17 +125,20 @@ fn production_composer_reaches_keyboard_paste_completion_queue_attachment_and_su
     app.handle_key(key(KeyCode::Char('s')));
     app.handle_key(key(KeyCode::Enter));
 
+    // act
     // Then: the production intent retains attachment bytes and ordering.
     let intents = intents.lock().expect("intent lock");
     let Some(UiIntent::SubmitPrompt { attachments, .. }) = intents.last() else {
         panic!("expected attachment-bearing submit intent, got {intents:?}");
     };
+    // assert
     assert_eq!(attachments.len(), 1);
     assert_eq!(attachments[0].bytes, b"hello attachment");
 }
 
 #[test]
 fn replay_and_provider_transport_preserve_attachment_contract() {
+    // arrange
     // Given: append-only user and attachment events with a shared request id.
     let request_id = "request-1".to_string();
     let events = vec![
@@ -179,7 +183,9 @@ fn replay_and_provider_transport_preserve_attachment_contract() {
     let serialized = serialize_attachments(&AttachmentProtocol::openai(), &[payload])
         .expect("provider serialization");
 
+    // act
     // Then: wire order and redacted metadata survive the transport boundary.
+    // assert
     assert_eq!(serialized[0].id(), "7");
     assert_eq!(serialized[0].text(), Some("hello attachment"));
     assert_eq!(

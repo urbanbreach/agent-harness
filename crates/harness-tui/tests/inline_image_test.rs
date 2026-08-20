@@ -14,6 +14,9 @@ fn request(source: &[u8], width: u16, height: u16) -> ImageRequest {
 
 #[test]
 fn capability_availability_matches_protocol() {
+    // arrange
+    // act
+    // assert
     assert!(ImageCapability::kitty(10, 10).is_available());
     assert!(ImageCapability::iterm2(10, 10).is_available());
     assert!(!ImageCapability::unsupported().is_available());
@@ -24,7 +27,10 @@ fn capability_availability_matches_protocol() {
 
 #[test]
 fn cache_keys_hash_source_deterministically() {
+    // arrange
+    // act
     let first = ImageCacheKey::new(b"image", 10, 20, GraphicsProtocol::Kitty);
+    // assert
     assert_eq!(
         first,
         ImageCacheKey::new(b"image", 10, 20, GraphicsProtocol::Kitty)
@@ -51,6 +57,8 @@ fn cached(
 
 #[test]
 fn cache_inserts_gets_and_evicts_oldest_entries() {
+    // arrange
+    // act
     let protocol = GraphicsProtocol::Kitty;
     let key_a = ImageCacheKey::new(b"a", 1, 1, protocol);
     let key_b = ImageCacheKey::new(b"b", 1, 1, protocol);
@@ -58,6 +66,7 @@ fn cache_inserts_gets_and_evicts_oldest_entries() {
     let mut cache = ImageCache::new(2, 4);
     cache.insert(cached(key_a, b"aa", 1));
     cache.insert(cached(key_b, b"b", 2));
+    // assert
     assert_eq!(
         cache
             .get(&key_a)
@@ -72,12 +81,15 @@ fn cache_inserts_gets_and_evicts_oldest_entries() {
 
 #[test]
 fn cache_invalidates_by_resize_and_protocol() {
+    // arrange
+    // act
     let key_kitty = ImageCacheKey::new(b"kitty", 1, 1, GraphicsProtocol::Kitty);
     let key_iterm = ImageCacheKey::new(b"iterm", 1, 1, GraphicsProtocol::ITerm2);
     let mut cache = ImageCache::default();
     cache.insert(cached(key_kitty, b"k", 1));
     cache.insert(cached(key_iterm, b"i", 2));
     cache.invalidate_protocol(GraphicsProtocol::Kitty);
+    // assert
     assert!(cache.get(&key_kitty).is_none());
     assert_eq!(cache.bytes(), 1);
     cache.invalidate_resize();
@@ -86,6 +98,7 @@ fn cache_invalidates_by_resize_and_protocol() {
 
 #[test]
 fn pipeline_enforces_flush_capability_and_validation() {
+    // arrange
     let image_request = request(b"source", 10, 10);
     let mut pipeline = ImagePipeline::new(ImageCapability::kitty(20, 20));
     assert_eq!(
@@ -109,8 +122,10 @@ fn pipeline_enforces_flush_capability_and_validation() {
         ImageState::Failed(ImageError::UnsupportedProtocol)
     );
 
+    // act
     let mut pipeline = ImagePipeline::new(ImageCapability::kitty(20, 20));
     pipeline.mark_flush_complete();
+    // assert
     assert_eq!(
         pipeline.submit(request(b"", 1, 1), 1).state,
         ImageState::Failed(ImageError::CorruptInput)
@@ -126,9 +141,12 @@ fn pipeline_enforces_flush_capability_and_validation() {
 
 #[test]
 fn pipeline_caches_completed_decode_and_respects_post_flush_ordering() {
+    // arrange
+    // act
     let mut pipeline = ImagePipeline::new(ImageCapability::kitty(20, 20));
     let image_request = request(b"source", 10, 10);
     let key = image_request.cache_key(GraphicsProtocol::Kitty);
+    // assert
     assert_eq!(
         pipeline.submit(image_request.clone(), 1).state,
         ImageState::Pending

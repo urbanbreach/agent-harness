@@ -22,7 +22,7 @@ expression: rendered.as_str()
   ┃  ↑/↓ navigate · y copy                                                          Enter:submit    
   ┃                                                                                                 
                                                                                                     
-  Esc:unselect  │  Tab:scrollback  │  Ctrl+c:dismiss                                                
+  Esc:scrollback  │  Tab:next option  │  Shift+Tab:previous option  │  Shift+X:dismiss              
                                                                                                     
                                                                                                     
   ╭──────────────────────────────────────────────────────────────────────────────────────────────╮  

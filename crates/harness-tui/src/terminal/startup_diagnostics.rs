@@ -177,44 +177,54 @@ mod tests {
 
     #[test]
     fn warning_surfaces_over_ssh_when_tmux_extended_keys_are_off() {
+        // arrange
         let facts = TmuxStartupFacts {
             extended_keys: TmuxQueryResult::Available("off".to_owned()),
             ..TmuxStartupFacts::default()
         };
 
+        // act
         let required = clipboard_warning_required_from_facts(tmux_context(), true, &facts);
 
+        // assert
         assert!(required);
     }
 
     #[test]
     fn warning_surfaces_over_ssh_when_supported_tmux_passthrough_is_off() {
+        // arrange
         let facts = TmuxStartupFacts {
             allow_passthrough_support: TmuxQueryResult::Available(()),
             allow_passthrough: TmuxQueryResult::Available("off".to_owned()),
             ..TmuxStartupFacts::default()
         };
 
+        // act
         let required = clipboard_warning_required_from_facts(tmux_context(), true, &facts);
 
+        // assert
         assert!(required);
     }
 
     #[test]
     fn warning_stays_suppressed_outside_ssh() {
+        // arrange
         let facts = TmuxStartupFacts {
             extended_keys: TmuxQueryResult::Available("off".to_owned()),
             allow_passthrough_support: TmuxQueryResult::Available(()),
             allow_passthrough: TmuxQueryResult::Available("off".to_owned()),
         };
 
+        // act
         let required = clipboard_warning_required_from_facts(tmux_context(), false, &facts);
 
+        // assert
         assert!(!required);
     }
 
     #[test]
     fn warning_stays_suppressed_outside_tmux() {
+        // arrange
         let facts = TmuxStartupFacts {
             extended_keys: TmuxQueryResult::Available("off".to_owned()),
             ..TmuxStartupFacts::default()
@@ -224,13 +234,17 @@ mod tests {
             ..tmux_context()
         };
 
+        // act
         let required = clipboard_warning_required_from_facts(context, true, &facts);
 
+        // assert
         assert!(!required);
     }
 
     #[test]
     fn warning_stays_suppressed_for_good_or_unavailable_tmux_values() {
+        // arrange
+        // act
         for facts in [
             TmuxStartupFacts {
                 extended_keys: TmuxQueryResult::Available("on".to_owned()),
@@ -241,20 +255,24 @@ mod tests {
         ] {
             let required = clipboard_warning_required_from_facts(tmux_context(), true, &facts);
 
+            // assert
             assert!(!required, "unexpected warning for {facts:?}");
         }
     }
 
     #[test]
     fn warning_stays_suppressed_when_passthrough_option_is_unsupported() {
+        // arrange
         let facts = TmuxStartupFacts {
             allow_passthrough_support: TmuxQueryResult::Unsupported,
             allow_passthrough: TmuxQueryResult::Available("off".to_owned()),
             ..TmuxStartupFacts::default()
         };
 
+        // act
         let required = clipboard_warning_required_from_facts(tmux_context(), true, &facts);
 
+        // assert
         assert!(!required);
     }
 }

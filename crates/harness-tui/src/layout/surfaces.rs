@@ -87,53 +87,25 @@ pub(crate) const HELP_MODAL_LAYOUT: HelpModalLayout = HelpModalLayout {
 };
 
 const PERMISSION_DOCK_RAIL_WIDTH: u16 = 1;
-// Freeze PERM: options(4) + post blank(1) + empty(1) + hints(1) + trailing blank(1).
-const PERMISSION_DOCK_TRAY_HEIGHT: u16 = 8;
 const QUESTION_PERMISSION_DOCK_TRAY_HEIGHT: u16 = 2;
 const PERMISSION_DOCK_STACKED_HINT_MIN_WIDTH: u16 = 80;
 const PERMISSION_DOCK_STACKED_HINT_MIN_ACTION_WIDTH: u16 = 20;
 
-pub(crate) fn permission_dock_layout(area: Rect, is_question: bool) -> PermissionDockLayout {
-    let tray_height = if is_question {
-        QUESTION_PERMISSION_DOCK_TRAY_HEIGHT.min(area.height)
-    } else if area.height >= PERMISSION_DOCK_TRAY_HEIGHT {
-        PERMISSION_DOCK_TRAY_HEIGHT
-    } else {
-        1
-    };
-
-    if is_question {
-        PermissionDockLayout {
-            rail_width: PERMISSION_DOCK_RAIL_WIDTH,
-            tray_height,
-            shell_padding: EdgeInsets::new(1, 1, 0, 0),
-            body_padding: EdgeInsets::ZERO,
-            tray_padding: EdgeInsets::new(1, 1, 0, 0),
-            header_gap: 0,
-            stacked_hint_min_width: PERMISSION_DOCK_STACKED_HINT_MIN_WIDTH,
-            stacked_hint_min_action_width: PERMISSION_DOCK_STACKED_HINT_MIN_ACTION_WIDTH,
-            question_content_padding: EdgeInsets::new(2, 2, 1, 1),
-            question_chrome_gap: 1,
-            question_footer_height: 1,
-            question_tab_rows: 2,
-            question_label_gap_rows: 2,
-        }
-    } else {
-        PermissionDockLayout {
-            rail_width: PERMISSION_DOCK_RAIL_WIDTH,
-            tray_height,
-            shell_padding: EdgeInsets::new(2, 1, 1, 0),
-            body_padding: EdgeInsets::ZERO,
-            tray_padding: EdgeInsets::new(2, 1, 0, 0),
-            header_gap: 1,
-            stacked_hint_min_width: PERMISSION_DOCK_STACKED_HINT_MIN_WIDTH,
-            stacked_hint_min_action_width: PERMISSION_DOCK_STACKED_HINT_MIN_ACTION_WIDTH,
-            question_content_padding: EdgeInsets::ZERO,
-            question_chrome_gap: 0,
-            question_footer_height: 0,
-            question_tab_rows: 0,
-            question_label_gap_rows: 0,
-        }
+pub(crate) fn permission_dock_layout(area: Rect) -> PermissionDockLayout {
+    PermissionDockLayout {
+        rail_width: PERMISSION_DOCK_RAIL_WIDTH,
+        tray_height: QUESTION_PERMISSION_DOCK_TRAY_HEIGHT.min(area.height),
+        shell_padding: EdgeInsets::new(1, 1, 0, 0),
+        body_padding: EdgeInsets::ZERO,
+        tray_padding: EdgeInsets::new(1, 1, 0, 0),
+        header_gap: 0,
+        stacked_hint_min_width: PERMISSION_DOCK_STACKED_HINT_MIN_WIDTH,
+        stacked_hint_min_action_width: PERMISSION_DOCK_STACKED_HINT_MIN_ACTION_WIDTH,
+        question_content_padding: EdgeInsets::new(2, 2, 1, 1),
+        question_chrome_gap: 1,
+        question_footer_height: 1,
+        question_tab_rows: 2,
+        question_label_gap_rows: 2,
     }
 }
 
@@ -235,6 +207,21 @@ pub(crate) fn centered_block_area(area: Rect, width: u16, height: u16) -> Rect {
         .y
         .saturating_add(area.height.saturating_sub(height) / 2);
     Rect::new(x, y, width, height)
+}
+
+pub(crate) fn release_notes_modal_area(area: Rect) -> Rect {
+    let width = area
+        .width
+        .saturating_mul(80)
+        .saturating_div(100)
+        .clamp(44.min(area.width), 120.min(area.width));
+    let compact = area.height <= 20;
+    let height = if compact {
+        area.height
+    } else {
+        area.height.saturating_sub(8)
+    };
+    centered_block_area(area, width, height)
 }
 
 pub(crate) fn startup_shell_area(area: Rect, theme: &Theme) -> Rect {

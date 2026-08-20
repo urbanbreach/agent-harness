@@ -83,6 +83,7 @@ fn finish(app: &mut AppState, request_id: &str, seq: u64) {
 
 #[test]
 fn rich_mermaid_interpretation_waits_for_stream_completion() {
+    // arrange
     let request_id = "req_stream_mermaid";
     let mut app = streaming_app(request_id);
     app.ingest_event(envelope(
@@ -105,9 +106,11 @@ fn rich_mermaid_interpretation_waits_for_stream_completion() {
         "finished-only diagram interpretation must not run mid-stream\n{streaming}"
     );
 
+    // act
     finish(&mut app, request_id, 4);
     let settled = render(&app);
 
+    // assert
     assert!(
         settled.contains("Start") && settled.contains("Done") && settled.contains('▼'),
         "completion must finalize the diagram in place\n{settled}"
@@ -120,6 +123,7 @@ fn rich_mermaid_interpretation_waits_for_stream_completion() {
 
 #[test]
 fn open_fence_tail_keeps_its_code_row_when_completion_closes_it() {
+    // arrange
     let request_id = "req_stream_open_fence";
     let mut app = streaming_app(request_id);
     app.ingest_event(envelope(
@@ -136,6 +140,7 @@ fn open_fence_tail_keeps_its_code_row_when_completion_closes_it() {
         .position(|line| line.contains("fn streamed"))
         .expect("streaming code row");
 
+    // act
     app.ingest_event(envelope(
         4,
         request_id,
@@ -151,6 +156,7 @@ fn open_fence_tail_keeps_its_code_row_when_completion_closes_it() {
         .position(|line| line.contains("fn streamed_probe()"))
         .expect("settled code row");
 
+    // assert
     assert_eq!(
         streaming_row, settled_row,
         "closing an already-visible fence must not shift its code row\nstreaming:\n{streaming}\nsettled:\n{settled}"

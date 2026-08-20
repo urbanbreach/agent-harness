@@ -116,6 +116,7 @@ fn render(app: &AppState) -> String {
 
 #[test]
 fn baseline_complete_settles_with_the_reference_worked_for_marker() {
+    // arrange
     // Given: a streamed assistant answer with deterministic event timing.
     let mut app = streaming_app();
 
@@ -123,7 +124,9 @@ fn baseline_complete_settles_with_the_reference_worked_for_marker() {
     finish(&mut app);
     let screen = render(&app);
 
+    // act
     // Then: completion releases the status row and settles the reference duration marker.
+    // assert
     assert!(
         FrameLayoutPlan::for_app(&app, Rect::new(0, 0, WIDTH, HEIGHT))
             .status
@@ -135,6 +138,7 @@ fn baseline_complete_settles_with_the_reference_worked_for_marker() {
 
 #[test]
 fn active_to_idle_status_transition_preserves_the_assistant_row_anchor() {
+    // arrange
     // Given: a visible assistant row while the one-row status surface is active.
     let mut app = streaming_app();
     let active_screen = render(&app);
@@ -151,12 +155,15 @@ fn active_to_idle_status_transition_preserves_the_assistant_row_anchor() {
         .position(|line| line.contains("Stable answer row"))
         .expect("settled assistant row");
 
+    // act
     // Then: the semantic transcript row remains anchored at the same terminal row.
+    // assert
     assert_eq!(active_row, settled_row);
 }
 
 #[test]
 fn user_cancellation_settles_with_the_reference_duration_marker() {
+    // arrange
     let mut app = streaming_app();
     app.ingest_event(envelope(
         5,
@@ -167,8 +174,10 @@ fn user_cancellation_settles_with_the_reference_duration_marker() {
         }),
     ));
 
+    // act
     let screen = render(&app);
 
+    // assert
     assert!(
         screen.contains("Turn cancelled by user in 4.0s."),
         "screen: {screen}"
@@ -178,6 +187,7 @@ fn user_cancellation_settles_with_the_reference_duration_marker() {
 
 #[test]
 fn send_now_cancellation_is_silent_and_releases_the_live_row() {
+    // arrange
     let mut app = streaming_app();
     app.ingest_event(envelope(
         5,
@@ -188,8 +198,10 @@ fn send_now_cancellation_is_silent_and_releases_the_live_row() {
         }),
     ));
 
+    // act
     let screen = render(&app);
 
+    // assert
     assert!(
         !screen.contains("Turn cancelled by user"),
         "screen: {screen}"
@@ -204,6 +216,7 @@ fn send_now_cancellation_is_silent_and_releases_the_live_row() {
 
 #[test]
 fn explicit_agent_turn_completion_scope_overrides_scheduler_row_inference() {
+    // arrange
     // Given: stale scheduler metadata classifies the outer turn task like a child task.
     let mut app = streaming_app_with_task_queue_key("agent:child");
 
@@ -211,12 +224,15 @@ fn explicit_agent_turn_completion_scope_overrides_scheduler_row_inference() {
     finish(&mut app);
     let screen = render(&app);
 
+    // act
     // Then: the turn settles with the authoritative completion marker.
+    // assert
     assert!(screen.contains("Worked for 5.0s"), "screen: {screen}");
 }
 
 #[test]
 fn explicit_agent_turn_cancellation_scope_overrides_scheduler_row_inference() {
+    // arrange
     // Given: stale scheduler metadata classifies the outer turn task like a child task.
     let mut app = streaming_app_with_task_queue_key("agent:child");
 
@@ -231,7 +247,9 @@ fn explicit_agent_turn_cancellation_scope_overrides_scheduler_row_inference() {
     ));
     let screen = render(&app);
 
+    // act
     // Then: cancellation settles with the authoritative user-cancellation marker.
+    // assert
     assert!(
         screen.contains("Turn cancelled by user in 4.0s."),
         "screen: {screen}"

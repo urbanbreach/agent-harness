@@ -75,9 +75,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_image_markdown() {
+    fn parses_image_markdown_into_media_reference() {
+        // arrange
+        // act
         let (alt, url, consumed) =
             try_parse_image_markdown("![screenshot](./img.png) rest").unwrap();
+        // assert
         assert_eq!(alt, "screenshot");
         assert_eq!(url, "./img.png");
         assert_eq!(consumed, 24);
@@ -85,16 +88,25 @@ mod tests {
 
     #[test]
     fn returns_none_for_link_not_image() {
+        // arrange
+        // act
+        // assert
         assert!(try_parse_image_markdown("[label](url)").is_none());
     }
 
     #[test]
     fn returns_none_for_plain_text() {
+        // arrange
+        // act
+        // assert
         assert!(try_parse_image_markdown("hello world").is_none());
     }
 
     #[test]
     fn detects_local_image_url() {
+        // arrange
+        // act
+        // assert
         assert!(is_local_image_url("./screenshots/ui.png"));
         assert!(is_local_image_url("/absolute/path/to/image.png"));
         assert!(!is_local_image_url("https://example.com/image.png"));
@@ -104,7 +116,10 @@ mod tests {
 
     #[test]
     fn handles_empty_alt_text() {
+        // arrange
+        // act
         let (alt, _url, _consumed) = try_parse_image_markdown("![](./img.png)").unwrap();
+        // assert
         assert_eq!(alt, "");
     }
 }

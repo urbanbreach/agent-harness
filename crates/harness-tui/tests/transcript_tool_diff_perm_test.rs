@@ -204,18 +204,24 @@ fn render_question_row(question: &QuestionLeafView) -> String {
 
 #[test]
 fn shell_idle_renders_without_panic() {
+    // arrange
+    // act
     let shell = ShellLeafView::new(ShellKindLeaf::Live, FocusLeaf::Composer);
     let transcript = TranscriptLeafView::new(0, 20);
     let output = render_shell(&shell, &transcript);
+    // assert
     assert!(output.contains("idle"), "idle state must render: {output}");
     assert!(output.contains("focus=composer"));
 }
 
 #[test]
 fn shell_stream_renders_without_panic() {
+    // arrange
+    // act
     let shell = ShellLeafView::new(ShellKindLeaf::Live, FocusLeaf::Transcript).streaming();
     let transcript = TranscriptLeafView::new(0, 20);
     let output = render_shell(&shell, &transcript);
+    // assert
     assert!(
         output.contains("streaming"),
         "streaming state must render: {output}"
@@ -224,11 +230,14 @@ fn shell_stream_renders_without_panic() {
 
 #[test]
 fn shell_cancel_renders_without_panic() {
+    // arrange
+    // act
     let shell = ShellLeafView::new(ShellKindLeaf::Live, FocusLeaf::Transcript)
         .streaming()
         .cancelled();
     let transcript = TranscriptLeafView::new(5, 20);
     let output = render_shell(&shell, &transcript);
+    // assert
     assert!(
         output.contains("cancelled"),
         "cancelled state must render: {output}"
@@ -237,11 +246,14 @@ fn shell_cancel_renders_without_panic() {
 
 #[test]
 fn shell_fail_renders_without_panic() {
+    // arrange
+    // act
     let shell = ShellLeafView::new(ShellKindLeaf::Live, FocusLeaf::Transcript)
         .streaming()
         .failed();
     let transcript = TranscriptLeafView::new(0, 20);
     let output = render_shell(&shell, &transcript);
+    // assert
     assert!(
         output.contains("failed"),
         "failed state must render: {output}"
@@ -250,11 +262,14 @@ fn shell_fail_renders_without_panic() {
 
 #[test]
 fn shell_recover_renders_without_panic() {
+    // arrange
+    // act
     let shell = ShellLeafView::new(ShellKindLeaf::Live, FocusLeaf::Composer)
         .failed()
         .recovered();
     let transcript = TranscriptLeafView::new(0, 20);
     let output = render_shell(&shell, &transcript);
+    // assert
     assert!(
         output.contains("idle"),
         "recovered shell must show idle: {output}"
@@ -265,11 +280,14 @@ fn shell_recover_renders_without_panic() {
 
 #[test]
 fn shell_complete_renders_without_panic() {
+    // arrange
+    // act
     let shell = ShellLeafView::new(ShellKindLeaf::Live, FocusLeaf::Composer)
         .streaming()
         .completed();
     let transcript = TranscriptLeafView::new(0, 20);
     let output = render_shell(&shell, &transcript);
+    // assert
     assert!(
         output.contains("complete"),
         "complete state must render: {output}"
@@ -278,9 +296,12 @@ fn shell_complete_renders_without_panic() {
 
 #[test]
 fn shell_scroll_renders_without_panic() {
+    // arrange
+    // act
     let shell = ShellLeafView::new(ShellKindLeaf::Live, FocusLeaf::Transcript);
     let transcript = TranscriptLeafView::new(42, 20);
     let output = render_shell(&shell, &transcript);
+    // assert
     assert!(
         output.contains("scroll: offset=42 visible=20"),
         "scroll offset must render: {output}"
@@ -291,6 +312,8 @@ fn shell_scroll_renders_without_panic() {
 
 #[test]
 fn tool_permission_pending_renders_without_panic() {
+    // arrange
+    // act
     let tool = ToolLeafView::new("edit", ToolStatusLeaf::Queued).permission_pending();
     let perm = PermissionLeafView::new(
         PermissionKindLeaf::Edit,
@@ -298,6 +321,7 @@ fn tool_permission_pending_renders_without_panic() {
         "tc-001",
     );
     let output = render_tool_row(&tool, &perm);
+    // assert
     assert!(output.contains("edit [queued]"));
     assert!(output.contains("edit [pending]"));
     assert!(perm.is_pending());
@@ -306,6 +330,8 @@ fn tool_permission_pending_renders_without_panic() {
 
 #[test]
 fn tool_permission_granted_renders_and_orders_correctly() {
+    // arrange
+    // act
     let tool = ToolLeafView::new("edit", ToolStatusLeaf::Running)
         .permission_pending()
         .permission_granted();
@@ -316,6 +342,7 @@ fn tool_permission_granted_renders_and_orders_correctly() {
     )
     .granted();
     let output = render_tool_row(&tool, &perm);
+    // assert
     assert!(output.contains("edit [running]"));
     assert!(output.contains("granted"));
     assert!(
@@ -327,6 +354,8 @@ fn tool_permission_granted_renders_and_orders_correctly() {
 
 #[test]
 fn tool_permission_denied_renders_and_blocks_tool() {
+    // arrange
+    // act
     let tool = ToolLeafView::new("bash", ToolStatusLeaf::Cancelled);
     let perm = PermissionLeafView::new(
         PermissionKindLeaf::Bash,
@@ -335,6 +364,7 @@ fn tool_permission_denied_renders_and_blocks_tool() {
     )
     .denied();
     let output = render_tool_row(&tool, &perm);
+    // assert
     assert!(output.contains("bash [cancelled]"));
     assert!(output.contains("denied"));
     assert!(perm.resolved_before_tool());
@@ -342,6 +372,8 @@ fn tool_permission_denied_renders_and_blocks_tool() {
 
 #[test]
 fn tool_with_diff_renders_diff_present() {
+    // arrange
+    // act
     let tool = ToolLeafView::new("edit", ToolStatusLeaf::Completed)
         .permission_granted()
         .with_diff();
@@ -351,12 +383,15 @@ fn tool_with_diff_renders_diff_present() {
         "tc-004",
     );
     let output = render_tool_row(&tool, &perm);
+    // assert
     assert!(output.contains("diff: yes"));
     assert!(tool.has_diff);
 }
 
 #[test]
 fn tool_with_error_renders_error_present() {
+    // arrange
+    // act
     let tool = ToolLeafView::new("bash", ToolStatusLeaf::Failed)
         .permission_granted()
         .with_error();
@@ -366,6 +401,7 @@ fn tool_with_error_renders_error_present() {
         "tc-005",
     );
     let output = render_tool_row(&tool, &perm);
+    // assert
     assert!(output.contains("error: yes"));
     assert!(tool.has_error);
 }
@@ -374,8 +410,11 @@ fn tool_with_error_renders_error_present() {
 
 #[test]
 fn diff_event_derived_renders_with_counts() {
+    // arrange
+    // act
     let diff = DiffLeafView::from_event("src/main.rs", 10, 3);
     let output = render_diff_block(&diff);
+    // assert
     assert!(output.contains("file: src/main.rs"));
     assert!(output.contains("+10 -3"));
     assert!(output.contains("event_derived: true"));
@@ -385,14 +424,19 @@ fn diff_event_derived_renders_with_counts() {
 
 #[test]
 fn diff_absent_renders_placeholder() {
+    // arrange
+    // act
     let diff = DiffLeafView::new();
     let output = render_diff_block(&diff);
+    // assert
     assert!(output.contains("(no diff)"));
     assert!(!diff.is_valid());
 }
 
 #[test]
 fn diff_not_event_derived_is_not_valid() {
+    // arrange
+    // act
     let diff = DiffLeafView {
         present: true,
         added_lines: 5,
@@ -400,6 +444,7 @@ fn diff_not_event_derived_is_not_valid() {
         event_derived: false,
         file_path: "synthetic.rs",
     };
+    // assert
     assert!(!diff.is_valid(), "non-event-derived diff must not be valid");
 }
 
@@ -407,8 +452,11 @@ fn diff_not_event_derived_is_not_valid() {
 
 #[test]
 fn question_pending_renders_without_panic() {
+    // arrange
+    // act
     let q = QuestionLeafView::new("Which file should I edit?");
     let output = render_question_row(&q);
+    // assert
     assert!(output.contains("Q: Which file should I edit?"));
     assert!(output.contains("pending"));
     assert!(q.is_pending());
@@ -420,8 +468,11 @@ fn question_pending_renders_without_panic() {
 
 #[test]
 fn question_answered_renders_answer() {
+    // arrange
+    // act
     let q = QuestionLeafView::new("Which approach?").answered("Option A");
     let output = render_question_row(&q);
+    // assert
     assert!(output.contains("answered"));
     assert!(output.contains("Option A"));
     assert!(!q.is_pending());
@@ -429,8 +480,11 @@ fn question_answered_renders_answer() {
 
 #[test]
 fn question_cancelled_renders_without_panic() {
+    // arrange
+    // act
     let q = QuestionLeafView::new("Cancel?").cancelled();
     let output = render_question_row(&q);
+    // assert
     assert!(output.contains("cancelled"));
     assert!(!q.is_pending());
 }
@@ -439,6 +493,9 @@ fn question_cancelled_renders_without_panic() {
 
 #[test]
 fn action_leaf_new_variants_are_deterministic() {
+    // arrange
+    // act
+    // assert
     assert_eq!(ActionLeaf::ApprovePermission, ActionLeaf::ApprovePermission);
     assert_ne!(ActionLeaf::ApprovePermission, ActionLeaf::DenyPermission);
     assert_eq!(ActionLeaf::ScrollUp, ActionLeaf::ScrollUp);
@@ -454,6 +511,7 @@ fn action_leaf_new_variants_are_deterministic() {
 
 #[test]
 fn full_lifecycle_sequence_renders_all_states() {
+    // arrange
     let transcript = TranscriptLeafView::new(0, 20);
 
     // idle
@@ -481,11 +539,13 @@ fn full_lifecycle_sequence_renders_all_states() {
     assert!(recovered.recovered);
     assert!(!recovered.failed);
 
+    // act
     // complete
     let completed = ShellLeafView::new(ShellKindLeaf::Live, FocusLeaf::Composer)
         .streaming()
         .completed();
     let complete_out = render_shell(&completed, &transcript);
+    // assert
     assert!(complete_out.contains("complete"));
 }
 
@@ -493,6 +553,7 @@ fn full_lifecycle_sequence_renders_all_states() {
 
 #[test]
 fn permission_before_tool_invariant_holds_across_lifecycle() {
+    // arrange
     // Pending: tool must not execute
     let perm_pending = PermissionLeafView::new(
         PermissionKindLeaf::Edit,
@@ -516,8 +577,10 @@ fn permission_before_tool_invariant_holds_across_lifecycle() {
     assert!(tool_done.permission_before_tool());
     assert!(tool_done.has_diff);
 
+    // act
     // Diff is event-derived
     let diff = DiffLeafView::from_event("src/lib.rs", 15, 5);
+    // assert
     assert!(diff.is_valid());
     assert!(diff.event_derived);
 }
@@ -526,6 +589,7 @@ fn permission_before_tool_invariant_holds_across_lifecycle() {
 
 #[test]
 fn scroll_offset_preserved_across_state_transitions() {
+    // arrange
     let base = ShellLeafView::new(ShellKindLeaf::Live, FocusLeaf::Transcript);
 
     // User scrolls up during streaming
@@ -541,12 +605,14 @@ fn scroll_offset_preserved_across_state_transitions() {
     assert!(out.contains("cancelled"));
     assert!(out.contains("offset=30"));
 
+    // act
     // Scroll to bottom on complete
     let completed = ShellLeafView::new(ShellKindLeaf::Live, FocusLeaf::Composer)
         .streaming()
         .completed();
     let at_bottom = TranscriptLeafView::new(0, 20);
     let out = render_shell(&completed, &at_bottom);
+    // assert
     assert!(out.contains("complete"));
     assert!(out.contains("offset=0"));
 }

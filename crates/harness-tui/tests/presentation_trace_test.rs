@@ -57,6 +57,7 @@ impl Write for FlushFailingSink {
 
 #[test]
 fn coalesced_causes_are_preserved_through_ack() {
+    // arrange
     // Given: two visible causes coalesced into one revision-bearing demand.
     let clock = PresentationClock::new();
     let first = CauseId::new("trace:cause:1");
@@ -96,7 +97,9 @@ fn coalesced_causes_are_preserved_through_ack() {
         .pop()
         .expect("one acknowledgement");
 
+    // act
     // Then: cause order, newest revision, byte identity, and flush timing survive intact.
+    // assert
     assert_eq!(ack.revision(), PresentationRevision::new(2));
     assert_eq!(ack.cause_ids(), &[first, second]);
     assert_eq!(ack.kind(), FrameKind::Differential);
@@ -109,6 +112,7 @@ fn coalesced_causes_are_preserved_through_ack() {
 
 #[test]
 fn no_op_cause_closes_without_visible_frame() {
+    // arrange
     // Given: a received cause whose render emits no terminal bytes.
     let mut trace = PresentationTrace::new("trace");
     let cause = cause("trace:cause:1", 10);
@@ -119,7 +123,9 @@ fn no_op_cause_closes_without_visible_frame() {
         .record_no_visible_change(cause.id().clone(), PresentationTimestamp::from_micros(20))
         .expect("close no-op cause");
 
+    // act
     // Then: the outcome is explicit and no accepted frame is fabricated.
+    // assert
     assert!(matches!(
         trace.outcomes().first(),
         Some(PresentationOutcome::NoVisibleChange { cause_id, .. }) if cause_id == cause.id()
@@ -129,6 +135,7 @@ fn no_op_cause_closes_without_visible_frame() {
 
 #[test]
 fn resync_requires_a_linked_replacement_full_repaint() {
+    // arrange
     // Given: a rejected differential demand followed by a newer repaint demand.
     let mut trace = PresentationTrace::new("trace");
 
@@ -141,7 +148,9 @@ fn resync_requires_a_linked_replacement_full_repaint() {
         )
         .expect("record resync");
 
+    // act
     // Then: the failed submission remains distinct from a written frame.
+    // assert
     assert!(matches!(
         trace.outcomes().first(),
         Some(PresentationOutcome::ResyncRequired {
@@ -156,6 +165,7 @@ fn resync_requires_a_linked_replacement_full_repaint() {
 
 #[test]
 fn failed_sink_has_no_success_ack() {
+    // arrange
     // Given: one accepted frame and a sink whose physical flush fails.
     let clock = PresentationClock::new();
     let demand = RenderDemand::new(
@@ -177,7 +187,9 @@ fn failed_sink_has_no_success_ack() {
     let _ = output.is_ready_for_frame();
     let acknowledgements = output.take_acknowledgements();
 
+    // act
     // Then: the accepted frame has exactly one typed failure and no success acknowledgement.
+    // assert
     assert_eq!(acknowledgements.len(), 1);
     assert!(matches!(
         acknowledgements[0].outcome(),

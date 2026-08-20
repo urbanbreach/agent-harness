@@ -38,13 +38,16 @@ fn loaded_controller() -> CompletionController {
 
 #[test]
 fn overlapping_triggers_use_documented_source_precedence() {
+    // arrange
     let slash = trigger(CompletionSource::Slash, 0, 2, "/");
     let file = trigger(CompletionSource::File, 1, 3, "~/");
     let shell = trigger(CompletionSource::Shell, 1, 3, "~");
     let history = trigger(CompletionSource::History, 1, 3, "~");
 
+    // act
     let selected = choose_preferred_trigger(&[file, shell, history, slash]);
 
+    // assert
     assert_eq!(
         selected.map(|value| value.source),
         Some(CompletionSource::Slash)
@@ -53,6 +56,7 @@ fn overlapping_triggers_use_documented_source_precedence() {
 
 #[test]
 fn stale_async_results_are_rejected_after_a_new_query() {
+    // arrange
     let mut controller = CompletionController::new();
     let first = controller.begin(trigger(CompletionSource::File, 0, 2, "~/"));
     let second = controller.begin(trigger(CompletionSource::File, 0, 3, "~/s"));
@@ -60,25 +64,32 @@ fn stale_async_results_are_rejected_after_a_new_query() {
     let stale = controller.apply_results(&first, vec![CompletionItem::new(1, "old", "old")]);
     assert!(stale.is_err());
 
+    // act
     controller
         .apply_results(&second, vec![CompletionItem::new(2, "src", "src")])
         .unwrap();
+    // assert
     assert_eq!(controller.status(), CompletionStatus::Ready);
 }
 
 #[test]
 fn mouse_and_keyboard_acceptance_return_the_same_event() {
+    // arrange
     let keyboard = loaded_controller();
     let mut mouse = loaded_controller();
 
+    // act
     let keyboard_event = keyboard.accept_keyboard().unwrap();
     let mouse_event = mouse.accept_mouse(0).unwrap();
 
+    // assert
     assert_eq!(keyboard_event, mouse_event);
 }
 
 #[test]
 fn resize_repositions_dropdown_inside_the_wrapped_composer() {
+    // arrange
+    // act
     let editor = ComposerEditor::from_text("one two three four five");
     let wide = ShellCompletionGeometry::calculate(&CompletionGeometryInput {
         viewport: Rect::new(0, 0, 80, 24),
@@ -97,6 +108,7 @@ fn resize_repositions_dropdown_inside_the_wrapped_composer() {
         max_rows: 5,
     });
 
+    // assert
     assert!(wide.rect.right() <= 80 && wide.rect.bottom() <= 24);
     assert!(narrow.rect.right() <= 40 && narrow.rect.bottom() <= 10);
     assert_ne!(wide.rect, narrow.rect);
@@ -105,6 +117,7 @@ fn resize_repositions_dropdown_inside_the_wrapped_composer() {
 
 #[test]
 fn completion_insertion_preserves_attachment_identity() {
+    // arrange
     let buffer = AtomBuffer::from_atoms(vec![
         ComposerAtom::attachment(1, AttachmentId::new(77)),
         ComposerAtom::text(2, GraphemeCluster::new("x")),
@@ -113,8 +126,10 @@ fn completion_insertion_preserves_attachment_identity() {
     let editor = ComposerEditor::from_buffer(buffer);
     let replacement = trigger(CompletionSource::File, 1, 2, "x");
 
+    // act
     let inserted = insert_completion(&editor, &replacement, "é").unwrap();
 
+    // assert
     assert_eq!(inserted.buffer().atoms()[0].id.get(), 1);
     assert!(matches!(
         inserted.buffer().atoms()[0].kind,
@@ -125,16 +140,19 @@ fn completion_insertion_preserves_attachment_identity() {
 
 #[test]
 fn empty_query_and_no_results_have_distinct_states() {
+    // arrange
     let mut empty = CompletionController::new();
     let empty_request = empty.begin(trigger(CompletionSource::History, 0, 0, ""));
     empty.apply_results(&empty_request, Vec::new()).unwrap();
 
+    // act
     let mut no_results = CompletionController::new();
     let no_result_request = no_results.begin(trigger(CompletionSource::Shell, 0, 1, "z"));
     no_results
         .apply_results(&no_result_request, Vec::new())
         .unwrap();
 
+    // assert
     assert_eq!(empty.status(), CompletionStatus::Empty);
     assert_eq!(no_results.status(), CompletionStatus::NoResults);
 }

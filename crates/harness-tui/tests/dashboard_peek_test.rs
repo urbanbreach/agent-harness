@@ -30,17 +30,20 @@ fn layout(blocks: &[BlockSnapshot], viewport_extent: f64) -> TranscriptLayout {
 
 #[test]
 fn dashboard_peek_preserves_each_session_draft_when_switching() {
+    // arrange
     let mut peek = DashboardPeek::new(10.0).unwrap_or_abort();
     let session_a = key("session-a");
     let session_b = key("session-b");
     peek.sync_sessions(&[session_a.clone(), session_b.clone()])
         .unwrap_or_abort();
 
+    // act
     peek.select(&session_a).unwrap_or_abort();
     peek.set_draft("draft a").unwrap_or_abort();
     peek.select(&session_b).unwrap_or_abort();
     peek.set_draft("draft b").unwrap_or_abort();
 
+    // assert
     assert_eq!(peek.draft_for(&session_a), Some("draft a"));
     assert_eq!(peek.draft_for(&session_b), Some("draft b"));
     assert_eq!(peek.view_for(&session_a).unwrap_or_abort().draft, "draft a");
@@ -49,6 +52,7 @@ fn dashboard_peek_preserves_each_session_draft_when_switching() {
 
 #[test]
 fn dashboard_peek_restores_detached_scroll_per_session() {
+    // arrange
     let mut peek = DashboardPeek::new(10.0).unwrap_or_abort();
     let session_a = key("session-a");
     let session_b = key("session-b");
@@ -62,15 +66,18 @@ fn dashboard_peek_restores_detached_scroll_per_session() {
     peek.scroll_by(5.0).unwrap_or_abort();
     let before_switch = peek.view().unwrap_or_abort().scroll_top;
 
+    // act
     peek.select(&session_b).unwrap_or_abort();
     peek.select(&session_a).unwrap_or_abort();
     let restored = peek.view().unwrap_or_abort();
+    // assert
     assert_eq!(restored.follow, FollowMode::Detached);
     assert!((restored.scroll_top - before_switch).abs() < 1e-9);
 }
 
 #[test]
 fn dashboard_peek_reports_incremental_append_without_rebuild() {
+    // arrange
     let mut peek = DashboardPeek::new(10.0).unwrap_or_abort();
     let session = key("session-a");
     peek.sync_sessions(std::slice::from_ref(&session))
@@ -78,9 +85,11 @@ fn dashboard_peek_reports_incremental_append_without_rebuild() {
     peek.replace_blocks(&session, &[block(1, "first")])
         .unwrap_or_abort();
 
+    // act
     let update = peek
         .append_block(&session, block(2, "second"))
         .unwrap_or_abort();
+    // assert
     assert_eq!(update.kind, TailUpdateKind::Incremental);
     assert_eq!(update.appended, 1);
     assert_eq!(update.replaced, 0);
@@ -89,6 +98,8 @@ fn dashboard_peek_reports_incremental_append_without_rebuild() {
 
 #[test]
 fn dashboard_peek_tracks_unread_while_detached_and_clears_at_bottom() {
+    // arrange
+    // act
     let mut peek = DashboardPeek::new(10.0).unwrap_or_abort();
     let session = key("session-a");
     let blocks = vec![block(1, "one"), block(2, "two"), block(3, "three")];
@@ -102,6 +113,7 @@ fn dashboard_peek_tracks_unread_while_detached_and_clears_at_bottom() {
     peek.append_block(&session, block(4, "four"))
         .unwrap_or_abort();
 
+    // assert
     assert_eq!(peek.view().unwrap_or_abort().unread_count, 1);
     peek.jump_to_bottom().unwrap_or_abort();
     let view = peek.view().unwrap_or_abort();
@@ -111,6 +123,7 @@ fn dashboard_peek_tracks_unread_while_detached_and_clears_at_bottom() {
 
 #[test]
 fn dashboard_peek_keeps_selection_through_reorder_and_marks_finished() {
+    // arrange
     let mut peek = DashboardPeek::new(10.0).unwrap_or_abort();
     let session_a = key("session-a");
     let session_b = key("session-b");
@@ -122,7 +135,9 @@ fn dashboard_peek_keeps_selection_through_reorder_and_marks_finished() {
         .unwrap_or_abort();
     peek.finish(&session_b).unwrap_or_abort();
 
+    // act
     let view = peek.view().unwrap_or_abort();
+    // assert
     assert_eq!(view.session_id, session_b);
     assert_eq!(view.status, PeekSessionStatus::Finished);
     assert!(peek
@@ -134,6 +149,7 @@ fn dashboard_peek_keeps_selection_through_reorder_and_marks_finished() {
 
 #[test]
 fn dashboard_peek_bounds_each_session_tail_cache() {
+    // arrange
     let limits = PeekLimits::new(2, 2);
     let mut peek = DashboardPeek::with_limits(10.0, limits).unwrap_or_abort();
     let session = key("session-a");
@@ -142,7 +158,9 @@ fn dashboard_peek_bounds_each_session_tail_cache() {
         .unwrap_or_abort();
     peek.replace_blocks(&session, &blocks).unwrap_or_abort();
 
+    // act
     let view = peek.view_for(&session).unwrap_or_abort();
+    // assert
     assert_eq!(view.blocks.len(), 2);
     assert_eq!(view.blocks[0].content, "two");
     assert_eq!(view.blocks[1].content, "three");
@@ -151,6 +169,7 @@ fn dashboard_peek_bounds_each_session_tail_cache() {
 
 #[test]
 fn dashboard_peek_isolates_content_and_follow_state_between_sessions() {
+    // arrange
     let mut peek = DashboardPeek::new(10.0).unwrap_or_abort();
     let session_a = key("session-a");
     let session_b = key("session-b");
@@ -167,8 +186,10 @@ fn dashboard_peek_isolates_content_and_follow_state_between_sessions() {
     peek.select(&session_a).unwrap_or_abort();
     peek.scroll_by(1.0).unwrap_or_abort();
 
+    // act
     let view_a = peek.view_for(&session_a).unwrap_or_abort();
     let view_b = peek.view_for(&session_b).unwrap_or_abort();
+    // assert
     assert_eq!(view_a.blocks[0].content, "only-a");
     assert_eq!(view_b.blocks[0].content, "only-b");
     assert_eq!(view_a.follow, FollowMode::Detached);

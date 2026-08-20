@@ -404,7 +404,7 @@ where
             let render_width = transcript_surface_render_width(width, surface.kind);
             let content_width = usize::from(transcript_surface_content_width(render_width, false));
             let height = transcript_visual_rows(&surface.lines, content_width);
-            content_height = top_offset + height;
+            content_height = top_offset + height + surface.trailing_gap_rows;
             measured_surfaces.push(TranscriptVisualEntry {
                 metadata,
                 kind: surface.kind,
@@ -867,6 +867,7 @@ mod pin_tests {
 
     #[test]
     fn footer_anchor_keeps_footer_identity_when_entry_is_inserted_before_it() {
+        // arrange
         let before = run_write_layout(2);
         let anchor = before
             .capture_content_anchor(1)
@@ -876,6 +877,7 @@ mod pin_tests {
             TranscriptVisualEntryId::Footer { .. }
         ));
 
+        // act
         let original = before.sections[0].as_ref();
         let body = original.surfaces[0].clone();
         let mut inserted = body.clone();
@@ -905,11 +907,14 @@ mod pin_tests {
             total_height: 3,
         };
 
+        // assert
         assert_eq!(after.resolve_content_anchor(anchor), Some(2));
     }
 
     #[test]
     fn typed_pinned_placement_is_copy_independent() {
+        // arrange
+        // act
         let mut layout = run_write_layout(4);
         let footer = Rc::make_mut(&mut layout.sections[0])
             .surfaces
@@ -918,12 +923,15 @@ mod pin_tests {
         footer.lines = vec![Line::from("alternate localized footer")];
         let outdent = typed_footer_outdent(footer);
 
+        // assert
         assert!(typed_footer_pin_delta(&layout, 20, 0).is_some());
         assert_eq!(outdent, 1);
     }
 
     #[test]
     fn typed_gap_rows_determine_measured_top_offset_once() {
+        // arrange
+        // act
         let theme = Theme::default();
         let layout = measure_transcript_layout(
             &[()],
@@ -935,12 +943,15 @@ mod pin_tests {
             |_, _, _, _| vec![test_render_surface(3, None)],
         );
 
+        // assert
         assert_eq!(layout.sections[0].surfaces[0].top_offset, 3);
         assert_eq!(layout.sections[0].surfaces[0].leading_gap_rows, 3);
     }
 
     #[test]
     fn typed_sticky_placement_survives_measurement() {
+        // arrange
+        // act
         let theme = Theme::default();
         let mut surface = test_render_surface(0, None);
         surface.kind = TranscriptRenderSurfaceKind::User;
@@ -955,6 +966,7 @@ mod pin_tests {
             |_, _, _, _| vec![surface.clone()],
         );
 
+        // assert
         assert_eq!(
             layout.sections[0].surfaces[0].placement,
             TranscriptBlockPlacement::StickyPromptCandidate
@@ -963,6 +975,8 @@ mod pin_tests {
 
     #[test]
     fn typed_layout_rejects_row_mismatch() {
+        // arrange
+        // act
         use crate::ui::ui_transcript::ui_transcript_block_grammar::{
             resolve_block_surface, test_spec, TranscriptBlockContent, TranscriptBlockRole,
             TranscriptGrammarError,
@@ -978,6 +992,7 @@ mod pin_tests {
         );
         let surface = test_render_surface(0, Some(vec![None, None]));
 
+        // assert
         assert!(matches!(
             resolve_block_surface(&spec, surface),
             Err(TranscriptGrammarError::RowMismatch)
@@ -986,6 +1001,8 @@ mod pin_tests {
 
     #[test]
     fn typed_layout_rejects_invalid_pin() {
+        // arrange
+        // act
         use crate::ui::ui_transcript::ui_transcript_block_grammar::{
             test_spec, validate_block_spec, TranscriptBlockContent, TranscriptBlockRole,
             TranscriptGrammarError,
@@ -1001,6 +1018,7 @@ mod pin_tests {
         );
         spec.placement = TranscriptBlockPlacement::PinnedFooter { outdent_cells: 1 };
 
+        // assert
         assert_eq!(
             validate_block_spec(&spec),
             Err(TranscriptGrammarError::InvalidPlacement)
@@ -1014,6 +1032,7 @@ mod pin_tests {
         TranscriptVisualEntryDraft {
             kind: TranscriptRenderSurfaceKind::AssistantBody,
             leading_gap_rows,
+            trailing_gap_rows: 0,
             placement: TranscriptBlockPlacement::Flow,
             show_outer_rail: false,
             rail_glyph: " ",
@@ -1108,13 +1127,16 @@ mod pin_tests {
 
     #[test]
     fn sticky_prompt_selection_is_surface_kind_independent() {
+        // arrange
         let mut layout = scroll_turn_layout(4, 40);
         let section = Rc::make_mut(&mut layout.sections[0]);
         section.surfaces[0].kind = TranscriptRenderSurfaceKind::AssistantBody;
 
+        // act
         let (_, surface_idx, surface) = sticky_user_surface(&layout, 10, 20)
             .expect("typed sticky placement must not depend on surface kind or copy");
 
+        // assert
         assert_eq!(surface_idx, 0);
         assert_eq!(
             surface.placement,
@@ -1199,6 +1221,7 @@ mod pin_tests {
 
     #[test]
     fn rendered_anchor_tracks_same_surface_when_preceding_content_expands() {
+        // arrange
         // Given: a detached viewport inside an assistant surface.
         let before = scroll_turn_layout(4, 40);
         let anchor = before
@@ -1216,12 +1239,15 @@ mod pin_tests {
             .resolve_content_anchor(anchor)
             .expect("resolved assistant surface anchor");
 
+        // act
         // Then: the same within-surface row stays at the viewport top.
+        // assert
         assert_eq!(restored, 15);
     }
 
     #[test]
     fn rendered_anchor_tracks_logical_position_through_long_line_rewrap() {
+        // arrange
         // Given: a detached viewport on the third wrapped row of one logical line.
         let mut before = scroll_turn_layout(1, 3);
         Rc::make_mut(&mut before.sections[0]).surfaces[1].selection_rows = Some(vec![
@@ -1241,12 +1267,15 @@ mod pin_tests {
             .resolve_content_anchor(anchor)
             .expect("rewrapped line anchor");
 
+        // act
         // Then: the same logical display offset resolves into the new wrapping.
+        // assert
         assert_eq!(restored, 2);
     }
 
     #[test]
     fn selection_endpoint_tracks_logical_cell_through_long_line_rewrap() {
+        // arrange
         // Given: a selection endpoint two cells into the third wrapped row.
         let mut before = scroll_turn_layout(1, 3);
         Rc::make_mut(&mut before.sections[0]).surfaces[1].selection_rows = Some(vec![
@@ -1266,7 +1295,9 @@ mod pin_tests {
             .resolve_selection_anchor(anchor)
             .expect("resolved selection endpoint");
 
+        // act
         // Then: the endpoint remains on display column ten of the source line.
+        // assert
         assert_eq!(restored, TranscriptSelectionCell { row: 2, column: 4 });
     }
 

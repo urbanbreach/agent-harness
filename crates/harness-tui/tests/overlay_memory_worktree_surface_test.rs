@@ -64,13 +64,16 @@ fn worktree(path: &str, branch: &str, slug: &str) -> ListedWorktree {
 
 #[test]
 fn l0_palette_crosswalk_pins_memory_and_worktree_ownership() {
+    // arrange
     // arrange / act
     let memory =
         palette_model::find("context.memory").expect("palette command `context.memory` must exist");
     let worktree = palette_model::find("worktree.switch")
         .expect("palette command `worktree.switch` must exist");
 
+    // act
     // assert: each palette id maps to its owning overlay action.
+    // assert
     assert!(
         matches!(
             &memory.dispatch,
@@ -210,8 +213,10 @@ fn l3_memory_browser_input_trace_navigate_cancel_recover() {
         "Esc must close the memory browser"
     );
 
+    // act
     // act + assert: recovery by reopening and navigating again.
     app.open_memory_browser();
+    // assert
     assert!(
         app.memory_browser.visible,
         "reopen must restore the overlay"
@@ -257,11 +262,13 @@ fn l3_worktree_picker_input_trace_error_cancel_confirm_safe() {
         "close must clear the error"
     );
 
+    // act
     // act + assert: Enter with no selectable worktree is a safe no-op (no panic, stays open).
     app.worktree_picker.visible = true;
     app.worktree_picker.error = None;
     app.worktree_picker.entries.clear();
     app.handle_key(key(KeyCode::Enter));
+    // assert
     assert!(
         app.worktree_picker.visible,
         "confirm with nothing selected must not crash or auto-close"

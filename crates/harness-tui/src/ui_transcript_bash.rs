@@ -366,6 +366,8 @@ mod tests {
 
     #[test]
     fn bash_body_can_omit_command_owned_by_header() {
+        // arrange
+        // act
         let lines = harness_bash_card_lines(
             "",
             "stdout",
@@ -382,6 +384,7 @@ mod tests {
             .map(|span| span.content.as_ref())
             .collect::<String>();
 
+        // assert
         assert!(!rendered.contains("$ "));
         assert!(rendered.contains("stdout"));
     }

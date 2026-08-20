@@ -99,9 +99,11 @@ fn integration() -> DashboardIntegration {
 
 #[test]
 fn focus_tab_and_shift_tab_cycle_without_losing_focus() {
+    // arrange
     let mut focus = DashboardFocus::new(DashboardPane::Roster);
     let visible = DashboardPane::ALL;
 
+    // act
     for expected in [
         DashboardPane::Peek,
         DashboardPane::Reply,
@@ -109,6 +111,7 @@ fn focus_tab_and_shift_tab_cycle_without_losing_focus() {
         DashboardPane::Roster,
     ] {
         focus.traverse(FocusDirection::Forward, &visible);
+        // assert
         assert_eq!(focus.current(), expected);
     }
     focus.traverse(FocusDirection::Backward, &visible);
@@ -117,6 +120,7 @@ fn focus_tab_and_shift_tab_cycle_without_losing_focus() {
 
 #[test]
 fn modal_overlay_precedes_dashboard_chrome_and_pane_targets() {
+    // arrange
     let mut overlays = DashboardOverlayState::new();
     overlays.open_chrome(OverlayKind::DetailsDrawer);
     assert_eq!(
@@ -124,7 +128,9 @@ fn modal_overlay_precedes_dashboard_chrome_and_pane_targets() {
         DashboardOverlayRoute::Chrome(OverlayKind::DetailsDrawer)
     );
 
+    // act
     overlays.open_modal(DashboardModal::Permission("permission-1".to_string()));
+    // assert
     assert_eq!(
         overlays.route(DashboardPane::Roster),
         DashboardOverlayRoute::Modal(DashboardModalKind::Permission)
@@ -133,9 +139,12 @@ fn modal_overlay_precedes_dashboard_chrome_and_pane_targets() {
 
 #[test]
 fn responsive_layout_uses_shell_geometry_and_hides_details_at_narrow_widths() {
+    // arrange
+    // act
     let compact = layout_for_rect(Rect::new(0, 0, 60, 15), ShellState::Streaming);
     let wide = layout_for_rect(Rect::new(0, 0, 132, 40), ShellState::Streaming);
 
+    // assert
     assert_eq!(compact.breakpoint, DashboardBreakpoint::Compact);
     assert!(!compact.visibility.details);
     assert!(compact.shell.contains_all_regions());
@@ -146,8 +155,11 @@ fn responsive_layout_uses_shell_geometry_and_hides_details_at_narrow_widths() {
 
 #[test]
 fn keyboard_and_roster_mouse_routes_reach_dashboard_targets() {
+    // arrange
+    // act
     let mut dashboard = integration();
     let router = DashboardInputRouter::new();
+    // assert
     assert_eq!(
         router.route_key(
             KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE),
@@ -180,6 +192,7 @@ fn keyboard_and_roster_mouse_routes_reach_dashboard_targets() {
 
 #[test]
 fn search_help_hooks_and_return_state_are_contextual_and_exact() {
+    // arrange
     let mut dashboard = integration();
     dashboard.begin_search(SearchContext::Roster);
     dashboard.input_search("Alpha").expect("search input");
@@ -187,9 +200,11 @@ fn search_help_hooks_and_return_state_are_contextual_and_exact() {
     let help = dashboard.help(Focus::List);
     assert!(help.entries.iter().any(|entry| entry.action == "search"));
 
+    // act
     let prior = DashboardReturnState::new(TranscriptFocus::Timeline, true, None);
     dashboard.capture_return_state(prior.clone());
     dashboard.notify_task_completed("alpha");
+    // assert
     assert!(dashboard.title().contains("alpha"));
     assert_eq!(dashboard.return_state(), Some(&prior));
     assert_eq!(dashboard.leave(), prior);

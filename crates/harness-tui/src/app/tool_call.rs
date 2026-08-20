@@ -454,6 +454,7 @@ mod presentation_tests {
 
     #[test]
     fn unresolved_permission_is_explicit_waiting_presentation() {
+        // arrange
         let mut tool_call = tool_call("bash");
         tool_call.lifecycle_state = Some(ToolCallLifecycleState::Running);
         tool_call.status = ToolCallDisplayStatus::Running;
@@ -471,8 +472,10 @@ mod presentation_tests {
             last_seq: 2,
         });
 
+        // act
         tool_call.sync_display_status();
 
+        // assert
         assert_eq!(
             tool_call.presentation().status,
             ToolCallPresentationStatus::Waiting
@@ -481,6 +484,8 @@ mod presentation_tests {
 
     #[test]
     fn correlated_structured_background_cancellation_is_cancelled_presentation() {
+        // arrange
+        // act
         for (tool_id, args_summary, output_json) in [
             (
                 "background_cancel",
@@ -503,6 +508,7 @@ mod presentation_tests {
             tool_call.args_summary = args_summary.to_string();
             tool_call.output_json = Some(output_json);
 
+            // assert
             assert_eq!(
                 tool_call.presentation().status,
                 ToolCallPresentationStatus::Cancelled
@@ -512,6 +518,7 @@ mod presentation_tests {
 
     #[test]
     fn cancellation_prose_or_mismatched_request_id_is_not_cancelled_presentation() {
+        // arrange
         let mut prose_only = tool_call("background_cancel");
         prose_only.args_summary = r#"{"request_id":"req-child"}"#.to_string();
         prose_only.output_summary = Some("Cancelled background task req-child".to_string());
@@ -520,12 +527,14 @@ mod presentation_tests {
             ToolCallPresentationStatus::Succeeded
         );
 
+        // act
         let mut mismatched = tool_call("background_cancel");
         mismatched.args_summary = r#"{"request_id":"req-child"}"#.to_string();
         mismatched.output_json = Some(serde_json::json!({
             "request_id": "another-child",
             "status": "cancelled"
         }));
+        // assert
         assert_eq!(
             mismatched.presentation().status,
             ToolCallPresentationStatus::Succeeded
@@ -534,12 +543,15 @@ mod presentation_tests {
 
     #[test]
     fn presentation_carries_explicit_duration_and_result_count_metadata() {
+        // arrange
         let mut tool_call = tool_call("grep");
         tool_call.timing_elapsed_ms = Some(1_250);
         tool_call.output_json = Some(serde_json::json!({ "match_count": 7 }));
 
+        // act
         let presentation = tool_call.presentation();
 
+        // assert
         assert_eq!(presentation.duration_ms, Some(1_250));
         assert_eq!(presentation.result_count, Some(7));
     }

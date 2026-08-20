@@ -30,6 +30,7 @@ fn stable_block_ids() -> Result<Vec<BlockId>, Box<dyn std::error::Error>> {
 
 #[test]
 fn fractional_scroll_conserves_signed_distance_for_property_inputs() {
+    // arrange
     // Given: many same-direction fractional gesture streams.
     for run in 1..=128_u32 {
         let direction = if run % 2 == 0 { 1.0 } else { -1.0 };
@@ -40,13 +41,16 @@ fn fractional_scroll_conserves_signed_distance_for_property_inputs() {
         // When: gesture deltas are reduced to integral scroll steps.
         let emitted = deltas.map(|delta| scroll.push(delta)).sum::<i32>();
 
+        // act
         // Then: integral output plus the retained carry equals the input distance.
         assert_close(f64::from(emitted) + scroll.fractional_carry(), total);
+        // assert
     }
 }
 
 #[test]
 fn logical_anchor_survives_concurrent_append_fold_and_resize() -> TestResult {
+    // arrange
     // Given: replay-derived IDs and a viewport whose visible point is inside block three.
     let ids = stable_block_ids()?;
     for scenario in 1..=64_u32 {
@@ -78,7 +82,9 @@ fn logical_anchor_survives_concurrent_append_fold_and_resize() -> TestResult {
         )?;
         let restored = anchor.resolve(&after)?;
 
+        // act
         // Then: the same logical block and intra-block distance are retained.
+        // assert
         assert_eq!(anchor.block_id(), ids[3]);
         assert_close(anchor.within_block(), 1.25);
         assert_close(restored, after.top_of(ids[3])? + 1.25);
@@ -88,6 +94,7 @@ fn logical_anchor_survives_concurrent_append_fold_and_resize() -> TestResult {
 
 #[test]
 fn follow_detaches_on_user_scroll_up_and_reattaches_at_bottom_jump() -> TestResult {
+    // arrange
     // Given: a following viewport at the content bottom.
     let mut follow = FollowState::new();
     assert!(follow.is_following());
@@ -98,7 +105,9 @@ fn follow_detaches_on_user_scroll_up_and_reattaches_at_bottom_jump() -> TestResu
     assert!(!follow.is_following());
     follow.jump_to_bottom();
 
+    // act
     // Then: follow mode is reattached at the exact bottom offset.
+    // assert
     assert!(follow.is_following());
     assert_close(follow.offset(), 0.0);
     Ok(())
@@ -106,6 +115,7 @@ fn follow_detaches_on_user_scroll_up_and_reattaches_at_bottom_jump() -> TestResu
 
 #[test]
 fn landing_at_bottom_remains_detached_until_an_overscroll_gesture() -> TestResult {
+    // arrange
     // Given: a viewport detached four rows above the live tail.
     let mut follow = FollowState::new();
     follow.scroll_by(4.0, 100.0)?;
@@ -113,7 +123,9 @@ fn landing_at_bottom_remains_detached_until_an_overscroll_gesture() -> TestResul
     // When: one downward gesture lands exactly at the bottom.
     follow.scroll_by(-4.0, 100.0)?;
 
+    // act
     // Then: landing alone does not opt back into live following.
+    // assert
     assert!(!follow.is_following());
     assert_close(follow.offset(), 0.0);
     Ok(())
@@ -121,6 +133,7 @@ fn landing_at_bottom_remains_detached_until_an_overscroll_gesture() -> TestResul
 
 #[test]
 fn fully_clamped_downward_overscroll_reattaches_follow() -> TestResult {
+    // arrange
     // Given: a detached viewport that has landed at the bottom.
     let mut follow = FollowState::new();
     follow.scroll_by(4.0, 100.0)?;
@@ -129,7 +142,9 @@ fn fully_clamped_downward_overscroll_reattaches_follow() -> TestResult {
     // When: the next downward gesture is fully clamped.
     follow.scroll_by(-1.0, 100.0)?;
 
+    // act
     // Then: follow reattaches without another input.
+    // assert
     assert!(follow.is_following());
     assert_close(follow.offset(), 0.0);
     Ok(())
@@ -137,6 +152,7 @@ fn fully_clamped_downward_overscroll_reattaches_follow() -> TestResult {
 
 #[test]
 fn page_and_jump_easing_are_deterministic_with_a_fake_clock() -> TestResult {
+    // arrange
     // Given: a full-motion page transition and a deterministic animation clock.
     let request = TransitionRequest::new(0.0, 100.0, 0, EasingKind::Page, MotionPreference::Full);
     let transition = ScrollTransition::start(request)?;
@@ -147,8 +163,10 @@ fn page_and_jump_easing_are_deterministic_with_a_fake_clock() -> TestResult {
     // When: the fake clock is sampled at the same point and after settling.
     let settled = transition.sample(200);
 
+    // act
     // Then: equal clock inputs produce equal frames and the target is reached exactly.
     assert_close(first.value, repeated.value);
+    // assert
     assert!(!first.settled);
     assert!(settled.settled);
     assert_close(settled.value, 100.0);
@@ -157,6 +175,7 @@ fn page_and_jump_easing_are_deterministic_with_a_fake_clock() -> TestResult {
 
 #[test]
 fn scrollbar_drag_keeps_the_pointer_grab_anchor() -> TestResult {
+    // arrange
     // Given: a scroll track and a fractional scroll offset.
     let geometry = ScrollbarGeometry::new(0.0, 100.0, 1_000.0, 100.0)?;
     let ids = stable_block_ids()?;
@@ -172,7 +191,9 @@ fn scrollbar_drag_keeps_the_pointer_grab_anchor() -> TestResult {
     let moved = drag.move_to(pointer + 10.0, &geometry)?;
     let returned = drag.move_to(pointer, &geometry)?;
 
+    // act
     // Then: the thumb follows the pointer without a grab-point jump.
+    // assert
     assert!(moved > offset);
     assert_close(returned, offset);
     assert_close(drag.grab_offset(), geometry.thumb_extent() / 2.0);
@@ -182,6 +203,7 @@ fn scrollbar_drag_keeps_the_pointer_grab_anchor() -> TestResult {
 
 #[test]
 fn reduced_motion_makes_every_transition_instant() -> TestResult {
+    // arrange
     // Given: a reduced-motion jump request.
     let request = TransitionRequest::new(
         12.0,
@@ -194,7 +216,9 @@ fn reduced_motion_makes_every_transition_instant() -> TestResult {
     // When: the transition is sampled at its start time.
     let frame = ScrollTransition::start(request)?.sample(900);
 
+    // act
     // Then: the target is already settled and no animation deadline exists.
+    // assert
     assert!(frame.settled);
     assert_close(frame.value, 480.0);
     assert!(!frame.needs_redraw);
@@ -203,6 +227,7 @@ fn reduced_motion_makes_every_transition_instant() -> TestResult {
 
 #[test]
 fn settled_scroll_produces_zero_idle_scheduler_redraws() -> TestResult {
+    // arrange
     // Given: a scheduled transition and the task-10 fake clock.
     let clock = DualClock::new();
     let transition = ScrollTransition::start(TransitionRequest::new(
@@ -226,7 +251,9 @@ fn settled_scroll_produces_zero_idle_scheduler_redraws() -> TestResult {
         },
     );
 
+    // act
     // Then: the fake scheduler returns no idle frame.
+    // assert
     assert!(settled.settled);
     assert!(idle.is_none());
     Ok(())
@@ -234,6 +261,7 @@ fn settled_scroll_produces_zero_idle_scheduler_redraws() -> TestResult {
 
 #[test]
 fn edge_drag_autoscroll_extends_selection_on_scheduler_deadlines() -> TestResult {
+    // arrange
     // Given: an active drag and a viewport edge zone.
     let viewport = DragViewport::new(0.0, 20.0, 3.0)?;
     let mut drag = DragAutoscroll::new();
@@ -248,7 +276,9 @@ fn edge_drag_autoscroll_extends_selection_on_scheduler_deadlines() -> TestResult
         .tick(clock.flush_now())
         .ok_or("expected an autoscroll step")?;
 
+    // act
     // Then: the scroll and selection extend forward, and leaving the edge idles.
+    // assert
     assert!(step.scroll_delta > 0.0);
     assert!(step.selection_delta > 0);
     assert_eq!(drag.selection_end(), 11);

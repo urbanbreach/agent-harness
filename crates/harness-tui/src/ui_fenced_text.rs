@@ -160,6 +160,9 @@ mod tests {
 
     #[test]
     fn streaming_parser_exposes_open_fence_body() {
+        // arrange
+        // act
+        // assert
         assert_eq!(
             parse_streaming_fenced_text_blocks("Before\n```rust\nfn main() {}"),
             vec![

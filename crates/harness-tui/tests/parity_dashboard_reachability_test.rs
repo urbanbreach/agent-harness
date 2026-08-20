@@ -69,6 +69,7 @@ fn render(app: &AppState, viewport: (u16, u16)) -> String {
 
 #[test]
 fn status_entry_reaches_source_observed_dashboard_at_all_viewports() {
+    // arrange
     // Given: the production status entry and the checked-in comparator journey contract.
     let dashboard_manifest: Value =
         serde_json::from_str(include_str!("dashboard_coverage_manifest.json"))
@@ -129,11 +130,13 @@ fn status_entry_reaches_source_observed_dashboard_at_all_viewports() {
             "settled frame lost source status: {settled}"
         );
 
+        // act
         // When: the user traverses the live dashboard and exits normally.
         app.handle_key(crossterm::event::KeyEvent::new(
             crossterm::event::KeyCode::Tab,
             crossterm::event::KeyModifiers::NONE,
         ));
+        // assert
         assert_eq!(app.status_dashboard_focus(), Some(DashboardPane::Peek));
         app.handle_key(crossterm::event::KeyEvent::new(
             crossterm::event::KeyCode::Esc,

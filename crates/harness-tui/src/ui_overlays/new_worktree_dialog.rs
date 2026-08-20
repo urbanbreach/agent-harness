@@ -151,12 +151,18 @@ mod tests {
 
     #[test]
     fn input_viewport_starts_on_display_character_boundaries() {
+        // arrange
+        // act
+        // assert
         assert_eq!(input_viewport("abcdef", 6, 4), ("def".to_string(), 3));
         assert_eq!(input_viewport("你你好", 9, 4), ("好".to_string(), 2));
     }
 
     #[test]
     fn input_viewport_keeps_combining_marks_with_their_base() {
+        // arrange
+        // act
+        // assert
         assert_eq!(
             input_viewport("e\u{301}x", "e\u{301}".len(), 4),
             ("e\u{301}x".to_string(), 1)

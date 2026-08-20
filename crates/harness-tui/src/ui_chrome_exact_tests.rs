@@ -741,6 +741,7 @@ pub(crate) fn exact_test_footer_status_cluster_empty_when_no_activity() {
 
 #[test]
 fn compact_draft_footer_keeps_reference_hints_without_context_metadata() {
+    // arrange
     use ratatui::{backend::TestBackend, Terminal};
 
     for (width, height) in [(60, 20), (80, 24)] {
@@ -762,9 +763,11 @@ fn compact_draft_footer_keeps_reference_hints_without_context_metadata() {
             .collect::<Vec<_>>()
             .join("\n");
 
+        // act
         let submit = rendered.find("Enter:send");
         let newline = rendered.find("Alt+Enter:newline");
         let mode = rendered.find("Shift+Tab:mode");
+        // assert
         assert!(
             matches!((submit, newline, mode), (Some(a), Some(b), Some(c)) if a < b && b < c),
             "{width}x{height}\n{rendered}"
@@ -778,8 +781,10 @@ fn compact_draft_footer_keeps_reference_hints_without_context_metadata() {
 
 #[test]
 fn shell_composer_renders_semantic_marker_and_label_without_model_identity() {
+    // arrange
     use ratatui::{backend::TestBackend, Terminal};
 
+    // act
     let mut app = AppState::new_live(None, false, None);
     app.startup_mode = false;
     app.composer.shell_mode = true;
@@ -803,6 +808,7 @@ fn shell_composer_renders_semantic_marker_and_label_without_model_identity() {
         .collect::<Vec<_>>()
         .join("\n");
 
+    // assert
     assert!(rendered.contains("! printf safe-shell"), "{rendered}");
     assert!(rendered.contains("Run shell command"), "{rendered}");
     assert!(!rendered.contains("❯ printf safe-shell"), "{rendered}");
@@ -815,6 +821,7 @@ fn shell_composer_renders_semantic_marker_and_label_without_model_identity() {
 
 #[test]
 fn hidden_header_identity_omits_primary_profile() {
+    // arrange
     // Given live sessions launched with either primary profile.
     let identities = ["build", "plan"].map(|profile| {
         let mut app = AppState::new_live(None, false, None);
@@ -828,7 +835,9 @@ fn hidden_header_identity_omits_primary_profile() {
         header_identity_text(&app, SessionHeaderMode::Hidden)
     });
 
+    // act
     // Then provider and model remain visible without the primary profile.
+    // assert
     assert_eq!(
         identities,
         [

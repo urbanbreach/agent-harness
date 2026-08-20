@@ -52,6 +52,9 @@ mod tests {
 
     #[test]
     fn clipping_keeps_cjk_codepoints_whole() {
+        // arrange
+        // act
+        // assert
         assert_eq!(clip_marker_label("成功", 3), "成");
         assert_eq!(marker_display_width("成"), 2);
     }

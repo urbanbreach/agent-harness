@@ -205,10 +205,13 @@ mod tests {
 
     #[test]
     fn page_flip_begin_is_idempotent_for_the_same_activity() {
+        // arrange
+        // act
         let preserving = PageFlipState::Idle.begin(7).preserve_at(42);
         let detached = preserving.detach_at(41);
         let consumed = detached.consume();
 
+        // assert
         assert_eq!(preserving.begin(7), preserving);
         assert_eq!(detached.begin(7), detached);
         assert_eq!(consumed.begin(7), consumed);
@@ -223,10 +226,13 @@ mod tests {
 
     #[test]
     fn page_flip_retarget_preserves_the_visible_scroll_position() {
+        // arrange
+        // act
         let preserving = PageFlipState::Preserving {
             activity_first_seq: 0,
             scroll_top: Some(17),
         };
+        // assert
         assert_eq!(
             preserving.retarget(42),
             PageFlipState::Preserving {

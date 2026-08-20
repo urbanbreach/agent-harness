@@ -4,7 +4,10 @@ use harness_tui::theme_family::ThemeChoice;
 
 #[test]
 fn defaults_have_current_fidelity_values() {
+    // arrange
+    // act
     let config = FidelityConfig::from_defaults();
+    // assert
     assert_eq!(config.schema_version, "fidelity-v1");
     assert_eq!(config.theme, ThemeChoice::Auto);
     assert_eq!(config.motion, MotionMode::Full);
@@ -15,15 +18,21 @@ fn defaults_have_current_fidelity_values() {
 
 #[test]
 fn config_round_trips_through_json() {
+    // arrange
+    // act
     let config = FidelityConfig::from_defaults();
     let json = config.to_json().expect("serialization should succeed");
     let parsed = FidelityConfig::from_json(&json).expect("parse should succeed");
+    // assert
     assert_eq!(parsed, config);
 }
 
 #[test]
 fn validation_accepts_current_and_rejects_unknown_schema() {
+    // arrange
+    // act
     let valid = FidelityConfig::from_defaults();
+    // assert
     assert_eq!(valid.validate(), Ok(()));
     let mut invalid = valid;
     invalid.schema_version = "fidelity-v9".to_string();
@@ -35,9 +44,12 @@ fn validation_accepts_current_and_rejects_unknown_schema() {
 
 #[test]
 fn v0_migrates_to_current_contract() {
+    // arrange
+    // act
     let raw =
         r#"{"schema_version":"fidelity-v0","theme":"dark","reduced_motion":true,"graphics":true}"#;
     let config = ConfigMigration::migrate(raw).expect("v0 should migrate");
+    // assert
     assert_eq!(config.schema_version, "fidelity-v1");
     assert_eq!(config.theme, ThemeChoice::Dark);
     assert_eq!(config.motion, MotionMode::Reduced);
@@ -48,6 +60,9 @@ fn v0_migrates_to_current_contract() {
 
 #[test]
 fn migration_reports_unknown_and_malformed_input() {
+    // arrange
+    // act
+    // assert
     assert!(matches!(
         ConfigMigration::migrate(r#"{"schema_version":"fidelity-v9"}"#),
         Err(MigrationError::UnknownSchema(_))
@@ -60,6 +75,8 @@ fn migration_reports_unknown_and_malformed_input() {
 
 #[test]
 fn rollback_toggle_sets_have_expected_decisions() {
+    // arrange
+    // act
     let enabled = RollbackToggles::all_enabled();
     let disabled = RollbackToggles::all_disabled("test");
     for feature in [
@@ -69,6 +86,7 @@ fn rollback_toggle_sets_have_expected_decisions() {
         "native_notifications",
         "modern_keyboard",
     ] {
+        // assert
         assert!(enabled.is_enabled(feature));
         assert!(!disabled.is_enabled(feature));
     }
@@ -81,6 +99,8 @@ fn rollback_toggle_sets_have_expected_decisions() {
 
 #[test]
 fn rollback_merge_disables_selected_fields() {
+    // arrange
+    // act
     let mut toggles = RollbackToggles::all_enabled();
     toggles.inline_images = RollbackDecision::ForceDisable {
         reason: "test".to_string(),
@@ -92,6 +112,7 @@ fn rollback_merge_disables_selected_fields() {
         reason: "test".to_string(),
     };
     let merged = toggles.merge_with_config(&FidelityConfig::from_defaults());
+    // assert
     assert!(!merged.inline_images);
     assert_eq!(merged.notification, NotificationMode::Bell);
     assert_eq!(merged.input_mode, InputMode::Legacy);
@@ -100,6 +121,8 @@ fn rollback_merge_disables_selected_fields() {
 
 #[test]
 fn rollback_uses_weakest_capability_profile() {
+    // arrange
+    // act
     let mut profiles = well_known_profiles();
     let dumb = CapabilityMatrix::new(profiles.remove(4).1);
     let dumb_toggles = RollbackToggles::from_capability_matrix(&dumb);
@@ -110,6 +133,7 @@ fn rollback_uses_weakest_capability_profile() {
         "terminal_title",
         "modern_keyboard",
     ] {
+        // assert
         assert!(!dumb_toggles.is_enabled(feature));
     }
     let wezterm = CapabilityMatrix::new(profiles.remove(0).1);

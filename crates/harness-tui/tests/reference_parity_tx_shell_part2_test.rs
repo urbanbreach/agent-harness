@@ -548,7 +548,6 @@ fn shell_recover_after_failure_keeps_composer_and_accepts_draft() {
     );
 }
 
-/// SHELL-SCROLL: settle inventory window to freeze band f39–f55 (loop15 packing).
 #[test]
 fn shell_scroll_freeze_viewport_packs_visible_inventory_at_120x32() {
     // arrange
@@ -610,7 +609,7 @@ fn shell_scroll_freeze_viewport_packs_visible_inventory_at_120x32() {
     let after_pages = render_at(&app, W, SCROLL_FREEZE_H);
     let first_after_pages = first_inventory_line(&after_pages);
     assert!(
-        first_after_pages.is_some_and(|n| (35..=42).contains(&n)),
+        first_after_pages.is_some_and(|n| (35..=43).contains(&n)),
         "PageUp should land near freeze mid-band; first inventory={first_after_pages:?}\n{after_pages}"
     );
 

@@ -5,13 +5,14 @@ use crate::theme::Theme;
 use super::roles::PaletteRole;
 
 impl PaletteRole {
-    pub const LABELS: [&str; 52] = [
+    pub const LABELS: [&str; 53] = [
         "surface.canvas",
         "surface.shell",
         "surface.panel",
         "surface.panel_elevated",
         "surface.overlay",
         "surface.card",
+        "surface.hover",
         "surface.selected_card",
         "border.subtle",
         "border.strong",
@@ -67,7 +68,7 @@ impl PaletteRole {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Palette {
-    pub values: [Color; 52],
+    pub values: [Color; 53],
 }
 
 impl Palette {
@@ -87,6 +88,7 @@ impl Palette {
                 surfaces.panel_elevated,
                 surfaces.overlay,
                 surfaces.card,
+                surfaces.hover,
                 surfaces.selected_card,
                 borders.subtle,
                 borders.strong,

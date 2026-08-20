@@ -99,6 +99,7 @@ pub(in crate::ui) fn test_spec(
         },
         spacing: TranscriptBlockSpacing {
             leading_gap_rows: 0,
+            trailing_gap_rows: 0,
         },
         grouping: TranscriptBlockGrouping {
             group_id: None,

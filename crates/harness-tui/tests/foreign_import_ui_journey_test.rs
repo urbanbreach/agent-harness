@@ -34,6 +34,7 @@ fn unique_temp_dir(label: &str) -> PathBuf {
 
 #[test]
 fn foreign_import_picker_discover_preview_import_events_appended() {
+    // arrange
     // -- arrange: foreign scan root with one importable candidate
     let scan_root = unique_temp_dir("scan");
     let foreign_session = scan_root.join("codex_session_alpha");
@@ -163,7 +164,9 @@ fn foreign_import_picker_discover_preview_import_events_appended() {
     let banner = app.status_banner.as_deref().unwrap_or_abort();
     assert!(banner.contains("imported"), "banner: {banner}");
 
+    // act
     // -- assert: last_import_summary is set
+    // assert
     assert!(app.foreign_import_picker.last_import_summary.is_some());
 
     // -- cleanup
@@ -173,6 +176,7 @@ fn foreign_import_picker_discover_preview_import_events_appended() {
 
 #[test]
 fn foreign_import_picker_emits_ui_intent_on_enter() {
+    // arrange
     // -- arrange
     let scan_root = unique_temp_dir("intent-scan");
     let foreign_session = scan_root.join("session_bravo");
@@ -226,7 +230,9 @@ fn foreign_import_picker_emits_ui_intent_on_enter() {
         assert_eq!(dest, &dest_session_dir);
     }
 
+    // act
     // -- assert: picker closed after intent emission
+    // assert
     assert!(!app.foreign_import_picker.visible);
 
     // -- cleanup
@@ -237,6 +243,7 @@ fn foreign_import_picker_emits_ui_intent_on_enter() {
 
 #[test]
 fn foreign_import_picker_esc_closes_overlay() {
+    // arrange
     let scan_root = unique_temp_dir("esc-scan");
     let dest_session_dir = unique_temp_dir("esc-dest");
 
@@ -244,7 +251,9 @@ fn foreign_import_picker_esc_closes_overlay() {
     app.open_foreign_import_picker(scan_root.clone());
     assert!(app.foreign_import_picker.visible);
 
+    // act
     app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    // assert
     assert!(
         !app.foreign_import_picker.visible,
         "esc should close picker"
@@ -256,14 +265,17 @@ fn foreign_import_picker_esc_closes_overlay() {
 
 #[test]
 fn foreign_import_picker_overlay_appears_in_overlay_stack() {
+    // arrange
     let scan_root = unique_temp_dir("overlay-scan");
     let dest_session_dir = unique_temp_dir("overlay-dest");
 
     let mut app = AppState::new_live(Some(dest_session_dir.clone()), false, None);
     app.open_foreign_import_picker(scan_root.clone());
 
+    // act
     let stack = app.overlay_stack();
     let overlays: Vec<_> = stack.ordered().to_vec();
+    // assert
     assert!(
         overlays.contains(&harness_tui::overlay::OverlayKind::ForeignImportPicker),
         "ForeignImportPicker must be in overlay stack: {overlays:?}"
@@ -275,6 +287,7 @@ fn foreign_import_picker_overlay_appears_in_overlay_stack() {
 
 #[test]
 fn import_slash_command_is_registered() {
+    // arrange
     // -- assert: /import is registered in slash commands
     let commands = harness_tui::keybindings::slash_commands();
     let import_cmd = commands.iter().find(|cmd| cmd.id == "import");
@@ -287,8 +300,10 @@ fn import_slash_command_is_registered() {
     let description = harness_tui::keybindings::slash_command_description("import");
     assert!(!description.is_empty(), "/import must have a description");
 
+    // act
     // -- assert: /import has an alias
     let aliases = harness_tui::keybindings::slash_command_aliases("import");
+    // assert
     assert!(
         aliases.contains(&"import-session"),
         "/import should have an import-session alias"

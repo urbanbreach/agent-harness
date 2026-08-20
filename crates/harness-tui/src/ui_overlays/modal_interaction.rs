@@ -12,12 +12,26 @@ pub(crate) struct ModalSurfaceModel {
     pub(crate) key: ModalSurfaceKey,
     pub(crate) popup: Rect,
     pub(crate) regions: Vec<ModalHitRegion>,
+    pub(crate) scrollbar: Option<super::ModalScrollbarGeometry>,
     pub(crate) visual_offset: usize,
     pub(crate) max_scroll: usize,
+    pub(crate) outside_dismiss_policy: OutsideDismissPolicy,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OutsideDismissPolicy {
+    MatchingRelease,
+    ImmediateDown,
 }
 
 impl ModalSurfaceModel {
     pub(crate) fn hit(&self, column: u16, row: u16) -> Option<ModalTarget> {
+        if self
+            .scrollbar
+            .is_some_and(|scrollbar| scrollbar.contains(column, row))
+        {
+            return Some(ModalTarget::Scrollbar);
+        }
         self.regions
             .iter()
             .find(|region| rect_contains(region.area, column, row))
@@ -59,6 +73,7 @@ pub(crate) fn modal_surface_model(app: &AppState, frame_area: Rect) -> Option<Mo
         OverlayKind::MemoryBrowser => memory_model(app, frame_area),
         OverlayKind::WorktreePicker => worktree_model(app, frame_area),
         OverlayKind::ForeignImportPicker => foreign_import_model(app, frame_area),
+        OverlayKind::ReleaseNotes => release_notes_model(app, frame_area),
         OverlayKind::NewWorktreeDialog => new_worktree_model(app, frame_area),
         OverlayKind::SubagentActions => subagent_model(app, frame_area),
         OverlayKind::ErrorDetails => error_details_model(app, frame_area),
@@ -67,9 +82,39 @@ pub(crate) fn modal_surface_model(app: &AppState, frame_area: Rect) -> Option<Mo
         | OverlayKind::FileMentions
         | OverlayKind::StatusDialog
         | OverlayKind::PermissionModal
-        | OverlayKind::AuthDialog
-        | OverlayKind::TrustFolderPrompt => None,
+        | OverlayKind::AuthDialog => None,
+        OverlayKind::TrustFolderPrompt => Some(ModalSurfaceModel {
+            key: ModalSurfaceKey::Overlay {
+                kind: OverlayKind::TrustFolderPrompt,
+                view: ModalViewKey::Primary,
+            },
+            popup: frame_area,
+            regions: Vec::new(),
+            scrollbar: None,
+            visual_offset: 0,
+            max_scroll: 0,
+            outside_dismiss_policy: OutsideDismissPolicy::MatchingRelease,
+        }),
     }
+}
+
+fn release_notes_model(app: &AppState, root: Rect) -> Option<ModalSurfaceModel> {
+    let popup = crate::layout::release_notes_modal_area(root);
+    let key = ModalSurfaceKey::Overlay {
+        kind: OverlayKind::ReleaseNotes,
+        view: ModalViewKey::Primary,
+    };
+    let max_scroll = super::release_notes::release_notes_max_scroll(popup);
+    let visual_offset = app.modal_visual_offset(key, app.release_notes_scroll, max_scroll);
+    Some(ModalSurfaceModel {
+        key,
+        popup,
+        regions: modal_chrome_regions(popup),
+        scrollbar: None,
+        visual_offset,
+        max_scroll,
+        outside_dismiss_policy: OutsideDismissPolicy::ImmediateDown,
+    })
 }
 
 fn help_model(app: &AppState, root: Rect, composer: Option<Rect>) -> Option<ModalSurfaceModel> {
@@ -103,8 +148,10 @@ fn help_model(app: &AppState, root: Rect, composer: Option<Rect>) -> Option<Moda
         key: ModalSurfaceKey::Help,
         popup: layout.popup,
         regions,
+        scrollbar: None,
         visual_offset,
         max_scroll,
+        outside_dismiss_policy: OutsideDismissPolicy::MatchingRelease,
     })
 }
 
@@ -126,9 +173,9 @@ fn lineage_model(app: &AppState, popup: Rect) -> Option<ModalSurfaceModel> {
     };
     let input = Rect::new(inner.x, inner.y.saturating_add(1), inner.width, 1);
     let list = Rect::new(
-        inner.x.saturating_add(1),
+        inner.x,
         inner.y.saturating_add(3),
-        inner.width.saturating_sub(2),
+        inner.width,
         inner.height.saturating_sub(3).saturating_sub(child_rows),
     );
     let rows = app.lineage_browser_view_model().rows;
@@ -150,12 +197,6 @@ fn fork_model(app: &AppState, popup: Rect) -> Option<ModalSurfaceModel> {
         view: ModalViewKey::ForkSelector,
     };
     let (_, input, list) = super::command_palette_dialog_layout(popup)?;
-    let list = Rect::new(
-        list.x.saturating_add(1),
-        list.y,
-        list.width.saturating_sub(2),
-        list.height,
-    );
     let rows = app.fork_selector_view_model().rows;
     visual_rows_model(
         app,
@@ -201,8 +242,10 @@ fn subagent_model(app: &AppState, root: Rect) -> Option<ModalSurfaceModel> {
         },
         popup,
         regions,
+        scrollbar: None,
         visual_offset: 0,
         max_scroll: 0,
+        outside_dismiss_policy: OutsideDismissPolicy::MatchingRelease,
     })
 }
 
@@ -272,8 +315,10 @@ fn error_details_model(app: &AppState, root: Rect) -> Option<ModalSurfaceModel> 
         key,
         popup: layout.popup,
         regions,
+        scrollbar: None,
         visual_offset: 0,
         max_scroll: 0,
+        outside_dismiss_policy: OutsideDismissPolicy::MatchingRelease,
     })
 }
 
@@ -291,8 +336,10 @@ fn session_history_model(app: &AppState, popup: Rect) -> Option<ModalSurfaceMode
             key,
             popup,
             regions: modal_chrome_regions(popup),
+            scrollbar: None,
             visual_offset: 0,
             max_scroll: 0,
+            outside_dismiss_policy: OutsideDismissPolicy::MatchingRelease,
         });
     }
     let input = Rect::new(
@@ -343,16 +390,17 @@ fn session_history_model(app: &AppState, popup: Rect) -> Option<ModalSurfaceMode
             continue;
         }
         if let Some(index) = target_index {
+            let row_area = Rect::new(
+                list.x,
+                list.y.saturating_add(
+                    u16::try_from(visual_index.saturating_sub(scroll)).unwrap_or(u16::MAX),
+                ),
+                list.width,
+                1,
+            );
             regions.push(ModalHitRegion {
                 target: ModalTarget::Row(index),
-                area: Rect::new(
-                    list.x,
-                    list.y.saturating_add(
-                        u16::try_from(visual_index.saturating_sub(scroll)).unwrap_or(u16::MAX),
-                    ),
-                    list.width,
-                    1,
-                ),
+                area: row_area,
             });
         }
     }
@@ -360,8 +408,10 @@ fn session_history_model(app: &AppState, popup: Rect) -> Option<ModalSurfaceMode
         key,
         popup,
         regions,
+        scrollbar: super::modal_scrollbar_geometry(list, scroll, max_scroll),
         visual_offset: scroll,
         max_scroll,
+        outside_dismiss_policy: OutsideDismissPolicy::MatchingRelease,
     })
 }
 
@@ -427,17 +477,13 @@ fn toggles_model(app: &AppState, popup: Rect) -> Option<ModalSurfaceModel> {
             key,
             popup: layout.popup,
             regions,
+            scrollbar: None,
             visual_offset: 0,
             max_scroll: 0,
+            outside_dismiss_policy: OutsideDismissPolicy::MatchingRelease,
         });
     }
     let (_, input, list) = super::command_palette_dialog_layout(popup)?;
-    let list = Rect::new(
-        list.x.saturating_add(1),
-        list.y,
-        list.width.saturating_sub(2),
-        list.height,
-    );
     let rows = super::toggles_menu::toggles_overlay_rows(app);
     let mut logical_index = 0usize;
     let targets = rows
@@ -492,24 +538,26 @@ fn visual_rows_model(
         if visual < scroll || visual >= scroll.saturating_add(visible) {
             return None;
         }
+        let row_area = Rect::new(
+            list.x,
+            list.y
+                .saturating_add(u16::try_from(visual.saturating_sub(scroll)).unwrap_or(u16::MAX)),
+            list.width,
+            1,
+        );
         Some(ModalHitRegion {
             target: ModalTarget::Row(logical),
-            area: Rect::new(
-                list.x,
-                list.y.saturating_add(
-                    u16::try_from(visual.saturating_sub(scroll)).unwrap_or(u16::MAX),
-                ),
-                list.width,
-                1,
-            ),
+            area: row_area,
         })
     }));
     Some(ModalSurfaceModel {
         key,
         popup,
         regions,
+        scrollbar: super::modal_scrollbar_geometry(list, scroll, max_scroll),
         visual_offset: scroll,
         max_scroll,
+        outside_dismiss_policy: OutsideDismissPolicy::MatchingRelease,
     })
 }
 
@@ -667,8 +715,10 @@ fn new_worktree_model(app: &AppState, root: Rect) -> Option<ModalSurfaceModel> {
                 ),
             },
         ],
+        scrollbar: None,
         visual_offset: 0,
         max_scroll: 0,
+        outside_dismiss_policy: OutsideDismissPolicy::MatchingRelease,
     })
 }
 
@@ -707,24 +757,29 @@ fn uniform_list_model(
     let scroll = app.modal_visual_offset(key, default, max_scroll);
     let mut regions = modal_chrome_regions(popup);
     regions.extend(
-        (scroll..count.min(scroll.saturating_add(visible))).map(|index| ModalHitRegion {
-            target: ModalTarget::Row(index),
-            area: Rect::new(
+        (scroll..count.min(scroll.saturating_add(visible))).map(|index| {
+            let row_area = Rect::new(
                 list.x,
                 list.y.saturating_add(
                     u16::try_from(index.saturating_sub(scroll)).unwrap_or(u16::MAX),
                 ),
                 list.width,
                 1,
-            ),
+            );
+            ModalHitRegion {
+                target: ModalTarget::Row(index),
+                area: row_area,
+            }
         }),
     );
     Some(ModalSurfaceModel {
         key,
         popup,
         regions,
+        scrollbar: super::modal_scrollbar_geometry(list, scroll, max_scroll),
         visual_offset: scroll,
         max_scroll,
+        outside_dismiss_policy: OutsideDismissPolicy::MatchingRelease,
     })
 }
 
@@ -751,16 +806,6 @@ fn command_palette_model(app: &AppState, popup: Rect) -> Option<ModalSurfaceMode
         view: ModalViewKey::Primary,
     };
     let (_, input, list) = super::command_palette_dialog_layout(popup)?;
-    let list = if list.width <= 1 {
-        list
-    } else {
-        Rect::new(
-            list.x.saturating_add(1),
-            list.y,
-            list.width.saturating_sub(1),
-            list.height,
-        )
-    };
     let rows = super::palette_overlay_rows(app);
     let visible = usize::from(list.height);
     let max_scroll = rows.len().saturating_sub(visible);
@@ -804,8 +849,10 @@ fn command_palette_model(app: &AppState, popup: Rect) -> Option<ModalSurfaceMode
         key,
         popup,
         regions,
+        scrollbar: super::modal_scrollbar_geometry(list, scroll, max_scroll),
         visual_offset: scroll,
         max_scroll,
+        outside_dismiss_policy: OutsideDismissPolicy::MatchingRelease,
     })
 }
 
@@ -830,8 +877,10 @@ fn theme_dialog_model(app: &AppState, root: Rect) -> Option<ModalSurfaceModel> {
         key,
         popup,
         regions,
+        scrollbar: None,
         visual_offset: 0,
         max_scroll: 0,
+        outside_dismiss_policy: OutsideDismissPolicy::MatchingRelease,
     })
 }
 

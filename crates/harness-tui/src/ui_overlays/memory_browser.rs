@@ -23,8 +23,6 @@ pub(super) fn render_memory_browser_overlay(
         .fg(theme.text.primary)
         .bg(surface)
         .add_modifier(Modifier::BOLD);
-    let selected_style = ui_chrome::overlay_focus_row_style(theme);
-    let text_style = Style::default().fg(theme.text.primary).bg(surface);
     let muted_style = Style::default().fg(theme.text.secondary).bg(surface);
 
     if !paint_modal_panel(
@@ -59,7 +57,6 @@ pub(super) fn render_memory_browser_overlay(
         title_area,
     );
 
-    let width = usize::from(inner.width);
     let list_y = inner.y.saturating_add(1);
     let list_height = inner.height.saturating_sub(1);
     let entries = app.memory_browser.filtered_entries();
@@ -86,6 +83,8 @@ pub(super) fn render_memory_browser_overlay(
         default_scroll,
         entries.len().saturating_sub(visible_rows),
     );
+    let max_scroll = entries.len().saturating_sub(visible_rows);
+    let list_area = Rect::new(inner.x, list_y, inner.width, list_height);
     for (visible_index, row_index) in (scroll..entries.len()).take(visible_rows).enumerate() {
         let Some(entry) = entries.get(row_index) else {
             break;
@@ -93,19 +92,45 @@ pub(super) fn render_memory_browser_overlay(
         let y = list_y.saturating_add(u16::try_from(visible_index).unwrap_or(u16::MAX));
         let area = Rect::new(inner.x, y, inner.width, 1);
         let is_selected = row_index == app.memory_browser.selected;
-        let style = if is_selected {
-            selected_style
-        } else {
-            text_style
+        let key = ModalSurfaceKey::Overlay {
+            kind: OverlayKind::MemoryBrowser,
+            view: ModalViewKey::Primary,
         };
-        let marker = if is_selected { "> " } else { "  " };
-        let label = truncate_plain_text(&entry.label, width.saturating_sub(marker.chars().count()));
+        let presentation = modal_list_row(
+            theme,
+            ModalListRowSpec {
+                area,
+                state: ModalListRowState {
+                    selected: is_selected,
+                    hovered: app.modal_target_hovered(key, ModalTarget::Row(row_index)),
+                    dimmed: false,
+                },
+                max_scroll,
+            },
+        );
+        let label = truncate_plain_text(
+            &entry.label,
+            usize::from(presentation.layout.content.width).saturating_sub(1),
+        );
+        frame.render_widget(
+            Block::default().style(presentation.style),
+            presentation.layout.content,
+        );
         frame.render_widget(
             Paragraph::new(Line::from(vec![
-                Span::styled(marker, style),
-                Span::styled(label, style),
+                Span::styled(label, presentation.style),
+                Span::styled(" ", presentation.style),
             ])),
-            area,
+            presentation.layout.content,
         );
     }
+    render_modal_list_scrollbar(
+        frame,
+        theme,
+        ModalListScrollbarSpec {
+            area: list_area,
+            offset: scroll,
+            max_scroll,
+        },
+    );
 }

@@ -101,8 +101,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn extracts_markdown_link() {
+    fn extracts_markdown_link_from_transcript_text() {
+        // arrange
+        // act
         let (link, consumed) = try_extract_link("[label](https://example.com)").unwrap();
+        // assert
         assert_eq!(link.label, "label");
         assert_eq!(link.url, "https://example.com");
         assert!(!link.is_image);
@@ -110,8 +113,11 @@ mod tests {
     }
 
     #[test]
-    fn extracts_image_link() {
+    fn extracts_image_link_from_transcript_text() {
+        // arrange
+        // act
         let (link, _consumed) = try_extract_link("![alt](./img.png)").unwrap();
+        // assert
         assert_eq!(link.label, "alt");
         assert_eq!(link.url, "./img.png");
         assert!(link.is_image);
@@ -119,11 +125,17 @@ mod tests {
 
     #[test]
     fn returns_none_for_plain_text() {
+        // arrange
+        // act
+        // assert
         assert!(try_extract_link("hello world").is_none());
     }
 
     #[test]
-    fn detects_raw_url() {
+    fn detects_raw_url_in_transcript_text() {
+        // arrange
+        // act
+        // assert
         assert!(is_raw_url("https://example.com"));
         assert!(is_raw_url("http://example.com"));
         assert!(!is_raw_url("ftp://example.com"));
@@ -132,6 +144,9 @@ mod tests {
 
     #[test]
     fn computes_raw_url_length() {
+        // arrange
+        // act
+        // assert
         assert_eq!(
             raw_url_len("https://example.com rest"),
             Some("https://example.com".len())

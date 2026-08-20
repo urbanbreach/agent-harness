@@ -126,16 +126,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn defaults_to_disabled() {
+    fn vim_mode_defaults_to_disabled_state() {
+        // arrange
+        // act
         let state = VimState::new();
+        // assert
         assert_eq!(state.mode(), VimEditorMode::Disabled);
         assert!(!state.is_enabled());
     }
 
     #[test]
     fn toggle_enables_normal_mode() {
+        // arrange
+        // act
         let mut state = VimState::new();
         state.toggle_vim();
+        // assert
         assert_eq!(state.mode(), VimEditorMode::Normal);
     }
 }

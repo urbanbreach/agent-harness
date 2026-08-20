@@ -23,8 +23,6 @@ pub(super) fn render_foreign_import_picker_overlay(
         .fg(theme.text.primary)
         .bg(surface)
         .add_modifier(Modifier::BOLD);
-    let selected_style = ui_chrome::overlay_focus_row_style(theme);
-    let text_style = Style::default().fg(theme.text.primary).bg(surface);
     let muted_style = Style::default().fg(theme.text.secondary).bg(surface);
     let ok_style = Style::default().fg(theme.status.success).bg(surface);
 
@@ -121,6 +119,8 @@ pub(super) fn render_foreign_import_picker_overlay(
         default_scroll,
         candidates.len().saturating_sub(visible_rows),
     );
+    let max_scroll = candidates.len().saturating_sub(visible_rows);
+    let list_area = Rect::new(inner.x, list_y, inner.width, list_height);
     for (visible_index, row_index) in (scroll..candidates.len()).take(visible_rows).enumerate() {
         let Some(candidate) = candidates.get(row_index) else {
             break;
@@ -128,39 +128,70 @@ pub(super) fn render_foreign_import_picker_overlay(
         let y = list_y.saturating_add(u16::try_from(visible_index).unwrap_or(u16::MAX));
         let area = Rect::new(inner.x, y, inner.width, 1);
         let is_selected = row_index == app.foreign_import_picker.selected;
-        let style = if is_selected {
-            selected_style
-        } else {
-            text_style
+        let key = ModalSurfaceKey::Overlay {
+            kind: OverlayKind::ForeignImportPicker,
+            view: ModalViewKey::Primary,
         };
-        let marker = if is_selected { "> " } else { "  " };
+        let presentation = modal_list_row(
+            theme,
+            ModalListRowSpec {
+                area,
+                state: ModalListRowState {
+                    selected: is_selected,
+                    hovered: app.modal_target_hovered(key, ModalTarget::Row(row_index)),
+                    dimmed: !candidate.is_importable(),
+                },
+                max_scroll,
+            },
+        );
 
         let label = foreign_candidate_label(candidate);
-        let truncated = truncate_plain_text(&label, width.saturating_sub(marker.chars().count()));
+        let status = if candidate.is_importable() {
+            " [importable]"
+        } else if candidate.is_corrupt() {
+            " [corrupt]"
+        } else {
+            " [rejected]"
+        };
+        let row_width = usize::from(presentation.layout.content.width);
+        let truncated = truncate_plain_text(
+            &label,
+            row_width
+                .saturating_sub(status.chars().count())
+                .saturating_sub(1),
+        );
 
         let status_style = if candidate.is_importable() {
-            ok_style
+            Style::default()
+                .fg(theme.status.success)
+                .bg(presentation.style.bg.unwrap_or(surface))
         } else {
-            muted_style
+            Style::default()
+                .fg(theme.text.tertiary)
+                .bg(presentation.style.bg.unwrap_or(surface))
         };
         frame.render_widget(
+            Block::default().style(presentation.style),
+            presentation.layout.content,
+        );
+        frame.render_widget(
             Paragraph::new(Line::from(vec![
-                Span::styled(marker, style),
-                Span::styled(truncated, style),
-                Span::styled(
-                    if candidate.is_importable() {
-                        " [importable]"
-                    } else if candidate.is_corrupt() {
-                        " [corrupt]"
-                    } else {
-                        " [rejected]"
-                    },
-                    status_style,
-                ),
+                Span::styled(truncated, presentation.style),
+                Span::styled(status, status_style),
+                Span::styled(" ", presentation.style),
             ])),
-            area,
+            presentation.layout.content,
         );
     }
+    render_modal_list_scrollbar(
+        frame,
+        theme,
+        ModalListScrollbarSpec {
+            area: list_area,
+            offset: scroll,
+            max_scroll,
+        },
+    );
 }
 
 fn foreign_candidate_label(

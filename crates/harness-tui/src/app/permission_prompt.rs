@@ -9,6 +9,7 @@ pub(crate) enum PermissionPointerTarget {
     Decision(PermissionModalSelection),
     Confirm(PermissionConfirmSelection),
     QuestionChoice(usize),
+    QuestionScrollbar,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -24,6 +25,7 @@ pub(crate) struct PermissionPromptState {
     pub(crate) stage: PermissionModalStage,
     pub(crate) selection: PermissionModalSelection,
     pub(crate) confirm_selection: PermissionConfirmSelection,
+    pub(crate) detail_expanded: bool,
     pub(crate) pointer_down: Option<PermissionPointerDown>,
     pub(crate) focus_return: Option<Focus>,
 }

@@ -219,14 +219,20 @@ mod tests {
 
     #[test]
     fn waiting_status_uses_reference_secondary_text() {
+        // arrange
+        // act
         let theme = Theme::harness_chat();
         let status = LiveTurnStatus::waiting(&theme);
 
+        // assert
         assert_eq!(status.style.fg, Some(theme.text.secondary));
     }
 
     #[test]
     fn source_compact_timer_and_token_formats_are_preserved() {
+        // arrange
+        // act
+        // assert
         assert_eq!(format_elapsed_ms(9_999), "10.0s");
         assert_eq!(format_elapsed_ms(10_999), "10s");
         assert_eq!(format_elapsed_ms(3_661_000), "1h1m");

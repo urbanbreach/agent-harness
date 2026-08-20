@@ -115,6 +115,7 @@ fn start_running_tool(app: &mut AppState, seq: u64, tool_id: &str, args_summary:
 
 #[test]
 fn baseline_stream_renders_one_row_with_phase_total_and_stop() {
+    // arrange
     // Given: a fixed-time active response with queued follow-up input.
     let mut app = active_app();
     app.queued_prompt_count = 2;
@@ -122,8 +123,10 @@ fn baseline_stream_renders_one_row_with_phase_total_and_stop() {
     // When: the live shell renders at its standard width.
     let row = status_text(&app, WIDE_WIDTH).expect("active status row");
 
+    // act
     // Then: active-turn facts share the single status row, while queued prompts remain
     // absent because responding is not a sendable wait in the reference.
+    // assert
     assert!(row.contains("Responding…"), "status row: {row:?}");
     assert!(row.matches("4.2s").count() >= 2, "status row: {row:?}");
     assert!(!row.contains("queued 2"), "status row: {row:?}");
@@ -132,6 +135,7 @@ fn baseline_stream_renders_one_row_with_phase_total_and_stop() {
 
 #[test]
 fn sendable_wait_advertises_queued_prompt_promotion() {
+    // arrange
     let mut app = active_app();
     app.queued_prompt_count = 1;
     start_running_tool(
@@ -142,8 +146,10 @@ fn sendable_wait_advertises_queued_prompt_promotion() {
     );
     app.queued_prompt_count = 1;
 
+    // act
     let row = status_text(&app, WIDE_WIDTH).expect("sendable-wait status row");
 
+    // assert
     assert!(
         row.contains("· 1 queued — Enter to send now"),
         "status row: {row:?}"
@@ -163,6 +169,7 @@ fn sendable_wait_advertises_queued_prompt_promotion() {
 
 #[test]
 fn send_now_hint_is_hidden_while_the_composer_has_a_draft() {
+    // arrange
     let mut app = active_app();
     start_running_tool(
         &mut app,
@@ -173,13 +180,16 @@ fn send_now_hint_is_hidden_while_the_composer_has_a_draft() {
     app.queued_prompt_count = 1;
     app.handle_paste("draft in progress");
 
+    // act
     let row = status_text(&app, WIDE_WIDTH).expect("sendable-wait status row");
 
+    // assert
     assert!(!row.contains("Enter to send now"), "status row: {row:?}");
 }
 
 #[test]
 fn instant_background_poll_does_not_advertise_queued_prompt_promotion() {
+    // arrange
     // Given: a non-blocking background status poll with queued follow-up input.
     let mut app = active_app();
     start_running_tool(
@@ -193,12 +203,15 @@ fn instant_background_poll_does_not_advertise_queued_prompt_promotion() {
     // When: the live status row is rendered.
     let row = status_text(&app, WIDE_WIDTH).expect("background poll status row");
 
+    // act
     // Then: the instant poll is not advertised as an interruptible parked wait.
+    // assert
     assert!(!row.contains("Enter to send now"), "status row: {row:?}");
 }
 
 #[test]
 fn agent_spawn_wait_advertises_queued_prompt_promotion() {
+    // arrange
     // Given: a foreground agent.spawn wait with queued follow-up input.
     let mut app = active_app();
     start_running_tool(
@@ -212,7 +225,9 @@ fn agent_spawn_wait_advertises_queued_prompt_promotion() {
     // When: the live status row is rendered.
     let row = status_text(&app, WIDE_WIDTH).expect("agent spawn status row");
 
+    // act
     // Then: agent.spawn shares the same send-now contract as task waits.
+    // assert
     assert!(
         row.contains("Waiting on subagent… 0.0s · 1 queued — Enter to send now"),
         "status row: {row:?}"
@@ -223,6 +238,7 @@ fn agent_spawn_wait_advertises_queued_prompt_promotion() {
 
 #[test]
 fn baseline_cancel_releases_the_status_row_after_turn_cancellation() {
+    // arrange
     // Given: an active turn with a coordinator-owned interrupt task.
     let mut app = active_app();
 
@@ -237,7 +253,9 @@ fn baseline_cancel_releases_the_status_row_after_turn_cancellation() {
         }),
     ));
 
+    // act
     // Then: cancellation remains transcript/runtime truth without reserving a blank live row.
+    // assert
     assert!(
         FrameLayoutPlan::for_app(&app, Rect::new(0, 0, WIDE_WIDTH, HEIGHT))
             .status
@@ -247,13 +265,16 @@ fn baseline_cancel_releases_the_status_row_after_turn_cancellation() {
 
 #[test]
 fn baseline_fail_releases_the_status_row_after_provider_failure() {
+    // arrange
     // Given: an active response whose provider reports a terminal runtime failure.
     let mut app = active_app();
 
     // When: the failure banner becomes the authoritative runtime state.
     app.set_status_banner(Some("provider stream error".to_string()));
 
+    // act
     // Then: the failure surface owns the error and the live row returns to zero height.
+    // assert
     assert!(
         FrameLayoutPlan::for_app(&app, Rect::new(0, 0, WIDE_WIDTH, HEIGHT))
             .status
@@ -263,6 +284,7 @@ fn baseline_fail_releases_the_status_row_after_provider_failure() {
 
 #[test]
 fn baseline_recover_labels_the_active_row_as_recovering() {
+    // arrange
     // Given: an active turn whose event stream entered replay recovery.
     let mut app = active_app();
     app.set_status_banner(Some("live stream lagged; replaying".to_string()));
@@ -270,7 +292,9 @@ fn baseline_recover_labels_the_active_row_as_recovering() {
     // When: the degraded active turn renders.
     let row = status_text(&app, WIDE_WIDTH).expect("recovering status row");
 
+    // act
     // Then: the row reports recovery rather than stale response activity.
+    // assert
     assert!(
         row.contains("Recovering live state…"),
         "status row: {row:?}"
@@ -279,6 +303,7 @@ fn baseline_recover_labels_the_active_row_as_recovering() {
 
 #[test]
 fn narrow_width_keeps_the_activity_and_stop_before_optional_metadata() {
+    // arrange
     // Given: the same active turn with optional queued-input metadata.
     let mut app = active_app();
     app.queued_prompt_count = 2;
@@ -286,7 +311,9 @@ fn narrow_width_keeps_the_activity_and_stop_before_optional_metadata() {
     // When: the shell renders in a 24-column viewport.
     let row = status_text(&app, 24).expect("narrow active status row");
 
+    // act
     // Then: required activity and stop affordance survive while lower-priority facts disappear.
+    // assert
     assert!(row.contains("Responding…"), "status row: {row:?}");
     assert!(row.contains("[stop]"), "status row: {row:?}");
     assert!(!row.contains("queued 2"), "status row: {row:?}");

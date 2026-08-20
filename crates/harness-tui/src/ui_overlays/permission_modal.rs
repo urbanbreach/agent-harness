@@ -425,7 +425,25 @@ pub(in crate::ui) fn question_permission_body_text(
             " Confirm ",
             if confirm { accent_style } else { muted_style },
         ));
-        lines.push(Line::from(tabs));
+        let tabs_line = Line::from(tabs);
+        if tabs_line.width() <= usize::from(content_width) {
+            lines.push(tabs_line);
+        } else {
+            let active = prompts
+                .get(tab.min(prompts.len().saturating_sub(1)))
+                .map(|prompt| prompt.header.as_str())
+                .unwrap_or("Confirm");
+            lines.push(Line::from(vec![
+                Span::styled(
+                    format!(" {}/{} {active} ", tab.saturating_add(1), prompts.len()),
+                    accent_style,
+                ),
+                Span::styled(
+                    " Confirm ",
+                    if confirm { accent_style } else { muted_style },
+                ),
+            ]));
+        }
         lines.push(Line::default());
     }
 
@@ -436,7 +454,7 @@ pub(in crate::ui) fn question_permission_body_text(
                 .get(index)
                 .map(|value| value.join(", "))
                 .unwrap_or_default();
-            lines.push(Line::from(vec![
+            let review_line = Line::from(vec![
                 Span::styled(format!("{}: ", prompt.header), muted_style),
                 Span::styled(
                     if value.is_empty() {
@@ -450,13 +468,25 @@ pub(in crate::ui) fn question_permission_body_text(
                         error_style
                     },
                 ),
-            ]));
+            ]);
+            lines.extend(wrap_question_line_preserving_spans(
+                review_line,
+                usize::from(content_width.max(1)),
+            ));
+        }
+        if let Some(error) = app.question_answer_error(&permission.permission_id) {
+            lines.push(Line::default());
+            lines.extend(wrap_question_line_preserving_spans(
+                Line::from(vec![Span::styled(error.to_string(), error_style)]),
+                usize::from(content_width.max(1)),
+            ));
         }
         return Text::from(lines);
     }
 
     let prompt = &prompts[tab.min(prompts.len().saturating_sub(1))];
     let selected = app.question_prompt_selection(&permission.permission_id);
+    let hovered = app.question_prompt_hovered(&permission.permission_id);
     let current_answers = answers.get(tab).cloned().unwrap_or_default();
 
     let question_line = Line::from(vec![Span::styled(
@@ -487,6 +517,14 @@ pub(in crate::ui) fn question_permission_body_text(
     for (index, option) in prompt.options.iter().enumerate() {
         let picked = current_answers.iter().any(|value| value == &option.label);
         let active = index == selected;
+        let hovered = hovered == Some(index);
+        let row_background = if hovered {
+            theme.surface.hover
+        } else if active {
+            theme.question_prompt.selected
+        } else {
+            surface
+        };
         let marker = if prompt.multiple {
             if picked {
                 format!("[{}]", glyphs.choice_checked)
@@ -498,18 +536,20 @@ pub(in crate::ui) fn question_permission_body_text(
         } else {
             glyphs.choice_unselected.to_string()
         };
-        let row_style = if active {
+        let row_style = (if active {
             active_label_style
         } else if picked {
             selected_style
         } else {
             primary_style
-        };
-        let number_style = if active {
+        })
+        .bg(row_background);
+        let number_style = (if active {
             active_number_style
         } else {
             Style::default().fg(question_accent).bg(surface)
-        };
+        })
+        .bg(row_background);
         let mut spans = vec![Span::styled(
             format!("{} ({marker}) ", index + 1),
             number_style,
@@ -524,26 +564,19 @@ pub(in crate::ui) fn question_permission_body_text(
         if !option.description.is_empty() {
             spans.push(Span::styled(
                 format!("  {}", option.description),
-                if active {
+                (if active {
                     active_row_style
                 } else {
                     muted_style
-                },
+                })
+                .bg(row_background),
             ));
         }
-        let option_line = Line::from(spans).style(if active {
-            active_row_style
-        } else {
-            Style::default().bg(surface)
-        });
-        if active {
-            lines.extend(wrap_question_line_preserving_spans(
-                option_line,
-                usize::from(content_width.max(1)),
-            ));
-        } else {
-            lines.push(option_line);
-        }
+        let option_line = Line::from(spans).style(Style::default().bg(row_background));
+        lines.extend(wrap_question_line_preserving_spans(
+            option_line,
+            usize::from(content_width.max(1)),
+        ));
     }
 
     if prompt.custom {
@@ -553,6 +586,14 @@ pub(in crate::ui) fn question_permission_body_text(
         let picked =
             !custom_value.is_empty() && current_answers.iter().any(|value| value == custom_value);
         let active = selected == prompt.options.len();
+        let hovered = hovered == Some(prompt.options.len());
+        let row_background = if hovered {
+            theme.surface.hover
+        } else if active {
+            theme.question_prompt.selected
+        } else {
+            surface
+        };
         let marker = if prompt.multiple {
             if picked {
                 format!("[{}]", glyphs.choice_checked)
@@ -564,28 +605,26 @@ pub(in crate::ui) fn question_permission_body_text(
         } else {
             glyphs.choice_unselected.to_string()
         };
-        let row_style = if active {
+        let row_style = (if active {
             active_label_style
         } else if picked {
             selected_style
         } else {
             primary_style
-        };
-        let number_style = if active {
+        })
+        .bg(row_background);
+        let number_style = (if active {
             active_number_style
         } else {
             Style::default().fg(question_accent).bg(surface)
-        };
+        })
+        .bg(row_background);
         lines.push(
             Line::from(vec![
                 Span::styled(format!("z ({marker}) "), number_style),
                 Span::styled("Type your answer here".to_string(), row_style),
             ])
-            .style(if active {
-                active_row_style
-            } else {
-                Style::default().bg(surface)
-            }),
+            .style(Style::default().bg(row_background)),
         );
 
         let editing = app.question_prompt_editing(&permission.permission_id) && active;
@@ -607,10 +646,10 @@ pub(in crate::ui) fn question_permission_body_text(
 
     if let Some(error) = app.question_answer_error(&permission.permission_id) {
         lines.push(Line::default());
-        lines.push(Line::from(vec![Span::styled(
-            error.to_string(),
-            error_style,
-        )]));
+        lines.extend(wrap_question_line_preserving_spans(
+            Line::from(vec![Span::styled(error.to_string(), error_style)]),
+            usize::from(content_width.max(1)),
+        ));
     }
 
     Text::from(lines)
@@ -677,13 +716,8 @@ fn wrap_question_chars_by_word(chars: &[QuestionVisualChar], width: usize) -> Ve
             lines.push(question_chars_to_line(&chars[start..fit_end]));
             start = fit_end + 1;
         } else {
-            let end = chars[fit_end..]
-                .iter()
-                .position(|visual_char| visual_char.ch.is_whitespace())
-                .map(|offset| fit_end + offset)
-                .unwrap_or(chars.len());
-            lines.push(question_chars_to_line(&chars[start..end]));
-            start = end;
+            lines.push(question_chars_to_line(&chars[start..fit_end]));
+            start = fit_end;
         }
     }
     lines

@@ -154,6 +154,7 @@ fn expected_restore_order() -> Vec<LifecycleEvent> {
 
 #[test]
 fn pager_success_suspends_launches_and_restores_in_order() {
+    // arrange
     // Given: an active terminal and a pager that exits successfully.
     let mut terminal = FakeTerminal::new();
     let snapshot = TranscriptSnapshot::from_text("hello");
@@ -167,7 +168,9 @@ fn pager_success_suspends_launches_and_restores_in_order() {
     )
     .unwrap_or_else(|error| panic!("pager should succeed: {error}"));
 
+    // act
     // Then: exit and terminal operations are observable and ordered.
+    // assert
     assert_eq!(exit, PagerExit::code(0, Vec::new(), Vec::new()));
     assert_eq!(terminal.event_log(), expected_restore_order());
     assert_eq!(terminal.state, TerminalState::active(120, 40));
@@ -175,6 +178,7 @@ fn pager_success_suspends_launches_and_restores_in_order() {
 
 #[test]
 fn pager_nonzero_exit_still_restores_once() {
+    // arrange
     // Given: a pager that returns a nonzero code.
     let mut terminal = FakeTerminal::new();
     let snapshot = TranscriptSnapshot::from_text("failure");
@@ -188,13 +192,16 @@ fn pager_nonzero_exit_still_restores_once() {
     )
     .unwrap_or_else(|error| panic!("nonzero exit should be captured: {error}"));
 
+    // act
     // Then: the code is captured and each restore operation occurs once.
+    // assert
     assert_eq!(exit.code, Some(7));
     assert_eq!(terminal.event_log(), expected_restore_order());
 }
 
 #[test]
 fn missing_pager_restores_terminal_state() {
+    // arrange
     // Given: a command path that cannot be spawned.
     let mut terminal = FakeTerminal::new();
     let snapshot = TranscriptSnapshot::from_text("missing");
@@ -207,13 +214,16 @@ fn missing_pager_restores_terminal_state() {
         &mut terminal,
     );
 
+    // act
     // Then: spawn failure is typed and restoration still runs exactly once.
+    // assert
     assert!(matches!(result, Err(PagerError::Spawn { .. })));
     assert_eq!(terminal.event_log(), expected_restore_order());
 }
 
 #[test]
 fn resize_reinitializes_capabilities_before_exact_restore() {
+    // arrange
     // Given: a pager output that represents a resize observed while suspended.
     let mut terminal = FakeTerminal::new();
     let snapshot = TranscriptSnapshot::from_text("resize");
@@ -221,13 +231,15 @@ fn resize_reinitializes_capabilities_before_exact_restore() {
     // When: the pager runs and the terminal is reinitialized on return.
     let exit = run_pager(
         &snapshot,
-        &command("printf RESIZED"),
+        &command("cat >/dev/null; printf RESIZED"),
         PagerStdio::capture(),
         &mut terminal,
     )
     .unwrap_or_else(|error| panic!("resize pager should succeed: {error}"));
 
+    // act
     // Then: the output survived and capabilities were reinitialized before reverse restore.
+    // assert
     assert_eq!(String::from_utf8_lossy(&exit.stdout), "RESIZED");
     assert_eq!(terminal.event_log()[5], LifecycleEvent::RestoreCapabilities);
     assert_eq!(terminal.state, TerminalState::active(120, 40));
@@ -236,6 +248,7 @@ fn resize_reinitializes_capabilities_before_exact_restore() {
 #[cfg(unix)]
 #[test]
 fn sigint_exit_is_captured_and_terminal_is_restored() {
+    // arrange
     // Given: a pager that terminates itself with SIGINT.
     let mut terminal = FakeTerminal::new();
     let snapshot = TranscriptSnapshot::from_text("interrupt");
@@ -249,7 +262,9 @@ fn sigint_exit_is_captured_and_terminal_is_restored() {
     )
     .unwrap_or_else(|error| panic!("SIGINT should be captured: {error}"));
 
+    // act
     // Then: SIGINT is represented without bypassing restoration.
+    // assert
     assert_eq!(exit.signal, Some(2));
     assert_eq!(terminal.event_log(), expected_restore_order());
 }
@@ -257,6 +272,7 @@ fn sigint_exit_is_captured_and_terminal_is_restored() {
 #[cfg(unix)]
 #[test]
 fn timeout_cleans_up_descendants_without_orphans() {
+    // arrange
     // Given: a pager with a descendant that would outlive the root without group cleanup.
     let mut terminal = FakeTerminal::new();
     let snapshot = TranscriptSnapshot::from_text("cleanup");
@@ -269,7 +285,9 @@ fn timeout_cleans_up_descendants_without_orphans() {
         &mut terminal,
     );
 
+    // act
     // Then: timeout carries cleanup evidence and restoration is still exact.
+    // assert
     assert!(
         matches!(result, Err(PagerError::Timeout { cleanup }) if cleanup.surviving_pids.is_empty())
     );
@@ -278,6 +296,7 @@ fn timeout_cleans_up_descendants_without_orphans() {
 
 #[test]
 fn snapshot_redacts_secrets_and_restores_state_exactly_once() {
+    // arrange
     // Given: transcript text containing scanner-recognized secret shapes.
     let mut terminal = FakeTerminal::new();
     let snapshot = TranscriptSnapshot::from_text(
@@ -293,8 +312,10 @@ fn snapshot_redacts_secrets_and_restores_state_exactly_once() {
     )
     .unwrap_or_else(|error| panic!("snapshot pager should succeed: {error}"));
 
+    // act
     // Then: raw credentials never cross the pager boundary and restore is once-only.
     let output = String::from_utf8_lossy(&exit.stdout);
+    // assert
     assert!(!output.contains("abc.def-ghi_123"));
     assert!(!output.contains("sk-AbCdEf0123456789"));
     assert!(output.contains("[REDACTED"));

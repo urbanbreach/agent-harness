@@ -1282,6 +1282,7 @@ mod presentation_section_tests {
 
     #[test]
     fn section_projects_waiting_and_correlated_cancelled_states() {
+        // arrange
         let mut waiting = transcript_section_model_test_tool_call("waiting", "bash");
         waiting.status = ToolCallDisplayStatus::PendingPermission;
         assert_eq!(
@@ -1289,6 +1290,7 @@ mod presentation_section_tests {
             ToolCallPresentationStatus::Waiting
         );
 
+        // act
         let mut cancelled =
             transcript_section_model_test_tool_call("cancelled", "background_cancel");
         cancelled.status = ToolCallDisplayStatus::Succeeded;
@@ -1297,6 +1299,7 @@ mod presentation_section_tests {
             "request_id": "req-child",
             "status": "cancelled"
         }));
+        // assert
         assert_eq!(
             section(&cancelled).header.presentation.status,
             ToolCallPresentationStatus::Cancelled
@@ -1305,12 +1308,14 @@ mod presentation_section_tests {
 
     #[test]
     fn section_preserves_terminal_metadata_and_disclosure_modes() {
+        // arrange
         let mut tool_call = transcript_section_model_test_tool_call("generic", "custom.tool");
         tool_call.status = ToolCallDisplayStatus::Succeeded;
         tool_call.output_summary = Some("result body".to_string());
         tool_call.output_json = Some(serde_json::json!({ "result_count": 3 }));
         tool_call.timing_elapsed_ms = Some(850);
 
+        // act
         let collapsed = section(&tool_call);
         let preview = build_transcript_tool_call_section(
             &tool_call,
@@ -1333,6 +1338,7 @@ mod presentation_section_tests {
             None,
         );
 
+        // assert
         assert_eq!(collapsed.header.presentation.duration_ms, Some(850));
         assert_eq!(collapsed.header.presentation.result_count, Some(3));
         assert_eq!(
@@ -1348,6 +1354,7 @@ mod presentation_section_tests {
 
     #[test]
     fn resolved_question_renders_numbered_question_and_answer_pairs() {
+        // arrange
         // Given: a completed native question call with one answer and one omission.
         let mut tool_call = transcript_section_model_test_tool_call("question", "question");
         tool_call.status = ToolCallDisplayStatus::Succeeded;
@@ -1370,7 +1377,9 @@ mod presentation_section_tests {
         // When: the transcript section is projected.
         let rendered = section(&tool_call);
 
+        // act
         // Then: the header and detail body preserve the reference question grammar.
+        // assert
         assert_eq!(rendered.header.title, "Asked 2 questions");
         assert_eq!(
             rendered.detail_blocks,

@@ -132,6 +132,9 @@ mod tests {
 
     #[test]
     fn active_turn_motion_demand_requires_a_visible_running_tool() {
+        // arrange
+        // act
+        // assert
         assert!(active_turn_motion_demand(true, true, true));
         assert!(!active_turn_motion_demand(true, true, false));
         assert!(!active_turn_motion_demand(true, false, true));
@@ -140,6 +143,7 @@ mod tests {
 
     #[test]
     fn terminal_tool_clears_running_elapsed_without_completion_motion() {
+        // arrange
         // Given: a tool that has accumulated running time.
         let mut tracker = ToolMotionTracker::default();
         let started_at = std::time::Instant::now();
@@ -153,7 +157,9 @@ mod tests {
         // When: the tool becomes terminal.
         tracker.sync_terminal_ids(["tool-finished".to_string()]);
 
+        // act
         // Then: terminal state carries no remaining running-motion clock.
+        // assert
         assert_eq!(
             tracker.running_elapsed("tool-finished", finished_at),
             std::time::Duration::ZERO

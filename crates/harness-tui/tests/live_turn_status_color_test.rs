@@ -28,6 +28,8 @@ fn watcher_event() -> EventEnvelopeV1 {
 
 #[test]
 fn watcher_pulse_uses_system_accent_while_label_stays_muted() {
+    // arrange
+    // act
     let mut app = AppState::new_live(None, false, None);
     app.ingest_event(watcher_event());
     let area = Rect::new(0, 0, 100, 30);
@@ -41,6 +43,7 @@ fn watcher_pulse_uses_system_accent_while_label_stays_muted() {
     let label_x = icon_x.saturating_add(2);
     let theme = app.theme();
 
+    // assert
     assert_eq!(buffer[(status.x, status.y)].symbol(), " ");
     assert_eq!(buffer[(status.x.saturating_add(1), status.y)].symbol(), " ");
     assert_eq!(buffer[(icon_x, status.y)].fg, theme.status.info);

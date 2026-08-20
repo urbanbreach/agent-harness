@@ -36,6 +36,8 @@ fn key(character: char, kind: KeyEventKind) -> Event {
 
 #[test]
 fn ordered_input_filters_non_press_keys_and_preserves_focus_and_paste() {
+    // arrange
+    // act
     let source = FakeSource {
         events: VecDeque::from([
             Ok(key('x', KeyEventKind::Release)),
@@ -52,6 +54,7 @@ fn ordered_input_filters_non_press_keys_and_preserves_focus_and_paste() {
     let first = ingress.queue.try_recv().expect("key");
     let second = ingress.queue.try_recv().expect("paste");
     let third = ingress.queue.try_recv().expect("focus");
+    // assert
     assert_eq!(first.sequence.get(), 1);
     assert!(matches!(first.event, TuiEvent::Key(_)));
     assert!(matches!(second.event, TuiEvent::Paste(ref text) if text == "body"));
@@ -61,6 +64,8 @@ fn ordered_input_filters_non_press_keys_and_preserves_focus_and_paste() {
 
 #[test]
 fn terminal_queue_backpressures_without_drop_and_shutdown_interrupts_full_send() {
+    // arrange
+    // act
     let events = (0..129)
         .map(|_| Ok(key('x', KeyEventKind::Press)))
         .collect();
@@ -70,6 +75,7 @@ fn terminal_queue_backpressures_without_drop_and_shutdown_interrupts_full_send()
     while ingress.queue.receiver().len() < 128 && Instant::now() < deadline {
         std::thread::yield_now();
     }
+    // assert
     assert_eq!(ingress.queue.receiver().len(), 128);
     let started = Instant::now();
     reader.stop_and_join().expect("reader joins");
@@ -83,6 +89,8 @@ fn terminal_queue_backpressures_without_drop_and_shutdown_interrupts_full_send()
 
 #[test]
 fn reader_failure_is_typed_and_lossless() {
+    // arrange
+    // act
     let source = FakeSource {
         events: VecDeque::from([Err(io::Error::other("read defect"))]),
     };
@@ -91,6 +99,7 @@ fn reader_failure_is_typed_and_lossless() {
         .status
         .recv_timeout(Duration::from_millis(50))
         .expect("typed status");
+    // assert
     assert_eq!(
         status,
         TerminalReaderStatus::Failed(TerminalReaderError::Read("read defect".to_string()))
@@ -100,6 +109,8 @@ fn reader_failure_is_typed_and_lossless() {
 
 #[test]
 fn adjacent_resize_coalescing_retains_every_sequence_and_stops_at_focus() {
+    // arrange
+    // act
     let (sender, receiver) = crossbeam_channel::bounded(4);
     for (sequence, event) in [
         (1, TuiEvent::Resize(80, 24)),
@@ -116,6 +127,7 @@ fn adjacent_resize_coalescing_retains_every_sequence_and_stops_at_focus() {
     }
     let mut queue = TerminalQueue::new(receiver);
     let resize = queue.try_recv().expect("resize");
+    // assert
     assert_eq!(
         resize
             .source_sequences

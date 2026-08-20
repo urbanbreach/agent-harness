@@ -26,17 +26,7 @@ mod welcome;
 const LIFECYCLE_COPY_INSET_X: u16 = 3;
 const STARTUP_CLIPBOARD_WARNING: &str = "Clipboard may be unreachable.";
 const STARTUP_CLIPBOARD_SETUP_HINT: &str = "Run /doctor for details and fixes.";
-const WELCOME_LOGO_WIDTH: usize = 15;
 const WELCOME_ACTION_COL: usize = 18;
-const WELCOME_LOGO_ROWS: [&str; 7] = [
-    " ██╗  ██╗",
-    " ██║  ██║",
-    " ██║  ██║",
-    " ███████║",
-    " ██╔══██║",
-    " ██║  ██║",
-    " ╚═╝  ╚═╝",
-];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum WelcomeActionEmphasis {
@@ -191,14 +181,23 @@ fn render_startup_clipboard_warning(frame: &mut Frame, app: &AppState, area: Rec
 }
 
 fn startup_breadcrumb_text(app: &AppState) -> String {
+    let (prefix, path) = startup_breadcrumb_parts(app);
+    if path.is_empty() {
+        prefix
+    } else {
+        format!("{prefix} {path}")
+    }
+}
+
+fn startup_breadcrumb_parts(app: &AppState) -> (String, String) {
     let label = app.startup_directory_branch_label();
     if let Some((path, branch)) = label.rsplit_once(':') {
         let branch = branch.trim();
         if !branch.is_empty() && !branch.contains('/') && !branch.contains('\\') {
-            return format!("   {branch} worktree {path}");
+            return (format!("   {branch}"), path.to_owned());
         }
     }
-    format!("  {label}")
+    (format!("  {label}"), String::new())
 }
 
 fn live_breadcrumb_text(app: &AppState, width: u16) -> String {
@@ -225,10 +224,17 @@ fn render_startup_breadcrumb(frame: &mut Frame, app: &AppState, area: Rect, them
         width: area.width,
         height: 1,
     };
-    let text = truncate_plain_text(&startup_breadcrumb_text(app), usize::from(row.width));
-    let text_width = u16::try_from(super::display_width(&text))
-        .unwrap_or(u16::MAX)
-        .min(row.width);
+    let (prefix, path) = startup_breadcrumb_parts(app);
+    let prefix = truncate_plain_text(&prefix, usize::from(row.width));
+    let prefix_width = super::display_width(&prefix);
+    let path = truncate_plain_text(
+        &path,
+        usize::from(row.width).saturating_sub(prefix_width.saturating_add(1)),
+    );
+    let text_width = prefix_width
+        .saturating_add(usize::from(!path.is_empty()))
+        .saturating_add(super::display_width(&path));
+    let text_width = u16::try_from(text_width).unwrap_or(u16::MAX).min(row.width);
     let row = Rect {
         width: text_width,
         ..row
@@ -237,18 +243,40 @@ fn render_startup_breadcrumb(frame: &mut Frame, app: &AppState, area: Rect, them
         .fg(theme.text.tertiary)
         .bg(theme.surface.canvas)
         .add_modifier(Modifier::DIM);
-    let line = if let Some(prefix) = text.strip_prefix("  ") {
-        Line::from(vec![
-            Span::styled("  ", Style::default().bg(theme.surface.canvas)),
-            Span::styled(prefix.to_string(), dim),
-        ])
+    if let Some(dimmed_prefix) = prefix.strip_prefix("  ") {
+        frame.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled("  ", Style::default().bg(theme.surface.canvas)),
+                Span::styled(dimmed_prefix.to_string(), dim),
+            ])),
+            Rect {
+                width: u16::try_from(prefix_width)
+                    .unwrap_or(row.width)
+                    .min(row.width),
+                ..row
+            },
+        );
+        if !path.is_empty() {
+            let path_x = row
+                .x
+                .saturating_add(u16::try_from(prefix_width.saturating_add(1)).unwrap_or(row.width));
+            frame.render_widget(
+                Paragraph::new(Span::styled(
+                    path,
+                    Style::default()
+                        .fg(theme.text.primary)
+                        .bg(theme.surface.canvas),
+                )),
+                Rect {
+                    x: path_x,
+                    width: row.right().saturating_sub(path_x),
+                    ..row
+                },
+            );
+        }
     } else {
-        Line::from(Span::styled(text, dim))
-    };
-    frame.render_widget(
-        Paragraph::new(line).style(Style::default().bg(theme.surface.canvas)),
-        row,
-    );
+        frame.render_widget(Paragraph::new(Span::styled(prefix, dim)), row);
+    }
 }
 
 pub(super) fn render_live_breadcrumb(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
@@ -378,16 +406,8 @@ fn startup_banner_is_clipboard_warning(banner: &str) -> bool {
         && (normalized.contains("unreachable") || normalized.contains("inaccessible"))
 }
 
-fn pad_logo_cell(row: &str) -> String {
-    let mut out = row.to_string();
-    while out.chars().count() < WELCOME_LOGO_WIDTH {
-        out.push(' ');
-    }
-    out.chars().take(WELCOME_LOGO_WIDTH).collect()
-}
-
-fn welcome_text_after_logo(text: &str, inner_width: usize) -> String {
-    let budget = inner_width.saturating_sub(WELCOME_LOGO_WIDTH).max(1);
+fn welcome_text_after_logo(text: &str, inner_width: usize, logo_width: usize) -> String {
+    let budget = inner_width.saturating_sub(logo_width).max(1);
     truncate_plain_text(text, budget)
 }
 
@@ -398,6 +418,18 @@ fn welcome_action_emphasis(app: &AppState, index: usize) -> WelcomeActionEmphasi
         WelcomeActionEmphasis::Hovered
     } else {
         WelcomeActionEmphasis::Default
+    }
+}
+
+fn welcome_changelog_section_style(theme: &Theme, app: &AppState) -> Style {
+    let surface = theme.surface.canvas;
+    if app.welcome_state().hovered_action() == Some(2) {
+        Style::default().fg(theme.text.primary).bg(surface)
+    } else {
+        Style::default()
+            .fg(theme.text.secondary)
+            .bg(surface)
+            .add_modifier(Modifier::DIM)
     }
 }
 
@@ -430,14 +462,21 @@ fn welcome_action_spans(theme: &Theme, row: WelcomeActionLine) -> Vec<Span<'stat
     let label_budget = row.width.saturating_sub(shortcut_width).saturating_sub(3);
     let label = truncate_plain_text(row.label, label_budget);
     let used = 1usize.saturating_add(super::display_width(&label));
-    let shortcut_column = row.width.saturating_sub(shortcut_width.saturating_add(2));
+    let shortcut_column = row.width.saturating_sub(shortcut_width.saturating_add(1));
     let gap = shortcut_column.saturating_sub(used);
     let trailing = row
         .width
         .saturating_sub(used.saturating_add(gap).saturating_add(shortcut_width));
 
     vec![
-        Span::styled(marker, label_style),
+        Span::styled(
+            marker,
+            if row.emphasis == WelcomeActionEmphasis::Focused {
+                label_style
+            } else {
+                shortcut_style
+            },
+        ),
         Span::styled(label, label_style),
         Span::styled(" ".repeat(gap), shortcut_style),
         Span::styled(shortcut, shortcut_style),
@@ -445,13 +484,20 @@ fn welcome_action_spans(theme: &Theme, row: WelcomeActionLine) -> Vec<Span<'stat
     ]
 }
 
-fn welcome_inner_lines(theme: &Theme, inner_width: usize, app: &AppState) -> Vec<Line<'static>> {
+fn welcome_inner_lines(
+    theme: &Theme,
+    inner_width: usize,
+    app: &AppState,
+    inline_copy: bool,
+) -> Vec<Line<'static>> {
     let surface = theme.surface.canvas;
     let title_style = Style::default()
         .fg(theme.text.primary)
         .bg(surface)
         .add_modifier(Modifier::BOLD);
     let muted = Style::default().fg(theme.text.secondary).bg(surface);
+    let body = Style::default().fg(theme.text.primary).bg(surface);
+    let section = welcome_changelog_section_style(theme, app);
     let identity = welcome::welcome_identity(theme.live_shell.startup.title);
     let changelog_bullets = welcome::changelog_bullets();
     let action_col = WELCOME_ACTION_COL;
@@ -459,20 +505,29 @@ fn welcome_inner_lines(theme: &Theme, inner_width: usize, app: &AppState) -> Vec
     let mut lines = Vec::new();
     lines.push(Line::from(Span::styled(" ", muted)));
 
-    for (idx, logo_row) in WELCOME_LOGO_ROWS.iter().enumerate() {
-        let logo = pad_logo_cell(logo_row);
-        let mut spans = vec![Span::styled(
-            logo,
-            Style::default().fg(theme.text.secondary).bg(surface),
-        )];
+    let logo =
+        crate::startup_logo::full_logo(theme.glyph_mode() == crate::theme::GlyphMode::Preferred);
+    let logo_width = logo.map_or(0, crate::startup_logo::Logo::width);
+    let expanded = app.startup_welcome_expanded();
+    let line_count = logo.map_or(7, crate::startup_logo::Logo::height);
+    for idx in 0..line_count {
+        let mut spans = logo
+            .filter(|logo| idx < logo.height())
+            .map_or_else(Vec::new, |logo| {
+                crate::startup_logo::row_spans(logo, idx, theme.text.secondary)
+            });
+        for span in &mut spans {
+            span.style = span.style.bg(surface);
+        }
         match idx {
-            0 => {
-                let title_text = format!("   {}  ", identity.title);
+            0 if inline_copy => {
+                let title_text = format!("   {:<10}  ", identity.title);
                 let version_text = welcome_text_after_logo(
                     &format!("{title_text}{}", identity.version),
                     inner_width,
+                    logo_width,
                 );
-                let title_prefix = welcome_text_after_logo(&title_text, inner_width);
+                let title_prefix = welcome_text_after_logo(&title_text, inner_width, logo_width);
                 let title_len = title_prefix.chars().count();
                 if version_text.chars().count() > title_len {
                     spans.push(Span::styled(title_prefix, title_style));
@@ -484,37 +539,55 @@ fn welcome_inner_lines(theme: &Theme, inner_width: usize, app: &AppState) -> Vec
                     spans.push(Span::styled(version_text, title_style));
                 }
             }
-            1 => {
+            1 if inline_copy && !expanded => spans.push(Span::styled(
+                welcome_text_after_logo(
+                    "   Thanks for trying Open Build, give feedback with /feedback!",
+                    inner_width,
+                    logo_width,
+                ),
+                body,
+            )),
+            2 if inline_copy && expanded => spans.push(Span::styled(
+                welcome_text_after_logo("   Changelog", inner_width, logo_width),
+                section,
+            )),
+            4..=6 if expanded => spans.push(Span::styled(
+                welcome_text_after_logo(
+                    &format!("    • {}", changelog_bullets[idx - 4]),
+                    inner_width,
+                    logo_width,
+                ),
+                body,
+            )),
+            3..=6 if !expanded => {
+                let (label, shortcut, action_index) = match idx {
+                    3 => ("New worktree", "ctrl+w", Some(0)),
+                    4 => ("Resume session", "ctrl+s", Some(1)),
+                    5 => ("Changelog", "", Some(2)),
+                    6 => ("Quit", "ctrl+q", Some(3)),
+                    _ => ("", "", None),
+                };
+                let prefix_width = action_col.saturating_sub(1).saturating_sub(logo_width);
+                let emphasis = action_index.map_or(WelcomeActionEmphasis::Default, |index| {
+                    welcome_action_emphasis(app, index)
+                });
+                let prefix_surface = match emphasis {
+                    WelcomeActionEmphasis::Default => theme.surface.canvas,
+                    WelcomeActionEmphasis::Hovered => theme.surface.card,
+                    WelcomeActionEmphasis::Focused => theme.surface.selected_card,
+                };
                 spans.push(Span::styled(
-                    welcome_text_after_logo("   Changelog", inner_width),
-                    title_style,
+                    " ".repeat(prefix_width),
+                    muted.bg(prefix_surface),
                 ));
-            }
-            2 => {
-                spans.push(Span::styled(
-                    welcome_text_after_logo(
-                        &format!("    • {}", changelog_bullets[0]),
-                        inner_width,
-                    ),
-                    muted,
-                ));
-            }
-            3 => {
-                spans.push(Span::styled(
-                    welcome_text_after_logo(
-                        &format!("    • {}", changelog_bullets[1]),
-                        inner_width,
-                    ),
-                    muted,
-                ));
-            }
-            4 => {
-                spans.push(Span::styled(
-                    welcome_text_after_logo(
-                        &format!("    • {}", changelog_bullets[2]),
-                        inner_width,
-                    ),
-                    muted,
+                spans.extend(welcome_action_spans(
+                    theme,
+                    WelcomeActionLine {
+                        label,
+                        shortcut,
+                        width: inner_width.saturating_sub(logo_width.saturating_add(prefix_width)),
+                        emphasis,
+                    },
                 ));
             }
             _ => {}
@@ -522,21 +595,30 @@ fn welcome_inner_lines(theme: &Theme, inner_width: usize, app: &AppState) -> Vec
         lines.push(Line::from(spans));
     }
 
+    if !expanded {
+        lines.push(Line::from(Span::styled(" ", muted)));
+        return lines;
+    }
+
     lines.push(Line::from(Span::styled(" ", muted)));
 
-    for (index, action) in crate::welcome_surface::WelcomeAction::ALL
-        .into_iter()
-        .enumerate()
-    {
+    for (label, shortcut, action_index) in [
+        ("New worktree", "ctrl+w", Some(0)),
+        ("Resume session", "ctrl+s", Some(1)),
+        ("Changelog", "", Some(2)),
+        ("Quit", "ctrl+q", Some(3)),
+    ] {
         let prefix_width = action_col.saturating_sub(1).min(inner_width);
         let mut spans = vec![Span::styled(" ".repeat(prefix_width), muted)];
         spans.extend(welcome_action_spans(
             theme,
             WelcomeActionLine {
-                label: action.label(),
-                shortcut: action.shortcut(),
+                label,
+                shortcut,
                 width: inner_width.saturating_sub(prefix_width),
-                emphasis: welcome_action_emphasis(app, index),
+                emphasis: action_index.map_or(WelcomeActionEmphasis::Default, |index| {
+                    welcome_action_emphasis(app, index)
+                }),
             },
         ));
         lines.push(Line::from(spans));
@@ -551,37 +633,39 @@ fn compact_welcome_lines(
     theme: &Theme,
     inner_width: usize,
     max_lines: usize,
+    _window_height: u16,
     app: &AppState,
 ) -> Vec<Line<'static>> {
     let surface = theme.surface.canvas;
     let muted = Style::default().fg(theme.text.secondary).bg(surface);
-    let dim_style = Style::default()
-        .fg(theme.text.tertiary)
-        .bg(surface)
-        .add_modifier(Modifier::DIM);
+    let section_style = welcome_changelog_section_style(theme, app);
 
     let mut lines = Vec::new();
-    for (index, action) in crate::welcome_surface::WelcomeAction::ALL
-        .into_iter()
-        .enumerate()
-    {
+    for (label, shortcut, action_index) in [
+        ("New worktree", "ctrl+w", Some(0)),
+        ("Resume session", "ctrl+s", Some(1)),
+        ("Changelog", "", Some(2)),
+        ("Quit", "ctrl+q", Some(3)),
+    ] {
         if lines.len() >= max_lines {
             break;
         }
         lines.push(Line::from(welcome_action_spans(
             theme,
             WelcomeActionLine {
-                label: action.label(),
-                shortcut: action.shortcut(),
+                label,
+                shortcut,
                 width: inner_width,
-                emphasis: welcome_action_emphasis(app, index),
+                emphasis: action_index.map_or(WelcomeActionEmphasis::Default, |index| {
+                    welcome_action_emphasis(app, index)
+                }),
             },
         )));
     }
     let changelog_min_lines = 2 + 1 + 1 + 1;
     if max_lines.saturating_sub(lines.len()) >= changelog_min_lines {
         lines.push(Line::from(Span::styled(" ", muted)));
-        lines.push(Line::from(Span::styled("Changelog", dim_style)));
+        lines.push(Line::from(Span::styled("Changelog", section_style)));
         lines.push(Line::from(Span::styled(" ", muted)));
         for bullet in welcome::changelog_bullets() {
             if lines.len() >= max_lines {
@@ -597,7 +681,13 @@ fn compact_welcome_lines(
     lines
 }
 
-fn render_compact_welcome_body(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
+fn render_compact_welcome_body(
+    frame: &mut Frame,
+    app: &AppState,
+    area: Rect,
+    window_height: u16,
+    theme: &Theme,
+) {
     let layout = app.welcome_layout(area);
     let content = rect_from_tuple(layout.content_rect);
     if content.width == 0 || content.height == 0 {
@@ -608,6 +698,7 @@ fn render_compact_welcome_body(frame: &mut Frame, app: &AppState, area: Rect, th
         theme,
         usize::from(content.width),
         usize::from(content.height),
+        window_height,
         app,
     );
     frame.render_widget(
@@ -616,8 +707,63 @@ fn render_compact_welcome_body(frame: &mut Frame, app: &AppState, area: Rect, th
     );
 }
 
+fn render_welcome_copy(
+    frame: &mut Frame,
+    app: &AppState,
+    layout: &crate::welcome_surface::WelcomeLayout,
+    inner: Rect,
+    theme: &Theme,
+) {
+    let x = inner.x.saturating_add(18);
+    let width = inner.right().saturating_sub(x);
+    if width == 0 {
+        return;
+    }
+    let surface = theme.surface.canvas;
+    let identity = welcome::welcome_identity(theme.live_shell.startup.title);
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled(
+                format!("{:<10}  ", identity.title),
+                Style::default()
+                    .fg(theme.text.primary)
+                    .bg(surface)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                identity.version,
+                Style::default().fg(theme.text.secondary).bg(surface),
+            ),
+        ])),
+        Rect::new(x, inner.y.saturating_add(1), width, 1),
+    );
+    let (row, text, style) = if app.startup_welcome_expanded() {
+        (
+            layout
+                .changelog_header_rect
+                .map_or(inner.y.saturating_add(3), |rect| rect.1),
+            "Changelog",
+            welcome_changelog_section_style(theme, app),
+        )
+    } else {
+        (
+            inner.y.saturating_add(2),
+            "Thanks for trying Open Build, give feedback with /feedback!",
+            Style::default().fg(theme.text.primary).bg(surface),
+        )
+    };
+    frame.render_widget(
+        Paragraph::new(Span::styled(
+            truncate_plain_text(text, usize::from(width)),
+            style,
+        )),
+        Rect::new(x, row, width, 1),
+    );
+}
+
 fn render_welcome_panel(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
     let layout = app.welcome_layout(area);
+    let window_height = area.height;
     if let Some(panel) = layout.panel_rect.map(rect_from_tuple) {
         let surface = theme.surface.canvas;
         let block = Block::default()
@@ -634,14 +780,15 @@ fn render_welcome_panel(frame: &mut Frame, app: &AppState, area: Rect, theme: &T
         if inner.width == 0 || inner.height == 0 {
             return;
         }
-        let lines = welcome_inner_lines(theme, usize::from(inner.width), app);
+        let lines = welcome_inner_lines(theme, usize::from(inner.width), app, false);
         frame.render_widget(
             Paragraph::new(Text::from(lines)).style(Style::default().bg(surface)),
             inner,
         );
+        render_welcome_copy(frame, app, &layout, inner, theme);
         return;
     }
-    render_compact_welcome_body(frame, app, area, theme);
+    render_compact_welcome_body(frame, app, area, window_height, theme);
 }
 
 /// Render the folder-trust prompt as a centered overlay dialog.
@@ -739,13 +886,14 @@ fn startup_lifecycle_flow_selection_surface(
         return None;
     }
     let layout = app.welcome_layout(area);
+    let window_height = area.height;
     if let Some(panel) = layout.panel_rect.map(rect_from_tuple) {
         let block = Block::default().borders(Borders::ALL);
         let content_area = inset_rect(block.inner(panel), 1, 0);
         if content_area.width == 0 || content_area.height == 0 {
             return None;
         }
-        let text_rows = welcome_inner_lines(theme, usize::from(content_area.width), app)
+        let text_rows = welcome_inner_lines(theme, usize::from(content_area.width), app, true)
             .into_iter()
             .enumerate()
             .map(|(idx, line)| LifecycleSelectableText {
@@ -768,6 +916,7 @@ fn startup_lifecycle_flow_selection_surface(
         theme,
         usize::from(content_area.width),
         usize::from(content_area.height),
+        window_height,
         app,
     )
     .into_iter()
@@ -854,11 +1003,14 @@ mod breadcrumb_token_meta_tests {
 
     #[test]
     fn live_breadcrumb_uses_composer_inset_at_compact_widths() {
+        // arrange
         let app = crate::app::AppState::new_live(None, false, None);
 
+        // act
         let compact = live_breadcrumb_text(&app, 60);
         let wider = live_breadcrumb_text(&app, 79);
 
+        // assert
         assert!(compact.starts_with(' '));
         assert!(!compact.starts_with("  "));
         assert!(wider.starts_with("  "));
@@ -866,6 +1018,7 @@ mod breadcrumb_token_meta_tests {
 
     #[test]
     fn startup_breadcrumb_does_not_dim_trailing_blank_cells() {
+        // arrange
         use ratatui::{
             backend::TestBackend,
             style::{Color, Modifier, Style},
@@ -890,11 +1043,13 @@ mod breadcrumb_token_meta_tests {
             })
             .expect("startup render");
 
+        // act
         // Then: a cell after the visible breadcrumb retains the canvas style.
         let text = super::startup_breadcrumb_text(&app);
         let text_width = u16::try_from(super::super::display_width(&text))
             .expect("breadcrumb fits standard viewport");
         let cell = &terminal.backend().buffer()[(text_width + 1, 1)];
+        // assert
         assert_eq!(cell.bg, theme.surface.canvas);
         assert!(!cell.modifier.contains(Modifier::DIM));
     }
@@ -908,8 +1063,10 @@ mod welcome_action_style_tests {
 
     #[test]
     fn hovered_action_uses_the_hover_surface_across_the_complete_row() {
+        // arrange
         let theme = Theme::harness_chat();
 
+        // act
         let spans = welcome_action_spans(
             &theme,
             WelcomeActionLine {
@@ -920,6 +1077,7 @@ mod welcome_action_style_tests {
             },
         );
 
+        // assert
         assert_eq!(
             (
                 spans
@@ -938,8 +1096,10 @@ mod welcome_action_style_tests {
 
     #[test]
     fn focused_action_uses_the_selected_surface_and_visible_marker() {
+        // arrange
         let theme = Theme::harness_chat();
 
+        // act
         let spans = welcome_action_spans(
             &theme,
             WelcomeActionLine {
@@ -950,6 +1110,7 @@ mod welcome_action_style_tests {
             },
         );
 
+        // assert
         assert_eq!(
             (
                 spans

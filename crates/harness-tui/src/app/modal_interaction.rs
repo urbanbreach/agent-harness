@@ -38,13 +38,37 @@ pub(crate) enum ModalTarget {
     Close,
     Input,
     Row(usize),
+    Scrollbar,
     Footer(ModalAction),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ModalPressLocation {
+    Target(ModalTarget),
+    Outside,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ModalScrollbarPress {
+    owner: ModalSurfaceKey,
+    anchor_row: u16,
+    anchor_offset: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ModalPress {
+    Target {
+        owner: ModalSurfaceKey,
+        location: ModalPressLocation,
+    },
+    Scrollbar(ModalScrollbarPress),
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct ModalInteractionState {
     owner: Option<ModalSurfaceKey>,
     hovered: Option<ModalTarget>,
+    pressed: Option<ModalPress>,
     visual_offset: usize,
 }
 
@@ -55,6 +79,7 @@ impl ModalInteractionState {
         }
         self.owner = Some(owner);
         self.hovered = None;
+        self.pressed = None;
         self.visual_offset = visual_offset;
         true
     }
@@ -106,6 +131,11 @@ impl AppState {
         let owner_changed = self.modal_interaction.bind(model.key, model.visual_offset);
         let target = model.hit(mouse.column, mouse.row);
 
+        if mouse.modifiers.contains(KeyModifiers::CONTROL) {
+            let press_invalidated = self.modal_interaction.pressed.take().is_some();
+            return Some(owner_changed || press_invalidated);
+        }
+
         match mouse.kind {
             MouseEventKind::Moved => {
                 let hover_changed = self.modal_interaction.hovered != target;
@@ -113,54 +143,95 @@ impl AppState {
                 let selection_changed = match (model.key, target) {
                     (ModalSurfaceKey::Help, _) => false,
                     (_, Some(ModalTarget::Row(index))) => self.select_modal_row(model.key, index),
-                    (_, Some(ModalTarget::Close | ModalTarget::Input | ModalTarget::Footer(_)))
+                    (_, Some(ModalTarget::Close | ModalTarget::Input | ModalTarget::Scrollbar))
+                    | (_, Some(ModalTarget::Footer(_)))
                     | (_, None) => false,
                 };
                 Some(owner_changed || hover_changed || selection_changed)
             }
             MouseEventKind::Down(MouseButton::Left) => {
-                if !model.contains(mouse.column, mouse.row) {
-                    if model.key == ModalSurfaceKey::Help {
-                        self.close_review_surface();
-                    } else {
-                        self.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
-                    }
-                    self.modal_interaction.invalidate();
+                if target.is_none()
+                    && !model.contains(mouse.column, mouse.row)
+                    && model.outside_dismiss_policy
+                        == crate::ui::ui_overlays::OutsideDismissPolicy::ImmediateDown
+                {
+                    self.dismiss_modal(model.key);
                     return Some(true);
                 }
-                match target {
-                    Some(ModalTarget::Close | ModalTarget::Footer(ModalAction::Cancel)) => {
-                        if model.key == ModalSurfaceKey::Help {
-                            self.close_review_surface();
-                        } else {
-                            self.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
-                        }
-                        self.modal_interaction.invalidate();
+                self.modal_interaction.pressed = match target {
+                    Some(ModalTarget::Scrollbar) => {
+                        Some(ModalPress::Scrollbar(ModalScrollbarPress {
+                            owner: model.key,
+                            anchor_row: mouse.row,
+                            anchor_offset: model.visual_offset,
+                        }))
+                    }
+                    Some(target) => Some(ModalPress::Target {
+                        owner: model.key,
+                        location: ModalPressLocation::Target(target),
+                    }),
+                    None if !model.contains(mouse.column, mouse.row) => Some(ModalPress::Target {
+                        owner: model.key,
+                        location: ModalPressLocation::Outside,
+                    }),
+                    None => None,
+                };
+                Some(true)
+            }
+            MouseEventKind::Up(MouseButton::Left) => {
+                let pressed = self.modal_interaction.pressed.take();
+                let released = if model.contains(mouse.column, mouse.row) {
+                    target.map(ModalPressLocation::Target)
+                } else {
+                    Some(ModalPressLocation::Outside)
+                };
+                let activated = match (pressed, released) {
+                    (Some(ModalPress::Target { owner, location }), Some(released_location))
+                        if owner == model.key && location == released_location =>
+                    {
+                        self.activate_modal_location(model.key, location)
+                    }
+                    (Some(ModalPress::Target { .. } | ModalPress::Scrollbar(_)), _) | (None, _) => {
+                        false
+                    }
+                };
+                Some(pressed.is_some() || activated)
+            }
+            MouseEventKind::Drag(MouseButton::Left) => {
+                let Some(pressed) = self.modal_interaction.pressed else {
+                    return Some(owner_changed);
+                };
+                match pressed {
+                    ModalPress::Target { .. } => {
+                        self.modal_interaction.pressed = None;
                         Some(true)
                     }
-                    Some(ModalTarget::Row(index)) => {
-                        self.select_modal_row(model.key, index);
-                        self.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-                        self.modal_interaction.invalidate();
-                        Some(true)
-                    }
-                    Some(ModalTarget::Footer(action)) => {
-                        let key = match action {
-                            ModalAction::Activate => KeyCode::Enter,
-                            ModalAction::Resubmit => KeyCode::Char('r'),
-                            ModalAction::Reset => KeyCode::Char('r'),
-                            ModalAction::Cancel => KeyCode::Esc,
+                    ModalPress::Scrollbar(press) => {
+                        let Some(scrollbar) = model.scrollbar else {
+                            self.modal_interaction.pressed = None;
+                            return Some(true);
                         };
-                        self.handle_key(KeyEvent::new(key, KeyModifiers::NONE));
-                        Some(true)
+                        if press.owner != model.key {
+                            self.modal_interaction.pressed = None;
+                            return Some(true);
+                        }
+                        let previous = self.modal_interaction.visual_offset;
+                        self.modal_interaction.visual_offset = scrollbar.drag_offset(
+                            press.anchor_row,
+                            press.anchor_offset,
+                            mouse.row,
+                            model.max_scroll,
+                        );
+                        self.modal_interaction.hovered = None;
+                        Some(owner_changed || self.modal_interaction.visual_offset != previous)
                     }
-                    Some(ModalTarget::Input) if model.key == ModalSurfaceKey::Help => {
-                        Some(self.help_browser.activate_search() || owner_changed)
-                    }
-                    Some(ModalTarget::Input) | None => Some(owner_changed),
                 }
             }
             MouseEventKind::ScrollDown | MouseEventKind::ScrollUp => {
+                let press_invalidated = self.modal_interaction.pressed.take().is_some();
+                if !model.contains(mouse.column, mouse.row) {
+                    return Some(owner_changed || press_invalidated);
+                }
                 if model.key == ModalSurfaceKey::Help {
                     let changed = self.help_browser.scroll_by(
                         mouse.kind == MouseEventKind::ScrollDown,
@@ -168,7 +239,7 @@ impl AppState {
                         model.max_scroll,
                     );
                     self.modal_interaction.hovered = None;
-                    return Some(owner_changed || changed);
+                    return Some(owner_changed || press_invalidated || changed);
                 }
                 let previous = self.modal_interaction.visual_offset;
                 self.modal_interaction.visual_offset = match mouse.kind {
@@ -182,14 +253,73 @@ impl AppState {
                     | MouseEventKind::ScrollRight => previous,
                 };
                 self.modal_interaction.hovered = None;
-                Some(owner_changed || self.modal_interaction.visual_offset != previous)
+                Some(
+                    owner_changed
+                        || press_invalidated
+                        || self.modal_interaction.visual_offset != previous,
+                )
             }
-            MouseEventKind::Up(_)
-            | MouseEventKind::Drag(_)
-            | MouseEventKind::Down(MouseButton::Right | MouseButton::Middle)
+            MouseEventKind::Down(MouseButton::Right | MouseButton::Middle)
+            | MouseEventKind::Up(MouseButton::Right | MouseButton::Middle)
+            | MouseEventKind::Drag(MouseButton::Right | MouseButton::Middle)
             | MouseEventKind::ScrollLeft
-            | MouseEventKind::ScrollRight => Some(owner_changed),
+            | MouseEventKind::ScrollRight => {
+                let press_invalidated = self.modal_interaction.pressed.take().is_some();
+                Some(owner_changed || press_invalidated)
+            }
         }
+    }
+
+    fn activate_modal_location(
+        &mut self,
+        owner: ModalSurfaceKey,
+        location: ModalPressLocation,
+    ) -> bool {
+        match location {
+            ModalPressLocation::Outside => {
+                self.dismiss_modal(owner);
+                true
+            }
+            ModalPressLocation::Target(ModalTarget::Close)
+            | ModalPressLocation::Target(ModalTarget::Footer(ModalAction::Cancel)) => {
+                self.dismiss_modal(owner);
+                true
+            }
+            ModalPressLocation::Target(ModalTarget::Row(index)) => {
+                self.select_modal_row(owner, index);
+                self.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+                true
+            }
+            ModalPressLocation::Target(ModalTarget::Footer(action)) => {
+                let key = match action {
+                    ModalAction::Activate => KeyCode::Enter,
+                    ModalAction::Cancel => KeyCode::Esc,
+                    ModalAction::Resubmit | ModalAction::Reset => KeyCode::Char('r'),
+                };
+                self.handle_key(KeyEvent::new(key, KeyModifiers::NONE));
+                true
+            }
+            ModalPressLocation::Target(ModalTarget::Input) if owner == ModalSurfaceKey::Help => {
+                self.help_browser.activate_search()
+            }
+            ModalPressLocation::Target(ModalTarget::Input | ModalTarget::Scrollbar) => false,
+        }
+    }
+
+    fn dismiss_modal(&mut self, owner: ModalSurfaceKey) {
+        if owner
+            == (ModalSurfaceKey::Overlay {
+                kind: OverlayKind::ReleaseNotes,
+                view: ModalViewKey::Primary,
+            })
+        {
+            self.close_release_notes();
+        } else if owner == ModalSurfaceKey::Help {
+            self.close_review_surface();
+        } else {
+            self.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        }
+        self.modal_interaction.invalidate();
     }
 
     fn select_modal_row(&mut self, owner: ModalSurfaceKey, index: usize) -> bool {

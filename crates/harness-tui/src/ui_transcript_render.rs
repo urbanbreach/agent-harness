@@ -312,6 +312,7 @@ fn build_user_render_surface(
     let raw = TranscriptVisualEntryDraft {
         kind: TranscriptRenderSurfaceKind::User,
         leading_gap_rows: 0,
+        trailing_gap_rows: 0,
         placement: TranscriptBlockPlacement::StickyPromptCandidate,
         show_outer_rail: false,
         rail_glyph: TRANSCRIPT_RAIL_GLYPH,
@@ -564,10 +565,14 @@ fn truncate_line_to_width(line: &mut Line<'static>, width: usize) {
     line.spans = clipped;
 }
 
+fn assistant_clock_target_width(content_width: u16) -> usize {
+    usize::from(content_width.saturating_sub(TRANSCRIPT_SURFACE_TRAILING_GAP_WIDTH))
+}
+
 fn right_aligned_wall_clock_line(clock: &str, content_width: u16, theme: &Theme) -> Line<'static> {
     let mut line = Line::default();
     let clock_width = display_width(clock);
-    let target = usize::from(content_width);
+    let target = assistant_clock_target_width(content_width);
     if clock_width == 0 || clock_width > target {
         return line;
     }
@@ -731,7 +736,7 @@ fn pack_wall_clock_on_line(
         .map(|span| display_width(span.content.as_ref()))
         .sum::<usize>();
     let clock_width = display_width(clock);
-    let target = usize::from(content_width);
+    let target = assistant_clock_target_width(content_width);
     if clock_width == 0 || used.saturating_add(clock_width) > target {
         return;
     }
@@ -1033,6 +1038,7 @@ fn build_assistant_part_render_surface(
     Ok(TranscriptVisualEntryDraft {
         kind,
         leading_gap_rows: spec.spacing.leading_gap_rows,
+        trailing_gap_rows: 0,
         placement: spec.placement,
         show_outer_rail,
         rail_glyph: if tool_rail_motion.is_some()
@@ -1144,6 +1150,7 @@ fn build_footer_only_render_surface(
     Ok(TranscriptVisualEntryDraft {
         kind: TranscriptRenderSurfaceKind::AssistantFooter,
         leading_gap_rows: spec.spacing.leading_gap_rows,
+        trailing_gap_rows: 0,
         placement: spec.placement,
         show_outer_rail: false,
         rail_glyph: TRANSCRIPT_RAIL_GLYPH,
@@ -1226,15 +1233,13 @@ fn append_reasoning_block(
     }
 
     let completed = !active;
-    let marker = if (selected || hovered) && !expanded {
+    let disclosure_marker = ((selected || hovered) && !expanded).then(|| {
         if theme.glyph_mode() == crate::theme::GlyphMode::Ascii {
             ">"
         } else {
             "›"
         }
-    } else {
-        theme.live_shell.transcript_glyphs.tool_marker
-    };
+    });
     let marker_color = if active {
         theme.text.tertiary
     } else if expanded {
@@ -1242,25 +1247,24 @@ fn append_reasoning_block(
     } else {
         header_color
     };
-    let marker_style = Style::default().fg(marker_color);
-    let header_spans = if completed {
-        let mut spans = vec![
-            Span::styled(format!("{marker} "), marker_style),
-            Span::styled("Thought", label_style),
-        ];
+    let mut header_spans = Vec::with_capacity(3);
+    if let Some(disclosure_marker) = disclosure_marker {
+        header_spans.push(Span::styled(
+            format!("{disclosure_marker} "),
+            Style::default().fg(marker_color),
+        ));
+    }
+    if completed {
+        header_spans.push(Span::styled("Thought", label_style));
         if let Some(duration_ms) = duration_ms {
-            spans.push(Span::styled(
+            header_spans.push(Span::styled(
                 format!(" for {}", format_thought_duration_ms(duration_ms)),
                 header_style,
             ));
         }
-        spans
     } else {
-        vec![
-            Span::styled(format!("{marker} "), marker_style),
-            Span::styled("Thinking…", label_style),
-        ]
-    };
+        header_spans.push(Span::styled("Thinking…", label_style));
+    }
     let content_prefix = if active || expanded { "   " } else { "  " };
     append_prefixed_wrapped_spans_line(lines, content_prefix, prefix_style, header_spans, width);
 
@@ -1459,12 +1463,7 @@ fn build_context_tool_group_render_surface(
     }
     let rail_color = if tool_calls.is_empty() {
         theme.border.subtle
-    } else if !command_group
-        && matches!(
-            aggregate_status,
-            ToolCallPresentationStatus::Succeeded | ToolCallPresentationStatus::Cancelled
-        )
-    {
+    } else if !command_group && aggregate_status == ToolCallPresentationStatus::Succeeded {
         blend_color(base_surface, theme.text.accent, 0.5)
     } else {
         tool_rail_color(aggregate_status, theme)
@@ -1743,6 +1742,7 @@ fn build_context_tool_group_render_surface(
     let raw = TranscriptVisualEntryDraft {
         kind,
         leading_gap_rows: 0,
+        trailing_gap_rows: 0,
         placement: TranscriptBlockPlacement::Flow,
         show_outer_rail: true,
         rail_glyph: context_group_rail_glyph(aggregate_status, theme),
@@ -2216,6 +2216,8 @@ mod tests {
 
     #[test]
     fn selected_user_prompt_uses_temporary_semantic_highlight() {
+        // arrange
+        // act
         let theme = Theme::default();
         let surfaces = build_transcript_render_surfaces(
             &selected_user_turn(),
@@ -2224,6 +2226,7 @@ mod tests {
             theme.surface.shell,
         );
 
+        // assert
         assert_eq!(surfaces[0].surface, theme.surface.selected_card);
         assert!(surfaces[0]
             .lines
@@ -2234,6 +2237,8 @@ mod tests {
 
     #[test]
     fn narrow_user_row_suppresses_timestamp_without_overflow() {
+        // arrange
+        // act
         let theme = Theme::default();
         let width = 11;
         let lines = build_user_surface_lines(
@@ -2251,6 +2256,7 @@ mod tests {
             ratatui::style::Style::default().fg(theme.text.primary),
         );
 
+        // assert
         assert!(lines.iter().all(|line| line.width() <= usize::from(width)));
         assert!(lines
             .iter()
@@ -2259,6 +2265,7 @@ mod tests {
 
     #[test]
     fn user_row_timestamp_keeps_reference_right_padding() {
+        // arrange
         let theme = Theme::default();
         let width = 40;
         let lines = build_user_surface_lines(
@@ -2276,7 +2283,9 @@ mod tests {
             ratatui::style::Style::default().fg(theme.text.primary),
         );
 
+        // act
         let right_padding = usize::from(width).saturating_sub(lines[1].width());
+        // assert
         assert_eq!(
             right_padding,
             usize::from(super::super::ui_transcript_surface::TRANSCRIPT_SURFACE_TRAILING_GAP_WIDTH)
@@ -2284,7 +2293,27 @@ mod tests {
     }
 
     #[test]
+    fn assistant_clock_line_keeps_reference_right_padding() {
+        // arrange
+        // Given: an assistant clock row measured inside the transcript content lane.
+        let theme = Theme::default();
+        let width = 40;
+
+        // act
+        // When: the clock is right-aligned for rendering.
+        let line = super::right_aligned_wall_clock_line("12:34 PM", width, &theme);
+
+        // assert
+        // Then: the clock preserves the shared two-cell trailing gap.
+        assert_eq!(
+            usize::from(width).saturating_sub(line.width()),
+            usize::from(super::super::ui_transcript_surface::TRANSCRIPT_SURFACE_TRAILING_GAP_WIDTH)
+        );
+    }
+
+    #[test]
     fn syntax_style_upgrade_preserves_diff_text_rows_selection_and_anchors() {
+        // arrange
         // Given: one expanded diff measured while its tool is still using provisional styles.
         let theme = Theme::default();
         let width = 36;
@@ -2351,7 +2380,9 @@ mod tests {
             .collect::<Vec<_>>();
         let after_selection = super::super::transcript_selection_rows(&after, usize::from(width));
 
+        // act
         // Then: style-only promotion leaves every geometry-bearing projection unchanged.
+        // assert
         assert_eq!(
             (
                 after_text,
@@ -2372,6 +2403,7 @@ mod tests {
 
     #[test]
     fn active_lifecycle_has_one_status_source_and_stable_composer_geometry() {
+        // arrange
         // Given: a live response with usage metadata, which previously duplicated Responding status.
         const WIDTH: u16 = 120;
         const HEIGHT: u16 = 40;
@@ -2463,7 +2495,9 @@ mod tests {
             .composer
             .expect("terminal composer");
 
+        // act
         // Then: only the bottom-dock status owns active lifecycle text and the composer never moves.
+        // assert
         assert_eq!(
             (
                 streaming_screen.matches("Responding…").count(),
@@ -2480,6 +2514,7 @@ mod tests {
 
     #[test]
     fn ordinary_assistant_text_surfaces_use_themed_base_surface() {
+        // arrange
         let mut app = AppState::default();
         let mut entry = super::super::transcript_section_model_test_activity(
             "request-transparent-assistant-text",
@@ -2498,6 +2533,7 @@ mod tests {
             ratatui::style::Color::Rgb(1, 2, 3),
         );
 
+        // act
         for surface in surfaces.into_iter().filter(|surface| {
             matches!(
                 surface.kind,
@@ -2505,6 +2541,7 @@ mod tests {
                     | super::super::TranscriptRenderSurfaceKind::AssistantBody
             )
         }) {
+            // assert
             assert_eq!(
                 surface.surface,
                 ratatui::style::Color::Rgb(1, 2, 3),
@@ -2515,6 +2552,7 @@ mod tests {
 
     #[test]
     fn assistant_footer_only_surface_uses_themed_base_surface() {
+        // arrange
         let mut app = AppState::default();
         app.activities = std::collections::VecDeque::from(vec![
             super::super::transcript_section_model_test_activity(
@@ -2525,6 +2563,7 @@ mod tests {
         ]);
         app.transcript_view.selected_activity_index = 0;
 
+        // act
         let sections = super::super::build_transcript_sections(&app);
         let footer = super::build_footer_only_render_surface(
             &sections[0],
@@ -2537,11 +2576,13 @@ mod tests {
         )
         .expect("valid footer spec");
 
+        // assert
         assert_eq!(footer.surface, ratatui::style::Color::Rgb(1, 2, 3));
     }
 
     #[test]
     fn initial_provider_attempt_does_not_render_retry_chrome() {
+        // arrange
         let mut app = AppState::default();
         let mut entry = super::super::transcript_section_model_test_activity(
             "request-initial-provider-attempt",
@@ -2572,6 +2613,7 @@ mod tests {
         app.activities = std::collections::VecDeque::from(vec![entry]);
         app.transcript_view.selected_activity_index = 0;
 
+        // act
         let sections = super::super::build_transcript_sections(&app);
         let surfaces = build_transcript_render_surfaces(
             &sections[0],
@@ -2586,11 +2628,13 @@ mod tests {
             .map(|span| span.content.as_ref())
             .collect::<String>();
 
+        // assert
         assert!(text.is_empty(), "{text}");
     }
 
     #[test]
     fn command_group_failure_color_stays_on_the_failed_member() {
+        // arrange
         // Given: adjacent commands with one successful and one failed member.
         let command = |id: &str, title: &str, status: ToolCallDisplayStatus| {
             super::super::TranscriptToolCallSection {
@@ -2685,13 +2729,16 @@ mod tests {
                 .any(|span| span.style.fg == Some(theme.reference_terminal.error))
         };
 
+        // act
         // Then: aggregate failure chrome does not recolor successful siblings.
+        // assert
         assert!(!row_has_error_color("echo ok"));
         assert!(row_has_error_color("echo fail"));
     }
 
     #[test]
     fn assistant_tool_surfaces_use_themed_base_surface() {
+        // arrange
         fn tool_section(
             id: &str,
             tool_id: &str,
@@ -2793,6 +2840,7 @@ mod tests {
             ratatui::style::Color::Rgb(1, 2, 3),
         );
 
+        // act
         for surface in surfaces.into_iter().filter(|surface| {
             matches!(
                 surface.kind,
@@ -2800,6 +2848,7 @@ mod tests {
                     | super::super::TranscriptRenderSurfaceKind::AssistantCommandTool
             )
         }) {
+            // assert
             assert_eq!(surface.surface, ratatui::style::Color::Rgb(1, 2, 3));
             let backgrounds = surface
                 .lines
@@ -2818,6 +2867,7 @@ mod tests {
 
     #[test]
     fn settled_provider_failure_uses_error_role_on_themed_base_surface() {
+        // arrange
         let mut app = AppState::default();
         let mut entry = super::super::transcript_section_model_test_activity(
             "request-transparent-assistant-error",
@@ -2828,6 +2878,7 @@ mod tests {
         app.activities = std::collections::VecDeque::from(vec![entry]);
         app.transcript_view.selected_activity_index = 0;
 
+        // act
         let sections = super::super::build_transcript_sections(&app);
         let surfaces = build_transcript_render_surfaces(
             &sections[0],
@@ -2842,6 +2893,7 @@ mod tests {
             })
             .expect("error activity must have an assistant-error surface");
 
+        // assert
         assert_eq!(
             error.surface,
             ratatui::style::Color::Rgb(1, 2, 3),
@@ -2937,6 +2989,9 @@ mod tests {
 
     #[test]
     fn dense_command_groups_keep_only_the_latest_ten_members_when_collapsed() {
+        // arrange
+        // act
+        // assert
         assert_eq!(super::dense_group_start(12, true, false), 2);
         assert_eq!(super::dense_group_start(10, true, false), 0);
         assert_eq!(super::dense_group_start(12, true, true), 0);

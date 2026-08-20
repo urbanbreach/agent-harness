@@ -442,11 +442,15 @@ fn render_startup_reference_footer(frame: &mut Frame, app: &AppState, area: Rect
     } else {
         "Provider configured"
     };
-    let line = Line::from(vec![
-        Span::styled(auth_summary, normal),
-        Span::styled("  │  ", dim),
-        Span::styled(mode.to_string(), normal),
-    ]);
+    let line = if auth_summary == "Provider configured" && mode == "Beta" {
+        Line::from(Span::styled("Logged in with API key", normal))
+    } else {
+        Line::from(vec![
+            Span::styled(auth_summary, normal),
+            Span::styled("  │  ", dim),
+            Span::styled(mode.to_string(), normal),
+        ])
+    };
     frame.render_widget(
         Paragraph::new(line)
             .style(Style::default().bg(theme.surface.canvas))
@@ -783,7 +787,7 @@ fn render_question_permission_with_shell_footer(
     }
 
     // Reference question state: dock (11) + blank + Esc footer + trailing blank.
-    const FOOTER_ROWS: u16 = 3;
+    const FOOTER_ROWS: u16 = crate::layout::QUESTION_OUTER_FOOTER_ROWS;
     if area.height <= FOOTER_ROWS {
         render_inline_permission_dock(frame, app, area, theme, permission);
         return;
@@ -820,24 +824,68 @@ fn render_question_permission_with_shell_footer(
         .bg(surface)
         .add_modifier(Modifier::DIM);
 
-    // Reference question-state outer shell:
-    //   Esc:unselect │ Tab:scrollback │ Shift+x:dismiss
-    // Harness product-honest keys (no invented Shift+x):
-    //   Esc / Ctrl+c both DismissModal; Tab is FocusNext ("scrollback" elsewhere).
-    let esc = preferred_binding(app, crate::keybindings::Action::DismissModal, "Esc");
-    let tab = preferred_binding(app, crate::keybindings::Action::FocusNext, "Tab");
-    let dismiss = preferred_binding(app, crate::keybindings::Action::DismissModal, "Ctrl+c");
-
-    let spans = vec![
-        Span::styled(esc, bold),
-        Span::styled(":unselect", normal),
-        Span::styled("  │  ", dim),
-        Span::styled(tab, bold),
-        Span::styled(":scrollback", normal),
-        Span::styled("  │  ", dim),
-        Span::styled(dismiss, bold),
-        Span::styled(":dismiss", normal),
-    ];
+    let answers = app.question_prompt_answers(&permission.permission_id);
+    let active_tab = app.question_prompt_tab(&permission.permission_id);
+    let has_selection = answers
+        .get(active_tab)
+        .is_some_and(|values| !values.is_empty());
+    let hints = if app.focus != crate::app::Focus::Prompt {
+        vec![("Tab", ":focus"), ("Ctrl+c", ":dismiss")]
+    } else if app.question_prompt_editing(&permission.permission_id) {
+        vec![
+            ("Enter", ":submit"),
+            ("Shift/Alt+Enter", ":newline"),
+            ("Esc", ":done"),
+        ]
+    } else {
+        vec![
+            (
+                "Esc",
+                if has_selection {
+                    ":unselect"
+                } else {
+                    ":scrollback"
+                },
+            ),
+            ("Tab", ":next option"),
+            ("Shift+Tab", ":previous option"),
+            ("Shift+X", ":dismiss"),
+        ]
+    };
+    let mut spans = Vec::new();
+    for (index, (key, label)) in hints.into_iter().enumerate() {
+        if index > 0 {
+            spans.push(Span::styled("  │  ", dim));
+        }
+        spans.push(Span::styled(key, bold));
+        spans.push(Span::styled(label, normal));
+    }
+    if Line::from(spans.clone()).width() > usize::from(footer_area.width) {
+        spans.clear();
+        let compact_hints = if app.focus != crate::app::Focus::Prompt {
+            vec![("Tab", ":focus"), ("^C", ":cancel")]
+        } else if app.question_prompt_editing(&permission.permission_id) {
+            vec![
+                ("Enter", ":commit"),
+                ("S/A+Enter", ":newline"),
+                ("Esc", ":done"),
+            ]
+        } else {
+            vec![
+                ("Esc", if has_selection { ":clear" } else { ":park" }),
+                ("Tab", ":next"),
+                ("⇧Tab", ":prev"),
+                ("⇧X", ":cancel"),
+            ]
+        };
+        for (index, (key, label)) in compact_hints.into_iter().enumerate() {
+            if index > 0 {
+                spans.push(Span::styled("  │  ", dim));
+            }
+            spans.push(Span::styled(key, bold));
+            spans.push(Span::styled(label, normal));
+        }
+    }
     frame.render_widget(
         Paragraph::new(Line::from(spans)).style(Style::default().bg(surface)),
         footer_area,
@@ -1377,8 +1425,11 @@ mod surface_tests {
 
     #[test]
     fn live_control_dock_uses_themed_canvas() {
+        // arrange
         let theme = Theme::harness_chat();
 
+        // act: resolve each control-dock surface inline below.
+        // assert: themed surfaces use the configured canvas and native surfaces reset.
         assert_eq!(live_control_dock_surface(&theme), theme.surface.canvas);
         assert_eq!(
             live_control_dock_surface(&Theme::terminal_native()),

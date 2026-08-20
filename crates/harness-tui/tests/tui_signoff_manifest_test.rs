@@ -495,8 +495,11 @@ fn parse_reference_parity_manifest() -> Value {
 #[test]
 #[allow(clippy::panic, reason = "test code must panic gracefully")]
 fn tui_reference_parity_manifest_is_honest() {
+    // arrange
+    // act
     let manifest = parse_reference_parity_manifest();
     let errs = validate_reference_parity_manifest(&manifest, &crate_dir());
+    // assert
     assert!(
         errs.is_empty(),
         "reference-parity manifest is not honest:\n{}",
@@ -507,6 +510,8 @@ fn tui_reference_parity_manifest_is_honest() {
 #[test]
 #[allow(clippy::panic, reason = "test code must panic gracefully")]
 fn rejects_self_oracle_expected_cell_path() {
+    // arrange
+    // act
     let mut manifest = parse_reference_parity_manifest();
     // Inject a self-oracle path on a visual row.
     manifest["rows"][0]["expected_semantic_cell_artifact"] = serde_json::Value::String(
@@ -521,6 +526,7 @@ fn rejects_self_oracle_expected_cell_path() {
     let hit = errs
         .iter()
         .any(|e| e.contains(&rid) && e.contains("self-oracle"));
+    // assert
     assert!(
         hit,
         "validator must reject self-oracle path with row id {rid}; errs:\n{}",
@@ -531,9 +537,12 @@ fn rejects_self_oracle_expected_cell_path() {
 #[test]
 #[allow(clippy::panic, reason = "test code must panic gracefully")]
 fn rejects_stale_reference_sha() {
+    // arrange
+    // act
     let mut manifest = parse_reference_parity_manifest();
     manifest["reference"]["binary_sha256"] = serde_json::Value::String("deadbeef".repeat(8));
     let errs = validate_reference_parity_manifest(&manifest, &crate_dir());
+    // assert
     assert!(
         errs.iter().any(|e| e.contains("pinned reference SHA")),
         "validator must reject stale reference SHA; errs:\n{}",
@@ -544,6 +553,8 @@ fn rejects_stale_reference_sha() {
 #[test]
 #[allow(clippy::panic, reason = "test code must panic gracefully")]
 fn rejects_oversized_identity_span() {
+    // arrange
+    // act
     let mut manifest = parse_reference_parity_manifest();
     // Add a non-identity (content) field to a visual row's identity mask.
     manifest["rows"][0]["identity_substitution"]["fields"] =
@@ -556,6 +567,7 @@ fn rejects_oversized_identity_span() {
     let hit = errs
         .iter()
         .any(|e| e.contains(&rid) && e.contains("oversized identity span"));
+    // assert
     assert!(
         hit,
         "validator must reject oversized identity span with row id {rid}; errs:\n{}",
@@ -566,6 +578,8 @@ fn rejects_oversized_identity_span() {
 #[test]
 #[allow(clippy::panic, reason = "test code must panic gracefully")]
 fn rejects_historical_visual_pass() {
+    // arrange
+    // act
     let mut manifest = parse_reference_parity_manifest();
     manifest["rows"][0]["status"] = serde_json::Value::String("pass".to_string());
     let rid = manifest["rows"][0]["requirement_id"]
@@ -576,6 +590,7 @@ fn rejects_historical_visual_pass() {
     let hit = errs
         .iter()
         .any(|e| e.contains(&rid) && e.contains("historical pass"));
+    // assert
     assert!(
         hit,
         "validator must reject historical visual pass with row id {rid}; errs:\n{}",
@@ -586,6 +601,8 @@ fn rejects_historical_visual_pass() {
 #[test]
 #[allow(clippy::panic, reason = "test code must panic gracefully")]
 fn rejects_restored_row_not_incomplete() {
+    // arrange
+    // act
     let mut manifest = parse_reference_parity_manifest();
     // Find the TX-TOOL row and flip it to pass.
     let row = manifest["rows"]
@@ -599,6 +616,7 @@ fn rejects_restored_row_not_incomplete() {
     let hit = errs
         .iter()
         .any(|e| e.contains("TX-TOOL") && e.contains("restored"));
+    // assert
     assert!(
         hit,
         "validator must reject a restored row not marked incomplete; errs:\n{}",
@@ -609,6 +627,8 @@ fn rejects_restored_row_not_incomplete() {
 #[test]
 #[allow(clippy::panic, reason = "test code must panic gracefully")]
 fn rejects_external_exclusion_not_excluded() {
+    // arrange
+    // act
     let mut manifest = parse_reference_parity_manifest();
     if let Some(ex) = manifest["external_exclusions"]
         .as_array_mut()
@@ -622,6 +642,7 @@ fn rejects_external_exclusion_not_excluded() {
     let hit = errs
         .iter()
         .any(|e| e.contains("cli.share") && e.contains("must remain excluded"));
+    // assert
     assert!(
         hit,
         "validator must reject an external exclusion not excluded; errs:\n{}",
@@ -637,6 +658,8 @@ fn rejects_external_exclusion_not_excluded() {
 #[test]
 #[allow(clippy::panic, reason = "test code must panic gracefully")]
 fn core_frame_loader_renders_wide_and_compact() {
+    // arrange
+    // act
     let crate_dir = crate_dir();
     // (frame, cols, rows): one wide (120x32) and one compact (60x20) Core frame.
     let cases: &[(&str, u16, u16)] = &[
@@ -655,6 +678,7 @@ fn core_frame_loader_renders_wide_and_compact() {
         let cells_path = resolve_under_crate(&crate_dir, &cells_rel);
         let loaded = SemanticFrame::read_cells_json(&cells_path)
             .unwrap_or_else(|err| panic!("loader must read {frame} cells.json: {err}"));
+        // assert
         assert_eq!(loaded.cols, *cols, "{frame} cols mismatch");
         assert_eq!(loaded.rows, *rows, "{frame} rows mismatch");
         let debug = loaded.to_cells_txt();

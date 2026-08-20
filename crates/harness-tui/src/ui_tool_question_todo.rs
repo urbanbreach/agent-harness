@@ -317,8 +317,11 @@ mod glyph_tests {
 
     #[test]
     fn completed_todo_uses_ascii_marker_in_legacy_mode() {
+        // arrange
+        // act
         let theme = Theme::harness_chat().with_glyph_mode(GlyphMode::Ascii);
 
+        // assert
         assert_eq!(
             TranscriptTodoStatus::Completed.checkbox_glyph(&theme),
             "[x]"

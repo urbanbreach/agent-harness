@@ -54,6 +54,10 @@ impl Presenter {
         self.dirty && writer_ready
     }
 
+    pub const fn has_pending_redraw(&self) -> bool {
+        self.dirty
+    }
+
     pub fn record_submission(&mut self, submission: FrameSubmission, now: Instant) {
         self.last_draw_at = Some(now);
         match submission {

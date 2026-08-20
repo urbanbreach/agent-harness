@@ -363,6 +363,8 @@ mod tests {
 
     #[test]
     fn structured_diff_syntax_respects_limited_color_levels() {
+        // arrange
+        // act
         let chunks = highlight_diff_line_chunks(
             Some("src/demo.rs"),
             "let value = 42;",
@@ -376,6 +378,7 @@ mod tests {
         )
         .unwrap_or_abort();
 
+        // assert
         assert!(chunks
             .iter()
             .all(|chunk| !matches!(chunk.style.fg, Some(Color::Rgb(_, _, _)))));
@@ -385,6 +388,8 @@ mod tests {
     }
     #[test]
     fn separated_hunks_render_truthful_unchanged_line_marker() {
+        // arrange
+        // act
         let diff = "--- src/demo.rs\n+++ src/demo.rs\n@@ -1,2 +1,2 @@\n-old_one\n+new_one\n keep_one\n@@ -20,2 +20,2 @@\n-old_two\n+new_two\n keep_two\n";
         let theme = Theme::default();
         let lines = render_structured_diff_lines_with_options(
@@ -408,11 +413,14 @@ mod tests {
             .map(line_to_plain_text)
             .collect::<Vec<_>>()
             .join("\n");
+        // assert
         assert!(text.contains("… 17 unchanged lines"), "{text}");
     }
 
     #[test]
     fn highlight_upgrade_preserves_text_and_row_geometry() {
+        // arrange
+        // act
         let diff = "--- src/demo.rs\n+++ src/demo.rs\n@@ -1,2 +1,2 @@\n-fn old() { let value = 1; }\n+fn new() { let value = 2; }\n context();\n";
         let render = |highlight_syntax| {
             render_structured_diff_lines_with_options(
@@ -434,6 +442,7 @@ mod tests {
         };
         let local = render(false);
         let upgraded = render(true);
+        // assert
         assert_eq!(local.len(), upgraded.len());
         assert_eq!(
             local

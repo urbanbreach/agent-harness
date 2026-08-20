@@ -9,6 +9,7 @@ use ratatui::{backend::Backend, layout::Position};
 
 #[test]
 fn unchanged_title_and_cursor_emit_no_physical_frame() {
+    // arrange
     // Given: a presented title and cursor state at the terminal serialization boundary.
     let (mut output, writer, receiver) = FrameOutput::bounded(1);
     let mut backend = FrameOutputBackend::new(writer);
@@ -39,13 +40,16 @@ fn unchanged_title_and_cursor_emit_no_physical_frame() {
         .expect("repeat cursor position");
     let submission = output.finish_frame().expect("finish unchanged frame");
 
+    // act
     // Then: no title command, synchronized marker, or physical frame is queued.
+    // assert
     assert_eq!(submission, FrameSubmission::Unchanged);
     assert!(receiver.try_recv().is_err());
 }
 
 #[test]
 fn changed_title_emits_one_physical_frame() {
+    // arrange
     // Given: one title has already reached the terminal serialization boundary.
     let (mut output, writer, receiver) = FrameOutput::bounded(1);
     let mut backend = FrameOutputBackend::new(writer);
@@ -68,7 +72,9 @@ fn changed_title_emits_one_physical_frame() {
     let submission = output.finish_frame().expect("finish changed frame");
     let frame = receiver.try_recv().expect("changed title frame");
 
+    // act
     // Then: exactly one changed OSC title is accepted for physical presentation.
+    // assert
     assert_eq!(
         submission,
         FrameSubmission::Accepted(FrameKind::Differential)

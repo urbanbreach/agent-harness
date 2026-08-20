@@ -57,6 +57,7 @@ fn start_tool(app: &mut AppState, seq: u64, request_id: &str, id: &str, tool_id:
 
 #[test]
 fn demotion_selects_only_exact_parent_tool_lineage() {
+    // arrange
     // Given: a visible task wait with one exact child and a newer unrelated child.
     let mut app = AppState::new_live(None, false, None);
     app.ingest_event(provider_started(1, "req_parent", "default", "model-1"));
@@ -86,7 +87,9 @@ fn demotion_selects_only_exact_parent_tool_lineage() {
         EventActor::new(ActorKind::Worker, Some("child_unrelated".to_string())),
     );
 
+    // act
     // When/Then: recency and child ownership cannot override exact tool-call lineage.
+    // assert
     assert_eq!(
         app.live_turn_demote_handle_id(),
         Some("req_exact".to_string())
@@ -95,6 +98,7 @@ fn demotion_selects_only_exact_parent_tool_lineage() {
 
 #[test]
 fn parked_status_has_no_invisible_control_hit_rectangles() {
+    // arrange
     // Given: a parked parent whose history also contains a running foreground child wait.
     let mut app = AppState::new_live(None, false, None);
     schedule_task(
@@ -132,6 +136,8 @@ fn parked_status_has_no_invisible_control_hit_rectangles() {
         ui::live_turn_background_rect(&app, TEST_FRAME_AREA),
     );
 
+    // act
     // Then: neither non-rendered control owns clickable terminal cells.
+    // assert
     assert_eq!(controls, (None, None));
 }

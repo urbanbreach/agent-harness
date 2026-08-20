@@ -154,14 +154,17 @@ fn envelope(seq: u64, correlation_id: Option<&str>, payload: EventV1) -> EventEn
 
 #[test]
 fn scroll_up_increases_offset_and_breaks_follow() {
+    // arrange
     let mut app = startup_app();
     app.record_transcript_max_scroll(200);
 
     assert!(app.follow_mode_active(), "app starts in follow mode");
     assert_eq!(app.transcript_scroll_offset(), 0);
 
+    // act
     app.scroll_page_up(20);
 
+    // assert
     assert!(
         !app.follow_mode_active(),
         "scroll up must break follow mode"
@@ -175,6 +178,7 @@ fn scroll_up_increases_offset_and_breaks_follow() {
 
 #[test]
 fn scroll_down_decreases_offset_and_reengages_at_bottom() {
+    // arrange
     let mut app = startup_app();
     app.record_transcript_max_scroll(200);
     app.set_transcript_scroll_for_test(0);
@@ -200,7 +204,9 @@ fn scroll_down_decreases_offset_and_reengages_at_bottom() {
         "page down reaching scroll=0 re-engages follow mode"
     );
 
+    // act
     app.scroll_page_down(30);
+    // assert
     assert!(
         app.follow_mode_active(),
         "a clamped downward gesture at scroll=0 re-engages follow mode"
@@ -209,6 +215,7 @@ fn scroll_down_decreases_offset_and_reengages_at_bottom() {
 
 #[test]
 fn scroll_half_page_uses_half_viewport() {
+    // arrange
     let mut app = startup_app();
     app.record_transcript_max_scroll(500);
 
@@ -219,7 +226,9 @@ fn scroll_half_page_uses_half_viewport() {
         "half page up with viewport=40 moves 20"
     );
 
+    // act
     app.scroll_half_page_down(40);
+    // assert
     assert_eq!(
         app.transcript_scroll_offset(),
         0,
@@ -229,11 +238,14 @@ fn scroll_half_page_uses_half_viewport() {
 
 #[test]
 fn goto_top_sets_offset_to_max_scroll() {
+    // arrange
     let mut app = startup_app();
     app.record_transcript_max_scroll(150);
 
+    // act
     app.scroll_goto_top();
 
+    // assert
     assert_eq!(
         app.transcript_scroll_offset(),
         150,
@@ -244,13 +256,16 @@ fn goto_top_sets_offset_to_max_scroll() {
 
 #[test]
 fn goto_bottom_resets_offset_and_engages_follow() {
+    // arrange
     let mut app = startup_app();
     app.record_transcript_max_scroll(150);
     app.scroll_goto_top();
     assert_eq!(app.transcript_scroll_offset(), 150);
 
+    // act
     app.scroll_goto_bottom();
 
+    // assert
     assert_eq!(app.transcript_scroll_offset(), 0);
     assert!(app.follow_mode_active(), "goto bottom re-engages follow");
 }
@@ -261,6 +276,7 @@ fn goto_bottom_resets_offset_and_engages_follow() {
 
 #[test]
 fn follow_mode_pins_scroll_on_content_arrival() {
+    // arrange
     let mut app = startup_app();
     app.record_transcript_max_scroll(100);
     assert!(app.follow_mode_active());
@@ -272,8 +288,10 @@ fn follow_mode_pins_scroll_on_content_arrival() {
         "follow mode keeps scroll at bottom (offset 0)"
     );
 
+    // act
     app.record_transcript_max_scroll(200);
     app.follow_mode_content_arrived();
+    // assert
     assert_eq!(
         app.transcript_scroll_offset(),
         0,
@@ -283,14 +301,17 @@ fn follow_mode_pins_scroll_on_content_arrival() {
 
 #[test]
 fn follow_mode_does_not_move_scroll_when_disengaged() {
+    // arrange
     let mut app = startup_app();
     app.record_transcript_max_scroll(100);
     app.scroll_page_up(10);
     assert!(!app.follow_mode_active());
     assert_eq!(app.transcript_scroll_offset(), 10);
 
+    // act
     app.record_transcript_max_scroll(200);
     app.follow_mode_content_arrived();
+    // assert
     assert_eq!(
         app.transcript_scroll_offset(),
         110,
@@ -300,6 +321,7 @@ fn follow_mode_does_not_move_scroll_when_disengaged() {
 
 #[test]
 fn follow_mode_round_trip_up_and_back_down() {
+    // arrange
     let mut app = startup_app();
     app.record_transcript_max_scroll(300);
 
@@ -312,7 +334,9 @@ fn follow_mode_round_trip_up_and_back_down() {
     app.scroll_page_down(30);
     assert!(app.follow_mode_active());
 
+    // act
     app.follow_mode_content_arrived();
+    // assert
     assert_eq!(app.transcript_scroll_offset(), 0);
 }
 
@@ -322,6 +346,7 @@ fn follow_mode_round_trip_up_and_back_down() {
 
 #[test]
 fn toggle_tool_output_expands_and_collapses() {
+    // arrange
     let mut app = live_app_with_tool_call();
 
     assert!(
@@ -335,7 +360,9 @@ fn toggle_tool_output_expands_and_collapses() {
         "toggle expands"
     );
 
+    // act
     app.toggle_tool_output_for_test("tc_bash_1");
+    // assert
     assert!(
         !app.is_tool_output_expanded_for_test("tc_bash_1"),
         "second toggle collapses"
@@ -344,6 +371,7 @@ fn toggle_tool_output_expands_and_collapses() {
 
 #[test]
 fn expand_all_and_collapse_all_tool_outputs() {
+    // arrange
     let mut app = live_app_with_tool_call();
 
     app.expand_all_tool_outputs_for_test();
@@ -357,8 +385,10 @@ fn expand_all_and_collapse_all_tool_outputs() {
         "expand_all includes read tool"
     );
 
+    // act
     app.collapse_all_tool_outputs_for_test();
     let collapsed = app.expanded_tool_output_ids_for_test();
+    // assert
     assert!(
         !collapsed.contains(&"tc_bash_1".to_string()),
         "collapse_all removes bash tool"
@@ -371,10 +401,13 @@ fn expand_all_and_collapse_all_tool_outputs() {
 
 #[test]
 fn fold_state_appears_in_interaction_snapshot() {
+    // arrange
     let mut app = live_app_with_tool_call();
     app.toggle_tool_output_for_test("tc_bash_1");
 
+    // act
     let snapshot = app.transcript_interaction_snapshot();
+    // assert
     assert!(
         snapshot
             .expanded_tool_call_ids
@@ -395,11 +428,14 @@ fn fold_state_appears_in_interaction_snapshot() {
 
 #[test]
 fn interaction_snapshot_captures_scroll_and_follow_state() {
+    // arrange
     let mut app = startup_app();
     app.record_transcript_max_scroll(400);
     app.scroll_page_up(25);
 
+    // act
     let snapshot = app.transcript_interaction_snapshot();
+    // assert
     assert_eq!(snapshot.scroll, 25);
     assert!(!snapshot.follow_mode);
     assert_eq!(snapshot.selected_activity_index, 0);
@@ -408,19 +444,25 @@ fn interaction_snapshot_captures_scroll_and_follow_state() {
 
 #[test]
 fn interaction_snapshot_at_follow_bottom() {
+    // arrange
     let app = startup_app();
 
+    // act
     let snapshot = app.transcript_interaction_snapshot();
+    // assert
     assert_eq!(snapshot.scroll, 0);
     assert!(snapshot.follow_mode, "default state is follow");
 }
 
 #[test]
 fn selected_activity_index_tracks_in_snapshot() {
+    // arrange
     let mut app = live_app_with_tool_call();
     app.set_selected_activity_index_for_test(0);
 
+    // act
     let snapshot = app.transcript_interaction_snapshot();
+    // assert
     assert_eq!(snapshot.selected_activity_index, 0);
     assert!(
         !snapshot.follow_mode,
@@ -434,6 +476,7 @@ fn selected_activity_index_tracks_in_snapshot() {
 
 #[test]
 fn viewport_scroll_bounds_never_exceed_max_scroll() {
+    // arrange
     let mut app = startup_app();
     app.record_transcript_max_scroll(50);
 
@@ -444,7 +487,9 @@ fn viewport_scroll_bounds_never_exceed_max_scroll() {
         "measured scroll state clamps to the rendered-row maximum"
     );
 
+    // act
     app.scroll_goto_top();
+    // assert
     assert_eq!(
         app.transcript_scroll_offset(),
         50,
@@ -454,10 +499,13 @@ fn viewport_scroll_bounds_never_exceed_max_scroll() {
 
 #[test]
 fn scroll_arithmetic_is_saturating() {
+    // arrange
     let mut app = startup_app();
     app.record_transcript_max_scroll(10);
 
+    // act
     app.scroll_page_down(100);
+    // assert
     assert_eq!(
         app.transcript_scroll_offset(),
         0,
@@ -468,10 +516,13 @@ fn scroll_arithmetic_is_saturating() {
 
 #[test]
 fn page_scroll_with_minimum_viewport() {
+    // arrange
     let mut app = startup_app();
     app.record_transcript_max_scroll(100);
 
+    // act
     app.scroll_page_up(0);
+    // assert
     assert_eq!(
         app.transcript_scroll_offset(),
         1,
@@ -481,10 +532,13 @@ fn page_scroll_with_minimum_viewport() {
 
 #[test]
 fn half_page_odd_viewport_rounds_up() {
+    // arrange
     let mut app = startup_app();
     app.record_transcript_max_scroll(100);
 
+    // act
     app.scroll_half_page_up(7);
+    // assert
     assert_eq!(
         app.transcript_scroll_offset(),
         4,

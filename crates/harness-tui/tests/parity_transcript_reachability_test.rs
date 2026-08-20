@@ -137,6 +137,7 @@ impl TerminalControl for FakeTerminal {
 
 #[test]
 fn live_and_replay_sessions_reach_the_transcript_parity_owner() {
+    // arrange
     // Given: real live and replay AppState values, not a fixture renderer.
     let long_text = "transcript line\n".repeat(48);
     let first = user_event(1, "request-one", &long_text);
@@ -154,7 +155,9 @@ fn live_and_replay_sessions_reach_the_transcript_parity_owner() {
         .draw(|frame| harness_tui::ui::render_app(frame, &live))
         .unwrap_or_abort();
 
+    // act
     // Then: both paths expose stable identity/block state through the composite owner.
+    // assert
     assert_eq!(
         live.transcript_view_model()
             .map(|view| view.identity.turns().len()),
@@ -205,6 +208,7 @@ fn live_and_replay_sessions_reach_the_transcript_parity_owner() {
 
 #[test]
 fn transcript_parity_owner_reaches_navigation_viewer_pager_selection_and_scroll() {
+    // arrange
     // Given: an event-derived composite containing a redacted raw tool block.
     let mut composite = composite_with_raw_tool();
     let view = composite.view().clone();
@@ -240,8 +244,10 @@ fn transcript_parity_owner_reaches_navigation_viewer_pager_selection_and_scroll(
         .resize(ratatui::layout::Rect::new(0, 0, 100, 30))
         .unwrap_or_abort();
 
+    // act
     // Then: replay identity-backed selection remains valid after the navigation lifecycle.
     let selection = TranscriptSelection::new(turn_id, block_id, 0..4).unwrap_or_abort();
+    // assert
     assert!(selection.is_present_in(&composite.view().identity));
     assert_eq!(
         composite.view().screen.mode(),
@@ -251,6 +257,8 @@ fn transcript_parity_owner_reaches_navigation_viewer_pager_selection_and_scroll(
 
 #[test]
 fn live_transcript_reachability_guards_cover_input_mouse_render_and_pager_adapters() {
+    // arrange
+    // act
     // Given: production source seams that must remain connected to the parity owner.
     // When: this regression guard is compiled with the installed crate sources.
     // Then: removing the live adapter or bypassing its render/input hooks fails this test.
@@ -262,6 +270,7 @@ fn live_transcript_reachability_guards_cover_input_mouse_render_and_pager_adapte
         (UI_TRANSCRIPT_SOURCE, "app.transcript_view_model()"),
         (RUNTIME_SOURCE, "ui::render_app(frame, &app)"),
     ] {
+        // assert
         assert!(source.contains(marker), "missing production seam: {marker}");
     }
     assert!(TRANSCRIPT_STATE_SOURCE.contains("run_pager"));

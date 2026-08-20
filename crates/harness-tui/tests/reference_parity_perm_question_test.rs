@@ -54,7 +54,11 @@ fn live_app() -> AppState {
 }
 
 fn render(app: &AppState) -> String {
-    render_to_string(app, Rect::new(0, 0, W, H), |app, frame, _area| {
+    render_at(app, W, H)
+}
+
+fn render_at(app: &AppState, width: u16, height: u16) -> String {
+    render_to_string(app, Rect::new(0, 0, width, height), |app, frame, _area| {
         ui::render_app(frame, app)
     })
 }
@@ -72,6 +76,20 @@ fn permission_requested_event(
     permission_id: &str,
     tool_call_id: &str,
 ) -> EventEnvelopeV1 {
+    permission_requested_event_with_summary(
+        seq,
+        permission_id,
+        tool_call_id,
+        "Apply hashline edit to demo.txt",
+    )
+}
+
+fn permission_requested_event_with_summary(
+    seq: u64,
+    permission_id: &str,
+    tool_call_id: &str,
+    summary: &str,
+) -> EventEnvelopeV1 {
     envelope(
         seq,
         Some(tool_call_id),
@@ -79,7 +97,7 @@ fn permission_requested_event(
             permission_id: permission_id.to_string(),
             kind: "edit_fs".to_string(),
             tool_call_id: Some(tool_call_id.into()),
-            summary: "Apply hashline edit to demo.txt".to_string(),
+            summary: summary.to_string(),
             request_digest: format!("digest-{permission_id}"),
             timeout_ms: 30_000,
             default_decision: harness_core::event::PermissionDecision::Deny,
@@ -181,6 +199,27 @@ fn multi_question_event(seq: u64, permission_id: &str, tool_call_id: &str) -> Ev
     )
 }
 
+fn question_event_with_summary(
+    seq: u64,
+    permission_id: &str,
+    tool_call_id: &str,
+    summary: serde_json::Value,
+) -> EventEnvelopeV1 {
+    envelope(
+        seq,
+        Some(tool_call_id),
+        EventV1::PermissionRequested(PermissionRequestedEvent {
+            permission_id: permission_id.to_string(),
+            kind: "question".to_string(),
+            tool_call_id: Some(tool_call_id.into()),
+            summary: summary.to_string(),
+            request_digest: format!("digest-question-{permission_id}"),
+            timeout_ms: 30_000,
+            default_decision: harness_core::event::PermissionDecision::Deny,
+        }),
+    )
+}
+
 fn question_live_app_with_sink() -> (AppState, Arc<Mutex<Vec<UiIntent>>>) {
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let sink_intents = Arc::clone(&intents);
@@ -195,6 +234,7 @@ fn question_live_app_with_sink() -> (AppState, Arc<Mutex<Vec<UiIntent>>>) {
 
 #[test]
 fn permission_and_question_keep_pinned_composer_rects() {
+    // arrange
     let mut permission = live_app();
     permission.ingest_event(permission_requested_event(
         1,
@@ -208,10 +248,12 @@ fn permission_and_question_keep_pinned_composer_rects() {
         "tool_question_geometry",
     ));
 
+    // act
     for (width, height, expected) in [
         (120, 40, Rect::new(2, 35, 116, 3)),
         (60, 20, Rect::new(1, 17, 58, 3)),
     ] {
+        // assert
         assert_eq!(plan_at(&permission, width, height).composer, Some(expected));
         assert_eq!(plan_at(&question, width, height).composer, Some(expected));
     }
@@ -410,6 +452,7 @@ fn shell_perm_dock_renders_all_decision_options_with_default_marker() {
 
 #[test]
 fn shell_perm_dock_keeps_all_choices_and_footer_visible_at_60x20() {
+    // arrange
     // Given: a permission request rendered at the minimum supported viewport.
     let mut app = live_app();
     app.ingest_event(permission_requested_event(
@@ -423,6 +466,7 @@ fn shell_perm_dock_keeps_all_choices_and_footer_visible_at_60x20() {
         ui::render_app(frame, app)
     });
 
+    // act
     // Then: every decision and both essential footer actions remain truthful and visible.
     for expected in [
         "1 (●) Yes, always approve",
@@ -433,6 +477,7 @@ fn shell_perm_dock_keeps_all_choices_and_footer_visible_at_60x20() {
         "Ctrl+o:always",
         "Ctrl+c:cancel",
     ] {
+        // assert
         assert!(
             rendered.contains(expected),
             "compact permission dock must retain {expected:?}\n{rendered}"
@@ -444,204 +489,192 @@ fn shell_perm_dock_keeps_all_choices_and_footer_visible_at_60x20() {
     );
 }
 
-/// SHELL-PERM state machine: cycling moves the radio marker between options
-/// (h/l or arrows), preserving the draft; the default marker starts on
-/// always-approve and moves to session grant after one cycle-forward.
 #[test]
-fn shell_perm_selection_cycling_moves_option_marker() {
+fn shell_perm_short_content_uses_measured_height() {
     // arrange
+    // Given: a one-line permission request at the primary reference viewport.
     let mut app = live_app();
-    app.composer.prompt_buffer = "cycling draft".to_string();
-    app.composer.prompt_cursor = "cycling draft".chars().count();
     app.ingest_event(permission_requested_event(
         1,
-        "perm_cycle_parity",
-        "tool_call_cycle",
+        "perm_short_height",
+        "tool_call_short_height",
     ));
-    let initial = render(&app);
+
+    // When: the shell allocates the permission status region.
+    let status = plan_for(&app)
+        .status
+        .expect("permission request must allocate a status region");
 
     // act
-    app.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
-    let cycled = render(&app);
-
-    // assert — marker moves option 1 -> option 2; draft preserved
-    assert!(
-        initial.contains("(●) Yes, and don't ask again for anything"),
-        "SHELL-PERM: default marker on always-approve\n{initial}"
-    );
-    assert!(
-        cycled.contains("(○) Yes, and don't ask again for anything"),
-        "SHELL-PERM: marker leaves option 1 after cycle\n{cycled}"
-    );
-    assert!(
-        cycled.contains("(●) Yes, allow all edits during this session"),
-        "SHELL-PERM: marker lands on session grant after cycle\n{cycled}"
-    );
-    assert_eq!(app.composer.prompt_buffer, "cycling draft");
+    // Then: the dock uses only its measured chrome, content, options, and footer rows.
+    // assert
+    assert_eq!(status.height, 9);
 }
 
-/// SHELL-PERM / OVL-PERM fail-closed recovery: Esc dismisses the dock as
-/// Deny — DismissModal emits a ResolvePermission{Deny} intent to the
-/// coordinator and keeps the draft; the modal view then waits for the
-/// coordinator resolution event.
 #[test]
-fn shell_perm_esc_sends_fail_closed_deny_intent_and_keeps_draft() {
-    // arrange — live app with an intent sink; active permission dock + draft
-    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
-    let sink_intents = Arc::clone(&intents);
-    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> =
-        Arc::new(move |intent| sink_intents.lock().unwrap_or_abort().push(intent));
-    let mut app = AppState::new_live(None, false, Some(sink));
-    app.set_launch_metadata(
-        LaunchMetadata::from_model_ref("build", "mock:model-tx").with_mode_label("Demo"),
-    );
-    let draft = "draft under esc-reject";
-    app.composer.prompt_buffer = draft.to_string();
-    app.composer.prompt_cursor = draft.chars().count();
-    app.focus = Focus::Prompt;
-    app.ingest_event(permission_requested_event(
+fn shell_perm_long_content_collapses_with_truthful_indicator() {
+    // arrange
+    // Given: permission detail that exceeds the five-row collapsed budget.
+    let mut app = live_app();
+    let summary = (1..=12)
+        .map(|line| format!("planned edit line {line}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    app.ingest_event(permission_requested_event_with_summary(
         1,
-        "perm_esc_parity",
-        "tool_call_esc",
+        "perm_collapsed_height",
+        "tool_call_collapsed_height",
+        &summary,
     ));
+
+    // When: the shell measures and renders the collapsed permission.
+    let status = plan_for(&app)
+        .status
+        .expect("permission request must allocate a status region");
+    let rendered = render(&app);
+
+    // act
+    // Then: four detail rows plus the expansion indicator determine the dock height.
+    // assert
+    assert_eq!(status.height, 13);
     assert!(
-        app.active_permission().is_some(),
-        "precondition: permission dock active before Esc"
+        rendered.contains("Ctrl-F to expand"),
+        "collapsed permission must disclose hidden content\n{rendered}"
     );
+}
 
-    // act — Esc = fail-closed deny
-    app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+#[test]
+fn shell_perm_collapsed_height_obeys_small_screen_cap() {
+    // arrange
+    // Given: long permission detail at the minimum supported terminal height.
+    let mut app = live_app();
+    let summary = (1..=12)
+        .map(|line| format!("compact planned edit line {line}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    app.ingest_event(permission_requested_event_with_summary(
+        1,
+        "perm_small_screen_cap",
+        "tool_call_small_screen_cap",
+        &summary,
+    ));
 
-    // assert — Deny intent emitted for the pending permission; draft intact
-    let emitted = intents.lock().unwrap_or_abort();
-    let deny = emitted.iter().find_map(|intent| match intent {
-        UiIntent::ResolvePermission {
-            permission_id,
-            decision,
-            ..
-        } if permission_id == "perm_esc_parity" => Some(*decision),
-        _ => None,
-    });
+    // When: the shell allocates the permission at 60x20.
+    let status = plan_at(&app, 60, 20)
+        .status
+        .expect("permission request must allocate a status region");
+
+    // act
+    // Then: Grok's min(half-screen max 10, eighty-percent) cap limits the dock.
+    // assert
+    assert_eq!(status.height, 10);
+}
+
+#[test]
+fn shell_perm_ctrl_f_expands_and_collapses_long_content() {
+    // arrange
+    // Given: a collapsed permission whose complete detail needs twelve rows.
+    let mut app = live_app();
+    let summary = (1..=12)
+        .map(|line| format!("expandable edit line {line}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    app.ingest_event(permission_requested_event_with_summary(
+        1,
+        "perm_expand_toggle",
+        "tool_call_expand_toggle",
+        &summary,
+    ));
+    let collapsed_height = plan_for(&app)
+        .status
+        .expect("permission request must allocate a status region")
+        .height;
+
+    // When: Ctrl-F expands the detail, then toggles it closed again.
+    app.handle_key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::CONTROL));
+    let expanded_height = plan_for(&app)
+        .status
+        .expect("expanded permission must retain a status region")
+        .height;
+    let expanded = render(&app);
+    app.handle_key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::CONTROL));
+    let recollapsed_height = plan_for(&app)
+        .status
+        .expect("recollapsed permission must retain a status region")
+        .height;
+
+    // act
+    // Then: expansion lifts the collapsed cap without disturbing the reversible state.
+    // assert
     assert_eq!(
-        deny,
-        Some(PermissionDecision::Deny),
-        "SHELL-PERM: Esc must resolve as Deny (fail-closed)"
+        (collapsed_height, expanded_height, recollapsed_height),
+        (13, 20, 13)
     );
-    assert_eq!(app.focus, Focus::Prompt, "composer keeps focus after deny");
-    assert_eq!(
-        app.composer.prompt_buffer, draft,
-        "SHELL-PERM: draft preserved across Esc reject"
+    assert!(
+        expanded.contains("Ctrl-F to collapse"),
+        "expanded permission must advertise the inverse action\n{expanded}"
     );
 }
 
-/// SHELL-QUESTION / OVL-QUESTION answer submission: digit keys select an
-/// option and Enter submits the answer as an Allow intent whose JSON reason
-/// carries the selected option label.
 #[test]
-fn shell_question_digit_select_then_enter_submits_answer_intent() {
-    // arrange — live app with intent sink; three-option question dock
-    let (mut app, intents) = question_live_app_with_sink();
-    app.ingest_event(three_option_question_event(
+fn shell_perm_measurement_uses_terminal_cell_width_for_cjk() {
+    // arrange
+    // Given: equal character counts whose terminal cell widths differ.
+    let mut ascii = live_app();
+    ascii.ingest_event(permission_requested_event_with_summary(
         1,
-        "question_answer_parity",
-        "tool_call_question_answer",
+        "perm_ascii_width",
+        "tool_call_ascii_width",
+        &"a".repeat(30),
     ));
-    assert!(
-        app.active_permission().is_some(),
-        "precondition: question dock active"
-    );
-
-    // act — digit '2' selects option B, Enter activates/submits the answer
-    app.handle_key(KeyEvent::new(KeyCode::Char('2'), KeyModifiers::NONE));
-    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-
-    // assert — Allow intent submitted with the selected option in the reason
-    let emitted = intents.lock().unwrap_or_abort();
-    let answer = emitted.iter().find_map(|intent| match intent {
-        UiIntent::ResolvePermission {
-            permission_id,
-            decision,
-            reason,
-            ..
-        } if permission_id == "question_answer_parity"
-            && *decision == PermissionDecision::Allow =>
-        {
-            reason.clone()
-        }
-        _ => None,
-    });
-    let answer = answer.expect("SHELL-QUESTION: Enter must submit an Allow answer intent");
-    assert!(
-        answer.contains("\"B\""),
-        "SHELL-QUESTION: answer reason must carry option B: {answer}"
-    );
-}
-
-/// SHELL-QUESTION / OVL-QUESTION fail-closed cancel: Esc dismisses the
-/// question dock as Deny (ResolvePermission{Deny} intent emitted).
-#[test]
-fn shell_question_esc_cancels_with_fail_closed_deny_intent() {
-    // arrange — live app with intent sink; question dock with draft
-    let (mut app, intents) = question_live_app_with_sink();
-    let draft = "draft under question cancel";
-    app.composer.prompt_buffer = draft.to_string();
-    app.composer.prompt_cursor = draft.chars().count();
-    app.focus = Focus::Prompt;
-    app.ingest_event(three_option_question_event(
+    let mut cjk = live_app();
+    cjk.ingest_event(permission_requested_event_with_summary(
         1,
-        "question_cancel_parity",
-        "tool_call_question_cancel",
+        "perm_cjk_width",
+        "tool_call_cjk_width",
+        &"界".repeat(30),
     ));
 
-    // act — Esc = fail-closed cancel
-    app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    // When: both requests are measured at the compact width.
+    let ascii_height = plan_at(&ascii, 60, 20)
+        .status
+        .expect("ASCII permission must allocate a status region")
+        .height;
+    let cjk_height = plan_at(&cjk, 60, 20)
+        .status
+        .expect("CJK permission must allocate a status region")
+        .height;
 
-    // assert — Deny intent emitted; draft preserved
-    let emitted = intents.lock().unwrap_or_abort();
-    let deny = emitted.iter().find_map(|intent| match intent {
-        UiIntent::ResolvePermission {
-            permission_id,
-            decision,
-            ..
-        } if permission_id == "question_cancel_parity" => Some(*decision),
-        _ => None,
-    });
-    assert_eq!(
-        deny,
-        Some(PermissionDecision::Deny),
-        "SHELL-QUESTION: Esc must resolve as Deny (fail-closed)"
-    );
-    assert_eq!(app.composer.prompt_buffer, draft);
+    // act
+    // Then: double-width glyphs wrap into one additional visible row.
+    // assert
+    assert_eq!(cjk_height, ascii_height.saturating_add(1));
 }
 
-/// SHELL-QUESTION / OVL-QUESTION state machine: Tab switches the active prompt
-/// in a multi-question dock (question 1 -> question 2 visible in the dock).
 #[test]
-fn shell_question_tab_navigation_switches_active_prompt() {
-    // arrange — two-question dock (multi-tab)
-    let (mut app, _intents) = question_live_app_with_sink();
-    app.ingest_event(multi_question_event(
+fn shell_perm_renders_wide_cjk_without_narrow_viewport_overflow() {
+    // arrange
+    // Given: a permission summary containing CJK Extension A at compact width.
+    let mut app = live_app();
+    app.ingest_event(permission_requested_event_with_summary(
         1,
-        "question_tabs_parity",
-        "tool_call_question_tabs",
+        "perm_cjk_render",
+        "tool_call_cjk_render",
+        &"㐀".repeat(24),
     ));
-    let initial = render(&app);
 
-    // act — Tab moves to the second question prompt
-    app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
-    let after_tab = render(&app);
+    // When: the real permission surface is rendered at 60x20.
+    let rendered = render_at(&app, 60, 20);
 
-    // assert — dock switches from question 1 to question 2
+    // act
+    // Then: CJK content and every decision remain visible without cell overflow.
+    // assert
     assert!(
-        initial.contains("First parity question"),
-        "SHELL-QUESTION: first prompt visible on tab 0\n{initial}"
+        rendered.contains('㐀'),
+        "CJK detail must remain visible\n{rendered}"
     );
-    assert!(
-        after_tab.contains("Second parity question"),
-        "SHELL-QUESTION: second prompt visible after Tab\n{after_tab}"
-    );
-    assert!(
-        !after_tab.contains("First parity question"),
-        "SHELL-QUESTION: first prompt hidden after Tab switches to tab 1\n{after_tab}"
-    );
+    assert!(rendered.contains("No, reject and add feedback"));
+    assert!(rendered.lines().all(|line| line.chars().count() <= 60));
 }
+
+include!("support/reference_parity_perm_question_test_part2_test.rs");

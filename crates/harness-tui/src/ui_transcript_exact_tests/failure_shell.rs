@@ -463,12 +463,12 @@ fn consecutive_tool_rows_form_a_zero_gap_activity_run() {
     let mut activity =
         transcript_section_model_test_activity("request-tool-stacking", ActivityStatus::Done, "");
 
-    let mut cancel_tool =
-        transcript_section_model_test_tool_call("tc-cancel-stacking", "background.cancel");
-    cancel_tool.status = ToolCallDisplayStatus::Succeeded;
-    cancel_tool.args_summary = r#"{"taskId":"bg_123"}"#.to_string();
-    cancel_tool.first_mono_ms = 10;
-    cancel_tool.last_mono_ms = 20;
+    let mut command_tool =
+        transcript_section_model_test_tool_call("tc-command-stacking", "shell.run");
+    command_tool.status = ToolCallDisplayStatus::Succeeded;
+    command_tool.args_summary = r#"{"cmd":"pwd"}"#.to_string();
+    command_tool.first_mono_ms = 10;
+    command_tool.last_mono_ms = 20;
 
     let mut lsp_tool = transcript_section_model_test_tool_call("tc-lsp-stacking", "code.lsp");
     lsp_tool.status = ToolCallDisplayStatus::Succeeded;
@@ -476,37 +476,19 @@ fn consecutive_tool_rows_form_a_zero_gap_activity_run() {
     lsp_tool.first_mono_ms = 30;
     lsp_tool.last_mono_ms = 45;
 
-    activity.tool_calls = vec![cancel_tool, lsp_tool];
+    activity.tool_calls = vec![command_tool, lsp_tool];
     app.activities = std::collections::VecDeque::from(vec![activity]);
     app.transcript_view.selected_activity_index = 0;
 
     let layout = build_measured_transcript_layout_for_width(&app, &Theme::default(), 120);
     let surfaces = &layout.sections[0].surfaces;
-
-    let cancel_surface = surfaces
-        .iter()
-        .find(|surface| {
-            surface.lines.iter().any(|line| {
-                line.spans
-                    .iter()
-                    .any(|span| span.content.as_ref().contains("background.cancel"))
-            })
-        })
-        .unwrap_or_abort();
-    let lsp_surface = surfaces
-        .iter()
-        .find(|surface| {
-            surface.lines.iter().any(|line| {
-                line.spans
-                    .iter()
-                    .any(|span| span.content.as_ref().contains("LSP"))
-            })
-        })
-        .unwrap_or_abort();
+    assert_eq!(surfaces.len(), 2);
+    let command_surface = surfaces.first().unwrap_or_abort();
+    let context_surface = surfaces.get(1).unwrap_or_abort();
 
     assert_eq!(
-        lsp_surface.top_offset,
-        cancel_surface.top_offset + cancel_surface.height,
+        context_surface.top_offset,
+        command_surface.top_offset + command_surface.height,
         "consecutive tool surfaces should remain visually grouped"
     );
 }
@@ -576,6 +558,7 @@ fn block_tool_cards_render_subtitle_inline_with_title() {
 
 #[test]
 fn running_and_finished_shell_tools_keep_one_command_header_identity() {
+    // arrange
     // Given: one shell tool before and after output arrives.
     let theme = Theme::default();
     let mut running = transcript_section_model_test_tool_call("tc-shell-stable", "shell.run");
@@ -622,8 +605,10 @@ fn running_and_finished_shell_tools_keep_one_command_header_identity() {
         .position(|line| line.contains("echo hi"))
         .unwrap_or_abort();
 
+    // act
     // Then: output appends below one stable `Run` header instead of replacing
     // an inline command row with a differently shaped completed block.
+    // assert
     assert_eq!(
         running_section.header.visual_style,
         TranscriptToolCallVisualStyle::Block
@@ -643,6 +628,7 @@ fn running_and_finished_shell_tools_keep_one_command_header_identity() {
 
 #[test]
 fn finished_shell_output_stays_collapsed_until_disclosed() {
+    // arrange
     // Given: a finished command with useful output.
     let theme = Theme::default();
     let mut tool_call = transcript_section_model_test_tool_call("tc-shell-collapsed", "shell.run");
@@ -666,7 +652,9 @@ fn finished_shell_output_stays_collapsed_until_disclosed() {
     )
     .join("\n");
 
+    // act
     // Then: the row is flat and its result remains behind explicit disclosure.
+    // assert
     assert!(section.details_collapsed_by_default);
     assert_eq!(
         section.header.disclosure_state,
@@ -973,6 +961,7 @@ fn failed_structured_shell_output_does_not_duplicate_matching_error_summary() {
 
 #[test]
 fn collapsed_failed_shell_omits_redundant_command_failed_copy() {
+    // arrange
     // Given: a failed command whose only result repeats its lifecycle state.
     let theme = Theme::default();
     let mut tool_call = transcript_section_model_test_tool_call("tc-shell-generic-fail", "bash");
@@ -995,7 +984,9 @@ fn collapsed_failed_shell_omits_redundant_command_failed_copy() {
         append_tool_call_section_lines(&section, &theme, 96, theme.surface.panel).lines,
     );
 
+    // act
     // Then: color and the Failed subtitle carry the state without a duplicate paragraph.
+    // assert
     assert!(rendered.iter().any(|line| line.contains("Failed")));
     assert!(!rendered
         .iter()

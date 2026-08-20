@@ -43,9 +43,13 @@ fn render_terminal(app: &AppState, width: u16, height: u16) -> Terminal<TestBack
 
 #[test]
 fn primary_startup_uses_measured_vertical_order_at_120x32() {
-    let rendered = render(&startup_app_with_clipboard_warning(), 120, 32);
+    // arrange
+    let mut app = startup_app_with_clipboard_warning();
+    app.advance_wall_clock_for_motion_evidence(std::time::Duration::from_millis(300));
+    let rendered = render(&app, 120, 32);
     let lines = rendered.lines().collect::<Vec<_>>();
 
+    // act
     let breadcrumb = lines.iter().position(|line| line.contains(''));
     let warning = lines
         .iter()
@@ -56,22 +60,26 @@ fn primary_startup_uses_measured_vertical_order_at_120x32() {
     let composer = lines.iter().rposition(|line| line.contains("│ ❯"));
     let footer = lines
         .iter()
-        .position(|line| line.contains("Provider configured"));
+        .position(|line| line.contains("Logged in with API key"));
 
+    // assert
     assert_eq!(
         (breadcrumb, warning, welcome_top, composer, footer),
-        (Some(1), Some(4), Some(8), Some(29), Some(31)),
+        (Some(1), Some(4), Some(7), Some(27), Some(30)),
         "startup rows must follow breadcrumb, warning, welcome, composer, footer\n{rendered}"
     );
 }
 
 #[test]
 fn home_top_bar_and_hero_topology_hold_at_80_90_100_and_120_columns() {
+    // arrange
+    // act
     for (width, height, welcome_boxes) in [(80, 24, 1), (90, 24, 2), (100, 30, 2), (120, 32, 2)] {
         let rendered = render(&startup_app(), width, height);
         let lines = rendered.lines().collect::<Vec<_>>();
         let breadcrumb = lines.iter().position(|line| line.contains(''));
 
+        // assert
         assert_eq!(
             breadcrumb,
             Some(1),
@@ -87,7 +95,7 @@ fn home_top_bar_and_hero_topology_hold_at_80_90_100_and_120_columns() {
             "startup actions and changelog must remain reachable at {width}x{height}\n{rendered}"
         );
         assert_eq!(
-            rendered.contains("██╗"),
+            rendered.contains('⣿'),
             width >= 90,
             "the two-column logo panel starts at 90 columns at {width}x{height}\n{rendered}"
         );
@@ -96,9 +104,11 @@ fn home_top_bar_and_hero_topology_hold_at_80_90_100_and_120_columns() {
 
 #[test]
 fn focused_home_action_uses_the_full_semantic_selection_row_at_all_breakpoints() {
+    // arrange
     for (width, height) in [(80, 24), (90, 24), (100, 30), (120, 32)] {
         let mut app = startup_app();
         app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        app.advance_wall_clock_for_motion_evidence(std::time::Duration::from_millis(300));
         let frame_area = Rect::new(0, 0, width, height);
         let startup_area = FrameLayoutPlan::for_app(&app, frame_area)
             .transcript
@@ -113,9 +123,11 @@ fn focused_home_action_uses_the_full_semantic_selection_row_at_all_breakpoints()
             false,
         );
 
+        // act
         let terminal = render_terminal(&app, width, height);
         let action = layout.action_rects[0];
         for column in action.0..action.0.saturating_add(action.2) {
+            // assert
             assert_eq!(
                 terminal.backend().buffer()[(column, action.1)].bg,
                 app.theme().surface.selected_card,
@@ -127,6 +139,8 @@ fn focused_home_action_uses_the_full_semantic_selection_row_at_all_breakpoints()
 
 #[test]
 fn primary_startup_keeps_harness_identity_in_reference_region_without_dead_action() {
+    // arrange
+    // act
     let rendered = render(&startup_app_with_clipboard_warning(), 120, 32);
     let title = rendered
         .lines()
@@ -134,6 +148,7 @@ fn primary_startup_keeps_harness_identity_in_reference_region_without_dead_actio
         .expect("Harness title row");
     let title_column = title.chars().position(|character| character == 'H');
 
+    // assert
     assert_eq!(
         (title_column, rendered.matches("Changelog").count()),
         (Some(23), 1),
@@ -142,8 +157,11 @@ fn primary_startup_keeps_harness_identity_in_reference_region_without_dead_actio
 }
 
 #[test]
-fn primary_startup_renders_changelog_as_a_bold_section_label() {
-    let app = startup_app_with_clipboard_warning();
+fn primary_startup_renders_changelog_as_a_dim_section_label() {
+    // arrange
+    // act
+    let mut app = startup_app_with_clipboard_warning();
+    app.advance_wall_clock_for_motion_evidence(std::time::Duration::from_millis(300));
     let terminal = render_terminal(&app, 120, 32);
     let rendered = render(&app, 120, 32);
     let (row, column) = rendered
@@ -162,16 +180,19 @@ fn primary_startup_renders_changelog_as_a_bold_section_label() {
     let row = u16::try_from(row).expect("render row fits terminal coordinates");
     let column = u16::try_from(column).expect("render column fits terminal coordinates");
 
+    // assert
     assert!(
         terminal.backend().buffer()[(column, row)]
             .modifier
-            .contains(Modifier::BOLD),
-        "Changelog must use the measured bold section-label hierarchy\n{rendered}"
+            .contains(Modifier::DIM),
+        "Changelog must use the measured dim section-label hierarchy\n{rendered}"
     );
 }
 
 #[test]
 fn compact_startup_collapses_welcome_chrome_but_keeps_bordered_composer() {
+    // arrange
+    // act
     let rendered = render(&startup_app(), 80, 24);
     let lines = rendered.lines().collect::<Vec<_>>();
     let composer_row = lines
@@ -179,6 +200,7 @@ fn compact_startup_collapses_welcome_chrome_but_keeps_bordered_composer() {
         .position(|line| line.contains("│ ❯"))
         .expect("compact composer row");
 
+    // assert
     assert!(
         lines
             .get(composer_row.saturating_sub(1))
@@ -193,10 +215,13 @@ fn compact_startup_collapses_welcome_chrome_but_keeps_bordered_composer() {
 
 #[test]
 fn disconnected_startup_keeps_recovery_status_in_footer_without_panel_notice() {
+    // arrange
     let mut app = AppState::new_startup(Vec::new(), None);
     app.maybe_set_no_provider_banner();
 
+    // act
     let rendered = render(&app, 80, 24);
+    // assert
     assert!(
         !rendered.contains("No provider connected. Use /connect.")
             && !rendered.contains("Notices:")
@@ -208,11 +233,14 @@ fn disconnected_startup_keeps_recovery_status_in_footer_without_panel_notice() {
 
 #[test]
 fn first_typed_grapheme_clears_only_welcome_content() {
+    // arrange
     let mut app = startup_app_with_clipboard_warning();
 
     app.handle_key(KeyEvent::new(KeyCode::Char('B'), KeyModifiers::NONE));
 
+    // act
     let rendered = render(&app, 120, 32);
+    // assert
     assert!(
         rendered.contains('')
             && rendered.contains("│ ❯ B")
@@ -226,12 +254,15 @@ fn first_typed_grapheme_clears_only_welcome_content() {
 
 #[test]
 fn erased_first_grapheme_keeps_welcome_dismissed() {
+    // arrange
     let mut app = startup_app_with_clipboard_warning();
     app.handle_key(KeyEvent::new(KeyCode::Char('é'), KeyModifiers::NONE));
 
     app.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
 
+    // act
     let rendered = render(&app, 120, 32);
+    // assert
     assert!(
         rendered.contains("│ ❯")
             && rendered.contains("Enter:send")
@@ -243,8 +274,11 @@ fn erased_first_grapheme_keeps_welcome_dismissed() {
 
 #[test]
 fn startup_composer_is_focused_and_has_no_placeholder() {
+    // arrange
+    // act
     let rendered = render(&startup_app(), 120, 32);
 
+    // assert
     assert!(
         rendered.contains("│ ❯") && !rendered.contains("Build anything"),
         "startup must render the focused empty composer rather than inactive placeholder copy\n{rendered}"
@@ -253,10 +287,13 @@ fn startup_composer_is_focused_and_has_no_placeholder() {
 
 #[test]
 fn new_worktree_dialog_preserves_welcome_underlay() {
+    // arrange
     let mut app = startup_app_with_clipboard_warning();
     app.handle_key(KeyEvent::new(KeyCode::Char('w'), KeyModifiers::CONTROL));
 
+    // act
     let rendered = render(&app, 120, 32);
+    // assert
     assert!(
         rendered.contains("Create worktree")
             && rendered.contains("Harness")
@@ -267,6 +304,8 @@ fn new_worktree_dialog_preserves_welcome_underlay() {
 
 #[test]
 fn startup_responsive_matrix_stays_inside_every_contract_viewport() {
+    // arrange
+    // act
     for (width, height) in [
         (120, 50),
         (120, 40),
@@ -278,6 +317,7 @@ fn startup_responsive_matrix_stays_inside_every_contract_viewport() {
     ] {
         let rendered = render(&startup_app(), width, height);
         let lines = rendered.lines().collect::<Vec<_>>();
+        // assert
         assert_eq!(lines.len(), usize::from(height));
         assert!(lines
             .iter()
@@ -289,10 +329,13 @@ fn startup_responsive_matrix_stays_inside_every_contract_viewport() {
 
 #[test]
 fn keyboard_focus_marks_the_selected_startup_action() {
+    // arrange
     let mut app = startup_app();
     app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
     assert!(render(&app, 120, 32).contains("›New worktree"));
 
+    // act
     app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+    // assert
     assert!(render(&app, 120, 32).contains("›Resume session"));
 }

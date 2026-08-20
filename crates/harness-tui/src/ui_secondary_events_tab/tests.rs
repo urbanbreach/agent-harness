@@ -2,6 +2,9 @@ use super::*;
 
 #[test]
 fn help_modal_matches_reference_sizing() {
+    // arrange
+    // act
+    // assert
     assert_eq!(
         help_modal_rects(Rect::new(0, 0, 120, 40), None).map(|layout| layout.popup),
         Some(Rect::new(20, 4, 80, 32))
@@ -14,9 +17,14 @@ fn help_modal_matches_reference_sizing() {
 
 #[test]
 fn help_expanded_row_renders_from_intra_row_scroll_offset() {
+    // arrange
     let mut app = AppState::new_live(None, false, None);
     let width = 30;
-    let description_width = width - 4;
+    let area = Rect::new(0, 0, width, 6);
+    let description_width = crate::ui::ui_overlays::modal_list_row_layout(area, 1)
+        .content
+        .width
+        .saturating_sub(4);
     let (action, description) = app
         .help_rows()
         .into_iter()
@@ -43,9 +51,9 @@ fn help_expanded_row_renders_from_intra_row_scroll_offset() {
     app.help_browser.selected = index;
     app.help_browser.visual_offset = index.saturating_add(1);
     app.help_browser.follow_selection = false;
-    let area = Rect::new(0, 0, width, 6);
     let layout = rows::help_row_layout(&app, area, &rows);
 
+    // act
     let rendered = crate::render_test::render_to_string(&app, area, |app, frame, area| {
         rows::render_browse(frame, app, app.theme(), area);
     });
@@ -54,6 +62,7 @@ fn help_expanded_row_renders_from_intra_row_scroll_offset() {
         .next()
         .expect("wrapped description");
 
+    // assert
     assert!(rendered
         .lines()
         .next()
@@ -66,4 +75,24 @@ fn help_expanded_row_renders_from_intra_row_scroll_offset() {
             .map(|area| area.y),
         Some(0)
     );
+}
+
+#[test]
+fn submit_prompt_detail_includes_a_meaningful_description() {
+    // arrange
+    let mut app = AppState::new_live(None, false, None);
+    app.help_browser.mode = crate::app::HelpMode::Detail {
+        action: Action::SubmitPrompt,
+        scroll: 0,
+    };
+    let area = Rect::new(0, 0, 120, 40);
+    let layout = help_modal_rects(area, None).expect("help layout");
+
+    // act
+    let rendered = crate::render_test::render_to_string(&app, area, |app, frame, _| {
+        render_detail(frame, app, app.theme(), layout, Action::SubmitPrompt, 0);
+    });
+
+    // assert
+    assert!(rendered.contains("Submit the current prompt"), "{rendered}");
 }

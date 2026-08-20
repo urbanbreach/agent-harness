@@ -27,16 +27,19 @@ fn user_event() -> EventEnvelopeV1 {
 
 #[test]
 fn live_projection_reaches_the_production_transcript_adapter() {
+    // arrange
     // Given: a real live AppState receiving a replayable user event.
     let mut app = AppState::new_live(None, false, None);
 
     // When: the production ingestion path accepts the event.
     app.ingest_event(user_event());
 
+    // act
     // Then: the new identity/block owner contains the live turn and user block.
     let view = app
         .transcript_view_model()
         .expect("live AppState must expose the integrated transcript");
+    // assert
     assert_eq!(view.identity.turns().len(), 1);
     assert_eq!(view.blocks.len(), 1);
     assert_eq!(view.blocks[0].kind, BlockKind::User);
@@ -44,6 +47,7 @@ fn live_projection_reaches_the_production_transcript_adapter() {
 
 #[test]
 fn live_transcript_viewer_is_reachable_from_production_input() {
+    // arrange
     // Given: a live transcript with transcript focus.
     let mut app = AppState::new_live(None, false, None);
     app.ingest_event(user_event());
@@ -52,7 +56,9 @@ fn live_transcript_viewer_is_reachable_from_production_input() {
     // When: the public key path opens the selected transcript block.
     app.handle_key(KeyEvent::new(KeyCode::Char('v'), KeyModifiers::NONE));
 
+    // act
     // Then: the integrated screen owner enters the full-screen viewer mode.
+    // assert
     assert_eq!(
         app.transcript_screen_mode(),
         Some(TranscriptScreenMode::SelectedBlockViewer)

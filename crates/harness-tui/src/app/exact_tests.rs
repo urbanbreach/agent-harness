@@ -28,6 +28,7 @@ pub(crate) fn exact_test_startup_slash_commands_execute_without_menu() {
 
 #[test]
 fn painted_welcome_actions_execute_the_matching_behavior() {
+    // arrange
     let mut worktree = AppState::new_startup(Vec::new(), None);
     worktree.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
     worktree.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
@@ -43,15 +44,42 @@ fn painted_welcome_actions_execute_the_matching_behavior() {
     quit.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
     quit.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
     quit.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+    quit.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
     quit.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
     assert!(quit.should_quit);
 
+    let mut changelog = AppState::new_startup(Vec::new(), None);
+    changelog.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    changelog.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+    changelog.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+    changelog.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    assert_eq!(
+        changelog.overlay_stack().top(),
+        Some(OverlayKind::ReleaseNotes)
+    );
+    assert_eq!(changelog.focus, Focus::List);
+    assert_eq!(
+        changelog.welcome_state().focus(),
+        crate::welcome_surface::WelcomeFocus::Menu(2)
+    );
+    assert!(changelog.welcome_state().hovered_action().is_none());
+
+    changelog.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    assert!(changelog.overlay_stack().top().is_none());
+    assert_eq!(changelog.focus, Focus::List);
+    assert_eq!(
+        changelog.welcome_state().focus(),
+        crate::welcome_surface::WelcomeFocus::Menu(2)
+    );
+
+    // act
     let mut backward = AppState::new_startup(Vec::new(), None);
     backward.handle_key(KeyEvent::new(
         KeyCode::Tab,
         KeyModifiers::CONTROL | KeyModifiers::SHIFT,
     ));
     backward.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    // assert
     assert!(backward.new_worktree_dialog.visible);
 }
 

@@ -31,6 +31,7 @@ pub(super) struct TranscriptLayoutCacheEntry {
 pub(in crate::ui) struct TranscriptVisualEntryDraft {
     pub(in crate::ui) kind: TranscriptRenderSurfaceKind,
     pub(in crate::ui) leading_gap_rows: usize,
+    pub(in crate::ui) trailing_gap_rows: usize,
     pub(in crate::ui) placement: TranscriptBlockPlacement,
     pub(in crate::ui) show_outer_rail: bool,
     pub(in crate::ui) rail_glyph: &'static str,
@@ -77,12 +78,23 @@ impl TranscriptToolVerb {
             "shell.run" | "bash" => Some(Self::Run),
             "fs.read" | "read" | "session_read" => Some(Self::Read),
             "fs.glob" | "glob" | "fs.grep" | "grep" | "search.code" | "codesearch"
-            | "session_search" | "ast_grep_search" => Some(Self::Search),
+            | "session_search" | "ast_grep_search" | "lsp" | "code.lsp" => Some(Self::Search),
             "fs.ls" | "list" | "session_list" => Some(Self::List),
             "skill" | "skill.load" => Some(Self::Skill),
             "web.fetch" | "webfetch" => Some(Self::WebFetch),
             "search.web" | "websearch" => Some(Self::WebSearch),
-            "agent.spawn" | "task" => Some(Self::Subagent),
+            "agent.spawn" | "task" | "background_output" | "background_cancel" => {
+                Some(Self::Subagent)
+            }
+            _ => Self::from_mcp_context_id(tool_id),
+        }
+    }
+
+    fn from_mcp_context_id(tool_id: &str) -> Option<Self> {
+        let (_, operation) = tool_id.strip_prefix("mcp.")?.split_once('.')?;
+        match operation {
+            "tools.list" | "resources.list" | "prompts.list" => Some(Self::List),
+            "resource.read" | "prompt.get" => Some(Self::Read),
             _ => None,
         }
     }
@@ -632,6 +644,7 @@ mod tool_group_tests {
 
     #[test]
     fn adjacent_command_group_keeps_mixed_member_states() {
+        // arrange
         let parts = vec![
             tool_part(
                 "success",
@@ -657,8 +670,10 @@ mod tool_group_tests {
             TranscriptAssistantPart::Body(TranscriptBodyBlock::RichText("stop".to_string())),
         ];
 
+        // act
         let summary = TranscriptToolGroupSummary::from_adjacent(&parts).expect("command group");
 
+        // assert
         assert_eq!(summary.kind, TranscriptToolGroupKind::Commands);
         assert_eq!(summary.member_count, 3);
         assert_eq!(summary.succeeded_count, 1);
@@ -668,6 +683,7 @@ mod tool_group_tests {
 
     #[test]
     fn single_command_folds_as_command_group() {
+        // arrange
         let parts = vec![tool_part(
             "command",
             "bash",
@@ -676,14 +692,17 @@ mod tool_group_tests {
             false,
         )];
 
+        // act
         let summary = TranscriptToolGroupSummary::from_adjacent(&parts).expect("command group");
 
+        // assert
         assert_eq!(summary.kind, TranscriptToolGroupKind::Commands);
         assert!(summary.folds_as_group());
     }
 
     #[test]
     fn adjacent_group_stops_at_typed_group_boundary() {
+        // arrange
         let parts = vec![
             tool_part(
                 "read",
@@ -708,8 +727,10 @@ mod tool_group_tests {
             ),
         ];
 
+        // act
         let summary = TranscriptToolGroupSummary::from_adjacent(&parts).expect("context group");
 
+        // assert
         assert_eq!(summary.kind, TranscriptToolGroupKind::Context);
         assert_eq!(summary.member_count, 2);
         assert_eq!(
@@ -720,6 +741,7 @@ mod tool_group_tests {
 
     #[test]
     fn context_group_label_uses_first_seen_order_and_grok_nouns() {
+        // arrange
         let parts = vec![
             tool_part(
                 "read",
@@ -744,8 +766,10 @@ mod tool_group_tests {
             ),
         ];
 
+        // act
         let summary = TranscriptToolGroupSummary::from_adjacent(&parts).expect("context group");
 
+        // assert
         assert_eq!(
             summary.semantic_label(),
             "Read 1 file, Listed 1 dir, Searched 1 pattern"
@@ -754,6 +778,7 @@ mod tool_group_tests {
 
     #[test]
     fn context_group_label_uses_present_tense_for_every_bucket_while_running() {
+        // arrange
         let parts = vec![
             tool_part(
                 "read",
@@ -771,8 +796,10 @@ mod tool_group_tests {
             ),
         ];
 
+        // act
         let summary = TranscriptToolGroupSummary::from_adjacent(&parts).expect("context group");
 
+        // assert
         assert_eq!(
             summary.semantic_label(),
             "Reading 1 file, Searching 1 pattern"
@@ -781,6 +808,7 @@ mod tool_group_tests {
 
     #[test]
     fn context_group_label_appends_failed_member_count() {
+        // arrange
         let parts = vec![
             tool_part(
                 "failed",
@@ -798,8 +826,10 @@ mod tool_group_tests {
             ),
         ];
 
+        // act
         let summary = TranscriptToolGroupSummary::from_adjacent(&parts).expect("context group");
 
+        // assert
         assert_eq!(
             summary.semantic_label(),
             "Fetched 1 website, Searched 1 website · 1 failed"
@@ -808,6 +838,7 @@ mod tool_group_tests {
 
     #[test]
     fn skill_file_read_uses_the_skill_bucket() {
+        // arrange
         let mut part = tool_part(
             "skill-read",
             "read",
@@ -820,13 +851,16 @@ mod tool_group_tests {
         };
         tool.header.path_metadata = Some(".agent-harness/skills/harness-qa/SKILL.md".into());
 
+        // act
         let summary = TranscriptToolGroupSummary::from_adjacent(&[part]).expect("context group");
 
+        // assert
         assert_eq!(summary.semantic_label(), "Read 1 skill");
     }
 
     #[test]
     fn waiting_context_tool_stays_outside_verb_group() {
+        // arrange
         let parts = vec![
             tool_part(
                 "read",
@@ -844,13 +878,17 @@ mod tool_group_tests {
             ),
         ];
 
+        // act
         let summary = TranscriptToolGroupSummary::from_adjacent(&parts).expect("context group");
 
+        // assert
         assert_eq!(summary.member_count, 1);
     }
 
     #[test]
     fn group_disclosure_promotes_collapsed_to_preview_then_expanded() {
+        // arrange
+        // act
         let collapsed = vec![
             tool_part(
                 "one",
@@ -882,6 +920,7 @@ mod tool_group_tests {
             tool_part("two", "grep", ToolCallDisplayStatus::Succeeded, false, true),
         ];
 
+        // assert
         assert_eq!(
             TranscriptToolGroupSummary::from_adjacent(&collapsed)
                 .expect("collapsed")
@@ -904,6 +943,8 @@ mod tool_group_tests {
 
     #[test]
     fn completed_tool_sections_default_to_settled_motion() {
+        // arrange
+        // act
         let part = tool_part(
             "completed",
             "read",
@@ -912,6 +953,7 @@ mod tool_group_tests {
             false,
         );
 
+        // assert
         assert!(matches!(
             part,
             TranscriptAssistantPart::ToolCall(section)
@@ -921,6 +963,7 @@ mod tool_group_tests {
 
     #[test]
     fn completed_reasoning_is_transparent_inside_a_tool_group_span() {
+        // arrange
         let parts = vec![
             tool_part(
                 "read",
@@ -942,14 +985,17 @@ mod tool_group_tests {
             ),
         ];
 
+        // act
         let summary = TranscriptToolGroupSummary::from_adjacent(&parts).expect("context group");
 
+        // assert
         assert_eq!(summary.member_count, 2);
         assert_eq!(summary.span_len, 3);
     }
 
     #[test]
     fn transcript_block_spec_enumerates_semantic_families() {
+        // arrange
         use super::super::ui_transcript_block_grammar::{
             test_spec, validate_block_spec, TranscriptBlockContent, TranscriptBlockId,
             TranscriptBlockRole, TranscriptFooterContent, TranscriptFooterLifecycle,
@@ -958,6 +1004,7 @@ mod tool_group_tests {
             TranscriptToolGroupClass,
         };
 
+        // act
         let families = [
             TranscriptToolFamily::Unknown,
             TranscriptToolFamily::Group,
@@ -1068,6 +1115,7 @@ mod tool_group_tests {
             spec
         }));
 
+        // assert
         assert!(specs.iter().all(|spec| validate_block_spec(spec).is_ok()));
         assert!(specs.iter().any(|spec| {
             spec.role == TranscriptBlockRole::Tool
@@ -1077,6 +1125,7 @@ mod tool_group_tests {
 
     #[test]
     fn transcript_block_spec_resolves_compatibility_surface() {
+        // arrange
         use super::super::ui_transcript_block_grammar::{
             resolve_block_surface, test_spec, TranscriptBlockContent, TranscriptBlockRole,
             TranscriptPromptState,
@@ -1093,6 +1142,7 @@ mod tool_group_tests {
         let surface = TranscriptVisualEntryDraft {
             kind: TranscriptRenderSurfaceKind::User,
             leading_gap_rows: 0,
+            trailing_gap_rows: 0,
             placement: TranscriptBlockPlacement::StickyPromptCandidate,
             show_outer_rail: false,
             rail_glyph: " ",
@@ -1106,13 +1156,16 @@ mod tool_group_tests {
             tool_rail_motion: None,
         };
 
+        // act
         let resolved = resolve_block_surface(&spec, surface).expect("valid compatibility surface");
 
+        // assert
         assert_eq!(resolved.kind, TranscriptRenderSurfaceKind::User);
     }
 
     #[test]
     fn transcript_block_spec_rejects_invalid_combinations() {
+        // arrange
         use super::super::ui_transcript_block_grammar::*;
         let base = test_spec(
             TranscriptBlockRole::AssistantBody,
@@ -1136,11 +1189,13 @@ mod tool_group_tests {
         let mut grouping = base;
         grouping.grouping.member_count = 2;
 
+        // act
         let errors = [interaction, motion, placement, disclosure, grouping]
             .iter()
             .map(validate_block_spec)
             .collect::<Vec<_>>();
 
+        // assert
         assert_eq!(
             errors,
             vec![

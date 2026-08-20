@@ -430,11 +430,14 @@ mod completion_tests {
     // --- E1: opening with candidates activates the overlay at index 0. ---
     #[test]
     fn completion_open_activates_with_candidates() {
+        // arrange
         let mut app = live_app();
         set_buffer(&mut app, "hello ");
 
+        // act
         app.open_completions(vec!["alpha".into(), "beta".into(), "gamma".into()], 0, 0);
 
+        // assert
         assert!(app.completion_active());
         assert_eq!(app.completion_entries(), vec!["alpha", "beta", "gamma"]);
         assert_eq!(app.completion_selected_index(), Some(0));
@@ -445,10 +448,13 @@ mod completion_tests {
     // --- E-Reject: opening with no candidates stays inactive. ---
     #[test]
     fn completion_open_with_no_candidates_is_inactive() {
+        // arrange
         let mut app = live_app();
 
+        // act
         app.open_completions(Vec::new(), 0, 0);
 
+        // assert
         assert!(!app.completion_active());
         assert_eq!(app.completion_selected_index(), None);
         assert_eq!(app.completion_selected_text(), None);
@@ -458,10 +464,13 @@ mod completion_tests {
     // --- E2: forward cycling wraps around the candidate list. ---
     #[test]
     fn completion_cycle_forward_wraps_around() {
+        // arrange
         let mut app = live_app();
         app.open_completions(vec!["a".into(), "b".into(), "c".into()], 0, 0);
 
+        // act
         app.cycle_completion_forward();
+        // assert
         assert_eq!(app.completion_selected_index(), Some(1));
         app.cycle_completion_forward();
         assert_eq!(app.completion_selected_index(), Some(2));
@@ -472,10 +481,13 @@ mod completion_tests {
     // --- E3: backward cycling wraps around the candidate list. ---
     #[test]
     fn completion_cycle_backward_wraps_around() {
+        // arrange
         let mut app = live_app();
         app.open_completions(vec!["a".into(), "b".into(), "c".into()], 0, 0);
 
+        // act
         app.cycle_completion_backward();
+        // assert
         assert_eq!(app.completion_selected_index(), Some(2), "wraps to last");
         app.cycle_completion_backward();
         assert_eq!(app.completion_selected_index(), Some(1));
@@ -485,12 +497,15 @@ mod completion_tests {
     //     deactivates. ---
     #[test]
     fn completion_accept_replaces_range_and_deactivates() {
+        // arrange
         let mut app = live_app();
         set_buffer(&mut app, "abXXef");
         app.open_completions(vec!["ZZ".into()], 2, 4);
 
+        // act
         app.accept_completion();
 
+        // assert
         assert_eq!(app.composer.prompt_buffer, "abZZef");
         assert_eq!(app.composer.prompt_cursor, 4);
         assert!(!app.completion_active());
@@ -500,14 +515,17 @@ mod completion_tests {
     // --- E5: accepting is undoable via the composer undo stack. ---
     #[test]
     fn completion_accept_is_undoable() {
+        // arrange
         let mut app = live_app();
         set_buffer_at(&mut app, "abc", 3);
         app.open_completions(vec!["XYZ".into()], 0, 3);
         app.accept_completion();
         assert_eq!(app.composer.prompt_buffer, "XYZ");
 
+        // act
         app.handle_key(ctrl('z'));
 
+        // assert
         assert_eq!(app.composer.prompt_buffer, "abc");
         assert_eq!(app.composer.prompt_cursor, 3);
     }
@@ -515,13 +533,16 @@ mod completion_tests {
     // --- E6: dismissing closes the overlay without touching the buffer. ---
     #[test]
     fn completion_dismiss_leaves_buffer_intact() {
+        // arrange
         let mut app = live_app();
         set_buffer(&mut app, "draft text");
         app.open_completions(vec!["one".into(), "two".into()], 0, 0);
         assert!(app.completion_active());
 
+        // act
         app.dismiss_completion();
 
+        // assert
         assert!(!app.completion_active());
         assert_eq!(app.composer.prompt_buffer, "draft text");
         assert_eq!(app.completion_selected_index(), None);
@@ -531,6 +552,7 @@ mod completion_tests {
     //     cursor, sorts them deterministically, and accepts into place. ---
     #[test]
     fn completion_for_word_filters_by_prefix_and_accepts() {
+        // arrange
         let mut app = live_app();
         set_buffer(&mut app, "hello wo");
         let candidates = vec![
@@ -546,8 +568,10 @@ mod completion_tests {
         assert_eq!(app.completion_selected_text(), Some("wonder".into()));
         assert_eq!(app.completion_replace_range(), Some((6, 8)));
 
+        // act
         app.accept_completion();
 
+        // assert
         assert_eq!(app.composer.prompt_buffer, "hello wonder");
         assert_eq!(app.composer.prompt_cursor, 12);
         assert!(!app.completion_active());
@@ -556,12 +580,15 @@ mod completion_tests {
     // --- E-Reject: word completion with no matching candidate stays inactive. ---
     #[test]
     fn completion_for_word_no_match_is_inactive() {
+        // arrange
         let mut app = live_app();
         set_buffer(&mut app, "hello xy");
         let candidates = vec!["world".to_string()];
 
+        // act
         app.open_completions_for_word(&candidates);
 
+        // assert
         assert!(!app.completion_active());
         assert_eq!(app.composer.prompt_buffer, "hello xy");
     }
@@ -569,14 +596,17 @@ mod completion_tests {
     // --- E-Reject: cycling/accepting while inactive are safe no-ops. ---
     #[test]
     fn completion_ops_are_noops_when_inactive() {
+        // arrange
         let mut app = live_app();
         set_buffer(&mut app, "abc");
 
+        // act
         app.cycle_completion_forward();
         app.cycle_completion_backward();
         app.accept_completion();
         app.dismiss_completion();
 
+        // assert
         assert!(!app.completion_active());
         assert_eq!(app.composer.prompt_buffer, "abc");
         assert_eq!(app.completion_selected_index(), None);

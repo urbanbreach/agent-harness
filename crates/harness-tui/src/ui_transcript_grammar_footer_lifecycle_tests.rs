@@ -65,6 +65,7 @@ fn grammar_prompt_copy_independent_pin_preserves_geometry() {
     let surface = TranscriptVisualEntryDraft {
         kind: TranscriptRenderSurfaceKind::AssistantFooter,
         leading_gap_rows: 0,
+        trailing_gap_rows: 0,
         placement: TranscriptBlockPlacement::Flow,
         show_outer_rail: false,
         rail_glyph: "│",

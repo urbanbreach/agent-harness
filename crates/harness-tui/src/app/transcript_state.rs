@@ -564,6 +564,7 @@ impl AppState {
     pub fn advance_animation_tick_by_for_evidence(&mut self, elapsed: Duration) {
         let now = self.now() + elapsed;
         self.now_fn = std::sync::Arc::new(move || now);
+        self.sampled_motion_elapsed = self.sampled_motion_elapsed.saturating_add(elapsed);
         self.advance_transcript_animation_phase();
     }
 

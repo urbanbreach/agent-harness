@@ -25,6 +25,7 @@ fn resolve_block_surface_for_activity(
         return Err(TranscriptGrammarError::RowMismatch);
     }
     surface.leading_gap_rows = spec.spacing.leading_gap_rows;
+    surface.trailing_gap_rows = spec.spacing.trailing_gap_rows;
     surface.placement = spec.placement;
     surface.show_outer_rail |= block_has_visible_accent(spec);
     surface.selected_rail |= block_is_selected(spec);
@@ -79,9 +80,11 @@ pub(in crate::ui) fn resolve_entry_surfaces(
     specs
         .iter()
         .zip(surfaces)
-        .map(|(source_spec, surface)| {
+        .enumerate()
+        .map(|(index, (source_spec, surface))| {
             let mut spec = source_spec.clone();
             spec.spacing.leading_gap_rows = grammar_leading_gap(previous_spec, source_spec);
+            spec.spacing.trailing_gap_rows = usize::from(index + 1 == specs.len());
             if let TranscriptBlockContent::Footer { lifecycle, .. } = &spec.content {
                 spec.placement = footer_placement(*lifecycle);
             }

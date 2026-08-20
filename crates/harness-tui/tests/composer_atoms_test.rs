@@ -12,13 +12,16 @@ use harness_tui::composer_atoms::{
 
 #[test]
 fn grapheme_clusters_preserve_combining_marks_zwj_and_regional_pairs() {
+    // arrange
     // Given: text containing the grapheme boundaries that byte/char editors split.
     let buffer = AtomBuffer::from_text("e\u{301} 👨‍👩‍👧‍👦 👍🏽 🇺🇳");
 
     // When: the text is inspected as typed atoms.
     let atoms = buffer.atoms();
 
+    // act
     // Then: every grapheme remains one identity-bearing atom with terminal width.
+    // assert
     assert_eq!(atoms.len(), 7);
     assert!(matches!(atoms[0].kind, AtomKind::Text(_)));
     assert_eq!(atoms[0].display_width, 1);
@@ -29,6 +32,7 @@ fn grapheme_clusters_preserve_combining_marks_zwj_and_regional_pairs() {
 
 #[test]
 fn cjk_and_fullwidth_graphemes_use_two_terminal_cells() {
+    // arrange
     // Given: a CJK string with a fullwidth Latin character.
     let buffer = AtomBuffer::from_text("界Ａ");
 
@@ -39,19 +43,24 @@ fn cjk_and_fullwidth_graphemes_use_two_terminal_cells() {
         .map(|atom| atom.display_width)
         .collect();
 
+    // act
     // Then: each atom occupies two cells.
+    // assert
     assert_eq!(widths, vec![2, 2]);
 }
 
 #[test]
 fn newlines_are_atoms_and_text_round_trips_without_byte_offsets() {
+    // arrange
     // Given: multiline content with a combining grapheme on the second line.
     let text = "first\nse\u{301}cond\n";
 
     // When: content is parsed into atoms and projected back to text.
     let buffer = AtomBuffer::from_text(text);
 
+    // act
     // Then: newlines have their own atoms and projection preserves the source.
+    // assert
     assert_eq!(
         buffer
             .atoms()
@@ -65,6 +74,7 @@ fn newlines_are_atoms_and_text_round_trips_without_byte_offsets() {
 
 #[test]
 fn insertion_and_deletion_preserve_unaffected_atom_ids() {
+    // arrange
     // Given: a buffer whose middle atom will be edited.
     let mut buffer = AtomBuffer::from_text("abc");
     let first = buffer.atoms()[0].id;
@@ -79,7 +89,9 @@ fn insertion_and_deletion_preserve_unaffected_atom_ids() {
         .delete_range(AtomCursor::before(1), AtomCursor::after(1))
         .expect("deletion uses atom boundaries");
 
+    // act
     // Then: existing identities survive and the new identity is never reused.
+    // assert
     assert_eq!(buffer.atoms()[0].id, first);
     assert_eq!(buffer.atoms()[2].id, last);
     assert!(buffer.atoms().iter().all(|atom| atom.id != inserted));
@@ -88,6 +100,7 @@ fn insertion_and_deletion_preserve_unaffected_atom_ids() {
 
 #[test]
 fn empty_buffers_and_empty_text_atoms_are_valid_round_trip_values() {
+    // arrange
     // Given: both legal empty representations.
     let empty = AtomBuffer::new();
     let single_empty =
@@ -98,7 +111,9 @@ fn empty_buffers_and_empty_text_atoms_are_valid_round_trip_values() {
     let empty_back: AtomBuffer = deserialize(&serialize(&empty).unwrap()).unwrap();
     let single_back: AtomBuffer = deserialize(&serialize(&single_empty).unwrap()).unwrap();
 
+    // act
     // Then: zero atoms and one zero-width atom remain distinguishable.
+    // assert
     assert!(empty_back.atoms().is_empty());
     assert_eq!(single_back.atoms().len(), 1);
     assert_eq!(single_back.atoms()[0].display_width, 0);
@@ -107,6 +122,7 @@ fn empty_buffers_and_empty_text_atoms_are_valid_round_trip_values() {
 
 #[test]
 fn serialization_preserves_atom_identity_and_typed_nontext_kinds() {
+    // arrange
     // Given: a buffer containing every non-text atom kind.
     let atoms = vec![
         ComposerAtom::file_mention(7, FileMentionId::new(9)),
@@ -119,7 +135,9 @@ fn serialization_preserves_atom_identity_and_typed_nontext_kinds() {
     let json = serialize(&buffer).expect("buffer serializes");
     let restored: AtomBuffer = deserialize(&json).expect("buffer deserializes");
 
+    // act
     // Then: IDs, kinds, and cursor metadata survive exactly.
+    // assert
     assert_eq!(restored, buffer);
     assert!(matches!(restored.atoms()[0].kind, AtomKind::FileMention(_)));
     assert!(matches!(restored.atoms()[1].kind, AtomKind::Attachment(_)));
@@ -128,6 +146,7 @@ fn serialization_preserves_atom_identity_and_typed_nontext_kinds() {
 
 #[test]
 fn viewport_wrapping_keeps_atoms_whole_and_identity_ordered() {
+    // arrange
     // Given: atoms whose widths force a wrap, plus an explicit newline.
     let buffer = AtomBuffer::from_text("ab界c\nde");
     let ids: Vec<_> = buffer.atoms().iter().map(|atom| atom.id).collect();
@@ -135,12 +154,14 @@ fn viewport_wrapping_keeps_atoms_whole_and_identity_ordered() {
     // When: wrapping is measured in terminal cells, not bytes or chars.
     let lines = buffer.wrap(4);
 
+    // act
     // Then: every atom appears once, in order, on a wrapped line.
     let wrapped_ids: Vec<_> = lines
         .iter()
         .flat_map(|line| line.atom_ids.iter())
         .copied()
         .collect();
+    // assert
     assert_eq!(wrapped_ids, ids);
     assert_eq!(
         lines

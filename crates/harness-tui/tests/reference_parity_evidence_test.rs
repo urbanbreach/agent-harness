@@ -142,6 +142,7 @@ fn evidence_validator_passes_with_seeded_evidence_root() {
 
 #[test]
 fn lane_evidence_paths_rebase_to_the_fresh_root() {
+    // arrange
     // Given: a canonical workspace-relative lane artifact path.
     let root = tempfile::tempdir().unwrap_or_abort();
     let manifest = checked_in_manifest();
@@ -150,12 +151,15 @@ fn lane_evidence_paths_rebase_to_the_fresh_root() {
     // When: the strict validator resolves it for an isolated signoff run.
     let resolved = resolve_evidence_path(&manifest, root.path(), declared);
 
+    // act
     // Then: the canonical prefix is replaced by the fresh evidence root.
+    // assert
     assert_eq!(resolved, root.path().join("receipts/example.json"));
 }
 
 #[test]
 fn source_owner_paths_are_not_required_inside_the_fresh_evidence_root() {
+    // arrange
     // Given: seeded pass rows with their synthetic source-owner copies removed.
     let (root, manifest) = seeded_evidence_root();
     let source_owner = root
@@ -166,9 +170,11 @@ fn source_owner_paths_are_not_required_inside_the_fresh_evidence_root() {
     // When: the disk-backed validator checks lane-produced artifacts.
     let result = validate_manifest_evidence(&manifest, root.path());
 
+    // act
     // Then: source ownership remains a structural contract, not a fabricated artifact.
     result.unwrap_or_else(|failures| {
         panic!("source owner path was incorrectly required as evidence: {failures:?}");
+        // assert
     });
 }
 

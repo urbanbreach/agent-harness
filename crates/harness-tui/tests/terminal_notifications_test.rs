@@ -19,6 +19,9 @@ fn event(kind: NotificationKind, tick: u64, title: &str, body: &str) -> Notifica
 
 #[test]
 fn protocols_emit_expected_sequences_and_strip_controls() {
+    // arrange
+    // act
+    // assert
     assert_eq!(
         NotificationProtocol::Osc9.sequence("title", "body"),
         "\x1b]9;body\x07"
@@ -40,6 +43,9 @@ fn protocols_emit_expected_sequences_and_strip_controls() {
 
 #[test]
 fn multiplexer_detection_and_forwarding_are_defined() {
+    // arrange
+    // act
+    // assert
     assert_eq!(
         Multiplexer::Tmux.forwarding_prefix(),
         Some("\x1bPtmux;\x1b")
@@ -63,6 +69,9 @@ fn multiplexer_detection_and_forwarding_are_defined() {
 
 #[test]
 fn protocol_sets_negotiate_and_support_empty_fallback() {
+    // arrange
+    // act
+    // assert
     assert_eq!(ProtocolSet::unsupported().primary(), None);
     assert!(ProtocolSet::unsupported().protocols.is_empty());
     let set = ProtocolSet {
@@ -78,8 +87,11 @@ fn protocol_sets_negotiate_and_support_empty_fallback() {
 
 #[test]
 fn policy_respects_focus_action_required_and_unfocused_events() {
+    // arrange
+    // act
     let mut policy = NotificationPolicy::new(0, 10);
     policy.set_focus(FocusState::Focused);
+    // assert
     assert!(!policy.should_notify(&event(NotificationKind::Info, 1, "i", "b")));
     assert!(policy.should_notify(&event(NotificationKind::ActionRequired, 2, "a", "b")));
     policy.set_focus(FocusState::Unfocused);
@@ -88,7 +100,10 @@ fn policy_respects_focus_action_required_and_unfocused_events() {
 
 #[test]
 fn policy_deduplicates_rate_limits_and_resets_window() {
+    // arrange
+    // act
     let mut policy = NotificationPolicy::new(5, 2);
+    // assert
     assert!(policy.should_notify(&event(NotificationKind::Info, 1, "same", "body")));
     assert!(!policy.should_notify(&event(NotificationKind::Info, 3, "same", "body")));
     assert!(policy.should_notify(&event(NotificationKind::Info, 4, "other", "body")));
@@ -98,8 +113,11 @@ fn policy_deduplicates_rate_limits_and_resets_window() {
 
 #[test]
 fn policy_suppression_ends_at_requested_tick() {
+    // arrange
+    // act
     let mut policy = NotificationPolicy::new(0, 10);
     policy.suppress_for(3, 10);
+    // assert
     assert!(!policy.should_notify(&event(NotificationKind::Info, 12, "x", "y")));
     assert!(policy.should_notify(&event(NotificationKind::Info, 13, "x", "y")));
 }
@@ -124,6 +142,8 @@ impl Write for FailOnce {
 
 #[test]
 fn writer_writes_primary_falls_back_and_handles_unsupported() {
+    // arrange
+    // act
     let event = event(NotificationKind::Info, 1, "title", "body");
     let set = ProtocolSet {
         protocols: vec![NotificationProtocol::Osc9, NotificationProtocol::Bell],
@@ -131,6 +151,7 @@ fn writer_writes_primary_falls_back_and_handles_unsupported() {
     };
     let writer = NotificationWriter::new(set);
     let mut output = Vec::new();
+    // assert
     assert_eq!(
         writer.write(&event, &mut output),
         WriteOutcome::Written {
@@ -157,10 +178,13 @@ fn writer_writes_primary_falls_back_and_handles_unsupported() {
 
 #[test]
 fn writer_shutdown_is_best_effort() {
+    // arrange
+    // act
     let writer = NotificationWriter::new(ProtocolSet::unsupported());
     let mut failing = FailOnce {
         failed: false,
         output: Vec::new(),
     };
+    // assert
     assert!(writer.shutdown(&mut failing).is_ok());
 }

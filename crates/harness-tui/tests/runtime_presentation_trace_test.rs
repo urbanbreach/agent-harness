@@ -5,15 +5,19 @@ use harness_tui::runtime_presentation::{InteractionEventClass, PresentationTelem
 
 #[test]
 fn absent_trace_path_disables_local_sidecar() {
+    // arrange
     // Given: ordinary execution without a runner-owned evidence path.
     let session = PresentationTelemetrySession::from_trace_path(None).expect("session setup");
 
+    // act
     // When/Then: telemetry remains disabled and no evidence target is invented.
+    // assert
     assert!(session.is_none());
 }
 
 #[test]
 fn local_sidecar_records_received_cause_and_noop_atomically() {
+    // arrange
     // Given: an opt-in trace target beneath an isolated evidence directory.
     let directory = tempfile::tempdir().expect("temporary evidence directory");
     let path = directory.path().join("presentation-trace.json");
@@ -36,7 +40,9 @@ fn local_sidecar_records_received_cause_and_noop_atomically() {
     let trace: harness_tui::presentation::PresentationTrace =
         serde_json::from_slice(&bytes).expect("parse sidecar");
 
+    // act
     // Then: the persisted trace closes the cause explicitly without a frame.
+    // assert
     assert_eq!(trace.causes.len(), 1);
     assert!(matches!(
         trace.causes[0].outcome,
@@ -47,6 +53,7 @@ fn local_sidecar_records_received_cause_and_noop_atomically() {
 
 #[test]
 fn runner_interaction_ids_are_consumed_at_terminal_receipt() {
+    // arrange
     // Given: a runner-owned content-free interaction queue and native trace target.
     let directory = tempfile::tempdir().expect("temporary evidence directory");
     let trace_path = directory.path().join("presentation-trace.json");
@@ -90,7 +97,9 @@ fn runner_interaction_ids_are_consumed_at_terminal_receipt() {
         Some(second),
     );
 
+    // act
     // Then: the mismatched event cannot shift either scripted interaction identity.
+    // assert
     assert_eq!(
         session.trace().causes[0].interaction_id,
         Some(InteractionId::new("scenario:action:0"))
@@ -107,6 +116,7 @@ fn runner_interaction_ids_are_consumed_at_terminal_receipt() {
 
 #[test]
 fn interaction_queue_correlates_every_supported_terminal_event_class() {
+    // arrange
     let directory = tempfile::tempdir().expect("temporary evidence directory");
     let interaction_path = directory.path().join("interaction-ids");
     std::fs::write(
@@ -118,9 +128,11 @@ fn interaction_queue_correlates_every_supported_terminal_event_class() {
             "\n",
             r#"{"interaction_id":"scenario:action:2","event_class":"mouse","receipt_count":2}"#,
             "\n",
-            r#"{"interaction_id":"scenario:action:3","event_class":"resize","receipt_count":1}"#,
+            r#"{"interaction_id":"scenario:action:3","event_class":"wheel","receipt_count":1}"#,
             "\n",
-            r#"{"interaction_id":"scenario:action:4","event_class":"focus","receipt_count":1}"#,
+            r#"{"interaction_id":"scenario:action:4","event_class":"resize","receipt_count":1}"#,
+            "\n",
+            r#"{"interaction_id":"scenario:action:5","event_class":"focus","receipt_count":1}"#,
             "\n",
         ),
     )
@@ -131,14 +143,17 @@ fn interaction_queue_correlates_every_supported_terminal_event_class() {
             .expect("session setup")
             .expect("enabled telemetry");
 
+    // act
     for (event_class, ordinal) in [
         (InteractionEventClass::Key, Some(0)),
         (InteractionEventClass::Paste, Some(1)),
         (InteractionEventClass::Mouse, Some(2)),
-        (InteractionEventClass::Mouse, None),
-        (InteractionEventClass::Resize, Some(3)),
-        (InteractionEventClass::Focus, Some(4)),
+        (InteractionEventClass::Mouse, Some(2)),
+        (InteractionEventClass::Wheel, Some(3)),
+        (InteractionEventClass::Resize, Some(4)),
+        (InteractionEventClass::Focus, Some(5)),
     ] {
+        // assert
         assert_eq!(
             session
                 .take_interaction_id(event_class)

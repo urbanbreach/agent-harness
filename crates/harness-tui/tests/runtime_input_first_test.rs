@@ -16,6 +16,7 @@ enum Interaction {
 
 #[test]
 fn sustained_stream_prioritizes_all_terminal_interactions() {
+    // arrange
     let mut terminal = "typed-while-streaming"
         .chars()
         .map(Interaction::Typed)
@@ -58,6 +59,7 @@ fn sustained_stream_prioritizes_all_terminal_interactions() {
         }
     }
 
+    // act
     let typed: String = applied
         .iter()
         .filter_map(|interaction| match interaction {
@@ -65,6 +67,7 @@ fn sustained_stream_prioritizes_all_terminal_interactions() {
             _ => None,
         })
         .collect();
+    // assert
     assert_eq!(typed, "typed-while-streaming");
     assert_eq!(
         applied
@@ -79,7 +82,10 @@ fn sustained_stream_prioritizes_all_terminal_interactions() {
 
 #[test]
 fn writer_failure_interrupts_active_input_and_live_batches() {
+    // arrange
+    // act
     let arbiter = RuntimeArbiter::default();
+    // assert
     assert_eq!(
         arbiter.decide(RuntimeReady {
             fatal_writer_failure: true,

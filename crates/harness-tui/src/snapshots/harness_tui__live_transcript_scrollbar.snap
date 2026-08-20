@@ -1,22 +1,23 @@
 ---
 source: crates/harness-tui/src/lib_tests/transcript_flow.rs
+assertion_line: 148
 expression: rendered
 ---
 
    test-workspace /workspace/agent-harness
 
 
-     reply 10 keeps wrapping through the transcript viewport so the scrollbar
-     thumb has real room to move
-
 
 
 
      ❯ question 11
 
+
+     reply 11 keeps wrapping through the transcript viewport so the scrollbar
+     thumb has real room to move
                                                                              █
-     reply 11 keeps wrapping through the transcript viewport so the scrollbar█
-     thumb has real room to move                                             █
+                                                                             █
+                                                                             █
                                        ▼
 
 

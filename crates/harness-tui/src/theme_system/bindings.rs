@@ -210,7 +210,7 @@ impl SemanticThemeColors {
                 background: theme.text.accent,
                 foreground: theme.text.inverse,
                 cursor: theme.text.primary,
-                hover_background: theme.surface.selected_card,
+                hover_background: theme.surface.hover,
                 hover_foreground: theme.text.primary,
             },
             diff: DiffColors {

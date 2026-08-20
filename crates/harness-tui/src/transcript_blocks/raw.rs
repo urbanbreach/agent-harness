@@ -277,13 +277,16 @@ mod tests {
 
     #[test]
     fn from_json_preserves_multibyte_text_without_credentials() {
+        // arrange
         // Given
         let source = json!({"summary": "gpt-5 · high"});
 
         // When
         let disclosure = RawDisclosure::from_json(&source);
 
+        // act
         // Then
+        // assert
         assert_eq!(disclosure.payload, RawPayload::Json(source));
     }
 }

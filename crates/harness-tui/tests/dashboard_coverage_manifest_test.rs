@@ -23,6 +23,7 @@ const REQUIRED_JOURNEYS: [&str; 15] = [
 
 #[test]
 fn dashboard_manifest_binds_distinct_comparator_journeys_to_all_viewports() {
+    // arrange
     // Given: the checked-in dashboard evidence contract.
     let manifest: Value = serde_json::from_str(MANIFEST).expect("valid dashboard manifest");
 
@@ -39,7 +40,9 @@ fn dashboard_manifest_binds_distinct_comparator_journeys_to_all_viewports() {
         .filter_map(|journey| journey["id"].as_str())
         .collect::<BTreeSet<_>>();
 
+    // act
     // Then: every required journey is distinct, comparator-backed, and viewport-complete.
+    // assert
     assert_ne!(
         manifest["reference_binary"].as_str(),
         manifest["candidate_binary"].as_str()

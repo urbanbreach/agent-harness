@@ -103,8 +103,11 @@ mod presentation_style_tests {
 
     #[test]
     fn inline_status_colors_distinguish_running_success_error_waiting_and_cancelled() {
+        // arrange
+        // act
         let theme = Theme::default();
 
+        // assert
         assert_eq!(
             inline_tool_color(ToolCallPresentationStatus::Running, &theme),
             theme.text.primary

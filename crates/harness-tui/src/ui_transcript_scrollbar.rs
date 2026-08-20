@@ -327,13 +327,16 @@ mod tests {
 
     #[test]
     fn more_below_hit_area_matches_the_centered_affordance_cell() {
+        // arrange
         // Given: detached content with more transcript rows below the viewport.
         let content = Rect::new(4, 2, 19, 12);
 
         // When: resolving the geometry shared by paint and hit-testing.
         let area = transcript_more_below_rect(content, 3, 8);
 
+        // act
         // Then: the target is the centered cell on the reserved bottom row.
+        // assert
         assert_eq!(area, Some(Rect::new(13, 13, 1, 1)));
         assert_eq!(transcript_more_below_rect(content, 8, 8), None);
     }

@@ -7,6 +7,7 @@ use harness_tui::runtime_scheduling::{
 
 #[test]
 fn scheduling_sidecar_is_content_free_ordered_and_backlog_bound() {
+    // arrange
     // Given: repeated terminal receipts for one typed action and a second action.
     let root = tempfile::tempdir().expect("evidence root");
     let path = root.path().join("scheduling.json");
@@ -72,9 +73,11 @@ fn scheduling_sidecar_is_content_free_ordered_and_backlog_bound() {
     );
     session.finish().expect("persist sidecar");
 
+    // act
     // Then: actions are unique and ordered, backlog is retained, and no user text is stored.
     let bytes = std::fs::read(&path).expect("sidecar bytes");
     let value: serde_json::Value = serde_json::from_slice(&bytes).expect("sidecar JSON");
+    // assert
     assert_eq!(value["maximum_backlog_depth"], 128);
     assert_eq!(value["actual_input_sends"][0]["queued_live_depth"], 127);
     assert_eq!(value["actual_input_sends"][0]["deferred_live_ready"], true);
@@ -101,6 +104,7 @@ fn scheduling_sidecar_is_content_free_ordered_and_backlog_bound() {
 
 #[test]
 fn active_stream_with_empty_receiver_does_not_claim_preemption() {
+    // arrange
     let root = tempfile::tempdir().expect("evidence root");
     let path = root.path().join("scheduling.json");
     let mut session = SchedulingTelemetrySession::new(path.clone()).expect("session");
@@ -116,8 +120,10 @@ fn active_stream_with_empty_receiver_does_not_claim_preemption() {
     );
     session.finish().expect("persist sidecar");
 
+    // act
     let value: serde_json::Value =
         serde_json::from_slice(&std::fs::read(path).expect("sidecar bytes")).expect("sidecar JSON");
+    // assert
     assert_eq!(value["actual_input_sends"][0]["live_ready_depth"], 0);
     assert_eq!(value["actual_input_sends"][0]["preempted_live"], false);
     assert_eq!(value["actual_input_sends"][0]["stream_active"], true);
@@ -125,10 +131,12 @@ fn active_stream_with_empty_receiver_does_not_claim_preemption() {
 
 #[test]
 fn readiness_signal_atomically_reports_only_literal_work() {
+    // arrange
     let root = tempfile::tempdir().expect("evidence root");
     let path = root.path().join("readiness.json");
     let mut signal = SchedulingReadinessSignal::new(path.clone()).expect("signal");
 
+    // act
     assert!(signal
         .publish_if_changed(SchedulingLiveReadiness {
             stream_active: true,
@@ -148,6 +156,7 @@ fn readiness_signal_atomically_reports_only_literal_work() {
         })
         .expect("unchanged snapshot"));
 
+    // assert
     assert!(signal
         .publish_if_changed(SchedulingLiveReadiness {
             queued_depth: 4,

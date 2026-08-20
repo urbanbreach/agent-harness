@@ -10,7 +10,7 @@ pub(super) fn render_toggles_menu_list(
         return;
     }
 
-    let list_area = inset_rect(area, 1.min(area.width.saturating_sub(1)), 0);
+    let list_area = area;
     if list_area.width == 0 || list_area.height == 0 {
         return;
     }
@@ -40,6 +40,12 @@ pub(super) fn render_toggles_menu_list(
         default_scroll,
         rows.len().saturating_sub(visible_rows),
     );
+    let max_scroll = rows.len().saturating_sub(visible_rows);
+    let mut logical_index = rows
+        .iter()
+        .take(scroll)
+        .filter(|row| matches!(row, TogglesOverlayRow::Toggle(_)))
+        .count();
 
     for (row, toggle_row) in rows.iter().enumerate().skip(scroll).take(visible_rows) {
         let row_y = list_area
@@ -51,34 +57,64 @@ pub(super) fn render_toggles_menu_list(
                 frame.render_widget(
                     Block::default()
                         .style(Style::default().bg(ui_chrome::command_palette_surface(theme))),
-                    row_area,
+                    modal_list_row_layout(row_area, max_scroll).content,
                 );
             }
             TogglesOverlayRow::Section(section) => {
+                let content = modal_list_row_layout(row_area, max_scroll).content;
                 frame.render_widget(
                     Paragraph::new(command_palette_section_row(
                         section,
                         theme,
-                        row_area.width,
+                        content.width,
                         false,
                     )),
-                    row_area,
+                    content,
                 );
             }
             TogglesOverlayRow::Toggle(toggle) => {
-                if toggle.selected {
-                    frame.render_widget(
-                        Block::default().style(ui_chrome::overlay_focus_row_style(theme)),
-                        row_area,
-                    );
-                }
+                let key = ModalSurfaceKey::Overlay {
+                    kind: OverlayKind::TogglesMenu,
+                    view: ModalViewKey::Toggles,
+                };
+                let presentation = modal_list_row(
+                    theme,
+                    ModalListRowSpec {
+                        area: row_area,
+                        state: ModalListRowState {
+                            selected: toggle.selected,
+                            hovered: app.modal_target_hovered(key, ModalTarget::Row(logical_index)),
+                            dimmed: false,
+                        },
+                        max_scroll,
+                    },
+                );
+                logical_index = logical_index.saturating_add(1);
                 frame.render_widget(
-                    Paragraph::new(toggle_menu_row(toggle, theme, row_area.width)),
-                    row_area,
+                    Block::default().style(presentation.style),
+                    presentation.layout.content,
+                );
+                frame.render_widget(
+                    Paragraph::new(toggle_menu_row(
+                        toggle,
+                        theme,
+                        presentation.layout.content.width,
+                        presentation.style,
+                    )),
+                    presentation.layout.content,
                 );
             }
         }
     }
+    render_modal_list_scrollbar(
+        frame,
+        theme,
+        ModalListScrollbarSpec {
+            area: list_area,
+            offset: scroll,
+            max_scroll,
+        },
+    );
 }
 
 pub(super) enum TogglesOverlayRow {
@@ -103,13 +139,12 @@ pub(super) fn toggles_overlay_rows(app: &AppState) -> Vec<TogglesOverlayRow> {
     rows
 }
 
-fn toggle_menu_row(toggle: &crate::app::ToggleMenuRow, theme: &Theme, width: u16) -> Line<'static> {
-    let surface = ui_chrome::command_palette_surface(theme);
-    let row_style = if toggle.selected {
-        ui_chrome::overlay_focus_row_style(theme)
-    } else {
-        Style::default().bg(surface)
-    };
+fn toggle_menu_row(
+    toggle: &crate::app::ToggleMenuRow,
+    theme: &Theme,
+    width: u16,
+    row_style: Style,
+) -> Line<'static> {
     let label_style = if toggle.selected {
         row_style.add_modifier(Modifier::BOLD)
     } else {

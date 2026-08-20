@@ -856,6 +856,7 @@ mod tests {
 
     #[test]
     fn fenced_selection_rows_preserve_logical_code_lines_through_rewrap() {
+        // arrange
         // Given: a fenced assistant body whose code line wraps at a narrow width.
         let Some(rows) = selection_rows_for_rich_text_block(
             "```rust\nlet value = a_very_long_identifier;\n```",
@@ -875,7 +876,9 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
 
+        // act
         // Then: only painted code is selectable and wrapped rows retain one logical line.
+        // assert
         assert!(!rendered.contains("```rust"));
         assert!(rendered.contains("let value"));
         assert!(rows.iter().any(|row| row.continues_previous));
@@ -883,6 +886,8 @@ mod tests {
 
     #[test]
     fn open_fence_selection_rows_match_streaming_code_body() {
+        // arrange
+        // act
         let Some(rows) = selection_rows_for_rich_text_block(
             "Before\n```rust\nlet value = 42;",
             Color::White,
@@ -899,6 +904,7 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
 
+        // assert
         assert!(rendered.contains("Before"));
         assert!(rendered.contains("let value = 42;"));
         assert!(!rendered.contains("```rust"));
@@ -906,10 +912,13 @@ mod tests {
 
     #[test]
     fn transformed_fences_fail_closed_for_semantic_selection() {
+        // arrange
+        // act
         for source in [
             "```mermaid\ngraph TD\nA --> B\n```",
             "```diff\n-old\n+new\n```",
         ] {
+            // assert
             assert!(selection_rows_for_rich_text_block(
                 source,
                 Color::White,
@@ -924,6 +933,7 @@ mod tests {
 
     #[test]
     fn unresolved_semantic_selection_does_not_fall_back_to_stale_cells() {
+        // arrange
         // Given: a snapshot whose anchored surface disappeared during reflow.
         let snapshot = TranscriptSelectionSnapshot {
             viewport: Rect::new(0, 0, 5, 1),
@@ -946,7 +956,9 @@ mod tests {
         // When: copy resolves selection text from the reflowed snapshot.
         let text = snapshot.selection_text(stale_selection);
 
+        // act
         // Then: unresolved semantic endpoints fail closed instead of selecting new content.
+        // assert
         assert_eq!(text, None);
     }
 }

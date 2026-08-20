@@ -15,6 +15,7 @@ use harness_tui::app::{AppState, LaunchMetadata};
 use harness_tui::render_test::render_to_string;
 use harness_tui::ui;
 use ratatui::layout::Rect;
+use unicode_width::UnicodeWidthStr;
 
 const W: u16 = 120;
 const H: u16 = 32;
@@ -104,7 +105,11 @@ fn p0_start_01_startup_has_bordered_welcome_and_composer() {
         .split_once('│')
         .map(|(_, rest)| rest)
         .expect("welcome action row must sit inside bordered panel");
-    let leading = after_border.len() - after_border.trim_start_matches(' ').len();
+    let action_prefix = after_border
+        .split_once("New worktree")
+        .map(|(prefix, _)| prefix)
+        .expect("welcome action label");
+    let leading = UnicodeWidthStr::width(action_prefix);
     assert_eq!(
         leading, 19,
         "P0-START-01: freeze run1-startup action indent is 19 spaces after border (got {leading})\n{action_line}"

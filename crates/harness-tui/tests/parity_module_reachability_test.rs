@@ -45,6 +45,7 @@ struct ModuleEntry {
 
 #[test]
 fn checked_in_inventory_proves_every_parity_module_reaches_product() {
+    // arrange
     // Given: the checked-in machine-readable reachability inventory.
     let inventory: Inventory =
         serde_json::from_str(INVENTORY).expect("inventory must be valid JSON");
@@ -63,9 +64,11 @@ fn checked_in_inventory_proves_every_parity_module_reaches_product() {
     assert_eq!(module_names.len(), EXPECTED_MODULES.len());
     assert_eq!(module_names, EXPECTED_MODULES.iter().copied().collect());
 
+    // act
     // Then: every retained root has a real product entry and cannot be test-only
     // or disconnected.
     for module in inventory.modules {
+        // assert
         assert!(
             matches!(
                 module.classification.as_str(),
@@ -83,6 +86,7 @@ fn checked_in_inventory_proves_every_parity_module_reaches_product() {
 
 #[test]
 fn production_source_does_not_lose_inventory_reachability_seams() {
+    // arrange
     // Given: the production entrypoints, not a test-only worker harness.
     let lib = include_str!("../src/lib.rs");
     let runtime = include_str!("../src/runtime.rs");
@@ -98,9 +102,11 @@ fn production_source_does_not_lose_inventory_reachability_seams() {
     let status_dialog = include_str!("../src/ui_overlays/status_dialog.rs");
     let integration = include_str!("../src/runtime_integration.rs");
 
+    // act
     // When: each inventory root is checked against the live source seams.
     // Then: removing a module from the shipped path breaks this regression guard.
     for module in EXPECTED_MODULES {
+        // assert
         assert!(
             lib.contains(&format!("pub mod {module}"))
                 && (runtime.contains(module)

@@ -13,12 +13,15 @@ fn action_from_str_roundtrip() {
 
 #[test]
 fn legacy_primary_mode_action_is_rejected() {
+    // arrange
     // Given: the retired primary-mode action and the supported model-variant action.
     // When: both identifiers are parsed from keybinding configuration.
     let legacy_mode = Action::from_str("cycle_mode");
     let model_variant = Action::from_str("variant_cycle");
 
+    // act
     // Then: only the model control remains configurable.
+    // assert
     assert!(legacy_mode.is_err());
     assert_eq!(model_variant, Ok(Action::VariantCycle));
 }

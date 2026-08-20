@@ -3,6 +3,10 @@ use super::*;
 use unicode_width::UnicodeWidthStr;
 
 use crate::app::{HelpRow, ModalSurfaceKey, ModalTarget};
+use crate::ui::ui_overlays::{
+    modal_list_row, modal_list_row_layout, render_modal_list_scrollbar, ModalListRowSpec,
+    ModalListRowState, ModalListScrollbarSpec,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct HelpRowLayout {
@@ -13,10 +17,26 @@ pub(crate) struct HelpRowLayout {
 
 pub(super) fn render_browse(frame: &mut Frame, app: &AppState, theme: &Theme, area: Rect) {
     let rows = app.help_rows();
+    if rows.is_empty() {
+        let content = modal_list_row_layout(area, 0).content;
+        frame.render_widget(
+            Paragraph::new("No shortcuts match").style(
+                Style::default()
+                    .fg(theme.text.tertiary)
+                    .bg(theme.reference_terminal.canvas),
+            ),
+            Rect::new(content.x, content.y, content.width, 1),
+        );
+        return;
+    }
     let layout = help_row_layout(app, area, &rows);
+    let row_width =
+        modal_list_row_layout(Rect::new(area.x, area.y, area.width, 1), layout.max_scroll)
+            .content
+            .width;
     let mut visual_y = 0usize;
     for (index, row) in rows.iter().enumerate() {
-        let height = row_height(row, area.width);
+        let height = row_height(row, row_width);
         let row_end = visual_y.saturating_add(height);
         if row_end <= layout.offset {
             visual_y = row_end;
@@ -38,22 +58,42 @@ pub(super) fn render_browse(frame: &mut Frame, app: &AppState, theme: &Theme, ar
             visible_start.saturating_sub(visual_y),
             index,
             row,
+            layout.max_scroll,
         );
         visual_y = row_end;
     }
     if layout.max_scroll > 0 && area.width > 0 {
-        render_scrollbar(frame, theme, area, layout.offset, layout.max_scroll);
+        render_modal_list_scrollbar(
+            frame,
+            theme,
+            ModalListScrollbarSpec {
+                area,
+                offset: layout.offset,
+                max_scroll: layout.max_scroll,
+            },
+        );
     }
 }
 
 pub(crate) fn help_row_layout(app: &AppState, area: Rect, rows: &[HelpRow]) -> HelpRowLayout {
+    let base_width = modal_list_row_layout(Rect::new(area.x, area.y, area.width, 1), 0)
+        .content
+        .width;
+    let base_heights = rows
+        .iter()
+        .map(|row| row_height(row, base_width))
+        .collect::<Vec<_>>();
+    let visible = usize::from(area.height);
+    let base_max_scroll = base_heights.iter().sum::<usize>().saturating_sub(visible);
+    let content_width =
+        modal_list_row_layout(Rect::new(area.x, area.y, area.width, 1), base_max_scroll)
+            .content
+            .width;
     let heights = rows
         .iter()
-        .map(|row| row_height(row, area.width))
+        .map(|row| row_height(row, content_width))
         .collect::<Vec<_>>();
-    let total = heights.iter().sum::<usize>();
-    let visible = usize::from(area.height);
-    let max_scroll = total.saturating_sub(visible);
+    let max_scroll = heights.iter().sum::<usize>().saturating_sub(visible);
     let selected_end = heights
         .iter()
         .take(app.help_browser.selected.saturating_add(1))
@@ -113,28 +153,36 @@ fn render_row(
     skipped_lines: usize,
     index: usize,
     row: &HelpRow,
+    max_scroll: usize,
 ) {
     let hovered = app.modal_target_hovered(ModalSurfaceKey::Help, ModalTarget::Row(index));
     let selected = app.help_browser.selected == index;
-    let background = if selected {
-        theme.question_prompt.selected
-    } else if hovered {
-        theme.surface.card
-    } else {
-        theme.reference_terminal.canvas
-    };
-    let foreground = match row {
-        HelpRow::Shortcut { dimmed: true, .. } if !selected => theme.reference_terminal.muted,
-        HelpRow::Section { .. } | HelpRow::Shortcut { .. } => theme.reference_terminal.primary,
-    };
-    let style = Style::default()
-        .fg(foreground)
-        .bg(background)
-        .add_modifier(if selected {
-            Modifier::BOLD
-        } else {
-            Modifier::empty()
-        });
+    let dimmed = matches!(row, HelpRow::Shortcut { dimmed: true, .. });
+    let row_width = modal_list_row_layout(Rect::new(list.x, y, list.width, 1), max_scroll)
+        .content
+        .width;
+    let visible_height = row_height(row, row_width)
+        .saturating_sub(skipped_lines)
+        .min(usize::from(list.bottom().saturating_sub(y)));
+    let presentation = modal_list_row(
+        theme,
+        ModalListRowSpec {
+            area: Rect::new(
+                list.x,
+                y,
+                list.width,
+                u16::try_from(visible_height).unwrap_or(u16::MAX),
+            ),
+            state: ModalListRowState {
+                selected,
+                hovered,
+                dimmed,
+            },
+            max_scroll,
+        },
+    );
+    let style = presentation.style;
+    let background = style.bg.unwrap_or(theme.reference_terminal.canvas);
     let line = match row {
         HelpRow::Section {
             section,
@@ -150,7 +198,7 @@ fn render_row(
                 if *collapsed { "› " } else { "◆ " },
                 &label,
                 "",
-                list.width,
+                presentation.layout.content.width,
                 style,
                 style,
             )
@@ -164,7 +212,7 @@ fn render_row(
             "  ◆ ",
             label,
             bindings,
-            list.width,
+            presentation.layout.content.width,
             style,
             Style::default()
                 .fg(if *dimmed {
@@ -175,21 +223,20 @@ fn render_row(
                 .bg(background),
         ),
     };
-    let visible_height = row_height(row, list.width)
-        .saturating_sub(skipped_lines)
-        .min(usize::from(list.bottom().saturating_sub(y)));
-    let row_area = Rect::new(
-        list.x,
-        y,
-        list.width,
-        u16::try_from(visible_height).unwrap_or(u16::MAX),
-    );
     frame.render_widget(
         Block::default().style(Style::default().bg(background)),
-        row_area,
+        presentation.layout.content,
     );
     if skipped_lines == 0 {
-        frame.render_widget(Paragraph::new(line), Rect::new(list.x, y, list.width, 1));
+        frame.render_widget(
+            Paragraph::new(line),
+            Rect::new(
+                presentation.layout.content.x,
+                y,
+                presentation.layout.content.width,
+                1,
+            ),
+        );
     }
     if let HelpRow::Shortcut {
         description,
@@ -199,11 +246,13 @@ fn render_row(
     {
         let description_start = skipped_lines.saturating_sub(1);
         let first_description_y = y.saturating_add(u16::from(skipped_lines == 0));
-        for (line_index, description_line) in
-            wrapped_lines(description, list.width.saturating_sub(4))
-                .into_iter()
-                .skip(description_start)
-                .enumerate()
+        for (line_index, description_line) in wrapped_lines(
+            description,
+            presentation.layout.content.width.saturating_sub(4),
+        )
+        .into_iter()
+        .skip(description_start)
+        .enumerate()
         {
             let description_y =
                 first_description_y.saturating_add(u16::try_from(line_index).unwrap_or(u16::MAX));
@@ -216,7 +265,12 @@ fn render_row(
                         .fg(theme.reference_terminal.secondary)
                         .bg(background),
                 ),
-                Rect::new(list.x, description_y, list.width, 1),
+                Rect::new(
+                    presentation.layout.content.x,
+                    description_y,
+                    presentation.layout.content.width,
+                    1,
+                ),
             );
         }
     }
@@ -264,32 +318,4 @@ pub(crate) fn wrapped_lines(text: &str, width: u16) -> Vec<String> {
         lines.push(current);
     }
     lines
-}
-
-fn render_scrollbar(frame: &mut Frame, theme: &Theme, area: Rect, offset: usize, max: usize) {
-    let x = area.right().saturating_sub(1);
-    let thumb = offset
-        .saturating_mul(usize::from(area.height.saturating_sub(1)))
-        .checked_div(max)
-        .unwrap_or(0);
-    for row in 0..area.height {
-        let color = if usize::from(row) == thumb {
-            theme.scrollbar.thumb_active
-        } else {
-            theme.scrollbar.track
-        };
-        frame.render_widget(
-            Paragraph::new(if usize::from(row) == thumb {
-                "█"
-            } else {
-                " "
-            })
-            .style(
-                Style::default()
-                    .fg(color)
-                    .bg(theme.reference_terminal.canvas),
-            ),
-            Rect::new(x, area.y.saturating_add(row), 1, 1),
-        );
-    }
 }

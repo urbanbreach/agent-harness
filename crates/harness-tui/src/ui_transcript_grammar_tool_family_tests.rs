@@ -14,6 +14,13 @@ fn grammar_tool_family_classifies_reference_shaped_strategies() {
         ("web.fetch", TranscriptToolFamily::Web),
         ("search.web", TranscriptToolFamily::Web),
         ("task", TranscriptToolFamily::Task),
+        ("codesearch", TranscriptToolFamily::Search),
+        ("lsp", TranscriptToolFamily::Search),
+        ("mcp.docs.resources.list", TranscriptToolFamily::List),
+        ("mcp.docs.resource.read", TranscriptToolFamily::Read),
+        ("mcp.docs.prompts.list", TranscriptToolFamily::List),
+        ("mcp.docs.prompt.get", TranscriptToolFamily::Read),
+        ("mcp.docs.tool.call", TranscriptToolFamily::Unknown),
         ("vendor.magic", TranscriptToolFamily::Unknown),
     ] {
         turn.assistant_parts = vec![grammar_tool(

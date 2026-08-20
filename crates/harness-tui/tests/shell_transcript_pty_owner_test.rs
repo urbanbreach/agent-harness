@@ -197,9 +197,12 @@ impl PtyOwnerScene {
 
 #[test]
 fn pty_owner_idle_renders_and_invariants_hold() {
+    // arrange
+    // act
     let scene = PtyOwnerScene::idle();
     let output = scene.render();
 
+    // assert
     assert!(output.contains("idle"), "idle must render: {output}");
     assert!(output.contains("focus=composer"));
     assert!(scene.shell.is_idle(), "idle shell must be_idle");
@@ -218,9 +221,12 @@ fn pty_owner_idle_renders_and_invariants_hold() {
 
 #[test]
 fn pty_owner_stream_renders_and_invariants_hold() {
+    // arrange
+    // act
     let scene = PtyOwnerScene::stream();
     let output = scene.render();
 
+    // assert
     assert!(
         output.contains("streaming"),
         "streaming must render: {output}"
@@ -233,9 +239,12 @@ fn pty_owner_stream_renders_and_invariants_hold() {
 
 #[test]
 fn pty_owner_cancel_renders_and_invariants_hold() {
+    // arrange
+    // act
     let scene = PtyOwnerScene::cancel();
     let output = scene.render();
 
+    // assert
     assert!(
         output.contains("cancelled"),
         "cancelled must render: {output}"
@@ -252,9 +261,12 @@ fn pty_owner_cancel_renders_and_invariants_hold() {
 
 #[test]
 fn pty_owner_fail_renders_and_invariants_hold() {
+    // arrange
+    // act
     let scene = PtyOwnerScene::fail();
     let output = scene.render();
 
+    // assert
     assert!(output.contains("failed"), "failed must render: {output}");
     assert!(scene.shell.failed);
     assert!(scene.tool.has_error);
@@ -268,9 +280,12 @@ fn pty_owner_fail_renders_and_invariants_hold() {
 
 #[test]
 fn pty_owner_recover_renders_and_invariants_hold() {
+    // arrange
+    // act
     let scene = PtyOwnerScene::recover();
     let output = scene.render();
 
+    // assert
     assert!(
         output.contains("idle"),
         "recovered shell must show idle: {output}"
@@ -287,9 +302,12 @@ fn pty_owner_recover_renders_and_invariants_hold() {
 
 #[test]
 fn pty_owner_complete_renders_and_invariants_hold() {
+    // arrange
+    // act
     let scene = PtyOwnerScene::complete();
     let output = scene.render();
 
+    // assert
     assert!(
         output.contains("complete"),
         "complete must render: {output}"
@@ -311,9 +329,12 @@ fn pty_owner_complete_renders_and_invariants_hold() {
 
 #[test]
 fn pty_owner_scroll_renders_and_invariants_hold() {
+    // arrange
+    // act
     let scene = PtyOwnerScene::scroll();
     let output = scene.render();
 
+    // assert
     assert!(
         output.contains("offset=50"),
         "scroll offset must render: {output}"
@@ -329,6 +350,8 @@ fn pty_owner_scroll_renders_and_invariants_hold() {
 
 #[test]
 fn pty_owner_permission_before_tool_holds_across_all_states() {
+    // arrange
+    // act
     for scene in [
         PtyOwnerScene::idle(),
         PtyOwnerScene::stream(),
@@ -340,6 +363,7 @@ fn pty_owner_permission_before_tool_holds_across_all_states() {
     ] {
         let _output = scene.render();
         if scene.tool.status != ToolStatusLeaf::Queued {
+            // assert
             assert!(
                 scene.tool.permission_before_tool(),
                 "permission must be resolved before tool in state {:?}",
@@ -353,11 +377,14 @@ fn pty_owner_permission_before_tool_holds_across_all_states() {
 
 #[test]
 fn pty_owner_diff_present_in_complete_and_scroll() {
+    // arrange
     let complete = PtyOwnerScene::complete();
     assert!(complete.diff.present);
     assert!(complete.diff.event_derived);
 
+    // act
     let scroll = PtyOwnerScene::scroll();
+    // assert
     assert!(scroll.diff.present);
     assert!(scroll.diff.event_derived);
 }
@@ -366,6 +393,7 @@ fn pty_owner_diff_present_in_complete_and_scroll() {
 
 #[test]
 fn pty_owner_all_states_render_without_panic() {
+    // arrange
     let scenes: Vec<(&str, PtyOwnerScene)> = vec![
         ("idle", PtyOwnerScene::idle()),
         ("stream", PtyOwnerScene::stream()),
@@ -376,8 +404,10 @@ fn pty_owner_all_states_render_without_panic() {
         ("scroll", PtyOwnerScene::scroll()),
     ];
 
+    // act
     for (name, scene) in scenes {
         let output = scene.render();
+        // assert
         assert!(
             !output.is_empty(),
             "rendered output for {name} must not be empty"
@@ -389,7 +419,10 @@ fn pty_owner_all_states_render_without_panic() {
 
 #[test]
 fn pty_owner_question_renders_no_permission_chrome() {
+    // arrange
+    // act
     let scene = PtyOwnerScene::idle();
+    // assert
     assert!(
         scene.question.renders_no_permission_chrome(),
         "question must never render permission chrome"
@@ -400,6 +433,7 @@ fn pty_owner_question_renders_no_permission_chrome() {
 
 #[test]
 fn pty_owner_action_leaf_covers_required_interactions() {
+    // arrange
     let required = [
         ActionLeaf::Submit,
         ActionLeaf::Cancel,
@@ -416,7 +450,9 @@ fn pty_owner_action_leaf_covers_required_interactions() {
         ActionLeaf::OpenDiff,
     ];
 
+    // act
     for action in required {
+        // assert
         assert_ne!(action, ActionLeaf::None, "action must not be None");
     }
 }
@@ -425,6 +461,7 @@ fn pty_owner_action_leaf_covers_required_interactions() {
 
 #[test]
 fn pty_owner_full_lifecycle_with_permission_and_diff() {
+    // arrange
     // Start idle
     let idle = PtyOwnerScene::idle();
     assert!(idle.permission.is_pending());
@@ -448,9 +485,11 @@ fn pty_owner_full_lifecycle_with_permission_and_diff() {
     assert!(output.contains("Diff: present=true"));
     assert!(output.contains("event_derived=true"));
 
+    // act
     // Scroll preserves diff
     let scroll = PtyOwnerScene::scroll();
     let scroll_output = scroll.render();
+    // assert
     assert!(scroll_output.contains("offset=50"));
     assert!(scroll.diff.present);
 }

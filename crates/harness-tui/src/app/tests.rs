@@ -29,7 +29,7 @@ use harness_core::event::{
 use harness_core::proj::inspect_resume_plan;
 use harness_providers::ProviderErrorCategory;
 use ratatui::layout::Rect;
-use ratatui::style::Color;
+use ratatui::style::{Color, Modifier};
 use ratatui::{backend::TestBackend, Terminal};
 use std::collections::BTreeMap;
 use std::fs;
@@ -143,6 +143,10 @@ mod live_turn_watcher_interaction_tests;
 #[path = "tests/help_browser_mouse_tests.rs"]
 mod help_browser_mouse_tests;
 
+#[cfg(test)]
+#[path = "tests/modal_press_invalidation_tests.rs"]
+mod modal_press_invalidation_tests;
+
 delegate_test!(toggles_slash_command_opens_command_styled_menu => toggles_menu_tests::toggles_slash_command_opens_command_styled_menu);
 delegate_test!(yolo_toggle_requires_confirmation_and_enables_entries => toggles_menu_tests::yolo_toggle_requires_confirmation_and_enables_entries);
 delegate_test!(toggles_config_drops_primary_profiles_and_keeps_subagents => toggles_menu_tests::toggles_config_drops_primary_profiles_and_keeps_subagents);
@@ -176,8 +180,22 @@ delegate_test!(hidden_delegated_child_activation_does_not_steal_detached_page_fl
 delegate_test!(hidden_child_event_does_not_adopt_foreground_local_echo => live_turn_status_tests::hidden_child_event_does_not_adopt_foreground_local_echo);
 delegate_test!(clicking_live_turn_watcher_opens_status_dashboard => live_turn_watcher_interaction_tests::clicking_live_turn_watcher_opens_status_dashboard);
 delegate_test!(command_palette_mouse_hover_moves_keyboard_selection => interaction_tests::command_palette_mouse_hover_moves_keyboard_selection);
-delegate_test!(command_palette_mouse_down_activates_row_without_release => interaction_tests::command_palette_mouse_down_activates_row_without_release);
-delegate_test!(command_palette_outside_mouse_down_dismisses_top_overlay => interaction_tests::command_palette_outside_mouse_down_dismisses_top_overlay);
+delegate_test!(command_palette_matching_mouse_release_activates_row => interaction_tests::command_palette_matching_mouse_release_activates_row);
+delegate_test!(command_palette_outside_matching_mouse_release_dismisses_top_overlay => interaction_tests::command_palette_outside_matching_mouse_release_dismisses_top_overlay);
+delegate_test!(release_notes_outside_mouse_down_dismisses_and_blocks_lower_surface => interaction_tests::release_notes_outside_mouse_down_dismisses_and_blocks_lower_surface);
+delegate_test!(release_notes_close_target_uses_matching_release_and_restores_focus => interaction_tests::release_notes_close_target_uses_matching_release_and_restores_focus);
+delegate_test!(release_notes_keyboard_scroll_supports_steps_pages_and_bounds => interaction_tests::release_notes_keyboard_scroll_supports_steps_pages_and_bounds);
+delegate_test!(command_palette_drag_cancels_armed_row_activation => interaction_tests::command_palette_drag_cancels_armed_row_activation);
+delegate_test!(command_palette_release_on_different_target_cancels_activation => interaction_tests::command_palette_release_on_different_target_cancels_activation);
+delegate_test!(command_palette_wheel_outside_popup_does_not_scroll => interaction_tests::command_palette_wheel_outside_popup_does_not_scroll);
+delegate_test!(command_palette_scrollbar_drag_is_anchored_and_never_selects_rows => interaction_tests::command_palette_scrollbar_drag_is_anchored_and_never_selects_rows);
+delegate_test!(control_modified_release_invalidates_armed_modal_target => interaction_tests::control_modified_release_invalidates_armed_modal_target);
+delegate_test!(modal_footer_matching_release_activates_action => interaction_tests::modal_footer_matching_release_activates_action);
+delegate_test!(trust_folder_prompt_preempts_lower_pointer_targets => interaction_tests::trust_folder_prompt_preempts_lower_pointer_targets);
+delegate_test!(modal_key_event_invalidates_armed_press => modal_press_invalidation_tests::modal_key_event_invalidates_armed_press);
+delegate_test!(modal_resize_invalidates_armed_press => modal_press_invalidation_tests::modal_resize_invalidates_armed_press);
+delegate_test!(modal_non_left_event_invalidates_armed_press => modal_press_invalidation_tests::modal_non_left_event_invalidates_armed_press);
+delegate_test!(modal_owner_change_invalidates_armed_press => modal_press_invalidation_tests::modal_owner_change_invalidates_armed_press);
 delegate_test!(command_palette_wheel_scrolls_three_rows_without_changing_selection => interaction_tests::command_palette_wheel_scrolls_three_rows_without_changing_selection);
 delegate_test!(top_modal_preempts_pointer_targets_from_lower_overlays => interaction_tests::top_modal_preempts_pointer_targets_from_lower_overlays);
 delegate_test!(modal_resize_invalidates_stale_close_hover_geometry => interaction_tests::modal_resize_invalidates_stale_close_hover_geometry);
@@ -270,6 +288,57 @@ fn rendered_cell_bg(app: &AppState, column: u16, row: u16) -> Color {
         .draw(|frame| render_app(frame, app))
         .unwrap_or_abort();
     terminal.backend().buffer()[(column, row)].bg
+}
+
+fn rendered_changelog_header_styles(app: &AppState, area: Rect) -> Vec<(Color, Modifier)> {
+    let backend = TestBackend::new(area.width, area.height);
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
+    terminal
+        .draw(|frame| render_app(frame, app))
+        .unwrap_or_abort();
+    let buffer = terminal.backend().buffer();
+    let row = (0..area.height)
+        .find(|row| {
+            (23..32)
+                .map(|column| buffer[(column, *row)].symbol())
+                .collect::<String>()
+                == "Changelog"
+        })
+        .unwrap_or_abort();
+    (23..32)
+        .map(|column| {
+            let cell = &buffer[(column, row)];
+            (cell.fg, cell.modifier)
+        })
+        .collect()
+}
+
+fn rendered_compact_changelog_section_styles(app: &AppState, area: Rect) -> Vec<(Color, Modifier)> {
+    let backend = TestBackend::new(area.width, area.height);
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
+    terminal
+        .draw(|frame| render_app(frame, app))
+        .unwrap_or_abort();
+    let buffer = terminal.backend().buffer();
+    let (column, row) = (0..area.height)
+        .flat_map(|row| {
+            let rendered_row = (0..area.width)
+                .map(|column| buffer[(column, row)].symbol())
+                .collect::<String>();
+            rendered_row
+                .match_indices("Changelog")
+                .map(move |(column, _)| (column, row))
+                .collect::<Vec<_>>()
+        })
+        .nth(1)
+        .unwrap_or_abort();
+    let column = u16::try_from(column).unwrap_or_abort();
+    (column..column.saturating_add(9))
+        .map(|column| {
+            let cell = &buffer[(column, row)];
+            (cell.fg, cell.modifier)
+        })
+        .collect()
 }
 
 fn default_navigation_keybindings() -> BTreeMap<String, String> {
@@ -993,13 +1062,20 @@ delegate_test!(overlay_stack_orders_details_palette_permission => permission_mod
 delegate_test!(overlay_stack_orders_permission_above_commands_and_slash => permission_modal_tests::overlay_stack_orders_permission_above_commands_and_slash);
 delegate_test!(permission_modal_preempts_palette => permission_modal_tests::permission_modal_preempts_palette);
 delegate_test!(permission_modal_ignores_unmapped_chars_without_buffering => permission_modal_tests::permission_modal_ignores_unmapped_chars_without_buffering);
-delegate_test!(permission_modal_escape_rejects_without_hiding_pending_permission => permission_modal_tests::permission_modal_escape_rejects_without_hiding_pending_permission);
+delegate_test!(permission_modal_escape_parks_and_tab_restores_without_answering => permission_modal_tests::permission_modal_escape_parks_and_tab_restores_without_answering);
+delegate_test!(permission_modal_tab_walks_rows_and_modified_tab_is_inert => permission_modal_tests::permission_modal_tab_walks_rows_and_modified_tab_is_inert);
+delegate_test!(permission_modal_ctrl_c_cancels_after_escape_only_parks => permission_modal_tests::permission_modal_ctrl_c_cancels_after_escape_only_parks);
+delegate_test!(permission_option_enter_accepts_every_modifier => permission_modal_tests::permission_option_enter_accepts_every_modifier);
 delegate_test!(permission_modal_ctrl_n_emits_deny_intent_without_hiding_pending_permission => permission_modal_tests::permission_modal_ctrl_n_emits_deny_intent_without_hiding_pending_permission);
 delegate_test!(question_permission_modal_collects_answers_and_emits_reason_payload => permission_modal_tests::question_permission_modal_collects_answers_and_emits_reason_payload);
-delegate_test!(question_permission_modal_multi_question_uses_tabs_before_submit => permission_modal_tests::question_permission_modal_multi_question_uses_tabs_before_submit);
+delegate_test!(question_permission_modal_tabs_walk_rows_and_arrows_switch_questions => permission_modal_tests::question_permission_modal_tabs_walk_rows_and_arrows_switch_questions);
+delegate_test!(question_option_enter_accepts_modifiers_while_modified_tab_is_inert => permission_modal_tests::question_option_enter_accepts_modifiers_while_modified_tab_is_inert);
+delegate_test!(question_escape_ladder_clears_then_parks_and_cancel_chords_deny => permission_modal_tests::question_escape_ladder_clears_then_parks_and_cancel_chords_deny);
 delegate_test!(question_modal_ignores_digits_past_visible_choices => permission_modal_tests::question_modal_ignores_digits_past_visible_choices);
-delegate_test!(question_modal_multi_custom_selection_toggles_saved_custom_answer => permission_modal_tests::question_modal_multi_custom_selection_toggles_saved_custom_answer);
-delegate_test!(question_modal_submit_allows_unanswered_questions_on_confirm => permission_modal_tests::question_modal_submit_allows_unanswered_questions_on_confirm);
+delegate_test!(question_modal_multi_custom_answer_coexists_with_fixed_options => permission_modal_tests::question_modal_multi_custom_answer_coexists_with_fixed_options);
+delegate_test!(question_text_enter_modifiers_route_commit_newline_or_inert => permission_modal_tests::question_text_enter_modifiers_route_commit_newline_or_inert);
+delegate_test!(permission_queue_restores_only_original_focus_and_preserved_draft => permission_modal_tests::permission_queue_restores_only_original_focus_and_preserved_draft);
+delegate_test!(question_modal_confirm_submits_unanswered_questions_as_empty_lists => permission_modal_tests::question_modal_confirm_submits_unanswered_questions_as_empty_lists);
 delegate_test!(permission_modal_allow_always_requests_durable_run_grant => permission_modal_tests::permission_modal_allow_always_requests_durable_run_grant);
 delegate_test!(always_approve_mode_auto_allows_subsequent_non_question_permission => permission_modal_tests::always_approve_mode_auto_allows_subsequent_non_question_permission);
 delegate_test!(always_approve_mode_appends_composer_badge_suffix => permission_modal_tests::always_approve_mode_appends_composer_badge_suffix);
@@ -1049,6 +1125,16 @@ delegate_test!(letter_on_transcript_focus_focuses_prompt_and_inserts_char => int
 delegate_test!(focus_returns_after_palette_close => interaction_tests::focus_returns_after_palette_close);
 delegate_test!(welcome_mouse_move_applies_hover_state_to_the_action_row => interaction_tests::welcome_mouse_move_applies_hover_state_to_the_action_row);
 delegate_test!(welcome_mouse_move_away_clears_hover_state_and_row_surface => interaction_tests::welcome_mouse_move_away_clears_hover_state_and_row_surface);
+delegate_test!(welcome_changelog_mouse_down_expands_the_startup_panel => interaction_tests::welcome_changelog_mouse_down_expands_the_startup_panel);
+delegate_test!(welcome_changelog_expanded_mouse_down_opens_release_notes_and_up_is_inert => interaction_tests::welcome_changelog_expanded_mouse_down_opens_release_notes_and_up_is_inert);
+delegate_test!(welcome_changelog_release_away_cancels_modal_activation => interaction_tests::welcome_changelog_release_away_cancels_modal_activation);
+delegate_test!(welcome_changelog_drag_cancels_modal_activation => interaction_tests::welcome_changelog_drag_cancels_modal_activation);
+delegate_test!(welcome_changelog_keyboard_activation_opens_modal_and_restores_focus => interaction_tests::welcome_changelog_keyboard_activation_opens_modal_and_restores_focus);
+delegate_test!(welcome_changelog_mouse_down_preserves_pointer_hover_for_inline_preview => interaction_tests::welcome_changelog_mouse_down_preserves_pointer_hover_for_inline_preview);
+delegate_test!(welcome_changelog_mouse_down_renders_a_bright_expanded_header => interaction_tests::welcome_changelog_mouse_down_renders_a_bright_expanded_header);
+delegate_test!(welcome_changelog_pointer_move_away_restores_the_dim_header => interaction_tests::welcome_changelog_pointer_move_away_restores_the_dim_header);
+delegate_test!(welcome_changelog_keyboard_activation_does_not_synthesize_pointer_hover => interaction_tests::welcome_changelog_keyboard_activation_does_not_synthesize_pointer_hover);
+delegate_test!(welcome_changelog_click_brightens_the_compact_section_header => interaction_tests::welcome_changelog_click_brightens_the_compact_section_header);
 
 delegate_test!(details_drawer_toggles_without_stealing_transcript_state => interaction_tests::details_drawer_toggles_without_stealing_transcript_state);
 

@@ -35,6 +35,7 @@ fn render(app: &AppState, width: u16, height: u16) -> ratatui::buffer::Buffer {
 
 #[test]
 fn live_shell_call_chain_keeps_one_parity_renderer_owner() {
+    // arrange
     // Given: the production runtime and renderer source, not a test-only facade.
     // When: the live frame ownership seams are checked in their execution order.
     assert_source_order(
@@ -58,6 +59,7 @@ fn live_shell_call_chain_keeps_one_parity_renderer_owner() {
         ],
     );
 
+    // act
     // Then: AppState, RuntimeExperience, and all three authored parity families are
     // production-owned seams rather than disconnected public modules.
     for (source, markers) in [
@@ -95,6 +97,7 @@ fn live_shell_call_chain_keeps_one_parity_renderer_owner() {
         ),
     ] {
         for marker in markers {
+            // assert
             assert!(source.contains(marker), "production source lost {marker:?}");
         }
     }
@@ -106,6 +109,7 @@ fn live_shell_call_chain_keeps_one_parity_renderer_owner() {
 
 #[test]
 fn startup_and_live_shells_render_through_parity_primitives() {
+    // arrange
     // Given: real AppState instances for the startup and live production modes.
     let startup = AppState::new_startup(Vec::new(), None);
     let live = AppState::new_live(None, false, None);
@@ -126,7 +130,9 @@ fn startup_and_live_shells_render_through_parity_primitives() {
         .iter()
         .any(|cell| cell.symbol() == "H"));
 
+    // act
     let plan = FrameLayoutPlan::for_app(&live, Rect::new(0, 0, 100, 30));
+    // assert
     assert!(plan.transcript.is_some());
     assert!(plan.composer.is_some());
     assert!(plan.operator_sidebar.is_none());

@@ -78,7 +78,7 @@ pub(super) fn render_lineage_browser_overlay(
 }
 
 fn render_lineage_browser_list(frame: &mut Frame, app: &AppState, theme: &Theme, area: Rect) {
-    let list_area = inset_rect(area, 1.min(area.width.saturating_sub(1)), 0);
+    let list_area = area;
     if list_area.width == 0 || list_area.height == 0 {
         return;
     }
@@ -105,6 +105,7 @@ fn render_lineage_browser_list(frame: &mut Frame, app: &AppState, theme: &Theme,
         default_scroll,
         vm.rows.len().saturating_sub(visible_rows),
     );
+    let max_scroll = vm.rows.len().saturating_sub(visible_rows);
     for (row_index, row) in vm.rows.iter().enumerate().skip(scroll).take(visible_rows) {
         let row_area = Rect::new(
             list_area.x,
@@ -114,15 +115,45 @@ fn render_lineage_browser_list(frame: &mut Frame, app: &AppState, theme: &Theme,
             list_area.width,
             1,
         );
-        frame.render_widget(
-            Block::default().style(lineage_row_style(theme, row.selected)),
-            row_area,
+        let key = ModalSurfaceKey::Overlay {
+            kind: OverlayKind::LineageBrowser,
+            view: ModalViewKey::Lineage,
+        };
+        let presentation = modal_list_row(
+            theme,
+            ModalListRowSpec {
+                area: row_area,
+                state: ModalListRowState {
+                    selected: row.selected,
+                    hovered: app.modal_target_hovered(key, ModalTarget::Row(row_index)),
+                    dimmed: false,
+                },
+                max_scroll,
+            },
         );
         frame.render_widget(
-            Paragraph::new(lineage_browser_row(row, theme, row_area.width)),
-            row_area,
+            Block::default().style(presentation.style),
+            presentation.layout.content,
+        );
+        frame.render_widget(
+            Paragraph::new(lineage_browser_row(
+                row,
+                theme,
+                presentation.layout.content.width,
+                presentation.style,
+            )),
+            presentation.layout.content,
         );
     }
+    render_modal_list_scrollbar(
+        frame,
+        theme,
+        ModalListScrollbarSpec {
+            area: list_area,
+            offset: scroll,
+            max_scroll,
+        },
+    );
 }
 
 fn render_lineage_child_dialog(
@@ -215,7 +246,7 @@ pub(super) fn render_fork_selector_list(
     theme: &Theme,
     area: Rect,
 ) {
-    let list_area = inset_rect(area, 1.min(area.width.saturating_sub(1)), 0);
+    let list_area = area;
     if list_area.width == 0 || list_area.height == 0 {
         return;
     }
@@ -242,6 +273,7 @@ pub(super) fn render_fork_selector_list(
         default_scroll,
         vm.rows.len().saturating_sub(visible_rows),
     );
+    let max_scroll = vm.rows.len().saturating_sub(visible_rows);
     for (row_index, row) in vm.rows.iter().enumerate().skip(scroll).take(visible_rows) {
         let row_area = Rect::new(
             list_area.x,
@@ -251,15 +283,45 @@ pub(super) fn render_fork_selector_list(
             list_area.width,
             1,
         );
-        frame.render_widget(
-            Block::default().style(lineage_row_style(theme, row.selected)),
-            row_area,
+        let key = ModalSurfaceKey::Overlay {
+            kind: OverlayKind::ForkSelector,
+            view: ModalViewKey::ForkSelector,
+        };
+        let presentation = modal_list_row(
+            theme,
+            ModalListRowSpec {
+                area: row_area,
+                state: ModalListRowState {
+                    selected: row.selected,
+                    hovered: app.modal_target_hovered(key, ModalTarget::Row(row_index)),
+                    dimmed: false,
+                },
+                max_scroll,
+            },
         );
         frame.render_widget(
-            Paragraph::new(fork_selector_row(row, theme, row_area.width)),
-            row_area,
+            Block::default().style(presentation.style),
+            presentation.layout.content,
+        );
+        frame.render_widget(
+            Paragraph::new(fork_selector_row(
+                row,
+                theme,
+                presentation.layout.content.width,
+                presentation.style,
+            )),
+            presentation.layout.content,
         );
     }
+    render_modal_list_scrollbar(
+        frame,
+        theme,
+        ModalListScrollbarSpec {
+            area: list_area,
+            offset: scroll,
+            max_scroll,
+        },
+    );
 }
 
 fn render_fork_selector_empty_message(frame: &mut Frame, theme: &Theme, area: Rect) {
@@ -287,21 +349,18 @@ fn lineage_browser_row(
     row: &crate::view_model::LineageBrowserRowViewModel,
     theme: &Theme,
     width: u16,
+    row_style: Style,
 ) -> Line<'static> {
-    let row_style = lineage_row_style(theme, row.selected);
-    let selected_fg = ui_chrome::slash_command_selection_fg(theme);
     let title_style = if row.selected {
-        row_style.fg(selected_fg).add_modifier(Modifier::BOLD)
+        row_style
+            .fg(theme.text.primary)
+            .add_modifier(Modifier::BOLD)
     } else if row.current {
         row_style.fg(theme.status.info).add_modifier(Modifier::BOLD)
     } else {
         row_style.fg(ui_chrome::command_palette_title(theme))
     };
-    let meta_style = if row.selected {
-        row_style.fg(selected_fg)
-    } else {
-        row_style.fg(ui_chrome::command_palette_muted(theme))
-    };
+    let meta_style = row_style.fg(ui_chrome::command_palette_muted(theme));
     let fold = if row.child_count == 0 {
         "•"
     } else if row.expanded {
@@ -332,23 +391,20 @@ fn fork_selector_row(
     row: &crate::view_model::ForkSelectorRowViewModel,
     theme: &Theme,
     width: u16,
+    row_style: Style,
 ) -> Line<'static> {
     const TITLE_PADDING: usize = 6;
     const RIGHT_PADDING: usize = 3;
     const MAX_TITLE_WIDTH: usize = 61;
 
-    let row_style = fork_selector_row_style(theme, row.selected);
-    let selected_fg = ui_chrome::fork_selector_selection_fg(theme);
     let title_style = if row.selected {
-        row_style.fg(selected_fg).add_modifier(Modifier::BOLD)
+        row_style
+            .fg(theme.text.primary)
+            .add_modifier(Modifier::BOLD)
     } else {
         row_style.fg(ui_chrome::command_palette_title(theme))
     };
-    let meta_style = if row.selected {
-        row_style.fg(selected_fg)
-    } else {
-        row_style.fg(ui_chrome::command_palette_muted(theme))
-    };
+    let meta_style = row_style.fg(ui_chrome::command_palette_muted(theme));
     let status = row.status.map(run_status_label).unwrap_or("stable");
     let meta = if row.event_id.is_none() {
         String::new()
@@ -410,27 +466,6 @@ fn split_title_meta_row(
         Span::styled(" ".repeat(gap), row_style),
         Span::styled(meta, meta_style),
     ])
-}
-
-fn lineage_row_style(theme: &Theme, selected: bool) -> Style {
-    if selected {
-        ui_chrome::overlay_focus_row_style(theme)
-    } else {
-        Style::default()
-            .fg(theme.text.primary)
-            .bg(ui_chrome::command_palette_surface(theme))
-    }
-}
-
-fn fork_selector_row_style(theme: &Theme, selected: bool) -> Style {
-    let surface = ui_chrome::command_palette_surface(theme);
-    if selected {
-        Style::default()
-            .fg(theme.reference_terminal.primary)
-            .bg(ui_chrome::fork_selector_selection_bg(theme))
-    } else {
-        Style::default().fg(theme.text.primary).bg(surface)
-    }
 }
 
 const fn run_status_label(status: RunStatus) -> &'static str {
@@ -516,6 +551,12 @@ fn render_session_history_list(frame: &mut Frame, app: &AppState, theme: &Theme,
         default_scroll,
         rows.len().saturating_sub(visible_rows),
     );
+    let max_scroll = rows.len().saturating_sub(visible_rows);
+    let mut logical_index = rows
+        .iter()
+        .take(scroll)
+        .filter(|row| matches!(row, SessionHistoryVisualRow::Entry { .. }))
+        .count();
     let surface = ui_chrome::command_palette_surface(theme);
     frame.render_widget(Block::default().style(Style::default().bg(surface)), area);
 
@@ -530,12 +571,7 @@ fn render_session_history_list(frame: &mut Frame, app: &AppState, theme: &Theme,
         match row {
             SessionHistoryVisualRow::Gap => {}
             SessionHistoryVisualRow::Header(label) => {
-                let header_area = Rect::new(
-                    row_area.x.saturating_add(3),
-                    row_area.y,
-                    row_area.width.saturating_sub(3),
-                    1,
-                );
+                let header_area = modal_list_row_layout(row_area, max_scroll).content;
                 frame.render_widget(
                     Paragraph::new(session_history_header_line(label, theme, header_area.width))
                         .style(Style::default().fg(theme.text.primary).bg(surface)),
@@ -549,22 +585,51 @@ fn render_session_history_list(frame: &mut Frame, app: &AppState, theme: &Theme,
                 let Some(entry) = app.session_history_entries.get(*entry_index) else {
                     continue;
                 };
-                let row_style = session_history_row_style(theme, *selected);
-                frame.render_widget(Block::default().style(row_style), row_area);
+                let key = ModalSurfaceKey::Overlay {
+                    kind: OverlayKind::CommandPalette,
+                    view: ModalViewKey::SessionHistory,
+                };
+                let presentation = modal_list_row(
+                    theme,
+                    ModalListRowSpec {
+                        area: row_area,
+                        state: ModalListRowState {
+                            selected: *selected,
+                            hovered: app.modal_target_hovered(key, ModalTarget::Row(logical_index)),
+                            dimmed: !entry.catalog.is_resumable,
+                        },
+                        max_scroll,
+                    },
+                );
+                logical_index = logical_index.saturating_add(1);
+                frame.render_widget(
+                    Block::default().style(presentation.style),
+                    presentation.layout.content,
+                );
                 frame.render_widget(
                     Paragraph::new(session_history_row(
                         entry,
                         app,
                         *selected,
                         theme,
-                        row_area.width,
+                        presentation.layout.content.width,
+                        presentation.style,
                     ))
-                    .style(row_style),
-                    row_area,
+                    .style(presentation.style),
+                    presentation.layout.content,
                 );
             }
         }
     }
+    render_modal_list_scrollbar(
+        frame,
+        theme,
+        ModalListScrollbarSpec {
+            area,
+            offset: scroll,
+            max_scroll,
+        },
+    );
 }
 
 pub(super) fn session_history_overlay_title(app: &AppState) -> String {
@@ -618,6 +683,7 @@ fn session_history_row(
     is_selected: bool,
     theme: &Theme,
     width: u16,
+    row_style: Style,
 ) -> Line<'static> {
     let row_width = usize::from(width);
     let current = session_history_current_marker(entry, app.current_session_id());
@@ -626,7 +692,6 @@ fn session_history_row(
         .session_delete_armed_run_id
         .as_deref()
         .is_some_and(|armed| armed == entry.catalog.run_id);
-    let row_style = session_history_row_style(theme, is_selected);
     let text_style = if is_selected || current {
         row_style.add_modifier(Modifier::BOLD)
     } else {
@@ -694,18 +759,6 @@ fn session_history_row(
     spans.push(Span::styled(" ".repeat(trailing_padding), row_style));
 
     Line::from(spans)
-}
-
-fn session_history_row_style(theme: &Theme, selected: bool) -> Style {
-    if selected {
-        Style::default()
-            .fg(theme.reference_terminal.primary)
-            .bg(theme.surface.card)
-    } else {
-        Style::default()
-            .fg(theme.text.primary)
-            .bg(ui_chrome::command_palette_surface(theme))
-    }
 }
 
 fn session_history_header_line(label: &str, theme: &Theme, width: u16) -> Line<'static> {
@@ -879,40 +932,64 @@ mod tests {
             selected: true,
         };
 
-        let line = fork_selector_row(&row, &theme, 86);
+        let row_style = modal_list_row(
+            &theme,
+            ModalListRowSpec {
+                area: Rect::new(0, 0, 86, 1),
+                state: ModalListRowState {
+                    selected: true,
+                    hovered: false,
+                    dimmed: false,
+                },
+                max_scroll: 0,
+            },
+        )
+        .style;
+        let line = fork_selector_row(&row, &theme, 86, row_style);
 
         assert_eq!(line.spans[0].content.as_ref(), "  ");
-        assert_eq!(
-            line.spans[0].style.bg,
-            Some(ui_chrome::fork_selector_selection_bg(&theme))
-        );
+        assert_eq!(line.spans[0].style.bg, Some(theme.question_prompt.selected));
         assert_eq!(line.spans[1].content.as_ref(), "    ");
-        assert_eq!(
-            line.spans[1].style.bg,
-            Some(ui_chrome::fork_selector_selection_bg(&theme))
-        );
+        assert_eq!(line.spans[1].style.bg, Some(theme.question_prompt.selected));
         assert_eq!(line.spans[2].content.as_ref(), "Fork this prompt");
-        assert_eq!(line.spans[2].style.fg, Some(theme.text.inverse));
+        assert_eq!(line.spans[2].style.fg, Some(theme.text.primary));
         assert!(line.spans[2].style.add_modifier.contains(Modifier::BOLD));
         assert_eq!(line.spans[4].content.as_ref(), "12:34");
-        assert_eq!(line.spans[4].style.fg, Some(theme.text.inverse));
+        assert_eq!(line.spans[4].style.fg, Some(theme.text.tertiary));
         assert_eq!(line.spans[5].content.as_ref(), "   ");
     }
 
     #[test]
     fn session_history_selection_uses_reference_neutral_card_fill() {
+        // arrange
         let theme = Theme::harness_chat();
 
-        let style = session_history_row_style(&theme, true);
+        // act
+        let style = modal_list_row(
+            &theme,
+            ModalListRowSpec {
+                area: Rect::new(0, 0, 80, 1),
+                state: ModalListRowState {
+                    selected: true,
+                    hovered: false,
+                    dimmed: false,
+                },
+                max_scroll: 0,
+            },
+        )
+        .style;
 
-        assert_eq!(style.bg, Some(theme.surface.card));
-        assert_eq!(style.fg, Some(theme.reference_terminal.primary));
+        // assert
+        assert_eq!(style.bg, Some(theme.question_prompt.selected));
+        assert_eq!(style.fg, Some(theme.text.primary));
     }
 
     #[test]
     fn session_history_header_draws_reference_divider_to_right_edge() {
+        // arrange
         let theme = Theme::harness_chat();
 
+        // act
         let line = session_history_header_line("Projects-agent-harness", &theme, 75);
         let rendered = line
             .spans
@@ -920,6 +997,7 @@ mod tests {
             .map(|span| span.content.as_ref())
             .collect::<String>();
 
+        // assert
         assert_eq!(rendered.chars().count(), 75);
         assert!(rendered.starts_with("Projects-agent-harness ─"));
         assert!(rendered.ends_with("  "));

@@ -7,10 +7,13 @@ use contextual_tips::{TipContext, TipId, TipLifetime, TipManager, TipPriority};
 
 #[test]
 fn triggers_cover_empty_and_all_true_contexts() {
+    // arrange
+    // act
     let empty_context = TipContext {
         model_selected: true,
         ..TipContext::default()
     };
+    // assert
     assert!(evaluate_triggers(&empty_context).is_empty());
     let context = TipContext {
         is_first_run: true,
@@ -29,6 +32,9 @@ fn triggers_cover_empty_and_all_true_contexts() {
 
 #[test]
 fn active_resolution_uses_priority_and_is_deterministic() {
+    // arrange
+    // act
+    // assert
     assert_eq!(resolve_active(&[]), None);
     assert_eq!(
         resolve_active(&[TipId::ToolRunning, TipId::PermissionPrompted]).map(|t| t.id),
@@ -54,7 +60,10 @@ fn active_resolution_uses_priority_and_is_deterministic() {
 
 #[test]
 fn manager_starts_empty_and_tracks_persistent_permission_tip() {
+    // arrange
+    // act
     let mut manager = TipManager::new();
+    // assert
     assert_eq!(manager.active(), None);
     let context = TipContext {
         permission_pending: true,
@@ -68,12 +77,15 @@ fn manager_starts_empty_and_tracks_persistent_permission_tip() {
 
 #[test]
 fn transient_tip_expires_after_its_display_ticks() {
+    // arrange
+    // act
     let mut manager = TipManager::new();
     let context = TipContext {
         composer_empty: true,
         model_selected: true,
         ..TipContext::default()
     };
+    // assert
     assert_eq!(manager.update(&context), Some(TipId::ComposerEmpty));
     for _ in 0..4 {
         manager.tick();
@@ -85,6 +97,8 @@ fn transient_tip_expires_after_its_display_ticks() {
 
 #[test]
 fn dismissal_persists_until_cleared() {
+    // arrange
+    // act
     let mut manager = TipManager::new();
     let context = TipContext {
         composer_empty: true,
@@ -93,6 +107,7 @@ fn dismissal_persists_until_cleared() {
     };
     manager.update(&context);
     manager.dismiss(TipId::ComposerEmpty);
+    // assert
     assert!(manager.is_dismissed(TipId::ComposerEmpty));
     assert_eq!(manager.active(), None);
     assert_eq!(manager.update(&context), None);
@@ -102,6 +117,8 @@ fn dismissal_persists_until_cleared() {
 
 #[test]
 fn competing_tips_choose_highest_priority_and_no_triggers_clear() {
+    // arrange
+    // act
     let mut manager = TipManager::new();
     let context = TipContext {
         composer_empty: true,
@@ -109,6 +126,7 @@ fn competing_tips_choose_highest_priority_and_no_triggers_clear() {
         model_selected: true,
         ..TipContext::default()
     };
+    // assert
     assert_eq!(manager.update(&context), Some(TipId::PermissionPrompted));
     assert!(matches!(TipLifetime::Persistent, TipLifetime::Persistent));
     assert_eq!(

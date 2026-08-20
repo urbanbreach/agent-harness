@@ -84,6 +84,11 @@ fn signoff_parity_dry_run_records_fail_closed_stages() {
             && verdict.contains("parity_complete=false"),
         "verdict must mark dry-run ownership and incomplete manifest parity: {verdict}"
     );
+    assert!(
+        verdict.contains("verification_receipt_path=missing")
+            && verdict.contains("verification_receipt_sha256=missing"),
+        "dry-run must not synthesize active completion authority: {verdict}"
+    );
 }
 
 #[test]

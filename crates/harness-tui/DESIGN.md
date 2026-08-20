@@ -169,7 +169,7 @@ Outer box: rows 8–23, cols 3–116, rounded borders.
 | Section label | `Changelog` bold at title column |
 | Changelog bullets | Three lines, each `• ` + sentence; indented under section |
 | Spacer | Empty row |
-| Harness action rows (3) | Real Harness actions only; label left (col 23), shortcut right (col 108) |
+| Harness action rows (4) | Real Harness actions only; label left (col 23), shortcut right (col 108) |
 | Bottom pad | Empty row before bottom border |
 
 ### Action rows
@@ -178,9 +178,10 @@ Outer box: rows 8–23, cols 3–116, rounded borders.
 |---|---|
 | `New worktree` | `ctrl+w` |
 | `Resume session` | `ctrl+s` |
+| `Changelog` | — |
 | `Quit` | `ctrl+q` |
 
-Labels and shortcuts use bold labels + normal/dim shortcuts (ANSI intensity). Shortcuts are right-aligned as a column, not trailing immediately after the label. The reference's separate `Changelog` action is omitted because Harness has no corresponding interactive action; the real Harness changelog summary remains in the information region.
+Labels and shortcuts use bold labels + normal/dim shortcuts (ANSI intensity). Shortcuts are right-aligned as a column, not trailing immediately after the label. `Changelog` opens the real Release Notes overlay and shares the same four-row WelcomeLayout used by keyboard, pointer, and session-history layering.
 
 ### Logo
 
@@ -270,6 +271,7 @@ from `harness-dark`. The mapping is locked exhaustively by
 | `surface.canvas`, `surface.shell`, `surface.panel`, `surface.overlay` | `bg_base` | `#141414` |
 | `surface.panel_elevated` | `bg_dark` | `#1c1c1c` |
 | `surface.card` | `bg_highlight` | `#242424` |
+| `surface.hover` | `bg_hover` | `#2c2c2c` |
 | `surface.selected_card` | pinned selected user surface | `#555753` |
 | `border.subtle` | `prompt_border` | `#323237` |
 | `border.strong` | `selection_border` | `#3c3c41` |
@@ -478,6 +480,27 @@ Reference capture names: `run4-shell-idle-pinned-v1`,
 `run1-palette-pinned-v1`, `run1-ovl-help-pinned-v1`, and
 `run1-ovl-session-pinned-v1`.
 
+### Modal list rows
+
+Compatible modal selectors use one gutter-aware row primitive. At normal widths,
+the row band begins two cells inside the list and leaves two cells at the right;
+scrolling lists reserve the final content-side cell for a position-aware
+scrollbar. Compact geometry reduces the inset to one cell before allowing the
+content band to collapse. Borders, titles, close chrome, and scrollbar cells are
+never painted by the row band.
+
+Pointer hit-testing uses the full logical row width, matching Grok's separation
+between full-width item rectangles and inset paint rectangles. Both gutters and
+the scrollbar-side cell therefore keep row hover/click behavior while retaining
+the modal or scrollbar material beneath the pointer.
+
+Keyboard selection uses `question.selected` with bold primary text. Pointer
+hover uses `surface.hover`; when a row is both selected and hovered, the hover
+background wins while the selected bold text remains. Normal rows use the modal
+canvas, and unavailable rows use tertiary text unless selected. Pointer movement
+may move the picker selection, matching the pinned Grok source; hover remains a
+separate visual state so its softer material is still observable.
+
 ### Dynamic projection and frame contract
 
 Moving-state parity is governed by the live reference scrollback behavior, not
@@ -501,6 +524,14 @@ product identity, but the visible transition semantics are binding:
   draft and prior pane focus once, keep transcript geometry stable while open,
   and restore both on resolve or dismiss. Unfocused prompts dim; focused prompts
   do not animate their bounds.
+- **Blocking-card focus.** Permission and question cards force prompt-pane focus
+  only when the queue first opens. Bare Tab and Shift+Tab wrap through answer
+  rows; Ctrl/Alt/Super-modified Tab is inert. Esc parks an unanswered card in
+  scrollback (or clears the active question selection first), while Ctrl+C is
+  the explicit cancellation chord and Shift+X also cancels questions. Horizontal
+  arrows, `h`/`l`, and brackets switch questions; Enter accepts the focused row
+  regardless of modifiers, while Space toggles it. In custom text, bare Enter
+  commits, Shift/Alt+Enter inserts a newline, and Ctrl/Super+Enter is inert.
 - **Shared live motion.** Active tool and thinking rails use one lifecycle:
   queued or waiting static state, a 32-row continuous spatial wave sampled from
   elapsed time, frozen static frame when user input requires attention or motion

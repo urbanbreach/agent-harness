@@ -9,6 +9,8 @@ use terminal_title::{
 
 #[test]
 fn activities_produce_distinct_titles() {
+    // arrange
+    // act
     let activities = [
         TitleActivity::Idle,
         TitleActivity::Streaming,
@@ -27,6 +29,7 @@ fn activities_produce_distinct_titles() {
             state.current_title("session")
         })
         .collect::<Vec<_>>();
+    // assert
     assert_eq!(titles.len(), 8);
     assert_eq!(
         titles
@@ -39,8 +42,11 @@ fn activities_produce_distinct_titles() {
 
 #[test]
 fn activity_changes_set_attention_or_steady_phase() {
+    // arrange
+    // act
     let mut state = TitleState::new();
     state.set_activity(TitleActivity::AwaitingPermission);
+    // assert
     assert_eq!(state.phase, TitlePhase::ActionRequired(0));
     state.set_activity(TitleActivity::Streaming);
     assert_eq!(state.phase, TitlePhase::Steady);
@@ -50,6 +56,8 @@ fn activity_changes_set_attention_or_steady_phase() {
 
 #[test]
 fn attention_ticks_decrement_and_wrap_at_eight() {
+    // arrange
+    // act
     let mut state = TitleState::new();
     state.set_activity(TitleActivity::AwaitingQuestion);
     let mut counters = Vec::new();
@@ -59,12 +67,16 @@ fn attention_ticks_decrement_and_wrap_at_eight() {
             counters.push(counter);
         }
     }
+    // assert
     assert_eq!(counters, [7, 6, 5, 4, 3, 2, 1, 0, 7]);
 }
 
 #[test]
 fn should_emit_deduplicates_candidates() {
+    // arrange
+    // act
     let mut state = TitleState::new();
+    // assert
     assert!(state.should_emit("first"));
     state.last_emitted = Some("first".to_string());
     assert!(!state.should_emit("first"));
@@ -73,7 +85,10 @@ fn should_emit_deduplicates_candidates() {
 
 #[test]
 fn sanitization_strips_controls_sequences_and_truncates_by_character() {
+    // arrange
+    // act
     let raw = "  a\0b\t\x1b]0;evil\x07\x1b[31m中\x1b[0m  ".to_string();
+    // assert
     assert_eq!(sanitize_title(&raw), "ab 中");
     assert_eq!(sanitize_title(&"界".repeat(201)).chars().count(), 200);
     assert!(!sanitize_title(&"界".repeat(201)).is_empty());
@@ -81,7 +96,10 @@ fn sanitization_strips_controls_sequences_and_truncates_by_character() {
 
 #[test]
 fn traced_sanitization_reports_stripped_content() {
+    // arrange
+    // act
     let (title, report) = terminal_title::sanitize::sanitize_title_traced("a\0\x1b]x\x07\x1b[31mb");
+    // assert
     assert_eq!(title, "ab");
     assert_eq!(report.control_chars_stripped, 1);
     assert_eq!(report.osc_sequences_stripped, 1);
@@ -93,8 +111,11 @@ fn traced_sanitization_reports_stripped_content() {
 
 #[test]
 fn writer_emits_sanitized_osc_and_reset() {
+    // arrange
+    // act
     let mut writer = TitleWriter::new();
     let mut output = Vec::new();
+    // assert
     assert_eq!(
         writer.write_title("hello\x1b]evil\x07", &mut output),
         Ok(true)
@@ -107,9 +128,12 @@ fn writer_emits_sanitized_osc_and_reset() {
 
 #[test]
 fn writer_suspend_blocks_until_resumed() {
+    // arrange
+    // act
     let mut writer = TitleWriter::new();
     let mut output = Vec::new();
     writer.suspend();
+    // assert
     assert_eq!(writer.write_title("blocked", &mut output), Ok(false));
     writer.resume();
     assert_eq!(writer.write_title("allowed", &mut output), Ok(true));
@@ -129,7 +153,10 @@ impl Write for FailingWriter {
 
 #[test]
 fn writer_returns_io_error() {
+    // arrange
+    // act
     let mut writer = TitleWriter::new();
     let error = writer.write_title("title", &mut FailingWriter);
+    // assert
     assert_eq!(error, Err(TitleWriteError::IoError("closed".to_string())));
 }

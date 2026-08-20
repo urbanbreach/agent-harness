@@ -20,6 +20,7 @@ pub enum OverlayKind {
     MemoryBrowser,
     WorktreePicker,
     ForeignImportPicker,
+    ReleaseNotes,
     TrustFolderPrompt,
 }
 
@@ -138,6 +139,18 @@ impl OverlayStack {
         self.overlays.last().copied()
     }
 
+    pub(crate) fn with_release_notes(mut self, visible: bool) -> Self {
+        if visible {
+            let index = self
+                .overlays
+                .iter()
+                .position(|kind| *kind == OverlayKind::TrustFolderPrompt)
+                .unwrap_or(self.overlays.len());
+            self.overlays.insert(index, OverlayKind::ReleaseNotes);
+        }
+        self
+    }
+
     pub fn ordered(&self) -> &[OverlayKind] {
         &self.overlays
     }
@@ -164,7 +177,8 @@ impl OverlayStack {
                     | OverlayKind::PlanView
                     | OverlayKind::MemoryBrowser
                     | OverlayKind::WorktreePicker
-                    | OverlayKind::ForeignImportPicker,
+                    | OverlayKind::ForeignImportPicker
+                    | OverlayKind::ReleaseNotes,
             )
         )
     }

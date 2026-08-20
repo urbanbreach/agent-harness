@@ -69,7 +69,6 @@ pub(in crate::ui::ui_transcript) fn tool_family(
     }
     match tool.header.tool_id.as_str() {
         "question" | "user.question" => TranscriptToolFamily::Question,
-        "bash" | "shell.run" => TranscriptToolFamily::Execute,
         "apply_patch"
         | "edit"
         | "write"
@@ -77,18 +76,25 @@ pub(in crate::ui::ui_transcript) fn tool_family(
         | "edit.hashline_apply"
         | "ast_grep_replace"
         | "lsp.rename" => TranscriptToolFamily::Edit,
-        "task" | "agent.spawn" | "background_output" | "background_cancel" => {
-            TranscriptToolFamily::Task
-        }
-        "fs.read" | "read" | "session_read" => TranscriptToolFamily::Read,
-        "fs.glob" | "glob" | "fs.grep" | "grep" | "search.code" | "session_search"
-        | "ast_grep_search" => TranscriptToolFamily::Search,
-        "fs.ls" | "list" | "session_list" => TranscriptToolFamily::List,
-        "web.fetch" | "search.web" => TranscriptToolFamily::Web,
-        _ if tool.header.presentation.status == ToolCallPresentationStatus::Waiting => {
-            TranscriptToolFamily::Permission
-        }
-        _ => TranscriptToolFamily::Unknown,
+        tool_id => TranscriptToolVerb::from_tool_id(tool_id).map_or_else(
+            || {
+                if tool.header.presentation.status == ToolCallPresentationStatus::Waiting {
+                    TranscriptToolFamily::Permission
+                } else {
+                    TranscriptToolFamily::Unknown
+                }
+            },
+            |verb| match verb {
+                TranscriptToolVerb::Run => TranscriptToolFamily::Execute,
+                TranscriptToolVerb::Read | TranscriptToolVerb::Skill => TranscriptToolFamily::Read,
+                TranscriptToolVerb::Search => TranscriptToolFamily::Search,
+                TranscriptToolVerb::List => TranscriptToolFamily::List,
+                TranscriptToolVerb::WebFetch | TranscriptToolVerb::WebSearch => {
+                    TranscriptToolFamily::Web
+                }
+                TranscriptToolVerb::Subagent => TranscriptToolFamily::Task,
+            },
+        ),
     }
 }
 

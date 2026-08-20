@@ -3,9 +3,6 @@ use super::permission_prompt::{PermissionPointerDown, PermissionPointerTarget};
 use super::*;
 use ratatui::text::Line;
 
-const PERMISSION_SHELL_CONTENT_ROWS: u16 = 3;
-const QUESTION_OUTER_FOOTER_ROWS: u16 = 3;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct PermissionPromptHitRegion {
     target: PermissionPointerTarget,
@@ -26,22 +23,27 @@ fn permission_prompt_hit_regions(
     if permission.question_prompts.is_some() {
         question_prompt_hit_regions(app, status_area, &permission)
     } else {
-        permission_choice_hit_regions(
-            status_area,
-            app.permission_modal_stage(&permission.permission_id),
-        )
+        permission_choice_hit_regions(app, status_area, &permission)
     }
 }
 
 fn permission_choice_hit_regions(
+    app: &AppState,
     status_area: Rect,
-    stage: PermissionModalStage,
+    permission: &ActivePermissionView,
 ) -> Vec<PermissionPromptHitRegion> {
-    let Some(tray) = permission_tray_inner(status_area) else {
+    let measure = crate::layout::permission_dock_measure(
+        app,
+        status_area.width,
+        status_area.height,
+        permission,
+    );
+    let tray = crate::layout::permission_dock_geometry(status_area, measure).options;
+    if tray.width == 0 || tray.height == 0 {
         return Vec::new();
-    };
+    }
 
-    match stage {
+    match app.permission_modal_stage(&permission.permission_id) {
         PermissionModalStage::Decision => [
             PermissionModalSelection::AllowAlways,
             PermissionModalSelection::AllowSession,
@@ -83,40 +85,6 @@ fn permission_choice_hit_regions(
     }
 }
 
-fn permission_tray_inner(status_area: Rect) -> Option<Rect> {
-    let dock_layout = crate::layout::permission_dock_layout(status_area, false);
-    if status_area.width <= dock_layout.rail_width || status_area.height <= dock_layout.tray_height
-    {
-        return None;
-    }
-    let shell_height = PERMISSION_SHELL_CONTENT_ROWS.min(
-        status_area
-            .height
-            .saturating_sub(dock_layout.tray_height)
-            .max(1),
-    );
-    let used_height = shell_height
-        .saturating_add(dock_layout.tray_height)
-        .min(status_area.height);
-    let dock_y = status_area
-        .y
-        .saturating_add(status_area.height.saturating_sub(used_height));
-    let body = Rect::new(
-        status_area.x.saturating_add(dock_layout.rail_width),
-        dock_y,
-        status_area.width.saturating_sub(dock_layout.rail_width),
-        used_height,
-    );
-    let tray = Rect::new(
-        body.x,
-        body.y.saturating_add(shell_height),
-        body.width,
-        body.height.saturating_sub(shell_height),
-    );
-    let inner = crate::layout::pad_rect(tray, dock_layout.tray_padding);
-    (inner.width > 0 && inner.height > 0).then_some(inner)
-}
-
 fn question_prompt_hit_regions(
     app: &AppState,
     status_area: Rect,
@@ -129,226 +97,78 @@ fn question_prompt_hit_regions(
         return Vec::new();
     }
 
-    let single = prompts.len() == 1 && !prompts[0].multiple;
     let tab = app
         .question_prompt_tab(&permission.permission_id)
         .min(prompts.len());
-    if !single && tab >= prompts.len() {
+    if tab >= prompts.len() {
         return Vec::new();
     }
     let Some(prompt) = prompts.get(tab.min(prompts.len().saturating_sub(1))) else {
         return Vec::new();
     };
-    let Some(inner) = question_prompt_inner(status_area) else {
-        return Vec::new();
-    };
-
-    let question = if prompt.multiple {
-        format!("{} (select all that apply)", prompt.question)
-    } else {
-        prompt.question.clone()
-    };
-    let mut row = u16::from(!single).saturating_mul(2);
-    row = row
-        .saturating_add(question_wrapped_row_count(&question, inner.width))
-        .saturating_add(1);
-
-    let selected = app.question_prompt_selection(&permission.permission_id);
-    let answers = app.question_prompt_answers(&permission.permission_id);
-    let current_answers = answers.get(tab).cloned().unwrap_or_default();
-    let label_width = prompt
-        .options
-        .iter()
-        .map(|option| Line::from(option.label.clone()).width())
-        .max()
-        .unwrap_or(0);
-    let mut ranges = Vec::with_capacity(prompt.options.len());
-    for (index, option) in prompt.options.iter().enumerate() {
-        let picked = current_answers.iter().any(|value| value == &option.label);
-        let marker = if prompt.multiple {
-            if picked {
-                "[✓]"
-            } else {
-                "[ ]"
-            }
-        } else if picked {
-            "●"
-        } else {
-            "○"
-        };
-        let visual = if option.description.is_empty() {
-            format!("{} ({marker}) {}", index + 1, option.label)
-        } else {
-            let padding = label_width.saturating_sub(Line::from(option.label.clone()).width());
-            format!(
-                "{} ({marker}) {}{}  {}",
-                index + 1,
-                option.label,
-                " ".repeat(padding),
-                option.description
-            )
-        };
-        let height = if index == selected {
-            question_wrapped_row_count(&visual, inner.width)
-        } else {
-            1
-        };
-        ranges.push((index, row, row.saturating_add(height)));
-        row = row.saturating_add(height);
-    }
-
-    let sticky_height = u16::from(prompt.custom);
-    if prompt.custom {
-        row = row.saturating_add(1);
-        let custom = app
-            .question_prompt_custom(&permission.permission_id, tab)
-            .unwrap_or_default();
-        if !custom.is_empty() {
-            row = row.saturating_add(1);
-        }
-    }
-    if app
-        .question_answer_error(&permission.permission_id)
-        .is_some()
-    {
-        row = row.saturating_add(2);
-    }
-
-    let dock_layout = crate::layout::permission_dock_layout(status_area, true);
-    let total_lines = row.saturating_sub(sticky_height);
-    let body_capacity = inner
-        .height
-        .saturating_sub(sticky_height)
-        .saturating_sub(dock_layout.question_chrome_gap)
-        .saturating_sub(dock_layout.question_footer_height);
-    let body_lines = total_lines.min(body_capacity);
-    let used_height = body_lines
-        .saturating_add(sticky_height)
-        .saturating_add(dock_layout.question_chrome_gap)
-        .saturating_add(dock_layout.question_footer_height)
-        .min(inner.height);
-    let body_height = body_lines.min(
-        used_height
-            .saturating_sub(sticky_height)
-            .saturating_sub(dock_layout.question_chrome_gap)
-            .saturating_sub(dock_layout.question_footer_height),
-    );
-    let max_scroll = total_lines.saturating_sub(body_height);
-    let scroll_y = if prompt.custom && selected == prompt.options.len() {
-        max_scroll
-    } else {
-        ranges
-            .get(selected)
-            .map(|(_, _, bottom)| bottom.saturating_sub(body_height).min(max_scroll))
-            .unwrap_or(0)
-    };
-    let visible_bottom = scroll_y.saturating_add(body_height);
-    let mut regions = ranges
-        .into_iter()
-        .filter_map(|(index, start, end)| {
-            let visible_start = start.max(scroll_y);
-            let visible_end = end.min(visible_bottom);
-            (visible_start < visible_end).then_some(PermissionPromptHitRegion {
-                target: PermissionPointerTarget::QuestionChoice(index),
-                area: Rect::new(
-                    inner.x,
-                    inner
-                        .y
-                        .saturating_add(visible_start.saturating_sub(scroll_y)),
-                    inner.width,
-                    visible_end.saturating_sub(visible_start),
-                ),
-            })
-        })
-        .collect::<Vec<_>>();
-    if prompt.custom && sticky_height > 0 {
-        regions.push(PermissionPromptHitRegion {
-            target: PermissionPointerTarget::QuestionChoice(prompt.options.len()),
-            area: Rect::new(
-                inner.x,
-                inner.y.saturating_add(body_height),
-                inner.width,
-                sticky_height,
-            ),
-        });
-    }
-    regions
-}
-
-fn question_prompt_inner(status_area: Rect) -> Option<Rect> {
-    let dock_area = if status_area.height > QUESTION_OUTER_FOOTER_ROWS {
+    let dock_area = if status_area.height > crate::layout::QUESTION_OUTER_FOOTER_ROWS {
         Rect::new(
             status_area.x,
             status_area.y,
             status_area.width,
             status_area
                 .height
-                .saturating_sub(QUESTION_OUTER_FOOTER_ROWS),
+                .saturating_sub(crate::layout::QUESTION_OUTER_FOOTER_ROWS),
         )
     } else {
         status_area
     };
-    let dock_layout = crate::layout::permission_dock_layout(dock_area, true);
-    if dock_area.width <= dock_layout.rail_width {
-        return None;
-    }
-    let body = Rect::new(
-        dock_area.x.saturating_add(dock_layout.rail_width),
-        dock_area.y,
-        dock_area.width.saturating_sub(dock_layout.rail_width),
-        dock_area.height,
+    let measure = crate::layout::question_dock_measure(
+        app,
+        status_area.width,
+        status_area.height,
+        permission,
     );
-    let inner = crate::layout::pad_rect(body, dock_layout.question_content_padding);
-    (inner.width > 0 && inner.height > 0).then_some(inner)
-}
-
-fn question_wrapped_row_count(text: &str, width: u16) -> u16 {
-    let width = usize::from(width.max(1));
-    let chars = text
-        .chars()
-        .map(|character| (character, Line::from(character.to_string()).width().max(1)))
+    let geometry = crate::layout::question_dock_geometry(dock_area, &measure);
+    let visible_bottom = measure
+        .scroll_offset
+        .saturating_add(geometry.options.height);
+    let mut regions = measure
+        .option_ranges
+        .into_iter()
+        .filter_map(|range| {
+            let visible_start = range.start.max(measure.scroll_offset);
+            let visible_end = range.end.min(visible_bottom);
+            (visible_start < visible_end).then_some(PermissionPromptHitRegion {
+                target: PermissionPointerTarget::QuestionChoice(range.index),
+                area: Rect::new(
+                    geometry.options.x,
+                    geometry
+                        .options
+                        .y
+                        .saturating_add(visible_start.saturating_sub(measure.scroll_offset)),
+                    geometry.options.width,
+                    visible_end.saturating_sub(visible_start),
+                ),
+            })
+        })
         .collect::<Vec<_>>();
-    if chars.is_empty() {
-        return 1;
+    if prompt.custom && geometry.sticky.height > 0 {
+        regions.push(PermissionPromptHitRegion {
+            target: PermissionPointerTarget::QuestionChoice(prompt.options.len()),
+            area: Rect::new(
+                geometry.sticky.x,
+                geometry.sticky.y,
+                geometry.sticky.width,
+                1,
+            ),
+        });
     }
-
-    let mut rows = 0usize;
-    let mut start = 0usize;
-    while start < chars.len() {
-        rows = rows.saturating_add(1);
-        let fit_end = question_fit_end(&chars, start, width);
-        if fit_end >= chars.len() {
-            break;
-        }
-        if let Some(break_at) = chars[start..fit_end]
-            .iter()
-            .rposition(|(character, _)| character.is_whitespace())
-            .map(|offset| start + offset)
-            .filter(|break_at| *break_at > start)
-        {
-            start = break_at + 1;
-        } else if chars[fit_end].0.is_whitespace() {
-            start = fit_end + 1;
-        } else {
-            start = chars[fit_end..]
-                .iter()
-                .position(|(character, _)| character.is_whitespace())
-                .map(|offset| fit_end + offset)
-                .unwrap_or(chars.len());
-        }
+    if let Some(scrollbar) = geometry.scrollbar {
+        regions.insert(
+            0,
+            PermissionPromptHitRegion {
+                target: PermissionPointerTarget::QuestionScrollbar,
+                area: scrollbar,
+            },
+        );
     }
-    u16::try_from(rows.max(1)).unwrap_or(u16::MAX)
-}
-
-fn question_fit_end(chars: &[(char, usize)], start: usize, width: usize) -> usize {
-    let mut used = 0usize;
-    for (position, (_, character_width)) in chars.iter().enumerate().skip(start) {
-        if position > start && used.saturating_add(*character_width) > width {
-            return position;
-        }
-        used = used.saturating_add(*character_width);
-    }
-    chars.len()
+    regions
 }
 
 impl AppState {
@@ -688,12 +508,33 @@ impl AppState {
             }
             crate::welcome_surface::WelcomeRegion::Menu => {
                 if let Some(index) = hit.item_index {
+                    let was_expanded = self.startup_welcome_expanded();
+                    self.welcome.set_hovered_action(Some(index));
                     self.welcome.focus_menu_item(index);
+                    if self.welcome.selected_action()
+                        == Some(crate::welcome_surface::WelcomeAction::Changelog)
+                    {
+                        self.welcome
+                            .handle(crate::welcome_surface::WelcomeInput::FocusPrompt);
+                        self.focus = Focus::Prompt;
+                        if was_expanded {
+                            self.open_release_notes();
+                        } else {
+                            self.expand_startup_changelog();
+                        }
+                    } else {
+                        self.execute_startup_launcher_action();
+                    }
                 } else {
                     self.welcome
                         .handle(crate::welcome_surface::WelcomeInput::FocusMenu);
                 }
-                self.focus = Focus::List;
+                if matches!(
+                    self.welcome.focus(),
+                    crate::welcome_surface::WelcomeFocus::Menu(_)
+                ) {
+                    self.focus = Focus::List;
+                }
             }
             crate::welcome_surface::WelcomeRegion::StatusBar
             | crate::welcome_surface::WelcomeRegion::Hero
@@ -701,6 +542,17 @@ impl AppState {
             | crate::welcome_surface::WelcomeRegion::None => return false,
         }
         true
+    }
+
+    fn handle_welcome_pointer_completion(&mut self, mouse: MouseEvent) -> bool {
+        match mouse.kind {
+            MouseEventKind::Up(MouseButton::Left) => {
+                self.welcome.take_pointer_press();
+                false
+            }
+            MouseEventKind::Drag(MouseButton::Left) => self.welcome.cancel_pointer_press(),
+            _ => false,
+        }
     }
 
     fn clear_blocked_pointer_state(&mut self) -> bool {
@@ -779,11 +631,80 @@ impl AppState {
                 {
                     return false;
                 }
+                self.question_prompt.hovered = Some(index);
                 self.question_prompt.selection = index;
                 true
             }
-            PermissionPointerTarget::Decision(_) | PermissionPointerTarget::Confirm(_) => false,
+            PermissionPointerTarget::Decision(_)
+            | PermissionPointerTarget::Confirm(_)
+            | PermissionPointerTarget::QuestionScrollbar => false,
         }
+    }
+
+    fn scroll_question_prompt(
+        &mut self,
+        frame_area: Rect,
+        pointer_row: Option<u16>,
+        delta: i16,
+    ) -> bool {
+        let Some(permission) = self.active_permission_view() else {
+            return false;
+        };
+        let Some(status_area) = crate::layout::FrameLayoutPlan::for_app(self, frame_area).status
+        else {
+            return false;
+        };
+        let measure = crate::layout::question_dock_measure(
+            self,
+            status_area.width,
+            status_area.height,
+            &permission,
+        );
+        let dock_area = if status_area.height > crate::layout::QUESTION_OUTER_FOOTER_ROWS {
+            Rect::new(
+                status_area.x,
+                status_area.y,
+                status_area.width,
+                status_area
+                    .height
+                    .saturating_sub(crate::layout::QUESTION_OUTER_FOOTER_ROWS),
+            )
+        } else {
+            status_area
+        };
+        let geometry = crate::layout::question_dock_geometry(dock_area, &measure);
+        if measure.max_scroll == 0 {
+            return false;
+        }
+        if self.question_prompt.permission_id.as_deref() != Some(permission.permission_id.as_str())
+        {
+            self.handle_permission_modal_key(KeyEvent::new(KeyCode::Null, KeyModifiers::NONE));
+        }
+        let tab = self.question_prompt_tab(&permission.permission_id);
+        let next = pointer_row.map_or_else(
+            || {
+                let bounded = i32::from(measure.scroll_offset)
+                    .saturating_add(i32::from(delta))
+                    .clamp(0, i32::from(measure.max_scroll));
+                u16::try_from(bounded).unwrap_or(measure.max_scroll)
+            },
+            |row| {
+                let track_height = geometry.options.height.max(1);
+                let relative = row
+                    .saturating_sub(geometry.options.y)
+                    .min(track_height.saturating_sub(1));
+                relative
+                    .saturating_mul(measure.max_scroll)
+                    .checked_div(track_height.saturating_sub(1).max(1))
+                    .unwrap_or(0)
+            },
+        );
+        let Some(scroll) = self.question_prompt.scroll_offsets.get_mut(tab) else {
+            return false;
+        };
+        let changed = *scroll != next;
+        *scroll = next;
+        changed
     }
 
     fn handle_permission_prompt_mouse(&mut self, mouse: MouseEvent, frame_area: Rect) -> bool {
@@ -793,6 +714,35 @@ impl AppState {
         }
 
         match mouse.kind {
+            MouseEventKind::Moved => {
+                let hovered = permission_prompt_hit_regions(self, frame_area)
+                    .into_iter()
+                    .find(|region| rect_contains(region.area, mouse.column, mouse.row))
+                    .and_then(|region| match region.target {
+                        PermissionPointerTarget::QuestionChoice(index) => Some(index),
+                        PermissionPointerTarget::Decision(_)
+                        | PermissionPointerTarget::Confirm(_)
+                        | PermissionPointerTarget::QuestionScrollbar => None,
+                    });
+                let active_question_id = self.active_permission_view().and_then(|permission| {
+                    permission
+                        .question_prompts
+                        .is_some()
+                        .then_some(permission.permission_id)
+                });
+                if hovered.is_some()
+                    && self.question_prompt.permission_id.as_deref()
+                        != active_question_id.as_deref()
+                {
+                    self.handle_permission_modal_key(KeyEvent::new(
+                        KeyCode::Null,
+                        KeyModifiers::NONE,
+                    ));
+                }
+                let changed = self.question_prompt.hovered != hovered;
+                self.question_prompt.hovered = hovered;
+                changed
+            }
             MouseEventKind::Down(MouseButton::Left) => {
                 let region = permission_prompt_hit_regions(self, frame_area)
                     .into_iter()
@@ -805,6 +755,15 @@ impl AppState {
                     self.permission_prompt.pointer_down = None;
                     return false;
                 };
+                if region.target == PermissionPointerTarget::QuestionScrollbar {
+                    self.scroll_question_prompt(frame_area, Some(mouse.row), 0);
+                    self.permission_prompt.pointer_down = Some(PermissionPointerDown {
+                        permission_id: permission.permission_id,
+                        target: region.target,
+                        area: region.area,
+                    });
+                    return true;
+                }
                 if !self.select_permission_pointer_target(&permission, region.target) {
                     self.permission_prompt.pointer_down = None;
                     return false;
@@ -820,6 +779,9 @@ impl AppState {
                 let Some(pointer_down) = self.permission_prompt.pointer_down.as_ref() else {
                     return false;
                 };
+                if pointer_down.target == PermissionPointerTarget::QuestionScrollbar {
+                    return self.scroll_question_prompt(frame_area, Some(mouse.row), 0);
+                }
                 let remains_inside = rect_contains(pointer_down.area, mouse.column, mouse.row)
                     && self.active_permission_view().is_some_and(|permission| {
                         permission.permission_id == pointer_down.permission_id
@@ -833,6 +795,10 @@ impl AppState {
                 let Some(pointer_down) = self.permission_prompt.pointer_down.take() else {
                     return false;
                 };
+                if pointer_down.target == PermissionPointerTarget::QuestionScrollbar {
+                    self.scroll_question_prompt(frame_area, Some(mouse.row), 0);
+                    return true;
+                }
                 if !rect_contains(pointer_down.area, mouse.column, mouse.row) {
                     return true;
                 }
@@ -846,6 +812,25 @@ impl AppState {
                 }
                 self.handle_permission_modal_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
                 true
+            }
+            MouseEventKind::ScrollDown | MouseEventKind::ScrollUp => {
+                let regions = permission_prompt_hit_regions(self, frame_area);
+                let inside = regions.iter().any(|region| {
+                    matches!(
+                        region.target,
+                        PermissionPointerTarget::QuestionChoice(_)
+                            | PermissionPointerTarget::QuestionScrollbar
+                    ) && rect_contains(region.area, mouse.column, mouse.row)
+                });
+                if !inside {
+                    return false;
+                }
+                let delta = if mouse.kind == MouseEventKind::ScrollDown {
+                    1
+                } else {
+                    -1
+                };
+                self.scroll_question_prompt(frame_area, None, delta)
             }
             _ => false,
         }
@@ -871,6 +856,7 @@ impl AppState {
         transcript_scrollbar_hit: Option<TranscriptScrollbarHit>,
     ) -> bool {
         if let Some(changed) = self.handle_top_modal_mouse(mouse, frame_area) {
+            self.welcome.take_pointer_press();
             let cleared = self.clear_blocked_pointer_state();
             return changed || cleared;
         }
@@ -914,6 +900,10 @@ impl AppState {
         }
 
         self.set_frame_area(frame_area);
+
+        if self.startup_shell_visible() && self.handle_welcome_pointer_completion(mouse) {
+            return true;
+        }
 
         if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
             && ui::live_turn_watching_rect(self, frame_area)

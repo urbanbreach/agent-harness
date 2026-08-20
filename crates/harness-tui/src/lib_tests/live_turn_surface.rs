@@ -379,7 +379,7 @@ pub(super) fn live_shell_permission_preserves_draft_snapshot() {
     println!("{rendered}");
 
     assert_live_shell_contains(&app, 80, 24, &["Allow Edit", "always-approve"]);
-    assert!(rendered.contains("Draft preserved"));
+    assert!(rendered.contains("keep this draft"));
 }
 
 pub(super) fn live_shell_degraded_bootstrap_snapshot() {

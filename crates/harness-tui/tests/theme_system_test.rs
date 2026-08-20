@@ -13,6 +13,7 @@ use ratatui::style::Color;
 
 #[test]
 fn legacy_agent_palette_roles_use_generic_accent() {
+    // arrange
     // Given: a theme that still carries compatibility slots for historical roles.
     let theme = Theme::default();
 
@@ -25,25 +26,30 @@ fn legacy_agent_palette_roles_use_generic_accent() {
         palette.color(PaletteRole::AgentAsk),
     ];
 
+    // act
     // Then: no historical role receives distinct primary chrome.
+    // assert
     assert_eq!(colors, [theme.text.accent; 4]);
 }
 
 #[test]
 fn theme_family_contract_exposes_every_role_without_missing_mappings() {
+    // arrange
     assert_eq!(ThemeFamily::ALL.len(), 5);
-    assert_eq!(PaletteRole::ALL.len(), 52);
+    assert_eq!(PaletteRole::ALL.len(), 53);
     assert_eq!(GlyphRole::ALL.len(), 13);
     assert_eq!(BorderRole::ALL.len(), 4);
     assert_eq!(FocusRole::ALL.len(), 5);
     assert_eq!(LifecycleState::ALL.len(), 16);
 
+    // act
     for family in ThemeFamily::ALL {
         let resolved = ThemeChoice::explicit(family).resolve(&ThemeEnvironment::default());
         for role in PaletteRole::ALL {
             let _ = resolved.palette.color(role);
         }
         for role in GlyphRole::ALL {
+            // assert
             assert!(!resolved.glyphs.glyph(role).is_empty());
         }
         for role in BorderRole::ALL {
@@ -60,6 +66,7 @@ fn theme_family_contract_exposes_every_role_without_missing_mappings() {
 
 #[test]
 fn light_and_dark_families_map_every_role_to_truecolor() {
+    // arrange
     for family in [ThemeFamily::HarnessDark, ThemeFamily::HarnessLight] {
         let palette = family.palette();
         for role in PaletteRole::ALL {
@@ -81,8 +88,10 @@ fn light_and_dark_families_map_every_role_to_truecolor() {
             }
         }
 
+        // act
         for role in FocusRole::ALL {
             let style = family.focus().style(role);
+            // assert
             assert!(matches!(style.foreground, Color::Rgb(..)));
             assert!(matches!(style.background, Color::Rgb(..)));
             assert!(matches!(style.border, Color::Rgb(..)));
@@ -92,7 +101,10 @@ fn light_and_dark_families_map_every_role_to_truecolor() {
 
 #[test]
 fn family_mapping_uses_theme_tokens_instead_of_raw_color_literals() {
+    // arrange
+    // act
     let source = include_str!("../src/theme_family/family.rs");
+    // assert
     assert!(!source.contains("Color::Rgb"));
     assert!(!source.contains("Color::Indexed"));
     assert!(!source.contains("0x"));
@@ -102,6 +114,7 @@ fn family_mapping_uses_theme_tokens_instead_of_raw_color_literals() {
 
 #[test]
 fn fallback_ladder_has_deterministic_truecolor_to_no_color_matrix() {
+    // arrange
     assert_eq!(
         FALLBACK_LADDER,
         [
@@ -112,11 +125,13 @@ fn fallback_ladder_has_deterministic_truecolor_to_no_color_matrix() {
         ]
     );
 
+    // act
     for family in [ThemeFamily::HarnessChat, ThemeFamily::HarnessDark] {
         for level in FALLBACK_LADDER {
             let environment = ThemeEnvironment::with_color_level(level);
             let first = ThemeChoice::explicit(family).resolve(&environment);
             let second = ThemeChoice::explicit(family).resolve(&environment);
+            // assert
             assert_eq!(first, second);
             assert_eq!(first.theme.color_level(), level);
             for role in PaletteRole::ALL {
@@ -135,9 +150,12 @@ fn fallback_ladder_has_deterministic_truecolor_to_no_color_matrix() {
 
 #[test]
 fn legacy_glyph_mode_uses_semantic_ascii_without_changing_colors() {
+    // arrange
+    // act
     let preferred = Theme::harness_chat();
     let legacy = preferred.with_glyph_mode(GlyphMode::Ascii);
 
+    // assert
     assert_eq!(legacy.live_shell.glyphs.streaming, "o");
     assert_eq!(legacy.live_shell.glyphs.done, "*");
     assert_eq!(legacy.live_shell.glyphs.error, "x");
@@ -149,14 +167,17 @@ fn legacy_glyph_mode_uses_semantic_ascii_without_changing_colors() {
 
 #[test]
 fn limited_color_modes_preserve_status_meaning() {
+    // arrange
     let basic = Theme::harness_chat().for_color_level(ColorLevel::Basic);
     assert_ne!(basic.status.success, basic.status.warning);
     assert_ne!(basic.status.success, basic.status.error);
     assert_ne!(basic.status.warning, basic.status.error);
 
+    // act
     let no_color = Theme::harness_chat()
         .for_color_level(ColorLevel::None)
         .with_glyph_mode(GlyphMode::Ascii);
+    // assert
     assert_eq!(no_color.status.success, Color::Reset);
     assert_eq!(no_color.status.warning, Color::Reset);
     assert_eq!(no_color.status.error, Color::Reset);
@@ -172,8 +193,11 @@ fn limited_color_modes_preserve_status_meaning() {
 
 #[test]
 fn semantic_bindings_follow_the_theme_token_groups() {
+    // arrange
+    // act
     let resolved =
         ThemeChoice::explicit(ThemeFamily::HarnessDark).resolve(&ThemeEnvironment::default());
+    // assert
     assert_eq!(
         resolved.bindings.selection.background,
         resolved.theme.text.accent
@@ -212,6 +236,7 @@ fn semantic_bindings_follow_the_theme_token_groups() {
 
 #[test]
 fn auto_mode_uses_colorfgbg_system_appearance_and_keeps_auto_choice() {
+    // arrange
     assert_eq!(
         detect_system_appearance(Some("15;0")),
         Some(SystemAppearance::Dark)
@@ -221,8 +246,10 @@ fn auto_mode_uses_colorfgbg_system_appearance_and_keeps_auto_choice() {
         Some(SystemAppearance::Light)
     );
 
+    // act
     let mut state =
         ThemePreviewState::new(ThemeChoice::Auto, ThemeEnvironment::from_colorfgbg("15;0"));
+    // assert
     assert_eq!(state.effective_theme().family, ThemeFamily::HarnessChat);
     state.on_system_appearance_change(SystemAppearance::Light);
     assert_eq!(state.committed_choice(), ThemeChoice::Auto);
@@ -231,6 +258,7 @@ fn auto_mode_uses_colorfgbg_system_appearance_and_keeps_auto_choice() {
 
 #[test]
 fn preview_cancel_restores_the_exact_committed_theme_until_commit() {
+    // arrange
     let committed = ThemeChoice::explicit(ThemeFamily::HarnessDark);
     let mut state = ThemePreviewState::new(committed, ThemeEnvironment::default());
     state.preview(ThemeChoice::explicit(ThemeFamily::HarnessLight));
@@ -243,8 +271,10 @@ fn preview_cancel_restores_the_exact_committed_theme_until_commit() {
     assert_eq!(state.committed_choice(), committed);
     assert_eq!(state.effective_theme().family, ThemeFamily::HarnessDark);
 
+    // act
     state.preview(ThemeChoice::explicit(ThemeFamily::HarnessLight));
     state.commit();
+    // assert
     assert_eq!(state.status(), ThemePreviewStatus::Committed);
     assert_eq!(
         state.committed_choice(),
@@ -254,15 +284,18 @@ fn preview_cancel_restores_the_exact_committed_theme_until_commit() {
 
 #[test]
 fn theme_choice_round_trips_through_existing_tui_keybinds_map() {
+    // arrange
     let mut keybinds = BTreeMap::from([(String::from("leader"), String::from("ctrl+x"))]);
     store_theme_choice(&mut keybinds, ThemeChoice::Auto);
     assert_eq!(keybinds.get("leader").map(String::as_str), Some("ctrl+x"));
     assert_eq!(load_theme_choice(&keybinds), Ok(ThemeChoice::Auto));
 
+    // act
     store_theme_choice(
         &mut keybinds,
         ThemeChoice::explicit(ThemeFamily::HarnessLight),
     );
+    // assert
     assert_eq!(
         load_theme_choice(&keybinds),
         Ok(ThemeChoice::explicit(ThemeFamily::HarnessLight))

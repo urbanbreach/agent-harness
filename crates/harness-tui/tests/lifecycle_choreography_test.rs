@@ -3,7 +3,10 @@ use harness_tui::lifecycle_choreography::*;
 
 #[test]
 fn transitions_allow_self_loops_and_documented_edges() {
+    // arrange
+    // act
     for state in LifecycleState::ALL {
+        // assert
         assert!(TransitionTable::is_valid(state, state));
     }
     let edges = [
@@ -70,6 +73,9 @@ fn transitions_allow_self_loops_and_documented_edges() {
 
 #[test]
 fn transitions_reject_impossible_edges() {
+    // arrange
+    // act
+    // assert
     assert!(!TransitionTable::is_valid(
         LifecycleState::Idle,
         LifecycleState::Completed
@@ -86,7 +92,10 @@ fn transitions_reject_impossible_edges() {
 
 #[test]
 fn valid_targets_include_idle_edges() {
+    // arrange
+    // act
     let targets = TransitionTable::valid_targets(LifecycleState::Idle);
+    // assert
     assert!(targets.contains(&LifecycleState::Drafting));
     assert!(targets.contains(&LifecycleState::Submitting));
     assert!(targets.contains(&LifecycleState::Compacting));
@@ -94,7 +103,10 @@ fn valid_targets_include_idle_edges() {
 
 #[test]
 fn authority_validates_and_runs_full_lifecycle() {
+    // arrange
+    // act
     let mut authority = LifecycleAuthority::new();
+    // assert
     assert_eq!(authority.snapshot().state, LifecycleState::Idle);
     assert!(authority.transition(LifecycleState::Drafting).is_ok());
     assert!(authority.transition(LifecycleState::Completed).is_err());
@@ -114,7 +126,10 @@ fn authority_validates_and_runs_full_lifecycle() {
 
 #[test]
 fn authority_tracks_counts_and_rest_invariant() {
+    // arrange
+    // act
     let mut authority = LifecycleAuthority::new();
+    // assert
     assert!(authority.snapshot().rest_frame());
     authority.set_pending_permissions(1);
     authority.set_queued_prompts(2);
@@ -130,6 +145,7 @@ fn authority_tracks_counts_and_rest_invariant() {
 
 #[test]
 fn surface_states_drive_visible_controls() {
+    // arrange
     let idle = SurfaceState::from_state(LifecycleState::Idle);
     assert_eq!(idle.composer_enabled, ActionAvailability::Enabled);
     assert_eq!(idle.transcript_focus, FocusDirective::Composer);
@@ -151,7 +167,9 @@ fn surface_states_drive_visible_controls() {
     assert!(question.question_visible);
     assert_eq!(question.transcript_focus, FocusDirective::QuestionPrompt);
 
+    // act
     let completed = SurfaceState::from_state(LifecycleState::Completed);
+    // assert
     assert_eq!(completed.composer_enabled, ActionAvailability::Enabled);
     assert_eq!(completed.cancel_available, ActionAvailability::Hidden);
     assert!(completed.cursor_visible());

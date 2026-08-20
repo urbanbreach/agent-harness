@@ -10,6 +10,7 @@ use ratatui::layout::Rect;
 
 #[test]
 fn signed_scroll_lines_are_conserved_across_fractional_deltas() {
+    // arrange
     for run in 1..=128 {
         let direction = if run % 2 == 0 { 1.0 } else { -1.0 };
         let deltas = (1..=run).map(|step| direction * f64::from(step) / 7.0);
@@ -17,13 +18,16 @@ fn signed_scroll_lines_are_conserved_across_fractional_deltas() {
         let mut gesture = ScrollGesture::new(GestureDevice::Trackpad);
         let emitted: i32 = deltas.map(|delta| gesture.push(delta)).sum();
 
+        // act
         let conserved = f64::from(emitted) + gesture.fractional_carry();
+        // assert
         assert!((conserved - total).abs() < 1e-9);
     }
 }
 
 #[test]
 fn device_classification_is_deterministic_and_boundary_aware() {
+    // arrange
     let mut history = GestureHistory::default();
     let trackpad = GestureEvent::scroll(0.25, 10);
     let wheel = GestureEvent::scroll(1.0, 20);
@@ -38,7 +42,9 @@ fn device_classification_is_deterministic_and_boundary_aware() {
         GestureKind::scroll(GestureDevice::Trackpad)
     );
 
+    // act
     let boundary = GestureEvent::scroll(1.0, 91);
+    // assert
     assert_eq!(
         classify(&boundary, &history),
         GestureKind::scroll(GestureDevice::Wheel)
@@ -48,8 +54,11 @@ fn device_classification_is_deterministic_and_boundary_aware() {
 
 #[test]
 fn timestamped_scroll_flushes_every_sixteen_milliseconds() {
+    // arrange
+    // act
     let mut gesture = ScrollGesture::new(GestureDevice::Trackpad);
 
+    // assert
     assert!(!gesture.push_at(0.25, 0).flush_due);
     assert!(!gesture.push_at(0.25, 15).flush_due);
     assert!(gesture.push_at(0.25, 16).flush_due);
@@ -57,10 +66,13 @@ fn timestamped_scroll_flushes_every_sixteen_milliseconds() {
 
 #[test]
 fn direction_change_resets_fractional_carry_and_gesture_generation() {
+    // arrange
+    // act
     let mut gesture = ScrollGesture::new(GestureDevice::Trackpad);
     let _ = gesture.push(0.75);
     let first_generation = gesture.generation();
 
+    // assert
     assert_eq!(gesture.push(-0.25), 0);
     assert_eq!(gesture.direction(), ScrollDirection::Down);
     assert!((gesture.fractional_carry() - (-0.25)).abs() < 1e-9);
@@ -69,6 +81,7 @@ fn direction_change_resets_fractional_carry_and_gesture_generation() {
 
 #[test]
 fn hit_routing_does_not_pass_through_covered_or_inactive_surfaces() {
+    // arrange
     let surfaces = [
         HitSurface::new(HitTarget::Overlay, Rect::new(0, 0, 10, 10), true, true),
         HitSurface::new(HitTarget::Transcript, Rect::new(0, 0, 10, 10), true, false),
@@ -87,12 +100,14 @@ fn hit_routing_does_not_pass_through_covered_or_inactive_surfaces() {
         HitTarget::None
     );
 
+    // act
     let active = [HitSurface::new(
         HitTarget::Inspector,
         Rect::new(0, 0, 10, 10),
         true,
         false,
     )];
+    // assert
     assert_eq!(
         route_hit_target(Point::new(2, 2), &active),
         HitTarget::Inspector
@@ -101,10 +116,13 @@ fn hit_routing_does_not_pass_through_covered_or_inactive_surfaces() {
 
 #[test]
 fn drag_lifecycle_requires_ordered_begin_update_end() {
+    // arrange
+    // act
     let mut drag = DragLifecycle::new();
     let start = Point::new(2, 3);
     let finish = Point::new(8, 9);
 
+    // assert
     assert!(drag.begin(start).is_ok());
     assert!(drag.update(finish).is_ok());
     let ended = drag.end(finish);
@@ -114,6 +132,7 @@ fn drag_lifecycle_requires_ordered_begin_update_end() {
 
 #[test]
 fn gesture_render_path_has_no_clock_reads_or_render_side_effects() {
+    // arrange
     let sources = [
         include_str!("../src/gestures/mod.rs"),
         include_str!("../src/gestures/device.rs"),
@@ -127,6 +146,7 @@ fn gesture_render_path_has_no_clock_reads_or_render_side_effects() {
         assert!(!source.contains("SystemTime::now"));
     }
 
+    // act
     let app = AppState::new_live(None, false, None);
     let mut probe = RenderPurityProbe::default();
     let result = probe.draw(|_| {
@@ -134,6 +154,7 @@ fn gesture_render_path_has_no_clock_reads_or_render_side_effects() {
             ui::render_app(frame, app);
         });
     });
+    // assert
     assert!(result.is_ok());
     assert!(probe.side_effects().is_empty());
 }

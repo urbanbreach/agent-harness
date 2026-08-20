@@ -89,8 +89,11 @@ mod tests {
     // collapse/expand toggles pub(crate) SecondarySurfaceState state.
     #[test]
     fn dashboard_roster_group_collapses_and_expands_sections() {
+        // arrange
+        // act
         let mut state = SecondarySurfaceState::default();
         // Subagents section starts expanded (not in collapsed_sections by default).
+        // assert
         assert!(
             !state.section_collapsed(OperatorSidebarSection::Subagents),
             "Subagents section must start expanded"

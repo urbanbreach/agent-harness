@@ -786,6 +786,7 @@ impl AppState {
 
     pub fn overlay_stack(&self) -> OverlayStack {
         OverlayStack::from_state(self.overlay_state())
+            .with_release_notes(self.release_notes_visible && self.active_permission().is_none())
     }
 
     pub fn take_reload_requested(&mut self) -> bool {
@@ -1058,6 +1059,7 @@ impl AppState {
                 .unwrap_or(now),
         );
         self.motion_epoch_started_at = self.live_turn_phase_started_at.unwrap_or(now);
+        self.sampled_motion_elapsed = Duration::ZERO;
         self.motion_revision = self.motion_revision.wrapping_add(1);
     }
 
@@ -1076,6 +1078,7 @@ impl AppState {
         self.live_turn_request_id = request_id.map(str::to_string);
         self.live_turn_phase_started_at = Some(now);
         self.motion_epoch_started_at = now;
+        self.sampled_motion_elapsed = Duration::ZERO;
         self.motion_revision = self.motion_revision.wrapping_add(1);
     }
 
@@ -1084,6 +1087,7 @@ impl AppState {
             let now = self.now();
             self.live_turn_phase_started_at = Some(now);
             self.motion_epoch_started_at = now;
+            self.sampled_motion_elapsed = Duration::ZERO;
             self.motion_revision = self.motion_revision.wrapping_add(1);
         }
     }

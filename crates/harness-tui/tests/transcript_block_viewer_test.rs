@@ -38,6 +38,7 @@ fn viewer(text: &str) -> TestResult<ViewerState> {
 
 #[test]
 fn search_wraps_back_and_forward_and_reports_no_result() -> TestResult {
+    // arrange
     // Given: a selected block with two Unicode matches.
     let mut viewer = viewer("中 alpha 中")?;
 
@@ -48,7 +49,9 @@ fn search_wraps_back_and_forward_and_reports_no_result() -> TestResult {
     let backward_wrap = viewer.search_backward();
     let absent = viewer.set_search_query("missing");
 
+    // act
     // Then: count, current match, wrap, and no-result state are explicit.
+    // assert
     assert_eq!(first.match_count, 2);
     assert_eq!(first.current_match, Some(0));
     assert!(!forward.wrapped);
@@ -64,6 +67,7 @@ fn search_wraps_back_and_forward_and_reports_no_result() -> TestResult {
 
 #[test]
 fn search_accepts_complete_unicode_graphemes_and_rejects_partial_ones() -> TestResult {
+    // arrange
     // Given: combining text, a ZWJ emoji, and CJK content.
     let mut viewer = viewer("e\u{301} 👩‍💻 中")?;
 
@@ -72,7 +76,9 @@ fn search_accepts_complete_unicode_graphemes_and_rejects_partial_ones() -> TestR
     let emoji = viewer.set_search_query("👩‍💻");
     let partial = viewer.set_search_query("\u{301}");
 
+    // act
     // Then: complete graphemes match while a combining suffix cannot be split.
+    // assert
     assert_eq!(combining.match_count, 1);
     assert_eq!(emoji.match_count, 1);
     assert!(partial.no_result);
@@ -81,6 +87,7 @@ fn search_accepts_complete_unicode_graphemes_and_rejects_partial_ones() -> TestR
 
 #[test]
 fn wrapped_and_raw_modes_route_selection_through_transcript_primitives() -> TestResult {
+    // arrange
     // Given: a narrow viewer so the wrapped selection crosses a soft row.
     let mut viewer = viewer("alpha beta\ngamma")?;
     viewer.resize(6, 3)?;
@@ -102,13 +109,16 @@ fn wrapped_and_raw_modes_route_selection_through_transcript_primitives() -> Test
     assert_eq!(viewer.mode(), ViewerMode::Raw);
     viewer.select_line(CellPoint::new(2, 1));
 
+    // act
     // Then: raw selection remains grapheme-safe and is copied through the same primitive.
+    // assert
     assert_eq!(viewer.copy_selection_text()?, "gamma");
     Ok(())
 }
 
 #[test]
 fn denied_copy_is_typed_and_non_destructive_for_local_and_osc52_routes() -> TestResult {
+    // arrange
     // Given: an active selection.
     let mut viewer = viewer("copy me")?;
     viewer.select_line(CellPoint::new(0, 0));
@@ -121,7 +131,9 @@ fn denied_copy_is_typed_and_non_destructive_for_local_and_osc52_routes() -> Test
     );
     let osc52 = viewer.copy_osc52(false, TmuxSequence::Direct);
 
+    // act
     // Then: errors are typed and the selection is unchanged.
+    // assert
     assert!(local.is_err());
     assert!(osc52.is_err());
     assert_eq!(viewer.selection(), before);
@@ -130,6 +142,7 @@ fn denied_copy_is_typed_and_non_destructive_for_local_and_osc52_routes() -> Test
 
 #[test]
 fn viewer_scroll_is_independent_and_survives_resize_with_anchor_identity() -> TestResult {
+    // arrange
     // Given: content taller than the viewer viewport.
     let mut viewer = viewer("one two three four five six seven eight")?;
     viewer.resize(7, 2)?;
@@ -140,7 +153,9 @@ fn viewer_scroll_is_independent_and_survives_resize_with_anchor_identity() -> Te
     viewer.resize(14, 4)?;
     let frame = viewer.sample_scroll(500);
 
+    // act
     // Then: viewer scroll state uses its own stable block anchor and settles safely.
+    // assert
     assert_eq!(before.block_id(), block_id());
     assert_eq!(viewer.scroll_anchor()?.block_id(), block_id());
     assert!(frame.value >= 0.0);
@@ -149,6 +164,7 @@ fn viewer_scroll_is_independent_and_survives_resize_with_anchor_identity() -> Te
 
 #[test]
 fn closing_restores_fold_focus_follow_and_anchor_exactly() -> TestResult {
+    // arrange
     // Given: an in-place state captured before entering the viewer.
     let snapshot = return_snapshot(block_id())?;
     let viewer = ViewerState::open(
@@ -160,7 +176,9 @@ fn closing_restores_fold_focus_follow_and_anchor_exactly() -> TestResult {
     // When: the full-screen viewer closes.
     let closed = viewer.close();
 
+    // act
     // Then: the complete return snapshot is byte-for-byte equivalent.
+    // assert
     assert_eq!(closed.reason(), ViewerCloseReason::Closed);
     assert_eq!(closed.return_snapshot(), snapshot);
     Ok(())
@@ -168,6 +186,7 @@ fn closing_restores_fold_focus_follow_and_anchor_exactly() -> TestResult {
 
 #[test]
 fn disappearing_block_closes_safely_without_losing_return_state() -> TestResult {
+    // arrange
     // Given: an open viewer for a currently present block.
     let snapshot = return_snapshot(block_id())?;
     let mut viewer = ViewerState::open(
@@ -181,7 +200,9 @@ fn disappearing_block_closes_safely_without_losing_return_state() -> TestResult 
         .reconcile_block(false)
         .ok_or("viewer did not close")?;
 
+    // act
     // Then: the viewer is inactive and returns the original state safely.
+    // assert
     assert!(!viewer.is_open());
     assert_eq!(closed.reason(), ViewerCloseReason::BlockDisappeared);
     assert_eq!(closed.return_snapshot(), snapshot);
@@ -190,6 +211,7 @@ fn disappearing_block_closes_safely_without_losing_return_state() -> TestResult 
 
 #[test]
 fn wrapped_and_raw_render_surfaces_highlight_current_match_and_selection() -> TestResult {
+    // arrange
     // Given: a viewer with a selected line and an active search match.
     let mut viewer = viewer("alpha beta")?;
     viewer.select_line(CellPoint::new(0, 1));
@@ -203,7 +225,9 @@ fn wrapped_and_raw_render_surfaces_highlight_current_match_and_selection() -> Te
     viewer.toggle_mode()?;
     let raw = viewer.render_surface(area);
 
+    // act
     // Then: mode labels and match/selection state survive the render boundary.
+    // assert
     assert_eq!(wrapped.mode, ViewerMode::Wrapped);
     assert!(wrapped.lines[0].selected);
     assert!(wrapped.lines[0].current_match);

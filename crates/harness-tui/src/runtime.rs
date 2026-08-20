@@ -74,6 +74,30 @@ fn has_canonical_render_demand(telemetry_enabled: bool, demand: Option<&RenderDe
     !telemetry_enabled || demand.is_some()
 }
 
+fn mouse_presentation_kind(
+    kind: MouseEventKind,
+) -> (InteractionEventClass, PresentationCauseKind, RenderReason) {
+    if matches!(
+        kind,
+        MouseEventKind::ScrollDown
+            | MouseEventKind::ScrollLeft
+            | MouseEventKind::ScrollRight
+            | MouseEventKind::ScrollUp
+    ) {
+        (
+            InteractionEventClass::Wheel,
+            PresentationCauseKind::Wheel,
+            RenderReason::Wheel,
+        )
+    } else {
+        (
+            InteractionEventClass::Mouse,
+            PresentationCauseKind::Mouse,
+            RenderReason::Mouse,
+        )
+    }
+}
+
 fn refresh_motion_plan(app: &mut AppState) -> MotionPlan {
     app.refresh_motion_state();
     app.motion_plan()
@@ -88,6 +112,10 @@ fn prioritize_terminal_before_present(
         *pending = queue.try_recv().ok();
         *input_priority = pending.is_some();
     }
+}
+
+const fn runtime_quit_ready(app_should_quit: bool, presenter: &Presenter) -> bool {
+    app_should_quit && !presenter.has_pending_redraw()
 }
 
 /// Explicit model of terminal features the TUI may enable or rely on.
@@ -662,7 +690,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
             let decision = select_runtime_decision(
                 &arbiter,
                 RuntimeReady {
-                    quit: app.should_quit,
+                    quit: runtime_quit_ready(app.should_quit, &presenter),
                     terminal_input: pending_terminal.is_some(),
                     pacer_deadline: pacing_due,
                     live_update: live_updates
@@ -801,7 +829,9 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                 pacer.request_flush();
             }
 
-            if matches!(decision, RuntimeDecision::Quit) || app.should_quit {
+            if matches!(decision, RuntimeDecision::Quit)
+                || runtime_quit_ready(app.should_quit, &presenter)
+            {
                 break;
             }
 
@@ -866,7 +896,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                 let event_class = match &event {
                     event::TuiEvent::Key(_) => InteractionEventClass::Key,
                     event::TuiEvent::Paste(_) => InteractionEventClass::Paste,
-                    event::TuiEvent::Mouse(_) => InteractionEventClass::Mouse,
+                    event::TuiEvent::Mouse(mouse) => mouse_presentation_kind(mouse.kind).0,
                     event::TuiEvent::Resize(_, _) => InteractionEventClass::Resize,
                     event::TuiEvent::FocusGained | event::TuiEvent::FocusLost => {
                         InteractionEventClass::Focus
@@ -895,8 +925,9 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                     event::TuiEvent::FocusGained | event::TuiEvent::FocusLost => {
                         (PresentationCauseKind::Focus, RenderReason::Focus)
                     }
-                    event::TuiEvent::Mouse(_) => {
-                        (PresentationCauseKind::Wheel, RenderReason::Wheel)
+                    event::TuiEvent::Mouse(mouse) => {
+                        let (_, cause, reason) = mouse_presentation_kind(mouse.kind);
+                        (cause, reason)
                     }
                     event::TuiEvent::Key(_) | event::TuiEvent::Paste(_) => (
                         PresentationCauseKind::TerminalInput,
@@ -1261,7 +1292,46 @@ mod tests {
     use harness_core::proj::{RunStatus, SessionCatalogEntry, SessionModeSource};
 
     #[test]
+    fn mouse_and_wheel_have_distinct_native_taxonomy() {
+        // arrange
+        let click = mouse_presentation_kind(MouseEventKind::Down(MouseButton::Left));
+        let wheel = mouse_presentation_kind(MouseEventKind::ScrollDown);
+
+        // act
+        // assert
+        assert_eq!(click.0, InteractionEventClass::Mouse);
+        assert_eq!(click.1, PresentationCauseKind::Mouse);
+        assert_eq!(click.2, RenderReason::Mouse);
+        assert_eq!(wheel.0, InteractionEventClass::Wheel);
+        assert_eq!(wheel.1, PresentationCauseKind::Wheel);
+        assert_eq!(wheel.2, RenderReason::Wheel);
+    }
+
+    #[test]
+    fn auto_exit_waits_for_the_final_pending_redraw() {
+        // arrange
+        // Given: a terminal event requests exit while the final visible state is still dirty.
+        let mut presenter = Presenter::new();
+
+        // When: runtime exit readiness is checked before and after frame submission.
+        let before_submission = runtime_quit_ready(true, &presenter);
+        presenter.record_submission(
+            FrameSubmission::Accepted(FrameKind::Differential),
+            Instant::now(),
+        );
+        let after_submission = runtime_quit_ready(true, &presenter);
+
+        // act
+        // Then: the runtime keeps running until the final frame reaches the writer queue.
+        // assert
+        assert!(!before_submission);
+        assert!(after_submission);
+    }
+
+    #[test]
     fn production_selector_observes_arbiter_fairness_mutation() {
+        // arrange
+        // act
         let ready = RuntimeReady {
             terminal_input: true,
             live_update: true,
@@ -1269,6 +1339,7 @@ mod tests {
         };
         let mut arbiter = RuntimeArbiter::default();
 
+        // assert
         assert_eq!(
             select_runtime_decision(&arbiter, ready),
             RuntimeDecision::TerminalInput
@@ -1287,10 +1358,13 @@ mod tests {
 
     #[test]
     fn active_stream_does_not_synthesize_live_readiness() {
+        // arrange
+        // act
         let active_without_work = SchedulingLiveReadiness {
             stream_active: true,
             ..SchedulingLiveReadiness::default()
         };
+        // assert
         assert_eq!(active_without_work.ready_depth(), 0);
         assert_eq!(
             SchedulingLiveReadiness {
@@ -1305,12 +1379,16 @@ mod tests {
 
     #[test]
     fn native_telemetry_never_synthesizes_an_unrecorded_frame_cause() {
+        // arrange
+        // act
+        // assert
         assert!(!has_canonical_render_demand(true, None));
         assert!(has_canonical_render_demand(false, None));
     }
 
     #[test]
     fn production_selector_preempts_sustained_live_backlog_with_bounded_fairness() {
+        // arrange
         let ready = RuntimeReady {
             terminal_input: true,
             live_update: true,
@@ -1322,6 +1400,7 @@ mod tests {
         let mut terminal_decisions = 0_usize;
         let mut live_decisions = 0_usize;
 
+        // act
         for _ in 0..(INPUT_BATCH_LIMIT * 4 + 4) {
             if budget.exhausted(now) {
                 arbiter.input_quantum_exhausted();
@@ -1340,12 +1419,14 @@ mod tests {
             }
         }
 
+        // assert
         assert_eq!(terminal_decisions, INPUT_BATCH_LIMIT * 4);
         assert_eq!(live_decisions, 4);
     }
 
     #[test]
     fn due_pacer_rotates_to_a_bounded_live_quantum() {
+        // arrange
         // Given: motion is continuously due and more live work is queued than one quantum.
         let (sender, receiver) = live_update_channel();
         for index in 0..(LIVE_UPDATE_DRAIN_MAX_PER_FRAME + 3) {
@@ -1374,7 +1455,9 @@ mod tests {
         let mut experience = RuntimeExperience::new();
         let drained = apply_live_update_quantum(&mut app, &receiver, &mut experience);
 
+        // act
         // Then: the bounded quantum progresses sixteen items, rather than one item per frame.
+        // assert
         assert!(drained.changed);
         assert!(drained.budget_exhausted);
         assert_eq!(receiver.ready_depth(), 3);
@@ -1382,6 +1465,7 @@ mod tests {
 
     #[test]
     fn terminal_arrival_after_arbitration_preempts_dirty_frame_build() {
+        // arrange
         // Given: lower-priority work won arbitration just before a click reaches ingress.
         let (sender, receiver) = crossbeam_channel::bounded(2);
         let mut queue = crate::input::TerminalQueue::new(receiver);
@@ -1403,7 +1487,9 @@ mod tests {
         // When: production reaches the last boundary before an expensive frame build.
         prioritize_terminal_before_present(&mut queue, &mut pending, &mut input_priority);
 
+        // act
         // Then: the click is dispatched before lower-priority rendering starts.
+        // assert
         assert!(input_priority);
         assert!(matches!(
             pending.map(|envelope| envelope.event),
@@ -1413,18 +1499,22 @@ mod tests {
 
     #[test]
     fn poll_timeout_parks_when_runtime_pacer_is_idle() {
+        // arrange
         // Given: an idle runtime pacer.
         let pacer = RuntimePacer::new();
 
         // When: the terminal asks how long it may park.
         let timeout = poll_timeout(&pacer, FrameNow::default());
 
+        // act
         // Then: no paint deadline shortens the idle interval.
+        // assert
         assert_eq!(timeout, None);
     }
 
     #[test]
     fn poll_timeout_tracks_runtime_pacer_animation_deadline() {
+        // arrange
         // Given: an active runtime pacer armed at zero.
         let mut pacer = RuntimePacer::new();
         pacer.poll(FrameNow::default(), true);
@@ -1439,7 +1529,9 @@ mod tests {
             },
         );
 
+        // act
         // Then: the scheduler's 30 Hz deadline is the poll authority.
+        // assert
         assert_eq!(
             (pending, due),
             (
@@ -1513,6 +1605,7 @@ mod tests {
 
     #[test]
     fn overlay_pause_is_applied_before_runtime_arms_toast_deadline() {
+        // arrange
         // Given: an active toast becomes occluded before the next runtime loop.
         let mut app = AppState::default();
         app.set_toast_for_test("Copied", ToastVariant::Info);
@@ -1522,7 +1615,9 @@ mod tests {
         // When: the production runtime refresh-and-plan boundary is evaluated.
         let plan = refresh_motion_plan(&mut app);
 
+        // act
         // Then: the paused toast contributes no stale wake deadline.
+        // assert
         assert!(plan.is_none());
         let pacer = RuntimePacer::new();
         assert!(!pacer.needs_poll(FrameNow::default(), plan));
@@ -1639,6 +1734,7 @@ mod tests {
 
     #[test]
     fn run_started_clears_the_new_session_bootstrap_status() {
+        // arrange
         // Given: new-live bootstrap posted a transient status before runtime events arrived.
         let (tx, rx) = live_update_channel();
         tx.send(LiveUpdate::Status("starting new session".to_string()))
@@ -1670,7 +1766,9 @@ mod tests {
         // When: the live-update quantum applies the bootstrap status and first runtime event.
         drain_live_updates(&mut app, &rx);
 
+        // act
         // Then: the transient bootstrap banner no longer overrides live turn state.
+        // assert
         assert_eq!(app.status_banner, None);
     }
 
@@ -1956,6 +2054,9 @@ mod tests {
 
     #[test]
     fn reduced_motion_override_accepts_only_explicit_enabled_values() {
+        // arrange
+        // act
+        // assert
         assert!(reduced_motion_from_env(Some("1")));
         assert!(reduced_motion_from_env(Some("true")));
         assert!(reduced_motion_from_env(Some("YES")));

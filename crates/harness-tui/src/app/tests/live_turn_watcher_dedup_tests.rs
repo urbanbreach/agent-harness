@@ -81,6 +81,7 @@ fn add_correlated_subagent_rows(
 
 #[test]
 fn watcher_count_deduplicates_tool_and_worker_rows_for_one_child() {
+    // arrange
     // Given: one delegated child is represented by both tool and provider task rows.
     let mut app = AppState::new_live(None, false, None);
     add_correlated_subagent_rows(&mut app, 1, "alpha", "tool_alpha");
@@ -88,12 +89,15 @@ fn watcher_count_deduplicates_tool_and_worker_rows_for_one_child() {
     // When: watcher counts are projected.
     let watchers = app.live_turn_watchers();
 
+    // act
     // Then: the logical child appears exactly once.
+    // assert
     assert_eq!(watchers.subagents, 1);
 }
 
 #[test]
 fn watcher_count_preserves_distinct_child_lineages() {
+    // arrange
     // Given: two separate children each have overlapping tool/provider rows.
     let mut app = AppState::new_live(None, false, None);
     add_correlated_subagent_rows(&mut app, 1, "alpha", "tool_alpha");
@@ -102,6 +106,8 @@ fn watcher_count_preserves_distinct_child_lineages() {
     // When: watcher counts are projected.
     let watchers = app.live_turn_watchers();
 
+    // act
     // Then: deduplication preserves both stable child identities.
+    // assert
     assert_eq!(watchers.subagents, 2);
 }

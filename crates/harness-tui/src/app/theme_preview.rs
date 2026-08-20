@@ -96,11 +96,14 @@ mod tests {
 
     #[test]
     fn automatic_dark_appearance_selects_harness_chat() {
+        // arrange
         let mut state = ThemePreviewState::new("harness-light");
         state.set_auto_mode(true);
 
+        // act
         state.on_system_appearance_change(SystemAppearance::Dark);
 
+        // assert
         assert_eq!(state.current_name(), "harness-chat");
     }
 }

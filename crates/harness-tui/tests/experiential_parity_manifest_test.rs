@@ -19,6 +19,7 @@ const PATHS: &[&str] = &["native_path", "fallback_path"];
 
 #[test]
 fn manifest_covers_every_module_root_and_terminal_tier() {
+    // arrange
     // Given: the checked-in cartesian-product coverage contract.
     let manifest: Value = serde_json::from_str(MANIFEST).unwrap_or_abort();
     let modules = manifest["module_roots"].as_array().unwrap_or_abort();
@@ -31,8 +32,10 @@ fn manifest_covers_every_module_root_and_terminal_tier() {
         .collect();
     let pair_count = module_names.len() * tiers.len();
 
+    // act
     // Then: every established root and tier is present, classified, and has
     // an installed-binary scenario plus a comparator verdict.
+    // assert
     assert_eq!(module_names.len(), MODULE_ROOTS.len());
     assert!(MODULE_ROOTS
         .iter()
@@ -54,13 +57,16 @@ fn manifest_covers_every_module_root_and_terminal_tier() {
 
 #[test]
 fn production_runtime_reaches_every_experiential_module() {
+    // arrange
     // Given: production source, not a test-only worker harness.
     let runtime = include_str!("../src/runtime.rs");
     let terminal = include_str!("../src/terminal.rs");
     let integration = include_str!("../src/runtime_integration.rs");
 
+    // act
     // When: the source is checked for the live ownership seam.
     // Then: removing any module from run_tui integration breaks this guard.
+    // assert
     assert!(runtime.contains("RuntimeExperience"));
     for module in MODULE_ROOTS {
         assert!(

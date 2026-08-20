@@ -10,6 +10,8 @@ mod foreign_import_picker;
 mod memory_browser;
 #[path = "ui_overlays/modal_interaction.rs"]
 mod modal_interaction;
+#[path = "ui_overlays/modal_list_row.rs"]
+mod modal_list_row;
 #[path = "ui_overlays/model_switcher.rs"]
 mod model_switcher;
 #[path = "ui_overlays/new_worktree_dialog.rs"]
@@ -20,6 +22,8 @@ mod permission_modal;
 mod plan_view;
 #[path = "ui_overlays/prompt_stash_dialog.rs"]
 mod prompt_stash_dialog;
+#[path = "ui_overlays/release_notes.rs"]
+mod release_notes;
 #[path = "ui_overlays/session_history.rs"]
 mod session_history;
 #[path = "ui_overlays/settings_editor.rs"]
@@ -37,7 +41,12 @@ use auth_dialog::render_auth_dialog_overlay;
 pub(crate) use auth_dialog::waiting_authorization_detail_at;
 use foreign_import_picker::render_foreign_import_picker_overlay;
 use memory_browser::render_memory_browser_overlay;
-pub(crate) use modal_interaction::{modal_surface_model, ModalSurfaceModel};
+pub(crate) use modal_interaction::{modal_surface_model, ModalSurfaceModel, OutsideDismissPolicy};
+pub(crate) use modal_list_row::{
+    modal_list_row, modal_list_row_layout, modal_list_row_text_style, modal_scrollbar_geometry,
+    render_modal_list_scrollbar, ModalListRowSpec, ModalListRowState, ModalListScrollbarSpec,
+    ModalScrollbarGeometry,
+};
 use model_switcher::{model_switcher_overlay_title, render_model_switcher_overlay};
 use new_worktree_dialog::render_new_worktree_dialog;
 pub(super) use permission_modal::{
@@ -48,6 +57,8 @@ pub(super) use permission_modal::{
 };
 use plan_view::render_plan_view_overlay;
 use prompt_stash_dialog::render_prompt_stash_list_overlay;
+pub(crate) use release_notes::release_notes_max_scroll;
+use release_notes::render_release_notes_overlay;
 use session_history::{
     render_fork_selector_input, render_fork_selector_list, render_lineage_browser_overlay,
     render_session_history_overlay, render_session_rename_dialog, session_history_overlay_title,
@@ -194,6 +205,7 @@ pub(super) fn render_overlays(
             OverlayKind::ForeignImportPicker => {
                 render_foreign_import_picker_overlay(frame, app, theme, plan.root)
             }
+            OverlayKind::ReleaseNotes => render_release_notes_overlay(frame, app, theme, plan.root),
             OverlayKind::TrustFolderPrompt => {}
         }
     }
@@ -948,16 +960,7 @@ fn render_command_palette_list(frame: &mut Frame, app: &AppState, theme: &Theme,
         return;
     }
 
-    let list_area = if area.width <= 1 {
-        area
-    } else {
-        Rect::new(
-            area.x.saturating_add(1),
-            area.y,
-            area.width.saturating_sub(1),
-            area.height,
-        )
-    };
+    let list_area = area;
     if list_area.width == 0 || list_area.height == 0 {
         return;
     }
@@ -997,50 +1000,54 @@ fn render_command_palette_list(frame: &mut Frame, app: &AppState, theme: &Theme,
             .y
             .saturating_add(u16::try_from(row - scroll).unwrap_or(u16::MAX));
         let row_area = Rect::new(list_area.x, row_y, list_area.width, 1);
-        let show_thumb = true;
         match palette_row {
             PaletteOverlayRow::Spacer => {
                 frame.render_widget(
                     Block::default()
                         .style(Style::default().bg(ui_chrome::command_palette_surface(theme))),
-                    row_area,
+                    modal_list_row_layout(row_area, max_scroll).content,
                 );
-                if show_thumb && row_area.width > 0 {
-                    let thumb = Rect::new(
-                        row_area.x.saturating_add(row_area.width.saturating_sub(1)),
-                        row_area.y,
-                        1,
-                        1,
-                    );
-                    frame.render_widget(
-                        Paragraph::new(Span::styled(
-                            "█",
-                            Style::default()
-                                .fg(ui_chrome::command_palette_muted(theme))
-                                .bg(ui_chrome::command_palette_surface(theme)),
-                        )),
-                        thumb,
-                    );
-                }
             }
             PaletteOverlayRow::Section(category) => {
+                let content = modal_list_row_layout(row_area, max_scroll).content;
                 frame.render_widget(
                     Paragraph::new(command_palette_section_row(
                         category.label(),
                         theme,
-                        row_area.width,
-                        show_thumb,
+                        content.width,
+                        false,
                     )),
-                    row_area,
+                    content,
                 );
             }
             PaletteOverlayRow::Command {
                 title,
                 description,
                 footer,
-                is_selected,
+                is_selected: filtered_index,
             } => {
-                let is_selected = *is_selected == selected;
+                let is_selected = *filtered_index == selected;
+                let key = ModalSurfaceKey::Overlay {
+                    kind: OverlayKind::CommandPalette,
+                    view: ModalViewKey::Primary,
+                };
+                let presentation = modal_list_row(
+                    theme,
+                    ModalListRowSpec {
+                        area: row_area,
+                        state: ModalListRowState {
+                            selected: is_selected,
+                            hovered: app
+                                .modal_target_hovered(key, ModalTarget::Row(*filtered_index)),
+                            dimmed: false,
+                        },
+                        max_scroll,
+                    },
+                );
+                frame.render_widget(
+                    Block::default().style(presentation.style),
+                    presentation.layout.content,
+                );
                 frame.render_widget(
                     Paragraph::new(command_palette_row(
                         title,
@@ -1048,14 +1055,23 @@ fn render_command_palette_list(frame: &mut Frame, app: &AppState, theme: &Theme,
                         footer,
                         is_selected,
                         theme,
-                        row_area.width,
-                        show_thumb,
+                        presentation.layout.content.width,
+                        presentation.style,
                     )),
-                    row_area,
+                    presentation.layout.content,
                 );
             }
         }
     }
+    render_modal_list_scrollbar(
+        frame,
+        theme,
+        ModalListScrollbarSpec {
+            area: list_area,
+            offset: scroll,
+            max_scroll,
+        },
+    );
 }
 
 pub(crate) enum PaletteOverlayRow {
@@ -1125,31 +1141,28 @@ fn command_palette_row(
     is_selected: bool,
     theme: &Theme,
     width: u16,
-    show_thumb: bool,
+    row_style: Style,
 ) -> Line<'static> {
     let _ = description;
     let row_width = usize::from(width);
-    let gutter = 4usize;
+    let gutter = 1usize;
     let body_row_width = row_width.saturating_sub(gutter);
     let surface = ui_chrome::command_palette_surface(theme);
-    let row_style = if is_selected {
-        Style::default()
-            .fg(ui_chrome::command_palette_selection_fg(theme))
-            .bg(ui_chrome::command_palette_selection_bg(theme))
+    let label_style = if is_selected {
+        row_style.add_modifier(Modifier::BOLD)
     } else {
-        Style::default()
-            .fg(ui_chrome::command_palette_title(theme))
-            .bg(surface)
+        row_style
     };
-    let label_style = row_style;
     let prefix_style = if is_selected {
         row_style
     } else {
         Style::default()
             .fg(ui_chrome::command_palette_muted(theme))
-            .bg(surface)
+            .bg(row_style.bg.unwrap_or(surface))
     };
-    let shortcut_style = prefix_style;
+    let shortcut_style = Style::default()
+        .fg(ui_chrome::command_palette_muted(theme))
+        .bg(row_style.bg.unwrap_or(surface));
 
     let shortcut_len = if shortcut.is_empty() {
         0
@@ -1173,11 +1186,7 @@ fn command_palette_row(
         spans.push(Span::styled(shortcut.to_string(), shortcut_style));
     }
 
-    spans.push(Span::styled("   ", row_style));
-    spans.push(Span::styled(
-        if show_thumb { "█" } else { " " }.to_string(),
-        prefix_style,
-    ));
+    spans.push(Span::styled(" ", row_style));
 
     Line::from(spans)
 }

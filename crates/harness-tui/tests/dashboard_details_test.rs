@@ -58,12 +58,15 @@ fn details() -> DashboardDetails {
 
 #[test]
 fn details_fields_include_metadata_lineage_status_and_activity() {
+    // arrange
     let mut details = details();
     details
         .attach(&SelectionKey::new("child-a"))
         .unwrap_or_abort();
 
+    // act
     let fields = details.fields().unwrap_or_abort();
+    // assert
     assert_eq!(fields.session_id.as_str(), "child-a");
     assert_eq!(fields.title.as_deref(), Some("Session child-a"));
     assert_eq!(
@@ -89,6 +92,7 @@ fn details_fields_include_metadata_lineage_status_and_activity() {
 
 #[test]
 fn nested_attach_cycle_and_back_restore_each_stable_roster_snapshot() {
+    // arrange
     let mut details = details();
     details
         .attach(&SelectionKey::new("child-a"))
@@ -121,7 +125,9 @@ fn nested_attach_cycle_and_back_restore_each_stable_roster_snapshot() {
     assert_eq!(details.roster_state().scroll, 8);
     assert_eq!(details.roster_state().draft, "child draft");
 
+    // act
     details.back().unwrap_or_abort();
+    // assert
     assert_eq!(details.current_session_id().as_str(), "root");
     assert_eq!(
         details
@@ -136,6 +142,7 @@ fn nested_attach_cycle_and_back_restore_each_stable_roster_snapshot() {
 
 #[test]
 fn stale_attach_and_missing_current_are_typed_and_non_mutating() {
+    // arrange
     let mut details = details();
     let missing = SelectionKey::new("gone");
     assert_eq!(
@@ -144,6 +151,7 @@ fn stale_attach_and_missing_current_are_typed_and_non_mutating() {
     );
     assert_eq!(details.current_session_id().as_str(), "root");
 
+    // act
     details
         .attach(&SelectionKey::new("child-b"))
         .unwrap_or_abort();
@@ -153,6 +161,7 @@ fn stale_attach_and_missing_current_are_typed_and_non_mutating() {
             &DashboardEligibilityRules::default(),
         )
         .unwrap_or_abort();
+    // assert
     assert_eq!(
         details.fields(),
         Err(NavigationError::StaleSession(SelectionKey::new("child-b")))
@@ -165,12 +174,15 @@ fn stale_attach_and_missing_current_are_typed_and_non_mutating() {
 
 #[test]
 fn details_replace_roster_on_narrow_and_overlay_on_wide_resize() {
+    // arrange
     let details = details();
     let narrow = details.layout_for(Rect::new(0, 0, 120, 40));
     assert_eq!(narrow.mode, DetailsLayoutMode::Replacement);
     assert!(narrow.roster.is_none());
 
+    // act
     let wide = details.layout_for(Rect::new(0, 0, 121, 40));
+    // assert
     assert_eq!(wide.mode, DetailsLayoutMode::Overlay);
     assert!(wide.roster.is_some());
     assert!(wide.details.width < 121);

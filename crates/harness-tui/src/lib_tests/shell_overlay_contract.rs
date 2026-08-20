@@ -355,14 +355,14 @@ pub(super) fn overlays_share_elevated_card_language() {
     assert!(
         bgs[start..end]
             .iter()
-            .all(|color| *color == theme.text.accent),
+            .all(|color| *color == theme.question_prompt.selected),
         "selected palette row uses semantic selection surface\n{row}"
     );
     assert!(
         fgs[start..end]
             .iter()
-            .all(|color| *color == theme.text.inverse),
-        "selected palette row uses semantic inverse text\n{row}"
+            .all(|color| *color == theme.text.primary),
+        "selected palette row uses semantic primary text\n{row}"
     );
 
     let mut sessions = app::AppState::new_startup(
@@ -396,13 +396,13 @@ pub(super) fn overlays_share_elevated_card_language() {
     assert!(
         sessions_bgs[sessions_start..sessions_end]
             .iter()
-            .all(|color| *color == theme.surface.card),
-        "session history selected row uses semantic card surface\n{sessions_row}"
+            .all(|color| *color == theme.question_prompt.selected),
+        "session history selected row uses semantic selection surface\n{sessions_row}"
     );
     assert!(
         sessions_fgs[sessions_start..sessions_end]
             .iter()
-            .all(|color| *color == theme.reference_terminal.primary),
+            .all(|color| *color == theme.text.primary),
         "session history selected row uses semantic primary text\n{sessions_row}"
     );
 }

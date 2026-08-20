@@ -71,7 +71,8 @@ pub(super) fn startup_surface_projects_clipboard_capability() {
             panel_row > hint_row,
             "welcome panel overlaps warning at {width}x{height}"
         );
-        assert!(rendered[1].contains("worktree"));
+        assert!(rendered[1].contains(" test-workspace"));
+        assert!(rendered[1].contains("/workspace/agent-harness"));
     }
 
     let loading = render_live_cells(&app, 100, 30);
@@ -80,12 +81,20 @@ pub(super) fn startup_surface_projects_clipboard_capability() {
         loading_rows
             .iter()
             .position(|row| row.iter().any(|cell| cell.symbol() == "╭")),
-        Some(7)
+        Some(8)
     );
-    assert!(loading
+    let loading_text = loading
         .content
-        .iter()
-        .any(|cell| cell.symbol().contains('•')));
+        .chunks(100)
+        .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n");
+    for action in ["New worktree", "Resume session", "Changelog", "Quit"] {
+        assert!(
+            loading_text.contains(action),
+            "startup capability notice hid {action:?}\n{loading_text}"
+        );
+    }
 
     let mut ready_app = app;
     for _ in 0..4 {
@@ -97,9 +106,13 @@ pub(super) fn startup_surface_projects_clipboard_capability() {
         ready_rows
             .iter()
             .position(|row| row.iter().any(|cell| cell.symbol() == "╭")),
-        Some(7)
+        Some(8)
     );
-    assert_eq!(loading, ready);
+    assert!(loading
+        .content
+        .iter()
+        .zip(&ready.content)
+        .all(|(loading_cell, ready_cell)| loading_cell.symbol() == ready_cell.symbol()));
     let ready_warning_row = ready_rows
         .iter()
         .position(|row| {

@@ -37,6 +37,11 @@ pub(crate) fn render_bordered_composer(
         &extra_identity,
         usize::from(area.width.saturating_sub(5)),
     );
+    let badge = if context.dock.variant == crate::view_model::ControlDockVariant::Startup {
+        startup_composer_badge(badge, area.width)
+    } else {
+        badge
+    };
     let content_lines = context.composer_lines.max(1);
     let strip_height = area
         .height
@@ -189,6 +194,20 @@ pub(crate) fn render_bordered_composer(
     }
 }
 
+fn startup_composer_badge(badge: String, area_width: u16) -> String {
+    if badge.is_empty() {
+        return badge;
+    }
+    let badge = badge
+        .strip_suffix("Demo")
+        .map_or(badge.clone(), |prefix| format!("{prefix}Demo mode"));
+    let field_width = 48.min(usize::from(area_width.saturating_sub(5)));
+    format!(
+        "{}{badge}",
+        " ".repeat(field_width.saturating_sub(display_width(&badge)))
+    )
+}
+
 pub(crate) fn connect_waiting_owns_input(app: &AppState) -> bool {
     app.connect_dialog.visible
         && app.connect_dialog.step == crate::app::auth_dialog::ConnectDialogStep::Waiting
@@ -224,9 +243,27 @@ mod active_thinking_color_tests {
     use super::*;
 
     #[test]
+    fn empty_startup_badge_keeps_continuous_bottom_border_title() {
+        // arrange
+        // Given: startup has no model or supplemental identity to display.
+        let badge = String::new();
+
+        // act
+        // When: startup reserves its right-aligned identity field.
+        let rendered = startup_composer_badge(badge, 120);
+
+        // assert
+        // Then: the empty title path remains truly empty so Ratatui draws the whole border.
+        assert!(rendered.is_empty(), "empty badge became {rendered:?}");
+    }
+
+    #[test]
     fn live_composer_border_matches_the_groknight_active_prompt() {
+        // arrange
+        // act
         let theme = Theme::harness_chat();
 
+        // assert
         assert_eq!(
             live_composer_border_color(&theme, true),
             Color::Rgb(80, 80, 88)
@@ -239,6 +276,7 @@ mod active_thinking_color_tests {
 
     #[test]
     fn plan_composer_uses_reference_warning_marker_and_bright_border() {
+        // arrange
         // Given: the active Harness chat theme and a focused plan surface.
         let theme = Theme::harness_chat();
 
@@ -249,7 +287,9 @@ mod active_thinking_color_tests {
             true,
         );
 
+        // act
         // Then: the marker is warning-yellow and the border is terminal-primary bright.
+        // assert
         assert_eq!(style.accent, Color::LightYellow);
         assert_eq!(style.border, theme.reference_terminal.primary);
     }

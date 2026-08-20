@@ -215,8 +215,8 @@ fn live_shell_collapses_chrome_while_startup_reserves_footer() {
         );
         assert_eq!(
             startup_plan.footer.height,
-            1,
-            "{}: startup shell reserves a 1-row footer",
+            2,
+            "{}: startup shell reserves a 2-row footer",
             id.behavior_id()
         );
     }
@@ -692,7 +692,7 @@ fn startup_shell_renders_border_chrome_with_footer_band() {
         rendered.contains('╭') && rendered.contains('╰'),
         "startup shell renders bordered composer chrome\n{rendered}"
     );
-    assert_eq!(plan.footer.height, 1, "startup footer band is reserved");
+    assert_eq!(plan.footer.height, 2, "startup footer band is reserved");
     assert_eq!(dock.composer.height, 3, "empty startup composer is 3 rows");
     assert!(
         dock.shell.y.saturating_add(dock.shell.height)
@@ -701,9 +701,9 @@ fn startup_shell_renders_border_chrome_with_footer_band() {
     );
 }
 
-/// A pending permission attaches its fixed tray above the stable composer.
+/// A pending permission attaches its measured tray above the stable composer.
 #[test]
-fn permission_dock_attaches_fixed_tray_above_stable_composer() {
+fn permission_dock_attaches_measured_tray_above_stable_composer() {
     // arrange
     let mut app = idle_live_app();
     let idle_composer = plan_at(&app, 120, 40).composer;
@@ -730,7 +730,7 @@ fn permission_dock_attaches_fixed_tray_above_stable_composer() {
     let status = plan
         .status
         .expect("permission dock must reserve an attached status tray");
-    assert_eq!(status.height, 11, "permission tray uses the freeze height");
+    assert_eq!(status.height, 9, "one-line permission uses measured height");
     assert_eq!(
         plan.composer.map(|area| area.y),
         idle_composer.map(|area| area.y.saturating_add(1)),

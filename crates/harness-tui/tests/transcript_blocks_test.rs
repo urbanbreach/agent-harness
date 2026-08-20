@@ -11,9 +11,12 @@ fn example_turn() -> ReplayTurn {
 
 #[test]
 fn every_block_kind_has_design_contract_styling() {
+    // arrange
+    // act
     for kind in BlockKind::ALL {
         let style = style_for(kind);
 
+        // assert
         assert_eq!(style.indent, DESIGN_TOKENS.spacing.transcript_gutter_x);
         assert!(!style.glyph.is_empty());
         assert!(!style.separator.is_empty());
@@ -22,6 +25,7 @@ fn every_block_kind_has_design_contract_styling() {
 
 #[test]
 fn lifecycle_defaults_cover_every_kind_and_state() {
+    // arrange
     let lifecycles = [
         BlockLifecycle::Streaming,
         BlockLifecycle::Tool,
@@ -30,6 +34,7 @@ fn lifecycle_defaults_cover_every_kind_and_state() {
         BlockLifecycle::Failed,
     ];
 
+    // act
     for kind in BlockKind::ALL {
         for lifecycle in lifecycles {
             let state = default_fold(kind, lifecycle);
@@ -38,6 +43,7 @@ fn lifecycle_defaults_cover_every_kind_and_state() {
                 | (BlockKind::Tool, BlockLifecycle::Completed) => FoldState::Collapsed,
                 _ => FoldState::Expanded,
             };
+            // assert
             assert_eq!(state, expected, "{kind:?} {lifecycle:?}");
         }
     }
@@ -45,6 +51,7 @@ fn lifecycle_defaults_cover_every_kind_and_state() {
 
 #[test]
 fn per_block_fold_toggle_preserves_content_and_raw_data() {
+    // arrange
     let turn = example_turn();
     let id = turn.block_id(0);
     let raw = RawDisclosure::from_text("result: unchanged");
@@ -57,9 +64,11 @@ fn per_block_fold_toggle_preserves_content_and_raw_data() {
         Some(raw),
     );
 
+    // act
     assert!(blocks.toggle_fold(id).is_ok());
     let block = blocks.get(id);
 
+    // assert
     assert_eq!(
         block.map(|block| block.fold_state()),
         Some(FoldState::Collapsed)
@@ -73,6 +82,7 @@ fn per_block_fold_toggle_preserves_content_and_raw_data() {
 
 #[test]
 fn append_while_folded_keeps_the_block_folded() {
+    // arrange
     let id = example_turn().block_id(0);
     let mut blocks = TranscriptBlocks::new();
     blocks.insert(
@@ -84,9 +94,11 @@ fn append_while_folded_keeps_the_block_folded() {
     );
     assert!(blocks.toggle_fold(id).is_ok());
 
+    // act
     assert!(blocks.append(id, " +more").is_ok());
     let block = blocks.get(id);
 
+    // assert
     assert_eq!(
         block.map(|block| block.fold_state()),
         Some(FoldState::Collapsed)
@@ -96,6 +108,7 @@ fn append_while_folded_keeps_the_block_folded() {
 
 #[test]
 fn replay_reconstructs_identical_blocks_and_fold_state() {
+    // arrange
     let id = example_turn().block_id(0);
     let events = [
         BlockEvent::Create {
@@ -115,11 +128,13 @@ fn replay_reconstructs_identical_blocks_and_fold_state() {
         },
     ];
 
+    // act
     let replayed = TranscriptBlocks::replay(&events);
     assert!(replayed.is_ok());
     let mut expected = TranscriptBlocks::new();
     assert!(expected.apply_all(&events).is_ok());
 
+    // assert
     assert_eq!(
         replayed.map(|blocks| blocks.snapshot()),
         Ok(expected.snapshot())
@@ -128,6 +143,7 @@ fn replay_reconstructs_identical_blocks_and_fold_state() {
 
 #[test]
 fn raw_disclosure_redacts_provider_and_auth_secrets_without_dropping_shape() {
+    // arrange
     let source = serde_json::json!({
         "model": "gpt",
         "api_key": "sk-1234567890abcdefghij",
@@ -145,6 +161,7 @@ fn raw_disclosure_redacts_provider_and_auth_secrets_without_dropping_shape() {
         RawPayload::Text(_) => return,
     };
 
+    // act
     assert_eq!(redacted["model"], "gpt");
     assert_eq!(redacted["nested"][0]["ok"], true);
     assert_eq!(redacted["nested"].as_array().map(Vec::len), Some(2));
@@ -159,6 +176,7 @@ fn raw_disclosure_redacts_provider_and_auth_secrets_without_dropping_shape() {
         &RawPayload::Text("Authorization: Bearer <redacted>".to_string())
     );
 
+    // assert
     insta::assert_json_snapshot!(redacted, @r###"
     {
       "api_key": "<redacted>",

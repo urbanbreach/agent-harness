@@ -40,6 +40,9 @@ const PTY_SIGNOFF_ENV: &str = "HARNESS_TUI_PTY_SIGNOFF";
 const PARITY_STRICT_ENV: &str = "HARNESS_TUI_PARITY_STRICT";
 const HELPER_SCENARIO_ENV: &str = "HARNESS_TUI_PTY_HELPER_SCENARIO";
 const HELPER_INJECT_DELAY_MS_ENV: &str = "HARNESS_TUI_PTY_HELPER_INJECT_DELAY_MS";
+const PERMISSION_SUMMARY_ENV: &str = "HARNESS_TUI_PTY_PERMISSION_SUMMARY";
+const PERMISSION_TIMEOUT_MS_ENV: &str = "HARNESS_TUI_PTY_PERMISSION_TIMEOUT_MS";
+const PERMISSION_AUTO_RESOLVE_MS_ENV: &str = "HARNESS_TUI_PTY_PERMISSION_AUTO_RESOLVE_MS";
 const LIVE_THINKING_TEXT_ENV: &str = "HARNESS_TUI_PTY_THINKING_TEXT";
 const TYPE_FIRST_STARTUP_SCENARIO: &str = "type_first_startup";
 const IDLE_SHELL_SCENARIO: &str = "idle_shell";
@@ -1472,6 +1475,18 @@ pub(crate) fn pty_helper_permission_overlay() {
             "perm_parity_overlay",
             PERMISSION_TOOL_CALL_ID,
         ))));
+        if let Some(delay) = std::env::var(PERMISSION_AUTO_RESOLVE_MS_ENV)
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+        {
+            thread::sleep(Duration::from_millis(delay));
+            let _ = inject_tx.send(LiveUpdate::Event(Box::new(permission_resolved_event(
+                8,
+                "perm_parity_overlay",
+                harness_core::event::PermissionDecision::Deny,
+                Some("permission timed out".to_string()),
+            ))));
+        }
     });
 
     let resolve_tx = update_tx.clone();
@@ -2982,9 +2997,13 @@ fn permission_requested_event(
             permission_id: permission_id.to_string(),
             kind: "edit_fs".to_string(),
             tool_call_id: Some(tool_call_id.into()),
-            summary: r#"{"path":"demo.txt"}"#.to_string(),
+            summary: std::env::var(PERMISSION_SUMMARY_ENV)
+                .unwrap_or_else(|_| r#"{"path":"demo.txt"}"#.to_string()),
             request_digest: format!("digest-{permission_id}"),
-            timeout_ms: 30_000,
+            timeout_ms: std::env::var(PERMISSION_TIMEOUT_MS_ENV)
+                .ok()
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(30_000),
             default_decision: harness_core::event::PermissionDecision::Deny,
         }),
     }

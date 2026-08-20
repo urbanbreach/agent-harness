@@ -19,9 +19,12 @@ where
 
 #[test]
 fn keyboard_word_and_line_movement_is_grapheme_safe_and_deterministic() {
+    // arrange
+    // act
     assert_deterministic(|| {
         let mut editor = ComposerEditor::from_text("alpha beta\n界🙂");
         editor.move_word_left();
+        // assert
         assert_eq!(editor.cursor().insertion_index(), 11);
         editor.move_line_start();
         assert_eq!(editor.cursor().insertion_index(), 11);
@@ -31,6 +34,7 @@ fn keyboard_word_and_line_movement_is_grapheme_safe_and_deterministic() {
 
 #[test]
 fn mouse_selection_keeps_structured_atoms_whole() {
+    // arrange
     assert_deterministic(|| {
         let mut editor = ComposerEditor::from_text("a界b");
         editor.move_buffer_start();
@@ -45,7 +49,9 @@ fn mouse_selection_keeps_structured_atoms_whole() {
             .update_mouse_selection(MousePoint::new(0, 5), 10)
             .expect("mouse active point is on the first visual line");
 
+        // act
         let selection = editor.selection().expect("selection is active");
+        // assert
         assert_eq!(selection.start().insertion_index(), 0);
         assert_eq!(selection.end().insertion_index(), 4);
         assert!(matches!(
@@ -58,12 +64,15 @@ fn mouse_selection_keeps_structured_atoms_whole() {
 
 #[test]
 fn paste_preserves_cjk_emoji_grapheme_and_multiline_boundaries() {
+    // arrange
+    // act
     assert_deterministic(|| {
         let mut editor = ComposerEditor::new();
         editor
             .paste("e\u{301}界🙂\r\nnext")
             .expect("paste is valid");
 
+        // assert
         assert_eq!(editor.text(), "e\u{301}界🙂\nnext");
         assert_eq!(editor.buffer().atoms().len(), 8);
         assert_eq!(editor.cursor().insertion_index(), 8);
@@ -73,11 +82,14 @@ fn paste_preserves_cjk_emoji_grapheme_and_multiline_boundaries() {
 
 #[test]
 fn attachment_insertion_is_one_undo_group() {
+    // arrange
+    // act
     assert_deterministic(|| {
         let mut editor = ComposerEditor::from_text("a");
         editor
             .insert_attachment(AttachmentId::new(11))
             .expect("attachment insertion is valid");
+        // assert
         assert_eq!(editor.undo_depth(), 1);
         assert_eq!(editor.text(), "a[attachment:11]");
         assert!(editor.undo());
@@ -89,10 +101,13 @@ fn attachment_insertion_is_one_undo_group() {
 
 #[test]
 fn history_edit_restores_scratch_without_clobbering_saved_prompt() {
+    // arrange
+    // act
     assert_deterministic(|| {
         let mut editor = ComposerEditor::from_text("scratch");
         editor.set_history(vec!["old one".into(), "old two".into()]);
         editor.history_previous();
+        // assert
         assert_eq!(editor.text(), "old two");
         editor.insert_text("!").expect("text insertion is valid");
         assert_eq!(editor.text(), "old two!");
@@ -105,11 +120,14 @@ fn history_edit_restores_scratch_without_clobbering_saved_prompt() {
 
 #[test]
 fn contiguous_char_deletes_group_but_word_delete_is_separate() {
+    // arrange
+    // act
     assert_deterministic(|| {
         let mut editor = ComposerEditor::from_text("one two");
         editor.backspace().expect("backspace is valid");
         editor.backspace().expect("backspace is valid");
         editor.backspace().expect("backspace is valid");
+        // assert
         assert_eq!(editor.text(), "one ");
         assert_eq!(editor.undo_depth(), 1);
         assert!(editor.undo());

@@ -49,6 +49,7 @@ impl SemanticRole {
                 ColorRole::PanelElevated => "palette:panel_elevated",
                 ColorRole::Overlay => "palette:overlay",
                 ColorRole::Card => "palette:card",
+                ColorRole::ModalHover => "palette:modal_hover",
                 ColorRole::SelectedCard => "palette:selected_card",
                 ColorRole::PromptActiveSurface => "palette:prompt_active_surface",
                 ColorRole::BorderSubtle => "palette:border_subtle",

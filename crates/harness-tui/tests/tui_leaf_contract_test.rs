@@ -24,8 +24,11 @@ use ratatui::Terminal;
 /// ComposerLeafView is deterministic: same inputs produce same outputs.
 #[test]
 fn composer_leaf_view_is_deterministic() {
+    // arrange
+    // act
     let a = ComposerLeafView::new(true, true);
     let b = ComposerLeafView::new(true, true);
+    // assert
     assert_eq!(a, b);
     let c = ComposerLeafView::new(false, true);
     assert_ne!(a, c);
@@ -34,8 +37,11 @@ fn composer_leaf_view_is_deterministic() {
 /// TranscriptLeafView is deterministic.
 #[test]
 fn transcript_leaf_view_is_deterministic() {
+    // arrange
+    // act
     let a = TranscriptLeafView::new(0, 10);
     let b = TranscriptLeafView::new(0, 10);
+    // assert
     assert_eq!(a, b);
     let c = TranscriptLeafView::new(5, 10);
     assert_ne!(a, c);
@@ -44,8 +50,11 @@ fn transcript_leaf_view_is_deterministic() {
 /// OverlayLeafView is deterministic.
 #[test]
 fn overlay_leaf_view_is_deterministic() {
+    // arrange
+    // act
     let a = OverlayLeafView::new("test", true);
     let b = OverlayLeafView::new("test", true);
+    // assert
     assert_eq!(a, b);
     let c = OverlayLeafView::new("test", false);
     assert_ne!(a, c);
@@ -54,8 +63,11 @@ fn overlay_leaf_view_is_deterministic() {
 /// ActionLeaf is deterministic.
 #[test]
 fn action_leaf_is_deterministic() {
+    // arrange
+    // act
     let a = ActionLeaf::Submit;
     let b = ActionLeaf::Submit;
+    // assert
     assert_eq!(a, b);
     assert_ne!(a, ActionLeaf::Cancel);
 }
@@ -64,9 +76,12 @@ fn action_leaf_is_deterministic() {
 /// without any registry, runtime, or app state.
 #[test]
 fn leaf_views_have_no_app_state_dependency() {
+    // arrange
+    // act
     let _composer = ComposerLeafView::default();
     let _transcript = TranscriptLeafView::default();
     let _overlay = OverlayLeafView::default();
+    // assert
     let _action = ActionLeaf::default();
 }
 
@@ -74,9 +89,12 @@ fn leaf_views_have_no_app_state_dependency() {
 /// with no shared state or global references.
 #[test]
 fn leaf_views_have_no_registry_dependency() {
+    // arrange
+    // act
     // Construct two independent instances — they must not share state.
     let composer_a = ComposerLeafView::new(true, false);
     let composer_b = ComposerLeafView::new(false, true);
+    // assert
     assert_ne!(composer_a, composer_b);
     // Modifying one does not affect the other (Copy semantics).
     let mut composer_c = composer_a;
@@ -89,6 +107,7 @@ fn leaf_views_have_no_registry_dependency() {
 /// IDs in order. This is a real-surface artifact, not a snapshot.
 #[test]
 fn slash_menu_renders_all_26_commands_in_order() {
+    // arrange
     let commands = slash_commands();
     assert_eq!(commands.len(), 26, "registry must have 26 commands");
 
@@ -117,6 +136,7 @@ fn slash_menu_renders_all_26_commands_in_order() {
     let buffer = terminal.backend().buffer().clone();
     let output = buffer_to_string(&buffer, area.width);
 
+    // act
     // Verify all 26 IDs appear in the rendered output, in order.
     let mut last_pos = 0;
     for cmd in commands {
@@ -125,6 +145,7 @@ fn slash_menu_renders_all_26_commands_in_order() {
         let pos = output
             .find(&needle)
             .unwrap_or_else(|| panic!("slash menu render missing command: {needle}\n{output}"));
+        // assert
         assert!(
             pos >= last_pos,
             "command {needle} appeared out of order at pos {pos} (last was {last_pos})"
@@ -137,6 +158,7 @@ fn slash_menu_renders_all_26_commands_in_order() {
 /// Run with `--nocapture` to see the output.
 #[test]
 fn slash_menu_render_capture() {
+    // arrange
     let commands = slash_commands();
     let area = Rect::new(0, 0, 80, 30);
     let backend = TestBackend::new(area.width, area.height);
@@ -160,7 +182,9 @@ fn slash_menu_render_capture() {
         })
         .expect("draw");
 
+    // act
     let buffer = terminal.backend().buffer().clone();
     let output = buffer_to_string(&buffer, area.width);
+    // assert
     println!("{output}");
 }

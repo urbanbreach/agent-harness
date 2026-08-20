@@ -152,9 +152,12 @@ mod tests {
 
     #[test]
     fn context_groups_include_skill_aliases() {
+        // arrange
+        // act
         // Given: both shipped spellings of the skill loader.
         // When: the context-group classifier evaluates them.
         // Then: either spelling participates in compact context summaries.
+        // assert
         assert!(context_group_tool_id("skill"));
         assert!(context_group_tool_id("skill.load"));
     }

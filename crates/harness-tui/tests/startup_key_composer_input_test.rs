@@ -26,6 +26,7 @@ use harness_tui::leaf_views::{
     ComposerLeafView, FocusOwner, FooterGrammar, InputLeafView, KeyLeafView, StartupLeafView,
     StartupPhase, TranscriptLeafView,
 };
+use harness_tui::overlay::OverlayKind;
 use harness_tui::render_test::{render_to_buffer, render_to_string};
 use harness_tui::ui;
 use ratatui::layout::Rect;
@@ -73,8 +74,11 @@ fn ctrl_w() -> KeyEvent {
 /// StartupLeafView is deterministic: same inputs produce same outputs.
 #[test]
 fn startup_leaf_view_is_deterministic() {
+    // arrange
+    // act
     let a = StartupLeafView::new(StartupPhase::WelcomePanel, true, true, true);
     let b = StartupLeafView::new(StartupPhase::WelcomePanel, true, true, true);
+    // assert
     assert_eq!(a, b);
     let c = StartupLeafView::new(StartupPhase::DraftActive, false, true, true);
     assert_ne!(a, c);
@@ -83,8 +87,11 @@ fn startup_leaf_view_is_deterministic() {
 /// KeyLeafView is deterministic.
 #[test]
 fn key_leaf_view_is_deterministic() {
+    // arrange
+    // act
     let a = KeyLeafView::new(FooterGrammar::Welcome, true);
     let b = KeyLeafView::new(FooterGrammar::Welcome, true);
+    // assert
     assert_eq!(a, b);
     let c = KeyLeafView::new(FooterGrammar::Draft, true);
     assert_ne!(a, c);
@@ -93,8 +100,11 @@ fn key_leaf_view_is_deterministic() {
 /// InputLeafView is deterministic.
 #[test]
 fn input_leaf_view_is_deterministic() {
+    // arrange
+    // act
     let a = InputLeafView::new(FocusOwner::Composer, "hello", 5, false);
     let b = InputLeafView::new(FocusOwner::Composer, "hello", 5, false);
+    // assert
     assert_eq!(a, b);
     let c = InputLeafView::new(FocusOwner::Composer, "world", 5, false);
     assert_ne!(a, c);
@@ -104,10 +114,13 @@ fn input_leaf_view_is_deterministic() {
 /// without any registry, runtime, or app state.
 #[test]
 fn leaf_views_have_no_app_state_dependency() {
+    // arrange
+    // act
     let _startup = StartupLeafView::default();
     let _key = KeyLeafView::default();
     let _input = InputLeafView::default();
     let _composer = ComposerLeafView::default();
+    // assert
     let _transcript = TranscriptLeafView::default();
 }
 
@@ -115,8 +128,11 @@ fn leaf_views_have_no_app_state_dependency() {
 /// do not share state (Copy semantics).
 #[test]
 fn leaf_views_have_no_registry_dependency() {
+    // arrange
+    // act
     let startup_a = StartupLeafView::new(StartupPhase::WelcomePanel, true, true, true);
     let startup_b = StartupLeafView::new(StartupPhase::DraftActive, false, true, true);
+    // assert
     assert_ne!(startup_a, startup_b);
     let mut startup_c = startup_a;
     startup_c.welcome_visible = false;
@@ -132,6 +148,8 @@ fn leaf_views_have_no_registry_dependency() {
 /// focus_owner == "composer".
 #[test]
 fn startup_leaf_view_from_app_welcome() {
+    // arrange
+    // act
     let app = startup_app();
     let view = StartupLeafView::from_app(
         app.lifecycle_shell_state(),
@@ -139,6 +157,7 @@ fn startup_leaf_view_from_app_welcome() {
         app.focus,
         !app.composer.prompt_buffer.is_empty(),
     );
+    // assert
     assert_eq!(view.phase, StartupPhase::WelcomePanel);
     assert!(view.welcome_visible);
     assert!(view.breadcrumb_visible);
@@ -150,6 +169,8 @@ fn startup_leaf_view_from_app_welcome() {
 /// and clears the welcome panel.
 #[test]
 fn startup_leaf_view_from_app_draft_clears_welcome() {
+    // arrange
+    // act
     let mut app = startup_app();
     app.composer.prompt_buffer = "Browser QA draft".to_string();
     app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
@@ -159,6 +180,7 @@ fn startup_leaf_view_from_app_draft_clears_welcome() {
         app.focus,
         !app.composer.prompt_buffer.is_empty(),
     );
+    // assert
     assert_eq!(view.phase, StartupPhase::DraftActive);
     assert!(!view.welcome_visible);
     assert!(view.welcome_cleared_by_draft());
@@ -169,12 +191,15 @@ fn startup_leaf_view_from_app_draft_clears_welcome() {
 /// the composer has text.
 #[test]
 fn key_leaf_view_footer_grammar_welcome_vs_draft() {
+    // arrange
     let app = startup_app();
     let welcome_view = KeyLeafView::from_state(app.startup_shell_visible(), false);
     assert_eq!(welcome_view.grammar, FooterGrammar::Welcome);
     assert!(welcome_view.footer_visible);
 
+    // act
     let draft_view = KeyLeafView::from_state(app.startup_shell_visible(), true);
+    // assert
     assert_eq!(draft_view.grammar, FooterGrammar::Draft);
     assert!(draft_view.footer_changes_with_composer());
     assert_eq!(
@@ -186,6 +211,8 @@ fn key_leaf_view_footer_grammar_welcome_vs_draft() {
 /// Input leaf view: focus owner is "composer" at startup.
 #[test]
 fn input_leaf_view_focus_owner_composer_at_startup() {
+    // arrange
+    // act
     let app = startup_app();
     let view = InputLeafView::from_state(
         app.focus == Focus::Prompt,
@@ -193,6 +220,7 @@ fn input_leaf_view_focus_owner_composer_at_startup() {
         app.composer.prompt_cursor,
         app.startup_shell_visible(),
     );
+    // assert
     assert_eq!(view.focus_owner, FocusOwner::Composer);
     assert!(view.focus_is_composer());
     assert_eq!(view.focus_owner.as_str(), "composer");
@@ -201,8 +229,11 @@ fn input_leaf_view_focus_owner_composer_at_startup() {
 /// Input leaf view: draft clears welcome.
 #[test]
 fn input_leaf_view_draft_clears_welcome() {
+    // arrange
+    // act
     let draft = "Browser QA draft";
     let view = InputLeafView::from_state(true, draft, draft.len(), true);
+    // assert
     assert!(view.draft_clears_welcome());
     assert!(!view.welcome_visible);
 }
@@ -210,56 +241,74 @@ fn input_leaf_view_draft_clears_welcome() {
 /// Input leaf view: cursor stays in bounds.
 #[test]
 fn input_leaf_view_cursor_in_bounds() {
+    // arrange
     let draft = "hello";
     let view = InputLeafView::from_state(true, draft, 3, false);
     assert!(view.cursor_in_bounds());
 
+    // act
     let out_of_bounds = InputLeafView::from_state(true, draft, 100, false);
+    // assert
     assert!(!out_of_bounds.cursor_in_bounds());
 }
 
 /// Input leaf view: Unicode display width is computed without panic.
 #[test]
 fn input_leaf_view_unicode_display_width() {
+    // arrange
+    // act
     let cjk = "你好世界";
     let view = InputLeafView::from_state(true, cjk, cjk.chars().count(), false);
     let width = view.draft_display_width();
+    // assert
     assert_eq!(width, 8, "4 CJK chars should be 8 cells wide");
     assert!(view.cursor_in_bounds());
 }
 
 #[test]
 fn ctrl_w_opens_optional_worktree_name_dialog_without_launching() {
+    // arrange
     let (mut app, intents) = startup_app_with_intents();
 
     app.handle_key(ctrl_w());
 
+    // act
     let rendered = render(&app);
+    // assert
     assert!(rendered.contains("Create worktree"));
     assert!(rendered.contains("Name (optional)"));
     assert!(rendered.contains("Changelog"));
-    assert!(!rendered.contains("Resume session"));
+    assert_eq!(
+        app.overlay_stack().top(),
+        Some(OverlayKind::NewWorktreeDialog)
+    );
     assert!(intents.lock().expect("intent sink lock").is_empty());
 }
 
 #[test]
 fn worktree_name_dialog_escape_cancels_without_launching() {
+    // arrange
     let (mut app, intents) = startup_app_with_intents();
     app.handle_key(ctrl_w());
 
+    // act
     app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
 
+    // assert
     assert!(!render(&app).contains("Create worktree"));
     assert!(intents.lock().expect("intent sink lock").is_empty());
 }
 
 #[test]
 fn worktree_name_dialog_enter_launches_with_generated_name() {
+    // arrange
     let (mut app, intents) = startup_app_with_intents();
     app.handle_key(ctrl_w());
 
+    // act
     app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
+    // assert
     assert_eq!(
         intents.lock().expect("intent sink lock").as_slice(),
         &[UiIntent::NewWorktreeSession { name: None }]
@@ -268,14 +317,17 @@ fn worktree_name_dialog_enter_launches_with_generated_name() {
 
 #[test]
 fn worktree_name_dialog_enter_launches_with_trimmed_name() {
+    // arrange
     let (mut app, intents) = startup_app_with_intents();
     app.handle_key(ctrl_w());
     for character in "  feature-auth  ".chars() {
         app.handle_key(KeyEvent::new(KeyCode::Char(character), KeyModifiers::NONE));
     }
 
+    // act
     app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
+    // assert
     assert_eq!(
         intents.lock().expect("intent sink lock").as_slice(),
         &[UiIntent::NewWorktreeSession {
@@ -291,6 +343,7 @@ fn worktree_name_dialog_enter_launches_with_trimmed_name() {
 /// P0-START-01: startup renders bordered welcome panel with composer focus.
 #[test]
 fn render_p0_start_01_welcome_panel_bordered() {
+    // arrange
     let app = startup_app();
     let rendered = render(&app);
 
@@ -327,6 +380,7 @@ fn render_p0_start_01_welcome_panel_bordered() {
         "identity: must not render the external product name\n{rendered}"
     );
 
+    // act
     // Focus owner verification via leaf view
     let view = StartupLeafView::from_app(
         app.lifecycle_shell_state(),
@@ -334,11 +388,14 @@ fn render_p0_start_01_welcome_panel_bordered() {
         app.focus,
         !app.composer.prompt_buffer.is_empty(),
     );
+    // assert
     assert_eq!(view.focus_owner(), "composer");
 }
 
 #[test]
 fn startup_box_borders_use_grok_build_colors() {
+    // arrange
+    // act
     let app = startup_app();
     let area = Rect::new(0, 0, W, H);
     let layout = FrameLayoutPlan::for_app(&app, area);
@@ -355,12 +412,15 @@ fn startup_box_borders_use_grok_build_colors() {
         .find(|cell| cell.symbol() == "╭")
         .expect("startup welcome border must be rendered");
 
+    // assert
     assert_eq!(welcome_corner.fg, Color::Rgb(51, 51, 51));
     assert_eq!(buffer[(composer.x, composer.y)].fg, Color::Rgb(80, 80, 88));
 }
 
 #[test]
 fn new_worktree_dialog_border_uses_grok_modal_color() {
+    // arrange
+    // act
     let mut app = startup_app();
     app.handle_key(ctrl_w());
     let area = Rect::new(0, 0, W, H);
@@ -373,12 +433,14 @@ fn new_worktree_dialog_border_uses_grok_modal_color() {
         .find(|cell| cell.symbol() == "╭" && cell.fg == Color::Rgb(88, 88, 88))
         .expect("new worktree dialog border must use Grok gray_dim");
 
+    // assert
     assert_eq!(dialog_corner.fg, Color::Rgb(88, 88, 88));
 }
 
 /// P0-START-02: breadcrumb and clipboard warning visible at startup.
 #[test]
 fn render_p0_start_02_breadcrumb_and_warning() {
+    // arrange
     let mut app = startup_app();
     app.status_banner = Some("clipboard is unreachable".to_string());
     let rendered = render(&app);
@@ -404,6 +466,7 @@ fn render_p0_start_02_breadcrumb_and_warning() {
         "P0-START-02: welcome panel must sit below breadcrumb+warning band (row {welcome_top})\n{rendered}"
     );
 
+    // act
     // Focus owner verification
     let view = StartupLeafView::from_app(
         app.lifecycle_shell_state(),
@@ -411,12 +474,14 @@ fn render_p0_start_02_breadcrumb_and_warning() {
         app.focus,
         !app.composer.prompt_buffer.is_empty(),
     );
+    // assert
     assert_eq!(view.focus_owner(), "composer");
 }
 
 /// P0-START-03: typing clears welcome; composer retains draft; footer switches grammar.
 #[test]
 fn render_p0_start_03_draft_clears_welcome() {
+    // arrange
     let mut app = startup_app();
     app.composer.prompt_buffer = "Browser QA draft".to_string();
     app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
@@ -443,6 +508,7 @@ fn render_p0_start_03_draft_clears_welcome() {
         "P0-KEY-01: draft footer must use Enter:send grammar\n{rendered}"
     );
 
+    // act
     // Leaf view confirms transition
     let view = StartupLeafView::from_app(
         app.lifecycle_shell_state(),
@@ -450,6 +516,7 @@ fn render_p0_start_03_draft_clears_welcome() {
         app.focus,
         !app.composer.prompt_buffer.is_empty(),
     );
+    // assert
     assert_eq!(view.phase, StartupPhase::DraftActive);
     assert!(view.welcome_cleared_by_draft());
     assert_eq!(view.focus_owner(), "composer");
@@ -458,6 +525,7 @@ fn render_p0_start_03_draft_clears_welcome() {
 /// P0-COMP-01: composer is a bordered strip with model badge.
 #[test]
 fn render_p0_comp_01_composer_bordered_strip_with_model_badge() {
+    // arrange
     let app = startup_app();
     let rendered = render(&app);
     let lines: Vec<&str> = rendered.lines().collect();
@@ -491,6 +559,7 @@ fn render_p0_comp_01_composer_bordered_strip_with_model_badge() {
         "P0-COMP-01: composer chrome should surface model/session identity\n{rendered}"
     );
 
+    // act
     // Focus owner verification
     let view = InputLeafView::from_state(
         app.focus == Focus::Prompt,
@@ -498,12 +567,14 @@ fn render_p0_comp_01_composer_bordered_strip_with_model_badge() {
         app.composer.prompt_cursor,
         app.startup_shell_visible(),
     );
+    // assert
     assert_eq!(view.focus_owner, FocusOwner::Composer);
 }
 
 /// P0-KEY-01: footer vocabulary changes with composer state.
 #[test]
 fn render_p0_key_01_footer_changes_with_draft() {
+    // arrange
     // Welcome footer
     let app_welcome = startup_app();
     let _rendered_welcome = render(&app_welcome);
@@ -519,7 +590,9 @@ fn render_p0_key_01_footer_changes_with_draft() {
     assert_eq!(key_draft.grammar, FooterGrammar::Draft);
     assert!(key_draft.footer_changes_with_composer());
 
+    // act
     // Draft footer has Enter:send grammar
+    // assert
     assert!(
         rendered_draft.contains("Enter:send") || rendered_draft.contains("Enter: send"),
         "P0-KEY-01: draft footer must use Enter:send grammar\n{rendered_draft}"
@@ -528,6 +601,7 @@ fn render_p0_key_01_footer_changes_with_draft() {
 
 #[test]
 fn startup_draft_footer_uses_configured_submit_binding() {
+    // arrange
     // Given
     let mut app = startup_app();
     app.apply_keybindings(BTreeMap::from([(
@@ -540,7 +614,9 @@ fn startup_draft_footer_uses_configured_submit_binding() {
     // When
     let rendered = render(&app);
 
+    // act
     // Then
+    // assert
     assert!(
         rendered.contains("Ctrl+g:send") && !rendered.contains("Enter:send"),
         "startup draft footer must show the active submit binding\n{rendered}"
@@ -554,6 +630,7 @@ fn startup_draft_footer_uses_configured_submit_binding() {
 /// Typing at startup transitions focus to Prompt (composer).
 #[test]
 fn input_typing_at_startup_transitions_focus_to_prompt() {
+    // arrange
     let mut app = startup_app();
     assert_eq!(app.focus, Focus::Prompt);
 
@@ -563,10 +640,12 @@ fn input_typing_at_startup_transitions_focus_to_prompt() {
     assert_eq!(app.composer.prompt_buffer, "B");
     assert_eq!(app.composer.prompt_cursor, 1);
 
+    // act
     // Type more chars
     for c in "rowser QA draft".chars() {
         app.handle_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
     }
+    // assert
     assert_eq!(app.composer.prompt_buffer, "Browser QA draft");
     assert_eq!(
         app.composer.prompt_cursor,
@@ -574,389 +653,4 @@ fn input_typing_at_startup_transitions_focus_to_prompt() {
     );
 }
 
-#[test]
-fn input_typed_text_uses_grok_primary_on_canvas() {
-    let mut app = startup_app();
-    for character in "Browser QA draft".chars() {
-        app.handle_key(KeyEvent::new(KeyCode::Char(character), KeyModifiers::NONE));
-    }
-
-    let buffer = render_to_buffer(&app, Rect::new(0, 0, W, H), |app, frame, _area| {
-        ui::render_app(frame, app);
-    });
-    let draft = "Browser QA draft".chars().collect::<Vec<_>>();
-    let draft_cells = buffer
-        .content
-        .windows(draft.len())
-        .find(|cells| {
-            cells
-                .iter()
-                .zip(&draft)
-                .all(|(cell, expected)| cell.symbol().starts_with(*expected))
-        })
-        .expect("typed draft must be rendered in the composer");
-
-    let foregrounds = draft_cells.iter().map(|cell| cell.fg).collect::<Vec<_>>();
-    let backgrounds = draft_cells.iter().map(|cell| cell.bg).collect::<Vec<_>>();
-    assert!(
-        foregrounds
-            .iter()
-            .all(|color| *color == Color::Rgb(225, 225, 225)),
-        "typed draft foregrounds must match Grok primary: {foregrounds:?}"
-    );
-    assert!(
-        backgrounds
-            .iter()
-            .all(|color| *color == Color::Rgb(20, 20, 20)),
-        "typed draft backgrounds must match Grok canvas: {backgrounds:?}"
-    );
-
-    let composer = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, W, H))
-        .dock
-        .expect("startup shell must include a dock")
-        .composer;
-    assert_eq!(buffer[(composer.x, composer.y)].fg, Color::Rgb(80, 80, 88));
-    assert_eq!(
-        buffer[(composer.x + 2, composer.y + 1)].fg,
-        Color::Rgb(200, 200, 200)
-    );
-}
-
-#[test]
-fn unfocused_empty_composer_uses_grok_idle_state() {
-    let mut app = AppState::new_live(None, false, None);
-    app.focus = Focus::Details;
-    let area = Rect::new(0, 0, W, 40);
-    let composer = FrameLayoutPlan::for_app(&app, area)
-        .dock
-        .expect("live shell must include a dock")
-        .composer;
-    let buffer = render_to_buffer(&app, area, |app, frame, _area| {
-        ui::render_app(frame, app);
-    });
-    let input_row = (composer.x..composer.right())
-        .map(|x| buffer[(x, composer.y)].symbol())
-        .collect::<String>();
-
-    assert_eq!(composer.height, 1);
-    assert!(input_row.contains("Build anything"), "{input_row:?}");
-    assert_eq!(buffer[(composer.x, composer.y)].fg, Color::Rgb(88, 88, 88));
-    assert_eq!(
-        buffer[(composer.x + 2, composer.y)].fg,
-        Color::Rgb(78, 78, 78)
-    );
-}
-
-#[test]
-fn unfocused_draft_keeps_wrapped_height_and_cursor_follow_window() {
-    let mut app = AppState::new_live(None, false, None);
-    let draft = format!(
-        "FIRST alpha beta gamma delta epsilon zeta eta theta iota kappa {}LAST omega",
-        "middle ".repeat(80)
-    );
-    app.focus = Focus::Prompt;
-    app.handle_paste(&draft);
-    let area = Rect::new(0, 0, 80, 24);
-    let focused_composer = FrameLayoutPlan::for_app(&app, area)
-        .dock
-        .expect("live shell must include a dock")
-        .composer;
-
-    app.focus = Focus::Details;
-    let composer = FrameLayoutPlan::for_app(&app, area)
-        .dock
-        .expect("live shell must include a dock")
-        .composer;
-    let buffer = render_to_buffer(&app, area, |app, frame, _area| {
-        ui::render_app(frame, app);
-    });
-
-    assert!(focused_composer.height > 3, "{focused_composer:?}");
-    assert_eq!(composer.height, focused_composer.height, "{composer:?}");
-    let visible_draft = (composer.y + 1..composer.bottom() - 1)
-        .map(|y| {
-            (composer.x..composer.right())
-                .map(|x| buffer[(x, y)].symbol())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    assert!(!visible_draft.contains("FIRST"), "{visible_draft:?}");
-    assert!(visible_draft.contains("LAST"), "{visible_draft:?}");
-    assert_eq!(
-        buffer[(composer.x + 4, composer.bottom() - 2)].fg,
-        Color::Rgb(155, 155, 155)
-    );
-}
-
-#[test]
-fn focused_wrapped_draft_caps_at_six_content_rows() {
-    let mut app = AppState::new_live(None, false, None);
-    app.composer.prompt_buffer = "wrapped composer content ".repeat(200);
-    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
-    app.focus = Focus::Prompt;
-
-    let composer = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, 80, 24))
-        .dock
-        .expect("live shell must include a dock")
-        .composer;
-
-    assert_eq!(
-        composer.height, 8,
-        "six content rows plus top and bottom borders must cap the composer at eight rows"
-    );
-}
-
-#[test]
-fn live_composer_wraps_against_its_inset_width() {
-    for (width, height, draft_width) in [(120, 40, 111), (60, 20, 53)] {
-        let mut app = AppState::new_live(None, false, None);
-        app.composer.prompt_buffer = "x".repeat(draft_width);
-        app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
-        app.focus = Focus::Prompt;
-
-        let composer = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, width, height))
-            .dock
-            .expect("live shell must include a dock")
-            .composer;
-
-        assert_eq!(
-            composer.height, 4,
-            "draft at the inset-width boundary must wrap to two content rows at {width}x{height}"
-        );
-    }
-}
-
-#[test]
-fn shell_composer_semantics_preserve_border_corners_and_prompt_position() {
-    let mut app = AppState::new_live(None, false, None);
-    app.set_launch_metadata(
-        LaunchMetadata::from_model_ref(
-            "build",
-            "mock:this-model-name-is-deliberately-much-too-long-for-sixty-columns",
-        )
-        .with_mode_label("Shell"),
-    );
-    app.queued_prompt_count = 7;
-    app.composer.shell_mode = true;
-    let area = Rect::new(0, 0, 60, 20);
-    let composer = FrameLayoutPlan::for_app(&app, area)
-        .dock
-        .expect("live shell must include a dock")
-        .composer;
-    let buffer = render_to_buffer(&app, area, |app, frame, _area| {
-        ui::render_app(frame, app);
-    });
-
-    assert_eq!(buffer[(composer.x, composer.y)].symbol(), "╭");
-    assert_eq!(buffer[(composer.right() - 1, composer.y)].symbol(), "╮");
-    assert_eq!(buffer[(composer.x, composer.bottom() - 1)].symbol(), "╰");
-    assert_eq!(
-        buffer[(composer.right() - 1, composer.bottom() - 1)].symbol(),
-        "╯"
-    );
-    assert_eq!(buffer[(composer.x + 2, composer.y + 1)].symbol(), "!");
-    let bottom_border = (composer.x..composer.right())
-        .map(|x| buffer[(x, composer.bottom() - 1)].symbol())
-        .collect::<String>();
-    assert!(
-        bottom_border.contains("Run shell command"),
-        "{bottom_border:?}"
-    );
-    assert!(!bottom_border.contains("queued 7"), "{bottom_border:?}");
-}
-
-#[test]
-fn live_bordered_composer_reserves_an_inner_input_row() {
-    let app = AppState::new_live(None, false, None);
-    let plan = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, W, 40));
-    let composer = plan.dock.expect("live shell must include a dock").composer;
-
-    assert_eq!(
-        composer.height, 3,
-        "single-line bordered composer needs exactly top, input, and bottom rows; got {composer:?}"
-    );
-}
-
-/// Typing clears the welcome panel (startup_mode stays but welcome not visible).
-#[test]
-fn input_typing_clears_welcome_panel() {
-    let mut app = startup_app();
-    assert!(app.startup_shell_visible());
-
-    // Type a char to transition to Prompt
-    app.handle_key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE));
-    // Startup mode is still true, but the welcome panel is no longer
-    // the active surface because the composer has a draft.
-    let view = StartupLeafView::from_app(
-        app.lifecycle_shell_state(),
-        app.startup_mode,
-        app.focus,
-        !app.composer.prompt_buffer.is_empty(),
-    );
-    assert_eq!(view.phase, StartupPhase::DraftActive);
-    assert!(!view.welcome_visible);
-    assert!(view.welcome_cleared_by_draft());
-}
-
-/// Unicode text is handled without panic and cursor stays in bounds.
-#[test]
-fn input_unicode_text_no_panic() {
-    let mut app = startup_app();
-    // Type unicode chars one at a time
-    for c in "你好世界🌍".chars() {
-        app.handle_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
-    }
-    assert_eq!(app.composer.prompt_buffer, "你好世界🌍");
-
-    let view = InputLeafView::from_state(
-        app.focus == Focus::Prompt,
-        &app.composer.prompt_buffer,
-        app.composer.prompt_cursor,
-        app.startup_shell_visible(),
-    );
-    assert!(view.cursor_in_bounds());
-    let width = view.draft_display_width();
-    assert!(width > 0, "unicode text should have nonzero display width");
-}
-
-/// Enhanced key: backspace works on unicode text without panic.
-#[test]
-fn input_enhanced_key_backspace_unicode() {
-    let mut app = startup_app();
-    app.focus = Focus::Prompt;
-    // Type unicode chars
-    for c in "你好".chars() {
-        app.handle_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
-    }
-    assert_eq!(app.composer.prompt_buffer, "你好");
-    assert_eq!(app.composer.prompt_cursor, 2);
-
-    // Backspace one char
-    app.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
-    assert_eq!(app.composer.prompt_buffer, "你");
-    assert_eq!(app.composer.prompt_cursor, 1);
-
-    // Backspace again
-    app.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
-    assert_eq!(app.composer.prompt_buffer, "");
-    assert_eq!(app.composer.prompt_cursor, 0);
-}
-
-/// Empty draft at startup: focus owner is still composer.
-#[test]
-fn input_empty_draft_focus_owner_composer() {
-    let app = startup_app();
-    let view = InputLeafView::from_state(
-        app.focus == Focus::Prompt,
-        &app.composer.prompt_buffer,
-        app.composer.prompt_cursor,
-        app.startup_shell_visible(),
-    );
-    assert_eq!(view.focus_owner, FocusOwner::Composer);
-    assert!(view.welcome_visible);
-    assert_eq!(view.focus_owner.as_str(), "composer");
-}
-
-/// Small viewport (80x24) does not panic at startup.
-#[test]
-fn input_small_viewport_no_panic() {
-    let app = startup_app();
-    let rendered = render_to_string(&app, Rect::new(0, 0, 80, 24), |app, frame, _area| {
-        ui::render_app(frame, app)
-    });
-    // Must still render something
-    assert!(!rendered.is_empty());
-    // Composer glyph should still be present even at small viewport
-    assert!(
-        rendered.contains('❯') || rendered.contains('│'),
-        "small viewport must still render composer area\n{rendered}"
-    );
-}
-
-// ---------------------------------------------------------------------------
-// Failure scenario: empty-small-unicode-enhanced-key
-// Verifies no_panic==true and recovered==true
-// ---------------------------------------------------------------------------
-
-/// Failure scenario: empty draft, small viewport, unicode text, enhanced keys.
-/// The app must not panic and must recover to a usable state.
-#[test]
-fn failure_scenario_empty_small_unicode_enhanced_key() {
-    let mut app = startup_app();
-
-    // Render at small viewport — must not panic
-    let small = render_to_string(&app, Rect::new(0, 0, 80, 24), |app, frame, _area| {
-        ui::render_app(frame, app)
-    });
-    assert!(!small.is_empty(), "small viewport render must not be empty");
-
-    // Type unicode chars — must not panic
-    for c in "你好世界🌍".chars() {
-        app.handle_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
-    }
-    assert_eq!(app.composer.prompt_buffer, "你好世界🌍");
-
-    // Render with unicode draft at small viewport — must not panic
-    let small_unicode = render_to_string(&app, Rect::new(0, 0, 80, 24), |app, frame, _area| {
-        ui::render_app(frame, app)
-    });
-    assert!(
-        !small_unicode.is_empty(),
-        "unicode small viewport render must not be empty"
-    );
-
-    // Enhanced key: backspace — must not panic
-    app.handle_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
-    assert_eq!(
-        app.composer.prompt_buffer,
-        "你好世界🌍"[..].chars().take(4).collect::<String>()
-    );
-
-    // Recovered: app is still usable (can type more text)
-    for c in " recovered".chars() {
-        app.handle_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
-    }
-    assert!(app.composer.prompt_buffer.contains("recovered"));
-
-    // Final render — must not panic
-    let final_render = render_to_string(&app, Rect::new(0, 0, 80, 24), |app, frame, _area| {
-        ui::render_app(frame, app)
-    });
-    assert!(
-        !final_render.is_empty(),
-        "final render after recovery must not be empty"
-    );
-
-    // External postconditions
-    let view = InputLeafView::from_state(
-        app.focus == Focus::Prompt,
-        &app.composer.prompt_buffer,
-        app.composer.prompt_cursor,
-        app.startup_shell_visible(),
-    );
-    assert_eq!(view.focus_owner, FocusOwner::Composer);
-    assert!(view.cursor_in_bounds());
-}
-
-// ---------------------------------------------------------------------------
-// Render capture for evidence (run with --nocapture)
-// ---------------------------------------------------------------------------
-
-/// Print the rendered startup screen for evidence capture.
-#[test]
-fn render_startup_capture() {
-    let app = startup_app();
-    let rendered = render(&app);
-    println!("{rendered}");
-}
-
-/// Print the rendered draft screen for evidence capture.
-#[test]
-fn render_draft_capture() {
-    let mut app = startup_app();
-    app.composer.prompt_buffer = "Browser QA draft".to_string();
-    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
-    let rendered = render(&app);
-    println!("{rendered}");
-}
+include!("support/startup_key_composer_input_test_part2_test.rs");

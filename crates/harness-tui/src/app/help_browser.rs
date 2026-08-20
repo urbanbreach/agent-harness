@@ -49,6 +49,7 @@ pub(crate) struct HelpBrowserState {
     pub(crate) expanded_actions: BTreeSet<Action>,
     pub(crate) hide_dimmed: bool,
     pub(crate) mode: HelpMode,
+    pub(crate) return_action: Option<Action>,
     pub(crate) visual_offset: usize,
     pub(crate) follow_selection: bool,
 }
@@ -63,6 +64,7 @@ impl Default for HelpBrowserState {
             expanded_actions: BTreeSet::new(),
             hide_dimmed: false,
             mode: HelpMode::Browse,
+            return_action: None,
             visual_offset: 0,
             follow_selection: true,
         }

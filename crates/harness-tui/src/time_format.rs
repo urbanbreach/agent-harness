@@ -115,6 +115,9 @@ mod tests {
 
     #[test]
     fn wall_clock_hover_detail_formats_reference_overlay() {
+        // arrange
+        // act
+        // assert
         assert_eq!(
             wall_clock_hover_detail("2026-08-14T12:34:56Z"),
             "12:34:56 | Aug 14"

@@ -324,6 +324,7 @@ fn synchronized_writer_begin_bytes_match_dec_private_mode_2026() {
 
 #[test]
 fn accepted_frame_is_serialized_with_synchronized_markers() {
+    // arrange
     // Given: an empty bounded frame queue and its command-recording backend.
     let (mut output, writer, receiver) = FrameOutput::bounded(1);
     let mut backend = FrameOutputBackend::new(writer);
@@ -334,7 +335,9 @@ fn accepted_frame_is_serialized_with_synchronized_markers() {
     let submission = output.finish_frame().expect("finish frame");
     let frame = receiver.try_recv().expect("accepted frame");
 
+    // act
     // Then: the writer receives one indivisible synchronized-update record.
+    // assert
     assert_eq!(kind, FrameKind::Differential);
     assert_eq!(
         submission,
@@ -345,6 +348,7 @@ fn accepted_frame_is_serialized_with_synchronized_markers() {
 
 #[test]
 fn dense_draw_batches_terminal_capture_writes() {
+    // arrange
     // Given: enough changed cells to exceed the historical per-command capture path.
     let (mut output, writer, receiver) = FrameOutput::bounded(1);
     let mut backend = FrameOutputBackend::new(writer);
@@ -360,7 +364,9 @@ fn dense_draw_batches_terminal_capture_writes() {
         .expect("draw dense frame");
     output.finish_frame().expect("finish dense frame");
 
+    // act
     // Then: Crossterm commands cross the synchronized capture boundary in bounded batches.
+    // assert
     assert!(receiver.try_recv().is_ok());
     assert!(
         output.metrics().capture_write_calls <= 2,
@@ -371,6 +377,7 @@ fn dense_draw_batches_terminal_capture_writes() {
 
 #[test]
 fn unchanged_cursor_emits_zero_commands() {
+    // arrange
     // Given: a backend whose visible cursor position has already been recorded.
     let (mut output, writer, receiver) = FrameOutput::bounded(1);
     let mut backend = FrameOutputBackend::new(writer);
@@ -392,13 +399,16 @@ fn unchanged_cursor_emits_zero_commands() {
         .expect("repeat cursor position");
     let submission = output.finish_frame().expect("finish unchanged frame");
 
+    // act
     // Then: no terminal command or synchronized marker is queued.
+    // assert
     assert_eq!(submission, FrameSubmission::Unchanged);
     assert!(receiver.try_recv().is_err());
 }
 
 #[test]
 fn empty_draw_preserves_the_cached_cursor_position() {
+    // arrange
     // Given: a backend whose visible cursor position has already been recorded.
     let (mut output, writer, receiver) = FrameOutput::bounded(1);
     let mut backend = FrameOutputBackend::new(writer);
@@ -421,12 +431,15 @@ fn empty_draw_preserves_the_cached_cursor_position() {
     output.finish_frame().expect("finish empty redraw frame");
     let frame = receiver.try_recv().expect("empty redraw frame");
 
+    // act
     // Then: no redundant cursor-position command is serialized.
+    // assert
     assert!(!frame.bytes().windows(6).any(|bytes| bytes == b"\x1b[3;5H"));
 }
 
 #[test]
 fn drawing_invalidates_the_cached_cursor_position() {
+    // arrange
     // Given: a backend whose visible cursor position has already been recorded.
     let (mut output, writer, receiver) = FrameOutput::bounded(1);
     let mut backend = FrameOutputBackend::new(writer);
@@ -450,12 +463,15 @@ fn drawing_invalidates_the_cached_cursor_position() {
     output.finish_frame().expect("finish redraw frame");
     let frame = receiver.try_recv().expect("redraw frame");
 
+    // act
     // Then: the redraw frame explicitly restores the cursor to the composer cell.
+    // assert
     assert!(frame.bytes().windows(6).any(|bytes| bytes == b"\x1b[3;5H"));
 }
 
 #[test]
 fn cursor_visibility_and_position_changes_emit_once() {
+    // arrange
     // Given: a fresh command-recording backend.
     let (mut output, writer, receiver) = FrameOutput::bounded(1);
     let mut backend = FrameOutputBackend::new(writer);
@@ -473,7 +489,9 @@ fn cursor_visibility_and_position_changes_emit_once() {
     output.finish_frame().expect("finish frame");
     let frame = receiver.try_recv().expect("cursor frame");
 
+    // act
     // Then: visibility and position each appear exactly once between the markers.
+    // assert
     assert_eq!(
         frame.bytes(),
         b"\x1b[?2026h\x1b[?25h\x1b[3;5H\x1b[?2026l".as_ref()
@@ -483,6 +501,7 @@ fn cursor_visibility_and_position_changes_emit_once() {
 
 #[test]
 fn in_flight_frame_blocks_capture_until_physical_ack() {
+    // arrange
     // Given: a queue with room for more than one frame.
     let (mut output, mut writer, receiver) = FrameOutput::bounded(2);
     output.begin_frame().expect("begin first frame");
@@ -506,7 +525,9 @@ fn in_flight_frame_blocks_capture_until_physical_ack() {
     let next = output.finish_frame().expect("accept next frame");
     let second = receiver.try_recv().expect("drain next frame");
 
+    // act
     // Then: no differential frame is dropped or promoted to a full repaint.
+    // assert
     assert_eq!(blocked.kind(), std::io::ErrorKind::WouldBlock);
     assert_eq!(next_kind, FrameKind::Differential);
     assert_eq!(next, FrameSubmission::Accepted(FrameKind::Differential));
@@ -650,153 +671,4 @@ fn leave_alternate_screen_returns_to_main_idempotently() {
     assert_eq!(lifecycle.screen_buffer(), ScreenBuffer::Main);
 }
 
-#[test]
-fn synchronized_output_enable_disable_lifecycle() {
-    // arrange
-    let mut lifecycle = TerminalLifecycle::new();
-    let full = TerminalCapabilities::full();
-
-    // act / assert — enable requires capability
-    let unsupported = lifecycle
-        .enable_synchronized_output(&TerminalCapabilities::none())
-        .expect_err("sync unsupported");
-    assert_eq!(
-        unsupported,
-        TerminalLifecycleError::SynchronizedOutputUnsupported
-    );
-
-    // act / assert — enable, then disable, then disable-again fails
-    lifecycle.enable_synchronized_output(&full).expect("enable");
-    assert!(lifecycle.is_synchronized_active());
-    lifecycle.disable_synchronized_output().expect("disable");
-    assert!(!lifecycle.is_synchronized_active());
-    let not_active = lifecycle
-        .disable_synchronized_output()
-        .expect_err("disable when inactive");
-    assert_eq!(
-        not_active,
-        TerminalLifecycleError::SynchronizedOutputNotActive
-    );
-}
-
-#[test]
-fn bracketed_paste_enable_disable_lifecycle() {
-    // arrange
-    let mut lifecycle = TerminalLifecycle::new();
-    let full = TerminalCapabilities::full();
-
-    // act / assert — enable requires capability
-    let unsupported = lifecycle
-        .enable_bracketed_paste(&TerminalCapabilities::none())
-        .expect_err("paste unsupported");
-    assert_eq!(
-        unsupported,
-        TerminalLifecycleError::BracketedPasteUnsupported
-    );
-
-    // act / assert — enable, disable, then disable-again fails
-    lifecycle.enable_bracketed_paste(&full).expect("enable");
-    assert!(lifecycle.is_bracketed_paste_active());
-    lifecycle.disable_bracketed_paste().expect("disable");
-    assert!(!lifecycle.is_bracketed_paste_active());
-    let not_active = lifecycle
-        .disable_bracketed_paste()
-        .expect_err("disable when inactive");
-    assert_eq!(not_active, TerminalLifecycleError::BracketedPasteNotActive);
-}
-
-#[test]
-fn teardown_plan_reflects_active_modes_and_clears_on_exit() {
-    // arrange — fully activated terminal
-    let mut lifecycle = TerminalLifecycle::new();
-    let caps = TerminalCapabilities::full();
-    lifecycle.enter_raw_mode(&caps).expect("raw");
-    lifecycle
-        .enter_alternate_screen(&caps, AltScreenMode::Always)
-        .expect("alt");
-    lifecycle.enable_synchronized_output(&caps).expect("sync");
-    lifecycle.enable_bracketed_paste(&caps).expect("paste");
-
-    // act
-    let active_plan = lifecycle.teardown_plan();
-
-    // assert — every active mode requires reversal
-    assert_eq!(
-        active_plan,
-        TeardownPlan {
-            disable_raw_mode: true,
-            leave_alternate_screen: true,
-            disable_synchronized_output: true,
-            disable_bracketed_paste: true,
-        }
-    );
-
-    // act — tear each mode down
-    lifecycle.exit_raw_mode().expect("exit raw");
-    lifecycle.leave_alternate_screen();
-    lifecycle
-        .disable_synchronized_output()
-        .expect("disable sync");
-    lifecycle.disable_bracketed_paste().expect("disable paste");
-
-    // assert — nothing left to reverse
-    assert_eq!(lifecycle.teardown_plan(), TeardownPlan::default());
-}
-
-#[test]
-fn lifecycle_starts_in_the_terminal_default_state() {
-    // arrange
-    // act
-    let lifecycle = TerminalLifecycle::new();
-
-    // assert — cooked mode, main screen, no optional modes active
-    assert!(!lifecycle.is_raw_mode_active());
-    assert_eq!(lifecycle.screen_buffer(), ScreenBuffer::Main);
-    assert!(!lifecycle.is_synchronized_active());
-    assert!(!lifecycle.is_bracketed_paste_active());
-    assert_eq!(lifecycle.teardown_plan(), TeardownPlan::default());
-}
-
-/// Capstone (P1 contract + P3 terminal + P7 lifecycle): a full-capability enter
-/// sequence reaches a fully active state and the teardown plan round-trips it
-/// back to the terminal default.
-#[test]
-fn full_capability_enter_sequence_round_trips_through_teardown() {
-    // arrange
-    let mut lifecycle = TerminalLifecycle::new();
-    let caps = TerminalCapabilities::full();
-
-    // act — enter the complete interactive session
-    lifecycle.enter_raw_mode(&caps).expect("raw");
-    lifecycle
-        .enter_alternate_screen(&caps, AltScreenMode::Always)
-        .expect("alt");
-    lifecycle.enable_synchronized_output(&caps).expect("sync");
-    lifecycle.enable_bracketed_paste(&caps).expect("paste");
-
-    // assert — fully active
-    assert!(lifecycle.is_raw_mode_active());
-    assert_eq!(lifecycle.screen_buffer(), ScreenBuffer::Alternate);
-    assert!(lifecycle.is_synchronized_active());
-    assert!(lifecycle.is_bracketed_paste_active());
-
-    // act — restore via the teardown plan decisions
-    if lifecycle.teardown_plan().disable_raw_mode {
-        lifecycle.exit_raw_mode().expect("exit raw");
-    }
-    if lifecycle.teardown_plan().leave_alternate_screen {
-        lifecycle.leave_alternate_screen();
-    }
-    if lifecycle.teardown_plan().disable_synchronized_output {
-        lifecycle
-            .disable_synchronized_output()
-            .expect("disable sync");
-    }
-    if lifecycle.teardown_plan().disable_bracketed_paste {
-        lifecycle.disable_bracketed_paste().expect("disable paste");
-    }
-
-    // assert — round-tripped back to the default state
-    assert_eq!(lifecycle, TerminalLifecycle::new());
-    assert_eq!(lifecycle.teardown_plan(), TeardownPlan::default());
-}
+include!("support/terminal_lifecycle_test_part2_test.rs");

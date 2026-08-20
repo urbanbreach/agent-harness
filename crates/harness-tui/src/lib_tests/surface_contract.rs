@@ -342,7 +342,7 @@ pub(super) fn session_view_ignores_duplicate_seq_without_losing_ui_state() {
     app.ingest_event(permission_requested_event(1, "perm_1", "tool_call_1"));
     app.handle_key(key(crossterm::event::KeyCode::Esc));
     assert!(app.active_permission().is_some());
-    assert!(app.permission_submission_pending("perm_1"));
+    assert!(!app.permission_submission_pending("perm_1"));
 
     app.focus = app::Focus::Prompt;
     app.composer.prompt_buffer = "draft".to_string();
@@ -359,7 +359,7 @@ pub(super) fn session_view_ignores_duplicate_seq_without_losing_ui_state() {
 
     assert_eq!(app.events.len(), 1);
     assert!(app.active_permission().is_some());
-    assert!(app.permission_submission_pending("perm_1"));
+    assert!(!app.permission_submission_pending("perm_1"));
     assert_eq!(app.composer.prompt_buffer, "draft");
     assert_eq!(app.composer.prompt_cursor, "draft".chars().count());
 }

@@ -109,6 +109,7 @@ fn active_app() -> AppState {
 
 #[test]
 fn background_only_work_keeps_one_status_row_until_completion() {
+    // arrange
     // Given: a live app with one non-turn-level task and no foreground request.
     let mut app = AppState::new_live(None, false, Some(Arc::new(|_| {})));
     app.ingest_event(envelope(
@@ -125,12 +126,15 @@ fn background_only_work_keeps_one_status_row_until_completion() {
     assert!(!row.contains("[stop]"), "row: {row:?}");
     assert!(!row.contains("0.0s"), "row: {row:?}");
 
+    // act
     app.ingest_event(envelope(2, completed("task_background", false)));
+    // assert
     assert!(status_text(&app).is_none());
 }
 
 #[test]
 fn background_watcher_uses_the_calm_reference_pulse_cadence() {
+    // arrange
     // Given: a background-only monitor on the first animation frame.
     let mut app = AppState::new_live(None, false, Some(Arc::new(|_| {})));
     app.ingest_event(envelope(1, scheduled("task_monitor", "tool:monitor")));
@@ -142,7 +146,9 @@ fn background_watcher_uses_the_calm_reference_pulse_cadence() {
     }
     let after = status_text(&app).expect("background status row");
 
+    // act
     // Then: the cue advances through the reference circle pulse, not the active spinner.
+    // assert
     assert!(
         before.contains("○ 1 monitor still running"),
         "row: {before:?}"
@@ -155,6 +161,7 @@ fn background_watcher_uses_the_calm_reference_pulse_cadence() {
 
 #[test]
 fn foreground_completion_keeps_background_status_until_background_completion() {
+    // arrange
     // Given: an active foreground response with a separate background task.
     let mut app = active_app();
     app.ingest_event(envelope(
@@ -181,12 +188,15 @@ fn foreground_completion_keeps_background_status_until_background_completion() {
     assert!(!row.contains("[stop]"), "row: {row:?}");
     assert!(!row.contains("4.2s"), "row: {row:?}");
 
+    // act
     app.ingest_event(envelope(8, completed("task_background", false)));
+    // assert
     assert!(status_text(&app).is_none());
 }
 
 #[test]
 fn foreground_work_wins_over_concurrent_background_work_until_it_completes() {
+    // arrange
     // Given: foreground and background tasks overlap before provider activity begins.
     let mut app = AppState::new_live(None, false, Some(Arc::new(|_| {})));
     app.ingest_event(envelope(
@@ -221,6 +231,8 @@ fn foreground_work_wins_over_concurrent_background_work_until_it_completes() {
     );
     assert!(!background.contains("[stop]"), "row: {background:?}");
 
+    // act
     app.ingest_event(envelope(4, completed("task_background", false)));
+    // assert
     assert!(status_text(&app).is_none());
 }

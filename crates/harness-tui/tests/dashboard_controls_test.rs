@@ -60,6 +60,7 @@ fn control_state(status: DashboardStatus) -> DashboardControlState {
 
 #[test]
 fn rename_and_stop_require_explicit_confirmation_before_pending_intents() {
+    // arrange
     // Given: an active selected session with a composer draft.
     let initial = control_state(DashboardStatus::Running);
 
@@ -84,13 +85,16 @@ fn rename_and_stop_require_explicit_confirmation_before_pending_intents() {
     let stop_preview = stop(&initial, Confirmation::Required)
         .expect("destructive stop should expose confirmation state");
 
+    // act
     // Then: the destructive command does not emit an effect before confirmation.
+    // assert
     assert_eq!(stop_preview.visual.state, ControlVisual::Confirming);
     assert!(stop_preview.intent.is_none());
 }
 
 #[test]
 fn duplicate_stop_is_rejected_and_failed_coordinator_response_preserves_context() {
+    // arrange
     // Given: a confirmed stop request waiting for the coordinator.
     let initial = control_state(DashboardStatus::Running);
     let pending = stop(&initial, Confirmation::Confirmed).expect("stop should become pending");
@@ -112,7 +116,9 @@ fn duplicate_stop_is_rejected_and_failed_coordinator_response_preserves_context(
         Confirmation::Confirmed,
     );
 
+    // act
     // Then: duplicate destructive work is rejected, and failure keeps the dashboard context.
+    // assert
     assert!(matches!(
         duplicate,
         Err(error) if matches!(error.kind(), DashboardControlErrorKind::Duplicate(_))
@@ -127,6 +133,7 @@ fn duplicate_stop_is_rejected_and_failed_coordinator_response_preserves_context(
 
 #[test]
 fn stale_finished_expired_unauthorized_and_replay_actions_fail_before_intents() {
+    // arrange
     // Given: sessions in each state that must not accept a mutating dashboard action.
     let finished = control_state(DashboardStatus::Completed);
     let expired = control_state(DashboardStatus::Running)
@@ -142,7 +149,9 @@ fn stale_finished_expired_unauthorized_and_replay_actions_fail_before_intents() 
         rename(&unauthorized, "new", Confirmation::Confirmed).expect_err("unauthorized");
     let replay_error = rename(&replay, "new", Confirmation::Confirmed).expect_err("replay");
 
+    // act
     // Then: all checks reject before a coordinator intent can exist.
+    // assert
     assert!(matches!(
         finished_error.kind(),
         DashboardControlErrorKind::FinishedSession(_)
@@ -164,6 +173,7 @@ fn stale_finished_expired_unauthorized_and_replay_actions_fail_before_intents() 
 
 #[test]
 fn permission_checks_precede_effects_and_question_answers_are_typed_and_idempotent() {
+    // arrange
     // Given: pending coordinator-owned permission and question requests.
     let key = SelectionKey::new("run-dashboard-controls");
     let state = control_state(DashboardStatus::Running)
@@ -195,7 +205,9 @@ fn permission_checks_precede_effects_and_question_answers_are_typed_and_idempote
         QuestionAnswerRequest::new("question-1", vec![vec!["option-a".to_string()]]),
     );
 
+    // act
     // Then: the rejected permission remains pending, and duplicate answers are idempotently rejected.
+    // assert
     assert!(matches!(
         denied_before_effect.kind(),
         DashboardControlErrorKind::UnauthorizedSession(_)
@@ -215,6 +227,7 @@ fn permission_checks_precede_effects_and_question_answers_are_typed_and_idempote
 
 #[test]
 fn invalid_input_and_stale_responses_preserve_selection_and_draft() {
+    // arrange
     // Given: a selected dashboard row and a draft that must survive failures.
     let state = control_state(DashboardStatus::Running);
 
@@ -226,7 +239,9 @@ fn invalid_input_and_stale_responses_preserve_selection_and_draft() {
     let stale_response = settle(&state, &unknown_intent, CoordinatorOutcome::Succeeded)
         .expect_err("unsubmitted response");
 
+    // act
     // Then: both failures retain the same context and render the failure visual.
+    // assert
     assert_eq!(invalid.context(), &state.context);
     assert_eq!(invalid.visual().state, ControlVisual::Failure);
     assert_eq!(stale_response.context(), &state.context);

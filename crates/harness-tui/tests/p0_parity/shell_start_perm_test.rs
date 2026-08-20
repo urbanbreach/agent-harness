@@ -104,19 +104,11 @@ fn startup_welcome_is_compose_first_with_harness_branding_no_reference_identity(
         rendered.contains("Harness") || rendered.contains('╭'),
         "P0-START-01: startup must show Harness welcome shell\n{rendered}"
     );
-    for logo_row in [
-        " ██╗  ██╗",
-        " ██║  ██║",
-        " ███████║",
-        " ██╔══██║",
-        " ██║  ██║",
-        " ╚═╝  ╚═╝",
-    ] {
-        assert!(
-            rendered.contains(logo_row),
-            "P0-START-01: startup must show every compact Harness identity row\n{rendered}"
-        );
-    }
+    let logo_rows = rendered.lines().filter(|line| line.contains('⣿')).count();
+    assert_eq!(
+        logo_rows, 7,
+        "P0-START-01: startup must preserve the seven-row Harness identity bounds\n{rendered}"
+    );
     assert!(
         rendered.contains("New worktree")
             || rendered.contains("New session")

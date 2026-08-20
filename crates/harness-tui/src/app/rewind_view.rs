@@ -116,18 +116,24 @@ mod tests {
     use super::*;
 
     #[test]
-    fn empty_rewind_view() {
+    fn empty_rewind_view_starts_without_snapshot() {
+        // arrange
+        // act
         let view = RewindView::new();
+        // assert
         assert!(view.is_empty());
         assert_eq!(view.len(), 0);
         assert!(view.restore().is_none());
     }
 
     #[test]
-    fn snapshot_and_restore() {
+    fn snapshot_and_restore_preserves_rewind_state() {
+        // arrange
+        // act
         let mut view = RewindView::new();
         view.snapshot("hello".to_string(), 3, None);
         let restored = view.restore().expect("restore");
+        // assert
         assert_eq!(restored.text, "hello");
         assert_eq!(restored.cursor, 3);
     }

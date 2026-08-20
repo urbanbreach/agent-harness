@@ -15,6 +15,7 @@ use ratatui::style::Color;
 
 #[test]
 fn every_generated_transition_case_is_checked_by_the_owner() {
+    // arrange
     // Given: the generated table is the complete finite state/event contract.
     let table = TransitionTable;
 
@@ -22,8 +23,10 @@ fn every_generated_transition_case_is_checked_by_the_owner() {
     for case in transition_cases() {
         let result = table.apply(case.state(), case.intent());
 
+        // act
         // Then: the table's declared outcome is observed, not inferred from the result.
         match case.outcome() {
+            // assert
             TransitionOutcome::Applied => assert!(
                 result.is_ok(),
                 "expected applied transition for {}: {result:?}",
@@ -40,6 +43,7 @@ fn every_generated_transition_case_is_checked_by_the_owner() {
 
 #[test]
 fn illegal_and_stale_transitions_fail_closed() {
+    // arrange
     // Given: an empty interaction state.
     let table = TransitionTable;
     let state = InteractionState::new(ScreenMode::Live, Focus::Prompt);
@@ -72,13 +76,16 @@ fn illegal_and_stale_transitions_fail_closed() {
         )),
     );
 
+    // act
     // Then: both stale requests are rejected.
+    // assert
     assert!(duplicate.is_err());
     assert!(stale_close.is_err());
 }
 
 #[test]
 fn keyboard_and_mouse_equivalents_emit_the_same_intent() {
+    // arrange
     // Given: Tab and a left-click on the next-focus target are equivalent user intent.
     let key = KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE);
     let mouse = MouseEvent {
@@ -92,13 +99,16 @@ fn keyboard_and_mouse_equivalents_emit_the_same_intent() {
     let keyboard = keyboard_intent(key);
     let pointer = mouse_intent(mouse, MouseTarget::FocusNext);
 
+    // act
     // Then: dispatch is source-independent.
+    // assert
     assert_eq!(keyboard, pointer);
     assert_eq!(keyboard, Some(UiIntent::MoveFocus(FocusDirection::Next)));
 }
 
 #[test]
 fn render_purity_wraps_the_real_harness_render_path() {
+    // arrange
     // Given: a real live AppState and the production renderer.
     let app = AppState::new_live(None, false, None);
     let area = Rect::new(0, 0, 80, 24);
@@ -116,12 +126,15 @@ fn render_purity_wraps_the_real_harness_render_path() {
     // When: a renderer attempts to dispatch an action.
     let rejected = probe.draw(|probe| probe.record_action(Action::SubmitPrompt));
 
+    // act
     // Then: the probe rejects the observable side effect.
+    // assert
     assert!(rejected.is_err());
 }
 
 #[test]
 fn parity_shell_call_chain_reaches_the_installed_render_owner() {
+    // arrange
     // Given: the shipped crate sources and the real startup AppState.
     let source_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let read_source = |name: &str| {
@@ -135,7 +148,9 @@ fn parity_shell_call_chain_reaches_the_installed_render_owner() {
         ui::render_app(frame, app);
     });
 
+    // act
     // Then: source ownership and the rendered design-contract canvas are both reachable.
+    // assert
     assert!(read_source("app.rs").contains("WelcomeState"));
     assert!(read_source("app.rs").contains("ThemeChoice"));
     assert!(read_source("runtime.rs").contains("ui::render_app"));
@@ -152,6 +167,7 @@ fn parity_shell_call_chain_reaches_the_installed_render_owner() {
 
 #[test]
 fn gesture_lifecycle_requires_matching_begin_and_end() {
+    // arrange
     // Given: an idle state and the reducer table.
     let table = TransitionTable;
     let state = InteractionState::new(ScreenMode::Live, Focus::Details);
@@ -172,7 +188,9 @@ fn gesture_lifecycle_requires_matching_begin_and_end() {
     );
     let ended = updated.and_then(|state| table.apply(state, UiIntent::EndGesture));
 
+    // act
     // Then: the lifecycle reaches idle again.
+    // assert
     assert!(ended.is_ok());
     assert!(matches!(
         ended.map(|state| state.gesture),

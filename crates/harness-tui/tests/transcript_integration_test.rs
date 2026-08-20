@@ -17,6 +17,7 @@ fn key(id: BlockId, width: u16) -> LayoutCacheKey {
 
 #[test]
 fn cache_is_width_aware_bounded_and_lru_evicted() {
+    // arrange
     // Given: a two-entry layout cache with three replay-derived keys.
     let ids = [
         ReplayTurn::event(1, 0, 1).block_id(0),
@@ -31,7 +32,9 @@ fn cache_is_width_aware_bounded_and_lru_evicted() {
     let _ = cache.get(&key(ids[0], 80));
     cache.insert(key(ids[2], 80), CachedLayout::new(4, 40, 80));
 
+    // act
     // Then: LRU eviction and width invalidation are observable and bounded.
+    // assert
     assert_eq!(cache.len(), 2);
     assert!(cache.contains(&key(ids[0], 80)));
     assert!(!cache.contains(&key(ids[1], 80)));
@@ -42,6 +45,7 @@ fn cache_is_width_aware_bounded_and_lru_evicted() {
 
 #[test]
 fn lifecycle_frames_are_pure_samples_of_the_runtime_clock() -> TestResult {
+    // arrange
     // Given: one streaming thinking block and two runtime-owned clock samples.
     let id = ReplayTurn::event(9, 0, 1).block_id(0);
     let mut lifecycle = LifecycleCoordinator::new(false);
@@ -57,7 +61,9 @@ fn lifecycle_frames_are_pure_samples_of_the_runtime_clock() -> TestResult {
         flush_ms: 0,
     });
 
+    // act
     // Then: elapsed wall time alone determines the frame and completed state parks.
+    // assert
     assert_eq!(initial.states[0].phase, LifecyclePhase::Streaming);
     assert_eq!(initial.states[0].frame, 0);
     assert!(advanced.states[0].frame > initial.states[0].frame);
@@ -123,12 +129,15 @@ fn interleaved_frame() -> TestResult<TranscriptViewModel> {
 #[test]
 fn interleaved_lifecycle_fold_scroll_resize_compaction_and_viewer_exit_settle_deterministically(
 ) -> TestResult {
+    // arrange
     // Given: two independently constructed event-derived transcript composites.
     let first = interleaved_frame()?;
     let second = interleaved_frame()?;
 
+    // act
     // When: both follow the same lifecycle-rich operation sequence.
     // Then: the settled view model and fold/lifecycle state are identical.
+    // assert
     assert_eq!(first, second);
     assert_eq!(first.blocks.len(), 1);
     assert_eq!(first.blocks[0].fold_state, FoldState::Expanded);

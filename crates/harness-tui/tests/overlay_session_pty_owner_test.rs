@@ -87,9 +87,12 @@ fn iso_timestamp() -> String {
 
 /// PTY availability is correctly detected on this platform.
 #[test]
-fn pty_availability_detected() {
+fn pty_availability_is_detected_before_capture() {
+    // arrange
+    // act
     let available = pty_available();
     if cfg!(target_os = "linux") {
+        // assert
         assert!(available, "PTY must be available on linux");
     } else {
         assert!(!available, "PTY must not be available on non-linux");
@@ -99,9 +102,12 @@ fn pty_availability_detected() {
 /// Harness binary path detection works: either finds the binary or returns None.
 #[test]
 fn harness_binary_path_detection_works() {
+    // arrange
+    // act
     let path = harness_binary_path();
     // The binary may or may not exist; the function must not panic.
     if let Some(ref p) = path {
+        // assert
         assert!(p.is_file(), "detected binary path must be a file: {p:?}");
     }
 }
@@ -114,14 +120,17 @@ fn harness_binary_path_detection_works() {
 /// them safe for PTY-based state verification.
 #[test]
 fn leaf_views_are_pty_compatible() {
+    // arrange
     let palette = PaletteLeafView::new(true, 0, 3, 0);
     let session = SessionLeafView::new(true, 0, 2, true);
     let model = ModelLeafView::new(true, 0, 1, 2);
 
+    // act
     // Copy semantics: PTY capture can clone state without borrowing.
     let palette_copy = palette;
     let session_copy = session;
     let model_copy = model;
+    // assert
     assert_eq!(palette, palette_copy);
     assert_eq!(session, session_copy);
     assert_eq!(model, model_copy);
@@ -131,11 +140,14 @@ fn leaf_views_are_pty_compatible() {
 /// by inspecting rendered output.
 #[test]
 fn overlay_kinds_are_pty_verifiable() {
+    // arrange
     let palette_kind = OverlaySessionModelAction::OpenPalette.overlay_kind();
     let session_kind = OverlaySessionModelAction::OpenSessionHistory.overlay_kind();
     let model_kind = OverlaySessionModelAction::OpenModelSwitcher.overlay_kind();
 
+    // act
     // Each kind is distinct, so PTY output can distinguish overlays.
+    // assert
     assert_ne!(palette_kind, session_kind);
     assert_ne!(session_kind, model_kind);
     assert_ne!(palette_kind, model_kind);
@@ -145,8 +157,11 @@ fn overlay_kinds_are_pty_verifiable() {
 /// by checking the cursor position after pressing Escape.
 #[test]
 fn close_overlay_restores_focus_for_pty() {
+    // arrange
+    // act
     let action = OverlaySessionModelAction::CloseOverlay;
     let focus = action.restored_focus();
+    // assert
     assert_eq!(
         focus,
         overlay_session_model::LeafFocusOwner::Composer,
@@ -163,24 +178,30 @@ fn close_overlay_restores_focus_for_pty() {
 /// and still passes (the block is recorded, not silently skipped).
 #[test]
 fn pty_owner_lane_runs_or_records_blocked() {
+    // arrange
     if let Some(reason) = pty_block_reason() {
         write_blocked_receipt(reason);
         eprintln!("BLOCKED: {reason}");
         return;
     }
 
+    // act
     // If we reach here, the PTY environment is available. The leaf types
     // have already been proven compatible above. A full PTY capture would
     // spawn the harness binary and drive the TUI; that requires the
     // signoff-pty lane (RUST_TEST_THREADS=1) and is out of scope for this
     // owner test file.
+    // assert
     eprintln!("PTY environment available; leaf types are compatible.");
 }
 
 /// The PTY block reason is None when both conditions are met.
 #[test]
 fn pty_block_reason_is_none_when_environment_ready() {
+    // arrange
+    // act
     if pty_available() && harness_binary_path().is_some() {
+        // assert
         assert!(pty_block_reason().is_none());
     }
 }

@@ -127,6 +127,7 @@ pub mod scheduling;
 mod session_events;
 pub mod shell_geometry;
 pub mod slash;
+mod startup_logo;
 pub mod terminal;
 #[expect(
     clippy::mod_module_files,

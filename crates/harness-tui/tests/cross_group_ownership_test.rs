@@ -33,6 +33,8 @@ use std::collections::HashSet;
 /// All retained group IDs are unique (B through I).
 #[test]
 fn all_group_ids_are_unique() {
+    // arrange
+    // act
     let ids = [
         group_b_composer_modes::group_id(),
         group_c_screen_modes::group_id(),
@@ -44,6 +46,7 @@ fn all_group_ids_are_unique() {
         group_i_preferences::group_id(),
     ];
     let unique: HashSet<&str> = ids.iter().copied().collect();
+    // assert
     assert_eq!(
         unique.len(),
         8,
@@ -57,6 +60,7 @@ fn all_group_ids_are_unique() {
 /// No capability ID appears in more than one group.
 #[test]
 fn no_overlapping_capability_ids_across_groups() {
+    // arrange
     let all_ids: Vec<&'static str> = [
         group_b_composer_modes::capability_ids(),
         group_c_screen_modes::capability_ids(),
@@ -71,8 +75,10 @@ fn no_overlapping_capability_ids_across_groups() {
     .flat_map(|ids| ids.iter().copied())
     .collect();
 
+    // act
     let mut seen = HashSet::new();
     for id in &all_ids {
+        // assert
         assert!(
             seen.insert(*id),
             "duplicate capability id across groups: {id}"
@@ -83,6 +89,7 @@ fn no_overlapping_capability_ids_across_groups() {
 /// Every group can resolve at least one capability to a real backend owner.
 #[test]
 fn every_group_resolves_to_real_backend_owner() {
+    // arrange
     let samples: &[(&str, &str)] = &[
         ("B", "tui.vim_mode"),
         ("C", "tui.minimal_mode"),
@@ -94,6 +101,7 @@ fn every_group_resolves_to_real_backend_owner() {
         ("I", "tui.theme_auto_system"),
     ];
 
+    // act
     for (group, cap_id) in samples {
         let backend_owner: &str = match *group {
             "B" => group_b_composer_modes::resolve(cap_id)
@@ -122,6 +130,7 @@ fn every_group_resolves_to_real_backend_owner() {
                 .unwrap_or_else(|| panic!("group I must resolve {cap_id}")),
             _ => panic!("unknown group {group}"),
         };
+        // assert
         assert!(
             !backend_owner.is_empty(),
             "group {group} backend_owner must not be empty"
@@ -137,6 +146,7 @@ fn every_group_resolves_to_real_backend_owner() {
 /// are all covered by exactly one group.
 #[test]
 fn eight_implement_rows_covered_excluding_session_tree() {
+    // arrange
     let implement_rows: &[&str] = &[
         "cli.dashboard",
         "tui.inline_media",
@@ -166,6 +176,7 @@ fn eight_implement_rows_covered_excluding_session_tree() {
         );
     }
 
+    // act
     // tui.session_tree is NOT covered by any group (belongs to Todo 24).
     let session_tree_found = [
         group_b_composer_modes::resolve("tui.session_tree").is_some(),
@@ -178,6 +189,7 @@ fn eight_implement_rows_covered_excluding_session_tree() {
         group_i_preferences::resolve("tui.session_tree").is_some(),
     ];
     let count = session_tree_found.iter().filter(|&&f| f).count();
+    // assert
     assert_eq!(
         count, 0,
         "tui.session_tree must NOT be covered by any group"

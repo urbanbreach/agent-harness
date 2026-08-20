@@ -209,11 +209,100 @@ fn grammar_cancelled_context_group_is_settled_not_failed() {
         .expect("group");
 
     assert_eq!(group.rail_glyph, "❙");
+    assert_eq!(group.rail_color, theme.status.disabled);
     assert_eq!(
         group.metadata.lifecycle,
         TranscriptVisualEntryLifecycle::Settled
     );
     assert!(!group_surface_text(group).contains("failed"));
+}
+
+#[test]
+fn grammar_native_lsp_and_mcp_context_tools_group_in_first_seen_order() {
+    let mut turn = canonical_turn();
+    turn.assistant_parts = vec![
+        grammar_tool(
+            "mcp-list",
+            "mcp.docs.resources.list",
+            ToolCallPresentationStatus::Succeeded,
+        ),
+        grammar_tool("lsp-1", "lsp", ToolCallPresentationStatus::Succeeded),
+        grammar_tool(
+            "code-1",
+            "codesearch",
+            ToolCallPresentationStatus::Succeeded,
+        ),
+        grammar_tool(
+            "mcp-read",
+            "mcp.docs.resource.read",
+            ToolCallPresentationStatus::Succeeded,
+        ),
+    ];
+
+    let summary = TranscriptToolGroupSummary::from_adjacent(&turn.assistant_parts)
+        .expect("typed context group");
+
+    assert_eq!(
+        summary.semantic_label(),
+        "Listed 1 dir, Searched 2 patterns, Read 1 file"
+    );
+}
+
+#[test]
+fn grammar_ascii_replay_context_group_preserves_semantics_and_fallback_rail() {
+    let theme = Theme::default().with_glyph_mode(crate::theme::GlyphMode::Ascii);
+    let mut turn = canonical_turn();
+    turn.assistant_parts = vec![grammar_tool(
+        "read-replay",
+        "read",
+        ToolCallPresentationStatus::Succeeded,
+    )];
+    let TranscriptAssistantPart::ToolCall(tool) = &mut turn.assistant_parts[0] else {
+        panic!("tool")
+    };
+    tool.replay_read_only = true;
+
+    let surfaces = build_transcript_render_surfaces(&turn, &theme, 80, theme.surface.shell);
+    let group = surfaces
+        .iter()
+        .find(|surface| {
+            matches!(
+                surface.metadata.id,
+                TranscriptVisualEntryId::ToolGroup { .. }
+            )
+        })
+        .expect("replay group");
+
+    assert_eq!(group.rail_glyph, "|");
+    assert!(group_surface_text(group).contains("Read 1 file"));
+}
+
+#[test]
+fn grammar_waiting_context_tool_breaks_a_settled_context_group() {
+    let mut turn = canonical_turn();
+    turn.assistant_parts = vec![
+        grammar_tool("read-1", "read", ToolCallPresentationStatus::Succeeded),
+        grammar_tool("waiting-1", "grep", ToolCallPresentationStatus::Waiting),
+        grammar_tool("list-1", "list", ToolCallPresentationStatus::Succeeded),
+    ];
+
+    let surfaces = build_transcript_render_surfaces(
+        &turn,
+        &Theme::default(),
+        80,
+        Theme::default().surface.shell,
+    );
+
+    assert_eq!(
+        surfaces
+            .iter()
+            .filter(|surface| matches!(
+                surface.metadata.id,
+                TranscriptVisualEntryId::ToolGroup { .. }
+            ))
+            .count(),
+        2
+    );
 }
 
 #[test]

@@ -644,6 +644,8 @@ mod tests {
 
     #[test]
     fn mermaid_flowchart_renders_unicode_nodes_instead_of_a_placeholder() {
+        // arrange
+        // act
         let text =
             render_mermaid_diagram("graph TD\n  A[Start] --> B[End]", "", &Theme::default(), 80)
                 .into_iter()
@@ -652,6 +654,7 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join("\n");
 
+        // assert
         assert!(
             text.contains("┌") && text.contains("Start") && text.contains('▼'),
             "{text}"
@@ -661,6 +664,8 @@ mod tests {
 
     #[test]
     fn mermaid_flowchart_reuses_labeled_nodes_across_edges() {
+        // arrange
+        // act
         let text = render_mermaid_diagram(
             "graph TD\n  A[Start] --> B[Build]\n  B --> C[Done]",
             "",
@@ -673,6 +678,7 @@ mod tests {
         .collect::<Vec<_>>()
         .join("\n");
 
+        // assert
         assert!(
             text.contains("Start") && text.contains("Build") && text.contains("Done"),
             "{text}"
@@ -685,6 +691,8 @@ mod tests {
 
     #[test]
     fn mermaid_sequence_renders_lifelines_without_source_syntax() {
+        // arrange
+        // act
         let text = render_mermaid_diagram(
             "sequenceDiagram\n  Alice->>Bob: Hello",
             "",
@@ -697,6 +705,7 @@ mod tests {
         .collect::<Vec<_>>()
         .join("\n");
 
+        // assert
         assert!(
             text.contains("Alice") && text.contains("Bob") && text.contains('▶'),
             "{text}"
@@ -709,6 +718,8 @@ mod tests {
 
     #[test]
     fn mermaid_state_diagram_renders_nodes_without_source_syntax() {
+        // arrange
+        // act
         let text = render_mermaid_diagram(
             "stateDiagram-v2\n  [*] --> Active\n  Active --> Done",
             "",
@@ -721,6 +732,7 @@ mod tests {
         .collect::<Vec<_>>()
         .join("\n");
 
+        // assert
         assert!(
             text.contains("Active") && text.contains("Done") && text.contains('▼'),
             "{text}"
@@ -733,6 +745,8 @@ mod tests {
 
     #[test]
     fn mermaid_class_diagram_renders_members_without_source_syntax() {
+        // arrange
+        // act
         let text = render_mermaid_diagram(
             "classDiagram\nclass Animal {\n  +int age\n  +isMammal() bool\n}\nAnimal <|-- Duck",
             "",
@@ -745,6 +759,7 @@ mod tests {
         .collect::<Vec<_>>()
         .join("\n");
 
+        // assert
         assert!(
             text.contains("Animal")
                 && text.contains("Duck")
@@ -785,6 +800,8 @@ mod tests {
 
     #[test]
     fn mermaid_sequence_renders_declared_participants_and_control_rows() {
+        // arrange
+        // act
         let text = render_mermaid_diagram(
             "sequenceDiagram\nparticipant C as Client\nparticipant S as Server\nautonumber\nC->>S: GET /\nNote over C,S: happy path\nloop retry\nS-->>C: ok\nend",
             "",
@@ -797,6 +814,7 @@ mod tests {
         .collect::<Vec<_>>()
         .join("\n");
 
+        // assert
         assert!(
             text.contains("Client")
                 && text.contains("Server")
@@ -814,6 +832,8 @@ mod tests {
 
     #[test]
     fn mermaid_flowchart_renders_group_and_relationship_label_without_source_syntax() {
+        // arrange
+        // act
         let text = render_mermaid_diagram(
             "flowchart TD\nsubgraph workers [Workers]\nA[Start] -->|dispatch| B[Build]\nend\nB --> C[Done]",
             "",
@@ -826,6 +846,7 @@ mod tests {
         .collect::<Vec<_>>()
         .join("\n");
 
+        // assert
         assert!(
             text.contains("Workers")
                 && text.contains("Start")
@@ -842,6 +863,8 @@ mod tests {
 
     #[test]
     fn mermaid_state_choice_renders_as_a_diamond_without_source_syntax() {
+        // arrange
+        // act
         let text = render_mermaid_diagram(
             "stateDiagram-v2\nstate c <<choice>>\nIdle --> c\nc --> Done: yes",
             "",
@@ -854,6 +877,7 @@ mod tests {
         .collect::<Vec<_>>()
         .join("\n");
 
+        // assert
         assert!(
             text.contains('◇') && text.contains("Idle") && text.contains("Done"),
             "{text}"
@@ -866,6 +890,8 @@ mod tests {
 
     #[test]
     fn mermaid_state_alias_uses_its_display_name_and_skips_notes() {
+        // arrange
+        // act
         let text = render_mermaid_diagram(
             "stateDiagram-v2\nstate \"Waiting for input\" as W\nW --> Done\nnote right of W: internal detail\nend note",
             "",
@@ -878,6 +904,7 @@ mod tests {
         .collect::<Vec<_>>()
         .join("\n");
 
+        // assert
         assert!(
             text.contains("Waiting for input") && text.contains("Done"),
             "{text}"

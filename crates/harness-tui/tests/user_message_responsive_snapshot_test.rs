@@ -227,7 +227,10 @@ fn viewport_snapshot(width: u16, height: u16) -> String {
 
 #[test]
 fn user_messages_match_responsive_anatomy_at_measured_viewports() {
+    // arrange
+    // act
     for (width, height) in VIEWPORTS {
+        // assert
         insta::assert_snapshot!(
             format!("responsive_user_messages_{width}x{height}"),
             viewport_snapshot(width, height)

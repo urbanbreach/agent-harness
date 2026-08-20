@@ -11,6 +11,8 @@ use harness_tui::design_contract::DESIGN_TOKENS;
 
 #[test]
 fn harness_chat_maps_every_visible_palette_role_to_groknight_truecolor() {
+    // arrange
+    // act
     let resolved = ThemeChoice::explicit(ThemeFamily::HarnessChat)
         .resolve(&ThemeEnvironment::with_color_level(ColorLevel::TrueColor));
     let expected = [
@@ -20,6 +22,7 @@ fn harness_chat_maps_every_visible_palette_role_to_groknight_truecolor() {
         Color::Rgb(28, 28, 28),
         Color::Rgb(20, 20, 20),
         Color::Rgb(36, 36, 36),
+        Color::Rgb(44, 44, 44),
         Color::Rgb(85, 87, 83),
         Color::Rgb(50, 50, 55),
         Color::Rgb(60, 60, 65),
@@ -68,6 +71,7 @@ fn harness_chat_maps_every_visible_palette_role_to_groknight_truecolor() {
         Color::Rgb(80, 80, 88),
     ];
 
+    // assert
     assert_eq!(PaletteRole::ALL.len(), expected.len());
     for (role, expected_color) in PaletteRole::ALL.into_iter().zip(expected) {
         assert_eq!(
@@ -81,8 +85,11 @@ fn harness_chat_maps_every_visible_palette_role_to_groknight_truecolor() {
 
 #[test]
 fn harness_chat_maps_complete_groknight_markdown_role_set() {
+    // arrange
+    // act
     let markdown = Theme::harness_chat().markdown;
 
+    // assert
     assert_eq!(
         [
             markdown.heading_h1,
@@ -119,7 +126,10 @@ fn harness_chat_maps_complete_groknight_markdown_role_set() {
 
 #[test]
 fn harness_chat_maps_terminal_and_diff_roles_to_groknight_truecolor() {
+    // arrange
+    // act
     let colors = Theme::harness_chat().reference_terminal;
+    // assert
     assert_eq!(
         [
             colors.canvas,
@@ -170,18 +180,24 @@ fn harness_chat_maps_terminal_and_diff_roles_to_groknight_truecolor() {
 
 #[test]
 fn welcome_border_quantizes_from_the_grok_blended_color() {
+    // arrange
+    // act
     let truecolor = Theme::harness_chat().reference_terminal.welcome_border;
     let ansi256 = Theme::harness_chat()
         .for_color_level(harness_tui::theme::ColorLevel::Ansi256)
         .reference_terminal
         .welcome_border;
 
+    // assert
     assert_eq!(truecolor, Color::Rgb(51, 51, 51));
     assert_eq!(ansi256, Color::Indexed(236));
 }
 
 #[test]
 fn harness_chat_maps_custom_agent_palette_to_groknight_accents() {
+    // arrange
+    // act
+    // assert
     assert_eq!(
         Theme::harness_chat().agents.palette,
         [
@@ -198,6 +214,9 @@ fn harness_chat_maps_custom_agent_palette_to_groknight_accents() {
 
 #[test]
 fn dark_family_truecolor_resolves_to_harness_chat() {
+    // arrange
+    // act
+    // assert
     assert_eq!(
         Theme::from_family(
             harness_tui::theme_family::ThemeFamily::Dark,
@@ -209,9 +228,12 @@ fn dark_family_truecolor_resolves_to_harness_chat() {
 
 #[test]
 fn generated_design_colors_resolve_through_the_harness_chat_theme() {
+    // arrange
     let theme = Theme::harness_chat();
 
+    // act
     for token in DESIGN_TOKENS.palette.roles {
+        // assert
         assert_eq!(
             theme.color_for_role(token.role),
             Color::Rgb(token.value.red, token.value.green, token.value.blue),

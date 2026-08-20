@@ -122,6 +122,7 @@ fn render_model_switcher_list(frame: &mut Frame, app: &AppState, theme: &Theme, 
         default_scroll,
         rows.len().saturating_sub(visible_rows),
     );
+    let max_scroll = rows.len().saturating_sub(visible_rows);
 
     for (row_index, row) in rows.iter().enumerate().skip(scroll).take(visible_rows) {
         let row_y = area
@@ -132,18 +133,19 @@ fn render_model_switcher_list(frame: &mut Frame, app: &AppState, theme: &Theme, 
             ModelSwitcherRow::Spacer => {
                 frame.render_widget(
                     Block::default().style(Style::default().bg(surface)),
-                    row_area,
+                    modal_list_row_layout(row_area, max_scroll).content,
                 );
             }
             ModelSwitcherRow::Category(category) => {
+                let content = modal_list_row_layout(row_area, max_scroll).content;
                 frame.render_widget(
                     Paragraph::new(command_palette_section_row(
                         category,
                         theme,
-                        row_area.width,
+                        content.width,
                         false,
                     )),
-                    row_area,
+                    content,
                 );
             }
             ModelSwitcherRow::Option {
@@ -154,12 +156,27 @@ fn render_model_switcher_list(frame: &mut Frame, app: &AppState, theme: &Theme, 
                     continue;
                 };
                 let is_selected = *filtered_index == selected;
-                if is_selected {
-                    frame.render_widget(
-                        Block::default().style(ui_chrome::overlay_focus_row_style(theme)),
-                        row_area,
-                    );
-                }
+                let key = ModalSurfaceKey::Overlay {
+                    kind: OverlayKind::CommandPalette,
+                    view: ModalViewKey::ModelSwitcher,
+                };
+                let presentation = modal_list_row(
+                    theme,
+                    ModalListRowSpec {
+                        area: row_area,
+                        state: ModalListRowState {
+                            selected: is_selected,
+                            hovered: app
+                                .modal_target_hovered(key, ModalTarget::Row(*filtered_index)),
+                            dimmed: false,
+                        },
+                        max_scroll,
+                    },
+                );
+                frame.render_widget(
+                    Block::default().style(presentation.style),
+                    presentation.layout.content,
+                );
                 frame.render_widget(
                     Paragraph::new(model_switcher_row(
                         option,
@@ -167,13 +184,23 @@ fn render_model_switcher_list(frame: &mut Frame, app: &AppState, theme: &Theme, 
                         is_selected,
                         has_trimmed_content(&app.palette_input),
                         theme,
-                        row_area.width,
+                        presentation.layout.content.width,
+                        presentation.style,
                     )),
-                    row_area,
+                    presentation.layout.content,
                 );
             }
         }
     }
+    render_modal_list_scrollbar(
+        frame,
+        theme,
+        ModalListScrollbarSpec {
+            area,
+            offset: scroll,
+            max_scroll,
+        },
+    );
 }
 
 pub(super) fn model_switcher_overlay_title(app: &AppState) -> String {
@@ -188,14 +215,9 @@ fn model_switcher_row(
     flatten: bool,
     theme: &Theme,
     width: u16,
+    row_style: Style,
 ) -> Line<'static> {
-    let surface = ui_chrome::command_palette_surface(theme);
-    let row_style = if is_selected {
-        ui_chrome::overlay_focus_row_style(theme)
-    } else {
-        Style::default().bg(surface)
-    };
-    let selected_fg = ui_chrome::command_palette_selection_fg(theme);
+    let selected_fg = theme.text.primary;
     let title_style = if is_selected {
         row_style.fg(selected_fg).add_modifier(Modifier::BOLD)
     } else if app.is_current_model_option(option) {
@@ -203,11 +225,7 @@ fn model_switcher_row(
     } else {
         row_style.fg(ui_chrome::command_palette_title(theme))
     };
-    let meta_style = if is_selected {
-        row_style.fg(selected_fg)
-    } else {
-        row_style.fg(ui_chrome::command_palette_muted(theme))
-    };
+    let meta_style = row_style.fg(ui_chrome::command_palette_muted(theme));
 
     let row_width = usize::from(width);
     let mut spans = Vec::new();

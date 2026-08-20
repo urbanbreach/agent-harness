@@ -23,7 +23,8 @@ pub struct WelcomeLayout {
     pub status_rect: (u16, u16, u16, u16),
     pub panel_rect: Option<(u16, u16, u16, u16)>,
     pub content_rect: (u16, u16, u16, u16),
-    pub action_rects: [(u16, u16, u16, u16); 3],
+    pub action_rects: [(u16, u16, u16, u16); 4],
+    pub changelog_header_rect: Option<(u16, u16, u16, u16)>,
     pub compact: bool,
     pub menu_items_visible: usize,
 }
@@ -33,21 +34,46 @@ impl WelcomeLayout {
         Self::for_area((0, 0, width, height), false)
     }
 
+    pub(crate) fn for_startup_area(
+        area: (u16, u16, u16, u16),
+        clipboard_warning_visible: bool,
+        expanded: bool,
+    ) -> Self {
+        Self::for_area_state(area, clipboard_warning_visible, expanded)
+    }
+
     pub fn for_area(
         (origin_x, origin_y, width, height): (u16, u16, u16, u16),
         clipboard_warning_visible: bool,
     ) -> Self {
+        Self::for_area_state(
+            (origin_x, origin_y, width, height),
+            clipboard_warning_visible,
+            true,
+        )
+    }
+
+    fn for_area_state(
+        (origin_x, origin_y, width, height): (u16, u16, u16, u16),
+        clipboard_warning_visible: bool,
+        expanded: bool,
+    ) -> Self {
         let wide = width >= TWO_COLUMN_MIN_WIDTH;
-        let menu_items_visible = 3;
+        let menu_items_visible = 4;
         let terminal_height = height.saturating_add(5);
-        let base_top: u16 = if wide && terminal_height <= 30 { 3 } else { 4 };
-        let top = base_top
+        let expanded_top = 4u16
             .saturating_add(terminal_height.saturating_sub(30) / 3)
             .saturating_add(u16::from(clipboard_warning_visible) * 3)
             .min(height.saturating_sub(8));
-        let compact = !wide || height.saturating_sub(top) < WIDE_PANEL_MIN_HEIGHT;
+        let top = if expanded {
+            expanded_top
+        } else {
+            expanded_top.saturating_add(1 + u16::from(terminal_height > 30))
+        };
+        let required_panel_height = if expanded { WIDE_PANEL_MIN_HEIGHT } else { 11 };
+        let compact = !wide || height.saturating_sub(top) < required_panel_height;
         let panel_width = width.saturating_sub(6).clamp(20, 120);
-        let panel_height = 16.min(height.saturating_sub(top));
+        let panel_height = if expanded { 16 } else { 11 }.min(height.saturating_sub(top));
         let panel_x = origin_x.saturating_add(width.saturating_sub(panel_width) / 2);
         let panel_y = origin_y.saturating_add(top);
         let panel_rect =
@@ -78,7 +104,7 @@ impl WelcomeLayout {
             )
         };
         let action_start = if panel_rect.is_some() {
-            content.1.saturating_add(9)
+            content.1.saturating_add(if expanded { 9 } else { 4 })
         } else {
             content.1
         };
@@ -90,12 +116,29 @@ impl WelcomeLayout {
             content.0
         };
         let action_width = content.0.saturating_add(content.2).saturating_sub(action_x);
-        let action_rects = [0, 1, 2].map(|offset| {
+        let action_rects = [0, 1, 2, 3].map(|offset| {
             bound(
                 (
                     action_x,
                     action_start.saturating_add(offset),
                     action_width,
+                    1,
+                ),
+                origin_x.saturating_add(width),
+                origin_y.saturating_add(height),
+            )
+        });
+        let changelog_header_rect = expanded.then(|| {
+            let (header_x, header_y) = if panel_rect.is_some() {
+                (content.0.saturating_add(18), content.1.saturating_add(3))
+            } else {
+                (content.0, content.1.saturating_add(5))
+            };
+            bound(
+                (
+                    header_x,
+                    header_y,
+                    content.0.saturating_add(content.2).saturating_sub(header_x),
                     1,
                 ),
                 origin_x.saturating_add(width),
@@ -159,6 +202,7 @@ impl WelcomeLayout {
             panel_rect,
             content_rect: content,
             action_rects,
+            changelog_header_rect,
             compact,
             menu_items_visible,
         }

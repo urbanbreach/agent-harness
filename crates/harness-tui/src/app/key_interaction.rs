@@ -37,6 +37,12 @@ impl AppState {
             return;
         }
 
+        if self.overlay_stack().top() == Some(OverlayKind::ReleaseNotes) {
+            self.handle_release_notes_key(key);
+            self.maybe_auto_exit();
+            return;
+        }
+
         if self.overlay_stack().top() == Some(OverlayKind::PermissionModal) {
             self.handle_permission_modal_key(key);
             return;
@@ -360,6 +366,27 @@ impl AppState {
         on_change(self);
     }
 
+    fn handle_release_notes_key(&mut self, key: KeyEvent) {
+        let area = self.last_frame_area().unwrap_or(Rect::new(0, 0, 100, 30));
+        let popup = crate::layout::release_notes_modal_area(area);
+        let max_scroll = crate::ui::ui_overlays::release_notes_max_scroll(popup);
+        self.release_notes_scroll = match key.code {
+            KeyCode::Esc => {
+                self.close_release_notes();
+                return;
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                self.release_notes_scroll.saturating_add(3).min(max_scroll)
+            }
+            KeyCode::Up | KeyCode::Char('k') => self.release_notes_scroll.saturating_sub(3),
+            KeyCode::PageDown => self.release_notes_scroll.saturating_add(20).min(max_scroll),
+            KeyCode::PageUp => self.release_notes_scroll.saturating_sub(20),
+            KeyCode::Home => 0,
+            KeyCode::End => max_scroll,
+            _ => self.release_notes_scroll,
+        };
+    }
+
     pub(in crate::app) fn overlay_delete(&mut self, on_change: fn(&mut Self)) {
         if self.palette_cursor >= self.palette_input.chars().count() {
             return;
@@ -390,7 +417,11 @@ impl AppState {
     pub(in crate::app) fn close_review_surface(&mut self) {
         self.active_review_surface = None;
         self.active_tab = Tab::Run;
-        self.normalize_focus_for_active_surface();
+        if let Some(previous_focus) = self.review_surface_focus_return.take() {
+            self.focus = previous_focus;
+        } else {
+            self.normalize_focus_for_active_surface();
+        }
     }
 
     pub(in crate::app) fn handle_slash_mouse(&mut self, mouse: MouseEvent, overlay: Rect) {
@@ -430,6 +461,10 @@ impl AppState {
     }
 
     pub(in crate::app) fn open_review_surface(&mut self, surface: ReviewSurface) {
+        self.review_surface_focus_return.get_or_insert(self.focus);
+        if self.overlay_state().command_palette_channel_visible() {
+            self.close_palette();
+        }
         self.active_tab = Tab::Run;
         self.active_review_surface = Some(surface);
         if surface == ReviewSurface::Help {

@@ -3,6 +3,9 @@ use harness_tui::theme::{ColorLevel, Theme};
 
 #[test]
 fn axes_have_stable_labels_and_mappings() {
+    // arrange
+    // act
+    // assert
     assert_eq!(ColorCapability::TrueColor.label(), "true_color");
     assert_eq!(
         ColorCapability::Ansi256.to_color_level(),
@@ -22,8 +25,11 @@ fn axes_have_stable_labels_and_mappings() {
 
 #[test]
 fn known_profiles_classify_expected_capabilities() {
+    // arrange
+    // act
     let profiles = harness_tui::capability_matrix::well_known_profiles();
     let wez = &profiles[0].1;
+    // assert
     assert_eq!(wez.color(), ColorCapability::TrueColor);
     assert_eq!(wez.graphics(), GraphicsCapability::Kitty);
     assert_eq!(wez.keyboard(), KeyboardCapability::Modern);
@@ -58,10 +64,13 @@ fn known_profiles_classify_expected_capabilities() {
 
 #[test]
 fn matrix_contains_classified_cell_for_every_viewport() {
+    // arrange
+    // act
     let classifier = harness_tui::capability_matrix::well_known_profiles()
         .remove(0)
         .1;
     let matrix = CapabilityMatrix::new(classifier);
+    // assert
     assert_eq!(matrix.len(), 7);
     assert!(!matrix.is_empty());
     assert!(matrix
@@ -74,6 +83,7 @@ fn matrix_contains_classified_cell_for_every_viewport() {
 
 #[test]
 fn reduced_capability_cell_applies_and_labels_every_visible_fallback() {
+    // arrange
     let classifier = harness_tui::capability_matrix::well_known_profiles()
         .remove(4)
         .1;
@@ -83,8 +93,10 @@ fn reduced_capability_cell_applies_and_labels_every_visible_fallback() {
         .expect("default viewport capability");
     cell.motion = MotionCapability::Reduced;
 
+    // act
     let reduced = cell.apply_to_theme(Theme::harness_chat());
 
+    // assert
     assert_eq!(reduced.color_level(), ColorLevel::None);
     assert_eq!(reduced.live_shell.glyphs.streaming, "o");
     assert_eq!(reduced.live_shell.glyphs.done, "*");

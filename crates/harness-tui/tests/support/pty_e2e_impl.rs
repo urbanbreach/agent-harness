@@ -129,12 +129,14 @@ pub(crate) fn pty_permission_overlay_resolves_and_preserves_draft() {
         "PTY permission dock must show selected radio marker\n{permission_screen}"
     );
 
-    send_bytes(helper.writer.as_mut(), b"\x1b").unwrap_or_abort();
+    send_key(helper.writer.as_mut(), b'\r').unwrap_or_abort();
+    helper.wait_for("Cancel");
+    send_key(helper.writer.as_mut(), b'\r').unwrap_or_abort();
     helper.wait_until_absent("Allow Edit");
     let after_resolve = helper.screen_text();
     assert!(
         !after_resolve.contains("Allow Edit"),
-        "permission dock must clear after Esc deny + resolved event\n{after_resolve}"
+        "permission dock must clear after confirmed allow + resolved event\n{after_resolve}"
     );
     assert!(
         after_resolve.contains(PERMISSION_DRAFT),

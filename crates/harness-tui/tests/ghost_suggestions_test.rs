@@ -28,6 +28,7 @@ fn ready_controller() -> (DualClock, SuggestionController) {
 
 #[test]
 fn stale_responses_are_rejected_after_a_generation_change() {
+    // arrange
     // Given: a request captured before the composer is edited again.
     let clock = DualClock::new();
     let mut controller = SuggestionController::new(50);
@@ -43,13 +44,16 @@ fn stale_responses_are_rejected_after_a_generation_change() {
         .apply_response(&stale, "old suggestion")
         .expect_err("the old generation must be rejected");
 
+    // act
     // Then: no stale text becomes visible.
+    // assert
     assert!(matches!(error, SuggestionError::StaleGeneration { .. }));
     assert!(controller.current().is_none());
 }
 
 #[test]
 fn generation_counter_bumps_for_edit_focus_and_state_changes() {
+    // arrange
     // Given: a fresh generation counter owned by the suggestion controller.
     let clock = DualClock::new();
     let mut controller = SuggestionController::new(50);
@@ -65,7 +69,9 @@ fn generation_counter_bumps_for_edit_focus_and_state_changes() {
         .on_state_change()
         .expect("state invalidation is valid");
 
+    // act
     // Then: each transition owns a strictly newer generation and old work is distinct.
+    // assert
     assert_eq!(edit.generation.value(), 1);
     assert_eq!(focus.value(), 2);
     assert_eq!(state.value(), 3);
@@ -73,6 +79,7 @@ fn generation_counter_bumps_for_edit_focus_and_state_changes() {
 
 #[test]
 fn partial_acceptance_preserves_complete_grapheme_clusters() {
+    // arrange
     // Given: a response containing ZWJ, combining-mark, and modifier clusters.
     let (clock, mut controller) = ready_controller();
     let response = "👨‍👩‍👧‍👦e\u{301}👍🏽";
@@ -91,7 +98,9 @@ fn partial_acceptance_preserves_complete_grapheme_clusters() {
         .accept_next_grapheme(&editor)
         .expect("one grapheme is a valid acceptance unit");
 
+    // act
     // Then: the complete first cluster is inserted and the remainder is intact.
+    // assert
     assert_eq!(next.text(), "prompt 👨‍👩‍👧‍👦");
     assert_eq!(
         controller.current().map(|suggestion| suggestion.text()),
@@ -101,6 +110,7 @@ fn partial_acceptance_preserves_complete_grapheme_clusters() {
 
 #[test]
 fn partial_then_full_acceptance_produces_the_expected_composer_state() {
+    // arrange
     // Given: a visible multi-unit suggestion at the end of a draft.
     let (_clock, mut controller) = ready_controller();
     let editor = ComposerEditor::from_text("inspect ");
@@ -113,7 +123,9 @@ fn partial_then_full_acceptance_produces_the_expected_composer_state() {
         .accept_full(&partial)
         .expect("full acceptance is valid");
 
+    // act
     // Then: both operations preserve their documented composer insertion point.
+    // assert
     assert_eq!(partial.text(), "inspect g");
     assert_eq!(full.text(), "inspect ghost text");
     assert!(controller.current().is_none());
@@ -121,6 +133,7 @@ fn partial_then_full_acceptance_produces_the_expected_composer_state() {
 
 #[test]
 fn edit_focus_and_state_transitions_clear_visible_suggestions() {
+    // arrange
     // Given: a controller with a visible suggestion.
     let (clock, mut controller) = ready_controller();
 
@@ -145,6 +158,7 @@ fn edit_focus_and_state_transitions_clear_visible_suggestions() {
     assert!(controller.current().is_none());
     assert!(controller.pending().is_none());
 
+    // act
     controller
         .on_edit(&clock, "state context")
         .expect("state fixture request is valid");
@@ -158,12 +172,14 @@ fn edit_focus_and_state_transitions_clear_visible_suggestions() {
     controller
         .invalidate(Invalidation::StateChange)
         .expect("state invalidation is valid");
+    // assert
     assert!(controller.current().is_none());
     assert!(controller.pending().is_none());
 }
 
 #[test]
 fn debounce_uses_the_deterministic_flush_clock() {
+    // arrange
     // Given: a request with a fixed debounce delay and a zeroed fake clock.
     let clock = DualClock::new();
     let mut controller = SuggestionController::new(75);
@@ -177,13 +193,16 @@ fn debounce_uses_the_deterministic_flush_clock() {
     clock.advance_flush(1);
     let due = controller.take_ready_request(&clock);
 
+    // act
     // Then: readiness is deterministic and the same keyed request is returned at the boundary.
+    // assert
     assert!(early.is_none());
     assert_eq!(due, Some(request));
 }
 
 #[test]
 fn suggestion_text_cannot_be_written_to_a_persistence_sink() {
+    // arrange
     // Given: a visible suggestion and a sink probe representing events/disk/log persistence.
     let (_clock, controller) = ready_controller();
     let suggestion = controller.current().expect("suggestion is visible");
@@ -194,7 +213,9 @@ fn suggestion_text_cannot_be_written_to_a_persistence_sink() {
         .try_persist_to(&mut sink)
         .expect_err("suggestions are memory-only");
 
+    // act
     // Then: the typed rejection leaves the sink untouched and exposes no persistence path.
+    // assert
     assert_eq!(error, SuggestionError::PersistenceForbidden);
     assert!(sink.writes.is_empty());
     assert!(!format!("{suggestion:?}").contains("ghost text"));
@@ -203,6 +224,7 @@ fn suggestion_text_cannot_be_written_to_a_persistence_sink() {
 
 #[test]
 fn ghost_rendering_uses_exact_muted_design_tokens_without_changing_text() {
+    // arrange
     // Given: a visible suggestion containing Unicode text.
     let (_clock, controller) = ready_controller();
     let suggestion = controller.current().expect("suggestion is visible");
@@ -210,7 +232,9 @@ fn ghost_rendering_uses_exact_muted_design_tokens_without_changing_text() {
     // When: the suggestion is converted to its ghost span.
     let span = harness_tui::ghost_suggestions::render_ghost(suggestion);
 
+    // act
     // Then: content is exact and the design-contract muted style is applied.
+    // assert
     assert_eq!(span.content.as_ref(), "ghost text");
     assert_eq!(span.style.fg, Some(Color::Rgb(88, 88, 88)));
     assert!(span.style.add_modifier.contains(Modifier::DIM));

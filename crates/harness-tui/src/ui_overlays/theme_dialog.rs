@@ -25,7 +25,7 @@ pub(super) fn render_theme_dialog_overlay(
         return;
     }
 
-    let content = inset_rect(dialog_area, 2.min(dialog_area.width.saturating_sub(1)), 1);
+    let content = inset_rect(dialog_area, 1.min(dialog_area.width.saturating_sub(1)), 1);
     if content.width == 0 || content.height == 0 {
         return;
     }
@@ -52,7 +52,7 @@ pub(super) fn theme_dialog_area(root: Rect) -> Option<Rect> {
 }
 
 pub(super) fn theme_dialog_row_areas(dialog_area: Rect) -> Vec<Rect> {
-    let content = inset_rect(dialog_area, 2.min(dialog_area.width.saturating_sub(1)), 1);
+    let content = inset_rect(dialog_area, 1.min(dialog_area.width.saturating_sub(1)), 1);
     if content.width == 0 || content.height == 0 {
         return Vec::new();
     }
@@ -110,12 +110,26 @@ fn render_theme_dialog_body(frame: &mut Frame, app: &AppState, theme: &Theme, ar
         );
         let is_selected = index == app.theme_dialog_selected;
         let is_current = *name == app.theme_name;
-        let row_style = if is_selected {
-            ui_chrome::overlay_focus_row_style(theme)
-        } else {
-            Style::default().bg(surface)
+        let key = ModalSurfaceKey::Overlay {
+            kind: OverlayKind::ThemeDialog,
+            view: ModalViewKey::Primary,
         };
-        frame.render_widget(Block::default().style(row_style), row_area);
+        let presentation = modal_list_row(
+            theme,
+            ModalListRowSpec {
+                area: row_area,
+                state: ModalListRowState {
+                    selected: is_selected,
+                    hovered: app.modal_target_hovered(key, ModalTarget::Row(index)),
+                    dimmed: false,
+                },
+                max_scroll: 0,
+            },
+        );
+        frame.render_widget(
+            Block::default().style(presentation.style),
+            presentation.layout.content,
+        );
 
         let prefix = "  ";
         let marker = if is_current { "● " } else { "  " };
@@ -125,18 +139,18 @@ fn render_theme_dialog_body(frame: &mut Frame, app: &AppState, theme: &Theme, ar
             _ => name,
         };
         let fg = if is_selected {
-            theme.text.inverse
+            theme.text.primary
         } else {
             ui_chrome::command_palette_title(theme)
         };
-        let bg = row_style.bg.unwrap_or(surface);
+        let label_style = modal_list_row_text_style(presentation.style, fg);
         frame.render_widget(
             Paragraph::new(Line::from(vec![
-                Span::styled(prefix, Style::default().fg(fg).bg(bg)),
-                Span::styled(marker, Style::default().fg(fg).bg(bg)),
-                Span::styled(label, Style::default().fg(fg).bg(bg)),
+                Span::styled(prefix, label_style),
+                Span::styled(marker, label_style),
+                Span::styled(label, label_style),
             ])),
-            row_area,
+            presentation.layout.content,
         );
     }
 

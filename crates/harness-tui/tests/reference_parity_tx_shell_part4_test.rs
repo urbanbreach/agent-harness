@@ -258,6 +258,7 @@ fn tx_tool_failed_call_renders_error_block() {
 /// (removed + added content visible, rail-free, no message card).
 #[test]
 fn tx_diff_tool_details_project_removed_and_added_versions() {
+    // arrange
     // arrange — session-path live app (transcript surface active) + edit tool call
     let mut app = AppState::new_live(Some(PathBuf::from("/tmp/run_tx_diff_parity")), false, None);
     app.set_launch_metadata(
@@ -313,6 +314,7 @@ fn tx_diff_tool_details_project_removed_and_added_versions() {
     }
     app.focus = Focus::Details;
 
+    // act
     // act — palette -> "show tool details" -> render
     app.handle_key(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL));
     for ch in "show tool details".chars() {
@@ -322,6 +324,7 @@ fn tx_diff_tool_details_project_removed_and_added_versions() {
     app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
     let rendered = render(&app);
 
+    // assert
     assert!(
         app.transcript_interaction_snapshot().show_tool_details,
         "TX-DIFF: tool details must toggle on"

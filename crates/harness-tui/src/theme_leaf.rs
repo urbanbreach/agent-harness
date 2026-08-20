@@ -204,6 +204,9 @@ mod tests {
 
     #[test]
     fn terminal_native_is_terminal_native() {
+        // arrange
+        // act
+        // assert
         assert!(NamedTheme::TerminalNative.is_terminal_native());
         assert!(!NamedTheme::HarnessDark.is_terminal_native());
     }

@@ -783,6 +783,7 @@ pub struct SurfaceColors {
     pub panel_elevated: Color,
     pub overlay: Color,
     pub card: Color,
+    pub hover: Color,
     pub selected_card: Color,
 }
 
@@ -973,6 +974,7 @@ impl Theme {
             ColorRole::PanelElevated => self.surface.panel_elevated,
             ColorRole::Overlay => self.surface.overlay,
             ColorRole::Card => self.surface.card,
+            ColorRole::ModalHover => self.surface.hover,
             ColorRole::SelectedCard => self.surface.selected_card,
             ColorRole::PromptActiveSurface => self.reference_terminal.active_prompt_surface,
             ColorRole::BorderSubtle => self.border.subtle,
@@ -1385,6 +1387,7 @@ impl Theme {
                 panel_elevated: rgb(0x12, 0x16, 0x1E),
                 overlay: rgb(0x0B, 0x0E, 0x14),
                 card: rgb(0x55, 0x57, 0x53),
+                hover: rgb(0x2C, 0x2C, 0x2C),
                 selected_card: rgb(0x55, 0x57, 0x53),
             },
             border: BorderColors {
@@ -1471,6 +1474,7 @@ impl Theme {
                 panel_elevated: design_contract_color(ColorRole::PanelElevated),
                 overlay: design_contract_color(ColorRole::Overlay),
                 card: design_contract_color(ColorRole::Card),
+                hover: design_contract_color(ColorRole::ModalHover),
                 selected_card: design_contract_color(ColorRole::SelectedCard),
             },
             border: BorderColors {
@@ -1556,6 +1560,7 @@ impl Theme {
                 panel_elevated: rgb(0xEF, 0xEF, 0xEA),
                 overlay: rgb(0xFA, 0xFA, 0xF5),
                 card: rgb(0xD4, 0xD4, 0xCF),
+                hover: rgb(0xD0, 0xD0, 0xD0),
                 selected_card: rgb(0xD4, 0xD4, 0xCF),
             },
             border: BorderColors {
@@ -1641,6 +1646,7 @@ impl Theme {
                 panel_elevated: Color::Black,
                 overlay: Color::Black,
                 card: Color::DarkGray,
+                hover: Color::DarkGray,
                 selected_card: Color::DarkGray,
             },
             border: BorderColors {
@@ -1750,6 +1756,7 @@ impl Theme {
         theme.surface.panel_elevated = color(ColorRole::PanelElevated);
         theme.surface.overlay = color(ColorRole::Overlay);
         theme.surface.card = color(ColorRole::Card);
+        theme.surface.hover = color(ColorRole::ModalHover);
         theme.surface.selected_card = color(ColorRole::SelectedCard);
         theme.border.subtle = color(ColorRole::BorderSubtle);
         theme.border.strong = color(ColorRole::BorderStrong);
@@ -1833,6 +1840,7 @@ impl Theme {
                 panel_elevated: q(self.surface.panel_elevated),
                 overlay: q(self.surface.overlay),
                 card: q(self.surface.card),
+                hover: q(self.surface.hover),
                 selected_card: q(self.surface.selected_card),
             },
             border: BorderColors {
@@ -1965,6 +1973,7 @@ impl Theme {
                 panel_elevated: elevated_bg,
                 overlay: elevated_bg,
                 card: elevated_bg,
+                hover: elevated_bg,
                 selected_card: elevated_bg,
             },
             border: BorderColors {
@@ -2090,6 +2099,7 @@ impl Theme {
                 panel_elevated: Color::Reset,
                 overlay: Color::Reset,
                 card: Color::Reset,
+                hover: Color::Reset,
                 selected_card: Color::Reset,
             },
             border: BorderColors {

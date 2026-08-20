@@ -1,10 +1,10 @@
 use super::*;
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 
-#[path = "live_turn_scope_regression_tests.rs"]
+#[path = "live_turn_scope_regression.rs"]
 mod live_turn_scope_regression_tests;
 
-#[path = "live_turn_lineage_geometry_regression_tests.rs"]
+#[path = "live_turn_lineage_geometry_regression.rs"]
 mod live_turn_lineage_geometry_regression_tests;
 
 #[path = "live_turn_watcher_dedup_tests.rs"]

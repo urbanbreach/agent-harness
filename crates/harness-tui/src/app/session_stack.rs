@@ -262,6 +262,7 @@ impl AppState {
         self.launch_metadata = restored_metadata.clone();
         self.runtime_context_metadata = Some(restored_metadata);
         self.active_review_surface = None;
+        self.review_surface_focus_return = None;
         self.active_tab = Tab::Run;
         self.focus = if self.replay_mode {
             Focus::Details
@@ -970,12 +971,15 @@ mod tests {
 
     #[test]
     fn subagent_status_returns_info_for_child_session() {
+        // arrange
+        // act
         let mut app = AppState::new_live(None, false, None);
         setup_parent_with_child(&mut app);
         app.navigate_to_child_session_id("agent_worker".to_string());
         let info = app
             .current_subagent_session_info()
             .expect("subagent info must be available after navigating to child");
+        // assert
         assert!(!info.label.is_empty(), "subagent label must be non-empty");
         assert!(!info.title.is_empty(), "subagent title must be non-empty");
         assert_eq!(
@@ -986,9 +990,12 @@ mod tests {
 
     #[test]
     fn subagent_catalog_lists_child_session_ids() {
+        // arrange
+        // act
         let mut app = AppState::new_live(None, false, None);
         setup_parent_with_child(&mut app);
         let children = app.child_session_ids();
+        // assert
         assert!(
             children.iter().any(|id| id == "agent_worker"),
             "child_session_ids must include agent_worker: {:?}",
@@ -998,8 +1005,11 @@ mod tests {
 
     #[test]
     fn subagent_catalog_empty_when_no_children() {
+        // arrange
+        // act
         let app = AppState::new_live(None, false, None);
         let children = app.child_session_ids();
+        // assert
         assert!(
             children.is_empty(),
             "child_session_ids must be empty when no task spawns exist"
@@ -1008,7 +1018,10 @@ mod tests {
 
     #[test]
     fn subagent_current_session_id_returns_none_without_session_path() {
+        // arrange
+        // act
         let app = AppState::new_live(None, false, None);
+        // assert
         assert!(
             app.current_session_id().is_none(),
             "current_session_id must be None without session_path"
@@ -1017,8 +1030,11 @@ mod tests {
 
     #[test]
     fn subagent_current_session_id_returns_path_component() {
+        // arrange
+        // act
         let mut app = AppState::new_live(None, false, None);
         app.session_path = Some(PathBuf::from("/tmp/harness-sessions/run-001"));
+        // assert
         assert_eq!(
             app.current_session_id(),
             Some("run-001"),
@@ -1028,9 +1044,12 @@ mod tests {
 
     #[test]
     fn subagent_session_present_false_for_root_session() {
+        // arrange
+        // act
         let mut app = AppState::new_live(None, false, None);
         app.session_path = Some(PathBuf::from("/tmp/harness-sessions/parent_run"));
         setup_parent_with_child(&mut app);
+        // assert
         assert!(
             !app.current_subagent_session_present(),
             "root session must not be a subagent"
@@ -1039,10 +1058,13 @@ mod tests {
 
     #[test]
     fn session_entry_navigates_to_child_session() {
+        // arrange
+        // act
         let mut app = AppState::new_live(None, false, None);
         app.session_path = Some(PathBuf::from("/tmp/harness-dash-parity/parent_run"));
         setup_parent_with_child(&mut app);
         app.navigate_to_child_session_id("agent_worker".to_string());
+        // assert
         assert!(
             app.replay_mode,
             "navigating to inline child must enter replay mode"
@@ -1056,10 +1078,13 @@ mod tests {
 
     #[test]
     fn session_return_navigates_to_parent_session() {
+        // arrange
+        // act
         let mut app = AppState::new_live(None, false, None);
         app.session_path = Some(PathBuf::from("/tmp/harness-dash-parity/parent_run"));
         setup_parent_with_child(&mut app);
         app.navigate_to_child_session_id("agent_worker".to_string());
+        // assert
         assert_eq!(app.current_session_id(), Some("agent_worker"));
         app.navigate_to_parent_session();
         assert_eq!(
@@ -1071,6 +1096,8 @@ mod tests {
 
     #[test]
     fn session_entry_sibling_cycle_wraps_around() {
+        // arrange
+        // act
         let mut app = AppState::new_live(None, false, None);
         app.session_path = Some(PathBuf::from("/tmp/harness-dash-parity/parent_run"));
         setup_parent_with_child(&mut app);
@@ -1108,6 +1135,7 @@ mod tests {
             }),
         ));
         let children = app.child_session_ids();
+        // assert
         assert!(
             children.len() >= 2,
             "must have at least 2 children for sibling cycle: {:?}",
@@ -1117,8 +1145,11 @@ mod tests {
 
     #[test]
     fn empty_dashboard_has_no_child_sessions() {
+        // arrange
+        // act
         let app = AppState::new_live(None, false, None);
         let children = app.child_session_ids();
+        // assert
         assert!(
             children.is_empty(),
             "empty dashboard must have no child sessions"
@@ -1127,7 +1158,10 @@ mod tests {
 
     #[test]
     fn empty_dashboard_has_no_subagent_info() {
+        // arrange
+        // act
         let app = AppState::new_live(None, false, None);
+        // assert
         assert!(
             app.current_subagent_session_info().is_none(),
             "empty dashboard must have no subagent session info"

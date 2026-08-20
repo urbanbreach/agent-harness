@@ -138,7 +138,7 @@ fn p21_tool_display_descriptors_cover_state_families_without_pty() {
     // assert
     insta::assert_snapshot!(trim_trailing_snapshot_whitespace(&rendered));
     // S1: completed — session_list folds into the semantic list bucket
-    assert_markers_in_order(&rendered, &["Listed 1 dir"]);
+    assert_markers_in_order(&rendered, &["Listing 1 dir"]);
     // S2: running — lsp tool shows operation and path
     assert_markers_in_order(&rendered, &["LSP diagnostics", "src/main.rs"]);
     // S3: failed — ast_grep_search shows intentional title
@@ -269,9 +269,10 @@ fn question_permission_prompt_renders_without_pty() {
     assert!(rendered.contains("y copy") || rendered.contains("copy"));
     assert!(rendered.contains("Enter:submit"));
     // Freeze-aligned outer shell footer (product-honest keys).
-    assert!(rendered.contains("Esc:unselect"));
-    assert!(rendered.contains("Tab:scrollback"));
-    assert!(rendered.contains("Ctrl+c:dismiss"));
+    assert!(rendered.contains("Esc:scrollback"));
+    assert!(rendered.contains("Tab:next option"));
+    assert!(rendered.contains("Shift+Tab:previous option"));
+    assert!(rendered.contains("Shift+X:dismiss"));
 }
 
 #[test]

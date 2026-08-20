@@ -1,5 +1,6 @@
 use super::*;
 use crate::UnwrapOrAbort;
+use crossterm::event::{KeyModifiers, MouseEvent, MouseEventKind};
 use harness_core::event::UserMessageSubmittedEvent;
 
 #[test]
@@ -139,6 +140,7 @@ fn transcript_pending_permission_stays_after_last_activity() {
 
 #[test]
 fn transcript_render_key_reuses_content_hash_across_animation_frames() {
+    // arrange
     // Given: a streaming transcript whose content is unchanged between animation frames.
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
@@ -178,7 +180,9 @@ fn transcript_render_key_reuses_content_hash_across_animation_frames() {
         app.advance_transcript_animation_phase();
     }
 
+    // act
     // Then: animation-only paint state does not re-hash the full transcript.
+    // assert
     assert_eq!(app.transcript_render_cache_key(), initial_key);
     assert_eq!(AppState::transcript_render_key_build_count_for_test(), 1);
 }
@@ -274,6 +278,7 @@ fn transcript_layout_cache_does_not_rebuild_on_animation_phase_change() {
 
 #[test]
 fn long_transcript_reuses_measured_sections_across_animation_frames() {
+    // arrange
     // Given: a long transcript with one visible running tool that requests animation frames.
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(
@@ -308,7 +313,9 @@ fn long_transcript_reuses_measured_sections_across_animation_frames() {
     app.advance_transcript_animation_phase();
     let _ = build_transcript_lines_for_width(&app, &theme, 120);
 
+    // act
     // Then: historical and active sections both reuse their measured render surfaces.
+    // assert
     assert_eq!(
         transcript_section_render_count_for_test(),
         rendered_sections
@@ -317,6 +324,7 @@ fn long_transcript_reuses_measured_sections_across_animation_frames() {
 
 #[test]
 fn streaming_delta_reuses_unrelated_running_tool_section() {
+    // arrange
     // Given: an earlier turn has a running background tool while the latest turn streams.
     let mut background = transcript_section_model_test_activity(
         "request-background-tool",
@@ -347,7 +355,9 @@ fn streaming_delta_reuses_unrelated_running_tool_section() {
     app.advance_transcript_animation_phase();
     let _ = build_transcript_lines_for_width(&app, &theme, 120);
 
+    // act
     // Then: only the changed active turn is remeasured.
+    // assert
     assert_eq!(transcript_section_render_count_for_test(), 1);
 }
 
@@ -502,8 +512,8 @@ fn streaming_assistant_footer_reserves_blank_geometry_for_live_status() {
 
     assert_eq!(
         lines,
-        vec![String::new()],
-        "streaming footer should reserve one blank row while the live status owns lifecycle text"
+        vec![String::new(), String::new()],
+        "streaming footer should reserve one blank row before the final block trailing gap"
     );
 }
 
@@ -1098,6 +1108,7 @@ fn user_row_wall_clock_right_aligned_matches_freeze_geometry() {
 
 #[test]
 fn user_row_wall_clock_expands_without_reflow_when_hovered() {
+    // arrange
     let request_id = "request-user-wall-clock-hover";
     let mut activity = transcript_section_model_test_activity(request_id, ActivityStatus::Done, "");
     activity.user_message = Some(UserMessageSubmittedEvent {
@@ -1123,6 +1134,7 @@ fn user_row_wall_clock_expands_without_reflow_when_hovered() {
         80,
     ));
 
+    // act
     let resting_row = resting
         .iter()
         .find(|line| line.contains("❯ A prompt"))
@@ -1131,6 +1143,7 @@ fn user_row_wall_clock_expands_without_reflow_when_hovered() {
         .iter()
         .find(|line| line.contains("❯ A prompt"))
         .expect("hovered user row");
+    // assert
     assert!(
         resting_row.ends_with("  12:34 PM"),
         "unexpected resting user row: {resting_row:?}"
@@ -1140,6 +1153,129 @@ fn user_row_wall_clock_expands_without_reflow_when_hovered() {
         "unexpected hovered user row: {hovered_row:?}"
     );
     assert_eq!(resting.len(), hovered.len(), "hover must not reflow rows");
+}
+
+#[test]
+fn user_timestamp_native_mouse_move_enters_and_leaves_detailed_clock_without_reflow() {
+    // arrange
+    // Given: a rendered live user row with a timestamp hit region.
+    let request_id = "request-user-wall-clock-native-hover";
+    let mut activity = transcript_section_model_test_activity(request_id, ActivityStatus::Done, "");
+    activity.user_message = Some(UserMessageSubmittedEvent {
+        request_id: request_id.into(),
+        text: "Native pointer hover keeps this body stable.".to_string(),
+    });
+    activity.user_timestamp = Some("2026-08-14T12:34:56Z".to_string());
+    let mut app = AppState::new_live(None, false, None);
+    app.activities.push_back(activity);
+    let area = Rect::new(0, 0, 120, 40);
+    app.set_frame_area(area);
+    let timestamp_cell = (0..area.height)
+        .flat_map(|row| (0..area.width).map(move |column| (column, row)))
+        .find(|(column, row)| {
+            matches!(
+                transcript_mouse_target(&app, area, *column, *row),
+                Some(TranscriptMouseTarget::UserTimestamp { .. })
+            )
+        })
+        .expect("timestamp hit cell");
+    let resting = transcript_test_line_texts(build_transcript_lines_for_width(
+        &app,
+        &Theme::default(),
+        120,
+    ));
+
+    // When: a real Move enters and then leaves the timestamp hit region.
+    let entered = app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Moved,
+            column: timestamp_cell.0,
+            row: timestamp_cell.1,
+            modifiers: KeyModifiers::NONE,
+        },
+        area,
+        None,
+        None,
+        None,
+    );
+    let hovered = transcript_test_line_texts(build_transcript_lines_for_width(
+        &app,
+        &Theme::default(),
+        120,
+    ));
+    let left = app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Moved,
+            column: 0,
+            row: 0,
+            modifiers: KeyModifiers::NONE,
+        },
+        area,
+        None,
+        None,
+        None,
+    );
+
+    // act
+    // Then: hover expands the clock, exit clears it, and neither move changes row count.
+    // assert
+    assert!(entered && left);
+    assert!(
+        hovered
+            .iter()
+            .any(|line| line.contains("12:34:56 | Aug 14")),
+        "{hovered:?}"
+    );
+    assert_eq!(resting.len(), hovered.len());
+    assert_eq!(app.hovered_transcript_target(), None);
+}
+
+#[test]
+fn user_timestamp_safe_fit_boundaries_hide_whole_clock_instead_of_clipping() {
+    // arrange
+    // Given: short and expanded wall-clock forms at every narrow content width.
+    for hovered in [false, true] {
+        let request_id = format!("request-safe-fit-{hovered}");
+        let mut activity =
+            transcript_section_model_test_activity(&request_id, ActivityStatus::Done, "");
+        activity.user_message = Some(UserMessageSubmittedEvent {
+            request_id: request_id.clone().into(),
+            text: "x".to_string(),
+        });
+        activity.user_timestamp = Some("2026-08-14T12:34:56Z".to_string());
+        let mut app = AppState::new_live(None, false, None);
+        app.activities.push_back(activity);
+        if hovered {
+            app.transcript_view.hovered_transcript_target =
+                Some(TranscriptMouseTarget::UserTimestamp { request_id });
+        }
+        let expected = if hovered {
+            "12:34:56 | Aug 14"
+        } else {
+            "12:34 PM"
+        };
+
+        // act
+        // When/Then: each boundary renders either the complete clock or none of it.
+        for width in 1..=40 {
+            let lines = transcript_test_line_texts(build_transcript_lines_for_width(
+                &app,
+                &Theme::default(),
+                width,
+            ));
+            let row = lines
+                .iter()
+                .find(|line| line.contains('❯'))
+                .cloned()
+                .unwrap_or_default();
+            let clock_fragment_present = row.contains(':') || row.contains("Aug");
+            // assert
+            assert!(
+                !clock_fragment_present || row.contains(expected),
+                "hovered={hovered} width={width} row={row:?}"
+            );
+        }
+    }
 }
 
 #[test]
@@ -1606,6 +1742,7 @@ fn command_group_auto_expands_failure_and_preserves_explicit_member_folds() {
 
 #[test]
 fn command_group_stays_coalesced_while_latest_member_is_running() {
+    // arrange
     let mut activity = transcript_section_model_test_activity(
         "request-command-group-running",
         ActivityStatus::Streaming,
@@ -1636,12 +1773,14 @@ fn command_group_stays_coalesced_while_latest_member_is_running() {
     app.activities = std::collections::VecDeque::from(vec![activity]);
     app.transcript_view.selected_activity_index = 0;
 
+    // act
     let lines = transcript_test_line_texts(build_transcript_lines_for_width(
         &app,
         &Theme::default(),
         80,
     ));
 
+    // assert
     assert!(lines.iter().any(|line| line.contains("Ran 2 commands")));
     assert!(lines.iter().any(|line| line.contains("printf finished")));
     assert!(lines.iter().any(|line| line.contains("printf running")));
@@ -1686,7 +1825,7 @@ fn reasoning_to_answer_transition_uses_one_blank_row() {
 }
 
 #[test]
-fn streaming_reasoning_header_renders_diamond_and_thinking_label() {
+fn streaming_reasoning_header_renders_plain_thinking_label() {
     // arrange
     // act
     // assert
@@ -1707,9 +1846,10 @@ fn streaming_reasoning_header_renders_diamond_and_thinking_label() {
     ));
     let rendered = lines.join("\n");
     assert!(
-        rendered.contains("◆ Thinking…"),
-        "streaming reasoning should show the Grok diamond + Thinking header\n{rendered}"
+        rendered.contains("Thinking…"),
+        "streaming reasoning should show the quiet Thinking header\n{rendered}"
     );
+    assert!(!rendered.contains("◆ Thinking…"));
     assert!(!rendered.contains('⠋'));
     assert!(
         rendered.contains("analyzing the problem"),
@@ -1818,7 +1958,7 @@ fn streaming_reasoning_stops_spinner_when_tool_call_arrives() {
 }
 
 #[test]
-fn streaming_reasoning_header_with_title_keeps_the_grok_header() {
+fn streaming_reasoning_header_with_title_keeps_the_quiet_header() {
     // arrange
     // act
     // assert
@@ -1839,9 +1979,10 @@ fn streaming_reasoning_header_with_title_keeps_the_grok_header() {
     ));
     let rendered = lines.join("\n");
     assert!(
-        rendered.contains("◆ Thinking…"),
+        rendered.contains("Thinking…"),
         "streaming reasoning keeps the quiet reference header\n{rendered}"
     );
+    assert!(!rendered.contains("◆ Thinking…"));
     assert!(rendered.contains("Planning approach"));
     assert!(
         rendered.contains("Detailed analysis"),
@@ -1933,6 +2074,7 @@ fn completed_reasoning_header_without_title_renders_thinking() {
 
 #[test]
 fn streaming_reasoning_defaults_to_last_three_wrapped_rows() {
+    // arrange
     // Given: a running reasoning paragraph longer than the reference preview.
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
@@ -1941,7 +2083,7 @@ fn streaming_reasoning_defaults_to_last_three_wrapped_rows() {
         "",
     );
     entry.thinking_text = "PREVIEW_START alpha beta gamma delta epsilon zeta eta theta iota \
-        kappa lambda mu nu xi omicron pi rho sigma tau upsilon phi chi psi omega PREVIEW_TAIL"
+        kappa lambda mu nu xi omicron rho sigma tau upsilon phi chi psi omega PREVIEW_TAIL"
         .to_string();
     app.activities = std::collections::VecDeque::from(vec![entry]);
     app.transcript_view.selected_activity_index = 0;
@@ -1954,7 +2096,9 @@ fn streaming_reasoning_defaults_to_last_three_wrapped_rows() {
     ));
     let rendered = lines.join("\n");
 
+    // act
     // Then: only the final three wrapped rows remain visible behind an ellipsis.
+    // assert
     assert!(!rendered.contains("PREVIEW_START"), "{rendered}");
     assert!(rendered.contains('…'), "{rendered}");
     assert!(rendered.contains("PREVIEW_TAIL"), "{rendered}");
@@ -1971,6 +2115,7 @@ fn streaming_reasoning_defaults_to_last_three_wrapped_rows() {
 
 #[test]
 fn selected_finished_reasoning_expands_and_collapses_deliberately() {
+    // arrange
     // Given: a finished reasoning trace in its default collapsed state.
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
@@ -2006,7 +2151,9 @@ fn selected_finished_reasoning_expands_and_collapses_deliberately() {
     ))
     .join("\n");
 
+    // act
     // Then: disclosure changes only the body while the settled duration stays fixed.
+    // assert
     assert!(!collapsed.contains("private reasoning body"));
     assert!(expanded_changed);
     assert!(expanded.contains("private reasoning body"));
@@ -2018,6 +2165,7 @@ fn selected_finished_reasoning_expands_and_collapses_deliberately() {
 
 #[test]
 fn ctrl_e_expands_selected_finished_reasoning_from_transcript_focus() {
+    // arrange
     // Given: a collapsed finished trace with keyboard focus on the transcript.
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
@@ -2044,13 +2192,16 @@ fn ctrl_e_expands_selected_finished_reasoning_from_transcript_focus() {
     ))
     .join("\n");
 
+    // act
     // Then: the selected trace expands without leaving the transcript surface.
+    // assert
     assert!(rendered.contains("keyboard-expanded reasoning"));
     assert_eq!(app.focus, crate::app::Focus::Details);
 }
 
 #[test]
 fn running_reasoning_text_stays_stable_across_shared_phase() {
+    // arrange
     // Given: an active reasoning trace on the first shared animation frame.
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
@@ -2083,13 +2234,17 @@ fn running_reasoning_text_stays_stable_across_shared_phase() {
     .find(|line| line.contains("Thinking…"))
     .unwrap_or_abort();
 
+    // act
     // Then: the color wave does not mutate transcript text without a provider delta.
+    // assert
     assert_eq!(before, after);
-    assert!(before.contains("◆ Thinking…"));
+    assert!(before.contains("Thinking…"));
+    assert!(!before.contains("◆ Thinking…"));
 }
 
 #[test]
 fn completed_empty_reasoning_leaves_no_header() {
+    // arrange
     // Given: a completed turn whose only reasoning payload is redacted away.
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
@@ -2110,7 +2265,9 @@ fn completed_empty_reasoning_leaves_no_header() {
     ))
     .join("\n");
 
+    // act
     // Then: no empty Thought/Thinking chrome remains.
+    // assert
     assert!(!rendered.contains("Thought"));
     assert!(!rendered.contains("Thinking"));
 }
@@ -2137,6 +2294,7 @@ fn completed_turn_without_thinking_text_still_renders_thought_for() {
     ));
     let rendered = lines.join("\n");
 
+    // assert
     assert!(
         !rendered.contains("Thought for"),
         "completed turns without reasoning must not render Thought for\n{rendered}"
@@ -2274,7 +2432,10 @@ fn streaming_assistant_footer_stays_blank_across_animation_ticks() {
 
     assert_eq!(
         (first, second),
-        (vec![String::new()], vec![String::new()]),
+        (
+            vec![String::new(), String::new()],
+            vec![String::new(), String::new()]
+        ),
         "animation ticks must not reintroduce a second lifecycle status source"
     );
 }
@@ -2364,6 +2525,7 @@ fn transcript_measurement_wrap_correctness_across_widths_and_styles() {
                         .sum::<usize>();
                     section_rows = surface.top_offset + visual_rows;
                 }
+                section_rows += usize::from(!section.surfaces.is_empty());
                 independently_computed_rows += section_rows;
             }
             // assert
@@ -2547,6 +2709,7 @@ fn perf_500_event_streaming_transcript_cache_and_layout_budget() {
 
 #[test]
 fn perf_packet2_streaming_tail_layout_stays_within_frame_budget() {
+    // arrange
     use std::time::{Duration, Instant};
 
     let mut app = AppState::default();
@@ -2558,11 +2721,13 @@ fn perf_packet2_streaming_tail_layout_stays_within_frame_budget() {
     activity.transcript_text.push_str(&"···".repeat(3_000));
     app.activities.push_back(activity);
 
+    // act
     let theme = Theme::default();
     let started = Instant::now();
     let lines = build_transcript_lines_for_width(&app, &theme, 98);
     let elapsed = started.elapsed();
 
+    // assert
     assert!(!lines.is_empty());
     assert!(
         elapsed < Duration::from_millis(16),

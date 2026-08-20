@@ -95,6 +95,7 @@ fn set_buffer_at(app: &mut AppState, text: &str, cursor: usize) {
 /// A1: typing inserts at the cursor and advances it.
 #[test]
 fn editor_typing_inserts_and_advances_cursor() {
+    // arrange
     // Given: a focused live app with an empty composer
     let mut app = live_app();
     assert!(app.composer.prompt_buffer.is_empty());
@@ -103,7 +104,9 @@ fn editor_typing_inserts_and_advances_cursor() {
     app.handle_key(key(KeyCode::Char('h')));
     app.handle_key(key(KeyCode::Char('i')));
 
+    // act
     // Then: both land in the buffer with the cursor after them
+    // assert
     assert_eq!(app.composer.prompt_buffer, "hi");
     assert_eq!(app.composer.prompt_cursor, 2);
 }
@@ -111,6 +114,7 @@ fn editor_typing_inserts_and_advances_cursor() {
 /// A2: plain cursor movement clamps at both ends and clears any selection.
 #[test]
 fn editor_cursor_movement_clamps_at_bounds() {
+    // arrange
     // Given: "abc" with the cursor at the end
     let mut app = live_app();
     set_buffer(&mut app, "abc");
@@ -132,13 +136,16 @@ fn editor_cursor_movement_clamps_at_bounds() {
     app.handle_key(key(KeyCode::Right));
     assert_eq!(app.composer.prompt_cursor, 3, "cursor must clamp at end");
 
+    // act
     // And: plain movement never leaves a selection behind
+    // assert
     assert_eq!(app.composer.selection_anchor, None);
 }
 
 /// A3: backspace deletes backward, delete deletes forward.
 #[test]
 fn editor_backspace_and_delete_remove_chars() {
+    // arrange
     // Given: "abc" cursor at end
     let mut app = live_app();
     set_buffer(&mut app, "abc");
@@ -150,11 +157,13 @@ fn editor_backspace_and_delete_remove_chars() {
     assert_eq!(app.composer.prompt_buffer, "a");
     assert_eq!(app.composer.prompt_cursor, 1);
 
+    // act
     // Given: "abc" cursor at start
     set_buffer_at(&mut app, "abc", 0);
     // When: forward-delete once
     app.handle_key(key(KeyCode::Delete));
     // Then
+    // assert
     assert_eq!(app.composer.prompt_buffer, "bc");
     assert_eq!(app.composer.prompt_cursor, 0);
 }
@@ -162,6 +171,7 @@ fn editor_backspace_and_delete_remove_chars() {
 /// A4: Ctrl+Left / Ctrl+Right jump by word.
 #[test]
 fn editor_word_navigation_jumps_by_word() {
+    // arrange
     // Given: "foo bar baz" cursor at end
     let mut app = live_app();
     set_buffer(&mut app, "foo bar baz");
@@ -172,9 +182,11 @@ fn editor_word_navigation_jumps_by_word() {
     app.handle_key(ctrl_key_left());
     assert_eq!(app.composer.prompt_cursor, 4, "lands at start of 'bar'");
 
+    // act
     // When: from column 0 Ctrl+Right spans the first word + separator
     set_buffer_at(&mut app, "foo bar baz", 0);
     app.handle_key(ctrl_key_right());
+    // assert
     assert_eq!(app.composer.prompt_cursor, 4, "lands just after 'foo '");
 }
 
@@ -189,12 +201,15 @@ fn ctrl_key_right() -> KeyEvent {
 /// A5: Home / End move to the current line edges.
 #[test]
 fn editor_home_and_end_move_to_line_edges() {
+    // arrange
     // Given: "hello" cursor in the middle
     let mut app = live_app();
     set_buffer_at(&mut app, "hello", 3);
 
+    // act
     // When/Then
     app.handle_key(key(KeyCode::Home));
+    // assert
     assert_eq!(app.composer.prompt_cursor, 0);
     app.handle_key(key(KeyCode::End));
     assert_eq!(app.composer.prompt_cursor, 5);
@@ -205,6 +220,7 @@ fn editor_home_and_end_move_to_line_edges() {
 /// away from the buffer boundary.
 #[test]
 fn editor_vertical_cursor_moves_across_lines() {
+    // arrange
     // Given: a three-line buffer with the caret on the last line
     let mut app = live_app();
     set_buffer_at(&mut app, "ab\ncd\nef", 7);
@@ -234,9 +250,11 @@ fn editor_vertical_cursor_moves_across_lines() {
     app.handle_key(key(KeyCode::Down));
     assert_eq!(app.composer.prompt_cursor, 7);
 
+    // act
     // When: Down on the bottom line cannot move further
     app.handle_key(key(KeyCode::Down));
     // Then: caret unchanged and, not at the buffer end, no history recall
+    // assert
     assert_eq!(app.composer.prompt_cursor, 7, "clamps at bottom line");
     assert_eq!(app.composer.prompt_history_index, None);
 }
@@ -245,6 +263,7 @@ fn editor_vertical_cursor_moves_across_lines() {
 /// movement clears the selection.
 #[test]
 fn editor_selection_anchor_and_select_all() {
+    // arrange
     // Given: "hello" cursor at end
     let mut app = live_app();
     set_buffer(&mut app, "hello");
@@ -266,14 +285,17 @@ fn editor_selection_anchor_and_select_all() {
     assert_eq!(app.composer.selection_anchor, Some(0));
     assert_eq!(app.composer.prompt_cursor, 5);
 
+    // act
     // When: plain Left clears the selection
     app.handle_key(key(KeyCode::Left));
+    // assert
     assert_eq!(app.composer.selection_anchor, None);
 }
 
 /// A8: Ctrl+W deletes the word behind the cursor.
 #[test]
 fn editor_delete_word_backward_removes_word() {
+    // arrange
     // Given: "foo bar" cursor at end
     let mut app = live_app();
     set_buffer(&mut app, "foo bar");
@@ -281,7 +303,9 @@ fn editor_delete_word_backward_removes_word() {
     // When
     app.handle_key(ctrl('w'));
 
+    // act
     // Then: the trailing word is gone, the separator stays
+    // assert
     assert_eq!(app.composer.prompt_buffer, "foo ");
     assert_eq!(app.composer.prompt_cursor, 4);
 }
@@ -289,6 +313,7 @@ fn editor_delete_word_backward_removes_word() {
 /// A9: Ctrl+U kills from the cursor to line start.
 #[test]
 fn editor_kill_to_line_start() {
+    // arrange
     // Given: "hello world" cursor after "hello"
     let mut app = live_app();
     set_buffer_at(&mut app, "hello world", 5);
@@ -296,7 +321,9 @@ fn editor_kill_to_line_start() {
     // When
     app.handle_key(ctrl('u'));
 
+    // act
     // Then
+    // assert
     assert_eq!(app.composer.prompt_buffer, " world");
     assert_eq!(app.composer.prompt_cursor, 0);
 }
@@ -304,6 +331,7 @@ fn editor_kill_to_line_start() {
 /// A10: Ctrl+K kills from the cursor to line end.
 #[test]
 fn editor_kill_to_line_end() {
+    // arrange
     // Given: "hello world" cursor after "hello"
     let mut app = live_app();
     set_buffer_at(&mut app, "hello world", 5);
@@ -311,7 +339,9 @@ fn editor_kill_to_line_end() {
     // When
     app.handle_key(ctrl('k'));
 
+    // act
     // Then
+    // assert
     assert_eq!(app.composer.prompt_buffer, "hello");
     assert_eq!(app.composer.prompt_cursor, 5);
 }
@@ -319,6 +349,7 @@ fn editor_kill_to_line_end() {
 /// A11: typing builds undo history; Ctrl+Z undoes, Ctrl+Shift+Z redoes.
 #[test]
 fn editor_undo_and_redo_round_trip() {
+    // arrange
     // Given: three typed characters (each insert pushes an undo snapshot)
     let mut app = live_app();
     type_str(&mut app, "abc");
@@ -330,17 +361,20 @@ fn editor_undo_and_redo_round_trip() {
     app.handle_key(ctrl('z'));
     assert_eq!(app.composer.prompt_buffer, "a");
 
+    // act
     // When/Then: redo restores one step
     app.handle_key(keym(
         KeyCode::Char('z'),
         KeyModifiers::CONTROL | KeyModifiers::SHIFT,
     ));
+    // assert
     assert_eq!(app.composer.prompt_buffer, "ab");
 }
 
 /// A12: InsertNewline (Ctrl+J) inserts a newline WITHOUT submitting.
 #[test]
 fn editor_insert_newline_does_not_submit() {
+    // arrange
     // Given: "ab" typed in a live app
     let (mut app, intents) = live_app_capture();
     type_str(&mut app, "ab");
@@ -349,7 +383,9 @@ fn editor_insert_newline_does_not_submit() {
     app.handle_key(ctrl('j'));
     type_str(&mut app, "cd");
 
+    // act
     // Then: the buffer spans two lines, nothing was sent, no history recorded
+    // assert
     assert_eq!(app.composer.prompt_buffer, "ab\ncd");
     assert_eq!(app.composer.prompt_cursor, 5);
     assert!(intents.lock().unwrap().is_empty());
@@ -366,6 +402,7 @@ fn editor_insert_newline_does_not_submit() {
 /// caret is moved Home before each further upward step.
 #[test]
 fn history_up_down_navigates_and_restores_draft() {
+    // arrange
     // Given: two history entries and an empty draft (cursor at start)
     let mut app = live_app();
     app.composer.prompt_history = vec!["first".to_string(), "second".to_string()];
@@ -402,9 +439,11 @@ fn history_up_down_navigates_and_restores_draft() {
     assert_eq!(app.composer.prompt_buffer, "second");
     assert_eq!(app.composer.prompt_history_index, Some(1));
 
+    // act
     // When: Down past the newest entry restores the (empty) draft
     app.handle_key(key(KeyCode::Down));
     // Then
+    // assert
     assert_eq!(app.composer.prompt_buffer, "");
     assert_eq!(app.composer.prompt_history_index, None);
 }
@@ -412,6 +451,7 @@ fn history_up_down_navigates_and_restores_draft() {
 /// B6: a non-empty in-progress draft is preserved across history navigation.
 #[test]
 fn history_preserves_nonempty_draft() {
+    // arrange
     // Given: history plus a draft "mydraft" with the cursor at the start
     let mut app = live_app();
     app.composer.prompt_history = vec!["first".to_string(), "second".to_string()];
@@ -422,9 +462,11 @@ fn history_preserves_nonempty_draft() {
     assert_eq!(app.composer.prompt_buffer, "second");
     assert_eq!(app.composer.prompt_history_index, Some(1));
 
+    // act
     // When: Down past the end restores the original draft verbatim
     app.handle_key(key(KeyCode::Down));
     // Then
+    // assert
     assert_eq!(app.composer.prompt_buffer, "mydraft");
     assert_eq!(app.composer.prompt_cursor, 0);
     assert_eq!(app.composer.prompt_history_index, None);
@@ -433,6 +475,7 @@ fn history_preserves_nonempty_draft() {
 /// B-Reject: with empty history, Up/Down leave the draft untouched.
 #[test]
 fn history_navigation_is_noop_when_history_empty() {
+    // arrange
     // Given: no history, a draft present, cursor at start
     let mut app = live_app();
     set_buffer_at(&mut app, "draft", 0);
@@ -441,7 +484,9 @@ fn history_navigation_is_noop_when_history_empty() {
     app.handle_key(key(KeyCode::Up));
     app.handle_key(key(KeyCode::Down));
 
+    // act
     // Then
+    // assert
     assert_eq!(app.composer.prompt_buffer, "draft");
     assert_eq!(app.composer.prompt_history_index, None);
 }
@@ -453,6 +498,7 @@ fn history_navigation_is_noop_when_history_empty() {
 /// C1: typing `!` on an empty prompt enters shell mode and does NOT insert it.
 #[test]
 fn shell_mode_enters_on_bang_when_prompt_empty() {
+    // arrange
     // Given: an empty focused prompt
     let mut app = live_app();
     assert!(!app.composer.shell_mode);
@@ -460,7 +506,9 @@ fn shell_mode_enters_on_bang_when_prompt_empty() {
     // When
     app.handle_key(key(KeyCode::Char('!')));
 
+    // act
     // Then
+    // assert
     assert!(
         app.composer.shell_mode,
         "! on empty prompt enters shell mode"
@@ -475,6 +523,7 @@ fn shell_mode_enters_on_bang_when_prompt_empty() {
 /// mode (P6 rejection).
 #[test]
 fn shell_mode_does_not_enter_when_prompt_has_text() {
+    // arrange
     // Given: a non-empty prompt
     let mut app = live_app();
     set_buffer(&mut app, "hello");
@@ -482,7 +531,9 @@ fn shell_mode_does_not_enter_when_prompt_has_text() {
     // When
     app.handle_key(key(KeyCode::Char('!')));
 
+    // act
     // Then
+    // assert
     assert!(!app.composer.shell_mode);
     assert_eq!(app.composer.prompt_buffer, "hello!");
 }
@@ -491,6 +542,7 @@ fn shell_mode_does_not_enter_when_prompt_has_text() {
 /// exits shell mode (SendPrompt routed to the shell path).
 #[test]
 fn shell_mode_enter_emits_run_shell_command_and_clears() {
+    // arrange
     // Given: shell mode with a typed command
     let (mut app, intents) = live_app_capture();
     app.composer.shell_mode = true;
@@ -499,8 +551,10 @@ fn shell_mode_enter_emits_run_shell_command_and_clears() {
     // When
     app.handle_key(key(KeyCode::Enter));
 
+    // act
     // Then: a single RunShellCommand intent with the trimmed command
     let captured = intents.lock().unwrap();
+    // assert
     assert_eq!(captured.len(), 1);
     match &captured[0] {
         UiIntent::RunShellCommand { command } => assert_eq!(command, "ls -la"),
@@ -513,6 +567,7 @@ fn shell_mode_enter_emits_run_shell_command_and_clears() {
 /// C3: Esc exits shell mode.
 #[test]
 fn shell_mode_exits_on_escape() {
+    // arrange
     // Given
     let mut app = live_app();
     app.composer.shell_mode = true;
@@ -520,13 +575,16 @@ fn shell_mode_exits_on_escape() {
     // When
     app.handle_key(key(KeyCode::Esc));
 
+    // act
     // Then
+    // assert
     assert!(!app.composer.shell_mode);
 }
 
 /// C4: Backspace on an empty shell prompt exits shell mode.
 #[test]
 fn shell_mode_exits_on_backspace_at_empty_prompt() {
+    // arrange
     // Given
     let mut app = live_app();
     app.composer.shell_mode = true;
@@ -534,7 +592,9 @@ fn shell_mode_exits_on_backspace_at_empty_prompt() {
     // When
     app.handle_key(key(KeyCode::Backspace));
 
+    // act
     // Then
+    // assert
     assert!(!app.composer.shell_mode);
 }
 

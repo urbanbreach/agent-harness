@@ -1,5 +1,6 @@
 ---
 source: crates/harness-tui/tests/deterministic_render_test.rs
+assertion_line: 139
 expression: trim_trailing_snapshot_whitespace(&rendered)
 ---
 
@@ -9,20 +10,20 @@ expression: trim_trailing_snapshot_whitespace(&rendered)
      ❯ Inspect P2.1 tool display descriptors
 
 
-  ❙  ◈ Listed 1 dir  ▸
+  ┃  ◈ Listing 1 dir, Searching 2 patterns, Reading 1 skill, Reading 1 file, Running 2 subagents · 2 failed  ▾
+  ┃  ◆ List session
   ┃  ◆ LSP diagnostics src/main.rs
-
-  ┃  ◈ Searched 1 pattern, Read 1 skill, Read 1 file · 2 failed  ▾
   ┃  ◆ AST Search "foo" · Failed
   ┃      ast-grep binary not found
   ┃  ◆ Skill "denied-skill" · Denied
   ┃      Operator denied skill load
   ┃  ◆ Read session · run-123
-
-     ◆ Cancelled background task · req-bg-child  ▸
-     ◆ Checked background output · req-bg-late · late_result · 3 child tool calls · 2ms  ▸
+  ┃  ◆ Cancelled background task · req-bg-child
+  ┃  ◆ Checked background output · req-bg-late · late_result · 3 child tool calls · 2ms
 
      P2.1 tool display descriptors cover all state families.
+
+
 
 
 

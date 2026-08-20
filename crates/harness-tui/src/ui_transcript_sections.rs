@@ -882,6 +882,7 @@ mod ui10_tests {
 
     #[test]
     fn same_file_coalescing_accepts_only_trusted_successful_adjacent_edits() {
+        // arrange
         let first = successful_edit("edit-1", "src/lib.rs");
         let second = successful_edit("edit-2", "src/lib.rs");
         assert!(safe_same_file_edit_pair(&first, &second));
@@ -893,11 +894,13 @@ mod ui10_tests {
             &successful_edit("edit-4", "src/main.rs")
         ));
 
+        // act
         let mut first_write = successful_edit("write-1", "src/lib.rs");
         first_write.tool_id = "fs.write".to_string();
         first_write.canonical_tool_id = Some("fs.write".to_string());
         let mut duplicate_write = first_write.clone();
         duplicate_write.tool_call_id = "write-2".to_string();
+        // assert
         assert!(safe_same_file_edit_pair(&first_write, &duplicate_write));
         duplicate_write.args_summary.push(' ');
         assert!(!safe_same_file_edit_pair(&first_write, &duplicate_write));
@@ -905,6 +908,7 @@ mod ui10_tests {
 
     #[test]
     fn live_duplicate_writes_coalesce_under_first_identity_and_expand_as_a_group() {
+        // arrange
         let run_dir = tempfile::tempdir().unwrap_or_abort();
         let mut app = AppState::new_live(Some(run_dir.path().to_path_buf()), false, None);
         let mut activity = transcript_section_model_test_activity(
@@ -936,17 +940,21 @@ mod ui10_tests {
         assert_eq!(collapsed_tools[0].header.title, "Edit demo.txt +1/-1");
         assert!(!collapsed_tools[0].details_visible());
 
+        // act
         for id in ["write-0", "write-1", "write-2"] {
             app.toggle_tool_output_for_test(id);
         }
         let expanded = build_transcript_sections(&app);
         let expanded_tools = expanded[0].assistant_tools().collect::<Vec<_>>();
+        // assert
         assert!(expanded_tools[0].details_visible());
         assert_eq!(expanded_tools[0].detail_blocks.len(), 1);
     }
 
     #[test]
     fn tool_lifecycle_upgrades_diff_highlight_without_replacing_identity_or_content() {
+        // arrange
+        // act
         let mut blocks = vec![TranscriptToolCallDetailBlock::StructuredDiff {
             diff_content: "--- src/lib.rs\n+++ src/lib.rs\n@@ -1 +1 @@\n-old\n+new\n".to_string(),
             fallback_path: Some("src/lib.rs".to_string()),
@@ -974,6 +982,7 @@ mod ui10_tests {
         else {
             panic!("structured after block");
         };
+        // assert
         assert!(*highlight_syntax);
         assert_eq!(before_text, after_text);
         assert_eq!(before_path, after_path);

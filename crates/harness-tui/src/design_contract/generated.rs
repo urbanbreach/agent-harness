@@ -46,6 +46,7 @@ const PALETTE: PaletteTokens = PaletteTokens {
         color(ColorRole::PanelElevated, 28, 28, 28),
         color(ColorRole::Overlay, 20, 20, 20),
         color(ColorRole::Card, 36, 36, 36),
+        color(ColorRole::ModalHover, 44, 44, 44),
         color(ColorRole::SelectedCard, 85, 87, 83),
         color(ColorRole::PromptActiveSurface, 38, 38, 38),
         color(ColorRole::BorderSubtle, 50, 50, 55),

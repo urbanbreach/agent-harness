@@ -223,7 +223,7 @@ const COMMAND_METADATA: &[CommandMetadata] = &[
     CommandMetadata {
         id: "submit_prompt",
         label: "Submit prompt",
-        description: "Submit prompt",
+        description: "Submit the current prompt",
     },
     CommandMetadata {
         id: "insert_newline",

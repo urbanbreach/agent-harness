@@ -121,13 +121,16 @@ fn submitted_app() -> AppState {
 
 #[test]
 fn submit_immediately_shows_waiting_state_before_any_runtime_event() {
+    // arrange
     // Given: a live prompt submitted before the coordinator emits an event.
     let app = submitted_app();
 
     // When: the synchronous post-submit frame is rendered.
     let screen = render(&app);
 
+    // act
     // Then: the Grok-equivalent working row is already visible.
+    // assert
     assert!(status_row(&screen, "Waiting for response…").is_some());
     assert!(dock_status_text(&app)
         .as_deref()
@@ -140,6 +143,7 @@ fn submit_immediately_shows_waiting_state_before_any_runtime_event() {
 
 #[test]
 fn pre_provider_runtime_events_keep_the_dock_waiting_status_visible() {
+    // arrange
     // Given: a locally submitted turn is adopted by the runtime before the provider starts.
     let request_id = "req_pre_provider";
     let mut app = submitted_app();
@@ -164,7 +168,9 @@ fn pre_provider_runtime_events_keep_the_dock_waiting_status_visible() {
         }),
     ));
 
+    // act
     // Then: the active turn still owns the bottom-left dock status.
+    // assert
     assert!(dock_status_text(&app)
         .as_deref()
         .is_some_and(|row| row.contains("Waiting for response…")));
@@ -172,6 +178,7 @@ fn pre_provider_runtime_events_keep_the_dock_waiting_status_visible() {
 
 #[test]
 fn first_reasoning_and_response_deltas_use_grok_phase_labels() {
+    // arrange
     // Given: the locally echoed turn is adopted by its runtime request.
     let request_id = "req_pre_response";
     let mut app = submitted_app();
@@ -224,8 +231,10 @@ fn first_reasoning_and_response_deltas_use_grok_phase_labels() {
         }),
     ));
 
+    // act
     // Then: the status row names the responding phase exactly like Grok Build.
     let responding = render(&app);
+    // assert
     assert!(status_row(&responding, "Responding…").is_some());
     assert_eq!(
         status_label_color(&app, "Responding…"),
@@ -235,6 +244,7 @@ fn first_reasoning_and_response_deltas_use_grok_phase_labels() {
 
 #[test]
 fn cancelling_turn_keeps_spinner_and_uses_error_accent() {
+    // arrange
     // Given: a cancellable provider turn is waiting for its first response.
     let request_id = "req_cancelling";
     let mut app = AppState::new_live(None, false, Some(std::sync::Arc::new(|_| {})));
@@ -267,10 +277,12 @@ fn cancelling_turn_keeps_spinner_and_uses_error_accent() {
         crossterm::event::KeyModifiers::CONTROL,
     ));
 
+    // act
     // Then: Grok's cancelling spinner and error accent retain turn chrome.
     let screen = render(&app);
     let row = status_row(&screen, "Cancelling…")
         .unwrap_or_else(|| panic!("expected cancelling status row in {screen:?}"));
+    // assert
     assert!(row.contains("0.0s"), "status row: {row:?}");
     assert!(row.contains("[stop]"), "status row: {row:?}");
     assert!(app.has_active_animations_for_evidence());

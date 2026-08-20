@@ -185,19 +185,23 @@ mod tests {
 
     #[test]
     fn landing_at_measured_bottom_remains_detached() {
+        // arrange
         // Given: a measured viewport detached ten rows above the tail.
         let viewport = MeasuredTranscriptViewport::following(100).scroll_up(10);
 
         // When: one downward gesture lands on the measured bottom.
         let landed = viewport.scroll_down(10);
 
+        // act
         // Then: landing does not silently resume following.
+        // assert
         assert!(!landed.is_following());
         assert_eq!(landed.top(), 100);
     }
 
     #[test]
     fn fully_clamped_measured_overscroll_reattaches() {
+        // arrange
         // Given: a measured viewport detached at the bottom.
         let viewport = MeasuredTranscriptViewport::following(100)
             .scroll_up(10)
@@ -206,20 +210,25 @@ mod tests {
         // When: another downward gesture is fully clamped.
         let reattached = viewport.scroll_down(1);
 
+        // act
         // Then: the viewport follows the live tail immediately.
+        // assert
         assert!(reattached.is_following());
         assert_eq!(reattached.offset_from_bottom(), 0);
     }
 
     #[test]
     fn content_growth_preserves_detached_measured_top() {
+        // arrange
         // Given: a detached viewport reading row seventy-five.
         let viewport = MeasuredTranscriptViewport::following(100).scroll_up(25);
 
         // When: streamed content extends the measured maximum.
         let extended = viewport.record_max_scroll(140);
 
+        // act
         // Then: the logical reading position stays fixed while distance grows.
+        // assert
         assert_eq!(extended.top(), 75);
         assert_eq!(extended.offset_from_bottom(), 65);
         assert!(!extended.is_following());
@@ -227,13 +236,16 @@ mod tests {
 
     #[test]
     fn shrinking_past_detached_top_reconciles_to_following() {
+        // arrange
         // Given: a detached viewport reading row seventy-five.
         let viewport = MeasuredTranscriptViewport::following(100).scroll_up(25);
 
         // When: reflow removes overflow below that row.
         let reconciled = viewport.record_max_scroll(70);
 
+        // act
         // Then: no unreachable detached state remains.
+        // assert
         assert!(reconciled.is_following());
         assert_eq!(reconciled.top(), 70);
     }

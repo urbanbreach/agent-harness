@@ -873,9 +873,34 @@ impl AppState {
             Some(crate::welcome_surface::WelcomeAction::ResumeSession) => {
                 self.begin_session_history_picker(StartupLauncherAction::ContinueSession);
             }
+            Some(crate::welcome_surface::WelcomeAction::Changelog) => {
+                self.open_release_notes();
+            }
             Some(crate::welcome_surface::WelcomeAction::Quit) => self.should_quit = true,
             None => {}
         }
+    }
+
+    pub(in crate::app) fn open_release_notes(&mut self) {
+        if self.release_notes_visible {
+            return;
+        }
+        self.release_notes_focus_return = Some(self.focus);
+        self.release_notes_visible = true;
+        self.release_notes_scroll = 0;
+        self.modal_interaction.invalidate();
+    }
+
+    pub(in crate::app) fn close_release_notes(&mut self) {
+        if !self.release_notes_visible {
+            return;
+        }
+        self.release_notes_visible = false;
+        self.release_notes_scroll = 0;
+        if let Some(focus) = self.release_notes_focus_return.take() {
+            self.focus = focus;
+        }
+        self.modal_interaction.invalidate();
     }
 
     pub(in crate::app) fn select_previous_post_run_handoff_action(&mut self) {
@@ -1034,10 +1059,13 @@ mod tests {
 
     #[test]
     fn active_writer_lock_blocks_fork_during_active_turn() {
+        // arrange
+        // act
         let mut app = AppState::new_live(None, false, None);
         app.session_path = Some(PathBuf::from("/tmp/harness-dash-parity/parent_run"));
         app.ingest_event(user_message(1, "req_active", "active turn"));
         app.ingest_event(provider_started(2, "req_active"));
+        // assert
         assert!(
             app.active_turn_in_progress(),
             "active turn must be in progress after provider started"
@@ -1052,8 +1080,11 @@ mod tests {
 
     #[test]
     fn active_writer_lock_allows_fork_when_idle() {
+        // arrange
+        // act
         let mut app = AppState::new_live(None, false, None);
         app.session_path = Some(PathBuf::from("/tmp/harness-dash-parity/parent_run"));
+        // assert
         assert!(!app.active_turn_in_progress(), "no active turn when idle");
         let blocked = app.lineage_write_blocked_reason();
         assert!(blocked.is_none(), "fork must not be blocked when idle");
@@ -1061,11 +1092,14 @@ mod tests {
 
     #[test]
     fn active_writer_lock_blocks_clone_in_replay_mode() {
+        // arrange
+        // act
         let app = AppState::new_replay(
             PathBuf::from("/tmp/harness-dash-parity/replay_run"),
             vec![run_started(1, "replay_run")],
         );
         let blocked = app.lineage_write_blocked_reason();
+        // assert
         assert_eq!(
             blocked,
             Some("replay"),

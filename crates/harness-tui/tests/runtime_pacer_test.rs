@@ -7,6 +7,7 @@ use harness_tui::terminal::multiplexer::TerminalMultiplexer;
 
 #[test]
 fn changed_work_is_coalesced_until_the_sixteen_millisecond_flush_deadline() {
+    // arrange
     // Given: changed UI work requested at the start of a flush window.
     let clock = DualClock::new();
     let mut pacer = RuntimePacer::new();
@@ -20,7 +21,9 @@ fn changed_work_is_coalesced_until_the_sixteen_millisecond_flush_deadline() {
     clock.advance_flush(FLUSH_DEADLINE_MS - 10);
     let due = pacer.poll(clock.snapshot(), false);
 
+    // act
     // Then: neither request moves the deadline, and exactly the due poll paints.
+    // assert
     assert_eq!(
         (armed.paint, pending.paint, due.paint),
         (false, false, true)
@@ -29,6 +32,7 @@ fn changed_work_is_coalesced_until_the_sixteen_millisecond_flush_deadline() {
 
 #[test]
 fn arbiter_readiness_arms_then_waits_for_the_flush_deadline() {
+    // arrange
     let clock = DualClock::new();
     let mut pacer = RuntimePacer::new();
     pacer.request_flush();
@@ -38,7 +42,9 @@ fn arbiter_readiness_arms_then_waits_for_the_flush_deadline() {
     assert!(!armed.paint);
     assert!(!pacer.needs_poll(clock.snapshot(), false));
 
+    // act
     clock.advance_flush(FLUSH_DEADLINE_MS);
+    // assert
     assert!(pacer.needs_poll(clock.snapshot(), false));
     assert!(pacer.poll(clock.snapshot(), false).paint);
     assert!(!pacer.needs_poll(clock.snapshot(), false));
@@ -46,6 +52,7 @@ fn arbiter_readiness_arms_then_waits_for_the_flush_deadline() {
 
 #[test]
 fn animation_ticks_remain_independent_from_the_flush_clock() {
+    // arrange
     // Given: an active animation with no pending flush work.
     let clock = DualClock::new();
     let mut pacer = RuntimePacer::new();
@@ -57,7 +64,9 @@ fn animation_ticks_remain_independent_from_the_flush_clock() {
     clock.advance_animation(ANIMATION_PERIOD_MS);
     let animation_due = pacer.poll(clock.snapshot(), true);
 
+    // act
     // Then: only the independent animation deadline advances and paints a frame.
+    // assert
     assert_eq!(
         (
             armed.advance_animation,
@@ -71,6 +80,7 @@ fn animation_ticks_remain_independent_from_the_flush_clock() {
 
 #[test]
 fn reduced_motion_settles_flush_work_without_arming_a_deadline() {
+    // arrange
     // Given: reduced motion is enabled and changed UI work is pending.
     let clock = DualClock::new();
     let mut pacer = RuntimePacer::with_reduced_motion(true);
@@ -79,12 +89,15 @@ fn reduced_motion_settles_flush_work_without_arming_a_deadline() {
     // When: the runtime pacer is polled without advancing either clock.
     let settled = pacer.poll(clock.snapshot(), false);
 
+    // act
     // Then: existing reduced-motion scheduling settles immediately and parks.
+    // assert
     assert_eq!((settled.paint, settled.next_wait_ms), (true, None));
 }
 
 #[test]
 fn wheel_flush_and_animation_both_progress_under_continuous_demand() {
+    // arrange
     // Given: animation and wheel input become active together.
     let clock = DualClock::new();
     let mut pacer = RuntimePacer::new();
@@ -97,7 +110,9 @@ fn wheel_flush_and_animation_both_progress_under_continuous_demand() {
     clock.advance_animation(ANIMATION_PERIOD_MS);
     let animation_due = pacer.poll(clock.snapshot(), true);
 
+    // act
     // Then: neither work stream starves the other.
+    // assert
     assert_eq!(
         (
             wheel_due.wheel_batch.map(|batch| batch.steps()),
@@ -109,6 +124,7 @@ fn wheel_flush_and_animation_both_progress_under_continuous_demand() {
 
 #[test]
 fn one_thousand_idle_polls_produce_zero_paints() {
+    // arrange
     // Given: a settled runtime with no animations, input, or provider changes.
     let clock = DualClock::new();
     let mut pacer = RuntimePacer::new();
@@ -118,12 +134,15 @@ fn one_thousand_idle_polls_produce_zero_paints() {
         .filter(|_| pacer.poll(clock.snapshot(), false).paint)
         .count();
 
+    // act
     // Then: idle polling never schedules a paint.
+    // assert
     assert_eq!(paints, 0);
 }
 
 #[test]
 fn wheel_flood_is_reduced_to_one_capped_batch() {
+    // arrange
     // Given: a thousand wheel ticks land inside one flush window.
     let clock = DualClock::new();
     let mut pacer = RuntimePacer::new();
@@ -137,7 +156,9 @@ fn wheel_flood_is_reduced_to_one_capped_batch() {
     let due = pacer.poll(clock.snapshot(), false);
     let after = pacer.poll(clock.snapshot(), false);
 
+    // act
     // Then: the flood becomes one meaningful bounded dispatch and no tail work.
+    // assert
     assert_eq!(
         due.wheel_batch.map(|batch| (
             batch.direction(),
@@ -152,6 +173,7 @@ fn wheel_flood_is_reduced_to_one_capped_batch() {
 
 #[test]
 fn three_event_terminal_wheel_notch_normalizes_to_one_step() {
+    // arrange
     // Given: a terminal that reports three wheel events for one physical notch.
     let clock = DualClock::new();
     let mut pacer = RuntimePacer::with_terminal_wheel_profile(
@@ -168,12 +190,15 @@ fn three_event_terminal_wheel_notch_normalizes_to_one_step() {
     clock.advance_flush(FLUSH_DEADLINE_MS);
     let due = pacer.poll(clock.snapshot(), false);
 
+    // act
     // Then: the physical notch dispatches one logical scroll step.
+    // assert
     assert_eq!(due.wheel_batch.map(|batch| batch.steps()), Some(1));
 }
 
 #[test]
 fn multiplexer_reencoded_wheel_events_remain_individual_steps() {
+    // arrange
     // Given: the same terminal behind a multiplexer that re-encodes wheel input.
     let clock = DualClock::new();
     let mut pacer = RuntimePacer::with_terminal_wheel_profile(
@@ -190,12 +215,15 @@ fn multiplexer_reencoded_wheel_events_remain_individual_steps() {
     clock.advance_flush(FLUSH_DEADLINE_MS);
     let due = pacer.poll(clock.snapshot(), false);
 
+    // act
     // Then: all re-encoded events remain logical scroll steps.
+    // assert
     assert_eq!(due.wheel_batch.map(|batch| batch.steps()), Some(3));
 }
 
 #[test]
 fn wheel_flush_paints_only_when_app_state_reports_movement() {
+    // arrange
     // Given: a due wheel batch with no other dirty or animation work.
     let clock = DualClock::new();
     let mut pacer = RuntimePacer::new();
@@ -206,7 +234,9 @@ fn wheel_flush_paints_only_when_app_state_reports_movement() {
     // When: the batch is released to the AppState movement seam.
     let due = pacer.poll(clock.snapshot(), false);
 
+    // act
     // Then: clamped/no-op movement suppresses paint while real movement enables it.
+    // assert
     assert_eq!(
         (due.should_paint(false), due.should_paint(true)),
         (false, true)

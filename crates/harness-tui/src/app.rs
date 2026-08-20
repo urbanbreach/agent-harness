@@ -332,6 +332,7 @@ pub struct AppState {
     pub focus: Focus,
     pub active_tab: Tab,
     pub(crate) active_review_surface: Option<ReviewSurface>,
+    review_surface_focus_return: Option<Focus>,
     pub(crate) live_details_drawer_open: bool,
     projection: SessionProjection,
     pub should_quit: bool,
@@ -349,6 +350,9 @@ pub struct AppState {
     last_frame_area: Option<Rect>,
     pub(crate) secondary_surfaces: SecondarySurfaceState,
     pub(crate) modal_interaction: ModalInteractionState,
+    pub(crate) release_notes_visible: bool,
+    pub(crate) release_notes_scroll: usize,
+    release_notes_focus_return: Option<Focus>,
     dashboard: Option<DashboardIntegration>,
     dashboard_return_focus: Option<Focus>,
     pub(crate) transcript_view: TranscriptViewState,
@@ -631,6 +635,7 @@ pub struct AppState {
     live_turn_phase_started_at: Option<Instant>,
     live_turn_request_id: Option<String>,
     motion_epoch_started_at: Instant,
+    sampled_motion_elapsed: Duration,
     motion_revision: u64,
     reduced_motion: bool,
     now_fn: Arc<dyn Fn() -> Instant + Send + Sync>,
@@ -647,6 +652,7 @@ impl Default for AppState {
             focus: Focus::default(),
             active_tab: Tab::default(),
             active_review_surface: None,
+            review_surface_focus_return: None,
             live_details_drawer_open: false,
             projection: SessionProjection::default(),
             should_quit: false,
@@ -665,6 +671,9 @@ impl Default for AppState {
             secondary_surfaces: SecondarySurfaceState::default(),
             help_browser: HelpBrowserState::default(),
             modal_interaction: ModalInteractionState::default(),
+            release_notes_visible: false,
+            release_notes_scroll: 0,
+            release_notes_focus_return: None,
             dashboard: None,
             dashboard_return_focus: None,
             transcript_view: TranscriptViewState::default(),
@@ -849,7 +858,7 @@ impl Default for AppState {
             theme_preview: ThemePreview::new(initial_theme_family),
             auto_theme_resolver,
             theme_color_level: ColorLevel::TrueColor,
-            welcome: WelcomeState::new(3, false),
+            welcome: WelcomeState::new(4, false),
             launch_metadata: LaunchMetadata::default(),
             runtime_context_metadata: None,
             session_navigation_stack: Vec::new(),
@@ -868,6 +877,7 @@ impl Default for AppState {
             live_turn_phase_started_at: None,
             live_turn_request_id: None,
             motion_epoch_started_at: now,
+            sampled_motion_elapsed: Duration::ZERO,
             motion_revision: 0,
             reduced_motion: false,
             now_fn: Arc::new(Instant::now),
@@ -1359,18 +1369,19 @@ impl AppState {
     }
 
     pub(crate) fn welcome_layout(&self, area: Rect) -> WelcomeLayout {
-        WelcomeLayout::for_area(
+        WelcomeLayout::for_startup_area(
             (area.x, area.y, area.width, area.height),
             self.status_banner.as_deref().is_some_and(|banner| {
                 let normalized = banner.to_ascii_lowercase();
                 normalized.contains("clipboard")
                     && (normalized.contains("unreachable") || normalized.contains("inaccessible"))
             }),
+            self.startup_welcome_expanded(),
         )
     }
 
     pub(crate) fn welcome_hit_map(&self, area: Rect) -> WelcomeHitMap {
-        const MENU_LABELS: [&str; 3] = ["New worktree", "Resume session", "Quit"];
+        const MENU_LABELS: [&str; 4] = ["New worktree", "Resume session", "Changelog", "Quit"];
         WelcomeHitMap::new(self.welcome_layout(area), &MENU_LABELS)
     }
 

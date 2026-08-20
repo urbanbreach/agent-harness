@@ -63,9 +63,12 @@ mod action_dispatch {
 
     #[test]
     fn always_context_available_in_every_context() {
+        // arrange
+        // act
         let d = sample_dispatcher();
         let event = key_ctrl('n');
         for ctx in ActionContext::all() {
+            // assert
             assert_eq!(
                 d.resolve(&event, *ctx),
                 Some(Action::Quit),
@@ -76,8 +79,11 @@ mod action_dispatch {
 
     #[test]
     fn scrollback_action_blocked_in_prompt_context() {
+        // arrange
+        // act
         let d = sample_dispatcher();
         let event = key_plain('j');
+        // assert
         assert_eq!(
             d.resolve(&event, ActionContext::ScrollbackFocused),
             Some(Action::MoveDown)
@@ -91,8 +97,11 @@ mod action_dispatch {
 
     #[test]
     fn prompt_action_blocked_in_scrollback_context() {
+        // arrange
+        // act
         let d = sample_dispatcher();
         let event = key(KeyCode::Enter, KeyModifiers::NONE);
+        // assert
         assert_eq!(
             d.resolve(&event, ActionContext::PromptFocused),
             Some(Action::SubmitPrompt)
@@ -106,8 +115,11 @@ mod action_dispatch {
 
     #[test]
     fn agent_screen_context_satisfied_by_scrollback() {
+        // arrange
+        // act
         let d = sample_dispatcher();
         let event = key_plain('y');
+        // assert
         assert_eq!(
             d.resolve(&event, ActionContext::AgentScreen),
             Some(Action::AllowPermission)
@@ -121,8 +133,11 @@ mod action_dispatch {
 
     #[test]
     fn agent_screen_context_satisfied_by_prompt_focused() {
+        // arrange
+        // act
         let d = sample_dispatcher();
         let event = key_plain('y');
+        // assert
         assert_eq!(
             d.resolve(&event, ActionContext::PromptFocused),
             Some(Action::AllowPermission),
@@ -132,8 +147,11 @@ mod action_dispatch {
 
     #[test]
     fn agent_screen_action_blocked_in_dashboard() {
+        // arrange
+        // act
         let d = sample_dispatcher();
         let event = key_plain('y');
+        // assert
         assert_eq!(
             d.resolve(&event, ActionContext::DashboardFocused),
             None,
@@ -143,8 +161,11 @@ mod action_dispatch {
 
     #[test]
     fn welcome_screen_context_isolated() {
+        // arrange
+        // act
         let d = sample_dispatcher();
         let event = key_plain('j');
+        // assert
         assert_eq!(
             d.resolve(&event, ActionContext::WelcomeScreen),
             None,
@@ -154,11 +175,14 @@ mod action_dispatch {
 
     #[test]
     fn resolve_def_returns_metadata() {
+        // arrange
+        // act
         let d = sample_dispatcher();
         let event = key_plain('j');
         let def = d
             .resolve_def(&event, ActionContext::ScrollbackFocused)
             .expect("should resolve");
+        // assert
         assert_eq!(def.label, "Select next");
         assert_eq!(def.action, Action::MoveDown);
         assert_eq!(def.context, ActionContext::ScrollbackFocused);
@@ -166,11 +190,14 @@ mod action_dispatch {
 
     #[test]
     fn active_defs_filters_by_context() {
+        // arrange
         let d = sample_dispatcher();
         let scrollback_defs = d.active_defs(ActionContext::ScrollbackFocused);
         assert!(scrollback_defs.len() >= 3,"scrollback should see: j, k (scrollback) + Ctrl+n (always) + y (agent_screen superset)");
 
+        // act
         let prompt_defs = d.active_defs(ActionContext::PromptFocused);
+        // assert
         assert!(prompt_defs
             .iter()
             .any(|def| def.action == Action::SubmitPrompt));
@@ -179,7 +206,10 @@ mod action_dispatch {
 
     #[test]
     fn seven_context_variants_exist() {
+        // arrange
+        // act
         let all = ActionContext::all();
+        // assert
         assert_eq!(all.len(), 7);
         assert!(all.contains(&ActionContext::Always));
         assert!(all.contains(&ActionContext::PromptFocused));
@@ -192,21 +222,29 @@ mod action_dispatch {
 
     #[test]
     fn context_as_str_roundtrip() {
+        // arrange
+        // act
         for ctx in ActionContext::all() {
             let s = ctx.as_str();
+            // assert
             assert!(!s.is_empty());
         }
     }
 
     #[test]
     fn dispatcher_empty_returns_none() {
+        // arrange
+        // act
         let d = ActionDispatcher::new();
+        // assert
         assert!(d.is_empty());
         assert_eq!(d.resolve(&key_plain('j'), ActionContext::Always), None);
     }
 
     #[test]
     fn first_match_wins_for_same_key() {
+        // arrange
+        // act
         let mut d = ActionDispatcher::new();
         d.register(ActionDef::new(
             KeyBinding::new(KeyCode::Char('x'), KeyModifiers::NONE),
@@ -220,6 +258,7 @@ mod action_dispatch {
             ActionContext::Always,
             "second",
         ));
+        // assert
         assert_eq!(
             d.resolve(&key_plain('x'), ActionContext::Always),
             Some(Action::Quit)
@@ -232,13 +271,19 @@ mod action_context_sat {
 
     #[test]
     fn always_satisfied_by_all() {
+        // arrange
+        // act
         for ctx in ActionContext::all() {
+            // assert
             assert!(ActionContext::Always.is_satisfied_by(*ctx));
         }
     }
 
     #[test]
     fn prompt_focused_only_by_itself() {
+        // arrange
+        // act
+        // assert
         assert!(ActionContext::PromptFocused.is_satisfied_by(ActionContext::PromptFocused));
         assert!(!ActionContext::PromptFocused.is_satisfied_by(ActionContext::ScrollbackFocused));
         assert!(!ActionContext::PromptFocused.is_satisfied_by(ActionContext::DashboardFocused));
@@ -246,12 +291,18 @@ mod action_context_sat {
 
     #[test]
     fn scrollback_focused_only_by_itself() {
+        // arrange
+        // act
+        // assert
         assert!(ActionContext::ScrollbackFocused.is_satisfied_by(ActionContext::ScrollbackFocused));
         assert!(!ActionContext::ScrollbackFocused.is_satisfied_by(ActionContext::PromptFocused));
     }
 
     #[test]
     fn agent_screen_superset_includes_prompt_and_scrollback() {
+        // arrange
+        // act
+        // assert
         assert!(ActionContext::AgentScreen.is_satisfied_by(ActionContext::AgentScreen));
         assert!(ActionContext::AgentScreen.is_satisfied_by(ActionContext::PromptFocused));
         assert!(ActionContext::AgentScreen.is_satisfied_by(ActionContext::ScrollbackFocused));
@@ -262,18 +313,27 @@ mod action_context_sat {
 
     #[test]
     fn dashboard_focused_only_by_itself() {
+        // arrange
+        // act
+        // assert
         assert!(ActionContext::DashboardFocused.is_satisfied_by(ActionContext::DashboardFocused));
         assert!(!ActionContext::DashboardFocused.is_satisfied_by(ActionContext::AgentScreen));
     }
 
     #[test]
     fn dashboard_overlay_only_by_itself() {
+        // arrange
+        // act
+        // assert
         assert!(ActionContext::DashboardOverlay.is_satisfied_by(ActionContext::DashboardOverlay));
         assert!(!ActionContext::DashboardOverlay.is_satisfied_by(ActionContext::DashboardFocused));
     }
 
     #[test]
     fn welcome_screen_only_by_itself() {
+        // arrange
+        // act
+        // assert
         assert!(ActionContext::WelcomeScreen.is_satisfied_by(ActionContext::WelcomeScreen));
         assert!(!ActionContext::WelcomeScreen.is_satisfied_by(ActionContext::AgentScreen));
     }
@@ -285,8 +345,11 @@ mod focus_management {
     use super::*;
 
     #[test]
-    fn six_panes_exist() {
+    fn six_focus_panes_exist_in_controller() {
+        // arrange
+        // act
         let panes = ActivePane::CYCLE_ORDER;
+        // assert
         assert_eq!(panes.len(), 6);
         assert!(panes.contains(&ActivePane::Scrollback));
         assert!(panes.contains(&ActivePane::Todo));
@@ -298,6 +361,9 @@ mod focus_management {
 
     #[test]
     fn cycle_next_wraps_around() {
+        // arrange
+        // act
+        // assert
         assert_eq!(ActivePane::Catalog.next(), ActivePane::Scrollback);
         assert_eq!(ActivePane::Scrollback.next(), ActivePane::Todo);
         assert_eq!(ActivePane::Prompt.next(), ActivePane::Tasks);
@@ -305,6 +371,9 @@ mod focus_management {
 
     #[test]
     fn cycle_prev_wraps_around() {
+        // arrange
+        // act
+        // assert
         assert_eq!(ActivePane::Scrollback.prev(), ActivePane::Catalog);
         assert_eq!(ActivePane::Todo.prev(), ActivePane::Scrollback);
         assert_eq!(ActivePane::Tasks.prev(), ActivePane::Prompt);
@@ -312,6 +381,8 @@ mod focus_management {
 
     #[test]
     fn full_forward_cycle_visits_all() {
+        // arrange
+        // act
         let start = ActivePane::Scrollback;
         let mut current = start;
         let mut visited = vec![current];
@@ -319,6 +390,7 @@ mod focus_management {
             current = current.next();
             visited.push(current);
         }
+        // assert
         assert_eq!(visited.len(), 6);
         for pane in &ActivePane::CYCLE_ORDER {
             assert!(visited.contains(pane), "must visit {pane:?}");
@@ -327,13 +399,19 @@ mod focus_management {
 
     #[test]
     fn controller_starts_at_prompt_by_default() {
+        // arrange
+        // act
         let fc = FocusController::default();
+        // assert
         assert_eq!(fc.current(), ActivePane::Prompt);
     }
 
     #[test]
     fn controller_focus_next_transitions() {
+        // arrange
+        // act
         let mut fc = FocusController::new(ActivePane::Scrollback);
+        // assert
         assert_eq!(fc.focus_next(), ActivePane::Todo);
         assert_eq!(fc.current(), ActivePane::Todo);
         assert_eq!(fc.focus_next(), ActivePane::Queue);
@@ -341,14 +419,20 @@ mod focus_management {
 
     #[test]
     fn controller_focus_prev_transitions() {
+        // arrange
+        // act
         let mut fc = FocusController::new(ActivePane::Scrollback);
+        // assert
         assert_eq!(fc.focus_prev(), ActivePane::Catalog);
         assert_eq!(fc.focus_prev(), ActivePane::Tasks);
     }
 
     #[test]
-    fn controller_direct_focus() {
+    fn controller_direct_focus_selects_requested_pane() {
+        // arrange
+        // act
         let mut fc = FocusController::new(ActivePane::Scrollback);
+        // assert
         assert_eq!(fc.focus_pane(ActivePane::Catalog), ActivePane::Catalog);
         assert!(fc.is_focused(ActivePane::Catalog));
         assert!(!fc.is_focused(ActivePane::Scrollback));
@@ -356,10 +440,13 @@ mod focus_management {
 
     #[test]
     fn controller_records_transition_history() {
+        // arrange
+        // act
         let mut fc = FocusController::new(ActivePane::Prompt);
         fc.focus_pane(ActivePane::Scrollback);
         fc.focus_next();
         fc.focus_prev();
+        // assert
         assert_eq!(
             fc.history(),
             &[
@@ -374,15 +461,21 @@ mod focus_management {
 
     #[test]
     fn controller_no_duplicate_history_on_same_focus() {
+        // arrange
+        // act
         let mut fc = FocusController::new(ActivePane::Prompt);
         fc.focus_pane(ActivePane::Prompt);
+        // assert
         assert_eq!(fc.history().len(), 1, "no-op focus must not record");
         assert_eq!(fc.transition_count(), 0);
     }
 
     #[test]
     fn pane_as_str_covers_all() {
+        // arrange
+        // act
         for pane in &ActivePane::CYCLE_ORDER {
+            // assert
             assert!(!pane.as_str().is_empty());
         }
     }
@@ -395,27 +488,36 @@ mod overlay_controller {
 
     #[test]
     fn empty_controller_no_top() {
+        // arrange
+        // act
         let oc = OverlayController::new();
+        // assert
         assert!(!oc.is_open());
         assert_eq!(oc.top(), None);
         assert_eq!(oc.depth(), 0);
     }
 
     #[test]
-    fn push_opens_overlay() {
+    fn push_opens_overlay_on_stack() {
+        // arrange
+        // act
         let mut oc = OverlayController::new();
         oc.push(OverlayKind::CommandPalette);
+        // assert
         assert!(oc.is_open());
         assert_eq!(oc.top(), Some(OverlayKind::CommandPalette));
         assert_eq!(oc.depth(), 1);
     }
 
     #[test]
-    fn stacking_multiple_overlays() {
+    fn stacking_multiple_overlays_preserves_order() {
+        // arrange
+        // act
         let mut oc = OverlayController::new();
         oc.push(OverlayKind::SettingsEditor);
         oc.push(OverlayKind::CommandPalette);
         oc.push(OverlayKind::PermissionModal);
+        // assert
         assert_eq!(oc.depth(), 3);
         assert_eq!(oc.top(), Some(OverlayKind::PermissionModal));
         assert_eq!(
@@ -429,20 +531,26 @@ mod overlay_controller {
     }
 
     #[test]
-    fn pop_closes_topmost() {
+    fn pop_closes_topmost_overlay_only() {
+        // arrange
+        // act
         let mut oc = OverlayController::new();
         oc.push(OverlayKind::SettingsEditor);
         oc.push(OverlayKind::CommandPalette);
+        // assert
         assert_eq!(oc.pop(), Some(OverlayKind::CommandPalette));
         assert_eq!(oc.top(), Some(OverlayKind::SettingsEditor));
         assert_eq!(oc.depth(), 1);
     }
 
     #[test]
-    fn escape_closes_topmost() {
+    fn escape_closes_topmost_overlay_only() {
+        // arrange
+        // act
         let mut oc = OverlayController::new();
         oc.push(OverlayKind::ThemeDialog);
         oc.push(OverlayKind::ErrorDetails);
+        // assert
         assert_eq!(oc.escape(), Some(OverlayKind::ErrorDetails));
         assert_eq!(oc.escape(), Some(OverlayKind::ThemeDialog));
         assert_eq!(oc.escape(), None, "escape on empty stack returns None");
@@ -450,16 +558,22 @@ mod overlay_controller {
 
     #[test]
     fn escape_on_empty_returns_none() {
+        // arrange
+        // act
         let mut oc = OverlayController::new();
+        // assert
         assert_eq!(oc.escape(), None);
     }
 
     #[test]
     fn close_specific_overlay_middle_of_stack() {
+        // arrange
+        // act
         let mut oc = OverlayController::new();
         oc.push(OverlayKind::SettingsEditor);
         oc.push(OverlayKind::CommandPalette);
         oc.push(OverlayKind::PermissionModal);
+        // assert
         assert!(oc.close(OverlayKind::CommandPalette));
         assert_eq!(oc.depth(), 2);
         assert!(!oc.contains(OverlayKind::CommandPalette));
@@ -468,43 +582,57 @@ mod overlay_controller {
 
     #[test]
     fn close_nonexistent_returns_false() {
+        // arrange
+        // act
         let mut oc = OverlayController::new();
         oc.push(OverlayKind::SettingsEditor);
+        // assert
         assert!(!oc.close(OverlayKind::AuthDialog));
         assert_eq!(oc.depth(), 1);
     }
 
     #[test]
     fn reopen_moves_to_top() {
+        // arrange
+        // act
         let mut oc = OverlayController::new();
         oc.push(OverlayKind::SettingsEditor);
         oc.push(OverlayKind::CommandPalette);
         oc.push(OverlayKind::SettingsEditor);
+        // assert
         assert_eq!(oc.depth(), 2, "re-push must not duplicate");
         assert_eq!(oc.top(), Some(OverlayKind::SettingsEditor));
     }
 
     #[test]
     fn close_all_empty_stack() {
+        // arrange
+        // act
         let mut oc = OverlayController::new();
         oc.push(OverlayKind::SettingsEditor);
         oc.push(OverlayKind::CommandPalette);
         oc.push(OverlayKind::PermissionModal);
         oc.close_all();
+        // assert
         assert!(!oc.is_open());
         assert_eq!(oc.depth(), 0);
     }
 
     #[test]
-    fn contains_checks_membership() {
+    fn contains_checks_overlay_stack_membership() {
+        // arrange
+        // act
         let mut oc = OverlayController::new();
         oc.push(OverlayKind::LineageBrowser);
+        // assert
         assert!(oc.contains(OverlayKind::LineageBrowser));
         assert!(!oc.contains(OverlayKind::ForkSelector));
     }
 
     #[test]
     fn eleven_reference_modals_representable() {
+        // arrange
+        // act
         let reference_modals = [
             OverlayKind::CommandPalette,
             OverlayKind::SettingsEditor,
@@ -522,6 +650,7 @@ mod overlay_controller {
         for modal in &reference_modals {
             oc.push(*modal);
         }
+        // assert
         assert_eq!(oc.depth(), 11);
         for modal in &reference_modals {
             assert!(oc.contains(*modal));
@@ -536,6 +665,7 @@ mod integration {
 
     #[test]
     fn focus_change_alters_available_actions() {
+        // arrange
         let mut d = ActionDispatcher::new();
         d.register(ActionDef::new(
             KeyBinding::new(KeyCode::Char('j'), KeyModifiers::NONE),
@@ -558,16 +688,21 @@ mod integration {
         assert_eq!(d.resolve(&ev_j, ctx), Some(Action::MoveDown));
         assert_eq!(d.resolve(&ev_enter, ctx), None);
 
+        // act
         fc.focus_pane(ActivePane::Prompt);
         let prompt_ctx = ActionContext::PromptFocused;
+        // assert
         assert_eq!(d.resolve(&ev_j, prompt_ctx), None);
         assert_eq!(d.resolve(&ev_enter, prompt_ctx), Some(Action::SubmitPrompt));
     }
 
     #[test]
     fn overlay_open_blocks_underlying_dispatch() {
+        // arrange
+        // act
         let mut oc = OverlayController::new();
         oc.push(OverlayKind::CommandPalette);
+        // assert
         assert!(oc.is_open());
         // When an overlay is open, the overlay controller signals that
         // underlying pane actions should be suppressed
@@ -576,6 +711,7 @@ mod integration {
 
     #[test]
     fn escape_closes_overlay_then_focus_resumes() {
+        // arrange
         let mut oc = OverlayController::new();
         let mut fc = FocusController::new(ActivePane::Scrollback);
 
@@ -586,7 +722,9 @@ mod integration {
         assert_eq!(closed, Some(OverlayKind::SettingsEditor));
         assert!(!oc.is_open());
 
+        // act
         fc.focus_next();
+        // assert
         assert_eq!(fc.current(), ActivePane::Todo);
     }
 }

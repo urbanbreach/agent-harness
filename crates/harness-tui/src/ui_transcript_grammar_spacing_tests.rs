@@ -92,10 +92,30 @@ fn pinned_footer_spec() -> TranscriptBlockSpec {
     spec
 }
 
+fn question_footer_spec() -> TranscriptBlockSpec {
+    let mut spec = test_spec(
+        TranscriptBlockRole::Footer,
+        TranscriptBlockContent::Footer {
+            lifecycle: TranscriptFooterLifecycle::Question,
+            state: TranscriptLifecycleState::Responding,
+            content: TranscriptFooterContent::Question {
+                label: "Choose one".into(),
+                metadata: TranscriptFooterMetadata {
+                    duration_ms: None,
+                    total_tokens: None,
+                },
+            },
+        },
+    );
+    spec.placement = TranscriptBlockPlacement::PinnedFooter { outdent_cells: 1 };
+    spec
+}
+
 fn surface(kind: TranscriptRenderSurfaceKind) -> TranscriptVisualEntryDraft {
     TranscriptVisualEntryDraft {
         kind,
         leading_gap_rows: 0,
+        trailing_gap_rows: 0,
         placement: TranscriptBlockPlacement::Flow,
         show_outer_rail: false,
         rail_glyph: " ",
@@ -223,6 +243,38 @@ fn pinned_footer_keeps_a_separator_after_collapsed_activity() {
 
     // assert
     assert_eq!(gaps, vec![0, 1]);
+}
+
+#[test]
+fn final_visible_block_keeps_one_trailing_gap_row() {
+    let specs = [tool_spec(TranscriptToolDisclosure::Collapsed)];
+    let entries = resolve_entry_surfaces(
+        1,
+        &specs,
+        vec![surface(TranscriptRenderSurfaceKind::AssistantTool)],
+    )
+    .expect("final entry resolves");
+
+    assert_eq!(entries[0].trailing_gap_rows, 1);
+}
+
+#[test]
+fn permission_and_question_footers_stay_separated_and_keep_the_final_gap() {
+    for footer in [pinned_footer_spec(), question_footer_spec()] {
+        let specs = [tool_spec(TranscriptToolDisclosure::Collapsed), footer];
+        let entries = resolve_entry_surfaces(
+            1,
+            &specs,
+            vec![
+                surface(TranscriptRenderSurfaceKind::AssistantTool),
+                surface(TranscriptRenderSurfaceKind::AssistantFooter),
+            ],
+        )
+        .expect("pinned footer resolves");
+
+        assert_eq!(entries[1].leading_gap_rows, 1);
+        assert_eq!(entries[1].trailing_gap_rows, 1);
+    }
 }
 
 #[test]

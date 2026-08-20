@@ -124,8 +124,10 @@ fn count_char(rendered: &str, ch: char) -> usize {
 
 #[test]
 fn streaming_state_remains_recognizable_at_all_reference_viewports() {
+    // arrange
     let app = streaming_shell_app();
 
+    // act
     for (width, height) in [
         (120_u16, 50_u16),
         (120, 40),
@@ -137,6 +139,7 @@ fn streaming_state_remains_recognizable_at_all_reference_viewports() {
     ] {
         let rendered = render_at(&app, width, height);
 
+        // assert
         assert!(
             rendered.contains("Streaming remains recognizable")
                 || rendered.contains("Responding")
@@ -158,8 +161,10 @@ fn streaming_state_remains_recognizable_at_all_reference_viewports() {
 
 #[test]
 fn permission_controls_remain_accessible_at_all_reference_viewports() {
+    // arrange
     let app = permission_shell_app();
 
+    // act
     for (width, height) in [
         (120_u16, 50_u16),
         (120, 40),
@@ -171,6 +176,7 @@ fn permission_controls_remain_accessible_at_all_reference_viewports() {
     ] {
         let rendered = render_at(&app, width, height);
 
+        // assert
         assert!(
             rendered.contains("Yes") && rendered.contains("No, reject"),
             "{width}x{height}: primary permission controls must remain accessible\n{rendered}"
@@ -406,10 +412,13 @@ fn resp_wide_140x40_idle_shell_keeps_bordered_composer() {
 /// Boundary 59/60/61 columns: composer border and footer survive the dense cutoff.
 #[test]
 fn boundary_59_60_61_columns_keep_bordered_composer_and_footer() {
+    // arrange
+    // act
     for width in [59u16, 60, 61] {
         let app = idle_shell_app();
         let rendered = render_at(&app, width, 20);
 
+        // assert
         assert!(
             rendered.contains('❯'),
             "boundary {width}x20: composer glyph required\n{rendered}"
@@ -429,10 +438,13 @@ fn boundary_59_60_61_columns_keep_bordered_composer_and_footer() {
 /// Boundary 79/80/81 columns: composer border and footer survive the minimum breakpoint.
 #[test]
 fn boundary_79_80_81_columns_keep_bordered_composer_and_footer() {
+    // arrange
+    // act
     for width in [79u16, 80, 81] {
         let app = idle_shell_app();
         let rendered = render_at(&app, width, 24);
 
+        // assert
         assert!(
             rendered.contains('❯'),
             "boundary {width}x24: composer glyph required\n{rendered}"
@@ -452,10 +464,13 @@ fn boundary_79_80_81_columns_keep_bordered_composer_and_footer() {
 /// Boundary 99/100/101 columns: composer border and footer survive the primary breakpoint.
 #[test]
 fn boundary_99_100_101_columns_keep_bordered_composer_and_footer() {
+    // arrange
+    // act
     for width in [99u16, 100, 101] {
         let app = idle_shell_app();
         let rendered = render_at(&app, width, 30);
 
+        // assert
         assert!(
             rendered.contains('❯'),
             "boundary {width}x30: composer glyph required\n{rendered}"
@@ -475,10 +490,13 @@ fn boundary_99_100_101_columns_keep_bordered_composer_and_footer() {
 /// Boundary 119/120/121 columns: composer border and footer survive the wide breakpoint.
 #[test]
 fn boundary_119_120_121_columns_keep_bordered_composer_and_footer() {
+    // arrange
+    // act
     for width in [119u16, 120, 121] {
         let app = idle_shell_app();
         let rendered = render_at(&app, width, 32);
 
+        // assert
         assert!(
             rendered.contains('❯'),
             "boundary {width}x32: composer glyph required\n{rendered}"
@@ -498,10 +516,13 @@ fn boundary_119_120_121_columns_keep_bordered_composer_and_footer() {
 /// Boundary 120×40 and 120×50: tall viewports keep anatomy.
 #[test]
 fn boundary_120_col_tall_heights_keep_bordered_composer_and_footer() {
+    // arrange
+    // act
     for height in [40u16, 50] {
         let app = idle_shell_app();
         let rendered = render_at(&app, 120, height);
 
+        // assert
         assert_eq!(
             count_char(&rendered, '╭'),
             1,
@@ -517,6 +538,7 @@ fn boundary_120_col_tall_heights_keep_bordered_composer_and_footer() {
 /// Layout plan boundary: composer and disclosure rects are valid at all boundaries.
 #[test]
 fn layout_plan_boundary_viewports_have_valid_composer_and_disclosure() {
+    // arrange
     use harness_tui::FrameLayoutPlan;
     use ratatui::layout::Rect;
 
@@ -539,11 +561,13 @@ fn layout_plan_boundary_viewports_have_valid_composer_and_disclosure() {
         (140, 40),
     ];
 
+    // act
     for &(w, h) in boundaries {
         let plan = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, w, h));
         let composer = plan
             .composer
             .unwrap_or_else(|| panic!("composer at {w}x{h}"));
+        // assert
         assert!(
             composer.height >= 3,
             "composer ≥3 rows at {w}x{h}; got {composer:?}"
@@ -569,9 +593,11 @@ fn layout_plan_boundary_viewports_have_valid_composer_and_disclosure() {
 /// the measured dock rhythm is tightened below.
 #[test]
 fn characterization_current_live_shell_geometry_is_full_width_and_bottom_safe() {
+    // arrange
     use harness_tui::FrameLayoutPlan;
     use ratatui::layout::Rect;
 
+    // act
     let app = idle_shell_app();
     for (width, height) in [
         (60u16, 20u16),
@@ -592,6 +618,7 @@ fn characterization_current_live_shell_geometry_is_full_width_and_bottom_safe() 
             .unwrap_or_else(|| panic!("composer at {width}x{height}"));
         let inset = if width <= 60 { 1 } else { 2 };
 
+        // assert
         assert_eq!(transcript.x, plan.shell.x);
         assert_eq!(transcript.width, plan.shell.width);
         assert_eq!(composer.x, plan.shell.x + inset);
@@ -610,12 +637,15 @@ fn characterization_current_live_shell_geometry_is_full_width_and_bottom_safe() 
 
 #[test]
 fn resp_120x40_matches_reference_dock_rhythm() {
+    // arrange
     use harness_tui::FrameLayoutPlan;
     use ratatui::layout::Rect;
 
+    // act
     let app = idle_shell_app();
     let plan = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, 120, 40));
     let composer = plan.composer.expect("composer at 120x40");
+    // assert
     assert_eq!(
         composer,
         Rect::new(2, 34, 116, 3),

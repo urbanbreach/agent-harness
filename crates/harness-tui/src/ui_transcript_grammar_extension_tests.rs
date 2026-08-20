@@ -2,6 +2,7 @@ use super::*;
 
 #[test]
 fn transcript_grammar_synthetic_extension_is_exhaustive_and_resolvable() {
+    // arrange
     let mut spec = test_spec(
         TranscriptBlockRole::Synthetic,
         TranscriptBlockContent::Synthetic {
@@ -35,9 +36,11 @@ fn transcript_grammar_synthetic_extension_is_exhaustive_and_resolvable() {
     };
     assert_eq!((role_name, content_value), ("synthetic", "extension"));
 
+    // act
     let surface = TranscriptVisualEntryDraft {
         kind: TranscriptRenderSurfaceKind::AssistantBody,
         leading_gap_rows: 0,
+        trailing_gap_rows: 0,
         placement: TranscriptBlockPlacement::Flow,
         show_outer_rail: false,
         rail_glyph: " ",
@@ -65,6 +68,7 @@ fn transcript_grammar_synthetic_extension_is_exhaustive_and_resolvable() {
         tool_rail_motion: None,
     };
     let resolved = resolve_block_surface(&spec, surface).expect("synthetic surface resolves");
+    // assert
     assert_eq!(resolved.leading_gap_rows, 1);
     assert_eq!(resolved.interaction_rows.as_ref().map(Vec::len), Some(1));
     assert_eq!(resolved.selection_rows.as_ref().map(Vec::len), Some(1));
@@ -75,12 +79,15 @@ fn transcript_grammar_synthetic_extension_is_exhaustive_and_resolvable() {
 
 #[test]
 fn transcript_grammar_all_families_are_exhaustive() {
+    // arrange
+    // act
     let mut turn = canonical_turn();
     turn.show_footer = true;
     let roles = normalize_turn_blocks(&turn)
         .into_iter()
         .map(|spec| spec.role)
         .collect::<Vec<_>>();
+    // assert
     assert!(roles.contains(&TranscriptBlockRole::UserPrompt));
     assert!(roles.contains(&TranscriptBlockRole::Reasoning));
     assert!(roles.contains(&TranscriptBlockRole::AssistantBody));
@@ -92,6 +99,7 @@ fn transcript_grammar_all_families_are_exhaustive() {
 
 #[test]
 fn transcript_grammar_static_guard_has_one_production_surface_constructor_boundary() {
+    // arrange
     let forbidden_mirrors = [
         "assistant_part_needs_leading_gap",
         "transcript_surface_leading_gap",
@@ -123,10 +131,12 @@ fn transcript_grammar_static_guard_has_one_production_surface_constructor_bounda
         );
     }
 
+    // act
     let renderer = include_str!("ui_transcript_render.rs")
         .split("#[cfg(test)]")
         .next()
         .unwrap_or(include_str!("ui_transcript_render.rs"));
+    // assert
     assert!(
         !renderer.contains("TranscriptBlockPlacement::CompatibilityFallback"),
         "approved renderer adapter must construct typed placement"
@@ -148,6 +158,7 @@ fn transcript_grammar_static_guard_has_one_production_surface_constructor_bounda
 
 #[test]
 fn transcript_grammar_invalid_spec_returns_err_without_partial_paint() {
+    // arrange
     let turn = canonical_turn();
     let mut specs = normalize_turn_blocks(&turn);
     let body = specs
@@ -158,6 +169,7 @@ fn transcript_grammar_invalid_spec_returns_err_without_partial_paint() {
     body.interaction.selected = true;
     let theme = Theme::default();
 
+    // act
     let result = super::ui_transcript_render::try_build_transcript_render_surfaces_with_specs(
         &turn,
         &specs,
@@ -166,6 +178,7 @@ fn transcript_grammar_invalid_spec_returns_err_without_partial_paint() {
         theme.surface.shell,
     );
 
+    // assert
     assert!(matches!(
         result,
         Err(TranscriptGrammarError::InvalidInteraction)

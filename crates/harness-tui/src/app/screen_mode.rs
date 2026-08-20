@@ -211,7 +211,10 @@ mod tests {
 
     #[test]
     fn defaults_are_inline_compact_fold() {
+        // arrange
+        // act
         let state = ScreenModeState::default();
+        // assert
         assert_eq!(state.terminal_mode(), TerminalMode::Inline);
         assert_eq!(state.scrollback_style(), ScrollbackStyle::Compact);
         assert_eq!(state.view_preference(), ViewPreference::Fold);
@@ -219,8 +222,11 @@ mod tests {
 
     #[test]
     fn unsupported_fullscreen_returns_error() {
+        // arrange
+        // act
         let mut state = ScreenModeState::new(false);
         let result = state.toggle_fullscreen();
+        // assert
         assert!(matches!(
             result,
             Err(ScreenModeError::FullscreenNotSupported)

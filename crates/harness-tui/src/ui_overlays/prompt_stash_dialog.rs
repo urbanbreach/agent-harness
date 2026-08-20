@@ -23,10 +23,7 @@ pub(super) fn render_prompt_stash_list_overlay(
         .fg(theme.text.primary)
         .bg(surface)
         .add_modifier(Modifier::BOLD);
-    let row_style = Style::default().bg(surface);
-    let selected_style = ui_chrome::overlay_focus_row_style(theme);
     let muted_style = Style::default().fg(theme.text.secondary).bg(surface);
-    let text_style = Style::default().fg(theme.text.primary).bg(surface);
 
     if !paint_modal_panel(
         frame,
@@ -60,7 +57,6 @@ pub(super) fn render_prompt_stash_list_overlay(
     );
 
     let list_y = inner.y.saturating_add(1);
-    let list_width = usize::from(inner.width);
 
     if app.prompt_stash.entries.is_empty() {
         let empty_area = Rect::new(inner.x + 1, list_y, inner.width.saturating_sub(2), 1);
@@ -83,6 +79,8 @@ pub(super) fn render_prompt_stash_list_overlay(
             default_scroll,
             app.prompt_stash.entries.len().saturating_sub(visible_rows),
         );
+        let max_scroll = app.prompt_stash.entries.len().saturating_sub(visible_rows);
+        let list_area = Rect::new(inner.x, list_y, inner.width, inner.height.saturating_sub(2));
 
         for (row, entry) in app
             .prompt_stash
@@ -95,33 +93,34 @@ pub(super) fn render_prompt_stash_list_overlay(
             let row_y = list_y + u16::try_from(row - scroll).unwrap_or(u16::MAX);
             let row_area = Rect::new(inner.x, row_y, inner.width, 1);
             let is_selected = row == selected;
-            let style = if is_selected {
-                selected_style
-            } else {
-                row_style
+            let key = ModalSurfaceKey::Overlay {
+                kind: OverlayKind::PromptStashList,
+                view: ModalViewKey::Primary,
             };
-            frame.render_widget(Block::default().style(style), row_area);
+            let presentation = modal_list_row(
+                theme,
+                ModalListRowSpec {
+                    area: row_area,
+                    state: ModalListRowState {
+                        selected: is_selected,
+                        hovered: app.modal_target_hovered(key, ModalTarget::Row(row)),
+                        dimmed: false,
+                    },
+                    max_scroll,
+                },
+            );
+            let style = presentation.style;
+            frame.render_widget(Block::default().style(style), presentation.layout.content);
 
             let timestamp = format_timestamp_short(entry.timestamp);
+            let list_width = usize::from(presentation.layout.content.width);
             let preview = preview_text(
                 &entry.text,
                 list_width.saturating_sub(timestamp.chars().count() + 4),
             );
 
-            let preview_style = if is_selected {
-                Style::default()
-                    .fg(theme.text.inverse)
-                    .bg(style.bg.unwrap_or(surface))
-            } else {
-                text_style
-            };
-            let timestamp_style = if is_selected {
-                Style::default()
-                    .fg(theme.text.inverse)
-                    .bg(style.bg.unwrap_or(surface))
-            } else {
-                muted_style
-            };
+            let preview_style = modal_list_row_text_style(style, theme.text.primary);
+            let timestamp_style = modal_list_row_text_style(style, theme.text.tertiary);
 
             let prefix = "  ";
             let line = Line::from(vec![
@@ -130,8 +129,17 @@ pub(super) fn render_prompt_stash_list_overlay(
                 Span::styled(" ".to_string(), style),
                 Span::styled(timestamp, timestamp_style),
             ]);
-            frame.render_widget(Paragraph::new(line), row_area);
+            frame.render_widget(Paragraph::new(line), presentation.layout.content);
         }
+        render_modal_list_scrollbar(
+            frame,
+            theme,
+            ModalListScrollbarSpec {
+                area: list_area,
+                offset: scroll,
+                max_scroll,
+            },
+        );
     }
 
     let hint_y = inner.y + inner.height.saturating_sub(1);

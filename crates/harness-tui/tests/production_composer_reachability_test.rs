@@ -10,6 +10,7 @@ use harness_tui::prompt_queue_actions::QueueAction;
 
 #[test]
 fn production_app_state_routes_keyboard_input_through_atom_composer() {
+    // arrange
     // Given: a live AppState with the production key dispatcher.
     let mut app = AppState::new_live(None, false, None);
 
@@ -22,15 +23,18 @@ fn production_app_state_routes_keyboard_input_through_atom_composer() {
     assert_eq!(view.text, "hi");
     assert_eq!(view.wrapped_atom_ids().len(), 2);
 
+    // act
     let submission = app
         .composer_submission()
         .expect("valid production composer submission");
+    // assert
     assert_eq!(submission.text, "hi");
     assert!(submission.attachments.is_empty());
 }
 
 #[test]
 fn production_app_state_routes_completion_and_queue_actions() {
+    // arrange
     // Given: a live production composer with a completion request and an idle queue.
     let mut app = AppState::new_live(None, false, None);
     let request = app.composer_begin_completion(CompletionTrigger::new(
@@ -57,7 +61,9 @@ fn production_app_state_routes_completion_and_queue_actions() {
     })
     .expect("queue edit applies");
 
+    // act
     // Then: completion output and queue state are owned by the production composer.
+    // assert
     assert_eq!(
         app.composer_view_model(ViewportId::Standard100x30).text,
         "status"
@@ -67,6 +73,7 @@ fn production_app_state_routes_completion_and_queue_actions() {
 
 #[test]
 fn production_app_state_routes_attachment_ingest_and_submit() {
+    // arrange
     // Given: a bounded attachment ingestor and a real AppState composer.
     let root = tempfile::tempdir().expect("temporary workspace");
     let policy = AttachmentPolicy::new(root.path()).expect("workspace policy");
@@ -80,7 +87,9 @@ fn production_app_state_routes_attachment_ingest_and_submit() {
         .expect("attachment attaches");
     let submission = app.composer_submission().expect("attachment submission");
 
+    // act
     // Then: attachment identity and bytes survive the typed production submission boundary.
+    // assert
     assert_eq!(submission.attachments.len(), 1);
     assert_eq!(submission.attachments[0].id, AttachmentId::new(7));
     assert_eq!(submission.attachments[0].bytes, b"hello attachment");

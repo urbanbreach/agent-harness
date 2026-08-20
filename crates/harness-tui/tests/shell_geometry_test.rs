@@ -12,6 +12,7 @@ use harness_tui::shell_geometry::{
 
 #[test]
 fn shell_geometry_is_deterministic_and_complete_for_every_viewport_and_state() {
+    // arrange
     for viewport in ViewportId::ALL {
         for state in ALL_SHELL_STATES {
             let first = layout_for(viewport, state);
@@ -30,7 +31,9 @@ fn shell_geometry_is_deterministic_and_complete_for_every_viewport_and_state() {
                 "{viewport:?}/{state:?} must fit"
             );
 
+            // act
             let hit_map = first.hit_map();
+            // assert
             assert_eq!(hit_map.regions.len(), 6, "all shell hit regions are named");
             let expected_target = if state.is_overlay() {
                 HitTarget::Overlay
@@ -51,6 +54,8 @@ fn shell_geometry_is_deterministic_and_complete_for_every_viewport_and_state() {
 
 #[test]
 fn unicode_width_drives_cursor_columns_without_splitting_wide_cells() {
+    // arrange
+    // act
     let regions = layout_for(ViewportId::Compact40x10, ShellState::Drafting);
     let cursor = cursor_for(
         &regions,
@@ -59,6 +64,7 @@ fn unicode_width_drives_cursor_columns_without_splitting_wide_cells() {
         "A川✅e\u{301}".chars().count(),
     );
 
+    // assert
     assert_eq!(cursor.display_column, 6);
     assert!(cursor.position.0 < regions.composer.right());
     assert!(cursor.position.1 < regions.composer.bottom());
@@ -67,17 +73,20 @@ fn unicode_width_drives_cursor_columns_without_splitting_wide_cells() {
 
 #[test]
 fn every_requested_shell_state_has_state_specific_geometry_and_hit_focus() {
+    // arrange
     for state in ALL_SHELL_STATES {
         let regions = layout_for(ViewportId::Default80x24, state);
         let overlay_active = matches!(state, ShellState::Permission | ShellState::Question);
         assert_eq!(regions.overlays.is_empty(), !overlay_active, "{state:?}");
 
+        // act
         let hit_map = regions.hit_map();
         let focus = hit_map
             .regions
             .iter()
             .find(|region| region.target == HitTarget::Composer)
             .expect("composer hit region");
+        // assert
         assert_eq!(focus.active, !overlay_active);
         assert_eq!(focus.covered, overlay_active);
     }
@@ -85,6 +94,8 @@ fn every_requested_shell_state_has_state_specific_geometry_and_hit_focus() {
 
 #[test]
 fn harness_identity_substitutions_fit_exact_reference_rectangles() {
+    // arrange
+    // act
     let copy = harness_tui::shell_geometry::IdentityCopy {
         product: "Harness",
         logo: "◆",
@@ -95,6 +106,7 @@ fn harness_identity_substitutions_fit_exact_reference_rectangles() {
     };
     let identity = identity_rectangles(ViewportId::Wide132x40, &copy);
 
+    // assert
     assert_eq!(identity.product.width, 7);
     assert_eq!(identity.logo.width, 1);
     assert!(identity.version.x >= identity.product.right());
@@ -107,9 +119,12 @@ fn harness_identity_substitutions_fit_exact_reference_rectangles() {
 
 #[test]
 fn minimum_viewport_never_clips_focus_or_cursor() {
+    // arrange
+    // act
     for state in ALL_SHELL_STATES {
         let regions = layout_for(ViewportId::Compact40x10, state);
         let cursor = cursor_for(&regions, state, "川✅", 2);
+        // assert
         assert!(cursor.position.0 < 40, "{state:?} cursor column clipped");
         assert!(cursor.position.1 < 10, "{state:?} cursor row clipped");
         assert!(
@@ -127,6 +142,9 @@ fn minimum_viewport_never_clips_focus_or_cursor() {
 
 #[test]
 fn shell_state_registry_is_exactly_the_requested_nine_states() {
+    // arrange
+    // act
+    // assert
     assert_eq!(
         ALL_SHELL_STATES,
         [

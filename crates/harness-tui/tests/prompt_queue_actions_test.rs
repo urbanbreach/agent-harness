@@ -22,6 +22,7 @@ fn state(lifecycle: QueueLifecycle) -> QueueState {
 
 #[test]
 fn lifecycle_matrix_exposes_busy_and_action_rules() {
+    // arrange
     // Given: every coordinator-owned lifecycle represented by the TUI snapshot.
     let lifecycles = [
         QueueLifecycle::Idle,
@@ -38,7 +39,9 @@ fn lifecycle_matrix_exposes_busy_and_action_rules() {
         let current = state(lifecycle);
         let visuals = current.visuals();
 
+        // act
         // Then: tool/cancelling are visibly busy, while streaming is the only interject state.
+        // assert
         assert_eq!(
             visuals.busy,
             matches!(
@@ -75,6 +78,7 @@ fn lifecycle_matrix_exposes_busy_and_action_rules() {
 
 #[test]
 fn queue_mutations_preserve_order_and_current_draft() {
+    // arrange
     // Given: an ordered queue and a separate composer draft.
     let current = state(QueueLifecycle::Idle);
 
@@ -103,7 +107,9 @@ fn queue_mutations_preserve_order_and_current_draft() {
     )
     .expect("new item can be queued");
 
+    // act
     // Then: the surviving order and draft are unchanged by queue mutations.
+    // assert
     assert_eq!(queued.queued_ids(), ["b", "c"]);
     assert_eq!(queued.queued[0].text, "edited second");
     assert_eq!(queued.draft, "keep this draft");
@@ -111,6 +117,7 @@ fn queue_mutations_preserve_order_and_current_draft() {
 
 #[test]
 fn stale_ids_are_rejected_without_hidden_mutation() {
+    // arrange
     // Given: a snapshot whose queue and draft are captured before a stale request.
     let current = state(QueueLifecycle::Idle);
 
@@ -124,7 +131,9 @@ fn stale_ids_are_rejected_without_hidden_mutation() {
         },
     );
 
+    // act
     // Then: both paths reject, and the original snapshot remains byte-for-byte equivalent.
+    // assert
     assert!(matches!(stale, Err(StaleError::MissingQueuedId(id)) if id == "missing"));
     assert!(matches!(edit, Err(QueueError::Stale(_))));
     assert_eq!(current, state(QueueLifecycle::Idle));
@@ -132,6 +141,7 @@ fn stale_ids_are_rejected_without_hidden_mutation() {
 
 #[test]
 fn cancel_requires_interrupt_before_kill() {
+    // arrange
     // Given: active work and a separate active snapshot with no interrupt yet.
     let running = state(QueueLifecycle::Streaming);
 
@@ -142,7 +152,9 @@ fn cancel_requires_interrupt_before_kill() {
     let killed =
         apply(interrupted, QueueAction::Cancel(CancelStage::Kill)).expect("kill follows interrupt");
 
+    // act
     // Then: premature kill is rejected and the accepted sequence is explicit.
+    // assert
     assert!(matches!(premature, Err(QueueError::Cancel(_))));
     assert_eq!(killed.cancel_stage, Some(CancelStage::Kill));
     assert_eq!(killed.lifecycle, QueueLifecycle::Cancelling);
@@ -150,6 +162,7 @@ fn cancel_requires_interrupt_before_kill() {
 
 #[test]
 fn interject_is_streaming_only_and_send_now_bypasses_queue() {
+    // arrange
     // Given: a streaming snapshot and an idle snapshot with the same queue.
     let streaming = state(QueueLifecycle::Streaming);
     let idle = state(QueueLifecycle::Idle);
@@ -171,7 +184,9 @@ fn interject_is_streaming_only_and_send_now_bypasses_queue() {
     )
     .expect("send-now does not require queue insertion");
 
+    // act
     // Then: interjection is front-ordered, and send-now leaves queue/draft untouched.
+    // assert
     assert_eq!(interjected.queued_ids(), ["urgent", "a", "b"]);
     assert!(interjected.queued[0].is_interjection);
     assert_eq!(sent_now.queued, idle.queued);
@@ -188,6 +203,7 @@ fn interject_is_streaming_only_and_send_now_bypasses_queue() {
 
 #[test]
 fn tool_execution_disables_editing_but_keeps_state_unchanged() {
+    // arrange
     // Given: a tool-execution snapshot with an existing queue item.
     let current = state(QueueLifecycle::Tool);
 
@@ -206,7 +222,9 @@ fn tool_execution_disables_editing_but_keeps_state_unchanged() {
         },
     );
 
+    // act
     // Then: the visuals and failures agree, with no hidden mutation.
+    // assert
     assert!(!current.visuals().editing_enabled);
     assert!(matches!(edited, Err(QueueError::Busy { .. })));
     assert!(matches!(removed, Err(QueueError::Busy { .. })));

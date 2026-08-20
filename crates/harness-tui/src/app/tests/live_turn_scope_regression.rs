@@ -37,6 +37,7 @@ fn start_background_wait(app: &mut AppState, seq: u64, request_id: &str) {
 
 #[test]
 fn hidden_child_turn_does_not_expose_parent_stop_control() {
+    // arrange
     // Given: only a delegated child turn is active while the parent session is visible.
     let mut app = AppState::new_live(None, false, None);
     app.session_path = Some(PathBuf::from("/tmp/parent"));
@@ -50,13 +51,16 @@ fn hidden_child_turn_does_not_expose_parent_stop_control() {
     // When: parent-view foreground authority is queried.
     let stop_rect = ui::live_turn_stop_rect(&app, TEST_FRAME_AREA);
 
+    // act
     // Then: the hidden child cannot appear as the parent's stoppable foreground turn.
+    // assert
     assert!(!app.live_turn_stop_available());
     assert_eq!(stop_rect, None);
 }
 
 #[test]
 fn hidden_child_wait_does_not_enable_parent_send_now() {
+    // arrange
     // Given: the visible parent is responding while a hidden child enters a sendable wait.
     let mut app = AppState::new_live(None, false, None);
     app.session_path = Some(PathBuf::from("/tmp/parent"));
@@ -77,12 +81,15 @@ fn hidden_child_wait_does_not_enable_parent_send_now() {
     start_background_wait(&mut app, 6, "req_child");
     app.queued_prompt_count = 1;
 
+    // act
     // When/Then: hidden child activity cannot make send-now actionable in the parent view.
+    // assert
     assert!(!app.queued_prompt_send_now_available());
 }
 
 #[test]
 fn send_now_interrupts_only_the_visible_parent_turn() {
+    // arrange
     // Given: a parked visible parent and an independently active hidden child turn.
     let intents = Arc::new(Mutex::new(Vec::new()));
     let sink = Arc::clone(&intents);
@@ -117,7 +124,9 @@ fn send_now_interrupts_only_the_visible_parent_turn() {
     // When: the queued prompt is promoted from the parent view.
     assert!(app.send_queued_prompt_now());
 
+    // act
     // Then: only the task matching the visible parked parent is interrupted.
+    // assert
     assert_eq!(
         intents
             .lock()

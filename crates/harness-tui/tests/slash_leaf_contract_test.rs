@@ -19,8 +19,11 @@ use harness_tui::slash::{SlashCommandLeaf, SlashCommandLeafError};
 /// registry exactly — id, metadata_id, aliases, and order.
 #[test]
 fn slash_command_ids_match_registry_exactly() {
+    // arrange
+    // act
     let leaves = all_commands();
     let registry = slash_commands();
+    // assert
     assert_eq!(
         leaves.len(),
         registry.len(),
@@ -48,6 +51,8 @@ fn slash_command_ids_match_registry_exactly() {
 /// The canonical ordered list matches the task specification exactly.
 #[test]
 fn canonical_order_matches_specification() {
+    // arrange
+    // act
     let expected: &[&str] = &[
         "new",
         "sessions",
@@ -77,18 +82,24 @@ fn canonical_order_matches_specification() {
         "import",
     ];
     let actual: Vec<&str> = all_commands().iter().map(|l| l.id).collect();
+    // assert
     assert_eq!(actual, expected);
 }
 
 /// There are exactly 26 slash commands.
 #[test]
 fn slash_commands_count_is_26() {
+    // arrange
+    // act
+    // assert
     assert_eq!(all_commands().len(), 26);
 }
 
 /// (b) Zero duplicate IDs across all leaf definitions.
 #[test]
 fn no_duplicate_command_ids() {
+    // arrange
+    // act
     let leaves = all_commands();
     let mut ids: Vec<&str> = leaves.iter().map(|l| l.id).collect();
     ids.sort_unstable();
@@ -97,20 +108,27 @@ fn no_duplicate_command_ids() {
         .filter(|w| w[0] == w[1])
         .map(|w| w[0])
         .collect();
+    // assert
     assert!(duplicates.is_empty(), "duplicate IDs: {duplicates:?}");
 }
 
 /// (c) Empty command id is rejected by validation.
 #[test]
 fn empty_command_id_rejected() {
+    // arrange
+    // act
     let empty_id = SlashCommandLeaf::new("", "test", &[]);
+    // assert
     assert_eq!(empty_id.validate(), Err(SlashCommandLeafError::EmptyId));
 }
 
 /// (c) Empty metadata_id is rejected by validation.
 #[test]
 fn empty_metadata_id_rejected() {
+    // arrange
+    // act
     let empty_meta = SlashCommandLeaf::new("test", "", &[]);
+    // assert
     assert_eq!(
         empty_meta.validate(),
         Err(SlashCommandLeafError::EmptyMetadataId)
@@ -121,7 +139,10 @@ fn empty_metadata_id_rejected() {
 /// validation, and the definitions are immutable static constants.
 #[test]
 fn error_state_mutation_rejected() {
+    // arrange
+    // act
     for leaf in all_commands() {
+        // assert
         assert!(
             leaf.validate().is_ok(),
             "canonical leaf `{}` failed validation",
@@ -134,8 +155,11 @@ fn error_state_mutation_rejected() {
 /// the same static slice (same pointer), proving no mutation is possible.
 #[test]
 fn leaf_definitions_are_immutable_constants() {
+    // arrange
+    // act
     let a = all_commands();
     let b = all_commands();
+    // assert
     assert_eq!(
         a.as_ptr(),
         b.as_ptr(),
@@ -147,7 +171,10 @@ fn leaf_definitions_are_immutable_constants() {
 /// from 26 files, all IDs unique.
 #[test]
 fn each_command_has_single_owner_module() {
+    // arrange
+    // act
     let leaves = all_commands();
+    // assert
     assert_eq!(leaves.len(), 26, "expected 26 leaves from 26 owner modules");
     let mut ids: Vec<&str> = leaves.iter().map(|l| l.id).collect();
     ids.sort_unstable();
@@ -162,9 +189,12 @@ fn each_command_has_single_owner_module() {
 /// The metadata_ids also match the existing registry exactly.
 #[test]
 fn metadata_ids_match_registry() {
+    // arrange
+    // act
     let leaves = all_commands();
     let registry = slash_commands();
     for (leaf, reg) in leaves.iter().zip(registry.iter()) {
+        // assert
         assert_eq!(
             leaf.metadata_id, reg.metadata_id,
             "metadata_id mismatch for id={}",
@@ -176,9 +206,12 @@ fn metadata_ids_match_registry() {
 /// The aliases also match the existing registry exactly.
 #[test]
 fn all_command_aliases_match_registry() {
+    // arrange
+    // act
     let leaves = all_commands();
     let registry = slash_commands();
     for (leaf, reg) in leaves.iter().zip(registry.iter()) {
+        // assert
         assert_eq!(
             leaf.aliases, reg.aliases,
             "aliases mismatch for id={}",

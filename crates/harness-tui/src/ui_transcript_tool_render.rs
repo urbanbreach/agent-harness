@@ -1092,6 +1092,7 @@ mod tests {
 
     #[test]
     fn generic_tool_header_omits_terminal_count_and_timing_metadata() {
+        // arrange
         let header = TranscriptToolCallHeader {
             tool_id: "edit".to_string(),
             title: "Edit".to_string(),
@@ -1108,6 +1109,7 @@ mod tests {
             disclosure_state: None,
         };
 
+        // act
         let spans = build_tool_header_spans(
             &header,
             &Theme::default(),
@@ -1119,6 +1121,7 @@ mod tests {
             .map(|span| span.content.as_ref())
             .collect::<String>();
 
+        // assert
         assert!(rendered.contains("Edit src/main.rs"));
         assert!(!rendered.contains("7 results"), "{rendered:?}");
         assert!(!rendered.contains("1.2s"), "{rendered:?}");

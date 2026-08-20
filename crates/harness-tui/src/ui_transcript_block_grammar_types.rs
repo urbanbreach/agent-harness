@@ -105,6 +105,7 @@ pub(in crate::ui) struct TranscriptBlockChrome {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::ui) struct TranscriptBlockSpacing {
     pub(in crate::ui) leading_gap_rows: usize,
+    pub(in crate::ui) trailing_gap_rows: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

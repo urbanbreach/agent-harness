@@ -89,6 +89,7 @@ mod tests {
 
     #[test]
     fn submit_key_requests_an_immediate_pre_provider_frame() {
+        // arrange
         // Given: a prompt submission that synchronously enters the waiting state.
         let event = TuiEvent::Key(crossterm::event::KeyEvent::new(
             crossterm::event::KeyCode::Enter,
@@ -98,12 +99,15 @@ mod tests {
         // When: input presentation classifies the submit key.
         let presentation = InputPresentation::for_event(&event).for_turn_start(false, true);
 
+        // act
         // Then: the waiting frame is not coalesced with the first provider update.
+        // assert
         assert_eq!(presentation, InputPresentation::Immediate);
     }
 
     #[test]
     fn two_event_click_under_live_backlog_is_ready_before_next_flush_cycle() {
+        // arrange
         // Given: a clean presenter and one logical click encoded as down then up.
         let now = Instant::now();
         let mut presenter = Presenter::new();
@@ -135,7 +139,9 @@ mod tests {
             .write_next(&mut sink)
             .expect("write physical frame");
 
+        // act
         // Then: the completed click is ready without waiting for a 16 ms pacer cycle.
+        // assert
         assert_eq!(
             decisions,
             [
@@ -156,6 +162,7 @@ mod tests {
 
     #[test]
     fn coalesced_terminal_resize_is_ready_without_a_second_flush_deadline() {
+        // arrange
         // Given: TerminalQueue already reduced a resize burst to its newest dimensions.
         let now = Instant::now();
         let mut presenter = Presenter::new();
@@ -166,7 +173,9 @@ mod tests {
         // When: the visible resize reaches the production presentation boundary.
         InputPresentation::for_event(&resize).request(true, &mut presenter, &mut pacer, now);
 
+        // act
         // Then: it can render immediately instead of paying another 16 ms coalescing deadline.
+        // assert
         assert!(presenter.should_present(true));
         assert_eq!(pacer.next_wait_ms(FrameNow::default()), None);
         assert!(!pacer.needs_poll(FrameNow::default(), MotionPlan::none()));
@@ -174,6 +183,7 @@ mod tests {
 
     #[test]
     fn ready_immediate_resize_presents_before_queued_live_quantum() {
+        // arrange
         // Given: a resize has requested immediate presentation while live work is queued.
         let now = Instant::now();
         let mut presenter = Presenter::new();
@@ -189,12 +199,15 @@ mod tests {
         // When: production chooses whether to apply that live quantum before rendering.
         let apply_live = super::should_apply_live_update(decision, &presenter, true);
 
+        // act
         // Then: the resize frame starts first instead of inheriting the live batch latency.
+        // assert
         assert!(!apply_live);
     }
 
     #[test]
     fn ordinary_dirty_presenter_does_not_suppress_live_quantum() {
+        // arrange
         // Given: ordinary non-input work dirtied a presenter while live work is selected.
         let presenter = Presenter::new();
 
@@ -202,12 +215,15 @@ mod tests {
         let apply_live =
             super::should_apply_live_update(RuntimeDecision::LiveUpdate, &presenter, true);
 
+        // act
         // Then: only typed immediate input priority can defer live work.
+        // assert
         assert!(apply_live);
     }
 
     #[test]
     fn blocked_immediate_presenter_does_not_busy_loop_a_live_quantum() {
+        // arrange
         // Given: immediate input is dirty while the capacity-one writer is unavailable.
         let now = Instant::now();
         let mut presenter = Presenter::new();
@@ -217,7 +233,9 @@ mod tests {
         let apply_live =
             super::should_apply_live_update(RuntimeDecision::LiveUpdate, &presenter, false);
 
+        // act
         // Then: live work progresses until immediate presentation becomes possible.
+        // assert
         assert!(apply_live);
     }
 }

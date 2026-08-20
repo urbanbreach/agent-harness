@@ -1,5 +1,6 @@
 ---
 source: crates/harness-tui/tests/deterministic_render_test.rs
+assertion_line: 174
 expression: snapshot.as_str()
 ---
 
@@ -10,29 +11,29 @@ expression: snapshot.as_str()
                               │                                                          │
                               │   search:                                                │
                               │──────────────────────────────────────────────────────────│
-                              │   Session ────────────────────────────────────────────  █│
-                              │  ◆ New Session                                 Ctrl+N   █│
-                              │  ◆ New Session in Worktree          Ctrl+P → worktree   █│
-                              │  ◆ Agent Dashboard                         /dashboard   █│
-                              │  ◆ Back to Home                                 /home   █│
-                              │  ◆ Resume Session                             /resume   █│
-                              │  ◆ Rename Session                             /rename   █│
-                              │  ◆ Session Info                         /session-info   █│
-                              │  ◆ Send Feedback                            /feedback   █│
-                              │                                                         █│
-                              │   Context ────────────────────────────────────────────  █│
-                              │  ◆ Compact History                           /compact   █│
-                              │  ◆ Context Usage                             /context   █│
-                              │  ◆ View Plan                               /view-plan   █│
-                              │  ◆ Memory                                     /memory   █│
-                              │                                                         █│
-                              │   Model & Input ──────────────────────────────────────  █│
-                              │  ◆ Switch Model                                /model   █│
-                              │  ◆ Always Approve Mode                /always-approve   █│
-                              │  ◆ Multiline Input                         /multiline   █│
-                              │                                                         █│
-                              │   Tools ──────────────────────────────────────────────  █│
-                              │  ◆ Hooks                                       /hooks   █│
+                              │    Session ────────────────────────────────────────   █  │
+                              │   ◆ New Session                                Ctrl+N █  │
+                              │   ◆ New Session in Worktree         Ctrl+P → worktree █  │
+                              │   ◆ Agent Dashboard                        /dashboard █  │
+                              │   ◆ Back to Home                                /home █  │
+                              │   ◆ Resume Session                            /resume █  │
+                              │   ◆ Rename Session                            /rename █  │
+                              │   ◆ Session Info                        /session-info █  │
+                              │   ◆ Send Feedback                           /feedback █  │
+                              │                                                       █  │
+                              │    Context ────────────────────────────────────────   █  │
+                              │   ◆ Compact History                          /compact █  │
+                              │   ◆ Context Usage                            /context █  │
+                              │   ◆ View Plan                              /view-plan █  │
+                              │   ◆ Memory                                    /memory █  │
+                              │                                                       █  │
+                              │    Model & Input ──────────────────────────────────   █  │
+                              │   ◆ Switch Model                               /model █  │
+                              │   ◆ Always Approve Mode               /always-approve █  │
+                              │   ◆ Multiline Input                        /multiline █  │
+                              │                                                       █  │
+                              │    Tools ──────────────────────────────────────────   █  │
+                              │   ◆ Hooks                                      /hooks    │
                               │          ↑/↓ nav  |  Enter select  |  Esc close          │
                               └──────────────────────────────────────────────────────────┘
 

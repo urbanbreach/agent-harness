@@ -40,6 +40,15 @@ impl WelcomeHitMap {
                     item_index: Some(*index),
                 })
             })
+            .or_else(|| {
+                self.layout
+                    .changelog_header_rect
+                    .filter(|rect| contains(*rect, col, row))
+                    .map(|_| WelcomeHit {
+                        region: WelcomeRegion::Menu,
+                        item_index: Some(2),
+                    })
+            })
             .or_else(|| match self.layout.region_at(col, row) {
                 WelcomeRegion::None => None,
                 region => Some(WelcomeHit {

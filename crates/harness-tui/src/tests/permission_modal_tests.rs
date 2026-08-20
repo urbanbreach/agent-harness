@@ -17,8 +17,8 @@ pub(super) fn permission_modal_snapshot_renders_request() {
     );
 }
 
-pub(super) fn permission_dock_packs_freeze_vertical_blanks() {
-    // Given: decision-stage permission dock with empty draft (freeze PERM packing)
+pub(super) fn permission_dock_packs_measured_content_rows() {
+    // Given: a decision-stage permission dock with measured detail content.
     let mut app = AppState::new_live(None, false, None);
     app.ingest_event(permission_requested_event(
         1,
@@ -26,7 +26,7 @@ pub(super) fn permission_dock_packs_freeze_vertical_blanks() {
         "tool_call_pack_v2",
     ));
 
-    // When: rendering live shell at freeze-like geometry
+    // When: rendering the live shell at the parity geometry.
     let rendered = render_live_lines(&app, 120, 32);
     let lines: Vec<&str> = rendered.lines().collect();
     let dock_start = lines
@@ -46,22 +46,19 @@ pub(super) fn permission_dock_packs_freeze_vertical_blanks() {
         .position(|line| line.contains("1/4:select"))
         .expect("1/4:select footer must render");
 
-    // Then: freeze vertical blanks — leading `┃` above title, gap before options, blank before footer
+    // Then: title, detail, gap, options, and footer occupy only their measured rows.
     assert!(
         dock_start > 0 && lines[dock_start - 1].contains('┃'),
-        "freeze packs a blank `┃` row above the Allow Edit title\n{rendered}"
+        "the dock keeps one leading rail row above the title\n{rendered}"
     );
     assert!(
-        option_start > dock_start + 1
-            && lines[dock_start + 1].contains('┃')
-            && !lines[dock_start + 1].contains("1 ("),
-        "freeze packs a blank `┃` gap between title and options\n{rendered}"
+        lines[dock_start + 1].contains("Apply hashline edit to demo.txt")
+            && option_start == dock_start + 3,
+        "the measured detail and one gap row precede the options\n{rendered}"
     );
     assert!(
-        footer > option_end + 1
-            && lines[option_end + 1].contains('┃')
-            && !lines[option_end + 1].contains("1/4:select"),
-        "freeze packs a blank `┃` row after options before the footer\n{rendered}"
+        footer == option_end + 1,
+        "the footer immediately follows the options without fixed blank rows\n{rendered}"
     );
     assert!(
         rendered.contains("Ctrl+o:always-approve") && rendered.contains("Ctrl+c:cancel"),
@@ -112,9 +109,10 @@ pub(super) fn question_permission_modal_renders_questions_and_answer_input() {
     assert!(debug.contains("↑/↓ navigate"));
     assert!(debug.contains("y copy"));
     assert!(debug.contains("Enter:submit"));
-    assert!(debug.contains("Esc:unselect"));
-    assert!(debug.contains("Tab:scrollback"));
-    assert!(debug.contains("Ctrl+c:dismiss"));
+    assert!(debug.contains("Esc:scrollback"));
+    assert!(debug.contains("Tab:next option"));
+    assert!(debug.contains("Shift+Tab:previous option"));
+    assert!(debug.contains("Shift+X:dismiss"));
     assert!(!debug.contains("Question required"));
     assert!(!debug.contains("default deny"));
     assert!(!debug.contains("always-approve"));

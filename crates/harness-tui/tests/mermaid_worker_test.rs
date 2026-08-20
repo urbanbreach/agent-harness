@@ -7,7 +7,10 @@ use mermaid_worker::{
 
 #[test]
 fn cache_keys_hash_content_and_cache_eviction_is_oldest_first() {
+    // arrange
+    // act
     let key = CacheKey::new("graph", 1, 20);
+    // assert
     assert_eq!(key, CacheKey::new("graph", 1, 20));
     assert_ne!(key, CacheKey::new("other", 1, 20));
     let mut cache = MermaidCache::new(2);
@@ -22,12 +25,15 @@ fn cache_keys_hash_content_and_cache_eviction_is_oldest_first() {
 
 #[test]
 fn cache_invalidates_each_dimension() {
+    // arrange
+    // act
     let mut cache = MermaidCache::new(8);
     let first = CacheKey::new("one", 1, 10);
     let second = CacheKey::new("two", 2, 10);
     cache.insert(first, "a".into(), 1);
     cache.insert(second, "b".into(), 2);
     cache.invalidate_theme(1);
+    // assert
     assert!(cache.get(&first).is_none());
     cache.invalidate_width(10);
     assert!(cache.is_empty());
@@ -38,7 +44,10 @@ fn cache_invalidates_each_dimension() {
 
 #[test]
 fn fallbacks_render_bounded_text_boxes_and_errors() {
+    // arrange
+    // act
     let text = MermaidFallback::render_text("graph TD\nlong line", 4);
+    // assert
     assert_eq!(text.as_str(), "```mermaid\ngrap\nlong\n```");
     let box_art = MermaidFallback::render_ascii_placeholder("graph TD", 20);
     assert!(box_art.as_str().starts_with("+------------------+\n|"));
@@ -49,6 +58,7 @@ fn fallbacks_render_bounded_text_boxes_and_errors() {
 
 #[test]
 fn worker_lifecycle_enforces_limits_deadlines_and_cleanup() {
+    // arrange
     let mut worker = MermaidWorker::new(1, 4);
     let first = worker.submit("graph TD".into(), 1, 20, 10);
     let second = worker.submit("graph LR".into(), 1, 20, 10);
@@ -74,8 +84,10 @@ fn worker_lifecycle_enforces_limits_deadlines_and_cleanup() {
         Some(&MermaidState::Rendered("svg".into()))
     );
 
+    // act
     let failed = worker.submit("late".into(), 1, 20, 2);
     let failed_key = CacheKey::new("late", 1, 20);
+    // assert
     assert!(matches!(
         worker.start_render(failed, 3),
         Err(WorkerError::DeadlineExceeded)
@@ -97,10 +109,13 @@ fn worker_lifecycle_enforces_limits_deadlines_and_cleanup() {
 
 #[test]
 fn worker_fail_and_tick_remove_pending_without_caching_failures() {
+    // arrange
+    // act
     let mut worker = MermaidWorker::default();
     let failed = worker.submit("bad".into(), 1, 20, 10);
     let failed_key = worker.start_render(failed, 1).ok().unwrap();
     worker.fail_render(&failed_key, "broken");
+    // assert
     assert_eq!(worker.pending_count(), 0);
     assert!(worker.state(&failed_key).is_some());
     let retry = worker.submit("bad".into(), 1, 20, 10);

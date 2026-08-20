@@ -711,10 +711,13 @@ mod paste_tests {
     /// at the end, and does NOT submit or record history.
     #[test]
     fn paste_normalizes_line_endings_and_does_not_submit() {
+        // arrange
         let (mut app, intents) = live_app_capture();
 
+        // act
         app.handle_paste("alpha\r\n\r\nbeta\rgamma");
 
+        // assert
         assert_eq!(app.composer.prompt_buffer, "alpha\n\nbeta\ngamma");
         assert_eq!(
             app.composer.prompt_cursor,
@@ -727,11 +730,14 @@ mod paste_tests {
     /// D2: pasting with the cursor mid-buffer inserts at the cursor.
     #[test]
     fn paste_inserts_at_cursor_position() {
+        // arrange
         let mut app = live_app();
         set_buffer_at(&mut app, "ac", 1);
 
+        // act
         app.handle_paste("b");
 
+        // assert
         assert_eq!(app.composer.prompt_buffer, "abc");
         assert_eq!(app.composer.prompt_cursor, 2);
     }
@@ -739,12 +745,15 @@ mod paste_tests {
     /// D3: pasting collapses an active selection and replaces it.
     #[test]
     fn paste_replaces_active_selection() {
+        // arrange
         let mut app = live_app();
         set_buffer_at(&mut app, "hello", 5);
         app.composer.selection_anchor = Some(0);
 
+        // act
         app.handle_paste("bye");
 
+        // assert
         assert_eq!(app.composer.prompt_buffer, "bye");
         assert_eq!(app.composer.prompt_cursor, 3);
         assert_eq!(app.composer.selection_anchor, None);
@@ -754,32 +763,41 @@ mod paste_tests {
     /// rejection).
     #[test]
     fn paste_is_ignored_when_prompt_not_focused() {
+        // arrange
         let mut app = live_app();
         app.focus = Focus::List;
 
+        // act
         app.handle_paste("should not appear");
 
+        // assert
         assert!(app.composer.prompt_buffer.is_empty());
     }
 
     /// D-Reject: an empty paste is a no-op.
     #[test]
     fn paste_empty_string_is_noop() {
+        // arrange
         let mut app = live_app();
 
+        // act
         app.handle_paste("");
 
+        // assert
         assert!(app.composer.prompt_buffer.is_empty());
         assert_eq!(app.composer.prompt_cursor, 0);
     }
 
     #[test]
     fn paste_targets_open_worktree_dialog_and_respects_byte_cap() {
+        // arrange
         let mut app = AppState::new_startup(Vec::new(), None);
         app.open_new_worktree_dialog();
 
+        // act
         app.handle_paste(&format!("{}\nignored", "a".repeat(100)));
 
+        // assert
         assert_eq!(app.new_worktree_dialog.input, "a".repeat(100));
         assert_eq!(app.new_worktree_dialog.cursor, 100);
         assert!(app.composer.prompt_buffer.is_empty());

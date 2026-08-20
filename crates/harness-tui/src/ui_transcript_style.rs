@@ -206,7 +206,10 @@ mod tests {
 
     #[test]
     fn running_tool_marker_wave_advances() {
+        // arrange
+        // act
         let theme = Theme::default();
+        // assert
         assert_ne!(
             transcript_running_tool_marker_color(&theme, 0),
             transcript_running_tool_marker_color(&theme, 10)
@@ -215,7 +218,10 @@ mod tests {
 
     #[test]
     fn pending_diamond_pulse_changes_color_across_ticks() {
+        // arrange
+        // act
         let theme = Theme::default();
+        // assert
         assert_ne!(
             pending_diamond_color(&theme, 0),
             pending_diamond_color(&theme, 10)
@@ -224,18 +230,22 @@ mod tests {
 
     #[test]
     fn reduced_motion_keeps_active_spinner_static() {
+        // arrange
         // Given: two different shared animation phases.
         // When: reduced motion resolves their active marker.
         let first = transcript_streaming_spinner_frame_with_motion(0, false);
         let later = transcript_streaming_spinner_frame_with_motion(40, false);
 
+        // act
         // Then: the active state remains clear without continuous movement.
+        // assert
         assert_eq!(first, "⠋");
         assert_eq!(later, first);
     }
 
     #[test]
     fn assistant_footer_label_is_profile_independent() {
+        // arrange
         // Given: legacy primary-profile labels on recorded turns.
         // When: the fallback assistant label is derived.
         let labels = [
@@ -243,7 +253,9 @@ mod tests {
             assistant_footer_label("plan"),
         ];
 
+        // act
         // Then: both turns retain the generic transcript message role.
+        // assert
         assert_eq!(labels, ["Assistant", "Assistant"]);
     }
 }

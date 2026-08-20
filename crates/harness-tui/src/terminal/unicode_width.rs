@@ -97,40 +97,8 @@ impl UnicodeWidthRecord {
     }
 }
 
-/// Compute the display width of a character using the same rules as the
-/// terminal renderer. This is a pure function with no external dependency.
-///
-/// Width rules:
-/// - ASCII printable: 1
-/// - Box-drawing characters: 1
-/// - CJK ideographs (U+4E00–U+9FFF): 2
-/// - Hiragana (U+3040–U+309F): 2
-/// - Katakana (U+30A0–U+30FF): 2
-/// - Hangul syllables (U+AC00–U+D7AF): 2
-/// - Fullwidth forms (U+FF00–U+FFEF): 2
-/// - Emoji and pictographs (U+2600–U+27BF): 2
-/// - Combining marks (U+0300–U+036F): 0
-/// - Default: 1
 pub fn char_display_width(c: char) -> u16 {
-    let code = c as u32;
-    match code {
-        // Combining marks have zero width
-        0x0300..=0x036F => 0,
-        // CJK unified ideographs
-        0x4E00..=0x9FFF => 2,
-        // Hiragana
-        0x3040..=0x309F => 2,
-        // Katakana
-        0x30A0..=0x30FF => 2,
-        // Hangul syllables
-        0xAC00..=0xD7AF => 2,
-        // Fullwidth forms
-        0xFF00..=0xFFEF => 2,
-        // Emoji and pictographs (excluding narrow dingbats like U+276F ❯)
-        0x2600..=0x276E | 0x2770..=0x27BF => 2,
-        // Everything else is narrow
-        _ => 1,
-    }
+    u16::try_from(unicode_width::UnicodeWidthChar::width(c).unwrap_or(0)).unwrap_or(u16::MAX)
 }
 
 #[cfg(test)]
@@ -167,6 +135,8 @@ mod tests {
         // assert
         assert_eq!(char_display_width('\u{5DDD}'), 2); // 川
         assert_eq!(char_display_width('\u{5C71}'), 2); // 山
+        assert_eq!(char_display_width('\u{3400}'), 2);
+        assert_eq!(char_display_width('\u{F900}'), 2);
     }
 
     #[test]
@@ -204,13 +174,13 @@ mod tests {
     }
 
     #[test]
-    fn emoji_are_wide() {
+    fn emoji_and_text_presentation_widths_match_terminal_cells() {
         // arrange
         // act
         // assert
         assert_eq!(char_display_width('\u{2705}'), 2); // ✅
         assert_eq!(char_display_width('\u{274C}'), 2); // ❌
-        assert_eq!(char_display_width('\u{26A0}'), 2); // ⚠
+        assert_eq!(char_display_width('\u{26A0}'), 1); // ⚠
     }
 
     #[test]

@@ -182,6 +182,7 @@ mod animation_phase_tests {
 
     #[test]
     fn cached_assistant_footer_rehydrates_the_pending_diamond_phase() {
+        // arrange
         // Given: a cached waiting footer with independently styled marker and label spans.
         let theme = Theme::default();
         let surface = TranscriptVisualEntry {
@@ -223,7 +224,9 @@ mod animation_phase_tests {
         let mut later = surface.lines.clone();
         apply_surface_animation_phase(&mut later, &surface, 0, 10, &theme);
 
+        // act
         // Then: the marker changes color while the waiting label remains muted.
+        // assert
         assert_ne!(first[0].spans[1].style.fg, later[0].spans[1].style.fg);
         assert_eq!(first[0].spans[2].style.fg, Some(theme.text.secondary));
         assert_eq!(later[0].spans[2].style.fg, Some(theme.text.secondary));
@@ -231,6 +234,7 @@ mod animation_phase_tests {
 
     #[test]
     fn active_reasoning_wave_animates_only_the_diamond() {
+        // arrange
         let theme = Theme::default();
         let surface = reasoning_surface(
             &theme,
@@ -241,11 +245,13 @@ mod animation_phase_tests {
             }),
         );
 
+        // act
         let mut first = surface.lines.clone();
         apply_surface_animation_phase(&mut first, &surface, 0, 0, &theme);
         let mut later = surface.lines.clone();
         apply_surface_animation_phase(&mut later, &surface, 0, 10, &theme);
 
+        // assert
         assert_ne!(first[0].spans[1].style.fg, later[0].spans[1].style.fg);
         assert_eq!(first[0].spans[2].style.fg, Some(theme.text.secondary));
         assert_eq!(later[0].spans[2].style.fg, Some(theme.text.secondary));
@@ -253,6 +259,7 @@ mod animation_phase_tests {
 
     #[test]
     fn active_reasoning_wave_animates_the_ascii_marker() {
+        // arrange
         let theme = Theme::default();
         let surface = reasoning_surface(
             &theme,
@@ -263,11 +270,13 @@ mod animation_phase_tests {
             }),
         );
 
+        // act
         let mut first = surface.lines.clone();
         apply_surface_animation_phase(&mut first, &surface, 0, 0, &theme);
         let mut later = surface.lines.clone();
         apply_surface_animation_phase(&mut later, &surface, 0, 10, &theme);
 
+        // assert
         assert_ne!(first[0].spans[1].style.fg, later[0].spans[1].style.fg);
         assert_eq!(first[0].spans[2].style.fg, Some(theme.text.secondary));
         assert_eq!(later[0].spans[2].style.fg, Some(theme.text.secondary));
@@ -275,17 +284,20 @@ mod animation_phase_tests {
 
     #[test]
     fn static_reasoning_rail_is_painted_after_content() {
+        // arrange
         let theme = Theme::default();
         let surface = reasoning_surface(&theme, "◆", None);
         let backend = TestBackend::new(20, 1);
         let mut terminal = Terminal::new(backend).expect("test terminal");
 
+        // act
         terminal
             .draw(|frame| {
                 render_transcript_surface(frame, &surface, Rect::new(0, 0, 20, 1), 0, 0, &theme);
             })
             .expect("render reasoning surface");
 
+        // assert
         assert_eq!(terminal.backend().buffer()[(0, 0)].symbol(), "┃");
     }
 }
@@ -488,6 +500,9 @@ where
             lines.push(Line::default());
         }
         lines.extend(surface.lines.iter().cloned());
+        for _ in 0..surface.trailing_gap_rows {
+            lines.push(Line::default());
+        }
     }
     lines
 }
@@ -1062,7 +1077,10 @@ mod tests {
 
     #[test]
     fn long_token_fast_path_preserves_unicode_and_complex_grapheme_boundaries() {
+        // arrange
+        // act
         let simple = "abc界···xyz";
+        // assert
         assert!(simple_grapheme_boundaries(simple));
         assert_eq!(wrapped_text(simple, 4), legacy_wrapped_text(simple, 4));
         assert!(!simple_grapheme_boundaries("e\u{301}x"));

@@ -23,8 +23,6 @@ pub(super) fn render_plan_view_overlay(
         .fg(theme.text.primary)
         .bg(surface)
         .add_modifier(Modifier::BOLD);
-    let row_style = Style::default().bg(surface);
-    let selected_style = ui_chrome::overlay_focus_row_style(theme);
     let muted_style = Style::default().fg(theme.text.secondary).bg(surface);
     let text_style = Style::default().fg(theme.text.primary).bg(surface);
 
@@ -134,17 +132,31 @@ pub(super) fn render_plan_view_overlay(
         default_scroll,
         rows.len().saturating_sub(visible_rows),
     );
+    let max_scroll = rows.len().saturating_sub(visible_rows);
+    let list_area = Rect::new(inner.x, list_y, inner.width, list_height);
 
     for (row, entry) in rows.iter().enumerate().skip(scroll).take(visible_rows) {
         let row_y = list_y + u16::try_from(row - scroll).unwrap_or(u16::MAX);
         let row_area = Rect::new(inner.x, row_y, inner.width, 1);
         let is_selected = row == selected;
-        let style = if is_selected {
-            selected_style
-        } else {
-            row_style
+        let key = ModalSurfaceKey::Overlay {
+            kind: OverlayKind::PlanView,
+            view: ModalViewKey::Primary,
         };
-        frame.render_widget(Block::default().style(style), row_area);
+        let presentation = modal_list_row(
+            theme,
+            ModalListRowSpec {
+                area: row_area,
+                state: ModalListRowState {
+                    selected: is_selected,
+                    hovered: app.modal_target_hovered(key, ModalTarget::Row(row)),
+                    dimmed: !entry.exists,
+                },
+                max_scroll,
+            },
+        );
+        let style = presentation.style;
+        frame.render_widget(Block::default().style(style), presentation.layout.content);
 
         let meta = match (entry.is_active, entry.exists) {
             (true, true) => "active",
@@ -152,7 +164,8 @@ pub(super) fn render_plan_view_overlay(
             (false, true) => "saved",
             (false, false) => "missing",
         };
-        let id_budget = list_width.saturating_sub(meta.chars().count() + 3);
+        let row_width = usize::from(presentation.layout.content.width);
+        let id_budget = row_width.saturating_sub(meta.chars().count() + 3);
         let id_text = if entry.path.chars().count() > id_budget {
             let mut out = entry
                 .path
@@ -165,22 +178,10 @@ pub(super) fn render_plan_view_overlay(
             entry.path.clone()
         };
 
-        let id_style = if is_selected {
-            Style::default()
-                .fg(theme.text.inverse)
-                .bg(style.bg.unwrap_or(surface))
-        } else {
-            text_style
-        };
-        let meta_style = if is_selected {
-            Style::default()
-                .fg(theme.text.inverse)
-                .bg(style.bg.unwrap_or(surface))
-        } else {
-            muted_style
-        };
+        let id_style = modal_list_row_text_style(style, theme.text.primary);
+        let meta_style = modal_list_row_text_style(style, theme.text.tertiary);
 
-        let pad = list_width
+        let pad = row_width
             .saturating_sub(id_text.chars().count())
             .saturating_sub(meta.chars().count());
         frame.render_widget(
@@ -189,7 +190,16 @@ pub(super) fn render_plan_view_overlay(
                 Span::styled(" ".repeat(pad.saturating_sub(1)), style),
                 Span::styled(meta, meta_style),
             ])),
-            row_area,
+            presentation.layout.content,
         );
     }
+    render_modal_list_scrollbar(
+        frame,
+        theme,
+        ModalListScrollbarSpec {
+            area: list_area,
+            offset: scroll,
+            max_scroll,
+        },
+    );
 }

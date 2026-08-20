@@ -50,7 +50,7 @@ fn active_reasoning_matches_groks_truncated_soft_wrapped_rows() {
     assert_eq!(
         rows,
         [
-            "   ◆ Thinking…",
+            "   Thinking…",
             "",
             "   …",
             "",
@@ -87,7 +87,7 @@ fn active_reasoning_keeps_distinct_summary_parts_on_separate_rows() {
     assert_eq!(
         rows,
         [
-            "   ◆ Thinking…",
+            "   Thinking…",
             "",
             "   Planning worktree inspection and diff analysis",
             "",
@@ -174,21 +174,15 @@ fn settled_collapsed_reasoning_is_a_single_muted_grok_header() {
 
     assert_eq!(
         reasoning.lines.iter().map(line_text).collect::<Vec<_>>(),
-        ["  ◆ Thought for 2.3s"]
+        ["  Thought for 2.3s"]
     );
     assert!(!reasoning.show_outer_rail);
     assert!(reasoning.tool_rail_motion.is_none());
-    let marker = header
-        .spans
-        .iter()
-        .find(|span| span.content.contains('◆'))
-        .expect("reasoning marker");
     let label_index = header
         .spans
         .iter()
         .position(|span| span.content.as_ref() == "Thought")
         .expect("reasoning label");
-    assert_eq!(marker.style.fg, Some(theme.text.secondary));
     assert_eq!(header.spans[label_index].style.add_modifier, Modifier::BOLD);
     assert!(header.spans[label_index + 1..].iter().all(|span| {
         span.style.fg == Some(theme.text.secondary) && span.style.add_modifier == Modifier::empty()
@@ -233,21 +227,12 @@ fn settled_expanded_reasoning_has_one_internal_gap_and_a_static_rail() {
     let reasoning = reasoning_surface(&surfaces);
     let rows = reasoning.lines.iter().map(line_text).collect::<Vec<_>>();
 
-    assert_eq!(rows, ["   ◆ Thought for 2.3s", "", "   first second"]);
+    assert_eq!(rows, ["   Thought for 2.3s", "", "   first second"]);
     assert!(reasoning.show_outer_rail);
     assert!(reasoning.tool_rail_motion.is_none());
     assert_eq!(
         reasoning.rail_glyph,
         theme.live_shell.transcript_glyphs.rail
-    );
-    let marker = reasoning.lines[0]
-        .spans
-        .iter()
-        .find(|span| span.content.contains('◆'))
-        .expect("expanded reasoning marker");
-    assert_eq!(
-        marker.style.fg,
-        Some(blend_color(theme.surface.shell, theme.text.primary, 0.5))
     );
 }
 
@@ -327,14 +312,14 @@ fn expanded_literal_ellipsis_remains_selectable_body_content() {
 }
 
 #[test]
-fn ascii_reasoning_uses_semantic_marker_and_rail_glyphs() {
+fn ascii_reasoning_uses_label_only_header_and_semantic_rail_glyph() {
     let theme = Theme::default().with_glyph_mode(crate::theme::GlyphMode::Ascii);
     let turn = reasoning_turn("ascii reasoning");
 
     let surfaces = build_transcript_render_surfaces(&turn, &theme, 80, theme.surface.shell);
     let reasoning = reasoning_surface(&surfaces);
 
-    assert!(line_text(&reasoning.lines[0]).starts_with("   * Thinking…"));
+    assert!(line_text(&reasoning.lines[0]).starts_with("   Thinking…"));
     assert_eq!(
         reasoning.rail_glyph,
         theme.live_shell.transcript_glyphs.rail

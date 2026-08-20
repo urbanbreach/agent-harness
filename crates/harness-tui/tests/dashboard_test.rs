@@ -154,6 +154,8 @@ fn registry() -> DashboardReplayRegistry {
 
 #[test]
 fn dashboard_projects_all_session_shapes_and_stable_relationships() {
+    // arrange
+    // act
     let model = project(&registry(), &DashboardEligibilityRules::default());
     let statuses = model.rows.iter().map(|row| row.status).collect::<Vec<_>>();
     for status in [
@@ -164,6 +166,7 @@ fn dashboard_projects_all_session_shapes_and_stable_relationships() {
         DashboardStatus::Failed,
         DashboardStatus::Stale,
     ] {
+        // assert
         assert!(statuses.contains(&status));
     }
     assert_eq!(
@@ -191,12 +194,15 @@ fn dashboard_projects_all_session_shapes_and_stable_relationships() {
 
 #[test]
 fn dashboard_sorts_by_status_then_creation_and_falls_back_by_stable_key() {
+    // arrange
+    // act
     let model = project(&registry(), &DashboardEligibilityRules::default());
     let ordered = model
         .rows
         .iter()
         .map(|row| row.selection_key.as_str())
         .collect::<Vec<_>>();
+    // assert
     assert_eq!(
         ordered,
         vec![
@@ -221,6 +227,8 @@ fn dashboard_sorts_by_status_then_creation_and_falls_back_by_stable_key() {
 
 #[test]
 fn dashboard_normalizes_out_of_order_events_and_orphans_deleted_parents() {
+    // arrange
+    // act
     let orphan = session(
         "orphan",
         Some("deleted-parent"),
@@ -236,6 +244,7 @@ fn dashboard_normalizes_out_of_order_events_and_orphans_deleted_parents() {
         &DashboardEligibilityRules::default(),
     );
     let row = model.row("orphan").expect("orphan row");
+    // assert
     assert_eq!(row.status, DashboardStatus::Completed);
     assert_eq!(row.activity.last_event_seq, 3);
     assert_eq!(
@@ -248,6 +257,8 @@ fn dashboard_normalizes_out_of_order_events_and_orphans_deleted_parents() {
 
 #[test]
 fn dashboard_eligibility_is_configurable_without_rendered_string_inspection() {
+    // arrange
+    // act
     let rules = DashboardEligibilityRules {
         include_finished: false,
         include_foreign: false,
@@ -259,6 +270,7 @@ fn dashboard_eligibility_is_configurable_without_rendered_string_inspection() {
         .iter()
         .map(|row| row.selection_key.as_str())
         .collect::<Vec<_>>();
+    // assert
     assert!(!keys.contains(&"finished"));
     assert!(!keys.contains(&"foreign"));
     assert!(
