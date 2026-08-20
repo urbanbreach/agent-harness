@@ -1,6 +1,6 @@
 use super::{
-    EventEnvelopeWithoutSeqV1, EventStore, EventStoreError, EventStream, InMemoryEventStore,
-    JsonlFileEventStore,
+    scan_events_from_cursor, serialize_jsonl_line, EventEnvelopeWithoutSeqV1, EventStore,
+    EventStoreError, EventStream, InMemoryEventStore, JsonlFileEventStore, ScanCursor,
 };
 use crate::event::{ActorKind, EventActor, EventV1, RunStartedEvent, SCHEMA_VERSION};
 use crate::UnwrapOrAbort;
@@ -47,6 +47,47 @@ fn jsonl_append_assigns_monotonic_sequence_numbers() {
 
     assert_eq!(first.seq, 1);
     assert_eq!(second.seq, 2);
+}
+
+#[test]
+fn jsonl_serialization_builds_one_complete_record_buffer() {
+    let envelope = run_started_draft("run_line", 1).with_seq(1);
+
+    let line = serialize_jsonl_line(&envelope).unwrap_or_abort();
+
+    assert_eq!(line.last(), Some(&b'\n'));
+    assert!(!line[..line.len() - 1].contains(&b'\n'));
+    let decoded = serde_json::from_slice::<crate::event::EventEnvelopeV1>(&line).unwrap_or_abort();
+    assert_eq!(decoded, envelope);
+}
+
+#[test]
+fn jsonl_tail_scan_indexes_only_records_after_cursor() {
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
+    let file_path = temp_dir.path().join("events.jsonl");
+    let first =
+        serialize_jsonl_line(&run_started_draft("run_tail", 1).with_seq(1)).unwrap_or_abort();
+    let second =
+        serialize_jsonl_line(&run_started_draft("run_tail", 2).with_seq(2)).unwrap_or_abort();
+    let first_len = u64::try_from(first.len()).unwrap_or_abort();
+    fs::write(&file_path, [first, second].concat()).unwrap_or_abort();
+
+    let scan = scan_events_from_cursor(
+        &file_path,
+        ScanCursor {
+            offset: first_len,
+            next_seq: 2,
+            line: 1,
+        },
+    )
+    .unwrap_or_abort();
+
+    let indexed = scan
+        .index
+        .iter()
+        .map(|entry| (entry.seq, entry.line, entry.offset))
+        .collect::<Vec<_>>();
+    assert_eq!(indexed, vec![(2, 2, first_len)]);
 }
 
 #[test]
@@ -311,6 +352,51 @@ async fn replay_from_seq_returns_expected_suffix() {
     let replayed = collect_stream(store.replay(3).unwrap_or_abort()).await;
     let replayed_seqs: Vec<u64> = replayed.into_iter().map(|event| event.seq).collect();
     assert_eq!(replayed_seqs, vec![3, 4]);
+}
+
+#[tokio::test]
+async fn jsonl_replay_extends_index_from_appended_tail() {
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
+    let run_id = "run_tail_refresh";
+    let store = JsonlFileEventStore::open(temp_dir.path(), run_id, false).unwrap_or_abort();
+    store.append(run_started_draft(run_id, 1)).unwrap_or_abort();
+    let second = serialize_jsonl_line(&run_started_draft(run_id, 2).with_seq(2)).unwrap_or_abort();
+    OpenOptions::new()
+        .append(true)
+        .open(store.file_path())
+        .unwrap_or_abort()
+        .write_all(&second)
+        .unwrap_or_abort();
+
+    let replayed = collect_stream(store.replay(2).unwrap_or_abort()).await;
+    let appended = store.append(run_started_draft(run_id, 3)).unwrap_or_abort();
+
+    let replayed_seqs = replayed.iter().map(|event| event.seq).collect::<Vec<_>>();
+    assert_eq!((replayed_seqs, appended.seq), (vec![2], 3));
+}
+
+#[tokio::test]
+async fn jsonl_replay_repairs_live_partial_tail_before_next_append() {
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
+    let run_id = "run_live_partial_tail";
+    let store = JsonlFileEventStore::open(temp_dir.path(), run_id, false).unwrap_or_abort();
+    store.append(run_started_draft(run_id, 1)).unwrap_or_abort();
+    OpenOptions::new()
+        .append(true)
+        .open(store.file_path())
+        .unwrap_or_abort()
+        .write_all(b"{")
+        .unwrap_or_abort();
+
+    let replayed = collect_stream(store.replay(1).unwrap_or_abort()).await;
+    let appended = store.append(run_started_draft(run_id, 2)).unwrap_or_abort();
+    let contents = fs::read_to_string(store.file_path()).unwrap_or_abort();
+
+    let replayed_seqs = replayed.iter().map(|event| event.seq).collect::<Vec<_>>();
+    assert_eq!(
+        (replayed_seqs, appended.seq, contents.lines().count()),
+        (vec![1], 2, 2)
+    );
 }
 
 #[tokio::test]

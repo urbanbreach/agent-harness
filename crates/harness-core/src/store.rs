@@ -384,6 +384,12 @@ struct EventLogIndexEntry {
     offset: u64,
 }
 
+fn serialize_jsonl_line(envelope: &EventEnvelopeV1) -> Result<Vec<u8>, EventStoreError> {
+    let mut line = serde_json::to_vec(envelope).map_err(EventStoreError::SerializeEnvelope)?;
+    line.push(b'\n');
+    Ok(line)
+}
+
 impl JsonlFileEventStore {
     pub fn open(
         session_dir: impl AsRef<Path>,
@@ -468,14 +474,12 @@ impl EventStore for JsonlFileEventStore {
     ) -> Result<EventEnvelopeV1, EventStoreError> {
         let mut state = lock_state(&self.state)?;
         let envelope = envelope.with_seq(state.next_seq);
-        let serialized =
-            serde_json::to_string(&envelope).map_err(EventStoreError::SerializeEnvelope)?;
+        let record = serialize_jsonl_line(&envelope)?;
         let offset = state.indexed_len;
 
         state
             .file
-            .write_all(serialized.as_bytes())
-            .and_then(|_| state.file.write_all(b"\n"))
+            .write_all(&record)
             .map_err(|source| EventStoreError::WriteLog {
                 path: display_path(&self.file_path),
                 source,
@@ -501,8 +505,7 @@ impl EventStore for JsonlFileEventStore {
         });
         state.indexed_len = state
             .indexed_len
-            .saturating_add(u64::try_from(serialized.len()).unwrap_or(0))
-            .saturating_add(1);
+            .saturating_add(u64::try_from(record.len()).unwrap_or(0));
         drop(state);
 
         let _ = self.tx.send(envelope.clone());
@@ -559,7 +562,28 @@ struct ScanResult {
 }
 
 fn scan_events_from_file(file_path: &Path) -> Result<ScanResult, EventStoreError> {
-    let file = File::open(file_path).map_err(|source| EventStoreError::ReadLog {
+    scan_events_from_cursor(
+        file_path,
+        ScanCursor {
+            offset: 0,
+            next_seq: 1,
+            line: 0,
+        },
+    )
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ScanCursor {
+    offset: u64,
+    next_seq: u64,
+    line: usize,
+}
+
+fn scan_events_from_cursor(
+    file_path: &Path,
+    cursor: ScanCursor,
+) -> Result<ScanResult, EventStoreError> {
+    let mut file = File::open(file_path).map_err(|source| EventStoreError::ReadLog {
         path: display_path(file_path),
         source,
     })?;
@@ -571,13 +595,19 @@ fn scan_events_from_file(file_path: &Path) -> Result<ScanResult, EventStoreError
             source,
         })?;
 
+    file.seek(SeekFrom::Start(cursor.offset))
+        .map_err(|source| EventStoreError::ReadLog {
+            path: display_path(file_path),
+            source,
+        })?;
+
     let mut index = Vec::new();
-    let mut expected_seq = 1;
-    let mut offset = 0_u64;
+    let mut expected_seq = cursor.next_seq;
+    let mut offset = cursor.offset;
 
     let mut reader = BufReader::new(file);
     let mut raw_line = Vec::new();
-    let mut line_number = 0usize;
+    let mut line_number = cursor.line;
     loop {
         raw_line.clear();
         let bytes_read =
@@ -711,10 +741,22 @@ fn replay_events_from_index(
             source,
         })?;
 
-    if current_len != state.indexed_len {
+    if current_len < state.indexed_len {
         let scan = scan_events_from_file(file_path)?;
         state.next_seq = scan.next_seq;
         state.replay_index = scan.index;
+        state.indexed_len = scan.file_len;
+    } else if current_len > state.indexed_len {
+        let scan = scan_events_from_cursor(
+            file_path,
+            ScanCursor {
+                offset: state.indexed_len,
+                next_seq: state.next_seq,
+                line: state.replay_index.len(),
+            },
+        )?;
+        state.next_seq = scan.next_seq;
+        state.replay_index.extend(scan.index);
         state.indexed_len = scan.file_len;
     }
 
