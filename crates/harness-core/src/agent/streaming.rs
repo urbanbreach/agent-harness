@@ -306,19 +306,23 @@ where
         match event {
             ProviderStreamEvent::Start | ProviderStreamEvent::Started { .. } => {}
             ProviderStreamEvent::TextDelta(delta) => {
-                output.push_str(&delta);
-                emit(AgentRuntimeEvent::ProviderStreamDelta {
-                    request_id: request_id.clone(),
-                    delta,
-                })
-                .await;
+                if !delta.is_empty() {
+                    output.push_str(&delta);
+                    emit(AgentRuntimeEvent::ProviderStreamDelta {
+                        request_id: request_id.clone(),
+                        delta,
+                    })
+                    .await;
+                }
             }
             ProviderStreamEvent::ReasoningDelta(delta) => {
-                emit(AgentRuntimeEvent::ProviderReasoningDelta {
-                    request_id: request_id.clone(),
-                    delta,
-                })
-                .await;
+                if !delta.is_empty() {
+                    emit(AgentRuntimeEvent::ProviderReasoningDelta {
+                        request_id: request_id.clone(),
+                        delta,
+                    })
+                    .await;
+                }
             }
             ProviderStreamEvent::ToolCallDelta { .. }
             | ProviderStreamEvent::ToolCallComplete { .. } => {}
@@ -524,21 +528,25 @@ where
         match event {
             ProviderStreamEvent::Start | ProviderStreamEvent::Started { .. } => {}
             ProviderStreamEvent::TextDelta(delta) => {
-                output.push_str(&delta);
-                emit(AgentRuntimeEvent::ProviderStreamDelta {
-                    request_id: provider_request_id.clone(),
-                    delta,
-                })
-                .await;
+                if !delta.is_empty() {
+                    output.push_str(&delta);
+                    emit(AgentRuntimeEvent::ProviderStreamDelta {
+                        request_id: provider_request_id.clone(),
+                        delta,
+                    })
+                    .await;
+                }
             }
             ProviderStreamEvent::ReasoningDelta(delta) => {
-                reasoning.push_str(&delta);
-                reasoning_deltas.push(delta.clone());
-                emit(AgentRuntimeEvent::ProviderReasoningDelta {
-                    request_id: provider_request_id.clone(),
-                    delta,
-                })
-                .await;
+                if !delta.is_empty() {
+                    reasoning.push_str(&delta);
+                    reasoning_deltas.push(delta.clone());
+                    emit(AgentRuntimeEvent::ProviderReasoningDelta {
+                        request_id: provider_request_id.clone(),
+                        delta,
+                    })
+                    .await;
+                }
             }
             ProviderStreamEvent::ToolCallDelta {
                 tool_call_id,

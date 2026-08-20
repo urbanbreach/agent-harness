@@ -127,7 +127,7 @@ mod tests {
         build_provider_context_messages, build_provider_tool_defs,
         project_provider_context_for_prompt, run_multi_turn_streaming,
         tool_result_to_message_content, transform_context_for_provider, AgentModelRef,
-        AgentModelSettings, AgentProfile, AgentRequest, AgentTurnOutcome,
+        AgentModelSettings, AgentProfile, AgentRequest, AgentRuntimeEvent, AgentTurnOutcome,
         MultiTurnStreamingRequest, ProviderBoundaryContext, ProviderBoundaryInput, ProviderContext,
         ProviderContextCheckpointMetadata, ProviderConversationTurn,
         ProviderConversationTurnStatus, MAX_TOOL_CALLS_TOTAL,
@@ -210,6 +210,80 @@ mod tests {
             }
         );
         assert_eq!(*seen_calls.lock().unwrap_or_abort(), 0);
+    }
+
+    #[tokio::test]
+    async fn multi_turn_runner_drops_empty_provider_deltas() {
+        let profile = test_profile();
+        let request = test_request();
+        let tool_registry = test_tool_registry();
+        let tool_defs =
+            build_provider_tool_defs(&profile, tool_registry.as_ref()).unwrap_or_abort();
+        let first_request = completion_request(
+            "model-1",
+            vec![
+                completion_system_message("sys"),
+                completion_user_message("Use a tool"),
+            ],
+            &tool_defs,
+        );
+        let mut scripted = BTreeMap::new();
+        scripted.insert(
+            request_digest(&first_request),
+            vec![
+                harness_providers::ProviderStreamEvent::Start,
+                harness_providers::ProviderStreamEvent::TextDelta(String::new()),
+                harness_providers::ProviderStreamEvent::TextDelta("answer".to_string()),
+                harness_providers::ProviderStreamEvent::ReasoningDelta(String::new()),
+                harness_providers::ProviderStreamEvent::ReasoningDelta("thought".to_string()),
+                harness_providers::ProviderStreamEvent::Done { usage: None },
+            ],
+        );
+        let events = Arc::new(Mutex::new(Vec::new()));
+
+        let outcome = run_multi_turn_streaming(
+            MultiTurnStreamingRequest {
+                provider: Arc::new(MockProvider::new(scripted)),
+                tool_registry,
+                profile: &profile,
+                request_id: "req_empty_deltas".into(),
+                request,
+                prior_context: &ProviderContext::default(),
+            },
+            test_provider_request_ids(),
+            |_tool_id, _args_json| async { Ok(ToolResult::text("unused")) },
+            {
+                let events = Arc::clone(&events);
+                move |event| {
+                    let events = Arc::clone(&events);
+                    async move { events.lock().unwrap_or_abort().push(event) }
+                }
+            },
+        )
+        .await;
+
+        assert_eq!(
+            outcome,
+            AgentTurnOutcome::Succeeded {
+                output: "answer".to_string(),
+                messages: Vec::new(),
+            }
+        );
+        let events = events.lock().unwrap_or_abort();
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(event, AgentRuntimeEvent::ProviderStreamDelta { .. }))
+                .count(),
+            1
+        );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(event, AgentRuntimeEvent::ProviderReasoningDelta { .. }))
+                .count(),
+            1
+        );
     }
 
     #[tokio::test]
