@@ -1118,21 +1118,79 @@ write_signoff_parity_verdict() {
 
   local git_rev
   git_rev="$(git -C "$repo_root" rev-parse HEAD 2>/dev/null || echo 'unknown')"
-  local manifest_path="${repo_root}/docs/reference/tui-reference-parity-manifest.v1.json"
-  local manifest_digest
-  manifest_digest="$(sha256sum "$manifest_path" 2>/dev/null | cut -d' ' -f1 || echo 'missing')"
-  local parity_complete="false"
-  if [[ -f "$manifest_path" ]]; then
-    parity_complete="$(python3 -c 'import json,sys; rows=json.load(open(sys.argv[1]))["rows"]; print("true" if all(row.get("status") in {"pass", "diverged", "excluded"} for row in rows) else "false")' "$manifest_path" 2>/dev/null || echo 'false')"
+  local authority_path="${repo_root}/configs/tui-fidelity-reference-authority.json"
+  local inventory_path="${repo_root}/configs/tui-fidelity-requirement-inventory.json"
+  local coverage_path="${repo_root}/configs/tui-fidelity-coverage-manifest.json"
+  local authority_sha256="missing"
+  local inventory_sha256="missing"
+  local coverage_sha256="missing"
+  if [[ -f "$authority_path" ]]; then
+    authority_sha256="$(sha256sum "$authority_path" | cut -d' ' -f1)"
   fi
+  if [[ -f "$inventory_path" ]]; then
+    inventory_sha256="$(sha256sum "$inventory_path" | cut -d' ' -f1)"
+  fi
+  if [[ -f "$coverage_path" ]]; then
+    coverage_sha256="$(sha256sum "$coverage_path" | cut -d' ' -f1)"
+  fi
+  local parity_complete="false"
+  local verification_receipt_path="${TUI_FIDELITY_ACTIVE_VERIFICATION_RECEIPT-missing}"
+  local verification_receipt_sha256="missing"
 
-  # Fail-closed: PASS requires at least one non-verdict artifact in the evidence dir
   if [[ "$verdict" == "PASS" ]]; then
-    local artifact_count
-    artifact_count="$(find "$artifacts_dir" -type f ! -name 'parity-lane-verdict.txt' | wc -l | tr -d ' ')"
-    if [[ "$artifact_count" -eq 0 ]]; then
+    local completion_fields
+    if completion_fields="$(python3 - "$verification_receipt_path" "$git_rev" "$authority_sha256" "$inventory_sha256" "$coverage_sha256" <<'PY'
+import hashlib
+import json
+import pathlib
+import sys
+
+receipt_path = pathlib.Path(sys.argv[1]).resolve()
+candidate, authority_sha256, inventory_sha256, coverage_sha256 = sys.argv[2:]
+receipt = json.loads(receipt_path.read_text())
+scheduler = receipt.get("scheduler", {})
+key_count = receipt.get("key_count")
+expected = {
+    "candidate_sha": candidate,
+    "authority_sha256": authority_sha256,
+    "inventory_sha256": inventory_sha256,
+    "coverage_sha256": coverage_sha256,
+}
+if (
+    receipt.get("schema_version") != "harness.tui-fidelity.verification.v1"
+    or receipt.get("status") != "passed"
+    or receipt.get("profile") != "all"
+    or receipt.get("sealed") is not True
+    or any(receipt.get(field) != value for field, value in expected.items())
+    or not isinstance(key_count, int)
+    or key_count <= 0
+    or scheduler.get("passed") != key_count
+    or any(scheduler.get(field) != 0 for field in ("failed", "cancelled", "skipped"))
+):
+    raise SystemExit("active verification receipt is not a sealed verify-all result")
+evidence_path = pathlib.Path(receipt["evidence_path"]).resolve()
+if receipt_path != evidence_path / "verification-receipt.json":
+    raise SystemExit("verification receipt is outside its sealed evidence root")
+seal = json.loads((evidence_path / "seal-manifest.json").read_text())
+records = seal.get("records")
+if (
+    seal.get("schema_version") != "harness.tui-fidelity.sealed-evidence.v1"
+    or seal.get("candidate") != candidate
+    or not isinstance(records, list)
+    or len(records) != key_count
+    or any(record.get("state") != "passed" for record in records)
+):
+    raise SystemExit("sealed evidence does not contain one passed record per key")
+print(receipt_path)
+print(hashlib.sha256(receipt_path.read_bytes()).hexdigest())
+PY
+)"; then
+      verification_receipt_path="$(printf '%s\n' "$completion_fields" | sed -n '1p')"
+      verification_receipt_sha256="$(printf '%s\n' "$completion_fields" | sed -n '2p')"
+      parity_complete="true"
+    else
       verdict="FAIL"
-      note="no_evidence_artifacts_in_fresh_root"
+      note="active_sealed_verify_all_receipt_invalid_or_missing"
     fi
   fi
 
@@ -1143,11 +1201,15 @@ verdict=${verdict}
 parity_complete=${parity_complete}
 note=${note}
 git_revision=${git_rev}
-manifest_sha256=${manifest_digest}
+authority_sha256=${authority_sha256}
+inventory_sha256=${inventory_sha256}
+coverage_sha256=${coverage_sha256}
+verification_receipt_path=${verification_receipt_path}
+verification_receipt_sha256=${verification_receipt_sha256}
 owns=dual_binary_cells_and_pixels
 stages=manifest,reference_binary,p0_contract,shell_topology,cells,pixels,first_slice,perm_question,tx_shell,responsive,pty_with_signoff,presentation_telemetry,evidence_provenance
 does_not_own=tui-signoff-manifest.v1.json
-manifest=docs/reference/tui-reference-parity-manifest.v1.json
+completion_authority=active_sealed_verify_all_receipt
 EOF
 }
 

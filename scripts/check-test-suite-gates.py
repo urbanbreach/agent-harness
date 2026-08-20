@@ -555,7 +555,8 @@ def scan_t5_line_budget(root: Path, max_lines: int) -> list[Violation]:
         return []
     total = 0
     for path in sorted(t5_root.glob("**/*.rs")):
-        total += len(path.read_text(errors="ignore").splitlines())
+        if is_t5_path(rel(path, root)):
+            total += len(path.read_text(errors="ignore").splitlines())
     if total <= max_lines:
         return []
     return [
@@ -563,9 +564,7 @@ def scan_t5_line_budget(root: Path, max_lines: int) -> list[Violation]:
             "t5-line-budget",
             rel(t5_root, root),
             0,
-            f"{total} total Rust lines > {max_lines}; measured with "
-            "`find crates/harness-testkit/tests -name '*.rs' "
-            "-exec wc -l {{}} +`",
+            f"{total} T5 signoff Rust lines > {max_lines}",
         )
     ]
 
@@ -932,8 +931,11 @@ def self_test() -> int:
         )
         t5_dir = root / "crates" / "harness-testkit" / "tests"
         t5_dir.mkdir(parents=True)
-        _ = (t5_dir / "t5_smoke.rs").write_text(
+        _ = (t5_dir / "pty_e2e.rs").write_text(
             "#[test]\nfn t5_smoke_runs() {}\n"
+        )
+        _ = (t5_dir / "deterministic_test.rs").write_text(
+            "#[test]\nfn deterministic_test_runs() {}\n" + "// filler\n" * 3
         )
 
         source_test_dir = root / "crates" / "demo" / "src"
@@ -956,7 +958,13 @@ def self_test() -> int:
             "---\nsource: crates/demo/tests/slow.rs\n"
             "expression: old\n---\nold\n"
         )
-        violations = run_gates(root, GATES, DEFAULT_MAX_LINES, 1)
+        if scan_t5_line_budget(root, 2):
+            print(
+                "self-test counted non-T5 harness-testkit tests in T5 budget",
+                file=sys.stderr,
+            )
+            return 1
+        violations = run_gates(root, GATES, 600, 1)
         gates = {violation.gate for violation in violations}
         expected = {
             "no-sleeps", "no-global-state", "no-real-world-deps",

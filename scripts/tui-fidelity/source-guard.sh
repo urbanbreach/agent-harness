@@ -59,10 +59,26 @@ tracked_source_hash() {
   while IFS= read -r -d '' path; do
     paths+=("$path")
   done < <(source_paths "$root" "$kind")
-  (
-    cd -- "$root"
-    sha256sum -- "${paths[@]}"
-  ) | LC_ALL=C sort | sha256sum | awk '{print $1}'
+  for path in "${paths[@]}"; do
+    if [[ -e "$root/$path" ]]; then
+      printf '%s  %s\0' "$(sha256sum "$root/$path" | awk '{print $1}')" "$path"
+    else
+      printf 'deleted  %s\0' "$path"
+    fi
+  done | LC_ALL=C sort -z | sha256sum | awk '{print $1}'
+}
+
+untracked_manifest_hash() {
+  local root="$1"
+  local path
+  while IFS= read -r -d '' path; do
+    printf '%s  %s\0' "$(sha256sum "$root/$path" | awk '{print $1}')" "$path"
+  done < <(git_value "$root" ls-files --others --exclude-standard -z) \
+    | LC_ALL=C sort -z | sha256sum | awk '{print $1}'
+}
+
+dirty_diff_hash() {
+  git_value "$1" diff --binary HEAD -- | sha256sum | awk '{print $1}'
 }
 
 assert_tracked_symlinks_resolve() {
@@ -81,15 +97,18 @@ assert_reference_source_unchanged() {
     || fail "reference source mutation detected: $root"
 }
 
-reference_snapshot() {
+source_snapshot() {
   local root="$1"
+  local kind="$2"
   local status_hash
-  status_hash="$(git_value "$root" status --porcelain=v1 --untracked-files=all | sha256sum | awk '{print $1}')"
-  printf '%s|%s|%s|%s\n' \
+  status_hash="$(git_value "$root" status --porcelain=v1 --untracked-files=all -z | sha256sum | awk '{print $1}')"
+  printf '%s|%s|%s|%s|%s|%s\n' \
     "$(git_value "$root" rev-parse HEAD)" \
     "$(git_value "$root" rev-parse 'HEAD^{tree}')" \
     "$status_hash" \
-    "$(tracked_source_hash "$root" reference)"
+    "$(tracked_source_hash "$root" "$kind")" \
+    "$(dirty_diff_hash "$root")" \
+    "$(untracked_manifest_hash "$root")"
 }
 
 path_is_within() {
@@ -182,43 +201,55 @@ done
 assert_tracked_symlinks_resolve "$harness_root"
 assert_tracked_symlinks_resolve "$reference_root"
 
-readonly before="$(reference_snapshot "$reference_root")"
-IFS='|' read -r reference_head reference_tree reference_status_sha256 reference_source_sha256 <<<"$before"
-readonly harness_head="$(git_value "$harness_root" rev-parse HEAD)"
-readonly harness_status_sha256="$(git_value "$harness_root" status --porcelain=v1 --untracked-files=all | sha256sum | awk '{print $1}')"
-readonly harness_source_sha256="$(tracked_source_hash "$harness_root" harness)"
+readonly reference_before="$(source_snapshot "$reference_root" reference)"
+readonly harness_before="$(source_snapshot "$harness_root" harness)"
+IFS='|' read -r reference_head reference_tree reference_status_sha256 reference_source_sha256 reference_dirty_diff_sha256 reference_untracked_manifest_sha256 <<<"$reference_before"
+IFS='|' read -r harness_head harness_tree harness_status_sha256 harness_source_sha256 harness_dirty_diff_sha256 harness_untracked_manifest_sha256 <<<"$harness_before"
+readonly harness_clean="$(if [[ -z "$(git_value "$harness_root" status --porcelain=v1 --untracked-files=all)" ]]; then printf true; else printf false; fi)"
 readonly harness_lock_sha256="$(sha256sum "$harness_root/Cargo.lock" | awk '{print $1}')"
 readonly harness_toolchain_sha256="$(sha256sum "$harness_root/rust-toolchain.toml" | awk '{print $1}')"
+readonly harness_cargo_config_path="$harness_root/.cargo/config.toml"
+readonly harness_cargo_config_sha256="$(if [[ -f "$harness_cargo_config_path" ]]; then sha256sum "$harness_cargo_config_path" | awk '{print $1}'; fi)"
 readonly reference_lock_sha256="$(sha256sum "$reference_root/Cargo.lock" | awk '{print $1}')"
-readonly reference_toolchain_path="$(git_value "$reference_root" ls-files | awk '/(^|\/)rust-toolchain(\.toml)?$/ {print; exit}')"
+readonly reference_toolchain_path="$(git_value "$reference_root" ls-files | awk '/(^|\/)rust-toolchain(\.toml)?$/ && !found {print; found=1}')"
 [[ -n "$reference_toolchain_path" ]] || fail "reference toolchain manifest is missing"
 readonly reference_toolchain_sha256="$(sha256sum "$reference_root/$reference_toolchain_path" | awk '{print $1}')"
+readonly reference_cargo_config_path="$(git_value "$reference_root" ls-files | awk '/(^|\/)\.cargo\/config(\.toml)?$/ && !found {print; found=1}')"
+readonly reference_cargo_config_sha256="$(if [[ -n "$reference_cargo_config_path" ]]; then sha256sum "$reference_root/$reference_cargo_config_path" | awk '{print $1}'; fi)"
 readonly rustc_version="$(rustc --version)"
 readonly cargo_version="$(cargo --version)"
-readonly after="$(reference_snapshot "$reference_root")"
-[[ "$before" == "$after" ]] || fail "reference source mutation detected during verification"
+readonly reference_after="$(source_snapshot "$reference_root" reference)"
+[[ "$reference_before" == "$reference_after" ]] || fail "reference source mutation detected during verification"
 
 receipt="${receipt:-$evidence_root/receipt.json}"
 generated_receipt="$(mktemp)"
 trap 'rm -f -- "$generated_receipt"' EXIT
 jq -n \
-  --arg schema "harness.tui-fidelity.source-guard.v1" \
+  --arg schema "harness.tui-fidelity.source-guard.v2" \
   --arg reference "$reference_root" \
   --arg revision "$reference_head" \
   --arg tree "$reference_tree" \
   --arg reference_status_sha256 "$reference_status_sha256" \
   --arg reference_source_sha256 "$reference_source_sha256" \
+  --arg reference_dirty_diff_sha256 "$reference_dirty_diff_sha256" \
+  --arg reference_untracked_manifest_sha256 "$reference_untracked_manifest_sha256" \
   --arg reference_lock_sha256 "$reference_lock_sha256" \
   --arg reference_toolchain_sha256 "$reference_toolchain_sha256" \
+  --arg reference_cargo_config_sha256 "$reference_cargo_config_sha256" \
   --arg harness "$harness_root" \
   --arg harness_revision "$harness_head" \
+  --arg harness_tree "$harness_tree" \
   --arg harness_status_sha256 "$harness_status_sha256" \
   --arg harness_source_sha256 "$harness_source_sha256" \
+  --arg harness_dirty_diff_sha256 "$harness_dirty_diff_sha256" \
+  --arg harness_untracked_manifest_sha256 "$harness_untracked_manifest_sha256" \
   --arg harness_lock_sha256 "$harness_lock_sha256" \
   --arg harness_toolchain_sha256 "$harness_toolchain_sha256" \
+  --arg harness_cargo_config_sha256 "$harness_cargo_config_sha256" \
+  --argjson harness_clean "$harness_clean" \
   --arg rustc "$rustc_version" \
   --arg cargo "$cargo_version" \
-  '{schema: $schema, reference: {path: $reference, revision: $revision, tree: $tree, status_sha256: $reference_status_sha256, source_sha256: $reference_source_sha256, cargo_lock_sha256: $reference_lock_sha256, toolchain_sha256: $reference_toolchain_sha256, clean_pre: true, clean_post: true}, harness: {path: $harness, revision: $harness_revision, status_sha256: $harness_status_sha256, source_sha256: $harness_source_sha256, cargo_lock_sha256: $harness_lock_sha256, toolchain_sha256: $harness_toolchain_sha256}, tools: {rustc: $rustc, cargo: $cargo}}' \
+  '{schema: $schema, reference: {path: $reference, revision: $revision, tree: $tree, status_sha256: $reference_status_sha256, source_sha256: $reference_source_sha256, dirty_diff_sha256: $reference_dirty_diff_sha256, untracked_manifest_sha256: $reference_untracked_manifest_sha256, cargo_lock_sha256: $reference_lock_sha256, toolchain_sha256: $reference_toolchain_sha256, cargo_config_sha256: (if $reference_cargo_config_sha256 == "" then null else $reference_cargo_config_sha256 end), clean_pre: true, clean_post: true}, harness: {path: $harness, revision: $harness_revision, tree: $harness_tree, status_sha256: $harness_status_sha256, source_sha256: $harness_source_sha256, dirty_diff_sha256: $harness_dirty_diff_sha256, untracked_manifest_sha256: $harness_untracked_manifest_sha256, cargo_lock_sha256: $harness_lock_sha256, toolchain_sha256: $harness_toolchain_sha256, cargo_config_sha256: (if $harness_cargo_config_sha256 == "" then null else $harness_cargo_config_sha256 end), clean_pre: $harness_clean, clean_post: $harness_clean}, tools: {rustc: $rustc, cargo: $cargo}}' \
   >"$generated_receipt"
 
 if [[ -n "$receipt" ]]; then
