@@ -827,11 +827,8 @@ fn live_freeze_primary_shortcut_disclosure_row(
         ),
         Span::styled(":newline", normal),
         Span::styled("  │  ", dim),
-        Span::styled(
-            freeze_preferred_binding(app, Action::VariantCycle, "Shift+Tab"),
-            bold,
-        ),
-        Span::styled(":mode", normal),
+        Span::styled(freeze_preferred_binding(app, Action::Help, "Ctrl+x"), bold),
+        Span::styled(":shortcuts", normal),
     ]
 }
 

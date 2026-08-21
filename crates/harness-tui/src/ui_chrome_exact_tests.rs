@@ -766,10 +766,18 @@ fn compact_draft_footer_keeps_reference_hints_without_context_metadata() {
         // act
         let submit = rendered.find("Enter:send");
         let newline = rendered.find("Alt+Enter:newline");
-        let mode = rendered.find("Shift+Tab:mode");
+        let trailing = rendered.find(if width == 60 {
+            "Ctrl+x:shortcuts"
+        } else {
+            "Shift+Tab:mode"
+        });
         // assert
         assert!(
-            matches!((submit, newline, mode), (Some(a), Some(b), Some(c)) if a < b && b < c),
+            matches!((submit, newline, trailing), (Some(a), Some(b), Some(c)) if a < b && b < c),
+            "{width}x{height}\n{rendered}"
+        );
+        assert!(
+            rendered.contains("Ctrl+x:shortcuts"),
             "{width}x{height}\n{rendered}"
         );
         assert!(
