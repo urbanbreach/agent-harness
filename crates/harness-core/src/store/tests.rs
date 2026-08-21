@@ -1,6 +1,6 @@
 use super::{
-    scan_events_from_cursor, serialize_jsonl_line, EventEnvelopeWithoutSeqV1, EventStore,
-    EventStoreError, EventStream, InMemoryEventStore, JsonlFileEventStore, ScanCursor,
+    decode_jsonl_line, scan_events_from_cursor, serialize_jsonl_line, EventEnvelopeWithoutSeqV1,
+    EventStore, EventStoreError, EventStream, InMemoryEventStore, JsonlFileEventStore, ScanCursor,
 };
 use crate::event::{ActorKind, EventActor, EventV1, RunStartedEvent, SCHEMA_VERSION};
 use crate::UnwrapOrAbort;
@@ -59,6 +59,15 @@ fn jsonl_serialization_builds_one_complete_record_buffer() {
     assert!(!line[..line.len() - 1].contains(&b'\n'));
     let decoded = serde_json::from_slice::<crate::event::EventEnvelopeV1>(&line).unwrap_or_abort();
     assert_eq!(decoded, envelope);
+}
+
+#[test]
+fn jsonl_line_decode_borrows_the_read_buffer() {
+    let raw_line = b"{\"seq\":1}\r\n";
+
+    let decoded = decode_jsonl_line(raw_line, Path::new("events.jsonl")).unwrap_or_abort();
+
+    assert_eq!(decoded.as_ptr(), raw_line.as_ptr());
 }
 
 #[test]

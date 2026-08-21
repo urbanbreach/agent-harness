@@ -712,7 +712,10 @@ fn append_missing_jsonl_newline(file_path: &Path) -> Result<(), EventStoreError>
         })
 }
 
-fn decode_jsonl_line(raw_line: &[u8], file_path: &Path) -> Result<String, EventStoreError> {
+fn decode_jsonl_line<'line>(
+    raw_line: &'line [u8],
+    file_path: &Path,
+) -> Result<&'line str, EventStoreError> {
     let mut line = raw_line;
     if let Some(stripped) = line.strip_suffix(b"\n") {
         line = stripped;
@@ -721,7 +724,7 @@ fn decode_jsonl_line(raw_line: &[u8], file_path: &Path) -> Result<String, EventS
         }
     }
 
-    String::from_utf8(line.to_vec()).map_err(|source| EventStoreError::ReadLog {
+    std::str::from_utf8(line).map_err(|source| EventStoreError::ReadLog {
         path: display_path(file_path),
         source: std::io::Error::new(std::io::ErrorKind::InvalidData, source),
     })
@@ -779,16 +782,26 @@ fn replay_events_from_index(
         })?;
 
     let mut events = Vec::new();
-    for (expected_seq, (offset_index, line_result)) in
-        (first_entry.seq..).zip(BufReader::new(file).lines().enumerate())
-    {
-        let line_number = first_entry.line + offset_index;
-        let line = line_result.map_err(|source| EventStoreError::ReadLog {
-            path: display_path(file_path),
-            source,
-        })?;
+    let mut expected_seq = first_entry.seq;
+    let mut line_number = first_entry.line.saturating_sub(1);
+    let mut reader = BufReader::new(file);
+    let mut raw_line = Vec::new();
+    loop {
+        raw_line.clear();
+        let bytes_read =
+            reader
+                .read_until(b'\n', &mut raw_line)
+                .map_err(|source| EventStoreError::ReadLog {
+                    path: display_path(file_path),
+                    source,
+                })?;
+        if bytes_read == 0 {
+            break;
+        }
+        line_number += 1;
+        let line = decode_jsonl_line(&raw_line, file_path)?;
         let event: EventEnvelopeV1 =
-            serde_json::from_str(&line).map_err(|source| EventStoreError::InvalidJsonLine {
+            serde_json::from_str(line).map_err(|source| EventStoreError::InvalidJsonLine {
                 line: line_number,
                 source,
             })?;
@@ -800,6 +813,7 @@ fn replay_events_from_index(
             });
         }
         events.push(event);
+        expected_seq += 1;
     }
 
     Ok(events)
