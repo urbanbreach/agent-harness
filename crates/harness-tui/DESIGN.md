@@ -548,6 +548,10 @@ product identity, but the visible transition semantics are binding:
   carry distinct live state. An empty unfocused composer collapses to one row.
   At 20 rows or fewer optional vertical padding is removed; at 16 rows or fewer
   tips, disclosure, redundant status spacing, and bottom margins are suppressed.
+- **Pinned shortcut discovery.** When the live-draft shortcut row exceeds the
+  available width, its compact fallback keeps complete submit, newline, and
+  shortcuts/help pairs. This matches the reference bar's pinned-help behavior
+  without partially clipping a lower-priority hint on narrow terminals.
 - **Normalized scroll streams.** Raw direction-only terminal mouse reports form
   streams separated by 80 ms. Terminal and multiplexer profiles, automatic or
   forced wheel/trackpad mode, fractional line carry, duplicate-safe interval
