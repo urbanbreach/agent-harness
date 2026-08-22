@@ -128,6 +128,15 @@ Shell contract:
 - **States**: queued, running, waiting, succeeded, failed, and cancelled each use an explicit lifecycle glyph; color and motion remain supplementary.
 - **Accessibility**: state must remain distinguishable in reduced-color terminals and ASCII glyph mode.
 
+### Detached transcript return
+
+- **Reference contract**: Grok Build `xai-grok-pager` renders a centered `▼` in the dedicated row after scrollback whenever follow mode is detached and content remains below; one cell is painted inside a centered three-cell pointer target, muted at rest and brighter on hover.
+- **Structure**: one `▼` painted at `x + width / 2` in the transcript viewport's reserved final row, with a three-cell horizontal hit target centered on the glyph.
+- **States**: hidden while following, at the bottom, or without overflow; secondary text at rest; primary text on hover.
+- **Interaction**: pointer activation jumps to the transcript bottom and restores follow mode for live and settled turns alike; keyboard scroll-to-bottom remains the authoritative equivalent.
+- **Accessibility**: hover changes color only as supplementary feedback; the glyph and keyboard path remain available without color or pointer input.
+- **Layout**: transcript-owned post-scrollback gap row; it does not reserve composer space or change transcript measurement.
+
 ## 6. Motion & Interaction
 
 - Motion is frame-based and meaningful: spinners indicate foreground work; pulse glyphs indicate monitored/background work.
@@ -135,6 +144,7 @@ Shell contract:
 - Confirmation and transient states must remain readable without relying on animation timing.
 - Reduced-motion mode uses stable glyphs while preserving labels and state colors.
 - Keyboard interaction is authoritative; mouse hover may enrich feedback but never reveal the only path.
+- Detached transcript return feedback is immediate: the centered `▼` brightens on hover and activation restores follow mode in one action.
 
 ## 7. Depth & Surface
 
