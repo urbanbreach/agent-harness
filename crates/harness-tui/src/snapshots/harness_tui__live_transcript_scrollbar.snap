@@ -1,6 +1,5 @@
 ---
 source: crates/harness-tui/src/lib_tests/transcript_flow.rs
-assertion_line: 148
 expression: rendered
 ---
 
@@ -25,4 +24,4 @@ expression: rendered
   │ ❯                                                                        │
   ╰─────────────────────────────────────────────────────────── gpt-5.4-mini ─╯
 
-  Shift+Tab:mode  │  Ctrl+x:shortcuts
+  Enter:send  │  Ctrl+x:shortcuts
