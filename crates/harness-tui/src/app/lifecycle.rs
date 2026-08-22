@@ -1102,11 +1102,6 @@ impl AppState {
         self.now_fn = Arc::new(move || now);
     }
 
-    #[cfg(test)]
-    pub(crate) fn clear_prompt_hint_for_test() -> &'static str {
-        CLEAR_PROMPT_HINT
-    }
-
     pub(crate) fn runtime_state_activity(&self) -> Option<&ActivityEntry> {
         let hidden_child_request_ids = self.hidden_delegated_child_request_ids_in_current_view();
         self.activities

@@ -71,7 +71,11 @@ pub(super) fn startup_surface_projects_clipboard_capability() {
             panel_row > hint_row,
             "welcome panel overlaps warning at {width}x{height}"
         );
-        assert!(rendered[1].contains(" test-workspace"));
+        assert!(rendered[1].contains("git:test-workspace"));
+        assert!(
+            !rendered[1].contains(''),
+            "default breadcrumb must not require a private-use font glyph"
+        );
         assert!(rendered[1].contains("/workspace/agent-harness"));
     }
 

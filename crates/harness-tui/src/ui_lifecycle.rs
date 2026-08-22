@@ -194,7 +194,7 @@ fn startup_breadcrumb_parts(app: &AppState) -> (String, String) {
     if let Some((path, branch)) = label.rsplit_once(':') {
         let branch = branch.trim();
         if !branch.is_empty() && !branch.contains('/') && !branch.contains('\\') {
-            return (format!("   {branch}"), path.to_owned());
+            return (format!("  git:{branch}"), path.to_owned());
         }
     }
     (format!("  {label}"), String::new())
@@ -206,7 +206,7 @@ fn live_breadcrumb_text(app: &AppState, width: u16) -> String {
     if let Some((path, branch)) = label.rsplit_once(':') {
         let branch = branch.trim();
         if !branch.is_empty() && !branch.contains('/') && !branch.contains('\\') {
-            return format!("{prefix} {branch} {path}");
+            return format!("{prefix}git:{branch} {path}");
         }
     }
     format!("{prefix}{label}")
@@ -976,7 +976,7 @@ mod breadcrumb_token_meta_tests {
         // arrange
         // act
         // assert
-        let packed = pack_breadcrumb_line("   main ~/proj", Some("12K / 262K"), 40);
+        let packed = pack_breadcrumb_line("  git:main ~/proj", Some("12K / 262K"), 40);
         assert!(packed.ends_with("12K / 262K"), "packed={packed:?}");
         assert_eq!(super::super::display_width(&packed), 40);
         assert!(
@@ -990,7 +990,7 @@ mod breadcrumb_token_meta_tests {
         // arrange
         // act
         // assert
-        let packed = pack_breadcrumb_line("   main ~/very/long/path/here", None, 20);
+        let packed = pack_breadcrumb_line("  git:main ~/very/long/path/here", None, 20);
         assert_eq!(super::super::display_width(&packed), 20);
         assert!(
             packed.starts_with("  "),
