@@ -52,7 +52,7 @@ coord/
 | Permissions/questions | `permission.rs`, `question.rs` | `cargo nextest run -p harness-core --test permission_policy_supports_native_tool_permission_kinds_test` |
 | Task/background lifecycle | `task_lifecycle.rs`, `background_notifications.rs` | `cargo nextest run -p harness-tools --test native_agent_spawn_and_batch_preserve_lineage_permissions_and_order_test` |
 | Session compaction/context | `session_compaction.rs`, `compaction/`, `compaction_support.rs`, `provider_context/`, `agent_turn_completion.rs` | `cargo nextest run -p harness-core --test coord_test compaction` |
-| Prompt queue drain | `prompt_queue_drain.rs` | `cargo nextest run -p harness-core --test prompt_queue_compaction_memory_parity_test` |
+| Prompt queue drain | `prompt_queue_drain.rs` | `cargo nextest run -p harness-core --test memory_queue_compaction_test` |
 | Replay metadata | `tool_metadata.rs`, `event_helpers.rs` | `cargo nextest run -p harness-core --test native_metadata_replay_test` |
 | Snapshots/reverts | `snapshot.rs`, `revert.rs` | `cargo nextest run -p harness-core --test coord_test workspace` |
 

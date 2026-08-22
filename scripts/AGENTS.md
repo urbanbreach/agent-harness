@@ -14,7 +14,7 @@
 | Branding/source-term gate | `check-forbidden-branding.py` | Forbidden source-brand terms and allowlist handling. |
 | Coverage ratchet | `coverage-ratchet.sh` | `cargo-llvm-cov` line coverage artifact and baseline comparison. |
 | Perf artifacts | `check-perf-artifacts.py` | Freshness/provenance checks for perf lane outputs. |
-| Nextest profiles | none | No repository-local `nextest.toml` or `[metadata.nextest]`; lanes currently pass `--profile ci` / `--profile perf`, so profile-argument changes must update scripts, CI, and testing docs together. |
+| Nextest profiles | `../.config/nextest.toml` | Defines default overrides plus `ci` and `perf`; profile changes must update scripts, CI, and testing docs together. |
 
 ## CONVENTIONS
 - `test-lanes.sh` writes `<artifact-root>/summary.txt`, `<artifact-root>/env.txt`, and per-stage `command.txt`, `stdout.txt`, `stderr.txt`, `status.txt`, `verification.txt`.

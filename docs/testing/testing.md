@@ -141,9 +141,9 @@ scripts/test-lanes.sh coverage
 
 `coverage` delegates to `scripts/coverage-ratchet.sh`, which requires `cargo-llvm-cov`, writes
 `target/coverage/lcov.info` and `target/coverage/summary.txt`, and compares aggregate line coverage
-at two-decimal precision against the source-controlled ratchet seed in
-`docs/test-suite-coverage-baseline.txt` by default. Override `COVERAGE_BASELINE_PATH` only for local
-experiments; a missing custom baseline records a new seed.
+at two-decimal precision against `docs/testing/test-suite-coverage-baseline.txt` by default. When the
+baseline is absent, the lane records the current value as a new seed. Override
+`COVERAGE_BASELINE_PATH` only for local experiments.
 
 ## Deterministic simulation lane
 
@@ -450,7 +450,7 @@ Current invariant owners:
 | Native tool catalog and stable public tool IDs | `cargo nextest run -p harness-tools` |
 | Doctor/support catalog metadata and redaction | `cargo nextest run -p harness --test config_schema_cli_test doctor_cli`; `cargo nextest run -p harness --test replay_sessions_cli_test sessions_export_cli_support_includes_readiness_and_config_summaries`; `cargo nextest run -p harness --test replay_sessions_cli_test sessions_export_cli_redacts_support_bundle_secret_shapes` |
 | Provider serialization, replay-only cassettes, redaction, and checkpoint accounting | `cargo nextest run -p harness-providers --test openai_compatible_serializes_native_tool_schema_without_alias_dupes_test`; `cargo nextest run -p harness-providers --test recorded_test`; `cargo nextest run -p harness-testkit --test secretscan_test` |
-| Offline deterministic simulation matrix, semantic predicates, same-seed normalization, artifact index, and simulation redaction | `scripts/test-lanes.sh simulation`; `cargo nextest run -p harness-testkit --test simulation_validator_test`; `cargo run -p harness-testkit --bin simulation_evidence -- --artifact-root <dir> --matrix docs/simulation-matrix.json --baseline-events <events.jsonl> --baseline-replay <replay.json> --repeat-events <events.jsonl> --repeat-replay <replay.json> --seed 0` |
+| Offline deterministic simulation matrix, semantic predicates, same-seed normalization, artifact index, and simulation redaction | `scripts/test-lanes.sh simulation`; `cargo nextest run -p harness-testkit --test simulation_validator_test`; `cargo run -p harness-testkit --bin simulation_evidence -- --artifact-root <dir> --matrix docs/testing/simulation-matrix.json --baseline-events <events.jsonl> --baseline-replay <replay.json> --repeat-events <events.jsonl> --repeat-replay <replay.json> --seed 0` |
 | Config/event docs drift and public schema generation | `cargo nextest run -p harness --test config_docs_reference_test`; `cargo nextest run -p harness --test event_docs_reference_test`; `cargo nextest run -p harness --test config_schema_cli_test` |
 | Deterministic UI content rendering, transcript layout, and navigation | `cargo nextest run -p harness-tui --test deterministic_render_test`; `cargo nextest run -p harness-tui --test lineage_view_model_test`; `cargo nextest run -p harness-tui --test model_switcher_metadata_test`; `cargo nextest run -p harness-tui --test session_navigation_keybindings_test`; `cargo nextest run -p harness-tui --test pty_e2e` as the fail-closed helper lane |
 | TUI visual/provenance flow coverage | `cargo nextest run -p harness-tui --test deterministic_render_test`; `env RUST_TEST_THREADS=1 cargo nextest run -p harness-testkit --test pty_e2e --test-threads 1`; `scripts/test-lanes.sh signoff-pty` |

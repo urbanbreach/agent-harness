@@ -3573,10 +3573,6 @@ impl AppState {
         !self.launch_metadata.has_provider()
     }
 
-    // -----------------------------------------------------------------------
-    // Scrollback test helpers (compilation shims for scrollback_state_test)
-    // -----------------------------------------------------------------------
-
     /// Record the maximum scroll offset for the current transcript content.
     pub fn record_transcript_max_scroll(&mut self, max_scroll: usize) {
         self.transcript_view.record_measured_max_scroll(max_scroll);
@@ -3653,10 +3649,6 @@ impl AppState {
             self.transcript_view.transcript_scroll = 0;
         }
     }
-
-    // -----------------------------------------------------------------------
-    // Tool output fold test helpers (compilation shims for scrollback_state_test)
-    // -----------------------------------------------------------------------
 
     /// Toggle the expansion state of a single tool output by id.
     pub fn toggle_tool_output_for_test(&mut self, tool_call_id: &str) {

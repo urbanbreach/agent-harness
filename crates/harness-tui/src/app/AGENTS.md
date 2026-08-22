@@ -1,7 +1,7 @@
 # AGENTS: crates/harness-tui/src/app
 
 ## OVERVIEW
-App state machine modules for live/replay/startup TUI state: event projection, interaction reducer, composer, session navigation, permissions, model/auth toggles, transcript state, and host/operator probe state.
+App state machine modules for live/replay/startup TUI state: event projection, composer interaction, session navigation, permissions, model/auth toggles, transcript state, and host/operator probe state.
 
 Read `../../AGENTS.md` first. Rendering stays in `../ui*.rs`; layout/theme math stays in `../layout.rs` and `../theme.rs`; overlay render owners live in `../ui_overlays/AGENTS.md`.
 
@@ -9,18 +9,18 @@ Read `../../AGENTS.md` first. Rendering stays in `../ui*.rs`; layout/theme math 
 | Area | Location | Role |
 |------|----------|------|
 | Aggregate state | `../app.rs` | `AppState`, event ingestion, overlay stack, Deref onto `SessionProjection`. |
-| Interaction | `key_interaction.rs`, `mouse_interaction.rs`, `interaction_reducer/` | Key/mouse intent reduction, render purity, transition tables. |
-| Lifecycle | `lifecycle.rs`, `recovery_state.rs`, `pending_live.rs`, `motion.rs`, `secondary_surfaces.rs` | `Focus`, `ShellKind`, `ReviewSurface`, `UiIntent`, startup/post-run and secondary-surface state. |
+| Interaction | `key_interaction.rs`, `mouse_interaction.rs`, `../composer_integration/interaction/` | Key/mouse intent reduction and composer transition tables. |
+| Lifecycle | `lifecycle.rs`, `pending_live.rs`, `motion.rs`, `secondary_surfaces.rs` | `Focus`, `ShellKind`, `ReviewSurface`, `UiIntent`, startup/post-run and secondary-surface state. |
 | Projection | `session_projection.rs`, `session_projection/` | Events → activities, pending permissions, compaction state, memory caps. Sole event-derived truth. |
 | Activity/tool rows | `activity.rs`, `tool_call.rs`, `tool_output.rs`, `child_session.rs` | Task/tool/message state shown by transcript and sidebar renderers. |
 | Permissions/questions | `permissions.rs`, `permissions/`, `permission_prompt.rs`, `question_prompt.rs` | Pending → decision/confirm → resolved modal lifecycle. |
 | Session navigation | `session_stack.rs`, `session_navigation.rs`, `session_history.rs`, `session_pins.rs`, `session_live_routing.rs`, `lineage.rs` | Parent/child stack, saved sessions, lineage browser, fork/clone state. |
-| Composer | `composer.rs`, `composer_editing.rs`, `prompt_input.rs`, `prompt_history.rs`, `prompt_stash*.rs`, `file_mentions.rs`, `palette_controller.rs`, `footer_state.rs` | Prompt buffer, history, stashing, mentions, submission helpers. |
+| Composer | `composer.rs`, `composer_editing.rs`, `prompt_input.rs`, `prompt_history.rs`, `prompt_stash*.rs`, `file_mentions.rs`, `palette_controller.rs` | Prompt buffer, history, stashing, mentions, submission helpers. |
 | Model/auth/toggles | `model_metadata.rs`, `model_switcher.rs`, `model_favorites.rs`, `auth_dialog*`, `auth_display.rs`, `toggles.rs` | Runtime choices and overlay state backing. |
-| Operator probe state | `operator_sidebar.rs`, `shell_status.rs`, `terminal_diagnostics.rs`, `terminal_panel.rs`, `workspace_display.rs`, `notifications.rs`, `tips.rs`, `footer_state.rs` | Host/MCP/LSP/workspace status surfacing for status dialog and secondary panels. |
+| Operator probe state | `operator_sidebar.rs`, `terminal_diagnostics.rs`, `terminal_panel.rs`, `workspace_display.rs`, `notifications.rs`, `tips.rs` | Host/MCP/LSP/workspace status surfacing for status dialog and secondary panels. |
 | Auxiliary dialogs | `settings_editor.rs`, `memory_browser.rs`, `plan_view.rs`, `new_worktree_dialog.rs`, `worktree_picker.rs`, `foreign_import.rs`, `session_slash.rs` | Overlay state backing rendered by `../ui_overlays/`. |
 | Transcript state | `transcript_state.rs`, `transcript_view.rs`, `transcript_viewport.rs`, `transcript_cache.rs` | Scroll, selection, expansion, cache epoch. |
-| Tests | `tests.rs`, `tests/`, `exact_tests.rs` | In-crate unit/integration suites and exact-render helpers. |
+| Tests | `tests.rs`, `tests/` | In-crate unit and integration suites. |
 
 ## INTERMODULE CONTRACTS
 - Mutate events/activities through `AppState::ingest_event`, `replace_events`, or `SessionProjection` helpers; do not write projection fields ad hoc.
@@ -30,7 +30,7 @@ Read `../../AGENTS.md` first. Rendering stays in `../ui*.rs`; layout/theme math 
 - `UiIntent` additions require runtime intent handling, key/command routing, and deterministic render coverage.
 - Prompt history/stash/favorites paths are session-derived local state; do not treat them as replay artifacts.
 - Operator probe state (MCP/LSP/workspace/todos) is display data for secondary surfaces; keep it in app state, never recomputed by renderers.
-- Interaction changes must keep the reducer render-purity contract green (`interaction_reducer/render_purity.rs`).
+- Composer interaction changes must keep `composer_integration_test` and the in-crate interaction suites green.
 
 ## TESTS
 ```bash

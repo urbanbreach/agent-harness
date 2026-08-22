@@ -29,10 +29,6 @@ junit = { path = "target/nextest/perf/junit.xml" }
 [test-groups.process-global-state]
 max-threads = 1
 
-[[profile.default.overrides]]
-filter = 'test(dual_binary_cli_pty_ctrl_s_resumes_seeded_session)'
-slow-timeout = { period = "10s", terminate-after = 12 }
-
 # The recorded happy path is a three-scenario PTY composite. It can hit a
 # transient harness/TUI stall; give it enough outer time so the internal
 # 20s marker timeout can print the stuck phase and screen before nextest

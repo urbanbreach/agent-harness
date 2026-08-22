@@ -565,8 +565,8 @@ terminal envelopes or 2 ms; fairness permits live progress without reordering in
 retains the 16 live / 8 ms budget boundary. The scheduler uses independent 16 ms flush, 80 ms lazy
 scroll-gesture, and 33 ms animation clocks and keeps the one-frame acknowledgement rule.
 
-Packet 2 QA exercises typing, wheel input, disclosure open/close, five resizes, and semantic
-cancellation while the isolated `packet2-sustained-stream` SSE fixture still has ready deltas. Its
+Runtime scheduling QA exercises typing, wheel input, disclosure open/close, resizes, and semantic
+cancellation while live work remains pending. Its
 Harness-only scheduling sidecar records decisions, depths, preemptions, deadlines, action IDs, and
 cause IDs; it does not contain provider or terminal text. Both runtimes remain observable through
 `external_pty_observed`; only Harness may claim `native_completed_write` after write and flush.

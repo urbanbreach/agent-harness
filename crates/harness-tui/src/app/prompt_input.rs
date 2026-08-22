@@ -665,13 +665,6 @@ impl AppState {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Paste contract unit tests — the integration test (prompt_editor_test.rs)
-// cannot call the pub(crate) handle_paste entry point from outside the crate.
-// These tests preserve the D-section paste/input behavior assertions here so
-// they compile and run against the real paste path for Todo 13.
-// ---------------------------------------------------------------------------
-
 #[cfg(test)]
 mod paste_tests {
     #![allow(

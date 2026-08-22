@@ -134,7 +134,6 @@ T5_PATH_PARTS: Final[tuple[str, ...]] = (
     "crates/harness/tests/pty_happy_path_recorded.rs",
     "crates/harness-tui/tests/pty_e2e.rs",
     "crates/harness-tui/tests/support/pty_e2e_impl.rs",
-    "crates/harness-tui/tests/support/visual_renderer.rs",
 )
 
 HOST_PATH_LITERAL: Final[re.Pattern[str]] = re.compile(

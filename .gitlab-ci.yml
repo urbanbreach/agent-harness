@@ -54,7 +54,7 @@ variables:
   expire_in: 1 week
   paths:
     - target/coverage/
-    - docs/test-suite-coverage-baseline.txt
+    - docs/testing/test-suite-coverage-baseline.txt
 
 .pty_visual_artifacts_always: &pty_visual_artifacts_always
   when: always

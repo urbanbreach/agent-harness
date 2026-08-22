@@ -12,7 +12,7 @@ Read `../AGENTS.md` first. TUI shell/render contracts live in `../../harness-tui
 | Live proxy | `README.live-proxy.md`, `live_proxy_e2e.rs` | Ignored, env-gated preflight and narrow live signoff wrappers. |
 | Native visual | `native_visual_e2e.rs` | Ignored local display/capture signoff; screenshot provenance only. |
 | Simulation | `simulation_validator_test.rs`, `support/simulation_validator.rs` | Validates the matrix, events, reports, and expected artifacts. |
-| Dependency/secret/focus | `tui_dependency_audit_test.rs`, `secretscan_test.rs`, `focus_region_test.rs` | Dependency inventory, artifact scanning, focus-region math. |
+| Secret/focus | `secretscan_test.rs`, `focus_region_test.rs` | Artifact scanning and focus-region math. |
 | Shared support | `support/` | Repo roots, fixtures, lifecycle cases, verification obligations, staging helpers. |
 
 ## LANE AND ENV CONTRACT
