@@ -672,7 +672,8 @@ fn live_empty_state_uses_shared_startup_copy_without_mode_badges() {
     assert!(demo_debug.contains('╭') || demo_debug.contains('╰'));
     assert!(demo_debug.contains("model-1") || demo_debug.contains("worker"));
     assert!(!demo_debug.contains("Session"));
-    assert!(!demo_debug.contains("Start a conversation to begin"));
+    assert!(demo_debug.contains("Start a conversation to begin"));
+    assert!(demo_debug.contains("inspect src/ui.rs"));
     assert!(!demo_debug.contains("Demo mode · mock provider"));
 
     let mut mock = AppState::new_live(None, false, None);
@@ -684,7 +685,8 @@ fn live_empty_state_uses_shared_startup_copy_without_mode_badges() {
     assert!(mock_debug.contains('❯'));
     assert!(mock_debug.contains("model-1") || mock_debug.contains("worker"));
     assert!(!mock_debug.contains("Session"));
-    assert!(!mock_debug.contains("Start a conversation to begin"));
+    assert!(mock_debug.contains("Start a conversation to begin"));
+    assert!(mock_debug.contains("review the latest edit"));
     assert!(!mock_debug.contains("Mock mode · mock provider"));
     assert!(!mock_debug.contains("Launch: worker · model-1 · Mock"));
 }

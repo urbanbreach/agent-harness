@@ -945,6 +945,43 @@ pub(super) fn render_live_empty_state(
         Block::default().style(Style::default().bg(theme.surface.canvas)),
         area,
     );
+
+    let surface = crate::layout::live_empty_state_area(area, theme);
+    let copy = theme.live_shell.empty_state;
+    let show_examples = surface.width >= 32 && surface.height >= 7;
+    let mut lines = vec![
+        Line::from(Span::styled(
+            copy.title,
+            Style::default()
+                .fg(theme.text.primary)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(
+            copy.value_prop,
+            Style::default().fg(theme.text.secondary),
+        )),
+    ];
+    if show_examples {
+        lines.push(Line::from(""));
+        lines.extend(copy.example_prompts.into_iter().map(|example| {
+            Line::from(vec![
+                Span::styled("-  ", Style::default().fg(theme.text.secondary)),
+                Span::styled(example.prompt, Style::default().fg(theme.text.secondary)),
+            ])
+        }));
+    }
+    let content = crate::layout::centered_overlay_area(
+        surface,
+        surface.width,
+        u16::try_from(lines.len()).unwrap_or(u16::MAX),
+    );
+    frame.render_widget(
+        Paragraph::new(lines)
+            .alignment(Alignment::Center)
+            .style(Style::default().bg(theme.surface.canvas)),
+        content,
+    );
 }
 
 pub(super) fn live_empty_state_selection_surface(
