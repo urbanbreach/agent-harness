@@ -189,13 +189,19 @@ pub(super) fn render_footer(
         return;
     }
 
-    if app.startup_shell_visible() {
+    let clear_prompt_confirmation_pending = app.clear_prompt_confirmation_pending();
+    if app.startup_shell_visible() && !clear_prompt_confirmation_pending {
         render_startup_footer(frame, app, text_area, theme);
         return;
     }
 
     let mut footer_hints = app.footer_hints_view_model();
-    if !app.replay_mode
+    if clear_prompt_confirmation_pending {
+        footer_hints.hints = vec![crate::view_model::FooterHint {
+            action: crate::keybindings::Action::DismissModal,
+            label: ":press again to clear",
+        }];
+    } else if !app.replay_mode
         && !app.startup_shell_visible()
         && app.composer.prompt_buffer.is_empty()
         && !app.completed_session_shell_active()
@@ -269,7 +275,11 @@ pub(super) fn render_footer(
         if i > 0 {
             hint_spans.push(Span::styled("  │  ", dim_style));
         }
-        let key_str = composer_footer_binding(app, hint.action);
+        let key_str = if clear_prompt_confirmation_pending {
+            "Esc".to_string()
+        } else {
+            composer_footer_binding(app, hint.action)
+        };
         if key_str != "-" {
             hint_spans.push(Span::styled(key_str, key_style));
             hint_spans.push(Span::styled(hint.label.to_string(), label_style));

@@ -21,6 +21,8 @@ use crate::theme::Theme;
 
 #[path = "ui_chrome.rs"]
 mod ui_chrome;
+#[path = "ui_context_budget.rs"]
+mod ui_context_budget;
 #[path = "ui_diff.rs"]
 mod ui_diff;
 #[path = "ui_fenced_text.rs"]

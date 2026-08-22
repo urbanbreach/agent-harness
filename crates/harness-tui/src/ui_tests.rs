@@ -21,6 +21,99 @@ fn render_debug(app: &AppState, width: u16, height: u16) -> String {
     format!("{:?}", terminal.backend().buffer())
 }
 
+fn render_live_status_debug(app: &AppState, width: u16) -> String {
+    use ratatui::{backend::TestBackend, Terminal};
+
+    let backend = TestBackend::new(width, 1);
+    let mut terminal = Terminal::new(backend).unwrap_or_abort();
+    terminal
+        .draw(|frame| {
+            ui_live_turn_status::render_live_turn_status(
+                frame,
+                app,
+                Rect::new(0, 0, width, 1),
+                app.theme(),
+            );
+        })
+        .unwrap_or_abort();
+    format!("{:?}", terminal.backend().buffer())
+}
+
+fn app_with_context_budget(tokens: u32) -> AppState {
+    let mut option = ModelOption::from_model_ref("worker", "mock:model-1");
+    option.context_window_tokens = Some(128_000);
+    let mut app = AppState::new_live(None, false, None);
+    app.startup_mode = false;
+    app.set_launch_metadata(LaunchMetadata::from_model_option(&option));
+    app.active_context_usage = Some(crate::app::ActiveContextUsage::estimate(tokens));
+    app
+}
+
+#[test]
+fn idle_control_dock_renders_context_budget_meter() {
+    // Given: an idle live shell with a known context limit and warning-level usage.
+    let mut app = app_with_context_budget(96_000);
+    app.composer.prompt_buffer = "draft".to_string();
+    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
+
+    // When: the full live shell is rendered at a wide viewport.
+    let debug = render_debug(&app, 140, 30);
+
+    // Then: idle dock chrome shows the used/limit label, percentage, and six-cell meter.
+    assert!(
+        debug.contains("ctx 96.0K/128.0K 75% [#####-]"),
+        "idle context budget meter should remain visible\n{debug}"
+    );
+}
+
+#[test]
+fn clear_confirmation_keeps_context_budget_disclosure_stable() {
+    // arrange
+    let mut app = app_with_context_budget(96_000);
+    app.focus = crate::app::Focus::Prompt;
+    app.composer.prompt_buffer = "draft".to_string();
+    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
+    app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+
+    // act
+    let debug = render_debug(&app, 140, 30);
+
+    // assert
+    assert!(
+        debug.contains("ctx 96.0K/128.0K 75% [#####-]")
+            && debug.contains("Esc:press again to clear"),
+        "confirmation must take over only the footer while context remains stable\n{debug}"
+    );
+}
+
+#[test]
+fn live_turn_status_renders_context_budget_meter() {
+    // Given: a streaming live turn with known critical context pressure.
+    let mut app = app_with_context_budget(116_000);
+    app.ingest_event(envelope(
+        1,
+        "req_context_meter",
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "req_context_meter".into(),
+            provider_id: "mock".to_string(),
+            model_id: "model-1".to_string(),
+            prompt_summary: "continue".to_string(),
+            request_digest: "digest-context-meter".to_string(),
+            metadata: None,
+        }),
+    ));
+    app.active_context_usage = Some(crate::app::ActiveContextUsage::estimate(116_000));
+
+    // When: only the live-turn status owner renders at full width.
+    let debug = render_live_status_debug(&app, 140);
+
+    // Then: live-turn chrome shows the same meter and critical percentage.
+    assert!(
+        debug.contains("ctx 116.0K/128.0K 91% [######]"),
+        "live status context budget meter should remain visible\n{debug}"
+    );
+}
+
 #[test]
 fn copied_to_clipboard_toast_renders_in_live_shell() {
     // arrange
