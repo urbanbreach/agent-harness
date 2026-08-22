@@ -2,7 +2,7 @@
 
 ## 1. Atmosphere & Identity
 
-Harness is a quiet, terminal-native command center: dense enough for active agent work, calm enough for long sessions, and explicit about what the runtime is doing. Its signature is stateful chrome: the transcript remains primary while compact shell rows reveal focus, progress, safety state, and the next useful action. Harness keeps its own name, neutral surfaces, blue system accent, and event-sourced operator language.
+Harness is a quiet, terminal-native command center: dense enough for active agent work, calm enough for long sessions, and explicit about what the runtime is doing. Its signature is stateful chrome: the transcript remains primary while compact shell rows reveal focus, progress, safety state, and the next useful action. Harness keeps its own name, neutral surfaces, blue system accent, and event-sourced operator language. Grok Build is a reference for compact keyboard-first hierarchy and status legibility only; Harness does not adopt its name, logo, copy, or palette.
 
 ## 2. Color
 
@@ -80,6 +80,14 @@ Shell contract:
 - **Accessibility**: keyboard-complete; focus remains visible; no status relies on color alone.
 - **Layout**: scroll-body shell; transcript is the sole primary scroll owner.
 
+### Live empty state
+
+- **Structure**: compact centered Harness identity, one direct value statement, and up to three static prompt examples above the composer.
+- **Variants**: full examples when the transcript region has room; title and value statement only in compact geometry.
+- **States**: visible only before the first activity and while the composer is empty; disappears as soon as work or drafting begins.
+- **Interaction**: examples are inspiration, not controls; they never imply mouse-only actions or steal composer focus.
+- **Layout**: chromeless and width-capped by the existing empty-state geometry so the composer remains the primary action.
+
 ### Composer
 
 - **Structure**: focus rail/border, document input, model and mode metadata, contextual hints.
@@ -111,6 +119,13 @@ Shell contract:
 - **States**: idle, drafting, queued, replay, disabled, clear-confirmation pending.
 - **Interaction**: pending confirmation replaces unrelated hints with `Esc:press again to clear` until completed or expired.
 - **Accessibility**: only currently valid actions are advertised; complete help access survives compact modes.
+- **Idle priority**: derive all labels from the active keymap and advertise send, mode, and shortcuts; compact modes preserve send and shortcuts first.
+
+### Tool activity marker
+
+- **Structure**: one fixed-width semantic glyph plus the existing title, path metadata, subtitle, and disclosure state.
+- **States**: queued, running, waiting, succeeded, failed, and cancelled each use an explicit lifecycle glyph; color and motion remain supplementary.
+- **Accessibility**: state must remain distinguishable in reduced-color terminals and ASCII glyph mode.
 
 ## 6. Motion & Interaction
 
