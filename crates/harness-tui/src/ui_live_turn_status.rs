@@ -13,6 +13,7 @@ use crate::{
 
 use super::{
     ui_chrome::{display_width, truncate_plain_text},
+    ui_context_budget::ContextBudget,
     ui_transcript_style::{monitor_pulse_frame, transcript_streaming_spinner_frame},
 };
 
@@ -170,6 +171,27 @@ pub(super) fn render_live_turn_status(
     let reserved_left = spinner_width
         .saturating_add(full_label_width)
         .saturating_add(if phase_visible { phase_width } else { 0 });
+    let context_budget = ContextBudget::from_app(app);
+    let mut context_label = None;
+    if let Some(budget) = context_budget.as_ref() {
+        for candidate in [budget.full_label(), budget.compact_label()] {
+            if context_label.as_deref() == Some(candidate) {
+                continue;
+            }
+            let control_count = usize::from(stop_visible) + usize::from(background_visible);
+            let insert_at = right_parts.len().saturating_sub(control_count);
+            right_parts.insert(insert_at, candidate.to_string());
+            if reserved_left
+                .saturating_add(right_width(&right_parts))
+                .saturating_add(1)
+                <= usize::from(area.width)
+            {
+                context_label = Some(candidate.to_string());
+                break;
+            }
+            right_parts.remove(insert_at);
+        }
+    }
     for candidate in [total, tokens].into_iter().flatten() {
         let control_count = usize::from(stop_visible) + usize::from(background_visible);
         let insert_at = right_parts.len().saturating_sub(control_count);
@@ -234,6 +256,8 @@ pub(super) fn render_live_turn_status(
         stop_visible,
         background_hovered: app.live_turn_background_hovered(),
         stop_hovered: app.live_turn_stop_hovered(),
+        context_label: context_label.as_deref(),
+        context_tone: context_budget.as_ref().map(ContextBudget::tone),
     }
     .into_spans(theme);
     frame.render_widget(
