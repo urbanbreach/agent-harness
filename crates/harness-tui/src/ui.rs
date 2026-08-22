@@ -91,6 +91,9 @@ mod ui_transcript_mermaid_art;
 mod ui_transcript_page_flip;
 #[path = "ui_transcript_scrollbar.rs"]
 mod ui_transcript_scrollbar;
+#[cfg(test)]
+#[path = "ui_transcript_scrollbar_hover_tests.rs"]
+mod ui_transcript_scrollbar_hover_tests;
 #[path = "ui_transcript_selection.rs"]
 mod ui_transcript_selection;
 #[path = "ui_transcript_style.rs"]
