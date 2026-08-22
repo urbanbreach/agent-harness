@@ -13,7 +13,7 @@ pub(super) fn live_shell_type_first_input_snapshot() {
     assert!(!rendered.contains("Waiting for first turn…"));
     assert!(rendered.contains("draft prompt"));
     assert!(!rendered.contains("┌Session"));
-    assert!(!rendered.contains("Start a conversation to begin"));
+    assert!(!rendered.contains("Build, inspect, or fix this workspace."));
     assert_live_shell_document_composer_contract(
         &app,
         80,

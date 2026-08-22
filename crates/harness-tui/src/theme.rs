@@ -505,6 +505,7 @@ pub struct EmptyStateTokens {
     pub max_width: u16,
     pub title: &'static str,
     pub value_prop: &'static str,
+    pub example_label: &'static str,
     pub example_prompts: [EmptyStatePrompt; 3],
     pub demo_mode_label: &'static str,
     pub mock_mode_label: &'static str,
@@ -1188,7 +1189,8 @@ impl Theme {
         empty_state: EmptyStateTokens {
             max_width: 62,
             title: "Harness",
-            value_prop: "Start a conversation to begin",
+            value_prop: "Build, inspect, or fix this workspace.",
+            example_label: "Try a prompt",
             example_prompts: [
                 EmptyStatePrompt {
                     prompt: "inspect src/ui.rs",

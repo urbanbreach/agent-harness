@@ -3,6 +3,7 @@ use super::*;
 
 use crate::welcome_surface::{WelcomeFocus, WelcomeLayout};
 use ratatui::widgets::{BorderType, Clear};
+use unicode_width::UnicodeWidthStr;
 
 #[path = "app/first_prompt.rs"]
 #[allow(
@@ -95,13 +96,23 @@ fn render_lifecycle_copy_line(
     );
 }
 
-pub(super) fn live_empty_state_visible(app: &AppState) -> bool {
+pub(crate) fn live_empty_state_visible(app: &AppState) -> bool {
     !app.replay_mode
         && !app.startup_shell_visible()
         && app.activities.is_empty()
         && app.active_permission_view().is_none()
         && app.transcript_pending_permissions().is_empty()
         && app.composer.prompt_buffer.is_empty()
+}
+
+pub(crate) fn live_empty_composer_guidance_visible(app: &AppState) -> bool {
+    live_empty_state_visible(app)
+        && app.events.is_empty()
+        && !app.completed_session_shell_active()
+        && !app.composer_disabled()
+        && app.review_surface().is_none()
+        && !app.overlay_state().command_palette_channel_visible()
+        && !app.overlay_state().permission_pending
 }
 
 pub(super) fn startup_shell_visible(app: &AppState) -> bool {
@@ -948,7 +959,7 @@ pub(super) fn render_live_empty_state(
 
     let surface = crate::layout::live_empty_state_area(area, theme);
     let copy = theme.live_shell.empty_state;
-    let show_examples = surface.width >= 32 && surface.height >= 7;
+    let show_examples = surface.width >= 32 && surface.height >= 8;
     let mut lines = vec![
         Line::from(Span::styled(
             copy.title,
@@ -963,11 +974,27 @@ pub(super) fn render_live_empty_state(
         )),
     ];
     if show_examples {
+        let example_width = copy
+            .example_prompts
+            .iter()
+            .map(|example| UnicodeWidthStr::width(example.prompt))
+            .max()
+            .unwrap_or(0);
         lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            copy.example_label,
+            Style::default().fg(theme.text.tertiary),
+        )));
         lines.extend(copy.example_prompts.into_iter().map(|example| {
+            let trailing_padding =
+                " ".repeat(example_width.saturating_sub(UnicodeWidthStr::width(example.prompt)));
             Line::from(vec![
-                Span::styled("-  ", Style::default().fg(theme.text.secondary)),
+                Span::styled(
+                    format!("{}  ", theme.live_shell.transcript_glyphs.user_marker),
+                    Style::default().fg(theme.text.accent),
+                ),
                 Span::styled(example.prompt, Style::default().fg(theme.text.secondary)),
+                Span::raw(trailing_padding),
             ])
         }));
     }

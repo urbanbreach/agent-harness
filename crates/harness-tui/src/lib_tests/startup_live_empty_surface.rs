@@ -105,7 +105,7 @@ pub(super) fn live_empty_state_uses_shared_startup_copy_without_mode_badges() {
     assert!(demo_rendered.contains('╭') || demo_rendered.contains('╰'));
     assert!(demo_rendered.contains("model-1") || demo_rendered.contains("worker"));
     assert!(!demo_rendered.contains("Session"));
-    assert!(demo_rendered.contains("Start a conversation to begin"));
+    assert!(demo_rendered.contains("Build, inspect, or fix this workspace."));
     assert!(demo_rendered.contains("inspect src/ui.rs"));
     assert!(!demo_rendered.contains("Demo mode · mock provider"));
 
@@ -118,7 +118,7 @@ pub(super) fn live_empty_state_uses_shared_startup_copy_without_mode_badges() {
     assert!(mock_rendered.contains('❯'));
     assert!(mock_rendered.contains("model-1") || mock_rendered.contains("worker"));
     assert!(!mock_rendered.contains("Session"));
-    assert!(mock_rendered.contains("Start a conversation to begin"));
+    assert!(mock_rendered.contains("Build, inspect, or fix this workspace."));
     assert!(mock_rendered.contains("review the latest edit"));
     assert!(!mock_rendered.contains("Mock mode · mock provider"));
 }
@@ -140,11 +140,16 @@ pub(super) fn live_empty_state_snapshot_renders_input_first_shell() {
     assert!(!rendered.contains('┌'));
     assert!(rendered.contains('❯'));
     assert!(rendered.contains('╭') || rendered.contains('╰'));
-    assert!(rendered.contains("Start a conversation to begin"));
+    assert!(rendered.contains("Build, inspect, or fix this workspace."));
+    assert!(rendered.contains("Try a prompt"));
     assert!(rendered.contains("trace the failing test"));
     assert!(!rendered.contains("Enter send · Shift+Enter/Ctrl+j newline · ↑/↓ history"));
     assert!(!rendered.contains("Type to start a new session."));
-    assert!(!rendered.contains("Ask Harness to inspect, edit, or explain…"));
+    assert!(rendered.contains("Ask Harness to inspect, edit, or explain…"));
+    assert!(
+        rendered.matches('❯').count() >= 4,
+        "empty state should use the prompt glyph for three examples and the composer\n{rendered}"
+    );
 }
 
 pub(super) fn live_empty_state_disappears_after_first_activity() {
@@ -245,7 +250,7 @@ pub(super) fn startup_home_matches_live_empty_shell_language() {
 
     assert!(!startup_render.contains("Dispatch a new run"));
     assert!(!startup_render.contains("Launch: worker · model-1"));
-    assert!(live_render.contains("Start a conversation to begin"));
+    assert!(live_render.contains("Build, inspect, or fix this workspace."));
     assert!(!live_render.contains("Session"));
     assert!(!startup_render.contains("● Tip"));
     assert!(!live_render.contains("Waiting for first turn…"));

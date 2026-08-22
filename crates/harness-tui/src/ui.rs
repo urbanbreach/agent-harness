@@ -115,9 +115,10 @@ use ui_chrome::{
 pub(crate) use ui_chrome::{subagent_footer_target_at, SubagentFooterTarget};
 pub(crate) use ui_diff::structured_diff_stats;
 pub(super) use ui_lifecycle::render_startup_lifecycle_surface;
+pub(crate) use ui_lifecycle::{live_empty_composer_guidance_visible, live_empty_state_visible};
 use ui_lifecycle::{
-    live_empty_state_visible, live_transcript_area_with_breadcrumb, render_live_breadcrumb,
-    render_live_empty_state, startup_shell_visible,
+    live_transcript_area_with_breadcrumb, render_live_breadcrumb, render_live_empty_state,
+    startup_shell_visible,
 };
 pub(crate) use ui_live_turn_status::{
     live_turn_background_rect, live_turn_stop_rect, live_turn_watching_rect,

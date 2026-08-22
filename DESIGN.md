@@ -82,7 +82,7 @@ Shell contract:
 
 ### Live empty state
 
-- **Structure**: compact centered Harness identity, one direct value statement, and up to three static prompt examples above the composer.
+- **Structure**: compact centered Harness identity, one direct value statement, and up to three static prompt examples introduced by a tertiary label and the canonical prompt glyph above the composer.
 - **Variants**: full examples when the transcript region has room; title and value statement only in compact geometry.
 - **States**: visible only before the first activity and while the composer is empty; disappears as soon as work or drafting begins.
 - **Interaction**: examples are inspiration, not controls; they never imply mouse-only actions or steal composer focus.
@@ -95,6 +95,7 @@ Shell contract:
 - **States**: empty, drafting, queued, submitting, clear-confirmation pending.
 - **Interaction**: destructive clearing uses a two-step confirmation; while pending, the footer replaces ordinary hints with the exact next action.
 - **Accessibility**: explicit key labels and visible mode/focus treatment; no hidden mouse-only action.
+- **Empty guidance**: an enabled empty composer names the primary action in muted text; mode-specific guidance replaces it in shell mode, and typing removes it immediately.
 
 ### Live-turn status
 
