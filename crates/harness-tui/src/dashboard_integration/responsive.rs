@@ -78,6 +78,20 @@ pub fn dashboard_viewport(root: Rect) -> Option<Rect> {
     ))
 }
 
+pub fn dashboard_content_viewport(root: Rect) -> Option<Rect> {
+    let overlay = dashboard_viewport(root)?;
+    let horizontal_inset = 2.min(overlay.width.saturating_sub(1));
+    let content = Rect::new(
+        overlay.x.saturating_add(horizontal_inset),
+        overlay.y.saturating_add(1),
+        overlay
+            .width
+            .saturating_sub(horizontal_inset.saturating_mul(2)),
+        overlay.height.saturating_sub(2),
+    );
+    (content.width > 0 && content.height > 0).then_some(content)
+}
+
 impl DashboardLayout {
     pub fn visible_panes(&self) -> Vec<DashboardPane> {
         let all = self.visibility.visible();

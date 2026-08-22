@@ -22,8 +22,9 @@ pub use overlays::{
     DashboardModal, DashboardModalKind, DashboardOverlayRoute, DashboardOverlayState,
 };
 pub use responsive::{
-    dashboard_viewport, layout_for_rect, DashboardBreakpoint, DashboardHooks, DashboardLayout,
-    DashboardNotification, DashboardNotificationKind, DashboardPaneVisibility,
+    dashboard_content_viewport, dashboard_viewport, layout_for_rect, DashboardBreakpoint,
+    DashboardHooks, DashboardLayout, DashboardNotification, DashboardNotificationKind,
+    DashboardPaneVisibility,
 };
 pub use state::{DashboardIntegrationError, DashboardIntegrationParts, DashboardReturnState};
 

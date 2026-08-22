@@ -274,7 +274,6 @@ pub use worktree_picker::WorktreePickerState;
 const TOOL_OUTPUT_DISPLAY_MAX_CHARS: usize = 100;
 
 const CLEAR_PROMPT_CONFIRM_TIMEOUT: Duration = Duration::from_millis(800);
-const CLEAR_PROMPT_HINT: &str = "press again to clear";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum OperatorSidebarSection {
@@ -900,7 +899,7 @@ impl AppState {
 
     pub fn open_status_dashboard_at(&mut self, frame_area: Rect) {
         self.last_frame_area = Some(frame_area);
-        let viewport = crate::dashboard_integration::dashboard_viewport(frame_area)
+        let viewport = crate::dashboard_integration::dashboard_content_viewport(frame_area)
             .unwrap_or(Rect::new(0, 0, 100, 36));
         let return_focus = self.focus;
         match self.build_dashboard_integration(viewport) {
@@ -1072,7 +1071,7 @@ impl AppState {
         let return_state = current.leave();
         let viewport = self
             .last_frame_area
-            .and_then(crate::dashboard_integration::dashboard_viewport)
+            .and_then(crate::dashboard_integration::dashboard_content_viewport)
             .unwrap_or(Rect::new(0, 0, 100, 36));
         if let Ok(mut next) = self.build_dashboard_integration(viewport) {
             next.capture_return_state(return_state);
