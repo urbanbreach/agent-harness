@@ -3,7 +3,7 @@ source: crates/harness-tui/src/lib_tests/transcript_flow.rs
 expression: "render_live_lines(&app, 80, 24)"
 ---
                                                                                 
-   test-workspace /workspace/agent-harness                                     
+  git:test-workspace /workspace/agent-harness                                   
                                                                                 
      transcript remains visible                                                 
                                                                                 

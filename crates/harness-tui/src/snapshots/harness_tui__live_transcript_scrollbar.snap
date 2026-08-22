@@ -4,7 +4,7 @@ assertion_line: 148
 expression: rendered
 ---
 
-   test-workspace /workspace/agent-harness
+  git:test-workspace /workspace/agent-harness
 
 
 
