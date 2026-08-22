@@ -306,8 +306,7 @@ pub(crate) fn assert_live_shell_document_composer_contract(
             input_row
         }
         None => {
-            let legacy_markers = [
-                "Ask Harness to inspect, edit, or explain…",
+            let contextual_markers = [
                 "Queue the next turn while this one finishes…",
                 "Ask Harness what to retry, inspect, or fix…",
                 "Draft preserved locally while recovery completes.",
@@ -317,8 +316,16 @@ pub(crate) fn assert_live_shell_document_composer_contract(
             assert!(
                 !lines[composer_first_row..=composer_last_row]
                     .iter()
-                    .any(|line| legacy_markers.iter().any(|marker| line.contains(marker))),
-                "live composer should stay blank when no draft is present\n{rendered}"
+                    .any(|line| contextual_markers.iter().any(|marker| line.contains(marker))),
+                "live composer should use one stable empty-state action instead of lifecycle prose\n{rendered}"
+            );
+            let guidance_visible = crate::ui::live_empty_composer_guidance_visible(app);
+            assert_eq!(
+                lines[composer_first_row..=composer_last_row]
+                    .iter()
+                    .any(|line| line.contains("Ask Harness to inspect, edit, or explain…")),
+                guidance_visible,
+                "empty-composer guidance should appear only on the fresh live surface\n{rendered}"
             );
             composer_first_row
         }

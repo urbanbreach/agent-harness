@@ -135,7 +135,7 @@ pub(super) fn composer_metadata_omits_profile_and_keeps_model_and_source_labels(
 
     // Then: model/source metadata remains visible without exposing the profile label.
     assert!(rendered.contains("GPT-5.4 Mini"), "{rendered}");
-    assert!(!rendered.contains("Build"), "{rendered}");
+    assert!(!rendered.contains("Deep Agent"), "{rendered}");
     assert_eq!(app.current_source_label().as_deref(), Some("CLIProxyAPI"));
 }
 

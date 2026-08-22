@@ -70,13 +70,26 @@ pub(crate) fn render_bordered_composer(
         .max(1);
     let max_visible = usize::from(inner.height.min(content_lines).max(1));
     let show_cursor = !context.dock.composer_disabled && focused;
+    let live_empty_guidance = crate::ui::live_empty_composer_guidance_visible(app);
+    let fallback_placeholder = if focused { "" } else { "Build anything" };
+    let placeholder = if context.dock.variant == crate::view_model::ControlDockVariant::Startup {
+        fallback_placeholder
+    } else if context.dock.composer_disabled || !composer_empty {
+        fallback_placeholder
+    } else if live_empty_guidance {
+        "Ask Harness to inspect, edit, or explain…"
+    } else if app.shell_mode() && focused {
+        "run a shell command…"
+    } else {
+        fallback_placeholder
+    };
     let Some(resolved) = super::presentation::resolve_composer(
         app,
         &composer_text,
         context.dock.composer_focused,
         context.dock.composer_disabled,
         context.dock.variant == crate::view_model::ControlDockVariant::Startup,
-        if focused { "" } else { "Build anything" },
+        placeholder,
         draft_width,
         max_visible,
         strip.height,
