@@ -473,7 +473,8 @@ impl AppState {
         }
         self.last_frame_area = Some(area);
         if let Some(dashboard) = self.dashboard.as_mut() {
-            let viewport = crate::dashboard_integration::dashboard_viewport(area).unwrap_or(area);
+            let viewport =
+                crate::dashboard_integration::dashboard_content_viewport(area).unwrap_or(area);
             if let Err(error) = dashboard.resize(viewport) {
                 self.status_banner = Some(error.to_string());
             }

@@ -118,6 +118,9 @@ impl DashboardInputRouter {
         if event.code == KeyCode::Char('f') && event.modifiers == KeyModifiers::CONTROL {
             return DashboardInput::Search(search_context(pane));
         }
+        if event.code == KeyCode::Char('h') && event.modifiers == KeyModifiers::NONE {
+            return DashboardInput::Help;
+        }
         match self.keymap.get_action(&event) {
             Some(Action::Help) => DashboardInput::Help,
             Some(Action::SubmitPrompt) if pane == DashboardPane::Reply => DashboardInput::Reply,
