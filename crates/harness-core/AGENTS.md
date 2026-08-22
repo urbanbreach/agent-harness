@@ -15,9 +15,9 @@ Read root `AGENTS.md` first for search scope, cross-crate invariants, and comman
 | Permissions | `src/perm.rs`, `src/perm/`, `src/coord/permission.rs` | Capability-to-permission-kind mapping and policy resolution. |
 | Tool contracts | `src/tool.rs` | Tool traits, capabilities, canonical ids, artifact store. |
 | Config | `src/config.rs`, `src/config/`, `src/config/AGENTS.md` | Public contract, settings registry/write, discovery, validation, model/provider registries. |
-| Auth/OAuth | `src/auth/`, `src/browser_oidc*.rs`, `src/mcp_oauth*.rs`, `src/sleep_wake_auth.rs`, `src/model_resolution.rs`, `src/config/model_*` | Stored auth, OAuth flows, sleep/wake parity, catalog metadata, variants, capability inference. |
+| Auth/OAuth | `src/auth/`, `src/browser_oidc*.rs`, `src/mcp_oauth*.rs`, `src/sleep_wake_auth.rs`, `src/model_resolution.rs`, `src/config/model_*` | Stored auth, OAuth flows, sleep/wake behavior, catalog metadata, variants, capability inference. |
 | Projections | `src/proj.rs`, `src/proj/`, `src/transcript_projection.rs`, `src/transcript_projection/` | Pure replay/UI/resume/export/debugging views. |
-| Memory/prompt queue | `src/memory.rs`, `src/memory/`, `src/prompt_queue.rs`, `src/prompt_rewind.rs` | Durable scoped memory, prompt queue persistence/ordering/drain, compaction parity. |
+| Memory/prompt queue | `src/memory.rs`, `src/memory/`, `src/prompt_queue.rs`, `src/prompt_rewind.rs` | Durable scoped memory, prompt queue persistence/ordering/drain, and compaction behavior. |
 | Worktrees/VCS | `src/worktree.rs`, `src/cow_worktree.rs`, `src/vcs.rs`, `src/jujutsu.rs` | Worktree snapshots, VCS integration and trust. |
 | Sandbox/trust | `src/sandbox.rs`, `src/sandbox/`, `src/folder_trust.rs` | Network/worktree confinement, folder trust. |
 | Cron/scheduler | `src/cron_schedule.rs`, `src/cron_execute.rs`, `src/sched.rs`, `src/scheduler_leaf.rs` | Recurring schedules, task scheduling, concurrency keys. |

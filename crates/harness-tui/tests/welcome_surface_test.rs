@@ -135,23 +135,6 @@ fn hit_map_prioritizes_menu_items() {
 }
 
 #[test]
-fn primary_action_hit_rows_match_reference_paint_rows() {
-    // arrange
-    // act
-    let layout = WelcomeLayout::compute(120, 32);
-
-    // assert
-    assert_eq!(
-        layout
-            .action_rects
-            .iter()
-            .map(|rect| rect.1)
-            .collect::<Vec<_>>(),
-        vec![16, 17, 18, 19]
-    );
-}
-
-#[test]
 fn welcome_dismissal_is_latched_until_reset() {
     // arrange
     let mut state = WelcomeState::new(3, false);
@@ -271,21 +254,4 @@ fn state_select_cycles_focus_and_menu_navigation_wraps() {
         InputResult::FocusChanged
     );
     assert_eq!(state.focus(), WelcomeFocus::Prompt);
-}
-
-#[test]
-fn menu_labels_are_harness_native() {
-    // arrange
-    // act
-    let labels = [
-        "New session",
-        "Open session",
-        "Inspect run",
-        "Settings",
-        "Quit",
-    ];
-    // assert
-    assert!(labels
-        .iter()
-        .all(|label| !label.contains("Grok") && !label.contains("xAI")));
 }

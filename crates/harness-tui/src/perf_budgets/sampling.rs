@@ -28,7 +28,7 @@ impl SampleWindow {
             self.samples.pop_front();
         }
     }
-    pub fn p95_frame_budget_gate(&self, reference_us: u64) -> bool {
+    pub fn p95_frame_budget_gate(&self, baseline_us: u64) -> bool {
         let mut totals: Vec<u64> = self
             .samples
             .iter()
@@ -39,7 +39,7 @@ impl SampleWindow {
         }
         totals.sort_unstable();
         totals[(totals.len() * 95 / 100).min(totals.len() - 1)]
-            <= reference_us.saturating_mul(110) / 100
+            <= baseline_us.saturating_mul(110) / 100
     }
     pub fn max_cadence_gap_ratio(&self) -> u64 {
         self.samples

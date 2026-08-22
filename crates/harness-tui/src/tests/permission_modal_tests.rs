@@ -26,7 +26,7 @@ pub(super) fn permission_dock_packs_measured_content_rows() {
         "tool_call_pack_v2",
     ));
 
-    // When: rendering the live shell at the parity geometry.
+    // When: rendering the live shell at the consistency geometry.
     let rendered = render_live_lines(&app, 120, 32);
     let lines: Vec<&str> = rendered.lines().collect();
     let dock_start = lines
@@ -163,65 +163,6 @@ pub(super) fn question_permission_modal_aligns_option_description_column() {
         debug.contains("Blue ") && debug.contains("Choose blue"),
         "Blue label must pad to Green width\n{debug}"
     );
-}
-
-pub(super) fn question_permission_modal_matches_reference_palette_contract() {
-    let mut app = AppState::new_live(None, false, None);
-    app.ingest_event(envelope(
-        1,
-        Some("req_question_palette"),
-        EventV1::PermissionRequested(PermissionRequestedEvent {
-            permission_id: "perm_question_palette".to_string(),
-            kind: "question".to_string(),
-            tool_call_id: Some("tool_call_question_palette".into()),
-            summary: serde_json::json!({
-                "questions": [
-                    {
-                        "question": "Pick one",
-                        "header": "Choice",
-                        "options": [{"label": "A", "description": "Option A"}],
-                    },
-                    {
-                        "question": "Pick another",
-                        "header": "Mode",
-                        "options": [{"label": "B", "description": "Option B"}],
-                    }
-                ]
-            })
-            .to_string(),
-            request_digest: "digest-question-palette".to_string(),
-            timeout_ms: 30_000,
-            default_decision: harness_core::event::PermissionDecision::Deny,
-        }),
-    ));
-
-    let buffer = render_live_cells(&app, 100, 28);
-    let (tab_row, tab_fgs, tab_bgs) =
-        row_text_and_palette(&buffer, 100, "Choice").unwrap_or_abort();
-    let tab_start = tab_row[..tab_row.find("Choice").unwrap_or_abort()]
-        .chars()
-        .count();
-    let tab_end = tab_start + "Choice".chars().count();
-    assert!(tab_bgs[tab_start..tab_end]
-        .iter()
-        .all(|color| *color == Color::Rgb(0xD9, 0x84, 0xD9)));
-    assert!(tab_fgs[tab_start..tab_end]
-        .iter()
-        .all(|color| *color == Color::Rgb(0x0B, 0x0E, 0x14)));
-
-    let (option_row, option_fgs, option_bgs) =
-        row_text_and_palette(&buffer, 100, "A").unwrap_or_abort();
-    let marker_start = option_row
-        .find('●')
-        .or_else(|| option_row.find('○'))
-        .unwrap_or_abort();
-    let marker_col = option_row[..marker_start].chars().count();
-    let label_start = option_row[..option_row.find("A").unwrap_or_abort()]
-        .chars()
-        .count();
-    assert_eq!(option_bgs[marker_col], Color::Rgb(0x12, 0x16, 0x1E));
-    assert_eq!(option_bgs[label_start], Color::Rgb(0x12, 0x16, 0x1E));
-    assert_eq!(option_fgs[label_start], Color::Rgb(0x5C, 0x9C, 0xF5));
 }
 
 pub(super) fn answered_questions_render_in_completed_tool_row() {

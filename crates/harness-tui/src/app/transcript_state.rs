@@ -1,7 +1,7 @@
 // allow: SIZE_OK — TUI app state (session projection + interaction)
-use crate::design_contract::LifecycleState;
 use crate::prompt_queue_actions::{QueueLifecycle, QueueState};
 use crate::scheduling::FrameNow;
+use crate::theme_tokens::LifecycleState;
 use crate::transcript_blocks::{BlockKind, BlockLifecycle, RawDisclosure};
 use crate::transcript_identity::ReplayTurn;
 use crate::transcript_integration::{
@@ -100,7 +100,7 @@ impl AppState {
         } else {
             QueueLifecycle::Idle
         };
-        let state = QueueState::new(lifecycle).with_draft(self.composer.parity_text());
+        let state = QueueState::new(lifecycle).with_draft(self.composer.editor_text());
         let _ = self.composer.slice.set_queue_state(state);
         let frame_area = self
             .last_frame_area
@@ -560,26 +560,19 @@ impl AppState {
         }
     }
 
-    /// Public fixed-tick advance for A-ANIMATION evidence capture (no wall clock).
-    pub fn advance_animation_tick_for_evidence(&mut self) {
-        self.advance_animation_tick_by_for_evidence(Duration::from_millis(
-            crate::scheduling::active_animation_period_ms(),
-        ));
-    }
-
-    pub fn advance_animation_tick_by_for_evidence(&mut self, elapsed: Duration) {
+    pub fn advance_animation_tick(&mut self) {
+        let elapsed = Duration::from_millis(crate::scheduling::active_animation_period_ms());
         let now = self.now() + elapsed;
         self.now_fn = std::sync::Arc::new(move || now);
         self.sampled_motion_elapsed = self.sampled_motion_elapsed.saturating_add(elapsed);
         self.advance_transcript_animation_phase();
     }
 
-    /// Current transcript animation phase for evidence metadata.
-    pub fn animation_phase_for_evidence(&self) -> usize {
+    pub fn animation_phase(&self) -> usize {
         self.transcript_animation_phase()
     }
 
-    pub(crate) fn has_active_animations(&self) -> bool {
+    pub fn has_active_animations(&self) -> bool {
         !self.motion_plan().is_none()
     }
 
@@ -589,25 +582,6 @@ impl AppState {
 
     pub(crate) fn set_starting_session_seed(&mut self, visible: bool) {
         self.starting_session_seed = visible && !self.active_turn_in_progress();
-    }
-
-    /// Whether the shell currently requests animation ticks (evidence / tests).
-    pub fn has_active_animations_for_evidence(&self) -> bool {
-        self.has_active_animations()
-    }
-
-    pub fn has_active_animations_with_motion_for_evidence(&self, motion_enabled: bool) -> bool {
-        let plan = self.motion_plan();
-        plan.until().is_some() || (motion_enabled && plan.cadence().interval().is_some())
-    }
-
-    pub fn animation_tick_interval_with_motion_for_evidence(
-        &self,
-        motion_enabled: bool,
-    ) -> Option<Duration> {
-        motion_enabled
-            .then(|| self.motion_plan().cadence().interval())
-            .flatten()
     }
 
     pub(crate) fn tool_running_elapsed(&self, tool_call_id: &str) -> Duration {
@@ -620,10 +594,6 @@ impl AppState {
         self.transcript_view
             .visible_running_tool_motion
             .set(visible);
-    }
-
-    pub fn record_visible_running_tool_motion_for_evidence(&self, visible: bool) {
-        self.record_visible_running_tool_motion(visible);
     }
 
     pub(crate) fn active_turn_tool_motion_demand(&self) -> bool {
@@ -1042,13 +1012,6 @@ impl AppState {
         self.motion_revision = self.motion_revision.wrapping_add(1);
     }
 
-    pub fn mode_banner_alpha_for_evidence(&self) -> Option<f32> {
-        self.toast
-            .as_ref()
-            .filter(|toast| toast.variant == ToastVariant::Mode)
-            .map(|toast| toast.fade_alpha(self.now()))
-    }
-
     pub(crate) fn toast_fade_alpha(&self) -> Option<f32> {
         self.toast
             .as_ref()
@@ -1277,22 +1240,22 @@ mod toast_tests {
         // act
         // assert
         let mut app = AppState::new_live(None, false, None);
-        app.freeze_now_for_animation_evidence();
+        app.freeze_animation_clock();
         app.show_toast("Saved", ToastVariant::Info);
         assert!(app.toast().is_some());
 
         for _ in 0..30 {
-            app.advance_animation_tick_for_evidence();
+            app.advance_animation_tick();
         }
         app.palette_visible = true;
         for _ in 0..30 {
-            app.advance_animation_tick_for_evidence();
+            app.advance_animation_tick();
         }
         assert!(app.toast().is_some());
 
         app.palette_visible = false;
         for _ in 0..31 {
-            app.advance_animation_tick_for_evidence();
+            app.advance_animation_tick();
         }
         assert!(app.toast().is_none());
     }

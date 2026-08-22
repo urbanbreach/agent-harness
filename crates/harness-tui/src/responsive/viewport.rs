@@ -1,13 +1,5 @@
-//! Viewport classification and frame-plan leaf for responsive parity rows.
-//!
-//! Each manifest RESP-* row maps to a `ViewportId` and a `ViewportPlan` that
-//! records the deterministic geometry classification, composer border state,
-//! and footer hint visibility at that viewport. These are pure value types —
-//! no `AppState` or shared registry dependency.
-
 use crate::theme::{ShellBreakpoints, ShellGeometryTarget};
 
-/// Canonical viewport identifiers matching the TUI parity manifest RESP-* rows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ViewportId {
     /// RESP-120x50

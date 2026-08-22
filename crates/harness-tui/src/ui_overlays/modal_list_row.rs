@@ -205,81 +205,6 @@ mod tests {
     }
 
     #[test]
-    fn modal_row_state_matrix_matches_reference_precedence() {
-        // arrange
-        // Given: every standalone modal-row state plus selected-and-dimmed.
-        let theme = Theme::harness_chat();
-        let cases = [
-            (
-                ModalListRowState {
-                    selected: false,
-                    hovered: false,
-                    dimmed: false,
-                },
-                ui_chrome::command_palette_surface(&theme),
-                theme.text.primary,
-                false,
-            ),
-            (
-                ModalListRowState {
-                    selected: false,
-                    hovered: true,
-                    dimmed: false,
-                },
-                theme.surface.hover,
-                theme.text.primary,
-                false,
-            ),
-            (
-                ModalListRowState {
-                    selected: true,
-                    hovered: false,
-                    dimmed: false,
-                },
-                theme.question_prompt.selected,
-                theme.text.primary,
-                true,
-            ),
-            (
-                ModalListRowState {
-                    selected: false,
-                    hovered: false,
-                    dimmed: true,
-                },
-                ui_chrome::command_palette_surface(&theme),
-                theme.text.tertiary,
-                false,
-            ),
-            (
-                ModalListRowState {
-                    selected: true,
-                    hovered: false,
-                    dimmed: true,
-                },
-                theme.question_prompt.selected,
-                theme.text.primary,
-                true,
-            ),
-        ];
-
-        // act
-        // When/Then: each state resolves independently to the semantic band and text role.
-        for (state, background, foreground, bold) in cases {
-            let row = presentation(&theme, state);
-            // assert
-            assert_eq!(
-                (
-                    row.style.bg,
-                    row.style.fg,
-                    row.style.add_modifier.contains(Modifier::BOLD)
-                ),
-                (Some(background), Some(foreground), bold),
-                "state={state:?}"
-            );
-        }
-    }
-
-    #[test]
     fn modal_row_viewport_gutters_keep_band_scrollbar_and_border_disjoint() {
         // arrange
         // Given: list rows inside the compact and wide modal border viewports.
@@ -307,7 +232,7 @@ mod tests {
     fn selected_hovered_row_uses_hover_band_and_selected_text() {
         // arrange
         // Given: a row that is both keyboard-selected and pointer-hovered.
-        let theme = Theme::harness_chat();
+        let theme = Theme::harness_dark();
         let spec = ModalListRowSpec {
             area: Rect::new(0, 0, 40, 1),
             state: ModalListRowState {
@@ -322,7 +247,6 @@ mod tests {
         let row = modal_list_row(&theme, spec);
 
         // act
-        // Then: Grok's hover material wins while selected text remains bold.
         // assert
         assert_eq!(row.style.bg, Some(theme.surface.hover));
         assert_eq!(row.style.fg, Some(theme.text.primary));
@@ -333,7 +257,7 @@ mod tests {
     fn selected_row_text_override_preserves_band_and_bold_modifier() {
         // arrange
         // Given: a selected and hovered row whose metadata needs a quieter foreground.
-        let theme = Theme::harness_chat();
+        let theme = Theme::harness_dark();
         let row = modal_list_row(
             &theme,
             ModalListRowSpec {

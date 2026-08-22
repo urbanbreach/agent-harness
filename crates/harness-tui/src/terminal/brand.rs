@@ -1,13 +1,7 @@
 //! Terminal brand detection and brand-level capability conditionals.
 //!
-//! Mirrors the clean-room parity contract for `terminal_brand` (20 brands) and
-//! the brand-level `terminal_conditional` capability methods. Detection is a
-//! pure function over a [`TerminalEnv`] snapshot (see [`super::env`]); the
-//! multiplexer kinds live in [`super::multiplexer`].
-
 use super::env::TerminalEnv;
 
-/// A detected terminal brand. Mirrors the 20 `terminal_brand` inventory rows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum TerminalName {
     AppleTerminal,
@@ -24,7 +18,6 @@ pub enum TerminalName {
     Rio,
     Foot,
     JetBrains,
-    GrokDesktop,
     Vte,
     Terminator,
     WindowsTerminal,
@@ -34,8 +27,7 @@ pub enum TerminalName {
 }
 
 impl TerminalName {
-    /// All 20 brands, in inventory order.
-    pub const ALL: [Self; 20] = [
+    pub const ALL: [Self; 19] = [
         Self::AppleTerminal,
         Self::Ghostty,
         Self::Iterm2,
@@ -50,7 +42,6 @@ impl TerminalName {
         Self::Rio,
         Self::Foot,
         Self::JetBrains,
-        Self::GrokDesktop,
         Self::Vte,
         Self::Terminator,
         Self::WindowsTerminal,
@@ -75,7 +66,6 @@ impl TerminalName {
             Self::Rio => "Rio",
             Self::Foot => "Foot",
             Self::JetBrains => "JetBrains",
-            Self::GrokDesktop => "GrokDesktop",
             Self::Vte => "Vte",
             Self::Terminator => "Terminator",
             Self::WindowsTerminal => "WindowsTerminal",
@@ -132,9 +122,6 @@ impl TerminalName {
         }
         if env.term_program_is("iterm.app") || env.lc_terminal_is("iterm2") {
             return Self::Iterm2;
-        }
-        if env.term_program_is("grok-desktop") {
-            return Self::GrokDesktop;
         }
         if env.term_program_is("otty") {
             return Self::Otty;
@@ -215,7 +202,6 @@ impl TerminalName {
                 | Self::Windsurf
                 | Self::WindowsTerminal
                 | Self::WarpTerminal
-                | Self::GrokDesktop
         )
     }
 }

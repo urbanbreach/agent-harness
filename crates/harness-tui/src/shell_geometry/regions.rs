@@ -1,7 +1,7 @@
 use ratatui::layout::Rect;
 
-use crate::design_contract::ViewportId;
 use crate::terminal::char_display_width;
+use crate::theme_tokens::ViewportId;
 
 use super::hit_map::HitMap;
 

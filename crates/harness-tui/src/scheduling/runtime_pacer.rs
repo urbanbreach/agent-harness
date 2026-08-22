@@ -192,7 +192,6 @@ const fn terminal_wheel_events_per_step(
         | TerminalName::Rio
         | TerminalName::Foot
         | TerminalName::JetBrains
-        | TerminalName::GrokDesktop
         | TerminalName::Vte
         | TerminalName::Terminator
         | TerminalName::WindowsTerminal

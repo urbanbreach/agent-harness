@@ -75,7 +75,7 @@ The generic agent uses the configured top-level permission policy plus its optio
 
 The generic parent and each named subagent have explicit toolsets and permission overlays. Worker capability filtering and direct-child ownership prevent delegation bypasses.
 
-## Ruleset-compatible evaluation
+## Pattern-rule evaluation
 
 Rules are ordered; **last match wins**. When no rule matches a permission+pattern pair, the default action is **ask**. Config scalars (`permission.bash: "allow"`) expand to `pattern: "*"`. Pattern maps (`permission.bash: { "git *": "allow", "*": "ask" }`) expand one rule per entry.
 

@@ -113,7 +113,7 @@ fn banded_rows_use_one_compact_number_gutter_without_redundant_markers() {
 fn bandless_rows_keep_foreground_and_glyph_fallbacks_legible() {
     // Given: ANSI16 and monochrome themes whose add/remove bands collapse together.
     let diff = "--- src/demo.rs\n+++ src/demo.rs\n@@ -1,1 +1,1 @@\n-old_value\n+new_value\n";
-    let ansi_theme = Theme::harness_chat().for_color_level(ColorLevel::Basic);
+    let ansi_theme = Theme::harness_dark().for_color_level(ColorLevel::Basic);
     assert_eq!(
         diff_row_palette('-', &ansi_theme).content_bg,
         diff_row_palette('+', &ansi_theme).content_bg
@@ -151,16 +151,16 @@ fn bandless_rows_keep_foreground_and_glyph_fallbacks_legible() {
     // Then: foreground accents remain, with glyphs surviving monochrome mode too.
     assert_eq!(
         removed_marker.style.fg,
-        Some(reference_diff_highlight_removed(&ansi_theme))
+        Some(diff_highlight_removed(&ansi_theme))
     );
     assert_eq!(
         added_marker.style.fg,
-        Some(reference_diff_highlight_added(&ansi_theme))
+        Some(diff_highlight_added(&ansi_theme))
     );
     let monochrome = render_plain_rows(
         diff,
         72,
-        &Theme::harness_chat().for_color_level(ColorLevel::None),
+        &Theme::harness_dark().for_color_level(ColorLevel::None),
     );
     let monochrome_changed = matching_rows(&monochrome, &["old_value", "new_value"]);
     assert!(monochrome_changed[0].contains('-'));

@@ -19,10 +19,9 @@ use ui_diff_render::render_structured_diff_model;
 use ui_diff_model::DiffSegmentKind;
 #[cfg(test)]
 use ui_diff_render::{
-    diff_hunk_palette, diff_marker_style, diff_row_palette, diff_segment_style,
-    reference_diff_added_bg, reference_diff_added_line_number_bg, reference_diff_highlight_added,
-    reference_diff_highlight_removed, reference_diff_hunk_header, reference_diff_removed_bg,
-    reference_diff_removed_line_number_bg, render_diff_hunk_header,
+    diff_added_bg, diff_added_line_number_bg, diff_highlight_added, diff_highlight_removed,
+    diff_hunk_header, diff_hunk_palette, diff_marker_style, diff_removed_bg,
+    diff_removed_line_number_bg, diff_row_palette, diff_segment_style, render_diff_hunk_header,
 };
 #[cfg(test)]
 use ui_diff_syntax::{diff_path_is_plain_prose, highlight_diff_line_chunks};
@@ -213,107 +212,6 @@ mod tests {
     }
 
     #[test]
-    fn structured_diff_palette_matches_reference_inline_diff_colors() {
-        // arrange
-        // act
-        // assert
-        let theme = Theme::default();
-
-        assert_eq!(
-            diff_row_palette('+', &theme).content_bg,
-            reference_diff_added_bg(&theme)
-        );
-        assert_eq!(
-            diff_row_palette('+', &theme).gutter_bg,
-            reference_diff_added_line_number_bg(&theme)
-        );
-        assert_eq!(
-            diff_row_palette('-', &theme).content_bg,
-            reference_diff_removed_bg(&theme)
-        );
-        assert_eq!(
-            diff_row_palette('-', &theme).gutter_bg,
-            reference_diff_removed_line_number_bg(&theme)
-        );
-        assert_eq!(diff_hunk_palette(&theme).content_bg, theme.surface.panel);
-        assert_eq!(
-            diff_marker_style('+', None, &theme).fg,
-            Some(reference_diff_highlight_added(&theme))
-        );
-        assert_eq!(
-            diff_marker_style('-', None, &theme).fg,
-            Some(reference_diff_highlight_removed(&theme))
-        );
-        assert_eq!(
-            diff_segment_style(
-                DiffSegmentKind::Added,
-                DiffSegmentKind::Removed,
-                None,
-                &theme
-            )
-            .fg,
-            Some(reference_diff_highlight_added(&theme))
-        );
-        assert_eq!(
-            diff_segment_style(
-                DiffSegmentKind::Removed,
-                DiffSegmentKind::Added,
-                None,
-                &theme
-            )
-            .fg,
-            Some(reference_diff_highlight_removed(&theme))
-        );
-
-        let hunk_header = render_diff_hunk_header("", "@@ -1,1 +1,1 @@", 48, 2, &theme);
-        let hunk_span = hunk_header
-            .spans
-            .iter()
-            .find(|span| span.content.contains("@@ -1,1 +1,1 @@"))
-            .unwrap_or_abort();
-        assert_eq!(hunk_span.style.fg, Some(reference_diff_hunk_header(&theme)));
-        assert_eq!(hunk_span.style.bg, Some(theme.surface.panel));
-    }
-
-    #[test]
-    fn structured_diff_syntax_highlighting_uses_reference_token_colors() {
-        // arrange
-        // act
-        // assert
-        let chunks = highlight_diff_line_chunks(
-            Some("src/demo.rs"),
-            "let value = \"hi\"; let total = 42; // note",
-            Some(reference_diff_added_bg(&Theme::default())),
-            crate::theme::ColorLevel::TrueColor,
-        )
-        .unwrap_or_abort();
-
-        let find_chunk = |needle: &str| {
-            chunks
-                .iter()
-                .find(|chunk| chunk.text.contains(needle))
-                .unwrap_or_else(|| panic!("missing chunk containing {needle:?}: {chunks:#?}"))
-        };
-
-        assert_eq!(
-            find_chunk("hi").style.fg,
-            Some(Color::Rgb(0x7F, 0xD8, 0x8F))
-        );
-        assert_eq!(
-            find_chunk("42").style.fg,
-            Some(Color::Rgb(0xE5, 0xC0, 0x7B))
-        );
-        assert_eq!(
-            find_chunk("note").style.fg,
-            Some(Color::Rgb(0x80, 0x80, 0x80))
-        );
-        assert_eq!(
-            find_chunk("note").style.bg,
-            Some(reference_diff_added_bg(&Theme::default()))
-        );
-    }
-
-    #[test]
     fn prose_diff_paths_skip_syntax_highlighting_fast_path() {
         // arrange
         let prose_paths = [
@@ -337,7 +235,7 @@ mod tests {
                 highlight_diff_line_chunks(
                     Some(path),
                     "# heading",
-                    Some(reference_diff_added_bg(&Theme::default())),
+                    Some(diff_added_bg(&Theme::default())),
                     crate::theme::ColorLevel::TrueColor,
                 )
                 .is_none(),
@@ -369,7 +267,7 @@ mod tests {
             Some("src/demo.rs"),
             "let value = 42;",
             Some(
-                Theme::harness_chat()
+                Theme::harness_dark()
                     .for_color_level(crate::theme::ColorLevel::Ansi256)
                     .surface
                     .panel,

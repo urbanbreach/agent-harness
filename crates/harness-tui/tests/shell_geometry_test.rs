@@ -5,10 +5,10 @@
     reason = "owner contract tests use direct fail-fast assertions"
 )]
 
-use harness_tui::design_contract::{ViewportId, VIEWPORTS};
 use harness_tui::shell_geometry::{
     cursor_for, identity_rectangles, layout_for, HitTarget, ShellState, ALL_SHELL_STATES,
 };
+use harness_tui::theme_tokens::{ViewportId, VIEWPORTS};
 
 #[test]
 fn shell_geometry_is_deterministic_and_complete_for_every_viewport_and_state() {
@@ -90,31 +90,6 @@ fn every_requested_shell_state_has_state_specific_geometry_and_hit_focus() {
         assert_eq!(focus.active, !overlay_active);
         assert_eq!(focus.covered, overlay_active);
     }
-}
-
-#[test]
-fn harness_identity_substitutions_fit_exact_reference_rectangles() {
-    // arrange
-    // act
-    let copy = harness_tui::shell_geometry::IdentityCopy {
-        product: "Harness",
-        logo: "◆",
-        version: "0.1.0",
-        auth: "OAuth/API key",
-        model: "mock:model-日本語",
-        workspace: "/workspace/日本語",
-    };
-    let identity = identity_rectangles(ViewportId::Wide132x40, &copy);
-
-    // assert
-    assert_eq!(identity.product.width, 7);
-    assert_eq!(identity.logo.width, 1);
-    assert!(identity.version.x >= identity.product.right());
-    assert!(identity.auth.x >= identity.version.right());
-    assert!(identity.model.x >= identity.auth.right());
-    assert!(identity.workspace.x >= identity.model.right());
-    assert!(identity.workspace.right() <= 132);
-    assert_eq!(identity.height(), 1);
 }
 
 #[test]

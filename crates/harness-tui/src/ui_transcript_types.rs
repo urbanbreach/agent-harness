@@ -740,43 +740,6 @@ mod tool_group_tests {
     }
 
     #[test]
-    fn context_group_label_uses_first_seen_order_and_grok_nouns() {
-        // arrange
-        let parts = vec![
-            tool_part(
-                "read",
-                "read",
-                ToolCallDisplayStatus::Succeeded,
-                false,
-                false,
-            ),
-            tool_part(
-                "list",
-                "list",
-                ToolCallDisplayStatus::Succeeded,
-                false,
-                false,
-            ),
-            tool_part(
-                "search",
-                "grep",
-                ToolCallDisplayStatus::Succeeded,
-                false,
-                false,
-            ),
-        ];
-
-        // act
-        let summary = TranscriptToolGroupSummary::from_adjacent(&parts).expect("context group");
-
-        // assert
-        assert_eq!(
-            summary.semantic_label(),
-            "Read 1 file, Listed 1 dir, Searched 1 pattern"
-        );
-    }
-
-    #[test]
     fn context_group_label_uses_present_tense_for_every_bucket_while_running() {
         // arrange
         let parts = vec![

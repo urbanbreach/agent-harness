@@ -5,7 +5,6 @@ use harness_core::event::{BackgroundTaskNotificationStatus, EventEnvelopeV1, Eve
 
 use crate::app::AppState;
 use crate::contextual_tips::{TipContext, TipManager};
-use crate::design_contract::LifecycleState;
 use crate::inline_image::{ImageCapability, ImagePipeline, ImageRequest};
 use crate::lifecycle_choreography::LifecycleAuthority;
 use crate::mermaid_worker::MermaidWorker;
@@ -18,6 +17,7 @@ use crate::terminal_notifications::{
     ProtocolSet,
 };
 use crate::terminal_title::{TitleActivity, TitleState, TitleWriter};
+use crate::theme_tokens::LifecycleState;
 use crate::video_viewer::{FramePacing, SubprocessDescriptor, SubprocessSupervisor, VideoViewer};
 
 pub(crate) struct RuntimeExperience {
@@ -201,9 +201,9 @@ impl RuntimeExperience {
         let _ = self.tips.update(&TipContext {
             is_first_run: app.startup_shell_visible(),
             composer_empty: app.composer_render_text().is_empty(),
-            is_streaming: app.has_active_animations_for_evidence(),
+            is_streaming: app.has_active_animations(),
             permission_pending: app.active_permission().is_some(),
-            tool_running: app.has_active_animations_for_evidence(),
+            tool_running: app.has_active_animations(),
             transcript_blocks: app.selected_event_index,
             reduced_motion: false,
             viewport_compact: app.last_frame_area().is_some_and(|area| area.width < 80),

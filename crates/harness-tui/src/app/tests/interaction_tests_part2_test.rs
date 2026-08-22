@@ -46,7 +46,6 @@ pub(super) fn command_palette_wheel_scrolls_three_rows_without_changing_selectio
     );
     let after = render_text(&app, area.width, area.height);
 
-    // Then: the visual offset advances by Grok's three-row wheel step while
     // keyboard selection remains unchanged.
     assert!(handled);
     assert_eq!(app.palette_selected, 0);

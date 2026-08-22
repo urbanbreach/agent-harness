@@ -89,7 +89,7 @@ fn syntax_highlight_assets() -> &'static SyntaxHighlightAssets {
 
     SYNTAX_ASSETS.get_or_init(|| {
         let syntax_set = SyntaxSet::load_defaults_nonewlines();
-        let theme = super::ui_diff::ui_diff_syntax::reference_diff_syntect_theme();
+        let theme = super::ui_diff::ui_diff_syntax::diff_syntect_theme();
         SyntaxHighlightAssets { syntax_set, theme }
     })
 }

@@ -87,7 +87,6 @@ use crate::dashboard_integration::{
 };
 use crate::dashboard_peek::DashboardPeek;
 use crate::dashboard_roster::RosterState;
-use crate::design_contract::ViewportId;
 use crate::keybindings::{Action, KeyBinding, KeyMap};
 use crate::overlay::{OverlayKind, OverlayStack, OverlayState};
 use crate::prompt_queue_actions::{QueueAction, QueueError, QueueLifecycle};
@@ -97,6 +96,7 @@ use crate::theme_family::{
     deserialize_choice, serialize_choice, AutoResolver, PersistError, ThemeChoice, ThemeFamily,
     ThemePreview,
 };
+use crate::theme_tokens::ViewportId;
 use crate::transcript_identity::{TranscriptFocus, TranscriptScreenMode, TurnId};
 use crate::transcript_integration::{TranscriptComposite, TranscriptViewModel};
 use crate::ui::{
@@ -114,13 +114,9 @@ mod auth_display;
 mod child_session;
 mod composer;
 mod composer_editing;
-#[cfg(test)]
-mod exact_tests;
 mod file_mentions;
-pub mod footer_state;
 mod foreign_import;
 mod help_browser;
-pub mod interaction_reducer;
 mod key_interaction;
 mod lifecycle;
 mod lineage;
@@ -144,7 +140,6 @@ mod prompt_input;
 mod prompt_stash;
 mod prompt_stash_actions;
 mod question_prompt;
-pub mod recovery_state;
 mod secondary_surfaces;
 pub(crate) mod session_history;
 mod session_live_routing;
@@ -154,15 +149,12 @@ mod session_projection;
 mod session_slash;
 mod session_stack;
 mod settings_editor;
-pub mod shell_status;
 pub mod terminal_diagnostics;
 mod terminal_panel;
 #[cfg(test)]
 mod tests;
 pub mod theme_preview;
 pub mod tips;
-#[cfg(test)]
-pub(crate) use exact_tests::*;
 mod toggles;
 mod tool_call;
 mod tool_output;
@@ -852,7 +844,7 @@ impl Default for AppState {
             file_mention_frecency: BTreeMap::new(),
             continue_disabled_banner: None,
             keymap: KeyMap::default(),
-            theme: Theme::harness_chat(),
+            theme: Theme::harness_dark(),
             theme_choice: ThemeChoice::Auto,
             theme_family: initial_theme_family,
             theme_preview: ThemePreview::new(initial_theme_family),
@@ -1109,19 +1101,19 @@ impl AppState {
     }
 
     pub(crate) fn composer_render_text(&self) -> String {
-        let parity_text = self.composer.parity_text();
-        if parity_text != self.composer.prompt_buffer {
+        let editor_text = self.composer.editor_text();
+        if editor_text != self.composer.prompt_buffer {
             self.composer.prompt_buffer.clone()
         } else {
-            parity_text
+            editor_text
         }
     }
 
     pub(crate) fn composer_render_cursor(&self) -> usize {
-        if self.composer.parity_text() != self.composer.prompt_buffer {
+        if self.composer.editor_text() != self.composer.prompt_buffer {
             self.composer.prompt_cursor
         } else {
-            self.composer.parity_cursor()
+            self.composer.editor_cursor()
         }
     }
 
@@ -1208,7 +1200,7 @@ impl AppState {
         &mut self,
     ) -> Result<CompletionAcceptance, crate::composer_integration::ComposerSliceError> {
         let acceptance = self.composer.slice.accept_completion_keyboard()?;
-        self.composer.sync_legacy_from_parity();
+        self.composer.sync_prompt_fields_from_editor();
         Ok(acceptance)
     }
 
@@ -1217,7 +1209,7 @@ impl AppState {
         index: usize,
     ) -> Result<CompletionAcceptance, crate::composer_integration::ComposerSliceError> {
         let acceptance = self.composer.slice.accept_completion_mouse(index)?;
-        self.composer.sync_legacy_from_parity();
+        self.composer.sync_prompt_fields_from_editor();
         Ok(acceptance)
     }
 
@@ -1242,7 +1234,7 @@ impl AppState {
         attachment: Attachment,
     ) -> Result<(), crate::composer_integration::ComposerSliceError> {
         self.composer.slice.attach(id, attachment)?;
-        self.composer.sync_legacy_from_parity();
+        self.composer.sync_prompt_fields_from_editor();
         Ok(())
     }
 
@@ -1392,8 +1384,7 @@ impl AppState {
         let glyph_mode = self.theme.glyph_mode();
         self.theme_color_level = level;
         self.theme = match self.theme_name.as_str() {
-            "default" | "harness-chat" => Theme::harness_chat(),
-            "harness-dark" | "dark" => Theme::harness_dark(),
+            "default" | "harness-dark" | "dark" => Theme::harness_dark(),
             "harness-light" | "light" => Theme::harness_light(),
             "high-contrast" => Theme::harness_high_contrast(),
             "terminal-native" => Theme::terminal_native(),
@@ -1401,7 +1392,7 @@ impl AppState {
                 ThemeChoice::Dark => Theme::harness_dark(),
                 ThemeChoice::Light => Theme::harness_light(),
                 ThemeChoice::Auto => match self.theme_family {
-                    ThemeFamily::Dark => Theme::harness_chat(),
+                    ThemeFamily::Dark => Theme::harness_dark(),
                     ThemeFamily::Light => Theme::harness_light(),
                 },
             },
@@ -1434,7 +1425,7 @@ impl AppState {
             ThemeChoice::Dark => Theme::harness_dark(),
             ThemeChoice::Light => Theme::harness_light(),
             ThemeChoice::Auto => match family {
-                ThemeFamily::Dark => Theme::harness_chat(),
+                ThemeFamily::Dark => Theme::harness_dark(),
                 ThemeFamily::Light => Theme::harness_light(),
             },
         }
@@ -1446,13 +1437,13 @@ impl AppState {
     pub(crate) fn apply_theme_by_name(&mut self, name: &str) {
         let glyph_mode = self.theme.glyph_mode();
         let choice = match name {
-            "default" | "harness-chat" => {
+            "default" => {
                 self.theme_name = name.to_string();
                 self.theme_choice = ThemeChoice::Auto;
                 self.theme_family = ThemeFamily::Dark;
                 self.theme_preview.begin_preview(ThemeFamily::Dark);
                 self.theme_preview.commit();
-                self.theme = Theme::harness_chat()
+                self.theme = Theme::harness_dark()
                     .for_color_level(self.theme_color_level)
                     .with_glyph_mode(glyph_mode);
                 self.bump_transcript_render_epoch();

@@ -1,7 +1,7 @@
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Span;
 
-use crate::design_contract::{TextModifier, DESIGN_TOKENS};
+use crate::theme_tokens::{TextModifier, DESIGN_TOKENS};
 
 use super::Suggestion;
 

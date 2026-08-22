@@ -98,7 +98,7 @@ pub(crate) fn tool_lifecycle_events() -> Vec<EventEnvelopeV1> {
             request_id,
             "tc_task",
             "task",
-            r#"{"description":"audit tool lifecycle parity","subagent_type":"researcher"}"#,
+            r#"{"description":"audit tool lifecycle consistency","subagent_type":"researcher"}"#,
             Some(ToolCallMetadata {
                 canonical_tool_id: Some("agent.spawn".to_string()),
                 alias_source_tool_id: Some("task".to_string()),
@@ -112,13 +112,13 @@ pub(crate) fn tool_lifecycle_events() -> Vec<EventEnvelopeV1> {
             request_id,
             "tc_task",
             ToolCallStatus::Succeeded,
-            Some("Found the whole-tool parity path."),
+            Some("Found the whole-tool consistency path."),
             Some(serde_json::json!({
-                "description": "audit tool lifecycle parity",
+                "description": "audit tool lifecycle consistency",
                 "profile": "researcher",
                 "mode": "foreground",
                 "status": "completed",
-                "result_summary": "Found the whole-tool parity path.",
+                "result_summary": "Found the whole-tool consistency path.",
                 "child_tool_call_count": 2,
                 "child_session_id": "agent_worker",
                 "child_request_id": "req_child"

@@ -98,7 +98,7 @@ pub(super) fn startup_surface_projects_clipboard_capability() {
 
     let mut ready_app = app;
     for _ in 0..4 {
-        ready_app.advance_animation_tick_for_evidence();
+        ready_app.advance_animation_tick();
     }
     let ready = render_live_cells(&ready_app, 100, 30);
     let ready_rows = ready.content.chunks(100).collect::<Vec<_>>();

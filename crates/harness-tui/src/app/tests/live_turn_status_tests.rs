@@ -181,7 +181,7 @@ pub(super) fn thinking_spinner_advances_on_animation_tick() {
 
     // When: the fixed-rate animation scheduler advances one spinner frame.
     for _ in 0..4 {
-        app.advance_animation_tick_for_evidence();
+        app.advance_animation_tick();
     }
 
     // Then: the visible spinner advances without requiring a provider event.
@@ -339,11 +339,11 @@ pub(super) fn clicking_stop_affordance_interrupts_active_task() {
     assert!(row.contains("0.0s"), "status row: {row:?}");
     assert!(row.contains("[stop]"), "status row: {row:?}");
     assert!(crate::ui::live_turn_stop_rect(&app, TEST_FRAME_AREA).is_some());
-    assert!(app.has_active_animations_for_evidence());
+    assert!(app.has_active_animations());
 
     let before_glyph = status_spinner_glyph(&screen, "Cancelling…");
     for _ in 0..4 {
-        app.advance_animation_tick_for_evidence();
+        app.advance_animation_tick();
     }
     let after = render_text(&app, 140, 40);
     let after_glyph = status_spinner_glyph(&after, "Cancelling…");
@@ -464,7 +464,6 @@ pub(super) fn live_historical_restore_rearms_streaming_turn_clocks() {
     app.replace_events(events);
     advance_clock(&clock, Duration::from_millis(500));
 
-    // Then: projected elapsed baselines continue on monotonic clocks.
     assert_eq!(app.live_turn_elapsed_ms(), Some(501));
     assert_eq!(
         app.live_turn_phase_elapsed_ms_for("req_restored"),

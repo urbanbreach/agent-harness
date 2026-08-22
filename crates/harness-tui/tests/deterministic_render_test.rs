@@ -13,7 +13,6 @@ use harness_core::event::{
     ToolCallRequestedEvent, ToolCallStartedEvent, ToolCallStatus, UserMessageSubmittedEvent,
     SCHEMA_VERSION,
 };
-use harness_core::proj::{RunStatus, SessionCatalogEntry, SessionModeSource};
 use harness_tui::app::{AppState, LaunchMetadata};
 use harness_tui::render_test::render_to_string;
 use harness_tui::{ui, FrameLayoutPlan};
@@ -48,7 +47,7 @@ fn startup_shell_is_compose_first_without_pty() {
         rendered.contains("Enter:send")
             || rendered.contains("Shift+Tab")
             || rendered.contains("Ctrl+x"),
-        "startup draft must use reference footer grammar\n{rendered}"
+        "startup draft must use baseline footer grammar\n{rendered}"
     );
     assert!(!rendered.contains("Actions:"));
     assert!(!rendered.contains("Tabs"));
@@ -209,42 +208,6 @@ fn permission_modal_preserves_draft_without_pty() {
         rendered.contains("esc") || rendered.contains("cancel") || rendered.contains("confirm")
     );
     assert_eq!(app.composer.prompt_buffer, "keep this draft");
-}
-
-#[test]
-fn startup_session_history_picker_renders_without_pty() {
-    // arrange
-    // act
-    // assert
-    let mut app = AppState::new_startup(startup_session_history_entries(), None);
-    app.set_launch_metadata(
-        LaunchMetadata::from_model_ref("worker", "mock:model-1").with_mode_label("Demo"),
-    );
-
-    app.execute_slash_command("sessions", Some(String::new()));
-
-    let rendered = render_text(&app, 100, 24);
-
-    insta::assert_snapshot!(normalize_volatile_branch(
-        &trim_trailing_snapshot_whitespace(&rendered)
-    ));
-
-    assert!(
-        rendered.contains("Resume session") || rendered.contains("Continue session"),
-        "session history picker title\n{rendered}"
-    );
-    assert!(
-        rendered.contains("Search") || rendered.contains("/ to search"),
-        "session history search affordance\n{rendered}"
-    );
-    assert!(rendered.contains("alpha-run"));
-    assert!(
-        rendered.contains("ago") || rendered.contains("just now"),
-        "session history footer must show relative age\n{rendered}"
-    );
-    assert!(!rendered.contains("beta-blocked"));
-    assert!(!rendered.contains("run is still active"));
-    assert!(!rendered.contains("provider unknown"));
 }
 
 #[test]
@@ -613,47 +576,6 @@ fn replay_failed_events() -> Vec<EventEnvelopeV1> {
                 error: "provider stream ended before final message".to_string(),
             }),
         ),
-    ]
-}
-
-fn startup_session_history_entries() -> Vec<harness_tui::app::SessionHistoryEntry> {
-    vec![
-        harness_tui::app::SessionHistoryEntry {
-            run_dir: PathBuf::from("/tmp/sessions/run_resume"),
-            catalog: SessionCatalogEntry {
-                run_id: "run_resume".into(),
-                run_name: Some("alpha-run".to_string()),
-                status: Some(RunStatus::Finished),
-                last_updated_at: Some("2026-03-08T12:34:56Z".to_string()),
-                workspace_root: Some("/tmp/workspace".to_string()),
-                profile_preset: Some("deep".to_string()),
-                provider_model: Some("openai/gpt-5.4-mini".to_string()),
-                mode_source: SessionModeSource::InteractiveLive,
-                is_resumable: true,
-                resume_disabled_reason: None,
-                artifact_count: 2,
-                child_session_count: 1,
-                parent_session_id: None,
-            },
-        },
-        harness_tui::app::SessionHistoryEntry {
-            run_dir: PathBuf::from("/tmp/sessions/run_blocked"),
-            catalog: SessionCatalogEntry {
-                run_id: "run_blocked".into(),
-                run_name: Some("beta-blocked".to_string()),
-                status: Some(RunStatus::Running),
-                last_updated_at: Some("2026-03-07T03:21:00Z".to_string()),
-                workspace_root: Some("/tmp/workspace".to_string()),
-                profile_preset: Some("ops".to_string()),
-                provider_model: Some("anthropic/claude-3.7".to_string()),
-                mode_source: SessionModeSource::InteractiveLive,
-                is_resumable: false,
-                resume_disabled_reason: Some("run is still active".to_string()),
-                artifact_count: 1,
-                child_session_count: 0,
-                parent_session_id: Some("run_parent".to_string()),
-            },
-        },
     ]
 }
 

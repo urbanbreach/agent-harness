@@ -145,7 +145,7 @@ pub(crate) fn render_document_composer_content(
     let body_color = if context.dock.composer_disabled {
         theme.status.disabled
     } else if placeholder_visible {
-        theme.reference_terminal.secondary
+        theme.terminal_colors.secondary
     } else if shell_mode_active {
         theme.status.warning
     } else {

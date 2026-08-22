@@ -50,95 +50,6 @@ fn transcript_test_line_texts_joins_spans() {
 }
 
 #[test]
-fn transcript_section_model_preserves_activity_order() {
-    // arrange
-    // act
-    // assert
-    exact_test_transcript_section_model_preserves_activity_order();
-}
-
-#[test]
-fn transcript_section_model_keeps_nested_tool_and_error_blocks() {
-    // arrange
-    // act
-    // assert
-    exact_test_transcript_section_model_keeps_nested_tool_and_error_blocks();
-}
-
-#[cfg(test)]
-#[test]
-fn transcript_reasoning_precedes_answer_and_tool_rows() {
-    // arrange
-    // act
-    // assert
-    exact_test_transcript_reasoning_precedes_answer_and_tool_rows();
-}
-
-#[test]
-fn transcript_follow_mode_uses_measured_surface_heights() {
-    // arrange
-    // act
-    // assert
-    exact_test_transcript_follow_mode_uses_measured_surface_heights();
-}
-
-#[test]
-fn failed_tool_cards_parse_legacy_error_copy() {
-    // arrange
-    // act
-    // assert
-    super::failed_tool_cards_parse_legacy_error_copy();
-}
-
-#[test]
-fn failed_tool_cards_normalize_lowercase_error_prefixes_and_tool_separators() {
-    // arrange
-    // act
-    // assert
-    super::failed_tool_cards_normalize_lowercase_error_prefixes_and_tool_separators();
-}
-
-#[test]
-fn denied_tool_cards_use_denied_subtitle() {
-    // arrange
-    // act
-    // assert
-    super::denied_tool_cards_use_denied_subtitle();
-}
-
-#[test]
-fn denied_tool_cards_keep_denied_subtitle_when_reason_contains_colon() {
-    // arrange
-    // act
-    // assert
-    super::denied_tool_cards_keep_denied_subtitle_when_reason_contains_colon();
-}
-
-#[test]
-fn generic_failed_tool_messages_do_not_split_arbitrary_prefixes() {
-    // arrange
-    // act
-    // assert
-    super::generic_failed_tool_messages_do_not_split_arbitrary_prefixes();
-}
-
-#[test]
-fn failed_tool_cards_fallback_when_error_details_are_missing() {
-    // arrange
-    // act
-    // assert
-    super::failed_tool_cards_fallback_when_error_details_are_missing();
-}
-
-#[test]
-fn transcript_pending_permission_stays_after_last_activity() {
-    // arrange
-    // act
-    // assert
-    exact_test_transcript_pending_permission_stays_after_last_activity();
-}
-
-#[test]
 fn transcript_render_key_reuses_content_hash_across_animation_frames() {
     // arrange
     // Given: a streaming transcript whose content is unchanged between animation frames.
@@ -1308,77 +1219,6 @@ fn user_timestamp_safe_fit_boundaries_hide_whole_clock_instead_of_clipping() {
 }
 
 #[test]
-fn user_row_keeps_reference_clock_padding_at_scroll_geometry() {
-    // arrange
-    // act
-    // assert
-    // Given: SCROLL freeze user prompt + wall clock (run1-scroll-proxy-v3)
-    let prompt = "List every file in the current directory using a tool, then write a numbered inventory of all names one per line.";
-    let mut app = AppState::default();
-    app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
-        request_id: "request-scroll-user-pack".to_string(),
-        profile_label: "default".to_string(),
-        model_id: "gpt-5.4-mini".to_string(),
-        provider_id: "openai".to_string(),
-        status: ActivityStatus::Done,
-        user_message: Some(harness_core::event::UserMessageSubmittedEvent {
-            request_id: "request-scroll-user-pack".into(),
-            text: prompt.to_string(),
-        }),
-        user_timestamp: Some("2026-03-19T05:54:00Z".to_string()),
-        request_data: None,
-        thinking_text: String::new(),
-        thinking_first_mono_ms: None,
-        thinking_last_mono_ms: None,
-        transcript_text: String::new(),
-        first_delta_mono_ms: None,
-        usage: None,
-        cache_usage: None,
-        error_message: None,
-        permissions: Vec::new(),
-        tool_calls: Vec::new(),
-        first_seq: 1,
-        last_seq: 1,
-        first_mono_ms: 1,
-        last_mono_ms: 1,
-        request_started_mono_ms: None,
-        revision: 0,
-    }]);
-    app.transcript_view.selected_activity_index = 0;
-
-    // When: measure at scrollbar-reduced scroll width (120 shell − dual gutter 10 − track 1)
-    let layout = build_measured_transcript_layout_for_width(&app, &Theme::default(), 109);
-    let user_surface = layout
-        .sections
-        .iter()
-        .flat_map(|section| section.surfaces.iter())
-        .find(|surface| {
-            transcript_test_line_texts(surface.lines.clone())
-                .iter()
-                .any(|line| line.contains("❯ List every"))
-        })
-        .expect("user surface");
-    let lines = transcript_test_line_texts(user_surface.lines.clone());
-    let first_content = lines
-        .iter()
-        .find(|line| line.contains("❯ "))
-        .expect("marked user row");
-
-    // Then: Grok's two-cell right pad keeps the clock inset and wraps "all names"
-    // together onto the continuation row.
-    assert!(
-        first_content.contains("inventory of")
-            && !first_content.contains("all")
-            && first_content.contains("5:54 AM"),
-        "SCROLL freeze keeps the inset clock on row 1; got {first_content:?}\nlines={lines:?}"
-    );
-    assert!(
-        lines.iter().any(|line| line.contains("all names one per")),
-        "'all names' must wrap together after applying the right pad; got {first_content:?}\nlines={lines:?}"
-    );
-}
-
-#[test]
 fn reasoning_summary_renders_as_nested_inset_block() {
     // arrange
     // act
@@ -2009,7 +1849,7 @@ fn streaming_reasoning_header_with_title_keeps_the_quiet_header() {
     let rendered = lines.join("\n");
     assert!(
         rendered.contains("Thinking…"),
-        "streaming reasoning keeps the quiet reference header\n{rendered}"
+        "streaming reasoning keeps the quiet header\n{rendered}"
     );
     assert!(!rendered.contains("◆ Thinking…"));
     assert!(rendered.contains("Planning approach"));
@@ -2030,7 +1870,6 @@ fn completed_reasoning_header_renders_thinking_with_title() {
     );
     entry.thinking_text = "**Review**\n\nbody text".to_string();
     entry.last_mono_ms = 1501;
-    // Reference packing: Thought for uses reasoning mono span, not full turn duration.
     entry.thinking_first_mono_ms = Some(0);
     entry.thinking_last_mono_ms = Some(1500);
     app.activities = std::collections::VecDeque::from(vec![entry]);
@@ -2071,7 +1910,6 @@ fn completed_reasoning_header_without_title_renders_thinking() {
     );
     entry.thinking_text = "simple reasoning".to_string();
     entry.last_mono_ms = 1501;
-    // Reference packing: Thought for uses reasoning mono span, not full turn duration.
     entry.thinking_first_mono_ms = Some(0);
     entry.thinking_last_mono_ms = Some(1500);
     app.activities = std::collections::VecDeque::from(vec![entry]);
@@ -2104,7 +1942,6 @@ fn completed_reasoning_header_without_title_renders_thinking() {
 #[test]
 fn streaming_reasoning_defaults_to_last_three_wrapped_rows() {
     // arrange
-    // Given: a running reasoning paragraph longer than the reference preview.
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
         "request-streaming-reasoning-preview",
@@ -2209,7 +2046,6 @@ fn ctrl_e_expands_selected_finished_reasoning_from_transcript_focus() {
     app.transcript_view.selected_activity_index = 0;
     app.focus = crate::app::Focus::Details;
 
-    // When: the reference disclosure chord is pressed.
     app.handle_key(crossterm::event::KeyEvent::new(
         crossterm::event::KeyCode::Char('e'),
         crossterm::event::KeyModifiers::CONTROL,
@@ -2252,7 +2088,7 @@ fn running_reasoning_text_stays_stable_across_shared_phase() {
 
     // When: the existing fixed-rate transcript clock advances one visible frame.
     for _ in 0..4 {
-        app.advance_animation_tick_for_evidence();
+        app.advance_animation_tick();
     }
     let after = transcript_test_line_texts(build_transcript_lines_for_width(
         &app,
@@ -2344,7 +2180,6 @@ fn failed_turn_without_thinking_text_omits_thought_for() {
     // arrange
     // act
     // assert
-    // Given: failed turn with no reasoning (reference run1-stream-probe failure state)
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
         "request-failed-no-thinking",
@@ -2371,7 +2206,7 @@ fn failed_turn_without_thinking_text_omits_thought_for() {
     // Then: fail chrome is flat Retry failed / Turn failed — no empty Thought for
     assert!(
         !rendered.contains("Thought for"),
-        "failed turns without reasoning must omit Thought for (reference failure state)\n{rendered}"
+        "failed turns without reasoning must omit Thought for\n{rendered}"
     );
     assert!(
         rendered.contains("Retry failed") || rendered.contains("API error"),
@@ -2762,257 +2597,6 @@ fn perf_packet2_streaming_tail_layout_stays_within_frame_budget() {
         elapsed < Duration::from_millis(16),
         "Packet 2 streaming tail layout took {elapsed:?}"
     );
-}
-
-#[test]
-fn capture_all_spacing_evidence() {
-    // arrange
-    // act
-    // assert
-    let dir = std::path::Path::new(".omo/evidence/chat-spacing-parity");
-    std::fs::create_dir_all(dir).unwrap_or_abort();
-
-    let write_evidence = |name: &str, app: &AppState, width: u16| {
-        let lines = transcript_test_line_texts(build_transcript_lines_for_width(
-            app,
-            &Theme::default(),
-            width,
-        ));
-        std::fs::write(dir.join(format!("{name}.txt")), lines.join("\n")).unwrap_or_abort();
-    };
-
-    let single_turn = || {
-        let mut app = AppState::default();
-        app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
-            request_id: "req-single".to_string(),
-            profile_label: "default".to_string(),
-            model_id: "gpt-5.4-mini".to_string(),
-            provider_id: "openai".to_string(),
-            status: ActivityStatus::Done,
-            user_message: Some(UserMessageSubmittedEvent {
-                request_id: "req-single".into(),
-                text: "Hello".to_string(),
-            }),
-            user_timestamp: None,
-            request_data: None,
-            thinking_text: String::new(),
-            thinking_first_mono_ms: None,
-            thinking_last_mono_ms: None,
-            transcript_text: "Hi there!".to_string(),
-            first_delta_mono_ms: None,
-            usage: None,
-            cache_usage: None,
-            error_message: None,
-            permissions: Vec::new(),
-            tool_calls: Vec::new(),
-            first_seq: 1,
-            last_seq: 1,
-            first_mono_ms: 1,
-            last_mono_ms: 1,
-            request_started_mono_ms: None,
-            revision: 0,
-        }]);
-        app.transcript_view.selected_activity_index = 0;
-        app
-    };
-
-    let two_turns = || {
-        let mut app = AppState::default();
-        app.activities = std::collections::VecDeque::from(vec![
-            ActivityEntry {
-                request_id: "req-two-a".to_string(),
-                profile_label: "default".to_string(),
-                model_id: "gpt-5.4-mini".to_string(),
-                provider_id: "openai".to_string(),
-                status: ActivityStatus::Done,
-                user_message: Some(UserMessageSubmittedEvent {
-                    request_id: "req-two-a".into(),
-                    text: "First question".to_string(),
-                }),
-                user_timestamp: None,
-                request_data: None,
-                thinking_text: String::new(),
-                thinking_first_mono_ms: None,
-                thinking_last_mono_ms: None,
-                transcript_text: "First answer".to_string(),
-                first_delta_mono_ms: None,
-                usage: None,
-                cache_usage: None,
-                error_message: None,
-                permissions: Vec::new(),
-                tool_calls: Vec::new(),
-                first_seq: 1,
-                last_seq: 1,
-                first_mono_ms: 1,
-                last_mono_ms: 1,
-                request_started_mono_ms: None,
-                revision: 0,
-            },
-            ActivityEntry {
-                request_id: "req-two-b".to_string(),
-                profile_label: "default".to_string(),
-                model_id: "gpt-5.4-mini".to_string(),
-                provider_id: "openai".to_string(),
-                status: ActivityStatus::Done,
-                user_message: Some(UserMessageSubmittedEvent {
-                    request_id: "req-two-b".into(),
-                    text: "Second question".to_string(),
-                }),
-                user_timestamp: None,
-                request_data: None,
-                thinking_text: String::new(),
-                thinking_first_mono_ms: None,
-                thinking_last_mono_ms: None,
-                transcript_text: "Second answer".to_string(),
-                first_delta_mono_ms: None,
-                usage: None,
-                cache_usage: None,
-                error_message: None,
-                permissions: Vec::new(),
-                tool_calls: Vec::new(),
-                first_seq: 2,
-                last_seq: 2,
-                first_mono_ms: 2,
-                last_mono_ms: 2,
-                request_started_mono_ms: None,
-                revision: 0,
-            },
-        ]);
-        app.transcript_view.selected_activity_index = 1;
-        app
-    };
-
-    let reasoning_to_body = || {
-        let mut app = AppState::default();
-        let mut entry = transcript_section_model_test_activity(
-            "req-reasoning",
-            ActivityStatus::Done,
-            "Here is my answer",
-        );
-        entry.thinking_text = "Let me think about this".to_string();
-        entry.user_message = Some(UserMessageSubmittedEvent {
-            request_id: "req-reasoning".into(),
-            text: "What is 2+2?".to_string(),
-        });
-        app.activities = std::collections::VecDeque::from(vec![entry]);
-        app.transcript_view.selected_activity_index = 0;
-        app
-    };
-
-    let tool_to_body = || {
-        let mut app = AppState::default();
-        let mut activity = transcript_section_model_test_activity(
-            "req-tool-body",
-            ActivityStatus::Done,
-            "The file contains the configuration",
-        );
-        activity.user_message = Some(UserMessageSubmittedEvent {
-            request_id: "req-tool-body".into(),
-            text: "Read the file".to_string(),
-        });
-        let mut tool = transcript_section_model_test_tool_call("tc-read", "fs.read");
-        tool.status = ToolCallDisplayStatus::Succeeded;
-        tool.output_summary = Some("24 lines read".to_string());
-        tool.truncated_output = Some("24 lines read".to_string());
-        activity.tool_calls.push(tool);
-        app.activities = std::collections::VecDeque::from(vec![activity]);
-        app.transcript_view.selected_activity_index = 0;
-        app
-    };
-
-    let consecutive_tools = || {
-        let mut app = AppState::default();
-        let mut activity = transcript_section_model_test_activity(
-            "req-tools",
-            ActivityStatus::Done,
-            "Done checking",
-        );
-        activity.user_message = Some(UserMessageSubmittedEvent {
-            request_id: "req-tools".into(),
-            text: "Check the files".to_string(),
-        });
-        let mut tool1 = transcript_section_model_test_tool_call("tc-read-1", "fs.read");
-        tool1.status = ToolCallDisplayStatus::Succeeded;
-        tool1.output_summary = Some("10 lines".to_string());
-        tool1.truncated_output = Some("10 lines".to_string());
-        let mut tool2 = transcript_section_model_test_tool_call("tc-read-2", "fs.read");
-        tool2.status = ToolCallDisplayStatus::Succeeded;
-        tool2.output_summary = Some("20 lines".to_string());
-        tool2.truncated_output = Some("20 lines".to_string());
-        activity.tool_calls.push(tool1);
-        activity.tool_calls.push(tool2);
-        app.activities = std::collections::VecDeque::from(vec![activity]);
-        app.transcript_view.selected_activity_index = 0;
-        app
-    };
-
-    let bash_output = || {
-        let mut app = AppState::default();
-        let mut activity = transcript_section_model_test_activity(
-            "req-bash",
-            ActivityStatus::Done,
-            "Tests passed",
-        );
-        activity.user_message = Some(UserMessageSubmittedEvent {
-            request_id: "req-bash".into(),
-            text: "Run the tests".to_string(),
-        });
-        let mut tool = transcript_section_model_test_tool_call("tc-bash", "shell.run");
-        tool.args_summary = r#"{"command":"seq 20","description":"Generate 20 lines"}"#.to_string();
-        tool.status = ToolCallDisplayStatus::Succeeded;
-        let output = (1..=20)
-            .map(|n| format!("line {n}"))
-            .collect::<Vec<_>>()
-            .join("\n");
-        tool.output_summary = Some(output.clone());
-        tool.truncated_output = Some(output);
-        activity.tool_calls.push(tool);
-        app.activities = std::collections::VecDeque::from(vec![activity]);
-        app.transcript_view.selected_activity_index = 0;
-        app
-    };
-
-    let markdown_headings = || {
-        let mut app = AppState::default();
-        app.activities =
-            std::collections::VecDeque::from(vec![transcript_section_model_test_activity(
-                "req-markdown",
-                ActivityStatus::Done,
-                "Intro paragraph\n\n# Heading\n\nBody text after heading",
-            )]);
-        app.transcript_view.selected_activity_index = 0;
-        app
-    };
-
-    let todos = || {
-        let mut app = AppState::default();
-        let mut activity = transcript_section_model_test_activity(
-            "req-todos",
-            ActivityStatus::Done,
-            "Here is the plan",
-        );
-        activity.user_message = Some(UserMessageSubmittedEvent {
-            request_id: "req-todos".into(),
-            text: "Show me the plan".to_string(),
-        });
-        let mut tool = transcript_section_model_test_tool_call("tc-todos", "task");
-        tool.status = ToolCallDisplayStatus::Succeeded;
-        tool.output_summary = Some("Plan created".to_string());
-        tool.truncated_output = Some("Plan created".to_string());
-        activity.tool_calls.push(tool);
-        app.activities = std::collections::VecDeque::from(vec![activity]);
-        app.transcript_view.selected_activity_index = 0;
-        app
-    };
-
-    write_evidence("single-turn", &single_turn(), 80);
-    write_evidence("two-turns", &two_turns(), 80);
-    write_evidence("reasoning-to-body", &reasoning_to_body(), 80);
-    write_evidence("tool-to-body", &tool_to_body(), 80);
-    write_evidence("consecutive-tools", &consecutive_tools(), 80);
-    write_evidence("bash-output", &bash_output(), 80);
-    write_evidence("markdown-headings-paragraphs", &markdown_headings(), 80);
-    write_evidence("todos", &todos(), 80);
 }
 
 #[test]

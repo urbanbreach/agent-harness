@@ -61,9 +61,9 @@ fn composer_mode_style(
     let standard_accent = bordered::live_composer_content_color(
         theme,
         if focused {
-            theme.reference_terminal.prompt_accent
+            theme.terminal_colors.prompt_accent
         } else {
-            theme.reference_terminal.muted
+            theme.terminal_colors.muted
         },
         focused,
     );
@@ -78,13 +78,9 @@ fn composer_mode_style(
         },
         ComposerTone::Plan => ComposerModeStyle {
             border: if focused {
-                theme.reference_terminal.primary
+                theme.terminal_colors.primary
             } else {
-                bordered::live_composer_content_color(
-                    theme,
-                    theme.reference_terminal.primary,
-                    false,
-                )
+                bordered::live_composer_content_color(theme, theme.terminal_colors.primary, false)
             },
             accent: Color::LightYellow,
         },

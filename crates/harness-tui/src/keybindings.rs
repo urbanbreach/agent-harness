@@ -8,11 +8,8 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::str::FromStr;
 
-pub mod action_dispatch;
 mod command_registry;
-pub mod focus;
 pub mod palette_model;
-pub mod parity_matrix;
 
 use command_registry::command_metadata;
 pub(crate) use command_registry::HelpCategory;

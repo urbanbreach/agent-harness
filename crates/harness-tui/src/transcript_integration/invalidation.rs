@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::design_contract::LifecycleState;
+use crate::theme_tokens::LifecycleState;
 use crate::transcript_blocks::{
     BlockEvent, BlockKind, BlockLifecycle, BlockStoreError, RawDisclosure, TranscriptBlocks,
 };

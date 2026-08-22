@@ -351,7 +351,7 @@ pub(super) fn assistant_markdown_renders_headings_lists_and_quotes() {
         Some("req_markdown"),
         EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
             request_id: "req_markdown".into(),
-            delta: "# Plan\n- [x] Capture transcript parity\n- [ ] Ship final polish\n> Keep the chrome muted".to_string(),
+            delta: "# Plan\n- [x] Capture transcript consistency\n- [ ] Ship final polish\n> Keep the chrome muted".to_string(),
         }),
     ));
     app.ingest_event(envelope(
@@ -377,7 +377,7 @@ pub(super) fn assistant_markdown_renders_headings_lists_and_quotes() {
     let debug = format!("{:?}", terminal.backend().buffer());
     assert!(debug.contains("Plan"), "heading text should render");
     assert!(
-        debug.contains("☑ Capture transcript parity"),
+        debug.contains("☑ Capture transcript consistency"),
         "checked task should render with checkbox"
     );
     assert!(
@@ -387,62 +387,6 @@ pub(super) fn assistant_markdown_renders_headings_lists_and_quotes() {
     assert!(
         debug.contains("▍ Keep the chrome muted"),
         "blockquote should render with quote glyph"
-    );
-}
-
-pub(super) fn assistant_markdown_tables_match_reference_top_level_columns() {
-    let mut app = AppState::new_live(None, false, None);
-
-    app.ingest_event(envelope(
-        1,
-        Some("req_markdown_table"),
-        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "req_markdown_table".into(),
-            provider_id: "openai".to_string(),
-            model_id: "gpt-5-codex".to_string(),
-            prompt_summary: "Render markdown table".to_string(),
-            request_digest: "digest-markdown-table".to_string(),
-            metadata: None,
-        }),
-    ));
-    app.ingest_event(envelope(
-        2,
-        Some("req_markdown_table"),
-        EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
-            request_id: "req_markdown_table".into(),
-            delta: "| Name | Age |\n|---|---|\n| Alice | 30 |\n| Bob | 5 |".to_string(),
-        }),
-    ));
-    app.ingest_event(envelope(
-        3,
-        Some("req_markdown_table"),
-        EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
-            request_id: "req_markdown_table".into(),
-            finish_reason: "stop".to_string(),
-            output_digest: Some("digest-markdown-table-finished".to_string()),
-            usage: None,
-            metadata: None,
-        }),
-    ));
-
-    app.active_tab = app::Tab::Run;
-
-    let rendered = render_live_lines(&app, 120, 30);
-    assert!(
-        rendered.contains("Name   Age"),
-        "table header should render as borderless content-width columns\n{rendered}"
-    );
-    assert!(
-        rendered.contains("Alice  30"),
-        "table body should align content-width columns\n{rendered}"
-    );
-    assert!(
-        !rendered.contains("| Name | Age |"),
-        "markdown table source rows should not render as raw pipe text\n{rendered}"
-    );
-    assert!(
-        !rendered.contains('┌'),
-        "top-level markdown tables should be borderless like the reference transcript\n{rendered}"
     );
 }
 

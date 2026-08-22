@@ -13,8 +13,8 @@ mod interaction_queue;
 pub use interaction_queue::InteractionEventClass;
 use interaction_queue::InteractionQueue;
 
-pub const PRESENTATION_TRACE_ENV: &str = "TUI_FIDELITY_PRESENTATION_TRACE";
-pub const INTERACTION_QUEUE_ENV: &str = "TUI_FIDELITY_INTERACTION_QUEUE";
+pub const PRESENTATION_TRACE_ENV: &str = "HARNESS_TUI_PRESENTATION_TRACE";
+pub const INTERACTION_QUEUE_ENV: &str = "HARNESS_TUI_INTERACTION_QUEUE";
 
 #[derive(Debug)]
 pub struct PresentationTelemetrySession {

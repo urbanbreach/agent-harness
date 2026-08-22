@@ -11,7 +11,7 @@
         45 -     render_diff_tab, render_events_tab, render_help_tab,                        45 +     render_events_tab, render_help_tab, render_live_details_overlay,         █    • No active LSP servers
         46       render_operator_sidebar,                                                    46       render_operator_sidebar,                                                 █
         47   };                                                                              47   };                                                                           █    ▼ Modified Files
-     ✓ audit tool lifecycle parity · Researcher Agent                                                                                                                         █    • crates/harness-tui/src/ui.rs · +1 -1
+     ✓ audit tool lifecycle consistency · Researcher Agent                                                                                                                         █    • crates/harness-tui/src/ui.rs · +1 -1
       └ 2 toolcalls · 2ms                                                                                                                                                      █
      $ cargo test -p harness-tui  ▸                                                                                                                                            █
       exit code: 1                                                                                                                                                             █

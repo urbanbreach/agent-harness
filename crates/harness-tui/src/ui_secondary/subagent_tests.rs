@@ -795,7 +795,7 @@ pub(crate) fn exact_test_operator_rail_keeps_subagents_visible_in_replay() {
             harness_core::event::EventV1::UserMessageSubmitted(
                 harness_core::event::UserMessageSubmittedEvent {
                     request_id: "req_replay_subagent".into(),
-                    text: "Review replay sidebar parity".to_string(),
+                    text: "Review replay sidebar consistency".to_string(),
                 },
             ),
         ),

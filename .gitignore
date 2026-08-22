@@ -54,14 +54,5 @@ crates/harness/harness.json
 /ATTEMPT/
 **/__pycache__/
 
-# UI parity / reference-copy development artifacts
-/43-ui-catalog-coverage.md
-/task-verification-*.json
-/configs/tui-fidelity-closure-contract.json
-/docs/reference/grok-build-*.md
-**/reference-target/
-**/harness-target/
-**/candidate-copy*/
-
 # Generated Pages site output
 /public/

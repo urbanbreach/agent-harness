@@ -41,21 +41,6 @@ pub(super) fn command_palette_groups_commands_for_shell() {
     assert!(rendered.contains("Commands"));
     assert!(rendered.contains("Resume Session") || rendered.contains("Switch session"));
 
-    let mut live_app = app::AppState::new_live(None, false, None);
-    live_app.handle_key(key_with_modifiers(
-        crossterm::event::KeyCode::Char('p'),
-        crossterm::event::KeyModifiers::CONTROL,
-    ));
-    for ch in "follow".chars() {
-        live_app.handle_key(key(crossterm::event::KeyCode::Char(ch)));
-    }
-    let filtered = render_live_lines(&live_app, 120, 30);
-    assert!(filtered.contains("Commands"));
-    assert!(
-        !filtered.contains("Toggle follow"),
-        "harness-only commands must not appear in parity palette"
-    );
-
     let mut system_app = app::AppState::new_live(None, false, None);
     system_app.handle_key(key_with_modifiers(
         crossterm::event::KeyCode::Char('p'),

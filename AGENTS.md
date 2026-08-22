@@ -15,7 +15,6 @@ agent-harness/
 ├── crates/harness-providers/ # provider protocol, OpenAI/Anthropic transports, schema/attachment compatibility, mocks/cassettes
 ├── crates/harness-tools/     # native tools: fs/edit/shell/task/web/GitHub/AST/LSP/MCP/session/control plane
 ├── crates/harness-tui/       # Ratatui runtime, app state, overlays, transcript, commands, themes, terminal signoff
-├── crates/harness-testkit/   # deterministic fakes, simulation, parity/fidelity, receipts, PTY/live/native evidence
 ├── configs/                  # generated schemas, starter examples, provider catalogs
 ├── docs/                     # public architecture/config/testing/tool/session/release documentation
 ├── scripts/                  # lane runner, static gates, perf/coverage/stress helpers
@@ -33,11 +32,10 @@ agent-harness/
 | Core owner tests | `crates/harness-core/tests/AGENTS.md` | Coordinator fan-in, fixtures, replay/projection, permission, integration, and perf owners. |
 | Provider protocol | `crates/harness-providers/AGENTS.md` | Read before changing `ProviderStreamEvent`, request metadata, cassettes, or transport code. |
 | Native tools | `crates/harness-tools/AGENTS.md` | Read before changing tool ids, schemas, path safety, bash, MCP, LSP, task/session tools. |
-| Tool owner tests | `crates/harness-tools/tests/AGENTS.md` | Registry parity, execution surfaces, common fixtures, and per-family suites. |
+| Tool owner tests | `crates/harness-tools/tests/AGENTS.md` | Registry coverage, execution surfaces, common fixtures, and per-family suites. |
 | TUI shell | `crates/harness-tui/AGENTS.md` | Read before touching app state, layout, transcript rendering, overlays, keybindings, or snapshots. |
 | TUI app state | `crates/harness-tui/src/app/AGENTS.md` | AppState, session projection/stack, permissions, composer, model switcher. |
 | TUI overlays | `crates/harness-tui/src/ui_overlays/AGENTS.md` | Modal/status/dashboard rendering, focus/geometry, and exact-render ownership. |
-| TUI owner tests | `crates/harness-tui/tests/AGENTS.md` | Deterministic render, reference parity, PTY, topology, snapshots, provenance helpers. |
 | Test helpers and signoff | `crates/harness-testkit/AGENTS.md`, `crates/harness-testkit/tests/AGENTS.md` | Deterministic fakes, simulation, PTY/live/native evidence, artifact provenance. |
 | Runtime prompt assets | `.agent-harness/AGENTS.md` | Generic runtime prompt, prompt-family fragments, and skill packages. |
 | Public docs | `docs/AGENTS.md` | Architecture, config, testing, tool catalog, session/replay, release evidence. |
@@ -103,13 +101,12 @@ RUST_TEST_THREADS=1 cargo nextest run -p harness-testkit --test pty_e2e --test-t
 |--------|-------------|
 | Public config keys or validation | `docs/configuration/config.md`, `configs/config.json`, `configs/tui.json`, example configs, config schema tests |
 | Event variants or replay semantics | `docs/architecture/architecture.md`, `docs/architecture/sessions-and-replay.md`, event/replay docs tests |
-| Native tool ids/schema/capability | `docs/tools/native-tool-catalog.md`, `native_tool_parity_matrix_test`, permission docs as needed |
+| Native tool ids/schema/capability | `docs/tools/native-tool-catalog.md`, tool catalog owner tests, permission docs as needed |
 | Test lane behavior or evidence shape | `docs/testing/testing.md`, `scripts/test-lanes.sh`, owner tests |
 | Simulation invariants | `docs/testing/simulation-matrix.json`, `simulation_validator_test`, simulation evidence, secret scan |
 | Provider model catalog | `configs/provider-catalog.generated.json`, `configs/provider-catalog.reference.jsonc`, generated catalog docs/tests |
 | Runtime prompt assets or shipped skills | `.agent-harness/AGENTS.md`, bootstrap/profile/skill discovery tests, prompt snapshots |
 | Starter config defaults | `configs/harness.example.jsonc`, `configs/tui.example.jsonc`, README quick start |
-| TUI fidelity evidence contract | `scripts/tui-fidelity/`, `scripts/tui-parity/`, `configs/tui-fidelity-*.json`, `docs/reference/`, owner signoff tests |
 
 ## INVARIANTS
 - Events are the source of truth; replay is side-effect free and derives from JSONL in contiguous `seq` order.

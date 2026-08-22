@@ -931,8 +931,8 @@ impl AppState {
                     return;
                 }
                 Action::CursorLeft => {
-                    if self.composer.parity_editing_ready()
-                        && self.composer.parity_move_left().is_ok()
+                    if self.composer.editor_matches_prompt_fields()
+                        && self.composer.editor_move_left().is_ok()
                     {
                         self.sync_file_mention_overlay();
                         return;
@@ -945,8 +945,8 @@ impl AppState {
                     return;
                 }
                 Action::CursorRight => {
-                    if self.composer.parity_editing_ready()
-                        && self.composer.parity_move_right().is_ok()
+                    if self.composer.editor_matches_prompt_fields()
+                        && self.composer.editor_move_right().is_ok()
                     {
                         self.sync_file_mention_overlay();
                         return;

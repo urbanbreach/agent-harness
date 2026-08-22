@@ -2,7 +2,7 @@
 //!
 //! These are plain value objects with no shared registry or app-state
 //! dependency. They capture the deterministic viewport classification and
-//! frame-plan summary that the responsive parity rows (RESP-*) require,
+//! frame-plan summary that the responsive consistency rows (RESP-*) require,
 //! without touching the shared `layout.rs` root.
 
 pub mod density;

@@ -1,8 +1,5 @@
 use std::fmt::{Display, Formatter};
 
-use crate::app::interaction_reducer::{
-    InteractionState, ScreenMode, TransitionError, TransitionTable, UiIntent as InteractionIntent,
-};
 use crate::app::Focus;
 use crate::attachment_lifecycle::Attachment;
 use crate::completion_controller::{
@@ -10,6 +7,9 @@ use crate::completion_controller::{
 };
 use crate::composer_atoms::AttachmentId;
 use crate::composer_editing::{ComposerEditor, EditingError};
+use crate::composer_integration::interaction::{
+    InteractionState, ScreenMode, TransitionError, TransitionTable, UiIntent as InteractionIntent,
+};
 use crate::ghost_suggestions::{SuggestionController, SuggestionError};
 use crate::prompt_queue_actions::{
     apply as apply_queue_action, QueueAction, QueueError, QueueLifecycle, QueueState,
@@ -20,7 +20,7 @@ use crate::shell_geometry::ShellState;
 use super::hit_map::{build as build_hit_map, ComposerHitMap};
 use super::submission::{build as build_submission, ComposerUiIntent, SubmissionError};
 use super::view_model::{build as build_view_model, ComposerViewModel};
-use crate::design_contract::ViewportId;
+use crate::theme_tokens::ViewportId;
 
 pub struct AttachmentEntry {
     pub id: AttachmentId,

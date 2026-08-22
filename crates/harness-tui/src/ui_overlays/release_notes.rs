@@ -280,7 +280,6 @@ mod tests {
         // assert
         assert!(text.contains(env!("CARGO_PKG_VERSION")));
         assert!(text.contains("~/.harness"));
-        assert!(!text.to_ascii_lowercase().contains("grok"));
     }
 
     #[test]

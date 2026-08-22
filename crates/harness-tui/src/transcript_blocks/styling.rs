@@ -1,5 +1,5 @@
 use super::BlockKind;
-use crate::design_contract::{
+use crate::theme_tokens::{
     BorderRole, ColorRole, GlyphRole, HierarchyLevel, TextModifier, DESIGN_TOKENS,
 };
 

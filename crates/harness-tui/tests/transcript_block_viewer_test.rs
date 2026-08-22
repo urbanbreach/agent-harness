@@ -221,7 +221,7 @@ fn wrapped_and_raw_render_surfaces_highlight_current_match_and_selection() -> Te
     // When: both rendering modes are materialized into a terminal buffer.
     let wrapped = render_surface(&viewer, area);
     let mut buffer = Buffer::empty(area);
-    render_to_buffer(&mut buffer, area, &wrapped, &Theme::harness_chat());
+    render_to_buffer(&mut buffer, area, &wrapped, &Theme::harness_dark());
     viewer.toggle_mode()?;
     let raw = viewer.render_surface(area);
 

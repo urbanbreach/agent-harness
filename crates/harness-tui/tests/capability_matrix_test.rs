@@ -94,7 +94,7 @@ fn reduced_capability_cell_applies_and_labels_every_visible_fallback() {
     cell.motion = MotionCapability::Reduced;
 
     // act
-    let reduced = cell.apply_to_theme(Theme::harness_chat());
+    let reduced = cell.apply_to_theme(Theme::harness_dark());
 
     // assert
     assert_eq!(reduced.color_level(), ColorLevel::None);

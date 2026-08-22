@@ -1,14 +1,6 @@
 // allow: SIZE_OK — keybinding data and command registry (palette entries)
-//! ruleset-compatible palette command model.
-//!
-//! Each entry uses a stable Harness command ID as the contract key.
-//! Dynamic toggle commands use one command ID with a `DynamicTitle` rule
-//! instead of split show/hide entries. Harness-only commands are marked
-//! explicitly and excluded from Harness parity accounting.
-
 use crate::keybindings::Action;
 
-/// ruleset-compatible palette command section (category).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum PaletteCategory {
     Suggested,
@@ -126,7 +118,6 @@ impl PaletteCommandEntry {
     }
 }
 
-/// A single ruleset-compatible palette command entry.
 #[derive(Debug, Clone, Copy)]
 pub struct PaletteCommandEntry {
     /// Stable Harness command ID (e.g., "session.new").
@@ -139,17 +130,10 @@ pub struct PaletteCommandEntry {
     pub description: &'static str,
     /// Suggested rule.
     pub suggested: SuggestedRule,
-    /// True if this is a Harness-only command with no Harness equivalent.
-    pub harness_only: bool,
     /// Dispatch target.
     pub dispatch: PaletteDispatch,
 }
 
-/// The complete ruleset-compatible palette command registry.
-///
-/// Derived from the parity matrix in `parity_matrix.rs`.
-/// Only `Included` commands appear here; excluded and hidden non-target
-/// commands are absent by construction.
 pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
     PaletteCommandEntry {
         id: "session.new",
@@ -157,7 +141,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("New Session"),
         description: "Start a fresh live session",
         suggested: SuggestedRule::Never,
-        harness_only: false,
         dispatch: PaletteDispatch::NewSession,
     },
     PaletteCommandEntry {
@@ -166,7 +149,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("New Session in Worktree"),
         description: "Create a git worktree and start a fresh session rooted in it",
         suggested: SuggestedRule::Never,
-        harness_only: false,
         dispatch: PaletteDispatch::NewWorktreeSession,
     },
     PaletteCommandEntry {
@@ -175,7 +157,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("Agent Dashboard"),
         description: "Open the agent dashboard",
         suggested: SuggestedRule::Never,
-        harness_only: false,
         dispatch: PaletteDispatch::Action(Action::OpenStatusDialog),
     },
     PaletteCommandEntry {
@@ -184,7 +165,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("Back to Home"),
         description: "Return to the home shell",
         suggested: SuggestedRule::Never,
-        harness_only: false,
         dispatch: PaletteDispatch::Action(Action::CloseReviewSurface),
     },
     PaletteCommandEntry {
@@ -193,7 +173,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("Resume Session"),
         description: "Continue a prior session when resumable",
         suggested: SuggestedRule::Never,
-        harness_only: false,
         dispatch: PaletteDispatch::OpenSessionHistory,
     },
     PaletteCommandEntry {
@@ -202,7 +181,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("Rename Session"),
         description: "Rename the current session",
         suggested: SuggestedRule::Never,
-        harness_only: false,
         dispatch: PaletteDispatch::OpenSessionRename,
     },
     PaletteCommandEntry {
@@ -211,7 +189,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("Session Info"),
         description: "Open status and session details",
         suggested: SuggestedRule::Never,
-        harness_only: false,
         dispatch: PaletteDispatch::Action(Action::OpenStatusDialog),
     },
     PaletteCommandEntry {
@@ -220,7 +197,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("Send Feedback"),
         description: "Open help (feedback action maps to help surface)",
         suggested: SuggestedRule::Never,
-        harness_only: false,
         dispatch: PaletteDispatch::Action(Action::Help),
     },
     PaletteCommandEntry {
@@ -229,7 +205,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("Fork session"),
         description: "Fork the current session",
         suggested: SuggestedRule::Never,
-        harness_only: false,
         dispatch: PaletteDispatch::OpenForkSelector,
     },
     PaletteCommandEntry {
@@ -238,7 +213,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("Compact History"),
         description: "Write a manual context checkpoint",
         suggested: SuggestedRule::Never,
-        harness_only: false,
         dispatch: PaletteDispatch::CompactSession,
     },
     PaletteCommandEntry {
@@ -247,7 +221,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("Context Usage"),
         description: "Show context usage",
         suggested: SuggestedRule::Never,
-        harness_only: false,
         dispatch: PaletteDispatch::Action(Action::OpenStatusDialog),
     },
     PaletteCommandEntry {
@@ -256,7 +229,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("View Plan"),
         description: "View plan files for this workspace/session",
         suggested: SuggestedRule::Never,
-        harness_only: false,
         dispatch: PaletteDispatch::Action(Action::OpenViewPlan),
     },
     PaletteCommandEntry {
@@ -265,7 +237,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("Memory"),
         description: "Open the durable memory browser",
         suggested: SuggestedRule::Never,
-        harness_only: false,
         dispatch: PaletteDispatch::Action(Action::OpenMemoryBrowser),
     },
     PaletteCommandEntry {
@@ -274,7 +245,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("Switch Worktree"),
         description: "Switch the active session worktree",
         suggested: SuggestedRule::Never,
-        harness_only: false,
         dispatch: PaletteDispatch::Action(Action::OpenWorktreePicker),
     },
     PaletteCommandEntry {
@@ -283,7 +253,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("Open status"),
         description: "Open status and session details",
         suggested: SuggestedRule::Never,
-        harness_only: false,
         dispatch: PaletteDispatch::Action(Action::OpenStatusDialog),
     },
     PaletteCommandEntry {
@@ -295,7 +264,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         },
         description: "Toggle user message timestamps",
         suggested: SuggestedRule::Never,
-        harness_only: false,
         dispatch: PaletteDispatch::ToggleTranscriptTimestamps,
     },
     PaletteCommandEntry {
@@ -307,7 +275,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         },
         description: "Toggle inline thinking rows",
         suggested: SuggestedRule::Never,
-        harness_only: false,
         dispatch: PaletteDispatch::ToggleTranscriptThinking,
     },
     PaletteCommandEntry {
@@ -319,7 +286,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         },
         description: "Toggle completed successful tools",
         suggested: SuggestedRule::Never,
-        harness_only: false,
         dispatch: PaletteDispatch::ToggleToolDetails,
     },
     PaletteCommandEntry {
@@ -328,7 +294,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("Toggle session scrollbar"),
         description: "Toggle the session scrollbar",
         suggested: SuggestedRule::Never,
-        harness_only: false,
         dispatch: PaletteDispatch::Action(Action::ToggleScrollbar),
     },
     PaletteCommandEntry {
@@ -340,7 +305,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         },
         description: "Toggle generic tool payload blocks",
         suggested: SuggestedRule::Never,
-        harness_only: false,
         dispatch: PaletteDispatch::ToggleGenericToolOutput,
     },
     PaletteCommandEntry {
@@ -349,7 +313,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("Copy last assistant message"),
         description: "Copy the last assistant message to clipboard",
         suggested: SuggestedRule::Never,
-        harness_only: false,
         dispatch: PaletteDispatch::Action(Action::CopyMessage),
     },
     PaletteCommandEntry {
@@ -358,7 +321,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("Copy session transcript"),
         description: "Copy the session transcript to clipboard",
         suggested: SuggestedRule::Never,
-        harness_only: false,
         dispatch: PaletteDispatch::CopySessionTranscript,
     },
     PaletteCommandEntry {
@@ -367,7 +329,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("Export session transcript"),
         description: "Export the session transcript to a file",
         suggested: SuggestedRule::Never,
-        harness_only: false,
         dispatch: PaletteDispatch::Action(Action::ExportSession),
     },
     // === Agent ===
@@ -377,7 +338,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("Switch Model"),
         description: "Browse available provider/model options",
         suggested: SuggestedRule::Never,
-        harness_only: false,
         dispatch: PaletteDispatch::OpenModelSwitcher,
     },
     PaletteCommandEntry {
@@ -386,7 +346,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("Switch agent"),
         description: "Switch the active agent profile",
         suggested: SuggestedRule::Never,
-        harness_only: false,
         dispatch: PaletteDispatch::OpenModelSwitcher,
     },
     PaletteCommandEntry {
@@ -395,7 +354,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("Toggle MCPs"),
         description: "Toggle MCP server registrations",
         suggested: SuggestedRule::Never,
-        harness_only: false,
         dispatch: PaletteDispatch::OpenTogglesMenu,
     },
     PaletteCommandEntry {
@@ -404,7 +362,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("Variant cycle"),
         description: "Cycle the configured model variant/reasoning preset",
         suggested: SuggestedRule::Never,
-        harness_only: false,
         dispatch: PaletteDispatch::Action(Action::VariantCycle),
     },
     PaletteCommandEntry {
@@ -413,7 +370,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("Always Approve Mode"),
         description: "Toggle always-approve (YOLO) mode for tool permissions",
         suggested: SuggestedRule::Never,
-        harness_only: false,
         dispatch: PaletteDispatch::OpenTogglesMenu,
     },
     PaletteCommandEntry {
@@ -422,7 +378,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("Multiline Input"),
         description: "Toggle multiline input mode in the composer",
         suggested: SuggestedRule::Never,
-        harness_only: false,
         dispatch: PaletteDispatch::Action(Action::InsertNewline),
     },
     // === Tools ===
@@ -432,7 +387,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("Hooks"),
         description: "Manage hooks configuration",
         suggested: SuggestedRule::Never,
-        harness_only: false,
         dispatch: PaletteDispatch::OpenTogglesMenu,
     },
     PaletteCommandEntry {
@@ -441,7 +395,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("Plugins"),
         description: "Manage plugins",
         suggested: SuggestedRule::Never,
-        harness_only: false,
         dispatch: PaletteDispatch::OpenTogglesMenu,
     },
     PaletteCommandEntry {
@@ -450,7 +403,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("Marketplace"),
         description: "Browse the plugin marketplace",
         suggested: SuggestedRule::Never,
-        harness_only: false,
         dispatch: PaletteDispatch::Action(Action::Help),
     },
     // === Workspace ===
@@ -461,7 +413,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("Connect provider"),
         description: "Connect a provider",
         suggested: SuggestedRule::WhenDisconnected,
-        harness_only: false,
         dispatch: PaletteDispatch::OpenConnectDialog,
     },
     // === Prompt ===
@@ -471,7 +422,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("Stash prompt"),
         description: "Stash the current composer draft",
         suggested: SuggestedRule::Never,
-        harness_only: false,
         dispatch: PaletteDispatch::Action(Action::PromptStash),
     },
     PaletteCommandEntry {
@@ -480,7 +430,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("Stash pop"),
         description: "Restore the most recently stashed prompt",
         suggested: SuggestedRule::Never,
-        harness_only: false,
         dispatch: PaletteDispatch::Action(Action::PromptStashPop),
     },
     PaletteCommandEntry {
@@ -489,7 +438,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("Stash list"),
         description: "Browse stashed prompts",
         suggested: SuggestedRule::Never,
-        harness_only: false,
         dispatch: PaletteDispatch::Action(Action::PromptStashList),
     },
     // === System ===
@@ -499,7 +447,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("Settings"),
         description: "Browse typed settings registry entries (read-only)",
         suggested: SuggestedRule::Never,
-        harness_only: false,
         dispatch: PaletteDispatch::Action(Action::OpenSettings),
     },
     PaletteCommandEntry {
@@ -508,17 +455,17 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("Exit the app"),
         description: "Quit the application",
         suggested: SuggestedRule::Never,
-        harness_only: false,
         dispatch: PaletteDispatch::Action(Action::Quit),
     },
-    // === Harness-only commands (no Harness equivalent) ===
+];
+
+const INTERNAL_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
     PaletteCommandEntry {
         id: "harness.close_review_surface",
         category: PaletteCategory::Session,
         title: DynamicTitle::Static("Session shell"),
         description: "Return to the transcript-first session shell",
         suggested: SuggestedRule::Never,
-        harness_only: true,
         dispatch: PaletteDispatch::Action(Action::CloseReviewSurface),
     },
     PaletteCommandEntry {
@@ -527,7 +474,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("Toggle terminal panel"),
         description: "Show or hide shell command output",
         suggested: SuggestedRule::Never,
-        harness_only: true,
         dispatch: PaletteDispatch::Action(Action::ToggleTerminalPanel),
     },
     PaletteCommandEntry {
@@ -536,7 +482,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("Toggle follow"),
         description: "Toggle follow mode",
         suggested: SuggestedRule::Never,
-        harness_only: true,
         dispatch: PaletteDispatch::Action(Action::ToggleFollow),
     },
     PaletteCommandEntry {
@@ -545,7 +490,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("Revert workspace"),
         description: "Revert workspace to the most recent snapshot",
         suggested: SuggestedRule::Never,
-        harness_only: true,
         dispatch: PaletteDispatch::Action(Action::RevertWorkspace),
     },
     PaletteCommandEntry {
@@ -554,7 +498,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("Session tree"),
         description: "Open the Harness session lineage browser",
         suggested: SuggestedRule::Never,
-        harness_only: true,
         dispatch: PaletteDispatch::Action(Action::OpenLineageBrowser),
     },
     PaletteCommandEntry {
@@ -563,7 +506,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("First child session"),
         description: "Open the first child session",
         suggested: SuggestedRule::Never,
-        harness_only: true,
         dispatch: PaletteDispatch::Action(Action::SessionChildFirst),
     },
     PaletteCommandEntry {
@@ -572,7 +514,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("Next child session"),
         description: "Cycle to the next sibling child session",
         suggested: SuggestedRule::Never,
-        harness_only: true,
         dispatch: PaletteDispatch::Action(Action::SessionChildCycle),
     },
     PaletteCommandEntry {
@@ -581,7 +522,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("Previous child session"),
         description: "Cycle to the previous sibling child session",
         suggested: SuggestedRule::Never,
-        harness_only: true,
         dispatch: PaletteDispatch::Action(Action::SessionChildCycleReverse),
     },
     PaletteCommandEntry {
@@ -590,7 +530,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("Parent session"),
         description: "Return to the parent session",
         suggested: SuggestedRule::Never,
-        harness_only: true,
         dispatch: PaletteDispatch::Action(Action::SessionParent),
     },
     PaletteCommandEntry {
@@ -599,7 +538,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("Background subagents"),
         description: "Move foreground subagents to the background",
         suggested: SuggestedRule::Never,
-        harness_only: true,
         dispatch: PaletteDispatch::Action(Action::SessionBackground),
     },
     PaletteCommandEntry {
@@ -608,7 +546,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("Use stacked diffs"),
         description: "Force unified stacked transcript diffs",
         suggested: SuggestedRule::Never,
-        harness_only: true,
         dispatch: PaletteDispatch::ToggleStackedDiffs,
     },
     PaletteCommandEntry {
@@ -617,7 +554,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("Use split diffs"),
         description: "Allow side-by-side transcript diffs when wide",
         suggested: SuggestedRule::Never,
-        harness_only: true,
         dispatch: PaletteDispatch::ToggleStackedDiffs,
     },
     PaletteCommandEntry {
@@ -626,7 +562,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("Expand turn results"),
         description: "Expand overflow tool output in the selected turn",
         suggested: SuggestedRule::Never,
-        harness_only: true,
         dispatch: PaletteDispatch::ExpandTurnResults,
     },
     PaletteCommandEntry {
@@ -635,7 +570,6 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("Collapse turn results"),
         description: "Collapse overflow tool output in the selected turn",
         suggested: SuggestedRule::Never,
-        harness_only: true,
         dispatch: PaletteDispatch::CollapseTurnResults,
     },
 ];
@@ -647,29 +581,17 @@ pub fn entries() -> &'static [PaletteCommandEntry] {
 
 /// Find an entry by command ID.
 pub fn find(id: &str) -> Option<&'static PaletteCommandEntry> {
-    PALETTE_COMMAND_ENTRIES.iter().find(|entry| entry.id == id)
+    PALETTE_COMMAND_ENTRIES
+        .iter()
+        .chain(INTERNAL_COMMAND_ENTRIES.iter())
+        .find(|entry| entry.id == id)
 }
 
-/// Get all command IDs (including harness-only).
 pub fn all_ids() -> Vec<&'static str> {
-    PALETTE_COMMAND_ENTRIES.iter().map(|e| e.id).collect()
-}
-
-/// Get all Harness-parity command IDs (excluding harness-only).
-pub fn parity_ids() -> Vec<&'static str> {
     PALETTE_COMMAND_ENTRIES
         .iter()
-        .filter(|e| !e.harness_only)
-        .map(|e| e.id)
-        .collect()
-}
-
-/// Get all harness-only command IDs.
-pub fn harness_only_ids() -> Vec<&'static str> {
-    PALETTE_COMMAND_ENTRIES
-        .iter()
-        .filter(|e| e.harness_only)
-        .map(|e| e.id)
+        .chain(INTERNAL_COMMAND_ENTRIES.iter())
+        .map(|entry| entry.id)
         .collect()
 }
 
@@ -683,10 +605,14 @@ mod tests {
         // arrange
         // act
         // assert
-        let ids: HashSet<&str> = PALETTE_COMMAND_ENTRIES.iter().map(|e| e.id).collect();
+        let entries: Vec<&PaletteCommandEntry> = PALETTE_COMMAND_ENTRIES
+            .iter()
+            .chain(INTERNAL_COMMAND_ENTRIES.iter())
+            .collect();
+        let ids: HashSet<&str> = entries.iter().map(|entry| entry.id).collect();
         assert_eq!(
             ids.len(),
-            PALETTE_COMMAND_ENTRIES.len(),
+            entries.len(),
             "palette command entries have duplicate IDs"
         );
     }
@@ -698,6 +624,7 @@ mod tests {
         // assert
         let placeholders: Vec<&str> = PALETTE_COMMAND_ENTRIES
             .iter()
+            .chain(INTERNAL_COMMAND_ENTRIES.iter())
             .filter(|entry| matches!(entry.dispatch, PaletteDispatch::Placeholder))
             .map(|entry| entry.id)
             .collect();
@@ -705,60 +632,5 @@ mod tests {
             placeholders.is_empty(),
             "production palette must not advertise Placeholder dispatches: {placeholders:?}"
         );
-    }
-
-    #[test]
-    fn all_parity_matrix_included_ids_have_entries() {
-        // arrange
-        // act
-        // assert
-        let entry_ids: HashSet<&str> = all_ids().into_iter().collect();
-        for id in crate::keybindings::parity_matrix::included_ids() {
-            assert!(
-                entry_ids.contains(id),
-                "palette registry missing included command ID from parity matrix: {id}"
-            );
-        }
-    }
-
-    #[test]
-    fn no_excluded_ids_in_registry() {
-        // arrange
-        // act
-        // assert
-        let entry_ids: HashSet<&str> = all_ids().into_iter().collect();
-        for id in crate::keybindings::parity_matrix::excluded_ids() {
-            assert!(
-                !entry_ids.contains(id),
-                "palette registry contains excluded command ID: {id}"
-            );
-        }
-    }
-
-    #[test]
-    fn no_hidden_non_target_ids_in_registry() {
-        // arrange
-        // act
-        // assert
-        let entry_ids: HashSet<&str> = all_ids().into_iter().collect();
-        for id in crate::keybindings::parity_matrix::hidden_non_target_ids() {
-            assert!(
-                !entry_ids.contains(id),
-                "palette registry contains hidden non-target command ID: {id}"
-            );
-        }
-    }
-
-    #[test]
-    fn harness_only_ids_are_prefixed() {
-        // arrange
-        // act
-        // assert
-        for id in harness_only_ids() {
-            assert!(
-                id.starts_with("harness."),
-                "harness-only command ID must be prefixed with 'harness.': {id}"
-            );
-        }
     }
 }

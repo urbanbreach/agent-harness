@@ -1378,7 +1378,6 @@ mod presentation_section_tests {
         let rendered = section(&tool_call);
 
         // act
-        // Then: the header and detail body preserve the reference question grammar.
         // assert
         assert_eq!(rendered.header.title, "Asked 2 questions");
         assert_eq!(

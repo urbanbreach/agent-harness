@@ -281,7 +281,6 @@ impl SessionProjection {
                             // Context breadcrumb uses prompt/context fill when reported;
                             // turn status (⇣Nk) uses activity.usage.total_tokens separately.
                             // Keep the latest provider usage visible while an enclosing turn
-                            // task remains active, matching Grok's live header behavior.
                             let context_tokens = if usage.prompt_tokens > 0 {
                                 usage.prompt_tokens
                             } else {

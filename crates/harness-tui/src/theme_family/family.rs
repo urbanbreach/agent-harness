@@ -1,7 +1,7 @@
 //! Light and dark theme family variants resolving design-contract roles to truecolor.
 
-use crate::design_contract::ColorRole;
-use crate::design_contract::DESIGN_TOKENS;
+use crate::theme_tokens::ColorRole;
+use crate::theme_tokens::DESIGN_TOKENS;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]

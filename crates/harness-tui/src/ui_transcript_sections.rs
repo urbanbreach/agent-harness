@@ -411,7 +411,7 @@ fn ensure_completed_thought_header(
     if !thinking_visible {
         return;
     }
-    // Pinned reference freeze (run1-shell-complete-pinned-v1) does NOT show
+    // Completed turns without reasoning do not show
     // Thought for completed turns without reasoning deltas. Only add Thought
     // when reasoning events were received or thinking text exists.
     let has_reasoning =
@@ -421,7 +421,6 @@ fn ensure_completed_thought_header(
     if !complete_with_reasoning && !error_with_reasoning {
         return;
     }
-    // Reference tool state omits Thought when there was no reasoning.
     if !activity.tool_calls.is_empty() && !activity_has_thinking_text(activity) {
         return;
     }
@@ -458,7 +457,7 @@ fn sync_reasoning_parts_with_activity(
         !activity.thinking_text.trim().is_empty() || activity.thinking_duration_ms().is_some();
     if !has_reasoning {
         // No reasoning events or thinking text — remove reasoning parts
-        // (pinned reference freeze does not show Thought for turns without reasoning).
+        // (turns without reasoning do not show Thought).
         parts.retain(|part| !matches!(part.part, TranscriptAssistantPart::Reasoning(_)));
         return;
     }
@@ -922,7 +921,7 @@ mod ui10_tests {
             write.tool_id = "fs.write".to_string();
             write.canonical_tool_id = Some("fs.write".to_string());
             write.args_summary =
-                r#"{"path":"demo.txt","content":"parity-diff-ok\n","oldContent":"old content\n"}"#
+                r#"{"path":"demo.txt","content":"consistency-diff-ok\n","oldContent":"old content\n"}"#
                     .to_string();
             writes.push(write);
         }

@@ -870,7 +870,7 @@ fn simple_mode_defaults_map_ctrl_c_to_dismiss_modal_not_interrupt_action() {
 }
 
 #[test]
-fn simple_mode_harness_only_chords_are_mapped_rematerializations() {
+fn simple_mode_additional_chords_are_mapped_rematerializations() {
     // arrange
     let keymap = KeyMap::with_defaults();
     // act

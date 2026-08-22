@@ -476,8 +476,6 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                 starting_session_seed && app.composer.prompt_buffer.is_empty(),
             );
             app.set_compact_session_supported(compact_session_supported);
-            // Shared pending slot (also used by Replay) packs freeze-aligned context window
-            // for PTY/reference helpers without expanding TuiMode.
             if let Some(launch_metadata) = take_pending_replay_launch_metadata() {
                 app.set_launch_metadata(launch_metadata);
             }

@@ -6,7 +6,7 @@
 use ratatui::layout::Rect;
 
 use crate::dashboard::{DashboardGroupKey, DashboardStatus, SelectionKey};
-use crate::design_contract::{ColorRole, GlyphRole};
+use crate::theme_tokens::{ColorRole, GlyphRole};
 
 pub use responsive::RosterResponsive;
 
@@ -127,7 +127,7 @@ pub mod hit_map;
 pub mod layout;
 pub mod responsive;
 
-pub use crate::design_contract::ViewportId;
+pub use crate::theme_tokens::ViewportId;
 pub use filter::{
     filter_model, FilteredRoster, FilteredRosterGroup, LineageFilter, RosterFilter, RosterState,
 };

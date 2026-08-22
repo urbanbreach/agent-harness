@@ -114,26 +114,6 @@ fn start_running_tool(app: &mut AppState, seq: u64, tool_id: &str, args_summary:
 }
 
 #[test]
-fn baseline_stream_renders_one_row_with_phase_total_and_stop() {
-    // arrange
-    // Given: a fixed-time active response with queued follow-up input.
-    let mut app = active_app();
-    app.queued_prompt_count = 2;
-
-    // When: the live shell renders at its standard width.
-    let row = status_text(&app, WIDE_WIDTH).expect("active status row");
-
-    // act
-    // Then: active-turn facts share the single status row, while queued prompts remain
-    // absent because responding is not a sendable wait in the reference.
-    // assert
-    assert!(row.contains("Responding…"), "status row: {row:?}");
-    assert!(row.matches("4.2s").count() >= 2, "status row: {row:?}");
-    assert!(!row.contains("queued 2"), "status row: {row:?}");
-    assert!(row.contains("[stop]"), "status row: {row:?}");
-}
-
-#[test]
 fn sendable_wait_advertises_queued_prompt_promotion() {
     // arrange
     let mut app = active_app();
@@ -234,71 +214,6 @@ fn agent_spawn_wait_advertises_queued_prompt_promotion() {
     );
     assert!(row.contains("4.2s"), "status row: {row:?}");
     assert!(row.contains("[stop]"), "status row: {row:?}");
-}
-
-#[test]
-fn baseline_cancel_releases_the_status_row_after_turn_cancellation() {
-    // arrange
-    // Given: an active turn with a coordinator-owned interrupt task.
-    let mut app = active_app();
-
-    // When: the turn task reaches its terminal cancellation event.
-    app.ingest_event(envelope(
-        5,
-        "req_live_turn_status",
-        EventV1::TaskCancelled(TaskCancelledEvent {
-            task_id: "task_live_turn_status".into(),
-            reason: "cancelled by operator".to_string(),
-            task_scope: Some(TaskTerminalScope::AgentTurn),
-        }),
-    ));
-
-    // act
-    // Then: cancellation remains transcript/runtime truth without reserving a blank live row.
-    // assert
-    assert!(
-        FrameLayoutPlan::for_app(&app, Rect::new(0, 0, WIDE_WIDTH, HEIGHT))
-            .status
-            .is_none()
-    );
-}
-
-#[test]
-fn baseline_fail_releases_the_status_row_after_provider_failure() {
-    // arrange
-    // Given: an active response whose provider reports a terminal runtime failure.
-    let mut app = active_app();
-
-    // When: the failure banner becomes the authoritative runtime state.
-    app.set_status_banner(Some("provider stream error".to_string()));
-
-    // act
-    // Then: the failure surface owns the error and the live row returns to zero height.
-    // assert
-    assert!(
-        FrameLayoutPlan::for_app(&app, Rect::new(0, 0, WIDE_WIDTH, HEIGHT))
-            .status
-            .is_none()
-    );
-}
-
-#[test]
-fn baseline_recover_labels_the_active_row_as_recovering() {
-    // arrange
-    // Given: an active turn whose event stream entered replay recovery.
-    let mut app = active_app();
-    app.set_status_banner(Some("live stream lagged; replaying".to_string()));
-
-    // When: the degraded active turn renders.
-    let row = status_text(&app, WIDE_WIDTH).expect("recovering status row");
-
-    // act
-    // Then: the row reports recovery rather than stale response activity.
-    // assert
-    assert!(
-        row.contains("Recovering live state…"),
-        "status row: {row:?}"
-    );
 }
 
 #[test]

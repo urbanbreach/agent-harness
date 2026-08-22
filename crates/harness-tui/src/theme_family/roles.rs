@@ -1,6 +1,6 @@
 //! Semantic role facade unifying the design contract role families.
 
-pub use crate::design_contract::{BorderRole, ColorRole, FocusRole, GlyphRole};
+pub use crate::theme_tokens::{BorderRole, ColorRole, FocusRole, GlyphRole};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]

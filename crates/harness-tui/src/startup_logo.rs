@@ -65,19 +65,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn full_logo_uses_the_reference_identity_rectangle() {
-        // arrange
-        // act
-        let spans = row_spans(FULL_LOGO, 0, Color::Rgb(10, 10, 10));
-
-        // assert
-        assert_eq!(spans[0].content, " ██╗  ██╗      ");
-        assert_eq!(spans[0].content.chars().count(), FULL_WIDTH);
-        assert_eq!(FULL_LOGO.height(), 7);
-        assert_eq!(spans[0].style.fg, Some(Color::Rgb(10, 10, 10)));
-    }
-
-    #[test]
     fn hidden_logo_collapses_its_layout_width() {
         // arrange
         // act

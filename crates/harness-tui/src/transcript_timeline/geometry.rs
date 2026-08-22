@@ -1,6 +1,6 @@
 use ratatui::layout::Rect;
 
-use crate::design_contract::ViewportId;
+use crate::theme_tokens::ViewportId;
 use crate::transcript_identity::TurnId;
 
 use super::clipping::{clip_marker_label, marker_column_width, marker_display_width};

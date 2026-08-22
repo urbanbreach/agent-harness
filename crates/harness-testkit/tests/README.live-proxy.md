@@ -37,32 +37,31 @@ Minimal portable baseline:
 - a reachable configured live proxy/provider
 - the workspace `harness.jsonc` provider/model tuple, unless overridden by env
 
-## Batch 1 parity signoff
+## Live signoff
 
-When the change is tied to the canonical signoff map from `docs/testing/testing.md`, prefer the composed
-Batch 1 parity wrappers first:
+For an explicit live-provider check, use the slim signoff entrypoints:
 
 ```bash
 HARNESS_LIVE_PROXY=1 \
 HARNESS_LIVE_PROXY_CONFIG=harness.jsonc \
 HARNESS_LIVE_PROXY_PROVIDER=umans-ai-coding-plan \
 HARNESS_LIVE_PROXY_MODEL=umans-kimi-k2.7 \
-cargo nextest run -p harness-testkit live_proxy_prompt_parity_signoff -- --ignored --exact
+cargo nextest run -p harness-testkit live_proxy_prompt_signoff -- --ignored --exact
 
 HARNESS_LIVE_PROXY=1 \
 HARNESS_LIVE_PROXY_CONFIG=harness.jsonc \
 HARNESS_LIVE_PROXY_PROVIDER=umans-ai-coding-plan \
 HARNESS_LIVE_PROXY_MODEL=umans-kimi-k2.7 \
 HARNESS_VISUAL_ARTIFACT_DIR=target/pty-visual-artifacts \
-cargo nextest run -p harness-testkit live_proxy_e2e_tui_parity_signoff -- --ignored --exact
+cargo nextest run -p harness-testkit live_proxy_e2e_tui_signoff -- --ignored --exact
 ```
 
 These wrappers are the shipped slim live signoff entrypoints:
 
-- CLI: `live_proxy_preflight_requires_live_env` → `live_proxy_prompt_parity_signoff`
-- TUI: `live_proxy_preflight_requires_live_env` → `live_proxy_e2e_tui_parity_signoff`
+- CLI: `live_proxy_preflight_requires_live_env` → `live_proxy_prompt_signoff`
+- TUI: `live_proxy_preflight_requires_live_env` → `live_proxy_e2e_tui_signoff`
 
-Batch 1 live parity signoff is scoped to the selected `HARNESS_LIVE_PROXY_PROVIDER` / model /
+Live signoff is scoped to the selected `HARNESS_LIVE_PROXY_PROVIDER` / model /
 variant tuple. After T5 slimming, these wrappers only assert the prerequisite tuple and config path;
 they do not write live manifests or summarize provider-turn behavior.
 
@@ -76,8 +75,8 @@ env-gated live signoff names above.
 ## Artifact layout
 
 The slim live proxy wrappers (`live_proxy_preflight_requires_live_env`,
-`live_proxy_prompt_parity_signoff`, `live_proxy_e2e_tui_parity_signoff`) do **not** produce live
-artifact trees (no `run-*` directories, no `manifest.json` / `run_summary.*` from T5 preflight/parity
+`live_proxy_prompt_signoff`, `live_proxy_e2e_tui_signoff`) do **not** produce live
+artifact trees (no `run-*` directories, no `manifest.json` / `run_summary.*` from T5 preflight
 wrappers). That is intentional: this lane is slim signoff names only and does **not** own the
 native tool behavioral matrix.
 
@@ -104,17 +103,6 @@ Recommended local root for native screenshot, offline PTY, and live manifest ins
 ```text
 target/pty-visual-artifacts/
 ```
-
-Offline PTY parity evidence now keeps the frozen PNGs at the artifact root and writes
-family manifests under:
-
-```text
-target/pty-visual-artifacts/pty-manifests/<family>/manifest.json
-target/pty-visual-artifacts/pty-manifests/<family>/manifest.jsonl
-```
-
-Those PTY manifests use the same `manifest.json` / `manifest.jsonl` filenames as the live proxy
-lane so marker presence, focus hashes, and PNG paths stay machine-checkable across both oracles.
 
 The native screenshot lane writes sibling runs under:
 
@@ -169,8 +157,8 @@ Agents can run this lane if the required env vars are present and the local prox
 Use this order while iterating:
 
 1. `live_proxy_preflight_requires_live_env`
-2. `live_proxy_prompt_parity_signoff` when you want the CLI live signoff name
-3. `live_proxy_e2e_tui_parity_signoff` when you want the TUI live signoff name
+2. `live_proxy_prompt_signoff` when you want the CLI live signoff name
+3. `live_proxy_e2e_tui_signoff` when you want the TUI live signoff name
 
 The tests are live-model dependent and intentionally opt-in. Deterministic behavior assertions live
 outside this T5 lane.

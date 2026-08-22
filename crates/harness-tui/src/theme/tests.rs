@@ -130,16 +130,16 @@ fn semantic_theme_families_preserve_default_contracts() {
 }
 
 #[test]
-fn default_theme_matches_harness_chat_contract() {
+fn default_theme_matches_harness_dark_contract() {
     // arrange
     // act
     // assert
     let default = Theme::default();
-    let harness_chat = Theme::harness_chat();
+    let harness_dark = Theme::harness_dark();
 
-    assert_eq!(default, harness_chat);
-    assert_eq!(default.token_families(), harness_chat.token_families());
-    assert_eq!(Theme::by_name("default"), Some(harness_chat));
+    assert_eq!(default, harness_dark);
+    assert_eq!(default.token_families(), harness_dark.token_families());
+    assert_eq!(Theme::by_name("default"), Some(harness_dark));
     assert_eq!(Theme::by_name("harness-dark"), Some(Theme::harness_dark()));
 }
 

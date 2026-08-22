@@ -1,5 +1,5 @@
-use crate::design_contract::DESIGN_TOKENS;
 use crate::terminal::char_display_width;
+use crate::theme_tokens::DESIGN_TOKENS;
 
 use super::regions::{ShellRegions, ShellState};
 

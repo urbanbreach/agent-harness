@@ -8,8 +8,8 @@ use serde::Serialize;
 
 use crate::presentation::{CauseId, InteractionId};
 
-pub const SCHEDULING_TRACE_ENV: &str = "TUI_FIDELITY_SCHEDULING_TRACE";
-pub const SCHEDULING_READINESS_ENV: &str = "TUI_FIDELITY_SCHEDULING_READINESS";
+pub const SCHEDULING_TRACE_ENV: &str = "HARNESS_TUI_SCHEDULING_TRACE";
+pub const SCHEDULING_READINESS_ENV: &str = "HARNESS_TUI_SCHEDULING_READINESS";
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct SchedulingLiveReadiness {

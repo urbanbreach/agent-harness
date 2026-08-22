@@ -15,8 +15,6 @@ scripts/test-lanes.sh signoff-binary
 scripts/test-lanes.sh signoff-pty
 scripts/test-lanes.sh signoff-live
 scripts/test-lanes.sh signoff-native
-scripts/test-lanes.sh signoff-parity
-scripts/test-lanes.sh signoff-journeys
 scripts/test-lanes.sh stress-offline
 scripts/test-lanes.sh stress-live
 scripts/test-lanes.sh all-deterministic
@@ -61,8 +59,7 @@ real-world dependency usage, widened test-file focus, T5 signoff-file line budge
 conventions, cassette secret hygiene, committed snapshot orphans, and test taxonomy. Any residual
 arrange/act/assert debt is stored as SHA-256 keys in `docs/testing/test-suite-conventions-baseline.json`;
 the gate fails on new or stale debt without storing source-brand terms in docs. The baseline is
-currently empty (Wave 3 Packet 3.5 fixed all 81 listed tests by adding arrange/act/assert
-sections and removed every exemption); re-adding entries requires explicit approval and a
+currently empty; re-adding entries requires explicit approval and a
 documented removal path, because the goal is to keep this file at zero debt. Committed `.snap`
 files with `source:` metadata must point at an existing source file with an insta assertion, or be
 referenced by snapshot name in crate Rust code. Acceptance requires the strict command without
@@ -224,7 +221,7 @@ Owner tests: `cargo nextest run -p harness-tools --test skill_load_discovery_tes
 | Theme | Owner surface |
 |-------|----------------|
 | T-permissions | `interactive_golden_path_deny_emits_edit_rejected_without_applying_file` (`harness` run unit tests) |
-| T-multi-tool | `dogfood_harness_jsonc_tool_parity_test`; `determinism_multi_turn_tools_test` |
+| T-multi-tool | `determinism_multi_turn_tools_test` |
 | T-compaction | harness-core coord compaction tests (manual/overflow/checkpoint) |
 | T-task-lineage | `session_lineage_materialization_test`; transcript projection task-lineage tests |
 | T-provider-error | `prompt_cli_exits_nonzero_on_provider_error_finish`; categorized provider error prompt CLI tests |
@@ -259,32 +256,13 @@ Fail-closed stages (no `|| true`):
 | `harness_testkit_pty_e2e` | testkit PTY E2E + visual artifact provenance |
 | `harness_tui_pty_e2e` | harness-tui PTY E2E under `HARNESS_TUI_PTY_SIGNOFF=1` |
 | `harness_tui_happy_path_pty` | compiled `harness` CLI mock happy path (`pty_happy_path_recorded`) |
-| `harness_tui_dual_binary_cli_pty` | compiled CLI dual-binary structural smokes (`dual_binary_cli_pty_*`, 12): startup, overlay keybinds, secondary surfaces (status/model/toggles), scenario permission allow+deny, scenario question open+resolve, scenario auto-complete, mock success+fail chrome, Ctrl+W worktree create, Ctrl+S resume seeded session — under `HARNESS_TUI_PTY_SIGNOFF=1` + strict |
-| Aggregate `pty-lane-verdict.txt` | machine-readable PASS/FAIL under dual-binary stage artifacts |
 
 For a combined deterministic closeout, use:
 
 - `env RUST_TEST_THREADS=1 cargo nextest run -p harness-testkit --test pty_e2e --test-threads 1`
 - `env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 cargo nextest run -p harness-tui --test pty_e2e --test-threads 1`
 - `env RUST_TEST_THREADS=1 HARNESS_TUI_HAPPY_PATH_ARTIFACT_DIR=<dir> cargo nextest run -p harness --test pty_happy_path_recorded --test-threads 1 -- --ignored --exact scripted_tui_happy_path_records_start_prompt_permission_tool_edit_resume_and_quit`
-- `env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 HARNESS_TUI_PARITY_STRICT=1 HARNESS_TUI_HAPPY_PATH_ARTIFACT_DIR=<dir> cargo nextest run -p harness --test pty_happy_path_recorded --test-threads 1 -- --ignored dual_binary_cli_pty`
 
-The strict-V1 TUI signoff manifest is checked in at
-[`docs/testing/tui-signoff-manifest.v1.json`](tui-signoff-manifest.v1.json). Its schema version is
-`harness-tui-signoff-manifest-v1`, and each flow row names:
-
-- deterministic owner tests/snapshots,
-- `signoff-pty` artifact stages,
-- an explicit note that reference-image comparison is not required, and
-- the native-visual policy for env-gated local screenshots.
-
-Required flow coverage is startup, command palette, session picker/resume, permission/question,
-provider/tool failure, and diff review. `cargo nextest run -p harness-tui --test deterministic_render_test`
-guards the manifest shape, required flows, deterministic owner tests, and the no-reference-image-comparison policy. `env RUST_TEST_THREADS=1 cargo nextest run
--p harness-testkit --test pty_e2e --test-threads 1` copies the manifest and a summary into
-`target/pty-visual-artifacts/` for lane provenance. Native visual remains a separate local
-provenance class: when `HARNESS_NATIVE_VISUAL=1` and `DISPLAY=<display>` are missing, the manifest
-records a documented gap rather than silently converting PTY evidence into native screenshot proof.
 
 Snapshot reconciliation note: the `command_palette_renders_without_pty` and
 `tool_lifecycle_rows_stay_ordered_without_pty` snapshots were reconciled to
@@ -303,9 +281,9 @@ pass. Its PTY gate requires `cargo` on `PATH`, both PTY test files to exist, and
 ## Live provider opt-in lane
 
 Live signoff is opt-in and env-gated. After T5 slimming, `signoff-live` remains a **preflight +
-parity-name** lane: env/config/provider-model tuple checks and the retained prompt/TUI signoff
+signoff** lane: env/config/provider-model tuple checks and the retained prompt/TUI signoff
 wrappers. It does **not** own the offline native tool behavioral matrix (that stays with
-deterministic provider cassette, harness-tools parity, and harness-tui owner tests).
+deterministic provider cassette, harness-tools, and harness-tui owner tests).
 
 ### Live smoke pack (residual PRD WS-L1 / WS-L2)
 
@@ -338,7 +316,7 @@ bash scripts/harness-qa-live-smoke.sh --slug <short-slug>
 Slim `live_proxy_e2e` wrappers still write **no** live artifact trees by design; the smoke pack
 script is the budgeted evidence path.
 
-### signoff-live lane (preflight + parity names)
+### signoff-live lane
 
 ```bash
 HARNESS_LIVE_PROXY=1 \
@@ -356,18 +334,18 @@ Required live environment:
 - `HARNESS_LIVE_PROXY_MODEL=<model>`
 
 `signoff-live` fails closed when the live environment is missing. When the environment is present,
-it runs `live_proxy_preflight_requires_live_env` first, then the prompt parity wrapper, then the TUI parity wrapper.
-The underlying parity order is documented in
+it runs `live_proxy_preflight_requires_live_env` first, then the prompt wrapper, then the TUI wrapper.
+The execution order is documented in
 [`crates/harness-testkit/tests/README.live-proxy.md`](../../crates/harness-testkit/tests/README.live-proxy.md):
-CLI parity runs `live_proxy_preflight_requires_live_env` and `live_proxy_prompt_parity_signoff`;
-TUI parity runs `live_proxy_preflight_requires_live_env` and
-`live_proxy_e2e_tui_parity_signoff`.
+CLI signoff runs `live_proxy_preflight_requires_live_env` and `live_proxy_prompt_signoff`;
+TUI signoff runs `live_proxy_preflight_requires_live_env` and
+`live_proxy_e2e_tui_signoff`.
 
 Current stage commands:
 
 - `cargo nextest run -p harness-testkit live_proxy_preflight_requires_live_env -- --ignored --exact`
-- `cargo nextest run -p harness-testkit live_proxy_prompt_parity_signoff -- --ignored --exact`
-- `cargo nextest run -p harness-testkit live_proxy_e2e_tui_parity_signoff -- --ignored --exact`
+- `cargo nextest run -p harness-testkit live_proxy_prompt_signoff -- --ignored --exact`
+- `cargo nextest run -p harness-testkit live_proxy_e2e_tui_signoff -- --ignored --exact`
 
 Use the live README for exact preflight details, optional live vars, artifacts, retention, and
 agent iteration order instead of duplicating that contract here.
@@ -380,283 +358,6 @@ Open-ended live freestyle eval missions (for example benchmark sweeps or open-en
 missions) are **rejected as CI or release proof** for V1. Local human experimentation is fine, but
 it is not evidence for release readiness.
 
-## Strict A-JOURNEYS scaffolding lane
-
-`signoff-journeys` is a **strict fail-closed** lane for journey-template rows in
-[`docs/reference/tui-reference-parity-manifest.v1.json`](../reference/tui-reference-parity-manifest.v1.json):
-
-- `JOURNEY-CONFIG-SHOW-EFFECTIVE` — real-process `harness config show --effective`
-- `JOURNEY-CONFIG-SOURCES-EXPLAIN` — real-process `harness config sources` + `config explain`
-- `JOURNEY-WORKTREE-CTRL-W` — owner documented only; dual-binary PTY remains
-  `HARNESS_TUI_PTY_SIGNOFF=1` via `pty_happy_path_recorded::dual_binary_cli_pty_worktree_ctrl_w_creates_git_worktree`
-- `JOURNEY-WAIT-ANY-ALL` — owner-doc only (`orchestration.wait_any` / wait-all L2/L5/L6)
-- `JOURNEY-FOLDER-TRUST-DENY` — owner-doc only (`workspace.folder_trust`)
-- `JOURNEY-MEMORY-CLI` — owner-doc only (`memory.durable_product_surface`)
-- `JOURNEY-ALWAYS-APPROVE-MODE` — owner-doc only (`permission.always_approve_mode`)
-- `JOURNEY-SETTINGS-EDITOR` — owner-doc only (`tui.settings_editor`)
-
-```bash
-scripts/test-lanes.sh signoff-journeys
-scripts/test-lanes.sh signoff-journeys --dry-run
-```
-
-Ownership:
-
-- **Owns:** offline deterministic CLI journey evidence + worktree owner documentation for A-JOURNEYS
-  scaffolding (`crates/harness/tests/journey_signoff_test.rs`).
-- **Does not own:** full L1–L6 freeze/pixel/PTY chains, `signoff-parity` cells/pixels, or flipping
-  journey rows to `pass` without the complete evidence chain.
-
-Fail-closed stages (no `|| true`):
-
-- Prerequisites: `journey_signoff_test.rs` must exist; `cargo` on `PATH` (missing owner = FAIL)
-- `cargo nextest run -p harness --test journey_signoff_test` with
-  `HARNESS_JOURNEY_STRICT=1` and `HARNESS_JOURNEY_ARTIFACT_DIR` pointing at the lane artifact tree
-- Aggregate `journey-lane-verdict.txt` under the lane artifact tree
-
-`HARNESS_JOURNEY_STRICT=1` enables fail-closed evidence validation: referenced L1/L3/L4/L6 paths
-under the gitignored parity evidence root must exist on disk. Ordinary `cargo nextest` runs do not
-set this variable and only validate manifest structure plus committed source owners, so the suite
-passes from a clean checkout without pre-existing signoff artifacts.
-
-Missing compiled harness binary fails the owner tests (no skip). Journey rows stay `incomplete`
-until L1–L6 are complete; this lane only scaffolds L5/L6 owners.
-
-## Strict dual-binary reference parity lane
-
-`signoff-parity` is the **strict fail-closed** lane for dual-binary TUI reference parity (semantic
-cells and rendered pixels). It does **not** use the soft `|| true` stage pattern of other lanes:
-missing prerequisites, missing owners, timeouts, or stage failures fail the run. Silent skip is
-forbidden.
-
-```bash
-scripts/test-lanes.sh signoff-parity
-scripts/test-lanes.sh signoff-parity --dry-run
-```
-
-Ownership:
-
-- **Owns:** active dual-binary cells/pixels verification. The frozen
-  [`docs/reference/tui-reference-parity-manifest.v1.json`](../reference/tui-reference-parity-manifest.v1.json)
-  supplies historical scenario/evidence rows but has no completion authority.
-- **Does not own:** [`docs/testing/tui-signoff-manifest.v1.json`](tui-signoff-manifest.v1.json) flow
-  coverage — that remains with `signoff-pty` / `tui_signoff_manifest_test` and is not a dual-binary
-  cells/pixels gate.
-
-The standalone `tui-fidelity compare` runner writes `cleanup.json` with schema
-`harness.tui-fidelity.cleanup.v3`. `detected_child_pids` records unexpected descendants alive at
-the cleanup boundary; `surviving_pids` contains only descendants still alive after termination and
-the bounded reap wait. A detected descendant still fails the comparison even when cleanup later
-reaps it, while the receipt keeps those two facts distinct.
-
-Current fail-closed stages (no `|| true`):
-
-- Prerequisites gate: the active reference authority and independent historical
-  reference-parity manifest paths must exist; `cargo` must be on `PATH`; all owner test files
-  listed below must exist (missing owner = FAIL, not skip).
-- `configs/tui-fidelity-reference-authority.json` supplies the active executable path, source
-  revision, binary SHA-256, and version. The lane does not duplicate those values.
-  `configs/tui-fidelity-reference-binary-receipt.json` records the corresponding clean source
-  tree, lockfile, toolchain, and executable identity for the active binary epoch.
-- `test -f docs/reference/tui-reference-parity-manifest.v1.json`
-- `reference_binary_present`: the authority-named executable must exist and be executable; its
-  SHA-256 and `--version`, plus the canonical checkout revision, must exactly match the active
-  authority. The lane never rebuilds or copies the reference binary. Historical Core-8 fixture
-  receipts remain validated against their frozen `c1b5909…` identity and are not active preflight.
-- Fresh L3 capture stages (`reference_parity_capture_*`, including
-  `reference_parity_capture_shell_lifecycle` for the 7 shell lifecycle rows): each stage runs a
-  real PTY capture rendered through xterm.js/Chromium and writes `terminal.png`, `terminal.txt`,
-  `terminal-ansi.txt`, and `metadata.json` under the lane's fresh evidence root. A failed capture
-  fails the lane (no silent skip)
-- Fresh nonvisual journey L3 capture stages (`reference_parity_capture_journey_*`, one per
-  journey row): each stage runs `scripts/tui-parity/capture-journey-l3.sh <key>`, which invokes
-  the A-JOURNEYS owner tests in `crates/harness/tests/journey_signoff_test.rs` in self-contained
-  mode (CLI/backend evidence only — no Chrome, no pixel PNG), relocates the generated
-  `journey-*-v1` evidence directory into the lane's fresh evidence root, and writes a provenance
-  `metadata.json` (`behavior_id` + `generating_command`) for the strict provenance validator
-- Fresh terminal capability L3 capture stage (`reference_parity_capture_term_cap`, shared by the
-  4 `TERM-CAP-*` rows): runs `scripts/tui-parity/capture-term-cap-l3.sh` with `EVIDENCE_DIR`
-  pointed at the lane's fresh `actual/harness-term-cap-v1` directory. The script exports
-  `HARNESS_TERMCAP_ARTIFACT_DIR` to a temp work dir and invokes
-  `cargo nextest run -p harness-tui --test terminal_capability_matrix_capture_test`, whose
-  env-gated owner test derives the Harness negotiated terminal mode set from the L2 owner
-  `crates/harness-tui/src/runtime.rs`, asserts exact parity with the pinned reference enabled
-  mode set (fail-closed), and writes `harness-term-cap-v1/term-cap-matrix.json`. The script
-  relocates that receipt into `EVIDENCE_DIR` and writes the provenance `metadata.json`
-  (`behavior_ids` + `generating_command`). Journey-style L3+receipt contract — no Chrome, no
-  pixel PNG. A failed capture fails the lane (no silent skip)
-- Evidence-generation stages after the captures: `reference_parity_freeze_receipt` writes the
-  pinned freeze receipt; `reference_parity_generate_evidence_layers` builds evidence only for
-  visual rows currently claimed as `pass`/`diverged`, plus all claimed journey and terminal-
-  capability rows. Copied receipts remain immutable; embedded digests must already match the
-  fresh artifacts or the final provenance gate fails closed
-- `cargo nextest run -p harness-tui --test reference_parity_manifest_test`
-- `cargo nextest run -p harness-tui --test p0_parity_contract_test`
-- `cargo nextest run -p harness-tui --test shell_topology_contract_test`
-- `HARNESS_TUI_PARITY_STRICT=1 cargo nextest run -p harness-tui --test reference_parity_cells_test`
-  (missing freeze/actual cell evidence fails closed; soft-skip forbidden)
-- `HARNESS_TUI_PARITY_STRICT=1 cargo nextest run -p harness-tui --test reference_parity_pixels_test`
-  (missing freeze PNG evidence fails closed)
-- `HARNESS_TUI_PARITY_STRICT=1 cargo nextest run -p harness-tui --test reference_parity_first_slice_test`
-- `HARNESS_TUI_PARITY_STRICT=1 cargo nextest run -p harness-tui --test reference_parity_perm_question_test`
-- `HARNESS_TUI_PARITY_STRICT=1 cargo nextest run -p harness-tui --test reference_parity_tx_shell_test`
-- `HARNESS_TUI_PARITY_STRICT=1 cargo nextest run -p harness-tui --test reference_parity_responsive_test`
-- `HARNESS_TUI_PTY_SIGNOFF=1 HARNESS_TUI_PARITY_STRICT=1 cargo nextest run -p harness-tui --test reference_parity_pty_test`
-  (forces PTY owners on; silent no-op without the env is forbidden in this lane)
-- `reference_parity_manifest_evidence` (final gate):
-  `HARNESS_TUI_PARITY_STRICT=1 HARNESS_TUI_PARITY_ARTIFACT_DIR="$parity_artifacts_dir" cargo nextest run -p harness-tui --test reference_parity_evidence_test`
-  runs the strict validator (`validate_manifest_evidence` in
-  `crates/harness-tui/tests/support/reference_parity_status.rs`) against the lane's fresh evidence
-  root under `target/test-lanes/`, never the repository `artifacts/` tree. Every claimed
-  (`pass`/`diverged`) row must have its applicable lane-artifact evidence files present; source
-  owner paths remain structural ownership references and are not copied into the evidence root. Declared capture digests
-  (`reference_txt_sha256`/`reference_png_sha256`) must hash-match the actual artifact bytes,
-  embedded receipt `path`/`sha256` pairs must hash-match, the freeze receipt must match the pinned
-  reference block (binary digest, freeze txt/png digests, scenario, viewport), divergence
-  approval receipt files must exist, and L3 `metadata.json` behavior_id/viewport provenance must
-  match the rows owning that capture. Any missing, stale, copied, or mismatched artifact fails
-  the lane.
-- Aggregate `parity-lane-verdict.txt` under the lane artifact tree, including an explicit
-  `stages=` list of the owners that ran. The frozen
-  `docs/reference/tui-reference-parity-manifest.v1.json` is historical non-acceptance evidence and
-  never derives `parity_complete`. Final `verdict=PASS` and `parity_complete=true` require
-  `TUI_FIDELITY_ACTIVE_VERIFICATION_RECEIPT` to identify an active sealed `verify --profile all`
-  receipt for the current candidate. The receipt and its seal must account for every key as passed
-  with zero failed, cancelled, or skipped records. The verdict binds the SHA-256 values of the
-  active reference authority, requirement inventory, coverage manifest, and verification receipt.
-  Dry runs always retain `parity_complete=false` and do not synthesize a verification receipt.
-
-Ordinary `cargo nextest` runs do not set `HARNESS_TUI_PARITY_STRICT`, so the env-gated strict
-provenance test stays inert and the suite passes from a clean checkout without signoff artifacts.
-Only the lane (with the fresh evidence root populated by the capture flow) drives the executable
-provenance validation.
-
-### Packet 1 presentation-telemetry contract
-
-`signoff-parity` also runs the fail-closed `presentation_telemetry` stage. It owns the focused
-receipt/comparator owners in `crates/harness-testkit/tests/tui_fidelity_presentation_receipt_test.rs`
-and `crates/harness-testkit/tests/tui_fidelity_runner_test.rs`; a missing owner, reference binary,
-trace, comparison gate, receipt, or cleanup receipt is a failure, never a skip. The stage runs
-single-threaded and stores controlled-defect evidence under
-`<artifact-root>/signoff-parity/stages/presentation_telemetry/artifacts/`.
-
-The only common cross-binary endpoint is `external_pty_observed`: a timed PTY reader records the
-actual input send, completed reads, raw byte lengths and SHA-256 values, decoder status, and
-parser-derived semantic observations. This says only that the observer read bytes and reconstructed
-a terminal frame. It is not an emulator-presented, pixel-presented, native-visual, or physical-paint
-claim.
-
-Harness has a separate local endpoint, `native_completed_write`: input reception through the first
-successful native sink flush for a frame containing the causal revision. It is reported separately
-from PTY timing and likewise is not evidence that a terminal emulator presented or painted the
-frame. The pinned reference emits no native fields, so its valid evidence variant is external-only.
-
-| Evidence field or label | Required | Meaning and limits |
-|---|---|---|
-| `external_pty_observed` | both binaries | Timed PTY read/decode boundary; required for all receipt timing and ordered motion. |
-| `native_completed_write` | Harness only | Successful native write/flush acknowledgement linked by frame digest and byte order; never asserted for the reference. |
-| `transport-drain observation` | optional diagnostic | A distinct transport observation when available; it does not upgrade a PTY read or flush into visual presentation. |
-| `native-visual observation` | optional diagnostic | A separately captured local visual observation; it is not required by, and is never inferred from, the PTY lane. |
-| interaction `scenario-id:action:ordinal` | both binaries | Content-free runner identifier. Receipts do not retain raw input or provider content. |
-| native cause `trace-id:cause:sequence` | Harness only | Content-free causal join key for native trace coverage. |
-
-The receipt schemas are `harness.tui-fidelity.runner.v4`,
-`harness.tui-fidelity.comparison.v3`, and `harness.tui-fidelity.cleanup.v3`. Scenario inputs use
-`tui-fidelity-scenario-v2`: every substitution explicitly declares `kind` as exactly
-`identity_text` or `truthful_dynamic_text`, an enumerated `field`, its canonical field placeholder,
-separate nonempty reference and candidate provenance, both explicit runtime text placements, and an
-exact cell rectangle. Identity fields remain limited to product logo and title; workspace, home,
-release version/date, provider/model/account, session, and auth fields are truthful dynamic text.
-Before semantic or pixel masking, captured reference and candidate cells must exactly match their
-declared values, styles, wrapping, and padding. Duplicate fields at one checkpoint, legacy `scope`,
-missing metadata, unknown kinds or fields, copied reference/candidate values, and
-row/component/region-shaped masks fail closed. The comparison receipt copies every successfully
-verified and applied typed span, including both values and both provenance fields, into
-`applied_substitutions`; undeclared or mismatched path/version/logo-like text is compared exactly and
-is never heuristically masked. The runner receipt
-uses a tagged evidence variant: `external_only` is valid only for the pinned reference;
-`harness_native` requires the shared external evidence, the complete native trace, its artifact
-digest, and ordered byte-digest links. `receipt.json` carries the adapter identity, scenario,
-binding hashes, evidence, and comparison; `comparison.json` records the `presentation`, `timing`,
-and `motion` gates and typed metrics; `cleanup.json` records descendant detection, survivors,
-removed temporary paths, and cleanup errors.
-
-Before metrics, receipt validation fails closed for a stale schema or binding, adapter/evidence
-mismatch, empty or non-monotonic input/read/observation records, incomplete or malformed decoder
-state, unresolved action/cause/frame/observation links, a non-monotonic revision or byte-link
-order, other than exactly one acknowledgement per accepted native frame, a visible cause without a
-completed frame, an unmatched native byte digest, a missing artifact digest, or non-clean idle and
-cleanup accounting. Freshness checks bind action schedules, motion contracts, the observer version,
-terminal identity, reference identity, and artifact bytes to the current run.
-
-Candidate acceptance additionally requires `harness.tui-fidelity.candidate-binding.v2`. The
-binding records the canonical repository and target roots, Git HEAD and tree, clean state, exact
-tracked-source and diagnostic dirty/untracked content digests, Cargo lock/toolchain/config digests,
-all three candidate binary digests, active authority/reference-receipt identities, and the
-`harness.tui-fidelity.source-guard.v2` digest. The comparator re-hashes those current bytes and
-requires byte-identical source guards before the reference capture and after the candidate capture.
-The default build refuses dirty source. `--diagnostic-non-release` may bind immutable dirty content
-with `receipt_kind=diagnostic_non_release`, `clean_release=false`, and `release_eligible=false`.
-Its independently bound `parity_acceptance_eligible=true` allows the sealed comparator to accept
-exact frozen dirty bytes when every source/diff/untracked, binary, authority, and guard digest
-re-verifies. This never makes the evidence eligible for a clean release lane.
-
-Scenario `motion_capture` is an ordered contract, not a checkpoint guess. It names the applicable
-`MotionFamily` values and ordered markers with a boundary, observation rule, phase, and repeat
-count. The comparator normalizes timed semantic observations only through that contract and rejects
-missing, out-of-order, or incompatible markers. It never derives cancellation, finish, resize, or
-settled phases from a process name, a scenario id, arbitrary raw chunks, or rest/mid/settled
-checkpoints. Checkpoints remain supplemental semantic/pixel gates.
-
-`scheduled_at` and `input_timestamps_millis` are scenario provenance only. Application latency is
-derived from actual input send to the first changed `external_pty_observed` observation; Harness
-native receive-to-flush is reported separately. The external candidate p95 must satisfy
-`candidate_p95 * 100 <= reference_p95 * 110` with no additive allowance. Each observation stream
-also fails when a gap exceeds twice its applicable cadence. The metrics record external latency and
-interval samples plus native receive-to-flush, request-to-flush, completed-write intervals,
-coalescing, queue saturation, resyncs, full repaints, bytes written, and idle redraws. Idle redraws
-must be zero for the five-run signoff aggregate.
-
-For a real five-run Packet 1 signoff, run sequentially against the same pinned reference identity;
-do not parallelize the PTY lane:
-
-```bash
-attempt_dir="${ATTEMPT_DIR:-.omo/evidence}"
-for n in 1 2 3 4 5; do
-  RUST_TEST_THREADS=1 scripts/test-lanes.sh signoff-parity \
-    --artifact-dir "$attempt_dir/task-10-signoff-parity-run-$n" || exit 1
-done
-```
-
-Aggregate exactly those five fresh run roots with the shipped CLI:
-
-```bash
-cargo run -p harness-testkit --bin tui_fidelity_aggregate -- \
-  "$attempt_dir"/task-10-signoff-parity-run-1 \
-  "$attempt_dir"/task-10-signoff-parity-run-2 \
-  "$attempt_dir"/task-10-signoff-parity-run-3 \
-  "$attempt_dir"/task-10-signoff-parity-run-4 \
-  "$attempt_dir"/task-10-signoff-parity-run-5 \
-  >"$attempt_dir/task-10-five-run-summary.json"
-```
-
-The output schema is `harness.tui-fidelity.aggregate.v1`. The CLI accepts exactly five roots and
-recursively locates one `receipt.json`, `comparison.json`, and `cleanup.json` in each. It rejects a
-mixed scenario, schema, reference/candidate identity, action or motion binding, observer version,
-terminal identity, or input order; any failed comparison gate or unclean cleanup; stale raw,
-observation, or native-sidecar digest; p95 above the 110% limit; a gap above twice cadence; or a
-nonzero idle-redraw count.
-
-Each fresh comparison evidence root contains `receipt.json`, `comparison.json`, `cleanup.json`,
-`grok/raw-pty.ansi`, `grok/pty-observations.json`, `harness/raw-pty.ansi`,
-`harness/pty-observations.json`, and `harness/native-presentation.json`; the receipt binds their
-SHA-256 values and the cleanup receipt proves bounded process cleanup. These are opt-in,
-local-only QA evidence under the caller-selected artifact directory. Do not commit them, send them
-to a network service, or treat them as product telemetry.
-
-`--dry-run` still records the same stage command shape without executing. Optional live/native
-lanes (`signoff-live`, `signoff-native`) and developer lanes (`fast`, …) keep soft-stage semantics.
-`signoff-pty` is fail-closed (see Deterministic signoff PTY lane).
 
 ## Binary shim smoke
 
@@ -746,95 +447,14 @@ Current invariant owners:
 | Coordinator scheduling, cancellation, failed-turn handling, compaction, and tool lifecycle | `cargo nextest run -p harness-core --test coord_test`; focused chunks under `crates/harness-core/tests/coord/` |
 | Replay purity and projection derivation from append-only events | `cargo nextest run -p harness --test replay_sessions_cli_test`; `cargo nextest run -p harness-core --test conversation_projection_test`; `cargo nextest run -p harness-core --test transcript_projection_test`; `cargo nextest run -p harness-core --test resume_plan_test`; `cargo nextest run -p harness-core --test session_lineage_materialization_test` |
 | Permission checks and redelegation guard | `cargo nextest run -p harness-core --test permission_policy_supports_native_tool_permission_kinds_test`; `cargo nextest run -p harness-tools --test native_agent_spawn_and_batch_preserve_lineage_permissions_and_order_test` |
-| Native tool parity and stable public tool IDs | `cargo nextest run -p harness-tools --test native_tool_parity_matrix_test` |
+| Native tool catalog and stable public tool IDs | `cargo nextest run -p harness-tools` |
 | Doctor/support catalog metadata and redaction | `cargo nextest run -p harness --test config_schema_cli_test doctor_cli`; `cargo nextest run -p harness --test replay_sessions_cli_test sessions_export_cli_support_includes_readiness_and_config_summaries`; `cargo nextest run -p harness --test replay_sessions_cli_test sessions_export_cli_redacts_support_bundle_secret_shapes` |
 | Provider serialization, replay-only cassettes, redaction, and checkpoint accounting | `cargo nextest run -p harness-providers --test openai_compatible_serializes_native_tool_schema_without_alias_dupes_test`; `cargo nextest run -p harness-providers --test recorded_test`; `cargo nextest run -p harness-testkit --test secretscan_test` |
 | Offline deterministic simulation matrix, semantic predicates, same-seed normalization, artifact index, and simulation redaction | `scripts/test-lanes.sh simulation`; `cargo nextest run -p harness-testkit --test simulation_validator_test`; `cargo run -p harness-testkit --bin simulation_evidence -- --artifact-root <dir> --matrix docs/simulation-matrix.json --baseline-events <events.jsonl> --baseline-replay <replay.json> --repeat-events <events.jsonl> --repeat-replay <replay.json> --seed 0` |
 | Config/event docs drift and public schema generation | `cargo nextest run -p harness --test config_docs_reference_test`; `cargo nextest run -p harness --test event_docs_reference_test`; `cargo nextest run -p harness --test config_schema_cli_test` |
 | Deterministic UI content rendering, transcript layout, and navigation | `cargo nextest run -p harness-tui --test deterministic_render_test`; `cargo nextest run -p harness-tui --test lineage_view_model_test`; `cargo nextest run -p harness-tui --test model_switcher_metadata_test`; `cargo nextest run -p harness-tui --test session_navigation_keybindings_test`; `cargo nextest run -p harness-tui --test pty_e2e` as the fail-closed helper lane |
-| TUI signoff manifest and visual/provenance flow coverage | `cargo nextest run -p harness-tui --test deterministic_render_test tui_signoff_manifest_covers_required_release_flows`; `env RUST_TEST_THREADS=1 cargo nextest run -p harness-testkit --test pty_e2e --test-threads 1 pty_signoff_manifest_declares_required_flow_artifacts`; `scripts/test-lanes.sh signoff-pty` |
+| TUI visual/provenance flow coverage | `cargo nextest run -p harness-tui --test deterministic_render_test`; `env RUST_TEST_THREADS=1 cargo nextest run -p harness-testkit --test pty_e2e --test-threads 1`; `scripts/test-lanes.sh signoff-pty` |
 | Live, PTY, native visual provenance contracts | `scripts/test-lanes.sh signoff-pty`; `scripts/test-lanes.sh signoff-live`; `scripts/test-lanes.sh signoff-native` as opt-in T5 lanes only |
-| Dual-binary TUI reference parity (cells/pixels) | `scripts/test-lanes.sh signoff-parity` (strict fail-closed; historical manifest rows cannot authorize completion; only an active sealed verify-all receipt can). Does **not** use `tui-signoff-manifest.v1.json`. |
-| A-JOURNEYS scaffolding (config CLI + worktree owner doc) | `scripts/test-lanes.sh signoff-journeys` (strict fail-closed; owns `crates/harness/tests/journey_signoff_test.rs`). Rows stay `incomplete` until full L1–L6. |
-
-Retired harness-tui PTY helper scenario owners:
-
-| Removed T5 helper scenario | Surviving deterministic owner |
-|---|---|
-| Startup shell / startup palette / startup session history | `cargo nextest run -p harness-tui --test deterministic_render_test startup_shell_is_compose_first_without_pty command_palette_renders_without_pty startup_session_history_picker_renders_without_pty`; `cargo nextest run -p harness-tui startup_slash_commands_execute_without_menu command_palette_renders_and_filters` |
-| Streamed response and completed live shell | `cargo nextest run -p harness-tui live_shell_enter_submits_and_echoes_prompt_snapshot live_shell_type_first_input_snapshot`; `cargo nextest run -p harness-tui --test deterministic_render_test live_transcript_and_composer_shell_render_without_pty` |
-| Tool lifecycle and inline diff parity | `cargo nextest run -p harness-tui --test deterministic_render_test tool_lifecycle_rows_stay_ordered_without_pty`; `cargo nextest run -p harness-tui transcript_apply_patch_surfaces_rename_and_wrapped_inline_diffs transcript_inline_diff_stays_compact_between_tool_rows transcript_native_edit_renders_inline_diff_from_artifact` |
-| Permission and question overlays | `cargo nextest run -p harness-tui permission_modal_preempts_palette_and_slash permission_overlay_preserves_draft_and_transcript_context permission_overlay_ignores_plain_draft_input_once_prompt_is_active`; `cargo nextest run -p harness-tui --test deterministic_render_test permission_modal_preserves_draft_without_pty question_permission_prompt_renders_without_pty` |
-| Full-width live shell, secondary operator surfaces, and orchestration states | `cargo nextest run -p harness-tui --test deterministic_render_test live_transcript_and_composer_shell_render_without_pty`; `cargo nextest run -p harness-tui --test shell_topology_contract_test`; `cargo nextest run -p harness-tui operator_sidebar_preserves_section_order_and_copy live_shell_details_drawer_orchestration_snapshot orchestration_projection_tracks_queued_started_completed_counts orchestration_projection_tracks_stale_then_late_result` |
-| Degraded/disconnected/replay shells | `cargo nextest run -p harness-tui live_shell_degraded_bootstrap_snapshot live_shell_disconnected_stream_snapshot`; `cargo nextest run -p harness-tui --test deterministic_render_test replay_shell_is_read_only_without_pty` |
-
-Narrowed harness-testkit PTY assertion owners:
-
-| Removed or narrowed T5 assertion | Surviving owner |
-|---|---|
-| Duplicate operator-sidebar screen-string assertions in `pty_e2e_sidebar_session_parity` and `pty_helper_operator_sidebar_session_contract` | `cargo nextest run -p harness-tui --test deterministic_render_test live_transcript_and_composer_shell_render_without_pty`; `cargo nextest run -p harness-tui --test shell_topology_contract_test`; `cargo nextest run -p harness-tui operator_sidebar_preserves_section_order_and_copy`; remaining T5 manifest-backed screenshots assert only smoke/provenance markers. |
-| Duplicate permission-overlay screen-string assertions in `pty_e2e_permission_dock_parity` and `pty_helper_permission_with_draft` | `cargo nextest run -p harness-tui permission_modal_preempts_palette_and_slash permission_overlay_preserves_draft_and_transcript_context permission_overlay_ignores_plain_draft_input_once_prompt_is_active`; `cargo nextest run -p harness-tui --test deterministic_render_test permission_modal_preserves_draft_without_pty`; remaining T5 captures keep permission smoke/provenance markers. |
-
-Retired harness-testkit T5 scenario owners:
-
-| Removed T5 scenario group | Surviving owner |
-|---|---|
-| PTY startup, command palette, replay/continue history, and type-first shell content checks | `cargo nextest run -p harness-tui --test deterministic_render_test startup_shell_is_compose_first_without_pty startup_session_history_picker_renders_without_pty replay_shell_is_read_only_without_pty`; `cargo nextest run -p harness-tui startup_slash_commands_execute_without_menu command_palette_renders_and_filters`; slim `cargo nextest run -p harness-testkit --test pty_e2e` keeps only single-thread/env/artifact-path smoke. |
-| PTY transcript, native-tool row, inline diff, MCP/background, and dense-log screen checks | `cargo nextest run -p harness-tui --test deterministic_render_test tool_lifecycle_rows_stay_ordered_without_pty live_transcript_and_composer_shell_render_without_pty`; `cargo nextest run -p harness-tui transcript_apply_patch_surfaces_rename_and_wrapped_inline_diffs transcript_inline_diff_stays_compact_between_tool_rows transcript_native_edit_renders_inline_diff_from_artifact`; `cargo nextest run -p harness-tools --test native_tool_parity_matrix_test`. |
-| PTY child-session, lineage, replay-read-only, active/unrestorable continue rejection checks | `cargo nextest run -p harness --test replay_sessions_cli_test`; `cargo nextest run -p harness-tui --test lineage_view_model_test`; `cargo nextest run -p harness-tui --test session_navigation_keybindings_test`; `cargo nextest run -p harness-core --test session_lineage_materialization_test`. |
-| Live proxy prompt/TUI/native tool-flow, provider parity, config mutation, request/evidence, and wiremock checks | `cargo nextest run -p harness-providers --test recorded_test`; `cargo nextest run -p harness-providers --test openai_compatible_serializes_native_tool_schema_without_alias_dupes_test`; `cargo nextest run -p harness-testkit --test live_proxy_e2e` for env-gated signoff names and fail-closed config preflight. |
-| Live visual manifest, vision, screenshot evidence, and artifact-retention checks | `cargo nextest run -p harness-tui --test deterministic_render_test`; `cargo nextest run -p harness-testkit --test native_visual_e2e`; opt-in `scripts/test-lanes.sh signoff-native` for local screenshot provenance only. |
-| Native visual startup geometry, navigation, permission, transcript, operator-sidebar, Ghostty, capture-helper, and managed-session checks | `cargo nextest run -p harness-tui --test deterministic_render_test`; `cargo nextest run -p harness-tui permission_modal_preempts_palette_and_slash operator_sidebar_preserves_section_order_and_copy`; `cargo nextest run -p harness-testkit --test native_visual_e2e`; `cargo nextest run -p harness-testkit --bin native_visual_helper -- --help` when validating the helper CLI. |
-| Shared T5 fixture/rendering helpers (`harness_bin`, session fixtures, temp paths, visual renderer, manifest writers, markers) | `cargo nextest run -p harness-testkit --lib`; `cargo nextest run -p harness-testkit --test secretscan_test`; deterministic fixture ownership moved to crate-local test helpers and harness-tui render fixtures rather than uncompiled T5 support. |
 
 The acceptance owner map above is the source of truth for the test-suite overhaul. Concrete lane
 artifacts land under `target/test-suite-overhaul/` when those stages run.
-
-## Complete fidelity matrix execution
-
-The `tui-fidelity matrix --suite complete` command executes the active coverage contract as a
-row/trial bijection. The checked-in 547-row manifest declares exactly five trials per row, so a
-complete run schedules 2,735 independent comparisons; the 452 shared capture keys are reporting
-metadata and never deduplicate row obligations. Every invocation binds the row's action path,
-viewport, terminal tier, persona, theme mode, media mode, failure path, and trial ordinal into the
-comparison evidence. The baseline registry must resolve every active scenario and viewport.
-Registered canary, Packet 6, cancel, and fail families remain explicit non-acceptance families
-until a future coverage manifest adds real rows for them.
-
-Matrix execution requires explicit reference authority, reference checkout, reference receipt,
-reference binary, candidate receipt, and candidate binary inputs. Its evidence root must be a
-fresh path. Each comparison receives a new full per-trial deadline; there is no shared global
-matrix timeout. A failed capture or comparison is retained in `matrix-receipt.json` with both
-booleans false where applicable, the command exits nonzero, and no `matrix-completion.json` is
-written. Full-parity comparisons require presentation, semantic-cell, pixel, motion, timing,
-provenance, checkpoint, exit, and cleanup gates.
-
-The browser renderer uses the exact direct versions recorded in
-`scripts/tui-parity/package-lock.json`. Checkpoint metadata binds Node, xterm.js, Unicode 11,
-node-pty, pngjs, and Puppeteer versions, and the Rust renderer validator rejects drift from those
-pins before accepting the capture.
-
-## Packet 2 scheduling signoff
-
-`scripts/test-lanes.sh signoff-packet2` is the real dual-runtime owner for
-`packet2-sustained-stream`. It requires absolute `--reference-bin`,
-`--reference-receipt`, and `--reference-root` inputs pinned to
-`eb267feff13129e568df38fb6fdf0ceb65f735d6`. The lane builds a clean-worktree candidate, then runs
-exactly five comparisons sequentially and aggregates them with `--profile packet2-scheduling`.
-Each adapter gets an isolated loopback SSE server and workspace; every cleanup receipt must report
-zero survivors.
-
-The runtime contract is a bounded 128-event terminal ingress queue, a maximum 16 terminal events or
-2 ms per input quantum, and one fairness yield before input resumes. Live work is limited to one
-application per arbitration decision and retains the 16 live / 8 ms budget contract. The deadline
-clocks remain independent: 16 ms for flush and wheel work, an 80 ms lazy scroll-stream boundary,
-and 33 ms for semantic animation. Cancellation is classified from the decoded terminal event, not
-from a sent byte, and one frame may be in flight until its sink-flush acknowledgement.
-
-The comparison truthfully distinguishes `external_pty_observed` for both adapters from Harness-only
-`native_completed_write`. Packet 2 permits cells/pixels/motion to remain diagnostic, but requires
-presentation, timing, provenance, checkpoint, exit, and cleanup gates. Candidate external p95 must
-be at most 110% of reference, every interval gap at most twice cadence, input order exact, every
-scheduled interaction backed by positive live-ready depth, and idle redraws zero. Evidence is laid
-out as `signoff-packet2/run-{1,2,3,4,5}/{receipt,comparison,cleanup}.json`, followed by the aggregate
-and lane verdict.

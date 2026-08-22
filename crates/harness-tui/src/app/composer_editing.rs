@@ -234,7 +234,9 @@ impl AppState {
     }
 
     pub(in crate::app) fn composer_undo(&mut self) {
-        if self.composer.parity_editing_ready() && matches!(self.composer.parity_undo(), Ok(true)) {
+        if self.composer.editor_matches_prompt_fields()
+            && matches!(self.composer.editor_undo(), Ok(true))
+        {
             self.sync_slash_overlay();
             self.sync_file_mention_overlay();
             return;
@@ -249,7 +251,9 @@ impl AppState {
     }
 
     pub(in crate::app) fn composer_redo(&mut self) {
-        if self.composer.parity_editing_ready() && matches!(self.composer.parity_redo(), Ok(true)) {
+        if self.composer.editor_matches_prompt_fields()
+            && matches!(self.composer.editor_redo(), Ok(true))
+        {
             self.sync_slash_overlay();
             self.sync_file_mention_overlay();
             return;
@@ -399,7 +403,7 @@ mod completion_tests {
         clippy::expect_used,
         clippy::panic,
         clippy::unwrap_used,
-        reason = "parity contract tests use fail-fast asserts for missing state"
+        reason = "consistency contract tests use fail-fast asserts for missing state"
     )]
 
     use super::*;

@@ -1,6 +1,6 @@
 use std::fmt;
 
-pub use crate::design_contract::LifecycleState;
+pub use crate::theme_tokens::LifecycleState;
 
 pub struct TransitionTable;
 

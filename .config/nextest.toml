@@ -29,26 +29,9 @@ junit = { path = "target/nextest/perf/junit.xml" }
 [test-groups.process-global-state]
 max-threads = 1
 
-# Runner owners create and reap PTY/process trees; serialize this test binary.
-[[profile.default.overrides]]
-filter = 'binary(=tui_fidelity_runner_test)'
-test-group = "process-global-state"
-
 [[profile.default.overrides]]
 filter = 'test(dual_binary_cli_pty_ctrl_s_resumes_seeded_session)'
 slow-timeout = { period = "10s", terminate-after = 12 }
-
-[[profile.default.overrides]]
-filter = 'binary(=reference_authority_receipt_test) and test(=reference_receipt_mutations_fail_closed)'
-slow-timeout = { period = "30s", terminate-after = 4 }
-
-[[profile.default.overrides]]
-filter = 'binary(=source_guard_test) and test(/^(source_guard_accepts_(clean_pinned_reference|current_code_input|current_manifest_input|fresh_runtime_output|relative_canonical_reference)|source_guard_rejects_stale_receipt)$/)'
-slow-timeout = { period = "30s", terminate-after = 4 }
-
-[[profile.default.overrides]]
-filter = 'binary(=tui_fidelity_runner_test) and test(/^(cached_reference_(requires_exact_presentation_identity|rejects_trace_or_schedule_drift|rejects_trace_artifact_drift)|compare_(writes_dual_runtime_checkpoint_and_cleanup_receipts|rejects_timeout_premature_exit_and_forced_kill_completion)|lifecycle_cases::(hanging_renderer_times_out_and_is_reaped_repeatedly|preexisting_runtime_root_and_sentinel_are_preserved)|packet1_(complete_receipt_passes_all_gates|provenance_rejects_every_bound_identity_mismatch)|presentation_trace_is_native_for_harness_and_external_for_grok|relative_evidence_path_preserves_harness_native_sidecar_across_runtime_cleanup|runner_packet::(compare_writes_explicit_capture_and_comparison_gate_receipt|packet1_controlled_defect_matrix))$/)'
-slow-timeout = { period = "30s", terminate-after = 4 }
 
 # The recorded happy path is a three-scenario PTY composite. It can hit a
 # transient harness/TUI stall; give it enough outer time so the internal

@@ -24,8 +24,8 @@ impl FrameMetrics {
         target_fps != 0 && self.total_frame_us <= 1_000_000 / u64::from(target_fps)
     }
 
-    pub fn within_110pct_gate(self, reference_us: u64) -> bool {
-        self.total_frame_us <= reference_us.saturating_mul(110) / 100
+    pub fn within_110pct_gate(self, baseline_us: u64) -> bool {
+        self.total_frame_us <= baseline_us.saturating_mul(110) / 100
     }
 
     pub fn cadence_gap_ok(self, prev: Self) -> bool {

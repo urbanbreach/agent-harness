@@ -1,11 +1,11 @@
 use crossterm::event::{MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
 
-use crate::app::interaction_reducer::{mouse_intent, MouseTarget, UiIntent};
 use crate::app::Focus;
 use crate::composer_atoms::AttachmentId;
-use crate::design_contract::ViewportId;
+use crate::composer_integration::interaction::{mouse_intent, MouseTarget, UiIntent};
 use crate::shell_geometry::{layout_for, FocusTarget, HitMap, HitTarget};
+use crate::theme_tokens::ViewportId;
 
 use super::slice::ComposerSlice;
 

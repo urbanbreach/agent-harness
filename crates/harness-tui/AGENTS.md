@@ -18,7 +18,7 @@ Read root `AGENTS.md` first. E2E lane details live in `crates/harness-testkit/te
 | Terminal | `src/terminal.rs`, `src/terminal/`, `src/terminal_title/`, `src/terminal_notifications/` | Capability probe, decode, frame clock, title/notifications, output. |
 | Dashboard | `src/dashboard/`, `src/dashboard_controls/`, `src/dashboard_details/`, `src/dashboard_dispatch/`, `src/dashboard_integration/`, `src/dashboard_peek/`, `src/dashboard_roster/` | Session dashboard read model, eligibility, peek, dispatch, controls. |
 | Presentation | `src/presentation.rs`, `src/presentation/`, `src/view_model.rs` | Render demand/cause tracking and presentation shaping. |
-| Snapshots/signoff | `src/snapshots/`, `src/ui_overlays/snapshots/`, `tests/snapshots/`, `tests/tui_signoff_manifest_test.rs` | Deterministic render expectations and required signoff manifest. |
+| Snapshots | `src/snapshots/`, `src/ui_overlays/snapshots/`, `tests/snapshots/` | Deterministic render expectations. |
 | Render test helpers | `src/lib_tests/`, `src/lib_tests.rs`, `src/overlay_tests.rs`, `src/render_test.rs` | Deterministic shell/view fixtures and overlay regression helpers. |
 
 ## SHELL CONTRACT
@@ -42,7 +42,6 @@ cargo nextest run -p harness-tui
 cargo nextest run -p harness-tui --test deterministic_render_test
 cargo nextest run -p harness-tui --test model_switcher_metadata_test
 cargo nextest run -p harness-tui --test session_navigation_keybindings_test
-cargo nextest run -p harness-tui --test tui_signoff_manifest_test
 cargo nextest run -p harness-tui --test pty_e2e
 RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 cargo nextest run -p harness-tui --test pty_e2e --test-threads 1
 ```

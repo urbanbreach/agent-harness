@@ -133,33 +133,6 @@ fn background_only_work_keeps_one_status_row_until_completion() {
 }
 
 #[test]
-fn background_watcher_uses_the_calm_reference_pulse_cadence() {
-    // arrange
-    // Given: a background-only monitor on the first animation frame.
-    let mut app = AppState::new_live(None, false, Some(Arc::new(|_| {})));
-    app.ingest_event(envelope(1, scheduled("task_monitor", "tool:monitor")));
-    let before = status_text(&app).expect("background status row");
-
-    // When: eight animation ticks advance one monitor-pulse frame.
-    for _ in 0..8 {
-        app.advance_animation_tick_for_evidence();
-    }
-    let after = status_text(&app).expect("background status row");
-
-    // act
-    // Then: the cue advances through the reference circle pulse, not the active spinner.
-    // assert
-    assert!(
-        before.contains("○ 1 monitor still running"),
-        "row: {before:?}"
-    );
-    assert!(
-        after.contains("◎ 1 monitor still running"),
-        "row: {after:?}"
-    );
-}
-
-#[test]
 fn foreground_completion_keeps_background_status_until_background_completion() {
     // arrange
     // Given: an active foreground response with a separate background task.

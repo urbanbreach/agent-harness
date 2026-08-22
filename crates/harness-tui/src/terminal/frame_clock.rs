@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use harness_core::clock::{Clock, FakeClock};
 
-/// Default per-tick step, matching the animation fixed-tick evidence cadence.
+/// Default per-tick step for deterministic frame progression.
 pub const DEFAULT_FRAME_TICK_MS: u64 = 1_000 / 30;
 
 /// A frame count, type-distinct from a millisecond reading.
@@ -25,8 +25,7 @@ impl FramePhase {
 /// A deterministic frame clock backed by a manually advanced [`FakeClock`].
 ///
 /// The backing clock is shared via [`Arc`] so the same reading can be handed to
-/// other deterministic consumers (e.g. animation-evidence capture) without
-/// copying.
+/// other deterministic consumers without copying.
 #[derive(Debug, Clone)]
 pub struct FrameClock {
     clock: Arc<FakeClock>,

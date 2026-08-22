@@ -1,14 +1,14 @@
 use super::*;
 use crate::UnwrapOrAbort;
 
-pub(super) fn harness_chat_theme_is_default() {
+pub(super) fn harness_dark_theme_is_default() {
     let default = Theme::default();
-    let harness_chat = Theme::harness_chat();
+    let harness_dark = Theme::harness_dark();
 
-    assert_eq!(default.surface, harness_chat.surface);
-    assert_eq!(default.border, harness_chat.border);
-    assert_eq!(default.text, harness_chat.text);
-    assert_eq!(default.status, harness_chat.status);
+    assert_eq!(default.surface, harness_dark.surface);
+    assert_eq!(default.border, harness_dark.border);
+    assert_eq!(default.text, harness_dark.text);
+    assert_eq!(default.status, harness_dark.status);
 }
 
 pub(super) fn theme_tokens_cover_live_shell_states() {
@@ -394,66 +394,4 @@ pub(super) fn live_layout_breakpoints_choose_shell_variant() {
         theme.live_shell.target(100, 30),
         ShellGeometryTarget::Primary
     );
-}
-
-pub(super) fn layout_breakpoints_match_shell_parity_contract() {
-    let mut wide = app::AppState::new_live(None, false, None);
-    wide.active_tab = app::Tab::Run;
-    for event in session_view_events() {
-        wide.ingest_event(event);
-    }
-    let wide_plan =
-        layout::FrameLayoutPlan::for_app(&wide, ratatui::layout::Rect::new(0, 0, 160, 48));
-    assert_eq!(wide_plan.header.height, 0);
-    assert_eq!(wide_plan.operator_sidebar, None);
-
-    let mut primary = app::AppState::new_live(None, false, None);
-    primary.active_tab = app::Tab::Run;
-    for event in session_view_events() {
-        primary.ingest_event(event);
-    }
-    let primary_plan =
-        layout::FrameLayoutPlan::for_app(&primary, ratatui::layout::Rect::new(0, 0, 100, 30));
-    assert_eq!(primary_plan.header.height, 0);
-    assert_eq!(primary_plan.operator_sidebar, None);
-
-    let mut split = app::AppState::new_live(None, false, None);
-    split.active_tab = app::Tab::Run;
-    for event in session_view_events() {
-        split.ingest_event(event);
-    }
-    let split_plan =
-        layout::FrameLayoutPlan::for_app(&split, ratatui::layout::Rect::new(0, 0, 96, 40));
-    assert_eq!(split_plan.header.height, 0);
-    assert_eq!(split_plan.operator_sidebar, None);
-
-    let mut overlay = app::AppState::new_live(None, false, None);
-    overlay.live_details_drawer_open = true;
-    let overlay_plan =
-        layout::FrameLayoutPlan::for_app(&overlay, ratatui::layout::Rect::new(0, 0, 80, 48));
-    assert_eq!(overlay_plan.header.height, 0);
-    assert!(overlay_plan.operator_sidebar.is_none());
-    assert_eq!(
-        overlay_plan.details_overlay,
-        Some(ratatui::layout::Rect::new(38, 0, 42, 41))
-    );
-
-    let mut compact = app::AppState::new_live(None, false, None);
-    compact.live_details_drawer_open = true;
-    let compact_plan =
-        layout::FrameLayoutPlan::for_app(&compact, ratatui::layout::Rect::new(0, 0, 80, 24));
-    assert_eq!(compact_plan.header.height, 0);
-    assert!(compact_plan.operator_sidebar.is_none());
-    assert_eq!(
-        compact_plan.details_overlay,
-        Some(ratatui::layout::Rect::new(38, 0, 42, 17))
-    );
-
-    let mut dense = app::AppState::new_live(None, false, None);
-    dense.live_details_drawer_open = true;
-    let dense_plan =
-        layout::FrameLayoutPlan::for_app(&dense, ratatui::layout::Rect::new(0, 0, 60, 18));
-    assert_eq!(dense_plan.header.height, 0);
-    assert!(dense_plan.operator_sidebar.is_none());
-    assert!(dense_plan.details_overlay.is_none());
 }

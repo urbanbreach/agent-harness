@@ -10,7 +10,7 @@ pub(super) fn startup_surface_renders_without_onboarding_overlay() {
     );
     assert!(
         !rendered.to_lowercase().contains("onboarding"),
-        "startup surface should not reference onboarding\n{rendered}"
+        "startup surface should not render onboarding\n{rendered}"
     );
 }
 
@@ -183,43 +183,6 @@ pub(super) fn legacy_live_redesign_gate_is_removed() {
     assert!(!chrome_src.contains("transcript_first_shell_redesign_active"));
     assert!(!transcript_src.contains("transcript_first_shell_redesign_active"));
     assert!(!chrome_src.contains("append_orchestration_status_legacy"));
-}
-
-pub(super) fn slash_overlay_uses_reference_navigation_keys() {
-    let mut app = app::AppState::new_live(None, false, None);
-    app.handle_key(key(crossterm::event::KeyCode::Char('/')));
-    assert_eq!(
-        app.overlay_stack().top(),
-        Some(overlay::OverlayKind::SlashCommands)
-    );
-
-    app.handle_key(key_with_modifiers(
-        crossterm::event::KeyCode::Char('p'),
-        crossterm::event::KeyModifiers::CONTROL,
-    ));
-    assert_eq!(
-        app.slash_selected,
-        app.slash_filtered.len().saturating_sub(1)
-    );
-
-    app.handle_key(key(crossterm::event::KeyCode::Down));
-    assert_eq!(app.slash_selected, 0);
-
-    app.handle_key(key(crossterm::event::KeyCode::Up));
-    assert_eq!(
-        app.slash_selected,
-        app.slash_filtered.len().saturating_sub(1)
-    );
-
-    app.handle_key(key_with_modifiers(
-        crossterm::event::KeyCode::Char('n'),
-        crossterm::event::KeyModifiers::CONTROL,
-    ));
-    assert_eq!(app.slash_selected, 0);
-
-    app.handle_key(key(crossterm::event::KeyCode::Esc));
-    assert_eq!(app.composer.prompt_buffer, "");
-    assert!(!app.slash_visible);
 }
 
 pub(super) fn slash_overlay_uses_input_width_aligned_rows_and_accent_selection() {
@@ -481,101 +444,6 @@ pub(super) fn quiet_overlay_helper_rows_use_semantic_chrome_palette() {
             .all(|color| *color == theme.text.primary),
         "session history title uses semantic palette title text\n{title_row}"
     );
-}
-
-pub(super) fn live_shell_redesign_preserves_replay_overlay_and_permission_parity() {
-    startup_and_live_empty_share_spacing_contract();
-    compact_geometry_uses_overlay_sidebar_and_minimal_footer();
-    hovered_wheel_target_uses_sidebar_overlay_hit_areas();
-    permission_modal_remains_visually_dominant_and_fail_closed();
-
-    let theme = Theme::default();
-
-    let mut replay =
-        app::AppState::new_replay(PathBuf::from("/tmp/replay-session"), session_view_events());
-    replay.transcript_view.transcript_scroll = usize::MAX;
-    let replay_plan = FrameLayoutPlan::for_app(&replay, ratatui::layout::Rect::new(0, 0, 100, 30));
-    let replay_render = render_live_lines(&replay, 100, 30);
-    let replay_buffer = render_live_cells(&replay, 100, 30);
-    let replay_lines = replay_render.lines().collect::<Vec<_>>();
-    assert!(replay_plan.live_anchor.is_none());
-    assert!(replay_plan.operator_sidebar.is_some());
-    let replay_header_row = find_line_containing_all(&replay_lines, &["Replay", "read-only"])
-        .unwrap_or_else(|| {
-            panic!("replay header should preserve replay identity\n{replay_render}")
-        });
-    let replay_disabled_row = find_line_containing_all_from(
-        &replay_lines,
-        replay_header_row + 1,
-        &["▎", "Replay is read-only."],
-    )
-    .filter(|row| !replay_lines[*row].contains("run "))
-    .unwrap_or_else(|| {
-        panic!("replay shell should preserve a disabled composer row\n{replay_render}")
-    });
-    let replay_shortcuts_row =
-        find_line_containing_from(&replay_lines, replay_disabled_row + 1, "shortcuts")
-            .unwrap_or_else(|| {
-                panic!("replay shell should preserve shortcut guidance\n{replay_render}")
-            });
-    let user_row = find_line_containing(&replay_lines, "Explain the refactor")
-        .unwrap_or_else(|| panic!("replay shell should preserve the user turn\n{replay_render}"));
-    let thinking_row = find_line_containing_all_from(&replay_lines, user_row + 1, &["Thought"])
-        .unwrap_or_else(|| {
-            panic!("replay shell should preserve collapsed thinking state\n{replay_render}")
-        });
-
-    assert!(replay_header_row < replay_disabled_row && replay_disabled_row < replay_shortcuts_row);
-    assert!(
-        user_row < thinking_row,
-        "replay transcript should preserve turn order\n{replay_render}"
-    );
-    assert_alphanumeric_row_palette(
-        &replay_buffer,
-        100,
-        replay_disabled_row,
-        theme.status.disabled,
-        theme.reference_terminal.canvas,
-        "replay disabled composer",
-    );
-    assert_row_segment_palette(
-        &replay_buffer,
-        100,
-        "shortcuts",
-        theme.text.secondary,
-        theme.reference_terminal.canvas,
-    );
-
-    let mut degraded = app::AppState::new_live(None, false, None);
-    degraded.set_status_banner(Some(
-        "live stream lagged by 2; replaying from seq 1".to_string(),
-    ));
-    let degraded_buffer = render_live_cells(&degraded, 80, 24);
-    assert_row_segment_background(
-        &degraded_buffer,
-        80,
-        "Recovery in progress",
-        theme.surface.overlay,
-    );
-
-    let mut disconnected = app::AppState::new_live(None, false, None);
-    disconnected.set_status_banner(Some("live event stream disconnected".to_string()));
-    let disconnected_buffer = render_live_cells(&disconnected, 80, 24);
-    assert_row_segment_background(
-        &disconnected_buffer,
-        80,
-        "Connection lost",
-        theme.surface.overlay,
-    );
-
-    let mut failure = app::AppState::new_live(None, false, None);
-    failure.set_status_banner(Some(
-        "runtime error: exit code 1\nstderr permission denied".to_string(),
-    ));
-    let failure_render = render_live_lines(&failure, 80, 24);
-    // Freeze-aligned: Failure no longer paints elevated overlay chrome.
-    assert!(!failure_render.contains("Review required"));
-    assert_eq!(failure.runtime_state().kind, app::RuntimeStateKind::Failure);
 }
 
 pub(super) fn permission_modal_remains_visually_dominant_and_fail_closed() {

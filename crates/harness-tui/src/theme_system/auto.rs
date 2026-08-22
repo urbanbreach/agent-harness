@@ -35,7 +35,7 @@ impl ThemeChoice {
 
 impl Default for ThemeChoice {
     fn default() -> Self {
-        Self::Explicit(ThemeFamily::HarnessChat)
+        Self::Explicit(ThemeFamily::HarnessDark)
     }
 }
 

@@ -35,7 +35,7 @@ fn legacy_agent_palette_roles_use_generic_accent() {
 #[test]
 fn theme_family_contract_exposes_every_role_without_missing_mappings() {
     // arrange
-    assert_eq!(ThemeFamily::ALL.len(), 5);
+    assert_eq!(ThemeFamily::ALL.len(), 4);
     assert_eq!(PaletteRole::ALL.len(), 53);
     assert_eq!(GlyphRole::ALL.len(), 13);
     assert_eq!(BorderRole::ALL.len(), 4);
@@ -126,7 +126,7 @@ fn fallback_ladder_has_deterministic_truecolor_to_no_color_matrix() {
     );
 
     // act
-    for family in [ThemeFamily::HarnessChat, ThemeFamily::HarnessDark] {
+    for family in [ThemeFamily::HarnessDark, ThemeFamily::HarnessLight] {
         for level in FALLBACK_LADDER {
             let environment = ThemeEnvironment::with_color_level(level);
             let first = ThemeChoice::explicit(family).resolve(&environment);
@@ -152,7 +152,7 @@ fn fallback_ladder_has_deterministic_truecolor_to_no_color_matrix() {
 fn legacy_glyph_mode_uses_semantic_ascii_without_changing_colors() {
     // arrange
     // act
-    let preferred = Theme::harness_chat();
+    let preferred = Theme::harness_dark();
     let legacy = preferred.with_glyph_mode(GlyphMode::Ascii);
 
     // assert
@@ -168,13 +168,13 @@ fn legacy_glyph_mode_uses_semantic_ascii_without_changing_colors() {
 #[test]
 fn limited_color_modes_preserve_status_meaning() {
     // arrange
-    let basic = Theme::harness_chat().for_color_level(ColorLevel::Basic);
+    let basic = Theme::harness_dark().for_color_level(ColorLevel::Basic);
     assert_ne!(basic.status.success, basic.status.warning);
     assert_ne!(basic.status.success, basic.status.error);
     assert_ne!(basic.status.warning, basic.status.error);
 
     // act
-    let no_color = Theme::harness_chat()
+    let no_color = Theme::harness_dark()
         .for_color_level(ColorLevel::None)
         .with_glyph_mode(GlyphMode::Ascii);
     // assert
@@ -208,11 +208,11 @@ fn semantic_bindings_follow_the_theme_token_groups() {
     );
     assert_eq!(
         resolved.bindings.diff.added_highlight,
-        resolved.theme.reference_terminal.diff_added_highlight
+        resolved.theme.terminal_colors.diff_added_highlight
     );
     assert_eq!(
         resolved.bindings.diff.removed_highlight,
-        resolved.theme.reference_terminal.diff_removed_highlight
+        resolved.theme.terminal_colors.diff_removed_highlight
     );
     assert_eq!(
         resolved.bindings.tool.pending,
@@ -250,7 +250,7 @@ fn auto_mode_uses_colorfgbg_system_appearance_and_keeps_auto_choice() {
     let mut state =
         ThemePreviewState::new(ThemeChoice::Auto, ThemeEnvironment::from_colorfgbg("15;0"));
     // assert
-    assert_eq!(state.effective_theme().family, ThemeFamily::HarnessChat);
+    assert_eq!(state.effective_theme().family, ThemeFamily::HarnessDark);
     state.on_system_appearance_change(SystemAppearance::Light);
     assert_eq!(state.committed_choice(), ThemeChoice::Auto);
     assert_eq!(state.effective_theme().family, ThemeFamily::HarnessLight);

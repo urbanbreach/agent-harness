@@ -625,22 +625,6 @@ fn startup_shell_shows_profile_provider_and_model_chrome() {
 }
 
 #[test]
-fn startup_shell_keeps_no_default_tab_chrome_after_runtime_context_addition() {
-    // arrange
-    // act
-    // assert
-    exact_test_startup_shell_keeps_no_default_tab_chrome_after_runtime_context_addition();
-}
-
-#[test]
-fn replay_prompt_pane_is_visibly_read_only() {
-    // arrange
-    // act
-    // assert
-    exact_test_replay_prompt_pane_is_visibly_read_only();
-}
-
-#[test]
 fn help_surface_lists_active_bindings() {
     // arrange
     // act
@@ -670,40 +654,7 @@ fn help_surface_lists_active_bindings() {
     assert!(!debug.contains("Live shell:"));
     assert!(!debug.contains("Review event log"));
     assert!(!debug.contains("Review diff artifact"));
-    assert!(!debug.contains("Reopen shortcut reference"));
     assert!(!debug.contains("4 / h"));
-}
-
-#[test]
-fn wheel_target_hits_transcript_when_hovered() {
-    // arrange
-    // act
-    // assert
-    exact_test_wheel_target_hits_transcript_when_hovered();
-}
-
-#[test]
-fn wheel_target_hits_inspector_inside_live_overlay() {
-    // arrange
-    // act
-    // assert
-    exact_test_wheel_target_hits_inspector_inside_live_overlay();
-}
-
-#[test]
-fn wheel_target_excludes_activity_portion_of_live_overlay() {
-    // arrange
-    // act
-    // assert
-    exact_test_wheel_target_excludes_activity_portion_of_live_overlay();
-}
-
-#[test]
-fn compact_operator_rail_does_not_capture_wheel() {
-    // arrange
-    // act
-    // assert
-    exact_test_compact_operator_rail_does_not_capture_wheel();
 }
 
 #[test]

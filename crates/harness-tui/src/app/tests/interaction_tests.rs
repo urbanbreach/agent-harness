@@ -213,7 +213,6 @@ pub(super) fn command_palette_mouse_hover_moves_keyboard_selection() {
         None,
     );
 
-    // Then: Grok's picker contract moves the keyboard selection with hover,
     // keeps the outer gutter on the modal surface, and paints the inset band
     // with the softer hover material.
     assert!(handled);

@@ -1,6 +1,6 @@
-use crate::design_contract::{MotionKind, DESIGN_TOKENS};
 use crate::scheduling::{FrameDecision, FrameNow};
 use crate::shell_geometry::layout_for_rect;
+use crate::theme_tokens::{MotionKind, DESIGN_TOKENS};
 use crate::transcript_blocks::{BlockKind, BlockLifecycle};
 use crate::transcript_identity::{BlockId, TranscriptIdentity};
 

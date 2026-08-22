@@ -114,7 +114,7 @@ fn modal_inner_rects(popup: Rect) -> Option<HelpModalRects> {
 }
 
 fn paint_panel(frame: &mut Frame, app: &AppState, theme: &Theme, popup: Rect) {
-    let colors = theme.reference_terminal;
+    let colors = theme.terminal_colors;
     let panel = Style::default().fg(colors.primary).bg(colors.canvas);
     let border = panel.fg(colors.muted);
     let close_hovered = app.modal_target_hovered(ModalSurfaceKey::Help, ModalTarget::Close);
@@ -148,7 +148,7 @@ fn paint_panel(frame: &mut Frame, app: &AppState, theme: &Theme, popup: Rect) {
 }
 
 fn render_search(frame: &mut Frame, app: &AppState, theme: &Theme, area: Rect) {
-    let colors = theme.reference_terminal;
+    let colors = theme.terminal_colors;
     let muted = Style::default().fg(colors.muted).bg(colors.canvas);
     let primary = Style::default().fg(colors.primary).bg(colors.canvas);
     let searching = app.help_browser.search_active || !app.help_browser.query.is_empty();
@@ -182,7 +182,7 @@ fn render_detail(
     action: Action,
     scroll: usize,
 ) {
-    let colors = theme.reference_terminal;
+    let colors = theme.terminal_colors;
     let label = action.metadata_label();
     let description = action.metadata_description();
     let mut lines = vec![
@@ -290,7 +290,7 @@ fn render_footer_line(frame: &mut Frame, theme: &Theme, area: Rect, text: &str) 
     frame.render_widget(
         Paragraph::new(Span::styled(
             text,
-            Style::default().fg(theme.reference_terminal.secondary),
+            Style::default().fg(theme.terminal_colors.secondary),
         ))
         .alignment(Alignment::Center),
         area,

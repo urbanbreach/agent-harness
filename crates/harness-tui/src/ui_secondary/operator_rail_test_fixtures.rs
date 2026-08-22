@@ -148,7 +148,7 @@ pub(crate) fn operator_rail_activity_test_app() -> AppState {
             harness_core::event::ToolCallRequestedEvent {
                 tool_call_id: "tool_call_web".into(),
                 tool_id: "search.web".to_string(),
-                args_summary: r#"{"query":"sidebar parity"}"#.to_string(),
+                args_summary: r#"{"query":"sidebar consistency"}"#.to_string(),
                 args_digest: "digest-tool-web".to_string(),
                 metadata: Some(harness_core::event::ToolCallMetadata {
                     canonical_tool_id: Some("search.web".to_string()),

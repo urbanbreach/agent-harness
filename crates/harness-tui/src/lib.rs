@@ -4,7 +4,6 @@
 //! layout/theme contracts centralized in their dedicated modules rather than in
 //! ad hoc render helpers.
 
-pub mod animation_evidence;
 pub mod app;
 #[expect(
     clippy::mod_module_files,
@@ -17,7 +16,6 @@ pub mod attachment_lifecycle;
 )]
 pub mod capability_matrix;
 mod clipboard;
-pub mod clipboard_leaf;
 #[expect(
     clippy::mod_module_files,
     reason = "completion_controller is a focused public facade"
@@ -74,13 +72,7 @@ pub mod dashboard_peek;
     reason = "task 31 requires dashboard_roster/mod.rs as the public facade"
 )]
 pub mod dashboard_roster;
-pub mod design_contract;
 pub mod event;
-#[expect(
-    clippy::mod_module_files,
-    reason = "task 48 requires fidelity_config/mod.rs as the public facade"
-)]
-pub mod fidelity_config;
 pub mod gestures;
 pub mod ghost_suggestions;
 #[expect(
@@ -92,7 +84,6 @@ pub mod input;
 pub mod keybindings;
 pub mod layout;
 pub mod leaf_actions;
-pub mod leaf_views;
 #[cfg(test)]
 mod lib_tests;
 #[expect(
@@ -148,8 +139,8 @@ pub mod theme;
     reason = "task 37 requires theme_family/mod.rs as the public facade"
 )]
 pub mod theme_family;
-pub mod theme_leaf;
 pub mod theme_system;
+pub mod theme_tokens;
 mod time_format;
 #[expect(
     clippy::mod_module_files,
@@ -189,6 +180,7 @@ pub mod ui;
     reason = "task 40 requires video_viewer/mod.rs as the public facade"
 )]
 pub mod video_viewer;
+pub mod viewport;
 #[expect(
     clippy::mod_module_files,
     reason = "task 38 requires welcome_surface/mod.rs as the public facade"

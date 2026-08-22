@@ -311,7 +311,6 @@ pub(in crate::ui) fn question_permission_actions_text(
     } else {
         "confirm"
     };
-    // Reference question state packs "y copy"; prefer bare `y` when bound.
     let bindings = app.keymap.get_binding_strs(Action::CopyMessage);
     let copy_key = if bindings.iter().any(|binding| binding == "y") {
         "y".to_string()

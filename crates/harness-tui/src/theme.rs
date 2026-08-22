@@ -1,8 +1,8 @@
 // allow: SIZE_OK — TUI theme tokens (color system + shell geometry)
 use ratatui::style::{Color, Modifier, Style};
 
-use crate::design_contract::{ColorRole, GlyphRole, DESIGN_TOKENS};
 use crate::theme_family::{FallbackLadder, ThemeFamily};
+use crate::theme_tokens::{ColorRole, GlyphRole, DESIGN_TOKENS};
 
 pub const DIFF_SIDE_BY_SIDE_MIN_WIDTH: u16 = 96;
 
@@ -10,7 +10,7 @@ const fn rgb(red: u8, green: u8, blue: u8) -> Color {
     Color::Rgb(red, green, blue)
 }
 
-fn design_contract_color(role: ColorRole) -> Color {
+fn theme_role_color(role: ColorRole) -> Color {
     DESIGN_TOKENS
         .palette
         .roles
@@ -27,9 +27,8 @@ fn design_contract_color(role: ColorRole) -> Color {
 
 /// Terminal color support level (ordered low → high).
 ///
-/// Mirrors the reference binary's `ColorLevel`: the theme is defined in
-/// truecolor RGB and degrades cleanly to 256-color, 16-color, or monochrome
-/// based on the terminal's detected capability.
+/// Themes are defined in truecolor RGB and degrade to the terminal's detected
+/// color capability.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub enum ColorLevel {
     /// No color support (monochrome / `NO_COLOR`).
@@ -889,14 +888,8 @@ pub struct ScrollbarColors {
     pub thumb_active: Color,
 }
 
-/// Terminal-native colors measured from the Grok Build chat shell.
-///
-/// These are kept as a named token family because several reference surfaces
-/// intentionally use ANSI palette entries rather than the RGB application
-/// palette. Keeping them here makes the frozen shell styling explicit and
-/// lets terminal capability quantization treat them consistently.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ReferenceTerminalColors {
+pub struct TerminalColors {
     pub canvas: Color,
     pub primary: Color,
     pub secondary: Color,
@@ -917,21 +910,6 @@ pub struct ReferenceTerminalColors {
     pub diff_added_highlight: Color,
     pub diff_removed_highlight: Color,
     pub diff_hunk_header: Color,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct ReferenceDiffSyntaxColors {
-    pub context_bg: [u8; 3],
-    pub comment: [u8; 3],
-    pub keyword: [u8; 3],
-    pub function: [u8; 3],
-    pub variable: [u8; 3],
-    pub string: [u8; 3],
-    pub number: [u8; 3],
-    pub r#type: [u8; 3],
-    pub operator: [u8; 3],
-    pub punctuation: [u8; 3],
-    pub error: [u8; 3],
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -961,7 +939,7 @@ pub struct Theme {
     pub markdown: MarkdownColors,
     pub agents: AgentColors,
     pub scrollbar: ScrollbarColors,
-    pub reference_terminal: ReferenceTerminalColors,
+    pub terminal_colors: TerminalColors,
     pub live_shell: LiveShellTokens,
 }
 
@@ -976,7 +954,7 @@ impl Theme {
             ColorRole::Card => self.surface.card,
             ColorRole::ModalHover => self.surface.hover,
             ColorRole::SelectedCard => self.surface.selected_card,
-            ColorRole::PromptActiveSurface => self.reference_terminal.active_prompt_surface,
+            ColorRole::PromptActiveSurface => self.terminal_colors.active_prompt_surface,
             ColorRole::BorderSubtle => self.border.subtle,
             ColorRole::BorderStrong => self.border.strong,
             ColorRole::BorderFocus => self.border.focus,
@@ -1006,62 +984,23 @@ impl Theme {
             ColorRole::MarkdownLinkText => self.markdown.link_text,
             ColorRole::MarkdownCode => self.markdown.code,
             ColorRole::ScrollbarTrack => self.scrollbar.track,
-            ColorRole::TerminalPrimary => self.reference_terminal.primary,
-            ColorRole::TerminalSecondary => self.reference_terminal.secondary,
-            ColorRole::TerminalMuted => self.reference_terminal.muted,
-            ColorRole::TerminalError => self.reference_terminal.error,
-            ColorRole::TerminalPaletteSection => self.reference_terminal.palette_section,
-            ColorRole::TerminalForkAccent => self.reference_terminal.fork_accent,
-            ColorRole::DiffAdded => self.reference_terminal.diff_added,
-            ColorRole::DiffRemoved => self.reference_terminal.diff_removed,
-            ColorRole::DiffAddedGutter => self.reference_terminal.diff_added_gutter,
-            ColorRole::DiffRemovedGutter => self.reference_terminal.diff_removed_gutter,
-            ColorRole::DiffAddedHighlight => self.reference_terminal.diff_added_highlight,
-            ColorRole::DiffRemovedHighlight => self.reference_terminal.diff_removed_highlight,
-            ColorRole::DiffHunkHeader => self.reference_terminal.diff_hunk_header,
+            ColorRole::TerminalPrimary => self.terminal_colors.primary,
+            ColorRole::TerminalSecondary => self.terminal_colors.secondary,
+            ColorRole::TerminalMuted => self.terminal_colors.muted,
+            ColorRole::TerminalError => self.terminal_colors.error,
+            ColorRole::TerminalPaletteSection => self.terminal_colors.palette_section,
+            ColorRole::TerminalForkAccent => self.terminal_colors.fork_accent,
+            ColorRole::DiffAdded => self.terminal_colors.diff_added,
+            ColorRole::DiffRemoved => self.terminal_colors.diff_removed,
+            ColorRole::DiffAddedGutter => self.terminal_colors.diff_added_gutter,
+            ColorRole::DiffRemovedGutter => self.terminal_colors.diff_removed_gutter,
+            ColorRole::DiffAddedHighlight => self.terminal_colors.diff_added_highlight,
+            ColorRole::DiffRemovedHighlight => self.terminal_colors.diff_removed_highlight,
+            ColorRole::DiffHunkHeader => self.terminal_colors.diff_hunk_header,
         }
     }
 
-    pub(crate) const GROK_DIFF_SYNTAX: ReferenceDiffSyntaxColors = ReferenceDiffSyntaxColors {
-        context_bg: [0x14, 0x14, 0x14],
-        comment: [0x80, 0x80, 0x80],
-        keyword: [0xD9, 0x84, 0xD9],
-        function: [0xE8, 0xA0, 0xE8],
-        variable: [0xE0, 0x6C, 0x75],
-        string: [0x7F, 0xD8, 0x8F],
-        number: [0xE5, 0xC0, 0x7B],
-        r#type: [0xE5, 0xC0, 0x7B],
-        operator: [0x56, 0xB6, 0xC2],
-        punctuation: [0xEE, 0xEE, 0xEE],
-        error: [0xE0, 0x6C, 0x75],
-    };
-
-    fn grok_terminal_colors() -> ReferenceTerminalColors {
-        ReferenceTerminalColors {
-            canvas: design_contract_color(ColorRole::Canvas),
-            primary: design_contract_color(ColorRole::TerminalPrimary),
-            secondary: design_contract_color(ColorRole::TerminalSecondary),
-            muted: design_contract_color(ColorRole::TerminalMuted),
-            welcome_border: rgb(51, 51, 51),
-            prompt_border: design_contract_color(ColorRole::BorderSubtle),
-            prompt_border_active: design_contract_color(ColorRole::BorderFocus),
-            prompt_accent: design_contract_color(ColorRole::QuestionAccent),
-            active_prompt_surface: design_contract_color(ColorRole::PromptActiveSurface),
-            error: design_contract_color(ColorRole::TerminalError),
-            palette_section: design_contract_color(ColorRole::TerminalPaletteSection),
-            fork_accent: design_contract_color(ColorRole::TerminalForkAccent),
-            assistant_error: design_contract_color(ColorRole::TerminalSecondary),
-            diff_added: design_contract_color(ColorRole::DiffAdded),
-            diff_removed: design_contract_color(ColorRole::DiffRemoved),
-            diff_added_gutter: design_contract_color(ColorRole::DiffAddedGutter),
-            diff_removed_gutter: design_contract_color(ColorRole::DiffRemovedGutter),
-            diff_added_highlight: design_contract_color(ColorRole::DiffAddedHighlight),
-            diff_removed_highlight: design_contract_color(ColorRole::DiffRemovedHighlight),
-            diff_hunk_header: design_contract_color(ColorRole::DiffHunkHeader),
-        }
-    }
-
-    const HARNESS_DARK_TERMINAL_COLORS: ReferenceTerminalColors = ReferenceTerminalColors {
+    const HARNESS_DARK_TERMINAL_COLORS: TerminalColors = TerminalColors {
         canvas: rgb(20, 20, 20),
         primary: rgb(225, 225, 225),
         secondary: rgb(108, 108, 108),
@@ -1458,94 +1397,7 @@ impl Theme {
                 thumb: rgb(0x32, 0x36, 0x3C),
                 thumb_active: rgb(0x60, 0x63, 0x6A),
             },
-            reference_terminal: Self::HARNESS_DARK_TERMINAL_COLORS,
-            live_shell: Self::HARNESS_DARK_SHELL,
-            color_level: ColorLevel::TrueColor,
-        }
-    }
-
-    /// Harness chat-shell tokens, anchored by the frozen RGB observation receipt.
-    pub fn harness_chat() -> Self {
-        Self {
-            surface: SurfaceColors {
-                canvas: design_contract_color(ColorRole::Canvas),
-                shell: design_contract_color(ColorRole::Shell),
-                panel: design_contract_color(ColorRole::Panel),
-                panel_elevated: design_contract_color(ColorRole::PanelElevated),
-                overlay: design_contract_color(ColorRole::Overlay),
-                card: design_contract_color(ColorRole::Card),
-                hover: design_contract_color(ColorRole::ModalHover),
-                selected_card: design_contract_color(ColorRole::SelectedCard),
-            },
-            border: BorderColors {
-                subtle: design_contract_color(ColorRole::BorderSubtle),
-                strong: design_contract_color(ColorRole::BorderStrong),
-                focus: design_contract_color(ColorRole::BorderFocus),
-            },
-            text: TextColors {
-                primary: design_contract_color(ColorRole::TextPrimary),
-                secondary: design_contract_color(ColorRole::TextSecondary),
-                tertiary: design_contract_color(ColorRole::TextTertiary),
-                accent: design_contract_color(ColorRole::TextAccent),
-                inverse: design_contract_color(ColorRole::TextInverse),
-            },
-            question_prompt: QuestionPromptColors {
-                surface: design_contract_color(ColorRole::QuestionSurface),
-                selected: design_contract_color(ColorRole::QuestionSelected),
-                primary: design_contract_color(ColorRole::QuestionPrimary),
-                accent: design_contract_color(ColorRole::QuestionAccent),
-                secondary: design_contract_color(ColorRole::QuestionSecondary),
-            },
-            status: StatusColors {
-                success: design_contract_color(ColorRole::StatusSuccess),
-                warning: design_contract_color(ColorRole::StatusWarning),
-                error: design_contract_color(ColorRole::StatusError),
-                info: design_contract_color(ColorRole::StatusInfo),
-                disabled: design_contract_color(ColorRole::StatusDisabled),
-            },
-            markdown: MarkdownColors {
-                heading_h1: design_contract_color(ColorRole::MarkdownHeadingH1),
-                heading_h2: design_contract_color(ColorRole::AgentBuild),
-                heading_h3: design_contract_color(ColorRole::MarkdownHeadingH3),
-                heading_h4: design_contract_color(ColorRole::MarkdownHeadingH4),
-                heading_h5: design_contract_color(ColorRole::TextSecondary),
-                heading_h6: design_contract_color(ColorRole::MarkdownHeadingH6),
-                link: design_contract_color(ColorRole::AgentBuild),
-                link_text: design_contract_color(ColorRole::MarkdownLinkText),
-                code: design_contract_color(ColorRole::MarkdownCode),
-                task_checked: design_contract_color(ColorRole::StatusSuccess),
-                task_unchecked: design_contract_color(ColorRole::QuestionAccent),
-                muted: design_contract_color(ColorRole::TextSecondary),
-                code_background: design_contract_color(ColorRole::PanelElevated),
-                text: design_contract_color(ColorRole::QuestionAccent),
-                emph: design_contract_color(ColorRole::QuestionAccent),
-                strong: design_contract_color(ColorRole::QuestionAccent),
-                block_quote: design_contract_color(ColorRole::TextSecondary),
-                list_item: design_contract_color(ColorRole::TextSecondary),
-                list_enum: design_contract_color(ColorRole::TextSecondary),
-                rule: design_contract_color(ColorRole::TextSecondary),
-            },
-            agents: AgentColors {
-                build: design_contract_color(ColorRole::AgentBuild),
-                plan: design_contract_color(ColorRole::AgentPlan),
-                docs: design_contract_color(ColorRole::AgentDocs),
-                ask: design_contract_color(ColorRole::AgentAsk),
-                palette: [
-                    design_contract_color(ColorRole::AgentBuild),
-                    design_contract_color(ColorRole::AgentPlan),
-                    design_contract_color(ColorRole::StatusSuccess),
-                    design_contract_color(ColorRole::AgentDocs),
-                    design_contract_color(ColorRole::TerminalForkAccent),
-                    design_contract_color(ColorRole::StatusError),
-                    design_contract_color(ColorRole::StatusInfo),
-                ],
-            },
-            scrollbar: ScrollbarColors {
-                track: design_contract_color(ColorRole::ScrollbarTrack),
-                thumb: design_contract_color(ColorRole::Card),
-                thumb_active: design_contract_color(ColorRole::BorderFocus),
-            },
-            reference_terminal: Self::grok_terminal_colors(),
+            terminal_colors: Self::HARNESS_DARK_TERMINAL_COLORS,
             live_shell: Self::HARNESS_DARK_SHELL,
             color_level: ColorLevel::TrueColor,
         }
@@ -1631,7 +1483,7 @@ impl Theme {
                 thumb: rgb(0xC8, 0xC8, 0xC3),
                 thumb_active: rgb(0xA0, 0xA0, 0x9B),
             },
-            reference_terminal: Self::HARNESS_DARK_TERMINAL_COLORS,
+            terminal_colors: Self::HARNESS_DARK_TERMINAL_COLORS,
             live_shell: Self::HARNESS_DARK_SHELL,
             color_level: ColorLevel::TrueColor,
         }
@@ -1717,7 +1569,7 @@ impl Theme {
                 thumb: Color::DarkGray,
                 thumb_active: Color::Yellow,
             },
-            reference_terminal: Self::HARNESS_DARK_TERMINAL_COLORS,
+            terminal_colors: Self::HARNESS_DARK_TERMINAL_COLORS,
             live_shell: Self::HARNESS_DARK_SHELL,
             color_level: ColorLevel::TrueColor,
         }
@@ -1725,8 +1577,7 @@ impl Theme {
 
     pub fn by_name(name: &str) -> Option<Self> {
         match name {
-            "default" | "harness-chat" => Some(Self::harness_chat()),
-            "harness-dark" | "dark" => Some(Self::harness_dark()),
+            "default" | "harness-dark" | "dark" => Some(Self::harness_dark()),
             "harness-light" | "light" => Some(Self::harness_light()),
             "high-contrast" => Some(Self::harness_high_contrast()),
             "terminal-native" => Some(Self::terminal_native()),
@@ -1736,7 +1587,7 @@ impl Theme {
 
     pub fn from_family(family: ThemeFamily, level: ColorLevel) -> Self {
         let mut theme = match family {
-            ThemeFamily::Dark => return Self::harness_chat().for_color_level(level),
+            ThemeFamily::Dark => return Self::harness_dark().for_color_level(level),
             ThemeFamily::Light => Self::harness_light(),
         };
         let palette = crate::theme_family::resolve_palette(family, level);
@@ -1780,16 +1631,16 @@ impl Theme {
         theme.agents.plan = color(ColorRole::AgentPlan);
         theme.agents.docs = color(ColorRole::AgentDocs);
         theme.agents.ask = color(ColorRole::AgentAsk);
-        theme.reference_terminal.error = color(ColorRole::TerminalError);
-        theme.reference_terminal.palette_section = color(ColorRole::TerminalPaletteSection);
-        theme.reference_terminal.fork_accent = color(ColorRole::TerminalForkAccent);
-        theme.reference_terminal.diff_added = color(ColorRole::DiffAdded);
-        theme.reference_terminal.diff_removed = color(ColorRole::DiffRemoved);
-        theme.reference_terminal.diff_added_gutter = color(ColorRole::DiffAddedGutter);
-        theme.reference_terminal.diff_removed_gutter = color(ColorRole::DiffRemovedGutter);
-        theme.reference_terminal.diff_added_highlight = color(ColorRole::DiffAddedHighlight);
-        theme.reference_terminal.diff_removed_highlight = color(ColorRole::DiffRemovedHighlight);
-        theme.reference_terminal.diff_hunk_header = color(ColorRole::DiffHunkHeader);
+        theme.terminal_colors.error = color(ColorRole::TerminalError);
+        theme.terminal_colors.palette_section = color(ColorRole::TerminalPaletteSection);
+        theme.terminal_colors.fork_accent = color(ColorRole::TerminalForkAccent);
+        theme.terminal_colors.diff_added = color(ColorRole::DiffAdded);
+        theme.terminal_colors.diff_removed = color(ColorRole::DiffRemoved);
+        theme.terminal_colors.diff_added_gutter = color(ColorRole::DiffAddedGutter);
+        theme.terminal_colors.diff_removed_gutter = color(ColorRole::DiffRemovedGutter);
+        theme.terminal_colors.diff_added_highlight = color(ColorRole::DiffAddedHighlight);
+        theme.terminal_colors.diff_removed_highlight = color(ColorRole::DiffRemovedHighlight);
+        theme.terminal_colors.diff_hunk_header = color(ColorRole::DiffHunkHeader);
 
         let spacing = DESIGN_TOKENS.spacing;
         theme.live_shell.heights = ShellHeights {
@@ -1903,27 +1754,27 @@ impl Theme {
                 thumb: q(self.scrollbar.thumb),
                 thumb_active: q(self.scrollbar.thumb_active),
             },
-            reference_terminal: ReferenceTerminalColors {
-                canvas: q(self.reference_terminal.canvas),
-                primary: q(self.reference_terminal.primary),
-                secondary: q(self.reference_terminal.secondary),
-                muted: q(self.reference_terminal.muted),
-                welcome_border: q(self.reference_terminal.welcome_border),
-                prompt_border: q(self.reference_terminal.prompt_border),
-                prompt_border_active: q(self.reference_terminal.prompt_border_active),
-                prompt_accent: q(self.reference_terminal.prompt_accent),
-                active_prompt_surface: q(self.reference_terminal.active_prompt_surface),
-                error: q(self.reference_terminal.error),
-                palette_section: q(self.reference_terminal.palette_section),
-                fork_accent: q(self.reference_terminal.fork_accent),
-                assistant_error: q(self.reference_terminal.assistant_error),
-                diff_added: q(self.reference_terminal.diff_added),
-                diff_removed: q(self.reference_terminal.diff_removed),
-                diff_added_gutter: q(self.reference_terminal.diff_added_gutter),
-                diff_removed_gutter: q(self.reference_terminal.diff_removed_gutter),
-                diff_added_highlight: q(self.reference_terminal.diff_added_highlight),
-                diff_removed_highlight: q(self.reference_terminal.diff_removed_highlight),
-                diff_hunk_header: q(self.reference_terminal.diff_hunk_header),
+            terminal_colors: TerminalColors {
+                canvas: q(self.terminal_colors.canvas),
+                primary: q(self.terminal_colors.primary),
+                secondary: q(self.terminal_colors.secondary),
+                muted: q(self.terminal_colors.muted),
+                welcome_border: q(self.terminal_colors.welcome_border),
+                prompt_border: q(self.terminal_colors.prompt_border),
+                prompt_border_active: q(self.terminal_colors.prompt_border_active),
+                prompt_accent: q(self.terminal_colors.prompt_accent),
+                active_prompt_surface: q(self.terminal_colors.active_prompt_surface),
+                error: q(self.terminal_colors.error),
+                palette_section: q(self.terminal_colors.palette_section),
+                fork_accent: q(self.terminal_colors.fork_accent),
+                assistant_error: q(self.terminal_colors.assistant_error),
+                diff_added: q(self.terminal_colors.diff_added),
+                diff_removed: q(self.terminal_colors.diff_removed),
+                diff_added_gutter: q(self.terminal_colors.diff_added_gutter),
+                diff_removed_gutter: q(self.terminal_colors.diff_removed_gutter),
+                diff_added_highlight: q(self.terminal_colors.diff_added_highlight),
+                diff_removed_highlight: q(self.terminal_colors.diff_removed_highlight),
+                diff_hunk_header: q(self.terminal_colors.diff_hunk_header),
             },
             live_shell: self.live_shell,
             color_level: level,
@@ -2036,7 +1887,7 @@ impl Theme {
                 thumb: muted_fg,
                 thumb_active: high_contrast_fg,
             },
-            reference_terminal: ReferenceTerminalColors {
+            terminal_colors: TerminalColors {
                 canvas: canvas_bg,
                 primary: high_contrast_fg,
                 secondary: muted_fg,
@@ -2085,8 +1936,7 @@ impl Theme {
     /// Terminal-native theme: uses `Color::Reset` for all backgrounds and
     /// default foreground, with named ANSI-16 accents for semantic roles.
     ///
-    /// Matches the reference binary's terminal-native mode: the core shell
-    /// surfaces defer to the terminal's own fg/bg (polarity-safe on any
+    /// Core shell surfaces defer to the terminal's own fg/bg (polarity-safe on any
     /// profile), while state signals (error/success/warning) use ANSI-16
     /// hues that survive 16-color quantization. De-emphasis is via
     /// `Modifier::DIM`, not hard-coded grays.
@@ -2170,7 +2020,7 @@ impl Theme {
                 thumb: Color::Reset,
                 thumb_active: Color::Reset,
             },
-            reference_terminal: ReferenceTerminalColors {
+            terminal_colors: TerminalColors {
                 canvas: Color::Reset,
                 primary: Color::Reset,
                 secondary: Color::Reset,
@@ -2364,7 +2214,7 @@ fn transcript_glyphs(preferred: bool) -> TranscriptGlyphs {
 
 impl Default for Theme {
     fn default() -> Self {
-        Self::harness_chat()
+        Self::harness_dark()
     }
 }
 

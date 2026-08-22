@@ -97,7 +97,7 @@ pub fn render_to_buffer(
 ) {
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(theme.reference_terminal.muted))
+        .border_style(Style::default().fg(theme.terminal_colors.muted))
         .title(surface.title.clone());
     let inner = block.inner(area);
     block.render(area, buffer);

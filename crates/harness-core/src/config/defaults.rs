@@ -23,14 +23,6 @@ pub(super) fn default_max_transcript_chars_in_memory() -> usize {
     200_000
 }
 
-pub(super) fn default_ui_variant_cycle_enabled() -> bool {
-    true
-}
-
-pub(super) fn default_ui_child_session_navigation_enabled() -> bool {
-    true
-}
-
 pub(super) fn default_background_task_default_concurrency() -> usize {
     4
 }

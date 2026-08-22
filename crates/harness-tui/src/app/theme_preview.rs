@@ -83,7 +83,7 @@ impl ThemePreviewState {
         self.system_appearance = Some(appearance);
         if self.auto_mode {
             self.current_name = match appearance {
-                SystemAppearance::Dark => "harness-chat".to_string(),
+                SystemAppearance::Dark => "harness-dark".to_string(),
                 SystemAppearance::Light => "harness-light".to_string(),
             };
         }
@@ -95,7 +95,7 @@ mod tests {
     use super::{SystemAppearance, ThemePreviewState};
 
     #[test]
-    fn automatic_dark_appearance_selects_harness_chat() {
+    fn automatic_dark_appearance_selects_harness_dark() {
         // arrange
         let mut state = ThemePreviewState::new("harness-light");
         state.set_auto_mode(true);
@@ -104,6 +104,6 @@ mod tests {
         state.on_system_appearance_change(SystemAppearance::Dark);
 
         // assert
-        assert_eq!(state.current_name(), "harness-chat");
+        assert_eq!(state.current_name(), "harness-dark");
     }
 }

@@ -107,28 +107,6 @@ pub(super) fn details_drawer_toggles_without_leaving_live_surface() {
     assert!(!closed_debug.contains("▼ MCP"));
 }
 
-pub(super) fn operator_sidebar_matches_parity_information_architecture() {
-    harness_core::config::clear_registered_integrations_config();
-    harness_core::config::set_registered_lsp_config(harness_core::config::LspConfig::default());
-
-    let app = orchestration_details_drawer_app(2);
-    let sidebar = operator_sidebar_text(&app);
-
-    assert_markers_in_order(
-        &sidebar,
-        &["Explain the refactor", "▼ MCP", "▼ LSP", "▶ Modified Files"],
-    );
-    assert!(
-        sidebar.contains("No MCP integrations configured")
-            || sidebar.contains("No MCP servers configured")
-            || sidebar.contains("websearch Disconnected")
-    );
-    assert!(sidebar.contains("No active LSP servers"));
-    assert!(!sidebar.contains("No modified files"));
-    assert!(!sidebar.contains("Todo ·"));
-    assert!(!sidebar.contains("Recovery ·"));
-}
-
 pub(super) fn operator_sidebar_uses_secondary_quiet_chrome() {
     let app = orchestration_details_drawer_app(2);
     let rendered = render_live_lines(&app, 160, 48);

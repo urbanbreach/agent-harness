@@ -328,7 +328,7 @@ fn edit_permission_event(seq: u64, permission_id: &str, tool_call_id: &str) -> E
 #[test]
 fn permission_mouse_hit_regions_match_the_rendered_option_rows() {
     // arrange
-    // Given: the four-choice permission dock at the primary parity viewport.
+    // Given: the four-choice permission dock at the primary consistency viewport.
     let frame_area = Rect::new(0, 0, 120, 40);
     let mut app = AppState::new_live(None, false, None);
     app.ingest_event(edit_permission_event(
@@ -384,7 +384,7 @@ fn permission_mouse_hit_regions_match_the_rendered_option_rows() {
 #[test]
 fn question_mouse_hit_regions_match_the_rendered_option_rows() {
     // arrange
-    // Given: a three-choice question dock at the primary parity viewport.
+    // Given: a three-choice question dock at the primary consistency viewport.
     let frame_area = Rect::new(0, 0, 120, 40);
     let mut app = AppState::new_live(None, false, None);
     app.ingest_event(three_choice_question_event("question_mouse_regions"));
@@ -457,7 +457,6 @@ fn question_overflow_keeps_custom_error_and_footer_sticky_at_60x20() {
             .to_string(),
     );
 
-    // When: the real question dock renders at the compact reference viewport.
     let rendered = render_text(&app, 60, 20);
 
     // act

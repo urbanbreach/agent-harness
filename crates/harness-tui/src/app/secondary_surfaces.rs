@@ -85,7 +85,7 @@ pub(crate) type OperatorSidebarState = SecondarySurfaceState;
 mod tests {
     use super::*;
 
-    // Relocated from dashboard_queue_worktree_parity_test.rs: section
+    // Relocated from dashboard_queue_worktree_consistency_test.rs: section
     // collapse/expand toggles pub(crate) SecondarySurfaceState state.
     #[test]
     fn dashboard_roster_group_collapses_and_expands_sections() {

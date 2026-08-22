@@ -515,7 +515,7 @@ fn surface_label(def: &SettingDefinition) -> &'static str {
 mod tests {
     use super::*;
 
-    // Relocated from overlay_picker_settings_permission_parity_test.rs: the
+    // Relocated from overlay_picker_settings_permission_consistency_test.rs: the
     // `is_writable_setting` helper is module-private; exercise it here without
     // widening visibility.
     #[test]

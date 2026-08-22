@@ -6,6 +6,7 @@
 
 mod controllers;
 mod hit_map;
+pub mod interaction;
 mod presentation;
 mod presentation_adapter;
 mod presentation_error;
@@ -15,9 +16,9 @@ mod submission;
 mod view_helpers;
 mod view_model;
 
-pub use crate::app::interaction_reducer::UiIntent as InteractionUiIntent;
-pub use crate::design_contract::ViewportId;
+pub use crate::theme_tokens::ViewportId;
 pub use hit_map::{ComposerHitMap, ComposerHitRegion, ComposerHitTarget};
+pub use interaction::UiIntent as InteractionUiIntent;
 pub use presentation::{
     ComposerChrome, ComposerEditorModel, ComposerPresentation, ComposerPresentationConfig,
     ComposerSurface, ComposerTone,

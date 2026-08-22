@@ -1,10 +1,10 @@
 use ratatui::style::{Color, Modifier, Style};
 
-use crate::design_contract::{
+use crate::theme::Theme;
+use crate::theme_tokens::{
     BorderRole, ColorRole, FocusRole, GlyphRole, LifecycleState, StateColorBinding, TextModifier,
     DESIGN_TOKENS,
 };
-use crate::theme::Theme;
 use crate::transcript_identity::{ReplayTurn, TurnId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

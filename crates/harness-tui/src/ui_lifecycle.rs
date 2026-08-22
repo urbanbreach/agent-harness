@@ -541,7 +541,7 @@ fn welcome_inner_lines(
             }
             1 if inline_copy && !expanded => spans.push(Span::styled(
                 welcome_text_after_logo(
-                    "   Thanks for trying Open Build, give feedback with /feedback!",
+                    "   Thanks for trying Harness, give feedback with /feedback!",
                     inner_width,
                     logo_width,
                 ),
@@ -748,7 +748,7 @@ fn render_welcome_copy(
     } else {
         (
             inner.y.saturating_add(2),
-            "Thanks for trying Open Build, give feedback with /feedback!",
+            "Thanks for trying Harness, give feedback with /feedback!",
             Style::default().fg(theme.text.primary).bg(surface),
         )
     };
@@ -771,7 +771,7 @@ fn render_welcome_panel(frame: &mut Frame, app: &AppState, area: Rect, theme: &T
             .border_type(BorderType::Rounded)
             .border_style(
                 Style::default()
-                    .fg(theme.reference_terminal.welcome_border)
+                    .fg(theme.terminal_colors.welcome_border)
                     .bg(surface),
             )
             .style(Style::default().bg(surface));
@@ -822,9 +822,7 @@ fn render_trust_folder_prompt_overlay(frame: &mut Frame, area: Rect, theme: &The
     let accent = theme.text.accent;
     let muted = theme.text.secondary;
     let text = theme.text.primary;
-    let border = Style::default()
-        .fg(theme.reference_terminal.muted)
-        .bg(surface);
+    let border = Style::default().fg(theme.terminal_colors.muted).bg(surface);
 
     let block = Block::default()
         .borders(Borders::ALL)
@@ -1064,7 +1062,7 @@ mod welcome_action_style_tests {
     #[test]
     fn hovered_action_uses_the_hover_surface_across_the_complete_row() {
         // arrange
-        let theme = Theme::harness_chat();
+        let theme = Theme::harness_dark();
 
         // act
         let spans = welcome_action_spans(
@@ -1097,7 +1095,7 @@ mod welcome_action_style_tests {
     #[test]
     fn focused_action_uses_the_selected_surface_and_visible_marker() {
         // arrange
-        let theme = Theme::harness_chat();
+        let theme = Theme::harness_dark();
 
         // act
         let spans = welcome_action_spans(

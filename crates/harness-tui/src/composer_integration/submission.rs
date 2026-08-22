@@ -1,8 +1,8 @@
 use std::fmt::{Display, Formatter};
 
-use crate::app::interaction_reducer::UiIntent as InteractionUiIntent;
 use crate::attachment_lifecycle::MimeKind;
 use crate::composer_atoms::AttachmentId;
+use crate::composer_integration::interaction::UiIntent as InteractionUiIntent;
 use crate::keybindings::Action;
 use crate::prompt_queue_actions::{apply, QueueAction, QueueError};
 

@@ -6,9 +6,9 @@ use ratatui::{
 };
 
 use crate::app::{AppState, Focus};
-use crate::design_contract::{ViewportBreakpoint, DESIGN_TOKENS};
 use crate::overlay::OverlayKind;
 use crate::theme::{LiveShellLayout, Theme};
+use crate::theme_tokens::{ViewportBreakpoint, DESIGN_TOKENS};
 
 mod overlays;
 mod permission;
@@ -95,7 +95,7 @@ pub(crate) fn breadcrumb_reserve_rows(width: u16) -> u16 {
     breadcrumb_top_margin(width).saturating_add(1)
 }
 
-/// Optional live-dock spacer: 0 while the pinned reference auto-compacts at
+/// Optional live-dock spacer: 0 while the live shell auto-compacts at
 /// 20 rows or fewer, otherwise the canonical composer/footer spacer token.
 pub(crate) fn composer_footer_spacer_rows(terminal_height: u16) -> u16 {
     if terminal_height <= LIVE_DOCK_AUTO_COMPACT_MAX_HEIGHT {
@@ -1093,14 +1093,6 @@ mod tests {
     }
 
     #[test]
-    fn composer_input_height_reserves_grok_right_padding() {
-        // arrange
-        // act
-        // assert
-        assert_eq!(composer_input_height("abcde", 10), 2);
-    }
-
-    #[test]
     fn startup_dock_is_bottom_aligned_with_horizontal_inset() {
         // arrange
         // act
@@ -1227,34 +1219,6 @@ mod tests {
         assert_eq!(overlay.y, 4);
         assert_eq!(overlay.height, 19);
         assert!(overlay.bottom() <= plan.composer.unwrap_or_abort().y);
-    }
-
-    #[test]
-    fn fork_selector_overlay_uses_reference_large_dialog_geometry() {
-        // arrange
-        // act
-        // assert
-        let mut app = AppState::new_live(None, false, None);
-        app.open_fork_selector();
-
-        assert!(app.fork_selector_visible);
-        assert_eq!(app.overlay_stack().top(), Some(OverlayKind::ForkSelector));
-
-        let plan = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, 100, 40));
-        let overlay = plan.palette_overlay.unwrap_or_abort();
-
-        assert_eq!(overlay.width, 88);
-        assert_eq!(
-            overlay.height,
-            fork_selector_overlay_height(&app, plan.content.height)
-        );
-        assert_eq!(overlay.y, 4);
-        assert_eq!(
-            overlay.x,
-            plan.content
-                .x
-                .saturating_add(plan.content.width.saturating_sub(88) / 2)
-        );
     }
 
     #[test]

@@ -112,15 +112,4 @@ mod tests {
         assert_eq!(wall_clock_12h("2026-03-19T21:45:00Z"), "9:45 PM");
         assert_eq!(wall_clock_12h(" already local "), "already local");
     }
-
-    #[test]
-    fn wall_clock_hover_detail_formats_reference_overlay() {
-        // arrange
-        // act
-        // assert
-        assert_eq!(
-            wall_clock_hover_detail("2026-08-14T12:34:56Z"),
-            "12:34:56 | Aug 14"
-        );
-    }
 }

@@ -18,9 +18,7 @@ if TYPE_CHECKING:
 sys.dont_write_bytecode = True
 
 ALLOWED_DIRS: Final[set[str]] = {".git", ".sisyphus", "inspirations", "target"}
-# Files and PRDs that intentionally reference the upstream terminal product
-# while implementing command-palette/provider parity.
-ALLOWED_PARITY_PATHS: Final[set[Path]] = {
+ALLOWED_REFERENCE_PATHS: Final[set[Path]] = {
     # External provider catalog keys still named after third-party products.
     Path("crates/harness-tui/src/app/auth_dialog/provider_menu.rs"),
     # Compaction ports still cite the upstream reference agent in comments.
@@ -34,14 +32,8 @@ ALLOWED_PARITY_PATHS: Final[set[Path]] = {
     Path("crates/harness-core/src/coord/compaction/tokens.rs"),
     Path("crates/harness-core/src/coord/session_compaction.rs"),
     Path("crates/harness-tui/src/ui_transcript_compaction.rs"),
-    Path("crates/harness-core/tests/fixtures/permission_ruleset_parity/opencode_agent_ts_matrix.json"),
-    Path("crates/harness-core/tests/permission_ruleset_parity_inventory_test.rs"),
-    Path("crates/harness/tests/bootstrap_profiles/oc_parity_permission_matrices_test.rs"),
     Path("crates/harness-core/src/config.rs"),
     Path("crates/harness-core/src/config/public.rs"),
-    Path("crates/harness-core/src/config/tests/permissions_models_test.rs"),
-    Path("crates/harness-core/src/perm/tests.rs"),
-    Path("crates/harness/tests/bootstrap_profiles_test.rs"),
     Path("configs/harness.example.jsonc"),
     Path("docs/configuration/config.md"),
     Path("docs/permissions/permissions.md"),
@@ -49,11 +41,6 @@ ALLOWED_PARITY_PATHS: Final[set[Path]] = {
     Path("crates/harness-core/src/foreign_session/discover.rs"),
     Path("crates/harness-core/src/foreign_session/import.rs"),
     Path("crates/harness-core/tests/foreign_session_test.rs"),
-    Path("docs/reference/grok-build-tui-implementation-prompt.md"),
-    Path("docs/reference/tui-reference-module-disposition.v1.json"),
-    Path("crates/harness-tui/DESIGN.md"),
-    Path("grok-build-clean-room-parity.md"),
-    Path("scripts/tui-parity/generate-evidence-layers.py"),
 }
 ALLOWED_MATCH_LINES: Final[dict[Path, set[int]]] = {
     Path("scripts/check-forbidden-branding.py"): set(),
@@ -132,15 +119,11 @@ def is_allowed(path: Path) -> bool:
     """Return True if the path is exempt from branding checks."""
     if path.name == "check-forbidden-branding.py":
         return True
-    if path in ALLOWED_PARITY_PATHS:
+    if path in ALLOWED_REFERENCE_PATHS:
         return True
     if any(part in ALLOWED_DIRS for part in path.parts):
         return True
-    name = path.name
-    oc = "open" + "code"
-    return name.startswith(oc + "_tools_parity_inventory") and name.endswith(
-        ".v1.json"
-    )
+    return False
 
 
 def is_allowed_match(relative: Path, line_number: int, line: str) -> bool:

@@ -6,9 +6,6 @@ mode=""
 artifact_root=""
 dry_run=0
 harness_bin=""
-reference_bin=""
-reference_receipt=""
-reference_root=""
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/.." && pwd)"
@@ -32,12 +29,9 @@ Modes:
   coverage             Coverage ratchet lane via scripts/coverage-ratchet.sh.
   simulation           Offline deterministic simulation lane with matrix validation, artifacts, same-seed comparison, and secret scan.
   signoff-binary       Real-process CLI shim smoke, env-gated and ignored by default.
-  signoff-pty          Strict fail-closed deterministic PTY signoff (dual-binary CLI journeys), single-threaded.
+  signoff-pty          Strict fail-closed deterministic PTY signoff, single-threaded.
   signoff-live         Live provider signoff. Requires live env and runs live_proxy_preflight_requires_live_env first.
   signoff-native       Native visual signoff. Requires native visual env and runs ignored native visual tests single-threaded.
-  signoff-parity       Strict fail-closed dual-binary TUI reference parity (cells/pixels) with executable evidence provenance. Missing manifest/env/binary/owners = FAIL.
-  signoff-packet2      Five sequential real-PTY Packet 2 scheduling comparisons against pinned reference assets.
-  signoff-journeys     Strict fail-closed A-JOURNEYS scaffolding: offline config CLI journeys + worktree owner doc. Missing binary/owners = FAIL.
   stress-offline       Delegates to scripts/stress-harness.sh --mode offline.
   stress-live          Requires live env/config and delegates to scripts/stress-harness.sh --mode live.
   all-deterministic    Runs quality-gates, simulation, fast, integration, then signoff-pty only when PTY support checks pass.
@@ -47,9 +41,6 @@ Options:
   --dry-run            Write command/status artifacts and print commands without executing them.
   --artifact-dir <path>  Artifact root. Default: target/test-lanes/<timestamp>
   --harness-bin <path> Reuse an already-built harness binary for stress lanes.
-  --reference-bin <path> Absolute pinned reference executable for signoff-packet2.
-  --reference-receipt <path> Absolute pinned reference receipt for signoff-packet2.
-  --reference-root <path> Absolute clean pinned reference worktree for signoff-packet2.
   --help              Show this help.
 
 Artifacts:
@@ -70,19 +61,7 @@ Required environment:
   signoff-native requires:
     HARNESS_NATIVE_VISUAL=1
     DISPLAY=<display>
-  signoff-parity requires (fail-closed; no silent skip):
-    docs/reference/tui-reference-parity-manifest.v1.json
-    cargo on PATH
-    harness-tui owner stages: manifest, p0/shell topology, cells, pixels, first-slice,
-      perm/question, tx/shell, responsive, and PTY owners with HARNESS_TUI_PTY_SIGNOFF=1
-    This lane owns dual-binary cells/pixels/PTY acceptance; docs/testing/tui-signoff-manifest.v1.json does not.
   signoff-binary sets HARNESS_BINARY_SMOKE=1 and HARNESS_BINARY_SMOKE_ARTIFACT_DIR for the ignored binary smoke.
-  signoff-journeys requires (fail-closed; no silent skip):
-    crates/harness/tests/journey_signoff_test.rs
-    cargo on PATH
-    compiled harness binary via cargo nextest (CARGO_BIN_EXE_harness)
-    Offline owners: config show --effective, config sources, config explain
-    Worktree owner is documented only; full PTY remains HARNESS_TUI_PTY_SIGNOFF=1
   all-deterministic PTY support requires:
     cargo on PATH
     crates/harness-testkit/tests/pty_e2e.rs
@@ -128,26 +107,11 @@ while [[ $# -gt 0 ]]; do
       harness_bin="$(abspath "$2")"
       shift 2
       ;;
-    --reference-bin)
-      require_option_value "$1" "${2-}"
-      reference_bin="$2"
-      shift 2
-      ;;
-    --reference-receipt)
-      require_option_value "$1" "${2-}"
-      reference_receipt="$2"
-      shift 2
-      ;;
-    --reference-root)
-      require_option_value "$1" "${2-}"
-      reference_root="$2"
-      shift 2
-      ;;
     --help)
       usage
       exit 0
       ;;
-    fast|integration|quality-gates|perf|coverage|simulation|signoff-binary|signoff-pty|signoff-live|signoff-native|signoff-parity|signoff-packet2|signoff-journeys|stress-offline|stress-live|all-deterministic|help)
+    fast|integration|quality-gates|perf|coverage|simulation|signoff-binary|signoff-pty|signoff-live|signoff-native|stress-offline|stress-live|all-deterministic|help)
       if [[ -n "$mode" ]]; then
         printf 'Multiple modes provided: %s and %s\n' "$mode" "$1" >&2
         usage >&2
@@ -590,9 +554,6 @@ run_signoff_binary() {
 
 run_signoff_pty() {
   local mode_name="signoff-pty"
-  local dual_binary_artifacts_dir
-  dual_binary_artifacts_dir="$(stage_dir_for signoff-pty harness_tui_dual_binary_cli_pty)/artifacts"
-  mkdir -p "$dual_binary_artifacts_dir"
   local tui_happy_path_artifacts_dir
   tui_happy_path_artifacts_dir="$(stage_dir_for signoff-pty harness_tui_happy_path_pty)/artifacts"
   mkdir -p "$tui_happy_path_artifacts_dir"
@@ -617,9 +578,9 @@ run_signoff_pty() {
         printf 'lane=signoff-pty\n'
         printf 'result=FAIL\n'
         printf 'reason=missing_prerequisites\n'
-        printf 'stages=prerequisites,testkit_pty,tui_pty,happy_path,dual_binary\n'
-        printf 'owns=deterministic_pty_and_dual_binary_cli_journeys\n'
-      } >"${dual_binary_artifacts_dir}/pty-lane-verdict.txt"
+        printf 'stages=prerequisites,testkit_pty,tui_pty,happy_path\n'
+        printf 'owns=deterministic_pty_journeys\n'
+      } >"${tui_happy_path_artifacts_dir}/pty-lane-verdict.txt"
       return 1
     fi
   fi
@@ -631,10 +592,6 @@ run_signoff_pty() {
   run_stage "$mode_name" harness_tui_happy_path_pty "$repo_root" \
     env RUST_TEST_THREADS=1 HARNESS_TUI_HAPPY_PATH_ARTIFACT_DIR="$tui_happy_path_artifacts_dir" \
     cargo nextest run -p harness --test pty_happy_path_recorded --test-threads 1 -- --ignored --exact scripted_tui_happy_path_records_start_prompt_permission_tool_edit_resume_and_quit
-  run_stage "$mode_name" harness_tui_dual_binary_cli_pty "$repo_root" \
-    env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 HARNESS_TUI_PARITY_STRICT=1 HARNESS_TUI_HAPPY_PATH_ARTIFACT_DIR="$dual_binary_artifacts_dir" \
-    cargo nextest run -p harness --test pty_happy_path_recorded --test-threads 1 -- --ignored dual_binary_cli_pty
-
   local mode_failed=0
   local stage_status
   for stage_status in "$(mode_dir_for signoff-pty)"/stages/*/status.txt; do
@@ -648,17 +605,17 @@ run_signoff_pty() {
       printf 'lane=signoff-pty\n'
       printf 'result=PASS\n'
       printf 'reason=owners_green\n'
-      printf 'stages=testkit_pty,tui_pty,happy_path,dual_binary\n'
-      printf 'owns=deterministic_pty_and_dual_binary_cli_journeys\n'
-    } >"${dual_binary_artifacts_dir}/pty-lane-verdict.txt"
+      printf 'stages=testkit_pty,tui_pty,happy_path\n'
+      printf 'owns=deterministic_pty_journeys\n'
+    } >"${tui_happy_path_artifacts_dir}/pty-lane-verdict.txt"
   else
     {
       printf 'lane=signoff-pty\n'
       printf 'result=FAIL\n'
       printf 'reason=stage_failure\n'
-      printf 'stages=testkit_pty,tui_pty,happy_path,dual_binary\n'
-      printf 'owns=deterministic_pty_and_dual_binary_cli_journeys\n'
-    } >"${dual_binary_artifacts_dir}/pty-lane-verdict.txt"
+      printf 'stages=testkit_pty,tui_pty,happy_path\n'
+      printf 'owns=deterministic_pty_journeys\n'
+    } >"${tui_happy_path_artifacts_dir}/pty-lane-verdict.txt"
     return 1
   fi
 }
@@ -666,551 +623,13 @@ run_signoff_pty() {
 run_signoff_live() {
   require_live_env signoff-live || return 0
   run_stage signoff-live live_proxy_preflight_requires_live_env "$repo_root" cargo nextest run -p harness-testkit live_proxy_preflight_requires_live_env -- --ignored --exact || true
-  run_stage signoff-live live_proxy_prompt_parity_signoff "$repo_root" cargo nextest run -p harness-testkit live_proxy_prompt_parity_signoff -- --ignored --exact || true
-  run_stage signoff-live live_proxy_e2e_tui_parity_signoff "$repo_root" cargo nextest run -p harness-testkit live_proxy_e2e_tui_parity_signoff -- --ignored --exact || true
+  run_stage signoff-live live_proxy_prompt_signoff "$repo_root" cargo nextest run -p harness-testkit live_proxy_prompt_signoff -- --ignored --exact || true
+  run_stage signoff-live live_proxy_e2e_tui_signoff "$repo_root" cargo nextest run -p harness-testkit live_proxy_e2e_tui_signoff -- --ignored --exact || true
 }
 
 run_signoff_native() {
   require_native_env signoff-native || return 0
   run_stage signoff-native native_visual_e2e_ignored "$repo_root" cargo nextest run -p harness-testkit --test native_visual_e2e --test-threads 1 -- --ignored || true
-}
-
-run_signoff_journeys() {
-  local mode_name="signoff-journeys"
-  local journey_test_rel="crates/harness/tests/journey_signoff_test.rs"
-  local journey_test_path="${repo_root}/${journey_test_rel}"
-  local journey_artifacts_dir
-  journey_artifacts_dir="$(stage_dir_for signoff-journeys journey_evidence)/artifacts"
-  mkdir -p "$journey_artifacts_dir"
-
-  if [[ "$dry_run" -eq 0 ]]; then
-    local missing=()
-    if [[ ! -f "$journey_test_path" ]]; then
-      missing+=("missing owner ${journey_test_rel} (silent skip is forbidden)")
-    fi
-    if ! command -v cargo >/dev/null 2>&1; then
-      missing+=("cargo is not available on PATH")
-    fi
-    if [[ "${#missing[@]}" -ne 0 ]]; then
-      record_gate_failure "$mode_name" journey_prerequisites "${missing[@]}"
-      {
-        printf 'lane=signoff-journeys\n'
-        printf 'result=FAIL\n'
-        printf 'reason=missing_prerequisites\n'
-        printf 'stages=prerequisites,journey_signoff_test\n'
-        printf 'owns=a_journeys_config_cli_and_worktree_owner_doc\n'
-        printf 'note=worktree_pty_remains_env_gated_HARNESS_TUI_PTY_SIGNOFF\n'
-      } >"${journey_artifacts_dir}/journey-lane-verdict.txt"
-      return 1
-    fi
-  fi
-
-  run_stage "$mode_name" journey_signoff_owner_present "$repo_root" test -f "$journey_test_path"
-  run_stage "$mode_name" journey_signoff_test "$repo_root" \
-    env HARNESS_JOURNEY_STRICT=1 HARNESS_JOURNEY_ARTIFACT_DIR="$journey_artifacts_dir" \
-    cargo nextest run -p harness --test journey_signoff_test
-
-  local mode_failed=0
-  local stage_status
-  for stage_status in "$(mode_dir_for signoff-journeys)"/stages/*/status.txt; do
-    if [[ -f "$stage_status" ]] && grep -q '^result=FAIL$' "$stage_status"; then
-      mode_failed=1
-      break
-    fi
-  done
-  if [[ "$mode_failed" -eq 0 ]]; then
-    {
-      printf 'lane=signoff-journeys\n'
-      printf 'result=PASS\n'
-      printf 'reason=owners_green\n'
-      printf 'stages=prerequisites,journey_signoff_test\n'
-      printf 'owns=a_journeys_config_cli_and_worktree_owner_doc\n'
-      printf 'note=rows_remain_incomplete_until_full_L1_L6;worktree_pty_env_gated\n'
-    } >"${journey_artifacts_dir}/journey-lane-verdict.txt"
-  else
-    {
-      printf 'lane=signoff-journeys\n'
-      printf 'result=FAIL\n'
-      printf 'reason=stage_failure\n'
-      printf 'stages=prerequisites,journey_signoff_test\n'
-      printf 'owns=a_journeys_config_cli_and_worktree_owner_doc\n'
-      printf 'note=rows_remain_incomplete_until_full_L1_L6;worktree_pty_env_gated\n'
-    } >"${journey_artifacts_dir}/journey-lane-verdict.txt"
-    return 1
-  fi
-}
-
-run_signoff_parity() {
-  local mode_name="signoff-parity"
-  local authority_rel="configs/tui-fidelity-reference-authority.json"
-  local authority_path="${repo_root}/${authority_rel}"
-  local manifest_rel="docs/reference/tui-reference-parity-manifest.v1.json"
-  local manifest_path="${repo_root}/${manifest_rel}"
-  local manifest_test_rel="crates/harness-tui/tests/reference_parity_manifest_test.rs"
-  local manifest_test_path="${repo_root}/${manifest_test_rel}"
-  local cells_test_rel="crates/harness-tui/tests/reference_parity_cells_test.rs"
-  local pixels_test_rel="crates/harness-tui/tests/reference_parity_pixels_test.rs"
-  local pty_test_rel="crates/harness-tui/tests/reference_parity_pty_test.rs"
-  local presentation_receipt_test_rel="crates/harness-testkit/tests/tui_fidelity_presentation_receipt_test.rs"
-  local presentation_runner_test_rel="crates/harness-testkit/tests/tui_fidelity_runner_test.rs"
-  local reference_binary_rel=""
-  local reference_checkout_rel=""
-  local reference_revision=""
-  local reference_binary_sha256=""
-  local reference_binary_version=""
-  if [[ -f "$authority_path" ]]; then
-    mapfile -t reference_authority_fields < <(python3 -c '
-import json, sys
-authority = json.load(open(sys.argv[1]))
-if authority.get("status") != "active":
-    raise SystemExit("reference authority is not active")
-reference = authority["reference"]
-for field in ("executable", "canonical_checkout", "source_revision", "binary_sha256", "binary_version"):
-    print(reference[field])
-' "$authority_path")
-    if [[ "${#reference_authority_fields[@]}" -eq 5 ]]; then
-      reference_binary_rel="${reference_authority_fields[0]}"
-      reference_checkout_rel="${reference_authority_fields[1]}"
-      reference_revision="${reference_authority_fields[2]}"
-      reference_binary_sha256="${reference_authority_fields[3]}"
-      reference_binary_version="${reference_authority_fields[4]}"
-    fi
-  fi
-  local reference_binary_path="${repo_root}/${reference_binary_rel}"
-  local parity_evidence_root
-  parity_evidence_root="$(stage_dir_for signoff-parity parity_evidence)"
-  local parity_artifacts_dir="${parity_evidence_root}/artifacts"
-  local reference_pin_path="${parity_evidence_root}/reference-binary-sha256.txt"
-  mkdir -p "$parity_evidence_root"
-  printf '%s' "$reference_binary_sha256" >"$reference_pin_path"
-  mkdir -p "$parity_artifacts_dir"
-
-  if [[ "$dry_run" -eq 0 ]]; then
-    local missing=()
-    if [[ ! -f "$authority_path" ]]; then
-      missing+=("${authority_rel} (active reference authority)")
-    elif [[ -z "$reference_binary_rel" || -z "$reference_checkout_rel" || -z "$reference_revision" || -z "$reference_binary_sha256" || -z "$reference_binary_version" ]]; then
-      missing+=("${authority_rel} (missing active executable, canonical_checkout, source_revision, binary_sha256, or binary_version)")
-    fi
-    if [[ ! -f "$manifest_path" ]]; then
-      missing+=("${manifest_rel} (independent dual-binary cells/pixels/PTY manifest; tui-signoff-manifest.v1.json does not own this lane)")
-    fi
-    if ! command -v cargo >/dev/null 2>&1; then
-      missing+=("cargo is not available on PATH")
-    fi
-    for owner_rel in \
-      "$manifest_test_rel" \
-      "$cells_test_rel" \
-      "$pixels_test_rel" \
-      "$pty_test_rel" \
-      "$presentation_receipt_test_rel" \
-      "$presentation_runner_test_rel" \
-      "crates/harness-tui/tests/reference_parity_first_slice_test.rs" \
-      "crates/harness-tui/tests/reference_parity_perm_question_test.rs" \
-      "crates/harness-tui/tests/reference_parity_tx_shell_test.rs" \
-      "crates/harness-tui/tests/reference_parity_responsive_test.rs" \
-      "crates/harness-tui/tests/p0_parity_contract_test.rs" \
-      "crates/harness-tui/tests/shell_topology_contract_test.rs"
-    do
-      if [[ ! -f "${repo_root}/${owner_rel}" ]]; then
-        missing+=("missing owner ${owner_rel} (silent skip is forbidden)")
-      fi
-    done
-    if [[ "${#missing[@]}" -ne 0 ]]; then
-      record_gate_failure "$mode_name" parity_prerequisites "${missing[@]}"
-      write_signoff_parity_verdict "$parity_artifacts_dir" FAIL missing_prerequisites
-      return 1
-    fi
-  fi
-
-  run_stage "$mode_name" reference_parity_manifest_present "$repo_root" test -f "$manifest_path"
-
-  # Presence + identity of the active-authority reference binary only; never rebuild or copy it.
-  run_stage "$mode_name" reference_binary_present "$repo_root" \
-    bash -c 'test -x "$0" || { echo "missing active reference binary $0" >&2; exit 1; }; actual_sha="$(sha256sum "$0" | cut -d" " -f1)"; expected_sha="$(cat "$1")"; actual_version="$($0 --version)"; actual_revision="$(git -C "$2" rev-parse HEAD)"; if [ "$actual_sha" != "$expected_sha" ]; then echo "reference binary digest mismatch: actual=$actual_sha expected=$expected_sha" >&2; exit 1; fi; if [ "$actual_version" != "$3" ]; then echo "reference binary version mismatch: actual=$actual_version expected=$3" >&2; exit 1; fi; if [ "$actual_revision" != "$4" ]; then echo "reference revision mismatch: actual=$actual_revision expected=$4" >&2; exit 1; fi' \
-    "$reference_binary_path" "$reference_pin_path" "${repo_root}/${reference_checkout_rel}" "$reference_binary_version" "$reference_revision"
-
-  # Generate fresh L3 captures by invoking the capture scripts. Each script
-  # runs the Harness binary through a real PTY capture and writes terminal.png,
-  # terminal.txt, terminal-ansi.txt, and metadata.json into the evidence root.
-  # Requires Chrome/Chromium for PNG capture (set CHROME_BIN or install
-  # google-chrome/chromium). If a capture script fails, the lane fails with
-  # a clear error — no silent skip.
-  # Evidence is generated fresh per run; the parity contract prohibits reuse.
-  run_stage "$mode_name" reference_parity_capture_shell_scroll "$repo_root" \
-    env EVIDENCE_DIR="$parity_artifacts_dir/actual/harness-shell-live_scroll-pinned-v1" \
-    bash scripts/tui-parity/capture-shell-scroll-l3.sh
-
-  run_stage "$mode_name" reference_parity_capture_question_stream "$repo_root" \
-    env EVIDENCE_DIR="$parity_artifacts_dir/actual/harness-shell-question-pinned-v1" \
-    bash scripts/tui-parity/capture-question-stream-l3.sh
-
-  run_stage "$mode_name" reference_parity_capture_resp_idle "$repo_root" \
-    env EVIDENCE_BASE="$parity_artifacts_dir/actual" \
-    bash scripts/tui-parity/capture-resp-idle-shell-l3.sh
-
-  run_stage "$mode_name" reference_parity_capture_perm_empty_draft "$repo_root" \
-    env EVIDENCE_DIR="$parity_artifacts_dir/actual/harness-pty-perm-empty-draft-120x32-v1" \
-    bash scripts/tui-parity/capture-perm-empty-draft-l3.sh
-
-  run_stage "$mode_name" reference_parity_capture_startup_welcome "$repo_root" \
-    env EVIDENCE_DIR="$parity_artifacts_dir/actual/harness-startup-v24" \
-    bash scripts/tui-parity/capture-startup-welcome-l3.sh
-
-  run_stage "$mode_name" reference_parity_capture_draft_composer "$repo_root" \
-    env EVIDENCE_DIR="$parity_artifacts_dir/actual/harness-draft-v23" \
-    bash scripts/tui-parity/capture-draft-composer-l3.sh
-
-  run_stage "$mode_name" reference_parity_capture_shell_lifecycle "$repo_root" \
-    env EVIDENCE_BASE="$parity_artifacts_dir/actual" \
-    bash scripts/tui-parity/capture-shell-lifecycle-l3.sh
-
-  # Fresh nonvisual journey L3 captures (one stage per journey row): each
-  # stage runs the A-JOURNEYS owner tests in crates/harness/tests/
-  # journey_signoff_test.rs in self-contained mode (CLI/backend evidence
-  # only — no Chrome, no pixel PNG), then relocates the generated
-  # journey-*-v1 evidence directory into the lane's fresh evidence root and
-  # writes a provenance metadata.json (behavior_id + generating_command) for
-  # the strict provenance validator. A failed capture fails the lane — no
-  # silent skip.
-  run_stage "$mode_name" reference_parity_capture_journey_worktree_owner "$repo_root" \
-    env EVIDENCE_BASE="$parity_artifacts_dir/actual" \
-    bash scripts/tui-parity/capture-journey-l3.sh worktree-owner
-
-  run_stage "$mode_name" reference_parity_capture_journey_config_show_effective "$repo_root" \
-    env EVIDENCE_BASE="$parity_artifacts_dir/actual" \
-    bash scripts/tui-parity/capture-journey-l3.sh config-show-effective
-
-  run_stage "$mode_name" reference_parity_capture_journey_config_sources_explain "$repo_root" \
-    env EVIDENCE_BASE="$parity_artifacts_dir/actual" \
-    bash scripts/tui-parity/capture-journey-l3.sh config-sources-explain
-
-  run_stage "$mode_name" reference_parity_capture_journey_wait_any_all "$repo_root" \
-    env EVIDENCE_BASE="$parity_artifacts_dir/actual" \
-    bash scripts/tui-parity/capture-journey-l3.sh wait-any-all
-
-  run_stage "$mode_name" reference_parity_capture_journey_memory_cli "$repo_root" \
-    env EVIDENCE_BASE="$parity_artifacts_dir/actual" \
-    bash scripts/tui-parity/capture-journey-l3.sh memory-cli
-
-  run_stage "$mode_name" reference_parity_capture_journey_folder_trust_deny "$repo_root" \
-    env EVIDENCE_BASE="$parity_artifacts_dir/actual" \
-    bash scripts/tui-parity/capture-journey-l3.sh folder-trust-deny
-
-  run_stage "$mode_name" reference_parity_capture_journey_always_approve_mode "$repo_root" \
-    env EVIDENCE_BASE="$parity_artifacts_dir/actual" \
-    bash scripts/tui-parity/capture-journey-l3.sh always-approve-mode
-
-  run_stage "$mode_name" reference_parity_capture_journey_settings_editor "$repo_root" \
-    env EVIDENCE_BASE="$parity_artifacts_dir/actual" \
-    bash scripts/tui-parity/capture-journey-l3.sh settings-editor
-
-  # Generate the reference-freeze receipt fresh into the evidence root. The
-  # receipt establishes pinned-reference-binary provenance for this run
-  # (Contract §5.1: each signoff run creates a new evidence root that records
-  # the reference path, SHA-256, version, and reference revision). The strict
-  # provenance validator (reference_parity_provenance::verify_freeze_receipt)
-  # fails closed when this receipt is missing or its pinned digests drift.
-  run_stage "$mode_name" reference_parity_freeze_receipt "$repo_root" \
-    bash -c 'mkdir -p "$0/receipts" && python3 -c "
-import json, os, sys
-out = os.path.join(sys.argv[1], \"receipts\", \"reference-freeze.receipt.json\")
-receipt = {
-    \"schema_version\": \"harness-tui-reference-freeze-receipt-v1\",
-    \"receipt_id\": \"reference-freeze\",
-    \"scenario\": \"startup_welcome_120x32\",
-    \"viewport\": {\"cols\": 120, \"rows\": 32},
-    \"global_pinned_reference\": {
-        \"binary_path\": sys.argv[5],
-        \"binary_sha256\": sys.argv[2],
-        \"reference_revision\": sys.argv[3],
-        \"version\": sys.argv[4]
-    },
-    \"freeze_txt_sha256\": \"1a5f24dc9be953df160e8d2bcb661f6f2d8dc7845021c3153cd415ab3889ca58\",
-    \"freeze_png_sha256\": \"0830427651ae47645ea3ea49b532ef7ea29a69c3140f140d7df201f5093d6016\"
-}
-
-os.makedirs(os.path.dirname(out), exist_ok=True)
-with open(out, \"w\") as f:
-    json.dump(receipt, f, indent=2)
-    f.write(\"\n\")
-print(f\"wrote freeze receipt {out}\")
-" "$0" "$1" "$2" "$3" "$4"' \
-    "$parity_artifacts_dir" "$reference_binary_sha256" "$reference_revision" "$reference_binary_version" "$reference_binary_rel"
-
-  # Fresh terminal capability L3 capture (shared by the four TERM-CAP-* rows):
-  # runs the env-gated terminal_capability_matrix_capture_test, which derives
-  # the Harness negotiated terminal mode set, asserts exact parity with the
-  # pinned reference binary (fail-closed), and writes the capability matrix
-  # receipt plus a provenance metadata.json. Journey-style L3+receipt contract
-  # — no Chrome/PNG. A failed capture fails the lane (no silent skip).
-  run_stage "$mode_name" reference_parity_capture_term_cap "$repo_root" \
-    env EVIDENCE_DIR="$parity_artifacts_dir/actual/harness-term-cap-v1" \
-    bash scripts/tui-parity/capture-term-cap-l3.sh
-
-  # Generate canonical L1/L4/L5/L6 evidence layers from the pinned reference
-  # lab and the fresh L3 captures produced above. Fail-closed: any missing
-  # reference freeze, capture, or receipt causes the lane to fail.
-  local claimed_visual_rows
-  claimed_visual_rows="$(python3 -c 'import json,sys; manifest=json.load(open(sys.argv[1])); print(",".join(row["behavior_id"] for row in manifest["rows"] if row.get("status") in {"pass", "diverged"} and row.get("row_kind", "visual") == "visual"))' "$manifest_path")"
-  run_stage "$mode_name" reference_parity_generate_evidence_layers "$repo_root" \
-    env HARNESS_TUI_PARITY_VISUAL_ROWS="$claimed_visual_rows" \
-    python3 scripts/tui-parity/generate-evidence-layers.py \
-      --lab "artifacts/qa-evidence/20260717-tui-reference-parity" \
-      --out "$parity_artifacts_dir" \
-      --lane
-
-  run_stage "$mode_name" reference_parity_manifest_test "$repo_root" \
-    env HARNESS_TUI_PARITY_ARTIFACT_DIR="$parity_artifacts_dir" \
-    cargo nextest run -p harness-tui --test reference_parity_manifest_test
-
-  run_stage "$mode_name" p0_parity_contract_test "$repo_root" \
-    cargo nextest run -p harness-tui --test p0_parity_contract_test
-  run_stage "$mode_name" shell_topology_contract_test "$repo_root" \
-    cargo nextest run -p harness-tui --test shell_topology_contract_test
-
-  run_stage "$mode_name" reference_parity_cells_test "$repo_root" \
-    env HARNESS_TUI_PARITY_ARTIFACT_DIR="$parity_artifacts_dir" HARNESS_TUI_PARITY_STRICT=1 \
-    cargo nextest run -p harness-tui --test reference_parity_cells_test
-  run_stage "$mode_name" reference_parity_pixels_test "$repo_root" \
-    env HARNESS_TUI_PARITY_ARTIFACT_DIR="$parity_artifacts_dir" HARNESS_TUI_PARITY_STRICT=1 \
-    cargo nextest run -p harness-tui --test reference_parity_pixels_test
-  run_stage "$mode_name" reference_parity_first_slice_test "$repo_root" \
-    env HARNESS_TUI_PARITY_STRICT=1 \
-    cargo nextest run -p harness-tui --test reference_parity_first_slice_test
-  run_stage "$mode_name" reference_parity_perm_question_test "$repo_root" \
-    env HARNESS_TUI_PARITY_STRICT=1 \
-    cargo nextest run -p harness-tui --test reference_parity_perm_question_test
-  run_stage "$mode_name" reference_parity_tx_shell_test "$repo_root" \
-    env HARNESS_TUI_PARITY_STRICT=1 \
-    cargo nextest run -p harness-tui --test reference_parity_tx_shell_test
-  run_stage "$mode_name" reference_parity_responsive_test "$repo_root" \
-    env HARNESS_TUI_PARITY_STRICT=1 \
-    cargo nextest run -p harness-tui --test reference_parity_responsive_test
-  run_stage "$mode_name" reference_parity_pty_test "$repo_root" \
-    env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 HARNESS_TUI_PARITY_STRICT=1 \
-    cargo nextest run -p harness-tui --test reference_parity_pty_test --test-threads 1
-
-  local presentation_artifacts_dir
-  presentation_artifacts_dir="$(stage_dir_for signoff-parity presentation_telemetry)/artifacts"
-  mkdir -p "$presentation_artifacts_dir"
-  run_stage "$mode_name" presentation_telemetry "$repo_root" \
-    bash -c 'cargo nextest run -p harness-testkit --test tui_fidelity_presentation_receipt_test && RUST_TEST_THREADS=1 HARNESS_PACKET1_EVIDENCE_DIR="$0/complete" cargo nextest run -p harness-testkit --test tui_fidelity_runner_test --test-threads 1 packet1_complete_receipt_passes_all_gates && RUST_TEST_THREADS=1 HARNESS_PACKET1_EVIDENCE_DIR="$0/defects" cargo nextest run -p harness-testkit --test tui_fidelity_runner_test --test-threads 1 packet1_controlled_defect_matrix' \
-    "$presentation_artifacts_dir"
-
-  # Final fail-closed provenance gate: the strict validator must accept the
-  # fresh evidence root (L1-L6 files present, capture/freeze/receipt digests
-  # hash-matched, capture metadata matched to the owning rows).
-  run_stage "$mode_name" reference_parity_manifest_evidence "$repo_root" \
-    env HARNESS_TUI_PARITY_ARTIFACT_DIR="$parity_artifacts_dir" HARNESS_TUI_PARITY_STRICT=1 \
-    cargo nextest run -p harness-tui --test reference_parity_evidence_test
-
-  local mode_failed=0
-  local stage_status
-  for stage_status in "$(mode_dir_for signoff-parity)"/stages/*/status.txt; do
-    if [[ -f "$stage_status" ]] && grep -q '^result=FAIL$' "$stage_status"; then
-      mode_failed=1
-      break
-    fi
-  done
-
-  if [[ "$dry_run" -eq 1 ]]; then
-    write_signoff_parity_verdict "$parity_artifacts_dir" DRY-RUN command_not_executed
-  elif [[ "$mode_failed" -ne 0 ]]; then
-    write_signoff_parity_verdict "$parity_artifacts_dir" FAIL stage_failure
-    fail_count=$((fail_count + 1))
-  else
-    write_signoff_parity_verdict "$parity_artifacts_dir" PASS all_required_stages_passed
-    # write_signoff_parity_verdict may downgrade PASS→FAIL when the fresh root has
-    # zero artifacts; re-read the verdict to reflect that in the exit count.
-    local final_verdict
-    final_verdict="$(grep '^verdict=' "${parity_artifacts_dir}/parity-lane-verdict.txt" | head -1 | cut -d= -f2)"
-    if [[ "$final_verdict" == "FAIL" ]]; then
-      fail_count=$((fail_count + 1))
-    fi
-  fi
-}
-
-run_signoff_packet2() {
-  local mode_name="signoff-packet2"
-  local mode_root
-  mode_root="$(mode_dir_for "$mode_name")"
-  mkdir -p "$mode_root"
-  local commands_path="$mode_root/commands.txt"
-  local target_dir="$repo_root/target/packet2-candidate"
-  local candidate_receipt="$mode_root/candidate-receipt.json"
-  local runner="$target_dir/debug/tui-fidelity"
-  local candidate="$target_dir/debug/harness"
-  local aggregate="$target_dir/debug/tui_fidelity_aggregate"
-
-  if [[ -z "$reference_bin" || -z "$reference_receipt" || -z "$reference_root" ]]; then
-    printf 'signoff-packet2 preflight: --reference-bin, --reference-receipt, and --reference-root are required\n' >&2
-    fail_count=$((fail_count + 1))
-    return 2
-  fi
-  if [[ "$reference_bin" != /* || "$reference_receipt" != /* || "$reference_root" != /* ]]; then
-    printf 'signoff-packet2 preflight: reference inputs must be absolute paths\n' >&2
-    fail_count=$((fail_count + 1))
-    return 2
-  fi
-  if [[ "$dry_run" -eq 0 ]]; then
-    if [[ ! -x "$reference_bin" || ! -f "$reference_receipt" || ! -d "$reference_root" ]]; then
-      printf 'signoff-packet2 preflight: pinned reference binary, receipt, or root is missing\n' >&2
-      fail_count=$((fail_count + 1))
-      return 2
-    fi
-    if [[ "$(git -C "$reference_root" rev-parse HEAD 2>/dev/null)" != "eb267feff13129e568df38fb6fdf0ceb65f735d6" ]]; then
-      printf 'signoff-packet2 preflight: reference revision mismatch\n' >&2
-      fail_count=$((fail_count + 1))
-      return 2
-    fi
-  fi
-
-  : >"$commands_path"
-  local run_root
-  for ordinal in 1 2 3 4 5; do
-    run_root="$mode_root/run-$ordinal"
-    write_quoted_command_line "$commands_path" \
-      "$runner" compare --scenario packet2-sustained-stream \
-      --acceptance packet2-scheduling --reference-bin "$reference_bin" \
-      --reference-receipt "$reference_receipt" --reference-root "$reference_root" \
-      --harness-bin "$candidate" --candidate-receipt "$candidate_receipt" \
-      --evidence-dir "$run_root"
-  done
-  write_quoted_command_line "$commands_path" "$aggregate" --profile packet2-scheduling \
-    "$mode_root/run-1" "$mode_root/run-2" "$mode_root/run-3" "$mode_root/run-4" "$mode_root/run-5"
-
-  run_stage "$mode_name" build_candidate "$repo_root" \
-    bash scripts/tui-fidelity/build-candidate.sh \
-      --target-dir target/packet2-candidate --receipt "$candidate_receipt"
-  for ordinal in 1 2 3 4 5; do
-    run_stage "$mode_name" "packet2_compare_$ordinal" "$repo_root" \
-      "$runner" compare --scenario packet2-sustained-stream \
-      --acceptance packet2-scheduling --reference-bin "$reference_bin" \
-      --reference-receipt "$reference_receipt" --reference-root "$reference_root" \
-      --harness-bin "$candidate" --candidate-receipt "$candidate_receipt" \
-      --evidence-dir "$mode_root/run-$ordinal"
-  done
-  run_stage "$mode_name" packet2_aggregate "$repo_root" \
-    "$aggregate" --profile packet2-scheduling \
-      "$mode_root/run-1" "$mode_root/run-2" "$mode_root/run-3" "$mode_root/run-4" "$mode_root/run-5"
-  run_stage "$mode_name" packet2_source_guard "$repo_root" \
-    git diff --exit-code 26ef1839 -- crates/harness-tui/tests/snapshots \
-      crates/harness-tui/src/ui.rs crates/harness-tui/src/layout.rs crates/harness-tui/src/theme.rs
-
-  local verdict="PASS"
-  if find "$mode_root/stages" -name status.txt -exec grep -l '^result=FAIL$' {} + | grep -q .; then
-    verdict="FAIL"
-    fail_count=$((fail_count + 1))
-  elif [[ "$dry_run" -eq 1 ]]; then
-    verdict="DRY-RUN"
-  fi
-  printf 'schema=harness-signoff-packet2-verdict-v1\nverdict=%s\nruns=5\nprofile=packet2-scheduling\n' \
-    "$verdict" >"$mode_root/lane-verdict.txt"
-}
-
-write_signoff_parity_verdict() {
-  local artifacts_dir="$1"
-  local verdict="$2"
-  local note="$3"
-  local verdict_path="${artifacts_dir}/parity-lane-verdict.txt"
-  mkdir -p "$artifacts_dir"
-
-  local git_rev
-  git_rev="$(git -C "$repo_root" rev-parse HEAD 2>/dev/null || echo 'unknown')"
-  local authority_path="${repo_root}/configs/tui-fidelity-reference-authority.json"
-  local inventory_path="${repo_root}/configs/tui-fidelity-requirement-inventory.json"
-  local coverage_path="${repo_root}/configs/tui-fidelity-coverage-manifest.json"
-  local authority_sha256="missing"
-  local inventory_sha256="missing"
-  local coverage_sha256="missing"
-  if [[ -f "$authority_path" ]]; then
-    authority_sha256="$(sha256sum "$authority_path" | cut -d' ' -f1)"
-  fi
-  if [[ -f "$inventory_path" ]]; then
-    inventory_sha256="$(sha256sum "$inventory_path" | cut -d' ' -f1)"
-  fi
-  if [[ -f "$coverage_path" ]]; then
-    coverage_sha256="$(sha256sum "$coverage_path" | cut -d' ' -f1)"
-  fi
-  local parity_complete="false"
-  local verification_receipt_path="${TUI_FIDELITY_ACTIVE_VERIFICATION_RECEIPT-missing}"
-  local verification_receipt_sha256="missing"
-
-  if [[ "$verdict" == "PASS" ]]; then
-    local completion_fields
-    if completion_fields="$(python3 - "$verification_receipt_path" "$git_rev" "$authority_sha256" "$inventory_sha256" "$coverage_sha256" <<'PY'
-import hashlib
-import json
-import pathlib
-import sys
-
-receipt_path = pathlib.Path(sys.argv[1]).resolve()
-candidate, authority_sha256, inventory_sha256, coverage_sha256 = sys.argv[2:]
-receipt = json.loads(receipt_path.read_text())
-scheduler = receipt.get("scheduler", {})
-key_count = receipt.get("key_count")
-expected = {
-    "candidate_sha": candidate,
-    "authority_sha256": authority_sha256,
-    "inventory_sha256": inventory_sha256,
-    "coverage_sha256": coverage_sha256,
-}
-if (
-    receipt.get("schema_version") != "harness.tui-fidelity.verification.v1"
-    or receipt.get("status") != "passed"
-    or receipt.get("profile") != "all"
-    or receipt.get("sealed") is not True
-    or any(receipt.get(field) != value for field, value in expected.items())
-    or not isinstance(key_count, int)
-    or key_count <= 0
-    or scheduler.get("passed") != key_count
-    or any(scheduler.get(field) != 0 for field in ("failed", "cancelled", "skipped"))
-):
-    raise SystemExit("active verification receipt is not a sealed verify-all result")
-evidence_path = pathlib.Path(receipt["evidence_path"]).resolve()
-if receipt_path != evidence_path / "verification-receipt.json":
-    raise SystemExit("verification receipt is outside its sealed evidence root")
-seal = json.loads((evidence_path / "seal-manifest.json").read_text())
-records = seal.get("records")
-if (
-    seal.get("schema_version") != "harness.tui-fidelity.sealed-evidence.v1"
-    or seal.get("candidate") != candidate
-    or not isinstance(records, list)
-    or len(records) != key_count
-    or any(record.get("state") != "passed" for record in records)
-):
-    raise SystemExit("sealed evidence does not contain one passed record per key")
-print(receipt_path)
-print(hashlib.sha256(receipt_path.read_bytes()).hexdigest())
-PY
-)"; then
-      verification_receipt_path="$(printf '%s\n' "$completion_fields" | sed -n '1p')"
-      verification_receipt_sha256="$(printf '%s\n' "$completion_fields" | sed -n '2p')"
-      parity_complete="true"
-    else
-      verdict="FAIL"
-      note="active_sealed_verify_all_receipt_invalid_or_missing"
-    fi
-  fi
-
-  cat >"$verdict_path" <<EOF
-schema=harness-signoff-parity-verdict-v1
-mode=signoff-parity
-verdict=${verdict}
-parity_complete=${parity_complete}
-note=${note}
-git_revision=${git_rev}
-authority_sha256=${authority_sha256}
-inventory_sha256=${inventory_sha256}
-coverage_sha256=${coverage_sha256}
-verification_receipt_path=${verification_receipt_path}
-verification_receipt_sha256=${verification_receipt_sha256}
-owns=dual_binary_cells_and_pixels
-stages=manifest,reference_binary,p0_contract,shell_topology,cells,pixels,first_slice,perm_question,tx_shell,responsive,pty_with_signoff,presentation_telemetry,evidence_provenance
-does_not_own=tui-signoff-manifest.v1.json
-completion_authority=active_sealed_verify_all_receipt
-EOF
 }
 
 run_stress_offline() {
@@ -1270,15 +689,6 @@ run_mode() {
       ;;
     signoff-native)
       run_signoff_native
-      ;;
-    signoff-parity)
-      run_signoff_parity
-      ;;
-    signoff-packet2)
-      run_signoff_packet2
-      ;;
-    signoff-journeys)
-      run_signoff_journeys
       ;;
     stress-offline)
       run_stress_offline

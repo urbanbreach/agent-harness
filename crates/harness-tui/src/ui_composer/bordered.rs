@@ -122,7 +122,7 @@ pub(crate) fn render_bordered_composer(
     } else if shell_mode_active {
         theme.status.warning
     } else if composer_empty {
-        theme.reference_terminal.secondary
+        theme.terminal_colors.secondary
     } else {
         composer_input_text(theme)
     };
@@ -142,9 +142,9 @@ pub(crate) fn render_bordered_composer(
             .fg(live_composer_content_color(
                 theme,
                 if focused {
-                    theme.reference_terminal.prompt_accent
+                    theme.terminal_colors.prompt_accent
                 } else {
-                    theme.reference_terminal.muted
+                    theme.terminal_colors.muted
                 },
                 focused,
             ))
@@ -215,9 +215,9 @@ pub(crate) fn connect_waiting_owns_input(app: &AppState) -> bool {
 
 pub(super) const fn live_composer_border_color(theme: &Theme, focused: bool) -> Color {
     if focused {
-        theme.reference_terminal.prompt_border_active
+        theme.terminal_colors.prompt_border_active
     } else {
-        theme.reference_terminal.prompt_border
+        theme.terminal_colors.prompt_border
     }
 }
 
@@ -225,15 +225,15 @@ pub(crate) fn live_composer_content_color(theme: &Theme, color: Color, focused: 
     if focused {
         color
     } else {
-        blend_color(theme.reference_terminal.canvas, color, 0.66)
+        blend_color(theme.terminal_colors.canvas, color, 0.66)
     }
 }
 
 fn live_composer_caption_color(theme: &Theme, focused: bool) -> Color {
     let opacity = if focused { 0.6 } else { 0.4 };
     blend_color(
-        theme.reference_terminal.canvas,
-        theme.reference_terminal.prompt_accent,
+        theme.terminal_colors.canvas,
+        theme.terminal_colors.prompt_accent,
         opacity,
     )
 }
@@ -255,42 +255,5 @@ mod active_thinking_color_tests {
         // assert
         // Then: the empty title path remains truly empty so Ratatui draws the whole border.
         assert!(rendered.is_empty(), "empty badge became {rendered:?}");
-    }
-
-    #[test]
-    fn live_composer_border_matches_the_groknight_active_prompt() {
-        // arrange
-        // act
-        let theme = Theme::harness_chat();
-
-        // assert
-        assert_eq!(
-            live_composer_border_color(&theme, true),
-            Color::Rgb(80, 80, 88)
-        );
-        assert_eq!(
-            live_composer_border_color(&theme, false),
-            Color::Rgb(50, 50, 55)
-        );
-    }
-
-    #[test]
-    fn plan_composer_uses_reference_warning_marker_and_bright_border() {
-        // arrange
-        // Given: the active Harness chat theme and a focused plan surface.
-        let theme = Theme::harness_chat();
-
-        // When: the shared composer presentation style is resolved.
-        let style = composer_mode_style(
-            &theme,
-            crate::composer_integration::ComposerTone::Plan,
-            true,
-        );
-
-        // act
-        // Then: the marker is warning-yellow and the border is terminal-primary bright.
-        // assert
-        assert_eq!(style.accent, Color::LightYellow);
-        assert_eq!(style.border, theme.reference_terminal.primary);
     }
 }

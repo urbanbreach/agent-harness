@@ -23,7 +23,7 @@ pub(super) fn render_browse(frame: &mut Frame, app: &AppState, theme: &Theme, ar
             Paragraph::new("No shortcuts match").style(
                 Style::default()
                     .fg(theme.text.tertiary)
-                    .bg(theme.reference_terminal.canvas),
+                    .bg(theme.terminal_colors.canvas),
             ),
             Rect::new(content.x, content.y, content.width, 1),
         );
@@ -182,7 +182,7 @@ fn render_row(
         },
     );
     let style = presentation.style;
-    let background = style.bg.unwrap_or(theme.reference_terminal.canvas);
+    let background = style.bg.unwrap_or(theme.terminal_colors.canvas);
     let line = match row {
         HelpRow::Section {
             section,
@@ -216,9 +216,9 @@ fn render_row(
             style,
             Style::default()
                 .fg(if *dimmed {
-                    theme.reference_terminal.muted
+                    theme.terminal_colors.muted
                 } else {
-                    theme.reference_terminal.secondary
+                    theme.terminal_colors.secondary
                 })
                 .bg(background),
         ),
@@ -262,7 +262,7 @@ fn render_row(
             frame.render_widget(
                 Paragraph::new(format!("    {description_line}")).style(
                     Style::default()
-                        .fg(theme.reference_terminal.secondary)
+                        .fg(theme.terminal_colors.secondary)
                         .bg(background),
                 ),
                 Rect::new(

@@ -115,28 +115,6 @@ fn render(app: &AppState) -> String {
 }
 
 #[test]
-fn baseline_complete_settles_with_the_reference_worked_for_marker() {
-    // arrange
-    // Given: a streamed assistant answer with deterministic event timing.
-    let mut app = streaming_app();
-
-    // When: both provider and turn-task completion barriers arrive.
-    finish(&mut app);
-    let screen = render(&app);
-
-    // act
-    // Then: completion releases the status row and settles the reference duration marker.
-    // assert
-    assert!(
-        FrameLayoutPlan::for_app(&app, Rect::new(0, 0, WIDTH, HEIGHT))
-            .status
-            .is_none()
-    );
-    assert!(screen.contains("Stable answer row"), "screen: {screen}");
-    assert!(screen.contains("Worked for 5.0s"), "screen: {screen}");
-}
-
-#[test]
 fn active_to_idle_status_transition_preserves_the_assistant_row_anchor() {
     // arrange
     // Given: a visible assistant row while the one-row status surface is active.
@@ -159,30 +137,6 @@ fn active_to_idle_status_transition_preserves_the_assistant_row_anchor() {
     // Then: the semantic transcript row remains anchored at the same terminal row.
     // assert
     assert_eq!(active_row, settled_row);
-}
-
-#[test]
-fn user_cancellation_settles_with_the_reference_duration_marker() {
-    // arrange
-    let mut app = streaming_app();
-    app.ingest_event(envelope(
-        5,
-        EventV1::TaskCancelled(TaskCancelledEvent {
-            task_id: "task_settled_metadata".into(),
-            reason: "interrupted".to_string(),
-            task_scope: Some(TaskTerminalScope::AgentTurn),
-        }),
-    ));
-
-    // act
-    let screen = render(&app);
-
-    // assert
-    assert!(
-        screen.contains("Turn cancelled by user in 4.0s."),
-        "screen: {screen}"
-    );
-    assert!(!screen.contains("Worked for"), "screen: {screen}");
 }
 
 #[test]

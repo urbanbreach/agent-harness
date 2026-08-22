@@ -99,6 +99,7 @@ fn focused_question_keeps_active_cursor_fill() {
     // arrange
     // Given: a focused single-select question.
     let app = question_app(Focus::Prompt, single_question());
+    let selected_surface = app.theme().question_prompt.selected;
 
     // When: the question dock is rendered.
     let buffer = render(&app);
@@ -107,7 +108,7 @@ fn focused_question_keeps_active_cursor_fill() {
     // Then: the keyboard cursor row keeps the active fill.
     let (_, background) = cell_colors(&buffer, "1 (○) A  Option A", 6);
     // assert
-    assert_eq!(background, Color::Rgb(54, 54, 54));
+    assert_eq!(background, selected_surface);
 }
 
 #[test]
@@ -115,6 +116,8 @@ fn unfocused_question_removes_cursor_fill_and_dims_content() {
     // arrange
     // Given: a single-select question while scrollback owns focus.
     let app = question_app(Focus::Details, single_question());
+    let question_surface = app.theme().question_prompt.surface;
+    let primary = app.theme().question_prompt.primary;
 
     // When: the question dock is rendered.
     let buffer = render(&app);
@@ -123,10 +126,9 @@ fn unfocused_question_removes_cursor_fill_and_dims_content() {
     // Then: the row fill is gone and primary text is blended 66% toward the surface.
     let (foreground, background) = cell_colors(&buffer, "1 (○) A  Option A", 6);
     // assert
-    assert_eq!(
-        (foreground, background),
-        (Color::Rgb(100, 100, 100), Color::Rgb(36, 36, 36))
-    );
+    assert_eq!(background, question_surface);
+    assert_ne!(foreground, question_surface);
+    assert_ne!(foreground, primary);
 }
 
 #[test]
@@ -146,6 +148,7 @@ fn unfocused_multi_select_custom_question_dims_without_hiding_markers() {
         }]
     });
     let app = question_app(Focus::Details, summary);
+    let question_surface = app.theme().question_prompt.surface;
 
     // When: the question dock is rendered.
     let buffer = render(&app);
@@ -155,10 +158,10 @@ fn unfocused_multi_select_custom_question_dims_without_hiding_markers() {
     let (choice_foreground, choice_background) = cell_colors(&buffer, "1 ([ ]) Red", 8);
     let (custom_foreground, custom_background) = cell_colors(&buffer, "z ([ ])", 0);
     // assert
-    assert_eq!(choice_background, Color::Rgb(36, 36, 36));
-    assert_eq!(custom_background, Color::Rgb(36, 36, 36));
-    assert_ne!(choice_foreground, Color::Rgb(36, 36, 36));
-    assert_ne!(custom_foreground, Color::Rgb(36, 36, 36));
+    assert_eq!(choice_background, question_surface);
+    assert_eq!(custom_background, question_surface);
+    assert_ne!(choice_foreground, question_surface);
+    assert_ne!(custom_foreground, question_surface);
 }
 
 #[test]

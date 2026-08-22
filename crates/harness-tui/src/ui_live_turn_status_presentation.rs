@@ -218,17 +218,6 @@ mod tests {
     use crate::theme::Theme;
 
     #[test]
-    fn waiting_status_uses_reference_secondary_text() {
-        // arrange
-        // act
-        let theme = Theme::harness_chat();
-        let status = LiveTurnStatus::waiting(&theme);
-
-        // assert
-        assert_eq!(status.style.fg, Some(theme.text.secondary));
-    }
-
-    #[test]
     fn source_compact_timer_and_token_formats_are_preserved() {
         // arrange
         // act

@@ -1326,16 +1326,8 @@ pub(crate) fn transcript_selection_row_count(app: &AppState, area: Rect) -> Opti
 }
 
 #[cfg(test)]
-#[path = "ui_transcript_exact_tests.rs"]
-mod ui_transcript_exact_tests;
-#[cfg(test)]
-pub(crate) use ui_transcript_exact_tests::*;
-#[cfg(test)]
 #[path = "ui_transcript_streaming_tests.rs"]
 mod streaming_tests;
 #[cfg(test)]
 #[path = "ui_transcript_tests.rs"]
 mod tests;
-#[cfg(test)]
-#[path = "ui_transcript_grammar_tests.rs"]
-mod ui_transcript_grammar_tests;

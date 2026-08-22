@@ -1,4 +1,4 @@
-use harness_tui::design_contract::LifecycleState;
+use harness_tui::theme_tokens::LifecycleState;
 use harness_tui::transcript_blocks::{BlockKind, BlockLifecycle};
 use harness_tui::transcript_identity::ReplayTurn;
 use harness_tui::transcript_integration::{

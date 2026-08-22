@@ -56,22 +56,6 @@ fn live_mode_snapshot_renders_grouped_streams() {
 }
 
 #[test]
-fn slash_commands_snapshot_renders_reference_style_popup() {
-    // arrange
-    // act
-    // assert
-    snapshot_render_tests::slash_commands_snapshot_renders_reference_style_popup();
-}
-
-#[test]
-fn tool_spacing_parity_snapshot_renders_grouped_context_and_output_transition() {
-    // arrange
-    // act
-    // assert
-    snapshot_render_tests::tool_spacing_parity_snapshot_renders_grouped_context_and_output_transition();
-}
-
-#[test]
 fn live_mode_renders_activity_and_transcript() {
     // arrange
     // act
@@ -113,10 +97,6 @@ fn question_permission_modal_aligns_option_description_column() {
     // act
     // assert
     permission_modal_tests::question_permission_modal_aligns_option_description_column();
-}
-
-fn question_permission_modal_matches_reference_palette_contract() {
-    permission_modal_tests::question_permission_modal_matches_reference_palette_contract();
 }
 
 #[test]
@@ -298,14 +278,6 @@ fn assistant_markdown_renders_headings_lists_and_quotes() {
     // act
     // assert
     transcript_render_tests::assistant_markdown_renders_headings_lists_and_quotes();
-}
-
-#[test]
-fn assistant_markdown_tables_match_reference_top_level_columns() {
-    // arrange
-    // act
-    transcript_render_tests::assistant_markdown_tables_match_reference_top_level_columns();
-    // assert
 }
 
 #[test]

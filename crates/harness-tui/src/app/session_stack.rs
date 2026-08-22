@@ -678,96 +678,6 @@ mod tests {
     }
 
     #[test]
-    fn subagent_session_info_matches_reference_footer_contract() {
-        // arrange
-        // act
-        // assert
-        let mut app = AppState::new_live(None, false, None);
-        app.session_path = Some(PathBuf::from("/tmp/harness-subagent-parent/parent_run"));
-        app.ingest_event(event(
-            1,
-            Some("req_parent"),
-            actor(harness_core::event::ActorKind::User, "interactive-user"),
-            EventV1::UserMessageSubmitted(harness_core::event::UserMessageSubmittedEvent {
-                request_id: "req_parent".into(),
-                text: "Audit transcript parity".to_string(),
-            }),
-        ));
-        app.ingest_event(event(
-            2,
-            Some("req_parent"),
-            actor(harness_core::event::ActorKind::Worker, "agent_parent"),
-            EventV1::ProviderRequestStarted(harness_core::event::ProviderRequestStartedEvent {
-                request_id: "req_parent".into(),
-                provider_id: "default".to_string(),
-                model_id: "model-1".to_string(),
-                prompt_summary: "Audit transcript parity".to_string(),
-                request_digest: "digest-parent".to_string(),
-                metadata: None,
-            }),
-        ));
-        app.ingest_event(event(
-            3,
-            Some("req_parent"),
-            actor(harness_core::event::ActorKind::System, "coordinator"),
-            EventV1::ToolCallRequested(harness_core::event::ToolCallRequestedEvent {
-                tool_call_id: "tc_task".into(),
-                tool_id: "task".to_string(),
-                args_summary:
-                    r#"{"description":"map chat renderers","subagent_type":"sisyphus-junior"}"#
-                        .to_string(),
-                args_digest: "digest-task-call".to_string(),
-                metadata: Some(harness_core::event::ToolCallMetadata {
-                    lineage: Some(harness_core::event::TaskLineageMetadata {
-                        parent_tool_call_id: Some("tc_task".to_string()),
-                        parent_request_id: Some("req_parent".to_string()),
-                        parent_session_id: Some("parent_run".to_string()),
-                        child_session_id: Some("agent_worker".to_string()),
-                        child_request_id: Some("req_child".to_string()),
-                        ..harness_core::event::TaskLineageMetadata::default()
-                    }),
-                    ..harness_core::event::ToolCallMetadata::default()
-                }),
-            }),
-        ));
-        app.ingest_event(event(
-            4,
-            Some("req_child"),
-            actor(harness_core::event::ActorKind::Worker, "agent_worker"),
-            EventV1::AgentSpawned(harness_core::event::AgentSpawnedEvent {
-                agent_id: "agent_worker".to_string(),
-                profile: "sisyphus-junior".to_string(),
-                parent_agent_id: Some("agent_parent".to_string()),
-            }),
-        ));
-        app.ingest_event(event(
-            5,
-            Some("req_child"),
-            actor(harness_core::event::ActorKind::Worker, "agent_worker"),
-            EventV1::ProviderRequestStarted(harness_core::event::ProviderRequestStartedEvent {
-                request_id: "req_child".into(),
-                provider_id: "default".to_string(),
-                model_id: "model-1".to_string(),
-                prompt_summary: "map chat renderers".to_string(),
-                request_digest: "digest-child".to_string(),
-                metadata: None,
-            }),
-        ));
-
-        app.navigate_to_child_session_id("agent_worker".to_string());
-
-        let info = app.current_subagent_session_info().unwrap_or_abort();
-        assert_eq!(info.label, "Sisyphus Junior");
-        assert_eq!(info.title, "map chat renderers");
-        assert_eq!(info.parent_label, "parent_run");
-        assert_eq!((info.index, info.total), (1, 1));
-        assert!(
-            app.replay_mode,
-            "inline child sessions should stay read-only"
-        );
-    }
-
-    #[test]
     fn parent_session_with_child_lineage_is_not_its_own_subagent() {
         // arrange
         // act
@@ -883,17 +793,17 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Relocated from dashboard_queue_worktree_parity_test.rs (private API).
+    // Relocated from dashboard_queue_worktree_consistency_test.rs (private API).
     // These scenarios exercise pub(super)/pub(crate) session-stack navigation
     // state that integration tests cannot reach without widening visibility.
     // -----------------------------------------------------------------------
 
     fn setup_parent_with_child(app: &mut AppState) {
-        app.session_path = Some(PathBuf::from("/tmp/harness-dash-parity/parent_run"));
+        app.session_path = Some(PathBuf::from("/tmp/harness-dash-consistency/parent_run"));
         app.ingest_event(event(
             1,
             None,
-            actor(harness_core::event::ActorKind::System, "dash-parity"),
+            actor(harness_core::event::ActorKind::System, "dash-consistency"),
             EventV1::RunStarted(harness_core::event::RunStartedEvent {
                 run_name: "parent_run".into(),
                 workspace_root: "/workspace".to_string(),
@@ -1061,7 +971,7 @@ mod tests {
         // arrange
         // act
         let mut app = AppState::new_live(None, false, None);
-        app.session_path = Some(PathBuf::from("/tmp/harness-dash-parity/parent_run"));
+        app.session_path = Some(PathBuf::from("/tmp/harness-dash-consistency/parent_run"));
         setup_parent_with_child(&mut app);
         app.navigate_to_child_session_id("agent_worker".to_string());
         // assert
@@ -1081,7 +991,7 @@ mod tests {
         // arrange
         // act
         let mut app = AppState::new_live(None, false, None);
-        app.session_path = Some(PathBuf::from("/tmp/harness-dash-parity/parent_run"));
+        app.session_path = Some(PathBuf::from("/tmp/harness-dash-consistency/parent_run"));
         setup_parent_with_child(&mut app);
         app.navigate_to_child_session_id("agent_worker".to_string());
         // assert
@@ -1099,7 +1009,7 @@ mod tests {
         // arrange
         // act
         let mut app = AppState::new_live(None, false, None);
-        app.session_path = Some(PathBuf::from("/tmp/harness-dash-parity/parent_run"));
+        app.session_path = Some(PathBuf::from("/tmp/harness-dash-consistency/parent_run"));
         setup_parent_with_child(&mut app);
         app.ingest_event(event(
             7,

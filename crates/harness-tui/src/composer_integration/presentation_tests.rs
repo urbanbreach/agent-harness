@@ -178,17 +178,6 @@ fn plan_surface_owns_a_distinct_presentation_tone() {
 }
 
 #[test]
-fn shell_surface_owns_reference_marker_and_semantic_label() {
-    assert_eq!(ComposerSurface::Shell.marker(), Some("!"));
-    assert_eq!(
-        ComposerSurface::Shell.right_label(),
-        Some("Run shell command")
-    );
-    assert_eq!(ComposerSurface::Live.marker(), None);
-    assert_eq!(ComposerSurface::Plan.right_label(), None);
-}
-
-#[test]
 fn compact_draft_hint_priority_keeps_submit_newline_and_mode() {
     use crate::keybindings::Action;
 

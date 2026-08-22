@@ -1,7 +1,7 @@
 use ratatui::layout::Rect;
 
 use crate::dashboard::{DashboardReadModel, DashboardRow, DashboardStatus};
-use crate::design_contract::{ColorRole, GlyphRole, ViewportId, DESIGN_TOKENS};
+use crate::theme_tokens::{ColorRole, GlyphRole, ViewportId, DESIGN_TOKENS};
 
 use super::filter::{filter_model, RosterState};
 use super::responsive::{

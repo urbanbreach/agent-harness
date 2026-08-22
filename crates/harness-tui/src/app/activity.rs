@@ -157,7 +157,6 @@ impl ActivityEntry {
             .then_some(self.last_mono_ms.saturating_sub(self.first_mono_ms))
     }
 
-    /// Mono span of reasoning deltas only — reference "Thought for" duration.
     pub fn thinking_duration_ms(&self) -> Option<u64> {
         match (self.thinking_first_mono_ms, self.thinking_last_mono_ms) {
             (Some(first), Some(last)) if last >= first => Some(last.saturating_sub(first)),
@@ -165,7 +164,6 @@ impl ActivityEntry {
         }
     }
 
-    /// Elapsed time since the first `ProviderStreamDelta` — reference "Responding…" duration.
     pub fn responding_duration_ms(&self) -> Option<u64> {
         self.first_delta_mono_ms
             .filter(|_| self.last_mono_ms >= self.first_mono_ms)

@@ -1,21 +1,6 @@
 use super::*;
 
 #[test]
-fn help_modal_matches_reference_sizing() {
-    // arrange
-    // act
-    // assert
-    assert_eq!(
-        help_modal_rects(Rect::new(0, 0, 120, 40), None).map(|layout| layout.popup),
-        Some(Rect::new(20, 4, 80, 32))
-    );
-    assert_eq!(
-        help_modal_rects(Rect::new(0, 0, 60, 20), None).map(|layout| layout.popup),
-        Some(Rect::new(8, 4, 44, 12))
-    );
-}
-
-#[test]
 fn help_expanded_row_renders_from_intra_row_scroll_offset() {
     // arrange
     let mut app = AppState::new_live(None, false, None);

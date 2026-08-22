@@ -1,4 +1,4 @@
-use harness_tui::design_contract::DESIGN_TOKENS;
+use harness_tui::theme_tokens::DESIGN_TOKENS;
 use harness_tui::transcript_blocks::{
     default_fold, style_for, BlockEvent, BlockKind, BlockLifecycle, FoldState, RawDisclosure,
     RawPayload, TranscriptBlocks,
@@ -10,7 +10,7 @@ fn example_turn() -> ReplayTurn {
 }
 
 #[test]
-fn every_block_kind_has_design_contract_styling() {
+fn every_block_kind_has_theme_styling() {
     // arrange
     // act
     for kind in BlockKind::ALL {

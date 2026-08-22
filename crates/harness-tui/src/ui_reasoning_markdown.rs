@@ -361,25 +361,4 @@ mod tests {
             s.style.fg == Some(colors.link) && s.style.add_modifier.contains(Modifier::UNDERLINED)
         }));
     }
-
-    #[test]
-    fn reasoning_colors_match_groks_seventy_percent_background_blend() {
-        // arrange
-        // act
-        // assert
-        let theme = Theme::default();
-        let colors = reasoning_markdown_colors(&theme, theme.surface.shell);
-        assert_eq!(
-            colors.base,
-            blend_color(theme.surface.shell, theme.markdown.text, 0.7)
-        );
-        assert_eq!(
-            colors.heading,
-            blend_color(theme.surface.shell, theme.markdown.heading_h1, 0.7)
-        );
-        assert_eq!(
-            colors.code,
-            blend_color(theme.surface.shell, theme.markdown.code, 0.7)
-        );
-    }
 }

@@ -1,6 +1,6 @@
 use ratatui::layout::Rect;
 
-use crate::design_contract::{ViewportId, DESIGN_TOKENS, VIEWPORTS};
+use crate::theme_tokens::{ViewportId, DESIGN_TOKENS, VIEWPORTS};
 
 use super::regions::{ShellRegions, ShellState};
 

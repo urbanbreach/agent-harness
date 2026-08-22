@@ -858,8 +858,7 @@ mod semantic_style_tests {
     #[test]
     fn selected_permission_choice_uses_question_choice_tokens() {
         // arrange
-        // Given: the reference-backed Harness chat theme.
-        let theme = Theme::harness_chat();
+        let theme = Theme::harness_dark();
 
         // When: a permission choice is selected.
         let style = permission_prompt_option_style(&theme, theme.question_prompt.surface, true);

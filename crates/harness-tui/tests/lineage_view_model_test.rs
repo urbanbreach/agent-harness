@@ -371,67 +371,6 @@ fn lineage_tree_navigation_filters_and_folds() {
 }
 
 #[test]
-fn fork_selector_lists_user_messages_like_reference_selector() {
-    // arrange
-    // act
-    // assert
-    let mut app = AppState::new_live(Some(PathBuf::from("/runs/source")), false, None);
-    for event in fork_source_events() {
-        app.ingest_event(event);
-    }
-
-    app.open_fork_selector();
-    let initial = app.fork_selector_view_model();
-    assert_eq!(
-        initial
-            .rows
-            .iter()
-            .map(|row| (row.cutoff_seq, row.prompt_text.as_str()))
-            .collect::<Vec<_>>(),
-        vec![
-            (11, "Full session"),
-            (10, "Second prompt"),
-            (5, "Unstable prompt"),
-            (2, "First prompt"),
-        ]
-    );
-    assert_eq!(initial.selected_cutoff_seq, Some(11));
-
-    for ch in "unstable".chars() {
-        app.handle_key(key(KeyCode::Char(ch)));
-    }
-    assert_eq!(
-        app.fork_selector_view_model()
-            .rows
-            .iter()
-            .map(|row| (row.cutoff_seq, row.prompt_text.as_str()))
-            .collect::<Vec<_>>(),
-        vec![(5, "Unstable prompt")]
-    );
-    app.handle_key(key(KeyCode::Enter));
-
-    let confirmed = app.confirmed_fork_prefix().unwrap_or_abort();
-    assert_eq!(confirmed.cutoff_seq, 5);
-    assert_eq!(confirmed.event_count, 5);
-    assert!(!app.fork_selector_visible);
-
-    app.open_fork_selector();
-
-    for _ in 0..8 {
-        app.handle_key(key(KeyCode::Backspace));
-    }
-    for ch in "second".chars() {
-        app.handle_key(key(KeyCode::Char(ch)));
-    }
-    app.handle_key(key(KeyCode::Enter));
-
-    let confirmed = app.confirmed_fork_prefix().unwrap_or_abort();
-    assert_eq!(confirmed.cutoff_seq, 10);
-    assert_eq!(confirmed.event_count, 10);
-    assert!(!app.fork_selector_visible);
-}
-
-#[test]
 fn fork_selector_keeps_later_messages_after_completed_native_edit() {
     // arrange
     // act

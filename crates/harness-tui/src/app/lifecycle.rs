@@ -1097,7 +1097,7 @@ impl AppState {
         self.now_fn = now_fn;
     }
 
-    pub fn freeze_now_for_animation_evidence(&mut self) {
+    pub fn freeze_animation_clock(&mut self) {
         let now = self.now();
         self.now_fn = Arc::new(move || now);
     }

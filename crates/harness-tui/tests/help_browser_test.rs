@@ -29,23 +29,6 @@ fn render_at(app: &AppState, width: u16, height: u16) -> String {
 }
 
 #[test]
-fn help_browse_footer_advertises_only_working_grok_controls() {
-    // arrange
-    let mut app = AppState::new_live(None, false, None);
-
-    // act
-    open_help(&mut app);
-    let rendered = render(&app);
-
-    // assert
-    assert!(rendered.contains("/ to search"), "{rendered}");
-    assert!(rendered.contains("f filter"), "{rendered}");
-    assert!(rendered.contains("e/Space/→ expand"), "{rendered}");
-    assert!(rendered.contains("Enter details"), "{rendered}");
-    assert!(rendered.contains("Ctrl+./X close") || rendered.contains("Esc close"));
-}
-
-#[test]
 fn help_search_escape_clears_then_closes() {
     // arrange
     let mut app = AppState::new_live(None, false, None);

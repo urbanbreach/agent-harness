@@ -182,7 +182,7 @@ impl AppState {
 
     pub(in crate::app) fn clear_prompt_input(&mut self) {
         self.reset_clear_prompt_confirmation();
-        let _ = self.composer.replace_parity_text("");
+        let _ = self.composer.replace_editor_text("");
         self.composer.prompt_buffer.clear();
         self.composer.prompt_cursor = 0;
         self.composer.selection_anchor = None;
@@ -242,7 +242,7 @@ impl AppState {
         if !prompt.is_empty() {
             self.dismiss_welcome_for_input();
         }
-        if self.composer.replace_parity_text(&prompt).is_err() {
+        if self.composer.replace_editor_text(&prompt).is_err() {
             self.composer.prompt_cursor = prompt.chars().count();
             self.composer.prompt_buffer = prompt;
         }
@@ -275,8 +275,8 @@ impl AppState {
         {
             self.slash_draft_snapshot = Some(self.composer.prompt_buffer.clone());
         }
-        if self.composer.parity_editing_ready()
-            && self.composer.parity_insert_text(&c.to_string()).is_ok()
+        if self.composer.editor_matches_prompt_fields()
+            && self.composer.editor_insert_text(&c.to_string()).is_ok()
         {
             self.sync_slash_overlay();
             self.sync_file_mention_overlay();
@@ -305,7 +305,8 @@ impl AppState {
     }
 
     fn insert_prompt_text(&mut self, text: &str) {
-        if self.composer.parity_editing_ready() && self.composer.parity_paste(text).is_ok() {
+        if self.composer.editor_matches_prompt_fields() && self.composer.editor_paste(text).is_ok()
+        {
             self.sync_slash_overlay();
             self.sync_file_mention_overlay();
             return;
@@ -339,7 +340,8 @@ impl AppState {
     }
 
     pub(in crate::app) fn backspace_prompt_char(&mut self) {
-        if self.composer.parity_editing_ready() && self.composer.parity_backspace().is_ok() {
+        if self.composer.editor_matches_prompt_fields() && self.composer.editor_backspace().is_ok()
+        {
             self.sync_slash_overlay();
             self.sync_file_mention_overlay();
             return;
@@ -371,10 +373,10 @@ impl AppState {
     }
 
     pub(in crate::app) fn delete_prompt_char(&mut self) {
-        if self.composer.parity_editing_ready()
+        if self.composer.editor_matches_prompt_fields()
             && self
                 .composer
-                .parity_delete(crate::composer_editing::DeleteKind::CharacterForward)
+                .editor_delete(crate::composer_editing::DeleteKind::CharacterForward)
                 .is_ok()
         {
             self.sync_slash_overlay();
@@ -676,7 +678,7 @@ mod paste_tests {
         clippy::expect_used,
         clippy::panic,
         clippy::unwrap_used,
-        reason = "parity contract tests use fail-fast asserts for missing state"
+        reason = "consistency contract tests use fail-fast asserts for missing state"
     )]
 
     use super::*;

@@ -1,5 +1,5 @@
-use harness_tui::design_contract::LifecycleState;
 use harness_tui::lifecycle_choreography::*;
+use harness_tui::theme_tokens::LifecycleState;
 
 #[test]
 fn transitions_allow_self_loops_and_documented_edges() {

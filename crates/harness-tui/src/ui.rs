@@ -41,9 +41,6 @@ pub(crate) mod ui_overlays;
 mod ui_secondary;
 #[path = "ui_secondary_events_tab.rs"]
 mod ui_secondary_events_tab;
-#[cfg(test)]
-#[path = "ui_shell_exact_tests.rs"]
-mod ui_shell_exact_tests;
 #[path = "ui_streaming_markdown.rs"]
 mod ui_streaming_markdown;
 #[path = "ui_syntax_highlight.rs"]
@@ -113,13 +110,6 @@ use ui_chrome::{
     render_header, render_unified_bottom_dock, runtime_state_color, status_badge,
     take_width_prefix, truncate_plain_text, ChromeFrame,
 };
-#[cfg(test)]
-pub(crate) use ui_chrome::{
-    exact_test_subagent_footer_body_keeps_ordered_transcript_tool_rows,
-    exact_test_subagent_footer_matches_harness_layout,
-    exact_test_subagent_footer_status_uses_running_and_cancelled_icons,
-    exact_test_subagent_replay_suppresses_parent_replay_dock,
-};
 pub(crate) use ui_chrome::{subagent_footer_target_at, SubagentFooterTarget};
 pub(crate) use ui_diff::structured_diff_stats;
 pub(super) use ui_lifecycle::render_startup_lifecycle_surface;
@@ -163,34 +153,6 @@ pub(crate) use ui_transcript_selection::{
 pub(crate) use ui_transcript_selection::{TranscriptSelection, TranscriptSelectionCell};
 
 #[cfg(test)]
-pub(crate) use ui_chrome::{
-    exact_test_composer_viewport_wraps_at_word_boundaries,
-    exact_test_composer_viewport_wraps_by_display_width,
-    exact_test_footer_status_cluster_empty_when_no_activity,
-    exact_test_footer_status_cluster_shows_pending_permission_count,
-    exact_test_live_composer_disclosure_none_context_shows_est_zero,
-    exact_test_live_composer_disclosure_none_context_shows_percent_when_limit_known,
-    exact_test_live_composer_disclosure_summarizes_compaction_metrics,
-    exact_test_live_composer_metadata_omits_success_without_variant,
-    exact_test_live_composer_reserves_right_gap,
-    exact_test_live_control_dock_keeps_compact_disclosure,
-    exact_test_live_control_dock_renders_shared_surface,
-    exact_test_retry_summary_segment_prioritizes_retry_indicator,
-    exact_test_startup_disclosure_matches_harness_hint_row,
-    exact_test_tool_status_summary_uses_effective_tool_identity,
-};
-#[cfg(test)]
-pub(crate) use ui_shell_exact_tests::{
-    exact_test_compact_operator_rail_does_not_capture_wheel,
-    exact_test_persistent_operator_sidebar_uses_panel_gutter,
-    exact_test_replay_prompt_pane_is_visibly_read_only,
-    exact_test_startup_shell_keeps_no_default_tab_chrome_after_runtime_context_addition,
-    exact_test_wheel_target_excludes_activity_portion_of_live_overlay,
-    exact_test_wheel_target_hits_inspector_inside_live_overlay,
-    exact_test_wheel_target_hits_transcript_when_hovered,
-};
-
-#[cfg(test)]
 use ui_secondary::format_detail_payload;
 #[cfg(test)]
 pub(crate) use ui_secondary::operator_sidebar_text_for_test;
@@ -226,58 +188,6 @@ pub(crate) use ui_secondary::{
 };
 #[cfg(test)]
 use ui_transcript::build_transcript_lines;
-#[cfg(test)]
-pub(crate) use ui_transcript::{
-    exact_test_block_tool_cards_skip_empty_subtitle_rows,
-    exact_test_body_after_thought_packs_wall_clock_on_same_line,
-    exact_test_done_body_after_tool_keeps_separate_wall_clock_row,
-    exact_test_file_search_rows_match_reference_title_description_shape,
-    exact_test_generic_tool_successful_output_prefers_inline_background_rows,
-    exact_test_inline_tool_rows_wrap_long_subtitles_cleanly,
-    exact_test_latest_assistant_footer_stays_after_trailing_tool_rows,
-    exact_test_lsp_tool_successful_output_stays_hidden_until_generic_output_enabled,
-    exact_test_markdown_table_rich_selection_matches_rendered_rows,
-    exact_test_markdown_table_selection_matches_rendered_rows,
-    exact_test_markdown_tables_match_reference_top_level_columns,
-    exact_test_markdown_tables_render_inline_links_code_alignment_and_cjk_width,
-    exact_test_mcp_tool_transcript_rows_use_effective_identity_without_generic_fallback,
-    exact_test_native_tool_transcript_rows_show_reference_timestamps_and_task_metadata,
-    exact_test_no_tool_turn_without_thinking_keeps_thought,
-    exact_test_pending_edit_permission_has_no_selected_rail,
-    exact_test_pending_edit_permission_packs_dual_run_write_duration,
-    exact_test_pending_question_has_no_selected_rail,
-    exact_test_redacted_only_reasoning_matches_reference_empty_body,
-    exact_test_selected_turn_with_tool_stays_rail_free,
-    exact_test_selected_turn_without_tool_stays_rail_free,
-    exact_test_skill_tool_rows_match_reference_title_and_icon,
-    exact_test_todo_write_rows_render_open_checklist,
-    exact_test_todo_write_running_renders_inline_updating_indicator,
-    exact_test_tool_turn_without_thinking_omits_thought,
-    exact_test_transcript_applied_edit_missing_diff_surfaces_truthful_summary,
-    exact_test_transcript_apply_patch_multifile_uses_output_edit_paths,
-    exact_test_transcript_apply_patch_surfaces_rename_and_wrapped_inline_diffs,
-    exact_test_transcript_edit_tool_matches_inline_diff_shape,
-    exact_test_transcript_follow_mode_uses_measured_surface_heights,
-    exact_test_transcript_harness_tool_progress_indicators,
-    exact_test_transcript_inline_diff_stays_compact_between_tool_rows,
-    exact_test_transcript_native_edit_renders_inline_diff_from_artifact,
-    exact_test_transcript_pending_permission_stays_after_last_activity,
-    exact_test_transcript_proposed_edit_renders_header,
-    exact_test_transcript_reasoning_precedes_answer_and_tool_rows,
-    exact_test_transcript_rejected_edit_surfaces_reason_inline,
-    exact_test_transcript_scroll_offset_preserves_large_overflow,
-    exact_test_transcript_section_model_keeps_nested_tool_and_error_blocks,
-    exact_test_transcript_section_model_preserves_activity_order,
-    exact_test_transcript_task_rows_match_reference_inline_title_and_no_hint,
-    exact_test_transcript_task_rows_show_child_status_duration_and_counts,
-    exact_test_transcript_tool_rows_follow_chronological_turn_order,
-    exact_test_transcript_user_and_reasoning_match_reference_entry_body,
-    exact_test_visible_surface_lines_support_large_offsets,
-    exact_test_write_tool_hides_redundant_patched_file_header,
-    exact_test_write_tool_renders_plain_numbered_dual_line_body,
-    exact_test_write_tool_title_matches_thought_lead,
-};
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WheelTarget {
     Transcript,

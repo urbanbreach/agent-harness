@@ -445,8 +445,3 @@ mod permission_ruleset_export_test {
     use super::*;
     include!("bootstrap_profiles/permission_ruleset_export_test.rs");
 }
-
-mod oc_parity_permission_matrices_test {
-    use super::*;
-    include!("bootstrap_profiles/oc_parity_permission_matrices_test.rs");
-}

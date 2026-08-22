@@ -30,16 +30,14 @@ pub(super) fn render_collapsed_composer(
     let line = Line::from(vec![
         Span::styled(
             glyph,
-            Style::default()
-                .fg(theme.reference_terminal.muted)
-                .bg(surface),
+            Style::default().fg(theme.terminal_colors.muted).bg(surface),
         ),
         Span::styled(
             resolved.body,
             Style::default()
                 .fg(super::bordered::live_composer_content_color(
                     theme,
-                    theme.reference_terminal.secondary,
+                    theme.terminal_colors.secondary,
                     false,
                 ))
                 .bg(surface),

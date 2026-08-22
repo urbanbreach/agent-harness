@@ -15,7 +15,7 @@ fn live_proxy_preflight_requires_live_env() {
 
 #[test]
 #[ignore = "requires HARNESS_LIVE_PROXY=1 and local CLIproxyAPI access"]
-fn live_proxy_prompt_parity_signoff() {
+fn live_proxy_prompt_signoff() {
     // arrange
     // act
     // assert
@@ -24,7 +24,7 @@ fn live_proxy_prompt_parity_signoff() {
 
 #[test]
 #[ignore = "requires HARNESS_LIVE_PROXY=1 and local CLIproxyAPI access"]
-fn live_proxy_e2e_tui_parity_signoff() {
+fn live_proxy_e2e_tui_signoff() {
     // arrange
     // act
     // assert

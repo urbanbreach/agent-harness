@@ -8,9 +8,6 @@
 use std::fs;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
-use harness_tui::app::interaction_reducer::{
-    keyboard_intent, InteractionState, ScreenMode, UiIntent as InteractionIntent,
-};
 use harness_tui::attachment_lifecycle::{
     AttachmentIngestor, AttachmentPolicy, CancellationToken, Limits,
 };
@@ -18,6 +15,9 @@ use harness_tui::completion_controller::{
     CompletionItem, CompletionRange, CompletionSource, CompletionTrigger,
 };
 use harness_tui::composer_atoms::{AtomId, AtomKind, AttachmentId};
+use harness_tui::composer_integration::interaction::{
+    keyboard_intent, InteractionState, ScreenMode, UiIntent as InteractionIntent,
+};
 use harness_tui::composer_integration::{
     ComposerHitTarget, ComposerSlice, ComposerUiIntent, UiIntent, ViewportId,
 };

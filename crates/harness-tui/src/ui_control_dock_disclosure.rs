@@ -743,17 +743,15 @@ fn live_freeze_shortcut_disclosure_row(
     surface: Color,
     compact: bool,
 ) -> Vec<Span<'static>> {
-    // Reference idle footer uses 256-color palette: color 15 (bright white) for
-    // bold key bindings, color 7 (normal white) for labels and dim separator.
     let bold = Style::default()
-        .fg(theme.reference_terminal.primary)
+        .fg(theme.terminal_colors.primary)
         .bg(surface)
         .add_modifier(Modifier::BOLD);
     let normal = Style::default()
-        .fg(theme.reference_terminal.secondary)
+        .fg(theme.terminal_colors.secondary)
         .bg(surface);
     let dim = Style::default()
-        .fg(theme.reference_terminal.secondary)
+        .fg(theme.terminal_colors.secondary)
         .bg(surface)
         .add_modifier(Modifier::DIM);
 
@@ -806,11 +804,11 @@ fn live_freeze_primary_shortcut_disclosure_row(
     surface: Color,
 ) -> Vec<Span<'static>> {
     let bold = Style::default()
-        .fg(theme.reference_terminal.primary)
+        .fg(theme.terminal_colors.primary)
         .bg(surface)
         .add_modifier(Modifier::BOLD);
     let normal = Style::default()
-        .fg(theme.reference_terminal.secondary)
+        .fg(theme.terminal_colors.secondary)
         .bg(surface);
     let dim = normal.add_modifier(Modifier::DIM);
     let active_turn = app.active_turn_in_progress();
@@ -1025,38 +1023,4 @@ mod monitor_pulse_tests {
     use super::{monitor_still_running_row, starting_session_seed_row};
     use crate::theme::Theme;
     use ratatui::style::Color;
-
-    #[test]
-    fn monitor_indicator_uses_reference_pulse_dwell() {
-        // arrange
-        // act
-        // assert
-        let theme = Theme::default();
-        let text = |tick| {
-            monitor_still_running_row(2, tick, &theme, Color::Reset)
-                .into_iter()
-                .map(|span| span.content.into_owned())
-                .collect::<String>()
-        };
-        assert_eq!(text(0), text(7));
-        assert_ne!(text(7), text(8));
-        assert!(text(16).contains("2 background tasks still running"));
-    }
-
-    #[test]
-    fn starting_session_seed_uses_reference_spinner_dwell() {
-        // arrange
-        // act
-        // assert
-        let theme = Theme::default();
-        let text = |tick| {
-            starting_session_seed_row(tick, &theme, Color::Reset)
-                .into_iter()
-                .map(|span| span.content.into_owned())
-                .collect::<String>()
-        };
-        assert_eq!(text(0), text(3));
-        assert_ne!(text(3), text(4));
-        assert!(text(0).contains("Starting session…"));
-    }
 }

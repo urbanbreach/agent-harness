@@ -4,10 +4,10 @@ use ratatui::style::Style;
 use crate::attachment_lifecycle::{MimeKind, Preview};
 use crate::completion_controller::{CompletionDropdownGeometry, CompletionItem, CompletionStatus};
 use crate::composer_atoms::{AtomId, AttachmentId, WrappedLine};
-use crate::design_contract::{BorderRole, ViewportId};
 use crate::ghost_suggestions::muted_style;
 use crate::prompt_queue_actions::{QueueLifecycle, QueueVisuals};
 use crate::shell_geometry::{cursor_for, layout_for, CursorPlacement, FocusTarget, ShellState};
+use crate::theme_tokens::{BorderRole, ViewportId};
 
 use super::slice::ComposerSlice;
 use super::view_helpers::{atom_char_count, preview_label};

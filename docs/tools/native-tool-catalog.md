@@ -1,6 +1,6 @@
 # Native tool catalog
 
-Harness exposes one built-in native tool surface through `harness-tools`. The runtime registry is the source of truth; this document is a human-readable mirror kept honest by `native_tool_parity_matrix_test`.
+Harness exposes one built-in native tool surface through `harness-tools`. The runtime registry is the source of truth; this document is its human-readable mirror.
 
 Tool execution still goes through the coordinator permission path before the tool runs. `none` below means the tool is read-only local inspection or control-plane reporting and does not have its own public permission bucket; it still must be present in the active agent toolset.
 

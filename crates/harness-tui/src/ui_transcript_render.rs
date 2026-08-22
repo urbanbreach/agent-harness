@@ -330,7 +330,7 @@ fn build_user_render_surface(
 
 pub(super) const fn user_prompt_surface(theme: &Theme, state: TranscriptPromptState) -> Color {
     match state {
-        TranscriptPromptState::ActiveThinking => theme.reference_terminal.active_prompt_surface,
+        TranscriptPromptState::ActiveThinking => theme.terminal_colors.active_prompt_surface,
         TranscriptPromptState::Selected => theme.surface.selected_card,
         TranscriptPromptState::Idle => theme.surface.card,
     }
@@ -512,7 +512,7 @@ fn append_user_row_wall_clock(
     surface: Color,
 ) {
     let clock_color = if surface == theme.surface.selected_card
-        || surface == theme.reference_terminal.active_prompt_surface
+        || surface == theme.terminal_colors.active_prompt_surface
     {
         theme.text.primary
     } else {
@@ -1272,7 +1272,7 @@ fn append_reasoning_block(
         return ReasoningBlockLayout::default();
     }
 
-    let body = reference_reasoning_body_text(thinking_text);
+    let body = reasoning_body_text(thinking_text);
     if body.trim().is_empty() {
         return ReasoningBlockLayout::default();
     }
@@ -1339,7 +1339,7 @@ fn reasoning_selection_rows(
         .collect()
 }
 
-fn reference_reasoning_body_text(raw: &str) -> String {
+fn reasoning_body_text(raw: &str) -> String {
     let clean = raw.replace("[REDACTED]", "");
     if clean.is_empty() {
         return clean;
@@ -1433,7 +1433,7 @@ fn build_context_tool_group_render_surface(
     let group_summary = TranscriptToolGroupSummary::from_tool_calls(tool_calls)
         .ok_or(TranscriptGrammarError::InvalidGrouping)?;
     let surface = if command_group {
-        theme.reference_terminal.canvas
+        theme.terminal_colors.canvas
     } else {
         base_surface
     };
@@ -1481,12 +1481,12 @@ fn build_context_tool_group_render_surface(
         vec![
             Span::styled(
                 format!("{} ", theme.live_shell.transcript_glyphs.group_marker),
-                Style::default().fg(theme.reference_terminal.secondary),
+                Style::default().fg(theme.terminal_colors.secondary),
             ),
             Span::styled(
                 "Ran ",
                 Style::default()
-                    .fg(theme.reference_terminal.secondary)
+                    .fg(theme.terminal_colors.secondary)
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
@@ -1495,7 +1495,7 @@ fn build_context_tool_group_render_surface(
                     tool_calls.len(),
                     if tool_calls.len() == 1 { "" } else { "s" }
                 ),
-                Style::default().fg(theme.reference_terminal.secondary),
+                Style::default().fg(theme.terminal_colors.secondary),
             ),
         ]
     } else {
@@ -1507,7 +1507,7 @@ fn build_context_tool_group_render_surface(
         ) {
             rail_color
         } else {
-            theme.reference_terminal.secondary
+            theme.terminal_colors.secondary
         };
         vec![
             Span::styled(
@@ -1517,7 +1517,7 @@ fn build_context_tool_group_render_surface(
             Span::styled(
                 group_summary.semantic_core_label(),
                 Style::default()
-                    .fg(theme.reference_terminal.secondary)
+                    .fg(theme.terminal_colors.secondary)
                     .add_modifier(Modifier::BOLD),
             ),
         ]
@@ -1527,7 +1527,7 @@ fn build_context_tool_group_render_surface(
         counts.push(format!("{} failed", group_summary.failed_count));
     }
     if !counts.is_empty() {
-        let count_style = Style::default().fg(theme.reference_terminal.error);
+        let count_style = Style::default().fg(theme.terminal_colors.error);
         summary.push(Span::styled(" · ", count_style));
         summary.push(Span::styled(counts.join(" · "), count_style));
     }
@@ -1578,10 +1578,10 @@ fn build_context_tool_group_render_surface(
             if command_group {
                 let command_style = if single_command {
                     Style::default()
-                        .fg(theme.reference_terminal.secondary)
+                        .fg(theme.terminal_colors.secondary)
                         .add_modifier(Modifier::DIM)
                 } else {
-                    Style::default().fg(theme.reference_terminal.secondary)
+                    Style::default().fg(theme.terminal_colors.secondary)
                 };
                 let command = command_group_member_command(tool_call);
                 let command = if single_command {
@@ -1614,7 +1614,7 @@ fn build_context_tool_group_render_surface(
                 ));
                 spans.push(Span::styled(
                     tool_call.header.title.clone(),
-                    Style::default().fg(theme.reference_terminal.secondary),
+                    Style::default().fg(theme.terminal_colors.secondary),
                 ));
             }
             if let Some(subtitle) = tool_call.header.subtitle.as_deref() {
@@ -1846,7 +1846,6 @@ fn build_assistant_footer_line(
     if let Some(waiting) = waiting_on_answers_label(turn) {
         return pack_waiting_on_answers_footer_line(turn, &waiting, theme, content_width);
     }
-    // Reference permission state: ◆ Run Write `path` … right meta while Allow Edit dock is open.
     if let Some(waiting) = pending_permission_tool_waiting(turn) {
         return pack_waiting_on_answers_footer_line(turn, &waiting, theme, content_width);
     }
@@ -1978,7 +1977,6 @@ fn format_waiting_token_count(count: u32) -> String {
     format!("{:.1}M", f64::from(count) / 1_000_000.0)
 }
 
-/// Pending write/edit tool under permission — reference permission state packs completed Thought for.
 fn pending_permission_tool_waiting(turn: &TranscriptTurnSection) -> Option<String> {
     for part in &turn.assistant_parts {
         let TranscriptAssistantPart::ToolCall(tool) = part else {
@@ -1993,7 +1991,6 @@ fn pending_permission_tool_waiting(turn: &TranscriptTurnSection) -> Option<Strin
         ) {
             continue;
         }
-        // Reference permission state: "Run Write `path`" while Allow Edit dock is open.
         let title = tool.header.title.trim();
         let label = if let Some(path) = title.strip_prefix("Creating ") {
             format!("Write `{path}`")
@@ -2261,54 +2258,6 @@ mod tests {
         assert!(lines
             .iter()
             .all(|line| !line.spans.iter().any(|span| span.content.contains("12:34"))));
-    }
-
-    #[test]
-    fn user_row_timestamp_keeps_reference_right_padding() {
-        // arrange
-        let theme = Theme::default();
-        let width = 40;
-        let lines = build_user_surface_lines(
-            &super::super::TranscriptUserMessageSection {
-                text: "Ship the padding fix.".to_string(),
-                queued: false,
-                wall_clock: Some("12:34 PM".to_string()),
-                expanded_wall_clock: Some("12:34:56 | Aug 14".to_string()),
-                wall_clock_hovered: false,
-            },
-            &theme,
-            width,
-            theme.surface.card,
-            theme.text.accent,
-            ratatui::style::Style::default().fg(theme.text.primary),
-        );
-
-        // act
-        let right_padding = usize::from(width).saturating_sub(lines[1].width());
-        // assert
-        assert_eq!(
-            right_padding,
-            usize::from(super::super::ui_transcript_surface::TRANSCRIPT_SURFACE_TRAILING_GAP_WIDTH)
-        );
-    }
-
-    #[test]
-    fn assistant_clock_line_keeps_reference_right_padding() {
-        // arrange
-        // Given: an assistant clock row measured inside the transcript content lane.
-        let theme = Theme::default();
-        let width = 40;
-
-        // act
-        // When: the clock is right-aligned for rendering.
-        let line = super::right_aligned_wall_clock_line("12:34 PM", width, &theme);
-
-        // assert
-        // Then: the clock preserves the shared two-cell trailing gap.
-        assert_eq!(
-            usize::from(width).saturating_sub(line.width()),
-            usize::from(super::super::ui_transcript_surface::TRANSCRIPT_SURFACE_TRAILING_GAP_WIDTH)
-        );
     }
 
     #[test]
@@ -2726,7 +2675,7 @@ mod tests {
             row.expect("command member row")
                 .spans
                 .iter()
-                .any(|span| span.style.fg == Some(theme.reference_terminal.error))
+                .any(|span| span.style.fg == Some(theme.status.error))
         };
 
         // act

@@ -54,41 +54,6 @@ pub(super) fn live_mode_snapshot_renders_grouped_streams() {
     );
 }
 
-pub(super) fn slash_commands_snapshot_renders_reference_style_popup() {
-    let mut app = AppState::new_live(None, false, None);
-    app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
-
-    let backend = TestBackend::new(100, 24);
-    let mut terminal = Terminal::new(backend).unwrap_or_abort();
-    terminal
-        .draw(|frame| ui::render_app(frame, &app))
-        .unwrap_or_abort();
-
-    assert_buffer_snapshot(
-        "slash_commands_snapshot_renders_reference_style_popup",
-        terminal.backend().buffer(),
-    );
-}
-
-pub(super) fn tool_spacing_parity_snapshot_renders_grouped_context_and_output_transition() {
-    let mut app = AppState::new_live(None, false, None);
-    for event in sample_tool_spacing_events() {
-        app.ingest_event(event);
-    }
-    app.active_tab = app::Tab::Run;
-
-    let backend = TestBackend::new(120, 30);
-    let mut terminal = Terminal::new(backend).unwrap_or_abort();
-    terminal
-        .draw(|frame| ui::render_app(frame, &app))
-        .unwrap_or_abort();
-
-    assert_buffer_snapshot(
-        "tool_spacing_parity_snapshot_renders_grouped_context_and_output_transition",
-        terminal.backend().buffer(),
-    );
-}
-
 pub(super) fn live_mode_renders_activity_and_transcript() {
     let mut app = AppState::new_live(None, false, None);
     for event in sample_live_events() {

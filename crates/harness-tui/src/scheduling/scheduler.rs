@@ -1,4 +1,4 @@
-use crate::design_contract::{MotionKind, DESIGN_TOKENS};
+use crate::theme_tokens::{MotionKind, DESIGN_TOKENS};
 
 use super::coalesce::RedrawCoalescer;
 use super::decision::{FrameDecision, FrameReason};

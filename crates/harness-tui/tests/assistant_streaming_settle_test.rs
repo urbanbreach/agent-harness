@@ -1,7 +1,7 @@
 #![allow(
     clippy::expect_used,
     clippy::panic,
-    reason = "integration parity tests use fail-fast assertions"
+    reason = "integration consistency tests use fail-fast assertions"
 )]
 
 use harness_core::event::{

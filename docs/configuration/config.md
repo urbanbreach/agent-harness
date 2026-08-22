@@ -275,7 +275,7 @@ for those settings instead of mixing them into runtime config.
 | `mcp` | MCP server definitions keyed by server name. |
 | `model` | Default full-capability model reference. |
 | `model_profile` | Named model selectors that resolve to configured provider/model targets plus optional fallback metadata; runtime profile resolution selects the primary target in V1. |
-| `permission` | Default permission policy for the supported tool subset plus optional shell allowlist. Supports scalar `allow`/`ask`/`deny` or per-tool maps (ruleset-compatible pattern rules). Catch-all deny hides tools from the model; last matching pattern wins. |
+| `permission` | Default permission policy for the supported tool subset plus optional shell allowlist. Supports scalar `allow`/`ask`/`deny` or per-tool pattern maps. Catch-all deny hides tools from the model; last matching pattern wins. |
 
 | `provider` | Provider definitions keyed by provider id. |
 | `runtime` | Runtime knobs that are not provider/model/agent definitions, currently including provider-context compaction settings and provider retry policy. |

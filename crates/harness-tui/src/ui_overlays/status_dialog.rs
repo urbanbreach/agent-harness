@@ -223,7 +223,7 @@ fn render_dashboard_pane(
 ) {
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(theme.reference_terminal.muted))
+        .border_style(Style::default().fg(theme.terminal_colors.muted))
         .title(title);
     let inner = block.inner(area);
     frame.render_widget(block, area);

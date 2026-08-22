@@ -1000,13 +1000,13 @@ mod tests {
             schema_version: harness_core::event::SCHEMA_VERSION,
             event_id: format!("evt_writer_lock_{seq:04}"),
             seq,
-            run_id: "run_dash_parity".into(),
+            run_id: "run_dash_consistency".into(),
             mono_ms: seq,
             ts: None,
             actor,
             correlation_id: correlation_id.map(str::to_string),
             causation_id: None,
-            stream_key: Some("run:run_dash_parity".to_string()),
+            stream_key: Some("run:run_dash_consistency".to_string()),
             payload,
         }
     }
@@ -1043,7 +1043,7 @@ mod tests {
         event(
             seq,
             None,
-            actor(harness_core::event::ActorKind::System, "dash-parity"),
+            actor(harness_core::event::ActorKind::System, "dash-consistency"),
             EventV1::RunStarted(harness_core::event::RunStartedEvent {
                 run_name: run_name.into(),
                 workspace_root: "/workspace".to_string(),
@@ -1052,7 +1052,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Relocated from dashboard_queue_worktree_parity_test.rs (private API).
+    // Relocated from dashboard_queue_worktree_consistency_test.rs (private API).
     // These scenarios exercise private `lineage_write_blocked_reason` and
     // pub(crate) `active_turn_in_progress` state.
     // -----------------------------------------------------------------------
@@ -1062,7 +1062,7 @@ mod tests {
         // arrange
         // act
         let mut app = AppState::new_live(None, false, None);
-        app.session_path = Some(PathBuf::from("/tmp/harness-dash-parity/parent_run"));
+        app.session_path = Some(PathBuf::from("/tmp/harness-dash-consistency/parent_run"));
         app.ingest_event(user_message(1, "req_active", "active turn"));
         app.ingest_event(provider_started(2, "req_active"));
         // assert
@@ -1083,7 +1083,7 @@ mod tests {
         // arrange
         // act
         let mut app = AppState::new_live(None, false, None);
-        app.session_path = Some(PathBuf::from("/tmp/harness-dash-parity/parent_run"));
+        app.session_path = Some(PathBuf::from("/tmp/harness-dash-consistency/parent_run"));
         // assert
         assert!(!app.active_turn_in_progress(), "no active turn when idle");
         let blocked = app.lineage_write_blocked_reason();
@@ -1095,7 +1095,7 @@ mod tests {
         // arrange
         // act
         let app = AppState::new_replay(
-            PathBuf::from("/tmp/harness-dash-parity/replay_run"),
+            PathBuf::from("/tmp/harness-dash-consistency/replay_run"),
             vec![run_started(1, "replay_run")],
         );
         let blocked = app.lineage_write_blocked_reason();

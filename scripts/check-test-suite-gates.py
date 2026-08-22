@@ -44,16 +44,11 @@ CONVENTIONS_BASELINE_PATH: Final[Path] = Path(
     "docs/testing/test-suite-conventions-baseline.json"
 )
 
-# Files that are allowed to use process-global-state or real-world
-# dependencies because they explicitly test env-var discovery, network
-# fetch, live formatter availability, or large parity matrices that are
-# intentionally scoped.
 PROCESS_GLOBAL_STATE_EXEMPTIONS: Final[set[str]] = {
     "crates/harness-core/src/provider_catalog.rs",
     "crates/harness-core/src/coord/tests/workspace_snapshot_tests.rs",
     "crates/harness-core/tests/poc_candidate3_catalog_poisoning_test.rs",
     "crates/harness-core/tests/browser_oidc_test.rs",
-    "crates/harness-tui/src/app/tests/palette_parity_tests.rs",
 }
 
 PATTERNS: Final[dict[str, list[re.Pattern[str]]]] = {
@@ -137,13 +132,8 @@ T5_PATH_PARTS: Final[tuple[str, ...]] = (
     "crates/harness-testkit/tests/support/pty_",
     "crates/harness/tests/binary_smoke.rs",
     "crates/harness/tests/pty_happy_path_recorded.rs",
-    "crates/harness/tests/support/journey_signoff.rs",
     "crates/harness-tui/tests/pty_e2e.rs",
     "crates/harness-tui/tests/support/pty_e2e_impl.rs",
-    "crates/harness-tui/tests/support/reference_parity_pty_impl.rs",
-    "crates/harness-tui/tests/reference_parity_pty_test.rs",
-    "crates/harness-tui/tests/reference_parity_lane_test.rs",
-    "crates/harness-tui/tests/reference_parity_pixels_test.rs",
     "crates/harness-tui/tests/support/visual_renderer.rs",
 )
 

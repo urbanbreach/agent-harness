@@ -177,7 +177,6 @@ fn input_burst_is_coalesced_into_one_flush_render() {
 
 #[test]
 fn custom_flush_cadence_supports_one_hundred_twenty_hertz_input_pacing() {
-    // Given: changed UI work is scheduled with Grok-style 8 ms pacing.
     let clock = DualClock::new();
     let mut scheduler = FrameScheduler::with_flush_interval_ms(8);
 

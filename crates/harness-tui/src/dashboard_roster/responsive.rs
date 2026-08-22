@@ -1,8 +1,8 @@
 use ratatui::layout::Rect;
 
 use crate::dashboard::{DashboardGroupKey, DashboardReadModel};
-use crate::design_contract::{ViewportId, DESIGN_TOKENS};
 use crate::terminal::char_display_width;
+use crate::theme_tokens::{ViewportId, DESIGN_TOKENS};
 
 use super::{OverflowDirection, RosterOverflowIndicator};
 

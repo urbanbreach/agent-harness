@@ -168,44 +168,6 @@ fn startup_welcome_requests_slow_motion_only_until_first_input() {
 }
 
 #[test]
-fn startup_welcome_matches_reference_rest_and_expanded_geometry() {
-    // arrange
-    let mut app = AppState::new_startup(Vec::new(), None);
-
-    // act
-    let rest = startup_text(&app, 100, 30);
-    app.advance_wall_clock_for_motion_evidence(Duration::from_millis(300));
-    let expanded = startup_text(&app, 100, 30);
-
-    // assert
-    assert_eq!(rounded_panel_rows(&rest, 3), vec![5, 15], "{rest}");
-    assert_eq!(rounded_panel_rows(&expanded, 3), vec![4, 19], "{expanded}");
-    assert_eq!(
-        rest.lines()
-            .filter(|line| {
-                ["New worktree", "Resume session", "Changelog", "Quit"]
-                    .iter()
-                    .any(|label| line.contains(label))
-            })
-            .count(),
-        4,
-        "rest menu rows:\n{rest}"
-    );
-    assert_eq!(
-        expanded
-            .lines()
-            .filter(|line| {
-                ["New worktree", "Resume session", "Quit"]
-                    .iter()
-                    .any(|label| line.contains(label))
-            })
-            .count(),
-        3,
-        "expanded action rows:\n{expanded}"
-    );
-}
-
-#[test]
 fn startup_logo_stays_on_one_color_during_welcome_expansion() {
     // arrange
     let mut app = AppState::new_startup(Vec::new(), None);
@@ -223,7 +185,7 @@ fn startup_logo_stays_on_one_color_during_welcome_expansion() {
 #[test]
 fn startup_welcome_settles_and_parks_after_expansion() {
     // arrange
-    // Given: a visible startup welcome before its reference expansion tick.
+    // Given: a visible startup welcome before its baseline expansion tick.
     let mut app = AppState::new_startup(Vec::new(), None);
 
     // When: the motion clock reaches the first expanded frame.

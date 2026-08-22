@@ -40,8 +40,7 @@ use self::defaults::{
     default_provider_retry_max_delay_ms, default_provider_retry_max_retries,
     default_runtime_ask_timeout_ms, default_runtime_tool_failure_mode, default_session_dir,
     default_skills_global_roots, default_skills_permissions, default_skills_project_roots,
-    default_skills_walk_to_git_root, default_ui_child_session_navigation_enabled,
-    default_ui_variant_cycle_enabled,
+    default_skills_walk_to_git_root,
 };
 pub use self::defaults::{
     DEFAULT_REMOTE_SEARCH_ENDPOINT, DEFAULT_REMOTE_SEARCH_MAX_RETRIES,
@@ -231,8 +230,6 @@ pub struct UiConfig {
     pub default_profile: Option<String>,
     #[serde(default)]
     pub keybindings: BTreeMap<String, String>,
-    #[serde(default)]
-    pub parity: UiParityConfig,
     #[serde(
         rename = "maxEventsInMemory",
         alias = "max_events_in_memory",
@@ -252,53 +249,10 @@ impl Default for UiConfig {
         Self {
             default_profile: None,
             keybindings: BTreeMap::new(),
-            parity: UiParityConfig::default(),
             max_events_in_memory: default_max_events_in_memory(),
             max_transcript_chars_in_memory: default_max_transcript_chars_in_memory(),
         }
     }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct UiParityConfig {
-    #[serde(
-        default = "default_ui_variant_cycle_enabled",
-        alias = "variantCycleEnabled"
-    )]
-    pub variant_cycle_enabled: bool,
-    #[serde(
-        default = "default_ui_child_session_navigation_enabled",
-        alias = "childSessionNavigationEnabled"
-    )]
-    pub child_session_navigation_enabled: bool,
-    #[serde(default)]
-    pub keybindings: UiParityKeybindingsConfig,
-}
-
-impl Default for UiParityConfig {
-    fn default() -> Self {
-        Self {
-            variant_cycle_enabled: default_ui_variant_cycle_enabled(),
-            child_session_navigation_enabled: default_ui_child_session_navigation_enabled(),
-            keybindings: UiParityKeybindingsConfig::default(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
-#[serde(deny_unknown_fields)]
-pub struct UiParityKeybindingsConfig {
-    #[serde(default, alias = "sessionChildFirst")]
-    pub session_child_first: Option<String>,
-    #[serde(default, alias = "sessionChildCycle")]
-    pub session_child_cycle: Option<String>,
-    #[serde(default, alias = "sessionChildCycleReverse")]
-    pub session_child_cycle_reverse: Option<String>,
-    #[serde(default, alias = "sessionParent")]
-    pub session_parent: Option<String>,
-    #[serde(default, alias = "variantCycle")]
-    pub variant_cycle: Option<String>,
 }
 
 /// Runtime formatter configuration.

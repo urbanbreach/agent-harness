@@ -134,7 +134,7 @@ fn render_theme_dialog_body(frame: &mut Frame, app: &AppState, theme: &Theme, ar
         let prefix = "  ";
         let marker = if is_current { "● " } else { "  " };
         let label: &'static str = match *name {
-            "default" => "Harness Chat",
+            "default" => "Harness Dark",
             "high-contrast" => "High Contrast",
             _ => name,
         };

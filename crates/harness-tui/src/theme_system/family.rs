@@ -8,7 +8,6 @@ use super::palette::Palette;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum ThemeFamily {
     #[default]
-    HarnessChat,
     HarnessDark,
     HarnessLight,
     HighContrast,
@@ -16,8 +15,7 @@ pub enum ThemeFamily {
 }
 
 impl ThemeFamily {
-    pub const ALL: [Self; 5] = [
-        Self::HarnessChat,
+    pub const ALL: [Self; 4] = [
         Self::HarnessDark,
         Self::HarnessLight,
         Self::HighContrast,
@@ -26,7 +24,6 @@ impl ThemeFamily {
 
     pub const fn label(self) -> &'static str {
         match self {
-            Self::HarnessChat => "harness-chat",
             Self::HarnessDark => "harness-dark",
             Self::HarnessLight => "harness-light",
             Self::HighContrast => "high-contrast",
@@ -36,8 +33,7 @@ impl ThemeFamily {
 
     pub fn from_label(label: &str) -> Option<Self> {
         match label.trim().to_ascii_lowercase().as_str() {
-            "default" | "harness-chat" | "harness_chat" | "chat" => Some(Self::HarnessChat),
-            "harness-dark" | "harness_dark" | "dark" => Some(Self::HarnessDark),
+            "default" | "harness-dark" | "harness_dark" | "dark" => Some(Self::HarnessDark),
             "harness-light" | "harness_light" | "light" => Some(Self::HarnessLight),
             "high-contrast" | "high_contrast" => Some(Self::HighContrast),
             "terminal-native" | "terminal_native" | "terminal" => Some(Self::TerminalNative),
@@ -47,16 +43,13 @@ impl ThemeFamily {
 
     pub const fn is_dark(self) -> bool {
         match self {
-            Self::HarnessChat | Self::HarnessDark | Self::HighContrast | Self::TerminalNative => {
-                true
-            }
+            Self::HarnessDark | Self::HighContrast | Self::TerminalNative => true,
             Self::HarnessLight => false,
         }
     }
 
     pub fn theme(self) -> Theme {
         match self {
-            Self::HarnessChat => Theme::harness_chat(),
             Self::HarnessDark => Theme::harness_dark(),
             Self::HarnessLight => Theme::harness_light(),
             Self::HighContrast => Theme::harness_high_contrast(),

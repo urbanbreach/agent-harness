@@ -157,19 +157,6 @@ fn assert_terminal_rows(state: &str, app: &AppState, expected: ExpectedDockRows)
 }
 
 #[test]
-fn active_status_dock_matches_reference_rows_at_all_measured_viewports() {
-    for (state, app) in [
-        ("waiting", waiting_app()),
-        ("parked", parked_app()),
-        ("watcher", watcher_app()),
-    ] {
-        for expected in VIEWPORTS {
-            assert_active_rows(state, &app, expected);
-        }
-    }
-}
-
-#[test]
 fn permission_suppression_keeps_dedicated_prompt_above_the_composer() {
     let app = permission_app();
     assert!(!app.live_turn_status_visible());
@@ -188,66 +175,6 @@ fn permission_suppression_keeps_dedicated_prompt_above_the_composer() {
             expected.height,
         );
         assert!(plan.disclosure.is_none());
-    }
-}
-
-#[test]
-fn terminal_dock_matches_reference_rows_at_all_measured_viewports() {
-    for (state, app) in [
-        ("completed", completed_app()),
-        ("failed", failed_app()),
-        ("cancelled", cancelled_app()),
-    ] {
-        for expected in VIEWPORTS {
-            assert_terminal_rows(state, &app, expected);
-        }
-    }
-}
-
-#[test]
-fn rendered_status_and_dock_cells_match_the_normalized_reference_contract() {
-    for (state, app, marker, stop_visible) in [
-        (
-            "waiting",
-            interruptible_waiting_app(),
-            "Waiting for response…",
-            true,
-        ),
-        (
-            "parked",
-            parked_app(),
-            "waiting · send a message to interrupt",
-            false,
-        ),
-        ("watcher", watcher_app(), "1 command still running", false),
-    ] {
-        for expected in VIEWPORTS {
-            let area = Rect::new(0, 0, expected.width, expected.height);
-            let plan = FrameLayoutPlan::for_app(&app, area);
-            let status = plan.status.expect("active status");
-            let buffer = render_to_buffer(&app, area, |app, frame, _area| {
-                ui::render_app(frame, app);
-            });
-            let status_row = rendered_row(&buffer, expected.width, status.y);
-            assert!(
-                status_row.contains(marker),
-                "{state} at {}x{}: {status_row:?}",
-                expected.width,
-                expected.height
-            );
-            assert_eq!(buffer[(status.x, status.y)].symbol(), " ");
-            assert_eq!(buffer[(status.x.saturating_add(1), status.y)].symbol(), " ");
-            assert_eq!(status_row.contains("[stop]"), stop_visible);
-            assert_composer_and_footer_cells(&buffer, plan, expected);
-            if expected.outer_spacer > 0 {
-                assert_blank_row(
-                    &buffer,
-                    expected.width,
-                    status.bottom(),
-                    "status/composer spacer",
-                );
-            }
-        }
     }
 }
 

@@ -237,7 +237,7 @@ async fn repeated_shell_command_after_run_grant_uses_prefix_pattern() {
             supervisor_actor(),
             Some("deep".to_string()),
             "shell.run",
-            json!({"command": "cargo test -p harness-tools --test native_tool_parity_matrix_test"}),
+            json!({"command": "cargo test -p harness-tools"}),
         )
         .await
         .unwrap_or_abort();

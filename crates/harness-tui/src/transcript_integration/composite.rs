@@ -2,8 +2,8 @@ use std::fmt::{Display, Formatter};
 
 use ratatui::layout::Rect;
 
-use crate::design_contract::LifecycleState;
 use crate::shell_geometry::{layout_for_rect, ShellState};
+use crate::theme_tokens::LifecycleState;
 use crate::transcript_block_viewer::ViewerError;
 use crate::transcript_blocks::{BlockLifecycle, BlockSnapshot, BlockStoreError, TranscriptBlocks};
 use crate::transcript_identity::{

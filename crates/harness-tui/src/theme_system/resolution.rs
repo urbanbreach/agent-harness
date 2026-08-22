@@ -8,17 +8,16 @@ impl ThemeChoice {
             Self::Explicit(family) => family,
             Self::Auto => match environment.system_appearance() {
                 Some(super::auto::SystemAppearance::Light) => ThemeFamily::HarnessLight,
-                Some(super::auto::SystemAppearance::Dark) | None => ThemeFamily::HarnessChat,
+                Some(super::auto::SystemAppearance::Dark) | None => ThemeFamily::HarnessDark,
             },
         };
         let base = family.theme();
         let color_level = environment.color_level();
         let theme = match family {
             ThemeFamily::TerminalNative => base,
-            ThemeFamily::HarnessChat
-            | ThemeFamily::HarnessDark
-            | ThemeFamily::HarnessLight
-            | ThemeFamily::HighContrast => fallback_theme(base, color_level),
+            ThemeFamily::HarnessDark | ThemeFamily::HarnessLight | ThemeFamily::HighContrast => {
+                fallback_theme(base, color_level)
+            }
         };
         ResolvedTheme {
             requested: self,

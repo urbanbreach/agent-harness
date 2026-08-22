@@ -5,8 +5,8 @@ use harness_tui::completion_controller::{
     CompletionItem, CompletionRange, CompletionSource, CompletionTrigger,
 };
 use harness_tui::composer_atoms::AttachmentId;
-use harness_tui::design_contract::ViewportId;
 use harness_tui::prompt_queue_actions::QueueAction;
+use harness_tui::theme_tokens::ViewportId;
 
 #[test]
 fn production_app_state_routes_keyboard_input_through_atom_composer() {

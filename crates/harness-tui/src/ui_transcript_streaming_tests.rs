@@ -241,7 +241,7 @@ fn animation_tick_reuses_all_measured_turn_sections() {
     reset_transcript_section_render_count_for_test();
 
     // When: only the active animation phase advances.
-    app.advance_animation_tick_for_evidence();
+    app.advance_animation_tick();
     let _ = build_measured_transcript_layout_for_width(&app, &theme, 100);
 
     // Then: animation paint state reuses both settled and active measured sections.

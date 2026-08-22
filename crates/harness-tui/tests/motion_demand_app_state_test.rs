@@ -24,7 +24,7 @@ fn app_routes_startup_and_streaming_to_distinct_visible_cadences() {
     let streaming_plan = streaming.motion_plan_for_evidence();
 
     // act
-    // Then: startup follows the 12fps reference and response glyphs wake at 133ms.
+    // Then: startup follows the 12fps baseline and response glyphs wake at 133ms.
     // assert
     assert_eq!(
         startup_plan.cadence(),
@@ -92,10 +92,7 @@ fn wall_clock_sampling_is_independent_of_intermediate_polls() {
     // act
     // Then: both sample the same semantic epoch, regardless of scheduler polling.
     // assert
-    assert_eq!(
-        direct.animation_phase_for_evidence(),
-        stepped.animation_phase_for_evidence()
-    );
+    assert_eq!(direct.animation_phase(), stepped.animation_phase());
 }
 
 #[test]
@@ -111,7 +108,7 @@ fn semantic_epoch_survives_same_phase_delta_and_restarts_on_transition() {
         }),
     ));
     app.advance_wall_clock_for_motion_evidence(Duration::from_millis(66));
-    let reasoning_phase = app.animation_phase_for_evidence();
+    let reasoning_phase = app.animation_phase();
     let reasoning_revision = app.motion_revision_for_evidence();
 
     // When: another reasoning delta arrives, followed by the response transition.
@@ -123,7 +120,7 @@ fn semantic_epoch_survives_same_phase_delta_and_restarts_on_transition() {
         }),
     ));
     app.advance_wall_clock_for_motion_evidence(Duration::ZERO);
-    let repeated_phase = app.animation_phase_for_evidence();
+    let repeated_phase = app.animation_phase();
     let repeated_revision = app.motion_revision_for_evidence();
     app.ingest_event(envelope(
         5,
@@ -139,7 +136,7 @@ fn semantic_epoch_survives_same_phase_delta_and_restarts_on_transition() {
     // assert
     assert_eq!(repeated_phase, reasoning_phase);
     assert_eq!(repeated_revision, reasoning_revision);
-    assert_eq!(app.animation_phase_for_evidence(), 0);
+    assert_eq!(app.animation_phase(), 0);
 }
 
 #[test]
@@ -168,6 +165,6 @@ fn new_request_restarts_epoch_and_focus_transition_is_immediate() {
     // act
     // Then: the new semantic identity restarts while focus owns no motion demand.
     // assert
-    assert_eq!(active.animation_phase_for_evidence(), 0);
+    assert_eq!(active.animation_phase(), 0);
     assert!(idle.motion_plan_for_evidence().is_none());
 }

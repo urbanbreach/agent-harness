@@ -1,13 +1,3 @@
-//! Hyperlink rendering helpers for the transcript.
-//!
-//! Provides utilities for extracting, classifying, and rendering hyperlinks
-//! in markdown text. The terminal cannot follow links directly, so links are
-//! rendered with visual styling (underline + color) and their labels are
-//! preserved for copy/reference.
-//!
-//! This module is replay-safe: it performs no network requests and does not
-//! attempt to validate URLs.
-
 use ratatui::{
     style::{Modifier, Style},
     text::Span,

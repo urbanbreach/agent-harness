@@ -1,15 +1,4 @@
 // allow: SIZE_OK — TUI app state (session projection + interaction)
-//! Palette controller: filtering, grouping, suggested rows, and availability
-//! for the ruleset-compatible command palette.
-//!
-//! This module implements the Harness palette semantics:
-//! - Fuzzy filtering on title and category only (not command IDs)
-//! - Title weighted higher than category
-//! - Results preserve category grouping even when filtered
-//! - Empty filter duplicates suggested commands into a synthetic "Suggested" group
-//! - Non-empty filter has no suggested duplicates
-//! - No-result text is exactly "No results found"
-
 use std::sync::LazyLock;
 
 use fuzzy_matcher::skim::SkimMatcherV2;
@@ -120,8 +109,6 @@ pub struct PaletteRow {
     pub category: PaletteCategory,
     /// Whether this is a synthetic suggested duplicate.
     pub is_suggested_duplicate: bool,
-    /// Whether this row is a harness-only command.
-    pub harness_only: bool,
 }
 
 /// Check if a command is available in the current app state.
@@ -273,7 +260,6 @@ pub fn compute_palette_rows(app: &AppState, filter: &str) -> Vec<PaletteRow> {
     let needle = filter.to_lowercase();
     let mut available: Vec<&PaletteCommandEntry> = entries()
         .iter()
-        .filter(|entry| !entry.harness_only)
         .filter(|entry| !matches!(entry.dispatch, PaletteDispatch::Placeholder))
         .filter(|entry| is_available(app, entry))
         .collect();
@@ -299,7 +285,6 @@ pub fn compute_palette_rows(app: &AppState, filter: &str) -> Vec<PaletteRow> {
                 description: entry.description,
                 category: entry.category,
                 is_suggested_duplicate: false,
-                harness_only: entry.harness_only,
             })
             .collect()
     } else {
@@ -355,7 +340,6 @@ pub fn compute_palette_rows(app: &AppState, filter: &str) -> Vec<PaletteRow> {
                 description: entry.description,
                 category: entry.category,
                 is_suggested_duplicate: false,
-                harness_only: entry.harness_only,
             })
             .collect()
     }

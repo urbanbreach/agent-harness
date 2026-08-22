@@ -57,8 +57,8 @@
   },
 
   // Harness-aligned allow-by-default. A scalar applies to all supported tool
-  // permissions; switch to an object for per-tool rules (ruleset-compatible
-  // shapes). Last matching pattern wins; catch-all deny (pattern "*") hides that
+  // permissions; switch to an object for per-tool pattern rules. Last matching
+  // pattern wins; catch-all deny (pattern "*") hides that
   // tool from the model tool list. When permission is omitted, ordinary tools
   // still default to allow while external_directory / doom_loop stay ask and
   // read keeps .env pattern asks.

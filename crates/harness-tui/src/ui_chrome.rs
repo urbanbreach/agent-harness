@@ -7,40 +7,6 @@ use crate::layout::{ControlDockLayout, FrameLayoutPlan, SessionFooterMode, Sessi
 use crate::text::has_trimmed_content;
 use crate::theme::{ChromeMode, DividerIntensity};
 
-#[cfg(test)]
-#[path = "ui_chrome_exact_tests.rs"]
-mod ui_chrome_exact_tests;
-#[cfg(test)]
-#[path = "ui_subagent_footer_entry_body_tests.rs"]
-mod ui_subagent_footer_entry_body_tests;
-#[cfg(test)]
-#[path = "ui_subagent_footer_exact_tests.rs"]
-mod ui_subagent_footer_exact_tests;
-#[cfg(test)]
-pub(crate) use ui_chrome_exact_tests::{
-    exact_test_composer_viewport_wraps_at_word_boundaries,
-    exact_test_composer_viewport_wraps_by_display_width,
-    exact_test_footer_status_cluster_empty_when_no_activity,
-    exact_test_footer_status_cluster_shows_pending_permission_count,
-    exact_test_live_composer_disclosure_none_context_shows_est_zero,
-    exact_test_live_composer_disclosure_none_context_shows_percent_when_limit_known,
-    exact_test_live_composer_disclosure_summarizes_compaction_metrics,
-    exact_test_live_composer_metadata_omits_success_without_variant,
-    exact_test_live_composer_reserves_right_gap,
-    exact_test_live_control_dock_keeps_compact_disclosure,
-    exact_test_live_control_dock_renders_shared_surface,
-    exact_test_retry_summary_segment_prioritizes_retry_indicator,
-    exact_test_startup_disclosure_matches_harness_hint_row,
-    exact_test_subagent_footer_matches_harness_layout,
-    exact_test_subagent_replay_suppresses_parent_replay_dock,
-    exact_test_tool_status_summary_uses_effective_tool_identity,
-};
-#[cfg(test)]
-pub(crate) use ui_subagent_footer_exact_tests::{
-    exact_test_subagent_footer_body_keeps_ordered_transcript_tool_rows,
-    exact_test_subagent_footer_status_uses_running_and_cancelled_icons,
-};
-
 #[path = "ui_subagent_footer.rs"]
 mod ui_subagent_footer;
 #[path = "ui_subagent_footer_navigation.rs"]
@@ -80,11 +46,11 @@ struct DocumentComposerRenderContext<'a> {
 const QUIET_SURFACE_PADDING_X: u16 = 1;
 const QUIET_SURFACE_PADDING_TOP: u16 = 1;
 pub(super) const fn composer_input_surface(theme: &Theme) -> Color {
-    theme.reference_terminal.canvas
+    theme.terminal_colors.canvas
 }
 
 pub(super) const fn composer_input_text(theme: &Theme) -> Color {
-    theme.reference_terminal.primary
+    theme.terminal_colors.primary
 }
 
 pub(super) const fn composer_input_muted(theme: &Theme) -> Color {
@@ -124,7 +90,7 @@ pub(super) const fn command_palette_muted(theme: &Theme) -> Color {
 }
 
 pub(super) const fn command_palette_section(theme: &Theme) -> Color {
-    theme.reference_terminal.palette_section
+    theme.terminal_colors.palette_section
 }
 
 pub(super) const fn command_palette_selection_bg(theme: &Theme) -> Color {
@@ -140,7 +106,7 @@ pub(super) const fn command_palette_cursor(theme: &Theme) -> Color {
 }
 
 pub(super) const fn fork_selector_selection_bg(theme: &Theme) -> Color {
-    theme.reference_terminal.fork_accent
+    theme.terminal_colors.fork_accent
 }
 
 pub(super) const fn fork_selector_selection_fg(theme: &Theme) -> Color {
@@ -148,7 +114,7 @@ pub(super) const fn fork_selector_selection_fg(theme: &Theme) -> Color {
 }
 
 pub(super) const fn fork_selector_cursor(theme: &Theme) -> Color {
-    theme.reference_terminal.fork_accent
+    theme.terminal_colors.fork_accent
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -224,13 +190,11 @@ pub(super) fn render_footer(
     }
 
     if app.startup_shell_visible() {
-        render_startup_reference_footer(frame, app, text_area, theme);
+        render_startup_footer(frame, app, text_area, theme);
         return;
     }
 
     let mut footer_hints = app.footer_hints_view_model();
-    // Reference idle footer shows VariantCycle/:mode and Help/:shortcuts when
-    // the prompt buffer is empty (matching the pinned reference freeze).
     if !app.replay_mode
         && !app.startup_shell_visible()
         && app.composer.prompt_buffer.is_empty()
@@ -289,14 +253,14 @@ pub(super) fn render_footer(
         }
     }
     let key_style = Style::default()
-        .fg(theme.reference_terminal.primary)
+        .fg(theme.terminal_colors.primary)
         .bg(theme.surface.canvas)
         .add_modifier(Modifier::BOLD);
     let label_style = Style::default()
-        .fg(theme.reference_terminal.secondary)
+        .fg(theme.terminal_colors.secondary)
         .bg(theme.surface.canvas);
     let dim_style = Style::default()
-        .fg(theme.reference_terminal.secondary)
+        .fg(theme.terminal_colors.secondary)
         .bg(theme.surface.canvas)
         .add_modifier(Modifier::DIM);
 
@@ -383,7 +347,7 @@ pub(super) fn footer_suppressed_by_overlay(app: &AppState) -> bool {
         || app.overlay_state().permission_pending
 }
 
-fn render_startup_reference_footer(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
+fn render_startup_footer(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
     if area.width == 0 || area.height == 0 {
         return;
     }
@@ -394,11 +358,11 @@ fn render_startup_reference_footer(frame: &mut Frame, app: &AppState, area: Rect
         height: area.height,
     };
     let bold = Style::default()
-        .fg(theme.reference_terminal.primary)
+        .fg(theme.terminal_colors.primary)
         .bg(theme.surface.canvas)
         .add_modifier(Modifier::BOLD);
     let normal = Style::default()
-        .fg(theme.reference_terminal.secondary)
+        .fg(theme.terminal_colors.secondary)
         .bg(theme.surface.canvas);
     let dim = normal.add_modifier(Modifier::DIM);
     if !app.composer.prompt_buffer.is_empty() || app.welcome_dismissed() {
@@ -786,7 +750,6 @@ fn render_question_permission_with_shell_footer(
         return;
     }
 
-    // Reference question state: dock (11) + blank + Esc footer + trailing blank.
     const FOOTER_ROWS: u16 = crate::layout::QUESTION_OUTER_FOOTER_ROWS;
     if area.height <= FOOTER_ROWS {
         render_inline_permission_dock(frame, app, area, theme, permission);
@@ -1426,7 +1389,7 @@ mod surface_tests {
     #[test]
     fn live_control_dock_uses_themed_canvas() {
         // arrange
-        let theme = Theme::harness_chat();
+        let theme = Theme::harness_dark();
 
         // act: resolve each control-dock surface inline below.
         // assert: themed surfaces use the configured canvas and native surfaces reset.

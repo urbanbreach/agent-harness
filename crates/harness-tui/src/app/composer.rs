@@ -30,11 +30,11 @@ pub struct ComposerState {
 }
 
 impl ComposerState {
-    pub(super) fn parity_text(&self) -> String {
+    pub(super) fn editor_text(&self) -> String {
         self.slice.editor().text()
     }
 
-    pub(super) fn parity_cursor(&self) -> usize {
+    pub(super) fn editor_cursor(&self) -> usize {
         self.slice
             .editor()
             .buffer()
@@ -50,88 +50,88 @@ impl ComposerState {
             .sum()
     }
 
-    pub(super) fn sync_legacy_from_parity(&mut self) {
-        self.prompt_buffer = self.parity_text();
-        self.prompt_cursor = self.parity_cursor();
+    pub(super) fn sync_prompt_fields_from_editor(&mut self) {
+        self.prompt_buffer = self.editor_text();
+        self.prompt_cursor = self.editor_cursor();
         self.selection_anchor = None;
     }
 
-    pub(super) fn parity_editing_ready(&self) -> bool {
-        self.parity_text() == self.prompt_buffer
-            && self.parity_cursor() == self.prompt_cursor
+    pub(super) fn editor_matches_prompt_fields(&self) -> bool {
+        self.editor_text() == self.prompt_buffer
+            && self.editor_cursor() == self.prompt_cursor
             && self.selection_anchor.is_none()
     }
 
-    fn sync_parity_from_legacy(&mut self) {
-        if self.parity_text() != self.prompt_buffer {
+    fn sync_editor_from_prompt_buffer(&mut self) {
+        if self.editor_text() != self.prompt_buffer {
             let _ = self.slice.replace_text(&self.prompt_buffer);
         }
     }
 
-    pub(super) fn replace_parity_text(&mut self, text: &str) -> Result<(), ComposerSliceError> {
-        self.sync_parity_from_legacy();
+    pub(super) fn replace_editor_text(&mut self, text: &str) -> Result<(), ComposerSliceError> {
+        self.sync_editor_from_prompt_buffer();
         self.slice.replace_text(text)?;
-        self.sync_legacy_from_parity();
+        self.sync_prompt_fields_from_editor();
         Ok(())
     }
 
-    pub(super) fn parity_insert_text(&mut self, text: &str) -> Result<(), ComposerSliceError> {
-        self.sync_parity_from_legacy();
+    pub(super) fn editor_insert_text(&mut self, text: &str) -> Result<(), ComposerSliceError> {
+        self.sync_editor_from_prompt_buffer();
         self.slice.insert_text(text)?;
-        self.sync_legacy_from_parity();
+        self.sync_prompt_fields_from_editor();
         Ok(())
     }
 
-    pub(super) fn parity_paste(&mut self, text: &str) -> Result<(), ComposerSliceError> {
-        self.sync_parity_from_legacy();
+    pub(super) fn editor_paste(&mut self, text: &str) -> Result<(), ComposerSliceError> {
+        self.sync_editor_from_prompt_buffer();
         self.slice.paste(text)?;
-        self.sync_legacy_from_parity();
+        self.sync_prompt_fields_from_editor();
         Ok(())
     }
 
-    pub(super) fn parity_backspace(&mut self) -> Result<(), ComposerSliceError> {
-        self.sync_parity_from_legacy();
+    pub(super) fn editor_backspace(&mut self) -> Result<(), ComposerSliceError> {
+        self.sync_editor_from_prompt_buffer();
         self.slice.backspace()?;
-        self.sync_legacy_from_parity();
+        self.sync_prompt_fields_from_editor();
         Ok(())
     }
 
-    pub(super) fn parity_delete(
+    pub(super) fn editor_delete(
         &mut self,
         kind: crate::composer_editing::DeleteKind,
     ) -> Result<(), ComposerSliceError> {
-        self.sync_parity_from_legacy();
+        self.sync_editor_from_prompt_buffer();
         self.slice.delete(kind)?;
-        self.sync_legacy_from_parity();
+        self.sync_prompt_fields_from_editor();
         Ok(())
     }
 
-    pub(super) fn parity_move_left(&mut self) -> Result<(), ComposerSliceError> {
-        self.sync_parity_from_legacy();
+    pub(super) fn editor_move_left(&mut self) -> Result<(), ComposerSliceError> {
+        self.sync_editor_from_prompt_buffer();
         self.slice.move_left()?;
-        self.sync_legacy_from_parity();
+        self.sync_prompt_fields_from_editor();
         Ok(())
     }
 
-    pub(super) fn parity_move_right(&mut self) -> Result<(), ComposerSliceError> {
-        self.sync_parity_from_legacy();
+    pub(super) fn editor_move_right(&mut self) -> Result<(), ComposerSliceError> {
+        self.sync_editor_from_prompt_buffer();
         self.slice.move_right()?;
-        self.sync_legacy_from_parity();
+        self.sync_prompt_fields_from_editor();
         Ok(())
     }
 
-    pub(super) fn parity_undo(&mut self) -> Result<bool, ComposerSliceError> {
+    pub(super) fn editor_undo(&mut self) -> Result<bool, ComposerSliceError> {
         let changed = self.slice.undo()?;
         if changed {
-            self.sync_legacy_from_parity();
+            self.sync_prompt_fields_from_editor();
         }
         Ok(changed)
     }
 
-    pub(super) fn parity_redo(&mut self) -> Result<bool, ComposerSliceError> {
+    pub(super) fn editor_redo(&mut self) -> Result<bool, ComposerSliceError> {
         let changed = self.slice.redo()?;
         if changed {
-            self.sync_legacy_from_parity();
+            self.sync_prompt_fields_from_editor();
         }
         Ok(changed)
     }

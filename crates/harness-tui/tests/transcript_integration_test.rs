@@ -1,5 +1,5 @@
-use harness_tui::design_contract::{LifecycleState, ViewportId};
 use harness_tui::scheduling::FrameNow;
+use harness_tui::theme_tokens::{LifecycleState, ViewportId};
 use harness_tui::transcript_blocks::{BlockKind, BlockLifecycle, FoldState};
 use harness_tui::transcript_identity::{BlockId, ReplayTurn};
 use harness_tui::transcript_integration::{
