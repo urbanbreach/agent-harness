@@ -22,7 +22,14 @@ impl AppState {
     pub(crate) fn refresh_motion_state(&mut self) -> bool {
         let now = self.now();
         self.clear_expired_interrupt_confirmation();
-        self.refresh_toast_motion(now)
+        let clear_prompt_confirmation_expired = self
+            .clear_prompt_confirm_deadline
+            .is_some_and(|deadline| now >= deadline);
+        if clear_prompt_confirmation_expired {
+            self.reset_clear_prompt_confirmation();
+        }
+        let toast_changed = self.refresh_toast_motion(now);
+        clear_prompt_confirmation_expired || toast_changed
     }
 
     pub(crate) fn motion_plan(&self) -> MotionPlan {
@@ -36,6 +43,9 @@ impl AppState {
             }
         }
         if let Some(deadline) = self.interrupt_confirm_deadline {
+            plan = plan.merge(MotionDemand::until(deadline.saturating_duration_since(now)));
+        }
+        if let Some(deadline) = self.clear_prompt_confirm_deadline {
             plan = plan.merge(MotionDemand::until(deadline.saturating_duration_since(now)));
         }
         if !self.reduced_motion {
@@ -173,8 +183,10 @@ impl AppState {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use std::sync::Arc;
+    use std::time::{Duration, Instant};
 
+    use crate::app::Focus;
     use crate::scheduling::MotionCadence;
     use crate::theme::{ColorLevel, GlyphMode};
 
@@ -206,5 +218,26 @@ mod tests {
             app.motion_plan().cadence(),
             MotionCadence::Slow(Duration::from_millis(83))
         );
+    }
+
+    #[test]
+    fn clear_prompt_confirmation_schedules_and_retires_its_deadline() {
+        // arrange
+        let base = Instant::now();
+        let mut app = AppState::new_live(None, false, None);
+        app.set_now_fn_for_test(Arc::new(move || base));
+        app.focus = Focus::Prompt;
+        app.composer.prompt_buffer = "draft".to_string();
+
+        // act
+        assert!(app.handle_clear_prompt_escape());
+        let pending = app.motion_plan();
+        app.set_now_fn_for_test(Arc::new(move || base + Duration::from_millis(800)));
+        let expired = app.refresh_motion_state();
+
+        // assert
+        assert_eq!(pending.until(), Some(Duration::from_millis(800)));
+        assert!(expired);
+        assert!(app.motion_plan().is_none());
     }
 }

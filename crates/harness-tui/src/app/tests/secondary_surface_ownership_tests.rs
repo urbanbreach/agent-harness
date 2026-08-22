@@ -150,11 +150,55 @@ pub(super) fn status_dashboard_allows_normal_quit_sequence() {
     );
 }
 
+pub(super) fn status_dashboard_h_key_opens_help() {
+    // arrange
+    let mut app = AppState::new_live(None, false, None);
+    app.execute_action(Action::OpenStatusDialog);
+
+    // act
+    app.handle_key(key(KeyCode::Char('h')));
+
+    // assert
+    assert!(
+        app.status_dashboard()
+            .is_some_and(crate::dashboard_integration::DashboardIntegration::help_visible),
+        "the dashboard-local h shortcut must open the advertised help surface"
+    );
+}
+
+pub(super) fn status_dashboard_help_stays_open_on_down_key() {
+    // arrange
+    let mut app = AppState::new_live(None, false, None);
+    app.execute_action(Action::OpenStatusDialog);
+    app.handle_key(key(KeyCode::Tab));
+    app.handle_key(key(KeyCode::Char('h')));
+
+    // act
+    app.handle_key(key(KeyCode::Down));
+
+    // assert
+    assert!(
+        app.status_dashboard()
+            .is_some_and(crate::dashboard_integration::DashboardIntegration::help_visible),
+        "Down must not dismiss dashboard help"
+    );
+    let rendered = render_text(&app, 100, 36);
+    assert!(
+        rendered.contains("Dashboard help")
+            && rendered.contains("toggle follow")
+            && !rendered.contains("move selection")
+            && !rendered.contains("reply composer")
+            && !rendered.contains("Crash/recovery"),
+        "dashboard help must match focused pane and clear content beneath it:\n{rendered}"
+    );
+}
+
 pub(super) fn status_dashboard_renders_empty_sections_from_app_state() {
     // Given
     let mut app = AppState::new_live(None, false, None);
     app.execute_action(Action::OpenStatusDialog);
     assert_eq!(app.overlay_stack().top(), Some(OverlayKind::StatusDialog));
+    app.refresh_status_dashboard();
 
     // When
     let rendered = render_text(&app, 100, 36);
@@ -163,6 +207,14 @@ pub(super) fn status_dashboard_renders_empty_sections_from_app_state() {
     assert!(
         rendered.contains("Status"),
         "dashboard header missing:\n{rendered}"
+    );
+    assert!(
+        !rendered.contains("Commands"),
+        "status dashboard must not inherit command-palette chrome:\n{rendered}"
+    );
+    assert!(
+        !rendered.contains("[✗]"),
+        "status dashboard must not advertise an inert close target:\n{rendered}"
     );
     assert!(
         rendered.contains("No MCP Servers") || rendered.contains("MCP"),
