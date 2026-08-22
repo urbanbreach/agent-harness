@@ -4,7 +4,7 @@ assertion_line: 91
 expression: trim_trailing_snapshot_whitespace(&rendered)
 ---
 
-   test-workspace /workspace/agent-harness
+  git:test-workspace /workspace/agent-harness
 
 
      ❯ Inspect deterministic sidebar

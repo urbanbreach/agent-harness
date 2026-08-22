@@ -3,7 +3,7 @@ source: crates/harness-tui/tests/deterministic_render_test.rs
 expression: rendered.as_str()
 ---
                                                                                                     
-   test-workspace /workspace/agent-harness                                                         
+  git:test-workspace /workspace/agent-harness                                                       
                                                                                                     
                                                                                                     
                                                                                                     

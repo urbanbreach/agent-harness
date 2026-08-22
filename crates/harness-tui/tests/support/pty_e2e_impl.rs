@@ -159,8 +159,8 @@ pub(crate) fn pty_status_dialog_opens_without_sidebar_copy() {
     helper.wait_for("No MCP Servers");
     let leader_status = helper.screen_text();
     assert!(
-        leader_status.contains("Commands") && leader_status.contains("Status · Harness dashboard"),
-        "PTY status dialog must show Commands and Status headers\n{leader_status}"
+        leader_status.contains("Status · Harness dashboard") && !leader_status.contains("Commands"),
+        "PTY status dialog must own its title without Commands palette chrome\n{leader_status}"
     );
     assert_no_sidebar_copy(&leader_status, "status dialog via Ctrl+x s");
     assert!(

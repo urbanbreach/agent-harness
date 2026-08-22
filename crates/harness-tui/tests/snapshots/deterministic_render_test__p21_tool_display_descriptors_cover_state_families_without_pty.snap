@@ -4,7 +4,7 @@ assertion_line: 139
 expression: trim_trailing_snapshot_whitespace(&rendered)
 ---
 
-   test-workspace /workspace/agent-harness
+  git:test-workspace /workspace/agent-harness
 
 
      ❯ Inspect P2.1 tool display descriptors
