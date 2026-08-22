@@ -36,6 +36,28 @@ fn narrow_draft_footer_keeps_shortcuts_discoverable_without_partial_hints() {
 }
 
 #[test]
+fn narrow_idle_footer_uses_active_send_binding_and_keeps_shortcuts_discoverable() {
+    // arrange
+    let mut app = AppState::new_live(None, false, None);
+    app.focus = Focus::Prompt;
+    app.keymap.apply_overrides(&BTreeMap::from([(
+        "submit_prompt".to_string(),
+        "ctrl+enter".to_string(),
+    )]));
+
+    // act
+    let rendered = render_to_string(&app, Rect::new(0, 0, 60, 20), |app, frame, _area| {
+        ui::render_app(frame, app);
+    });
+
+    // assert
+    assert!(
+        rendered.contains("Ctrl+Enter:send") && rendered.contains("Ctrl+x:shortcuts"),
+        "idle footer must derive send and shortcuts hints from the active keymap\n{rendered}"
+    );
+}
+
+#[test]
 fn first_escape_replaces_draft_hints_with_clear_confirmation() {
     // arrange
     let mut app = draft_shell();

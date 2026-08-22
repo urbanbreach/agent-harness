@@ -18,12 +18,14 @@ pub(super) fn live_shell_keeps_idle_keybinds_visible() {
 
     let reduced_render = render_live_lines(&live, 80, 24);
     assert!(!reduced_render.contains("q quit"));
-    assert!(reduced_render.contains("Shift+Tab:mode"));
+    assert!(reduced_render.contains("Enter:send"));
+    assert!(!reduced_render.contains("Shift+Tab:mode"));
     assert!(reduced_render.contains("Ctrl+x:shortcuts"));
 
     let minimal_render = render_live_lines(&live, 60, 18);
     assert!(!minimal_render.contains("q quit"));
-    assert!(minimal_render.contains("Shift+Tab:mode"));
+    assert!(minimal_render.contains("Enter:send"));
+    assert!(!minimal_render.contains("Shift+Tab:mode"));
     assert!(minimal_render.contains("Ctrl+x:shortcuts"));
 
     let replay =

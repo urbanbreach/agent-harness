@@ -208,6 +208,10 @@ pub(super) fn render_footer(
     {
         footer_hints.hints = vec![
             crate::view_model::FooterHint {
+                action: crate::keybindings::Action::SubmitPrompt,
+                label: ":send",
+            },
+            crate::view_model::FooterHint {
                 action: crate::keybindings::Action::VariantCycle,
                 label: ":mode",
             },
@@ -376,14 +380,9 @@ fn render_startup_footer(frame: &mut Frame, app: &AppState, area: Rect, theme: &
         .bg(theme.surface.canvas);
     let dim = normal.add_modifier(Modifier::DIM);
     if !app.composer.prompt_buffer.is_empty() || app.welcome_dismissed() {
-        let submit = app.keymap.get_binding_str(Action::SubmitPrompt);
-        let variant = app.keymap.get_binding_str(Action::VariantCycle);
-        let help = app
-            .keymap
-            .get_binding_strs(Action::Help)
-            .into_iter()
-            .find(|binding| binding == "Ctrl+x")
-            .unwrap_or_else(|| app.keymap.get_binding_str(Action::Help));
+        let submit = composer_footer_binding(app, Action::SubmitPrompt);
+        let variant = composer_footer_binding(app, Action::VariantCycle);
+        let help = composer_footer_binding(app, Action::Help);
         let line = Line::from(vec![
             Span::styled("  ", normal),
             Span::styled(submit, bold),
