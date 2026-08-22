@@ -166,6 +166,7 @@ impl AppState {
     }
 
     fn restore_prompt_history_draft_or_clear(&mut self) {
+        self.reset_clear_prompt_confirmation();
         self.composer.prompt_history_index = None;
         let Some(draft) = self.composer.prompt_history_draft.take() else {
             self.clear_prompt_input();
@@ -195,7 +196,7 @@ impl AppState {
         self.sync_file_mention_overlay();
     }
 
-    pub(in crate::app) fn clear_prompt_confirmation_pending(&self) -> bool {
+    pub(crate) fn clear_prompt_confirmation_pending(&self) -> bool {
         self.clear_prompt_confirm_deadline
             .is_some_and(|deadline| self.now() < deadline)
     }
@@ -234,11 +235,12 @@ impl AppState {
         }
 
         self.clear_prompt_confirm_deadline = Some(self.now() + CLEAR_PROMPT_CONFIRM_TIMEOUT);
-        self.show_toast(CLEAR_PROMPT_HINT, ToastVariant::Info);
+        self.toast = None;
         true
     }
 
     pub(in crate::app) fn replace_prompt_input(&mut self, prompt: String) {
+        self.reset_clear_prompt_confirmation();
         if !prompt.is_empty() {
             self.dismiss_welcome_for_input();
         }
@@ -305,6 +307,9 @@ impl AppState {
     }
 
     fn insert_prompt_text(&mut self, text: &str) {
+        if !text.is_empty() {
+            self.reset_clear_prompt_confirmation();
+        }
         if self.composer.editor_matches_prompt_fields() && self.composer.editor_paste(text).is_ok()
         {
             self.sync_slash_overlay();
@@ -340,6 +345,7 @@ impl AppState {
     }
 
     pub(in crate::app) fn backspace_prompt_char(&mut self) {
+        self.reset_clear_prompt_confirmation();
         if self.composer.editor_matches_prompt_fields() && self.composer.editor_backspace().is_ok()
         {
             self.sync_slash_overlay();
@@ -373,6 +379,7 @@ impl AppState {
     }
 
     pub(in crate::app) fn delete_prompt_char(&mut self) {
+        self.reset_clear_prompt_confirmation();
         if self.composer.editor_matches_prompt_fields()
             && self
                 .composer

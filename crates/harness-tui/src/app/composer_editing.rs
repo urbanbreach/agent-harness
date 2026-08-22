@@ -73,6 +73,7 @@ impl AppState {
         if start >= end {
             return;
         }
+        self.reset_clear_prompt_confirmation();
         self.continued_live_reopen_surface_active = false;
         self.adjust_file_mention_tags_for_delete(start, end);
         let start_byte = self.prompt_char_byte_index(start);
@@ -234,6 +235,7 @@ impl AppState {
     }
 
     pub(in crate::app) fn composer_undo(&mut self) {
+        self.reset_clear_prompt_confirmation();
         if self.composer.editor_matches_prompt_fields()
             && matches!(self.composer.editor_undo(), Ok(true))
         {
@@ -251,6 +253,7 @@ impl AppState {
     }
 
     pub(in crate::app) fn composer_redo(&mut self) {
+        self.reset_clear_prompt_confirmation();
         if self.composer.editor_matches_prompt_fields()
             && matches!(self.composer.editor_redo(), Ok(true))
         {

@@ -221,10 +221,7 @@ pub(super) fn first_esc_on_nonempty_idle_prompt_shows_press_again_hint_without_c
 
     assert_eq!(app.composer.prompt_buffer, "draft text");
     assert!(app.clear_prompt_confirmation_pending());
-    assert_eq!(
-        app.toast().map(|toast| toast.message.as_str()),
-        Some(AppState::clear_prompt_hint_for_test())
-    );
+    assert!(app.toast().is_none());
     assert!(app.composer.prompt_history.is_empty());
 }
 
@@ -268,10 +265,55 @@ pub(super) fn second_esc_after_800ms_restarts_clear_gesture_without_clearing() {
     assert_eq!(app.composer.prompt_buffer, "still here");
     assert!(app.clear_prompt_confirmation_pending());
     assert!(app.composer.prompt_history.is_empty());
-    assert_eq!(
-        app.toast().map(|toast| toast.message.as_str()),
-        Some(AppState::clear_prompt_hint_for_test())
-    );
+    assert!(app.toast().is_none());
+}
+
+pub(super) fn replacing_prompt_after_first_esc_disarms_clear_confirmation() {
+    // arrange
+    let mut app = AppState::new_live(None, false, None);
+    app.focus = Focus::Prompt;
+    app.composer.prompt_buffer = "original".to_string();
+    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
+    app.handle_key(key(KeyCode::Esc));
+
+    // act
+    app.replace_prompt_input("replacement".to_string());
+
+    // assert
+    assert_eq!(app.composer.prompt_buffer, "replacement");
+    assert!(!app.clear_prompt_confirmation_pending());
+}
+
+pub(super) fn backspace_after_first_esc_disarms_clear_confirmation() {
+    // arrange
+    let mut app = AppState::new_live(None, false, None);
+    app.focus = Focus::Prompt;
+    app.composer.prompt_buffer = "draft".to_string();
+    app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
+    app.handle_key(key(KeyCode::Esc));
+
+    // act
+    app.handle_key(key(KeyCode::Backspace));
+
+    // assert
+    assert_eq!(app.composer.prompt_buffer, "draf");
+    assert!(!app.clear_prompt_confirmation_pending());
+}
+
+pub(super) fn delete_after_first_esc_disarms_clear_confirmation() {
+    // arrange
+    let mut app = AppState::new_live(None, false, None);
+    app.focus = Focus::Prompt;
+    app.composer.prompt_buffer = "draft".to_string();
+    app.composer.prompt_cursor = 0;
+    app.handle_key(key(KeyCode::Esc));
+
+    // act
+    app.handle_key(key(KeyCode::Delete));
+
+    // assert
+    assert_eq!(app.composer.prompt_buffer, "raft");
+    assert!(!app.clear_prompt_confirmation_pending());
 }
 
 pub(super) fn esc_while_turn_running_does_not_cancel_on_single_press() {
