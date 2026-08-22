@@ -3637,6 +3637,7 @@ impl AppState {
     /// Jump to the bottom (newest content). Re-engages follow mode.
     pub fn scroll_goto_bottom(&mut self) {
         self.cancel_transcript_page_flip();
+        self.transcript_view.return_to_live_hovered = false;
         let next = self.transcript_view.measured_viewport().jump_to_bottom();
         self.transcript_view.set_measured_viewport(next);
     }

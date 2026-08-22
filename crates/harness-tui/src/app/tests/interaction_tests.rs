@@ -166,10 +166,12 @@ pub(super) fn resize_invalidates_geometry_dependent_pointer_state() {
     let mut app = AppState::new_live(None, false, None);
     app.set_frame_area(TEST_FRAME_AREA);
     app.hovered_live_turn_stop = true;
+    app.transcript_view.return_to_live_hovered = true;
 
     // When: the same geometry is observed, then the terminal width changes.
     app.set_frame_area(TEST_FRAME_AREA);
     let same_frame_kept_hover = app.hovered_live_turn_stop;
+    let same_frame_kept_return_hover = app.transcript_view.return_to_live_hovered;
     app.set_frame_area(Rect::new(
         TEST_FRAME_AREA.x,
         TEST_FRAME_AREA.y,
@@ -179,7 +181,9 @@ pub(super) fn resize_invalidates_geometry_dependent_pointer_state() {
 
     // Then: stable geometry preserves hover, while resized geometry cannot keep stale hits.
     assert!(same_frame_kept_hover);
+    assert!(same_frame_kept_return_hover);
     assert!(!app.hovered_live_turn_stop);
+    assert!(!app.transcript_view.return_to_live_hovered);
 }
 
 pub(super) fn command_palette_mouse_hover_moves_keyboard_selection() {

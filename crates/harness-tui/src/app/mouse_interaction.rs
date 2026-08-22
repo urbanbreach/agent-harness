@@ -462,6 +462,7 @@ impl AppState {
         {
             self.transcript_view.transcript_scrollbar_drag = None;
             self.transcript_view.hovered_transcript_target = None;
+            self.transcript_view.return_to_live_hovered = false;
             self.transcript_view.transcript_selection_dragging = false;
             self.hovered_subagent_footer_target = None;
             self.hovered_live_turn_stop = false;
@@ -559,6 +560,7 @@ impl AppState {
     fn clear_blocked_pointer_state(&mut self) -> bool {
         let changed = self.transcript_view.transcript_scrollbar_drag.is_some()
             || self.transcript_view.hovered_transcript_target.is_some()
+            || self.transcript_view.return_to_live_hovered
             || self.hovered_subagent_footer_target.is_some()
             || self.hovered_live_turn_stop
             || self.hovered_live_turn_background
@@ -566,6 +568,7 @@ impl AppState {
             || self.secondary_surfaces.selection.is_some();
         self.transcript_view.transcript_scrollbar_drag = None;
         self.transcript_view.hovered_transcript_target = None;
+        self.transcript_view.return_to_live_hovered = false;
         self.hovered_subagent_footer_target = None;
         self.hovered_live_turn_stop = false;
         self.hovered_live_turn_background = false;
@@ -960,6 +963,8 @@ impl AppState {
                     .is_some_and(|area| rect_contains(area, mouse.column, mouse.row));
                 let hovered_live_turn_background = ui::live_turn_background_rect(self, frame_area)
                     .is_some_and(|area| rect_contains(area, mouse.column, mouse.row));
+                let return_to_live_hovered =
+                    ui::transcript_return_to_live_hit(self, frame_area, mouse.column, mouse.row);
                 let hovered_subagent_footer_target =
                     ui::subagent_footer_target_at(self, frame_area, mouse.column, mouse.row);
                 let hovered_transcript_target = if hovered_subagent_footer_target.is_none() {
@@ -971,11 +976,13 @@ impl AppState {
                     || self.transcript_view.hovered_transcript_target != hovered_transcript_target
                     || self.hovered_subagent_footer_target != hovered_subagent_footer_target
                     || self.hovered_live_turn_stop != hovered_live_turn_stop
-                    || self.hovered_live_turn_background != hovered_live_turn_background;
+                    || self.hovered_live_turn_background != hovered_live_turn_background
+                    || self.transcript_view.return_to_live_hovered != return_to_live_hovered;
                 self.transcript_view.hovered_transcript_target = hovered_transcript_target;
                 self.hovered_subagent_footer_target = hovered_subagent_footer_target;
                 self.hovered_live_turn_stop = hovered_live_turn_stop;
                 self.hovered_live_turn_background = hovered_live_turn_background;
+                self.transcript_view.return_to_live_hovered = return_to_live_hovered;
                 changed
             }
             MouseEventKind::Down(MouseButton::Right) => {
@@ -1108,8 +1115,10 @@ impl AppState {
                 let hover_changed = self.transcript_view.hovered_transcript_target.is_some()
                     || self.hovered_subagent_footer_target.is_some()
                     || self.hovered_live_turn_stop
-                    || self.hovered_live_turn_background;
+                    || self.hovered_live_turn_background
+                    || self.transcript_view.return_to_live_hovered;
                 self.transcript_view.hovered_transcript_target = None;
+                self.transcript_view.return_to_live_hovered = false;
                 self.hovered_subagent_footer_target = None;
                 self.hovered_live_turn_stop = false;
                 self.hovered_live_turn_background = false;
