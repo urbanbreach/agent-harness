@@ -45,7 +45,7 @@ pub(crate) fn pty_smoke_starts_accepts_input_resizes_and_exits() {
     let mut helper = spawn_type_first_startup_helper();
     helper.wait_for("❯");
     let startup_screen = helper.screen_text();
-    assert_no_multi_row_prompt_rail(&startup_screen, "startup");
+    assert_fresh_session_prompt_glyph_contract(&startup_screen);
 
     helper
         .writer
@@ -420,15 +420,42 @@ fn wait_for_child_exit(helper: &mut SpawnedHelper, context: &str) {
     let _ = helper.child.wait();
 }
 
-fn assert_no_multi_row_prompt_rail(screen: &str, context: &str) {
+fn assert_fresh_session_prompt_glyph_contract(screen: &str) {
     let prompt_glyph_lines = screen.lines().filter(|line| line.contains('❯')).count();
+    assert_eq!(
+        prompt_glyph_lines, 4,
+        "PTY fresh session must paint three example prompts and one composer prompt (found {prompt_glyph_lines})\n{screen}"
+    );
+    let example_prompts = [
+        "inspect src/ui.rs",
+        "trace the failing test",
+        "review the latest edit",
+    ];
+    for copy in example_prompts
+        .into_iter()
+        .chain(["Ask Harness to inspect, edit, or explain…"])
+    {
+        assert!(
+            screen.contains(copy),
+            "PTY fresh session must show `{copy}`\n{screen}"
+        );
+    }
+    let example_columns = example_prompts.map(|copy| {
+        screen
+            .lines()
+            .find(|line| line.contains(copy))
+            .and_then(|line| line.find('❯'))
+            .unwrap_or_abort()
+    });
     assert!(
-        prompt_glyph_lines <= 1,
-        "PTY {context} must not paint a multi-row ❯ rail (found {prompt_glyph_lines})\n{screen}"
+        example_columns
+            .windows(2)
+            .all(|columns| columns[0] == columns[1]),
+        "PTY fresh-session example prompts must share one left edge: {example_columns:?}\n{screen}"
     );
     assert!(
         !screen.contains('┃'),
-        "PTY {context} must not render legacy composer rail ┃\n{screen}"
+        "PTY fresh session must not render legacy composer rail ┃\n{screen}"
     );
 }
 
