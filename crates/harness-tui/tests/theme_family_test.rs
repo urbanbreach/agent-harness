@@ -10,7 +10,7 @@ fn semantic_role_all_returns_every_role_with_expected_kinds() {
     let roles = SemanticRole::all();
 
     // assert
-    assert_eq!(roles.len(), 73);
+    assert_eq!(roles.len(), 74);
     assert_eq!(
         roles
             .iter()
@@ -23,7 +23,7 @@ fn semantic_role_all_returns_every_role_with_expected_kinds() {
             .iter()
             .filter(|role| role.kind() == SemanticKind::Glyph)
             .count(),
-        13
+        14
     );
     assert_eq!(
         roles

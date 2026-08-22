@@ -37,7 +37,7 @@ fn theme_family_contract_exposes_every_role_without_missing_mappings() {
     // arrange
     assert_eq!(ThemeFamily::ALL.len(), 4);
     assert_eq!(PaletteRole::ALL.len(), 53);
-    assert_eq!(GlyphRole::ALL.len(), 13);
+    assert_eq!(GlyphRole::ALL.len(), 14);
     assert_eq!(BorderRole::ALL.len(), 4);
     assert_eq!(FocusRole::ALL.len(), 5);
     assert_eq!(LifecycleState::ALL.len(), 16);

@@ -63,12 +63,12 @@ pub struct BorderTokens {
 #[serde(rename_all = "snake_case")]
 #[rustfmt::skip]
 pub enum GlyphRole {
-    Streaming, Done, Error, PendingPermission, Queued, Running, Succeeded, Failed, UserMarker, ToolMarker, CardTop, CardMiddle, CardBottom,
+    Streaming, Done, Error, PendingPermission, Queued, Running, Succeeded, Failed, Cancelled, UserMarker, ToolMarker, CardTop, CardMiddle, CardBottom,
 }
 
 #[rustfmt::skip]
 impl GlyphRole {
-    pub const ALL: [Self; 13] = [Self::Streaming, Self::Done, Self::Error, Self::PendingPermission, Self::Queued, Self::Running, Self::Succeeded, Self::Failed, Self::UserMarker, Self::ToolMarker, Self::CardTop, Self::CardMiddle, Self::CardBottom];
+    pub const ALL: [Self; 14] = [Self::Streaming, Self::Done, Self::Error, Self::PendingPermission, Self::Queued, Self::Running, Self::Succeeded, Self::Failed, Self::Cancelled, Self::UserMarker, Self::ToolMarker, Self::CardTop, Self::CardMiddle, Self::CardBottom];
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

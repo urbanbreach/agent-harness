@@ -3,7 +3,7 @@ use crate::theme::{StatusGlyphs, Theme, TranscriptGlyphs};
 use super::roles::GlyphRole;
 
 impl GlyphRole {
-    pub const LABELS: [&str; 13] = [
+    pub const LABELS: [&str; 14] = [
         "streaming",
         "done",
         "error",
@@ -12,6 +12,7 @@ impl GlyphRole {
         "running",
         "succeeded",
         "failed",
+        "cancelled",
         "user_marker",
         "tool_marker",
         "card_top",
@@ -26,7 +27,7 @@ impl GlyphRole {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GlyphPalette {
-    pub values: [&'static str; 13],
+    pub values: [&'static str; 14],
 }
 
 impl GlyphPalette {
@@ -43,6 +44,7 @@ impl GlyphPalette {
                 status.running,
                 status.succeeded,
                 status.failed,
+                status.cancelled,
                 transcript.user_marker,
                 transcript.tool_marker,
                 transcript.card_top,

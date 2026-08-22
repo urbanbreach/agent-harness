@@ -104,6 +104,7 @@ impl SemanticRole {
                 GlyphRole::Running => "glyph:running",
                 GlyphRole::Succeeded => "glyph:succeeded",
                 GlyphRole::Failed => "glyph:failed",
+                GlyphRole::Cancelled => "glyph:cancelled",
                 GlyphRole::UserMarker => "glyph:user_marker",
                 GlyphRole::ToolMarker => "glyph:tool_marker",
                 GlyphRole::CardTop => "glyph:card_top",

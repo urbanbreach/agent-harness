@@ -181,6 +181,7 @@ pub enum GlyphRole {
     Running,
     Succeeded,
     Failed,
+    Cancelled,
     UserMarker,
     ToolMarker,
     CardTop,
@@ -189,7 +190,7 @@ pub enum GlyphRole {
 }
 
 impl GlyphRole {
-    pub const ALL: [Self; 13] = [
+    pub const ALL: [Self; 14] = [
         Self::Streaming,
         Self::Done,
         Self::Error,
@@ -198,6 +199,7 @@ impl GlyphRole {
         Self::Running,
         Self::Succeeded,
         Self::Failed,
+        Self::Cancelled,
         Self::UserMarker,
         Self::ToolMarker,
         Self::CardTop,
@@ -215,11 +217,12 @@ impl GlyphRole {
             Self::Running => 5,
             Self::Succeeded => 6,
             Self::Failed => 7,
-            Self::UserMarker => 8,
-            Self::ToolMarker => 9,
-            Self::CardTop => 10,
-            Self::CardMid => 11,
-            Self::CardBottom => 12,
+            Self::Cancelled => 8,
+            Self::UserMarker => 9,
+            Self::ToolMarker => 10,
+            Self::CardTop => 11,
+            Self::CardMid => 12,
+            Self::CardBottom => 13,
         }
     }
 }

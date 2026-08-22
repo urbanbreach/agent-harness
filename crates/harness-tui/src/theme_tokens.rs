@@ -119,7 +119,7 @@ const BORDERS: BorderTokens = BorderTokens {
 };
 #[rustfmt::skip]
 const GLYPHS: GlyphRoles = GlyphRoles {
-    all: &[glyph(GlyphRole::Streaming, "◐", "o"), glyph(GlyphRole::Done, "●", "*"), glyph(GlyphRole::Error, "✗", "x"), glyph(GlyphRole::PendingPermission, "◷", "?"), glyph(GlyphRole::Queued, "◴", "."), glyph(GlyphRole::Running, "◐", "o"), glyph(GlyphRole::Succeeded, "●", "*"), glyph(GlyphRole::Failed, "✗", "x"), glyph(GlyphRole::UserMarker, "❯", ">"), glyph(GlyphRole::ToolMarker, "◆", "*"), glyph(GlyphRole::CardTop, "  ", "  "), glyph(GlyphRole::CardMiddle, " ", " "), glyph(GlyphRole::CardBottom, "  ", "  ")],
+    all: &[glyph(GlyphRole::Streaming, "◐", "o"), glyph(GlyphRole::Done, "●", "*"), glyph(GlyphRole::Error, "✗", "x"), glyph(GlyphRole::PendingPermission, "◷", "?"), glyph(GlyphRole::Queued, "◴", "."), glyph(GlyphRole::Running, "◐", "o"), glyph(GlyphRole::Succeeded, "●", "*"), glyph(GlyphRole::Failed, "✗", "x"), glyph(GlyphRole::Cancelled, "⊘", "-"), glyph(GlyphRole::UserMarker, "❯", ">"), glyph(GlyphRole::ToolMarker, "◆", "*"), glyph(GlyphRole::CardTop, "  ", "  "), glyph(GlyphRole::CardMiddle, " ", " "), glyph(GlyphRole::CardBottom, "  ", "  ")],
 };
 #[rustfmt::skip]
 const HIERARCHY: HierarchyTokens = HierarchyTokens {

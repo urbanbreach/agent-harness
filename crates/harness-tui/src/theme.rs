@@ -432,6 +432,7 @@ pub struct StatusGlyphs {
     pub running: &'static str,
     pub succeeded: &'static str,
     pub failed: &'static str,
+    pub cancelled: &'static str,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1128,6 +1129,7 @@ impl Theme {
             running: "◐",
             succeeded: "●",
             failed: "✗",
+            cancelled: "⊘",
         },
         transcript_glyphs: TranscriptGlyphs {
             user_marker: "❯",
@@ -1155,6 +1157,7 @@ impl Theme {
                 running: "o",
                 succeeded: "*",
                 failed: "x",
+                cancelled: "-",
             },
             transcript: TranscriptGlyphs {
                 user_marker: ">",
@@ -2176,6 +2179,7 @@ fn status_glyphs(preferred: bool) -> StatusGlyphs {
         running: glyph(GlyphRole::Running, "◐"),
         succeeded: glyph(GlyphRole::Succeeded, "●"),
         failed: glyph(GlyphRole::Failed, "✗"),
+        cancelled: glyph(GlyphRole::Cancelled, "⊘"),
     }
 }
 
