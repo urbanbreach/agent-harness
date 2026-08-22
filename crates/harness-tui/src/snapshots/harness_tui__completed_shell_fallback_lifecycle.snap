@@ -9,12 +9,12 @@ expression: "fallback_render.lines().map(str::trim_end).collect::<Vec<_>>().join
 
                                                Harness
 
-                                    Start a conversation to begin
+                               Build, inspect, or fix this workspace.
 
-                                        -  inspect src/ui.rs
-                                      -  trace the failing test
-                                      -  review the latest edit
-
+                                            Try a prompt
+                                      ❯  inspect src/ui.rs
+                                      ❯  trace the failing test
+                                      ❯  review the latest edit
 
 
 
