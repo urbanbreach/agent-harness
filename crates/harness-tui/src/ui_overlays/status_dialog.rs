@@ -20,35 +20,23 @@ pub(super) fn render_status_dialog_overlay(
     };
 
     render_overlay_dim_backdrop(frame, root);
-    if !paint_command_palette_panel(frame, theme, overlay) {
+    if !paint_overlay_panel_titled(frame, theme, overlay, "Status · Harness dashboard", None) {
         return;
     }
 
-    let content = inset_rect(overlay, 2.min(overlay.width.saturating_sub(1)), 1);
-    if content.width == 0 || content.height == 0 {
+    let Some(content) = crate::dashboard_integration::dashboard_content_viewport(root) else {
         return;
-    }
+    };
 
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(1), Constraint::Min(0)])
-        .split(content);
     if let Some(dashboard) = app.status_dashboard() {
         render_interactive_dashboard(frame, app, theme, overlay);
-        let summary_area = Rect::new(
-            chunks[1].x.saturating_add(1),
-            chunks[1].bottom().saturating_sub(8),
-            chunks[1].width.saturating_sub(2),
-            7,
-        );
-        render_dashboard_summary(frame, app, theme, summary_area);
+        render_dashboard_summary(frame, app, theme, dashboard.layout().shell.composer);
         if dashboard.help_visible() {
-            render_dashboard_help(frame, theme, overlay, dashboard);
+            render_dashboard_help(frame, theme, content, dashboard);
         }
     } else {
-        render_status_dialog_body(frame, theme, chunks[1], status_dialog_body(app, theme));
+        render_status_dialog_body(frame, theme, content, status_dialog_body(app, theme));
     }
-    render_status_dialog_header(frame, theme, chunks[0]);
 }
 
 fn render_status_dialog_body(frame: &mut Frame, theme: &Theme, area: Rect, body: Text<'static>) {
@@ -62,32 +50,6 @@ fn render_status_dialog_body(frame: &mut Frame, theme: &Theme, area: Rect, body:
 
 fn status_dialog_area(root: Rect) -> Option<Rect> {
     crate::dashboard_integration::dashboard_viewport(root)
-}
-
-fn render_status_dialog_header(frame: &mut Frame, theme: &Theme, area: Rect) {
-    if area.width == 0 || area.height == 0 {
-        return;
-    }
-    let surface = ui_chrome::command_palette_surface(theme);
-    let title = "Status · Harness dashboard";
-    let esc = "esc";
-    let title_width = title.chars().count();
-    let esc_width = esc.chars().count();
-    let gap = usize::from(area.width).saturating_sub(title_width.saturating_add(esc_width));
-    frame.render_widget(
-        Paragraph::new(Line::from(vec![
-            Span::styled(
-                title,
-                Style::default()
-                    .fg(theme.text.primary)
-                    .bg(surface)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(" ".repeat(gap), Style::default().bg(surface)),
-            Span::styled(esc, Style::default().fg(theme.text.secondary).bg(surface)),
-        ])),
-        area,
-    );
 }
 
 fn render_interactive_dashboard(frame: &mut Frame, app: &AppState, theme: &Theme, overlay: Rect) {
@@ -221,15 +183,18 @@ fn render_dashboard_pane(
     title: &str,
     lines: Vec<String>,
 ) {
+    let surface = theme.surface.canvas;
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(theme.terminal_colors.muted))
+        .border_style(Style::default().fg(theme.terminal_colors.muted).bg(surface))
+        .style(Style::default().bg(surface))
         .title(title);
     let inner = block.inner(area);
+    frame.render_widget(Clear, area);
     frame.render_widget(block, area);
     frame.render_widget(
         Paragraph::new(lines.join("\n"))
-            .style(Style::default().fg(theme.text.primary))
+            .style(Style::default().fg(theme.text.primary).bg(surface))
             .wrap(Wrap { trim: true }),
         inner,
     );
@@ -261,38 +226,42 @@ fn render_dashboard_summary(frame: &mut Frame, app: &AppState, theme: &Theme, ar
     let fallback_line = operator
         .fallback_banner
         .map_or_else(String::new, |value| format!("Fallback banner: {value}"));
-    let mut lines = vec![
-        "Operator".to_string(),
-        mcp,
-        plugin_line,
-        edit_line,
-        operator_line,
-        crash_line,
+    let width = usize::from(area.width);
+    let lines = [
+        truncate_plain_text(&format!("Operator · {mcp} · {plugin_line}"), width),
+        truncate_plain_text(&format!("{edit_line} · {operator_line}"), width),
+        status_summary_pair(&crash_line, &fallback_line, width),
     ];
-    if !fallback_line.is_empty() {
-        lines.push(fallback_line);
-    }
     frame.render_widget(
-        Paragraph::new(lines.join("\n"))
-            .style(Style::default().fg(theme.text.secondary))
-            .wrap(Wrap { trim: true }),
+        Paragraph::new(lines.join("\n")).style(Style::default().fg(theme.text.secondary)),
         area,
     );
+}
+
+fn status_summary_pair(left: &str, right: &str, width: usize) -> String {
+    if right.is_empty() {
+        return truncate_plain_text(left, width);
+    }
+
+    const SEPARATOR: &str = " · ";
+    let available = width.saturating_sub(SEPARATOR.len());
+    let right_width = available / 2;
+    let left_width = available.saturating_sub(right_width);
+    format!(
+        "{}{}{}",
+        truncate_plain_text(left, left_width),
+        SEPARATOR,
+        truncate_plain_text(right, right_width)
+    )
 }
 
 fn render_dashboard_help(
     frame: &mut Frame,
     theme: &Theme,
-    overlay: Rect,
+    area: Rect,
     dashboard: &crate::dashboard_integration::DashboardIntegration,
 ) {
-    let help = dashboard.help(crate::app::Focus::List);
-    let area = Rect::new(
-        overlay.x.saturating_add(4),
-        overlay.y.saturating_add(3),
-        overlay.width.saturating_sub(8),
-        overlay.height.saturating_sub(6),
-    );
+    let help = dashboard.focused_help();
     let lines = help
         .entries
         .into_iter()
@@ -5652,17 +5621,19 @@ pub(crate) fn exact_test_status_dialog_render_snapshot_covers_harness_sections()
             let root = Rect::new(0, 0, 80, 24);
             let overlay = status_dialog_area(root).unwrap_or_abort();
             render_overlay_dim_backdrop(frame, root);
-            assert!(paint_command_palette_panel(frame, &theme, overlay));
-            let content = inset_rect(overlay, 2.min(overlay.width.saturating_sub(1)), 1);
-            let chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([Constraint::Length(1), Constraint::Min(0)])
-                .split(content);
-            render_status_dialog_header(frame, &theme, chunks[0]);
+            assert!(paint_overlay_panel_titled(
+                frame,
+                &theme,
+                overlay,
+                "Status · Harness dashboard",
+                None,
+            ));
+            let content =
+                crate::dashboard_integration::dashboard_content_viewport(root).unwrap_or_abort();
             render_status_dialog_body(
                 frame,
                 &theme,
-                chunks[1],
+                content,
                 status_dialog_body_from_rows(
                     mcp_rows,
                     lsp_rows,

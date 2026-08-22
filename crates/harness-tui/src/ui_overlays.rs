@@ -678,7 +678,7 @@ fn render_command_palette_surface(frame: &mut Frame, theme: &Theme, overlay: Rec
 }
 
 fn paint_command_palette_panel(frame: &mut Frame, theme: &Theme, overlay: Rect) -> bool {
-    paint_command_palette_panel_titled(frame, theme, overlay, "Commands", false)
+    paint_overlay_panel_titled(frame, theme, overlay, "Commands", Some(false))
 }
 
 pub(super) fn paint_modal_panel(
@@ -689,39 +689,34 @@ pub(super) fn paint_modal_panel(
     key: ModalSurfaceKey,
     title: &str,
 ) -> bool {
-    paint_command_palette_panel_titled(
+    paint_overlay_panel_titled(
         frame,
         theme,
         overlay,
         title,
-        app.modal_target_hovered(key, ModalTarget::Close),
+        Some(app.modal_target_hovered(key, ModalTarget::Close)),
     )
 }
 
-fn paint_command_palette_panel_titled(
+fn paint_overlay_panel_titled(
     frame: &mut Frame,
     theme: &Theme,
     overlay: Rect,
     title: &str,
-    close_hovered: bool,
+    close_hovered: Option<bool>,
 ) -> bool {
     if overlay.width == 0 || overlay.height == 0 {
         return false;
     }
 
-    let surface = ui_chrome::command_palette_surface(theme);
+    let surface = theme.surface.canvas;
     let border_style = Style::default().fg(theme.terminal_colors.muted).bg(surface);
     let title_style = Style::default()
         .fg(ui_chrome::command_palette_title(theme))
         .bg(surface)
         .add_modifier(Modifier::BOLD);
-    let close_style = if close_hovered {
-        ui_chrome::overlay_focus_row_style(theme).add_modifier(Modifier::BOLD)
-    } else {
-        border_style
-    };
     frame.render_widget(Clear, overlay);
-    let block = Block::default()
+    let mut block = Block::default()
         .borders(Borders::ALL)
         .border_type(ratatui::widgets::BorderType::Plain)
         .border_style(border_style)
@@ -730,8 +725,14 @@ fn paint_command_palette_panel_titled(
             Span::styled("─ ", border_style),
             Span::styled(title.to_string(), title_style),
             Span::styled(" ", border_style),
-        ]))
-        .title(
+        ]));
+    if let Some(close_hovered) = close_hovered {
+        let close_style = if close_hovered {
+            ui_chrome::overlay_focus_row_style(theme).add_modifier(Modifier::BOLD)
+        } else {
+            border_style
+        };
+        block = block.title(
             Line::from(vec![
                 Span::styled(" [", close_style),
                 Span::styled("✗", close_style),
@@ -739,6 +740,7 @@ fn paint_command_palette_panel_titled(
             ])
             .right_aligned(),
         );
+    }
     frame.render_widget(block, overlay);
     true
 }
