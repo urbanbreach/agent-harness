@@ -1575,6 +1575,10 @@ fn build_context_tool_group_render_surface(
         for tool_call in visible_tool_calls {
             let mut spans = Vec::new();
             let member_accent = inline_tool_color(tool_call.header.presentation.status, theme);
+            let member_marker = super::ui_transcript_tool_render::completed_tool_marker(
+                tool_call.header.presentation.status,
+                theme,
+            );
             if command_group {
                 let command_style = if single_command {
                     Style::default()
@@ -1586,16 +1590,14 @@ fn build_context_tool_group_render_surface(
                 let command = command_group_member_command(tool_call);
                 let command = if single_command {
                     let fixed_width = surface_prefix_width(&detail_prefix)
-                        .saturating_add(display_width(
-                            theme.live_shell.transcript_glyphs.tool_marker,
-                        ))
+                        .saturating_add(display_width(member_marker))
                         .saturating_add(display_width(" Run "));
                     truncate_plain_text(&command, usize::from(width).saturating_sub(fixed_width))
                 } else {
                     command
                 };
                 spans.push(Span::styled(
-                    format!("{} ", theme.live_shell.transcript_glyphs.tool_marker),
+                    format!("{member_marker} "),
                     Style::default().fg(member_accent),
                 ));
                 spans.push(Span::styled(
@@ -1609,7 +1611,7 @@ fn build_context_tool_group_render_surface(
                 spans.push(Span::styled(command, command_style));
             } else {
                 spans.push(Span::styled(
-                    format!("{} ", theme.live_shell.transcript_glyphs.tool_marker),
+                    format!("{member_marker} "),
                     Style::default().fg(member_accent),
                 ));
                 spans.push(Span::styled(
@@ -1900,7 +1902,7 @@ fn pack_waiting_on_answers_footer_line(
     theme: &Theme,
     content_width: u16,
 ) -> Line<'static> {
-    let marker = theme.live_shell.transcript_glyphs.tool_marker;
+    let marker = theme.live_shell.glyphs.pending_permission;
     let label = if waiting.starts_with("Run ") {
         match turn.header.duration_ms {
             Some(duration_ms) => {

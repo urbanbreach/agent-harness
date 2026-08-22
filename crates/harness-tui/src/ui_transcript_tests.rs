@@ -1496,10 +1496,8 @@ fn assistant_tool_surfaces_keep_same_trailing_gap_as_text_boxes() {
     assert!(tool_interactions[command_row].is_some());
     assert_eq!(tool_interactions[output_row], None);
     assert!(
-        tool_lines
-            .iter()
-            .any(|line| line.contains('◈') || line.contains('◆')),
-        "harness shell blocks should render the flat tool header (◈ completed / ◆ active)\n{tool_lines:#?}"
+        tool_lines.iter().any(|line| line.contains('✓')),
+        "succeeded harness shell blocks should render the lifecycle success marker\n{tool_lines:#?}"
     );
     assert!(
         tool_surface

@@ -67,14 +67,17 @@ fn build_tool_header_spans(
     spans
 }
 
-fn completed_tool_marker(status: ToolCallPresentationStatus, theme: &Theme) -> &'static str {
+pub(super) fn completed_tool_marker(
+    status: ToolCallPresentationStatus,
+    theme: &Theme,
+) -> &'static str {
     match status {
-        ToolCallPresentationStatus::Queued
-        | ToolCallPresentationStatus::Running
-        | ToolCallPresentationStatus::Waiting
-        | ToolCallPresentationStatus::Succeeded
-        | ToolCallPresentationStatus::Failed
-        | ToolCallPresentationStatus::Cancelled => theme.live_shell.transcript_glyphs.tool_marker,
+        ToolCallPresentationStatus::Queued => theme.live_shell.glyphs.queued,
+        ToolCallPresentationStatus::Running => theme.live_shell.glyphs.running,
+        ToolCallPresentationStatus::Waiting => theme.live_shell.glyphs.pending_permission,
+        ToolCallPresentationStatus::Succeeded => theme.live_shell.transcript_glyphs.success_marker,
+        ToolCallPresentationStatus::Failed => theme.live_shell.glyphs.failed,
+        ToolCallPresentationStatus::Cancelled => theme.live_shell.glyphs.cancelled,
     }
 }
 
@@ -292,7 +295,13 @@ fn append_task_inline_tool_section_lines(
     let style = tool_call_header_style(tool_call.header.struck_out, fg);
     let surface = base_surface;
     let mut spans = Vec::new();
-    spans.push(Span::styled("· ", muted_meta_style(theme)));
+    spans.push(Span::styled(
+        format!(
+            "{} ",
+            completed_tool_marker(tool_call.header.presentation.status, theme)
+        ),
+        Style::default().fg(fg),
+    ));
     let _ = tool_call.header.icon;
     spans.push(Span::styled(tool_call.header.title.clone(), style));
     if let Some(subtitle) = tool_call.header.subtitle.as_deref() {
@@ -1084,6 +1093,44 @@ fn append_tool_call_diff_block(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn completed_tool_marker_encodes_each_lifecycle_state_without_color() {
+        // arrange
+        let theme = Theme::default();
+        let cases = [
+            (ToolCallPresentationStatus::Queued, "◴"),
+            (ToolCallPresentationStatus::Running, "◐"),
+            (ToolCallPresentationStatus::Waiting, "◷"),
+            (ToolCallPresentationStatus::Succeeded, "✓"),
+            (ToolCallPresentationStatus::Failed, "✗"),
+            (ToolCallPresentationStatus::Cancelled, "⊘"),
+        ];
+
+        // act / assert
+        for (status, expected) in cases {
+            assert_eq!(completed_tool_marker(status, &theme), expected);
+        }
+    }
+
+    #[test]
+    fn completed_tool_marker_uses_ascii_lifecycle_fallbacks() {
+        // arrange
+        let theme = Theme::default().with_glyph_mode(crate::theme::GlyphMode::Ascii);
+        let cases = [
+            (ToolCallPresentationStatus::Queued, "."),
+            (ToolCallPresentationStatus::Running, "o"),
+            (ToolCallPresentationStatus::Waiting, "?"),
+            (ToolCallPresentationStatus::Succeeded, "v"),
+            (ToolCallPresentationStatus::Failed, "x"),
+            (ToolCallPresentationStatus::Cancelled, "-"),
+        ];
+
+        // act / assert
+        for (status, expected) in cases {
+            assert_eq!(completed_tool_marker(status, &theme), expected);
+        }
+    }
 
     #[test]
     fn generic_tool_header_omits_terminal_count_and_timing_metadata() {

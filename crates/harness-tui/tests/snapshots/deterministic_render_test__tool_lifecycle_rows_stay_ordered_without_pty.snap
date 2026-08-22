@@ -10,10 +10,10 @@ expression: trim_trailing_snapshot_whitespace(&rendered)
 
 
   ❙  ◈ Read 1 file  ▸
-     ◆ Edit ui.rs crates/harness-tui/src  ▸
+     ✓ Edit ui.rs crates/harness-tui/src  ▸
   ❙  ◈ Ran 1 subagent  ▸
 
-  ┃  ◆ Run cargo test -p harness-tui · Failed
+  ┃  ✗ Run cargo test -p harness-tui · Failed
   ┃      exit code: 1
   ┃      stderr: snapshot mismatch
 
@@ -36,4 +36,4 @@ expression: trim_trailing_snapshot_whitespace(&rendered)
   │ ❯                                                                                                                                                                            │
   ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── model-1 ─╯
 
-  Shift+Tab:mode  │  Ctrl+x:shortcuts
+  Enter:send  │  Shift+Tab:mode  │  Ctrl+x:shortcuts
