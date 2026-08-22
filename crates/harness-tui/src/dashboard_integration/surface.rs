@@ -41,6 +41,10 @@ impl DashboardIntegration {
         })
     }
 
+    pub fn focused_help(&self) -> ShortcutHelp {
+        self.input.help(self.focus.current())
+    }
+
     pub fn capture_return_state(&mut self, state: DashboardReturnState) {
         self.return_state = Some(state);
     }

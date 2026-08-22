@@ -15,6 +15,7 @@ use super::{
     composer_agent_accent, composer_input_accent, composer_input_muted, composer_input_text,
     control_dock_surface, truncate_plain_text,
 };
+use crate::ui::ui_context_budget::ContextBudget;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DisclosureTone {
@@ -106,62 +107,37 @@ fn compact_usage_count(value: u64) -> String {
     value.to_string()
 }
 
-fn composer_context_usage(app: &AppState) -> (String, Option<String>) {
-    let Some(active_context) = app.active_context_usage() else {
-        return ("ctx 0 est".to_string(), context_percent(app, 0));
-    };
-    if active_context.compacted_pending_refresh {
-        return ("ctx compacted".to_string(), None);
-    }
-    let total = active_context.tokens.unwrap_or(0);
-    (
-        format!("ctx {} est", compact_usage_count(u64::from(total))),
-        context_percent(app, total),
-    )
-}
-
-fn context_percent(app: &AppState, total: u32) -> Option<String> {
-    app.current_context_window_tokens().and_then(|limit| {
-        (limit > 0).then(|| {
-            format!(
-                "{:.0}%",
-                ((f64::from(total) / f64::from(limit)) * 100.0).clamp(0.0, 999.0)
-            )
-        })
-    })
-}
-
 pub(super) fn composer_context_summary_candidates(
     app: &AppState,
     theme: &Theme,
     surface: Color,
 ) -> Vec<Vec<Span<'static>>> {
-    let (tokens, percent) = composer_context_usage(app);
     let metrics = app.compaction_usage_metrics();
-    let mut primary = vec![disclosure_segment(
-        format!("live {tokens}"),
-        DisclosureTone::Secondary,
-        theme,
-        surface,
-    )];
-    if let Some(percent) = percent.as_deref() {
-        primary.push(disclosure_segment(
-            format!(" ({percent})"),
-            DisclosureTone::Tertiary,
-            theme,
-            surface,
-        ));
-    }
+    let budget = ContextBudget::from_app(app);
+    let mut primary = budget
+        .as_ref()
+        .map(|budget| {
+            vec![context_budget_segment(
+                budget.full_label(),
+                budget,
+                theme,
+                surface,
+            )]
+        })
+        .unwrap_or_default();
     append_composer_compaction_metrics(&mut primary, app, metrics, theme, surface, false);
 
-    let mut candidates = vec![primary];
-    let mut compact = vec![disclosure_segment(
-        tokens.clone(),
-        DisclosureTone::Secondary,
-        theme,
-        surface,
-    )];
-    if percent.is_some() {
+    let mut candidates = Vec::new();
+    if !primary.is_empty() {
+        candidates.push(primary);
+    }
+    if let Some(budget) = budget.as_ref() {
+        let mut compact = vec![context_budget_segment(
+            budget.compact_label(),
+            budget,
+            theme,
+            surface,
+        )];
         append_composer_compaction_metrics(&mut compact, app, metrics, theme, surface, true);
         candidates.push(compact);
     }
@@ -186,7 +162,9 @@ fn append_composer_compaction_metrics(
     if compaction_text.is_empty() {
         return;
     }
-    spans.push(disclosure_separator(theme, surface));
+    if !spans.is_empty() {
+        spans.push(disclosure_separator(theme, surface));
+    }
     spans.push(disclosure_segment(
         compaction_text,
         DisclosureTone::Secondary,
@@ -404,18 +382,26 @@ pub(super) fn render_control_dock_disclosure(
 
     let active_live_composer =
         dock.variant == crate::view_model::ControlDockVariant::Live && !dock.composer_disabled;
+    let clear_prompt_confirmation_pending = app.clear_prompt_confirmation_pending();
     let context_summary_visible = app.current_context_window_tokens().is_some()
         || app.active_context_usage().is_some()
         || app.compaction_usage_metrics().completed_count > 0;
 
-    if active_live_composer && app.starting_session_seed_visible() {
+    if active_live_composer
+        && !clear_prompt_confirmation_pending
+        && app.starting_session_seed_visible()
+    {
         let row = starting_session_seed_row(app.startup_motion_phase(), theme, surface);
         frame.render_widget(Paragraph::new(Line::from(row)).style(base), area);
         return;
     }
 
     let background_task_count = app.active_background_task_count();
-    if active_live_composer && background_task_count > 0 && !app.active_turn_in_progress() {
+    if active_live_composer
+        && !clear_prompt_confirmation_pending
+        && background_task_count > 0
+        && !app.active_turn_in_progress()
+    {
         let freeze_row = live_freeze_shortcut_disclosure_row(
             app,
             theme,
@@ -428,6 +414,7 @@ pub(super) fn render_control_dock_disclosure(
         }
     }
     if active_live_composer
+        && !clear_prompt_confirmation_pending
         && !app.active_turn_in_progress()
         && background_task_count > 0
         && !context_summary_visible
@@ -443,6 +430,7 @@ pub(super) fn render_control_dock_disclosure(
     }
 
     if active_live_composer
+        && !clear_prompt_confirmation_pending
         && (!app.interrupt_hint_visible() || app.active_turn_in_progress())
         && (!context_summary_visible || app.active_turn_in_progress())
     {
@@ -467,7 +455,19 @@ pub(super) fn render_control_dock_disclosure(
         }
     }
 
-    let mut hint_candidates = if active_live_composer
+    let mut hint_candidates = if clear_prompt_confirmation_pending {
+        let key = Style::default()
+            .fg(theme.terminal_colors.primary)
+            .bg(surface)
+            .add_modifier(Modifier::BOLD);
+        let text = Style::default()
+            .fg(theme.terminal_colors.secondary)
+            .bg(surface);
+        vec![vec![
+            Span::styled("Esc", key),
+            Span::styled(":press again to clear", text),
+        ]]
+    } else if active_live_composer
         && (!app.interrupt_hint_visible() || app.active_turn_in_progress())
     {
         let freeze_row = live_freeze_shortcut_disclosure_row(
@@ -631,6 +631,18 @@ fn disclosure_segment(
         Style::default()
             .fg(disclosure_color(tone, theme, composer_input_accent(theme)))
             .bg(surface),
+    )
+}
+
+fn context_budget_segment(
+    text: impl Into<String>,
+    budget: &ContextBudget,
+    theme: &Theme,
+    surface: Color,
+) -> Span<'static> {
+    Span::styled(
+        text.into(),
+        Style::default().fg(budget.tone().color(theme)).bg(surface),
     )
 }
 
