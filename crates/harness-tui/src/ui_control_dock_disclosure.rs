@@ -770,32 +770,31 @@ fn live_freeze_shortcut_disclosure_row(
     let mode_key = freeze_preferred_binding(app, Action::VariantCycle, "Shift+Tab");
     let help_key = freeze_preferred_binding(app, Action::Help, "Ctrl+x");
     let active_turn = app.active_turn_in_progress();
-    let mut spans = Vec::new();
-    if !app.composer.prompt_buffer.is_empty() {
+    let mut spans = vec![
+        Span::styled(
+            freeze_preferred_binding(app, Action::SubmitPrompt, "Enter"),
+            bold,
+        ),
+        Span::styled(if active_turn { ":queue" } else { ":send" }, normal),
+        Span::styled("  │  ", dim),
+    ];
+    if !app.composer.prompt_buffer.is_empty() && (active_turn || compact) {
         spans.extend([
             Span::styled(
-                freeze_preferred_binding(app, Action::SubmitPrompt, "Enter"),
+                freeze_preferred_binding(app, Action::InsertNewline, "Alt+Enter"),
                 bold,
             ),
-            Span::styled(if active_turn { ":queue" } else { ":send" }, normal),
+            Span::styled(":newline", normal),
             Span::styled("  │  ", dim),
         ]);
-        if active_turn || compact {
-            spans.extend([
-                Span::styled(
-                    freeze_preferred_binding(app, Action::InsertNewline, "Alt+Enter"),
-                    bold,
-                ),
-                Span::styled(":newline", normal),
-                Span::styled("  │  ", dim),
-            ]);
-        }
     }
-    spans.extend([
-        Span::styled(mode_key, bold),
-        Span::styled(":mode", normal),
-        Span::styled("  │  ", dim),
-    ]);
+    if !compact {
+        spans.extend([
+            Span::styled(mode_key, bold),
+            Span::styled(":mode", normal),
+            Span::styled("  │  ", dim),
+        ]);
+    }
     if active_turn {
         spans.extend([
             Span::styled("Ctrl+c", bold),
