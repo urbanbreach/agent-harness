@@ -80,6 +80,7 @@ pub(super) fn render_transcript_more_below_affordance(
     max_scroll: usize,
     theme: &Theme,
     base_surface: Color,
+    hovered: bool,
 ) {
     let Some(area) = transcript_more_below_rect(content, scroll_top, max_scroll) else {
         return;
@@ -87,7 +88,11 @@ pub(super) fn render_transcript_more_below_affordance(
 
     let cell = &mut frame.buffer_mut()[(area.x, area.y)];
     cell.set_symbol(TRANSCRIPT_MORE_BELOW_GLYPH);
-    cell.set_fg(theme.text.secondary);
+    cell.set_fg(if hovered {
+        theme.text.primary
+    } else {
+        theme.text.secondary
+    });
     cell.set_bg(base_surface);
 }
 
@@ -101,13 +106,20 @@ pub(super) fn transcript_more_below_rect(
     }
 
     Some(Rect::new(
-        content
-            .x
-            .saturating_add(content.width.saturating_sub(1) / 2),
+        content.x.saturating_add(content.width / 2),
         content.bottom().saturating_sub(1),
         1,
         1,
     ))
+}
+
+pub(super) fn transcript_more_below_hit_rect(
+    content: Rect,
+    scroll_top: usize,
+    max_scroll: usize,
+) -> Option<Rect> {
+    transcript_more_below_rect(content, scroll_top, max_scroll)
+        .map(|paint| Rect::new(paint.x.saturating_sub(1), paint.y, 3, 1))
 }
 
 pub(super) fn transcript_scrollbar_geometry(
@@ -266,7 +278,7 @@ mod tests {
         let mut terminal = Terminal::new(backend).expect("terminal");
         let theme = Theme::default();
         let content = Rect::new(0, 0, 20, 6);
-        let center_x = content.x + (content.width - 1) / 2;
+        let center_x = content.x + content.width / 2;
         let bottom_y = content.bottom().saturating_sub(1);
 
         terminal
@@ -278,6 +290,7 @@ mod tests {
                     10,
                     &theme,
                     Color::Black,
+                    false,
                 );
             })
             .expect("draw");
@@ -300,7 +313,7 @@ mod tests {
         let mut terminal = Terminal::new(backend).expect("terminal");
         let theme = Theme::default();
         let content = Rect::new(0, 0, 20, 6);
-        let center_x = content.x + (content.width - 1) / 2;
+        let center_x = content.x + content.width / 2;
         let bottom_y = content.bottom().saturating_sub(1);
 
         terminal
@@ -312,6 +325,7 @@ mod tests {
                     10,
                     &theme,
                     Color::Black,
+                    false,
                 );
             })
             .expect("draw");
@@ -326,18 +340,32 @@ mod tests {
     }
 
     #[test]
-    fn more_below_hit_area_matches_the_centered_affordance_cell() {
+    fn more_below_hit_area_matches_grok_pointer_geometry() {
         // arrange
         // Given: detached content with more transcript rows below the viewport.
         let content = Rect::new(4, 2, 19, 12);
 
-        // When: resolving the geometry shared by paint and hit-testing.
-        let area = transcript_more_below_rect(content, 3, 8);
+        // When: resolving the separate paint and pointer geometries.
+        let paint = transcript_more_below_rect(content, 3, 8);
+        let hit = transcript_more_below_hit_rect(content, 3, 8);
 
         // act
-        // Then: the target is the centered cell on the reserved bottom row.
+        // Then: one cell is painted inside Grok's centered three-cell pointer target.
         // assert
-        assert_eq!(area, Some(Rect::new(13, 13, 1, 1)));
-        assert_eq!(transcript_more_below_rect(content, 8, 8), None);
+        assert_eq!(paint, Some(Rect::new(13, 13, 1, 1)));
+        assert_eq!(hit, Some(Rect::new(12, 13, 3, 1)));
+        assert_eq!(transcript_more_below_hit_rect(content, 8, 8), None);
+    }
+
+    #[test]
+    fn more_below_even_width_uses_groks_right_center_cell() {
+        // Given: an even-width detached viewport with content below.
+        let content = Rect::new(4, 2, 20, 12);
+
+        // When: resolving the painted affordance cell.
+        let paint = transcript_more_below_rect(content, 3, 8);
+
+        // Then: Grok's width/2 calculation selects the right center cell.
+        assert_eq!(paint, Some(Rect::new(14, 13, 1, 1)));
     }
 }

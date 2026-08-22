@@ -147,6 +147,10 @@ mod help_browser_mouse_tests;
 #[path = "tests/modal_press_invalidation_tests.rs"]
 mod modal_press_invalidation_tests;
 
+#[cfg(test)]
+#[path = "tests/transcript_return_to_live_tests.rs"]
+mod transcript_return_to_live_tests;
+
 delegate_test!(toggles_slash_command_opens_command_styled_menu => toggles_menu_tests::toggles_slash_command_opens_command_styled_menu);
 delegate_test!(yolo_toggle_requires_confirmation_and_enables_entries => toggles_menu_tests::yolo_toggle_requires_confirmation_and_enables_entries);
 delegate_test!(toggles_config_drops_primary_profiles_and_keeps_subagents => toggles_menu_tests::toggles_config_drops_primary_profiles_and_keeps_subagents);
@@ -1148,7 +1152,7 @@ delegate_test!(transcript_navigation_keys_match_scroll_expectations => interacti
 delegate_test!(detached_page_flip_reconciles_when_resize_reaches_bottom => interaction_tests::detached_page_flip_reconciles_when_resize_reaches_bottom);
 delegate_test!(detached_page_flip_survives_resize_with_remaining_overflow => interaction_tests::detached_page_flip_survives_resize_with_remaining_overflow);
 delegate_test!(active_stream_more_below_click_returns_to_live => interaction_tests::active_stream_more_below_click_returns_to_live);
-delegate_test!(completed_stream_more_below_affordance_remains_passive => interaction_tests::completed_stream_more_below_affordance_remains_passive);
+delegate_test!(completed_stream_more_below_affordance_is_actionable => interaction_tests::completed_stream_more_below_affordance_is_actionable);
 delegate_test!(detached_measured_viewport_has_no_stale_timeline_targets => interaction_tests::detached_measured_viewport_has_no_stale_timeline_targets);
 delegate_test!(vanished_selection_anchor_stays_closed_through_mouse_up => interaction_tests::vanished_selection_anchor_stays_closed_through_mouse_up);
 delegate_test!(selection_mouse_up_does_not_activate_underlying_tool_target => interaction_tests::selection_mouse_up_does_not_activate_underlying_tool_target);

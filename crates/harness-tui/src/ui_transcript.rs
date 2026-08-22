@@ -78,6 +78,7 @@ use super::ui_transcript_layout::{
     TranscriptVisualEntry,
 };
 use super::ui_transcript_page_flip::{transcript_scroll_position, TranscriptScrollPosition};
+use super::ui_transcript_scrollbar::transcript_more_below_hit_rect;
 use super::ui_transcript_scrollbar::{
     current_transcript_scroll_top, render_transcript_more_below_affordance,
     render_transcript_scrollbar, transcript_more_below_rect, transcript_scroll_offset,
@@ -579,6 +580,7 @@ fn render_measured_transcript_pane(
                 max_scroll,
                 theme,
                 empty_surface,
+                app.transcript_view.return_to_live_hovered,
             );
         },
     );
@@ -1065,7 +1067,7 @@ pub(crate) fn transcript_return_to_live_hit(
     column: u16,
     row: u16,
 ) -> bool {
-    if !app.active_turn_in_progress() || app.transcript_following() {
+    if app.transcript_following() {
         return false;
     }
     let theme = *app.theme();
@@ -1095,8 +1097,12 @@ pub(crate) fn transcript_return_to_live_hit(
                 viewport.height,
                 transcript_scroll_top(app, layout, viewport.height),
             );
-            transcript_more_below_rect(viewport, scroll_position.top, scroll_position.max_scroll)
-                .is_some_and(|target| rect_contains(target, column, row))
+            transcript_more_below_hit_rect(
+                viewport,
+                scroll_position.top,
+                scroll_position.max_scroll,
+            )
+            .is_some_and(|target| rect_contains(target, column, row))
         },
     )
 }

@@ -562,8 +562,8 @@ pub(super) fn active_stream_more_below_click_returns_to_live() {
         .collect::<Vec<_>>();
     assert_eq!(
         targets.len(),
-        1,
-        "active affordance must expose one painted-cell target"
+        3,
+        "active affordance must expose Grok's three-cell pointer target"
     );
 
     // When: the user clicks the active more-below affordance.
@@ -606,7 +606,7 @@ pub(super) fn active_stream_more_below_click_returns_to_live() {
     assert!(!app.transcript_view.transcript_click_activated_on_down);
 }
 
-pub(super) fn completed_stream_more_below_affordance_remains_passive() {
+pub(super) fn completed_stream_more_below_affordance_is_actionable() {
     // Given: detached history after every visible turn has completed.
     let mut app = detached_resize_app();
     for activity in &mut app.activities {
@@ -615,17 +615,18 @@ pub(super) fn completed_stream_more_below_affordance_remains_passive() {
     let area = Rect::new(0, 0, 80, 20);
     let rendered = render_text(&app, area.width, area.height);
 
-    // When: checking every cell of the visible passive affordance surface.
-    let has_target = (0..area.height).any(|row| {
-        (0..area.width).any(|column| ui::transcript_return_to_live_hit(&app, area, column, row))
-    });
+    // When: checking every cell of the visible affordance surface.
+    let targets = (0..area.height)
+        .flat_map(|row| (0..area.width).map(move |column| (column, row)))
+        .filter(|(column, row)| ui::transcript_return_to_live_hit(&app, area, *column, *row))
+        .collect::<Vec<_>>();
 
-    // Then: the completion-state glyph remains visible but never becomes actionable.
+    // Then: the completion-state glyph remains visible with Grok's three-cell pointer target.
     assert!(
         rendered.contains('▼'),
-        "completed detached history keeps its passive indicator"
+        "completed detached history keeps its return indicator"
     );
-    assert!(!has_target);
+    assert_eq!(targets.len(), 3);
 }
 
 pub(super) fn detached_measured_viewport_has_no_stale_timeline_targets() {
