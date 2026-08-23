@@ -102,14 +102,14 @@ fn completion_dropdown_follows_composer_anchor_at_every_viewport() {
 }
 
 #[test]
-fn ghost_suggestion_is_muted_and_clears_on_edit_invalidation() {
+fn ghost_suggestion_is_muted_and_hides_on_divergent_edit() {
     // arrange
     let mut slice = ComposerSlice::from_text("inspect ");
     let request = slice.request_suggestion("inspect ").expect("request");
     slice.advance_flush(100);
     assert_eq!(slice.ready_suggestion(), Some(request.clone()));
     slice
-        .apply_suggestion_response(&request, "the workspace")
+        .apply_suggestion_response(&request, "inspect the workspace")
         .expect("current suggestion");
 
     let ghost = slice
