@@ -44,7 +44,7 @@ where
         return Ok(());
     }
 
-    let event_store = Arc::new(JsonlFileEventStore::open(
+    let event_store = Arc::new(config.event_store_opener.open(
         &config.session_dir,
         child_session_id,
         config.deterministic_store,
@@ -119,7 +119,7 @@ where
 
         let run_dir = config.session_dir.join(agent_id);
         if run_dir.join(EVENTS_FILE_NAME).exists() {
-            let event_store = Arc::new(JsonlFileEventStore::open_existing(
+            let event_store = Arc::new(config.event_store_opener.open_existing(
                 &config.session_dir,
                 agent_id,
                 config.deterministic_store,

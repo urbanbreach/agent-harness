@@ -3,6 +3,8 @@ use crate::UnwrapOrAbort;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -36,12 +38,22 @@ pub enum MockProviderError {
         #[source]
         source: serde_json::Error,
     },
+    #[error("fixture {path} duplicates normalized request digest {digest}")]
+    DuplicateFixture { path: String, digest: String },
+}
+
+#[derive(Debug, Default)]
+struct MockProviderCalls {
+    count: AtomicUsize,
+    requests: tokio::sync::Mutex<Vec<CompletionRequest>>,
 }
 
 #[derive(Debug, Default, Clone)]
 pub struct MockProvider {
     scripted_events: BTreeMap<String, Vec<ProviderStreamEvent>>,
     fixture_path: Option<String>,
+    legacy_context_agnostic_lookup: bool,
+    calls: Arc<MockProviderCalls>,
 }
 
 impl MockProvider {
@@ -49,6 +61,8 @@ impl MockProvider {
         Self {
             scripted_events,
             fixture_path: None,
+            legacy_context_agnostic_lookup: true,
+            calls: Arc::default(),
         }
     }
 
@@ -89,13 +103,29 @@ impl MockProvider {
 
             let request: CompletionRequest = fixture.request.into();
             let digest = request_digest(&request);
-            scripted_events.insert(digest, fixture.events.into_iter().map(Into::into).collect());
+            let events = fixture.events.into_iter().map(Into::into).collect();
+            if scripted_events.insert(digest.clone(), events).is_some() {
+                return Err(MockProviderError::DuplicateFixture {
+                    path: entry_path.display().to_string(),
+                    digest,
+                });
+            }
         }
 
         Ok(Self {
             scripted_events,
             fixture_path: Some(path_string),
+            legacy_context_agnostic_lookup: false,
+            calls: Arc::default(),
         })
+    }
+
+    pub fn call_count(&self) -> usize {
+        self.calls.count.load(Ordering::SeqCst)
+    }
+
+    pub async fn captured_requests(&self) -> Vec<CompletionRequest> {
+        self.calls.requests.lock().await.clone()
     }
 
     fn format_missing_fixture_message(&self, digest: &str) -> String {
@@ -120,10 +150,20 @@ impl MockProvider {
 #[async_trait]
 impl Provider for MockProvider {
     async fn stream_completion(&self, req: CompletionRequest) -> ProviderEventStream {
+        {
+            let mut requests = self.calls.requests.lock().await;
+            requests.push(req.clone());
+            self.calls.count.fetch_add(1, Ordering::SeqCst);
+        }
         let digest = request_digest(&req);
         let events = self
             .scripted_events
             .get(&digest)
+            .or_else(|| {
+                self.legacy_context_agnostic_lookup
+                    .then(|| context_agnostic_request_digest(&req))
+                    .and_then(|legacy_digest| self.scripted_events.get(&legacy_digest))
+            })
             .cloned()
             .unwrap_or_else(|| {
                 let message = self.format_missing_fixture_message(&digest);
@@ -136,6 +176,20 @@ impl Provider for MockProvider {
 
 pub fn request_digest(request: &CompletionRequest) -> String {
     let normalized = normalize_request(request);
+    let normalized_bytes = serde_json::to_vec(&normalized).unwrap_or_else(|_| b"null".to_vec());
+    blake3::hash(&normalized_bytes).to_hex().to_string()
+}
+
+fn context_agnostic_request_digest(request: &CompletionRequest) -> String {
+    let mut normalized = normalize_request(request);
+    if let Value::Object(request) = &mut normalized {
+        if let Some(Value::Object(context)) = request.get_mut("context") {
+            context.remove("session_id");
+            if context.is_empty() {
+                request.remove("context");
+            }
+        }
+    }
     let normalized_bytes = serde_json::to_vec(&normalized).unwrap_or_else(|_| b"null".to_vec());
     blake3::hash(&normalized_bytes).to_hex().to_string()
 }
@@ -154,11 +208,9 @@ fn normalize_volatile_provider_context_for_digest(value: &mut Value) {
         return;
     };
 
-    // Session and request ids are provider-routing metadata that change from run
-    // to run. Mock fixtures key off the prompt-visible request shape while still
-    // preserving semantic context fields such as cache retention, media, and
-    // initiator when they are explicitly non-default.
-    context.remove("session_id");
+    // A physical retry receives a new request id but remains the same fixture
+    // lookup. Session identity stays because root and child requests must not
+    // consume each other's scripted response.
     context.remove("request_id");
     if context.is_empty() {
         request.remove("context");
@@ -330,6 +382,34 @@ impl From<FixtureStreamEvent> for ProviderStreamEvent {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+    use tempfile::tempdir;
+
+    #[test]
+    fn duplicate_normalized_fixture_requests_are_rejected() {
+        let directory = tempdir().unwrap_or_abort();
+        let fixture = serde_json::json!({
+            "request": {
+                "model_id": "model-fixture",
+                "messages": [{"role": "user", "content": "same request"}],
+                "stream": true
+            },
+            "events": [{"type": "text_delta", "text": "response"}]
+        });
+        fs::write(
+            directory.path().join("first.json"),
+            serde_json::to_vec(&fixture).unwrap_or_abort(),
+        )
+        .unwrap_or_abort();
+        fs::write(
+            directory.path().join("second.json"),
+            serde_json::to_vec(&fixture).unwrap_or_abort(),
+        )
+        .unwrap_or_abort();
+        let result = MockProvider::from_fixture_dir(directory.path());
+        assert!(result.is_err());
+    }
+
     use crate::UnwrapOrAbort;
     use std::path::PathBuf;
 
@@ -436,20 +516,63 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn legacy_context_agnostic_scripts_accept_runtime_session_identity() {
+        let request = fixture_known_request();
+        let expected = vec![ProviderStreamEvent::Done { usage: None }];
+        let provider = MockProvider::new(BTreeMap::from([(
+            request_digest(&request),
+            expected.clone(),
+        )]));
+        let mut runtime_request = request;
+        runtime_request.context.session_id = Some("agent_000001".to_string());
+
+        let events = provider
+            .stream_completion(runtime_request)
+            .await
+            .collect::<Vec<_>>()
+            .await;
+
+        assert_eq!(events, expected);
+    }
+
+    #[tokio::test]
+    async fn fixture_directory_rejects_cross_session_identity() {
+        let provider = load_fixture_provider();
+        let mut request = fixture_known_request();
+        request.context.session_id = Some("different-child-session".to_string());
+
+        let events = provider
+            .stream_completion(request)
+            .await
+            .collect::<Vec<_>>()
+            .await;
+
+        assert!(
+            matches!(
+                events.as_slice(),
+                [ProviderStreamEvent::Error { message, .. }]
+                    if message.contains("mock fixture missing for request_digest")
+            ),
+            "unexpected cross-session fixture events: {events:?}"
+        );
+    }
+
     #[test]
-    fn request_digest_ignores_volatile_provider_context_ids() {
+    fn mock_request_digest_ignores_physical_retry_request_id() {
         // arrange
         // act
         // assert
-        let base = fixture_known_request();
-        let mut contextual = base.clone();
-        contextual.context = ProviderRequestContext {
+        let mut base = fixture_known_request();
+        base.context = ProviderRequestContext {
             session_id: Some("agent-session-one".to_string()),
-            request_id: Some("req-volatile-one".to_string()),
+            request_id: Some("req-physical-one".to_string()),
             ..ProviderRequestContext::default()
         };
+        let mut retry = base.clone();
+        retry.context.request_id = Some("req-physical-two".to_string());
 
-        assert_eq!(request_digest(&base), request_digest(&contextual));
+        assert_eq!(request_digest(&base), request_digest(&retry));
     }
 
     #[tokio::test]

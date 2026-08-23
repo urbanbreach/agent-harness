@@ -1,5 +1,15 @@
 include!("common/coord_fixtures.rs");
 
+mod part_00_engine_fixture_bank_test {
+    use super::*;
+    include!("coord/00_engine_fixture_bank_test.rs");
+}
+
+mod part_00b_event_store_opener_test {
+    use super::*;
+    include!("coord/00b_event_store_opener_test.rs");
+}
+
 mod part_01_coord_title_generation_uses_isolated_hidden_test {
     use super::*;
     include!("coord/01_coord_title_generation_uses_isolated_hidden_test.rs");

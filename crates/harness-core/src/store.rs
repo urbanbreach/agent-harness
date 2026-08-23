@@ -227,6 +227,45 @@ pub struct JsonlFileEventStore {
     tx: broadcast::Sender<EventEnvelopeV1>,
 }
 
+pub trait EventStoreOpener: Send + Sync {
+    fn open(
+        &self,
+        session_dir: &Path,
+        run_id: &str,
+        deterministic: bool,
+    ) -> Result<JsonlFileEventStore, EventStoreError>;
+
+    fn open_existing(
+        &self,
+        session_dir: &Path,
+        run_id: &str,
+        deterministic: bool,
+    ) -> Result<JsonlFileEventStore, EventStoreError>;
+}
+
+#[derive(Debug, Default)]
+pub struct JsonlEventStoreOpener;
+
+impl EventStoreOpener for JsonlEventStoreOpener {
+    fn open(
+        &self,
+        session_dir: &Path,
+        run_id: &str,
+        deterministic: bool,
+    ) -> Result<JsonlFileEventStore, EventStoreError> {
+        JsonlFileEventStore::open(session_dir, run_id, deterministic)
+    }
+
+    fn open_existing(
+        &self,
+        session_dir: &Path,
+        run_id: &str,
+        deterministic: bool,
+    ) -> Result<JsonlFileEventStore, EventStoreError> {
+        JsonlFileEventStore::open_existing(session_dir, run_id, deterministic)
+    }
+}
+
 #[derive(Debug)]
 struct WriterLock {
     path: PathBuf,

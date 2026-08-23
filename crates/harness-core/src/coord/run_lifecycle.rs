@@ -71,7 +71,7 @@ impl Coordinator {
             }
         })?;
 
-        let event_store = JsonlFileEventStore::open(
+        let event_store = self.config.event_store_opener.open(
             &self.config.session_dir,
             &run_id,
             self.config.deterministic_store,
@@ -198,7 +198,7 @@ impl Coordinator {
         }
 
         let run_dir = self.config.session_dir.join(&run_id);
-        let event_store = JsonlFileEventStore::open_existing(
+        let event_store = self.config.event_store_opener.open_existing(
             &self.config.session_dir,
             &run_id,
             self.config.deterministic_store,

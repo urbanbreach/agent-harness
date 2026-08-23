@@ -1,7 +1,7 @@
 use harness::UnwrapOrAbort;
 
 #[test]
-fn sessions_reopen_json_emits_single_summary_shape() {
+fn fixtures_sessions_reopen_json_emits_single_summary_shape() {
     // arrange — a minimal completed run under a session dir
     let session_dir = tempdir().unwrap_or_abort();
     let run_dir = session_dir.path().join("run_reopen_shape");
