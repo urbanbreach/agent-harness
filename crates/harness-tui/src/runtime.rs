@@ -656,7 +656,20 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
             );
         }
 
+        let mut suggestion_poll_at = Instant::now();
         loop {
+            let suggestion_poll_now = Instant::now();
+            let suggestion_elapsed_ms = u64::try_from(
+                suggestion_poll_now
+                    .saturating_duration_since(suggestion_poll_at)
+                    .as_millis(),
+            )
+            .unwrap_or(u64::MAX);
+            suggestion_poll_at = suggestion_poll_now;
+            if app.poll_local_ghost_suggestion(suggestion_elapsed_ms) {
+                presenter.request_redraw(suggestion_poll_now);
+                pacer.request_flush();
+            }
             let motion_plan = refresh_motion_plan(&mut app);
             let frame_ready = frame_output.is_ready_for_frame();
             if let Some(failure) = frame_output.take_fatal_failure() {

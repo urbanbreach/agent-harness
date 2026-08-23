@@ -164,7 +164,8 @@ fn startup_welcome_requests_slow_motion_only_until_first_input() {
         visible.cadence(),
         MotionCadence::Slow(Duration::from_millis(83))
     );
-    assert_eq!(dismissed, MotionPlan::none());
+    assert_eq!(dismissed.cadence(), MotionCadence::None);
+    assert_eq!(dismissed.until(), Some(Duration::from_millis(100)));
 }
 
 #[test]

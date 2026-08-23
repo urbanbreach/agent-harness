@@ -36,6 +36,10 @@ impl AppState {
         let now = self.now();
         let mut plan = MotionPlan::none();
 
+        if let Some(remaining) = self.composer_suggestion_delay_remaining() {
+            plan = plan.merge(MotionDemand::until(remaining));
+        }
+
         if let Some(remaining) = self.toast_motion_remaining(now) {
             plan = plan.merge(MotionDemand::until(remaining));
             if !self.reduced_motion && self.toast_requires_fade(now) {
