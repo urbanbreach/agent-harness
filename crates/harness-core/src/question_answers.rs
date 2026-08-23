@@ -39,8 +39,19 @@ where
 {
     let answers = answers
         .into_iter()
-        .map(|answer| answer.trim().to_string())
-        .filter(|answer| !answer.is_empty())
+        .filter_map(|answer| {
+            let trimmed = answer.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(
+                    prompt
+                        .canonical_option_label(trimmed)
+                        .map(str::to_string)
+                        .unwrap_or(answer),
+                )
+            }
+        })
         .collect::<Vec<_>>();
     if answers.is_empty() {
         return Ok(Vec::new());
@@ -54,15 +65,7 @@ where
         ));
     }
 
-    Ok(answers
-        .into_iter()
-        .map(|answer| {
-            prompt
-                .canonical_option_label(&answer)
-                .map(str::to_string)
-                .unwrap_or(answer)
-        })
-        .collect())
+    Ok(answers)
 }
 
 #[cfg(test)]
@@ -143,13 +146,16 @@ mod tests {
             &prompts,
             vec![vec![
                 " y ".to_string(),
-                "custom".to_string(),
+                " custom ".to_string(),
                 " ".to_string(),
             ]],
         )
         .unwrap_or_abort();
 
         // assert
-        assert_eq!(answers, vec![vec!["Yes".to_string(), "custom".to_string()]]);
+        assert_eq!(
+            answers,
+            vec![vec!["Yes".to_string(), " custom ".to_string()]]
+        );
     }
 }
