@@ -148,7 +148,7 @@ impl ComposerSlice {
         context: impl Into<String>,
     ) -> Result<SuggestionRequest, ComposerSliceError> {
         let (suggestions, clock) = (&mut self.suggestions, &self.clock);
-        Ok(suggestions.on_edit(clock, context)?)
+        Ok(suggestions.request(clock, context)?)
     }
 
     pub fn advance_flush(&self, milliseconds: u64) -> u64 {
@@ -180,12 +180,16 @@ impl ComposerSlice {
         Ok(())
     }
 
+    pub fn dismiss_suggestion(&mut self) {
+        self.suggestions.dismiss();
+    }
+
     fn after_edit(&mut self) -> Result<(), ComposerSliceError> {
         self.queue.draft = self.editor.text();
         self.cancel_completion();
         let context = self.editor.text();
         let (suggestions, clock) = (&mut self.suggestions, &self.clock);
-        suggestions.on_edit(clock, context)?;
+        let _ = suggestions.on_edit(clock, context)?;
         Ok(())
     }
 }

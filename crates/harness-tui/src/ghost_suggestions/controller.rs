@@ -8,7 +8,7 @@ use super::SuggestionError;
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct Suggestion {
-    text: String,
+    full_text: String,
     context: SuggestionContext,
     generation: SuggestionGeneration,
 }
@@ -17,7 +17,7 @@ impl std::fmt::Debug for Suggestion {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
             .debug_struct("Suggestion")
-            .field("text", &"<redacted>")
+            .field("full_text", &"<redacted>")
             .field("context", &"<redacted>")
             .field("generation", &self.generation)
             .finish()
@@ -26,7 +26,7 @@ impl std::fmt::Debug for Suggestion {
 
 impl Suggestion {
     pub fn text(&self) -> &str {
-        &self.text
+        &self.full_text
     }
 
     pub const fn generation(&self) -> SuggestionGeneration {
@@ -39,14 +39,20 @@ impl Suggestion {
 
     fn new(request: &Request, text: impl Into<String>) -> Self {
         Self {
-            text: text.into(),
+            full_text: text.into(),
             context: request.context.clone(),
             generation: request.generation,
         }
     }
 
-    fn grapheme_clusters(&self) -> Vec<String> {
-        AtomBuffer::from_text(&self.text)
+    fn remainder_for(&self, text: &str) -> Option<&str> {
+        self.full_text
+            .strip_prefix(text)
+            .filter(|remainder| !remainder.is_empty())
+    }
+
+    fn grapheme_clusters(text: &str) -> Vec<String> {
+        AtomBuffer::from_text(text)
             .atoms()
             .iter()
             .map(|atom| match &atom.kind {
@@ -57,8 +63,8 @@ impl Suggestion {
             .collect()
     }
 
-    fn prefix(&self, units: usize) -> Result<String, SuggestionError> {
-        let clusters = self.grapheme_clusters();
+    fn prefix(text: &str, units: usize) -> Result<String, SuggestionError> {
+        let clusters = Self::grapheme_clusters(text);
         if units == 0 {
             return Err(SuggestionError::ZeroPartialUnits);
         }
@@ -70,11 +76,6 @@ impl Suggestion {
         }
         Ok(clusters[..units].concat())
     }
-
-    fn consume(&mut self, units: usize) {
-        let clusters = self.grapheme_clusters();
-        self.text = clusters[units..].concat();
-    }
 }
 
 #[derive(Debug)]
@@ -83,6 +84,7 @@ pub struct SuggestionController {
     debouncer: Debouncer,
     pub(crate) pending: Option<Request>,
     pub(crate) current: Option<Suggestion>,
+    dismissed: bool,
 }
 
 impl SuggestionController {
@@ -92,6 +94,7 @@ impl SuggestionController {
             debouncer: Debouncer::new(debounce_ms),
             pending: None,
             current: None,
+            dismissed: false,
         }
     }
 
@@ -107,17 +110,42 @@ impl SuggestionController {
         self.current.as_ref()
     }
 
+    pub fn ghost_for(&self, text: &str) -> Option<&str> {
+        (!self.dismissed)
+            .then_some(())
+            .and(self.current.as_ref())
+            .and_then(|suggestion| suggestion.remainder_for(text))
+    }
+
     pub fn on_edit(
         &mut self,
         clock: &DualClock,
         context: impl Into<String>,
+    ) -> Result<Option<Request>, SuggestionError> {
+        self.generation.bump(Invalidation::Edit)?;
+        self.pending = None;
+        if self.current.is_some() {
+            return Ok(None);
+        }
+        Ok(Some(self.schedule(clock, context)))
+    }
+
+    pub fn request(
+        &mut self,
+        clock: &DualClock,
+        context: impl Into<String>,
     ) -> Result<Request, SuggestionError> {
-        self.invalidate(Invalidation::Edit)?;
+        self.generation.bump(Invalidation::Edit)?;
+        self.pending = None;
+        Ok(self.schedule(clock, context))
+    }
+
+    fn schedule(&mut self, clock: &DualClock, context: impl Into<String>) -> Request {
         let request =
             self.debouncer
                 .schedule(clock, self.generation, SuggestionContext::new(context));
         self.pending = Some(request.clone());
-        Ok(request)
+        request
     }
 
     pub fn on_focus_change(&mut self) -> Result<SuggestionGeneration, SuggestionError> {
@@ -132,6 +160,10 @@ impl SuggestionController {
         self.invalidate(Invalidation::Cancellation)
     }
 
+    pub fn dismiss(&mut self) {
+        self.dismissed = true;
+    }
+
     pub fn invalidate(
         &mut self,
         reason: Invalidation,
@@ -139,6 +171,7 @@ impl SuggestionController {
         let generation = self.generation.bump(reason)?;
         self.pending = None;
         self.current = None;
+        self.dismissed = false;
         Ok(generation)
     }
 
@@ -168,7 +201,9 @@ impl SuggestionController {
         }
         self.pending = None;
         let text = text.into();
-        self.current = (!text.is_empty()).then(|| Suggestion::new(request, text));
+        self.current = (!text.trim().is_empty() && !text.contains('\n'))
+            .then(|| Suggestion::new(request, text));
+        self.dismissed = false;
         Ok(())
     }
 
@@ -183,12 +218,10 @@ impl SuggestionController {
         &mut self,
         editor: &ComposerEditor,
     ) -> Result<ComposerEditor, SuggestionError> {
-        let units = self
-            .current
-            .as_ref()
-            .ok_or(SuggestionError::NoCurrentSuggestion)?
-            .grapheme_clusters()
-            .len();
+        let remainder = self
+            .ghost_for(&editor.text())
+            .ok_or(SuggestionError::NoCurrentSuggestion)?;
+        let units = Suggestion::grapheme_clusters(remainder).len();
         self.accept_units(editor, units, Invalidation::FullAcceptance)
     }
 
@@ -198,24 +231,22 @@ impl SuggestionController {
         units: usize,
         reason: Invalidation,
     ) -> Result<ComposerEditor, SuggestionError> {
-        let prefix = self
-            .current
-            .as_ref()
-            .ok_or(SuggestionError::NoCurrentSuggestion)?
-            .prefix(units)?;
+        let remainder = self
+            .ghost_for(&editor.text())
+            .ok_or(SuggestionError::NoCurrentSuggestion)?;
+        let prefix = Suggestion::prefix(remainder, units)?;
         let mut next = editor.clone();
         next.insert_text(&prefix)?;
         let generation = self.generation.bump(reason)?;
         self.pending = None;
-        let empty = if let Some(current) = self.current.as_mut() {
-            current.consume(units);
-            current.generation = generation;
-            current.text.is_empty()
-        } else {
-            false
-        };
-        if empty {
+        let fully_accepted = self
+            .current
+            .as_ref()
+            .is_some_and(|current| current.full_text == next.text());
+        if fully_accepted {
             self.current = None;
+        } else if let Some(current) = self.current.as_mut() {
+            current.generation = generation;
         }
         Ok(next)
     }

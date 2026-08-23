@@ -116,9 +116,9 @@ pub(super) fn build_for_rect(
         .collect();
     let ghost = slice
         .suggestions
-        .current()
-        .map(|suggestion| GhostSuggestionViewModel {
-            text: suggestion.text().to_owned(),
+        .ghost_for(&text)
+        .map(|remainder| GhostSuggestionViewModel {
+            text: remainder.to_owned(),
             style: muted_style(),
         });
     ComposerViewModel {

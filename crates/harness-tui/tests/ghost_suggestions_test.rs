@@ -16,12 +16,13 @@ fn ready_controller() -> (DualClock, SuggestionController) {
     let clock = DualClock::new();
     let mut controller = SuggestionController::new(100);
     let request = controller
-        .on_edit(&clock, "prompt context")
-        .expect("edit starts a request");
+        .on_edit(&clock, "inspect ")
+        .expect("edit can schedule a request")
+        .expect("empty controller starts a request");
     clock.advance_flush(100);
     assert_eq!(controller.take_ready_request(&clock), Some(request.clone()));
     controller
-        .apply_response(&request, "ghost text")
+        .apply_response(&request, "inspect ghost text")
         .expect("current request accepts its response");
     (clock, controller)
 }
@@ -34,9 +35,11 @@ fn stale_responses_are_rejected_after_a_generation_change() {
     let mut controller = SuggestionController::new(50);
     let stale = controller
         .on_edit(&clock, "first context")
-        .expect("first request is valid");
+        .expect("first edit is valid")
+        .expect("first edit starts a request");
     controller
         .on_edit(&clock, "second context")
+        .expect("second edit is valid")
         .expect("second edit replaces the request");
 
     // When: the old provider response arrives late.
@@ -61,7 +64,8 @@ fn generation_counter_bumps_for_edit_focus_and_state_changes() {
     // When: each invalidating composer/lifecycle transition occurs once.
     let edit = controller
         .on_edit(&clock, "edit")
-        .expect("edit request is valid");
+        .expect("edit is valid")
+        .expect("edit request is scheduled");
     let focus = controller
         .on_focus_change()
         .expect("focus invalidation is valid");
@@ -84,14 +88,14 @@ fn partial_acceptance_preserves_complete_grapheme_clusters() {
     let (clock, mut controller) = ready_controller();
     let response = "👨‍👩‍👧‍👦e\u{301}👍🏽";
     let request = controller
-        .on_edit(&clock, "prompt context")
+        .request(&clock, "inspect ")
         .expect("replacement request is valid");
     clock.advance_flush(100);
     assert_eq!(controller.take_ready_request(&clock), Some(request.clone()));
     controller
-        .apply_response(&request, response)
+        .apply_response(&request, format!("inspect {response}"))
         .expect("response is current");
-    let editor = ComposerEditor::from_text("prompt ");
+    let editor = ComposerEditor::from_text("inspect ");
 
     // When: exactly one documented partial-acceptance unit is accepted.
     let next = controller
@@ -101,11 +105,8 @@ fn partial_acceptance_preserves_complete_grapheme_clusters() {
     // act
     // Then: the complete first cluster is inserted and the remainder is intact.
     // assert
-    assert_eq!(next.text(), "prompt 👨‍👩‍👧‍👦");
-    assert_eq!(
-        controller.current().map(|suggestion| suggestion.text()),
-        Some("e\u{301}👍🏽")
-    );
+    assert_eq!(next.text(), "inspect 👨‍👩‍👧‍👦");
+    assert_eq!(controller.ghost_for(&next.text()), Some("e\u{301}👍🏽"));
 }
 
 #[test]
@@ -132,46 +133,84 @@ fn partial_then_full_acceptance_produces_the_expected_composer_state() {
 }
 
 #[test]
-fn edit_focus_and_state_transitions_clear_visible_suggestions() {
+fn matching_divergent_and_cleared_edits_derive_visibility_from_full_prediction() {
     // arrange
-    // Given: a controller with a visible suggestion.
+    // arrange
     let (clock, mut controller) = ready_controller();
 
-    // When: a composer edit invalidates it, a fresh request may be pending but no old text remains.
-    let edit_request = controller
-        .on_edit(&clock, "edited context")
-        .expect("edit request is valid");
-    assert!(controller.current().is_none());
-    assert_eq!(controller.pending(), Some(&edit_request));
+    // act
+    let matching_request = controller
+        .on_edit(&clock, "inspect g")
+        .expect("matching edit request is valid");
+    let matching = controller.ghost_for("inspect g").map(str::to_owned);
+    let divergent_request = controller
+        .on_edit(&clock, "inspect x")
+        .expect("divergent edit request is valid");
+    let divergent = controller.ghost_for("inspect x").map(str::to_owned);
+    let cleared_request = controller
+        .on_edit(&clock, "")
+        .expect("cleared edit request is valid");
+    let restored = controller.ghost_for("").map(str::to_owned);
 
+    // assert
+    assert_eq!(matching.as_deref(), Some("host text"));
+    assert!(divergent.is_none());
+    assert_eq!(restored.as_deref(), Some("inspect ghost text"));
+    assert!(matching_request.is_none());
+    assert!(divergent_request.is_none());
+    assert!(cleared_request.is_none());
+}
+
+#[test]
+fn dismissal_hides_the_prediction_until_a_new_response_loads() {
+    // arrange
+    let (clock, mut controller) = ready_controller();
+    assert_eq!(controller.ghost_for(""), Some("inspect ghost text"));
+
+    // act
+    controller.dismiss();
+    let dismissed = controller.ghost_for("").is_none();
+    let request = controller
+        .request(&clock, "")
+        .expect("a later explicit request is valid");
     clock.advance_flush(100);
-    assert_eq!(
-        controller.take_ready_request(&clock),
-        Some(edit_request.clone())
-    );
     controller
-        .apply_response(&edit_request, "focus-sensitive")
-        .expect("fresh response is current");
+        .apply_response(&request, "review the workspace")
+        .expect("a new prediction resets dismissal");
+
+    // assert
+    assert!(dismissed);
+    assert_eq!(controller.ghost_for(""), Some("review the workspace"));
+}
+
+#[test]
+fn focus_and_state_transitions_clear_visible_suggestions() {
+    // arrange
+    let (clock, mut controller) = ready_controller();
+
+    // act
     controller
         .invalidate(Invalidation::FocusChange)
         .expect("focus invalidation is valid");
     assert!(controller.current().is_none());
     assert!(controller.pending().is_none());
 
-    // act
-    controller
+    let edit_request = controller
         .on_edit(&clock, "state context")
-        .expect("state fixture request is valid");
+        .expect("state fixture edit is valid")
+        .expect("state fixture request is scheduled");
     clock.advance_flush(100);
-    let state_request = controller
-        .take_ready_request(&clock)
-        .expect("state fixture request is due");
+    assert_eq!(
+        controller.take_ready_request(&clock),
+        Some(edit_request.clone())
+    );
     controller
-        .apply_response(&state_request, "state-sensitive")
-        .expect("state fixture response is current");
+        .apply_response(&edit_request, "state context-sensitive")
+        .expect("fresh response is current");
     controller
         .invalidate(Invalidation::StateChange)
         .expect("state invalidation is valid");
+
     // assert
     assert!(controller.current().is_none());
     assert!(controller.pending().is_none());
@@ -185,7 +224,8 @@ fn debounce_uses_the_deterministic_flush_clock() {
     let mut controller = SuggestionController::new(75);
     let request = controller
         .on_edit(&clock, "debounced")
-        .expect("request is valid");
+        .expect("edit is valid")
+        .expect("request is scheduled");
 
     // When: the fake clock advances once before and once at the deadline.
     clock.advance_flush(74);
@@ -235,9 +275,10 @@ fn ghost_rendering_uses_exact_muted_design_tokens_without_changing_text() {
     // act
     // Then: content is exact and the design-contract muted style is applied.
     // assert
-    assert_eq!(span.content.as_ref(), "ghost text");
+    assert_eq!(span.content.as_ref(), "inspect ghost text");
     assert_eq!(span.style.fg, Some(Color::Rgb(88, 88, 88)));
     assert!(span.style.add_modifier.contains(Modifier::DIM));
+    assert!(span.style.add_modifier.contains(Modifier::ITALIC));
 }
 
 #[derive(Default)]
