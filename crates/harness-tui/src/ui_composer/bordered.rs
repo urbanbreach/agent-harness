@@ -70,9 +70,12 @@ pub(crate) fn render_bordered_composer(
         .max(1);
     let max_visible = usize::from(inner.height.min(content_lines).max(1));
     let show_cursor = !context.dock.composer_disabled && focused;
+    let ghost_visible = app.composer_ghost_eligible();
     let live_empty_guidance = crate::ui::live_empty_composer_guidance_visible(app);
     let fallback_placeholder = if focused { "" } else { "Build anything" };
-    let placeholder = if context.dock.variant == crate::view_model::ControlDockVariant::Startup {
+    let placeholder = if ghost_visible {
+        ""
+    } else if context.dock.variant == crate::view_model::ControlDockVariant::Startup {
         fallback_placeholder
     } else if context.dock.composer_disabled || !composer_empty {
         fallback_placeholder
@@ -172,17 +175,33 @@ pub(crate) fn render_bordered_composer(
         .iter()
         .enumerate()
         .map(|(row, line)| {
-            if row == 0 {
-                Line::from(vec![
+            let mut spans = if row == 0 {
+                vec![
                     Span::styled(glyph_prefix.clone(), glyph_style),
                     Span::styled(line.clone(), base_style),
-                ])
+                ]
             } else {
-                Line::from(vec![
+                vec![
                     Span::styled(" ".repeat(glyph_cols), base_style),
                     Span::styled(line.clone(), base_style),
-                ])
+                ]
+            };
+            if ghost_visible
+                && viewport.cursor.is_some_and(|(cursor_row, cursor_col)| {
+                    cursor_row == row && cursor_col == display_width(line)
+                })
+            {
+                if let Some(ghost) = composer_view.ghost.as_ref() {
+                    let cursor_col = viewport.cursor.map_or(0, |(_, cursor_col)| cursor_col);
+                    let available_width = usize::from(inner.width)
+                        .saturating_sub(glyph_cols.saturating_add(cursor_col));
+                    spans.push(Span::styled(
+                        super::ghost::truncate_to_width(&ghost.text, available_width),
+                        ghost.style,
+                    ));
+                }
             }
+            Line::from(spans)
         })
         .collect::<Vec<_>>();
     frame.render_widget(

@@ -20,7 +20,9 @@ pub fn muted_style() -> Style {
         TextModifier::Dim => Modifier::DIM,
         TextModifier::Bold => Modifier::BOLD,
     };
-    Style::default().fg(color).add_modifier(modifier)
+    Style::default()
+        .fg(color)
+        .add_modifier(modifier | Modifier::ITALIC)
 }
 
 pub fn render_ghost(suggestion: &Suggestion) -> Span<'_> {

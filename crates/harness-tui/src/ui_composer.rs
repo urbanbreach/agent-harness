@@ -11,6 +11,8 @@ mod collapsed;
 mod document;
 #[path = "ui_composer/file_tags.rs"]
 mod file_tags;
+#[path = "ui_composer/ghost.rs"]
+mod ghost;
 #[path = "ui_composer/identity.rs"]
 mod identity;
 #[path = "ui_composer/metadata.rs"]
