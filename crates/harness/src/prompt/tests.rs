@@ -27,13 +27,113 @@ use super::stream::{
 };
 use super::{
     apply_prompt_command_config, permission_policy_for_resolution,
-    resolve_effective_permission_policy, resolve_permission_mode, resolve_settings, run_prompt,
-    PermissionModeResolution, PromptCommand, PromptOutputFormat,
+    resolve_effective_permission_policy, resolve_permission_mode, resolve_prompt_model_override,
+    resolve_settings, run_prompt, user_actor, PermissionModeResolution, PromptCommand,
+    PromptOutputFormat, PromptSettings,
 };
 use harness_core::config::PermissionMode;
 use harness_core::coord::CoordinatorConfig;
 use harness_core::perm::{PermissionKind, PermissionPolicy, PolicyDecision};
 use uuid::Uuid;
+
+#[tokio::test]
+async fn prompt_distinct_model_override_reaches_recorded_runtime_context() {
+    // arrange
+    use harness_core::agent::AgentProfile;
+    use harness_core::clock::FakeClock;
+    use harness_core::config::{load_config_from_str, resolve_model_selection};
+    use harness_core::coord::spawn_coordinator;
+    use harness_core::proj::RunMetadata;
+    use harness_core::redact::DefaultRedactor;
+    use std::collections::BTreeMap;
+
+    let temp = tempfile::tempdir().unwrap_or_abort();
+    let config = load_config_from_str(
+        r#"{
+          provider: { mock: { type: "openai_compatible", baseURL: "http://127.0.0.1:1/v1", apiKey: "test", models: {
+            base: { name: "Base", limit: { context: 8192, input: 4096, output: 1024 } },
+            "model-1": { name: "Selected", limit: { context: 64000, input: 48000, output: 8000 } }
+          } } },
+          model: "mock/base",
+          agent: { default: { model: "mock/base" } },
+          permission: "deny"
+        }"#,
+    )
+    .unwrap_or_abort();
+    let expected = resolve_model_selection(&config, "mock:model-1", None)
+        .unwrap_or_abort()
+        .primary;
+    let mut coordinator_config = CoordinatorConfig::new(temp.path().join("sessions"));
+    coordinator_config.deterministic_store = true;
+    coordinator_config.provider = Arc::new(crate::scenarios::golden_path_provider());
+    coordinator_config.agent_profiles = BTreeMap::from([(
+        "default".to_string(),
+        AgentProfile {
+            name: "default".to_string(),
+            model_ref: "mock:base".to_string(),
+            model_ref_explicit: true,
+            system_prompt: "test".to_string(),
+            temperature: None,
+            cache_retention: Default::default(),
+            max_iters: Some(1),
+            tool_failure_mode: harness_core::config::ToolFailureMode::ContinueAsToolMessage,
+            toolset: Vec::new(),
+            permission_ruleset: Vec::new(),
+        },
+    )]);
+    let settings = PromptSettings {
+        logging_config: Some(config),
+        coordinator_config: coordinator_config.clone(),
+        default_profile: "default".to_string(),
+        deterministic: true,
+        deterministic_seed: 1,
+        config_digest: "test".to_string(),
+        workspace_root: temp.path().to_path_buf(),
+        deps: crate::CliDeps::real().with_current_dir(temp.path().to_path_buf()),
+    };
+    let mut cmd = default_prompt_command();
+    cmd.model = Some("mock:model-1".to_string());
+    let model_override = resolve_prompt_model_override(&cmd, &settings, "default")
+        .unwrap_or_abort()
+        .unwrap_or_abort();
+    let coordinator = spawn_coordinator(
+        coordinator_config,
+        Arc::new(FakeClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    let run = coordinator
+        .start_run("prompt-target", temp.path())
+        .await
+        .unwrap_or_abort();
+    let agent_id = coordinator
+        .spawn_agent_idle(crate::scenarios::supervisor_actor(), "default", None)
+        .await
+        .unwrap_or_abort();
+
+    // act
+    coordinator
+        .request_agent_turn_with_model_target(
+            user_actor(),
+            agent_id,
+            "prompt override",
+            model_override.model_target.unwrap_or_abort(),
+        )
+        .await
+        .unwrap_or_abort();
+    let metadata: RunMetadata = serde_json::from_str(
+        &std::fs::read_to_string(run.run_dir.join("meta.json")).unwrap_or_abort(),
+    )
+    .unwrap_or_abort();
+    let recorded = metadata.recorded_runtime_context.unwrap_or_abort();
+
+    // assert
+    assert_eq!(recorded.provider, expected.provider);
+    assert_eq!(recorded.model, expected.model);
+    assert_eq!(recorded.model_limits, expected.limits);
+    assert_eq!(recorded.reasoning_effort, expected.reasoning_effort);
+    assert_eq!(recorded.profile, "default");
+    coordinator.stop_run().await.unwrap_or_abort();
+}
 fn default_prompt_command() -> PromptCommand {
     PromptCommand {
         text: Some("hello".to_string()),

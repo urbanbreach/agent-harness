@@ -86,6 +86,8 @@ pub struct AgentRequest {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub selected_resource_tags: Vec<SelectedResourceTag>,
     pub model_ref: String,
+    #[serde(skip)]
+    pub model_target: Option<crate::config::ResolvedModelTarget>,
     #[serde(default)]
     pub model_settings: AgentModelSettings,
 }
@@ -111,6 +113,18 @@ pub struct AgentModelSettings {
     pub reasoning_summary: Option<String>,
     #[serde(default)]
     pub thinking: Option<serde_json::Value>,
+}
+
+impl From<&crate::config::ResolvedModelTarget> for AgentModelSettings {
+    fn from(target: &crate::config::ResolvedModelTarget) -> Self {
+        Self {
+            variant: target.variant.clone(),
+            reasoning_effort: target.reasoning_effort.clone(),
+            text_verbosity: target.text_verbosity.clone(),
+            reasoning_summary: target.reasoning_summary.clone(),
+            thinking: target.thinking.clone(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -866,6 +880,7 @@ mod tests {
             selected_agent_tags: Vec::new(),
             selected_resource_tags: Vec::new(),
             model_ref: "mock:model-1".to_string(),
+            model_target: None,
             model_settings: AgentModelSettings::default(),
         }
     }

@@ -16,6 +16,8 @@ pub struct ModelsCommand {
 
 #[derive(Debug, Subcommand, Clone)]
 enum ModelsSubcommand {
+    /// List configured models and their resolved token limits.
+    List,
     /// Write the generated provider catalog artifact.
     Generate(ModelGenerateCommand),
     /// Print the generated provider catalog embedded in this build.
@@ -41,17 +43,18 @@ fn execute_with_writers(
     deps: &crate::CliDeps,
 ) -> i32 {
     if let Some(command) = cmd.command {
-        return match command {
+        match command {
+            ModelsSubcommand::List => {}
             ModelsSubcommand::Generate(command) => {
-                crate::model_probe::execute_generate_with_writers(command, stdout, stderr)
+                return crate::model_probe::execute_generate_with_writers(command, stdout, stderr);
             }
             ModelsSubcommand::Generated(command) => {
-                crate::model_probe::execute_generated_with_writers(command, stdout, stderr)
+                return crate::model_probe::execute_generated_with_writers(command, stdout, stderr);
             }
             ModelsSubcommand::Probe(command) => {
-                crate::model_probe::execute_probe_with_writers(command, stdout, stderr)
+                return crate::model_probe::execute_probe_with_writers(command, stdout, stderr);
             }
-        };
+        }
     }
 
     let config_context = match deps.config_load_context() {
@@ -123,6 +126,43 @@ fn execute_with_writers(
         if let Some(token_window_label) = entry.token_window_label.as_deref() {
             segments.push(format!("tokens={token_window_label}"));
         }
+        segments.push(format!(
+            "context={}",
+            entry
+                .limits
+                .context_window_tokens()
+                .map_or_else(|| "unknown".to_string(), |value| value.to_string())
+        ));
+        segments.push(format!(
+            "context_provenance={}",
+            entry.limits.context_window.provenance.kind.as_str()
+        ));
+        segments.push(format!(
+            "max_input={}",
+            entry
+                .limits
+                .max_input_tokens()
+                .map_or_else(|| "unknown".to_string(), |value| value.to_string())
+        ));
+        segments.push(format!(
+            "max_input_provenance={}",
+            entry.limits.max_input.provenance.kind.as_str()
+        ));
+        segments.push(format!(
+            "max_output={}",
+            entry
+                .limits
+                .max_output_tokens()
+                .map_or_else(|| "unknown".to_string(), |value| value.to_string())
+        ));
+        segments.push(format!(
+            "max_output_provenance={}",
+            entry.limits.max_output.provenance.kind.as_str()
+        ));
+        segments.push(format!(
+            "max_input_semantics={}",
+            entry.limits.max_input_semantics.as_str()
+        ));
 
         let _ = writeln!(stdout, "{}", segments.join(" | "));
     }

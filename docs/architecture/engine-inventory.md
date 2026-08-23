@@ -84,9 +84,9 @@ owner surface when present; `none recorded` is deliberate, not an implied pass.
 | CLI/TUI bootstrap | `harness/src/{lib.rs,tui.rs}`; `execute_cli`, `tui::execute` | yes/yes | CLI/TUI owners; PTY owner | headless golden; TUI none recorded | canonical; Keep |
 | configuration discovery and merging | `harness-core/src/config/{discovery.rs,loader.rs}`; bootstrap config load | yes/yes | config owners; no PTY | golden config bootstrap | canonical; Keep |
 | provider registry | `harness-core/src/{provider_catalog.rs,provider_protocol.rs}` | yes/yes | provider catalog owners; no PTY | mock provider in golden | canonical; Keep |
-| model registry and model resolution | `config/model_catalog.rs`, `model_resolution.rs`, `config/model_selection.rs::resolve_model_selection` | yes/yes | model owners; no PTY | golden selection | duplicated provenance; Consolidate |
-| model variants | `config/model_catalog.rs`, `config/model_selection.rs` | yes/yes | model owners; no PTY | none recorded | duplicated; Consolidate |
-| context-window resolution | `model_resolution.rs`, `coord/compaction_support.rs` | yes/yes | compaction owners; no PTY | none recorded | incomplete; Consolidate |
+| model registry and model resolution | `config/{model_limits.rs,model_limit_resolution.rs,model_catalog.rs,model_selection.rs}` | yes/yes | model-limit resolution, catalog poisoning, CLI catalog, and TUI metadata owners | `harness models list` | canonical limits/provenance; Keep |
+| model variants | `config/model_limit_resolution.rs`, `config/model_selection.rs` | yes/yes | model variant and model-limit resolution owners | configured variant catalog | explicit-field override semantics; Keep |
+| context-window resolution | `config/model_limits.rs`; legacy M03 consumer in `coord/compaction_support.rs` | yes/yes | model-limit owners; compaction owners in M03 | CLI/TUI resolved metadata | canonical source established; budget migration remains Move |
 | provider request construction | `agent/provider_boundary.rs::build_provider_context_messages`, providers request modules | yes/yes | provider boundary owners; no PTY | golden mock request | canonical boundary; Keep |
 | prompt/system-context construction | `dynamic_prompt.rs`, `agent/provider_boundary.rs` | yes/yes | prompt owners; no PTY | golden mock request | duplicated context assembly; Consolidate |
 | session persistence | `store.rs::JsonlFileEventStore::append` | yes/yes | store owners; no PTY | golden `events.jsonl` | canonical journal; Keep |
@@ -108,6 +108,15 @@ owner surface when present; `none recorded` is deliberate, not an implied pass.
 | crash recovery | `crash_recovery.rs`, session reopen | yes/yes | recovery owners; no PTY | none recorded | supported; Keep |
 | extension/hook paths | `integrations/`, `coord/hooks.rs` | yes/yes | integration/hook owners; no PTY | none recorded | incomplete boundary; Disable dynamic execution claims |
 | legacy compatibility code | legacy event/checkpoint/replay readers | yes/yes | replay/session owners; TUI replay owner | none recorded | legacy; Disable mutation then Delete adapter after migration |
+
+## M02 model-limit inventory receipt
+
+The canonical type is `config::ResolvedModelLimits`; its three fields each carry typed provenance,
+and `MaxInputSemantics::ProviderVisibleInputTokens` fixes the input meaning. Numeric window fields
+were removed from model-family capability resolution and from resolved profile/catalog/TUI model
+metadata. `RecordedRuntimeContext` persists the canonical record while retaining non-authoritative
+numeric mirrors only for the pre-M03 compaction compatibility path. Request-budget calculations
+and deletion of those mirrors remain assigned to M03.
 
 ## Current compaction and reducer inventory
 

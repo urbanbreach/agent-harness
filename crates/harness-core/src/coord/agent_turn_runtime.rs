@@ -15,6 +15,7 @@ impl Coordinator {
         attachments: Vec<crate::attachment_transport::AttachmentMetadata>,
         model_ref_override: Option<String>,
         model_settings_override: Option<AgentModelSettings>,
+        model_target_override: Option<ResolvedModelTarget>,
         child_task_metadata: Option<ChildTaskRequestMetadata>,
     ) -> Result<String, CoordinatorError> {
         let run_state = self
@@ -71,6 +72,14 @@ impl Coordinator {
         );
 
         let skip_profile_fallback = model_ref_override.is_some();
+        let model_ref = model_ref_override.unwrap_or_else(|| profile.model_ref.clone());
+        let model_target = model_target_override.or_else(|| {
+            self.config
+                .agent_model_targets
+                .get(&profile.name)
+                .filter(|target| target.model_ref == model_ref)
+                .cloned()
+        });
         let request = AgentRequest {
             agent_id,
             prompt,
@@ -78,7 +87,8 @@ impl Coordinator {
             selected_file_tags: selected_tags.files,
             selected_agent_tags: selected_tags.agents,
             selected_resource_tags: selected_tags.resources,
-            model_ref: model_ref_override.unwrap_or_else(|| profile.model_ref.clone()),
+            model_ref,
+            model_target,
             model_settings: model_settings_override
                 .unwrap_or_else(|| default_model_settings_for_profile(&profile.name)),
         };
@@ -87,10 +97,12 @@ impl Coordinator {
             && actor.kind == ActorKind::User
             && run_state.next_provider_request_id == 2
         {
-            run_state.recorded_runtime_context = Some(RecordedRuntimeContext::from_profile_model(
-                &profile.name,
-                &request.model_ref,
-            ));
+            run_state.recorded_runtime_context = Some(match request.model_target.as_ref() {
+                Some(target) => RecordedRuntimeContext::from_model_target(&profile.name, target),
+                None => {
+                    RecordedRuntimeContext::from_profile_model(&profile.name, &request.model_ref)
+                }
+            });
             write_run_metadata(run_state, &self.config, self.clock.as_ref())?;
         }
 
@@ -254,7 +266,7 @@ pub(in crate::coord) struct ScheduleAgentTurnArgs {
     pub(in crate::coord) request: AgentRequest,
     pub(in crate::coord) request_id: String,
     pub(in crate::coord) child_task: Option<ChildTaskTurnState>,
-    pub(in crate::coord) model_fallback_chain: Vec<String>,
+    pub(in crate::coord) model_fallback_chain: Vec<crate::config::ResolvedModelTarget>,
 }
 
 struct TurnStartPhaseResult {
@@ -785,18 +797,20 @@ where
                                 )
                             }) =>
                         {
-                            if let Some(next_model) =
-                                crate::auto_fallback::take_next_fallback_model_ref(
+                            if let Some(next_target) =
+                                crate::auto_fallback::take_next_fallback_model_target(
                                     &mut task.model_fallback_chain,
                                 )
                             {
                                 let failed_model = task.request.model_ref.clone();
-                                task.request.model_ref = next_model.clone();
+                                task.request.model_ref = next_target.model_ref.clone();
+                                task.request.model_settings = AgentModelSettings::from(&next_target);
+                                task.request.model_target = Some(next_target.clone());
                                 tracing::warn!(
                                     agent_id = %task.agent_id,
                                     request_id = %task.request_id,
                                     failed_model = %failed_model,
-                                    next_model = %next_model,
+                                    next_model = %next_target.model_ref,
                                     error = %reason,
                                     "provider failure; switching to model fallback"
                                 );

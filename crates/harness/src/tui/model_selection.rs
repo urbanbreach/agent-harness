@@ -161,6 +161,7 @@ pub(super) fn apply_model_selection_to_launch_metadata(
         return launch_metadata;
     };
     LaunchMetadata::from_model_option(option)
+        .with_resolved_models(launch_metadata.resolved_models().to_vec())
         .with_available_models(launch_metadata.available_models().to_vec())
         .with_switchable_profiles(launch_metadata.switchable_profiles().to_vec())
 }

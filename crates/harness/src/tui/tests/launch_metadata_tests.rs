@@ -57,6 +57,11 @@ fn continue_metadata_prefers_recorded_runtime_context_before_event_inference() {
         model_display_label: Some("Recorded Model".to_string()),
         variant_display_label: Some("Recorded Variant".to_string()),
         token_window_label: Some("128k ctx".to_string()),
+        model_limits: harness_core::config::ResolvedModelLimits::compatibility_mirror(
+            Some(128_000),
+            Some(64_000),
+            Some(8_000),
+        ),
         context_window_tokens: Some(128_000),
         max_input_tokens: Some(64_000),
         max_output_tokens: Some(8_000),
@@ -120,6 +125,9 @@ fn replay_launch_metadata_prefers_recorded_runtime_context_before_event_inferenc
         model_display_label: Some("Recorded Replay Model".to_string()),
         variant_display_label: None,
         token_window_label: None,
+        model_limits: harness_core::config::ResolvedModelLimits::compatibility_mirror(
+            None, None, None,
+        ),
         context_window_tokens: None,
         max_input_tokens: None,
         max_output_tokens: None,

@@ -18,6 +18,7 @@ impl Coordinator {
             prompt_summary,
             request_digest,
             metadata,
+            model_target,
         } = args;
         let Some(run_state) = self.run_state.as_mut() else {
             return Ok(());
@@ -30,6 +31,16 @@ impl Coordinator {
         let profile = running.profile.clone();
         let cancellation_token = running.cancellation_token.clone();
         let parent_agent_id = run_state.subagent_parent_by_id.get(&agent_id).cloned();
+        if parent_agent_id.is_none() {
+            if let Some(target) = model_target.as_ref() {
+                run_state.recorded_runtime_context =
+                    Some(RecordedRuntimeContext::from_model_target(
+                        profile.as_deref().unwrap_or("default"),
+                        target,
+                    ));
+                write_run_metadata(run_state, &self.config, self.clock.as_ref())?;
+            }
+        }
         let provider_id_for_state = provider_id.clone();
         let model_id_for_state = model_id.clone();
         let metadata = provider_request_started_metadata(metadata, &turn_request_id, &request_id);

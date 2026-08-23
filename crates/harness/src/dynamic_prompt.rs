@@ -575,9 +575,6 @@ mod tests {
                 model,
                 metadata_family: None,
                 input_modalities: &[],
-                context_window_tokens: None,
-                max_input_tokens: None,
-                max_output_tokens: None,
                 supports_tool_calls: None,
                 supports_reasoning_summaries: None,
             },
@@ -591,7 +588,9 @@ mod tests {
             text_verbosity: None,
             reasoning_summary: None,
             thinking: None,
+            limits: Default::default(),
             resolution,
+            catalog_entry: None,
         }
     }
 
@@ -603,9 +602,6 @@ mod tests {
                 model: model_id,
                 metadata_family: Some(family),
                 input_modalities: &[],
-                context_window_tokens: None,
-                max_input_tokens: None,
-                max_output_tokens: None,
                 supports_tool_calls: None,
                 supports_reasoning_summaries: None,
             },

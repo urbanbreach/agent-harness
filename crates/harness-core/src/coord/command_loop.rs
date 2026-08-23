@@ -168,6 +168,7 @@ impl Coordinator {
                 attachments,
                 model_ref_override,
                 model_settings_override,
+                model_target_override,
                 child_task_metadata,
                 respond_to,
             } => {
@@ -184,6 +185,7 @@ impl Coordinator {
                         attachments,
                         model_ref_override,
                         model_settings_override,
+                        model_target_override.map(|target| *target),
                         child_task_metadata,
                     )
                     .await;
@@ -320,6 +322,7 @@ impl Coordinator {
                 prompt_summary,
                 request_digest,
                 metadata,
+                model_target,
             } => {
                 let _ = self
                     .agent_provider_request_started_internal(AgentProviderRequestStartedArgs {
@@ -331,6 +334,7 @@ impl Coordinator {
                         prompt_summary,
                         request_digest,
                         metadata,
+                        model_target: *model_target,
                     })
                     .await;
             }

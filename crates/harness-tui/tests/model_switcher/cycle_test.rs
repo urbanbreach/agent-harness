@@ -265,7 +265,13 @@ fn ctrl_t_cycles_from_last_variant_to_none() {
         })
     };
 
-    let available_models = same_profile_variant_options();
+    let mut available_models = same_profile_variant_options();
+    available_models.push(
+        config_backed_profile_model_options("default")
+            .into_iter()
+            .find(|option| option.variant().is_none())
+            .unwrap_or_abort(),
+    );
     let mut live = AppState::new_live(None, false, Some(sink));
     live.set_launch_metadata(
         LaunchMetadata::from_model_option(&available_models[1])
@@ -291,4 +297,7 @@ fn ctrl_t_cycles_from_last_variant_to_none() {
     assert_eq!(launch_metadata.variant(), None);
     assert_eq!(launch_metadata.reasoning_effort(), None);
     assert_eq!(launch_metadata.mode_label(), Some("Demo"));
+    assert_eq!(launch_metadata.context_window_tokens(), Some(128_000));
+    assert_eq!(launch_metadata.max_input_tokens(), Some(128_000));
+    assert_eq!(launch_metadata.max_output_tokens(), Some(16_384));
 }

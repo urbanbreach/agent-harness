@@ -417,6 +417,7 @@ async fn run_provider_stream_phase(
     } = request;
     let task_id = task_id.to_string();
     let agent_id = agent_id.to_string();
+    let model_target = request.model_target.clone();
 
     stream_assistant_response_once(
         StreamAssistantResponseOnceRequest {
@@ -436,9 +437,11 @@ async fn run_provider_stream_phase(
             let job_tx = job_tx.clone();
             let task_id = task_id.clone();
             let agent_id = agent_id.clone();
+            let model_target = model_target.clone();
             async move {
                 if let Err(reason) =
-                    emit_agent_runtime_event_phase(job_tx, task_id, agent_id, event).await
+                    emit_agent_runtime_event_phase(job_tx, task_id, agent_id, model_target, event)
+                        .await
                 {
                     tracing::warn!(reason, "failed to emit agent runtime phase event");
                 }
@@ -452,6 +455,7 @@ async fn emit_agent_runtime_event_phase(
     job_tx: mpsc::Sender<Command>,
     task_id: String,
     agent_id: String,
+    model_target: Option<crate::config::ResolvedModelTarget>,
     event: AgentRuntimeEvent,
 ) -> Result<(), String> {
     match event {
@@ -465,6 +469,7 @@ async fn emit_agent_runtime_event_phase(
                 prompt_summary: started.prompt_summary,
                 request_digest: started.request_digest,
                 metadata: started.metadata,
+                model_target: Box::new(model_target),
             })
             .await
             .map_err(|_| "provider request start channel closed".to_string()),

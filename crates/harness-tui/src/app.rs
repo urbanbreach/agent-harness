@@ -2719,7 +2719,9 @@ impl AppState {
                 text_verbosity: None,
                 reasoning_summary: None,
                 thinking: None,
+                limits: Default::default(),
                 resolution: ModelResolution::default(),
+                catalog_entry: None,
             };
             let selection = ResolvedModelSelection {
                 selector: "(probe)".into(),

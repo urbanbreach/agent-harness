@@ -300,7 +300,7 @@ pub(in crate::coord) struct QueuedAgentTurn {
     pub(in crate::coord) scheduler_queued: bool,
     pub(in crate::coord) child_task: Option<ChildTaskTurnState>,
     /// Remaining model refs to try after the current `request.model_ref` fails.
-    pub(in crate::coord) model_fallback_chain: Vec<String>,
+    pub(in crate::coord) model_fallback_chain: Vec<crate::config::ResolvedModelTarget>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -528,6 +528,7 @@ pub(in crate::coord) struct AgentProviderRequestStartedArgs {
     pub(in crate::coord) prompt_summary: String,
     pub(in crate::coord) request_digest: String,
     pub(in crate::coord) metadata: Option<ProviderRequestStartedMetadata>,
+    pub(in crate::coord) model_target: Option<crate::config::ResolvedModelTarget>,
 }
 
 pub(in crate::coord) struct AgentProviderRequestFinishedArgs {

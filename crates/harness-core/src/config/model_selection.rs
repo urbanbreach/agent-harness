@@ -143,6 +143,7 @@ fn resolve_direct_model_target(
 
     let resolved = resolve_configured_model_metadata(cfg, provider_name, model_name, variant_name)
         .map_err(|err| ConfigError::InvalidReference(format!("{context}: {err}")))?;
+    let catalog_entry = Box::new(resolved.clone());
     Ok(ResolvedModelTarget {
         model_ref: normalize_model_ref(&resolved.provider, &resolved.model),
         provider: resolved.provider,
@@ -161,6 +162,8 @@ fn resolve_direct_model_target(
             None
         },
         thinking: resolved.thinking,
-        resolution: resolved.resolution,
+        limits: resolved.limits,
+        resolution: resolved.resolution.clone(),
+        catalog_entry: Some(catalog_entry),
     })
 }

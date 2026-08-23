@@ -7,7 +7,9 @@ use harness_tui::{LiveUpdate, LiveUpdateSender, OperatorNoticeLevel, UiIntent};
 use tokio::sync::mpsc;
 
 use super::auth_backend::{spawn_tui_auth_backend_task, TuiAuthBackendContext};
-use super::launch_metadata::{launch_metadata_model_ref, launch_metadata_model_settings};
+use super::launch_metadata::{
+    launch_metadata_model_ref, launch_metadata_model_settings, launch_metadata_model_target,
+};
 use super::lineage::{materialize_tui_fork_child, materialize_tui_lineage_child};
 use super::recover_mutex_lock;
 use crate::scenarios::supervisor_actor;
@@ -64,22 +66,37 @@ pub(super) async fn handle_ui_intents(
 
                 if let Some(agent_id) = agent_id {
                     let attachment_metadata = prompt_attachment_metadata(&attachments)?;
-                    let request_id = coordinator
-                        .request_agent_turn_with_model_and_selected_tags_and_attachments(
-                            user_actor.clone(),
-                            agent_id,
-                            text,
-                            harness_core::file_tag::SelectedPromptTags {
-                                files: selected_file_tags,
-                                agents: selected_agent_tags,
-                                resources: selected_resource_tags,
-                            },
-                            attachment_metadata,
-                            launch_metadata_model_ref(&launch_metadata),
-                            Some(launch_metadata_model_settings(&launch_metadata)),
-                        )
-                        .await
-                        .map_err(|err| err.to_string())?;
+                    let selected_tags = harness_core::file_tag::SelectedPromptTags {
+                        files: selected_file_tags,
+                        agents: selected_agent_tags,
+                        resources: selected_resource_tags,
+                    };
+                    let request = match launch_metadata_model_target(&launch_metadata) {
+                        Some(target) => coordinator
+                            .request_agent_turn_with_model_target_and_selected_tags_and_attachments(
+                                user_actor.clone(),
+                                agent_id,
+                                text,
+                                selected_tags,
+                                attachment_metadata,
+                                target,
+                            )
+                            .await,
+                        None => {
+                            coordinator
+                                .request_agent_turn_with_model_and_selected_tags_and_attachments(
+                                    user_actor.clone(),
+                                    agent_id,
+                                    text,
+                                    selected_tags,
+                                    attachment_metadata,
+                                    launch_metadata_model_ref(&launch_metadata),
+                                    Some(launch_metadata_model_settings(&launch_metadata)),
+                                )
+                                .await
+                        }
+                    };
+                    let request_id = request.map_err(|err| err.to_string())?;
                     if let Some(live_agent_target) = live_agent_target.as_ref() {
                         let mut target = live_agent_target
                             .lock()

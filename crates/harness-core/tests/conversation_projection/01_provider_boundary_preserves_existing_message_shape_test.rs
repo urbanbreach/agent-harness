@@ -13,6 +13,7 @@ fn provider_boundary_preserves_existing_message_shape() {
         selected_agent_tags: Vec::new(),
         selected_resource_tags: Vec::new(),
         model_ref: "mock:model-1".to_string(),
+        model_target: None,
         model_settings: AgentModelSettings {
             variant: Some("gpt-5.4".to_string()),
             reasoning_effort: Some("high".to_string()),

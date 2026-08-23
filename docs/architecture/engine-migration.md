@@ -16,6 +16,14 @@ fail as read-only until a separate migration is explicitly implemented. Each sta
 `engine-metrics-v1` artifact against the same baseline so reductions are comparable rather than
 silently rebased.
 
+## M02 model-limit consolidation
+
+M02 replaces the catalog, profile selection, recorded runtime context, CLI list, and TUI metadata
+copies with `ResolvedModelLimits`. Generated and provider-discovered entries retain source and
+verification-date provenance; explicit configuration remains distinguishable. Strict boundary
+validation rejects partial, zero, and impossible triples, while entirely absent custom limits are
+recorded as unknown. No request-budget or compaction policy changed in this milestone.
+
 ## Baseline lane reconciliation
 
 The pre-migration baseline was rechecked at `ccdefb5c65693880a05fbfc63f7a30094043d552`

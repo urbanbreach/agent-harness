@@ -68,9 +68,10 @@ pub fn build_interactive_coordinator_config(
     coordinator_config.provider_retry = cfg.runtime.provider_retry;
     coordinator_config.provider = Arc::new(build_provider_router(cfg)?);
     coordinator_config.title_model_ref = cfg.small_model.clone();
-    let (agent_profiles, agent_model_fallbacks) =
+    let (agent_profiles, agent_model_targets, agent_model_fallbacks) =
         interactive_agent_profiles_with_extra_tools(cfg, &auto_tool_ids)?;
     coordinator_config.agent_profiles = agent_profiles;
+    coordinator_config.agent_model_targets = agent_model_targets;
     coordinator_config.agent_model_fallbacks = agent_model_fallbacks;
     coordinator_config.formatter = cfg.formatter.clone();
     Ok(coordinator_config)
@@ -410,7 +411,8 @@ fn interactive_agent_profiles_with_extra_tools(
 ) -> Result<
     (
         BTreeMap<String, AgentProfile>,
-        BTreeMap<String, Vec<String>>,
+        BTreeMap<String, harness_core::config::ResolvedModelTarget>,
+        BTreeMap<String, Vec<harness_core::config::ResolvedModelTarget>>,
     ),
     String,
 > {
@@ -418,6 +420,7 @@ fn interactive_agent_profiles_with_extra_tools(
 
     let mut profiles = BTreeMap::new();
     let mut model_fallbacks = BTreeMap::new();
+    let mut model_targets = BTreeMap::new();
 
     let editing_surface = EditingToolSurfaceConfig {
         hashline_edit: cfg.hashline_edit,
@@ -452,14 +455,10 @@ fn interactive_agent_profiles_with_extra_tools(
             .map(provider_cache_retention)
             .unwrap_or_default();
 
-        let fallback_refs: Vec<String> = model_selection
-            .fallback
-            .iter()
-            .map(|target| target.model_ref.clone())
-            .collect();
-        if !fallback_refs.is_empty() {
-            model_fallbacks.insert(profile_name.clone(), fallback_refs);
+        if !model_selection.fallback.is_empty() {
+            model_fallbacks.insert(profile_name.clone(), model_selection.fallback.clone());
         }
+        model_targets.insert(profile_name.clone(), model_selection.primary.clone());
 
         profiles.insert(
             profile_name.clone(),
@@ -482,7 +481,7 @@ fn interactive_agent_profiles_with_extra_tools(
         );
     }
 
-    Ok((profiles, model_fallbacks))
+    Ok((profiles, model_targets, model_fallbacks))
 }
 
 fn provider_cache_retention(provider: &ProviderConfig) -> harness_providers::CacheRetention {
@@ -716,7 +715,7 @@ mod tests {
             "#,
         );
 
-        let (profiles, _fallbacks) = interactive_agent_profiles_with_extra_tools(
+        let (profiles, _targets, _fallbacks) = interactive_agent_profiles_with_extra_tools(
             &cfg,
             &[
                 "mcp.docs-rs.search_in_crate".to_string(),

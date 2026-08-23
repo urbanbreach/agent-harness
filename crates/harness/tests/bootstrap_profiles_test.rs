@@ -68,6 +68,43 @@ fn shipped_runtime_materializes_generic_default_and_named_subagents() {
 }
 
 #[test]
+fn bootstrap_preserves_primary_variant_and_fallback_targets_with_limits() {
+    // arrange
+    let config = load_config_from_str(
+        r#"{
+          provider: { default: { type: "openai_compatible", baseURL: "http://127.0.0.1:1/v1",
+            apiKey: "test", models: {
+              primary: { name: "Primary", limit: { context: 128000, output: 16000 }, variants: {
+                compact: { limit: { output: 4096 }, metadata: { reasoning_effort: "low" } }
+              } },
+              fallback: { name: "Fallback", limit: { context: 64000, input: 48000, output: 8000 } }
+            } } },
+          model_profile: { work: { model: "default:primary", variant: "compact",
+            fallback: [{ model: "default:fallback" }] } },
+          model: "work",
+          agent: { default: { model: "work", system_prompt: "Work", tools: ["read"] } },
+          permission: "deny"
+        }"#,
+    )
+    .unwrap_or_else(|error| panic!("fixture must load: {error}"));
+
+    // act
+    let runtime = bootstrap::build_interactive_coordinator_config(&config).unwrap_or_abort();
+    let primary = &runtime.agent_model_targets["default"];
+    let fallback = &runtime.agent_model_fallbacks["default"][0];
+
+    // assert
+    assert_eq!(primary.variant.as_deref(), Some("compact"));
+    assert_eq!(primary.limits.context_window_tokens(), Some(128_000));
+    assert_eq!(primary.limits.max_input_tokens(), None);
+    assert_eq!(primary.limits.max_output_tokens(), Some(4_096));
+    assert_eq!(fallback.model_ref, "default:fallback");
+    assert_eq!(fallback.limits.context_window_tokens(), Some(64_000));
+    assert_eq!(fallback.limits.max_input_tokens(), Some(48_000));
+    assert_eq!(fallback.limits.max_output_tokens(), Some(8_000));
+}
+
+#[test]
 fn shipped_v1_prompt_assets_have_contract_bodies() {
     // arrange
     let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
@@ -231,6 +268,7 @@ fn family_prompt_model_target(
         text_verbosity: None,
         reasoning_summary: None,
         thinking: None,
+        limits: Default::default(),
         resolution: harness_core::model_resolution::ModelResolution {
             family: model_family,
             family_source: harness_core::model_resolution::ModelFamilySource::Metadata,
@@ -244,11 +282,9 @@ fn family_prompt_model_target(
                 supports_top_p: true,
                 supports_thinking: false,
                 supports_reasoning_summaries: false,
-                context_window_tokens: None,
-                max_input_tokens: None,
-                max_output_tokens: None,
             },
         },
+        catalog_entry: None,
     }
 }
 
