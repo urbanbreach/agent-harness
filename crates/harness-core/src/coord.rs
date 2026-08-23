@@ -23,8 +23,8 @@ use crate::agent::{
 use crate::clock::Clock;
 use crate::config::{
     registered_hook_runtime_config, CompactionSettings, FormatterConfig, HookLifecycleEvent,
-    HookRuntimeConfig, LifecycleHookConfig, ProviderRetryRuntimeConfig, ShellAllowlist,
-    ToolFailureMode,
+    HookRuntimeConfig, LifecycleHookConfig, ProviderRetryRuntimeConfig, ResolvedModelTarget,
+    ShellAllowlist, ToolFailureMode,
 };
 use crate::conversation::{
     ConversationAssistantMessage, ConversationMessage, ConversationToolCall,
@@ -231,12 +231,13 @@ pub struct CoordinatorConfig {
     pub tool_registry: Arc<ToolRegistry>,
     pub provider: Arc<dyn Provider>,
     pub agent_profiles: BTreeMap<String, AgentProfile>,
+    pub agent_model_targets: BTreeMap<String, ResolvedModelTarget>,
     pub title_model_ref: Option<String>,
     /// Remaining model-ref fallback chain keyed by agent profile name.
     ///
     /// Populated at bootstrap from `model_profile.fallback` after the primary is
     /// resolved onto the agent. Empty means no model auto-fallback for that agent.
-    pub agent_model_fallbacks: BTreeMap<String, Vec<String>>,
+    pub agent_model_fallbacks: BTreeMap<String, Vec<ResolvedModelTarget>>,
     pub hook_runtime_config: HookRuntimeConfig,
     pub hook_command_executor: Arc<dyn LifecycleHookCommandExecutor + Send + Sync>,
     pub compaction: CompactionSettings,
@@ -264,6 +265,7 @@ impl CoordinatorConfig {
             tool_registry: Arc::new(ToolRegistry::new()),
             provider: default_provider(),
             agent_profiles: BTreeMap::new(),
+            agent_model_targets: BTreeMap::new(),
             title_model_ref: None,
             agent_model_fallbacks: BTreeMap::new(),
             hook_runtime_config: registered_hook_runtime_config(),
@@ -384,6 +386,7 @@ pub enum Command {
         attachments: Vec<crate::attachment_transport::AttachmentMetadata>,
         model_ref_override: Option<String>,
         model_settings_override: Option<AgentModelSettings>,
+        model_target_override: Option<Box<ResolvedModelTarget>>,
         child_task_metadata: Option<ChildTaskRequestMetadata>,
         respond_to: oneshot::Sender<Result<String, CoordinatorError>>,
     },
@@ -472,6 +475,7 @@ pub enum Command {
         prompt_summary: String,
         request_digest: String,
         metadata: Option<ProviderRequestStartedMetadata>,
+        model_target: Box<Option<ResolvedModelTarget>>,
     },
     AgentProviderStreamDelta {
         task_id: String,

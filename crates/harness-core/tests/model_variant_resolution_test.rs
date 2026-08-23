@@ -142,9 +142,9 @@ fn model_variant_resolution_returns_variant_display_and_metadata() {
         metadata.token_window_label.as_deref(),
         Some("128k ctx · 128k in · 4k out")
     );
-    assert_eq!(metadata.context_window_tokens, Some(128000));
-    assert_eq!(metadata.max_input_tokens, Some(128000));
-    assert_eq!(metadata.max_output_tokens, Some(4096));
+    assert_eq!(metadata.limits.context_window_tokens(), Some(128000));
+    assert_eq!(metadata.limits.max_input_tokens(), Some(128000));
+    assert_eq!(metadata.limits.max_output_tokens(), Some(4096));
     assert_eq!(metadata.description.as_deref(), Some("Deterministic mode"));
     assert_eq!(metadata.reasoning_effort.as_deref(), Some("minimal"));
     assert_eq!(metadata.text_verbosity.as_deref(), Some("low"));
@@ -155,10 +155,7 @@ fn model_variant_resolution_returns_variant_display_and_metadata() {
         ModelFamilySource::Heuristic
     );
     assert_eq!(metadata.resolution.prompt_family, PromptFamily::Gpt);
-    assert_eq!(
-        metadata.resolution.capabilities.context_window_tokens,
-        Some(128000)
-    );
+    assert_eq!(metadata.limits.context_window_tokens(), Some(128000));
 }
 
 #[test]
@@ -204,8 +201,8 @@ fn model_variant_resolution_allows_variant_context_window_override() {
 
     assert_eq!(metadata.model, "gpt-5.4");
     assert_eq!(metadata.variant.as_deref(), Some("1m-high"));
-    assert_eq!(metadata.context_window_tokens, Some(922000));
-    assert_eq!(metadata.max_input_tokens, Some(922000));
+    assert_eq!(metadata.limits.context_window_tokens(), Some(922000));
+    assert_eq!(metadata.limits.max_input_tokens(), Some(922000));
     assert_eq!(
         metadata.token_window_label.as_deref(),
         Some("922k ctx · 922k in · 128k out")
@@ -295,9 +292,12 @@ fn model_resolution_prefers_metadata_family_and_exposes_capabilities() {
     assert!(resolution.capabilities.supports_vision);
     assert!(!resolution.capabilities.supports_tool_calls);
     assert!(resolution.capabilities.supports_reasoning_summaries);
-    assert_eq!(resolution.capabilities.context_window_tokens, Some(1048576));
-    assert_eq!(resolution.capabilities.max_input_tokens, Some(900000));
-    assert_eq!(resolution.capabilities.max_output_tokens, Some(64000));
+    assert_eq!(
+        selection.primary.limits.context_window_tokens(),
+        Some(1048576)
+    );
+    assert_eq!(selection.primary.limits.max_input_tokens(), Some(900000));
+    assert_eq!(selection.primary.limits.max_output_tokens(), Some(64000));
 }
 
 #[test]

@@ -5,9 +5,7 @@ fn snapshot_model_target() -> ResolvedModelTarget {
             model: "gpt-5.4-mini",
             metadata_family: None,
             input_modalities: &[],
-            context_window_tokens: None,
-            max_input_tokens: None,
-            max_output_tokens: None,
+
             supports_tool_calls: None,
             supports_reasoning_summaries: None,
         });
@@ -20,7 +18,9 @@ fn snapshot_model_target() -> ResolvedModelTarget {
         text_verbosity: None,
         reasoning_summary: None,
         thinking: None,
+        limits: Default::default(),
         resolution,
+        catalog_entry: None,
     }
 }
 

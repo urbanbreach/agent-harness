@@ -1,10 +1,13 @@
 // allow: SIZE_OK — provider catalog (embedded JSON + reference merge + model variant + capability metadata)
+use crate::config::{ModelLimitError, ModelLimitProvenance, ResolvedModelLimits};
 use crate::UnwrapOrAbort;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
+
+mod duplicate_checked_json;
 
 const EMBEDDED_CATALOG: &str = include_str!("../../../configs/provider-catalog.generated.json");
 
@@ -21,9 +24,21 @@ const PROVIDER_PRIORITY: &[(&str, u8)] = &[
     ("openrouter", 4),
 ];
 
+pub fn duplicate_checked_json_value(json: &str) -> Result<serde_json::Value, serde_json::Error> {
+    duplicate_checked_json::parse(json)
+}
+
 #[derive(Debug, Clone)]
 pub struct ProviderCatalog {
     providers: BTreeMap<String, ProviderCatalogEntry>,
+    diagnostics: Vec<CatalogDiagnostic>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CatalogDiagnostic {
+    pub provider: String,
+    pub model: String,
+    pub message: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,7 +54,7 @@ pub struct ProviderCatalogEntry {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelCatalogEntry {
     pub name: String,
-    pub context_window: Option<u64>,
+    pub limits: ResolvedModelLimits,
     pub supports_tool_calls: Option<bool>,
     pub supports_reasoning: bool,
 }
@@ -74,11 +89,31 @@ pub enum CatalogError {
         path: String,
         source: std::io::Error,
     },
+    #[error("catalog contains no provider with a usable model")]
+    NoUsableModels,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum CatalogModelError {
+    #[error("catalog model `{provider}:{model}` was not found")]
+    NotFound { provider: String, model: String },
+    #[error(transparent)]
+    InvalidLimits(#[from] ModelLimitError),
+}
+
+#[derive(Debug, Clone, Copy)]
+enum CatalogLimitSource {
+    Generated,
+    Discovered,
 }
 
 impl ProviderCatalog {
     pub fn from_embedded() -> Result<Self, CatalogError> {
-        parse_catalog(EMBEDDED_CATALOG)
+        parse_catalog(
+            EMBEDDED_CATALOG,
+            CatalogLimitSource::Generated,
+            "https://models.dev/api.json",
+        )
     }
 
     pub fn from_path(path: &Path) -> Result<Self, CatalogError> {
@@ -86,7 +121,11 @@ impl ProviderCatalog {
             path: path.display().to_string(),
             source,
         })?;
-        parse_catalog(&content)
+        parse_catalog(
+            &content,
+            CatalogLimitSource::Discovered,
+            &format!("file://{}", path.display()),
+        )
     }
 
     pub fn providers(&self) -> Vec<&ProviderCatalogEntry> {
@@ -95,6 +134,26 @@ impl ProviderCatalog {
 
     pub fn provider(&self, id: &str) -> Option<&ProviderCatalogEntry> {
         self.providers.get(id)
+    }
+
+    pub fn diagnostics(&self) -> &[CatalogDiagnostic] {
+        &self.diagnostics
+    }
+
+    pub fn validated_model(
+        &self,
+        provider: &str,
+        model: &str,
+    ) -> Result<&ModelCatalogEntry, CatalogModelError> {
+        let entry = self
+            .provider(provider)
+            .and_then(|provider_entry| provider_entry.models.get(model))
+            .ok_or_else(|| CatalogModelError::NotFound {
+                provider: provider.to_string(),
+                model: model.to_string(),
+            })?;
+        entry.limits.validate(&format!("{provider}:{model}"))?;
+        Ok(entry)
     }
 
     pub fn sorted_by_priority(&self) -> Vec<&ProviderCatalogEntry> {
@@ -109,7 +168,7 @@ impl ProviderCatalog {
 
     pub fn fetch_from_url(url: &str) -> Result<Self, CatalogError> {
         let body = fetch_raw(url)?;
-        parse_catalog(&body)
+        parse_catalog(&body, CatalogLimitSource::Discovered, url)
     }
 
     pub fn cached(path: &Path, url: Option<&str>) -> Result<Self, CatalogError> {
@@ -137,10 +196,10 @@ impl ProviderCatalog {
                 return Self::from_path(path).or_else(|_| Self::from_embedded());
             }
             match fetch_raw(url) {
-                Ok(body) => {
-                    let _ = write_cache_atomic(path, &body);
-                    parse_catalog(&body).or_else(|_| Self::from_embedded())
-                }
+                Ok(body) => match replace_cache_with_valid_catalog(path, &body, url) {
+                    Ok(catalog) => Ok(catalog),
+                    Err(_) => Self::from_embedded(),
+                },
                 Err(_) => Self::from_embedded(),
             }
         } else {
@@ -156,7 +215,7 @@ impl ProviderCatalog {
                 return;
             }
             if let Ok(body) = fetch_raw(&url) {
-                if parse_catalog(&body).is_ok() {
+                if parse_catalog(&body, CatalogLimitSource::Discovered, &url).is_ok() {
                     let _ = write_cache_atomic(&path, &body);
                 }
             }
@@ -170,6 +229,19 @@ impl ProviderCatalog {
     }
 }
 
+fn replace_cache_with_valid_catalog(
+    path: &Path,
+    body: &str,
+    source_reference: &str,
+) -> Result<ProviderCatalog, CatalogError> {
+    let catalog = parse_catalog(body, CatalogLimitSource::Discovered, source_reference)?;
+    write_cache_atomic(path, body).map_err(|source| CatalogError::CacheWrite {
+        path: path.display().to_string(),
+        source,
+    })?;
+    Ok(catalog)
+}
+
 fn priority_of(id: &str) -> u8 {
     PROVIDER_PRIORITY
         .iter()
@@ -178,39 +250,81 @@ fn priority_of(id: &str) -> u8 {
         .unwrap_or(255)
 }
 
-fn parse_catalog(json: &str) -> Result<ProviderCatalog, CatalogError> {
+fn parse_catalog(
+    json: &str,
+    source_kind: CatalogLimitSource,
+    source_reference: &str,
+) -> Result<ProviderCatalog, CatalogError> {
+    let value =
+        duplicate_checked_json_value(json).map_err(|source| CatalogError::Parse { source })?;
     let raw: RawCatalog =
-        serde_json::from_str(json).map_err(|source| CatalogError::Parse { source })?;
+        serde_json::from_value(value).map_err(|source| CatalogError::Parse { source })?;
     let raw_providers = match raw {
         RawCatalog::Generated { provider } | RawCatalog::ModelsDev(provider) => provider,
     };
 
     let mut providers = BTreeMap::new();
+    let mut diagnostics = Vec::new();
     for (id, raw_provider) in raw_providers {
         let auth_methods = auth_methods_for_provider(&id);
         let models = raw_provider
             .models
             .into_iter()
-            .map(|(model_id, raw_model)| {
+            .filter_map(|(model_id, raw_model)| {
                 let context_window = raw_model
                     .metadata
                     .as_ref()
                     .and_then(|metadata| metadata.context_window_tokens)
                     .or_else(|| raw_model.limit.as_ref().and_then(|limit| limit.context));
+                let max_input = raw_model.limit.as_ref().and_then(|limit| limit.input);
+                let max_output = raw_model.limit.as_ref().and_then(|limit| limit.output);
                 let supports_tool_calls = raw_model
                     .metadata
                     .as_ref()
                     .and_then(|metadata| metadata.supports_tool_calls)
                     .or(Some(raw_model.tool_call));
-                (
+                let verified_at = raw_model
+                    .last_updated
+                    .clone()
+                    .or_else(|| models_dev_option(&raw_model.options, &["model", "lastUpdated"]));
+                let source = sanitize_catalog_source_origin(
+                    &models_dev_option(&raw_model.options, &["source"])
+                        .unwrap_or_else(|| source_reference.to_string()),
+                );
+                let provenance = match source_kind {
+                    CatalogLimitSource::Generated => {
+                        ModelLimitProvenance::generated(source, verified_at)
+                    }
+                    CatalogLimitSource::Discovered => {
+                        ModelLimitProvenance::discovered(source, verified_at)
+                    }
+                };
+                let limits = match checked_catalog_limits(
+                    context_window,
+                    max_input,
+                    max_output,
+                    provenance,
+                    &format!("{id}:{model_id}"),
+                ) {
+                    Ok(limits) => limits,
+                    Err(error) => {
+                        diagnostics.push(CatalogDiagnostic {
+                            provider: id.clone(),
+                            model: model_id,
+                            message: error,
+                        });
+                        return None;
+                    }
+                };
+                Some((
                     model_id.clone(),
                     ModelCatalogEntry {
                         name: raw_model.name.unwrap_or(model_id),
-                        context_window,
+                        limits,
                         supports_tool_calls,
                         supports_reasoning: raw_model.reasoning,
                     },
-                )
+                ))
             })
             .collect();
 
@@ -236,7 +350,103 @@ fn parse_catalog(json: &str) -> Result<ProviderCatalog, CatalogError> {
         );
     }
 
-    Ok(ProviderCatalog { providers })
+    if !providers
+        .values()
+        .any(|provider| !provider.models.is_empty())
+    {
+        return Err(CatalogError::NoUsableModels);
+    }
+
+    Ok(ProviderCatalog {
+        providers,
+        diagnostics,
+    })
+}
+
+fn checked_limit(value: Option<u64>) -> Result<Option<u32>, std::num::TryFromIntError> {
+    value.map(u32::try_from).transpose()
+}
+
+pub fn checked_catalog_limits(
+    context_window: Option<u64>,
+    max_input: Option<u64>,
+    max_output: Option<u64>,
+    mut provenance: ModelLimitProvenance,
+    identity: &str,
+) -> Result<ResolvedModelLimits, String> {
+    provenance.verified_at = provenance
+        .verified_at
+        .as_deref()
+        .and_then(sanitize_catalog_verified_at);
+    let context_window = checked_limit(context_window)
+        .map_err(|_| format!("model `{identity}` context exceeds the supported u32 token range"))?;
+    let max_input = checked_limit(max_input)
+        .map_err(|_| format!("model `{identity}` input exceeds the supported u32 token range"))?;
+    let max_output = checked_limit(max_output)
+        .map_err(|_| format!("model `{identity}` output exceeds the supported u32 token range"))?;
+    let limits =
+        ResolvedModelLimits::from_values(context_window, max_input, max_output, provenance);
+    limits
+        .validate(identity)
+        .map_err(|error| error.to_string())?;
+    if !limits.is_selectable_known() {
+        return Err(format!(
+            "model `{identity}` does not define selectable context and output limits"
+        ));
+    }
+    Ok(limits)
+}
+
+pub fn sanitize_catalog_verified_at(value: &str) -> Option<String> {
+    let bytes = value.as_bytes();
+    let digits = |range: std::ops::Range<usize>| {
+        bytes
+            .get(range)
+            .is_some_and(|segment| segment.iter().all(u8::is_ascii_digit))
+    };
+    let year_valid = bytes.len() >= 4 && digits(0..4);
+    let month_valid = bytes.len() >= 7
+        && bytes.get(4) == Some(&b'-')
+        && digits(5..7)
+        && (1..=12).contains(&((bytes[5] - b'0') * 10 + bytes[6] - b'0'));
+    let day_valid = bytes.len() == 10
+        && bytes.get(7) == Some(&b'-')
+        && digits(8..10)
+        && (1..=31).contains(&((bytes[8] - b'0') * 10 + bytes[9] - b'0'));
+    if (bytes.len() == 4 && year_valid)
+        || (bytes.len() == 7 && year_valid && month_valid)
+        || (year_valid && month_valid && day_valid)
+    {
+        Some(value.to_string())
+    } else {
+        None
+    }
+}
+
+pub fn sanitize_catalog_source_origin(source: &str) -> String {
+    let trimmed = source.trim();
+    if trimmed.starts_with("file:") {
+        return "file://<redacted>".to_string();
+    }
+    let Ok(mut url) = reqwest::Url::parse(trimmed) else {
+        return "<redacted>".to_string();
+    };
+    let _ = url.set_username("");
+    let _ = url.set_password(None);
+    url.set_query(None);
+    url.set_fragment(None);
+    url.to_string()
+}
+
+fn models_dev_option(
+    options: &BTreeMap<String, serde_json::Value>,
+    path: &[&str],
+) -> Option<String> {
+    let mut value = options.get("modelsDev")?;
+    for segment in path {
+        value = value.get(*segment)?;
+    }
+    value.as_str().map(str::to_string)
 }
 
 fn auth_methods_for_provider(id: &str) -> Vec<CatalogAuthMethod> {
@@ -406,6 +616,10 @@ struct RawModel {
     tool_call: bool,
     #[serde(default)]
     limit: Option<RawModelLimit>,
+    #[serde(default)]
+    options: BTreeMap<String, serde_json::Value>,
+    #[serde(default, alias = "lastUpdated")]
+    last_updated: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -420,11 +634,16 @@ struct RawModelMetadata {
 struct RawModelLimit {
     #[serde(default)]
     context: Option<u64>,
+    #[serde(default)]
+    input: Option<u64>,
+    #[serde(default)]
+    output: Option<u64>,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::{ModelLimitError, ModelLimitProvenance, ResolvedModelLimits};
     use crate::UnwrapOrAbort;
 
     static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -454,19 +673,24 @@ mod tests {
                 "name": "GPT-5.6",
                 "reasoning": true,
                 "tool_call": true,
-                "limit": { "context": 1050000 }
+                "limit": { "context": 1050000, "output": 128000 }
               }
             }
           }
         }"#;
 
         // act
-        let catalog = parse_catalog(body).unwrap_or_abort();
+        let catalog = parse_catalog(
+            body,
+            CatalogLimitSource::Discovered,
+            "https://example.test/models",
+        )
+        .unwrap_or_abort();
 
         // assert
         let model = &catalog.provider("openai").unwrap_or_abort().models["gpt-5.6"];
         assert_eq!(model.name, "GPT-5.6");
-        assert_eq!(model.context_window, Some(1_050_000));
+        assert_eq!(model.limits.context_window_tokens(), Some(1_050_000));
         assert_eq!(model.supports_tool_calls, Some(true));
         assert!(model.supports_reasoning);
     }
@@ -646,6 +870,30 @@ mod tests {
                 .permissions();
             assert_eq!(perms.mode() & 0o777, 0o600);
         }
+    }
+
+    #[test]
+    fn cache_replacement_validates_the_body_before_atomic_write() {
+        // arrange
+        let dir = tempfile::tempdir().unwrap_or_abort();
+        let cache_path = dir.path().join("cache.json");
+        let original =
+            r#"{"provider":{"safe":{"models":{"safe":{"limit":{"context":8192,"output":1024}}}}}}"#;
+        std::fs::write(&cache_path, original).unwrap_or_abort();
+
+        // act
+        let result = replace_cache_with_valid_catalog(
+            &cache_path,
+            r#"{"provider":{"bad":{"models":{"bad":{"limit":{"context":0,"output":1}}}}}}"#,
+            "https://example.test/models",
+        );
+
+        // assert
+        assert!(result.is_err());
+        assert_eq!(
+            std::fs::read_to_string(&cache_path).unwrap_or_abort(),
+            original
+        );
     }
 
     #[test]

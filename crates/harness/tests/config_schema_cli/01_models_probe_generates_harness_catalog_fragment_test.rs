@@ -119,11 +119,15 @@ fn models_probe_generates_harness_catalog_fragment_from_models_dev_json() {
     assert_eq!(model["modalities"]["input"][1], "image");
     assert_eq!(
         model["options"]["modelsDev"]["source"],
-        format!("file://{}", source_path.display())
+        "file://<redacted>"
     );
     assert_eq!(
         model["options"]["modelsDev"]["capabilities"]["reasoning"],
         true
+    );
+    assert_eq!(
+        model["options"]["modelsDev"]["model"]["lastUpdated"],
+        "2026-02-01"
     );
     assert_eq!(model["options"]["modelsDev"]["cost"]["cache_read"], 0.025);
     assert_eq!(
@@ -204,6 +208,96 @@ fn models_generate_updates_static_catalog_artifact_from_models_dev_json() {
             ["reasoningEffort"],
         "medium"
     );
+}
+
+#[test]
+fn models_probe_uses_checked_conversion_and_quarantines_invalid_rows() {
+    // arrange
+    let temp = tempdir().unwrap_or_abort();
+    let source_path = temp.path().join("models-dev.json");
+    write_json(
+        &source_path,
+        &serde_json::json!({"openai":{"models":{
+            "good":{"tool_call":true,"limit":{"context":8192,"output":1024}},
+            "zero":{"tool_call":true,"limit":{"context":0,"output":1}},
+            "overflow":{"tool_call":true,"limit":{"context":4294967296_u64,"output":1}},
+            "too-large":{"tool_call":true,"limit":{"context":8192,"output":16384}}
+        }}}),
+    );
+
+    // act
+    let output = harness_command()
+        .args(["models", "probe", "--input", source_path.to_str().unwrap_or_abort()])
+        .output()
+        .unwrap_or_abort();
+    let catalog: Value = serde_json::from_slice(&output.stdout).unwrap_or_abort();
+    let models = catalog["provider"]["openai"]["models"]
+        .as_object()
+        .unwrap_or_abort();
+
+    // assert
+    assert!(output.status.success());
+    assert_eq!(models.len(), 1);
+    assert!(models.contains_key("good"));
+    assert!(models["good"]["limit"].get("input").is_none());
+}
+
+#[test]
+fn models_probe_rejects_a_body_with_no_usable_model() {
+    // arrange
+    let temp = tempdir().unwrap_or_abort();
+    let source_path = temp.path().join("models-dev.json");
+    write_json(
+        &source_path,
+        &serde_json::json!({"openai":{"models":{
+            "zero":{"tool_call":true,"limit":{"context":0,"output":1}},
+            "overflow":{"tool_call":true,"limit":{"context":4294967296_u64,"output":1}},
+            "too-large":{"tool_call":true,"limit":{"context":8192,"output":16384}}
+        }}}),
+    );
+
+    // act
+    let output = harness_command()
+        .args(["models", "probe", "--input", source_path.to_str().unwrap_or_abort()])
+        .output()
+        .unwrap_or_abort();
+
+    // assert
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr)
+        .contains("catalog contains no provider with a usable model"));
+}
+
+#[test]
+fn models_generate_rejects_duplicate_keys_before_replacing_output() {
+    // arrange
+    let temp = tempdir().unwrap_or_abort();
+    let source_path = temp.path().join("models-dev.json");
+    let output_path = temp.path().join("provider-catalog.generated.json");
+    fs::write(
+        &source_path,
+        r#"{"openai":{"models":{}},"openai":{"models":{}}}"#,
+    )
+    .unwrap_or_abort();
+    fs::write(&output_path, "original\n").unwrap_or_abort();
+
+    // act
+    let output = harness_command()
+        .args([
+            "models",
+            "generate",
+            "--input",
+            source_path.to_str().unwrap_or_abort(),
+            "--output",
+            output_path.to_str().unwrap_or_abort(),
+        ])
+        .output()
+        .unwrap_or_abort();
+
+    // assert
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("duplicate key `openai`"));
+    assert_eq!(fs::read_to_string(output_path).unwrap_or_abort(), "original\n");
 }
 #[test]
 fn models_generated_prints_embedded_static_catalog() {

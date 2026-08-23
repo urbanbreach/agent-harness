@@ -27,3 +27,13 @@ harness run → coordinator → ResolvedModelLimits + RequestBudget → Canonica
 
 The target preserves append-only events, side-effect-free replay, provider-specific lowering in
 adapters, and ephemeral streaming separate from durable semantic history.
+
+## Canonical model-limit contract
+
+`ResolvedModelLimits` owns the resolved context window, maximum provider-visible input, maximum
+output, and field-level provenance. Configuration and catalog boundaries reject partial, zero, or
+impossible triples. Fully absent custom-model limits remain explicit unknowns, and family detection
+never creates numeric limits. Variant resolution changes only explicitly overridden fields.
+
+Request-budget math is deliberately separate: M02 establishes authoritative inputs and their
+meaning, while M03 will derive per-request budgets from them.

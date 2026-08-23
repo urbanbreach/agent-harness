@@ -1,6 +1,7 @@
 // allow: SIZE_OK — model catalog (merge thinking + variant resolution + capability inference + fallback metadata)
 use crate::model_resolution::{resolve_model, ModelResolution, ModelResolutionInput};
 
+use super::model_limit_resolution::{resolve_model_limits, ModelLimitIdentity};
 use super::model_selection::{resolve_agent_model_selection, resolve_named_model_profile};
 use super::*;
 use serde_json::Value;
@@ -74,29 +75,19 @@ pub fn resolve_profile_model_metadata(
             .clone()
             .unwrap_or_else(|| variant_name.to_string())
     });
-    let context_window_tokens = variant
-        .and_then(|(_, variant_cfg)| variant_cfg.context_window_tokens)
-        .or_else(|| variant.and_then(|(_, variant_cfg)| variant_cfg.limit.context))
-        .or(model.metadata.context_window_tokens)
-        .or(model.limit.context);
-    let max_input_tokens = variant
-        .and_then(|(_, variant_cfg)| variant_cfg.max_input_tokens)
-        .or_else(|| variant.and_then(|(_, variant_cfg)| variant_cfg.limit.input))
-        .or(model.max_input_tokens)
-        .or(model.limit.input);
-    let max_output_tokens = variant
-        .and_then(|(_, variant_cfg)| variant_cfg.max_output_tokens)
-        .or_else(|| variant.and_then(|(_, variant_cfg)| variant_cfg.limit.output))
-        .or(model.max_output_tokens)
-        .or(model.limit.output);
-    let resolution = resolve_model_catalog_metadata(
-        provider_name,
-        model_name,
+    let limits = resolve_model_limits(
+        ModelLimitIdentity {
+            provider: provider_name,
+            model: model_name,
+            variant: variant.map(|(name, _)| name),
+        },
         model,
-        context_window_tokens,
-        max_input_tokens,
-        max_output_tokens,
+        variant.map(|(_, config)| config),
     );
+    limits
+        .validate(&format!("{provider_name}:{model_name}"))
+        .map_err(|error| ConfigError::InvalidReference(error.to_string()))?;
+    let resolution = resolve_model_catalog_metadata(provider_name, model_name, model);
     let thinking = merge_thinking_option(&model.options, variant.map(|(_, cfg)| &cfg.options));
 
     Ok(ResolvedProfileModelMetadata {
@@ -110,14 +101,8 @@ pub fn resolve_profile_model_metadata(
         variant: variant.map(|(variant_name, _)| variant_name.to_string()),
         variant_display_label,
         display_label,
-        token_window_label: build_token_window_label(
-            context_window_tokens,
-            max_input_tokens,
-            max_output_tokens,
-        ),
-        context_window_tokens,
-        max_input_tokens,
-        max_output_tokens,
+        token_window_label: build_token_window_label(&limits),
+        limits,
         description: variant.and_then(|(_, variant_cfg)| variant_cfg.metadata.description.clone()),
         reasoning_effort: variant.and_then(|(_, variant_cfg)| {
             variant_cfg
@@ -178,13 +163,13 @@ pub fn resolve_configured_model_metadata(
     });
     let variant = variant.transpose()?;
 
-    Ok(build_resolved_model_catalog_entry(
-        provider_name,
-        model_name,
-        model,
-        provider,
-        variant,
-    ))
+    let resolved =
+        build_resolved_model_catalog_entry(provider_name, model_name, model, provider, variant);
+    resolved
+        .limits
+        .validate(&format!("{provider_name}:{model_name}"))
+        .map_err(|error| ConfigError::InvalidReference(error.to_string()))?;
+    Ok(resolved)
 }
 
 pub fn configured_model_catalog(cfg: &HarnessConfig) -> Vec<ResolvedModelCatalogEntry> {
@@ -243,29 +228,16 @@ fn build_resolved_model_catalog_entry(
     provider: &ProviderConfig,
     variant: Option<(&str, &ModelVariantConfig)>,
 ) -> ResolvedModelCatalogEntry {
-    let context_window_tokens = variant
-        .and_then(|(_, variant_cfg)| variant_cfg.context_window_tokens)
-        .or_else(|| variant.and_then(|(_, variant_cfg)| variant_cfg.limit.context))
-        .or(model.metadata.context_window_tokens)
-        .or(model.limit.context);
-    let max_input_tokens = variant
-        .and_then(|(_, variant_cfg)| variant_cfg.max_input_tokens)
-        .or_else(|| variant.and_then(|(_, variant_cfg)| variant_cfg.limit.input))
-        .or(model.max_input_tokens)
-        .or(model.limit.input);
-    let max_output_tokens = variant
-        .and_then(|(_, variant_cfg)| variant_cfg.max_output_tokens)
-        .or_else(|| variant.and_then(|(_, variant_cfg)| variant_cfg.limit.output))
-        .or(model.max_output_tokens)
-        .or(model.limit.output);
-    let resolution = resolve_model_catalog_metadata(
-        provider_name,
-        model_name,
+    let limits = resolve_model_limits(
+        ModelLimitIdentity {
+            provider: provider_name,
+            model: model_name,
+            variant: variant.map(|(name, _)| name),
+        },
         model,
-        context_window_tokens,
-        max_input_tokens,
-        max_output_tokens,
+        variant.map(|(_, config)| config),
     );
+    let resolution = resolve_model_catalog_metadata(provider_name, model_name, model);
     let thinking = merge_thinking_option(&model.options, variant.map(|(_, cfg)| &cfg.options));
 
     ResolvedModelCatalogEntry {
@@ -282,14 +254,8 @@ fn build_resolved_model_catalog_entry(
                 .unwrap_or_else(|| variant_name.to_string())
         }),
         display_label: build_model_display_label(model, variant),
-        token_window_label: build_token_window_label(
-            context_window_tokens,
-            max_input_tokens,
-            max_output_tokens,
-        ),
-        context_window_tokens,
-        max_input_tokens,
-        max_output_tokens,
+        token_window_label: build_token_window_label(&limits),
+        limits,
         description: variant.and_then(|(_, variant_cfg)| variant_cfg.metadata.description.clone()),
         reasoning_effort: variant.and_then(|(_, variant_cfg)| {
             variant_cfg
@@ -317,18 +283,12 @@ fn resolve_model_catalog_metadata(
     provider_name: &str,
     model_name: &str,
     model: &ModelConfig,
-    context_window_tokens: Option<u32>,
-    max_input_tokens: Option<u32>,
-    max_output_tokens: Option<u32>,
 ) -> ModelResolution {
     resolve_model(ModelResolutionInput {
         provider: provider_name,
         model: model_name,
         metadata_family: model.metadata.family.as_deref(),
         input_modalities: &model.modalities.input,
-        context_window_tokens,
-        max_input_tokens,
-        max_output_tokens,
         supports_tool_calls: model.metadata.supports_tool_calls,
         supports_reasoning_summaries: model.metadata.supports_reasoning_summaries,
     })
@@ -353,20 +313,16 @@ fn build_model_display_label(
     format!("{} · {}", model.display_name, variant_label)
 }
 
-fn build_token_window_label(
-    context_window_tokens: Option<u32>,
-    max_input_tokens: Option<u32>,
-    max_output_tokens: Option<u32>,
-) -> Option<String> {
+fn build_token_window_label(limits: &ResolvedModelLimits) -> Option<String> {
     let mut segments = Vec::new();
 
-    if let Some(tokens) = context_window_tokens {
+    if let Some(tokens) = limits.context_window_tokens() {
         segments.push(format!("{} ctx", compact_token_count(tokens)));
     }
-    if let Some(tokens) = max_input_tokens {
+    if let Some(tokens) = limits.max_input_tokens() {
         segments.push(format!("{} in", compact_token_count(tokens)));
     }
-    if let Some(tokens) = max_output_tokens {
+    if let Some(tokens) = limits.max_output_tokens() {
         segments.push(format!("{} out", compact_token_count(tokens)));
     }
 

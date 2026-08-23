@@ -5,9 +5,12 @@ use std::path::Path;
 use std::sync::Arc;
 
 use harness_core::agent::AgentProfile;
+use harness_core::auto_fallback::take_next_fallback_model_target;
 use harness_core::clock::FakeClock;
 use harness_core::config::{
-    refresh_profile_model_metadata_registry, HarnessConfig, ToolFailureMode,
+    refresh_profile_model_metadata_registry, resolve_model_selection, HarnessConfig,
+    MaxInputSemantics, ModelLimitProvenance, ResolvedModelLimit, ResolvedModelLimits,
+    ToolFailureMode,
 };
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig, CoordinatorHandle};
 use harness_core::event::{
@@ -70,6 +73,23 @@ async fn recorded_runtime_context_meta_roundtrips() {
         model_display_label: Some("GPT-5.4 Mini".to_string()),
         variant_display_label: Some("Deterministic".to_string()),
         token_window_label: Some("128k ctx · 128k in · 4k out".to_string()),
+        model_limits: ResolvedModelLimits {
+            context_window: ResolvedModelLimit {
+                tokens: Some(128000),
+                provenance: ModelLimitProvenance::explicit("model configuration"),
+            },
+            max_input: ResolvedModelLimit {
+                tokens: Some(128000),
+                provenance: ModelLimitProvenance::explicit("model configuration"),
+            },
+            max_output: ResolvedModelLimit {
+                tokens: Some(4096),
+                provenance: ModelLimitProvenance::explicit(
+                    "model `default:gpt-5.4-mini` variant `deterministic`",
+                ),
+            },
+            max_input_semantics: MaxInputSemantics::ProviderVisibleInputTokens,
+        },
         context_window_tokens: Some(128000),
         max_input_tokens: Some(128000),
         max_output_tokens: Some(4096),
@@ -113,6 +133,186 @@ async fn recorded_runtime_context_meta_roundtrips() {
         entry.provider_model.as_deref(),
         Some("default/gpt-5.4-mini")
     );
+}
+
+#[tokio::test]
+async fn active_typed_primary_and_different_model_targets_reach_recorded_context() {
+    // arrange
+    let config = profile_metadata_config();
+    let primary = resolve_model_selection(&config, MODEL_REF, Some("deterministic"))
+        .unwrap_or_abort()
+        .primary;
+    let mut different = primary.clone();
+    different.model_ref = "other:distinct".to_string();
+    different.provider = "other".to_string();
+    different.model = "distinct".to_string();
+    different.variant = None;
+    different.limits =
+        ResolvedModelLimits::compatibility_mirror(Some(64_000), Some(48_000), Some(8_000));
+
+    for target in [primary, different] {
+        let temp_dir = tempfile::tempdir().unwrap_or_abort();
+        let session_dir = temp_dir.path().join("sessions");
+        let workspace_root = temp_dir.path().join("workspace");
+        fs::create_dir_all(&session_dir).unwrap_or_abort();
+        fs::create_dir_all(&workspace_root).unwrap_or_abort();
+        let mut coordinator_config = CoordinatorConfig::new(&session_dir);
+        coordinator_config.deterministic_store = true;
+        coordinator_config.agent_profiles = agent_profiles();
+        coordinator_config
+            .agent_model_targets
+            .insert(PROFILE_NAME.to_string(), target.clone());
+        let coordinator = spawn_coordinator(
+            coordinator_config,
+            Arc::new(FakeClock::new()),
+            Arc::new(DefaultRedactor::default()),
+        );
+
+        // act
+        let run = coordinator
+            .start_run("typed-target", &workspace_root)
+            .await
+            .unwrap_or_abort();
+        coordinator
+            .spawn_agent_idle(
+                supervisor_actor_with_id("agent-supervisor"),
+                PROFILE_NAME,
+                None,
+            )
+            .await
+            .unwrap_or_abort();
+        coordinator.stop_run().await.unwrap_or_abort();
+        let metadata: RunMetadata = serde_json::from_str(
+            &fs::read_to_string(run.run_dir.join("meta.json")).unwrap_or_abort(),
+        )
+        .unwrap_or_abort();
+        let recorded = metadata.recorded_runtime_context.unwrap_or_abort();
+
+        // assert
+        assert_eq!(recorded.provider, target.provider);
+        assert_eq!(recorded.model, target.model);
+        assert_eq!(recorded.variant, target.variant);
+        assert_eq!(recorded.reasoning_effort, target.reasoning_effort);
+        assert_eq!(recorded.model_limits, target.limits);
+    }
+}
+
+#[test]
+fn model_target_recording_preserves_matching_rich_metadata_and_clears_stale_fallback_fields() {
+    // arrange
+    let config = profile_metadata_config();
+    refresh_profile_model_metadata_registry(&config).unwrap_or_abort();
+    let primary = resolve_model_selection(&config, MODEL_REF, Some("deterministic"))
+        .unwrap_or_abort()
+        .primary;
+    let mut fallback = primary.clone();
+    fallback.model_ref = "other:distinct".to_string();
+    fallback.provider = "other".to_string();
+    fallback.model = "distinct".to_string();
+    fallback.variant = None;
+    fallback.reasoning_effort = Some("high".to_string());
+    fallback.limits =
+        ResolvedModelLimits::compatibility_mirror(Some(64_000), Some(48_000), Some(8_000));
+
+    // act
+    let recorded_primary = RecordedRuntimeContext::from_model_target(PROFILE_NAME, &primary);
+    let recorded_fallback = RecordedRuntimeContext::from_model_target(PROFILE_NAME, &fallback);
+
+    // assert
+    assert_eq!(
+        recorded_primary.provider_display_label.as_deref(),
+        Some("default")
+    );
+    assert_eq!(
+        recorded_primary.provider_backend_label.as_deref(),
+        Some("OpenAI")
+    );
+    assert_eq!(
+        recorded_primary.model_display_label.as_deref(),
+        Some("GPT-5.4 Mini")
+    );
+    assert_eq!(
+        recorded_primary.variant_display_label.as_deref(),
+        Some("Deterministic")
+    );
+    assert_eq!(
+        recorded_primary.token_window_label.as_deref(),
+        Some("128k ctx · 128k in · 4k out")
+    );
+    assert_eq!(
+        recorded_primary.description.as_deref(),
+        Some("Deterministic mode")
+    );
+    assert_eq!(
+        recorded_fallback.profile_description.as_deref(),
+        Some("Deep work")
+    );
+    assert_eq!(recorded_fallback.provider, "other");
+    assert_eq!(recorded_fallback.model, "distinct");
+    assert_eq!(
+        recorded_fallback.model_display_label.as_deref(),
+        Some("distinct")
+    );
+    assert_eq!(recorded_fallback.description, None);
+    assert_eq!(recorded_fallback.recommended_for, None);
+    assert_eq!(recorded_fallback.model_limits, fallback.limits);
+}
+
+#[tokio::test]
+async fn selected_same_model_variant_rich_metadata_roundtrips_recorded_context() {
+    // arrange
+    let config = profile_metadata_config();
+    refresh_profile_model_metadata_registry(&config).unwrap_or_abort();
+    let selected = resolve_model_selection(&config, MODEL_REF, Some("high"))
+        .unwrap_or_abort()
+        .primary;
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
+    let session_dir = temp_dir.path().join("sessions");
+    let workspace_root = temp_dir.path().join("workspace");
+    fs::create_dir_all(&session_dir).unwrap_or_abort();
+    fs::create_dir_all(&workspace_root).unwrap_or_abort();
+    let mut coordinator_config = CoordinatorConfig::new(&session_dir);
+    coordinator_config.deterministic_store = true;
+    coordinator_config.agent_profiles = agent_profiles();
+    coordinator_config
+        .agent_model_targets
+        .insert(PROFILE_NAME.to_string(), selected);
+    let coordinator = spawn_coordinator(
+        coordinator_config,
+        Arc::new(FakeClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+
+    // act
+    let run = coordinator
+        .start_run("selected-high-variant", &workspace_root)
+        .await
+        .unwrap_or_abort();
+    coordinator
+        .spawn_agent_idle(
+            supervisor_actor_with_id("agent-supervisor"),
+            PROFILE_NAME,
+            None,
+        )
+        .await
+        .unwrap_or_abort();
+    coordinator.stop_run().await.unwrap_or_abort();
+    let metadata: RunMetadata =
+        serde_json::from_str(&fs::read_to_string(run.run_dir.join("meta.json")).unwrap_or_abort())
+            .unwrap_or_abort();
+    let recorded = metadata.recorded_runtime_context.unwrap_or_abort();
+    let replayed: RecordedRuntimeContext =
+        serde_json::from_str(&serde_json::to_string(&recorded).unwrap_or_abort()).unwrap_or_abort();
+
+    // assert
+    assert_eq!(replayed.variant.as_deref(), Some("high"));
+    assert_eq!(replayed.variant_display_label.as_deref(), Some("High"));
+    assert_eq!(
+        replayed.token_window_label.as_deref(),
+        Some("128k ctx · 128k in · 6k out")
+    );
+    assert_eq!(replayed.description.as_deref(), Some("High reasoning mode"));
+    assert_eq!(replayed.recommended_for.as_deref(), Some("review"));
 }
 
 #[test]
@@ -179,6 +379,59 @@ fn session_catalog_entry_tolerates_legacy_meta_without_runtime_context() {
     assert_eq!(entry.mode_source, SessionModeSource::InteractiveLive);
 }
 
+#[test]
+fn legacy_scalar_runtime_context_reconstructs_compatibility_limits() {
+    // arrange
+    let context: RecordedRuntimeContext = serde_json::from_str(
+        r#"{
+          "profile":"legacy","provider":"default","model":"legacy-model",
+          "variant":null,"display_label":"Legacy","token_window_label":null,
+          "context_window_tokens":128000,"max_input_tokens":96000,
+          "max_output_tokens":16000,"description":null,"recommended_for":null,
+          "reasoning_effort":null,"text_verbosity":null
+        }"#,
+    )
+    .unwrap_or_abort();
+
+    // act
+    let limits = context.effective_model_limits();
+
+    // assert
+    assert_eq!(limits.context_window_tokens(), Some(128_000));
+    assert_eq!(limits.max_input_tokens(), Some(96_000));
+    assert_eq!(limits.max_output_tokens(), Some(16_000));
+    assert_eq!(
+        limits.context_window.provenance.kind,
+        harness_core::config::ModelLimitProvenanceKind::CompatibilityFallback
+    );
+}
+
+#[test]
+fn fallback_queue_preserves_the_complete_target_for_runtime_recording() {
+    // arrange
+    let config = profile_metadata_config();
+    let mut fallback = resolve_model_selection(&config, MODEL_REF, Some("deterministic"))
+        .unwrap_or_abort()
+        .primary;
+    fallback.model_ref = "other:fallback".to_string();
+    fallback.provider = "other".to_string();
+    fallback.model = "fallback".to_string();
+    fallback.limits =
+        ResolvedModelLimits::compatibility_mirror(Some(96_000), Some(80_000), Some(12_000));
+    let mut queue = vec![fallback.clone()];
+
+    // act
+    let active = take_next_fallback_model_target(&mut queue).unwrap_or_abort();
+    let recorded = RecordedRuntimeContext::from_model_target(PROFILE_NAME, &active);
+
+    // assert
+    assert!(queue.is_empty());
+    assert_eq!(active, fallback);
+    assert_eq!(recorded.provider, "other");
+    assert_eq!(recorded.model, "fallback");
+    assert_eq!(recorded.model_limits, fallback.limits);
+}
+
 fn profile_metadata_config() -> HarnessConfig {
     json5::from_str(&format!(
         r#"
@@ -207,6 +460,15 @@ fn profile_metadata_config() -> HarnessConfig {
                         reasoning_effort: "minimal",
                         text_verbosity: "low",
                         recommended_for: "deep",
+                      }},
+                    }},
+                    high: {{
+                      display_name: "High",
+                      max_output_tokens: 6144,
+                      metadata: {{
+                        description: "High reasoning mode",
+                        reasoning_effort: "high",
+                        recommended_for: "review",
                       }},
                     }},
                   }},

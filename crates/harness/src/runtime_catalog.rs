@@ -7,8 +7,8 @@ use harness_core::auth::codex::codex_oauth_model_allowed;
 use harness_core::auth::copilot::copilot_offline_fallback_models;
 use harness_core::auth::{AuthProviderId, CredentialStore};
 use harness_core::config::{
-    load_config_from_str, HarnessConfig, ModelConfig, ModelLimitConfig, ModelMetadataConfig,
-    ModelModalitiesConfig, ModelVariantConfig, ModelVariantMetadataConfig,
+    load_config_from_str, HarnessConfig, ModelConfig, ModelLimitConfig, ModelLimitProvenance,
+    ModelMetadataConfig, ModelModalitiesConfig, ModelVariantConfig, ModelVariantMetadataConfig,
     ModelVariantReasoningEffort, OpenAiApiMode, OpenAiCompatibleProviderConfig, ProviderConfig,
 };
 use harness_core::provider_catalog::{ModelCatalogEntry, ProviderCatalog};
@@ -185,9 +185,9 @@ fn merge_live_codex_models(config: &mut HarnessConfig, catalog: &ProviderCatalog
 }
 
 fn model_config_from_catalog(metadata: &ModelCatalogEntry) -> ModelConfig {
-    let context = metadata
-        .context_window
-        .and_then(|value| u32::try_from(value).ok());
+    let context = metadata.limits.context_window_tokens();
+    let max_input = metadata.limits.max_input_tokens();
+    let max_output = metadata.limits.max_output_tokens();
     ModelConfig {
         display_name: metadata.name.clone(),
         metadata: ModelMetadataConfig {
@@ -197,15 +197,17 @@ fn model_config_from_catalog(metadata: &ModelCatalogEntry) -> ModelConfig {
         },
         limit: ModelLimitConfig {
             context,
-            ..Default::default()
+            input: max_input,
+            output: max_output,
         },
         modalities: ModelModalitiesConfig {
             input: vec!["text".to_string()],
             output: vec!["text".to_string()],
         },
         options: BTreeMap::new(),
-        max_input_tokens: None,
-        max_output_tokens: None,
+        max_input_tokens: max_input,
+        max_output_tokens: max_output,
+        limit_provenance: metadata.limits.primary_provenance().clone(),
         variants: BTreeMap::new(),
     }
 }
@@ -259,15 +261,6 @@ fn normalize_codex_model_variants(model_id: &str, mut cfg: ModelConfig) -> Model
         retain_codex_variants(&mut cfg.variants, efforts);
         insert_missing_codex_variants(&mut cfg.variants, efforts);
     }
-    if model_id == "gpt-5.5" {
-        cfg.metadata.context_window_tokens = Some(400_000);
-        cfg.limit = ModelLimitConfig {
-            context: Some(400_000),
-            input: Some(272_000),
-            output: Some(128_000),
-        };
-    }
-
     cfg
 }
 
@@ -440,6 +433,9 @@ fn builtin_copilot_provider() -> Result<ProviderConfig, String> {
                     options: BTreeMap::new(),
                     max_input_tokens: None,
                     max_output_tokens: None,
+                    limit_provenance: ModelLimitProvenance::compatibility(
+                        "GitHub Copilot offline fallback",
+                    ),
                     variants: BTreeMap::new(),
                 };
                 cfg.options.insert(
@@ -482,6 +478,7 @@ fn openai_provider(
 }
 
 fn generated_provider_models(provider_id: &str) -> Result<BTreeMap<String, ModelConfig>, String> {
+    let validated_catalog = ProviderCatalog::from_embedded().map_err(|err| err.to_string())?;
     let root = serde_json::from_str::<Value>(PROVIDER_CATALOG_JSON)
         .map_err(|err| format!("failed to parse generated provider catalog: {err}"))?;
     let Some(models) = root
@@ -493,16 +490,22 @@ fn generated_provider_models(provider_id: &str) -> Result<BTreeMap<String, Model
         return Ok(BTreeMap::new());
     };
 
-    models
-        .iter()
-        .map(|(id, model)| {
-            serde_json::from_value::<ModelConfig>(model.clone())
-                .map(|model| (id.clone(), model))
-                .map_err(|err| {
-                    format!("failed to parse generated model `{provider_id}:{id}`: {err}")
-                })
-        })
-        .collect()
+    let mut projected = BTreeMap::new();
+    for (id, model) in models {
+        let Ok(validated) = validated_catalog.validated_model(provider_id, id) else {
+            continue;
+        };
+        let mut config = serde_json::from_value::<ModelConfig>(model.clone()).map_err(|err| {
+            format!("failed to parse generated model `{provider_id}:{id}`: {err}")
+        })?;
+        config.metadata.context_window_tokens = validated.limits.context_window_tokens();
+        config.limit.context = validated.limits.context_window_tokens();
+        config.limit.input = validated.limits.max_input_tokens();
+        config.limit.output = validated.limits.max_output_tokens();
+        config.limit_provenance = validated.limits.context_window.provenance.clone();
+        projected.insert(id.clone(), config);
+    }
+    Ok(projected)
 }
 
 fn normalize_builtin_default_variants(config: &mut HarnessConfig) {
@@ -567,6 +570,34 @@ mod tests {
             ))
             .unwrap_or_abort();
         (temp, store)
+    }
+
+    #[test]
+    fn builtin_generated_model_projection_matches_validated_catalog() {
+        // arrange
+        let catalog = ProviderCatalog::from_embedded().unwrap_or_abort();
+
+        // act
+        for provider_id in ["openai", "github-copilot"] {
+            let projected = generated_provider_models(provider_id).unwrap_or_abort();
+            let validated = catalog.provider(provider_id).unwrap_or_abort();
+
+            // assert
+            assert_eq!(projected.len(), validated.models.len());
+            for (model_id, config) in projected {
+                let entry = validated.models.get(&model_id).unwrap_or_abort();
+                assert_eq!(
+                    config.metadata.context_window_tokens,
+                    entry.limits.context_window_tokens()
+                );
+                assert_eq!(config.limit.input, entry.limits.max_input_tokens());
+                assert_eq!(config.limit.output, entry.limits.max_output_tokens());
+                assert_eq!(
+                    config.limit_provenance,
+                    entry.limits.context_window.provenance
+                );
+            }
+        }
     }
 
     #[test]
@@ -954,9 +985,9 @@ mod tests {
                     && e.variant.is_none()
             })
             .unwrap_or_abort();
-        assert_eq!(gpt55.context_window_tokens, Some(400_000));
-        assert_eq!(gpt55.max_input_tokens, Some(272_000));
-        assert_eq!(gpt55.max_output_tokens, Some(128_000));
+        assert_eq!(gpt55.limits.context_window_tokens(), Some(1_050_000));
+        assert_eq!(gpt55.limits.max_input_tokens(), Some(922_000));
+        assert_eq!(gpt55.limits.max_output_tokens(), Some(128_000));
 
         let gpt55_pro_entries: Vec<_> = entries
             .iter()

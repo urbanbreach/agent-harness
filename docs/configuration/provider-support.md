@@ -16,7 +16,7 @@ Document or script them only as maintainer-opt-in dogfood.
 
 ## Fallback policy
 
-V1 documents a minimal fallback policy: OpenAI-compatible `auto` mode may fall back from Responses API to Chat Completions when that transport path is unsupported. Model fallback by error category is documented as no-op unless an explicit `model_profile` fallback chain is configured and tested later. Failures remain visible to the operator.
+OpenAI-compatible `auto` mode may fall back from Responses API to Chat Completions when that transport path is unsupported. A configured `model_profile` fallback chain retains each target's resolved variant, reasoning settings, and model limits when a provider failure advances to the next model. Failures remain visible to the operator.
 
 ## Credentials
 
@@ -27,6 +27,12 @@ Use config/env-backed provider credentials. Missing credentials are reported wit
 The bundled model catalog is refreshed from `https://models.dev/api.json` using a five-minute cache. Harness accepts both the direct models.dev provider map and the generated catalog shape, serves a valid stale cache immediately, and refreshes stale data in the background with an atomic, mode-`0600` cache write. Set `HARNESS_DISABLE_MODELS_FETCH=1` to keep the embedded catalog only; `HARNESS_MODELS_URL` and `HARNESS_MODELS_PATH` override the source and cache location.
 
 For the built-in `openai-codex` provider, refreshed OpenAI model metadata is merged into the configured Codex model list without replacing explicit entries. This lets newly published GPT models appear in `/model` while preserving local variants and provider settings. Unknown live entries receive conservative metadata and the existing Codex model-id reasoning policy; a provider-specific model endpoint is not required for this catalog path.
+
+## Resolved model limits
+
+`ResolvedModelLimits` is the runtime authority for context, maximum input, and maximum output tokens. `max_input` means provider-visible input tokens before generated output; it is not a percentage or a request-budget calculation. Each field records whether it came from explicit configuration, the generated catalog, provider discovery, or a compatibility fallback, together with its source and optional verification date.
+
+A selectable known model must provide positive context and output values, with output no larger than context. `max_input` is an independent optional physical provider cap; when present it must be positive and no larger than context, and when absent its value and provenance remain unknown. A custom model may omit all three fields, and Harness does not infer a window from the model family. Variants replace only the fields they explicitly set. `harness models` prints every field and its per-field provenance.
 
 ## Stable error categories
 
@@ -47,4 +53,4 @@ Provider categories are persisted in `ProviderRequestFinished.metadata.provider_
 
 ## Model fallback policy
 
-OpenAI-compatible `auto` mode can fall back from the Responses API to Chat Completions when the configured transport reports that the Responses path is unsupported. No automatic model fallback is performed for provider error categories in V1; category failures stay visible in the event log and operator surfaces until an explicit fallback chain is added and tested.
+OpenAI-compatible `auto` mode can fall back from the Responses API to Chat Completions when the configured transport reports that the Responses path is unsupported. Eligible provider failures may also advance through an explicitly configured `model_profile.fallback` chain; each switch applies the next typed target atomically, including its model ref, variant settings, and resolved limits.

@@ -2,6 +2,273 @@ use super::*;
 use harness::UnwrapOrAbort;
 
 #[tokio::test]
+async fn configured_opaque_tui_target_preserves_reasoning_summary_capability_in_provider_request() {
+    // arrange
+    use harness_core::config::{resolve_model_selection, HarnessConfig};
+    use harness_providers::mock::MockProvider;
+
+    let config: HarnessConfig = load_config_from_str(
+        r#"
+        {
+          provider: {
+            custom: {
+              type: "openai_compatible",
+              options: {
+                baseURL: "http://127.0.0.1:8317/v1",
+                apiKey: "test-key",
+                apiMode: "responses"
+              },
+              models: {
+                "opaque-model-id": {
+                  name: "Opaque Gemini",
+                  metadata: {
+                    family: "gemini",
+                    supportsReasoningSummaries: true
+                  },
+                  variants: {
+                    high: {
+                      name: "High",
+                      metadata: { reasoningEffort: "high" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          model: "custom/opaque-model-id",
+          agent: {
+            default: {
+              system_prompt: "Answer carefully.",
+              model: "custom/opaque-model-id",
+              tools: []
+            }
+          },
+          permission: "allow"
+        }
+        "#,
+    )
+    .unwrap_or_abort();
+    let mut agent_profiles = bootstrap::interactive_agent_profiles(&config).unwrap_or_abort();
+    agent_profiles
+        .get_mut("default")
+        .unwrap_or_abort()
+        .toolset
+        .clear();
+    let launch_metadata =
+        interactive_launch_metadata(Some(&config), &agent_profiles, "default").unwrap_or_abort();
+    let launch_metadata = apply_model_selection_to_launch_metadata(
+        launch_metadata,
+        &PersistedModelSelection {
+            schema_version: 2,
+            config_digest: "test-digest".to_string(),
+            profile: "default".to_string(),
+            provider: "custom".to_string(),
+            model: "opaque-model-id".to_string(),
+            variant: Some("high".to_string()),
+        },
+    );
+    let provider = Arc::new(MockProvider::default());
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
+    let mut coordinator_config = CoordinatorConfig::new(temp_dir.path().join("sessions"));
+    coordinator_config.deterministic_store = true;
+    coordinator_config.provider_model_concurrency = 1;
+    coordinator_config.agent_profiles = agent_profiles;
+    let coordinator_provider = Arc::clone(&provider);
+    coordinator_config.provider = coordinator_provider;
+    coordinator_config.agent_model_targets.insert(
+        "default".to_string(),
+        resolve_model_selection(&config, "custom:opaque-model-id", None)
+            .unwrap_or_abort()
+            .primary,
+    );
+    let coordinator = spawn_coordinator(
+        coordinator_config,
+        Arc::new(RealClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    coordinator
+        .start_run("opaque-tui-target", temp_dir.path())
+        .await
+        .unwrap_or_abort();
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "default", None)
+        .await
+        .unwrap_or_abort();
+    let live_agent_target = Arc::new(Mutex::new(LiveAgentTarget {
+        agent_id: Some(agent_id),
+        profile: "default".to_string(),
+        last_request_id: None,
+    }));
+    let (intent_tx, intent_rx) = mpsc::unbounded_channel();
+    let (status_tx, _status_rx) = live_update_channel();
+    let handle = tokio::spawn(handle_ui_intents(
+        coordinator.clone(),
+        intent_rx,
+        user_actor(),
+        Some(live_agent_target),
+        status_tx,
+        TuiAuthBackendContext {
+            config_path: None,
+            session_dir: Some(temp_dir.path().join("sessions")),
+            workspace_root: temp_dir.path().to_path_buf(),
+            config_digest: "test-digest".to_string(),
+        },
+    ));
+
+    // act
+    intent_tx
+        .send(UiIntent::SubmitPrompt {
+            text: "preserve configured capabilities".to_string(),
+            selected_file_tags: Vec::new(),
+            selected_agent_tags: Vec::new(),
+            selected_resource_tags: Vec::new(),
+            attachments: Vec::new(),
+            launch_metadata,
+        })
+        .unwrap_or_abort();
+    drop(intent_tx);
+    handle.await.unwrap_or_abort().unwrap_or_abort();
+    let request = tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            if let Some(request) = provider.captured_requests().await.into_iter().next() {
+                break request;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap_or_abort();
+
+    // assert
+    assert_eq!(request.model_id, "opaque-model-id");
+    assert_eq!(request.reasoning_effort.as_deref(), Some("high"));
+    assert_eq!(request.reasoning_summary.as_deref(), Some("auto"));
+    coordinator.stop_run().await.unwrap_or_abort();
+}
+
+#[tokio::test]
+async fn selected_tui_variant_target_reaches_provider_start_runtime_context() {
+    // arrange
+    use harness_core::config::{ResolvedModelLimits, ResolvedModelTarget};
+    use harness_core::model_resolution::{resolve_model, ModelResolutionInput};
+    use harness_core::proj::RunMetadata;
+
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
+    let mut config = CoordinatorConfig::new(temp_dir.path().join("sessions"));
+    config.deterministic_store = true;
+    config.agent_profiles = golden_path_profiles();
+    config.provider = Arc::new(golden_path_provider());
+    config.agent_model_targets.insert(
+        "default".to_string(),
+        ResolvedModelTarget {
+            model_ref: "mock:model-1".to_string(),
+            provider: "mock".to_string(),
+            model: "model-1".to_string(),
+            variant: None,
+            reasoning_effort: None,
+            text_verbosity: None,
+            reasoning_summary: None,
+            thinking: None,
+            limits: ResolvedModelLimits::compatibility_mirror(
+                Some(8_192),
+                Some(4_096),
+                Some(1_024),
+            ),
+            resolution: resolve_model(ModelResolutionInput {
+                provider: "mock",
+                model: "model-1",
+                metadata_family: None,
+                input_modalities: &[],
+                supports_tool_calls: Some(true),
+                supports_reasoning_summaries: Some(false),
+            }),
+            catalog_entry: None,
+        },
+    );
+    let selected_limits =
+        ResolvedModelLimits::compatibility_mirror(Some(64_000), Some(48_000), Some(8_000));
+    let selected = ModelOption {
+        profile: "default".to_string(),
+        provider: "mock".to_string(),
+        provider_display_label: Some("Mock".to_string()),
+        provider_backend_label: Some("Test backend".to_string()),
+        model: "model-1".to_string(),
+        model_display_label: Some("Variant Model".to_string()),
+        variant: Some("high".to_string()),
+        variant_display_label: Some("High".to_string()),
+        display_label: Some("Variant Model · High".to_string()),
+        token_window_label: Some("64k ctx · 48k in · 8k out".to_string()),
+        model_limits: selected_limits.clone(),
+        description: Some("selected target".to_string()),
+        profile_description: Some("Default profile".to_string()),
+        reasoning_effort: Some("high".to_string()),
+        text_verbosity: Some("low".to_string()),
+        thinking: None,
+        recommended_for: Some("review".to_string()),
+    };
+    let coordinator = spawn_coordinator(
+        config,
+        Arc::new(FakeClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    let run = coordinator
+        .start_run("tui-target", temp_dir.path())
+        .await
+        .unwrap_or_abort();
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "default", None)
+        .await
+        .unwrap_or_abort();
+    let live_agent_target = Arc::new(Mutex::new(LiveAgentTarget {
+        agent_id: Some(agent_id),
+        profile: "default".to_string(),
+        last_request_id: None,
+    }));
+    let (intent_tx, intent_rx) = mpsc::unbounded_channel();
+    let (status_tx, _status_rx) = live_update_channel();
+    let handle = tokio::spawn(handle_ui_intents(
+        coordinator.clone(),
+        intent_rx,
+        user_actor(),
+        Some(live_agent_target),
+        status_tx,
+        TuiAuthBackendContext {
+            config_path: None,
+            session_dir: Some(temp_dir.path().join("sessions")),
+            workspace_root: temp_dir.path().to_path_buf(),
+            config_digest: "test-digest".to_string(),
+        },
+    ));
+
+    // act
+    intent_tx
+        .send(UiIntent::SubmitPrompt {
+            text: "use selected target".to_string(),
+            selected_file_tags: Vec::new(),
+            selected_agent_tags: Vec::new(),
+            selected_resource_tags: Vec::new(),
+            attachments: Vec::new(),
+            launch_metadata: LaunchMetadata::from_model_option(&selected),
+        })
+        .unwrap_or_abort();
+    drop(intent_tx);
+    handle.await.unwrap_or_abort().unwrap_or_abort();
+    let metadata: RunMetadata = serde_json::from_str(
+        &std::fs::read_to_string(run.run_dir.join("meta.json")).unwrap_or_abort(),
+    )
+    .unwrap_or_abort();
+    let recorded = metadata.recorded_runtime_context.unwrap_or_abort();
+
+    // assert
+    assert_eq!(recorded.provider, "mock");
+    assert_eq!(recorded.model, "model-1");
+    assert_eq!(recorded.variant.as_deref(), Some("high"));
+    assert_eq!(recorded.reasoning_effort.as_deref(), Some("high"));
+    assert_eq!(recorded.model_limits, selected_limits);
+    coordinator.stop_run().await.unwrap_or_abort();
+}
+
+#[tokio::test]
 async fn compact_intent_reports_noop_status_for_idle_live_agent() {
     // arrange
     // act

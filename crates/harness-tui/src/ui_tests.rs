@@ -41,7 +41,8 @@ fn render_live_status_debug(app: &AppState, width: u16) -> String {
 
 fn app_with_context_budget(tokens: u32) -> AppState {
     let mut option = ModelOption::from_model_ref("worker", "mock:model-1");
-    option.context_window_tokens = Some(128_000);
+    option.model_limits =
+        harness_core::config::ResolvedModelLimits::compatibility_mirror(Some(128_000), None, None);
     let mut app = AppState::new_live(None, false, None);
     app.startup_mode = false;
     app.set_launch_metadata(LaunchMetadata::from_model_option(&option));
@@ -508,9 +509,9 @@ fn live_control_dock_keeps_current_runtime_primary_and_next_turn_secondary() {
         variant_display_label: Some("Deterministic".to_string()),
         display_label: Some("GPT-5.4 Mini · Deterministic".to_string()),
         token_window_label: None,
-        context_window_tokens: None,
-        max_input_tokens: None,
-        max_output_tokens: None,
+        model_limits: harness_core::config::ResolvedModelLimits::compatibility_mirror(
+            None, None, None,
+        ),
         description: None,
         profile_description: Some("Deep work".to_string()),
         reasoning_effort: None,
@@ -529,9 +530,9 @@ fn live_control_dock_keeps_current_runtime_primary_and_next_turn_secondary() {
         variant_display_label: Some("Creative".to_string()),
         display_label: Some("GPT-5.4 Mini · Creative".to_string()),
         token_window_label: None,
-        context_window_tokens: None,
-        max_input_tokens: None,
-        max_output_tokens: None,
+        model_limits: harness_core::config::ResolvedModelLimits::compatibility_mirror(
+            None, None, None,
+        ),
         description: None,
         profile_description: Some("Deep work".to_string()),
         reasoning_effort: None,
@@ -578,9 +579,9 @@ fn continued_live_control_dock_preserves_continued_runtime_after_switch() {
         variant_display_label: Some("Deterministic".to_string()),
         display_label: Some("GPT-5.4 Mini · Deterministic".to_string()),
         token_window_label: None,
-        context_window_tokens: None,
-        max_input_tokens: None,
-        max_output_tokens: None,
+        model_limits: harness_core::config::ResolvedModelLimits::compatibility_mirror(
+            None, None, None,
+        ),
         description: None,
         profile_description: Some("Deep work".to_string()),
         reasoning_effort: None,
@@ -599,9 +600,9 @@ fn continued_live_control_dock_preserves_continued_runtime_after_switch() {
         variant_display_label: Some("Creative".to_string()),
         display_label: Some("GPT-5.4 Mini · Creative".to_string()),
         token_window_label: None,
-        context_window_tokens: None,
-        max_input_tokens: None,
-        max_output_tokens: None,
+        model_limits: harness_core::config::ResolvedModelLimits::compatibility_mirror(
+            None, None, None,
+        ),
         description: None,
         profile_description: Some("Deep work".to_string()),
         reasoning_effort: None,

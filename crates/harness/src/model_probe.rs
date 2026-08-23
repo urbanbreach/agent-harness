@@ -149,11 +149,18 @@ fn generate_catalog_body(
 ) -> Result<String, String> {
     validate_source_options(source)?;
 
-    let source_label = ProbeSource::from_options(source).label();
+    let source_label = harness_core::provider_catalog::sanitize_catalog_source_origin(
+        &ProbeSource::from_options(source).label(),
+    );
     let source_body = read_source(source)?;
-    let providers: BTreeMap<String, ModelsDevProvider> = serde_json::from_str(&source_body)
+    let value = harness_core::provider_catalog::duplicate_checked_json_value(&source_body)
+        .map_err(|err| format!("failed to parse models.dev JSON: {err}"))?;
+    let providers: BTreeMap<String, ModelsDevProvider> = serde_json::from_value(value)
         .map_err(|err| format!("failed to parse models.dev JSON: {err}"))?;
     let catalog = build_catalog(&providers, filters, source_label);
+    if catalog.provider.is_empty() {
+        return Err("catalog contains no provider with a usable model".to_string());
+    }
     serde_json::to_string(&catalog)
         .map(|body| format!("{body}\n"))
         .map_err(|err| format!("failed to serialize generated catalog: {err}"))
@@ -258,17 +265,16 @@ fn build_catalog(
                 continue;
             }
 
-            models.insert(
-                model_id.clone(),
-                HarnessModelConfig::from_models_dev(
-                    provider_id,
-                    provider,
-                    model_id,
-                    model,
-                    filters,
-                    &source_label,
-                ),
-            );
+            if let Some(config) = HarnessModelConfig::from_models_dev(
+                provider_id,
+                provider,
+                model_id,
+                model,
+                filters,
+                &source_label,
+            ) {
+                models.insert(model_id.clone(), config);
+            }
         }
 
         if models.is_empty() {
@@ -354,11 +360,23 @@ impl HarnessModelConfig {
         model: &ModelsDevModel,
         filters: &ModelCatalogFilterOptions,
         source_label: &str,
-    ) -> Self {
+    ) -> Option<Self> {
+        let provenance = harness_core::config::ModelLimitProvenance::generated(
+            source_label,
+            model.last_updated.clone(),
+        );
+        let limits = harness_core::provider_catalog::checked_catalog_limits(
+            model.limit.as_ref().and_then(|limit| limit.context),
+            model.limit.as_ref().and_then(|limit| limit.input),
+            model.limit.as_ref().and_then(|limit| limit.output),
+            provenance,
+            &format!("{provider_id}:{model_id}"),
+        )
+        .ok()?;
         let limit = HarnessModelLimit {
-            context: model.limit.as_ref().and_then(|limit| limit.context),
-            input: model.limit.as_ref().and_then(|limit| limit.input),
-            output: model.limit.as_ref().and_then(|limit| limit.output),
+            context: limits.context_window_tokens(),
+            input: limits.max_input_tokens(),
+            output: limits.max_output_tokens(),
         };
         let modalities = HarnessModelModalities {
             input: model
@@ -379,7 +397,7 @@ impl HarnessModelConfig {
             build_models_dev_options(source_label, provider_id, provider, model_id, model),
         );
 
-        Self {
+        Some(Self {
             name: model.name.clone().unwrap_or_else(|| model_id.to_string()),
             metadata: HarnessModelMetadata {
                 family: model.family.clone(),
@@ -392,7 +410,7 @@ impl HarnessModelConfig {
             modalities,
             options,
             variants: reasoning_variants(model.reasoning, filters.emit_reasoning_variants),
-        }
+        })
     }
 }
 
@@ -654,10 +672,10 @@ struct ModelsDevCost {
 
 #[derive(Debug, Deserialize)]
 struct ModelsDevLimit {
-    context: Option<u32>,
+    context: Option<u64>,
     #[serde(default)]
-    input: Option<u32>,
-    output: Option<u32>,
+    input: Option<u64>,
+    output: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]

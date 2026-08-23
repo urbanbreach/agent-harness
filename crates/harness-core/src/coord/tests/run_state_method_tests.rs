@@ -146,6 +146,7 @@ fn queued_agent_turn_fixture(
             selected_agent_tags: Vec::new(),
             selected_resource_tags: Vec::new(),
             model_ref: "mock:model-1".to_string(),
+            model_target: None,
             model_settings: Default::default(),
         },
         queue_key: ConcurrencyKey::ProviderModel {

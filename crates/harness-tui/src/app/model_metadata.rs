@@ -1,6 +1,9 @@
 // allow: SIZE_OK — TUI app state (session projection + interaction)
 use harness_core::agent::AgentModelRef;
-use harness_core::config::{registered_profile_model_metadata, ResolvedProfileModelMetadata};
+use harness_core::config::{
+    registered_profile_model_metadata, ResolvedModelCatalogEntry, ResolvedModelLimits,
+    ResolvedProfileModelMetadata,
+};
 use serde_json::Value;
 
 use crate::text::has_trimmed_content;
@@ -36,9 +39,7 @@ pub struct LaunchMetadata {
     variant_display_label: Option<String>,
     display_label: Option<String>,
     token_window_label: Option<String>,
-    context_window_tokens: Option<u32>,
-    max_input_tokens: Option<u32>,
-    max_output_tokens: Option<u32>,
+    model_limits: ResolvedModelLimits,
     description: Option<String>,
     reasoning_effort: Option<String>,
     text_verbosity: Option<String>,
@@ -46,6 +47,7 @@ pub struct LaunchMetadata {
     recommended_for: Option<String>,
     mode_label: Option<String>,
     oauth_authenticated: bool,
+    resolved_models: Vec<ResolvedModelCatalogEntry>,
     available_models: Vec<ModelOption>,
     switchable_profiles: Vec<String>,
     mcp_resources: Vec<McpResourceOption>,
@@ -80,9 +82,7 @@ impl LaunchMetadata {
             variant_display_label: None,
             display_label: None,
             token_window_label: None,
-            context_window_tokens: None,
-            max_input_tokens: None,
-            max_output_tokens: None,
+            model_limits: ResolvedModelLimits::default(),
             description: None,
             reasoning_effort: None,
             text_verbosity: None,
@@ -90,6 +90,7 @@ impl LaunchMetadata {
             recommended_for: None,
             mode_label: None,
             oauth_authenticated: false,
+            resolved_models: Vec::new(),
             available_models: Vec::new(),
             switchable_profiles: Vec::new(),
             mcp_resources: Vec::new(),
@@ -117,9 +118,7 @@ impl LaunchMetadata {
             variant_display_label: option.variant_display_label.clone(),
             display_label: option.display_label.clone(),
             token_window_label: option.token_window_label.clone(),
-            context_window_tokens: option.context_window_tokens,
-            max_input_tokens: option.max_input_tokens,
-            max_output_tokens: option.max_output_tokens,
+            model_limits: option.model_limits.clone(),
             description: option.description.clone(),
             reasoning_effort: option.reasoning_effort.clone(),
             text_verbosity: option.text_verbosity.clone(),
@@ -127,6 +126,7 @@ impl LaunchMetadata {
             recommended_for: option.recommended_for.clone(),
             mode_label: None,
             oauth_authenticated: false,
+            resolved_models: Vec::new(),
             available_models: Vec::new(),
             switchable_profiles: Vec::new(),
             mcp_resources: Vec::new(),
@@ -154,6 +154,11 @@ impl LaunchMetadata {
 
     pub fn with_available_models(mut self, available_models: Vec<ModelOption>) -> Self {
         self.available_models = available_models;
+        self
+    }
+
+    pub fn with_resolved_models(mut self, resolved_models: Vec<ResolvedModelCatalogEntry>) -> Self {
+        self.resolved_models = resolved_models;
         self
     }
 
@@ -231,24 +236,28 @@ impl LaunchMetadata {
         self.fallback_model_option_label(&self.token_window_label, ModelOption::token_window_label)
     }
 
+    pub fn model_limits(&self) -> &ResolvedModelLimits {
+        &self.model_limits
+    }
+
     pub fn context_window_tokens(&self) -> Option<u32> {
-        self.context_window_tokens.or_else(|| {
+        self.model_limits.context_window_tokens().or_else(|| {
             self.matching_available_model()
-                .and_then(|option| option.context_window_tokens)
+                .and_then(|option| option.model_limits.context_window_tokens())
         })
     }
 
     pub fn max_input_tokens(&self) -> Option<u32> {
-        self.max_input_tokens.or_else(|| {
+        self.model_limits.max_input_tokens().or_else(|| {
             self.matching_available_model()
-                .and_then(|option| option.max_input_tokens)
+                .and_then(|option| option.model_limits.max_input_tokens())
         })
     }
 
     pub fn max_output_tokens(&self) -> Option<u32> {
-        self.max_output_tokens.or_else(|| {
+        self.model_limits.max_output_tokens().or_else(|| {
             self.matching_available_model()
-                .and_then(|option| option.max_output_tokens)
+                .and_then(|option| option.model_limits.max_output_tokens())
         })
     }
 
@@ -283,6 +292,10 @@ impl LaunchMetadata {
         &self.available_models
     }
 
+    pub fn resolved_models(&self) -> &[ResolvedModelCatalogEntry] {
+        &self.resolved_models
+    }
+
     pub fn switchable_profiles(&self) -> &[String] {
         &self.switchable_profiles
     }
@@ -303,9 +316,7 @@ impl LaunchMetadata {
             variant_display_label: self.variant_display_label().map(str::to_string),
             display_label: self.display_label().map(str::to_string),
             token_window_label: self.token_window_label().map(str::to_string),
-            context_window_tokens: self.context_window_tokens(),
-            max_input_tokens: self.max_input_tokens(),
-            max_output_tokens: self.max_output_tokens(),
+            model_limits: self.model_limits.clone(),
             description: self.description().map(str::to_string),
             profile_description: self.profile_description().map(str::to_string),
             reasoning_effort: self.reasoning_effort().map(str::to_string),
@@ -334,9 +345,7 @@ impl LaunchMetadata {
         self.variant_display_label = metadata.variant_display_label.clone();
         self.display_label = Some(metadata.display_label.clone());
         self.token_window_label = metadata.token_window_label.clone();
-        self.context_window_tokens = metadata.context_window_tokens;
-        self.max_input_tokens = metadata.max_input_tokens;
-        self.max_output_tokens = metadata.max_output_tokens;
+        self.model_limits = metadata.limits.clone();
         self.description = metadata.description.clone();
         self.reasoning_effort = metadata.reasoning_effort.clone();
         self.text_verbosity = metadata.text_verbosity.clone();
@@ -410,9 +419,7 @@ pub struct ModelOption {
     pub variant_display_label: Option<String>,
     pub display_label: Option<String>,
     pub token_window_label: Option<String>,
-    pub context_window_tokens: Option<u32>,
-    pub max_input_tokens: Option<u32>,
-    pub max_output_tokens: Option<u32>,
+    pub model_limits: ResolvedModelLimits,
     pub description: Option<String>,
     pub profile_description: Option<String>,
     pub reasoning_effort: Option<String>,
@@ -447,9 +454,7 @@ impl ModelOption {
             variant_display_label: None,
             display_label: None,
             token_window_label: None,
-            context_window_tokens: None,
-            max_input_tokens: None,
-            max_output_tokens: None,
+            model_limits: ResolvedModelLimits::default(),
             description: None,
             profile_description: None,
             reasoning_effort: None,
@@ -475,6 +480,10 @@ impl ModelOption {
     pub(crate) fn selector_category(&self) -> &str {
         self.provider_display_label()
             .unwrap_or(self.provider.as_str())
+    }
+
+    pub fn model_limits(&self) -> &ResolvedModelLimits {
+        &self.model_limits
     }
 
     pub fn variant(&self) -> Option<&str> {
@@ -510,9 +519,7 @@ impl ModelOption {
         self.variant_display_label = metadata.variant_display_label;
         self.display_label = Some(metadata.display_label);
         self.token_window_label = metadata.token_window_label;
-        self.context_window_tokens = metadata.context_window_tokens;
-        self.max_input_tokens = metadata.max_input_tokens;
-        self.max_output_tokens = metadata.max_output_tokens;
+        self.model_limits = metadata.limits;
         self.description = metadata.description;
         self.profile_description = metadata.profile_description;
         self.reasoning_effort = metadata.reasoning_effort;

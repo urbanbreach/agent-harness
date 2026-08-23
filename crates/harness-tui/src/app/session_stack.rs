@@ -608,9 +608,7 @@ fn launch_metadata_from_recorded_runtime_context(
         display_label: Some(recorded_runtime_context.display_label.clone())
             .filter(|value| non_empty_str(value).is_some()),
         token_window_label: recorded_runtime_context.token_window_label.clone(),
-        context_window_tokens: recorded_runtime_context.context_window_tokens,
-        max_input_tokens: recorded_runtime_context.max_input_tokens,
-        max_output_tokens: recorded_runtime_context.max_output_tokens,
+        model_limits: recorded_runtime_context.effective_model_limits(),
         description: recorded_runtime_context.description.clone(),
         profile_description: recorded_runtime_context.profile_description.clone(),
         reasoning_effort: recorded_runtime_context.reasoning_effort.clone(),

@@ -6,7 +6,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::agent::AgentModelRef;
-use crate::config::{registered_profile_model_metadata, ResolvedProfileModelMetadata};
+use crate::config::{
+    registered_profile_model_metadata, ResolvedModelLimits, ResolvedModelTarget,
+    ResolvedProfileModelMetadata,
+};
 use crate::event::{first_lineage_parent_session_id, EventEnvelopeV1, EventV1};
 use crate::session_paths::META_FILE_NAME;
 
@@ -42,6 +45,9 @@ pub struct RecordedRuntimeContext {
     #[serde(default)]
     pub variant_display_label: Option<String>,
     pub token_window_label: Option<String>,
+    #[serde(default)]
+    pub model_limits: ResolvedModelLimits,
+    // Compatibility mirrors consumed by the pre-M03 compaction path.
     pub context_window_tokens: Option<u32>,
     pub max_input_tokens: Option<u32>,
     pub max_output_tokens: Option<u32>,
@@ -54,6 +60,103 @@ pub struct RecordedRuntimeContext {
 }
 
 impl RecordedRuntimeContext {
+    pub fn from_model_target(profile: &str, target: &ResolvedModelTarget) -> Self {
+        let registered = registered_profile_model_metadata(profile);
+        let matching_identity = registered.as_ref().is_some_and(|metadata| {
+            metadata.provider == target.provider && metadata.model == target.model
+        });
+        let matching_variant = matching_identity
+            && registered
+                .as_ref()
+                .is_some_and(|metadata| metadata.variant == target.variant);
+        let profile_description = registered
+            .as_ref()
+            .and_then(|metadata| metadata.profile_description.clone());
+        let selected_catalog_entry = target.catalog_entry.as_deref().filter(|entry| {
+            entry.provider == target.provider
+                && entry.model == target.model
+                && entry.variant == target.variant
+        });
+        let mut recorded = if let Some(entry) = selected_catalog_entry {
+            Self {
+                profile: profile.to_string(),
+                profile_description,
+                provider: entry.provider.clone(),
+                provider_display_label: Some(entry.provider_display_label.clone()),
+                provider_backend_label: entry.provider_backend_label.clone(),
+                model: entry.model.clone(),
+                variant: entry.variant.clone(),
+                display_label: entry.display_label.clone(),
+                model_display_label: Some(entry.model_display_label.clone()),
+                variant_display_label: entry.variant_display_label.clone(),
+                token_window_label: entry.token_window_label.clone(),
+                model_limits: entry.limits.clone(),
+                context_window_tokens: entry.limits.context_window_tokens(),
+                max_input_tokens: entry.limits.max_input_tokens(),
+                max_output_tokens: entry.limits.max_output_tokens(),
+                description: entry.description.clone(),
+                recommended_for: entry.recommended_for.clone(),
+                reasoning_effort: entry.reasoning_effort.clone(),
+                text_verbosity: entry.text_verbosity.clone(),
+                thinking: entry.thinking.clone(),
+            }
+        } else if let Some(metadata) = registered.filter(|_| matching_identity) {
+            Self::from(metadata)
+        } else {
+            let display_label = target.variant.as_ref().map_or_else(
+                || target.model.clone(),
+                |variant| format!("{} · {variant}", target.model),
+            );
+            Self {
+                profile: profile.to_string(),
+                profile_description,
+                provider: target.provider.clone(),
+                provider_display_label: None,
+                provider_backend_label: None,
+                model: target.model.clone(),
+                variant: target.variant.clone(),
+                display_label,
+                model_display_label: Some(target.model.clone()),
+                variant_display_label: target.variant.clone(),
+                token_window_label: None,
+                model_limits: target.limits.clone(),
+                context_window_tokens: target.limits.context_window_tokens(),
+                max_input_tokens: target.limits.max_input_tokens(),
+                max_output_tokens: target.limits.max_output_tokens(),
+                description: None,
+                recommended_for: None,
+                reasoning_effort: target.reasoning_effort.clone(),
+                text_verbosity: target.text_verbosity.clone(),
+                thinking: target.thinking.clone(),
+            }
+        };
+        recorded.provider = target.provider.clone();
+        recorded.model = target.model.clone();
+        recorded.variant = target.variant.clone();
+        recorded.model_limits = target.limits.clone();
+        recorded.context_window_tokens = target.limits.context_window_tokens();
+        recorded.max_input_tokens = target.limits.max_input_tokens();
+        recorded.max_output_tokens = target.limits.max_output_tokens();
+        recorded.reasoning_effort = target.reasoning_effort.clone();
+        recorded.text_verbosity = target.text_verbosity.clone();
+        recorded.thinking = target.thinking.clone();
+        if selected_catalog_entry.is_none() && !matching_variant {
+            let model_label = recorded
+                .model_display_label
+                .clone()
+                .unwrap_or_else(|| target.model.clone());
+            recorded.display_label = target.variant.as_ref().map_or_else(
+                || model_label.clone(),
+                |variant| format!("{model_label} · {variant}"),
+            );
+            recorded.variant_display_label = target.variant.clone();
+            recorded.token_window_label = None;
+            recorded.description = None;
+            recorded.recommended_for = None;
+        }
+        recorded
+    }
+
     pub fn from_profile_model(profile: &str, model_ref: &str) -> Self {
         let model_ref = AgentModelRef::parse(model_ref);
         if let Some(metadata) = registered_profile_model_metadata(profile) {
@@ -76,6 +179,7 @@ impl RecordedRuntimeContext {
             model_display_label: None,
             variant_display_label: None,
             token_window_label: None,
+            model_limits: ResolvedModelLimits::default(),
             context_window_tokens: None,
             max_input_tokens: None,
             max_output_tokens: None,
@@ -85,6 +189,25 @@ impl RecordedRuntimeContext {
             text_verbosity: None,
             thinking: None,
         }
+    }
+
+    pub fn effective_model_limits(&self) -> ResolvedModelLimits {
+        if self.model_limits == ResolvedModelLimits::default()
+            && (self.context_window_tokens.is_some()
+                || self.max_input_tokens.is_some()
+                || self.max_output_tokens.is_some())
+        {
+            return ResolvedModelLimits::compatibility_mirror(
+                self.context_window_tokens,
+                self.max_input_tokens,
+                self.max_output_tokens,
+            );
+        }
+        self.model_limits.clone()
+    }
+
+    fn hydrate_legacy_model_limits(&mut self) {
+        self.model_limits = self.effective_model_limits();
     }
 }
 
@@ -102,9 +225,10 @@ impl From<ResolvedProfileModelMetadata> for RecordedRuntimeContext {
             model_display_label: Some(metadata.model_display_label),
             variant_display_label: metadata.variant_display_label,
             token_window_label: metadata.token_window_label,
-            context_window_tokens: metadata.context_window_tokens,
-            max_input_tokens: metadata.max_input_tokens,
-            max_output_tokens: metadata.max_output_tokens,
+            context_window_tokens: metadata.limits.context_window_tokens(),
+            max_input_tokens: metadata.limits.max_input_tokens(),
+            max_output_tokens: metadata.limits.max_output_tokens(),
+            model_limits: metadata.limits,
             description: metadata.description,
             recommended_for: metadata.recommended_for,
             reasoning_effort: metadata.reasoning_effort,
@@ -177,7 +301,11 @@ impl SessionCatalogEntry {
 
 pub fn load_run_metadata(run_dir: &Path) -> Option<RunMetadata> {
     let body = fs::read_to_string(run_dir.join(META_FILE_NAME)).ok()?;
-    serde_json::from_str(&body).ok()
+    let mut metadata: RunMetadata = serde_json::from_str(&body).ok()?;
+    if let Some(context) = metadata.recorded_runtime_context.as_mut() {
+        context.hydrate_legacy_model_limits();
+    }
+    Some(metadata)
 }
 
 pub fn project_session_catalog_entry<'a>(

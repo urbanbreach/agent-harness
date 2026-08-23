@@ -17,6 +17,10 @@ mod integrations;
 mod loader;
 mod model_alias;
 mod model_catalog;
+mod model_limit_error;
+mod model_limit_provenance;
+mod model_limit_resolution;
+mod model_limits;
 mod model_selection;
 mod model_types;
 mod provider;
@@ -62,6 +66,11 @@ pub use self::model_catalog::{
     configured_model_catalog, configured_model_profile_catalog, resolve_configured_model_metadata,
     resolve_profile_model_metadata,
 };
+pub use self::model_limit_error::ModelLimitError;
+pub use self::model_limit_provenance::{
+    MaxInputSemantics, ModelLimitProvenance, ModelLimitProvenanceKind,
+};
+pub use self::model_limits::{ResolvedModelLimit, ResolvedModelLimits};
 pub use self::model_selection::resolve_model_selection;
 use self::model_selection::{resolve_agent_model_selection, resolve_named_model_profile};
 pub use self::model_types::{

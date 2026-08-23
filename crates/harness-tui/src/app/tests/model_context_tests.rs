@@ -20,9 +20,9 @@ fn runtime_context_model_option(
         variant_display_label: None,
         display_label: Some(display_label.to_string()),
         token_window_label: None,
-        context_window_tokens: None,
-        max_input_tokens: None,
-        max_output_tokens: None,
+        model_limits: harness_core::config::ResolvedModelLimits::compatibility_mirror(
+            None, None, None,
+        ),
         description: None,
         profile_description: None,
         reasoning_effort: None,
@@ -51,9 +51,9 @@ fn metadata_model_option(
         variant_display_label: Some("High".to_string()),
         display_label: Some(display_label.to_string()),
         token_window_label: None,
-        context_window_tokens: None,
-        max_input_tokens: None,
-        max_output_tokens: None,
+        model_limits: harness_core::config::ResolvedModelLimits::compatibility_mirror(
+            None, None, None,
+        ),
         description: None,
         profile_description: profile_description.map(str::to_string),
         reasoning_effort: Some("high".to_string()),
@@ -272,7 +272,8 @@ pub(super) fn current_context_window_tokens_uses_runtime_context_after_model_swi
         Some("deterministic"),
         "GPT-5.4 Mini · Deterministic",
     );
-    runtime_option.context_window_tokens = Some(64000);
+    runtime_option.model_limits =
+        harness_core::config::ResolvedModelLimits::compatibility_mirror(Some(64000), None, None);
 
     let next_turn_option = runtime_context_model_option(
         "deep",

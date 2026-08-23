@@ -28,8 +28,9 @@ fn model_variant_cycle_cmp(left: &ModelOption, right: &ModelOption) -> std::cmp:
         .then_with(|| left.profile.cmp(&right.profile))
 }
 
-fn model_variant_cycle_none_option(seed: &ModelOption) -> ModelOption {
-    let mut option = seed.clone();
+fn model_variant_cycle_none_option(seed: &ModelOption, base: &ModelOption) -> ModelOption {
+    let mut option = base.clone();
+    option.profile = seed.profile.clone();
     let base_label = option.model_display_label.clone().or_else(|| {
         option
             .display_label
@@ -44,13 +45,6 @@ fn model_variant_cycle_none_option(seed: &ModelOption) -> ModelOption {
         option.model_display_label = base_label.clone();
     }
     option.display_label = base_label;
-    option.token_window_label = None;
-    option.max_input_tokens = None;
-    option.max_output_tokens = None;
-    option.description = None;
-    option.reasoning_effort = None;
-    option.text_verbosity = None;
-    option.recommended_for = None;
     option
 }
 
@@ -417,6 +411,7 @@ impl AppState {
     }
     fn build_launch_metadata_for_option(&self, selected_model: &ModelOption) -> LaunchMetadata {
         let mut launch_metadata = LaunchMetadata::from_model_option(selected_model)
+            .with_resolved_models(self.launch_metadata.resolved_models().to_vec())
             .with_available_models(self.launch_metadata.available_models().to_vec())
             .with_switchable_profiles(self.launch_metadata.switchable_profiles().to_vec());
         if selected_model.provider == self.launch_metadata.provider()
@@ -475,8 +470,17 @@ impl AppState {
                 .launch_metadata
                 .to_model_option()
                 .or_else(|| variants.first().cloned());
-            if let Some(none_seed) = none_seed {
-                variants.push(model_variant_cycle_none_option(&none_seed));
+            let resolved_base = self
+                .launch_metadata
+                .available_models()
+                .iter()
+                .find(|option| {
+                    option.provider == provider_id
+                        && option.model == model_id
+                        && option.variant().is_none()
+                });
+            if let (Some(none_seed), Some(resolved_base)) = (none_seed, resolved_base) {
+                variants.push(model_variant_cycle_none_option(&none_seed, resolved_base));
             }
         }
 
@@ -591,9 +595,10 @@ impl AppState {
                         variant_display_label: None,
                         display_label: None,
                         token_window_label: None,
-                        context_window_tokens: None,
-                        max_input_tokens: None,
-                        max_output_tokens: None,
+                        model_limits:
+                            harness_core::config::ResolvedModelLimits::compatibility_mirror(
+                                None, None, None,
+                            ),
                         description: None,
                         profile_description: None,
                         reasoning_effort: None,
@@ -623,9 +628,9 @@ impl AppState {
                     variant_display_label: None,
                     display_label: None,
                     token_window_label: None,
-                    context_window_tokens: None,
-                    max_input_tokens: None,
-                    max_output_tokens: None,
+                    model_limits: harness_core::config::ResolvedModelLimits::compatibility_mirror(
+                        None, None, None,
+                    ),
                     description: None,
                     profile_description: None,
                     reasoning_effort: None,

@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::model_resolution::ModelResolution;
 
+use super::{ModelLimitProvenance, ResolvedModelLimits};
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ModelConfig {
@@ -24,6 +26,9 @@ pub struct ModelConfig {
     pub max_output_tokens: Option<u32>,
     #[serde(default)]
     pub variants: BTreeMap<String, ModelVariantConfig>,
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub limit_provenance: ModelLimitProvenance,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -105,9 +110,7 @@ pub struct ResolvedProfileModelMetadata {
     pub variant_display_label: Option<String>,
     pub display_label: String,
     pub token_window_label: Option<String>,
-    pub context_window_tokens: Option<u32>,
-    pub max_input_tokens: Option<u32>,
-    pub max_output_tokens: Option<u32>,
+    pub limits: ResolvedModelLimits,
     pub description: Option<String>,
     pub reasoning_effort: Option<String>,
     pub text_verbosity: Option<String>,
@@ -127,9 +130,7 @@ pub struct ResolvedModelCatalogEntry {
     pub variant_display_label: Option<String>,
     pub display_label: String,
     pub token_window_label: Option<String>,
-    pub context_window_tokens: Option<u32>,
-    pub max_input_tokens: Option<u32>,
-    pub max_output_tokens: Option<u32>,
+    pub limits: ResolvedModelLimits,
     pub description: Option<String>,
     pub reasoning_effort: Option<String>,
     pub text_verbosity: Option<String>,
@@ -149,7 +150,9 @@ pub struct ResolvedModelTarget {
     pub text_verbosity: Option<String>,
     pub reasoning_summary: Option<String>,
     pub thinking: Option<serde_json::Value>,
+    pub limits: ResolvedModelLimits,
     pub resolution: ModelResolution,
+    pub catalog_entry: Option<Box<ResolvedModelCatalogEntry>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

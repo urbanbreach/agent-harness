@@ -9,7 +9,7 @@ use clap::{Args, ValueEnum};
 use harness_core::agent::{default_model_settings_for_profile, AgentModelSettings};
 use harness_core::clock::Determinism;
 use harness_core::config::PermissionMode;
-use harness_core::config::{resolve_configured_model_metadata, ShellAllowlist};
+use harness_core::config::{resolve_model_selection, ResolvedModelTarget, ShellAllowlist};
 use harness_core::coord::{spawn_coordinator, CoordinatorConfig};
 use harness_core::event::{ActorKind, EventActor};
 use harness_core::perm::PermissionPolicy;
@@ -458,17 +458,29 @@ async fn run_prompt(
         .map_err(|err| err.to_string())?;
 
     let request_id = match model_override {
-        Some(model_override) => {
-            coordinator
-                .request_agent_turn_with_model(
-                    user_actor(),
-                    agent_id,
-                    prompt_text.to_string(),
-                    model_override.model_ref,
-                    Some(model_override.model_settings),
-                )
-                .await
-        }
+        Some(model_override) => match model_override.model_target {
+            Some(target) => {
+                coordinator
+                    .request_agent_turn_with_model_target(
+                        user_actor(),
+                        agent_id,
+                        prompt_text.to_string(),
+                        target,
+                    )
+                    .await
+            }
+            None => {
+                coordinator
+                    .request_agent_turn_with_model(
+                        user_actor(),
+                        agent_id,
+                        prompt_text.to_string(),
+                        model_override.model_ref,
+                        Some(model_override.model_settings),
+                    )
+                    .await
+            }
+        },
         None => {
             coordinator
                 .request_agent_turn(user_actor(), agent_id, prompt_text.to_string())
@@ -630,17 +642,29 @@ async fn run_resumed_prompt(
 
     let model_override = resolve_prompt_model_override(cmd, settings, &resume_profile)?;
     let request_id = match model_override {
-        Some(model_override) => {
-            coordinator
-                .request_agent_turn_with_model(
-                    user_actor(),
-                    resume_agent_id,
-                    prompt_text.to_string(),
-                    model_override.model_ref,
-                    Some(model_override.model_settings),
-                )
-                .await
-        }
+        Some(model_override) => match model_override.model_target {
+            Some(target) => {
+                coordinator
+                    .request_agent_turn_with_model_target(
+                        user_actor(),
+                        resume_agent_id,
+                        prompt_text.to_string(),
+                        target,
+                    )
+                    .await
+            }
+            None => {
+                coordinator
+                    .request_agent_turn_with_model(
+                        user_actor(),
+                        resume_agent_id,
+                        prompt_text.to_string(),
+                        model_override.model_ref,
+                        Some(model_override.model_settings),
+                    )
+                    .await
+            }
+        },
         None => {
             coordinator
                 .request_agent_turn(user_actor(), resume_agent_id, prompt_text.to_string())
@@ -731,6 +755,7 @@ fn default_prompt_permission_policy() -> PermissionPolicy {
 struct PromptModelOverride {
     model_ref: Option<String>,
     model_settings: AgentModelSettings,
+    model_target: Option<ResolvedModelTarget>,
 }
 
 fn resolve_prompt_model_override(
@@ -748,6 +773,7 @@ fn resolve_prompt_model_override(
 
     let mut model_settings = default_model_settings_for_profile(profile_name);
     let mut model_ref_override = None;
+    let mut model_target = None;
 
     if let Some(config) = settings.logging_config.as_ref() {
         let (provider, model) = if let Some(model_ref) = cmd.model.as_deref() {
@@ -759,9 +785,13 @@ fn resolve_prompt_model_override(
             parse_cli_model_ref(&profile.model_ref)?
         };
 
-        let resolved =
-            resolve_configured_model_metadata(config, &provider, &model, cmd.variant.as_deref())
-                .map_err(|err| err.to_string())?;
+        let mut resolved = resolve_model_selection(
+            config,
+            &format!("{provider}:{model}"),
+            cmd.variant.as_deref(),
+        )
+        .map_err(|err| err.to_string())?
+        .primary;
 
         model_settings.variant = resolved.variant.clone();
         model_settings.reasoning_effort = resolved.reasoning_effort.clone();
@@ -783,8 +813,10 @@ fn resolve_prompt_model_override(
         }
 
         if cmd.model.is_some() || cmd.variant.is_some() || cmd.thinking {
-            model_ref_override = Some(format!("{}:{}", resolved.provider, resolved.model));
+            model_ref_override = Some(resolved.model_ref.clone());
         }
+        resolved.reasoning_summary = model_settings.reasoning_summary.clone();
+        model_target = Some(resolved);
     } else {
         if let Some(model_ref) = cmd.model.as_deref() {
             let (provider, model) = parse_cli_model_ref(model_ref)?;
@@ -800,11 +832,21 @@ fn resolve_prompt_model_override(
 
     if let Some(ref effort) = cmd.reasoning_effort {
         model_settings.reasoning_effort = Some(effort.clone());
+        if let Some(target) = model_target.as_mut() {
+            target.reasoning_effort = Some(effort.clone());
+            target.reasoning_summary = target
+                .resolution
+                .capabilities
+                .supports_reasoning_summaries
+                .then(|| "auto".to_string());
+            model_settings.reasoning_summary = target.reasoning_summary.clone();
+        }
     }
 
     Ok(Some(PromptModelOverride {
         model_ref: model_ref_override,
         model_settings,
+        model_target,
     }))
 }
 

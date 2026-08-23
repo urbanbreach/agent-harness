@@ -78,9 +78,6 @@ pub struct ModelCapabilities {
     pub supports_top_p: bool,
     pub supports_thinking: bool,
     pub supports_reasoning_summaries: bool,
-    pub context_window_tokens: Option<u32>,
-    pub max_input_tokens: Option<u32>,
-    pub max_output_tokens: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -97,9 +94,6 @@ pub struct ModelResolutionInput<'a> {
     pub model: &'a str,
     pub metadata_family: Option<&'a str>,
     pub input_modalities: &'a [String],
-    pub context_window_tokens: Option<u32>,
-    pub max_input_tokens: Option<u32>,
-    pub max_output_tokens: Option<u32>,
     pub supports_tool_calls: Option<bool>,
     pub supports_reasoning_summaries: Option<bool>,
 }
@@ -111,9 +105,6 @@ impl Default for ModelResolution {
             model: "",
             metadata_family: None,
             input_modalities: &[],
-            context_window_tokens: None,
-            max_input_tokens: None,
-            max_output_tokens: None,
             supports_tool_calls: None,
             supports_reasoning_summaries: None,
         })
@@ -140,9 +131,6 @@ pub fn resolve_model(input: ModelResolutionInput<'_>) -> ModelResolution {
         .unwrap_or(caps.supports_reasoning_summaries);
     caps.supports_vision =
         input_modalities_support_vision(input.input_modalities) || caps.supports_vision;
-    caps.context_window_tokens = input.context_window_tokens.or(caps.context_window_tokens);
-    caps.max_input_tokens = input.max_input_tokens.or(caps.max_input_tokens);
-    caps.max_output_tokens = input.max_output_tokens.or(caps.max_output_tokens);
 
     ModelResolution {
         family,
@@ -285,21 +273,16 @@ fn family_capabilities(family: ModelFamily) -> ModelCapabilities {
         supports_top_p: true,
         supports_thinking: false,
         supports_reasoning_summaries: false,
-        context_window_tokens: None,
-        max_input_tokens: None,
-        max_output_tokens: None,
     };
 
     match family {
         ModelFamily::ClaudeOpus => {
             caps.variants = variants(&["low", "medium", "high", "max"]);
             caps.supports_thinking = true;
-            caps.context_window_tokens = Some(200_000);
         }
         ModelFamily::Claude => {
             caps.variants = variants(&["low", "medium", "high"]);
             caps.supports_thinking = true;
-            caps.context_window_tokens = Some(200_000);
         }
         ModelFamily::OpenAiReasoning => {
             caps.variants = variants(&["low", "medium", "high"]);
@@ -369,9 +352,6 @@ mod tests {
             model: "enterprise-alpha",
             metadata_family: Some("gemini-pro"),
             input_modalities: &[],
-            context_window_tokens: None,
-            max_input_tokens: None,
-            max_output_tokens: None,
             supports_tool_calls: None,
             supports_reasoning_summaries: None,
         });
@@ -392,9 +372,6 @@ mod tests {
             model: "gpt-5.5",
             metadata_family: None,
             input_modalities: &input_modalities,
-            context_window_tokens: Some(272_000),
-            max_input_tokens: Some(260_000),
-            max_output_tokens: Some(128_000),
             supports_tool_calls: Some(false),
             supports_reasoning_summaries: Some(false),
         });
@@ -407,8 +384,6 @@ mod tests {
         assert!(resolution.capabilities.supports_vision);
         assert!(!resolution.capabilities.supports_tool_calls);
         assert!(!resolution.capabilities.supports_reasoning_summaries);
-        assert_eq!(resolution.capabilities.context_window_tokens, Some(272_000));
-        assert_eq!(resolution.capabilities.max_output_tokens, Some(128_000));
     }
 
     #[test]
@@ -421,9 +396,6 @@ mod tests {
             model: "mystery-model",
             metadata_family: None,
             input_modalities: &[],
-            context_window_tokens: None,
-            max_input_tokens: None,
-            max_output_tokens: None,
             supports_tool_calls: None,
             supports_reasoning_summaries: None,
         });

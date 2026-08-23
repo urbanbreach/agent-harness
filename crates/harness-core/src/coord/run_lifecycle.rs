@@ -710,10 +710,22 @@ impl Coordinator {
             .insert(agent_id.clone(), profile_cfg.clone());
 
         if should_record_runtime_context {
-            run_state.recorded_runtime_context = Some(RecordedRuntimeContext::from_profile_model(
-                &profile_cfg.name,
-                &profile_cfg.model_ref,
-            ));
+            run_state.recorded_runtime_context = Some(
+                self.config
+                    .agent_model_targets
+                    .get(&profile_cfg.name)
+                    .map_or_else(
+                        || {
+                            RecordedRuntimeContext::from_profile_model(
+                                &profile_cfg.name,
+                                &profile_cfg.model_ref,
+                            )
+                        },
+                        |target| {
+                            RecordedRuntimeContext::from_model_target(&profile_cfg.name, target)
+                        },
+                    ),
+            );
             write_run_metadata(run_state, &self.config, self.clock.as_ref())?;
             run_state.allow_initial_runtime_context_recording = false;
         }
@@ -751,6 +763,11 @@ impl Coordinator {
                 selected_agent_tags: Vec::new(),
                 selected_resource_tags: Vec::new(),
                 model_ref: profile_cfg.model_ref.clone(),
+                model_target: self
+                    .config
+                    .agent_model_targets
+                    .get(&profile_cfg.name)
+                    .cloned(),
                 model_settings: default_model_settings_for_profile(&profile_cfg.name),
             };
 

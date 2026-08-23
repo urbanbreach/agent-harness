@@ -3,9 +3,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use harness_core::agent::{AgentModelSettings, AgentProfile};
 use harness_core::config::{
-    configured_model_catalog, resolve_profile_model_metadata, HarnessConfig,
+    configured_model_catalog, resolve_profile_model_metadata, HarnessConfig, ResolvedModelTarget,
 };
 use harness_core::event::{ActorKind, EventEnvelopeV1, EventV1};
+use harness_core::model_resolution::{resolve_model, ModelResolutionInput};
 use harness_core::proj::RecordedRuntimeContext;
 use harness_tui::app::{LaunchMetadata, ModelOption};
 
@@ -21,6 +22,7 @@ pub(super) fn interactive_launch_metadata(
     };
 
     let available_models = model_options_for_profiles(config, agent_profiles, profile);
+    let resolved_models = config.map(configured_model_catalog).unwrap_or_default();
     let launch_metadata = config
         .and_then(|config| resolve_profile_model_metadata(config, profile).ok())
         .map(|metadata| {
@@ -35,9 +37,7 @@ pub(super) fn interactive_launch_metadata(
                 variant_display_label: metadata.variant_display_label,
                 display_label: Some(metadata.display_label),
                 token_window_label: metadata.token_window_label,
-                context_window_tokens: metadata.context_window_tokens,
-                max_input_tokens: metadata.max_input_tokens,
-                max_output_tokens: metadata.max_output_tokens,
+                model_limits: metadata.limits,
                 description: metadata.description,
                 profile_description: metadata.profile_description,
                 reasoning_effort: metadata.reasoning_effort,
@@ -54,6 +54,7 @@ pub(super) fn interactive_launch_metadata(
         });
 
     Ok(launch_metadata
+        .with_resolved_models(resolved_models)
         .with_available_models(available_models)
         .with_switchable_profiles(switchable_profile_names(config, agent_profiles, profile)))
 }
@@ -139,9 +140,7 @@ fn configured_profile_model_options(
                 variant_display_label: entry.variant_display_label.clone(),
                 display_label: Some(entry.display_label.clone()),
                 token_window_label: entry.token_window_label.clone(),
-                context_window_tokens: entry.context_window_tokens,
-                max_input_tokens: entry.max_input_tokens,
-                max_output_tokens: entry.max_output_tokens,
+                model_limits: entry.limits.clone(),
                 description: entry.description.clone(),
                 profile_description: profile_description.clone(),
                 reasoning_effort: entry.reasoning_effort.clone(),
@@ -176,9 +175,7 @@ fn configured_profile_model_options(
                     variant_display_label: entry.variant_display_label.clone(),
                     display_label: Some(entry.display_label.clone()),
                     token_window_label: entry.token_window_label.clone(),
-                    context_window_tokens: entry.context_window_tokens,
-                    max_input_tokens: entry.max_input_tokens,
-                    max_output_tokens: entry.max_output_tokens,
+                    model_limits: entry.limits.clone(),
                     description: entry.description.clone(),
                     profile_description: profile_description.clone(),
                     reasoning_effort: entry.reasoning_effort.clone(),
@@ -203,9 +200,7 @@ fn configured_profile_model_options(
                 variant_display_label: metadata.variant_display_label,
                 display_label: Some(metadata.display_label),
                 token_window_label: metadata.token_window_label,
-                context_window_tokens: metadata.context_window_tokens,
-                max_input_tokens: metadata.max_input_tokens,
-                max_output_tokens: metadata.max_output_tokens,
+                model_limits: metadata.limits,
                 description: metadata.description,
                 profile_description: metadata.profile_description,
                 reasoning_effort: metadata.reasoning_effort,
@@ -268,6 +263,7 @@ pub(super) fn launch_metadata_for_connected_providers(
         LaunchMetadata::new(launch_metadata.profile().to_string(), "local", None)
     };
     selected = selected
+        .with_resolved_models(launch_metadata.resolved_models().to_vec())
         .with_available_models(available)
         .with_switchable_profiles(launch_metadata.switchable_profiles().to_vec());
     selected
@@ -295,6 +291,60 @@ pub(super) fn launch_metadata_model_settings(
     }
 }
 
+pub(super) fn launch_metadata_model_target(
+    launch_metadata: &LaunchMetadata,
+) -> Option<ResolvedModelTarget> {
+    let provider = launch_metadata.provider();
+    let model = launch_metadata.model()?;
+    if let Some(entry) = launch_metadata.resolved_models().iter().find(|entry| {
+        entry.provider == provider
+            && entry.model == model
+            && entry.variant.as_deref() == launch_metadata.variant()
+    }) {
+        return Some(ResolvedModelTarget {
+            model_ref: format!("{provider}:{model}"),
+            provider: provider.to_string(),
+            model: model.to_string(),
+            variant: entry.variant.clone(),
+            reasoning_effort: entry.reasoning_effort.clone(),
+            text_verbosity: entry.text_verbosity.clone(),
+            reasoning_summary: (entry.supports_reasoning_summaries
+                && entry.reasoning_effort.is_some())
+            .then(|| "auto".to_string()),
+            thinking: entry.thinking.clone(),
+            limits: entry.limits.clone(),
+            resolution: entry.resolution.clone(),
+            catalog_entry: Some(Box::new(entry.clone())),
+        });
+    }
+    let resolution = resolve_model(ModelResolutionInput {
+        provider,
+        model,
+        metadata_family: None,
+        input_modalities: &[],
+        supports_tool_calls: None,
+        supports_reasoning_summaries: None,
+    });
+    let reasoning_effort = launch_metadata.reasoning_effort().map(str::to_string);
+    Some(ResolvedModelTarget {
+        model_ref: format!("{provider}:{model}"),
+        provider: provider.to_string(),
+        model: model.to_string(),
+        variant: launch_metadata.variant().map(str::to_string),
+        reasoning_summary: resolution
+            .capabilities
+            .supports_reasoning_summaries
+            .then(|| reasoning_effort.as_ref().map(|_| "auto".to_string()))
+            .flatten(),
+        reasoning_effort,
+        text_verbosity: launch_metadata.text_verbosity().map(str::to_string),
+        thinking: launch_metadata.thinking().cloned(),
+        limits: launch_metadata.model_limits().clone(),
+        resolution,
+        catalog_entry: None,
+    })
+}
+
 fn launch_metadata_from_recorded_runtime_context(
     recorded_runtime_context: &RecordedRuntimeContext,
 ) -> LaunchMetadata {
@@ -310,9 +360,7 @@ fn launch_metadata_from_recorded_runtime_context(
         display_label: Some(recorded_runtime_context.display_label.clone())
             .filter(|value| metadata_value_present(value)),
         token_window_label: recorded_runtime_context.token_window_label.clone(),
-        context_window_tokens: recorded_runtime_context.context_window_tokens,
-        max_input_tokens: recorded_runtime_context.max_input_tokens,
-        max_output_tokens: recorded_runtime_context.max_output_tokens,
+        model_limits: recorded_runtime_context.effective_model_limits(),
         description: recorded_runtime_context.description.clone(),
         profile_description: recorded_runtime_context.profile_description.clone(),
         reasoning_effort: recorded_runtime_context.reasoning_effort.clone(),

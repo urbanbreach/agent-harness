@@ -118,6 +118,16 @@ pub fn take_next_fallback_model_ref(chain: &mut Vec<String>) -> Option<String> {
     }
 }
 
+pub fn take_next_fallback_model_target(
+    chain: &mut Vec<ResolvedModelTarget>,
+) -> Option<ResolvedModelTarget> {
+    if chain.is_empty() {
+        None
+    } else {
+        Some(chain.remove(0))
+    }
+}
+
 /// Whether a terminal turn failure stage is eligible for model auto-fallback.
 ///
 /// Same-model transport retries are handled first by `provider_retry`. After
@@ -409,7 +419,9 @@ mod tests {
             text_verbosity: None,
             reasoning_summary: None,
             thinking: None,
+            limits: Default::default(),
             resolution: ModelResolution::default(),
+            catalog_entry: None,
         }
     }
 

@@ -237,6 +237,24 @@ impl CoordinatorHandle {
         .await
     }
 
+    pub async fn request_agent_turn_with_model_target(
+        &self,
+        actor: EventActor,
+        agent_id: impl Into<String>,
+        prompt: impl Into<String>,
+        target: crate::config::ResolvedModelTarget,
+    ) -> Result<String, CoordinatorError> {
+        self.request_agent_turn_with_model_target_and_selected_tags_and_attachments(
+            actor,
+            agent_id,
+            prompt,
+            crate::file_tag::SelectedPromptTags::default(),
+            Vec::new(),
+            target,
+        )
+        .await
+    }
+
     pub async fn request_agent_turn_with_model_and_selected_tags(
         &self,
         actor: EventActor,
@@ -256,6 +274,7 @@ impl CoordinatorHandle {
             attachments: Vec::new(),
             model_ref_override,
             model_settings_override,
+            model_target_override: None,
             child_task_metadata: None,
             respond_to,
         })
@@ -282,6 +301,35 @@ impl CoordinatorHandle {
             attachments,
             model_ref_override,
             model_settings_override,
+            model_target_override: None,
+            child_task_metadata: None,
+            respond_to,
+        })
+        .await
+    }
+
+    pub async fn request_agent_turn_with_model_target_and_selected_tags_and_attachments(
+        &self,
+        actor: EventActor,
+        agent_id: impl Into<String>,
+        prompt: impl Into<String>,
+        selected_tags: crate::file_tag::SelectedPromptTags,
+        attachments: Vec<crate::attachment_transport::AttachmentMetadata>,
+        target: crate::config::ResolvedModelTarget,
+    ) -> Result<String, CoordinatorError> {
+        let model_ref_override = Some(target.model_ref.clone());
+        let model_settings_override = Some(AgentModelSettings::from(&target));
+        self.request(|respond_to| Command::RequestAgentTurn {
+            actor,
+            agent_id: agent_id.into(),
+            prompt: prompt.into(),
+            selected_file_tags: selected_tags.files,
+            selected_agent_tags: selected_tags.agents,
+            selected_resource_tags: selected_tags.resources,
+            attachments,
+            model_ref_override,
+            model_settings_override,
+            model_target_override: Some(Box::new(target)),
             child_task_metadata: None,
             respond_to,
         })
@@ -307,6 +355,7 @@ impl CoordinatorHandle {
             attachments: Vec::new(),
             model_ref_override,
             model_settings_override,
+            model_target_override: None,
             child_task_metadata: Some(child_task_metadata),
             respond_to,
         })

@@ -150,9 +150,6 @@ fn prompt_family_asset_metadata(
         model: model_id,
         metadata_family: model.metadata.family.as_deref(),
         input_modalities: &model.modalities.input,
-        context_window_tokens: model.metadata.context_window_tokens.or(model.limit.context),
-        max_input_tokens: model.max_input_tokens.or(model.limit.input),
-        max_output_tokens: model.max_output_tokens.or(model.limit.output),
         supports_tool_calls: model.metadata.supports_tool_calls,
         supports_reasoning_summaries: model.metadata.supports_reasoning_summaries,
     });
