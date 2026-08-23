@@ -21,9 +21,11 @@ const READ_POLL_TIMEOUT: Duration = Duration::from_millis(50);
 const PTY_SIGNOFF_ENV: &str = "HARNESS_TUI_PTY_SIGNOFF";
 const HELPER_SCENARIO_ENV: &str = "HARNESS_TUI_PTY_HELPER_SCENARIO";
 const TYPE_FIRST_STARTUP_SCENARIO: &str = "type_first_startup";
+const SCROLL_FOLLOW_SCENARIO: &str = "scroll_follow";
 const CONNECT_AUTH_SCENARIO: &str = "connect_auth";
 const PERMISSION_OVERLAY_SCENARIO: &str = "permission_overlay";
 const TYPE_FIRST_STARTUP_TEST: &str = "pty_helper_type_first_startup";
+const SCROLL_FOLLOW_TEST: &str = "pty_helper_scroll_follow";
 const CONNECT_AUTH_TEST: &str = "pty_helper_connect_auth";
 const PERMISSION_OVERLAY_TEST: &str = "pty_helper_permission_overlay";
 const DRAFT_TEXT: &str = "Hello from PTY";
@@ -70,6 +72,57 @@ pub(crate) fn pty_smoke_starts_accepts_input_resizes_and_exits() {
     helper.wait_for("Exit the app");
     send_key(helper.writer.as_mut(), b'\r').unwrap_or_abort();
     wait_for_child_exit(&mut helper, "pty_smoke_exit");
+}
+
+pub(crate) fn pty_scroll_follow_requires_second_clamped_page_down() {
+    if !cfg!(target_os = "linux") || std::env::var(PTY_SIGNOFF_ENV).as_deref() != Ok("1") {
+        return;
+    }
+
+    let mut helper = spawn_scroll_follow_helper();
+    helper.wait_for("中文双宽字符");
+    helper
+        .master
+        .resize(pty_size(MINIMUM_COLS, MINIMUM_ROWS))
+        .unwrap_or_abort();
+    helper.parser = Parser::new(MINIMUM_ROWS, MINIMUM_COLS, 0);
+    helper.wait_for("中文双宽字符");
+
+    send_bytes(helper.writer.as_mut(), b"\x1b[5~").unwrap_or_abort();
+    helper.wait_for("▼");
+    let page_up_screen = helper.screen_text();
+    let arrow_column = page_up_screen
+        .lines()
+        .find_map(|line| line.chars().position(|character| character == '▼'))
+        .unwrap_or_abort();
+    assert!(
+        (38..=41).contains(&arrow_column),
+        "detached indicator must stay centered at 80 columns\n{page_up_screen}"
+    );
+
+    send_bytes(helper.writer.as_mut(), b"\x1b[6~").unwrap_or_abort();
+    helper.wait_until_absent("▼");
+    let landed_screen = helper.screen_text();
+    assert!(
+        landed_screen.contains("中文双宽字符"),
+        "first PageDown must keep the CJK transcript intact\n{landed_screen}"
+    );
+
+    send_bytes(helper.writer.as_mut(), b"\x1b[6~").unwrap_or_abort();
+    send_key(helper.writer.as_mut(), 0x10).unwrap_or_abort();
+    helper.wait_for("Commands");
+    send_bytes(helper.writer.as_mut(), b"\x1b").unwrap_or_abort();
+    helper.wait_until_absent("Commands");
+    let following_screen = helper.screen_text();
+    assert!(
+        following_screen.contains("中文双宽字符") && !following_screen.contains('▼'),
+        "second clamped PageDown must resume the live tail without CJK drift\n{following_screen}"
+    );
+
+    println!(
+        "--- detached-page-up ---\n{page_up_screen}\n--- landed-first-page-down ---\n{landed_screen}\n--- following-second-page-down ---\n{following_screen}"
+    );
+    exit_via_palette(&mut helper);
 }
 
 pub(crate) fn pty_connect_auth_drives_provider_connection() {
@@ -253,6 +306,33 @@ pub(crate) fn pty_helper_type_first_startup() {
     .unwrap_or_abort();
 }
 
+pub(crate) fn pty_helper_scroll_follow() {
+    if std::env::var(HELPER_SCENARIO_ENV).as_deref() != Ok(SCROLL_FOLLOW_SCENARIO) {
+        return;
+    }
+
+    let run_dir = tempfile::tempdir().unwrap_or_abort();
+    let config = super::capture_events::scenario("responding").unwrap_or_abort();
+    let (_keepalive, update_rx) = live_update_channel();
+    run_tui_with_options(TuiOptions {
+        mode: TuiMode::Live {
+            run_dir: run_dir.path().to_path_buf(),
+            historical_events: config.events,
+            session_history_entries: Vec::new(),
+            prompt_history_path: None,
+            update_rx,
+            compact_session_supported: false,
+        },
+        exit_on_finish: false,
+        on_ui_intent: None,
+        keybindings: None,
+        toggles: None,
+        preserve_terminal_on_exit: false,
+        skip_alternate_screen: false,
+    })
+    .unwrap_or_abort();
+}
+
 pub(crate) fn pty_helper_permission_overlay() {
     if std::env::var(HELPER_SCENARIO_ENV).as_deref() != Ok(PERMISSION_OVERLAY_SCENARIO) {
         return;
@@ -383,6 +463,10 @@ impl SpawnedHelper {
 
 fn spawn_type_first_startup_helper() -> SpawnedHelper {
     spawn_helper(TYPE_FIRST_STARTUP_TEST, TYPE_FIRST_STARTUP_SCENARIO)
+}
+
+fn spawn_scroll_follow_helper() -> SpawnedHelper {
+    spawn_helper(SCROLL_FOLLOW_TEST, SCROLL_FOLLOW_SCENARIO)
 }
 
 fn exit_via_palette(helper: &mut SpawnedHelper) {

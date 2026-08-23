@@ -1,3 +1,5 @@
+#[path = "support/manual_live_turn_visual_capture_events.rs"]
+mod capture_events;
 #[path = "support/pty_e2e_impl.rs"]
 mod pty_e2e_impl;
 
@@ -7,6 +9,14 @@ fn pty_smoke_starts_accepts_input_resizes_and_exits() {
     // act
     // assert
     pty_e2e_impl::pty_smoke_starts_accepts_input_resizes_and_exits();
+}
+
+#[test]
+fn pty_scroll_follow_requires_second_clamped_page_down() {
+    // arrange
+    // act
+    // assert
+    pty_e2e_impl::pty_scroll_follow_requires_second_clamped_page_down();
 }
 
 #[test]
@@ -47,6 +57,14 @@ fn pty_helper_type_first_startup() {
     // act
     // assert
     pty_e2e_impl::pty_helper_type_first_startup();
+}
+
+#[test]
+fn pty_helper_scroll_follow() {
+    // arrange
+    // act
+    // assert
+    pty_e2e_impl::pty_helper_scroll_follow();
 }
 
 #[test]

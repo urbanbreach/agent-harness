@@ -345,7 +345,7 @@ pub(super) fn transcript_navigation_keys_match_scroll_expectations() {
 
     app.handle_key(key(KeyCode::PageDown));
     assert_eq!(app.transcript_view.transcript_scroll, 0);
-    assert!(app.transcript_view.follow_mode);
+    assert!(!app.transcript_view.follow_mode);
 
     app.handle_key(key(KeyCode::PageDown));
     assert_eq!(app.transcript_view.transcript_scroll, 0);
@@ -522,7 +522,7 @@ pub(super) fn page_up_down_with_prompt_focus_scrolls_transcript_without_clearing
 
     app.handle_key(key(KeyCode::PageDown));
     assert_eq!(app.transcript_view.transcript_scroll, 0);
-    assert!(app.transcript_view.follow_mode);
+    assert!(!app.transcript_view.follow_mode);
 
     app.handle_key(key(KeyCode::PageDown));
     assert!(app.transcript_view.follow_mode);

@@ -181,7 +181,29 @@ impl TranscriptViewState {
 
 #[cfg(test)]
 mod tests {
+    use crate::app::AppState;
+
     use super::MeasuredTranscriptViewport;
+
+    #[test]
+    fn page_down_requires_a_second_clamped_gesture_to_resume_following() {
+        // arrange
+        // Given: the live transcript is detached exactly one page above the tail.
+        let mut app = AppState::new_live(None, false, None);
+        app.transcript_view.record_measured_max_scroll(100);
+        app.set_transcript_scroll_for_test(10);
+
+        // When: one page-down gesture lands at the measured bottom.
+        app.scroll_page_down(10);
+
+        // act
+        // Then: landing remains detached until a second clamped gesture resumes following.
+        // assert
+        assert_eq!(app.transcript_scroll_offset(), 0);
+        assert!(!app.follow_mode_active());
+        app.scroll_page_down(1);
+        assert!(app.follow_mode_active());
+    }
 
     #[test]
     fn landing_at_measured_bottom_remains_detached() {

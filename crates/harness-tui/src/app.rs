@@ -3629,14 +3629,11 @@ impl AppState {
         self.scroll_transcript_up(u16::try_from(viewport.max(1)).unwrap_or(u16::MAX));
     }
 
-    /// Scroll down (toward bottom) by `viewport` rows. Re-engages follow at 0.
+    /// Scroll down toward the bottom by `viewport` rows.
+    /// Landing at the bottom stays detached; the next clamped gesture resumes follow mode.
     pub fn scroll_page_down(&mut self, viewport: usize) {
         let viewport = viewport.max(1);
-        if self.transcript_scroll_offset() <= viewport {
-            self.scroll_goto_bottom();
-        } else {
-            self.scroll_transcript_down(u16::try_from(viewport).unwrap_or(u16::MAX));
-        }
+        self.scroll_transcript_down(u16::try_from(viewport).unwrap_or(u16::MAX));
     }
 
     /// Scroll up by half of `viewport` (rounded up), breaking follow mode.
@@ -3645,7 +3642,7 @@ impl AppState {
         self.scroll_page_up(half);
     }
 
-    /// Scroll down by half of `viewport` (rounded up). Re-engages follow at 0.
+    /// Scroll down by half of `viewport` (rounded up), preserving overscroll follow semantics.
     pub fn scroll_half_page_down(&mut self, viewport: usize) {
         let half = viewport.div_ceil(2);
         self.scroll_page_down(half);
