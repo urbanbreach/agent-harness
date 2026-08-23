@@ -473,13 +473,29 @@ fn render_question_permission_dock(
         surface,
         measure.content_width,
     );
-    let chrome_end = usize::from(measure.chrome_rows).min(body.lines.len());
-    let option_end = chrome_end
+    let source_chrome_end = usize::from(measure.source_chrome_rows).min(body.lines.len());
+    let sticky_start = body
+        .lines
+        .len()
+        .saturating_sub(usize::from(measure.sticky_rows));
+    let option_end = source_chrome_end
         .saturating_add(usize::from(measure.option_rows))
-        .min(body.lines.len());
-    let chrome_body = Text::from(body.lines[..chrome_end].to_vec());
-    let scroll_body = Text::from(body.lines[chrome_end..option_end].to_vec());
-    let sticky_body = Text::from(body.lines[option_end..].to_vec());
+        .min(sticky_start);
+    let mut chrome_lines = body.lines[..source_chrome_end].to_vec();
+    if chrome_lines.len() > usize::from(measure.chrome_rows) {
+        chrome_lines.truncate(usize::from(measure.chrome_rows));
+        if let Some(last) = chrome_lines.last_mut() {
+            *last = Line::from(Span::styled(
+                "... Ctrl-F to expand",
+                Style::default()
+                    .fg(theme.question_prompt.secondary)
+                    .bg(surface),
+            ));
+        }
+    }
+    let chrome_body = Text::from(chrome_lines);
+    let scroll_body = Text::from(body.lines[source_chrome_end..option_end].to_vec());
+    let sticky_body = Text::from(body.lines[sticky_start..].to_vec());
 
     if geometry.chrome.height > 0 {
         frame.render_widget(Paragraph::new(chrome_body), geometry.chrome);
