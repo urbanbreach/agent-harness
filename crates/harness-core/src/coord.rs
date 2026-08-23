@@ -62,7 +62,9 @@ use crate::session_title::{
     clean_generated_title, is_parent_default_title, SessionTitleOperationSpec,
     TITLE_GENERATION_USER_PROMPT, TITLE_OPERATION_SYSTEM_PROMPT,
 };
-use crate::store::{EventStore, EventStoreError, JsonlFileEventStore};
+use crate::store::{
+    EventStore, EventStoreError, EventStoreOpener, JsonlEventStoreOpener, JsonlFileEventStore,
+};
 use crate::text::{non_empty_trimmed, truncate_with_ellipsis};
 use crate::tool::{ToolContext, ToolRegistry, ToolResult, ToolRunState};
 use harness_providers::{
@@ -218,6 +220,7 @@ pub struct CoordinatorConfig {
     pub session_dir: PathBuf,
     pub run_id_override: Option<String>,
     pub deterministic_store: bool,
+    pub event_store_opener: Arc<dyn EventStoreOpener>,
     pub command_buffer: usize,
     pub permission_policy: PermissionPolicy,
     pub tool_concurrency: usize,
@@ -250,6 +253,7 @@ impl CoordinatorConfig {
             session_dir: session_dir.into(),
             run_id_override: None,
             deterministic_store: false,
+            event_store_opener: Arc::new(JsonlEventStoreOpener),
             command_buffer: DEFAULT_COMMAND_BUFFER,
             permission_policy: PermissionPolicy::default(),
             tool_concurrency: DEFAULT_TOOL_CONCURRENCY,
