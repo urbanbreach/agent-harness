@@ -802,15 +802,16 @@ fn render_question_permission_with_shell_footer(
         .get(active_tab)
         .is_some_and(|values| !values.is_empty());
     let hints = if app.focus != crate::app::Focus::Prompt {
-        vec![("Tab", ":focus"), ("Ctrl+c", ":dismiss")]
+        vec![("Tab/Space", ":question")]
     } else if app.question_prompt_editing(&permission.permission_id) {
         vec![
             ("Enter", ":submit"),
             ("Shift/Alt+Enter", ":newline"),
-            ("Esc", ":done"),
+            ("Ctrl+C/Esc", ":back"),
         ]
     } else {
         vec![
+            ("Tab", ":next answer"),
             (
                 "Esc",
                 if has_selection {
@@ -819,9 +820,7 @@ fn render_question_permission_with_shell_footer(
                     ":scrollback"
                 },
             ),
-            ("Tab", ":next option"),
-            ("Shift+Tab", ":previous option"),
-            ("Shift+X", ":dismiss"),
+            ("X", ":dismiss"),
         ]
     };
     let mut spans = Vec::new();
@@ -835,19 +834,25 @@ fn render_question_permission_with_shell_footer(
     if Line::from(spans.clone()).width() > usize::from(footer_area.width) {
         spans.clear();
         let compact_hints = if app.focus != crate::app::Focus::Prompt {
-            vec![("Tab", ":focus"), ("^C", ":cancel")]
+            vec![("Tab/Spc", ":question")]
         } else if app.question_prompt_editing(&permission.permission_id) {
             vec![
                 ("Enter", ":commit"),
                 ("S/A+Enter", ":newline"),
-                ("Esc", ":done"),
+                ("Esc", ":back"),
             ]
         } else {
             vec![
-                ("Esc", if has_selection { ":clear" } else { ":park" }),
                 ("Tab", ":next"),
-                ("⇧Tab", ":prev"),
-                ("⇧X", ":cancel"),
+                (
+                    "Esc",
+                    if has_selection {
+                        ":clear"
+                    } else {
+                        ":scrollback"
+                    },
+                ),
+                ("X", ":dismiss"),
             ]
         };
         for (index, (key, label)) in compact_hints.into_iter().enumerate() {
