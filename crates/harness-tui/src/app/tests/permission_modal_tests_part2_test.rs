@@ -309,6 +309,35 @@ fn overflowing_question_event(permission_id: &str) -> EventEnvelopeV1 {
     )
 }
 
+fn compact_chrome_question_event(permission_id: &str) -> EventEnvelopeV1 {
+    envelope(
+        1,
+        permission_id,
+        EventV1::PermissionRequested(PermissionRequestedEvent {
+            permission_id: permission_id.to_string(),
+            kind: "question".to_string(),
+            tool_call_id: Some("tool_call_question_compact_chrome".into()),
+            summary: serde_json::json!({
+                "questions": [{
+                    "question": "Pick one\n\nd1\nd2\nd3\nd4",
+                    "header": "Choice",
+                    "options": [
+                        {"label": "Choice 1", "description": ""},
+                        {"label": "Choice 2", "description": ""},
+                        {"label": "Choice 3", "description": ""}
+                    ],
+                    "multiple": false,
+                    "custom": true
+                }]
+            })
+            .to_string(),
+            request_digest: format!("digest-{permission_id}"),
+            timeout_ms: 30_000,
+            default_decision: harness_core::event::PermissionDecision::Deny,
+        }),
+    )
+}
+
 fn edit_permission_event(seq: u64, permission_id: &str, tool_call_id: &str) -> EventEnvelopeV1 {
     envelope(
         seq,
@@ -410,6 +439,10 @@ fn question_mouse_hit_regions_match_the_rendered_option_rows() {
                 PermissionPointerTarget::QuestionChoice(2),
                 Rect::new(5, 27, 111, 1),
             ),
+            (
+                PermissionPointerTarget::QuestionSubmit,
+                Rect::new(104, 29, 12, 1),
+            ),
         ]
     );
 }
@@ -476,12 +509,36 @@ fn question_overflow_keeps_custom_error_and_footer_sticky_at_60x20() {
     );
     assert!(
         rendered.contains("Enter:submit"),
-        "dock footer hidden\n{rendered}"
+        "card submit action hidden\n{rendered}"
     );
+    assert!(!rendered.contains("Ctrl+F expand"), "{rendered}");
     assert!(
-        rendered.contains("⇧X:cancel"),
+        rendered.contains("X:dismiss"),
         "compact outer footer must name the question cancellation action\n{rendered}"
     );
+}
+
+#[test]
+fn question_compact_chrome_truncation_keeps_options_in_the_option_viewport() {
+    // Given: four description rows exceed the compact question chrome budget.
+    let frame_area = Rect::new(0, 0, 60, 20);
+    let mut app = AppState::new_live(None, false, None);
+    app.ingest_event(compact_chrome_question_event("question_compact_chrome"));
+
+    // When: the compact dock and pointer map are rendered from the same measurement.
+    let rendered = render_text(&app, frame_area.width, frame_area.height);
+    let choice_regions = app
+        .permission_prompt_hit_regions_for_test(frame_area)
+        .into_iter()
+        .filter(|(target, _)| matches!(target, PermissionPointerTarget::QuestionChoice(_)))
+        .count();
+
+    // Then: hidden chrome is replaced by an affordance and never painted as choices.
+    assert!(rendered.contains("... Ctrl-F to expand"), "{rendered}");
+    assert!(rendered.contains("Choice 1"), "{rendered}");
+    assert!(rendered.contains("Choice 2"), "{rendered}");
+    assert!(rendered.contains("Choice 3"), "{rendered}");
+    assert_eq!(choice_regions, 4);
 }
 
 #[test]
@@ -494,12 +551,12 @@ fn question_compact_footer_names_active_row_walk_park_and_cancel_actions() {
     let rendered = render_text(&app, 60, 20);
 
     // assert
-    assert!(rendered.contains("Esc:park"), "{rendered}");
-    assert!(rendered.contains("Tab:next"), "{rendered}");
-    assert!(rendered.contains("⇧Tab:prev"), "{rendered}");
-    assert!(rendered.contains("⇧X:cancel"), "{rendered}");
+    assert!(rendered.contains("Esc:scrollback"), "{rendered}");
+    assert!(rendered.contains("Enter:submit"), "{rendered}");
+    assert!(!rendered.contains("Ctrl+F expand"), "{rendered}");
+    assert!(rendered.contains("Tab:next answer"), "{rendered}");
+    assert!(rendered.contains("X:dismiss"), "{rendered}");
     assert!(!rendered.contains("Esc:back"), "{rendered}");
-    assert!(!rendered.contains("⇧X:dismiss"), "{rendered}");
 }
 
 #[test]

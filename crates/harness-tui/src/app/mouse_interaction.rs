@@ -2,6 +2,8 @@
 use super::permission_prompt::{PermissionPointerDown, PermissionPointerTarget};
 use super::*;
 use ratatui::text::Line;
+use unicode_segmentation::UnicodeSegmentation as _;
+use unicode_width::UnicodeWidthStr as _;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct PermissionPromptHitRegion {
@@ -93,7 +95,7 @@ fn question_prompt_hit_regions(
     let Some(prompts) = permission.question_prompts.as_deref() else {
         return Vec::new();
     };
-    if prompts.is_empty() || app.question_prompt_editing(&permission.permission_id) {
+    if prompts.is_empty() {
         return Vec::new();
     }
 
@@ -156,6 +158,33 @@ fn question_prompt_hit_regions(
                 geometry.sticky.y,
                 geometry.sticky.width,
                 1,
+            ),
+        });
+    }
+    if geometry.footer.width > 0
+        && app.submitted_permission_id.as_deref() != Some(permission.permission_id.as_str())
+    {
+        let enter_label = if app.question_prompt_editing(&permission.permission_id) {
+            "commit"
+        } else if prompt.custom
+            && app.question_prompt_selection(&permission.permission_id) == prompt.options.len()
+        {
+            "edit"
+        } else if tab + 1 >= prompts.len() {
+            "submit"
+        } else {
+            "select"
+        };
+        let action_width = u16::try_from(format!("Enter:{enter_label}").width())
+            .unwrap_or(u16::MAX)
+            .min(geometry.footer.width);
+        regions.push(PermissionPromptHitRegion {
+            target: PermissionPointerTarget::QuestionSubmit,
+            area: Rect::new(
+                geometry.footer.right().saturating_sub(action_width),
+                geometry.footer.y,
+                action_width,
+                geometry.footer.height,
             ),
         });
     }
@@ -639,6 +668,7 @@ impl AppState {
                 self.question_prompt.selection = index;
                 true
             }
+            PermissionPointerTarget::QuestionSubmit => permission.question_prompts.is_some(),
             PermissionPointerTarget::Decision(_)
             | PermissionPointerTarget::Confirm(_)
             | PermissionPointerTarget::QuestionScrollbar => false,
@@ -697,9 +727,18 @@ impl AppState {
                 let relative = row
                     .saturating_sub(geometry.options.y)
                     .min(track_height.saturating_sub(1));
+                let thumb_height = track_height
+                    .saturating_mul(track_height)
+                    .checked_div(measure.option_rows.max(1))
+                    .unwrap_or(1)
+                    .max(1)
+                    .min(track_height);
+                let thumb_range = track_height.saturating_sub(thumb_height);
                 relative
+                    .saturating_sub(thumb_height / 2)
+                    .min(thumb_range)
                     .saturating_mul(measure.max_scroll)
-                    .checked_div(track_height.saturating_sub(1).max(1))
+                    .checked_div(thumb_range.max(1))
                     .unwrap_or(0)
             },
         );
@@ -726,6 +765,7 @@ impl AppState {
                         PermissionPointerTarget::QuestionChoice(index) => Some(index),
                         PermissionPointerTarget::Decision(_)
                         | PermissionPointerTarget::Confirm(_)
+                        | PermissionPointerTarget::QuestionSubmit
                         | PermissionPointerTarget::QuestionScrollbar => None,
                     });
                 let active_question_id = self.active_permission_view().and_then(|permission| {
@@ -759,6 +799,62 @@ impl AppState {
                     self.permission_prompt.pointer_down = None;
                     return false;
                 };
+                if self.question_prompt.editing {
+                    if let PermissionPointerTarget::QuestionChoice(index) = region.target {
+                        let option_count = permission
+                            .question_prompts
+                            .as_ref()
+                            .and_then(|prompts| prompts.get(self.question_prompt.tab))
+                            .map_or(0, |prompt| prompt.options.len());
+                        if index == option_count {
+                            let prompt = permission
+                                .question_prompts
+                                .as_ref()
+                                .and_then(|prompts| prompts.get(self.question_prompt.tab));
+                            let picked = self
+                                .question_prompt
+                                .custom_selected
+                                .get(self.question_prompt.tab)
+                                .copied()
+                                .unwrap_or(false);
+                            let glyphs = self.theme().live_shell.transcript_glyphs;
+                            let marker = if prompt.is_some_and(|prompt| prompt.multiple) {
+                                if picked {
+                                    "[x]"
+                                } else {
+                                    "[ ]"
+                                }
+                            } else if picked {
+                                glyphs.choice_selected
+                            } else {
+                                glyphs.choice_unselected
+                            };
+                            let marker = if prompt.is_some_and(|prompt| prompt.multiple) {
+                                marker.to_string()
+                            } else {
+                                format!("({marker})")
+                            };
+                            let prefix_width = u16::try_from(
+                                format!("z {marker} {} ", glyphs.user_marker).width(),
+                            )
+                            .unwrap_or(u16::MAX);
+                            let column = usize::from(
+                                mouse
+                                    .column
+                                    .saturating_sub(region.area.x.saturating_add(prefix_width)),
+                            );
+                            self.question_prompt.answer_cursor = question_answer_cursor_for_column(
+                                &self.question_prompt.answer_buffer,
+                                column,
+                            );
+                            return true;
+                        }
+                        self.handle_permission_modal_key(KeyEvent::new(
+                            KeyCode::Esc,
+                            KeyModifiers::NONE,
+                        ));
+                    }
+                }
                 if region.target == PermissionPointerTarget::QuestionScrollbar {
                     self.scroll_question_prompt(frame_area, Some(mouse.row), 0);
                     self.permission_prompt.pointer_down = Some(PermissionPointerDown {
@@ -771,6 +867,49 @@ impl AppState {
                 if !self.select_permission_pointer_target(&permission, region.target) {
                     self.permission_prompt.pointer_down = None;
                     return false;
+                }
+                if let PermissionPointerTarget::QuestionChoice(index) = region.target {
+                    let option_count = permission
+                        .question_prompts
+                        .as_ref()
+                        .and_then(|prompts| prompts.get(self.question_prompt.tab))
+                        .map_or(0, |prompt| prompt.options.len());
+                    if index < option_count {
+                        const DOUBLE_CLICK_TIMEOUT: std::time::Duration =
+                            std::time::Duration::from_millis(300);
+                        let now = self.now();
+                        let tab = self.question_prompt.tab;
+                        let is_double_click = self.question_prompt.last_click.is_some_and(
+                            |(previous, previous_tab, previous_index)| {
+                                previous_tab == tab
+                                    && previous_index == index
+                                    && now.saturating_duration_since(previous)
+                                        < DOUBLE_CLICK_TIMEOUT
+                            },
+                        );
+                        if is_double_click {
+                            self.question_prompt.last_click = None;
+                            self.handle_permission_modal_key(KeyEvent::new(
+                                KeyCode::Enter,
+                                KeyModifiers::NONE,
+                            ));
+                        } else {
+                            self.question_prompt.last_click = Some((now, tab, index));
+                            self.handle_permission_modal_key(KeyEvent::new(
+                                KeyCode::Char(' '),
+                                KeyModifiers::NONE,
+                            ));
+                        }
+                        return true;
+                    }
+                    self.question_prompt.last_click = None;
+                    if index == option_count {
+                        self.handle_permission_modal_key(KeyEvent::new(
+                            KeyCode::Char(' '),
+                            KeyModifiers::NONE,
+                        ));
+                    }
+                    return true;
                 }
                 self.permission_prompt.pointer_down = Some(PermissionPointerDown {
                     permission_id: permission.permission_id,
@@ -823,6 +962,7 @@ impl AppState {
                     matches!(
                         region.target,
                         PermissionPointerTarget::QuestionChoice(_)
+                            | PermissionPointerTarget::QuestionSubmit
                             | PermissionPointerTarget::QuestionScrollbar
                     ) && rect_contains(region.area, mouse.column, mouse.row)
                 });
@@ -1389,5 +1529,37 @@ impl AppState {
             scroll_top.min(drag.max_scroll),
             drag.max_scroll,
         );
+    }
+}
+
+fn question_answer_cursor_for_column(text: &str, column: usize) -> usize {
+    let mut cells = 0usize;
+    let mut chars = 0usize;
+    for grapheme in text.graphemes(true) {
+        let next_cells = cells.saturating_add(grapheme.width().max(1));
+        if column < next_cells {
+            break;
+        }
+        cells = next_cells;
+        chars = chars.saturating_add(grapheme.chars().count());
+    }
+    chars
+}
+
+#[cfg(test)]
+mod question_answer_cursor_tests {
+    use super::question_answer_cursor_for_column;
+
+    #[test]
+    fn wide_and_combining_graphemes_map_terminal_columns_to_char_boundaries() {
+        // Given: wide and combining graphemes followed by ASCII text.
+        let text = "界e\u{301}a";
+
+        // When/Then: terminal-cell offsets land only on complete grapheme boundaries.
+        assert_eq!(question_answer_cursor_for_column(text, 0), 0);
+        assert_eq!(question_answer_cursor_for_column(text, 1), 0);
+        assert_eq!(question_answer_cursor_for_column(text, 2), 1);
+        assert_eq!(question_answer_cursor_for_column(text, 3), 3);
+        assert_eq!(question_answer_cursor_for_column(text, 4), 4);
     }
 }

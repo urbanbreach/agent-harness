@@ -8,7 +8,7 @@ use harness_core::event::{ActorKind, EventEnvelopeV1, EventV1};
 
 #[cfg(test)]
 use super::OverlayKind;
-use super::{Action, AppState, UiIntent};
+use super::{Action, AppState, ToastVariant, UiIntent};
 
 mod modal;
 mod question;
@@ -17,9 +17,10 @@ pub(crate) use modal::{
     PermissionConfirmSelection, PermissionModalSelection, PermissionModalStage,
 };
 pub(super) use question::permission_display_summary;
+pub(crate) use question::question_option_shortcut_label;
 use question::{
-    build_question_answers, parse_question_prompts, question_prompt_choice_count,
-    question_prompt_confirm_active, question_prompt_tab_count,
+    build_question_answers, parse_question_prompts, question_option_index_for_key,
+    question_prompt_choice_count, question_prompt_tab_count,
 };
 pub use question::{QuestionOptionView, QuestionPromptView};
 
@@ -256,11 +257,30 @@ impl AppState {
     }
 
     pub(crate) fn question_prompt_answers(&self, permission_id: &str) -> Vec<Vec<String>> {
-        if self.question_answer_is_active(permission_id) {
-            self.question_prompt.answers.clone()
-        } else {
-            Vec::new()
+        if !self.question_answer_is_active(permission_id) {
+            return Vec::new();
         }
+        let mut answers = self.question_prompt.answers.clone();
+        for (index, selected) in self
+            .question_prompt
+            .custom_selected
+            .iter()
+            .copied()
+            .enumerate()
+        {
+            if !selected {
+                continue;
+            }
+            if let (Some(values), Some(custom)) = (
+                answers.get_mut(index),
+                self.question_prompt.custom.get(index),
+            ) {
+                if !custom.is_empty() {
+                    values.push(custom.clone());
+                }
+            }
+        }
+        answers
     }
 
     pub(crate) fn question_prompt_custom(&self, permission_id: &str, index: usize) -> Option<&str> {
@@ -269,6 +289,20 @@ impl AppState {
         }
 
         self.question_prompt.custom.get(index).map(String::as_str)
+    }
+
+    pub(crate) fn question_prompt_custom_selected(
+        &self,
+        permission_id: &str,
+        index: usize,
+    ) -> bool {
+        self.question_answer_is_active(permission_id)
+            && self
+                .question_prompt
+                .custom_selected
+                .get(index)
+                .copied()
+                .unwrap_or(false)
     }
 
     fn cycle_permission_modal_selection(
@@ -397,7 +431,9 @@ impl AppState {
         };
 
         if self.focus != super::Focus::Prompt {
-            if question_row_walk(&key).is_some() {
+            if question_row_walk(&key).is_some()
+                || key.code == KeyCode::Char(' ') && key.modifiers.is_empty()
+            {
                 self.focus = super::Focus::Prompt;
             }
             return;
@@ -542,24 +578,24 @@ impl AppState {
             return;
         };
         self.ensure_question_answer_state(&permission.permission_id, prompts);
-        let confirm = question_prompt_confirm_active(self.question_prompt.tab, prompts);
         if key.code == KeyCode::Char('f') && key.modifiers == KeyModifiers::CONTROL {
             self.question_prompt.fullscreen = !self.question_prompt.fullscreen;
-            self.question_prompt
-                .scroll_offsets
-                .fill(crate::layout::QUESTION_AUTO_SCROLL);
             return;
         }
-        if key.code == KeyCode::Char('c') && key.modifiers == KeyModifiers::CONTROL
-            || key.code == KeyCode::Char('X') && key.modifiers == KeyModifiers::SHIFT
-        {
-            self.execute_action(Action::DismissModal);
-            self.maybe_auto_exit();
+        if key.code == KeyCode::Char('y') && key.modifiers == KeyModifiers::CONTROL {
+            self.dismissed_permissions
+                .insert(permission.permission_id.clone());
+            self.focus = super::Focus::List;
             return;
         }
 
         if !self.composer_disabled() {
             if self.question_prompt.editing {
+                if key.code == KeyCode::Char('c') && key.modifiers == KeyModifiers::CONTROL {
+                    self.question_prompt.editing = false;
+                    self.question_prompt.answer_error = None;
+                    return;
+                }
                 if key.code == KeyCode::Enter
                     && matches!(key.modifiers, KeyModifiers::SHIFT | KeyModifiers::ALT)
                 {
@@ -628,8 +664,41 @@ impl AppState {
                 }
             }
 
+            if key.code == KeyCode::Char('X') && key.modifiers == KeyModifiers::SHIFT {
+                self.execute_action(Action::DismissModal);
+                self.maybe_auto_exit();
+                return;
+            }
+
+            if key.code == KeyCode::Char('c') && key.modifiers == KeyModifiers::CONTROL {
+                self.execute_action(Action::DismissModal);
+                self.maybe_auto_exit();
+                return;
+            }
+
+            if let Some(prompt) = prompts.get(self.question_prompt.tab) {
+                if prompt.custom
+                    && self.question_prompt.selection == prompt.options.len()
+                    && (key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT)
+                    && matches!(key.code, KeyCode::Char(character) if character != ' ')
+                    && !matches!(
+                        key.code,
+                        KeyCode::Char(character)
+                            if key.modifiers.is_empty()
+                                && question_option_index_for_key(character)
+                                    .is_some_and(|index| index < prompt.options.len())
+                    )
+                {
+                    self.start_question_custom_edit(&permission.permission_id, prompt.multiple);
+                    if let KeyCode::Char(character) = key.code {
+                        self.insert_question_answer_char(character);
+                    }
+                    return;
+                }
+            }
+
             if let Some(forward) = question_row_walk(&key) {
-                self.move_question_selection(prompts, if forward { 1 } else { -1 });
+                self.walk_question_selection(prompts, forward);
                 return;
             }
 
@@ -661,28 +730,82 @@ impl AppState {
                 }
                 KeyCode::PageUp => {
                     if switch_modifiers {
-                        self.move_question_selection_page(prompts, -5);
+                        self.move_question_selection_page(prompts, isize::MIN);
                         return;
                     }
                 }
                 KeyCode::PageDown => {
                     if switch_modifiers {
-                        self.move_question_selection_page(prompts, 5);
+                        self.move_question_selection_page(prompts, isize::MAX);
                         return;
                     }
+                }
+                KeyCode::Char('d') if key.modifiers == KeyModifiers::CONTROL => {
+                    self.move_question_selection_half_page(prompts, true);
+                    return;
+                }
+                KeyCode::Char('u') if key.modifiers == KeyModifiers::CONTROL => {
+                    self.move_question_selection_half_page(prompts, false);
+                    return;
+                }
+                KeyCode::Char('g') if key.modifiers.is_empty() => {
+                    self.move_question_selection_page(prompts, isize::MIN);
+                    return;
+                }
+                KeyCode::Char('G') if key.modifiers == KeyModifiers::SHIFT => {
+                    self.move_question_selection_page(prompts, isize::MAX);
+                    return;
                 }
                 KeyCode::Char(' ') => {
                     self.toggle_active_question_selection(&permission.permission_id, prompts);
                     return;
                 }
-                KeyCode::Char(c @ '1'..='9') => {
+                KeyCode::Char('z') if key.modifiers.is_empty() => {
+                    let Some(prompt) = prompts.get(self.question_prompt.tab) else {
+                        return;
+                    };
+                    if prompt.custom {
+                        self.question_prompt.hovered = None;
+                        self.question_prompt.selection = prompt.options.len();
+                        self.start_question_custom_edit(&permission.permission_id, prompt.multiple);
+                    }
+                    return;
+                }
+                KeyCode::Char('y') if key.modifiers.is_empty() => {
+                    let Some(option) = prompts
+                        .get(self.question_prompt.tab)
+                        .and_then(|prompt| prompt.options.get(self.question_prompt.selection))
+                    else {
+                        return;
+                    };
+                    let normalized_label = option
+                        .label
+                        .split_whitespace()
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    let text = if option.description.is_empty() {
+                        normalized_label
+                    } else {
+                        format!("{}\n{}", normalized_label, option.description)
+                    };
+                    match crate::clipboard::copy(&text) {
+                        Ok(()) => self.show_toast("Copied option", ToastVariant::Info),
+                        Err(error) => self.show_toast(
+                            format!("clipboard copy failed: {error}"),
+                            ToastVariant::Error,
+                        ),
+                    }
+                    return;
+                }
+                KeyCode::Char(c) => {
                     if key.modifiers.is_empty() {
-                        let index = usize::from((c as u8).saturating_sub(b'1')); // allow: WIDENING — char is ASCII digit, lower byte is the digit value
+                        let Some(index) = question_option_index_for_key(c) else {
+                            return;
+                        };
                         let Some(prompt) = prompts.get(self.question_prompt.tab) else {
                             return;
                         };
-                        let max = question_prompt_choice_count(prompt).min(9);
-                        if index >= max {
+                        if index >= prompt.options.len() {
                             return;
                         }
                         self.question_prompt.hovered = None;
@@ -693,11 +816,7 @@ impl AppState {
                     }
                 }
                 KeyCode::Enter => {
-                    if confirm {
-                        self.execute_action(Action::AllowPermission);
-                    } else {
-                        self.accept_question_selection(&permission.permission_id, prompts);
-                    }
+                    self.accept_question_selection(&permission.permission_id, prompts);
                     self.maybe_auto_exit();
                     return;
                 }
@@ -707,6 +826,12 @@ impl AppState {
                         .answers
                         .get(self.question_prompt.tab)
                         .is_some_and(|answers| !answers.is_empty())
+                        || self
+                            .question_prompt
+                            .custom_selected
+                            .get(self.question_prompt.tab)
+                            .copied()
+                            .unwrap_or(false)
                     {
                         self.clear_active_question_selection();
                     } else {
@@ -812,6 +937,7 @@ impl AppState {
         self.question_prompt.hovered = None;
         self.question_prompt.answers = vec![Vec::new(); prompts.len()];
         self.question_prompt.custom = vec![String::new(); prompts.len()];
+        self.question_prompt.custom_selected = vec![false; prompts.len()];
         self.question_prompt.editing = false;
         self.question_prompt.answer_buffer.clear();
         self.question_prompt.answer_cursor = 0;
@@ -819,6 +945,7 @@ impl AppState {
         self.question_prompt.scroll_offsets =
             vec![crate::layout::QUESTION_AUTO_SCROLL; prompts.len()];
         self.question_prompt.fullscreen = false;
+        self.question_prompt.last_click = None;
     }
 
     fn select_question_tab(&mut self, tab: usize) {
@@ -837,54 +964,16 @@ impl AppState {
             .copied()
             .unwrap_or_default();
         self.question_prompt.hovered = None;
+        self.question_prompt.last_click = None;
         self.question_prompt.editing = false;
         self.question_prompt.answer_buffer.clear();
         self.question_prompt.answer_cursor = 0;
         self.question_prompt.answer_error = None;
-        if let Some(scroll) = self.question_prompt.scroll_offsets.get_mut(tab) {
-            *scroll = crate::layout::QUESTION_AUTO_SCROLL;
-        }
     }
 
     fn move_question_selection(&mut self, prompts: &[QuestionPromptView], delta: isize) {
         self.question_prompt.hovered = None;
-        let Some(prompt) = prompts.get(self.question_prompt.tab) else {
-            return;
-        };
-        let total = question_prompt_choice_count(prompt);
-        if total == 0 {
-            self.question_prompt.selection = 0;
-            return;
-        }
-        self.question_prompt.selection = if delta < 0 {
-            if self.question_prompt.selection == 0 {
-                total.saturating_sub(1)
-            } else {
-                self.question_prompt.selection - 1
-            }
-        } else if self.question_prompt.selection + 1 >= total {
-            0
-        } else {
-            self.question_prompt.selection + 1
-        };
-        if let Some(scroll) = self
-            .question_prompt
-            .scroll_offsets
-            .get_mut(self.question_prompt.tab)
-        {
-            *scroll = crate::layout::QUESTION_AUTO_SCROLL;
-        }
-        if let Some(cursor) = self
-            .question_prompt
-            .cursors
-            .get_mut(self.question_prompt.tab)
-        {
-            *cursor = self.question_prompt.selection;
-        }
-    }
-
-    fn move_question_selection_page(&mut self, prompts: &[QuestionPromptView], delta: isize) {
-        self.question_prompt.hovered = None;
+        self.question_prompt.last_click = None;
         let Some(prompt) = prompts.get(self.question_prompt.tab) else {
             return;
         };
@@ -914,6 +1003,82 @@ impl AppState {
         }
     }
 
+    fn walk_question_selection(&mut self, prompts: &[QuestionPromptView], forward: bool) {
+        self.question_prompt.hovered = None;
+        self.question_prompt.last_click = None;
+        let Some(prompt) = prompts.get(self.question_prompt.tab) else {
+            return;
+        };
+        let total = question_prompt_choice_count(prompt);
+        if total == 0 {
+            self.question_prompt.selection = 0;
+            return;
+        }
+        self.question_prompt.selection = if forward {
+            self.question_prompt.selection.saturating_add(1) % total
+        } else {
+            self.question_prompt
+                .selection
+                .checked_sub(1)
+                .unwrap_or(total.saturating_sub(1))
+        };
+        if let Some(scroll) = self
+            .question_prompt
+            .scroll_offsets
+            .get_mut(self.question_prompt.tab)
+        {
+            *scroll = crate::layout::QUESTION_AUTO_SCROLL;
+        }
+        if let Some(cursor) = self
+            .question_prompt
+            .cursors
+            .get_mut(self.question_prompt.tab)
+        {
+            *cursor = self.question_prompt.selection;
+        }
+    }
+
+    fn move_question_selection_page(&mut self, prompts: &[QuestionPromptView], delta: isize) {
+        self.question_prompt.hovered = None;
+        self.question_prompt.last_click = None;
+        let Some(prompt) = prompts.get(self.question_prompt.tab) else {
+            return;
+        };
+        let total = question_prompt_choice_count(prompt);
+        if total == 0 {
+            self.question_prompt.selection = 0;
+            return;
+        }
+        self.question_prompt.selection = self
+            .question_prompt
+            .selection
+            .saturating_add_signed(delta)
+            .min(total.saturating_sub(1));
+        if let Some(scroll) = self
+            .question_prompt
+            .scroll_offsets
+            .get_mut(self.question_prompt.tab)
+        {
+            *scroll = crate::layout::QUESTION_AUTO_SCROLL;
+        }
+        if let Some(cursor) = self
+            .question_prompt
+            .cursors
+            .get_mut(self.question_prompt.tab)
+        {
+            *cursor = self.question_prompt.selection;
+        }
+    }
+
+    fn move_question_selection_half_page(&mut self, prompts: &[QuestionPromptView], forward: bool) {
+        let Some(prompt) = prompts.get(self.question_prompt.tab) else {
+            return;
+        };
+        let last = question_prompt_choice_count(prompt).saturating_sub(1);
+        let distance = isize::try_from((last / 2).max(1)).unwrap_or(isize::MAX);
+        self.move_question_selection_page(prompts, if forward { distance } else { -distance });
+    }
+
     fn clear_active_question_selection(&mut self) {
         if let Some(answers) = self
             .question_prompt
@@ -922,12 +1087,12 @@ impl AppState {
         {
             answers.clear();
         }
-        if let Some(custom) = self
+        if let Some(selected) = self
             .question_prompt
-            .custom
+            .custom_selected
             .get_mut(self.question_prompt.tab)
         {
-            custom.clear();
+            *selected = false;
         }
     }
 
@@ -940,22 +1105,22 @@ impl AppState {
             return;
         };
         if prompt.custom && self.question_prompt.selection == prompt.options.len() {
-            self.start_question_custom_edit(permission_id);
+            self.start_question_custom_edit(permission_id, prompt.multiple);
             return;
         }
         let Some(option) = prompt.options.get(self.question_prompt.selection) else {
             return;
         };
         let answer = option.label.clone();
-        self.toggle_question_answer(self.question_prompt.tab, &answer);
+        if prompt.multiple {
+            self.toggle_question_answer(self.question_prompt.tab, &answer);
+        } else if self.question_prompt.answers[self.question_prompt.tab] == [answer.clone()] {
+            self.question_prompt.answers[self.question_prompt.tab].clear();
+        } else {
+            self.question_prompt.answers[self.question_prompt.tab] = vec![answer];
+        }
         if !prompt.multiple {
-            if let Some(custom) = self
-                .question_prompt
-                .custom
-                .get_mut(self.question_prompt.tab)
-            {
-                custom.clear();
-            }
+            self.question_prompt.custom_selected[self.question_prompt.tab] = false;
         }
     }
 
@@ -964,7 +1129,7 @@ impl AppState {
             return;
         };
         if prompt.custom && self.question_prompt.selection == prompt.options.len() {
-            self.start_question_custom_edit(permission_id);
+            self.start_question_custom_edit(permission_id, prompt.multiple);
             return;
         }
         let Some(option) = prompt.options.get(self.question_prompt.selection) else {
@@ -977,7 +1142,7 @@ impl AppState {
             }
         } else {
             self.question_prompt.answers[self.question_prompt.tab] = vec![answer];
-            self.question_prompt.custom[self.question_prompt.tab].clear();
+            self.question_prompt.custom_selected[self.question_prompt.tab] = false;
         }
         if self.question_prompt.tab + 1 < prompts.len() {
             self.select_question_tab(self.question_prompt.tab + 1);
@@ -986,7 +1151,7 @@ impl AppState {
         }
     }
 
-    fn start_question_custom_edit(&mut self, permission_id: &str) {
+    fn start_question_custom_edit(&mut self, permission_id: &str, multiple: bool) {
         let Some(current) = self
             .question_prompt
             .custom
@@ -996,6 +1161,10 @@ impl AppState {
             return;
         };
         self.question_prompt.permission_id = Some(permission_id.to_string());
+        self.question_prompt.custom_selected[self.question_prompt.tab] = true;
+        if !multiple {
+            self.question_prompt.answers[self.question_prompt.tab].clear();
+        }
         self.question_prompt.editing = true;
         self.question_prompt.answer_buffer = current;
         self.question_prompt.answer_cursor = self.question_answer_char_count();
@@ -1011,26 +1180,21 @@ impl AppState {
         let Some(prompt) = prompts.get(self.question_prompt.tab) else {
             return;
         };
-        let answer = self.question_prompt.answer_buffer.trim().to_string();
-        let previous = self
-            .question_prompt
-            .custom
-            .get(self.question_prompt.tab)
-            .cloned()
-            .unwrap_or_default();
+        let answer = self.question_prompt.answer_buffer.clone();
         self.question_prompt.editing = false;
         self.question_prompt.answer_error = None;
 
-        if answer.is_empty() {
-            self.clear_question_custom_answer(self.question_prompt.tab, &previous);
-            return;
-        }
-
-        self.question_prompt.custom[self.question_prompt.tab] = answer.clone();
-        if prompt.multiple {
-            self.replace_question_custom_answer(self.question_prompt.tab, &previous, answer);
+        if answer.trim().is_empty() {
+            self.clear_question_custom_answer(self.question_prompt.tab);
+            if !prompt.multiple {
+                self.question_prompt.answers[self.question_prompt.tab].clear();
+            }
         } else {
-            self.question_prompt.answers[self.question_prompt.tab] = vec![answer];
+            self.question_prompt.custom[self.question_prompt.tab] = answer;
+            self.question_prompt.custom_selected[self.question_prompt.tab] = true;
+            if !prompt.multiple {
+                self.question_prompt.answers[self.question_prompt.tab].clear();
+            }
         }
 
         if advance {
@@ -1054,25 +1218,12 @@ impl AppState {
         }
     }
 
-    fn clear_question_custom_answer(&mut self, index: usize, previous: &str) {
+    fn clear_question_custom_answer(&mut self, index: usize) {
         if let Some(value) = self.question_prompt.custom.get_mut(index) {
             value.clear();
         }
-        if previous.is_empty() {
-            return;
-        }
-        if let Some(values) = self.question_prompt.answers.get_mut(index) {
-            values.retain(|value| value != previous);
-        }
-    }
-
-    fn replace_question_custom_answer(&mut self, index: usize, previous: &str, answer: String) {
-        let Some(values) = self.question_prompt.answers.get_mut(index) else {
-            return;
-        };
-        values.retain(|value| value != previous);
-        if !values.iter().any(|value| value == &answer) {
-            values.push(answer);
+        if let Some(selected) = self.question_prompt.custom_selected.get_mut(index) {
+            *selected = false;
         }
     }
 
@@ -1122,7 +1273,8 @@ impl AppState {
         permission: &ActivePermissionView,
     ) -> Option<String> {
         let prompts = permission.question_prompts.as_ref()?;
-        match build_question_answers(prompts, &self.question_prompt.answers) {
+        let current_answers = self.question_prompt_answers(&permission.permission_id);
+        match build_question_answers(prompts, &current_answers) {
             Ok(answers) => {
                 self.question_prompt.answer_error = None;
                 serde_json::to_string(&answers).ok()
@@ -1176,12 +1328,14 @@ impl AppState {
         self.question_prompt.hovered = None;
         self.question_prompt.answers.clear();
         self.question_prompt.custom.clear();
+        self.question_prompt.custom_selected.clear();
         self.question_prompt.editing = false;
         self.question_prompt.answer_buffer.clear();
         self.question_prompt.answer_cursor = 0;
         self.question_prompt.answer_error = None;
         self.question_prompt.scroll_offsets.clear();
         self.question_prompt.fullscreen = false;
+        self.question_prompt.last_click = None;
     }
 
     pub(super) fn send_permission_intent(

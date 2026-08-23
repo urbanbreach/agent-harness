@@ -382,6 +382,11 @@ pub(super) fn question_permission_modal_tabs_walk_rows_and_arrows_switch_questio
     app.handle_key(key(KeyCode::Tab));
     assert_eq!(app.question_prompt_tab("perm_question_tabs"), 0);
     assert_eq!(app.question_prompt_selection("perm_question_tabs"), 1);
+    app.handle_key(key(KeyCode::Down));
+    assert_eq!(app.question_prompt_selection("perm_question_tabs"), 1);
+    app.handle_key(key(KeyCode::Up));
+    app.handle_key(key(KeyCode::Up));
+    assert_eq!(app.question_prompt_selection("perm_question_tabs"), 0);
     app.handle_key(key(KeyCode::Right));
     assert_eq!(app.question_prompt_tab("perm_question_tabs"), 1);
     assert!(intents.lock().unwrap_or_abort().is_empty());
@@ -437,6 +442,7 @@ pub(super) fn question_escape_ladder_clears_then_parks_and_cancel_chords_deny() 
     let sink_intents = Arc::clone(&intents);
     let sink = Arc::new(move |intent| sink_intents.lock().unwrap_or_abort().push(intent));
     let mut app = AppState::new_live(None, false, Some(sink));
+    app.composer.prompt_buffer = "keep this draft".to_string();
     app.ingest_event(three_choice_question_event("question_esc_ladder"));
     app.handle_key(key_with_modifiers(KeyCode::Char(' '), KeyModifiers::NONE));
 
@@ -450,6 +456,7 @@ pub(super) fn question_escape_ladder_clears_then_parks_and_cancel_chords_deny() 
     assert_eq!(app.focus, Focus::Prompt);
     app.handle_key(key_with_modifiers(KeyCode::Char('X'), KeyModifiers::SHIFT));
     assert_eq!(intents.lock().unwrap_or_abort().len(), 1);
+    assert_eq!(app.composer.prompt_buffer, "keep this draft");
 }
 
 pub(super) fn question_modal_ignores_digits_past_visible_choices() {
@@ -524,6 +531,19 @@ pub(super) fn question_modal_multi_custom_answer_coexists_with_fixed_options() {
     app.handle_key(key(KeyCode::Enter));
     assert!(app.question_prompt_editing("perm_question_multi_custom"));
 
+    app.handle_key(key(KeyCode::Char('x')));
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char('c'),
+        KeyModifiers::CONTROL,
+    ));
+
+    assert!(!app.question_prompt_editing("perm_question_multi_custom"));
+    assert_eq!(
+        app.question_prompt_answers("perm_question_multi_custom"),
+        vec![vec!["A".to_string()]]
+    );
+
+    app.handle_key(key(KeyCode::Enter));
     app.handle_key(key(KeyCode::Char('x')));
     app.handle_key(key(KeyCode::Enter));
 
@@ -611,7 +631,7 @@ pub(super) fn permission_queue_restores_only_original_focus_and_preserved_draft(
     assert_eq!(app.composer.prompt_buffer, "queued draft");
 }
 
-pub(super) fn question_modal_confirm_submits_unanswered_questions_as_empty_lists() {
+pub(super) fn question_ctrl_c_cancels_answered_questions() {
     let intents = std::sync::Arc::new(std::sync::Mutex::new(Vec::<UiIntent>::new()));
     let intent_sink = {
         let intents = std::sync::Arc::clone(&intents);
@@ -649,10 +669,12 @@ pub(super) fn question_modal_confirm_submits_unanswered_questions_as_empty_lists
     ));
 
     app.handle_key(key(KeyCode::Enter));
-    app.handle_key(key(KeyCode::Right));
-    assert_eq!(app.question_prompt_tab("perm_question_partial_submit"), 2);
+    assert_eq!(app.question_prompt_tab("perm_question_partial_submit"), 1);
     assert!(intents.lock().unwrap_or_abort().is_empty());
-    app.handle_key(key(KeyCode::Enter));
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char('c'),
+        KeyModifiers::CONTROL,
+    ));
 
     let intents = intents.lock().unwrap_or_abort();
     assert_eq!(intents.len(), 1);
@@ -660,11 +682,31 @@ pub(super) fn question_modal_confirm_submits_unanswered_questions_as_empty_lists
         intents[0],
         UiIntent::ResolvePermission {
             permission_id: "perm_question_partial_submit".to_string(),
-            decision: PermissionDecision::Allow,
-            reason: Some("[[\"A\"],[]]".to_string()),
+            decision: PermissionDecision::Deny,
+            reason: None,
             grant_scope: None,
         }
     );
+}
+
+pub(super) fn question_y_copies_the_focused_option_label_and_description() {
+    // Given: a focused question and an observable clipboard hook.
+    let _clipboard_guard = ClipboardModeGuard::disabled_copy_on_select();
+    let copied = Arc::new(Mutex::new(Vec::<String>::new()));
+    let copied_hook = Arc::clone(&copied);
+    crate::clipboard::set_copy_override(Some(Box::new(move |text| {
+        copied_hook.lock().unwrap_or_abort().push(text.to_string());
+        Ok(())
+    })));
+    let mut app = AppState::new_live(None, false, None);
+    app.ingest_event(three_choice_question_event("question_copy_option"));
+
+    // When: the operator focuses the second option and presses y.
+    app.handle_key(key(KeyCode::Down));
+    app.handle_key(key(KeyCode::Char('y')));
+
+    // Then: Grok's label-newline-description payload reaches the clipboard.
+    assert_eq!(copied.lock().unwrap_or_abort().as_slice(), ["B\nOption B"]);
 }
 
 include!("permission_modal_tests_part2_test.rs");

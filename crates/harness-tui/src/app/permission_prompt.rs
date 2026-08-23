@@ -9,6 +9,7 @@ pub(crate) enum PermissionPointerTarget {
     Decision(PermissionModalSelection),
     Confirm(PermissionConfirmSelection),
     QuestionChoice(usize),
+    QuestionSubmit,
     QuestionScrollbar,
 }
 
