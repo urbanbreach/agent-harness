@@ -6,12 +6,14 @@
 use harness_core::event::{
     ActorKind, EventActor, EventEnvelopeV1, EventV1, PermissionRequestedEvent, SCHEMA_VERSION,
 };
-use harness_tui::app::{AppState, Focus};
+use harness_core::perm::PermissionDecision;
+use harness_tui::app::{AppState, Focus, UiIntent};
 use harness_tui::{ui, UnwrapOrAbort};
 use ratatui::backend::TestBackend;
 use ratatui::buffer::Buffer;
 use ratatui::style::Color;
 use ratatui::Terminal;
+use std::sync::{Arc, Mutex};
 
 const WIDTH: u16 = 100;
 const HEIGHT: u16 = 28;
@@ -94,6 +96,49 @@ fn single_question() -> serde_json::Value {
     })
 }
 
+fn multi_question() -> serde_json::Value {
+    serde_json::json!({
+        "questions": [
+            {
+                "question": "Choose modes",
+                "header": "Modes",
+                "options": [
+                    {"label": "One", "description": "First mode"},
+                    {"label": "Two", "description": "Second mode"},
+                    {"label": "Three", "description": "Third mode"},
+                    {"label": "Four", "description": "Fourth mode"},
+                    {"label": "Five", "description": "Fifth mode"},
+                    {"label": "Six", "description": "Sixth mode"},
+                    {"label": "Seven", "description": "Seventh mode"},
+                    {"label": "Eight", "description": "Eighth mode"},
+                    {"label": "Nine", "description": "Ninth mode"},
+                    {"label": "Ten", "description": "Tenth mode"}
+                ],
+                "multiple": true,
+                "custom": true
+            },
+            {
+                "question": "Choose output",
+                "header": "Output",
+                "options": [{"label": "Text", "description": "Plain text"}],
+                "multiple": false,
+                "custom": true
+            }
+        ]
+    })
+}
+
+fn key(code: crossterm::event::KeyCode) -> crossterm::event::KeyEvent {
+    crossterm::event::KeyEvent::new(code, crossterm::event::KeyModifiers::NONE)
+}
+
+fn key_with_modifiers(
+    code: crossterm::event::KeyCode,
+    modifiers: crossterm::event::KeyModifiers,
+) -> crossterm::event::KeyEvent {
+    crossterm::event::KeyEvent::new(code, modifiers)
+}
+
 #[test]
 fn focused_question_keeps_active_cursor_fill() {
     // arrange
@@ -155,8 +200,8 @@ fn unfocused_multi_select_custom_question_dims_without_hiding_markers() {
 
     // act
     // Then: both the choice cursor and freeform marker remain legible on the base surface.
-    let (choice_foreground, choice_background) = cell_colors(&buffer, "1 ([ ]) Red", 8);
-    let (custom_foreground, custom_background) = cell_colors(&buffer, "z ([ ])", 0);
+    let (choice_foreground, choice_background) = cell_colors(&buffer, "1 [ ] Red", 6);
+    let (custom_foreground, custom_background) = cell_colors(&buffer, "z [ ]", 0);
     // assert
     assert_eq!(choice_background, question_surface);
     assert_eq!(custom_background, question_surface);
@@ -170,7 +215,9 @@ fn question_footer_labels_follow_focus_and_selection_state() {
     let mut app = question_app(Focus::Prompt, single_question());
     let focused = rendered_text(&app);
     assert!(focused.contains("Esc:scrollback"));
-    assert!(focused.contains("Tab:next option"));
+    assert!(focused.contains("Enter:submit"));
+    assert!(focused.contains("Tab:next answer"));
+    assert!(focused.contains("X:dismiss"));
 
     app.handle_key(crossterm::event::KeyEvent::new(
         crossterm::event::KeyCode::Char(' '),
@@ -188,5 +235,94 @@ fn question_footer_labels_follow_focus_and_selection_state() {
         crossterm::event::KeyModifiers::NONE,
     ));
     // assert
-    assert!(rendered_text(&app).contains("Tab:focus"));
+    assert!(rendered_text(&app).contains("Tab/Space:question"));
+}
+
+#[test]
+fn multi_question_matches_grok_markers_counter_and_navigation_copy() {
+    // Given: the first page of a multi-question prompt.
+    let app = question_app(Focus::Prompt, multi_question());
+
+    // When: the question dock is rendered.
+    let rendered = rendered_text(&app);
+
+    // Then: Grok's marker anatomy, sticky freeform row, and page footer are visible.
+    assert!(rendered.contains("1 [ ] One"), "{rendered}");
+    assert!(
+        rendered.contains("z [ ] Type your answer here"),
+        "{rendered}"
+    );
+    assert!(
+        rendered.contains("[1/2] ↑/↓ navigate · ←/→ question · y copy"),
+        "{rendered}"
+    );
+    assert!(!rendered.contains(" Confirm "), "{rendered}");
+}
+
+#[test]
+fn unfocused_option_description_collapses_to_one_ellipsized_line() {
+    // Given: a single question whose second option has a long description.
+    let app = question_app(
+        Focus::Prompt,
+        serde_json::json!({
+            "questions": [{
+                "question": "Choose a mode",
+                "header": "Mode",
+                "options": [
+                    {"label": "Focused", "description": "The focused description stays expanded."},
+                    {
+                        "label": "Other",
+                        "description": "This unfocused description is intentionally long enough to exceed one terminal row and must collapse with an ellipsis instead of wrapping into the next option row."
+                    }
+                ],
+                "multiple": false,
+                "custom": false
+            }]
+        }),
+    );
+
+    // When: the question dock is rendered with the first option focused.
+    let rendered = rendered_text(&app);
+
+    // Then: the focused description remains complete and the other row is ellipsized.
+    assert!(
+        rendered.contains("The focused description stays expanded."),
+        "{rendered}"
+    );
+    assert!(rendered.contains('…'), "{rendered}");
+}
+
+#[test]
+fn alphabetic_shortcut_selects_tenth_option_and_ctrl_c_cancels() {
+    // Given: a multi-question prompt and an intent sink.
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let intent_sink = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().unwrap_or_abort().push(intent);
+        })
+    };
+    let mut app = AppState::new_live(None, false, Some(intent_sink));
+    app.ingest_event(question_event(multi_question()));
+
+    // When: `a` selects option ten, then Ctrl+C cancels the question.
+    app.handle_key(key(crossterm::event::KeyCode::Char('a')));
+    assert!(rendered_text(&app).contains("[2/2]"));
+    app.handle_key(key(crossterm::event::KeyCode::Left));
+    assert!(rendered_text(&app).contains("a [x] Ten"));
+    app.handle_key(key_with_modifiers(
+        crossterm::event::KeyCode::Char('c'),
+        crossterm::event::KeyModifiers::CONTROL,
+    ));
+
+    // Then: the question resolves as cancelled without answer data.
+    assert_eq!(
+        intents.lock().unwrap_or_abort().as_slice(),
+        [UiIntent::ResolvePermission {
+            permission_id: "perm-question-focus".to_string(),
+            decision: PermissionDecision::Deny,
+            reason: None,
+            grant_scope: None,
+        }]
+    );
 }

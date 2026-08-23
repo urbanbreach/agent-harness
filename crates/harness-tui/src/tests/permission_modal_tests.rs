@@ -110,9 +110,8 @@ pub(super) fn question_permission_modal_renders_questions_and_answer_input() {
     assert!(debug.contains("y copy"));
     assert!(debug.contains("Enter:submit"));
     assert!(debug.contains("Esc:scrollback"));
-    assert!(debug.contains("Tab:next option"));
-    assert!(debug.contains("Shift+Tab:previous option"));
-    assert!(debug.contains("Shift+X:dismiss"));
+    assert!(debug.contains("Tab:next answer"));
+    assert!(debug.contains("X:dismiss"));
     assert!(!debug.contains("Question required"));
     assert!(!debug.contains("default deny"));
     assert!(!debug.contains("always-approve"));

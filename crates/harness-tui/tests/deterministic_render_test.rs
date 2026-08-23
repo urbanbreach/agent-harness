@@ -231,11 +231,9 @@ fn question_permission_prompt_renders_without_pty() {
     assert!(rendered.contains("↑/↓ navigate"));
     assert!(rendered.contains("y copy") || rendered.contains("copy"));
     assert!(rendered.contains("Enter:submit"));
-    // Freeze-aligned outer shell footer (product-honest keys).
     assert!(rendered.contains("Esc:scrollback"));
-    assert!(rendered.contains("Tab:next option"));
-    assert!(rendered.contains("Shift+Tab:previous option"));
-    assert!(rendered.contains("Shift+X:dismiss"));
+    assert!(rendered.contains("Tab:next answer"));
+    assert!(rendered.contains("X:dismiss"));
 }
 
 #[test]
