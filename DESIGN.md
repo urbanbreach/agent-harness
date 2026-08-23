@@ -97,6 +97,14 @@ Shell contract:
 - **Accessibility**: explicit key labels and visible mode/focus treatment; no hidden mouse-only action.
 - **Empty guidance**: an enabled empty composer names the primary action in muted text; mode-specific guidance replaces it in shell mode, and typing removes it immediately.
 
+### Question card
+
+- **Reference contract**: Grok Build `xai-grok-pager` question cards define the option anatomy, per-question progression, sticky freeform row, compact counter, and keyboard grammar; Harness retains its own semantic theme roles and permission/event boundary.
+- **Structure**: left accent rail, question label, scrollable options, sticky `z` freeform choice, `[n/N]` navigation footer when multiple questions are present, and a separate shell shortcut row.
+- **Options**: shortcuts are `1` through `9`, then `a` through `f`; multi-select markers are `[ ]`/`[x]`, single-select markers are `(○)`/`(●)`; the focused option expands its description while every other option remains one ellipsized row.
+- **Interaction**: arrows or `j`/`k` navigate, Tab/Shift+Tab wrap choices, Left/Right or `h`/`l` change question, Space toggles, Enter selects and advances or submits on the final question, `z` opens the freeform choice, `y` copies the focused option, Ctrl+F toggles fullscreen, Ctrl+C submits an existing selection or dismisses an unanswered card, Ctrl+Y and `X` dismiss, and Esc clears the current answer before parking focus in scrollback.
+- **Accessibility**: marker shape and shortcut text carry selection and action state without relying on color; unfocused cards remain visible but dimmed; narrow layouts preserve complete high-priority hints.
+
 ### Live-turn status
 
 - **Structure**: activity glyph, direct activity label, phase timing, context budget, optional controls.
