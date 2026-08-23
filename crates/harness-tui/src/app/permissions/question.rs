@@ -13,6 +13,7 @@ pub struct QuestionPromptView {
 pub struct QuestionOptionView {
     pub label: String,
     pub description: String,
+    pub preview: Option<String>,
 }
 
 pub(super) fn parse_question_prompts(kind: &str, summary: &str) -> Option<Vec<QuestionPromptView>> {
@@ -39,6 +40,10 @@ pub(super) fn parse_question_prompts(kind: &str, summary: &str) -> Option<Vec<Qu
                         Some(QuestionOptionView {
                             label: option.get("label")?.as_str()?.to_string(),
                             description: option.get("description")?.as_str()?.to_string(),
+                            preview: option
+                                .get("preview")
+                                .and_then(serde_json::Value::as_str)
+                                .map(str::to_string),
                         })
                     })
                     .collect::<Option<Vec<_>>>()?,
@@ -96,19 +101,32 @@ pub(super) fn question_prompt_is_single_select(prompts: &[QuestionPromptView]) -
 }
 
 pub(super) fn question_prompt_tab_count(prompts: &[QuestionPromptView]) -> usize {
-    if question_prompt_is_single_select(prompts) {
-        1
-    } else {
-        prompts.len() + 1
-    }
-}
-
-pub(super) fn question_prompt_confirm_active(tab: usize, prompts: &[QuestionPromptView]) -> bool {
-    !question_prompt_is_single_select(prompts) && tab >= prompts.len()
+    prompts.len().max(1)
 }
 
 pub(super) fn question_prompt_choice_count(prompt: &QuestionPromptView) -> usize {
     prompt.options.len() + usize::from(prompt.custom)
+}
+
+pub(crate) fn question_option_shortcut_label(index: usize) -> Option<char> {
+    let index = u8::try_from(index).ok()?;
+    match index {
+        0..=8 => Some(char::from(b'1'.saturating_add(index))),
+        9..=14 => Some(char::from(b'a'.saturating_add(index.saturating_sub(9)))),
+        _ => None,
+    }
+}
+
+pub(super) fn question_option_index_for_key(key: char) -> Option<usize> {
+    match key {
+        '1'..='9' => key
+            .to_digit(10)
+            .and_then(|digit| usize::try_from(digit.saturating_sub(1)).ok()),
+        'a'..='f' => usize::try_from(u32::from(key).saturating_sub(u32::from('a')))
+            .ok()
+            .map(|index| index.saturating_add(9)),
+        _ => None,
+    }
 }
 
 pub(crate) fn permission_display_summary(permission: &ActivePermissionView) -> String {
@@ -116,5 +134,19 @@ pub(crate) fn permission_display_summary(permission: &ActivePermissionView) -> S
         "Question requested".to_string()
     } else {
         permission.summary.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::question_option_shortcut_label;
+
+    #[test]
+    fn shortcuts_stop_before_owned_navigation_keys() {
+        // Given: the final canonical letter shortcut and the next option.
+        // When: their display labels are requested.
+        // Then: only the conflict-free a-f range is advertised.
+        assert_eq!(question_option_shortcut_label(14), Some('f'));
+        assert_eq!(question_option_shortcut_label(15), None);
     }
 }

@@ -1526,11 +1526,7 @@ impl AppState {
         self.permission_prompt.selection = PermissionModalSelection::AllowAlways;
         self.permission_prompt.confirm_selection = PermissionConfirmSelection::Confirm;
         self.permission_prompt.focus_return = None;
-        self.question_prompt.tab = 0;
-        self.question_prompt.selection = 0;
-        self.question_prompt.answers.clear();
-        self.question_prompt.custom.clear();
-        self.question_prompt.editing = false;
+        self.question_prompt = QuestionPromptState::default();
         self.transcript_view.expanded_patch_file_outputs.clear();
         self.transcript_view.expanded_reasoning_requests.clear();
         self.transcript_view.tool_motion = Default::default();

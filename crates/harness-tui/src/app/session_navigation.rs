@@ -273,11 +273,7 @@ impl AppState {
         self.permission_prompt.stage = PermissionModalStage::Decision;
         self.permission_prompt.selection = PermissionModalSelection::AllowAlways;
         self.permission_prompt.confirm_selection = PermissionConfirmSelection::Confirm;
-        self.question_prompt.tab = 0;
-        self.question_prompt.selection = 0;
-        self.question_prompt.answers.clear();
-        self.question_prompt.custom.clear();
-        self.question_prompt.editing = false;
+        self.question_prompt = super::QuestionPromptState::default();
         self.reload_requested = false;
         self.should_quit = false;
         self.focus = Focus::Prompt;
@@ -827,11 +823,7 @@ impl AppState {
         self.permission_prompt.stage = PermissionModalStage::Decision;
         self.permission_prompt.selection = PermissionModalSelection::AllowAlways;
         self.permission_prompt.confirm_selection = PermissionConfirmSelection::Confirm;
-        self.question_prompt.tab = 0;
-        self.question_prompt.selection = 0;
-        self.question_prompt.answers.clear();
-        self.question_prompt.custom.clear();
-        self.question_prompt.editing = false;
+        self.question_prompt = super::QuestionPromptState::default();
         self.composer.prompt_history.clear();
         self.composer.prompt_history_index = None;
         self.replay_mode = false;
