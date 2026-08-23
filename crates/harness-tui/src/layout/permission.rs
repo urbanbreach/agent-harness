@@ -1,10 +1,11 @@
 use std::borrow::Cow;
 
 use ratatui::layout::Rect;
+use unicode_segmentation::UnicodeSegmentation as _;
+use unicode_width::UnicodeWidthStr as _;
 
 use crate::app::permissions::PermissionModalStage;
 use crate::app::{ActivePermissionView, AppState};
-use crate::terminal::char_display_width;
 
 const ACCENT_WIDTH: u16 = 1;
 const CONTENT_LEFT_PADDING: u16 = 2;
@@ -20,7 +21,6 @@ const QUESTION_TOP_PADDING_ROWS: u16 = 1;
 const QUESTION_BOTTOM_PADDING_ROWS: u16 = 1;
 const QUESTION_BODY_GAP_ROWS: u16 = 1;
 const QUESTION_FOOTER_ROWS: u16 = 1;
-const QUESTION_TABS_ROWS: u16 = 2;
 const QUESTION_LABEL_GAP_ROWS: u16 = 2;
 const QUESTION_MIN_VISIBLE_OPTION_ROWS: u16 = 3;
 
@@ -57,6 +57,7 @@ pub(crate) struct QuestionDockMeasure {
     pub content_width: u16,
     pub status_height: u16,
     pub dock_height: u16,
+    pub source_chrome_rows: u16,
     pub chrome_rows: u16,
     pub option_rows: u16,
     pub body_viewport_rows: u16,
@@ -202,56 +203,70 @@ pub(crate) fn question_dock_measure(
             .saturating_add(CONTENT_RIGHT_PADDING),
     );
     let prompts = permission.question_prompts.as_deref().unwrap_or(&[]);
-    let single = prompts.len() == 1 && prompts.first().is_some_and(|prompt| !prompt.multiple);
     let tab = app
         .question_prompt_tab(&permission.permission_id)
-        .min(prompts.len());
-    let confirm = !single && tab >= prompts.len();
-    let answers = app.question_prompt_answers(&permission.permission_id);
-    let mut chrome_rows = if single { 0 } else { QUESTION_TABS_ROWS };
+        .min(prompts.len().saturating_sub(1));
+    let fullscreen = app.question_prompt_fullscreen(&permission.permission_id);
+    let mut chrome_rows = 0u16;
     let mut option_rows = 0u16;
     let mut option_ranges = Vec::new();
     let mut selected_range = None;
     let mut sticky_rows = 0u16;
 
-    if confirm {
-        chrome_rows = chrome_rows.saturating_add(1);
-        for (index, prompt) in prompts.iter().enumerate() {
-            let value = answers
-                .get(index)
-                .map(|values| values.join(", "))
-                .unwrap_or_default();
-            option_rows = option_rows.saturating_add(wrapped_row_count(
-                &format!("{}: {}", prompt.header, value),
-                content_width,
-            ));
+    if let Some(prompt) = prompts.get(tab) {
+        let (question_label, question_description) =
+            split_question_label_description(&prompt.question);
+        chrome_rows =
+            chrome_rows.saturating_add(wrapped_row_count(question_label, content_width).max(1));
+        if !question_description.is_empty() {
+            let rows = wrapped_row_count(question_description, content_width);
+            chrome_rows = chrome_rows.saturating_add(1).saturating_add(if fullscreen {
+                rows
+            } else {
+                rows.min(4)
+            });
         }
-        if let Some(error) = app.question_answer_error(&permission.permission_id) {
-            sticky_rows = 1u16.saturating_add(wrapped_row_count(error, content_width).max(1));
-        }
-    } else if let Some(prompt) = prompts.get(tab) {
-        let question = if prompt.multiple {
-            format!("{} (select all that apply)", prompt.question)
-        } else {
-            prompt.question.clone()
-        };
-        chrome_rows = chrome_rows
-            .saturating_add(wrapped_row_count(&question, content_width).max(1))
-            .saturating_add(QUESTION_LABEL_GAP_ROWS);
         let selected = app.question_prompt_selection(&permission.permission_id);
-        let label_width = prompt
+        if let Some(preview) = prompt
             .options
-            .iter()
-            .map(|option| display_width(&option.label))
-            .max()
-            .unwrap_or(0);
+            .get(selected)
+            .and_then(|option| option.preview.as_deref())
+            .filter(|preview| !preview.is_empty())
+        {
+            let rows = wrapped_row_count(preview, content_width);
+            chrome_rows = chrome_rows.saturating_add(1).saturating_add(if fullscreen {
+                rows
+            } else {
+                rows.min(3)
+            });
+        }
+        chrome_rows = chrome_rows.saturating_add(QUESTION_LABEL_GAP_ROWS);
+        let label_width = question_label_column_width(&prompt.options, usize::from(content_width));
         for (index, option) in prompt.options.iter().enumerate() {
             let start = option_rows;
-            let rows = wrapped_row_count(
-                &question_option_visual(index, option, label_width, prompt.multiple),
-                content_width,
-            )
-            .max(1);
+            let normalized_label = normalize_question_label(&option.label);
+            let rows = if index == selected {
+                if display_width(&normalized_label) > label_width {
+                    let stacked_width = content_width.saturating_sub(6).max(1);
+                    wrapped_row_count(&normalized_label, stacked_width)
+                        .saturating_add(wrapped_row_count(&option.description, stacked_width))
+                        .max(1)
+                } else if !option.description.is_empty() {
+                    let description_width = content_width
+                        .saturating_sub(u16::try_from(label_width).unwrap_or(u16::MAX))
+                        .saturating_sub(8)
+                        .max(1);
+                    wrapped_row_count(&option.description, description_width).max(1)
+                } else {
+                    wrapped_row_count(
+                        &question_option_visual(index, option, label_width, prompt.multiple),
+                        content_width,
+                    )
+                    .max(1)
+                }
+            } else {
+                1
+            };
             option_rows = option_rows.saturating_add(rows);
             let range = QuestionRowRange {
                 index,
@@ -265,14 +280,6 @@ pub(crate) fn question_dock_measure(
         }
         if prompt.custom {
             sticky_rows = 1;
-            if selected == prompt.options.len() {
-                let custom = app
-                    .question_prompt_custom(&permission.permission_id, tab)
-                    .unwrap_or_default();
-                if app.question_prompt_editing(&permission.permission_id) || !custom.is_empty() {
-                    sticky_rows = sticky_rows.saturating_add(1);
-                }
-            }
         }
         if let Some(error) = app.question_answer_error(&permission.permission_id) {
             sticky_rows = sticky_rows
@@ -281,6 +288,19 @@ pub(crate) fn question_dock_measure(
         }
     }
 
+    let source_chrome_rows = chrome_rows;
+    let available_dock_height = screen_height.saturating_sub(QUESTION_OUTER_FOOTER_ROWS);
+    let embedded_cap =
+        question_height_cap(screen_height).saturating_add(QUESTION_OUTER_FOOTER_ROWS);
+    let fixed_rows = QUESTION_TOP_PADDING_ROWS
+        .saturating_add(sticky_rows)
+        .saturating_add(QUESTION_BODY_GAP_ROWS)
+        .saturating_add(QUESTION_FOOTER_ROWS)
+        .saturating_add(QUESTION_BOTTOM_PADDING_ROWS)
+        .saturating_add(option_rows.min(QUESTION_MIN_VISIBLE_OPTION_ROWS));
+    if !fullscreen {
+        chrome_rows = chrome_rows.min(embedded_cap.saturating_sub(fixed_rows));
+    }
     let desired_dock_height = QUESTION_TOP_PADDING_ROWS
         .saturating_add(chrome_rows)
         .saturating_add(option_rows)
@@ -288,18 +308,7 @@ pub(crate) fn question_dock_measure(
         .saturating_add(QUESTION_BODY_GAP_ROWS)
         .saturating_add(QUESTION_FOOTER_ROWS)
         .saturating_add(QUESTION_BOTTOM_PADDING_ROWS);
-    let fullscreen = app.question_prompt_fullscreen(&permission.permission_id);
-    let available_dock_height = screen_height.saturating_sub(QUESTION_OUTER_FOOTER_ROWS);
-    let embedded_cap =
-        question_height_cap(screen_height).saturating_add(QUESTION_OUTER_FOOTER_ROWS);
-    let minimum_safe_height = QUESTION_TOP_PADDING_ROWS
-        .saturating_add(chrome_rows)
-        .saturating_add(sticky_rows)
-        .saturating_add(QUESTION_BODY_GAP_ROWS)
-        .saturating_add(QUESTION_FOOTER_ROWS)
-        .saturating_add(QUESTION_BOTTOM_PADDING_ROWS)
-        .saturating_add(option_rows.min(QUESTION_MIN_VISIBLE_OPTION_ROWS));
-    let cap = if fullscreen || minimum_safe_height > embedded_cap {
+    let cap = if fullscreen || fixed_rows >= embedded_cap {
         available_dock_height
     } else {
         embedded_cap
@@ -330,6 +339,7 @@ pub(crate) fn question_dock_measure(
         content_width,
         status_height,
         dock_height,
+        source_chrome_rows,
         chrome_rows,
         option_rows,
         body_viewport_rows,
@@ -409,18 +419,44 @@ pub(crate) fn question_option_visual(
     label_width: usize,
     multiple: bool,
 ) -> String {
-    let marker = if multiple { "[ ]" } else { "○" };
-    let prefix = format!("{} ({marker}) ", index.saturating_add(1));
+    let shortcut = crate::app::permissions::question_option_shortcut_label(index).unwrap_or(' ');
+    let marker = if multiple { "[ ]" } else { "(○)" };
+    let prefix = format!("{shortcut} {marker} ");
     if option.description.is_empty() {
-        return format!("{prefix}{}", option.label);
+        return format!("{prefix}{}", normalize_question_label(&option.label));
     }
-    let padding = label_width.saturating_sub(display_width(&option.label));
+    let label = normalize_question_label(&option.label);
+    let padding = label_width.saturating_sub(display_width(&label));
     format!(
         "{prefix}{}{}  {}",
-        option.label,
+        label,
         " ".repeat(padding),
         option.description
     )
+}
+
+pub(crate) fn question_label_column_width(
+    options: &[crate::app::QuestionOptionView],
+    content_width: usize,
+) -> usize {
+    options
+        .iter()
+        .map(|option| display_width(&normalize_question_label(&option.label)))
+        .max()
+        .unwrap_or(0)
+        .min(content_width.saturating_mul(3) / 5)
+}
+
+fn normalize_question_label(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn split_question_label_description(question: &str) -> (&str, &str) {
+    question
+        .split_once("\n\n")
+        .map_or((question.trim(), ""), |(label, description)| {
+            (label.trim(), description.trim())
+        })
 }
 
 fn permission_detail_text(permission: &ActivePermissionView) -> Cow<'_, str> {
@@ -447,7 +483,9 @@ fn question_height_cap(screen_height: u16) -> u16 {
 }
 
 fn display_width(text: &str) -> usize {
-    text.chars().map(char_display_width).map(usize::from).sum()
+    text.graphemes(true)
+        .map(|grapheme| grapheme.width().max(1))
+        .sum()
 }
 
 fn wrapped_row_count(text: &str, width: u16) -> u16 {
@@ -464,46 +502,41 @@ fn wrap_text(text: &str, width: u16, max_rows: u16) -> Vec<String> {
     let width = width.max(1);
     let mut rows = Vec::new();
     for source_line in text.split('\n') {
-        let chars = source_line
-            .chars()
-            .map(|character| (character, char_display_width(character)))
+        let clusters = source_line
+            .graphemes(true)
+            .map(|grapheme| {
+                (
+                    grapheme,
+                    u16::try_from(grapheme.width().max(1)).unwrap_or(u16::MAX),
+                )
+            })
             .collect::<Vec<_>>();
-        if chars.is_empty() {
+        if clusters.is_empty() {
             rows.push(String::new());
             continue;
         }
         let mut start = 0usize;
-        while start < chars.len() {
+        while start < clusters.len() {
             let mut used = 0u16;
             let mut fit_end = start;
-            while fit_end < chars.len() && used.saturating_add(chars[fit_end].1) <= width {
-                used = used.saturating_add(chars[fit_end].1);
+            while fit_end < clusters.len() && used.saturating_add(clusters[fit_end].1) <= width {
+                used = used.saturating_add(clusters[fit_end].1);
                 fit_end += 1;
             }
-            if fit_end == chars.len() {
-                rows.push(
-                    chars[start..]
-                        .iter()
-                        .map(|(character, _)| *character)
-                        .collect(),
-                );
+            if fit_end == clusters.len() {
+                rows.push(question_clusters_to_string(&clusters[start..]));
                 break;
             }
-            let end = chars[start..fit_end]
+            let end = clusters[start..fit_end]
                 .iter()
-                .rposition(|(character, _)| character.is_whitespace())
+                .rposition(|(cluster, _)| cluster.chars().all(char::is_whitespace))
                 .map(|offset| start + offset)
                 .filter(|end| *end > start)
                 .unwrap_or(fit_end.max(start.saturating_add(1)));
-            rows.push(
-                chars[start..end]
-                    .iter()
-                    .map(|(character, _)| *character)
-                    .collect(),
-            );
-            start = if chars
+            rows.push(question_clusters_to_string(&clusters[start..end]));
+            start = if clusters
                 .get(end)
-                .is_some_and(|(character, _)| character.is_whitespace())
+                .is_some_and(|(cluster, _)| cluster.chars().all(char::is_whitespace))
             {
                 end.saturating_add(1)
             } else {
@@ -518,4 +551,29 @@ fn wrap_text(text: &str, width: u16, max_rows: u16) -> Vec<String> {
         }
     }
     rows
+}
+
+fn question_clusters_to_string(clusters: &[(&str, u16)]) -> String {
+    clusters
+        .iter()
+        .fold(String::new(), |mut text, (cluster, _)| {
+            text.push_str(cluster);
+            text
+        })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn question_label_column_is_capped_at_three_fifths_of_content_width() {
+        let options = vec![crate::app::QuestionOptionView {
+            label: "A label that would otherwise consume the description column".to_string(),
+            description: "Description".to_string(),
+            preview: None,
+        }];
+
+        assert_eq!(question_label_column_width(&options, 20), 12);
+    }
 }

@@ -22,9 +22,9 @@ pub(crate) use overlays::{completion_overlay_content_area, slash_command_overlay
 use overlays::{fork_selector_overlay_height, lifecycle_overlay_area};
 pub(crate) use permission::{
     permission_detail_lines, permission_dock_geometry, permission_dock_measure,
-    question_dock_geometry, question_dock_measure, question_option_visual, PermissionDockGeometry,
-    PermissionDockMeasure, QuestionDockGeometry, QuestionDockMeasure, QUESTION_AUTO_SCROLL,
-    QUESTION_OUTER_FOOTER_ROWS,
+    question_dock_geometry, question_dock_measure, question_label_column_width,
+    question_option_visual, PermissionDockGeometry, PermissionDockMeasure, QuestionDockGeometry,
+    QuestionDockMeasure, QUESTION_AUTO_SCROLL, QUESTION_OUTER_FOOTER_ROWS,
 };
 #[cfg(test)]
 pub(crate) use surfaces::lifecycle_card_area;
@@ -584,13 +584,6 @@ pub(crate) fn session_shell_layout(
             };
             control_dock_layout(shell_area, None, composer, None)
         } else {
-            let status_rows = rhythm.status_rows.min(shell_area.height);
-            let composer_footer_spacer = rhythm
-                .composer_footer_spacer_rows
-                .min(shell_area.height.saturating_sub(status_rows));
-            let status_composer_spacer = rhythm
-                .status_composer_spacer_rows
-                .min(shell_area.height.saturating_sub(status_rows));
             let composer_height = live_prompt_block_height(
                 app,
                 composer_measure_area,
@@ -599,6 +592,15 @@ pub(crate) fn session_shell_layout(
                 terminal_height,
             )
             .min(shell_area.height);
+            let status_rows = rhythm
+                .status_rows
+                .min(shell_area.height.saturating_sub(composer_height));
+            let composer_footer_spacer = rhythm
+                .composer_footer_spacer_rows
+                .min(shell_area.height.saturating_sub(status_rows));
+            let status_composer_spacer = rhythm
+                .status_composer_spacer_rows
+                .min(shell_area.height.saturating_sub(status_rows));
             let bottom_margin = rhythm.bottom_margin_rows.min(
                 shell_area.height.saturating_sub(
                     status_rows
