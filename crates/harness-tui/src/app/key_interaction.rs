@@ -227,7 +227,26 @@ impl AppState {
             return;
         }
 
+        if key.code == KeyCode::Esc
+            && key.modifiers == KeyModifiers::NONE
+            && self.composer_render_text().is_empty()
+            && self.composer_ghost_eligible()
+        {
+            self.composer_dismiss_suggestion();
+            self.maybe_auto_exit();
+            return;
+        }
+
         if key.code == KeyCode::Esc && self.handle_clear_prompt_escape() {
+            self.maybe_auto_exit();
+            return;
+        }
+
+        if key.modifiers == KeyModifiers::NONE
+            && matches!(key.code, KeyCode::Tab | KeyCode::Right)
+            && self.composer_ghost_eligible()
+            && self.composer_accept_full_suggestion().is_ok()
+        {
             self.maybe_auto_exit();
             return;
         }

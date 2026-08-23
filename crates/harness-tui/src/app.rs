@@ -116,6 +116,7 @@ mod composer;
 mod composer_editing;
 mod file_mentions;
 mod foreign_import;
+mod ghost_suggestion;
 mod help_browser;
 mod key_interaction;
 mod lifecycle;
@@ -1081,7 +1082,11 @@ impl AppState {
     }
 
     pub fn composer_view_model(&self, viewport: ViewportId) -> ComposerViewModel {
-        self.composer.slice.view_model(viewport)
+        let mut view_model = self.composer.slice.view_model(viewport);
+        if !self.composer_ghost_eligible() {
+            view_model.ghost = None;
+        }
+        view_model
     }
 
     pub fn composer_view_model_for_area(&self, area: Rect) -> ComposerViewModel {
@@ -1114,6 +1119,23 @@ impl AppState {
         } else {
             self.composer.editor_cursor()
         }
+    }
+
+    pub(crate) fn composer_ghost_eligible(&self) -> bool {
+        let text = self.composer_render_text();
+        let prompt_row_available = matches!(
+            self.overlay_stack().top(),
+            None | Some(crate::overlay::OverlayKind::DetailsDrawer)
+        );
+        self.focus == Focus::Prompt
+            && !self.composer_disabled()
+            && !self.composer.shell_mode
+            && !self.composer_completion_active()
+            && !self.composer.slice.queue_state().lifecycle.has_work()
+            && prompt_row_available
+            && self.active_review_surface.is_none()
+            && self.composer.slice.suggestions().ghost_for(&text).is_some()
+            && self.composer_render_cursor() == text.chars().count()
     }
 
     pub fn composer_hit_map(
@@ -1174,7 +1196,13 @@ impl AppState {
     pub fn composer_accept_full_suggestion(
         &mut self,
     ) -> Result<(), crate::composer_integration::ComposerSliceError> {
-        self.composer.slice.accept_full_suggestion()
+        self.composer.slice.accept_full_suggestion()?;
+        self.composer.sync_prompt_fields_from_editor();
+        Ok(())
+    }
+
+    pub fn composer_dismiss_suggestion(&mut self) {
+        self.composer.slice.dismiss_suggestion();
     }
 
     pub fn handle_composer_mouse(&mut self, mouse: MouseEvent, frame_area: Rect) -> bool {
