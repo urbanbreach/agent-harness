@@ -1552,14 +1552,15 @@ mod question_answer_cursor_tests {
 
     #[test]
     fn wide_and_combining_graphemes_map_terminal_columns_to_char_boundaries() {
-        // Given: wide and combining graphemes followed by ASCII text.
+        // arrange — Given wide and combining graphemes followed by ASCII text.
         let text = "界e\u{301}a";
 
-        // When/Then: terminal-cell offsets land only on complete grapheme boundaries.
-        assert_eq!(question_answer_cursor_for_column(text, 0), 0);
-        assert_eq!(question_answer_cursor_for_column(text, 1), 0);
-        assert_eq!(question_answer_cursor_for_column(text, 2), 1);
-        assert_eq!(question_answer_cursor_for_column(text, 3), 3);
-        assert_eq!(question_answer_cursor_for_column(text, 4), 4);
+        // act
+        let boundaries = (0..=4)
+            .map(|column| question_answer_cursor_for_column(text, column))
+            .collect::<Vec<_>>();
+
+        // assert — Then terminal-cell offsets land only on complete grapheme boundaries.
+        assert_eq!(boundaries, [0, 0, 1, 3, 4]);
     }
 }

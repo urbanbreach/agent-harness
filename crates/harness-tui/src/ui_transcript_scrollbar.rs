@@ -359,13 +359,13 @@ mod tests {
 
     #[test]
     fn more_below_even_width_uses_groks_right_center_cell() {
-        // Given: an even-width detached viewport with content below.
+        // arrange — Given an even-width detached viewport with content below.
         let content = Rect::new(4, 2, 20, 12);
 
-        // When: resolving the painted affordance cell.
+        // act — When resolving the painted affordance cell.
         let paint = transcript_more_below_rect(content, 3, 8);
 
-        // Then: Grok's width/2 calculation selects the right center cell.
+        // assert — Then Grok's width/2 calculation selects the right center cell.
         assert_eq!(paint, Some(Rect::new(14, 13, 1, 1)));
     }
 }

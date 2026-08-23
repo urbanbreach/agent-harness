@@ -76,7 +76,7 @@ fn question_mouse_click_preserves_shell_state_and_emits_only_answer_intent() {
         })
         .unwrap_or_abort();
 
-    // When: the B row is clicked once.
+    // act — When the B row is clicked once.
     app.handle_mouse(
         mouse_event(MouseEventKind::Down(MouseButton::Left), option_area),
         frame_area,
@@ -85,7 +85,7 @@ fn question_mouse_click_preserves_shell_state_and_emits_only_answer_intent() {
         None,
     );
 
-    // Then: pointer-down selects the answer but emits no permission decision.
+    // assert — Then pointer-down selects the answer but emits no permission decision.
     assert_eq!(app.question_prompt_selection("question_mouse_select"), 1);
     assert!(intents.lock().unwrap_or_abort().is_empty());
     assert_eq!(
@@ -149,6 +149,7 @@ fn question_mouse_click_preserves_shell_state_and_emits_only_answer_intent() {
 
 #[test]
 fn question_single_select_space_replaces_the_previous_option() {
+    // arrange
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let sink_intents = Arc::clone(&intents);
     let sink: Arc<dyn Fn(UiIntent) + Send + Sync> =
@@ -156,10 +157,12 @@ fn question_single_select_space_replaces_the_previous_option() {
     let mut app = AppState::new_live(None, false, Some(sink));
     app.ingest_event(three_choice_question_event("question_single_replace"));
 
+    // act
     app.handle_key(key(KeyCode::Char(' ')));
     app.handle_key(key(KeyCode::Down));
     app.handle_key(key(KeyCode::Char(' ')));
 
+    // assert
     assert_eq!(
         app.question_prompt_answers("question_single_replace"),
         vec![vec!["B".to_string()]]
@@ -173,6 +176,7 @@ fn question_single_select_space_replaces_the_previous_option() {
 
 #[test]
 fn question_ctrl_c_cancels_the_question() {
+    // arrange
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let sink_intents = Arc::clone(&intents);
     let sink: Arc<dyn Fn(UiIntent) + Send + Sync> =
@@ -180,11 +184,13 @@ fn question_ctrl_c_cancels_the_question() {
     let mut app = AppState::new_live(None, false, Some(sink));
     app.ingest_event(three_choice_question_event("question_empty_ctrl_c"));
 
+    // act
     app.handle_key(key_with_modifiers(
         KeyCode::Char('c'),
         KeyModifiers::CONTROL,
     ));
 
+    // assert
     assert_eq!(
         intents.lock().unwrap_or_abort().as_slice(),
         &[UiIntent::ResolvePermission {
@@ -198,6 +204,7 @@ fn question_ctrl_c_cancels_the_question() {
 
 #[test]
 fn question_ctrl_y_hides_the_question_without_resolving_it() {
+    // arrange
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let sink_intents = Arc::clone(&intents);
     let sink: Arc<dyn Fn(UiIntent) + Send + Sync> =
@@ -205,18 +212,20 @@ fn question_ctrl_y_hides_the_question_without_resolving_it() {
     let mut app = AppState::new_live(None, false, Some(sink));
     app.ingest_event(three_choice_question_event("question_ctrl_y_dismiss"));
 
+    // act
     app.handle_key(key_with_modifiers(
         KeyCode::Char('y'),
         KeyModifiers::CONTROL,
     ));
 
+    // assert
     assert!(intents.lock().unwrap_or_abort().is_empty());
     assert!(app.active_permission_view().is_none());
 }
 
 #[test]
 fn question_cancelled_custom_edit_keeps_custom_selected() {
-    // Given: a selected fixed answer and an uncommitted custom edit.
+    // arrange — Given a selected fixed answer and an uncommitted custom edit.
     let mut app = AppState::new_live(None, false, None);
     app.ingest_event(custom_question_event("question_cancel_custom", false));
     app.handle_key(key(KeyCode::Char(' ')));
@@ -224,13 +233,13 @@ fn question_cancelled_custom_edit_keeps_custom_selected() {
     app.handle_key(key(KeyCode::Enter));
     app.handle_key(key(KeyCode::Char('n')));
 
-    // When: custom editing is cancelled.
+    // act — When custom editing is cancelled.
     app.handle_key(key_with_modifiers(
         KeyCode::Char('c'),
         KeyModifiers::CONTROL,
     ));
 
-    // Then: entering freeform owns the selection even though the draft was not committed.
+    // assert — Then entering freeform owns the selection even though the draft was not committed.
     assert_eq!(
         app.question_prompt_answers("question_cancel_custom"),
         vec![Vec::<String>::new()]
@@ -240,7 +249,7 @@ fn question_cancelled_custom_edit_keeps_custom_selected() {
 
 #[test]
 fn question_space_on_selected_custom_reopens_input() {
-    // Given: a committed custom answer with the custom row still focused.
+    // arrange — Given a committed custom answer with the custom row still focused.
     let mut app = AppState::new_live(None, false, None);
     app.ingest_event(custom_question_event("question_reopen_custom", false));
     app.handle_key(key(KeyCode::BackTab));
@@ -248,33 +257,33 @@ fn question_space_on_selected_custom_reopens_input() {
     app.handle_key(key(KeyCode::Char('n')));
     app.handle_key(key(KeyCode::Esc));
 
-    // When: Space activates the selected custom row.
+    // act — When Space activates the selected custom row.
     app.handle_key(key(KeyCode::Char(' ')));
 
-    // Then: the saved text is reopened for editing rather than deselected.
+    // assert — Then the saved text is reopened for editing rather than deselected.
     assert!(app.question_prompt_editing("question_reopen_custom"));
     assert!(app.question_prompt_custom_selected("question_reopen_custom", 0));
 }
 
 #[test]
 fn question_shift_x_is_text_while_custom_input_is_active() {
-    // Given: active custom input.
+    // arrange — Given active custom input.
     let mut app = AppState::new_live(None, false, None);
     app.ingest_event(custom_question_event("question_custom_x", false));
     app.handle_key(key(KeyCode::BackTab));
     app.handle_key(key(KeyCode::Enter));
 
-    // When: uppercase X is typed.
+    // act — When uppercase X is typed.
     app.handle_key(key_with_modifiers(KeyCode::Char('X'), KeyModifiers::SHIFT));
 
-    // Then: X belongs to the draft instead of dismissing the question.
+    // assert — Then X belongs to the draft instead of dismissing the question.
     assert!(app.question_prompt_editing("question_custom_x"));
     assert_eq!(app.question_prompt.answer_buffer, "X");
 }
 
 #[test]
 fn question_blank_custom_enter_submits_an_empty_response() {
-    // Given: the custom row is being edited with an empty buffer.
+    // arrange — Given the custom row is being edited with an empty buffer.
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let sink_intents = Arc::clone(&intents);
     let sink: Arc<dyn Fn(UiIntent) + Send + Sync> =
@@ -284,10 +293,10 @@ fn question_blank_custom_enter_submits_an_empty_response() {
     app.handle_key(key(KeyCode::BackTab));
     app.handle_key(key(KeyCode::Enter));
 
-    // When: the blank custom answer is committed.
+    // act — When the blank custom answer is committed.
     app.handle_key(key(KeyCode::Enter));
 
-    // Then: the question is submitted with an accepted empty answer list.
+    // assert — Then the question is submitted with an accepted empty answer list.
     assert_eq!(
         intents.lock().unwrap_or_abort().as_slice(),
         &[UiIntent::ResolvePermission {
@@ -301,7 +310,7 @@ fn question_blank_custom_enter_submits_an_empty_response() {
 
 #[test]
 fn question_multi_select_keeps_custom_answer_when_fixed_option_toggles() {
-    // Given: a multi-select question with a committed custom answer.
+    // arrange — Given a multi-select question with a committed custom answer.
     let mut app = AppState::new_live(None, false, None);
     app.ingest_event(custom_question_event("question_multi_custom", true));
     app.handle_key(key(KeyCode::BackTab));
@@ -311,11 +320,11 @@ fn question_multi_select_keeps_custom_answer_when_fixed_option_toggles() {
     }
     app.handle_key(key(KeyCode::Esc));
 
-    // When: a fixed option is toggled on.
+    // act — When a fixed option is toggled on.
     app.handle_key(key(KeyCode::Up));
     app.handle_key(key(KeyCode::Char(' ')));
 
-    // Then: both answers remain visibly selected and submit together.
+    // assert — Then both answers remain visibly selected and submit together.
     assert!(app.question_prompt_custom_selected("question_multi_custom", 0));
     assert_eq!(
         app.question_prompt_answers("question_multi_custom"),
@@ -325,7 +334,7 @@ fn question_multi_select_keeps_custom_answer_when_fixed_option_toggles() {
 
 #[test]
 fn question_multi_select_keeps_equal_fixed_and_custom_answers_distinct() {
-    // Given: a fixed option A and a custom answer with the same text.
+    // arrange — Given a fixed option A and a custom answer with the same text.
     let mut app = AppState::new_live(None, false, None);
     app.ingest_event(custom_question_event("question_equal_custom", true));
     app.handle_key(key(KeyCode::Char(' ')));
@@ -334,12 +343,12 @@ fn question_multi_select_keeps_equal_fixed_and_custom_answers_distinct() {
     app.handle_key(key(KeyCode::Char('A')));
     app.handle_key(key(KeyCode::Esc));
 
-    // When: the custom answer is reopened and committed empty.
+    // act — When the custom answer is reopened and committed empty.
     app.handle_key(key(KeyCode::Char(' ')));
     app.handle_key(key(KeyCode::Backspace));
     app.handle_key(key(KeyCode::Esc));
 
-    // Then: the independently selected fixed option remains.
+    // assert — Then the independently selected fixed option remains.
     assert_eq!(
         app.question_prompt_answers("question_equal_custom"),
         vec![vec!["A".to_string()]]
@@ -348,7 +357,7 @@ fn question_multi_select_keeps_equal_fixed_and_custom_answers_distinct() {
 
 #[test]
 fn question_tab_and_fullscreen_round_trip_preserves_scroll_offsets() {
-    // Given: two questions with explicit per-tab scroll offsets.
+    // arrange — Given two questions with explicit per-tab scroll offsets.
     let mut app = AppState::new_live(None, false, None);
     app.ingest_event(envelope(
         1,
@@ -372,18 +381,19 @@ fn question_tab_and_fullscreen_round_trip_preserves_scroll_offsets() {
     app.question_prompt.scroll_offsets[0] = 3;
     app.question_prompt.scroll_offsets[1] = 5;
 
-    // When: tabs and fullscreen are round-tripped.
+    // act — When tabs and fullscreen are round-tripped.
     app.handle_key(key(KeyCode::Right));
     app.handle_key(key(KeyCode::Left));
     app.handle_key(key_with_modifiers(KeyCode::Char('f'), KeyModifiers::CONTROL));
     app.handle_key(key_with_modifiers(KeyCode::Char('f'), KeyModifiers::CONTROL));
 
-    // Then: both explicit offsets remain intact.
+    // assert — Then both explicit offsets remain intact.
     assert_eq!(app.question_prompt.scroll_offsets, vec![3, 5]);
 }
 
 #[test]
 fn question_clearing_custom_selection_preserves_its_text() {
+    // arrange
     let mut app = AppState::new_live(None, false, None);
     app.ingest_event(envelope(
         1,
@@ -418,8 +428,11 @@ fn question_clearing_custom_selection_preserves_its_text() {
         app.question_prompt_custom("question_custom_preserved", 0),
         Some("note")
     );
+
+    // act
     app.handle_key(key(KeyCode::Esc));
 
+    // assert
     assert!(!app.question_prompt_custom_selected("question_custom_preserved", 0));
     assert_eq!(
         app.question_prompt_custom("question_custom_preserved", 0),
@@ -429,6 +442,7 @@ fn question_clearing_custom_selection_preserves_its_text() {
 
 #[test]
 fn question_double_click_history_does_not_cross_question_tabs() {
+    // arrange
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let sink_intents = Arc::clone(&intents);
     let sink: Arc<dyn Fn(UiIntent) + Send + Sync> =
@@ -483,6 +497,7 @@ fn question_double_click_history_does_not_cross_question_tabs() {
         })
         .unwrap_or_abort();
 
+    // act
     app.handle_mouse(
         mouse_event(MouseEventKind::Down(MouseButton::Left), second_area),
         frame_area,
@@ -498,6 +513,7 @@ fn question_double_click_history_does_not_cross_question_tabs() {
         None,
     );
 
+    // assert
     assert!(intents.lock().unwrap_or_abort().is_empty());
     assert_eq!(
         app.question_prompt_answers("question_cross_tab_click"),
@@ -672,7 +688,7 @@ fn permission_decision_waits_for_resolution_then_resumes_and_settles_tool() {
 
 #[test]
 fn question_custom_answer_preserves_surrounding_whitespace() {
-    // Given: custom input containing intentional surrounding spaces.
+    // arrange — Given custom input containing intentional surrounding spaces.
     let mut app = AppState::new_live(None, false, None);
     app.ingest_event(custom_question_event("question_whitespace", false));
     app.handle_key(key(KeyCode::BackTab));
@@ -681,10 +697,10 @@ fn question_custom_answer_preserves_surrounding_whitespace() {
         app.handle_key(key(KeyCode::Char(character)));
     }
 
-    // When: editing is committed without submitting the permission.
+    // act — When editing is committed without submitting the permission.
     app.handle_key(key(KeyCode::Esc));
 
-    // Then: trimming is used only for emptiness, not stored answer content.
+    // assert — Then trimming is used only for emptiness, not stored answer content.
     assert_eq!(
         app.question_prompt_answers("question_whitespace"),
         vec![vec!["  note  ".to_string()]]
@@ -693,15 +709,15 @@ fn question_custom_answer_preserves_surrounding_whitespace() {
 
 #[test]
 fn question_fixed_shortcut_wins_over_custom_type_to_edit() {
-    // Given: the custom row is selected below ten advertised fixed options.
+    // arrange — Given the custom row is selected below ten advertised fixed options.
     let mut app = AppState::new_live(None, false, None);
     app.ingest_event(shortcut_question_event("question_shortcut_precedence"));
     app.handle_key(key(KeyCode::BackTab));
 
-    // When: the advertised `a` shortcut is pressed.
+    // act — When the advertised `a` shortcut is pressed.
     app.handle_key(key(KeyCode::Char('a')));
 
-    // Then: option ten is selected instead of opening custom input with `a`.
+    // assert — Then option ten is selected instead of opening custom input with `a`.
     assert!(!app.question_prompt_editing("question_shortcut_precedence"));
     assert_eq!(
         app.question_prompt_answers("question_shortcut_precedence"),
@@ -711,7 +727,7 @@ fn question_fixed_shortcut_wins_over_custom_type_to_edit() {
 
 #[test]
 fn question_submit_footer_click_submits_the_selected_option() {
-    // Given: a question with a painted Enter action and a permission intent sink.
+    // arrange — Given a question with a painted Enter action and a permission intent sink.
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let sink_intents = Arc::clone(&intents);
     let sink: Arc<dyn Fn(UiIntent) + Send + Sync> =
@@ -727,7 +743,7 @@ fn question_submit_footer_click_submits_the_selected_option() {
         })
         .unwrap_or_abort();
 
-    // When: the Enter action receives a complete click.
+    // act — When the Enter action receives a complete click.
     app.handle_mouse(
         mouse_event(MouseEventKind::Down(MouseButton::Left), submit_area),
         frame_area,
@@ -743,7 +759,7 @@ fn question_submit_footer_click_submits_the_selected_option() {
         None,
     );
 
-    // Then: the currently focused option is submitted exactly once.
+    // assert — Then the currently focused option is submitted exactly once.
     assert_eq!(
         intents.lock().unwrap_or_abort().as_slice(),
         &[UiIntent::ResolvePermission {
@@ -757,17 +773,17 @@ fn question_submit_footer_click_submits_the_selected_option() {
 
 #[test]
 fn replace_events_resets_question_identity_before_reusing_permission_id() {
-    // Given: initialized prompt state for a pending question.
+    // arrange — Given initialized prompt state for a pending question.
     let event = custom_question_event("question_reused_id", false);
     let mut app = AppState::new_live(None, false, None);
     app.ingest_event(event.clone());
     app.handle_key(key(KeyCode::Down));
 
-    // When: replay replacement restores a question with the same permission id.
+    // act — When replay replacement restores a question with the same permission id.
     app.replace_events(vec![event]);
     app.handle_key(key(KeyCode::Enter));
 
-    // Then: state is reinitialized rather than indexing stale empty vectors.
+    // assert — Then state is reinitialized rather than indexing stale empty vectors.
     assert_eq!(
         app.question_prompt_answers("question_reused_id"),
         vec![vec!["A".to_string()]]
@@ -776,17 +792,17 @@ fn replace_events_resets_question_identity_before_reusing_permission_id() {
 
 #[test]
 fn new_session_resets_question_identity_before_reusing_permission_id() {
-    // Given: a locally hidden question whose prompt state has been initialized.
+    // arrange — Given a locally hidden question whose prompt state has been initialized.
     let mut app = AppState::new_live(None, false, None);
     app.ingest_event(custom_question_event("question_new_reused_id", false));
     app.handle_key(KeyEvent::new(KeyCode::Char('y'), KeyModifiers::CONTROL));
 
-    // When: a new session receives a question with the same permission id.
+    // act — When a new session receives a question with the same permission id.
     app.execute_slash_command("new", None);
     app.ingest_event(custom_question_event("question_new_reused_id", false));
     app.handle_key(key(KeyCode::Enter));
 
-    // Then: prompt vectors are reinitialized and the default option submits normally.
+    // assert — Then prompt vectors are reinitialized and the default option submits normally.
     assert_eq!(
         app.question_prompt_answers("question_new_reused_id"),
         vec![vec!["A".to_string()]]

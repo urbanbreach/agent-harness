@@ -568,12 +568,17 @@ mod tests {
 
     #[test]
     fn question_label_column_is_capped_at_three_fifths_of_content_width() {
+        // arrange
         let options = vec![crate::app::QuestionOptionView {
             label: "A label that would otherwise consume the description column".to_string(),
             description: "Description".to_string(),
             preview: None,
         }];
 
-        assert_eq!(question_label_column_width(&options, 20), 12);
+        // act
+        let width = question_label_column_width(&options, 20);
+
+        // assert
+        assert_eq!(width, 12);
     }
 }

@@ -214,6 +214,7 @@ mod tests {
 
     #[tokio::test]
     async fn multi_turn_runner_drops_empty_provider_deltas() {
+        // arrange
         let profile = test_profile();
         let request = test_request();
         let tool_registry = test_tool_registry();
@@ -241,6 +242,7 @@ mod tests {
         );
         let events = Arc::new(Mutex::new(Vec::new()));
 
+        // act
         let outcome = run_multi_turn_streaming(
             MultiTurnStreamingRequest {
                 provider: Arc::new(MockProvider::new(scripted)),
@@ -262,6 +264,7 @@ mod tests {
         )
         .await;
 
+        // assert
         assert_eq!(
             outcome,
             AgentTurnOutcome::Succeeded {

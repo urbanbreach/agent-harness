@@ -81,31 +81,37 @@ mod tests {
 
     #[tokio::test]
     async fn next_sse_event_uses_the_earliest_mixed_delimiter() {
+        // arrange
         let mut body: OpenAiResponseBody =
             Box::pin(tokio_stream::empty::<Result<Vec<u8>, String>>());
         let mut buffer = b"data: first\n\ndata: second\r\n\r\n".to_vec();
 
+        // act
         let event = next_sse_event(&mut body, &mut buffer)
             .await
             .expect("SSE parse should succeed")
             .expect("first frame should produce an event");
 
+        // assert
         assert_eq!(event.data, "first");
     }
 
     #[tokio::test]
     async fn next_sse_event_reuses_the_input_buffer_allocation() {
+        // arrange
         let mut body: OpenAiResponseBody =
             Box::pin(tokio_stream::empty::<Result<Vec<u8>, String>>());
         let mut buffer = Vec::with_capacity(4_096);
         buffer.extend_from_slice(b"data: first\n\ndata: second\n\n");
         let initial_capacity = buffer.capacity();
 
+        // act
         let _event = next_sse_event(&mut body, &mut buffer)
             .await
             .expect("SSE parse should succeed")
             .expect("first frame should produce an event");
 
+        // assert
         assert_eq!(buffer.capacity(), initial_capacity);
     }
 }

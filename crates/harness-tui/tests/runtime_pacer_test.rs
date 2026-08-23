@@ -32,17 +32,17 @@ fn changed_work_is_coalesced_until_the_sixteen_millisecond_flush_deadline() {
 
 #[test]
 fn changed_work_can_be_paced_at_one_hundred_twenty_hertz() {
-    // Given: the runtime pacer uses an 8 ms minimum draw interval.
+    // arrange — Given the runtime pacer uses an 8 ms minimum draw interval.
     let clock = DualClock::new();
     let mut pacer = RuntimePacer::with_reduced_motion_and_flush_interval_ms(false, 8);
     pacer.request_flush();
 
-    // When: the high-refresh deadline elapses.
+    // act — When the high-refresh deadline elapses.
     let armed = pacer.poll(clock.snapshot(), false);
     clock.advance_flush(8);
     let due = pacer.poll(clock.snapshot(), false);
 
-    // Then: changed work paints at 120 Hz without creating an idle redraw loop.
+    // assert — Then changed work paints at 120 Hz without creating an idle redraw loop.
     assert_eq!(
         (armed.next_wait_ms, armed.paint, due.paint, due.next_wait_ms),
         (Some(8), false, true, None)

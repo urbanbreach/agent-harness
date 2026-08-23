@@ -177,15 +177,16 @@ fn input_burst_is_coalesced_into_one_flush_render() {
 
 #[test]
 fn custom_flush_cadence_supports_one_hundred_twenty_hertz_input_pacing() {
+    // arrange
     let clock = DualClock::new();
     let mut scheduler = FrameScheduler::with_flush_interval_ms(8);
 
-    // When: the scheduler reaches the configured flush boundary.
+    // act — When the scheduler reaches the configured flush boundary.
     let armed = scheduler.schedule(clock.snapshot(), FrameInputs::flush());
     clock.advance_flush(8);
     let rendered = scheduler.schedule(clock.snapshot(), FrameInputs::idle());
 
-    // Then: the work is presented at the 120 Hz cadence instead of the 16 ms default.
+    // assert — Then the work is presented at the 120 Hz cadence instead of the 16 ms default.
     assert_eq!(
         (
             armed.and_then(|decision| decision.deadline_ms),

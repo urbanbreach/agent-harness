@@ -17,10 +17,6 @@ Task delegation reminder: if the `task` tool is available, select the named suba
 Instructions from: /workspace/agent-harness/AGENTS.md
 # PROJECT KNOWLEDGE BASE
 
-**Generated:** 2026-08-17
-**Commit:** `3b5d1256`
-**Branch:** `dev`
-
 ## OVERVIEW
 Rust workspace for an event-sourced agent harness: CLI entrypoint, coordinator/runtime core, provider adapters, native tool surface, Ratatui TUI, runtime prompt assets, and deterministic plus opt-in signoff lanes.
 
@@ -60,15 +56,15 @@ agent-harness/
 | Build/test scripts | `scripts/AGENTS.md` | Lane runner, static gates, coverage/perf/stress scripts. |
 
 ## CODE MAP
-| Symbol | Type | Location | Refs | Role |
-|--------|------|----------|------|------|
-| `execute_cli` | function | `crates/harness/src/lib.rs` | 2 | Central Clap dispatch; routes all command families through injectable IO/deps. |
-| `spawn_coordinator` | function | `crates/harness-core/src/coord.rs` | 100+ | Shared runtime entry for headless, prompt, TUI, tools, and owner tests. |
-| `Provider` | trait | `crates/harness-providers/src/lib.rs` | 270 | Streaming provider boundary implemented by live, cassette, mock, and test providers. |
-| `coordinator_registry` | function | `crates/harness-tools/src/lib.rs` | 100+ | Installs the typed native tool surface consumed by runtime entrypoints. |
-| `AppState` | struct | `crates/harness-tui/src/app.rs` | 2,036 | Aggregate TUI state; delegates event truth to `SessionProjection`. |
-| `SessionProjection` | struct | `crates/harness-tui/src/app/session_projection.rs` | 22 | Replay/live event projection for activities, permissions, tasks, and transcript deltas. |
-| `validate_matrix_file` | function | `crates/harness-testkit/src/simulation.rs` | 2 | Entry for the simulation evidence contract and validator binary. |
+| Symbol | Type | Location | Role |
+|--------|------|----------|------|
+| `execute_cli` | function | `crates/harness/src/lib.rs` | Central Clap dispatch; routes all command families through injectable IO/deps. |
+| `spawn_coordinator` | function | `crates/harness-core/src/coord.rs` | Shared runtime entry for headless, prompt, TUI, tools, and owner tests. |
+| `Provider` | trait | `crates/harness-providers/src/lib.rs` | Streaming provider boundary implemented by live, cassette, mock, and test providers. |
+| `coordinator_registry` | function | `crates/harness-tools/src/lib.rs` | Installs the typed native tool surface consumed by runtime entrypoints. |
+| `AppState` | struct | `crates/harness-tui/src/app.rs` | Aggregate TUI state; delegates event truth to `SessionProjection`. |
+| `SessionProjection` | struct | `crates/harness-tui/src/app/session_projection.rs` | Replay/live event projection for activities, permissions, tasks, and transcript deltas. |
+| `validate_matrix_file` | function | `crates/harness-testkit/src/simulation.rs` | Entry for the simulation evidence contract and validator binary. |
 
 ## FIRST-PARTY SEARCH SCOPE
 - Include by default: `crates/`, `configs/`, `docs/`, `scripts/`, `.agent-harness/agents/`, `.agent-harness/prompt-families/`, `.agent-harness/skills/`, root manifests.

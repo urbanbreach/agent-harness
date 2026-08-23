@@ -240,13 +240,13 @@ fn question_footer_labels_follow_focus_and_selection_state() {
 
 #[test]
 fn multi_question_matches_grok_markers_counter_and_navigation_copy() {
-    // Given: the first page of a multi-question prompt.
+    // arrange — Given the first page of a multi-question prompt.
     let app = question_app(Focus::Prompt, multi_question());
 
-    // When: the question dock is rendered.
+    // act — When the question dock is rendered.
     let rendered = rendered_text(&app);
 
-    // Then: Grok's marker anatomy, sticky freeform row, and page footer are visible.
+    // assert — Then Grok's marker anatomy, sticky freeform row, and page footer are visible.
     assert!(rendered.contains("1 [ ] One"), "{rendered}");
     assert!(
         rendered.contains("z [ ] Type your answer here"),
@@ -261,7 +261,7 @@ fn multi_question_matches_grok_markers_counter_and_navigation_copy() {
 
 #[test]
 fn unfocused_option_description_collapses_to_one_ellipsized_line() {
-    // Given: a single question whose second option has a long description.
+    // arrange — Given a single question whose second option has a long description.
     let app = question_app(
         Focus::Prompt,
         serde_json::json!({
@@ -281,10 +281,10 @@ fn unfocused_option_description_collapses_to_one_ellipsized_line() {
         }),
     );
 
-    // When: the question dock is rendered with the first option focused.
+    // act — When the question dock is rendered with the first option focused.
     let rendered = rendered_text(&app);
 
-    // Then: the focused description remains complete and the other row is ellipsized.
+    // assert — Then the focused description remains complete and the other row is ellipsized.
     assert!(
         rendered.contains("The focused description stays expanded."),
         "{rendered}"
@@ -294,7 +294,7 @@ fn unfocused_option_description_collapses_to_one_ellipsized_line() {
 
 #[test]
 fn alphabetic_shortcut_selects_tenth_option_and_ctrl_c_cancels() {
-    // Given: a multi-question prompt and an intent sink.
+    // arrange — Given a multi-question prompt and an intent sink.
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let intent_sink = {
         let intents = Arc::clone(&intents);
@@ -305,7 +305,7 @@ fn alphabetic_shortcut_selects_tenth_option_and_ctrl_c_cancels() {
     let mut app = AppState::new_live(None, false, Some(intent_sink));
     app.ingest_event(question_event(multi_question()));
 
-    // When: `a` selects option ten, then Ctrl+C cancels the question.
+    // act — When `a` selects option ten, then Ctrl+C cancels the question.
     app.handle_key(key(crossterm::event::KeyCode::Char('a')));
     assert!(rendered_text(&app).contains("[2/2]"));
     app.handle_key(key(crossterm::event::KeyCode::Left));
@@ -315,7 +315,7 @@ fn alphabetic_shortcut_selects_tenth_option_and_ctrl_c_cancels() {
         crossterm::event::KeyModifiers::CONTROL,
     ));
 
-    // Then: the question resolves as cancelled without answer data.
+    // assert — Then the question resolves as cancelled without answer data.
     assert_eq!(
         intents.lock().unwrap_or_abort().as_slice(),
         [UiIntent::ResolvePermission {

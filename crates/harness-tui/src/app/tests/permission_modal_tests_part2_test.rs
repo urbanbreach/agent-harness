@@ -520,12 +520,12 @@ fn question_overflow_keeps_custom_error_and_footer_sticky_at_60x20() {
 
 #[test]
 fn question_compact_chrome_truncation_keeps_options_in_the_option_viewport() {
-    // Given: four description rows exceed the compact question chrome budget.
+    // arrange — Given four description rows exceed the compact question chrome budget.
     let frame_area = Rect::new(0, 0, 60, 20);
     let mut app = AppState::new_live(None, false, None);
     app.ingest_event(compact_chrome_question_event("question_compact_chrome"));
 
-    // When: the compact dock and pointer map are rendered from the same measurement.
+    // act — When the compact dock and pointer map are rendered from the same measurement.
     let rendered = render_text(&app, frame_area.width, frame_area.height);
     let choice_regions = app
         .permission_prompt_hit_regions_for_test(frame_area)
@@ -533,7 +533,7 @@ fn question_compact_chrome_truncation_keeps_options_in_the_option_viewport() {
         .filter(|(target, _)| matches!(target, PermissionPointerTarget::QuestionChoice(_)))
         .count();
 
-    // Then: hidden chrome is replaced by an affordance and never painted as choices.
+    // assert — Then hidden chrome is replaced by an affordance and never painted as choices.
     assert!(rendered.contains("... Ctrl-F to expand"), "{rendered}");
     assert!(rendered.contains("Choice 1"), "{rendered}");
     assert!(rendered.contains("Choice 2"), "{rendered}");

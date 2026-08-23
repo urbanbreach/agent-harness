@@ -51,10 +51,13 @@ fn jsonl_append_assigns_monotonic_sequence_numbers() {
 
 #[test]
 fn jsonl_serialization_builds_one_complete_record_buffer() {
+    // arrange
     let envelope = run_started_draft("run_line", 1).with_seq(1);
 
+    // act
     let line = serialize_jsonl_line(&envelope).unwrap_or_abort();
 
+    // assert
     assert_eq!(line.last(), Some(&b'\n'));
     assert!(!line[..line.len() - 1].contains(&b'\n'));
     let decoded = serde_json::from_slice::<crate::event::EventEnvelopeV1>(&line).unwrap_or_abort();
@@ -63,15 +66,19 @@ fn jsonl_serialization_builds_one_complete_record_buffer() {
 
 #[test]
 fn jsonl_line_decode_borrows_the_read_buffer() {
+    // arrange
     let raw_line = b"{\"seq\":1}\r\n";
 
+    // act
     let decoded = decode_jsonl_line(raw_line, Path::new("events.jsonl")).unwrap_or_abort();
 
+    // assert
     assert_eq!(decoded.as_ptr(), raw_line.as_ptr());
 }
 
 #[test]
 fn jsonl_tail_scan_indexes_only_records_after_cursor() {
+    // arrange
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let file_path = temp_dir.path().join("events.jsonl");
     let first =
@@ -81,6 +88,7 @@ fn jsonl_tail_scan_indexes_only_records_after_cursor() {
     let first_len = u64::try_from(first.len()).unwrap_or_abort();
     fs::write(&file_path, [first, second].concat()).unwrap_or_abort();
 
+    // act
     let scan = scan_events_from_cursor(
         &file_path,
         ScanCursor {
@@ -91,6 +99,7 @@ fn jsonl_tail_scan_indexes_only_records_after_cursor() {
     )
     .unwrap_or_abort();
 
+    // assert
     let indexed = scan
         .index
         .iter()
@@ -365,6 +374,7 @@ async fn replay_from_seq_returns_expected_suffix() {
 
 #[tokio::test]
 async fn jsonl_replay_extends_index_from_appended_tail() {
+    // arrange
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_tail_refresh";
     let store = JsonlFileEventStore::open(temp_dir.path(), run_id, false).unwrap_or_abort();
@@ -377,9 +387,11 @@ async fn jsonl_replay_extends_index_from_appended_tail() {
         .write_all(&second)
         .unwrap_or_abort();
 
+    // act
     let replayed = collect_stream(store.replay(2).unwrap_or_abort()).await;
     let appended = store.append(run_started_draft(run_id, 3)).unwrap_or_abort();
 
+    // assert
     let replayed_seqs = replayed.iter().map(|event| event.seq).collect::<Vec<_>>();
     assert_eq!((replayed_seqs, appended.seq), (vec![2], 3));
 }

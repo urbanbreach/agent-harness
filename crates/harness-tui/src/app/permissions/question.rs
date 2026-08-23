@@ -143,10 +143,13 @@ mod tests {
 
     #[test]
     fn shortcuts_stop_before_owned_navigation_keys() {
-        // Given: the final canonical letter shortcut and the next option.
-        // When: their display labels are requested.
-        // Then: only the conflict-free a-f range is advertised.
-        assert_eq!(question_option_shortcut_label(14), Some('f'));
-        assert_eq!(question_option_shortcut_label(15), None);
+        // arrange — Given the final canonical letter shortcut and the next option.
+        let indices = [14, 15];
+
+        // act — When their display labels are requested.
+        let shortcuts = indices.map(question_option_shortcut_label);
+
+        // assert — Then only the conflict-free a-f range is advertised.
+        assert_eq!(shortcuts, [Some('f'), None]);
     }
 }

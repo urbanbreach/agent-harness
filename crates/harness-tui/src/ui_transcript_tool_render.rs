@@ -1107,10 +1107,11 @@ mod tests {
             (ToolCallPresentationStatus::Cancelled, "⊘"),
         ];
 
-        // act / assert
-        for (status, expected) in cases {
-            assert_eq!(completed_tool_marker(status, &theme), expected);
-        }
+        // act
+        let markers = cases.map(|(status, _)| completed_tool_marker(status, &theme));
+
+        // assert
+        assert_eq!(markers, cases.map(|(_, expected)| expected));
     }
 
     #[test]
@@ -1126,10 +1127,11 @@ mod tests {
             (ToolCallPresentationStatus::Cancelled, "-"),
         ];
 
-        // act / assert
-        for (status, expected) in cases {
-            assert_eq!(completed_tool_marker(status, &theme), expected);
-        }
+        // act
+        let markers = cases.map(|(status, _)| completed_tool_marker(status, &theme));
+
+        // assert
+        assert_eq!(markers, cases.map(|(_, expected)| expected));
     }
 
     #[test]

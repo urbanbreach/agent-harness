@@ -762,11 +762,14 @@ mod tests {
 
     #[test]
     fn read_utf8_lines_retains_one_owned_text_buffer() {
+        // arrange
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         write_file(tempdir.path(), "lines.txt", "alpha\nbeta\n");
 
+        // act
         let contents = read_utf8_lines(&tempdir.path().join("lines.txt")).unwrap_or_abort();
 
+        // assert
         let Utf8FileLines::Text(text) = contents else {
             panic!("UTF-8 input should remain in one text buffer");
         };

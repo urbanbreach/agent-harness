@@ -895,27 +895,39 @@ mod tests {
 
     #[test]
     fn question_truncation_keeps_combining_graphemes_intact() {
-        let truncated = truncate_question_line_with_ellipsis(Line::from("ae\u{301}bc"), 3);
+        // arrange
+        let line = Line::from("ae\u{301}bc");
 
+        // act
+        let truncated = truncate_question_line_with_ellipsis(line, 3);
+
+        // assert
         assert_eq!(line_text(&truncated), "ae\u{301}…");
     }
 
     #[test]
     fn question_wrapping_keeps_combining_graphemes_intact() {
-        let wrapped = wrap_question_line_preserving_spans(Line::from("ae\u{301}bc"), 2);
+        // arrange
+        let line = Line::from("ae\u{301}bc");
+
+        // act
+        let wrapped = wrap_question_line_preserving_spans(line, 2);
         let text = wrapped.iter().map(line_text).collect::<Vec<_>>();
 
+        // assert
         assert_eq!(text, ["ae\u{301}", "bc"]);
     }
 
     #[test]
     fn question_wrapping_preserves_explicit_newlines_as_rows() {
-        let wrapped = wrap_question_line_preserving_spans(
-            Line::from(Span::raw("alpha\nbeta".to_string())),
-            20,
-        );
+        // arrange
+        let line = Line::from(Span::raw("alpha\nbeta".to_string()));
+
+        // act
+        let wrapped = wrap_question_line_preserving_spans(line, 20);
         let text = wrapped.iter().map(line_text).collect::<Vec<_>>();
 
+        // assert
         assert_eq!(text, ["alpha", "beta"]);
     }
 }
