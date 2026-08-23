@@ -145,6 +145,20 @@ at two-decimal precision against `docs/testing/test-suite-coverage-baseline.txt`
 baseline is absent, the lane records the current value as a new seed. Override
 `COVERAGE_BASELINE_PATH` only for local experiments.
 
+### Engine metrics baseline
+
+The simplification work also has a source-and-runtime inventory command:
+
+```bash
+bash scripts/engine-metrics.sh --output artifacts/qa-evidence/20260823-engine-simplification-baseline/engine-metrics.json --baseline 060ee1fd
+```
+
+The versioned `engine-metrics-v1` JSON is written atomically after the supplied baseline commit
+resolves. It excludes target, session/artifact directories, reference caches, Rust tests, and
+`cfg(test)` code from production LOC. A missing baseline fails before an output is created. It
+does not relabel the one-session golden run as corpus or long-session evidence: those timing
+fields are explicitly `unavailable` until the perf fixture produces a successful artifact.
+
 ## Deterministic simulation lane
 
 Run this lane when a change needs offline behavioral evidence that agents can diff and inspect:

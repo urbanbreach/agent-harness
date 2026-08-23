@@ -156,6 +156,41 @@ fn signoff_pty_mode_is_fail_closed() {
     );
 }
 
+#[test]
+fn engine_metrics_script_declares_the_versioned_baseline_contract() {
+    // arrange
+    let script =
+        fs::read_to_string(repo_root().join("scripts/engine-metrics.sh")).unwrap_or_abort();
+
+    // act
+    let required_contract_tokens = [
+        "engine-metrics-v1",
+        "--output",
+        "--baseline",
+        "production_loc",
+        "frozen_overlap",
+        "event_variants",
+        "compaction_variants",
+        "reducer_count",
+        "size_ok",
+        "representative_log",
+        "list_inspect_latency",
+        "long_session_context_build",
+        "model_resolution",
+        "provider_context/restore.rs",
+        "CompactionFailed",
+        "unavailable",
+    ];
+
+    // assert
+    for token in required_contract_tokens {
+        assert!(
+            script.contains(token),
+            "engine metrics script missing contract token `{token}`"
+        );
+    }
+}
+
 fn lane_modes_from_script(script: &str) -> BTreeSet<String> {
     let mut modes = BTreeSet::new();
     for line in script.lines() {

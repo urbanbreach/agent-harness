@@ -136,6 +136,33 @@ fn architecture_docs_cover_compaction_contracts_and_preservation_context() {
 }
 
 #[test]
+fn engine_architecture_docs_lock_the_inventory_target_and_migration_contract() {
+    // arrange
+    let inventory = read_doc("docs/architecture/engine-inventory.md");
+    let phase_zero = "CLI/TUI bootstrap|configuration discovery and merging|provider registry|model registry and model resolution|model variants|context-window resolution|provider request construction|prompt/system-context construction|session persistence|session listing|session continuation|replay|conversation projection|transcript projection|TUI session projection|prompt queue|tool execution|permissions|subagents and child sessions|background tasks|compaction|provider-context checkpoints|operational memory|branching/fork/clone/rewind|crash recovery|extension/hook paths|legacy compatibility code";
+    let documents = [
+        ("docs/architecture/engine-inventory.md", &["engine-metrics-v1", "Interactive TUI flow", "Headless flow", "Frozen overlap file set", "SHA-256", "205939", "54964", "100800", "14207", "5944", "1585", "15121", "39", "192/185"] as &[_]),
+        ("docs/architecture/engine-target.md", &["Keep", "Consolidate", "Move", "Disable", "Delete", "Interactive TUI flow", "Headless flow"]),
+        ("docs/architecture/engine-migration.md", &["Baseline", "Target", "Migration", "Delete", "060ee1fd"]),
+    ];
+
+    // act
+    let missing_subsystem = phase_zero.split('|').find(|subsystem| !inventory.contains(subsystem));
+    let missing_document_anchor = documents.iter().find_map(|(path, anchors)| {
+        let document = read_doc(path);
+        anchors
+            .iter()
+            .find(|anchor| !document.contains(**anchor))
+            .map(|anchor| format!("{path} missing anchor `{anchor}`"))
+    });
+
+    // assert
+    assert_eq!(missing_subsystem, None, "inventory is missing a Phase 0 subsystem");
+    assert_eq!(missing_document_anchor, None);
+}
+
+#[test]
+// CLIPPY-ALLOW: the documentation scan reports unreadable files as test failures.
 #[allow(clippy::panic, reason = "test code must panic gracefully")]
 fn docs_do_not_reference_broken_local_markdown_targets_or_deleted_prd_artifacts() {
     // arrange
@@ -245,6 +272,7 @@ fn planning_and_progress_docs_are_not_checked_in() {
     }
 }
 
+// CLIPPY-ALLOW: recursive fixture discovery reports unreadable directories as test failures.
 #[allow(clippy::panic, reason = "test code must panic gracefully")]
 fn markdown_files(dir: &Path) -> Vec<PathBuf> {
     let mut files = Vec::new();

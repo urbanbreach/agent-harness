@@ -36,6 +36,17 @@ Binary size is recorded as a documented limitation in this slice. A final-slice 
 
 Every performance claim in README or release docs must point to a fresh lane artifact under the perf stage directory (or be removed/softened). Do not reintroduce claim ledgers or PRD checkboxes.
 
+## Engine simplification baseline
+
+`bash scripts/engine-metrics.sh --output <path> --baseline 060ee1fd` writes an
+`engine-metrics-v1` comparison artifact. It records production LOC, the frozen
+session/conversation/transcript/projection/provider-context/compaction overlap, event and
+compaction variants, reducer and `SIZE_OK` counts, plus a deterministic mock run's log bytes and
+event count. It names the existing 120-session perf fixture for corpus/list measurements, but
+marks corpus list/inspect and long-session context rebuild timing `unavailable` until their owner
+surfaces produce a truthful artifact. The supplied baseline facts remain in the JSON; any
+fresh-measurement disagreement is a drift signal, not a replacement baseline.
+
 ## Anti-gaming policy
 
 Budgets are checked against current commands and artifacts. Do not add JSON baselines or allowlists that grandfather old measurements. A failing budget means the code or the claim changes, not the gate.
