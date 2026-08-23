@@ -330,9 +330,8 @@ fn build_user_render_surface(
 
 pub(super) const fn user_prompt_surface(theme: &Theme, state: TranscriptPromptState) -> Color {
     match state {
-        TranscriptPromptState::ActiveThinking => theme.terminal_colors.active_prompt_surface,
         TranscriptPromptState::Selected => theme.surface.selected_card,
-        TranscriptPromptState::Idle => theme.surface.card,
+        TranscriptPromptState::ActiveThinking | TranscriptPromptState::Idle => theme.surface.card,
     }
 }
 
@@ -2232,6 +2231,22 @@ mod tests {
             .iter()
             .flat_map(|line| &line.spans)
             .all(|span| span.style.bg == Some(theme.surface.selected_card)));
+    }
+
+    #[test]
+    fn active_user_prompt_keeps_the_idle_surface() {
+        // arrange
+        let theme = Theme::default();
+
+        // act
+        let active =
+            super::user_prompt_surface(&theme, super::TranscriptPromptState::ActiveThinking);
+        let idle = super::user_prompt_surface(&theme, super::TranscriptPromptState::Idle);
+        let selected = super::user_prompt_surface(&theme, super::TranscriptPromptState::Selected);
+
+        // assert
+        assert_eq!(active, idle);
+        assert_eq!(selected, theme.surface.selected_card);
     }
 
     #[test]
