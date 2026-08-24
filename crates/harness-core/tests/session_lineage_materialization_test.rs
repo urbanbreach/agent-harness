@@ -6,3 +6,7 @@ mod part_01_session_lineage_materializes_child_atomically_test {
         "session_lineage_materialization/01_session_lineage_materializes_child_atomically_test.rs"
     );
 }
+
+mod part_02_canonical_root_child_isolation_test {
+    include!("session_lineage_materialization/02_canonical_root_child_isolation_test.rs");
+}

@@ -2,6 +2,34 @@
 
 Harness sessions are append-only event logs plus redacted artifacts. Replay and session inspection are side-effect free: they read JSONL events in `seq` order and derive projections without executing providers, tools, hooks, MCP, network, or CLI.
 
+## Typed canonical read domain
+
+G004 adds `harness-core::session` as the canonical typed read domain. Its pure reducer reconstructs
+parent-linked entries, typed run attempts, session metadata/status, one selected active leaf, and
+one deterministic `active_path()`. A read-only `LegacyEventLogAdapter` projects borrowed V1
+envelopes into that domain with deterministic namespaced identities, provenance, audit references,
+and structured warnings. The adapter exposes no writer and does not open or modify
+`events.jsonl`, `meta.json`, locks, indexes, journals, or sidecars.
+
+An entry commit must name a run attempt already started in the same session and that run must still
+be active. A terminal run cannot accept later entries, a terminal session cannot accept later
+records, and selecting a new leaf rechecks tool-call/result pairing on the selected path. The V1
+adapter enforces provider request start/delta/finish/assistant ordering, accepts both turn and
+historical tool-call-id correlations, and preserves text, reasoning, tool calls/results,
+attachments, usage, provenance, title, compaction summary, and branch summary where V1 contains
+enough information. Missing associations and unsupported or lossy legacy shapes remain explicit
+`LegacyWarning` values.
+
+Legacy-derived IDs are stable, domain separated, and backed by 128-bit BLAKE3 digests. The adapter
+and projection helper implementations are real Rust submodules so source-size and ownership checks
+see the same boundaries that the compiler sees.
+
+The active persistence contract remains transitional: the coordinator still appends only V1
+`events.jsonl`, while resume, provider context, TUI, session tools, export, catalog, lineage, and
+compaction continue to use their existing V1-derived projections. Later milestones move those
+consumers before the legacy projection and checkpoint paths are deleted or restricted to the
+single compatibility adapter.
+
 ## CLI inspection
 
 The operator CLI remains available:
@@ -11,6 +39,10 @@ The operator CLI remains available:
 - `harness sessions continue <run-id-or-path>` when invoked through the interactive resume surface
 - `harness sessions export <run-id-or-path>`
 - `harness sessions tree|fork|clone`
+
+`sessions list` intentionally omits `scenario_fixture` runs. Offline list/inspect/reopen QA must
+therefore create a successful `harness prompt --mock` operator-mode run inside the isolated session
+root; deterministic scenario fixtures remain valid for direct inspect/reopen and replay QA.
 
 `sessions reopen --json` emits one typed response envelope (Packet 3.4 contract):
 

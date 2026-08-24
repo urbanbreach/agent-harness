@@ -13,3 +13,11 @@ mod part_02_provider_boundary_sanitizes_unknown_historical_tool_test {
         "conversation_projection/02_provider_boundary_sanitizes_unknown_historical_tool_test.rs"
     );
 }
+
+mod part_03_canonical_session_contract_test {
+    include!("conversation_projection/03_canonical_session_contract_test.rs");
+}
+
+mod part_04_canonical_session_behavior_test {
+    include!("conversation_projection/04_canonical_session_behavior_test.rs");
+}

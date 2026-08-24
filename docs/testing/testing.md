@@ -159,6 +159,29 @@ resolves. It excludes target, session/artifact directories, reference caches, Ru
 does not relabel the one-session golden run as corpus or long-session evidence: those timing
 fields are explicitly `unavailable` until the perf fixture produces a successful artifact.
 
+## G004 typed session owner checks
+
+The canonical typed session reducer and read-only V1 compatibility boundary are owned by these
+literal filters:
+
+```bash
+cargo nextest run -p harness-core --test conversation_projection_test --test resume_plan_test --test session_lineage_materialization_test -E 'test(/canonical_session_|canonical_active_path_|canonical_tool_pairing_|canonical_root_child_isolation/)'
+cargo nextest run -p harness-core --test foreign_session_test --test session_lineage_materialization_test --test resume_plan_test -E 'test(/legacy_adapter_|canonical_foreign_identity_|canonical_branch_selection/)'
+```
+
+The second filter covers real tool-call-id correlation, provider lifecycle ordering, semantic
+payload and warning inventory, restart fidelity, deterministic collision-resistant identities, and
+zero-write source preservation. Product-surface QA runs:
+
+```bash
+bash scripts/harness-qa-dogfood.sh --slug m04-session
+```
+
+The resulting deterministic `scenario_fixture` can be inspected and reopened directly. Because
+`sessions list` intentionally hides scenario fixtures, list/inspect/reopen coverage additionally
+creates a successful isolated `harness prompt --mock` run in the same evidence session directory
+and targets that operator-mode run.
+
 ## Deterministic simulation lane
 
 Run this lane when a change needs offline behavioral evidence that agents can diff and inspect:

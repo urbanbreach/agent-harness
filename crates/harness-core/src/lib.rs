@@ -51,6 +51,7 @@ pub mod redact;
 pub mod sandbox;
 pub mod sched;
 pub mod scheduler_leaf;
+pub mod session;
 pub mod session_leaf;
 pub mod session_lineage;
 pub(crate) mod session_paths;

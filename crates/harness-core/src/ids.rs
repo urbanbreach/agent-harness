@@ -45,7 +45,10 @@ macro_rules! id_newtype {
 
 id_newtype!(RunId);
 id_newtype!(SessionId);
+id_newtype!(EntryId);
+id_newtype!(TurnId);
 id_newtype!(TaskId);
 id_newtype!(RequestId);
+id_newtype!(ProviderRequestId);
 id_newtype!(ToolCallId);
 id_newtype!(RunName);

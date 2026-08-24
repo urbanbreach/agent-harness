@@ -539,6 +539,34 @@ After an overflow-style provider failure, the coordinator may compact and retry 
 
 Compaction is a provider-context persistence feature. It is separate from TUI/session presentation caps that trim or collapse on-screen history for usability. UI memory caps do not rewrite provider context, do not create compaction checkpoints, and should not be treated as compaction.
 
+## G004 canonical session transition
+
+`harness-core::session` now defines the typed canonical read domain: distinct session, run, entry,
+turn, provider-request, and tool-call identities; parent-linked immutable entries; one selected
+active leaf; deterministic `active_path()` traversal; typed tool pairing; and pure replay.
+`LegacyEventLogAdapter` is the sole new compatibility boundary for projecting borrowed V1
+`EventEnvelopeV1` history into that domain. It validates the legacy envelope sequence and identity
+relationships, emits structured loss warnings, and performs no file, lock, index, journal, or
+sidecar writes.
+
+Canonical replay commits entries only to known active run attempts. Unknown runs, terminal runs,
+duplicate or cyclic parents, and any record after a terminal session transition are rejected.
+Selecting a sibling leaf rebuilds the active path and revalidates tool-call/result pairing on that
+path. Legacy projection likewise enforces provider start/delta/finish/assistant ordering while
+accepting the historical tool-call-id correlation shape emitted by real logs. Deterministic legacy
+session, entry, turn, request, and run identities use domain-separated 128-bit BLAKE3 digests rather
+than a short collision-prone checksum.
+
+The adapter and projection are ordinary Rust submodules under `session/legacy/`; they are not
+textually combined with `include!`. Each source file therefore has a truthful, independently
+reviewable ownership boundary.
+
+This is a transitional foundation, not a completed storage cutover. In G004 the coordinator still
+writes the existing V1 `events.jsonl`, and provider context, resume, TUI, session tools, export,
+catalog, lineage, and compaction consumers retain their current V1 projections. G005-G009 migrate
+the durable history and consumers; G010 removes or isolates the superseded checkpoint, event, and
+projection paths after their final consumers move.
+
 ## Replay Contract
 
 Replay is side-effect free. It:

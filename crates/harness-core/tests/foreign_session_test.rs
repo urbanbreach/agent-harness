@@ -40,6 +40,27 @@ fn write_events_jsonl(path: &std::path::Path, events: &[EventEnvelopeV1]) {
 }
 
 #[test]
+fn legacy_adapter_source_contract() {
+    // arrange
+    let source_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let lib_source = include_str!("../src/lib.rs");
+
+    // act
+    let adapter = source_root.join("session/legacy.rs");
+
+    // assert
+    assert!(
+        lib_source.contains("pub mod session;"),
+        "missing public canonical session domain"
+    );
+    assert!(
+        adapter.is_file(),
+        "missing single read-only legacy adapter `{}`",
+        adapter.display()
+    );
+}
+
+#[test]
 fn discover_valid_foreign_session_without_touching_active() {
     // arrange
     // act
@@ -468,4 +489,12 @@ fn multi_source_foreign_scan_discovers_importable_and_corrupt_then_imports_first
         corrupt_err,
         ForeignSessionError::UnsupportedFormat { .. }
     ));
+}
+
+mod part_01_legacy_adapter_behavior_test {
+    include!("foreign_session/01_legacy_adapter_behavior_test.rs");
+}
+
+mod part_02_legacy_adapter_lifecycle_test {
+    include!("foreign_session/02_legacy_adapter_lifecycle_test.rs");
 }
