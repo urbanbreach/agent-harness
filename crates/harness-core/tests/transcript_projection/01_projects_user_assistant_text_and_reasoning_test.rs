@@ -91,6 +91,8 @@ fn projects_user_assistant_text_and_reasoning_parts() {
             EventV1::AssistantMessageFinished(AssistantMessageFinishedEvent {
                 request_id: "provider_req_1".into(),
                 tool_call_count: 0,
+                parts: Vec::new(),
+                provenance: None,
                 assistant_message: None,
             }),
         ),

@@ -14,21 +14,38 @@ and structured warnings. The adapter exposes no writer and does not open or modi
 An entry commit must name a run attempt already started in the same session and that run must still
 be active. A terminal run cannot accept later entries, a terminal session cannot accept later
 records, and selecting a new leaf rechecks tool-call/result pairing on the selected path. The V1
-adapter enforces provider request start/delta/finish/assistant ordering, accepts both turn and
-historical tool-call-id correlations, and preserves text, reasoning, tool calls/results,
-attachments, usage, provenance, title, compaction summary, and branch summary where V1 contains
-enough information. Missing associations and unsupported or lossy legacy shapes remain explicit
-`LegacyWarning` values.
+adapter enforces provider request start, finish, and assistant commit ordering. It also accepts the
+historical delta sequence and both turn and tool-call-id correlations found in old logs. Text,
+reasoning, tool calls/results, attachments, usage, provenance, title, compaction summary, and branch
+summary are preserved where V1 contains enough information. Missing associations and unsupported
+or lossy legacy shapes remain explicit `LegacyWarning` values.
 
 Legacy-derived IDs are stable, domain separated, and backed by 128-bit BLAKE3 digests. The adapter
 and projection helper implementations are real Rust submodules so source-size and ownership checks
 see the same boundaries that the compiler sees.
 
-The active persistence contract remains transitional: the coordinator still appends only V1
-`events.jsonl`, while resume, provider context, TUI, session tools, export, catalog, lineage, and
-compaction continue to use their existing V1-derived projections. Later milestones move those
-consumers before the legacy projection and checkpoint paths are deleted or restricted to the
-single compatibility adapter.
+## Assistant completion and provider fragments
+
+A new assistant completion is self-contained. After provider transport finishes, the coordinator
+appends one `AssistantMessageFinished` event with final sanitized reasoning, text, completed tool
+intents, provider provenance, and optional assistant message metadata. Conversation, transcript,
+canonical session, session inspection, search, export, and resume readers prefer this committed
+content over any legacy fragments.
+
+Provider fragments are bounded, lossy, non-replayable runtime events. Connected runtime
+subscribers receive text, reasoning, and partial tool input through a 1024-item broadcast channel;
+lag can drop fragments. The fragments aren't written to `events.jsonl` and aren't returned by
+replay. An interrupted new provider request therefore has no canonical assistant message unless a
+final assistant commit was appended.
+
+The legacy `EventV1` delta variants remain decode-only. Old partial logs remain readable:
+compatibility projections can preserve their partial assistant text or reasoning and report a
+structured missing-final-content warning. Defaulted `parts` and `provenance` fields also let old
+`AssistantMessageFinished` records decode unchanged.
+
+The coordinator still appends V1 `events.jsonl`, and several provider-context, resume, transcript,
+session, export, catalog, lineage, and compaction readers remain V1-specific. Later projection
+consolidation and deletion are not yet complete.
 
 ## CLI inspection
 
@@ -81,7 +98,7 @@ The V1 control plane adds native tools so a model can inspect prior Harness sess
 
 All five tools return structured JSON with `source: "event_replay"`, are redacted by default, cap inline output, spill large output to artifacts, and reject traversal or out-of-session-root selectors. The replay-derived session inspection tools do not execute providers, tools, hooks, MCP, network, or CLI. Model tool calls cannot disable redaction unless a future operator-facing policy explicitly adds that ability.
 
-`session_read` exposes independent event and message windows: `eventOffset`/`eventLimit` select replay event summaries, while `messageOffset`/`messageLimit` select user-message and assistant-message summaries from the same replay data. Assistant-message entries expose provider metadata/digests rather than raw assistant payloads.
+`session_read` exposes independent event and message windows: `eventOffset`/`eventLimit` select replay event summaries, while `messageOffset`/`messageLimit` select user-message and assistant-message summaries from the same replay data. For new logs, assistant summaries include committed assistant text plus provider metadata; old logs without self-contained completion parts retain their compatibility shape.
 
 ## Failure boundaries
 

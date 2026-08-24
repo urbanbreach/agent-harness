@@ -57,8 +57,9 @@ impl LegacyBoundary {
     pub(super) fn assistant_finished(
         &mut self,
         event: &EventEnvelopeV1,
-        request_id: &str,
+        payload: &crate::event::AssistantMessageFinishedEvent,
     ) -> Result<LegacyFact, LegacyAdapterError> {
+        let request_id = payload.request_id.as_str();
         let relationship = self.provider_relationship(event, request_id)?;
         if !relationship.finished || relationship.assistant_finished {
             return Err(Self::invalid(event));
@@ -70,6 +71,8 @@ impl LegacyBoundary {
             event,
             LegacyFactKind::AssistantFinished {
                 request_id: request_id.to_string(),
+                parts: payload.parts.clone(),
+                provenance: payload.provenance.clone(),
             },
         ))
     }
@@ -107,6 +110,7 @@ impl LegacyBoundary {
                 request_id,
                 part: AssistantPart::ToolCall(AssistantToolCall {
                     tool_call_id: payload.tool_call_id.clone(),
+                    provider_tool_call_id: None,
                     tool_id: payload.tool_id.clone(),
                     args_summary: payload.args_summary.clone(),
                     args_digest: payload.args_digest.clone(),

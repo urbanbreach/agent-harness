@@ -5,6 +5,7 @@
 //! cut point that keeps approximately `keep_recent_tokens`.
 
 use crate::event::{EventEnvelopeV1, EventV1};
+use crate::session::AssistantPart;
 
 use super::tokens::estimate_text_tokens;
 
@@ -70,9 +71,10 @@ pub fn find_manual_cut_point(events: &[EventEnvelopeV1], agent_id: &str) -> Opti
     }
 
     let cut_event = agent_events[last_user_idx];
+    let semantic_accounting = SemanticAccounting::new(&agent_events);
     let tokens_before: u32 = agent_events
         .iter()
-        .map(|e| estimate_event_tokens(&e.payload))
+        .map(|event| semantic_accounting.estimate(event))
         .sum();
 
     Some(CutPointResult {
@@ -122,9 +124,10 @@ pub fn find_cut_point(
         return None;
     }
 
+    let semantic_accounting = SemanticAccounting::new(&agent_events);
     let tokens_before: u32 = agent_events
         .iter()
-        .map(|e| estimate_event_tokens(&e.payload))
+        .map(|event| semantic_accounting.estimate(event))
         .sum();
 
     // Collect indices of valid cut points.
@@ -155,7 +158,7 @@ pub fn find_cut_point(
         .unwrap_or(&cut_point_indices[0]);
 
     for i in (0..agent_events.len()).rev() {
-        let event_tokens = estimate_event_tokens(&agent_events[i].payload);
+        let event_tokens = semantic_accounting.estimate(agent_events[i]);
         if event_tokens == 0 {
             continue;
         }
@@ -230,19 +233,82 @@ fn extract_request_id(payload: &EventV1) -> Option<String> {
     }
 }
 
-/// Estimate the token contribution of a single event to the context window.
-fn estimate_event_tokens(payload: &EventV1) -> u32 {
-    match payload {
-        EventV1::UserMessageSubmitted(e) => estimate_text_tokens(&e.text),
-        EventV1::ProviderStreamDelta(e) => estimate_text_tokens(&e.delta),
-        EventV1::ToolCallRequested(e) => {
-            estimate_text_tokens(&e.tool_id).saturating_add(estimate_text_tokens(&e.args_summary))
+struct SemanticAccounting<'a> {
+    provider_request_ids: std::collections::HashSet<&'a str>,
+    turn_ids: std::collections::HashSet<&'a str>,
+}
+
+impl<'a> SemanticAccounting<'a> {
+    fn new(events: &[&'a EventEnvelopeV1]) -> Self {
+        let mut provider_request_ids = std::collections::HashSet::new();
+        let mut turn_ids = std::collections::HashSet::new();
+        for event in events {
+            let EventV1::AssistantMessageFinished(payload) = &event.payload else {
+                continue;
+            };
+            if payload.parts.is_empty() {
+                continue;
+            }
+            provider_request_ids.insert(payload.request_id.as_str());
+            turn_ids.insert(
+                event
+                    .correlation_id
+                    .as_deref()
+                    .unwrap_or(payload.request_id.as_str()),
+            );
         }
-        EventV1::ToolCallFinished(e) => e
-            .output_summary
-            .as_deref()
-            .map(estimate_text_tokens)
-            .unwrap_or(0),
-        _ => 0,
+        Self {
+            provider_request_ids,
+            turn_ids,
+        }
+    }
+
+    fn estimate(&self, event: &EventEnvelopeV1) -> u32 {
+        match &event.payload {
+            EventV1::UserMessageSubmitted(payload) => estimate_text_tokens(&payload.text),
+            EventV1::ProviderStreamDelta(payload)
+                if !self
+                    .provider_request_ids
+                    .contains(payload.request_id.as_str()) =>
+            {
+                estimate_text_tokens(&payload.delta)
+            }
+            EventV1::ProviderReasoningDelta(payload)
+                if !self
+                    .provider_request_ids
+                    .contains(payload.request_id.as_str()) =>
+            {
+                estimate_text_tokens(&payload.delta)
+            }
+            EventV1::AssistantMessageFinished(payload) if !payload.parts.is_empty() => payload
+                .parts
+                .iter()
+                .map(|part| match part {
+                    AssistantPart::Text { text } | AssistantPart::Reasoning { text } => {
+                        estimate_text_tokens(text)
+                    }
+                    AssistantPart::ToolCall(tool_call) => estimate_text_tokens(&tool_call.tool_id)
+                        .saturating_add(estimate_text_tokens(&tool_call.args_summary)),
+                })
+                .fold(0_u32, u32::saturating_add),
+            EventV1::ToolCallRequested(payload) => {
+                if event
+                    .correlation_id
+                    .as_deref()
+                    .is_some_and(|turn_id| self.turn_ids.contains(turn_id))
+                {
+                    0
+                } else {
+                    estimate_text_tokens(&payload.tool_id)
+                        .saturating_add(estimate_text_tokens(&payload.args_summary))
+                }
+            }
+            EventV1::ToolCallFinished(payload) => payload
+                .output_summary
+                .as_deref()
+                .map(estimate_text_tokens)
+                .unwrap_or(0),
+            _ => 0,
+        }
     }
 }

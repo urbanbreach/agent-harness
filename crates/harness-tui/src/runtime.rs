@@ -11,7 +11,7 @@ use crossterm::event::{
     EnableFocusChange, EnableMouseCapture, KeyModifiers, KeyboardEnhancementFlags, MouseButton,
     MouseEvent, MouseEventKind, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
 };
-use harness_core::event::EventEnvelopeV1;
+use harness_core::event::{EventEnvelopeV1, RuntimeEvent};
 use ratatui::buffer::Buffer;
 use ratatui::Terminal;
 
@@ -316,7 +316,7 @@ fn take_pending_replay_launch_metadata() -> Option<LaunchMetadata> {
 }
 
 pub enum LiveUpdate {
-    Event(Box<EventEnvelopeV1>),
+    Event(Box<RuntimeEvent>),
     Status(String),
     SessionHistory(Vec<SessionHistoryEntry>),
     ContinueSession {
@@ -1754,27 +1754,29 @@ mod tests {
         let (tx, rx) = live_update_channel();
         tx.send(LiveUpdate::Status("starting new session".to_string()))
             .unwrap_or_abort();
-        tx.send(LiveUpdate::Event(Box::new(EventEnvelopeV1 {
-            schema_version: harness_core::event::SCHEMA_VERSION,
-            event_id: "evt-bootstrap-started".to_string(),
-            seq: 1,
-            run_id: "run-bootstrap-started".into(),
-            mono_ms: 1,
-            ts: None,
-            actor: harness_core::event::EventActor::new(
-                harness_core::event::ActorKind::System,
-                Some("coordinator".to_string()),
-            ),
-            correlation_id: None,
-            causation_id: None,
-            stream_key: Some("run:run-bootstrap-started".to_string()),
-            payload: harness_core::event::EventV1::RunStarted(
-                harness_core::event::RunStartedEvent {
-                    run_name: "bootstrap started".into(),
-                    workspace_root: "/workspace".to_string(),
-                },
-            ),
-        })))
+        tx.send(LiveUpdate::Event(Box::new(RuntimeEvent::Durable(
+            Box::new(EventEnvelopeV1 {
+                schema_version: harness_core::event::SCHEMA_VERSION,
+                event_id: "evt-bootstrap-started".to_string(),
+                seq: 1,
+                run_id: "run-bootstrap-started".into(),
+                mono_ms: 1,
+                ts: None,
+                actor: harness_core::event::EventActor::new(
+                    harness_core::event::ActorKind::System,
+                    Some("coordinator".to_string()),
+                ),
+                correlation_id: None,
+                causation_id: None,
+                stream_key: Some("run:run-bootstrap-started".to_string()),
+                payload: harness_core::event::EventV1::RunStarted(
+                    harness_core::event::RunStartedEvent {
+                        run_name: "bootstrap started".into(),
+                        workspace_root: "/workspace".to_string(),
+                    },
+                ),
+            }),
+        ))))
         .unwrap_or_abort();
         let mut app = AppState::new_live(None, false, None);
 

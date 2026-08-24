@@ -209,6 +209,8 @@ pub fn inspect_session_recovery(run_dir: &Path) -> Result<SessionRecoverySummary
     let recovery_action =
         previous_crash_detected.then(|| resolve_crash_recovery_action(catalog.is_resumable));
     let recovery_action_hint = recovery_action.map(|action| action.operator_hint(&catalog.run_id));
+    let continue_mock_flag =
+        matches!(catalog.mode_source, SessionModeSource::InteractiveMock).then_some(" --mock");
 
     Ok(SessionRecoverySummary {
         run_id: catalog.run_id.clone(),
@@ -231,8 +233,9 @@ pub fn inspect_session_recovery(run_dir: &Path) -> Result<SessionRecoverySummary
         artifacts: collect_artifacts(&resume_plan),
         continue_hint: resume_agent_id.map(|_| {
             format!(
-                "harness prompt --resume {} --text \"<next prompt>\"",
-                catalog.run_id
+                "harness prompt{} --resume {} --text \"<next prompt>\"",
+                continue_mock_flag.unwrap_or_default(),
+                catalog.run_id,
             )
         }),
         previous_crash_detected,

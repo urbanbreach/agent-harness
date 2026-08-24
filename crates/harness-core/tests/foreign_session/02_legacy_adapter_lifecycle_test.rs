@@ -42,6 +42,8 @@ fn legacy_adapter_rejects_out_of_order_provider_lifecycle() {
             harness_core::event::AssistantMessageFinishedEvent {
                 request_id: "provider-1".into(),
                 tool_call_count: 0,
+                parts: Vec::new(),
+                provenance: None,
                 assistant_message: None,
             },
         ),

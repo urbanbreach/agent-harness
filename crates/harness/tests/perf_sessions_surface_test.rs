@@ -245,6 +245,8 @@ fn large_session_events(run_id: &str, index: usize, workspace_root: &Path) -> Ve
             EventV1::AssistantMessageFinished(AssistantMessageFinishedEvent {
                 request_id: request_id.clone().into(),
                 tool_call_count: 0,
+                parts: Vec::new(),
+                provenance: None,
                 assistant_message: None,
             }),
             EventV1::TaskCompleted(TaskCompletedEvent {

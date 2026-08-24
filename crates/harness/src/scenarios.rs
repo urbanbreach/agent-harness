@@ -318,6 +318,67 @@ pub fn golden_path_provider() -> MockProvider {
     for prompt_text in ["hello", "hi", "pipe", "arg\npipe", "Hello"] {
         insert_default_text_response(&mut scripted_events, prompt_text, true, "Hello world");
     }
+    let resumed_semantic_request = CompletionRequest {
+        provider_id: Some("mock".to_string()),
+        model_id: "model-1".to_string(),
+        messages: vec![
+            CompletionMessage {
+                role: MessageRole::System,
+                content: "default-prompt".to_string(),
+                name: None,
+                tool_call_id: None,
+                assistant_tool_calls: None,
+            },
+            CompletionMessage {
+                role: MessageRole::User,
+                content: "hello".to_string(),
+                name: None,
+                tool_call_id: None,
+                assistant_tool_calls: None,
+            },
+            CompletionMessage {
+                role: MessageRole::Assistant,
+                content: "Hello world".to_string(),
+                name: None,
+                tool_call_id: None,
+                assistant_tool_calls: None,
+            },
+            CompletionMessage {
+                role: MessageRole::User,
+                content: "hello".to_string(),
+                name: None,
+                tool_call_id: None,
+                assistant_tool_calls: None,
+            },
+        ],
+        temperature: Some(0.0),
+        max_tokens: None,
+        variant: None,
+        reasoning_effort: None,
+        text_verbosity: None,
+        reasoning_summary: None,
+        thinking: None,
+        tools: Some(vec![demo_edit_tool_def()]),
+        tool_choice: Some(ToolChoice::Auto),
+        context: Default::default(),
+        stream: true,
+    };
+    insert_model_setting_variants(
+        &mut scripted_events,
+        &resumed_semantic_request,
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::ReasoningDelta("continuation reasoning".to_string()),
+            ProviderStreamEvent::TextDelta("Hello again".to_string()),
+            ProviderStreamEvent::Done {
+                usage: Some(CompletionUsage {
+                    prompt_tokens: 8,
+                    completion_tokens: 3,
+                    total_tokens: 11,
+                }),
+            },
+        ],
+    );
 
     let shell_parity_request = CompletionRequest {
         provider_id: Some("mock".to_string()),

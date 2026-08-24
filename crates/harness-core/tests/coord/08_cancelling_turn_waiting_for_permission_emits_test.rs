@@ -409,17 +409,6 @@ async fn provider_partial_output_then_error_is_not_successful_assistant_message(
     .await;
     coordinator.stop_run().await.unwrap_or_abort();
 
-    let delta_idx = events
-        .iter()
-        .position(|event| {
-            matches!(
-                &event.payload,
-                EventV1::ProviderStreamDelta(data)
-                    if data.delta == "partial answer"
-                        && event.correlation_id.as_deref() == Some(request_id.as_str())
-            )
-        })
-        .unwrap_or_abort();
     let finished_idx = events
         .iter()
         .position(|event| {
@@ -432,7 +421,9 @@ async fn provider_partial_output_then_error_is_not_successful_assistant_message(
             )
         })
         .unwrap_or_abort();
-    assert!(delta_idx < finished_idx);
+    assert!(!events[..finished_idx].iter().any(|event| {
+        matches!(&event.payload, EventV1::ProviderStreamDelta(_))
+    }));
     assert!(!events.iter().any(|event| {
         matches!(
             &event.payload,
@@ -487,13 +478,8 @@ async fn records_provider_error_events_and_fails_agent_turn() {
     .await;
     coordinator.stop_run().await.unwrap_or_abort();
 
-    assert!(events.iter().any(|event| {
-        matches!(
-            &event.payload,
-            EventV1::ProviderStreamDelta(data)
-                if event.correlation_id.as_deref() == Some(request_id.as_str())
-                    && data.delta == "partial answer"
-        )
+    assert!(!events.iter().any(|event| {
+        matches!(&event.payload, EventV1::ProviderStreamDelta(_))
     }));
     assert!(events.iter().any(|event| {
         matches!(

@@ -177,8 +177,10 @@ fn apply_update(
             {
                 app.set_status_banner(None);
             }
-            experience.on_event(&event);
-            app.ingest_event(*event);
+            if let harness_core::event::RuntimeEvent::Durable(durable) = event.as_ref() {
+                experience.on_event(durable);
+            }
+            app.ingest_runtime_event(*event);
         }
         LiveUpdate::Status(status) => {
             if app.status_banner.as_deref() == Some(status.as_str()) {

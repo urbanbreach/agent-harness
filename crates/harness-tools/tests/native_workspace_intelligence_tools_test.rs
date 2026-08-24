@@ -284,6 +284,8 @@ async fn model_visible_session_tools_are_replay_safe_redacted_and_capped() {
                 EventV1::AssistantMessageFinished(AssistantMessageFinishedEvent {
                     request_id: "req-1".into(),
                     tool_call_count: 1,
+                    parts: Vec::new(),
+                    provenance: None,
                     assistant_message: Some(ProviderAssistantMessageMetadata {
                         message_id: Some("msg-1".to_string()),
                         text_digest: Some("assistant-text-digest".to_string()),

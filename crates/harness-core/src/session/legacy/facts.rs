@@ -39,6 +39,8 @@ pub(super) enum LegacyFactKind {
     ProviderFinished(ProviderFinishFact),
     AssistantFinished {
         request_id: String,
+        parts: Vec<AssistantPart>,
+        provenance: Option<crate::session::ProviderProvenance>,
     },
     ToolFinished(ToolFinishFact),
     Compaction {
@@ -86,6 +88,9 @@ pub(super) struct AssistantAggregate {
     pub stop_reason: Option<String>,
     pub usage: Option<CompletionUsage>,
     pub finished: bool,
+    pub semantic_parts_authoritative: bool,
+    pub semantic_tool_requests_seen: usize,
+    pub provenance: Option<crate::session::ProviderProvenance>,
 }
 
 #[derive(Debug, Default)]
@@ -136,12 +141,34 @@ impl ProjectionIndex {
                             stop_reason: None,
                             usage: None,
                             finished: false,
+                            semantic_parts_authoritative: false,
+                            semantic_tool_requests_seen: 0,
+                            provenance: None,
                         },
                     );
                 }
                 LegacyFactKind::AssistantPart { request_id, part } => {
                     if let Some(assistant) = self.assistants.get_mut(request_id) {
-                        assistant.parts.push((fact.sequence, part.clone()));
+                        if !assistant.semantic_parts_authoritative {
+                            assistant.parts.push((fact.sequence, part.clone()));
+                        } else if let AssistantPart::ToolCall(materialized) = part {
+                            let committed = assistant
+                                .parts
+                                .iter_mut()
+                                .filter_map(|(_, part)| match part {
+                                    AssistantPart::ToolCall(tool_call) => Some(tool_call),
+                                    AssistantPart::Text { .. }
+                                    | AssistantPart::Reasoning { .. } => None,
+                                })
+                                .find(|committed| {
+                                    committed.tool_call_id == materialized.tool_call_id
+                                });
+                            if let Some(committed) = committed {
+                                committed.tool_call_id = materialized.tool_call_id.clone();
+                                assistant.semantic_tool_requests_seen =
+                                    assistant.semantic_tool_requests_seen.saturating_add(1);
+                            }
+                        }
                     }
                 }
                 LegacyFactKind::ProviderFinished(finish) => {
@@ -151,9 +178,23 @@ impl ProjectionIndex {
                         assistant.usage.clone_from(&finish.usage);
                     }
                 }
-                LegacyFactKind::AssistantFinished { request_id } => {
+                LegacyFactKind::AssistantFinished {
+                    request_id,
+                    parts,
+                    provenance,
+                } => {
                     if let Some(assistant) = self.assistants.get_mut(request_id) {
                         assistant.finished = true;
+                        if !parts.is_empty() {
+                            assistant.parts = parts
+                                .iter()
+                                .cloned()
+                                .map(|part| (fact.sequence, part))
+                                .collect();
+                            assistant.semantic_parts_authoritative = true;
+                            assistant.semantic_tool_requests_seen = 0;
+                            assistant.provenance.clone_from(provenance);
+                        }
                     }
                 }
                 LegacyFactKind::RunStarted
@@ -195,7 +236,7 @@ impl ProjectionIndex {
                     self.provider_entries.get(&start.request_id).cloned()
                 }
                 LegacyFactKind::AssistantPart { request_id, .. }
-                | LegacyFactKind::AssistantFinished { request_id } => {
+                | LegacyFactKind::AssistantFinished { request_id, .. } => {
                     self.provider_entries.get(request_id).cloned()
                 }
                 LegacyFactKind::ProviderFinished(finish) => {

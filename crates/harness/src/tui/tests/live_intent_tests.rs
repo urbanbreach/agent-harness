@@ -398,9 +398,100 @@ async fn event_forwarder_stops_after_terminal_event_when_requested() {
     let updates = rx.try_iter().collect::<Vec<_>>();
     assert_eq!(updates.len(), 2);
     assert!(matches!(updates[0], LiveUpdate::Event(_)));
-    assert!(
-        matches!(updates[1], LiveUpdate::Event(ref event) if is_terminal_event(&event.payload))
-    );
+    assert!(matches!(
+        updates[1],
+        LiveUpdate::Event(ref event)
+            if matches!(
+                event.as_ref(),
+                harness_core::event::RuntimeEvent::Durable(durable)
+                    if is_terminal_event(&durable.payload)
+            )
+    ));
+}
+
+#[tokio::test]
+async fn event_forwarder_delivers_live_fragments_without_advancing_durable_sequence() {
+    // Given: the forwarder has consumed a durable start barrier.
+    let store = Arc::new(InMemoryEventStore::new());
+    store
+        .append(forwarder_event_draft(
+            "run_forwarder_live",
+            "started",
+            EventV1::RunStarted(RunStartedEvent {
+                run_name: "forwarder live".into(),
+                workspace_root: "/workspace".to_string(),
+            }),
+        ))
+        .unwrap_or_abort();
+    let (tx, rx) = live_update_channel();
+    let forward_store = Arc::clone(&store);
+    let forwarder =
+        tokio::spawn(async move { forward_events_to_tui(forward_store, tx, 1, None, true).await });
+    let first_rx = rx.receiver().clone();
+    let first =
+        tokio::task::spawn_blocking(move || first_rx.recv_timeout(Duration::from_millis(500)))
+            .await
+            .unwrap_or_abort()
+            .unwrap_or_abort();
+    assert!(matches!(
+        first,
+        LiveUpdate::Event(event)
+            if matches!(event.as_ref(), harness_core::event::RuntimeEvent::Durable(durable) if durable.seq == 1)
+    ));
+
+    // When: a sequence-free live fragment is followed by durable sequence 2.
+    store.publish_live(harness_core::event::LiveEventEnvelope {
+        event_id: "live-text".to_string(),
+        run_id: "run_forwarder_live".into(),
+        mono_ms: 2,
+        ts: None,
+        actor: harness_core::event::EventActor::new(
+            harness_core::event::ActorKind::Worker,
+            Some("agent-1".to_string()),
+        ),
+        correlation_id: Some("turn-1".to_string()),
+        causation_id: None,
+        stream_key: Some("agent:agent-1".to_string()),
+        payload: harness_core::event::LiveEventV1::ProviderTextDelta {
+            request_id: "provider-1".into(),
+            delta: "hello".to_string(),
+        },
+    });
+    store
+        .append(forwarder_event_draft(
+            "run_forwarder_live",
+            "finished",
+            EventV1::RunFinished(RunFinishedEvent {
+                summary: "done".to_string(),
+            }),
+        ))
+        .unwrap_or_abort();
+    tokio::time::timeout(Duration::from_millis(500), forwarder)
+        .await
+        .unwrap_or_abort()
+        .unwrap_or_abort()
+        .unwrap_or_abort();
+
+    // Then: the live variant is preserved and the next durable event remains sequence 2.
+    let remaining_rx = rx.receiver().clone();
+    let remaining = tokio::task::spawn_blocking(move || {
+        [
+            remaining_rx.recv_timeout(Duration::from_millis(500)),
+            remaining_rx.recv_timeout(Duration::from_millis(500)),
+        ]
+    })
+    .await
+    .unwrap_or_abort();
+    assert!(matches!(
+        &remaining[0],
+        Ok(LiveUpdate::Event(event))
+            if matches!(event.as_ref(), harness_core::event::RuntimeEvent::Live(live) if matches!(&live.payload, harness_core::event::LiveEventV1::ProviderTextDelta { delta, .. } if delta == "hello"))
+    ));
+    assert!(matches!(
+        &remaining[1],
+        Ok(LiveUpdate::Event(event))
+            if matches!(event.as_ref(), harness_core::event::RuntimeEvent::Durable(durable) if durable.seq == 2)
+    ));
 }
 
 #[tokio::test]

@@ -60,6 +60,8 @@ fn assistant_finished(seq: u64, agent_id: &str, request_id: &str) -> EventEnvelo
         EventV1::AssistantMessageFinished(AssistantMessageFinishedEvent {
             request_id: RequestId::new(request_id),
             tool_call_count: 0,
+            parts: Vec::new(),
+            provenance: None,
             assistant_message: None,
         }),
     )
@@ -504,6 +506,34 @@ fn find_cut_point_tokens_before_is_total() {
     let result = find_cut_point(&events, "agent-1", 1000).unwrap();
     // 4 bytes (user) + 4 bytes (delta) = 8 bytes -> ceil(8/4) = 2 tokens
     assert_eq!(result.tokens_before, 2);
+}
+
+#[test]
+fn find_cut_point_semantic_finish_replaces_legacy_delta_accounting() {
+    // arrange
+    let events = vec![
+        user_msg(1, "agent-1", "req-1", "abcd"),
+        stream_delta(2, "agent-1", "req-1", "abcdefgh"),
+        envelope(
+            3,
+            "agent-1",
+            EventV1::AssistantMessageFinished(AssistantMessageFinishedEvent {
+                request_id: RequestId::new("req-1"),
+                tool_call_count: 0,
+                parts: vec![crate::session::AssistantPart::Text {
+                    text: "abcdefgh".to_string(),
+                }],
+                provenance: None,
+                assistant_message: None,
+            }),
+        ),
+    ];
+
+    // act
+    let result = find_cut_point(&events, "agent-1", 1000).unwrap();
+
+    // assert
+    assert_eq!(result.tokens_before, 3);
 }
 
 #[test]

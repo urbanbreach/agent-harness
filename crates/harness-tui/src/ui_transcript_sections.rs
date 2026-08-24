@@ -604,6 +604,69 @@ fn build_ordered_assistant_parts_from_events(
                     pending.1.push_str(&data.delta);
                 }
             }
+            harness_core::event::EventV1::AssistantMessageFinished(data)
+                if provider_event_matches_activity(
+                    event,
+                    data.request_id.as_str(),
+                    &activity.request_id,
+                ) =>
+            {
+                saw_turn_event = true;
+                flush_pending_pre_tool_stream(
+                    &mut parts,
+                    &mut next_index,
+                    &mut pending_pre_tool_stream,
+                    activity,
+                    thinking_visible,
+                    &mut saw_reasoning_event,
+                    &mut saw_body_event,
+                );
+                settle_trailing_body(&mut parts);
+                for committed_part in &data.parts {
+                    match committed_part {
+                        harness_core::session::AssistantPart::Reasoning { text }
+                            if thinking_visible =>
+                        {
+                            saw_reasoning_event = true;
+                            push_sequenced_text_part(
+                                &mut parts,
+                                &mut next_index,
+                                event.seq,
+                                TranscriptAssistantTextKind::Reasoning,
+                                text,
+                            );
+                        }
+                        harness_core::session::AssistantPart::Reasoning { .. } => {}
+                        harness_core::session::AssistantPart::Text { text } => {
+                            saw_body_event = true;
+                            push_sequenced_text_part(
+                                &mut parts,
+                                &mut next_index,
+                                event.seq,
+                                TranscriptAssistantTextKind::Body,
+                                text,
+                            );
+                        }
+                        harness_core::session::AssistantPart::ToolCall(tool_call) => {
+                            saw_tool_call = true;
+                            settle_trailing_body(&mut parts);
+                            if let Some(tool_call) =
+                                pending_tool_calls.remove(tool_call.tool_call_id.as_str())
+                            {
+                                parts.push(SequencedTranscriptAssistantPart {
+                                    seq: event.seq,
+                                    index: next_index,
+                                    part: TranscriptAssistantPart::ToolCall(Box::new(
+                                        tool_call.section,
+                                    )),
+                                });
+                                next_index += 1;
+                            }
+                        }
+                    }
+                }
+                settle_all_streaming_bodies(&mut parts);
+            }
             harness_core::event::EventV1::TaskCompleted(data)
                 if event.correlation_id.as_deref() == Some(activity.request_id.as_str()) =>
             {

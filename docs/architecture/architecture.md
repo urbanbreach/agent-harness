@@ -145,6 +145,23 @@ Events are the source of truth. All state is derived from events.
 }
 ```
 
+### Durable and live event boundaries
+
+A new assistant completion is self-contained in its durable `AssistantMessageFinished` event. The
+completion carries final sanitized reasoning, text, completed tool intents, provider provenance,
+and optional assistant message metadata. Durable replay does not need provider fragments to rebuild
+that completion.
+
+Provider fragments are bounded, lossy, non-replayable runtime events. Text, reasoning, and partial
+tool input fragments use a 1024-item broadcast channel for connected runtime subscribers. A slow
+subscriber can lag and lose fragments. These fragments are never appended to `events.jsonl`, and
+replay returns only durable events.
+
+The legacy `EventV1` variants `ProviderStreamDelta` and `ProviderReasoningDelta` remain decode-only
+on the provider execution path. They are retained so old logs, including interrupted logs with
+partial assistant output, remain readable. New provider execution publishes corresponding
+fragments only as live events and doesn't append these variants.
+
 ### Event Types
 
 **Lifecycle**
@@ -181,10 +198,10 @@ checks without scheduling work during replay.
 
 **Provider Streaming**
 - `ProviderRequestStarted`
-- `ProviderStreamDelta` - Text chunk
-- `ProviderReasoningDelta` - Reasoning/thinking chunk
+- `ProviderStreamDelta` - Legacy decode-only text fragment from old logs
+- `ProviderReasoningDelta` - Legacy decode-only reasoning fragment from old logs
 - `ProviderRequestFinished`
-- `AssistantMessageFinished` - Assistant message committed before tool preflight/execution
+- `AssistantMessageFinished` - Self-contained assistant commit before tool preflight/execution; includes `request_id`, `tool_call_count`, `parts`, `provenance`, and optional `assistant_message`
 - Provider tool-call deltas/completions are normalized before coordinator execution
 - `SessionCompaction` - session-level compaction event; replaces the deprecated `CompactionRequested`/`CompactionWritten`/`CompactionApplied`/`CompactionFailed` sequence. Carries the compaction summary, token estimate before compaction, file lists, trigger reason, and hook provenance in a single event.
 - `BranchSummary` - branch-level summary event for forked/child session context.
@@ -194,18 +211,20 @@ checks without scheduling work during replay.
 The durable provider lifecycle barriers are `ProviderRequestStarted` and `ProviderRequestFinished`.
 Replay, resume, and audits may rely on their ordered presence, shared `request_id`, provider/model
 ids, redacted prompt summary, request digest, finish reason, output digest, and aggregate usage.
-`AssistantMessageFinished` is the separate durable assistant-message boundary: it is appended after
-the coordinator commits the completed assistant response to provider-visible message state and before
-tool preflight or execution begins. These barriers also accept optional metadata objects. Metadata
-fields are additive, serde-defaulted for old logs, and ignored for semantic replay decisions except
-where projections surface them as optional inspection data.
+`AssistantMessageFinished` is the separate durable assistant-message boundary. It is appended after
+provider transport finishes and before tool preflight or execution. For new logs, its ordered `parts`
+and `provenance` are the authoritative assistant content. Empty defaulted fields preserve decoding
+of old logs, whose content can still be reconstructed from legacy delta variants. These barriers
+also accept optional metadata objects. Metadata fields are additive, serde-defaulted for old logs,
+and ignored for semantic replay decisions except where projections surface them as optional
+inspection data.
 
-The following state is derived from the event stream, not stored as separate semantic barriers:
+The following state is not stored as a separate durable semantic barrier:
 
-- reasoning display boundaries, from provider start/finish plus accumulated reasoning deltas,
-- tool-call readiness, from normalized provider tool-call events before coordinator execution,
-- loop continuation, from finished provider request, executed tool results, and guardrail state,
-- provider stream chunk grouping, from adjacent delta events with the same `request_id`.
+- connected-client streaming presentation, from bounded live provider fragments,
+- tool-call readiness, from the completed tool intents in `AssistantMessageFinished` and later normalized tool events,
+- loop continuation, from the finished provider request, executed tool results, and guardrail state,
+- provider chunk grouping, which is transport presentation and is absent from new durable history.
 
 Provider metadata is optional and non-semantic for old logs. Missing metadata must not change replay
 equivalence. When implementation needs provider metadata, add it to `ProviderRequestStarted` or
@@ -220,7 +239,7 @@ Field decisions:
 | Provider session or cache key | Optional start/finish `metadata.provider_session_id` / `metadata.provider_cache_id` | Store redacted summaries or digests only when needed for cache inspection. Missing values are normal. |
 | Stop reason | Existing `finish_reason`; optional finish `metadata.provider_stop_reason` | Durable as a summary string. Provider-specific raw finish payloads are omitted. |
 | Usage and cache read/write counts | Existing `usage`; optional finish `metadata.cache_read_tokens` / `metadata.cache_write_tokens` | Durable aggregate accounting. Counts are advisory and must be safe to omit from old logs. |
-| Assistant message barrier ids/digests | `assistant_message` on `AssistantMessageFinished`; compatibility-only mirror in optional finish `metadata.assistant_message` | Carries redacted message ids or text/reasoning digests for audit boundaries. New logs should use `AssistantMessageFinished` as the explicit assistant boundary; old logs may only have the provider-finish metadata mirror. |
+| Assistant completion and audit metadata | Ordered `parts`, `provenance`, and optional `assistant_message` on `AssistantMessageFinished`; compatibility-only mirror in optional finish `metadata.assistant_message` | New logs store the sanitized assistant completion in one self-contained event. Old logs may omit these defaulted fields and use legacy deltas plus the provider-finish metadata mirror. |
 | Retry attempt counter and policy | Optional start `metadata.retry` with `{ attempt, max_attempts, delay_ms, category }` | Additive, serde-defaulted counter used for bounded retry before the final provider response is committed. Absent on old logs; the coordinator treats missing retry metadata as the first attempt. |
 | Transient error server hint | Optional `retry_after_ms` in Error event metadata (provider-lifecycle finish events) | Records provider Retry-After header values in milliseconds when present. Advisory; scheduling falls back to exponential backoff when absent. Old logs without the field replay identically. |
 | Thinking or reasoning signatures | Optional finish `metadata.thinking` | Store only summaries, digests, or signature ids. Never store raw hidden thinking text. |
@@ -354,12 +373,12 @@ tools on the production coordinator path. The turn loop runs through explicit ph
    provider-start time from event-derived context plus any applied checkpoint. Queued turns do not
    carry stale scheduled-time provider input.
 3. **Provider stream** - the coordinator allocates a fresh provider-call id, invokes the single-call
-   provider primitive, and receives provider lifecycle/text/reasoning/tool-intent events through
-   coordinator commands.
-4. **Assistant-message barrier** - `ProviderRequestFinished` closes provider streaming, then
-   `AssistantMessageFinished` is appended and acknowledged after the assistant response is committed
-   to coordinator message state. Its optional metadata carries non-semantic assistant-message digests
-   for audit/debugging.
+   provider primitive, and receives provider output through coordinator commands. Text, reasoning,
+   and partial tool input are published only as bounded live runtime fragments.
+4. **Assistant-message barrier** - `ProviderRequestFinished` closes provider transport, then
+   `AssistantMessageFinished` durably commits the final sanitized reasoning, text, completed tool
+   intents, and provider provenance before tool execution. Replay settles from this event even when
+   no live fragments were observed.
 5. **Tool preflight and execution** - parsed tool intents are mapped back to canonical tool ids and
    re-enter the coordinator through `ExecuteAgentToolCall`, so permission checks, scheduler slots,
    artifacts, redaction, cancellation, and late-result handling stay on the same path as native tool
@@ -539,33 +558,33 @@ After an overflow-style provider failure, the coordinator may compact and retry 
 
 Compaction is a provider-context persistence feature. It is separate from TUI/session presentation caps that trim or collapse on-screen history for usability. UI memory caps do not rewrite provider context, do not create compaction checkpoints, and should not be treated as compaction.
 
-## G004 canonical session transition
+## Canonical session and semantic assistant history
 
-`harness-core::session` now defines the typed canonical read domain: distinct session, run, entry,
+`harness-core::session` defines the typed canonical read domain: distinct session, run, entry,
 turn, provider-request, and tool-call identities; parent-linked immutable entries; one selected
 active leaf; deterministic `active_path()` traversal; typed tool pairing; and pure replay.
-`LegacyEventLogAdapter` is the sole new compatibility boundary for projecting borrowed V1
-`EventEnvelopeV1` history into that domain. It validates the legacy envelope sequence and identity
+`LegacyEventLogAdapter` is the compatibility boundary that projects borrowed V1
+`EventEnvelopeV1` history into that domain. It validates envelope sequence and identity
 relationships, emits structured loss warnings, and performs no file, lock, index, journal, or
 sidecar writes.
 
 Canonical replay commits entries only to known active run attempts. Unknown runs, terminal runs,
-duplicate or cyclic parents, and any record after a terminal session transition are rejected.
+duplicate or cyclic parents, and records after a terminal session transition are rejected.
 Selecting a sibling leaf rebuilds the active path and revalidates tool-call/result pairing on that
-path. Legacy projection likewise enforces provider start/delta/finish/assistant ordering while
-accepting the historical tool-call-id correlation shape emitted by real logs. Deterministic legacy
-session, entry, turn, request, and run identities use domain-separated 128-bit BLAKE3 digests rather
-than a short collision-prone checksum.
+path. The compatibility projection enforces provider start, finish, and assistant commit ordering,
+while also accepting the historical delta ordering and tool-call-id correlation found in old logs.
+Deterministic legacy session, entry, turn, request, and run identities use domain-separated 128-bit
+BLAKE3 digests.
 
-The adapter and projection are ordinary Rust submodules under `session/legacy/`; they are not
-textually combined with `include!`. Each source file therefore has a truthful, independently
-reviewable ownership boundary.
+New successful assistant responses persist their final semantic parts and provider provenance in
+`AssistantMessageFinished`. The adapter treats those parts as authoritative and still decodes old
+partial logs that only contain `ProviderStreamDelta` or `ProviderReasoningDelta`; incomplete legacy
+assistant content remains visible with a structured warning. Provider fragments from new runs are
+live-only and cannot become canonical history unless a final assistant commit is written.
 
-This is a transitional foundation, not a completed storage cutover. In G004 the coordinator still
-writes the existing V1 `events.jsonl`, and provider context, resume, TUI, session tools, export,
-catalog, lineage, and compaction consumers retain their current V1 projections. G005-G009 migrate
-the durable history and consumers; G010 removes or isolates the superseded checkpoint, event, and
-projection paths after their final consumers move.
+The coordinator still writes V1 `events.jsonl`. Provider context, resume, transcript, session,
+export, catalog, lineage, and compaction code still contains several V1-specific projections.
+Later projection consolidation and deletion are not yet complete.
 
 ## Replay Contract
 

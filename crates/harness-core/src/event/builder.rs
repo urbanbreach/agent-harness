@@ -3,14 +3,17 @@ use std::collections::BTreeMap;
 use serde_json::Value;
 use thiserror::Error;
 
+use crate::agent::AssistantToolIntent;
 use crate::clock::Clock;
 use crate::digest::digest12_json;
 use crate::redact::{redact_value, Redactor};
+use crate::session::{AssistantPart, AssistantToolCall};
 use crate::text::truncate_with_ellipsis;
 
 use super::{
-    EventContext, EventEnvelopeV1, EventV1, PermissionRequestedArgs, PermissionRequestedEvent,
-    RunStartedEvent, ToolCallMetadata, ToolCallRequestedEvent, SCHEMA_VERSION,
+    EventContext, EventEnvelopeV1, EventV1, LiveEventContext, LiveEventEnvelope, LiveEventV1,
+    PermissionRequestedArgs, PermissionRequestedEvent, RunStartedEvent, ToolCallMetadata,
+    ToolCallRequestedEvent, SCHEMA_VERSION,
 };
 
 const DEFAULT_EVENT_ID_PREFIX: &str = "evt";
@@ -61,6 +64,28 @@ impl<'a, C: Clock + ?Sized, R: Redactor + ?Sized> EventBuilder<'a, C, R> {
         };
 
         self.redact_envelope(envelope)
+    }
+
+    pub fn build_live(
+        &self,
+        context: LiveEventContext,
+        payload: LiveEventV1,
+    ) -> Result<LiveEventEnvelope, EventBuildError> {
+        let envelope = LiveEventEnvelope {
+            event_id: context.event_id,
+            run_id: self.run_id.clone(),
+            mono_ms: self.clock.mono_ms(),
+            ts: self.clock.system_time_rfc3339(),
+            actor: context.actor,
+            correlation_id: context.correlation_id,
+            causation_id: context.causation_id,
+            stream_key: context.stream_key,
+            payload,
+        };
+
+        let value = serde_json::to_value(&envelope).map_err(EventBuildError::SerializeEnvelope)?;
+        let redacted = redact_value(self.redactor, &value);
+        serde_json::from_value(redacted).map_err(EventBuildError::DeserializeEnvelope)
     }
 
     pub fn run_started(
@@ -121,6 +146,22 @@ impl<'a, C: Clock + ?Sized, R: Redactor + ?Sized> EventBuilder<'a, C, R> {
         });
 
         self.build(context, payload)
+    }
+
+    pub(crate) fn assistant_tool_call_part(
+        &self,
+        intent: &AssistantToolIntent,
+        tool_call_id: crate::ids::ToolCallId,
+        provider_call_id: Option<&str>,
+    ) -> AssistantPart {
+        AssistantPart::ToolCall(AssistantToolCall {
+            tool_call_id,
+            provider_tool_call_id: Some(intent.tool_call_id.to_string()),
+            tool_id: intent.tool_id.clone(),
+            args_summary: self.summarize_and_redact(&intent.arguments),
+            args_digest: value_digest(&intent.arguments),
+            provider_call_id: provider_call_id.map(str::to_string),
+        })
     }
 
     fn summarize_and_redact(&self, value: &Value) -> String {

@@ -39,14 +39,13 @@ use crate::digest::digest12;
 use crate::event::{
     ActorKind, AgentSpawnedEvent, BackgroundTaskNotificationStatus, CompactionAppliedEvent,
     CompactionRequestedEvent, CompactionWrittenEvent, EventActor, EventBuildError, EventEnvelopeV1,
-    EventV1, HookExecutionMetadata, PermissionDecision as EventPermissionDecision,
-    PolicyViolationDetectedEvent, ProviderAssistantMessageMetadata, ProviderReasoningDeltaEvent,
-    ProviderRequestFinishedMetadata, ProviderRequestRetryMetadata, ProviderRequestStartedMetadata,
-    RunFailedEvent, RunFinishedEvent, RunStartedEvent, SessionTitleUpdatedEvent,
-    StaleDetectedEvent, TaskCancelledEvent, TaskCompletedEvent, TaskCompletionMetadata,
-    TaskLineageMetadata, TaskResultLateEvent, TaskScheduleMetadata, TaskScheduleState,
-    TaskScheduledEvent, TaskTerminalScope, ToolCallMetadata, ToolCallStatus, ToolIdentityMetadata,
-    UserMessageSubmittedEvent,
+    EventV1, HookExecutionMetadata, LiveEventV1, PermissionDecision as EventPermissionDecision,
+    PolicyViolationDetectedEvent, ProviderRequestFinishedMetadata, ProviderRequestRetryMetadata,
+    ProviderRequestStartedMetadata, RunFailedEvent, RunFinishedEvent, RunStartedEvent,
+    SessionTitleUpdatedEvent, StaleDetectedEvent, TaskCancelledEvent, TaskCompletedEvent,
+    TaskCompletionMetadata, TaskLineageMetadata, TaskResultLateEvent, TaskScheduleMetadata,
+    TaskScheduleState, TaskScheduledEvent, TaskTerminalScope, ToolCallMetadata, ToolCallStatus,
+    ToolIdentityMetadata, UserMessageSubmittedEvent,
 };
 use crate::perm::{
     permission_kind_for_tool_call, PermissionDecision, PermissionGrant, PermissionGrantRequest,
@@ -100,6 +99,7 @@ mod provider_lifecycle;
 mod question;
 mod revert;
 mod run_lifecycle;
+mod semantic_history;
 mod snapshot;
 mod state;
 mod task_lifecycle;
@@ -141,7 +141,7 @@ pub(in crate::coord) use self::event_helpers::{
     append_payload_event_with_correlation, append_permission_grant_recorded_event,
     append_permission_requested_event, append_permission_resolved_event,
     append_tool_call_finished_event, append_tool_call_requested_event,
-    append_tool_call_started_event, system_actor,
+    append_tool_call_started_event, publish_live_event, system_actor, LiveEventPublishArgs,
 };
 pub use self::handle::CoordinatorHandle;
 pub(in crate::coord) use self::session_compaction::{compact_session, AppliedCompaction};
@@ -416,6 +416,13 @@ pub enum Command {
         request_id: String,
         delta: String,
     },
+    AgentProviderToolInputDelta {
+        task_id: String,
+        agent_id: String,
+        request_id: String,
+        tool_call_id: crate::ids::ToolCallId,
+        delta: String,
+    },
     RequestToolCall {
         actor: EventActor,
         legacy_profile_hint: Option<String>,
@@ -428,6 +435,7 @@ pub enum Command {
         legacy_profile_hint: Option<String>,
         tool_id: String,
         args_json: Value,
+        reserved_tool_call_id: Option<crate::ids::ToolCallId>,
         respond_to: oneshot::Sender<Result<ToolResult, String>>,
     },
     RequestQuestion {
@@ -516,11 +524,8 @@ pub enum Command {
     AgentAssistantMessageFinished {
         task_id: String,
         agent_id: String,
-        request_id: String,
-        assistant_output: String,
-        tool_call_count: usize,
-        assistant_message: Option<ProviderAssistantMessageMetadata>,
-        respond_to: oneshot::Sender<Result<(), CoordinatorError>>,
+        response: Box<AssistantResponse>,
+        respond_to: oneshot::Sender<Result<Vec<crate::ids::ToolCallId>, CoordinatorError>>,
     },
     AllocateProviderRequestId {
         respond_to: oneshot::Sender<Result<String, CoordinatorError>>,

@@ -1,5 +1,5 @@
 use harness_core::event::{
-    ActorKind, EventActor, EventEnvelopeV1, EventV1, PermissionRequestedEvent,
+    ActorKind, EventActor, EventEnvelopeV1, EventV1, PermissionRequestedEvent, RuntimeEvent,
     ToolCallRequestedEvent, SCHEMA_VERSION,
 };
 use harness_tui::UnwrapOrAbort;
@@ -139,10 +139,10 @@ pub(crate) fn pty_connect_auth_drives_provider_connection() {
     helper.wait_for("connect");
     send_key(helper.writer.as_mut(), b'\r').unwrap_or_abort();
 
-    std::thread::sleep(std::time::Duration::from_millis(500));
+    helper.wait_for("Connect a provider");
     send_bytes(helper.writer.as_mut(), b"\x1b").unwrap_or_abort();
-
-    std::thread::sleep(std::time::Duration::from_millis(200));
+    helper.wait_until_absent("Connect a provider");
+    helper.wait_for("❯");
     helper.writer.write_all(b"/exit").unwrap_or_abort();
     helper.writer.flush().unwrap_or_abort();
     send_key(helper.writer.as_mut(), b'\r').unwrap_or_abort();
@@ -344,16 +344,20 @@ pub(crate) fn pty_helper_permission_overlay() {
     let inject_tx = update_tx.clone();
     thread::spawn(move || {
         thread::sleep(PERMISSION_INJECT_DELAY);
-        let _ = inject_tx.send(LiveUpdate::Event(Box::new(permission_requested_event(
-            2,
-            "perm_pty_overlay",
-            "tool_call_pty_overlay",
+        let _ = inject_tx.send(LiveUpdate::Event(Box::new(RuntimeEvent::Durable(
+            Box::new(permission_requested_event(
+                2,
+                "perm_pty_overlay",
+                "tool_call_pty_overlay",
+            )),
         ))));
         thread::sleep(Duration::from_millis(500));
-        let _ = inject_tx.send(LiveUpdate::Event(Box::new(permission_requested_event(
-            2,
-            "perm_pty_overlay",
-            "tool_call_pty_overlay",
+        let _ = inject_tx.send(LiveUpdate::Event(Box::new(RuntimeEvent::Durable(
+            Box::new(permission_requested_event(
+                2,
+                "perm_pty_overlay",
+                "tool_call_pty_overlay",
+            )),
         ))));
     });
 
@@ -374,11 +378,13 @@ pub(crate) fn pty_helper_permission_overlay() {
                     harness_core::event::PermissionDecision::Deny
                 }
             };
-            let _ = resolve_tx.send(LiveUpdate::Event(Box::new(permission_resolved_event(
-                3,
-                &permission_id,
-                event_decision,
-                reason,
+            let _ = resolve_tx.send(LiveUpdate::Event(Box::new(RuntimeEvent::Durable(
+                Box::new(permission_resolved_event(
+                    3,
+                    &permission_id,
+                    event_decision,
+                    reason,
+                )),
             ))));
         }
     });

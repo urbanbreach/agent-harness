@@ -136,6 +136,8 @@ fn append_assistant_finished(
         EventV1::AssistantMessageFinished(AssistantMessageFinishedEvent {
             request_id: RequestId::new(request_id),
             tool_call_count: 0,
+            parts: Vec::new(),
+            provenance: None,
             assistant_message: None,
         }),
     )

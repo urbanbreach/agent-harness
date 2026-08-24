@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use harness_core::event::{ActorKind, EventEnvelopeV1};
+use harness_core::event::{ActorKind, EventEnvelopeV1, RuntimeEvent};
 use harness_core::store::{EventStore, EventStoreError};
 use harness_tui::{LiveUpdate, LiveUpdateSender};
 
@@ -33,12 +33,22 @@ pub(super) async fn forward_events_to_tui(
     let mut last_seq_seen = from_seq.saturating_sub(1);
 
     loop {
-        let mut stream = store.subscribe(from_seq).map_err(|err| err.to_string())?;
+        let mut stream = store
+            .subscribe_runtime(from_seq)
+            .map_err(|err| err.to_string())?;
         let mut should_resubscribe = false;
 
         while let Some(next) = std::future::poll_fn(|cx| stream.as_mut().poll_next(cx)).await {
             match next {
-                Ok(event) => {
+                Ok(RuntimeEvent::Live(event)) => {
+                    if live_update_tx
+                        .send(LiveUpdate::Event(Box::new(RuntimeEvent::Live(event))))
+                        .is_err()
+                    {
+                        return Ok(());
+                    }
+                }
+                Ok(RuntimeEvent::Durable(event)) => {
                     if event.seq <= last_seq_seen {
                         continue;
                     }
@@ -47,7 +57,7 @@ pub(super) async fn forward_events_to_tui(
                     last_seq_seen = event.seq;
                     from_seq = last_seq_seen.saturating_add(1);
                     if live_update_tx
-                        .send(LiveUpdate::Event(Box::new(event)))
+                        .send(LiveUpdate::Event(Box::new(RuntimeEvent::Durable(event))))
                         .is_err()
                     {
                         return Ok(());
@@ -77,7 +87,9 @@ pub(super) async fn forward_events_to_tui(
                         last_seq_seen = replayed_event.seq;
                         from_seq = last_seq_seen.saturating_add(1);
                         if live_update_tx
-                            .send(LiveUpdate::Event(Box::new(replayed_event)))
+                            .send(LiveUpdate::Event(Box::new(RuntimeEvent::Durable(
+                                Box::new(replayed_event),
+                            ))))
                             .is_err()
                         {
                             return Ok(());

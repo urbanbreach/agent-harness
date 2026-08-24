@@ -182,6 +182,28 @@ The resulting deterministic `scenario_fixture` can be inspected and reopened dir
 creates a successful isolated `harness prompt --mock` run in the same evidence session directory
 and targets that operator-mode run.
 
+## G005 semantic history owner checks
+
+The focused core owners cover self-contained assistant commits, chunk-boundary independence,
+non-durable runtime fragments, interrupted requests, old delta-only logs, deterministic restart,
+and semantic conversation/transcript projection:
+
+```bash
+cargo nextest run -p harness-core --test coord_test --test conversation_projection_test --test transcript_projection_test --test resume_plan_test -E 'test(/semantic_history_|semantic_conversation_|semantic_transcript_|semantic_restart_|provider_chunk_boundaries_|lost_live_deltas_|interrupted_fragments_|runtime_subscription_delivers_live_deltas_|legacy_conversation_|legacy_interrupted_history_/)'
+```
+
+The product owner checks that committed assistant content replaces a conflicting legacy fragment
+and that an `interactive_mock` session reopens with an offline continuation hint, accepts
+`--mock --resume`, and appends the next semantic commit without durable deltas. The docs owner
+checks the public event inventory and completion fields:
+
+```bash
+cargo nextest run -p harness --test replay_sessions_cli_test -E 'test(/export_uses_committed_assistant_content|interactive_mock_reopen_hint_preserves_offline_resume_mode|prompt_cli_accepts_mock_resume_for_offline_continuation|interactive_mock_session_continues_offline_from_semantic_commit/)'
+cargo nextest run -p harness --test event_docs_reference_test
+```
+
+These deterministic owners don't assert PTY, live-provider, native visual, or dogfood evidence.
+
 ## Deterministic simulation lane
 
 Run this lane when a change needs offline behavioral evidence that agents can diff and inspect:

@@ -960,8 +960,8 @@ fn execute_export(
     };
 
     let mut markdown = String::new();
-    let mut current_assistant_text = String::new();
-    let mut has_assistant = false;
+    let mut legacy_assistant_text = String::new();
+    let mut has_legacy_assistant = false;
 
     for line in text.lines() {
         let envelope: EventEnvelopeV1 = match serde_json::from_str(line) {
@@ -970,43 +970,48 @@ fn execute_export(
         };
         match envelope.payload {
             EventV1::UserMessageSubmitted(ev) => {
-                if has_assistant {
+                if has_legacy_assistant {
                     use std::fmt::Write as _;
-                    let _ = writeln!(
-                        &mut markdown,
-                        "## Assistant\n\n{current_assistant_text}\n\n"
-                    );
-                    current_assistant_text.clear();
-                    has_assistant = false;
+                    let _ = writeln!(&mut markdown, "## Assistant\n\n{legacy_assistant_text}\n\n");
+                    legacy_assistant_text.clear();
+                    has_legacy_assistant = false;
                 }
                 use std::fmt::Write as _;
                 let _ = writeln!(&mut markdown, "## User\n\n{}\n\n", ev.text);
             }
             EventV1::ProviderStreamDelta(ev) => {
-                current_assistant_text.push_str(&ev.delta);
-                has_assistant = true;
+                legacy_assistant_text.push_str(&ev.delta);
+                has_legacy_assistant = true;
             }
-            EventV1::AssistantMessageFinished(_) => {
-                if has_assistant {
+            EventV1::AssistantMessageFinished(ev) => {
+                let committed_text = ev
+                    .parts
+                    .iter()
+                    .filter_map(|part| match part {
+                        harness_core::session::AssistantPart::Text { text } => Some(text.as_str()),
+                        harness_core::session::AssistantPart::Reasoning { .. }
+                        | harness_core::session::AssistantPart::ToolCall(_) => None,
+                    })
+                    .collect::<String>();
+                let assistant_text = if ev.parts.is_empty() {
+                    legacy_assistant_text.as_str()
+                } else {
+                    committed_text.as_str()
+                };
+                if !assistant_text.is_empty() {
                     use std::fmt::Write as _;
-                    let _ = writeln!(
-                        &mut markdown,
-                        "## Assistant\n\n{current_assistant_text}\n\n"
-                    );
-                    current_assistant_text.clear();
-                    has_assistant = false;
+                    let _ = writeln!(&mut markdown, "## Assistant\n\n{assistant_text}\n\n");
                 }
+                legacy_assistant_text.clear();
+                has_legacy_assistant = false;
             }
             _ => {}
         }
     }
 
-    if has_assistant {
+    if has_legacy_assistant {
         use std::fmt::Write as _;
-        let _ = writeln!(
-            &mut markdown,
-            "## Assistant\n\n{current_assistant_text}\n\n"
-        );
+        let _ = writeln!(&mut markdown, "## Assistant\n\n{legacy_assistant_text}\n\n");
     }
 
     if markdown.is_empty() {

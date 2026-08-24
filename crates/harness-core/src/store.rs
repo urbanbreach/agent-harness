@@ -12,7 +12,7 @@ use tokio::sync::broadcast;
 use tokio_stream::wrappers::{errors::BroadcastStreamRecvError, BroadcastStream};
 use tokio_stream::{Stream, StreamExt};
 
-use crate::event::{EventActor, EventEnvelopeV1, EventV1};
+use crate::event::{EventActor, EventEnvelopeV1, EventV1, LiveEventEnvelope, RuntimeEvent};
 use crate::path_display::display_path;
 use crate::session_paths::{
     ARTIFACTS_DIR_NAME, EVENTS_FILE_NAME, META_FILE_NAME, WRITER_LOCK_FILE_NAME,
@@ -23,6 +23,8 @@ const WRITER_LOCK_RECOVERY_FILE_NAME: &str = ".writer.lock.recovering";
 static NEXT_WRITER_LOCK_TOKEN: AtomicU64 = AtomicU64::new(1);
 
 pub type EventStream = Pin<Box<dyn Stream<Item = Result<EventEnvelopeV1, EventStoreError>> + Send>>;
+pub type RuntimeEventStream =
+    Pin<Box<dyn Stream<Item = Result<RuntimeEvent, EventStoreError>> + Send>>;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EventEnvelopeWithoutSeqV1 {
@@ -84,6 +86,8 @@ pub trait EventStore: Send + Sync {
     ) -> Result<EventEnvelopeV1, EventStoreError>;
     fn replay(&self, from_seq: u64) -> Result<EventStream, EventStoreError>;
     fn subscribe(&self, from_seq: u64) -> Result<EventStream, EventStoreError>;
+    fn subscribe_runtime(&self, from_seq: u64) -> Result<RuntimeEventStream, EventStoreError>;
+    fn publish_live(&self, envelope: LiveEventEnvelope);
 }
 
 #[derive(Debug, Error)]
@@ -144,6 +148,7 @@ pub enum EventStoreError {
 pub struct InMemoryEventStore {
     state: Mutex<InMemoryState>,
     tx: broadcast::Sender<EventEnvelopeV1>,
+    runtime_tx: broadcast::Sender<RuntimeEvent>,
 }
 
 #[derive(Debug)]
@@ -161,12 +166,14 @@ impl Default for InMemoryEventStore {
 impl InMemoryEventStore {
     pub fn new() -> Self {
         let (tx, _) = broadcast::channel(SUBSCRIBER_BUFFER);
+        let (runtime_tx, _) = broadcast::channel(SUBSCRIBER_BUFFER);
         Self {
             state: Mutex::new(InMemoryState {
                 next_seq: 1,
                 events: Vec::new(),
             }),
             tx,
+            runtime_tx,
         }
     }
 }
@@ -181,7 +188,8 @@ impl EventStore for InMemoryEventStore {
         state.next_seq += 1;
         let event = envelope.clone();
         state.events.push(event.clone());
-        let _ = self.tx.send(event);
+        let _ = self.tx.send(event.clone());
+        let _ = self.runtime_tx.send(RuntimeEvent::Durable(Box::new(event)));
         Ok(envelope)
     }
 
@@ -216,6 +224,37 @@ impl EventStore for InMemoryEventStore {
         let live_stream = broadcast_stream(rx, max_replayed_seq);
         Ok(Box::pin(replay_stream.chain(live_stream)))
     }
+
+    fn subscribe_runtime(&self, from_seq: u64) -> Result<RuntimeEventStream, EventStoreError> {
+        let (replayed, max_replayed_seq, rx) = {
+            let state = lock_state(&self.state)?;
+            let replayed: Vec<_> = state
+                .events
+                .iter()
+                .filter(|event| event.seq >= from_seq)
+                .cloned()
+                .collect();
+            let max_replayed_seq = replayed
+                .last()
+                .map(|event| event.seq)
+                .unwrap_or_else(|| from_seq.saturating_sub(1));
+            (replayed, max_replayed_seq, self.runtime_tx.subscribe())
+        };
+
+        let replay_stream = tokio_stream::iter(
+            replayed
+                .into_iter()
+                .map(Box::new)
+                .map(RuntimeEvent::Durable)
+                .map(Ok),
+        );
+        let live_stream = runtime_broadcast_stream(rx, max_replayed_seq);
+        Ok(Box::pin(replay_stream.chain(live_stream)))
+    }
+
+    fn publish_live(&self, envelope: LiveEventEnvelope) {
+        let _ = self.runtime_tx.send(RuntimeEvent::Live(Box::new(envelope)));
+    }
 }
 
 #[derive(Debug)]
@@ -225,6 +264,7 @@ pub struct JsonlFileEventStore {
     deterministic: bool,
     state: Mutex<JsonlState>,
     tx: broadcast::Sender<EventEnvelopeV1>,
+    runtime_tx: broadcast::Sender<RuntimeEvent>,
 }
 
 pub trait EventStoreOpener: Send + Sync {
@@ -481,6 +521,7 @@ impl JsonlFileEventStore {
 
         let scan = scan_events_from_file(&file_path)?;
         let (tx, _) = broadcast::channel(SUBSCRIBER_BUFFER);
+        let (runtime_tx, _) = broadcast::channel(SUBSCRIBER_BUFFER);
 
         Ok(Self {
             _writer_lock: writer_lock,
@@ -493,6 +534,7 @@ impl JsonlFileEventStore {
                 indexed_len: scan.file_len,
             }),
             tx,
+            runtime_tx,
         })
     }
 
@@ -548,6 +590,9 @@ impl EventStore for JsonlFileEventStore {
         drop(state);
 
         let _ = self.tx.send(envelope.clone());
+        let _ = self
+            .runtime_tx
+            .send(RuntimeEvent::Durable(Box::new(envelope.clone())));
         Ok(envelope)
     }
 
@@ -575,6 +620,48 @@ impl EventStore for JsonlFileEventStore {
         let live_stream = broadcast_stream(rx, max_replayed_seq);
         Ok(Box::pin(replay_stream.chain(live_stream)))
     }
+
+    fn subscribe_runtime(&self, from_seq: u64) -> Result<RuntimeEventStream, EventStoreError> {
+        let (replayed, max_replayed_seq, rx) = {
+            let mut state = lock_state(&self.state)?;
+            let replayed = replay_events_from_index(&self.file_path, &mut state, from_seq)?;
+            let max_replayed_seq = replayed
+                .last()
+                .map(|event| event.seq)
+                .unwrap_or_else(|| from_seq.saturating_sub(1));
+            (replayed, max_replayed_seq, self.runtime_tx.subscribe())
+        };
+
+        let replay_stream = tokio_stream::iter(
+            replayed
+                .into_iter()
+                .map(Box::new)
+                .map(RuntimeEvent::Durable)
+                .map(Ok),
+        );
+        let live_stream = runtime_broadcast_stream(rx, max_replayed_seq);
+        Ok(Box::pin(replay_stream.chain(live_stream)))
+    }
+
+    fn publish_live(&self, envelope: LiveEventEnvelope) {
+        let _ = self.runtime_tx.send(RuntimeEvent::Live(Box::new(envelope)));
+    }
+}
+
+fn runtime_broadcast_stream(
+    rx: broadcast::Receiver<RuntimeEvent>,
+    min_durable_seq_exclusive: u64,
+) -> impl Stream<Item = Result<RuntimeEvent, EventStoreError>> {
+    BroadcastStream::new(rx).filter_map(move |item| match item {
+        Ok(RuntimeEvent::Durable(event)) if event.seq > min_durable_seq_exclusive => {
+            Some(Ok(RuntimeEvent::Durable(event)))
+        }
+        Ok(RuntimeEvent::Durable(_)) => None,
+        Ok(RuntimeEvent::Live(event)) => Some(Ok(RuntimeEvent::Live(event))),
+        Err(BroadcastStreamRecvError::Lagged(skipped)) => {
+            Some(Err(EventStoreError::SubscriberLagged(skipped)))
+        }
+    })
 }
 
 fn broadcast_stream(

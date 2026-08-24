@@ -62,7 +62,7 @@ impl LegacyBoundary {
             )?,
             EventV1::ProviderRequestFinished(payload) => self.provider_finished(event, payload)?,
             EventV1::AssistantMessageFinished(payload) => {
-                self.assistant_finished(event, payload.request_id.as_str())?
+                self.assistant_finished(event, payload)?
             }
             EventV1::SessionCompaction(payload) => {
                 if payload.first_kept_event_seq == 0 {

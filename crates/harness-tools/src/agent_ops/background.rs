@@ -8,6 +8,7 @@ use harness_core::proj::{
     resolve_all_background_request_refs, BackgroundRequestProjection, BackgroundToolCallCounts,
 };
 use harness_core::redact::{DefaultRedactor, Redactor};
+use harness_core::session::AssistantPart;
 use harness_core::tool::{ArtifactRef, ToolContext, ToolError, ToolResult};
 use harness_core::ToolResultExt;
 use serde_json::{json, Value};
@@ -891,24 +892,42 @@ fn build_thinking_artifact(
 ) -> Result<Option<(Value, ArtifactRef)>, ToolError> {
     let max_chars = request.thinking_max_chars.unwrap_or(2000) as usize;
 
-    let mut thinking_blocks: Vec<(String, String)> = Vec::new();
-    let mut current_request_id: Option<String> = None;
-    let mut current_text = String::new();
+    let mut thinking_blocks: Vec<(String, String)> = events
+        .iter()
+        .filter_map(|event| {
+            let EventV1::AssistantMessageFinished(data) = &event.payload else {
+                return None;
+            };
+            let reasoning = data
+                .parts
+                .iter()
+                .filter_map(|part| match part {
+                    AssistantPart::Reasoning { text } => Some(text.as_str()),
+                    AssistantPart::Text { .. } | AssistantPart::ToolCall(_) => None,
+                })
+                .collect::<String>();
+            (!reasoning.is_empty()).then(|| (data.request_id.to_string(), reasoning))
+        })
+        .collect();
 
-    for event in events {
-        if let EventV1::ProviderReasoningDelta(data) = &event.payload {
-            let req_id = data.request_id.to_string();
-            if current_request_id.as_deref() != Some(req_id.as_str()) {
-                if let Some(prev_id) = current_request_id.take() {
-                    thinking_blocks.push((prev_id, std::mem::take(&mut current_text)));
+    if thinking_blocks.is_empty() {
+        let mut current_request_id: Option<String> = None;
+        let mut current_text = String::new();
+        for event in events {
+            if let EventV1::ProviderReasoningDelta(data) = &event.payload {
+                let req_id = data.request_id.to_string();
+                if current_request_id.as_deref() != Some(req_id.as_str()) {
+                    if let Some(prev_id) = current_request_id.take() {
+                        thinking_blocks.push((prev_id, std::mem::take(&mut current_text)));
+                    }
+                    current_request_id = Some(req_id);
                 }
-                current_request_id = Some(req_id);
+                current_text.push_str(&data.delta);
             }
-            current_text.push_str(&data.delta);
         }
-    }
-    if let Some(req_id) = current_request_id {
-        thinking_blocks.push((req_id, current_text));
+        if let Some(req_id) = current_request_id {
+            thinking_blocks.push((req_id, current_text));
+        }
     }
 
     if thinking_blocks.is_empty() {
