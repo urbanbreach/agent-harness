@@ -47,9 +47,14 @@ pub struct RecordedRuntimeContext {
     pub token_window_label: Option<String>,
     #[serde(default)]
     pub model_limits: ResolvedModelLimits,
-    // Compatibility mirrors consumed by the pre-M03 compaction path.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_request_budget: Option<crate::context_budget::RequestBudgetSnapshot>,
+    // Read-only compatibility inputs for pre-M03 meta.json files.
+    #[serde(default, skip_serializing)]
     pub context_window_tokens: Option<u32>,
+    #[serde(default, skip_serializing)]
     pub max_input_tokens: Option<u32>,
+    #[serde(default, skip_serializing)]
     pub max_output_tokens: Option<u32>,
     pub description: Option<String>,
     pub recommended_for: Option<String>,
@@ -91,9 +96,10 @@ impl RecordedRuntimeContext {
                 variant_display_label: entry.variant_display_label.clone(),
                 token_window_label: entry.token_window_label.clone(),
                 model_limits: entry.limits.clone(),
-                context_window_tokens: entry.limits.context_window_tokens(),
-                max_input_tokens: entry.limits.max_input_tokens(),
-                max_output_tokens: entry.limits.max_output_tokens(),
+                last_request_budget: None,
+                context_window_tokens: None,
+                max_input_tokens: None,
+                max_output_tokens: None,
                 description: entry.description.clone(),
                 recommended_for: entry.recommended_for.clone(),
                 reasoning_effort: entry.reasoning_effort.clone(),
@@ -120,9 +126,10 @@ impl RecordedRuntimeContext {
                 variant_display_label: target.variant.clone(),
                 token_window_label: None,
                 model_limits: target.limits.clone(),
-                context_window_tokens: target.limits.context_window_tokens(),
-                max_input_tokens: target.limits.max_input_tokens(),
-                max_output_tokens: target.limits.max_output_tokens(),
+                last_request_budget: None,
+                context_window_tokens: None,
+                max_input_tokens: None,
+                max_output_tokens: None,
                 description: None,
                 recommended_for: None,
                 reasoning_effort: target.reasoning_effort.clone(),
@@ -134,9 +141,9 @@ impl RecordedRuntimeContext {
         recorded.model = target.model.clone();
         recorded.variant = target.variant.clone();
         recorded.model_limits = target.limits.clone();
-        recorded.context_window_tokens = target.limits.context_window_tokens();
-        recorded.max_input_tokens = target.limits.max_input_tokens();
-        recorded.max_output_tokens = target.limits.max_output_tokens();
+        recorded.context_window_tokens = None;
+        recorded.max_input_tokens = None;
+        recorded.max_output_tokens = None;
         recorded.reasoning_effort = target.reasoning_effort.clone();
         recorded.text_verbosity = target.text_verbosity.clone();
         recorded.thinking = target.thinking.clone();
@@ -180,6 +187,7 @@ impl RecordedRuntimeContext {
             variant_display_label: None,
             token_window_label: None,
             model_limits: ResolvedModelLimits::default(),
+            last_request_budget: None,
             context_window_tokens: None,
             max_input_tokens: None,
             max_output_tokens: None,
@@ -208,6 +216,9 @@ impl RecordedRuntimeContext {
 
     fn hydrate_legacy_model_limits(&mut self) {
         self.model_limits = self.effective_model_limits();
+        self.context_window_tokens = None;
+        self.max_input_tokens = None;
+        self.max_output_tokens = None;
     }
 }
 
@@ -225,10 +236,11 @@ impl From<ResolvedProfileModelMetadata> for RecordedRuntimeContext {
             model_display_label: Some(metadata.model_display_label),
             variant_display_label: metadata.variant_display_label,
             token_window_label: metadata.token_window_label,
-            context_window_tokens: metadata.limits.context_window_tokens(),
-            max_input_tokens: metadata.limits.max_input_tokens(),
-            max_output_tokens: metadata.limits.max_output_tokens(),
+            context_window_tokens: None,
+            max_input_tokens: None,
+            max_output_tokens: None,
             model_limits: metadata.limits,
+            last_request_budget: None,
             description: metadata.description,
             recommended_for: metadata.recommended_for,
             reasoning_effort: metadata.reasoning_effort,

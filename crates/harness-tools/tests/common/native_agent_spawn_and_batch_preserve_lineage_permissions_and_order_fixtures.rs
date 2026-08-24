@@ -41,6 +41,14 @@ struct StaticProvider;
 
 #[async_trait]
 impl Provider for StaticProvider {
+    fn request_budget_semantics(
+        &self,
+        request: &CompletionRequest,
+        pending_prompt_index: usize,
+    ) -> Result<harness_providers::ProviderBudgetSemantics, harness_providers::ProviderRequestCostError> {
+        harness_providers::generic_request_budget_semantics(request, pending_prompt_index)
+    }
+
     async fn stream_completion(&self, _req: CompletionRequest) -> ProviderEventStream {
         Box::pin(tokio_stream::iter(vec![
             ProviderStreamEvent::Start,
@@ -61,6 +69,14 @@ struct BlockingProvider;
 
 #[async_trait]
 impl Provider for BlockingProvider {
+    fn request_budget_semantics(
+        &self,
+        request: &CompletionRequest,
+        pending_prompt_index: usize,
+    ) -> Result<harness_providers::ProviderBudgetSemantics, harness_providers::ProviderRequestCostError> {
+        harness_providers::generic_request_budget_semantics(request, pending_prompt_index)
+    }
+
     async fn stream_completion(&self, _req: CompletionRequest) -> ProviderEventStream {
         Box::pin(
             tokio_stream::iter(vec![ProviderStreamEvent::Start])
@@ -74,6 +90,14 @@ struct DelayedProvider;
 
 #[async_trait]
 impl Provider for DelayedProvider {
+    fn request_budget_semantics(
+        &self,
+        request: &CompletionRequest,
+        pending_prompt_index: usize,
+    ) -> Result<harness_providers::ProviderBudgetSemantics, harness_providers::ProviderRequestCostError> {
+        harness_providers::generic_request_budget_semantics(request, pending_prompt_index)
+    }
+
     async fn stream_completion(&self, _req: CompletionRequest) -> ProviderEventStream {
         tokio::task::yield_now().await;
         Box::pin(tokio_stream::iter(vec![
@@ -109,6 +133,14 @@ impl ChildToolThenFinalProvider {
 
 #[async_trait]
 impl Provider for ChildToolThenFinalProvider {
+    fn request_budget_semantics(
+        &self,
+        request: &CompletionRequest,
+        pending_prompt_index: usize,
+    ) -> Result<harness_providers::ProviderBudgetSemantics, harness_providers::ProviderRequestCostError> {
+        harness_providers::generic_request_budget_semantics(request, pending_prompt_index)
+    }
+
     async fn stream_completion(&self, req: CompletionRequest) -> ProviderEventStream {
         let mut requests = self.requests.lock().await;
         requests.push(req);
@@ -183,6 +215,14 @@ impl DelegationContractProvider {
 
 #[async_trait]
 impl Provider for DelegationContractProvider {
+    fn request_budget_semantics(
+        &self,
+        request: &CompletionRequest,
+        pending_prompt_index: usize,
+    ) -> Result<harness_providers::ProviderBudgetSemantics, harness_providers::ProviderRequestCostError> {
+        harness_providers::generic_request_budget_semantics(request, pending_prompt_index)
+    }
+
     async fn stream_completion(&self, req: CompletionRequest) -> ProviderEventStream {
         let mut requests = self.requests.lock().await;
         requests.push(req);
@@ -211,6 +251,14 @@ impl Provider for DelegationContractProvider {
 
 #[async_trait]
 impl Provider for TaskCallingProvider {
+    fn request_budget_semantics(
+        &self,
+        request: &CompletionRequest,
+        pending_prompt_index: usize,
+    ) -> Result<harness_providers::ProviderBudgetSemantics, harness_providers::ProviderRequestCostError> {
+        harness_providers::generic_request_budget_semantics(request, pending_prompt_index)
+    }
+
     async fn stream_completion(&self, req: CompletionRequest) -> ProviderEventStream {
         let mut requests = self.requests.lock().await;
         requests.push(req);

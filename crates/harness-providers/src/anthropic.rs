@@ -11,15 +11,15 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::{
-    CompletionMessage, CompletionRequest, CompletionUsage, MessageRole, Provider,
-    ProviderErrorCategory, ProviderEventStream, ProviderStreamEvent,
-    ProviderStreamFinishedMetadata, ToolChoice, ToolDef,
+    CompletionMessage, CompletionRequest, CompletionUsage, MessageRole, ProviderErrorCategory,
+    ProviderStreamEvent, ProviderStreamFinishedMetadata, ToolChoice, ToolDef,
 };
+
+mod provider;
 
 /// Anthropic API version header value.
 pub const ANTHROPIC_VERSION: &str = "2023-06-01";
@@ -33,13 +33,13 @@ pub const ANTHROPIC_BASE_URL: &str = "https://api.anthropic.com";
 /// JSON shape: extracts `system` from system messages, converts tool messages
 /// to `tool_result` content blocks, and maps tool definitions to Anthropic format.
 pub fn build_anthropic_request(req: &CompletionRequest) -> Value {
-    let mut system: Option<String> = None;
+    let mut system = Vec::new();
     let mut anthropic_messages: Vec<Value> = Vec::with_capacity(req.messages.len());
 
     for msg in &req.messages {
         match msg.role {
             MessageRole::System => {
-                system = Some(msg.content.clone());
+                system.push(msg.content.as_str());
             }
             MessageRole::User => {
                 if let Some(tool_call_id) = &msg.tool_call_id {
@@ -84,12 +84,14 @@ pub fn build_anthropic_request(req: &CompletionRequest) -> Value {
             }
             MessageRole::Tool => {
                 if let Some(tool_call_id) = &msg.tool_call_id {
+                    let content = crate::openai::prepare_tool_result(&msg.content)
+                        .map_or_else(|| msg.content.clone(), |result| result.text);
                     anthropic_messages.push(json!({
                         "role": "user",
                         "content": [{
                             "type": "tool_result",
                             "tool_use_id": tool_call_id,
-                            "content": msg.content,
+                            "content": content,
                         }]
                     }));
                 }
@@ -103,8 +105,8 @@ pub fn build_anthropic_request(req: &CompletionRequest) -> Value {
         "max_tokens": req.max_tokens.unwrap_or(4096),
     });
 
-    if let Some(sys) = system {
-        body["system"] = json!(sys);
+    if !system.is_empty() {
+        body["system"] = json!(system.join("\n\n"));
     }
     if let Some(temp) = req.temperature {
         body["temperature"] = json!(temp);
@@ -539,7 +541,7 @@ pub enum AnthropicProviderError {
     BuildHttpClient(reqwest::Error),
 }
 
-/// Anthropic Messages API provider implementing [`Provider`].
+/// Anthropic Messages API provider implementing [`crate::Provider`].
 ///
 /// Uses `x-api-key` authentication and POSTs to `/v1/messages`.
 /// Streaming responses are parsed via [`parse_anthropic_sse_stream`];
@@ -566,68 +568,6 @@ impl AnthropicProvider {
             api_key: config.api_key,
             headers: config.headers,
         })
-    }
-}
-
-#[async_trait]
-impl Provider for AnthropicProvider {
-    async fn stream_completion(&self, req: CompletionRequest) -> ProviderEventStream {
-        let body = build_anthropic_request(&req);
-        let url = anthropic_messages_url(&self.base_url);
-
-        let mut request = self
-            .client
-            .post(&url)
-            .header("x-api-key", &self.api_key)
-            .header("anthropic-version", ANTHROPIC_VERSION)
-            .header("content-type", "application/json")
-            .json(&body);
-
-        for (key, value) in &self.headers {
-            request = request.header(key.as_str(), value.as_str());
-        }
-
-        match request.send().await {
-            Ok(response) => {
-                let status = response.status();
-                if !status.is_success() {
-                    let message = format!("anthropic request to {url} returned status {status}");
-                    return Box::pin(tokio_stream::iter(vec![
-                        ProviderStreamEvent::categorized_error(
-                            message,
-                            ProviderErrorCategory::TransportFailure,
-                        ),
-                    ]));
-                }
-                let bytes = match response.bytes().await {
-                    Ok(bytes) => bytes,
-                    Err(err) => {
-                        return Box::pin(tokio_stream::iter(vec![
-                            ProviderStreamEvent::categorized_error(
-                                format!("failed to read anthropic response body: {err}"),
-                                ProviderErrorCategory::TransportFailure,
-                            ),
-                        ]));
-                    }
-                };
-                let raw = String::from_utf8_lossy(&bytes);
-                let events = if req.stream {
-                    parse_anthropic_sse_stream(&raw)
-                } else {
-                    parse_anthropic_response(&raw)
-                };
-                Box::pin(tokio_stream::iter(events))
-            }
-            Err(err) => {
-                let message = format!("anthropic transport error: {err}");
-                Box::pin(tokio_stream::iter(vec![
-                    ProviderStreamEvent::categorized_error(
-                        message,
-                        ProviderErrorCategory::TransportFailure,
-                    ),
-                ]))
-            }
-        }
     }
 }
 

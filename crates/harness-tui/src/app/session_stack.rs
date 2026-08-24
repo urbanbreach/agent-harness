@@ -618,6 +618,9 @@ fn launch_metadata_from_recorded_runtime_context(
     })
     .with_available_models(fallback.available_models().to_vec())
     .with_switchable_profiles(fallback.switchable_profiles().to_vec());
+    if let Some(snapshot) = recorded_runtime_context.last_request_budget {
+        launch_metadata = launch_metadata.with_last_request_budget(snapshot);
+    }
     if let Some(mode_label) = fallback.mode_label().map(str::to_owned) {
         launch_metadata = launch_metadata.with_mode_label(mode_label);
     }

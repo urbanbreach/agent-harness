@@ -273,6 +273,10 @@ impl AppState {
         self.session_mode
     }
 
+    pub(crate) const fn is_replay_mode(&self) -> bool {
+        self.replay_mode
+    }
+
     pub(in crate::app) fn launch_value_is_unknown(value: &str) -> bool {
         let trimmed = value.trim();
         trimmed.is_empty() || trimmed.eq_ignore_ascii_case("unknown")

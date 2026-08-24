@@ -711,3 +711,4 @@ pub(super) fn question_y_copies_the_focused_option_label_and_description() {
 
 include!("permission_modal_tests_part2_test.rs");
 include!("permission_modal_tests_part3_test.rs");
+include!("permission_modal_tests_part4_test.rs");

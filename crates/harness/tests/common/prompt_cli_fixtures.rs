@@ -90,6 +90,14 @@ impl ScriptedPromptProvider {
 }
 
 impl Provider for ScriptedPromptProvider {
+    fn request_budget_semantics(
+        &self,
+        request: &CompletionRequest,
+        pending_prompt_index: usize,
+    ) -> Result<harness_providers::ProviderBudgetSemantics, harness_providers::ProviderRequestCostError> {
+        harness_providers::generic_request_budget_semantics(request, pending_prompt_index)
+    }
+
     fn stream_completion<'life0, 'async_trait>(
         &'life0 self,
         req: CompletionRequest,

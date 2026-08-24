@@ -22,6 +22,14 @@ struct SummaryMockProvider {
 
 #[async_trait]
 impl Provider for SummaryMockProvider {
+    fn request_budget_semantics(
+        &self,
+        request: &CompletionRequest,
+        pending_prompt_index: usize,
+    ) -> Result<harness_providers::ProviderBudgetSemantics, harness_providers::ProviderRequestCostError> {
+        harness_providers::generic_request_budget_semantics(request, pending_prompt_index)
+    }
+
     async fn stream_completion(&self, _req: CompletionRequest) -> ProviderEventStream {
         let summary = self.summary.clone();
         Box::pin(tokio_stream::iter(vec![
@@ -102,7 +110,10 @@ fn append_provider_started(
             model_id: "model-1".to_string(),
             prompt_summary: "prompt".to_string(),
             request_digest: "digest".to_string(),
-            metadata: None,
+            metadata: Some(crate::event::ProviderRequestStartedMetadata {
+                context_budget: Some(pressured_compaction_budget()),
+                ..Default::default()
+            }),
         }),
     )
     .unwrap_or_abort();

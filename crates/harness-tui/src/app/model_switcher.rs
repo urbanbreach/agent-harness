@@ -174,24 +174,26 @@ impl AppState {
             .filter(|value| !Self::launch_value_is_unknown(value))
     }
 
-    pub(crate) fn current_context_window_tokens(&self) -> Option<u32> {
-        self.runtime_context_metadata()
-            .context_window_tokens()
-            .or_else(|| {
-                self.activities
-                    .back()
-                    .and_then(|activity| {
-                        non_empty_str(&activity.model_id).map(|model_id| {
-                            LaunchMetadata::new(
-                                self.runtime_context_profile(),
-                                self.runtime_context_provider(),
-                                Some(model_id.to_string()),
-                            )
-                            .context_window_tokens()
-                        })
-                    })
-                    .flatten()
-            })
+    pub(crate) fn current_request_budget_snapshot(
+        &self,
+    ) -> Option<harness_core::context_budget::RequestBudgetSnapshot> {
+        match self.projection.latest_request_budget() {
+            Some(snapshot) => snapshot,
+            None => self.runtime_context_metadata().last_request_budget(),
+        }
+    }
+
+    pub(crate) fn uses_unknown_budget_fallback(&self) -> bool {
+        match self.projection.latest_request_budget() {
+            Some(snapshot) => snapshot.is_none(),
+            None => {
+                self.is_replay_mode()
+                    && self
+                        .runtime_context_metadata()
+                        .last_request_budget()
+                        .is_none()
+            }
+        }
     }
 
     pub fn current_source_label(&self) -> Option<String> {

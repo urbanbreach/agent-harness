@@ -1,5 +1,4 @@
 use super::*;
-use crate::config::CompactionSettings;
 use crate::conversation::{
     ConversationAssistantMessage, ConversationCheckpointMessage, ConversationMessage,
     ConversationToolCall, ConversationToolResultMessage, ConversationUserMessage,
@@ -93,15 +92,6 @@ fn tool_finished(seq: u64, agent_id: &str, output_summary: &str) -> EventEnvelop
             metadata: None,
         }),
     )
-}
-
-fn settings(enabled: bool, reserve_tokens: u32, keep_recent_tokens: u32) -> CompactionSettings {
-    CompactionSettings {
-        enabled,
-        reserve_tokens,
-        keep_recent_tokens,
-        ..Default::default()
-    }
 }
 
 // =========================================================================
@@ -354,77 +344,6 @@ fn estimate_context_tokens_empty_messages() {
 }
 
 // =========================================================================
-// should_compact
-// =========================================================================
-
-#[test]
-fn should_compact_true_when_context_exceeds_threshold() {
-    // arrange
-    // act
-    // assert
-    let s = settings(true, 10000, 20000);
-    assert!(should_compact(95000, 100000, &s));
-}
-
-#[test]
-fn should_compact_false_when_below_threshold() {
-    // arrange
-    // act
-    // assert
-    let s = settings(true, 10000, 20000);
-    assert!(!should_compact(89000, 100000, &s));
-}
-
-#[test]
-fn should_compact_false_when_disabled() {
-    // arrange
-    // act
-    // assert
-    let s = settings(false, 10000, 20000);
-    assert!(!should_compact(95000, 100000, &s));
-}
-
-#[test]
-fn should_compact_boundary_exact_threshold() {
-    // arrange
-    // act
-    // assert
-    // context_tokens > context_window - reserve_tokens
-    // 90000 > 100000 - 10000 = 90000 -> false (not strictly greater)
-    let s = settings(true, 10000, 20000);
-    assert!(!should_compact(90000, 100000, &s));
-}
-
-#[test]
-fn should_compact_boundary_one_above_threshold() {
-    // arrange
-    // act
-    // assert
-    // 90001 > 90000 -> true
-    let s = settings(true, 10000, 20000);
-    assert!(should_compact(90001, 100000, &s));
-}
-
-#[test]
-fn should_compact_zero_context_window_with_tokens() {
-    // arrange
-    // act
-    // assert
-    let s = settings(true, 10000, 20000);
-    // 0u32.saturating_sub(10000) = 0, so context_tokens > 0
-    assert!(should_compact(1, 0, &s));
-}
-
-#[test]
-fn should_compact_zero_context_window_zero_tokens() {
-    // arrange
-    // act
-    // assert
-    let s = settings(true, 10000, 20000);
-    assert!(!should_compact(0, 0, &s));
-}
-
-// =========================================================================
 // find_cut_point
 // =========================================================================
 
@@ -639,28 +558,6 @@ fn pi_calculate_context_tokens_zero() {
     // assert
     // Pi test: createMockUsage(0, 0, 0, 0) -> 0
     assert_eq!(calculate_context_tokens(0, 0, 0, 0), 0);
-}
-
-#[test]
-fn pi_should_compact_boundary() {
-    // arrange
-    // act
-    // assert
-    // Pi test: shouldCompact(95000, 100000, settings) -> true
-    // Pi test: shouldCompact(89000, 100000, settings) -> false
-    let s = settings(true, 10000, 20000);
-    assert!(should_compact(95000, 100000, &s));
-    assert!(!should_compact(89000, 100000, &s));
-}
-
-#[test]
-fn pi_should_compact_disabled() {
-    // arrange
-    // act
-    // assert
-    // Pi test: disabled returns false even at 95000/100000
-    let s = settings(false, 10000, 20000);
-    assert!(!should_compact(95000, 100000, &s));
 }
 
 #[test]

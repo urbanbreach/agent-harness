@@ -336,17 +336,19 @@ pub(super) fn render_live_breadcrumb(frame: &mut Frame, app: &AppState, area: Re
 
 /// Freeze breadcrumb right meta: `12K / 262K` (uppercase K, space slash).
 fn breadcrumb_context_meta(app: &AppState) -> Option<String> {
-    let used = app
-        .active_context_usage()?
-        .tokens
-        .filter(|tokens| *tokens > 0)?;
-    let limit = app
-        .current_context_window_tokens()
-        .filter(|limit| *limit > 0)?;
+    let snapshot = app.current_request_budget_snapshot()?;
+    if snapshot.status != harness_core::context_budget::BudgetStatus::Estimated {
+        return None;
+    }
+    let occupied =
+        (snapshot.occupied_input_tokens > 0).then_some(snapshot.occupied_input_tokens)?;
+    let threshold = snapshot
+        .compaction_threshold_tokens
+        .filter(|threshold| *threshold > 0)?;
     Some(format!(
         "{} / {}",
-        format_breadcrumb_token_count(used),
-        format_breadcrumb_token_count(limit)
+        format_breadcrumb_token_count(occupied),
+        format_breadcrumb_token_count(threshold)
     ))
 }
 

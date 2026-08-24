@@ -21,19 +21,30 @@ fn run_cli_config(session_dir: &Path) -> String {
                     "timeoutMs": 60000
                 },
                 "models": {
-                    "gpt-4o-mini": {
-                        "name": "GPT-4o mini"
+                    "gpt-5.6-luna": {
+                        "name": "GPT 5.6 Luna",
+                        "metadata": {"supportsReasoningSummaries": true},
+                        "variants": {
+                            "max": {"metadata": {"reasoningEffort": "max"}}
+                        }
                     }
                 }
             }
         },
-        "model": "default/gpt-4o-mini",
+        "model": "default/gpt-5.6-luna",
         "agent": {
             "default": {
-                "tools": []
+                "tools": [],
+                "variant": "max"
             }
         },
-        "permission": "allow",
+        "permission": {
+            "*": "allow",
+            "shell_allowlist": {
+                "executables": ["bash", "git", "cargo", "ls", "rg"],
+                "cwd_roots": ["."]
+            }
+        },
         "runtime": {
             "background_tasks": {
                 "default_concurrency": 2,
@@ -113,6 +124,59 @@ fn run_cli_writes_out_file_and_prints_run_dir() {
         "expected CliHarness to capture run artifacts under {}",
         captured_run.run_dir.display()
     );
+}
+
+#[test]
+fn run_cli_golden_path_completes_provider_turn_with_configured_model_settings() {
+    // arrange
+    let temp = tempdir().unwrap_or_abort();
+    let config_path = temp.path().join("harness.scenario.jsonc");
+    let session_dir = temp.path().join("sessions");
+    fs::write(&config_path, run_cli_config(&session_dir)).unwrap_or_abort();
+
+    // act
+    let output = CliHarness::new()
+        .args([
+            "--config",
+            config_path.to_str().unwrap_or_abort(),
+            "run",
+            "--scenario",
+            "golden_path",
+            "--deterministic",
+            "--session-dir",
+            session_dir.to_str().unwrap_or_abort(),
+        ])
+        .capture_session_dir(&session_dir)
+        .output();
+
+    // assert
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let captured = output.single_run();
+    let parsed = captured
+        .events
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap_or_abort())
+        .collect::<Vec<_>>();
+    assert!(parsed.iter().any(|event| {
+        event["payload"]["event_type"] == "provider_request_started"
+            && event["payload"]["data"]["metadata"]["context_budget"].is_object()
+    }));
+    assert!(parsed.iter().any(|event| {
+        event["payload"]["event_type"] == "provider_request_finished"
+            && event["payload"]["data"]["finish_reason"] == "done"
+    }));
+    assert!(!parsed.iter().any(|event| {
+        event["payload"]["event_type"] == "provider_request_finished"
+            && event["payload"]["data"]["finish_reason"] == "error"
+    }));
+    assert!(!parsed
+        .iter()
+        .any(|event| event["payload"]["event_type"] == "task_cancelled"));
 }
 
 #[test]

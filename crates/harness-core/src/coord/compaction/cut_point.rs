@@ -1,10 +1,9 @@
 //! Cut-point detection for context compaction.
 //!
-//! Ports Pi's `findCutPoint` and `shouldCompact` to the Rust event model.
-//! Walks backward through an agent's events, accumulating token estimates,
-//! and finds the first valid cut point that keeps approximately `keep_recent_tokens`.
+//! Ports Pi's `findCutPoint` to the Rust event model. Walks backward through
+//! an agent's events, accumulating token estimates, and finds the first valid
+//! cut point that keeps approximately `keep_recent_tokens`.
 
-use crate::config::CompactionSettings;
 use crate::event::{EventEnvelopeV1, EventV1};
 
 use super::tokens::estimate_text_tokens;
@@ -22,21 +21,6 @@ pub struct CutPointResult {
     pub turn_start_seq: Option<u64>,
     /// Total estimated context tokens before compaction.
     pub tokens_before: u32,
-}
-
-/// Check if compaction should trigger based on context usage.
-///
-/// Ports Pi's `shouldCompact`: returns `false` when disabled, otherwise
-/// `context_tokens > context_window.saturating_sub(reserve_tokens)`.
-pub fn should_compact(
-    context_tokens: u32,
-    context_window: u32,
-    settings: &CompactionSettings,
-) -> bool {
-    if !settings.enabled {
-        return false;
-    }
-    context_tokens > context_window.saturating_sub(settings.reserve_tokens)
 }
 
 /// Find a cut point that preserves the agent's last complete turn and summarizes

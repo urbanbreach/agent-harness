@@ -199,25 +199,29 @@ fn serialize_chat_messages(messages: Vec<CompletionMessage>) -> Vec<OpenAiChatMe
 fn chat_message_and_images_from_tool_message(
     message: CompletionMessage,
 ) -> (OpenAiChatMessage, Vec<OpenAiChatUserContent>) {
-    let tool_call_id = message.tool_call_id.clone();
-    let payload = parse_harness_tool_result(&message.content);
-    let text = payload
+    let prepared = prepare_tool_result(&message.content);
+    let text = prepared
         .as_ref()
-        .map(provider_tool_result_text)
-        .unwrap_or_else(|| message.content.clone());
-    let tool_message = OpenAiChatMessage {
-        role: role_to_openai(&message.role).to_string(),
-        content: OpenAiChatMessageContent::Text(text),
-        name: message.name,
-        tool_call_id,
-        tool_calls: None,
-    };
-
-    let images = payload
-        .as_ref()
-        .map(provider_tool_result_images)
-        .unwrap_or_default();
-    (tool_message, images)
+        .map_or_else(|| message.content.clone(), |result| result.text.clone());
+    let images = prepared.map_or_else(Vec::new, |result| {
+        result
+            .images
+            .into_iter()
+            .map(|image| OpenAiChatUserContent::ImageUrl {
+                image_url: OpenAiImageUrl { url: image.url },
+            })
+            .collect()
+    });
+    (
+        OpenAiChatMessage {
+            role: role_to_openai(&message.role).to_string(),
+            content: OpenAiChatMessageContent::Text(text),
+            name: message.name,
+            tool_call_id: message.tool_call_id,
+            tool_calls: None,
+        },
+        images,
+    )
 }
 
 #[derive(Debug, Serialize)]
@@ -496,62 +500,73 @@ enum HarnessToolResultContent {
     File { uri: String, mime: String },
 }
 
-fn parse_harness_tool_result(content: &str) -> Option<HarnessToolResultPayload> {
-    serde_json::from_str::<HarnessToolResultEnvelope>(content)
-        .ok()
-        .map(|envelope| envelope.result)
+#[derive(Debug, Clone)]
+pub(crate) struct PreparedToolResult {
+    pub(crate) text: String,
+    text_parts: Vec<String>,
+    pub(crate) images: Vec<PreparedImage>,
 }
 
-fn provider_tool_result_text(payload: &HarnessToolResultPayload) -> String {
-    payload
+#[derive(Debug, Clone)]
+pub(crate) struct PreparedImage {
+    pub(crate) url: String,
+    pub(crate) mime: String,
+}
+
+pub(crate) fn prepare_tool_result(content: &str) -> Option<PreparedToolResult> {
+    let payload = serde_json::from_str::<HarnessToolResultEnvelope>(content)
+        .ok()?
+        .result;
+    let text_parts = payload
         .content
         .iter()
         .filter_map(|item| match item {
-            HarnessToolResultContent::Text { text } => Some(text.as_str()),
+            HarnessToolResultContent::Text { text } => Some(text.clone()),
             HarnessToolResultContent::File { .. } => None,
         })
-        .collect::<Vec<_>>()
+        .collect::<Vec<_>>();
+    let text = text_parts
         .join("\n")
         .trim()
         .to_string()
-        .if_empty_then(|| payload.text.clone())
-}
-
-fn provider_tool_result_images(payload: &HarnessToolResultPayload) -> Vec<OpenAiChatUserContent> {
-    payload
+        .if_empty_then(|| payload.text.clone());
+    let images = payload
         .content
-        .iter()
+        .into_iter()
         .filter_map(|item| match item {
-            HarnessToolResultContent::File { uri, mime } => validated_openai_image_url(uri, mime)
-                .map(|url| OpenAiChatUserContent::ImageUrl {
-                    image_url: OpenAiImageUrl { url },
+            HarnessToolResultContent::File { uri, mime } => validated_openai_image_url(&uri, &mime)
+                .map(|url| PreparedImage {
+                    url,
+                    mime: mime.to_ascii_lowercase(),
                 }),
             HarnessToolResultContent::Text { .. } => None,
         })
-        .collect()
+        .collect();
+    Some(PreparedToolResult {
+        text,
+        text_parts,
+        images,
+    })
 }
 
 fn responses_tool_result_output(content: &str) -> OpenAiResponsesFunctionCallOutput {
-    let Some(payload) = parse_harness_tool_result(content) else {
+    let Some(prepared) = prepare_tool_result(content) else {
         return OpenAiResponsesFunctionCallOutput::Text(content.to_string());
     };
 
-    OpenAiResponsesFunctionCallOutput::Content(
-        payload
-            .content
+    let mut output = Vec::with_capacity(prepared.text_parts.len() + prepared.images.len());
+    output.extend(
+        prepared
+            .text_parts
             .into_iter()
-            .filter_map(|item| match item {
-                HarnessToolResultContent::Text { text } => {
-                    Some(OpenAiResponsesFunctionCallOutputContent::Text { text })
-                }
-                HarnessToolResultContent::File { uri, mime } => {
-                    validated_openai_image_url(&uri, &mime).map(|image_url| {
-                        OpenAiResponsesFunctionCallOutputContent::Image { image_url }
-                    })
-                }
-            })
-            .collect(),
-    )
+            .map(|text| OpenAiResponsesFunctionCallOutputContent::Text { text }),
+    );
+    output.extend(prepared.images.into_iter().map(|image| {
+        OpenAiResponsesFunctionCallOutputContent::Image {
+            image_url: image.url,
+        }
+    }));
+    OpenAiResponsesFunctionCallOutput::Content(output)
 }
 
 fn is_openai_image_mime(mime: &str) -> bool {

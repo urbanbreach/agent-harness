@@ -19,6 +19,7 @@ use tokio_stream::StreamExt;
 use crate::agent::{AgentModelRef, ProviderContext};
 use crate::clock::Clock;
 use crate::config::CompactionSettings;
+use crate::context_budget::RequestBudgetSnapshot;
 use crate::conversation::{project_conversation, ConversationMessage};
 use crate::event::{EventEnvelopeV1, EventV1, SessionCompactionEvent};
 use crate::redact::Redactor;
@@ -28,9 +29,12 @@ use super::compaction::{
     build_summarization_prompt, build_turn_prefix_prompt, compute_file_lists,
     estimate_context_tokens, estimate_messages_tokens, estimate_text_tokens,
     extract_file_ops_from_tool_call, find_cut_point, find_manual_cut_point, merge_file_operations,
-    should_compact, CutPointResult, FileOperations, SUMMARIZATION_SYSTEM_PROMPT,
+    CutPointResult, FileOperations, SUMMARIZATION_SYSTEM_PROMPT,
 };
 use super::{append_payload_event, system_actor, CoordinatorError, RunState};
+use budget::CompactionBudget;
+
+mod budget;
 
 /// Result of a successful session compaction.
 #[derive(Debug, Clone)]
@@ -44,9 +48,6 @@ pub struct AppliedCompaction {
     /// Estimated token count after compaction.
     pub tokens_after: u32,
 }
-
-/// Default context window when model metadata is unavailable.
-const DEFAULT_CONTEXT_WINDOW_TOKENS: u32 = 128_000;
 
 /// Compact a session for the given agent.
 ///
@@ -64,7 +65,7 @@ pub(in crate::coord) async fn compact_session<C, R>(
     agent_id: &str,
     trigger_reason: &str,
     settings: &CompactionSettings,
-    prompt_tokens_estimate: Option<u32>,
+    prepared_budget: Option<RequestBudgetSnapshot>,
 ) -> Result<Option<AppliedCompaction>, CoordinatorError>
 where
     C: Clock + ?Sized,
@@ -78,7 +79,8 @@ where
     // 2. Read all events from the event store.
     let all_events = collect_events(run_state).await?;
 
-    // 3. Check if the agent has any events.
+    // 3. Resolve the provisional or latest persisted request budget.
+    let context_budget = CompactionBudget::resolve(prepared_budget, &all_events, agent_id);
 
     // If a previous SessionCompaction exists, only consider events at or after
     // its first_kept_event_seq — earlier events are already captured in the summary.
@@ -130,27 +132,14 @@ where
         }
     }
 
-    // 5. Determine context window from recorded runtime context or config fallback.
-    // When no model reports a window but token-trigger estimation is enabled, use the
-    // configured fallback budget so tests and small-model profiles trigger compaction.
-    let context_window = run_state
-        .recorded_runtime_context
-        .as_ref()
-        .and_then(|ctx| ctx.max_input_tokens.or(ctx.context_window_tokens))
-        .or(settings
-            .estimated_token_triggers
-            .then_some(settings.fallback_input_tokens))
-        .unwrap_or(DEFAULT_CONTEXT_WINDOW_TOKENS);
-
-    // 6. Check if compaction should trigger.
-    // For pre_prompt/proactive triggers, include the upcoming prompt estimate so
-    // compaction fires before the window would be exceeded.
-    let estimated_total = total_tokens.saturating_add(prompt_tokens_estimate.unwrap_or(0));
+    // 5. Automatic and pre-prompt decisions consume the canonical prepared
+    // snapshot. Unknown limits therefore have no automatic threshold; an explicit
+    // conservative fallback arrives already labeled and pressure-tested.
     let force_compact = matches!(
         trigger_reason,
         "manual" | "overflow" | "aborted_response" | "failed_response"
     );
-    if !force_compact && !should_compact(estimated_total, context_window, settings) {
+    if !force_compact && !context_budget.requires_compaction() {
         return Ok(None);
     }
 
@@ -160,20 +149,17 @@ where
         return Ok(None);
     }
 
-    // 7. Find cut point in the agent's events.
-    // Manual and pre_prompt compaction preserve whole turns: manual keeps the
-    // latest completed turn, while pre_prompt keeps the latest turn so the
-    // upcoming prompt plus that turn fit under the model window. Overflow and
-    // proactive triggers use a token-budget cut-point that may split a turn.
-    let cut_point = if trigger_reason == "manual" || trigger_reason == "pre_prompt" {
+    // 7. Find the cut point. Manual compaction preserves the latest complete
+    // turn. Prepared-budget triggers preserve history only from the canonical
+    // threshold remaining after current non-history components.
+    let cut_point = if trigger_reason == "manual" {
         find_manual_cut_point(&events, agent_id)
     } else {
-        let prompt_estimate = prompt_tokens_estimate.unwrap_or(0);
-        let window_budget = context_window
-            .saturating_sub(settings.reserve_tokens)
-            .saturating_sub(prompt_estimate);
-        let recent_budget = settings.keep_recent_tokens.min(window_budget);
-        find_cut_point(&events, agent_id, recent_budget)
+        find_cut_point(
+            &events,
+            agent_id,
+            context_budget.history_allowance(settings.keep_recent_tokens),
+        )
     };
     let Some(cut_point) = cut_point else {
         return Ok(None);

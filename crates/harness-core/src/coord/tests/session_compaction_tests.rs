@@ -19,6 +19,17 @@ struct SummaryMockProvider {
 
 #[async_trait]
 impl Provider for SummaryMockProvider {
+    fn request_budget_semantics(
+        &self,
+        request: &CompletionRequest,
+        pending_prompt_index: usize,
+    ) -> Result<
+        harness_providers::ProviderBudgetSemantics,
+        harness_providers::ProviderRequestCostError,
+    > {
+        harness_providers::generic_request_budget_semantics(request, pending_prompt_index)
+    }
+
     async fn stream_completion(&self, _req: CompletionRequest) -> ProviderEventStream {
         let summary = self.summary.clone();
         Box::pin(tokio_stream::iter(vec![
@@ -99,7 +110,10 @@ fn append_provider_started(
             model_id: "model-1".to_string(),
             prompt_summary: "prompt".to_string(),
             request_digest: "digest".to_string(),
-            metadata: None,
+            metadata: Some(crate::event::ProviderRequestStartedMetadata {
+                context_budget: Some(pressured_compaction_budget()),
+                ..Default::default()
+            }),
         }),
     )
     .unwrap_or_abort();
@@ -309,6 +323,79 @@ async fn threshold_compaction_appends_single_session_compaction_event() {
         .as_ref()
         .unwrap_or_abort()
         .contains("Test summary"));
+}
+
+#[tokio::test]
+async fn unified_context_budget_boundary_requires_compaction_with_history_allowance() {
+    // arrange: equality pressure and only 100 tokens available for preserved history.
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
+    let clock = FakeClock::new();
+    let redactor = DefaultRedactor::default();
+    let mut run_state = test_run_state(temp_dir.path(), "run_budget_history_allowance");
+    let agent_id = "agent_000001";
+    setup_agent(&mut run_state, agent_id);
+    for turn in 0_u64..3 {
+        let request_id = format!("req_{}", turn + 1);
+        append_user_message(
+            &clock,
+            &redactor,
+            &mut run_state,
+            agent_id,
+            &request_id,
+            &large_text('Q', 100),
+        );
+        append_provider_started(&clock, &redactor, &mut run_state, agent_id, &request_id);
+        append_stream_delta(
+            &clock,
+            &redactor,
+            &mut run_state,
+            agent_id,
+            &request_id,
+            &large_text('A', 100),
+        );
+        append_assistant_finished(&clock, &redactor, &mut run_state, agent_id, &request_id);
+    }
+    let snapshot = RequestBudgetSnapshot {
+        status: BudgetStatus::Estimated,
+        requested_output_tokens: Some(100),
+        reserved_output_tokens: Some(100),
+        maximum_input_tokens: Some(1_000),
+        safety_margin_tokens: 0,
+        compaction_threshold_tokens: Some(1_000),
+        components: RequestBudgetComponents {
+            system_tokens: 300,
+            tools_tokens: 300,
+            history_tokens: 100,
+            attachments_tokens: 0,
+            framing_tokens: 200,
+            pending_prompt_tokens: 100,
+        },
+        occupied_input_tokens: 1_000,
+        remaining_input_tokens: Some(0),
+        requires_compaction: Some(true),
+        output_cap_disposition: ProviderOutputCapDisposition::Emitted(100),
+    };
+    let provider = Arc::new(SummaryMockProvider {
+        summary: "## Goal\nBudget summary".to_string(),
+    });
+
+    // act: automatic compaction consumes the prepared snapshot.
+    let applied = compact_session(
+        &clock,
+        &redactor,
+        &mut run_state,
+        provider,
+        agent_id,
+        "proactive",
+        &settings(true, 0, 500),
+        Some(snapshot),
+    )
+    .await
+    .unwrap_or_abort()
+    .unwrap_or_abort();
+
+    // assert: equality compacts and fixed request components leave two recent turns.
+    assert_eq!(applied.first_kept_event_seq, 5);
 }
 
 /// Split-turn compaction: cut point lands on an `AssistantMessageFinished`,

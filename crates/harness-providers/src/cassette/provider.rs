@@ -7,7 +7,10 @@ use tokio_stream::{self as stream, StreamExt};
 use crate::cassette::{
     CassetteError, CassetteInteraction, CassetteMode, ProviderCassette, CASSETTE_VERSION,
 };
-use crate::{CompletionRequest, Provider, ProviderEventStream, ProviderStreamEvent};
+use crate::{
+    CompletionRequest, Provider, ProviderBudgetSemantics, ProviderEventStream,
+    ProviderRequestCostError, ProviderStreamEvent,
+};
 
 #[derive(Debug)]
 struct CassetteState {
@@ -105,6 +108,15 @@ impl<P> Provider for RecordedProvider<P>
 where
     P: Provider + Send + Sync,
 {
+    fn request_budget_semantics(
+        &self,
+        request: &CompletionRequest,
+        pending_prompt_index: usize,
+    ) -> Result<ProviderBudgetSemantics, ProviderRequestCostError> {
+        self.inner
+            .request_budget_semantics(request, pending_prompt_index)
+    }
+
     async fn stream_completion(&self, req: CompletionRequest) -> ProviderEventStream {
         let record = self.state.lock().unwrap_or_else(|e| e.into_inner()).record;
         if !record {

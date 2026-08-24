@@ -119,12 +119,19 @@ async fn codex_auth_profile_rewrites_endpoint_and_adds_context_headers() {
     );
     request.context.session_id = Some("session-abc".to_string());
     request.context.request_id = Some("request-def".to_string());
+    let budget = provider
+        .request_budget_semantics(&request, 1)
+        .expect("Codex request budget semantics");
     let events = collect_events(&provider, request).await;
 
     assert!(matches!(
         events.last(),
         Some(ProviderStreamEvent::DoneWithMetadata { .. })
     ));
+    assert_eq!(
+        budget.output_cap_disposition,
+        ProviderOutputCapDisposition::ProviderControlled
+    );
     let requests = transport.requests();
     assert_eq!(requests.len(), 1);
     let request = &requests[0];

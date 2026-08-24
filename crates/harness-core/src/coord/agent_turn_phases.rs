@@ -12,13 +12,32 @@ pub(in crate::coord) struct AgentTurnPhaseLoopRequest<'a> {
     pub(in crate::coord) job_tx: mpsc::Sender<Command>,
     pub(in crate::coord) cancellation_token: CancellationToken,
     pub(in crate::coord) provider_retry: ProviderRetryRuntimeConfig,
+    pub(in crate::coord) compaction: CompactionSettings,
 }
 
-struct AgentProviderTurnState {
+pub(in crate::coord) struct AgentProviderTurnState {
     model: AgentModelRef,
     tool_defs: Vec<ToolDef>,
     messages: Vec<CompletionMessage>,
+    request_budget: ProviderRequestBudgetContext,
+    pub(in crate::coord) budget_snapshot: RequestBudgetSnapshot,
     total_tool_calls: usize,
+}
+
+pub(in crate::coord) struct ProviderTurnPreparationRequest<'a> {
+    pub(in crate::coord) provider: &'a dyn Provider,
+    pub(in crate::coord) task: &'a QueuedAgentTurn,
+    pub(in crate::coord) prior_context: &'a ProviderContext,
+    pub(in crate::coord) tool_registry: &'a ToolRegistry,
+    pub(in crate::coord) compaction: &'a CompactionSettings,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub(in crate::coord) enum ProviderTurnPreparationError {
+    #[error("provider tool preparation failed: {0}")]
+    ToolDefinitions(String),
+    #[error(transparent)]
+    RequestPreflight(#[from] ProviderRequestPreflightError),
 }
 
 enum AgentToolPhaseDecision {
@@ -35,6 +54,7 @@ struct ProviderStreamPhaseRequest<'a> {
     model: AgentModelRef,
     messages: &'a [CompletionMessage],
     tool_defs: &'a [ToolDef],
+    request_budget: ProviderRequestBudgetContext,
     retry_metadata: ProviderRequestRetryMetadata,
     job_tx: mpsc::Sender<Command>,
     task_id: &'a str,
@@ -53,17 +73,27 @@ pub(in crate::coord) async fn run_agent_turn_phase_loop(
         job_tx,
         cancellation_token,
         provider_retry,
+        compaction,
     } = request;
 
-    let mut turn_state = match prepare_provider_transform_phase(
-        &task.profile,
-        &task.request,
+    let mut turn_state = match prepare_provider_transform_phase(ProviderTurnPreparationRequest {
+        provider: provider.as_ref(),
+        task,
         prior_context,
-        tool_registry.as_ref(),
-    ) {
+        tool_registry: tool_registry.as_ref(),
+        compaction: &compaction,
+    }) {
         Ok(turn_state) => turn_state,
-        Err(reason) => return AgentTurnOutcome::failed(reason),
+        Err(failure) => {
+            return AgentTurnOutcome::Failed {
+                reason: failure.to_string(),
+                memory: None,
+            }
+        }
     };
+    if let Err(error) = reject_compaction_pressure(turn_state.budget_snapshot) {
+        return AgentTurnOutcome::failed(error.to_string());
+    }
     let current_turn_start_index = turn_state.messages.len().saturating_sub(1);
 
     loop {
@@ -249,21 +279,56 @@ pub(in crate::coord) async fn execute_session_title_operation(
     Ok(clean_generated_title(&text))
 }
 
-fn prepare_provider_transform_phase(
-    profile: &AgentProfile,
-    request: &AgentRequest,
-    prior_context: &ProviderContext,
-    tool_registry: &ToolRegistry,
-) -> Result<AgentProviderTurnState, String> {
+pub(in crate::coord) fn prepare_provider_transform_phase(
+    preparation: ProviderTurnPreparationRequest<'_>,
+) -> Result<AgentProviderTurnState, ProviderTurnPreparationError> {
+    let ProviderTurnPreparationRequest {
+        provider,
+        task,
+        prior_context,
+        tool_registry,
+        compaction,
+    } = preparation;
+    let profile = &task.profile;
+    let request = &task.request;
     let model = AgentModelRef::parse(&request.model_ref);
-    let tool_defs = build_provider_tool_defs_for_model(profile, tool_registry, &request.model_ref)?;
+    let tool_defs = build_provider_tool_defs_for_model(profile, tool_registry, &request.model_ref)
+        .map_err(ProviderTurnPreparationError::ToolDefinitions)?;
     let provider_prompt = request.provider_prompt();
     let messages = build_provider_context_messages(profile, prior_context, &provider_prompt);
+    let pending_prompt_index = messages.len().saturating_sub(1);
+    let request_budget = ProviderRequestBudgetContext {
+        model_limits: request
+            .model_target
+            .as_ref()
+            .map(|target| target.limits.clone())
+            .unwrap_or_default(),
+        requested_output_tokens: None,
+        safety_margin_tokens: compaction.reserve_tokens,
+        estimated_token_triggers: compaction.estimated_token_triggers,
+        fallback_input_tokens: compaction.fallback_input_tokens,
+        pending_prompt_index,
+    };
+    let provider_boundary = transform_context_for_provider(ProviderBoundaryInput {
+        profile,
+        model: model.clone(),
+        model_settings: request.model_settings.clone(),
+        context: ProviderBoundaryContext::ProviderMessages {
+            messages: &messages,
+        },
+        tools: (!tool_defs.is_empty()).then(|| tool_defs.clone()),
+        tool_choice: (!tool_defs.is_empty()).then_some(ToolChoice::Auto),
+    });
+    let mut completion_request = provider_boundary.request;
+    let budget_snapshot =
+        apply_provider_request_budget(provider, &mut completion_request, &request_budget)?;
 
     Ok(AgentProviderTurnState {
         model,
         tool_defs,
         messages,
+        request_budget,
+        budget_snapshot,
         total_tool_calls: 0,
     })
 }
@@ -323,6 +388,7 @@ async fn run_provider_with_retry_phase(
             model: turn_state.model.clone(),
             messages: &turn_state.messages,
             tool_defs: &turn_state.tool_defs,
+            request_budget: turn_state.request_budget.clone(),
             retry_metadata,
             job_tx: job_tx.clone(),
             task_id: &task.task_id,
@@ -409,6 +475,7 @@ async fn run_provider_stream_phase(
         model,
         messages,
         tool_defs,
+        request_budget: turn_state_request_budget,
         retry_metadata,
         job_tx,
         task_id,
@@ -419,7 +486,7 @@ async fn run_provider_stream_phase(
     let agent_id = agent_id.to_string();
     let model_target = request.model_target.clone();
 
-    stream_assistant_response_once(
+    stream_assistant_response_once_with_budget(
         StreamAssistantResponseOnceRequest {
             provider,
             profile,
@@ -433,6 +500,7 @@ async fn run_provider_stream_phase(
             context: ProviderBoundaryContext::ProviderMessages { messages },
             tool_defs,
         },
+        Some(turn_state_request_budget),
         |event| {
             let job_tx = job_tx.clone();
             let task_id = task_id.clone();

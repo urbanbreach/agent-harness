@@ -90,6 +90,119 @@ async fn resume_existing_run_persists_bindings_for_future_reresume() {
     assert_eq!(second_request_id, "req_000004");
     second.stop_run().await.unwrap_or_abort();
 }
+
+#[tokio::test]
+async fn resume_restores_context_budget_without_provider_side_effects() {
+    // arrange: a resumable session whose legacy scalar limits and latest budget live in meta.json.
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
+    let run_id = "run_resume_context_budget";
+    write_resume_fixture(
+        temp_dir.path(),
+        run_id,
+        &[
+            resume_fixture_event(
+                run_id,
+                1,
+                EventV1::RunStarted(RunStartedEvent {
+                    run_name: "interactive".into(),
+                    workspace_root: "/workspace/project".to_string(),
+                }),
+            ),
+            resume_fixture_event(
+                run_id,
+                2,
+                EventV1::AgentSpawned(AgentSpawnedEvent {
+                    agent_id: "agent_000001".to_string(),
+                    profile: "default".to_string(),
+                    parent_agent_id: None,
+                }),
+            ),
+            resume_fixture_event(
+                run_id,
+                3,
+                EventV1::RunFinished(RunFinishedEvent {
+                    summary: "segment complete".to_string(),
+                }),
+            ),
+        ],
+    );
+    let snapshot = json!({
+        "status": "estimated",
+        "requested_output_tokens": 4096,
+        "reserved_output_tokens": 4096,
+        "maximum_input_tokens": 96000,
+        "safety_margin_tokens": 16384,
+        "compaction_threshold_tokens": 79616,
+        "components": {
+            "system_tokens": 10,
+            "tools_tokens": 20,
+            "history_tokens": 30,
+            "attachments_tokens": 0,
+            "framing_tokens": 5,
+            "pending_prompt_tokens": 15
+        },
+        "occupied_input_tokens": 80,
+        "remaining_input_tokens": 79536,
+        "requires_compaction": false,
+        "output_cap_disposition": { "emitted": 4096 }
+    });
+    let run_dir = temp_dir.path().join(run_id);
+    fs::write(
+        run_dir.join("meta.json"),
+        serde_json::to_string_pretty(&json!({
+            "run_id": run_id,
+            "run_name": "interactive",
+            "workspace_root": "/workspace/project",
+            "config_digest": "digest",
+            "harness_version": "test",
+            "recorded_runtime_context": {
+                "profile": "default",
+                "provider": "mock",
+                "model": "model-1",
+                "variant": null,
+                "display_label": "Mock Model 1",
+                "token_window_label": null,
+                "context_window_tokens": 100000,
+                "max_input_tokens": 96000,
+                "max_output_tokens": 4096,
+                "last_request_budget": snapshot
+            },
+            "mode_source": "interactive_mock"
+        }))
+        .unwrap_or_abort(),
+    )
+    .unwrap_or_abort();
+    let provider = BudgetObservingProvider::new(Vec::new());
+    let coordinator =
+        test_resume_coordinator_with_provider(temp_dir.path(), Arc::new(provider.clone()));
+
+    // act: resume hydrates RunState and a later user action rewrites metadata.
+    coordinator
+        .resume_run(run_id, "interactive")
+        .await
+        .unwrap_or_abort();
+    coordinator
+        .update_session_title("resumed with budget")
+        .await
+        .unwrap_or_abort();
+    coordinator.stop_run().await.unwrap_or_abort();
+
+    // assert: the exact snapshot and canonicalized limits survive without provider work.
+    let metadata: harness_core::proj::RunMetadata = serde_json::from_str(
+        &fs::read_to_string(run_dir.join("meta.json")).unwrap_or_abort(),
+    )
+    .unwrap_or_abort();
+    let context = metadata.recorded_runtime_context.unwrap_or_abort();
+    assert_eq!(
+        serde_json::to_value(context.last_request_budget).unwrap_or_abort(),
+        snapshot
+    );
+    assert_eq!(context.model_limits.context_window_tokens(), Some(100_000));
+    assert_eq!(context.model_limits.max_input_tokens(), Some(96_000));
+    assert_eq!(context.model_limits.max_output_tokens(), Some(4_096));
+    assert!(provider.requests().is_empty());
+}
+
 #[tokio::test]
 async fn resume_existing_run_remains_resumable_after_open_and_quit_without_prompt() {
     // arrange

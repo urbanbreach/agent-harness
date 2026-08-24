@@ -23,7 +23,11 @@ pub use provider_context::{
     ProviderContextCheckpoint, ProviderContextCheckpointMetadata, ProviderConversationTurn,
     ProviderConversationTurnStatus, ProviderFileOperationFact,
 };
-pub(crate) use streaming::MAX_TOOL_CALLS_TOTAL;
+pub(crate) use streaming::{
+    apply_provider_request_budget, reject_compaction_pressure,
+    stream_assistant_response_once_with_budget, ProviderRequestBudgetContext,
+    ProviderRequestPreflightError, MAX_TOOL_CALLS_TOTAL,
+};
 pub use streaming::{
     default_model_settings_for_profile, default_provider, run_multi_turn_streaming,
     run_single_turn_streaming, stream_assistant_response_once, AgentModelRef, AgentRuntimeEvent,

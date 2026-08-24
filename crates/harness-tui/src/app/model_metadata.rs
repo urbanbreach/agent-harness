@@ -4,6 +4,7 @@ use harness_core::config::{
     registered_profile_model_metadata, ResolvedModelCatalogEntry, ResolvedModelLimits,
     ResolvedProfileModelMetadata,
 };
+use harness_core::context_budget::RequestBudgetSnapshot;
 use serde_json::Value;
 
 use crate::text::has_trimmed_content;
@@ -40,6 +41,7 @@ pub struct LaunchMetadata {
     display_label: Option<String>,
     token_window_label: Option<String>,
     model_limits: ResolvedModelLimits,
+    last_request_budget: Option<RequestBudgetSnapshot>,
     description: Option<String>,
     reasoning_effort: Option<String>,
     text_verbosity: Option<String>,
@@ -83,6 +85,7 @@ impl LaunchMetadata {
             display_label: None,
             token_window_label: None,
             model_limits: ResolvedModelLimits::default(),
+            last_request_budget: None,
             description: None,
             reasoning_effort: None,
             text_verbosity: None,
@@ -119,6 +122,7 @@ impl LaunchMetadata {
             display_label: option.display_label.clone(),
             token_window_label: option.token_window_label.clone(),
             model_limits: option.model_limits.clone(),
+            last_request_budget: None,
             description: option.description.clone(),
             reasoning_effort: option.reasoning_effort.clone(),
             text_verbosity: option.text_verbosity.clone(),
@@ -131,6 +135,11 @@ impl LaunchMetadata {
             switchable_profiles: Vec::new(),
             mcp_resources: Vec::new(),
         }
+    }
+
+    pub fn with_last_request_budget(mut self, snapshot: RequestBudgetSnapshot) -> Self {
+        self.last_request_budget = Some(snapshot);
+        self
     }
 
     pub fn with_mode_label(mut self, mode_label: impl Into<String>) -> Self {
@@ -240,25 +249,8 @@ impl LaunchMetadata {
         &self.model_limits
     }
 
-    pub fn context_window_tokens(&self) -> Option<u32> {
-        self.model_limits.context_window_tokens().or_else(|| {
-            self.matching_available_model()
-                .and_then(|option| option.model_limits.context_window_tokens())
-        })
-    }
-
-    pub fn max_input_tokens(&self) -> Option<u32> {
-        self.model_limits.max_input_tokens().or_else(|| {
-            self.matching_available_model()
-                .and_then(|option| option.model_limits.max_input_tokens())
-        })
-    }
-
-    pub fn max_output_tokens(&self) -> Option<u32> {
-        self.model_limits.max_output_tokens().or_else(|| {
-            self.matching_available_model()
-                .and_then(|option| option.model_limits.max_output_tokens())
-        })
+    pub fn last_request_budget(&self) -> Option<RequestBudgetSnapshot> {
+        self.last_request_budget
     }
 
     pub fn description(&self) -> Option<&str> {

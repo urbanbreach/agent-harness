@@ -24,6 +24,7 @@ use crate::config::{
     HookLifecycleEvent, HookRuntimeConfig, HooksConfig, LifecycleHookConfig, PermissionMode,
     ProfilePermissions, ShellAllowlist,
 };
+use crate::context_budget::{BudgetStatus, RequestBudgetComponents, RequestBudgetSnapshot};
 use crate::conversation::{
     ConversationAssistantMessage, ConversationMessage, ConversationToolCall,
     ConversationToolResultMessage, ConversationUserMessage,
@@ -67,7 +68,26 @@ use super::{
     QueuedAgentTurn, RunInfo, RunState, RunningAgentTurn, TaskExecutionState, TaskState,
     TokioLifecycleHookCommandExecutor, ToolCallFinishedEventArgs, ToolCallRequestedEventArgs,
 };
-use harness_providers::{CompletionMessage, MessageRole};
+use harness_providers::{CompletionMessage, MessageRole, ProviderOutputCapDisposition};
+
+fn pressured_compaction_budget() -> RequestBudgetSnapshot {
+    RequestBudgetSnapshot {
+        status: BudgetStatus::Estimated,
+        requested_output_tokens: Some(1),
+        reserved_output_tokens: Some(1),
+        maximum_input_tokens: Some(u32::MAX),
+        safety_margin_tokens: 0,
+        compaction_threshold_tokens: Some(u32::MAX),
+        components: RequestBudgetComponents {
+            history_tokens: u32::MAX,
+            ..RequestBudgetComponents::default()
+        },
+        occupied_input_tokens: u32::MAX,
+        remaining_input_tokens: Some(0),
+        requires_compaction: Some(true),
+        output_cap_disposition: ProviderOutputCapDisposition::Emitted(1),
+    }
+}
 
 use super::hooks::{
     LifecycleHookCommandExecutor, LifecycleHookCommandInvocation, LifecycleHookCommandOutput,

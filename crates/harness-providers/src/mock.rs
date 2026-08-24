@@ -13,8 +13,9 @@ use thiserror::Error;
 use tokio_stream::{self as stream, StreamExt};
 
 use crate::{
-    CompletionRequest, CompletionUsage, Provider, ProviderErrorCategory, ProviderEventStream,
-    ProviderRequestContext, ProviderStreamEvent, ProviderStreamFinishedMetadata,
+    generic_request_budget_semantics, CompletionRequest, CompletionUsage, Provider,
+    ProviderBudgetSemantics, ProviderErrorCategory, ProviderEventStream, ProviderRequestContext,
+    ProviderRequestCostError, ProviderStreamEvent, ProviderStreamFinishedMetadata,
     ProviderStreamStartMetadata, ToolChoice, ToolDef,
 };
 
@@ -149,6 +150,14 @@ impl MockProvider {
 
 #[async_trait]
 impl Provider for MockProvider {
+    fn request_budget_semantics(
+        &self,
+        request: &CompletionRequest,
+        pending_prompt_index: usize,
+    ) -> Result<ProviderBudgetSemantics, ProviderRequestCostError> {
+        generic_request_budget_semantics(request, pending_prompt_index)
+    }
+
     async fn stream_completion(&self, req: CompletionRequest) -> ProviderEventStream {
         {
             let mut requests = self.calls.requests.lock().await;
@@ -387,6 +396,7 @@ mod tests {
 
     #[test]
     fn duplicate_normalized_fixture_requests_are_rejected() {
+        // arrange
         let directory = tempdir().unwrap_or_abort();
         let fixture = serde_json::json!({
             "request": {
@@ -406,7 +416,11 @@ mod tests {
             serde_json::to_vec(&fixture).unwrap_or_abort(),
         )
         .unwrap_or_abort();
+
+        // act
         let result = MockProvider::from_fixture_dir(directory.path());
+
+        // assert
         assert!(result.is_err());
     }
 
@@ -518,6 +532,7 @@ mod tests {
 
     #[tokio::test]
     async fn legacy_context_agnostic_scripts_accept_runtime_session_identity() {
+        // arrange
         let request = fixture_known_request();
         let expected = vec![ProviderStreamEvent::Done { usage: None }];
         let provider = MockProvider::new(BTreeMap::from([(
@@ -527,27 +542,32 @@ mod tests {
         let mut runtime_request = request;
         runtime_request.context.session_id = Some("agent_000001".to_string());
 
+        // act
         let events = provider
             .stream_completion(runtime_request)
             .await
             .collect::<Vec<_>>()
             .await;
 
+        // assert
         assert_eq!(events, expected);
     }
 
     #[tokio::test]
     async fn fixture_directory_rejects_cross_session_identity() {
+        // arrange
         let provider = load_fixture_provider();
         let mut request = fixture_known_request();
         request.context.session_id = Some("different-child-session".to_string());
 
+        // act
         let events = provider
             .stream_completion(request)
             .await
             .collect::<Vec<_>>()
             .await;
 
+        // assert
         assert!(
             matches!(
                 events.as_slice(),

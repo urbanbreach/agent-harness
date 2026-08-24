@@ -13,12 +13,15 @@ use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
 
 use crate::agent::{
-    build_provider_context_messages, build_provider_tool_defs_for_model,
-    default_model_settings_for_profile, default_provider, stream_assistant_response_once,
-    tool_result_to_message_content, AgentModelRef, AgentModelSettings, AgentProfile, AgentRequest,
+    apply_provider_request_budget, build_provider_context_messages,
+    build_provider_tool_defs_for_model, default_model_settings_for_profile, default_provider,
+    reject_compaction_pressure, stream_assistant_response_once,
+    stream_assistant_response_once_with_budget, tool_result_to_message_content,
+    transform_context_for_provider, AgentModelRef, AgentModelSettings, AgentProfile, AgentRequest,
     AgentRuntimeEvent, AgentTurnFailure, AgentTurnOutcome, AssistantResponse, AssistantToolIntent,
-    ProviderBoundaryContext, ProviderContext, ProviderConversationTurn,
-    ProviderConversationTurnStatus, StreamAssistantResponseOnceRequest, MAX_TOOL_CALLS_TOTAL,
+    ProviderBoundaryContext, ProviderBoundaryInput, ProviderContext, ProviderConversationTurn,
+    ProviderConversationTurnStatus, ProviderRequestBudgetContext, ProviderRequestPreflightError,
+    StreamAssistantResponseOnceRequest, MAX_TOOL_CALLS_TOTAL,
 };
 use crate::clock::Clock;
 use crate::config::{
@@ -26,6 +29,7 @@ use crate::config::{
     HookRuntimeConfig, LifecycleHookConfig, ProviderRetryRuntimeConfig, ResolvedModelTarget,
     ShellAllowlist, ToolFailureMode,
 };
+use crate::context_budget::RequestBudgetSnapshot;
 use crate::conversation::{
     ConversationAssistantMessage, ConversationMessage, ConversationToolCall,
     ConversationToolResultMessage, ConversationUserMessage,
@@ -49,8 +53,9 @@ use crate::perm::{
     PermissionGrantScope, PermissionGrantSet, PermissionKind, PermissionPolicy, PolicyDecision,
 };
 use crate::proj::{
-    inspect_resume_plan, project_background_request, resolve_background_request_ref,
-    BackgroundRequestProjection, RecordedRuntimeContext, RunMetadata, SessionModeSource,
+    inspect_resume_plan, load_run_metadata, project_background_request,
+    resolve_background_request_ref, BackgroundRequestProjection, RecordedRuntimeContext,
+    RunMetadata, SessionModeSource,
 };
 use crate::provider_args::provider_tool_arguments_json;
 use crate::redact::Redactor;
@@ -69,7 +74,7 @@ use crate::text::{non_empty_trimmed, truncate_with_ellipsis};
 use crate::tool::{ToolContext, ToolRegistry, ToolResult, ToolRunState};
 use harness_providers::{
     AssistantToolCall, CompletionMessage, CompletionRequest, MessageRole, Provider,
-    ProviderErrorCategory, ProviderStreamEvent, ToolDef,
+    ProviderErrorCategory, ProviderStreamEvent, ToolChoice, ToolDef,
 };
 
 mod agent_turn_completion;
@@ -159,8 +164,8 @@ pub use self::hooks::{
 };
 
 use self::compaction_support::{
-    approximate_provider_context_tokens, approximate_text_tokens,
-    is_provider_context_overflow_reason, truncated_failure_reason, ProviderCompactionTrigger,
+    approximate_provider_context_tokens, is_provider_context_overflow_reason,
+    truncated_failure_reason, ProviderCompactionTrigger,
 };
 use self::provider_context::restore_provider_context_from_history;
 use self::question::QuestionPromptSpec;
@@ -327,6 +332,21 @@ pub enum JobOutcome {
     Succeeded { result: ToolResult },
     Failed { error: String },
     Cancelled { reason: String },
+}
+
+#[doc(hidden)]
+#[derive(Debug, Clone, Default)]
+pub struct CompactionRequestEvidence {
+    pub usage: Option<harness_providers::CompletionUsage>,
+    pub context_budget: Option<RequestBudgetSnapshot>,
+}
+
+pub(in crate::coord) struct CompactAgentContextRequest<'a> {
+    pub(in crate::coord) task_id: Option<&'a str>,
+    pub(in crate::coord) agent_id: &'a str,
+    pub(in crate::coord) through_request_id: Option<String>,
+    pub(in crate::coord) trigger_reason: &'a str,
+    pub(in crate::coord) evidence: CompactionRequestEvidence,
 }
 
 #[derive(Debug)]
@@ -510,7 +530,7 @@ pub enum Command {
         agent_id: String,
         request_id: String,
         trigger_reason: String,
-        usage: Option<harness_providers::CompletionUsage>,
+        evidence: CompactionRequestEvidence,
         respond_to: oneshot::Sender<Result<ProviderContext, CoordinatorError>>,
     },
     ManualCompactAgentContext {

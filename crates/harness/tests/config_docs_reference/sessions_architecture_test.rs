@@ -92,42 +92,42 @@ fn sessions_docs_cover_resume_acceptance_realistic_interrupted_session() {
 fn architecture_docs_cover_compaction_contracts_and_preservation_context() {
     // arrange
     let architecture = read_doc("docs/architecture/architecture.md");
-    let provider_context = [
-        read_doc("crates/harness-core/src/coord/provider_context.rs"),
-        read_doc("crates/harness-core/src/coord/provider_context/operational_memory.rs"),
-        read_doc("crates/harness-core/src/coord/provider_context/planning.rs"),
+    let active_compaction = [
+        read_doc("crates/harness-core/src/coord/session_compaction.rs"),
+        read_doc("crates/harness-core/src/coord/session_compaction/budget.rs"),
+        read_doc("crates/harness-core/src/coord/compaction/file_ops.rs"),
+        read_doc("crates/harness-core/src/coord/tests/operational_memory_context_tests.rs"),
     ]
     .join("\n");
-    let config = read_doc("crates/harness-core/src/config.rs");
-    let coord_tests = read_doc("crates/harness-core/src/coord/tests.rs");
-
-    for source_anchor in [
-        "fallback_input_tokens",
-        "provider_context_keep_recent_tokens",
-        "collect_compacted_file_operation_facts",
-        "add_tool_operation_fact",
-        "compaction_preserves_file_tool_skill_todo_and_plan_context",
     // act
+    for source_anchor in [
+        "prepared_budget",
+        "compaction_threshold_tokens",
+        "history_allowance",
+        "extract_file_ops_from_messages",
+        "operational_memory_records_read_and_modified_files_from_events",
     ] {
         // assert
         assert!(
-            provider_context.contains(source_anchor)
-                || config.contains(source_anchor)
-                || coord_tests.contains(source_anchor),
+            active_compaction.contains(source_anchor),
             "compaction implementation missing source anchor `{source_anchor}`"
         );
     }
 
+    // act
     for doc_anchor in [
         "Threshold policy",
-        "fallback_input_tokens",
+        "RequestBudgetSnapshot",
+        "conservative, non-exact pressure",
         "Retained recent turns",
-        "provider_context_keep_recent_tokens",
-        "File/tool/skill/todo/plan context",
-        "Todo/plan bridging",
-        "Post-compaction restoration hints",
+        "runtime.compaction.keep_recent_tokens",
+        "snapshot's history allowance",
+        "File-operation context",
+        "rather than a second provider-context planner",
+        "Post-compaction restoration",
         "preserved recent turns plus the live user prompt take precedence",
     ] {
+        // assert
         assert!(
             architecture.contains(doc_anchor),
             "architecture docs missing compaction contract anchor `{doc_anchor}`"

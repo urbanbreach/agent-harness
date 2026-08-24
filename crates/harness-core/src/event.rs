@@ -449,6 +449,8 @@ pub struct ProviderRequestStartedMetadata {
     pub provider_cache_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub retry: Option<ProviderRequestRetryMetadata>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_budget: Option<crate::context_budget::RequestBudgetSnapshot>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -513,8 +515,9 @@ pub struct ProviderRequestFinishedMetadata {
 ///
 /// `request_id`, `provider_id`, `model_id`, `prompt_summary`, and `request_digest` are the stable
 /// replay-visible contract. `metadata` carries only optional, redacted, non-semantic provider
-/// correlation hints: stable turn/request correlation, provider-call identity, and provider
-/// session/cache ids. Raw provider payloads, unredacted thinking text, secrets, and
+/// correlation hints: stable turn/request correlation, provider-call identity, provider
+/// session/cache ids, and a redacted context-budget snapshot. Raw provider payloads, unredacted
+/// thinking text, secrets, and
 /// provider-specific control hints must not be persisted in this event. Provider stream chunk
 /// boundaries remain presentation details derived from following delta events.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

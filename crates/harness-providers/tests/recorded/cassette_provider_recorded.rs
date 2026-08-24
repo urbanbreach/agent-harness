@@ -174,6 +174,17 @@ impl CountingProvider {
 
 #[async_trait]
 impl Provider for CountingProvider {
+    fn request_budget_semantics(
+        &self,
+        request: &CompletionRequest,
+        pending_prompt_index: usize,
+    ) -> Result<
+        harness_providers::ProviderBudgetSemantics,
+        harness_providers::ProviderRequestCostError,
+    > {
+        harness_providers::generic_request_budget_semantics(request, pending_prompt_index)
+    }
+
     async fn stream_completion(&self, _req: CompletionRequest) -> ProviderEventStream {
         let call = self.calls.fetch_add(1, Ordering::SeqCst) + 1;
         Box::pin(stream::iter(vec![ProviderStreamEvent::TextDelta(format!(

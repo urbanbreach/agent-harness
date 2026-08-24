@@ -1,4 +1,25 @@
 use super::*;
+use harness_core::context_budget::{BudgetStatus, RequestBudgetComponents, RequestBudgetSnapshot};
+use harness_providers::ProviderOutputCapDisposition;
+
+fn recorded_request_budget() -> RequestBudgetSnapshot {
+    RequestBudgetSnapshot {
+        status: BudgetStatus::Estimated,
+        requested_output_tokens: Some(8_000),
+        reserved_output_tokens: Some(8_000),
+        maximum_input_tokens: Some(64_000),
+        safety_margin_tokens: 1_000,
+        compaction_threshold_tokens: Some(63_000),
+        components: RequestBudgetComponents {
+            history_tokens: 12_000,
+            ..RequestBudgetComponents::default()
+        },
+        occupied_input_tokens: 12_000,
+        remaining_input_tokens: Some(51_000),
+        requires_compaction: Some(false),
+        output_cap_disposition: ProviderOutputCapDisposition::Emitted(8_000),
+    }
+}
 
 #[test]
 fn continue_launch_metadata_preserves_cross_profile_switch_options() {
@@ -62,6 +83,7 @@ fn continue_metadata_prefers_recorded_runtime_context_before_event_inference() {
             Some(64_000),
             Some(8_000),
         ),
+        last_request_budget: Some(recorded_request_budget()),
         context_window_tokens: Some(128_000),
         max_input_tokens: Some(64_000),
         max_output_tokens: Some(8_000),
@@ -85,6 +107,10 @@ fn continue_metadata_prefers_recorded_runtime_context_before_event_inference() {
     assert_eq!(metadata.model(), Some("recorded-model"));
     assert_eq!(metadata.variant(), Some("recorded-variant"));
     assert_eq!(metadata.display_label(), Some("Recorded Model"));
+    assert_eq!(
+        metadata.last_request_budget(),
+        Some(recorded_request_budget())
+    );
     assert_eq!(metadata.mode_label(), Some("Continued"));
 }
 
@@ -128,6 +154,7 @@ fn replay_launch_metadata_prefers_recorded_runtime_context_before_event_inferenc
         model_limits: harness_core::config::ResolvedModelLimits::compatibility_mirror(
             None, None, None,
         ),
+        last_request_budget: None,
         context_window_tokens: None,
         max_input_tokens: None,
         max_output_tokens: None,

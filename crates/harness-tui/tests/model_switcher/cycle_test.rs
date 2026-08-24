@@ -297,7 +297,16 @@ fn ctrl_t_cycles_from_last_variant_to_none() {
     assert_eq!(launch_metadata.variant(), None);
     assert_eq!(launch_metadata.reasoning_effort(), None);
     assert_eq!(launch_metadata.mode_label(), Some("Demo"));
-    assert_eq!(launch_metadata.context_window_tokens(), Some(128_000));
-    assert_eq!(launch_metadata.max_input_tokens(), Some(128_000));
-    assert_eq!(launch_metadata.max_output_tokens(), Some(16_384));
+    assert_eq!(
+        launch_metadata.model_limits().context_window_tokens(),
+        Some(128_000)
+    );
+    assert_eq!(
+        launch_metadata.model_limits().max_input_tokens(),
+        Some(128_000)
+    );
+    assert_eq!(
+        launch_metadata.model_limits().max_output_tokens(),
+        Some(16_384)
+    );
 }

@@ -2,6 +2,29 @@ use super::*;
 use crate::UnwrapOrAbort;
 
 #[test]
+fn request_budget_output_caps_match_chat_and_responses_wire_keys() {
+    // arrange
+    let request = CompletionRequest {
+        max_tokens: Some(321),
+        ..basic_request("gpt-5.5")
+    };
+
+    // act
+    let chat =
+        serde_json::to_value(OpenAiChatCompletionsRequest::from(request.clone())).unwrap_or_abort();
+    let responses = serde_json::to_value(OpenAiResponsesRequest::from(request)).unwrap_or_abort();
+
+    // assert
+    assert_eq!(chat.get("max_tokens"), Some(&serde_json::json!(321)));
+    assert!(chat.get("max_output_tokens").is_none());
+    assert_eq!(
+        responses.get("max_output_tokens"),
+        Some(&serde_json::json!(321))
+    );
+    assert!(responses.get("max_tokens").is_none());
+}
+
+#[test]
 fn openai_responses_request_sends_system_prompt_as_instructions() {
     // arrange
     // act
@@ -247,6 +270,13 @@ fn openai_responses_request_omits_empty_assistant_output_text_for_tool_only_turn
         stream: true,
     };
 
+    let budget = crate::request_budget::openai_request_budget_semantics(
+        &request,
+        1,
+        crate::request_budget::OpenAiBudgetMode::Responses,
+        false,
+    )
+    .unwrap_or_abort();
     let body = serde_json::to_value(OpenAiResponsesRequest::from(request)).unwrap_or_abort();
     let input = body
         .get("input")
@@ -269,6 +299,7 @@ fn openai_responses_request_omits_empty_assistant_output_text_for_tool_only_turn
         })
         .unwrap_or_abort();
 
+    assert_eq!(budget.request_cost.framing_tokens, 19);
     assert_eq!(
         function_call_index, 2,
         "empty assistant output_text should be omitted"

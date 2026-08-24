@@ -28,7 +28,6 @@ pub(in crate::coord) struct ProviderCompactionTrigger {
     pub(in crate::coord) through_request_id: Option<String>,
     pub(in crate::coord) trigger_reason: String,
     pub(in crate::coord) tokens_before: Option<u32>,
-    pub(in crate::coord) prompt_tokens_estimate: Option<u32>,
     pub(in crate::coord) estimate_source: Option<String>,
 }
 
