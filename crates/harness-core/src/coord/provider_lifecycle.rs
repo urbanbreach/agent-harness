@@ -31,13 +31,22 @@ impl Coordinator {
         let profile = running.profile.clone();
         let cancellation_token = running.cancellation_token.clone();
         let parent_agent_id = run_state.subagent_parent_by_id.get(&agent_id).cloned();
+        let context_budget = metadata
+            .as_ref()
+            .and_then(|metadata| metadata.context_budget);
         if parent_agent_id.is_none() {
             if let Some(target) = model_target.as_ref() {
-                run_state.recorded_runtime_context =
-                    Some(RecordedRuntimeContext::from_model_target(
-                        profile.as_deref().unwrap_or("default"),
-                        target,
-                    ));
+                let mut context = RecordedRuntimeContext::from_model_target(
+                    profile.as_deref().unwrap_or("default"),
+                    target,
+                );
+                context.last_request_budget = context_budget;
+                run_state.recorded_runtime_context = Some(context);
+                write_run_metadata(run_state, &self.config, self.clock.as_ref())?;
+            } else if let (Some(context), Some(snapshot)) =
+                (run_state.recorded_runtime_context.as_mut(), context_budget)
+            {
+                context.last_request_budget = Some(snapshot);
                 write_run_metadata(run_state, &self.config, self.clock.as_ref())?;
             }
         }

@@ -383,7 +383,8 @@ pub(super) fn render_control_dock_disclosure(
     let active_live_composer =
         dock.variant == crate::view_model::ControlDockVariant::Live && !dock.composer_disabled;
     let clear_prompt_confirmation_pending = app.clear_prompt_confirmation_pending();
-    let context_summary_visible = app.current_context_window_tokens().is_some()
+    let context_summary_visible = app.current_request_budget_snapshot().is_some()
+        || app.uses_unknown_budget_fallback()
         || app.active_context_usage().is_some()
         || app.compaction_usage_metrics().completed_count > 0;
 

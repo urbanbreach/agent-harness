@@ -1084,7 +1084,6 @@ delegate_test!(composer_metadata_source_label_uses_provider_display_label_only =
 delegate_test!(live_switch_model_labels_next_turn_only => model_context_tests::live_switch_model_labels_next_turn_only);
 delegate_test!(control_tab_does_not_cycle_named_profiles => model_context_tests::control_tab_does_not_cycle_named_profiles);
 delegate_test!(submitted_turn_omits_named_profile_badge => model_context_tests::submitted_turn_omits_named_profile_badge);
-delegate_test!(current_context_window_tokens_uses_runtime_context_after_model_switch => model_context_tests::current_context_window_tokens_uses_runtime_context_after_model_switch);
 
 #[cfg(test)]
 #[path = "tests/interaction_tests.rs"]

@@ -1,3 +1,7 @@
+#[path = "model_switcher/budget_artifact_test.rs"]
+mod budget_artifact_test;
+#[path = "model_switcher/context_budget_test.rs"]
+mod context_budget_test;
 #[path = "model_switcher/context_test.rs"]
 mod context_test;
 #[path = "model_switcher/cycle_test.rs"]

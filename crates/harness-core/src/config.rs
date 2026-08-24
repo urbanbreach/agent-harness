@@ -512,8 +512,11 @@ pub struct CompactionSettings {
         alias = "structuredSummaryContract"
     )]
     pub structured_summary_contract: bool,
+    /// Enables the explicitly conservative fallback only when all model limits are unknown.
+    /// This mode can trigger compaction but never claims exact model capacity.
     #[serde(default = "default_compaction_estimated_token_triggers")]
     pub estimated_token_triggers: bool,
+    /// Conservative non-exact input cap used only when all model limits are unknown.
     #[serde(
         default = "default_compaction_fallback_input_tokens",
         alias = "fallbackInputTokens"

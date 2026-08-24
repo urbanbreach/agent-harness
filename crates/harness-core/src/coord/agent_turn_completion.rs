@@ -7,12 +7,16 @@ use super::*;
 impl Coordinator {
     pub(in crate::coord) async fn compact_agent_context_internal(
         &mut self,
-        task_id: Option<&str>,
-        agent_id: &str,
-        through_request_id: Option<String>,
-        trigger_reason: &str,
-        usage: Option<harness_providers::CompletionUsage>,
+        request: CompactAgentContextRequest<'_>,
     ) -> Result<CompactAgentContextResult, CoordinatorError> {
+        let CompactAgentContextRequest {
+            task_id,
+            agent_id,
+            through_request_id,
+            trigger_reason,
+            evidence,
+        } = request;
+        let prepared_budget = evidence.context_budget;
         let (existing_context, trigger, hook_context) = {
             let Some(run_state) = self.run_state.as_ref() else {
                 return Err(CoordinatorError::RunNotStarted);
@@ -38,8 +42,6 @@ impl Coordinator {
                 });
 
             let trigger = if let Some(running) = running_turn {
-                let prompt_tokens_estimate = (trigger_reason == "pre_prompt")
-                    .then(|| approximate_text_tokens(&running.request_prompt));
                 ProviderCompactionTrigger {
                     agent_id: agent_id.to_string(),
                     profile_name: running.profile_name.clone(),
@@ -48,11 +50,11 @@ impl Coordinator {
                     model_id: running.latest_model_id.clone(),
                     through_request_id,
                     trigger_reason: trigger_reason.to_string(),
-                    tokens_before: usage
+                    tokens_before: evidence
+                        .usage
                         .as_ref()
                         .map(|usage| usage.prompt_tokens)
                         .or(manual_tokens_before),
-                    prompt_tokens_estimate,
                     estimate_source: None,
                 }
             } else {
@@ -69,11 +71,11 @@ impl Coordinator {
                     model_id: None,
                     through_request_id,
                     trigger_reason: trigger_reason.to_string(),
-                    tokens_before: usage
+                    tokens_before: evidence
+                        .usage
                         .as_ref()
                         .map(|usage| usage.prompt_tokens)
                         .or(manual_tokens_before),
-                    prompt_tokens_estimate: None,
                     estimate_source: None,
                 }
             };
@@ -129,7 +131,6 @@ impl Coordinator {
             return Err(CoordinatorError::RunNotStarted);
         };
 
-        let prompt_estimate = trigger.prompt_tokens_estimate;
         let applied = match compact_session(
             self.clock.as_ref(),
             self.redactor.as_ref(),
@@ -138,7 +139,7 @@ impl Coordinator {
             agent_id,
             trigger_reason,
             &self.config.compaction,
-            prompt_estimate,
+            prepared_budget,
         )
         .await
         {
@@ -218,13 +219,13 @@ impl Coordinator {
         }
 
         match self
-            .compact_agent_context_internal(
-                Some(&request.task_id),
-                &request.agent_id,
-                Some(request.request_id.clone()),
-                &request.trigger_reason,
-                None,
-            )
+            .compact_agent_context_internal(CompactAgentContextRequest {
+                task_id: Some(&request.task_id),
+                agent_id: &request.agent_id,
+                through_request_id: Some(request.request_id.clone()),
+                trigger_reason: &request.trigger_reason,
+                evidence: CompactionRequestEvidence::default(),
+            })
             .await
         {
             Ok(CompactAgentContextResult::Compacted { .. })
@@ -278,12 +279,15 @@ impl Coordinator {
         }
 
         let model = crate::agent::AgentModelRef::parse(&model_ref);
-        let context_window = self
+        let Some(context_window) = self
             .run_state
             .as_ref()
-            .and_then(|rs| rs.recorded_runtime_context.as_ref())
-            .and_then(|ctx| ctx.context_window_tokens)
-            .unwrap_or(128_000);
+            .and_then(|state| state.recorded_runtime_context.as_ref())
+            .and_then(|context| context.model_limits.context_window_tokens())
+        else {
+            // Unknown limits cannot support an exact branch-summary token budget.
+            return Ok(BranchSummaryOutcome::NoOp);
+        };
 
         let options = GenerateBranchSummaryOptions {
             provider_id: model.provider_id.clone(),

@@ -70,9 +70,12 @@ fn model_switcher_preserves_resolved_limits_and_provenance() {
     let metadata = LaunchMetadata::from_model_option(&option);
 
     // assert
-    assert_eq!(metadata.context_window_tokens(), Some(128_000));
-    assert_eq!(metadata.max_input_tokens(), Some(128_000));
-    assert_eq!(metadata.max_output_tokens(), Some(4_096));
+    assert_eq!(
+        metadata.model_limits().context_window_tokens(),
+        Some(128_000)
+    );
+    assert_eq!(metadata.model_limits().max_input_tokens(), Some(128_000));
+    assert_eq!(metadata.model_limits().max_output_tokens(), Some(4_096));
     assert_eq!(
         metadata.model_limits().max_input_semantics,
         MaxInputSemantics::ProviderVisibleInputTokens

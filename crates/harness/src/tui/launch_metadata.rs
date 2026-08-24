@@ -348,7 +348,7 @@ pub(super) fn launch_metadata_model_target(
 fn launch_metadata_from_recorded_runtime_context(
     recorded_runtime_context: &RecordedRuntimeContext,
 ) -> LaunchMetadata {
-    LaunchMetadata::from_model_option(&ModelOption {
+    let metadata = LaunchMetadata::from_model_option(&ModelOption {
         profile: recorded_runtime_context.profile.clone(),
         provider: recorded_runtime_context.provider.clone(),
         provider_display_label: recorded_runtime_context.provider_display_label.clone(),
@@ -367,7 +367,12 @@ fn launch_metadata_from_recorded_runtime_context(
         text_verbosity: recorded_runtime_context.text_verbosity.clone(),
         thinking: recorded_runtime_context.thinking.clone(),
         recommended_for: recorded_runtime_context.recommended_for.clone(),
-    })
+    });
+    if let Some(snapshot) = recorded_runtime_context.last_request_budget {
+        metadata.with_last_request_budget(snapshot)
+    } else {
+        metadata
+    }
 }
 
 fn metadata_value_present(value: &str) -> bool {

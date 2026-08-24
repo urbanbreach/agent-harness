@@ -60,27 +60,32 @@ fn coordinator_with_counting_opener(
 
 #[tokio::test]
 async fn event_store_opener_counts_root_start_exactly_once() {
+    // arrange
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let opener = Arc::new(CountingEventStoreOpener::default());
     let coordinator =
         coordinator_with_counting_opener(temp_dir.path(), Arc::clone(&opener));
 
+    // act
     coordinator
         .start_run("root opener", temp_dir.path())
         .await
         .unwrap_or_abort();
 
+    // assert
     assert_eq!(opener.counts(), (1, 0));
     coordinator.stop_run().await.unwrap_or_abort();
 }
 
 #[tokio::test]
 async fn event_store_opener_counts_root_and_child_creation_exactly() {
+    // arrange
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let opener = Arc::new(CountingEventStoreOpener::default());
     let coordinator =
         coordinator_with_counting_opener(temp_dir.path(), Arc::clone(&opener));
 
+    // act
     coordinator
         .start_run("child opener", temp_dir.path())
         .await
@@ -98,12 +103,14 @@ async fn event_store_opener_counts_root_and_child_creation_exactly() {
         .await
         .unwrap_or_abort();
 
+    // assert
     assert_eq!(opener.counts(), (2, 0));
     coordinator.stop_run().await.unwrap_or_abort();
 }
 
 #[tokio::test]
 async fn event_store_opener_counts_root_resume_exactly_once() {
+    // arrange
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_event_store_opener_resume";
     write_resume_fixture(
@@ -152,9 +159,11 @@ async fn event_store_opener_counts_root_resume_exactly_once() {
     let coordinator =
         coordinator_with_counting_opener(temp_dir.path(), Arc::clone(&opener));
 
+    // act
     let resumed = coordinator.resume_run(run_id, "resume opener").await;
-    assert!(resumed.is_ok(), "resume failed: {resumed:?}");
 
+    // assert
+    assert!(resumed.is_ok(), "resume failed: {resumed:?}");
     assert_eq!(opener.counts(), (0, 1));
     coordinator.stop_run().await.unwrap_or_abort();
 }

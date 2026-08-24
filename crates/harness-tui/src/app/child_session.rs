@@ -113,14 +113,7 @@ pub(super) fn subagent_usage_label(app: &AppState) -> Option<String> {
     if total_tokens == 0 {
         return None;
     }
-    let token_label = compact_usage_count(total_tokens);
-    let percent = app.current_context_window_tokens().and_then(|limit| {
-        (limit > 0).then(|| format!("{}%", (total_tokens * 100 / u64::from(limit)).min(999)))
-    });
-    Some(match percent {
-        Some(percent) => format!("{token_label} ({percent})"),
-        None => token_label,
-    })
+    Some(compact_usage_count(total_tokens))
 }
 
 fn compact_usage_count(value: u64) -> String {

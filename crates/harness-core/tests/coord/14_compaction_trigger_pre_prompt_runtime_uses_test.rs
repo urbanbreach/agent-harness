@@ -10,6 +10,7 @@ async fn compaction_trigger_pre_prompt_runtime_uses_checkpointed_prior_context()
         provider_text_events(&"A".repeat(12_000)),
         provider_text_events(&"B".repeat(12_000)),
         provider_text_events("Compaction summary of earlier turns."),
+        provider_text_events("Preserved split-turn context."),
         provider_text_events("third answer"),
     ]);
     let coordinator = test_agent_coordinator_with_provider_and_compaction(
@@ -51,8 +52,8 @@ async fn compaction_trigger_pre_prompt_runtime_uses_checkpointed_prior_context()
     let requests = provider.requests();
     assert_eq!(
         requests.len(),
-        4,
-        "third turn should include compaction summary call (3 turns + 1 summary)"
+        5,
+        "third turn should include main and split-turn compaction summary calls"
     );
     let third_messages = requests
         .last()
@@ -95,6 +96,7 @@ async fn compaction_no_loop_guards_cover_pre_prompt_overflow_and_failed_response
         provider_text_events(&"A".repeat(12_000)),
         provider_text_events(&"B".repeat(12_000)),
         provider_text_events("Compaction summary of earlier turns."),
+        provider_text_events("Preserved split-turn context."),
         provider_text_events("third answer after pre-prompt no-shrink"),
     ]);
     let pre_prompt = test_agent_coordinator_with_provider_and_compaction(
@@ -168,8 +170,8 @@ async fn compaction_no_loop_guards_cover_pre_prompt_overflow_and_failed_response
     );
     assert_eq!(
         pre_prompt_provider.requests().len(),
-        4,
-        "pre-prompt compaction includes summary call (3 turns + 1 summary)"
+        5,
+        "pre-prompt compaction includes main and split-turn summary calls"
     );
 
     let overflow_dir = tempfile::tempdir().unwrap_or_abort();
@@ -410,4 +412,71 @@ async fn manual_compaction_writes_checkpoint_and_manual_events() {
     assert_eq!(compaction.agent_id, "agent_000001");
     assert_eq!(compaction.trigger_reason, "manual");
     assert_eq!(compaction.tokens_before, tokens_before);
+}
+
+#[tokio::test]
+async fn manual_unknown_budget_remains_available_without_automatic_pressure() {
+    // arrange: unknown model limits with conservative estimated triggers disabled.
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
+    let provider = SequentialScriptedProvider::new(vec![
+        provider_text_events("first answer"),
+        provider_text_events("second answer"),
+        provider_text_events("manual summary"),
+    ]);
+    let coordinator = test_agent_coordinator_with_provider_and_compaction(
+        temp_dir.path(),
+        Arc::new(provider.clone()),
+        1,
+        CompactionRuntimeConfig {
+            estimated_token_triggers: false,
+            fallback_input_tokens: 0,
+            ..CompactionRuntimeConfig::default()
+        },
+    );
+    let run = coordinator
+        .start_run(
+            "manual_unknown_budget",
+            PathBuf::from("/workspace/project"),
+        )
+        .await
+        .unwrap_or_abort();
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "alpha", None)
+        .await
+        .unwrap_or_abort();
+    for (prompt, answer) in [
+        ("first question", "first answer"),
+        ("second question", "second answer"),
+    ] {
+        let request_id = coordinator
+            .request_agent_turn(supervisor_actor(), agent_id.clone(), prompt)
+            .await
+            .unwrap_or_abort();
+        wait_for_events(&run.events_path, Duration::from_secs(1), |events| {
+            events.iter().any(|event| {
+                matches!(
+                    &event.payload,
+                    EventV1::TaskCompleted(payload)
+                        if event.correlation_id.as_deref() == Some(request_id.as_str())
+                            && payload.result_summary == answer
+                )
+            })
+        })
+        .await;
+    }
+    assert_eq!(provider.requests().len(), 2);
+    assert!(!load_events(&run.events_path)
+        .iter()
+        .any(|event| matches!(event.payload, EventV1::SessionCompaction(_))));
+
+    // act: the operator explicitly requests compaction.
+    let outcome = coordinator
+        .compact_agent_context(agent_id, None, "manual")
+        .await
+        .unwrap_or_abort();
+    coordinator.stop_run().await.unwrap_or_abort();
+
+    // assert: manual force semantics remain available without invented capacity.
+    assert!(matches!(outcome, ManualCompactionOutcome::Compacted { .. }));
+    assert_eq!(provider.requests().len(), 3);
 }

@@ -27,7 +27,7 @@ pub use context_projection::{
     build_session_context, build_session_context_with_branch_summaries,
     estimate_session_context_tokens,
 };
-pub use cut_point::{find_cut_point, find_manual_cut_point, should_compact, CutPointResult};
+pub use cut_point::{find_cut_point, find_manual_cut_point, CutPointResult};
 pub use file_ops::{
     compute_file_lists, extract_file_ops_from_tool_call, merge_file_operations, FileOperation,
     FileOperations,

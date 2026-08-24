@@ -2,6 +2,82 @@ use super::*;
 use crate::UnwrapOrAbort;
 
 #[test]
+fn request_budget_media_and_framing_match_lowered_chat_and_responses_shapes() {
+    // arrange
+    let request = CompletionRequest {
+        provider_id: None,
+        model_id: "gpt-4o-mini".to_string(),
+        messages: vec![
+            CompletionMessage {
+                role: MessageRole::User,
+                content: "look".to_string(),
+                name: None,
+                tool_call_id: None,
+                assistant_tool_calls: None,
+            },
+            CompletionMessage {
+                role: MessageRole::Tool,
+                content: harness_tool_result_content(json!([
+                    { "type": "text", "text": "abcd" },
+                    { "type": "file", "uri": (["data", ":", "image/png", ";base64,", "AAAA"].concat()), "mime": "image/png" },
+                ])),
+                name: Some("read".to_string()),
+                tool_call_id: Some("call_1".to_string()),
+                assistant_tool_calls: None,
+            },
+        ],
+        temperature: None,
+        max_tokens: Some(128),
+        variant: None,
+        reasoning_effort: None,
+        text_verbosity: None,
+        reasoning_summary: None,
+        thinking: None,
+        tools: None,
+        tool_choice: None,
+        context: Default::default(),
+        stream: true,
+    };
+    let chat_provider = OpenAiCompatibleProvider::new(OpenAiCompatibleProviderConfig {
+        base_url: "https://example.test/v1".to_string(),
+        api_key: "test-key".to_string(),
+        api_mode: OpenAiApiMode::ChatCompletions,
+        timeout_ms: 1,
+        headers: BTreeMap::new(),
+    })
+    .unwrap_or_abort();
+    let responses_provider = OpenAiCompatibleProvider::new(OpenAiCompatibleProviderConfig {
+        base_url: "https://example.test/v1".to_string(),
+        api_key: "test-key".to_string(),
+        api_mode: OpenAiApiMode::Responses,
+        timeout_ms: 1,
+        headers: BTreeMap::new(),
+    })
+    .unwrap_or_abort();
+
+    // act
+    let chat_cost = chat_provider
+        .request_budget_semantics(&request, 0)
+        .unwrap_or_abort()
+        .request_cost;
+    let responses_cost = responses_provider
+        .request_budget_semantics(&request, 0)
+        .unwrap_or_abort()
+        .request_cost;
+    let chat =
+        serde_json::to_value(OpenAiChatCompletionsRequest::from(request.clone())).unwrap_or_abort();
+    let responses = serde_json::to_value(OpenAiResponsesRequest::from(request)).unwrap_or_abort();
+
+    // assert
+    assert_eq!(chat_cost.attachments_tokens, 7);
+    assert_eq!(responses_cost.attachments_tokens, 7);
+    assert_eq!(chat_cost.framing_tokens, 15);
+    assert_eq!(responses_cost.framing_tokens, 11);
+    assert_eq!(chat["messages"].as_array().map(Vec::len), Some(3));
+    assert_eq!(responses["input"].as_array().map(Vec::len), Some(2));
+}
+
+#[test]
 fn openai_chat_request_extracts_tool_result_images_to_user_message() {
     // arrange
     let request = CompletionRequest {

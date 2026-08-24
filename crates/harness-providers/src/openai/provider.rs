@@ -5,10 +5,11 @@ use std::time::Duration;
 use async_trait::async_trait;
 use reqwest::header::HeaderMap;
 
+use crate::request_budget::{openai_request_budget_semantics, OpenAiBudgetMode};
 use crate::{
-    CompletionRequest, Provider, ProviderBearerToken, ProviderCredentialKind,
-    ProviderCredentialSource, ProviderErrorCategory, ProviderEventStream, ProviderRequestContext,
-    ProviderStreamEvent,
+    CompletionRequest, Provider, ProviderBearerToken, ProviderBudgetSemantics,
+    ProviderCredentialKind, ProviderCredentialSource, ProviderErrorCategory, ProviderEventStream,
+    ProviderRequestContext, ProviderRequestCostError, ProviderStreamEvent,
 };
 
 use super::config::{
@@ -297,6 +298,24 @@ impl OpenAiCompatibleProvider {
 
 #[async_trait]
 impl Provider for OpenAiCompatibleProvider {
+    fn request_budget_semantics(
+        &self,
+        request: &CompletionRequest,
+        pending_prompt_index: usize,
+    ) -> Result<ProviderBudgetSemantics, ProviderRequestCostError> {
+        let mode = match self.api_mode {
+            OpenAiApiMode::ChatCompletions => OpenAiBudgetMode::Chat,
+            OpenAiApiMode::Responses => OpenAiBudgetMode::Responses,
+            OpenAiApiMode::Auto => OpenAiBudgetMode::Auto,
+        };
+        openai_request_budget_semantics(
+            request,
+            pending_prompt_index,
+            mode,
+            self.is_codex_profile(),
+        )
+    }
+
     async fn stream_completion(&self, req: CompletionRequest) -> ProviderEventStream {
         super::stream::stream_completion(self, req).await
     }

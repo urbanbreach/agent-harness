@@ -1,5 +1,9 @@
 include!("common/coord_fixtures.rs");
 
+#[path = "common/coord_fixtures/budget_provider.rs"]
+mod budget_provider;
+use budget_provider::BudgetObservingProvider;
+
 mod part_00_engine_fixture_bank_test {
     use super::*;
     include!("coord/00_engine_fixture_bank_test.rs");
@@ -152,4 +156,14 @@ mod part_22_provider_retry_metadata_test {
 mod part_22b_provider_retry_hardening_test {
     use super::*;
     include!("coord/22b_provider_retry_hardening_test.rs");
+}
+
+mod part_24_request_budget_dispatch_test {
+    use super::*;
+    include!("coord/24_request_budget_dispatch_test.rs");
+}
+
+mod part_25_request_budget_preflight_test {
+    use super::*;
+    include!("coord/25_request_budget_preflight_test.rs");
 }

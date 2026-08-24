@@ -485,22 +485,19 @@ Provider-visible conversation state is compacted without rewriting `events.jsonl
 
 V1 compaction contract:
 
-- Threshold policy: proactive and pre-prompt checks use provider/model context-window metadata when
-  present; when metadata is absent, estimated trigger checks use
-  `runtime.compaction.fallback_input_tokens` (default `32768`). Overflow-style provider failures may
-  run one overflow retry when `runtime.compaction.auto_retry_overflow=true`.
-- Retained recent turns: `provider_context_keep_recent_tokens` keeps roughly one quarter of the
-  model input window, clamped between 2,000 and 8,000 tokens. Manual `/compact` preserves the latest
-  completed turn verbatim; overflow/failed-response compaction may use summary-only or split-tail
-  boundaries only when that safely reduces provider context.
-- File/tool/skill/todo/plan context: checkpoint operational memory stores event-derived read-file
-  and modified-file facts, generic tool operation facts, skill loads, todo updates, and plan-handoff
-  references from compacted turns. These facts are redacted and capped before persistence.
-- Todo/plan bridging: todo updates (`todowrite`/`todoread`) and plan-handoff references are
-  summarized as compact operation facts so a resumed agent can continue without guessing which
-  checklist or handoff was active.
-- Post-compaction restoration hints: checkpoint summaries include source facts, relevant
-  files/artifacts, operational memory, tail-boundary metadata, and a reminder that preserved recent turns plus the live user prompt take precedence over the lossy recap.
+- Threshold policy: proactive and pre-prompt checks consume the prepared request's shared
+  `RequestBudgetSnapshot`. Estimated capacity uses its compaction threshold; missing model limits
+  have no automatic threshold unless `runtime.compaction.fallback_input_tokens` explicitly enables
+  conservative, non-exact pressure. Overflow-style provider failures may still run one overflow
+  retry when `runtime.compaction.auto_retry_overflow=true`.
+- Retained recent turns: `runtime.compaction.keep_recent_tokens` is capped by the snapshot's history allowance
+  after system, tools, attachments, provider framing, and the pending prompt are removed
+  from the shared threshold. Manual `/compact` preserves the latest completed turn verbatim.
+- File-operation context: active session compaction extracts deterministic read-file and
+  modified-file facts from the event-derived messages being summarized. Other tool, skill, todo,
+  and plan details remain represented by those messages rather than a second provider-context planner.
+- Post-compaction restoration: checkpoint summaries and preserved recent turns are replay-derived;
+  preserved recent turns plus the live user prompt take precedence over the lossy recap.
 
 - `events.jsonl` remains append-only and stays the source of truth.
 - Compaction appends a single `SessionCompaction` event with the generated summary, token estimate, file lists, and trigger reason. No checkpoint artifacts are written — the summary lives entirely in the event and the in-memory `ProviderContext`.

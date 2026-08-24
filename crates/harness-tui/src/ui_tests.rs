@@ -40,12 +40,26 @@ fn render_live_status_debug(app: &AppState, width: u16) -> String {
 }
 
 fn app_with_context_budget(tokens: u32) -> AppState {
-    let mut option = ModelOption::from_model_ref("worker", "mock:model-1");
-    option.model_limits =
-        harness_core::config::ResolvedModelLimits::compatibility_mirror(Some(128_000), None, None);
+    let option = ModelOption::from_model_ref("worker", "mock:model-1");
+    let snapshot = harness_core::context_budget::RequestBudgetSnapshot {
+        status: harness_core::context_budget::BudgetStatus::Estimated,
+        requested_output_tokens: None,
+        reserved_output_tokens: None,
+        maximum_input_tokens: Some(128_000),
+        safety_margin_tokens: 0,
+        compaction_threshold_tokens: Some(128_000),
+        components: harness_core::context_budget::RequestBudgetComponents::default(),
+        occupied_input_tokens: tokens,
+        remaining_input_tokens: Some(128_000_u32.saturating_sub(tokens)),
+        requires_compaction: Some(tokens >= 128_000),
+        output_cap_disposition:
+            harness_providers::ProviderOutputCapDisposition::UnspecifiedUnknownLimit,
+    };
     let mut app = AppState::new_live(None, false, None);
     app.startup_mode = false;
-    app.set_launch_metadata(LaunchMetadata::from_model_option(&option));
+    app.set_launch_metadata(
+        LaunchMetadata::from_model_option(&option).with_last_request_budget(snapshot),
+    );
     app.active_context_usage = Some(crate::app::ActiveContextUsage::estimate(tokens));
     app
 }
@@ -62,8 +76,8 @@ fn idle_control_dock_renders_context_budget_meter() {
 
     // Then: idle dock chrome shows the used/limit label, percentage, and six-cell meter.
     assert!(
-        debug.contains("ctx 96.0K/128.0K 75% [#####-]"),
-        "idle context budget meter should remain visible\n{debug}"
+        debug.contains("ctx ~96000/128000 75%"),
+        "idle context budget snapshot should remain visible\n{debug}"
     );
 }
 
@@ -81,8 +95,7 @@ fn clear_confirmation_keeps_context_budget_disclosure_stable() {
 
     // assert
     assert!(
-        debug.contains("ctx 96.0K/128.0K 75% [#####-]")
-            && debug.contains("Esc:press again to clear"),
+        debug.contains("ctx ~96000/128000 75%") && debug.contains("Esc:press again to clear"),
         "confirmation must take over only the footer while context remains stable\n{debug}"
     );
 }
@@ -91,6 +104,7 @@ fn clear_confirmation_keeps_context_budget_disclosure_stable() {
 fn live_turn_status_renders_context_budget_meter() {
     // Given: a streaming live turn with known critical context pressure.
     let mut app = app_with_context_budget(116_000);
+    let snapshot = app.current_request_budget_snapshot().unwrap_or_abort();
     app.ingest_event(envelope(
         1,
         "req_context_meter",
@@ -100,7 +114,10 @@ fn live_turn_status_renders_context_budget_meter() {
             model_id: "model-1".to_string(),
             prompt_summary: "continue".to_string(),
             request_digest: "digest-context-meter".to_string(),
-            metadata: None,
+            metadata: Some(harness_core::event::ProviderRequestStartedMetadata {
+                context_budget: Some(snapshot),
+                ..harness_core::event::ProviderRequestStartedMetadata::default()
+            }),
         }),
     ));
     app.active_context_usage = Some(crate::app::ActiveContextUsage::estimate(116_000));
@@ -110,8 +127,8 @@ fn live_turn_status_renders_context_budget_meter() {
 
     // Then: live-turn chrome shows the same meter and critical percentage.
     assert!(
-        debug.contains("ctx 116.0K/128.0K 91% [######]"),
-        "live status context budget meter should remain visible\n{debug}"
+        debug.contains("ctx ~116000/128000 91%"),
+        "live status context budget snapshot should remain visible\n{debug}"
     );
 }
 

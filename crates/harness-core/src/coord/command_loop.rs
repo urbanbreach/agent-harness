@@ -417,17 +417,17 @@ impl Coordinator {
                 agent_id,
                 request_id,
                 trigger_reason,
-                usage,
+                evidence,
                 respond_to,
             } => {
                 let result = self
-                    .compact_agent_context_internal(
-                        Some(&task_id),
-                        &agent_id,
-                        Some(request_id),
-                        &trigger_reason,
-                        usage,
-                    )
+                    .compact_agent_context_internal(CompactAgentContextRequest {
+                        task_id: Some(&task_id),
+                        agent_id: &agent_id,
+                        through_request_id: Some(request_id),
+                        trigger_reason: &trigger_reason,
+                        evidence,
+                    })
                     .await
                     .map(CompactAgentContextResult::into_context);
                 warn_oneshot_send_failure(respond_to.send(result), "compact_agent_context");
@@ -439,13 +439,13 @@ impl Coordinator {
                 respond_to,
             } => {
                 let result = self
-                    .compact_agent_context_internal(
-                        None,
-                        &agent_id,
+                    .compact_agent_context_internal(CompactAgentContextRequest {
+                        task_id: None,
+                        agent_id: &agent_id,
                         through_request_id,
-                        &trigger_reason,
-                        None,
-                    )
+                        trigger_reason: &trigger_reason,
+                        evidence: CompactionRequestEvidence::default(),
+                    })
                     .await
                     .map(CompactAgentContextResult::into_manual_outcome);
                 warn_oneshot_send_failure(respond_to.send(result), "manual_compact_agent_context");

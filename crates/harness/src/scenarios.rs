@@ -183,7 +183,7 @@ pub fn golden_path_provider() -> MockProvider {
         stream: true,
     };
 
-    insert_thinking_variants(
+    insert_model_setting_variants(
         &mut scripted_events,
         &request,
         vec![
@@ -216,7 +216,7 @@ pub fn golden_path_provider() -> MockProvider {
         stream: request.stream,
     };
 
-    insert_thinking_variants(
+    insert_model_setting_variants(
         &mut scripted_events,
         &default_request_with_tools,
         vec![
@@ -264,7 +264,7 @@ pub fn golden_path_provider() -> MockProvider {
         stream: true,
     };
 
-    insert_thinking_variants(
+    insert_model_setting_variants(
         &mut scripted_events,
         &interactive_request,
         vec![
@@ -298,7 +298,7 @@ pub fn golden_path_provider() -> MockProvider {
         stream: interactive_request.stream,
     };
 
-    insert_thinking_variants(
+    insert_model_setting_variants(
         &mut scripted_events,
         &interactive_request_with_tools,
         vec![
@@ -351,7 +351,7 @@ pub fn golden_path_provider() -> MockProvider {
         stream: true,
     };
 
-    insert_thinking_variants(
+    insert_model_setting_variants(
         &mut scripted_events,
         &shell_parity_request,
         vec![
@@ -413,7 +413,7 @@ fn insert_default_text_response(
         request.tool_choice = Some(ToolChoice::Auto);
     }
 
-    insert_thinking_variants(
+    insert_model_setting_variants(
         scripted_events,
         &request,
         vec![
@@ -454,13 +454,20 @@ fn golden_path_thinking() -> Option<Value> {
     }))
 }
 
-fn insert_thinking_variants(
+fn insert_model_setting_variants(
     scripted_events: &mut BTreeMap<String, Vec<ProviderStreamEvent>>,
     request: &CompletionRequest,
     events: Vec<ProviderStreamEvent>,
 ) {
-    for thinking in [None, golden_path_thinking()] {
+    for (variant, reasoning_effort, reasoning_summary, thinking) in [
+        (None, None, None, None),
+        (None, None, None, golden_path_thinking()),
+        (Some("max"), Some("max"), Some("auto"), None),
+    ] {
         let mut request = request.clone();
+        request.variant = variant.map(str::to_string);
+        request.reasoning_effort = reasoning_effort.map(str::to_string);
+        request.reasoning_summary = reasoning_summary.map(str::to_string);
         request.thinking = thinking;
         scripted_events.insert(request_digest(&request), events.clone());
     }

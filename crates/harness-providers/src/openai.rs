@@ -19,6 +19,7 @@ pub use self::config::{
 };
 pub use self::endpoint::{CODEX_API_ENDPOINT, COPILOT_API_BASE};
 pub use self::provider::OpenAiCompatibleProvider;
+pub(crate) use self::request::{prepare_tool_result, PreparedImage};
 pub(crate) use self::stream::{
     non_empty_string, warn_stream_processing_failure, warn_stream_send_failure,
 };

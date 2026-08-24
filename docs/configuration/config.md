@@ -791,20 +791,19 @@ values, config loading rejects the file instead of silently choosing one.
 
 ## Provider context compaction expectations
 
-Provider-context compaction uses the active profile/model limits when available,
-especially:
+Provider-context compaction consumes the same redacted request-budget snapshot
+prepared for provider dispatch. Canonical model limits, the reserved output,
+provider framing, tools, attachments, history, the pending prompt, and the
+configured safety margin are accounted once before the snapshot reaches the
+compaction path. Model variants still override base model limits during model
+resolution; compaction does not reconstruct those limits from scalar metadata.
 
-- `context_window_tokens`
-- `max_input_tokens`
-- `max_output_tokens`
-
-Model variants may also set `context_window_tokens`, `max_input_tokens`, and
-`max_output_tokens`. Variant values override the base model metadata for picker
-labels and compaction estimates, which lets one provider model expose multiple
-operator-facing presets such as an extended-context GPT profile while
-still using the same underlying provider model id.
-
-The coordinator uses those values to decide when proactive compaction should summarize older provider-visible history and how much recent context to preserve verbatim. The preserved tail is governed by `keep_recent_tokens` and always keeps at least the latest complete turn when possible.
+Known limits produce an estimated compaction threshold, and equality with that
+threshold requires compaction. When all model limits are unknown, automatic
+compaction has no threshold unless the explicit conservative fallback below is
+enabled. Manual and provider-overflow compaction remain available without known
+capacity. The preserved history allowance is the snapshot threshold minus
+current non-history request components, capped by `keep_recent_tokens`.
 
 Public compaction knobs live under `runtime.compaction`:
 
@@ -816,8 +815,8 @@ Public compaction knobs live under `runtime.compaction`:
 | `splitOversizedTurns` / `split_oversized_turns` | `false` | Allows overflow compaction to split an oversized latest turn, summarizing the earlier portion while preserving a suffix as recent provider context. |
 | `autoRetryOverflow` / `auto_retry_overflow` | `true` | Enables the one-shot overflow compaction retry after a provider context-window error. Set `false` to fail immediately. |
 | `structuredSummaryContract` / `structured_summary_contract` | `true` | Requires summaries to carry the Harness sections `Goal`, `Constraints`, `Progress`, `Key Decisions`, `Next Steps`, and `Critical Context`. Set `false` only for legacy heading compatibility. |
-| `estimatedTokenTriggers` / `estimated_token_triggers` | `true` | Allows proactive and pre-prompt compaction to use deterministic context estimates when provider usage or model metadata is absent. |
-| `fallbackInputTokens` / `fallback_input_tokens` | `32768` | Input budget used for estimated trigger checks when the active model does not publish a context window or max input token limit. |
+| `estimatedTokenTriggers` / `estimated_token_triggers` | `true` | Enables the explicitly conservative automatic-compaction mode only when all model limits are unknown. This mode is labeled conservative and never claims exact model capacity or a percentage. |
+| `fallbackInputTokens` / `fallback_input_tokens` | `32768` | Non-exact conservative input cap used only by that all-limits-unknown mode. Set to `0` (or disable `estimatedTokenTriggers`) to leave capacity unknown and automatic pressure undecided. |
 
 On successful compaction, the coordinator appends a single `SessionCompaction` event to the event log and updates the in-memory provider context. The event carries the generated summary, token estimate before compaction, the sequence number of the first preserved event, replay-derived read/modified file lists, the trigger reason, and hook provenance. No separate checkpoint artifact is written; the summary lives entirely in the event and the in-memory `ProviderContext`. Resume reconstructs provider context from the latest `SessionCompaction` event for the agent, then replays post-compaction deltas from `events.jsonl`; the event log itself stays append-only.
 

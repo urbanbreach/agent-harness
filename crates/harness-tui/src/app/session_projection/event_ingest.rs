@@ -106,6 +106,16 @@ impl SessionProjection {
                 self.ensure_orphan_question_tool_calls();
             }
             EventV1::ProviderRequestStarted(data) => {
+                let is_latest = self
+                    .latest_request_budget
+                    .is_none_or(|(seq, _)| event.seq > seq);
+                if is_latest {
+                    let snapshot = data
+                        .metadata
+                        .as_ref()
+                        .and_then(|metadata| metadata.context_budget);
+                    self.latest_request_budget = Some((event.seq, snapshot));
+                }
                 self.note_child_agent_request(event, data.request_id.as_str());
                 let turn_id = Self::canonical_provider_turn_id(event, data.request_id.as_str());
                 self.note_child_agent_request(event, turn_id);

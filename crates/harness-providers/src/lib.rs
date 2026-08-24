@@ -22,7 +22,13 @@ pub mod cassette;
 pub mod leaf;
 pub mod mock;
 pub mod openai;
+pub mod request_budget;
 pub mod schema_compat;
+
+pub use request_budget::{
+    generic_request_budget_semantics, ProviderBudgetSemantics, ProviderOutputCapDisposition,
+    ProviderRequestCost, ProviderRequestCostError,
+};
 
 pub trait UnwrapOrAbort<T> {
     fn unwrap_or_abort(self) -> T;
@@ -429,6 +435,12 @@ impl ProviderStreamEvent {
 
 #[async_trait]
 pub trait Provider: Send + Sync {
+    fn request_budget_semantics(
+        &self,
+        request: &CompletionRequest,
+        pending_prompt_index: usize,
+    ) -> Result<ProviderBudgetSemantics, ProviderRequestCostError>;
+
     async fn stream_completion(&self, req: CompletionRequest) -> ProviderEventStream;
 }
 
@@ -476,6 +488,20 @@ impl ProviderRouter {
 
 #[async_trait]
 impl Provider for ProviderRouter {
+    fn request_budget_semantics(
+        &self,
+        request: &CompletionRequest,
+        pending_prompt_index: usize,
+    ) -> Result<ProviderBudgetSemantics, ProviderRequestCostError> {
+        let provider_id = self
+            .resolve_provider_id(request.provider_id.as_deref())
+            .map_err(|_| ProviderRequestCostError::ProviderUnavailable)?;
+        self.providers
+            .get(provider_id)
+            .ok_or(ProviderRequestCostError::ProviderUnavailable)?
+            .request_budget_semantics(request, pending_prompt_index)
+    }
+
     async fn stream_completion(&self, req: CompletionRequest) -> ProviderEventStream {
         let provider_id = match self.resolve_provider_id(req.provider_id.as_deref()) {
             Ok(provider_id) => provider_id,

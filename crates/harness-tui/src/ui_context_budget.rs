@@ -1,8 +1,7 @@
+use harness_core::context_budget::{BudgetStatus, RequestBudgetSnapshot};
 use ratatui::style::Color;
 
 use crate::{app::AppState, theme::Theme};
-
-const METER_CELLS: u64 = 6;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ContextBudgetTone {
@@ -27,84 +26,88 @@ impl ContextBudgetTone {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct ContextBudget {
-    full_label: String,
-    compact_label: String,
+    label: String,
     tone: ContextBudgetTone,
 }
 
 impl ContextBudget {
     pub(super) fn from_app(app: &AppState) -> Option<Self> {
-        let usage = app.active_context_usage();
-        let limit = app
-            .current_context_window_tokens()
-            .filter(|limit| *limit > 0);
-        Self::from_values(
-            usage.and_then(|usage| usage.tokens),
-            limit,
-            usage.is_some_and(|usage| usage.compacted_pending_refresh),
-        )
-    }
-
-    fn from_values(tokens: Option<u32>, limit: Option<u32>, refreshing: bool) -> Option<Self> {
-        if refreshing {
+        if app
+            .active_context_usage()
+            .is_some_and(|usage| usage.compacted_pending_refresh)
+        {
             return Some(Self {
-                full_label: "ctx compacted · refreshing".to_string(),
-                compact_label: "ctx compacted".to_string(),
+                label: "ctx compacted · refreshing".to_string(),
                 tone: ContextBudgetTone::Refreshing,
             });
         }
 
-        match (tokens, limit) {
-            (Some(tokens), Some(limit)) => {
-                let percent =
-                    ((u64::from(tokens) * 100 + u64::from(limit) / 2) / u64::from(limit)).min(999);
-                let pressure = u64::from(tokens) * 100;
-                let critical_threshold = u64::from(limit) * 90;
-                let warning_threshold = u64::from(limit) * 75;
-                let filled = (u64::from(tokens) * METER_CELLS)
-                    .div_ceil(u64::from(limit))
-                    .min(METER_CELLS);
-                let meter = format!(
-                    "[{}{}]",
-                    "#".repeat(usize::try_from(filled).unwrap_or(6)),
-                    "-".repeat(usize::try_from(METER_CELLS - filled).unwrap_or(0))
-                );
-                Some(Self {
-                    full_label: format!(
-                        "ctx {}/{} {percent}% {meter}",
-                        compact_tokens(tokens),
-                        compact_tokens(limit)
-                    ),
-                    compact_label: format!("ctx {percent}%"),
-                    tone: if pressure >= critical_threshold {
-                        ContextBudgetTone::Critical
-                    } else if pressure >= warning_threshold {
-                        ContextBudgetTone::Warning
-                    } else {
-                        ContextBudgetTone::Normal
-                    },
-                })
-            }
-            (Some(tokens), None) => Some(Self {
-                full_label: format!("ctx {}", compact_tokens(tokens)),
-                compact_label: format!("ctx {}", compact_tokens(tokens)),
+        if let Some(snapshot) = app.current_request_budget_snapshot() {
+            return Some(Self::from_snapshot(snapshot));
+        }
+        app.uses_unknown_budget_fallback().then(|| Self {
+            label: format!(
+                "ctx ~{} · capacity unknown",
+                app.active_context_usage()
+                    .and_then(|usage| usage.tokens)
+                    .unwrap_or(0)
+            ),
+            tone: ContextBudgetTone::Unknown,
+        })
+    }
+
+    fn from_snapshot(snapshot: RequestBudgetSnapshot) -> Self {
+        match snapshot.status {
+            BudgetStatus::Estimated => Self::estimated(snapshot),
+            BudgetStatus::ConservativeFallback => Self {
+                label: format!("ctx ~{} · conservative", snapshot.occupied_input_tokens),
+                tone: if snapshot.requires_compaction == Some(true) {
+                    ContextBudgetTone::Warning
+                } else {
+                    ContextBudgetTone::Unknown
+                },
+            },
+            BudgetStatus::UnknownLimits => Self {
+                label: format!("ctx ~{} · capacity unknown", snapshot.occupied_input_tokens),
                 tone: ContextBudgetTone::Unknown,
-            }),
-            (None, Some(limit)) => Some(Self {
-                full_label: format!("ctx ?/{}", compact_tokens(limit)),
-                compact_label: "ctx ?".to_string(),
+            },
+        }
+    }
+
+    fn estimated(snapshot: RequestBudgetSnapshot) -> Self {
+        let Some(threshold) = snapshot
+            .compaction_threshold_tokens
+            .filter(|value| *value > 0)
+        else {
+            return Self {
+                label: format!("ctx ~{} · capacity unknown", snapshot.occupied_input_tokens),
                 tone: ContextBudgetTone::Unknown,
-            }),
-            (None, None) => None,
+            };
+        };
+        let occupied = snapshot.occupied_input_tokens;
+        let percent = ((u64::from(occupied) * 100 + u64::from(threshold) / 2)
+            / u64::from(threshold))
+        .min(999);
+        let pressure = u64::from(occupied) * 100;
+        let threshold = u64::from(threshold);
+        Self {
+            label: format!("ctx ~{occupied}/{threshold} {percent}%"),
+            tone: if snapshot.requires_compaction == Some(true) || pressure >= threshold * 90 {
+                ContextBudgetTone::Critical
+            } else if pressure >= threshold * 75 {
+                ContextBudgetTone::Warning
+            } else {
+                ContextBudgetTone::Normal
+            },
         }
     }
 
     pub(super) fn full_label(&self) -> &str {
-        &self.full_label
+        &self.label
     }
 
     pub(super) fn compact_label(&self) -> &str {
-        &self.compact_label
+        &self.label
     }
 
     pub(super) const fn tone(&self) -> ContextBudgetTone {
@@ -112,87 +115,72 @@ impl ContextBudget {
     }
 }
 
-fn compact_tokens(tokens: u32) -> String {
-    if tokens >= 1_000_000 {
-        format!("{:.1}M", f64::from(tokens) / 1_000_000.0)
-    } else if tokens >= 1_000 {
-        format!("{:.1}K", f64::from(tokens) / 1_000.0)
-    } else {
-        tokens.to_string()
+impl AppState {
+    pub fn runtime_context_budget_text(&self) -> Option<String> {
+        ContextBudget::from_app(self).map(|budget| budget.label)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use harness_core::context_budget::{
+        BudgetStatus, RequestBudgetComponents, RequestBudgetSnapshot,
+    };
+    use harness_providers::ProviderOutputCapDisposition;
+
     use super::{ContextBudget, ContextBudgetTone};
-    use crate::UnwrapOrAbort;
+
+    fn snapshot(
+        status: BudgetStatus,
+        occupied_input_tokens: u32,
+        compaction_threshold_tokens: Option<u32>,
+    ) -> RequestBudgetSnapshot {
+        RequestBudgetSnapshot {
+            status,
+            requested_output_tokens: None,
+            reserved_output_tokens: None,
+            maximum_input_tokens: compaction_threshold_tokens,
+            safety_margin_tokens: 0,
+            compaction_threshold_tokens,
+            components: RequestBudgetComponents::default(),
+            occupied_input_tokens,
+            remaining_input_tokens: None,
+            requires_compaction: compaction_threshold_tokens
+                .map(|threshold| occupied_input_tokens >= threshold),
+            output_cap_disposition: ProviderOutputCapDisposition::UnspecifiedUnknownLimit,
+        }
+    }
 
     #[test]
-    fn context_budget_maps_thresholds_and_six_cell_meter() {
-        // arrange
-        let normal =
-            ContextBudget::from_values(Some(32_000), Some(128_000), false).unwrap_or_abort();
-        let warning =
-            ContextBudget::from_values(Some(96_000), Some(128_000), false).unwrap_or_abort();
-        let critical =
-            ContextBudget::from_values(Some(116_000), Some(128_000), false).unwrap_or_abort();
+    fn estimated_budget_uses_snapshot_threshold_for_label_and_tone() {
+        // arrange: occupied input at the warning boundary of the shared threshold.
+        let snapshot = snapshot(BudgetStatus::Estimated, 900, Some(1_200));
 
-        // act
+        // act: the snapshot is formatted.
+        let budget = ContextBudget::from_snapshot(snapshot);
+
+        // assert: threshold drives both the exact label and presentation tone.
+        assert_eq!(budget.full_label(), "ctx ~900/1200 75%");
+        assert_eq!(budget.tone(), ContextBudgetTone::Warning);
+    }
+
+    #[test]
+    fn unknown_and_conservative_budgets_never_render_percentages() {
+        // arrange: snapshots without estimated capacity.
+        let unknown = snapshot(BudgetStatus::UnknownLimits, 321, None);
+        let conservative = snapshot(BudgetStatus::ConservativeFallback, 400, Some(500));
+
+        // act: both snapshots are formatted.
         let labels = [
-            normal.full_label(),
-            warning.full_label(),
-            critical.full_label(),
+            ContextBudget::from_snapshot(unknown).label,
+            ContextBudget::from_snapshot(conservative).label,
         ];
 
-        // assert
-        assert_eq!(labels[0], "ctx 32.0K/128.0K 25% [##----]");
-        assert_eq!(normal.tone(), ContextBudgetTone::Normal);
-        assert_eq!(labels[1], "ctx 96.0K/128.0K 75% [#####-]");
-        assert_eq!(warning.tone(), ContextBudgetTone::Warning);
-        assert_eq!(labels[2], "ctx 116.0K/128.0K 91% [######]");
-        assert_eq!(critical.tone(), ContextBudgetTone::Critical);
-    }
-
-    #[test]
-    fn context_budget_preserves_refreshing_and_unknown_states() {
-        // arrange
-        let refreshing = ContextBudget::from_values(None, Some(128_000), true).unwrap_or_abort();
-        let unknown = ContextBudget::from_values(None, Some(128_000), false).unwrap_or_abort();
-
-        // act
-        let refreshing_label = refreshing.full_label();
-        let unknown_label = unknown.full_label();
-
-        // assert
-        assert_eq!(refreshing_label, "ctx compacted · refreshing");
-        assert_eq!(refreshing.compact_label(), "ctx compacted");
-        assert_eq!(refreshing.tone(), ContextBudgetTone::Refreshing);
-        assert_eq!(unknown_label, "ctx ?/128.0K");
-        assert_eq!(unknown.tone(), ContextBudgetTone::Unknown);
-        assert!(ContextBudget::from_values(None, None, false).is_none());
-    }
-
-    #[test]
-    fn context_budget_classifies_pressure_from_exact_ratio() {
-        // arrange
-        let below_warning =
-            ContextBudget::from_values(Some(74_900), Some(100_000), false).unwrap_or_abort();
-        let warning =
-            ContextBudget::from_values(Some(89_900), Some(100_000), false).unwrap_or_abort();
-        let critical =
-            ContextBudget::from_values(Some(90_000), Some(100_000), false).unwrap_or_abort();
-
-        // act
-        let tones = [below_warning.tone(), warning.tone(), critical.tone()];
-
-        // assert
+        // assert: status is explicit without fabricated percentages.
         assert_eq!(
-            tones,
-            [
-                ContextBudgetTone::Normal,
-                ContextBudgetTone::Warning,
-                ContextBudgetTone::Critical,
-            ]
+            labels,
+            ["ctx ~321 · capacity unknown", "ctx ~400 · conservative"]
         );
+        assert!(labels.iter().all(|label| !label.contains('%')));
     }
 }

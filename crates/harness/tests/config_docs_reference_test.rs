@@ -522,7 +522,9 @@ fn v1_release_docs_cover_permissions_extension_privacy_migration_and_provider_su
         );
     }
     assert!(provider.contains("OpenAI-compatible `auto` mode"));
-    assert!(provider.contains("No automatic model fallback"));
+    assert!(provider.contains(
+        "Eligible provider failures may also advance through an explicitly configured `model_profile.fallback` chain"
+    ));
 }
 
 mod extension_strategy_test {

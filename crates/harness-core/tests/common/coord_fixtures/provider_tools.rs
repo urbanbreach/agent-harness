@@ -153,6 +153,14 @@ impl CapturingProvider {
 
 #[async_trait]
 impl Provider for CapturingProvider {
+    fn request_budget_semantics(
+        &self,
+        request: &CompletionRequest,
+        pending_prompt_index: usize,
+    ) -> Result<harness_providers::ProviderBudgetSemantics, harness_providers::ProviderRequestCostError> {
+        harness_providers::generic_request_budget_semantics(request, pending_prompt_index)
+    }
+
     async fn stream_completion(&self, req: CompletionRequest) -> ProviderEventStream {
         self.captured_requests.lock().unwrap_or_abort().push(req);
 
@@ -198,6 +206,14 @@ impl DelayedCapturingProvider {
 
 #[async_trait]
 impl Provider for DelayedCapturingProvider {
+    fn request_budget_semantics(
+        &self,
+        request: &CompletionRequest,
+        pending_prompt_index: usize,
+    ) -> Result<harness_providers::ProviderBudgetSemantics, harness_providers::ProviderRequestCostError> {
+        self.inner.request_budget_semantics(request, pending_prompt_index)
+    }
+
     async fn stream_completion(&self, req: CompletionRequest) -> ProviderEventStream {
         let delay = self.delay;
         let stream = self
@@ -235,6 +251,14 @@ impl SequentialScriptedProvider {
 
 #[async_trait]
 impl Provider for SequentialScriptedProvider {
+    fn request_budget_semantics(
+        &self,
+        request: &CompletionRequest,
+        pending_prompt_index: usize,
+    ) -> Result<harness_providers::ProviderBudgetSemantics, harness_providers::ProviderRequestCostError> {
+        harness_providers::generic_request_budget_semantics(request, pending_prompt_index)
+    }
+
     async fn stream_completion(&self, req: CompletionRequest) -> ProviderEventStream {
         // Keep the original request for the fallback closure while recording a clone.
         let fallback_text = req
@@ -353,6 +377,14 @@ pub(super) struct SlowMockProvider {
 
 #[async_trait]
 impl Provider for SlowMockProvider {
+    fn request_budget_semantics(
+        &self,
+        request: &CompletionRequest,
+        pending_prompt_index: usize,
+    ) -> Result<harness_providers::ProviderBudgetSemantics, harness_providers::ProviderRequestCostError> {
+        self.inner.request_budget_semantics(request, pending_prompt_index)
+    }
+
     async fn stream_completion(&self, req: CompletionRequest) -> ProviderEventStream {
         let delay = self.delay;
         let stream = self
@@ -384,6 +416,14 @@ impl PromptScriptedProvider {
 
 #[async_trait]
 impl Provider for PromptScriptedProvider {
+    fn request_budget_semantics(
+        &self,
+        request: &CompletionRequest,
+        pending_prompt_index: usize,
+    ) -> Result<harness_providers::ProviderBudgetSemantics, harness_providers::ProviderRequestCostError> {
+        harness_providers::generic_request_budget_semantics(request, pending_prompt_index)
+    }
+
     async fn stream_completion(&self, req: CompletionRequest) -> ProviderEventStream {
         let prompt = req
             .messages

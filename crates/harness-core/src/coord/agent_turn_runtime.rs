@@ -591,12 +591,21 @@ where
     }
 }
 
+struct AgentContextCompactionRequest<'a> {
+    task: &'a QueuedAgentTurn,
+    trigger_reason: &'a str,
+    evidence: CompactionRequestEvidence,
+}
+
 async fn request_agent_context_compaction(
     job_tx: &mpsc::Sender<Command>,
-    task: &QueuedAgentTurn,
-    trigger_reason: &str,
-    usage: Option<harness_providers::CompletionUsage>,
+    request: AgentContextCompactionRequest<'_>,
 ) -> Result<ProviderContext, CoordinatorError> {
+    let AgentContextCompactionRequest {
+        task,
+        trigger_reason,
+        evidence,
+    } = request;
     let (respond_to, response_rx) = oneshot::channel();
     job_tx
         .send(Command::CompactAgentContext {
@@ -604,7 +613,7 @@ async fn request_agent_context_compaction(
             agent_id: task.agent_id.clone(),
             request_id: task.request_id.clone(),
             trigger_reason: trigger_reason.to_string(),
-            usage,
+            evidence,
             respond_to,
         })
         .await
@@ -692,30 +701,47 @@ where
                 let mut prior_context = provider_context;
                 let mut overflow_retry_attempted = false;
 
-                let pre_prompt_critical_failure = match request_agent_context_compaction(
-                    &job_tx,
-                    &task,
-                    "pre_prompt",
-                    None,
-                )
-                .await
-                {
-                    Ok(compacted_context) => {
-                        prior_context = compacted_context;
-                        None
-                    }
-                    Err(CoordinatorError::LifecycleHookFailed(reason)) => Some(format!(
-                        "pre-prompt compaction critical lifecycle hook failed: {reason}"
-                    )),
-                    Err(err) => {
-                        tracing::warn!(
-                            agent_id = %task.agent_id,
-                            request_id = %task.request_id,
-                            error = %err,
-                            "pre-prompt provider context compaction failed; continuing without checkpoint"
-                        );
-                        None
-                    }
+                let provisional_preparation = agent_turn_phases::ProviderTurnPreparationRequest {
+                    provider: provider.as_ref(),
+                    task: &task,
+                    prior_context: &prior_context,
+                    tool_registry: tool_registry.as_ref(),
+                    compaction: &compaction_config,
+                };
+                let pre_prompt_critical_failure = match agent_turn_phases::prepare_provider_transform_phase(
+                    provisional_preparation,
+                ) {
+                    Ok(provisional) => match request_agent_context_compaction(
+                        &job_tx,
+                        AgentContextCompactionRequest {
+                            task: &task,
+                            trigger_reason: "pre_prompt",
+                            evidence: CompactionRequestEvidence {
+                                usage: None,
+                                context_budget: Some(provisional.budget_snapshot),
+                            },
+                        },
+                    )
+                    .await
+                    {
+                        Ok(compacted_context) => {
+                            prior_context = compacted_context;
+                            None
+                        }
+                        Err(CoordinatorError::LifecycleHookFailed(reason)) => Some(format!(
+                            "pre-prompt compaction critical lifecycle hook failed: {reason}"
+                        )),
+                        Err(err) => {
+                            tracing::warn!(
+                                agent_id = %task.agent_id,
+                                request_id = %task.request_id,
+                                error = %err,
+                                "pre-prompt provider context compaction failed; continuing without checkpoint"
+                            );
+                            None
+                        }
+                    },
+                    Err(failure) => Some(failure.to_string()),
                 };
 
                 if let Some(reason) = pre_prompt_critical_failure {
@@ -731,6 +757,7 @@ where
                         job_tx: job_tx.clone(),
                         cancellation_token: cancellation_token.clone(),
                         provider_retry: provider_retry_config,
+                        compaction: compaction_config.clone(),
                     })
                     .await;
 
@@ -743,9 +770,11 @@ where
                         {
                             match request_agent_context_compaction(
                                 &job_tx,
-                                &task,
-                                "overflow",
-                                None,
+                                AgentContextCompactionRequest {
+                                    task: &task,
+                                    trigger_reason: "overflow",
+                                    evidence: CompactionRequestEvidence::default(),
+                                },
                             )
                             .await
                             {

@@ -22,8 +22,8 @@ use super::{
 use crate::{
     CacheRetention, CompletionMessage, CompletionRequest, CompletionUsage, MessageRole, Provider,
     ProviderBearerToken, ProviderCredentialKind, ProviderCredentialSource, ProviderErrorCategory,
-    ProviderRequestInitiator, ProviderStreamEvent, ProviderStreamFinishedMetadata, ToolChoice,
-    ToolDef,
+    ProviderOutputCapDisposition, ProviderRequestInitiator, ProviderStreamEvent,
+    ProviderStreamFinishedMetadata, ToolChoice, ToolDef,
 };
 
 #[derive(Debug, Clone)]

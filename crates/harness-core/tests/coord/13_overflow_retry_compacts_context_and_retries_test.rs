@@ -360,6 +360,7 @@ async fn compaction_trigger_pre_prompt_occurs_before_provider_request_started() 
         provider_text_events(&"A".repeat(12_000)),
         provider_text_events(&"B".repeat(12_000)),
         provider_text_events("Compaction summary of earlier turns."),
+        provider_text_events("Preserved split-turn context."),
         provider_text_events("third answer"),
     ]);
     let coordinator = test_agent_coordinator_with_provider_and_compaction(
@@ -436,6 +437,7 @@ async fn compaction_trigger_pre_prompt_attempts_once_per_turn() {
         provider_text_events(&"A".repeat(12_000)),
         provider_text_events(&"B".repeat(12_000)),
         provider_text_events("Compaction summary of earlier turns."),
+        provider_text_events("Preserved split-turn context."),
         provider_text_events("third answer"),
     ]);
     let coordinator = test_agent_coordinator_with_provider_and_compaction(
@@ -490,7 +492,7 @@ async fn compaction_trigger_pre_prompt_attempts_once_per_turn() {
     );
     assert_eq!(
         provider.requests().len(),
-        4,
-        "provider execution should continue once with the uncompacted context (3 turns + 1 summary)"
+        5,
+        "provider execution should continue once after main and split-turn summaries"
     );
 }

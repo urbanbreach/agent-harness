@@ -18,17 +18,46 @@ use harness_core::event::{
     RunStartedEvent, SCHEMA_VERSION,
 };
 use harness_core::proj::{
-    project_session_catalog_entry, RecordedRuntimeContext, RunMetadata, SessionCatalogMetadata,
-    SessionModeSource,
+    load_run_metadata, project_session_catalog_entry, RecordedRuntimeContext, RunMetadata,
+    SessionCatalogMetadata, SessionModeSource,
 };
 use harness_core::redact::DefaultRedactor;
 
+#[path = "recorded_runtime_context_meta/budget_contract_test.rs"]
+mod budget_contract_test;
 mod common;
 
 use common::{load_events, supervisor_actor_with_id};
 
 const PROFILE_NAME: &str = "task1_deep";
 const MODEL_REF: &str = "default:gpt-5.4-mini";
+
+#[test]
+fn legacy_model_limit_mirrors_are_not_written_for_canonical_targets() {
+    // arrange: a selected model with authoritative canonical limits.
+    let config = profile_metadata_config();
+    refresh_profile_model_metadata_registry(&config).unwrap_or_abort();
+    let target = resolve_model_selection(&config, MODEL_REF, Some("deterministic"))
+        .unwrap_or_abort()
+        .primary;
+    let recorded = RecordedRuntimeContext::from_model_target(PROFILE_NAME, &target);
+
+    // act: new runtime metadata is serialized.
+    let value = serde_json::to_value(recorded).unwrap_or_abort();
+
+    // assert: canonical limits are written once and all pre-M03 scalar mirrors are omitted.
+    assert!(value.get("model_limits").is_some());
+    for mirror in [
+        "context_window_tokens",
+        "max_input_tokens",
+        "max_output_tokens",
+    ] {
+        assert!(
+            value.get(mirror).is_none(),
+            "scalar mirror `{mirror}` was written"
+        );
+    }
+}
 
 #[tokio::test]
 async fn recorded_runtime_context_meta_roundtrips() {
@@ -73,6 +102,7 @@ async fn recorded_runtime_context_meta_roundtrips() {
         model_display_label: Some("GPT-5.4 Mini".to_string()),
         variant_display_label: Some("Deterministic".to_string()),
         token_window_label: Some("128k ctx · 128k in · 4k out".to_string()),
+        last_request_budget: None,
         model_limits: ResolvedModelLimits {
             context_window: ResolvedModelLimit {
                 tokens: Some(128000),
@@ -90,9 +120,9 @@ async fn recorded_runtime_context_meta_roundtrips() {
             },
             max_input_semantics: MaxInputSemantics::ProviderVisibleInputTokens,
         },
-        context_window_tokens: Some(128000),
-        max_input_tokens: Some(128000),
-        max_output_tokens: Some(4096),
+        context_window_tokens: None,
+        max_input_tokens: None,
+        max_output_tokens: None,
         description: Some("Deterministic mode".to_string()),
         recommended_for: Some("deep".to_string()),
         reasoning_effort: Some("minimal".to_string()),
@@ -380,23 +410,32 @@ fn session_catalog_entry_tolerates_legacy_meta_without_runtime_context() {
 }
 
 #[test]
-fn legacy_scalar_runtime_context_reconstructs_compatibility_limits() {
-    // arrange
-    let context: RecordedRuntimeContext = serde_json::from_str(
+fn legacy_model_limit_mirrors_reconstruct_compatibility_limits() {
+    // arrange: a pre-M03 meta.json containing only scalar model-limit mirrors.
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
+    fs::write(
+        temp_dir.path().join("meta.json"),
         r#"{
-          "profile":"legacy","provider":"default","model":"legacy-model",
-          "variant":null,"display_label":"Legacy","token_window_label":null,
-          "context_window_tokens":128000,"max_input_tokens":96000,
-          "max_output_tokens":16000,"description":null,"recommended_for":null,
-          "reasoning_effort":null,"text_verbosity":null
+          "run_id":"run_legacy","run_name":"interactive","workspace_root":"/workspace",
+          "config_digest":"digest","harness_version":"test",
+          "recorded_runtime_context":{
+            "profile":"legacy","provider":"default","model":"legacy-model",
+            "variant":null,"display_label":"Legacy","token_window_label":null,
+            "context_window_tokens":128000,"max_input_tokens":96000,
+            "max_output_tokens":16000,"description":null,"recommended_for":null,
+            "reasoning_effort":null,"text_verbosity":null
+          }
         }"#,
     )
     .unwrap_or_abort();
 
-    // act
+    // act: the canonical metadata loader hydrates the compatibility input.
+    let metadata = load_run_metadata(temp_dir.path()).unwrap_or_abort();
+    let context = metadata.recorded_runtime_context.unwrap_or_abort();
     let limits = context.effective_model_limits();
+    let serialized = serde_json::to_value(&context).unwrap_or_abort();
 
-    // assert
+    // assert: canonical limits survive and legacy mirrors are cleared from future writes.
     assert_eq!(limits.context_window_tokens(), Some(128_000));
     assert_eq!(limits.max_input_tokens(), Some(96_000));
     assert_eq!(limits.max_output_tokens(), Some(16_000));
@@ -404,6 +443,16 @@ fn legacy_scalar_runtime_context_reconstructs_compatibility_limits() {
         limits.context_window.provenance.kind,
         harness_core::config::ModelLimitProvenanceKind::CompatibilityFallback
     );
+    for mirror in [
+        "context_window_tokens",
+        "max_input_tokens",
+        "max_output_tokens",
+    ] {
+        assert!(
+            serialized.get(mirror).is_none(),
+            "scalar mirror `{mirror}` was rewritten"
+        );
+    }
 }
 
 #[test]

@@ -7,8 +7,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use harness_providers::{
     CompletionRequest, CompletionUsage, Provider, ProviderErrorCategory, ProviderEventStream,
-    ProviderStreamEvent, ProviderStreamFinishedMetadata, ProviderStreamStartMetadata,
-    ProviderStreamThinkingMetadata, ToolChoice, ToolDef,
+    ProviderRequestCostError, ProviderStreamEvent, ProviderStreamFinishedMetadata,
+    ProviderStreamStartMetadata, ProviderStreamThinkingMetadata, ToolChoice, ToolDef,
 };
 use serde_json::Value;
 use tokio_stream::StreamExt;
@@ -21,7 +21,10 @@ use super::provider_boundary::{
 use super::{
     AgentModelSettings, AgentProfile, AgentRequest, ProviderContext, ProviderConversationTurnStatus,
 };
-use crate::config::registered_profile_model_metadata;
+use crate::config::{registered_profile_model_metadata, ResolvedModelLimits};
+use crate::context_budget::{
+    compute_request_budget, RequestBudgetError, RequestBudgetInput, RequestBudgetSnapshot,
+};
 use crate::conversation::ConversationMessage;
 use crate::digest::{digest12, digest12_json};
 use crate::event::{
@@ -189,6 +192,91 @@ impl fmt::Display for AgentTurnFailure {
     }
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct ProviderRequestBudgetContext {
+    pub(crate) model_limits: ResolvedModelLimits,
+    pub(crate) requested_output_tokens: Option<u32>,
+    pub(crate) safety_margin_tokens: u32,
+    pub(crate) estimated_token_triggers: bool,
+    pub(crate) fallback_input_tokens: u32,
+    pub(crate) pending_prompt_index: usize,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum ProviderRequestPreflightError {
+    #[error("provider request costing failed: {0}")]
+    Cost(#[from] ProviderRequestCostError),
+    #[error("request budget calculation failed: {0}")]
+    Budget(#[from] RequestBudgetError),
+    #[error(
+        "request budget exceeded: occupied input {occupied_input_tokens} meets or exceeds threshold {compaction_threshold_tokens}"
+    )]
+    InputBudgetExceeded {
+        occupied_input_tokens: u32,
+        compaction_threshold_tokens: u32,
+    },
+}
+
+impl AgentTurnFailure {
+    fn request_preflight(error: ProviderRequestPreflightError) -> Self {
+        Self::new(
+            ProviderConversationTurnStatus::Failed,
+            "request_preflight",
+            error.to_string(),
+            String::new(),
+            None,
+        )
+    }
+}
+
+pub(crate) fn apply_provider_request_budget(
+    provider: &dyn Provider,
+    request: &mut CompletionRequest,
+    context: &ProviderRequestBudgetContext,
+) -> Result<RequestBudgetSnapshot, ProviderRequestPreflightError> {
+    let provisional = provider.request_budget_semantics(request, context.pending_prompt_index)?;
+    let provisional_budget = compute_request_budget(RequestBudgetInput {
+        model_limits: &context.model_limits,
+        request_cost: provisional.request_cost,
+        requested_output_tokens: context.requested_output_tokens,
+        safety_margin_tokens: context.safety_margin_tokens,
+        estimated_token_triggers: context.estimated_token_triggers,
+        fallback_input_tokens: context.fallback_input_tokens,
+        output_cap_disposition: provisional.output_cap_disposition,
+    })?;
+    request.max_tokens = provisional_budget.reserved_output_tokens;
+
+    let current = provider.request_budget_semantics(request, context.pending_prompt_index)?;
+    Ok(compute_request_budget(RequestBudgetInput {
+        model_limits: &context.model_limits,
+        request_cost: current.request_cost,
+        requested_output_tokens: context.requested_output_tokens,
+        safety_margin_tokens: context.safety_margin_tokens,
+        estimated_token_triggers: context.estimated_token_triggers,
+        fallback_input_tokens: context.fallback_input_tokens,
+        output_cap_disposition: current.output_cap_disposition,
+    })?
+    .snapshot())
+}
+
+pub(crate) fn reject_compaction_pressure(
+    snapshot: RequestBudgetSnapshot,
+) -> Result<(), ProviderRequestPreflightError> {
+    match (
+        snapshot.requires_compaction,
+        snapshot.compaction_threshold_tokens,
+    ) {
+        (Some(true), Some(compaction_threshold_tokens)) => {
+            Err(ProviderRequestPreflightError::InputBudgetExceeded {
+                occupied_input_tokens: snapshot.occupied_input_tokens,
+                compaction_threshold_tokens,
+            })
+        }
+        (Some(false) | None, Some(_) | None) => Ok(()),
+        (Some(true), None) => Ok(()),
+    }
+}
+
 pub fn default_provider() -> Arc<dyn Provider> {
     Arc::new(NullProvider)
 }
@@ -292,6 +380,7 @@ where
                 &request_id,
                 &request_id,
                 provider_start_metadata.as_ref(),
+                None,
                 None,
             )),
         },
@@ -445,6 +534,18 @@ where
 
 pub async fn stream_assistant_response_once<F, Fut>(
     request: StreamAssistantResponseOnceRequest<'_>,
+    emit: F,
+) -> Result<AssistantResponse, AgentTurnFailure>
+where
+    F: FnMut(AgentRuntimeEvent) -> Fut,
+    Fut: Future<Output = ()>,
+{
+    stream_assistant_response_once_with_budget(request, None, emit).await
+}
+
+pub(crate) async fn stream_assistant_response_once_with_budget<F, Fut>(
+    request: StreamAssistantResponseOnceRequest<'_>,
+    request_budget: Option<ProviderRequestBudgetContext>,
     mut emit: F,
 ) -> Result<AssistantResponse, AgentTurnFailure>
 where
@@ -479,6 +580,16 @@ where
         tool_choice: (!tool_defs.is_empty()).then_some(ToolChoice::Auto),
     });
     let mut completion_request = provider_boundary.request;
+    let context_budget = request_budget
+        .as_ref()
+        .map(|budget| {
+            apply_provider_request_budget(provider.as_ref(), &mut completion_request, budget)
+        })
+        .transpose()
+        .map_err(AgentTurnFailure::request_preflight)?;
+    if let Some(snapshot) = context_budget {
+        reject_compaction_pressure(snapshot).map_err(AgentTurnFailure::request_preflight)?;
+    }
     apply_provider_request_context(
         &mut completion_request,
         session_id.as_deref(),
@@ -494,6 +605,7 @@ where
         &provider_request_id,
         provider_start_metadata.as_ref(),
         retry_metadata,
+        context_budget,
     );
 
     emit(AgentRuntimeEvent::ProviderRequestStarted(Box::new(
@@ -837,6 +949,7 @@ fn provider_request_started_metadata(
     provider_request_id: &str,
     provider_metadata: Option<&ProviderStreamStartMetadata>,
     retry_metadata: Option<ProviderRequestRetryMetadata>,
+    context_budget: Option<RequestBudgetSnapshot>,
 ) -> ProviderRequestStartedMetadata {
     ProviderRequestStartedMetadata {
         turn_id: Some(turn_request_id.to_string()),
@@ -856,6 +969,7 @@ fn provider_request_started_metadata(
                 .map(str::to_string)
         }),
         retry: retry_metadata,
+        context_budget,
     }
 }
 
@@ -990,6 +1104,17 @@ struct NullProvider;
 
 #[async_trait]
 impl Provider for NullProvider {
+    fn request_budget_semantics(
+        &self,
+        request: &CompletionRequest,
+        pending_prompt_index: usize,
+    ) -> Result<
+        harness_providers::ProviderBudgetSemantics,
+        harness_providers::ProviderRequestCostError,
+    > {
+        harness_providers::generic_request_budget_semantics(request, pending_prompt_index)
+    }
+
     async fn stream_completion(&self, _req: CompletionRequest) -> ProviderEventStream {
         Box::pin(tokio_stream::iter(vec![ProviderStreamEvent::error(
             "no provider configured",

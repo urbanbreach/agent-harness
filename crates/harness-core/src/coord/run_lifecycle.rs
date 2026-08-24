@@ -314,6 +314,8 @@ impl Coordinator {
             }
         })?;
 
+        let recorded_runtime_context =
+            load_run_metadata(&run_dir).and_then(|metadata| metadata.recorded_runtime_context);
         let events_path = event_store.file_path().to_path_buf();
         let run_info = RunInfo {
             run_id: crate::ids::RunId::from(run_id.clone()),
@@ -354,7 +356,7 @@ impl Coordinator {
                 provider_model: self.config.provider_model_concurrency,
                 tool: self.config.tool_concurrency,
             }),
-            recorded_runtime_context: None,
+            recorded_runtime_context,
             allow_initial_runtime_context_recording: false,
             shutdown_token: CancellationToken::new(),
             tool_state: ToolRunState::default(),

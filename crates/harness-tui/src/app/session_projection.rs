@@ -3,6 +3,7 @@ use crate::UnwrapOrAbort;
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
+use harness_core::context_budget::RequestBudgetSnapshot;
 use harness_core::event::{
     ActorKind, BackgroundTaskNotificationEvent, EventEnvelopeV1, EventV1,
     ProviderRequestFinishedEvent, ProviderRequestRetryMetadata, ResolvedToolIdentity,
@@ -64,6 +65,7 @@ pub struct SessionProjection {
     pub(crate) events: Vec<EventEnvelopeV1>,
     pub(crate) activities: VecDeque<ActivityEntry>,
     pub(crate) active_context_usage: Option<ActiveContextUsage>,
+    latest_request_budget: Option<(u64, Option<RequestBudgetSnapshot>)>,
     pub(crate) compaction_status: Option<CompactionStatus>,
     pub(crate) compaction_usage_metrics: CompactionUsageMetrics,
     pub(crate) memory_caps: MemoryCaps,
@@ -88,6 +90,7 @@ impl SessionProjection {
         self.events.clear();
         self.activities.clear();
         self.active_context_usage = None;
+        self.latest_request_budget = None;
         self.compaction_status = None;
         self.compaction_usage_metrics = CompactionUsageMetrics::default();
         self.orchestration_tasks.clear();
@@ -115,6 +118,10 @@ impl SessionProjection {
 
     pub(crate) fn terminal_elapsed_ms(&self, request_id: &str) -> Option<u64> {
         self.terminal_elapsed_ms.get(request_id).copied()
+    }
+
+    pub(crate) fn latest_request_budget(&self) -> Option<Option<RequestBudgetSnapshot>> {
+        self.latest_request_budget.map(|(_, snapshot)| snapshot)
     }
 
     pub(crate) fn turn_completion_seen(&self, request_id: &str) -> bool {

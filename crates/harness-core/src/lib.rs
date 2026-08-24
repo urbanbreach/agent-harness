@@ -11,6 +11,7 @@ pub mod browser_oidc_local;
 pub mod clock;
 pub mod code_graph;
 pub mod config;
+pub mod context_budget;
 pub mod conversation;
 pub mod coord;
 pub(crate) mod counter_id;
@@ -70,5 +71,9 @@ pub mod workspace_hub_local;
 pub mod workspace_leaf;
 pub mod worktree;
 
+pub use context_budget::{
+    compute_request_budget, BudgetStatus, RequestBudget, RequestBudgetComponents,
+    RequestBudgetError, RequestBudgetInput, RequestBudgetSnapshot,
+};
 pub use harness_providers::UnwrapOrAbort;
 pub use tool::ToolResultExt;
