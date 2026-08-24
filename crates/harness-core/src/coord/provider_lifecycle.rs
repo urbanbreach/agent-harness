@@ -127,12 +127,11 @@ impl Coordinator {
         Ok(())
     }
 
-    pub(in crate::coord) fn agent_provider_stream_delta_internal(
+    pub(in crate::coord) fn agent_provider_live_event_internal(
         &mut self,
         task_id: String,
         agent_id: String,
-        request_id: String,
-        delta: String,
+        payload: LiveEventV1,
     ) -> Result<(), CoordinatorError> {
         let Some(run_state) = self.run_state.as_mut() else {
             return Ok(());
@@ -146,52 +145,20 @@ impl Coordinator {
             return Ok(());
         };
 
-        append_payload_event_with_correlation(
+        let builder = crate::event::EventBuilder::new(
             self.clock.as_ref(),
             self.redactor.as_ref(),
+            run_state.info.run_id.to_string(),
+        );
+        publish_live_event(
+            &builder,
             run_state,
-            agent_actor(&agent_id),
-            Some(format!("agent:{agent_id}")),
-            Some(turn_request_id),
-            EventV1::ProviderStreamDelta(crate::event::ProviderStreamDeltaEvent {
-                request_id: request_id.into(),
-                delta,
-            }),
-        )?;
-
-        Ok(())
-    }
-
-    pub(in crate::coord) fn agent_provider_reasoning_delta_internal(
-        &mut self,
-        task_id: String,
-        agent_id: String,
-        request_id: String,
-        delta: String,
-    ) -> Result<(), CoordinatorError> {
-        let Some(run_state) = self.run_state.as_mut() else {
-            return Ok(());
-        };
-
-        let Some(turn_request_id) = run_state
-            .running_agent_turns
-            .get(&task_id)
-            .map(|running| running.request_id.clone())
-        else {
-            return Ok(());
-        };
-
-        append_payload_event_with_correlation(
-            self.clock.as_ref(),
-            self.redactor.as_ref(),
-            run_state,
-            agent_actor(&agent_id),
-            Some(format!("agent:{agent_id}")),
-            Some(turn_request_id),
-            EventV1::ProviderReasoningDelta(ProviderReasoningDeltaEvent {
-                request_id: request_id.into(),
-                delta,
-            }),
+            LiveEventPublishArgs {
+                actor: agent_actor(&agent_id),
+                stream_key: Some(format!("agent:{agent_id}")),
+                correlation_id: Some(turn_request_id),
+                payload,
+            },
         )?;
 
         Ok(())
@@ -299,13 +266,10 @@ impl Coordinator {
         &mut self,
         task_id: String,
         agent_id: String,
-        request_id: String,
-        assistant_output: String,
-        tool_call_count: usize,
-        assistant_message: Option<ProviderAssistantMessageMetadata>,
-    ) -> Result<(), CoordinatorError> {
+        response: Box<AssistantResponse>,
+    ) -> Result<Vec<crate::ids::ToolCallId>, CoordinatorError> {
         let Some(run_state) = self.run_state.as_mut() else {
-            return Ok(());
+            return Ok(Vec::new());
         };
 
         let Some(turn_request_id) = run_state
@@ -313,9 +277,25 @@ impl Coordinator {
             .get(&task_id)
             .map(|running| running.request_id.clone())
         else {
-            return Ok(());
+            return Ok(Vec::new());
         };
 
+        let tool_call_ids = response
+            .tool_intents
+            .iter()
+            .map(|_| {
+                let id = format!("toolcall_{:06}", run_state.next_tool_call_id);
+                run_state.next_tool_call_id += 1;
+                crate::ids::ToolCallId::new(id)
+            })
+            .collect::<Vec<_>>();
+        let builder = crate::event::EventBuilder::new(
+            self.clock.as_ref(),
+            self.redactor.as_ref(),
+            run_state.info.run_id.to_string(),
+        );
+        let finished =
+            semantic_history::assistant_message_finished_event(&builder, &response, &tool_call_ids);
         append_payload_event_with_correlation(
             self.clock.as_ref(),
             self.redactor.as_ref(),
@@ -323,23 +303,20 @@ impl Coordinator {
             agent_actor(&agent_id),
             Some(format!("agent:{agent_id}")),
             Some(turn_request_id),
-            EventV1::AssistantMessageFinished(crate::event::AssistantMessageFinishedEvent {
-                request_id: request_id.clone().into(),
-                tool_call_count,
-                assistant_message,
-            }),
+            EventV1::AssistantMessageFinished(finished),
         )?;
 
         if let Some(running) = run_state.running_agent_turns.get_mut(&task_id) {
-            running.latest_assistant_output = Some(assistant_output);
+            running.latest_assistant_output = Some(response.text.clone());
         }
 
-        if tool_call_count > 0 {
+        if !response.tool_intents.is_empty() {
+            let request_id = response.request_id.to_string();
             if let Err(err) = self.snapshot_workspace_internal(request_id.clone()).await {
                 tracing::warn!(error = %err, request_id, "failed to snapshot workspace before tool batch");
             }
         }
 
-        Ok(())
+        Ok(tool_call_ids)
     }
 }

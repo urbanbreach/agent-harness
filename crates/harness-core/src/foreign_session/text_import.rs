@@ -23,11 +23,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::digest::digest12;
 use crate::event::{
-    ActorKind, EventActor, EventEnvelopeV1, EventV1, ProviderRequestFinishedEvent,
-    ProviderRequestStartedEvent, ProviderStreamDeltaEvent, RunFinishedEvent, RunStartedEvent,
-    UserMessageSubmittedEvent, SCHEMA_VERSION,
+    ActorKind, AssistantMessageFinishedEvent, EventActor, EventEnvelopeV1, EventV1,
+    ProviderAssistantMessageMetadata, RunFinishedEvent, RunStartedEvent, UserMessageSubmittedEvent,
+    SCHEMA_VERSION,
 };
 use crate::ids::RunId;
+use crate::session::{AssistantPart, ProviderProvenance};
 use crate::proj::SessionModeSource;
 use crate::session_paths::META_FILE_NAME;
 
@@ -249,12 +250,11 @@ fn heading_role(line: &str) -> Option<TranscriptRole> {
 
 /// Build a deterministic replay event stream for parsed transcript messages.
 ///
-/// User messages map to `UserMessageSubmitted`; assistant messages map to the
-/// durable provider barriers (`ProviderRequestStarted` + `ProviderStreamDelta`
-/// + `ProviderRequestFinished` + `AssistantMessageFinished`) so transcript
-/// projection renders them as ordinary assistant turns.
+/// User messages map to `UserMessageSubmitted`; assistant messages map directly
+/// to a semantic `AssistantMessageFinished` commit. Imported text is durable
+/// semantic history, never provider transport telemetry.
 fn synthesize_transcript_events(run_id: &str, messages: &[TranscriptMessage]) -> Vec<EventEnvelopeV1> {
-    let mut events: Vec<EventEnvelopeV1> = Vec::with_capacity(messages.len() * 4 + 2);
+    let mut events: Vec<EventEnvelopeV1> = Vec::with_capacity(messages.len() + 2);
     let mut seq: u64 = 0;
     let mut turn_counter: u64 = 0;
     let mut current_request_id: Option<String> = None;
@@ -320,50 +320,26 @@ fn synthesize_transcript_events(run_id: &str, messages: &[TranscriptMessage]) ->
                     &mut seq,
                     EventActor::new(ActorKind::System, None),
                     Some(request_id.clone()),
-                    EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                    EventV1::AssistantMessageFinished(AssistantMessageFinishedEvent {
                         request_id: request_id.clone().into(),
-                        provider_id: "foreign-import".to_string(),
-                        model_id: "imported-transcript".to_string(),
-                        prompt_summary: "imported foreign transcript".to_string(),
-                        request_digest: digest.to_string(),
-                        metadata: None,
-                    }),
-                );
-                push(
-                    &mut events,
-                    &mut seq,
-                    EventActor::new(ActorKind::System, None),
-                    Some(request_id.clone()),
-                    EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
-                        request_id: request_id.clone().into(),
-                        delta: message.text.clone(),
-                    }),
-                );
-                push(
-                    &mut events,
-                    &mut seq,
-                    EventActor::new(ActorKind::System, None),
-                    Some(request_id.clone()),
-                    EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
-                        request_id: request_id.clone().into(),
-                        finish_reason: "stop".to_string(),
-                        output_digest: Some(digest.to_string()),
-                        usage: None,
-                        metadata: None,
-                    }),
-                );
-                push(
-                    &mut events,
-                    &mut seq,
-                    EventActor::new(ActorKind::System, None),
-                    Some(request_id.clone()),
-                    EventV1::AssistantMessageFinished(
-                        crate::event::AssistantMessageFinishedEvent {
+                        tool_call_count: 0,
+                        parts: vec![AssistantPart::Text {
+                            text: message.text.clone(),
+                        }],
+                        provenance: Some(ProviderProvenance {
+                            provider_id: "foreign-import".to_string(),
+                            model_id: "imported-transcript".to_string(),
                             request_id: request_id.into(),
-                            tool_call_count: 0,
-                            assistant_message: None,
-                        },
-                    ),
+                            response_id: None,
+                            stop_reason: Some("stop".to_string()),
+                            usage: None,
+                        }),
+                        assistant_message: Some(ProviderAssistantMessageMetadata {
+                            message_id: None,
+                            text_digest: Some(digest.to_string()),
+                            reasoning_digest: None,
+                        }),
+                    }),
                 );
                 current_request_id = None;
             }
@@ -610,15 +586,23 @@ mod tests {
             .iter()
             .filter(|event| matches!(event.payload, EventV1::UserMessageSubmitted(_)))
             .count();
-        let assistant_delta = events
+        let assistant_parts = events
             .iter()
-            .filter_map(|event| match &event.payload {
-                EventV1::ProviderStreamDelta(data) => Some(data.delta.clone()),
+            .find_map(|event| match &event.payload {
+                EventV1::AssistantMessageFinished(data) => Some(data.parts.clone()),
                 _ => None,
             })
-            .collect::<Vec<_>>();
+            .unwrap_or_default();
         assert_eq!(user_count, 1);
-        assert_eq!(assistant_delta, vec!["world".to_string()]);
+        assert_eq!(
+            assistant_parts,
+            vec![AssistantPart::Text {
+                text: "world".to_string(),
+            }]
+        );
+        assert!(!events
+            .iter()
+            .any(|event| matches!(event.payload, EventV1::ProviderStreamDelta(_))));
         let seqs: Vec<u64> = events.iter().map(|event| event.seq).collect();
         let mut sorted = seqs.clone();
         sorted.sort_unstable();

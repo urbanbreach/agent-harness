@@ -2,6 +2,7 @@
 use std::collections::BTreeMap;
 
 use crate::event::{EventEnvelopeV1, EventV1, TaskScheduleState, ToolCallStatus};
+use crate::session::AssistantPart;
 
 mod helpers;
 mod model;
@@ -251,21 +252,36 @@ pub fn project_transcript(
             }
             EventV1::ProviderRequestStarted(payload) => {
                 let request_id = provider_turn_request_id(event, payload.request_id.as_str());
-                let message_index = ensure_assistant_message(
-                    &mut projection,
-                    &mut request_locations,
-                    event,
-                    &request_id,
-                );
-                let message = &mut projection.messages[message_index];
-                message.state = ProjectedMessageState::Streaming;
-                let provider = message.provider.get_or_insert_with(Default::default);
+                let locations = request_locations.entry(request_id).or_default();
+                let starts_new_provider_call = locations
+                    .pending_provider
+                    .as_ref()
+                    .and_then(|provider| provider.provider_request_id.as_deref())
+                    .is_some_and(|request_id| request_id != payload.request_id.as_str());
+                if starts_new_provider_call {
+                    locations.assistant_message_index = None;
+                    locations.assistant_text_part_index = None;
+                    locations.assistant_reasoning_part_index = None;
+                    locations.pending_provider = None;
+                    locations.pending_provenance = None;
+                    locations.semantic_parts_authoritative = false;
+                    locations.semantic_tool_requests_seen = 0;
+                }
+                locations.assistant_agent_id = event.actor.agent_id.clone();
+                locations.pending_state = Some(ProjectedMessageState::Streaming);
+                let provider = locations
+                    .pending_provider
+                    .get_or_insert_with(Default::default);
                 provider.provider_request_id = Some(payload.request_id.to_string());
                 provider.provider_id = Some(payload.provider_id.clone());
                 provider.model_id = Some(payload.model_id.clone());
                 provider.prompt_summary = Some(payload.prompt_summary.clone());
                 provider.request_digest = Some(payload.request_digest.clone());
-                message.provenance.extend(event);
+                if let Some(provenance) = locations.pending_provenance.as_mut() {
+                    provenance.extend(event);
+                } else {
+                    locations.pending_provenance = Some(ProvenanceRange::from_event(event));
+                }
             }
             EventV1::ProviderStreamDelta(payload) => {
                 let request_id = provider_turn_request_id(event, payload.request_id.as_str());
@@ -291,28 +307,37 @@ pub fn project_transcript(
             }
             EventV1::ProviderRequestFinished(payload) => {
                 let request_id = provider_turn_request_id(event, payload.request_id.as_str());
-                let message_index = ensure_assistant_message(
-                    &mut projection,
-                    &mut request_locations,
-                    event,
-                    &request_id,
-                );
-                let message = &mut projection.messages[message_index];
-                message.state = if payload.finish_reason.eq_ignore_ascii_case("error") {
+                let state = if payload.finish_reason.eq_ignore_ascii_case("error") {
                     ProjectedMessageState::Failed
                 } else {
                     ProjectedMessageState::Complete
                 };
-                let provider = message.provider.get_or_insert_with(Default::default);
+                let locations = request_locations.entry(request_id).or_default();
+                locations.pending_state = Some(state);
+                let provider = locations
+                    .pending_provider
+                    .get_or_insert_with(Default::default);
                 provider.provider_request_id = Some(payload.request_id.to_string());
                 provider.finish_reason = Some(payload.finish_reason.clone());
-                provider.output_digest = payload.output_digest.clone();
-                if let Some(metadata) = payload.metadata.as_ref() {
-                    if let Some(assistant_message) = metadata.assistant_message.as_ref() {
-                        apply_assistant_message_metadata(provider, assistant_message);
-                    }
+                provider.output_digest.clone_from(&payload.output_digest);
+                if let Some(assistant_message) = payload
+                    .metadata
+                    .as_ref()
+                    .and_then(|metadata| metadata.assistant_message.as_ref())
+                {
+                    apply_assistant_message_metadata(provider, assistant_message);
                 }
-                message.provenance.extend(event);
+                if let Some(provenance) = locations.pending_provenance.as_mut() {
+                    provenance.extend(event);
+                } else {
+                    locations.pending_provenance = Some(ProvenanceRange::from_event(event));
+                }
+                if let Some(message_index) = locations.assistant_message_index {
+                    let message = &mut projection.messages[message_index];
+                    message.state = state;
+                    message.provider.clone_from(&locations.pending_provider);
+                    message.provenance.extend(event);
+                }
             }
             EventV1::AssistantMessageFinished(payload) => {
                 let request_id = provider_turn_request_id(event, payload.request_id.as_str());
@@ -324,9 +349,76 @@ pub fn project_transcript(
                 );
                 let message = &mut projection.messages[message_index];
                 message.state = ProjectedMessageState::Complete;
+                if let Some(provenance) = payload.provenance.as_ref() {
+                    let provider = message.provider.get_or_insert_with(Default::default);
+                    provider.provider_request_id = Some(provenance.request_id.to_string());
+                    provider.provider_id = Some(provenance.provider_id.clone());
+                    provider.model_id = Some(provenance.model_id.clone());
+                    provider.finish_reason.clone_from(&provenance.stop_reason);
+                }
                 if let Some(assistant_message) = payload.assistant_message.as_ref() {
                     let provider = message.provider.get_or_insert_with(Default::default);
                     apply_assistant_message_metadata(provider, assistant_message);
+                }
+                if !payload.parts.is_empty() {
+                    tool_locations.retain(|_, location| location.message_index != message_index);
+                    message.parts.clear();
+                    let locations = request_locations.entry(request_id.clone()).or_default();
+                    locations.assistant_text_part_index = None;
+                    locations.assistant_reasoning_part_index = None;
+                    locations.semantic_parts_authoritative = true;
+                    locations.semantic_tool_requests_seen = 0;
+                    for part in &payload.parts {
+                        let part_index = message.parts.len();
+                        match part {
+                            AssistantPart::Text { text } => {
+                                message.parts.push(ProjectedPart::Text(ProjectedTextPart {
+                                    text: text.clone(),
+                                    provenance: ProvenanceRange::from_event(event),
+                                }));
+                                locations.assistant_text_part_index = Some(part_index);
+                            }
+                            AssistantPart::Reasoning { text } => {
+                                message
+                                    .parts
+                                    .push(ProjectedPart::Reasoning(ProjectedTextPart {
+                                        text: text.clone(),
+                                        provenance: ProvenanceRange::from_event(event),
+                                    }));
+                                locations.assistant_reasoning_part_index = Some(part_index);
+                            }
+                            AssistantPart::ToolCall(tool_call) => {
+                                message.parts.push(ProjectedPart::ToolCall(Box::new(
+                                    ProjectedToolCallPart {
+                                        tool_call_id: tool_call.tool_call_id.clone(),
+                                        tool_id: tool_call.tool_id.clone(),
+                                        args_summary: tool_call.args_summary.clone(),
+                                        args_digest: tool_call.args_digest.clone(),
+                                        state: ProjectedToolCallState::Pending,
+                                        status: None,
+                                        output_summary: None,
+                                        output_digest: None,
+                                        output_json: None,
+                                        requested_seq: None,
+                                        started_seq: None,
+                                        finished_seq: None,
+                                        metadata: None,
+                                        permissions: Vec::new(),
+                                        artifacts: Vec::new(),
+                                        lineage: None,
+                                        provenance: ProvenanceRange::from_event(event),
+                                    },
+                                )));
+                                tool_locations.insert(
+                                    tool_call.tool_call_id.to_string(),
+                                    PartLocation {
+                                        message_index,
+                                        part_index,
+                                    },
+                                );
+                            }
+                        }
+                    }
                 }
                 message.provenance.extend(event);
             }
@@ -389,6 +481,53 @@ pub fn project_transcript(
                 );
                 for artifact in metadata_artifacts.iter().cloned() {
                     push_unique_artifact(&mut projection.artifacts, artifact);
+                }
+                let semantic_location = event
+                    .correlation_id
+                    .as_deref()
+                    .and_then(|_| tool_locations.get(payload.tool_call_id.as_str()).copied());
+                if let Some(location) = semantic_location {
+                    let mut previous_tool_call_id = None;
+                    if let Some(tool_call) = tool_call_part_mut(&mut projection, location) {
+                        previous_tool_call_id = Some(tool_call.tool_call_id.to_string());
+                        tool_call.tool_call_id = payload.tool_call_id.clone();
+                        tool_call.requested_seq = Some(event.seq);
+                        tool_call.metadata.clone_from(&payload.metadata);
+                        tool_call.lineage = lineage.clone();
+                        for artifact in metadata_artifacts {
+                            push_unique_artifact(&mut tool_call.artifacts, artifact);
+                        }
+                        tool_call.provenance.extend(event);
+                    }
+                    if let Some(previous_tool_call_id) = previous_tool_call_id {
+                        tool_locations.remove(&previous_tool_call_id);
+                    }
+                    tool_locations.insert(payload.tool_call_id.to_string(), location);
+                    if let Some(request_id) = event.correlation_id.as_deref() {
+                        let locations =
+                            request_locations.entry(request_id.to_string()).or_default();
+                        locations.semantic_tool_requests_seen =
+                            locations.semantic_tool_requests_seen.saturating_add(1);
+                    }
+                    projection.messages[location.message_index]
+                        .provenance
+                        .extend(event);
+                    continue;
+                }
+                if let Some(location) = tool_locations.get(payload.tool_call_id.as_str()).copied() {
+                    if let Some(tool_call) = tool_call_part_mut(&mut projection, location) {
+                        tool_call.requested_seq = Some(event.seq);
+                        tool_call.metadata.clone_from(&payload.metadata);
+                        tool_call.lineage = lineage.clone();
+                        for artifact in metadata_artifacts {
+                            push_unique_artifact(&mut tool_call.artifacts, artifact);
+                        }
+                        tool_call.provenance.extend(event);
+                    }
+                    projection.messages[location.message_index]
+                        .provenance
+                        .extend(event);
+                    continue;
                 }
 
                 let tool_part = ProjectedToolCallPart {

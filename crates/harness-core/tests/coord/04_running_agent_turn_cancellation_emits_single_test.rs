@@ -334,6 +334,16 @@ async fn provider_single_call_returns_tool_intents_without_executing_tools() {
     )));
     assert!(events.iter().any(|event| matches!(
         event,
+        AgentRuntimeEvent::ProviderToolInputDelta {
+            request_id,
+            tool_call_id,
+            delta,
+        } if request_id == "provider_call_1"
+            && tool_call_id.as_str() == "first_call"
+            && delta == "{"
+    )));
+    assert!(events.iter().any(|event| matches!(
+        event,
         AgentRuntimeEvent::ProviderRequestFinished(finished)
             if finished.request_id.as_str() == "provider_call_1" && finished.finish_reason == "done"
     )));

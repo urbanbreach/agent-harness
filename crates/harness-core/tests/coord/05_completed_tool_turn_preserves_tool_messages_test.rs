@@ -96,6 +96,81 @@ async fn completed_tool_turn_preserves_tool_messages_for_followup_context() {
     .await;
     coordinator.stop_run().await.unwrap_or_abort();
 
+    let events = load_events(&run.events_path);
+    let committed_tool_call = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::AssistantMessageFinished(data)
+                if event.correlation_id.as_deref() == Some(first_request_id.as_str()) =>
+            {
+                data.parts.iter().find_map(|part| match part {
+                    harness_core::session::AssistantPart::ToolCall(tool_call) => Some(tool_call),
+                    _ => None,
+                })
+            }
+            _ => None,
+        })
+        .unwrap_or_abort();
+    let requested_tool_call_id = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::ToolCallRequested(data)
+                if event.correlation_id.as_deref() == Some(first_request_id.as_str()) =>
+            {
+                Some(data.tool_call_id.clone())
+            }
+            _ => None,
+        })
+        .unwrap_or_abort();
+    assert_eq!(committed_tool_call.tool_call_id, requested_tool_call_id);
+    assert_eq!(
+        committed_tool_call.provider_tool_call_id.as_deref(),
+        Some("call_edit")
+    );
+    assert_ne!(committed_tool_call.tool_call_id.as_str(), "call_edit");
+
+    let projection = harness_core::conversation::project_conversation(&events, &[])
+        .unwrap_or_abort();
+    let first_turn_assistants = projection
+        .messages
+        .iter()
+        .filter_map(|message| match message {
+            harness_core::conversation::ConversationMessage::Assistant(assistant)
+                if assistant.request_id.as_str() == first_request_id.as_str() =>
+            {
+                Some(assistant)
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(first_turn_assistants.len(), 2);
+    assert_eq!(first_turn_assistants[0].tool_calls.len(), 1);
+    assert_eq!(first_turn_assistants[1].text, "I edited docs/config.md.");
+
+    let transcript = harness_core::transcript_projection::project_transcript(&events)
+        .unwrap_or_abort();
+    let first_turn_transcript = transcript
+        .messages
+        .iter()
+        .filter(|message| {
+            message.role
+                == harness_core::transcript_projection::ProjectedMessageRole::Assistant
+                && message.request_id.as_ref().is_some_and(|request_id| {
+                    request_id.as_str() == first_request_id.as_str()
+                })
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(first_turn_transcript.len(), 2);
+    assert!(first_turn_transcript[0].parts.iter().any(|part| matches!(
+        part,
+        harness_core::transcript_projection::ProjectedPart::ToolCall(_)
+    )));
+    assert!(first_turn_transcript[1].parts.iter().any(|part| matches!(
+        part,
+        harness_core::transcript_projection::ProjectedPart::Text(text)
+            if text.text == "I edited docs/config.md."
+    )));
+
     let requests = provider.requests();
     assert_eq!(
         requests.len(),

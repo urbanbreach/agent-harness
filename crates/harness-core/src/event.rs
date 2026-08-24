@@ -36,6 +36,48 @@ pub struct EventEnvelopeV1 {
     pub payload: EventV1,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LiveEventEnvelope {
+    pub event_id: String,
+    pub run_id: crate::ids::RunId,
+    pub mono_ms: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ts: Option<String>,
+    pub actor: EventActor,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub correlation_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub causation_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stream_key: Option<String>,
+    pub payload: LiveEventV1,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "event_type", content = "data", rename_all = "snake_case")]
+pub enum LiveEventV1 {
+    ProviderTextDelta {
+        request_id: crate::ids::ProviderRequestId,
+        delta: String,
+    },
+    ProviderReasoningDelta {
+        request_id: crate::ids::ProviderRequestId,
+        delta: String,
+    },
+    ProviderToolInputDelta {
+        request_id: crate::ids::ProviderRequestId,
+        tool_call_id: crate::ids::ToolCallId,
+        delta: String,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "delivery", content = "event", rename_all = "snake_case")]
+pub enum RuntimeEvent {
+    Durable(Box<EventEnvelopeV1>),
+    Live(Box<LiveEventEnvelope>),
+}
+
 impl EventEnvelopeV1 {
     pub fn lineage_parent_session_id(&self) -> Option<&str> {
         self.payload.lineage_parent_session_id()
@@ -82,6 +124,27 @@ pub struct EventContext {
     pub stream_key: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LiveEventContext {
+    pub event_id: String,
+    pub actor: EventActor,
+    pub correlation_id: Option<String>,
+    pub causation_id: Option<String>,
+    pub stream_key: Option<String>,
+}
+
+impl LiveEventContext {
+    pub fn new(event_id: impl Into<String>, actor: EventActor) -> Self {
+        Self {
+            event_id: event_id.into(),
+            actor,
+            correlation_id: None,
+            causation_id: None,
+            stream_key: None,
+        }
+    }
+}
+
 impl EventContext {
     pub fn new(seq: u64, actor: EventActor) -> Self {
         Self {
@@ -113,7 +176,9 @@ pub enum EventV1 {
     UserMessageSubmitted(UserMessageSubmittedEvent),
     PromptAttachmentsSubmitted(PromptAttachmentsSubmittedEvent),
     ProviderRequestStarted(ProviderRequestStartedEvent),
+    /// Legacy decode only. New provider text fragments use [`LiveEventV1::ProviderTextDelta`].
     ProviderStreamDelta(ProviderStreamDeltaEvent),
+    /// Legacy decode only. New reasoning fragments use [`LiveEventV1::ProviderReasoningDelta`].
     ProviderReasoningDelta(ProviderReasoningDeltaEvent),
     ProviderRequestFinished(ProviderRequestFinishedEvent),
     AssistantMessageFinished(AssistantMessageFinishedEvent),
@@ -566,14 +631,17 @@ pub struct ProviderRequestFinishedEvent {
 
 /// Durable assistant message finish barrier.
 ///
-/// This event is appended after the coordinator has committed the completed assistant response to
-/// its provider-visible message state, and before tool preflight or execution begins. It separates
-/// provider transport completion (`ProviderRequestFinished`) from the assistant-message boundary
-/// that replay/debugging tools can observe deterministically in JSONL order.
+/// `parts` contains the final sanitized reasoning, text, and completed tool intents in canonical
+/// order. The coordinator appends this event after provider transport completion and before tool
+/// preflight or execution begins. Missing `parts` and `provenance` preserve decoding of legacy logs.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AssistantMessageFinishedEvent {
     pub request_id: crate::ids::RequestId,
     pub tool_call_count: usize,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parts: Vec<crate::session::AssistantPart>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<crate::session::ProviderProvenance>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub assistant_message: Option<ProviderAssistantMessageMetadata>,
 }

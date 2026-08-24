@@ -21,6 +21,12 @@ pub(super) struct RequestLocations {
     pub(super) assistant_message_index: Option<usize>,
     pub(super) assistant_text_part_index: Option<usize>,
     pub(super) assistant_reasoning_part_index: Option<usize>,
+    pub(super) assistant_agent_id: Option<String>,
+    pub(super) pending_provider: Option<ProjectedProviderMessageMetadata>,
+    pub(super) pending_provenance: Option<ProvenanceRange>,
+    pub(super) pending_state: Option<ProjectedMessageState>,
+    pub(super) semantic_parts_authoritative: bool,
+    pub(super) semantic_tool_requests_seen: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -101,22 +107,41 @@ pub(super) fn ensure_assistant_message(
         return index;
     }
 
+    let locations = request_locations.entry(request_id.to_string()).or_default();
+    let agent_id = locations
+        .assistant_agent_id
+        .clone()
+        .or_else(|| event.actor.agent_id.clone());
+    let provider = locations.pending_provider.clone();
+    let provenance = locations
+        .pending_provenance
+        .clone()
+        .unwrap_or_else(|| ProvenanceRange::from_event(event));
+    let state = locations
+        .pending_state
+        .unwrap_or(ProjectedMessageState::Incomplete);
+
     let index = projection.messages.len();
+    let message_id = locations
+        .pending_provider
+        .as_ref()
+        .and_then(|provider| provider.provider_request_id.as_deref())
+        .map_or_else(
+            || format!("assistant:{request_id}"),
+            |provider_request_id| format!("assistant:{request_id}:{provider_request_id}"),
+        );
     projection.messages.push(ProjectedMessage {
-        message_id: format!("assistant:{request_id}"),
+        message_id,
         role: ProjectedMessageRole::Assistant,
-        state: ProjectedMessageState::Incomplete,
+        state,
         request_id: Some(request_id.into()),
-        agent_id: event.actor.agent_id.clone(),
-        provider: None,
-        provenance: ProvenanceRange::from_event(event),
+        agent_id,
+        provider,
+        provenance,
         parts: Vec::new(),
         attachments: Vec::new(),
     });
-    request_locations
-        .entry(request_id.to_string())
-        .or_default()
-        .assistant_message_index = Some(index);
+    locations.assistant_message_index = Some(index);
     index
 }
 

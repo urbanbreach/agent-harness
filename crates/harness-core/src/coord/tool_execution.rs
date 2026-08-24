@@ -9,6 +9,7 @@ impl Coordinator {
         _legacy_profile_hint: Option<String>,
         tool_id: String,
         args_json: Value,
+        reserved_tool_call_id: Option<crate::ids::ToolCallId>,
         respond_to: Option<oneshot::Sender<Result<ToolResult, String>>>,
     ) -> Result<String, CoordinatorError> {
         let clock = Arc::clone(&self.clock);
@@ -20,8 +21,14 @@ impl Coordinator {
             .as_mut()
             .ok_or(CoordinatorError::RunNotStarted)?;
 
-        let tool_call_id = format!("toolcall_{:06}", run_state.next_tool_call_id);
-        run_state.next_tool_call_id += 1;
+        let tool_call_id = match reserved_tool_call_id {
+            Some(tool_call_id) => tool_call_id.to_string(),
+            None => {
+                let tool_call_id = format!("toolcall_{:06}", run_state.next_tool_call_id);
+                run_state.next_tool_call_id += 1;
+                tool_call_id
+            }
+        };
 
         let request_correlation_id = tool_request_correlation_id(run_state, &actor);
         let tool_metadata = requested_tool_call_metadata(&tool_id, &args_json);

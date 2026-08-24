@@ -4,7 +4,11 @@ use std::io::Write;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use harness_core::event::{EventEnvelopeV1, EventV1, TaskCancelledEvent, TaskCompletedEvent};
+use harness_core::event::{
+    EventEnvelopeV1, EventV1, LiveEventEnvelope, LiveEventV1, RuntimeEvent, TaskCancelledEvent,
+    TaskCompletedEvent,
+};
+use harness_core::session::AssistantPart;
 use harness_core::store::{EventStore, EventStoreError};
 
 use super::PromptOutputFormat;
@@ -44,7 +48,7 @@ pub(super) async fn wait_for_prompt_completion_with_output<W: Write + ?Sized>(
     let mut printer = PromptStreamPrinter::new(show_thinking, format, stdout);
     let mut next_seq = 1;
     let mut stream = event_store
-        .subscribe(next_seq)
+        .subscribe_runtime(next_seq)
         .map_err(|err| format!("failed to subscribe to prompt event stream: {err}"))?;
 
     loop {
@@ -57,9 +61,12 @@ pub(super) async fn wait_for_prompt_completion_with_output<W: Write + ?Sized>(
         )
         .await
         {
-            Ok(Some(Ok(event))) => {
+            Ok(Some(Ok(RuntimeEvent::Live(event)))) => {
+                printer.observe_live(&event, request_id);
+            }
+            Ok(Some(Ok(RuntimeEvent::Durable(event)))) => {
                 next_seq = event.seq.saturating_add(1);
-                printer.observe(&event, request_id);
+                printer.observe_durable(&event, request_id);
                 match tracker.observe(&event) {
                     PromptCompletionStatus::Continue => {}
                     PromptCompletionStatus::Completed => {
@@ -73,7 +80,7 @@ pub(super) async fn wait_for_prompt_completion_with_output<W: Write + ?Sized>(
                 }
             }
             Ok(Some(Err(EventStoreError::SubscriberLagged(_)))) => {
-                stream = event_store.subscribe(next_seq).map_err(|err| {
+                stream = event_store.subscribe_runtime(next_seq).map_err(|err| {
                     format!("failed to resubscribe to prompt event stream: {err}")
                 })?;
             }
@@ -117,6 +124,8 @@ struct PromptStreamPrinter<'a, W: Write + ?Sized> {
     active_section: Option<PromptStreamSection>,
     wrote_output: bool,
     assistant_buffer: String,
+    streamed_assistant: String,
+    streamed_reasoning: String,
     saw_thinking: bool,
     json_buffer: Vec<String>,
 }
@@ -130,12 +139,14 @@ impl<'a, W: Write + ?Sized> PromptStreamPrinter<'a, W> {
             active_section: None,
             wrote_output: false,
             assistant_buffer: String::new(),
+            streamed_assistant: String::new(),
+            streamed_reasoning: String::new(),
             saw_thinking: false,
             json_buffer: Vec::new(),
         }
     }
 
-    fn observe(&mut self, event: &EventEnvelopeV1, request_id: &str) {
+    fn observe_durable(&mut self, event: &EventEnvelopeV1, request_id: &str) {
         match self.format {
             PromptOutputFormat::Json => {
                 self.buffer_json(event, request_id);
@@ -151,6 +162,11 @@ impl<'a, W: Write + ?Sized> PromptStreamPrinter<'a, W> {
         }
 
         match &event.payload {
+            EventV1::AssistantMessageFinished(data)
+                if provider_event_matches_prompt(event, data.request_id.as_str(), request_id) =>
+            {
+                self.settle_assistant(&data.parts);
+            }
             EventV1::ProviderReasoningDelta(data)
                 if self.show_thinking
                     && provider_event_matches_prompt(
@@ -168,6 +184,86 @@ impl<'a, W: Write + ?Sized> PromptStreamPrinter<'a, W> {
             }
             _ => {}
         }
+    }
+
+    fn observe_live(&mut self, event: &LiveEventEnvelope, request_id: &str) {
+        let include = live_event_matches_prompt(event, request_id);
+        if !include {
+            return;
+        }
+        match self.format {
+            PromptOutputFormat::Json => {
+                if let Ok(line) =
+                    serde_json::to_string(&RuntimeEvent::Live(Box::new(event.clone())))
+                {
+                    self.json_buffer.push(line);
+                }
+                return;
+            }
+            PromptOutputFormat::StreamingJson => {
+                if let Ok(line) =
+                    serde_json::to_string(&RuntimeEvent::Live(Box::new(event.clone())))
+                {
+                    let _ = writeln!(self.stdout, "{line}");
+                    let _ = self.stdout.flush();
+                }
+                return;
+            }
+            PromptOutputFormat::Default => {}
+        }
+
+        match &event.payload {
+            LiveEventV1::ProviderTextDelta { delta, .. } => self.write_assistant(delta),
+            LiveEventV1::ProviderReasoningDelta { delta, .. } if self.show_thinking => {
+                self.write_thinking(delta);
+            }
+            LiveEventV1::ProviderReasoningDelta { .. }
+            | LiveEventV1::ProviderToolInputDelta { .. } => {}
+        }
+    }
+
+    fn settle_assistant(&mut self, parts: &[AssistantPart]) {
+        if parts.is_empty() {
+            return;
+        }
+        let mut final_text = String::new();
+        let mut final_reasoning = String::new();
+        for part in parts {
+            match part {
+                AssistantPart::Text { text } => final_text.push_str(text),
+                AssistantPart::Reasoning { text } => final_reasoning.push_str(text),
+                AssistantPart::ToolCall(_) => {}
+            }
+        }
+        if self.show_thinking {
+            if !self.saw_thinking {
+                self.write_thinking(&final_reasoning);
+            } else if let Some(remainder) = final_reasoning.strip_prefix(&self.streamed_reasoning) {
+                self.write_thinking(remainder);
+            } else if self.streamed_reasoning != final_reasoning {
+                self.active_section = None;
+                self.streamed_reasoning.clear();
+                self.write_thinking(&final_reasoning);
+            }
+            self.streamed_reasoning.clear();
+            if self.streamed_assistant.is_empty() {
+                self.assistant_buffer.push_str(&final_text);
+            } else if !assistant_final_replays_buffer(&final_text, &self.assistant_buffer) {
+                self.assistant_buffer.clear();
+                self.assistant_buffer.push_str(&final_text);
+            }
+        } else if self.streamed_assistant.is_empty() {
+            self.write_assistant(&final_text);
+        } else if let Some(remainder) = final_text.strip_prefix(&self.streamed_assistant) {
+            if !remainder.is_empty() {
+                self.write_assistant(remainder);
+            }
+        } else if self.streamed_assistant != final_text {
+            let _ = writeln!(self.stdout);
+            self.streamed_assistant.clear();
+            self.write_assistant(&final_text);
+        }
+        self.streamed_assistant.clear();
     }
 
     fn finish(&mut self) {
@@ -213,6 +309,9 @@ impl<'a, W: Write + ?Sized> PromptStreamPrinter<'a, W> {
             EventV1::ProviderRequestFinished(data) => {
                 provider_finish_matches_prompt(event, data, request_id)
             }
+            EventV1::AssistantMessageFinished(data) => {
+                provider_event_matches_prompt(event, data.request_id.as_str(), request_id)
+            }
             EventV1::ToolCallRequested(_)
             | EventV1::ToolCallStarted(_)
             | EventV1::ToolCallFinished(_)
@@ -226,7 +325,7 @@ impl<'a, W: Write + ?Sized> PromptStreamPrinter<'a, W> {
             return;
         }
 
-        if let Ok(line) = serde_json::to_string(event) {
+        if let Ok(line) = serde_json::to_string(&RuntimeEvent::Durable(Box::new(event.clone()))) {
             let _ = writeln!(self.stdout, "{line}");
             let _ = self.stdout.flush();
         }
@@ -246,6 +345,9 @@ impl<'a, W: Write + ?Sized> PromptStreamPrinter<'a, W> {
             EventV1::ProviderRequestFinished(data) => {
                 provider_finish_matches_prompt(event, data, request_id)
             }
+            EventV1::AssistantMessageFinished(data) => {
+                provider_event_matches_prompt(event, data.request_id.as_str(), request_id)
+            }
             EventV1::ToolCallRequested(_)
             | EventV1::ToolCallStarted(_)
             | EventV1::ToolCallFinished(_)
@@ -259,7 +361,7 @@ impl<'a, W: Write + ?Sized> PromptStreamPrinter<'a, W> {
             return;
         }
 
-        if let Ok(line) = serde_json::to_string(event) {
+        if let Ok(line) = serde_json::to_string(&RuntimeEvent::Durable(Box::new(event.clone()))) {
             self.json_buffer.push(line);
         }
     }
@@ -276,6 +378,7 @@ impl<'a, W: Write + ?Sized> PromptStreamPrinter<'a, W> {
             self.active_section = Some(PromptStreamSection::Thinking);
         }
         self.saw_thinking = true;
+        self.streamed_reasoning.push_str(delta);
         self.wrote_output = true;
         let _ = write!(self.stdout, "{delta}");
         let _ = self.stdout.flush();
@@ -285,6 +388,7 @@ impl<'a, W: Write + ?Sized> PromptStreamPrinter<'a, W> {
         if delta.is_empty() {
             return;
         }
+        self.streamed_assistant.push_str(delta);
         if self.show_thinking {
             self.buffer_assistant_delta(delta);
             return;
@@ -348,6 +452,56 @@ fn assistant_delta_replays_buffer(delta: &str, assistant_buffer: &str) -> bool {
 
 fn normalize_stream_text_for_replay_check(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+#[cfg(test)]
+mod semantic_settle_tests {
+    use super::*;
+
+    #[test]
+    fn committed_text_is_rendered_after_a_non_prefix_live_fragment() {
+        let mut output = Vec::new();
+        let mut printer = PromptStreamPrinter::new(false, PromptOutputFormat::Default, &mut output);
+        printer.write_assistant("world");
+        printer.settle_assistant(&[AssistantPart::Text {
+            text: "hello world".to_string(),
+        }]);
+        drop(printer);
+
+        assert_eq!(String::from_utf8(output).unwrap(), "world\nhello world");
+    }
+
+    #[test]
+    fn committed_reasoning_settles_a_non_prefix_live_fragment() {
+        let mut output = Vec::new();
+        let mut printer = PromptStreamPrinter::new(true, PromptOutputFormat::Default, &mut output);
+        printer.write_thinking("suffix");
+        printer.settle_assistant(&[AssistantPart::Reasoning {
+            text: "complete reasoning".to_string(),
+        }]);
+        drop(printer);
+
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            "Thinking: suffix\nThinking: complete reasoning"
+        );
+    }
+}
+
+fn assistant_final_replays_buffer(final_text: &str, assistant_buffer: &str) -> bool {
+    let final_text = final_text.trim();
+    let assistant_buffer = assistant_buffer.trim();
+    if assistant_buffer.is_empty() {
+        return final_text.is_empty();
+    }
+
+    let mut remainder = final_text;
+    let mut repetitions = 0;
+    while let Some(next) = remainder.strip_prefix(assistant_buffer) {
+        repetitions += 1;
+        remainder = next.trim_start();
+    }
+    repetitions > 0 && remainder.is_empty()
 }
 
 /// Prompt mode waits on the coordinator event stream once, then processes replayed
@@ -577,6 +731,15 @@ fn agent_turn_task_id<'a>(events: &'a [EventEnvelopeV1], request_id: &str) -> Op
 
 fn event_matches_request(event: &EventEnvelopeV1, request_id: &str) -> bool {
     event.correlation_id.as_deref() == Some(request_id)
+}
+
+fn live_event_matches_prompt(event: &LiveEventEnvelope, request_id: &str) -> bool {
+    let provider_request_id = match &event.payload {
+        LiveEventV1::ProviderTextDelta { request_id, .. }
+        | LiveEventV1::ProviderReasoningDelta { request_id, .. }
+        | LiveEventV1::ProviderToolInputDelta { request_id, .. } => request_id.as_str(),
+    };
+    provider_request_id == request_id || event.correlation_id.as_deref() == Some(request_id)
 }
 
 fn provider_event_matches_prompt(

@@ -8,13 +8,16 @@ use harness_core::auth::{
     AuthProviderId, CredentialClock, CredentialStore, StoredCredential, SystemCredentialClock,
 };
 use harness_core::event::{
-    ActorKind, AgentSpawnedEvent, EventActor, EventEnvelopeV1, EventV1,
-    ProviderRequestFinishedEvent, ProviderRequestStartedEvent, RunFailedEvent, RunFinishedEvent,
-    RunStartedEvent, TaskCancelledEvent, TaskCompletedEvent, TaskCompletionMetadata,
-    TaskLineageMetadata, TaskScheduleState, TaskScheduledEvent, UserMessageSubmittedEvent,
+    ActorKind, AgentSpawnedEvent, AssistantMessageFinishedEvent, EventActor, EventEnvelopeV1,
+    EventV1, LiveEventEnvelope, LiveEventV1, ProviderRequestFinishedEvent,
+    ProviderRequestStartedEvent, RunFailedEvent, RunFinishedEvent, RunStartedEvent,
+    TaskCancelledEvent, TaskCompletedEvent, TaskCompletionMetadata, TaskLineageMetadata,
+    TaskScheduleState, TaskScheduledEvent, UserMessageSubmittedEvent,
 };
+use harness_core::session::AssistantPart;
 use harness_core::store::{
     EventEnvelopeWithoutSeqV1, EventStore, EventStoreError, EventStream, InMemoryEventStore,
+    RuntimeEventStream,
 };
 use harness_providers::mock::{request_digest, MockProvider};
 use harness_providers::{
@@ -23,7 +26,8 @@ use harness_providers::{
 
 use super::stream::{
     evaluate_prompt_completion, has_provider_error_finish, parse_wait_timeout_ms,
-    wait_for_prompt_completion, PromptCompletionStatus, DEFAULT_WAIT_TIMEOUT,
+    wait_for_prompt_completion, wait_for_prompt_completion_with_output, PromptCompletionStatus,
+    DEFAULT_WAIT_TIMEOUT,
 };
 use super::{
     apply_prompt_command_config, permission_policy_for_resolution,
@@ -432,6 +436,124 @@ async fn prompt_tracker_waits_for_agent_turn_end_not_provider_finish() {
         .unwrap_or_abort();
 
     assert_eq!(waiter.await.unwrap_or_abort(), Ok(()));
+}
+
+#[tokio::test]
+async fn prompt_stream_preserves_typed_live_variants_until_durable_completion() {
+    // Given: a prompt waiter has subscribed to the typed runtime stream.
+    let store = Arc::new(CountingEventStore::new());
+    let wait_store: Arc<dyn EventStore> = Arc::<CountingEventStore>::clone(&store);
+    let waiter = tokio::spawn(async move {
+        let mut output = Vec::new();
+        let result = wait_for_prompt_completion_with_output(
+            wait_store,
+            "turn-1",
+            Duration::from_secs(1),
+            true,
+            PromptOutputFormat::StreamingJson,
+            &mut output,
+        )
+        .await;
+        (result, output)
+    });
+    tokio::time::timeout(
+        Duration::from_millis(500),
+        store.wait_until_runtime_subscribed(),
+    )
+    .await
+    .unwrap_or_abort();
+
+    // When: each live fragment kind arrives before the final durable assistant commit.
+    for (event_id, payload) in [
+        (
+            "live-reasoning",
+            LiveEventV1::ProviderReasoningDelta {
+                request_id: "provider-1".into(),
+                delta: "reasoning".to_string(),
+            },
+        ),
+        (
+            "live-text",
+            LiveEventV1::ProviderTextDelta {
+                request_id: "provider-1".into(),
+                delta: "answer".to_string(),
+            },
+        ),
+        (
+            "live-tool-input",
+            LiveEventV1::ProviderToolInputDelta {
+                request_id: "provider-1".into(),
+                tool_call_id: "tool-1".into(),
+                delta: "{\"path\":\"src/lib.rs\"}".to_string(),
+            },
+        ),
+    ] {
+        store.publish_live(LiveEventEnvelope {
+            event_id: event_id.to_string(),
+            run_id: "run-prompt-runtime".into(),
+            mono_ms: 1,
+            ts: None,
+            actor: EventActor::new(ActorKind::Worker, Some("agent-1".to_string())),
+            correlation_id: Some("turn-1".to_string()),
+            causation_id: None,
+            stream_key: Some("agent:agent-1".to_string()),
+            payload,
+        });
+    }
+    store
+        .append(draft_event(
+            EventV1::AssistantMessageFinished(AssistantMessageFinishedEvent {
+                request_id: "provider-1".into(),
+                tool_call_count: 0,
+                parts: vec![AssistantPart::Text {
+                    text: "answer".to_string(),
+                }],
+                provenance: None,
+                assistant_message: None,
+            }),
+            Some("turn-1"),
+        ))
+        .unwrap_or_abort();
+    store
+        .append(draft_event(
+            EventV1::TaskCompleted(TaskCompletedEvent {
+                task_id: "task-1".into(),
+                result_summary: "answer".to_string(),
+                result_digest: "result-digest".to_string(),
+                metadata: Some(TaskCompletionMetadata {
+                    lineage: None,
+                    task_scope: Some(harness_core::event::TaskTerminalScope::AgentTurn),
+                    timing: None,
+                    hook_executions: Vec::new(),
+                }),
+            }),
+            Some("turn-1"),
+        ))
+        .unwrap_or_abort();
+
+    // Then: live machine variants are explicit and only durable events settle the waiter.
+    let (result, output) = waiter.await.unwrap_or_abort();
+    assert_eq!(result, Ok(()));
+    let events = String::from_utf8(output)
+        .unwrap_or_abort()
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap_or_abort())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| event["delivery"] == "live")
+            .count(),
+        3
+    );
+    assert!(events.iter().any(|event| {
+        event["delivery"] == "live"
+            && event["event"]["payload"]["event_type"] == "provider_tool_input_delta"
+    }));
+    assert!(events.iter().any(|event| {
+        event["delivery"] == "durable"
+            && event["event"]["payload"]["event_type"] == "assistant_message_finished"
+    }));
 }
 
 #[test]
@@ -2165,6 +2287,7 @@ struct CountingEventStore {
     inner: InMemoryEventStore,
     subscribe_calls: AtomicUsize,
     replay_calls: AtomicUsize,
+    runtime_subscribed: tokio::sync::Notify,
 }
 
 impl CountingEventStore {
@@ -2173,6 +2296,7 @@ impl CountingEventStore {
             inner: InMemoryEventStore::new(),
             subscribe_calls: AtomicUsize::new(0),
             replay_calls: AtomicUsize::new(0),
+            runtime_subscribed: tokio::sync::Notify::new(),
         }
     }
 
@@ -2182,6 +2306,12 @@ impl CountingEventStore {
 
     fn replay_calls(&self) -> usize {
         self.replay_calls.load(Ordering::SeqCst)
+    }
+
+    async fn wait_until_runtime_subscribed(&self) {
+        if self.subscribe_calls() == 0 {
+            self.runtime_subscribed.notified().await;
+        }
     }
 }
 
@@ -2199,7 +2329,17 @@ impl EventStore for CountingEventStore {
     }
 
     fn subscribe(&self, from_seq: u64) -> Result<EventStream, EventStoreError> {
-        self.subscribe_calls.fetch_add(1, Ordering::SeqCst);
         self.inner.subscribe(from_seq)
+    }
+
+    fn subscribe_runtime(&self, from_seq: u64) -> Result<RuntimeEventStream, EventStoreError> {
+        self.subscribe_calls.fetch_add(1, Ordering::SeqCst);
+        let stream = self.inner.subscribe_runtime(from_seq);
+        self.runtime_subscribed.notify_waiters();
+        stream
+    }
+
+    fn publish_live(&self, envelope: LiveEventEnvelope) {
+        self.inner.publish_live(envelope);
     }
 }

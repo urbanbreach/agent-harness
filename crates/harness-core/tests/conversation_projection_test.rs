@@ -21,3 +21,8 @@ mod part_03_canonical_session_contract_test {
 mod part_04_canonical_session_behavior_test {
     include!("conversation_projection/04_canonical_session_behavior_test.rs");
 }
+
+mod part_05_semantic_assistant_commit_test {
+    use super::*;
+    include!("conversation_projection/05_semantic_assistant_commit_test.rs");
+}

@@ -46,6 +46,7 @@ fn assistant(id: &str, tool_call_id: &str) -> SessionEntry {
         payload: SessionEntryPayload::AssistantMessage {
             parts: vec![AssistantPart::ToolCall(AssistantToolCall {
                 tool_call_id: ToolCallId::new(tool_call_id),
+                provider_tool_call_id: None,
                 tool_id: "read".to_string(),
                 args_summary: "file".to_string(),
                 args_digest: "digest".to_string(),

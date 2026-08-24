@@ -5,10 +5,11 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use harness_core::context_budget::RequestBudgetSnapshot;
 use harness_core::event::{
-    ActorKind, BackgroundTaskNotificationEvent, EventEnvelopeV1, EventV1,
-    ProviderRequestFinishedEvent, ProviderRequestRetryMetadata, ResolvedToolIdentity,
-    UserMessageSubmittedEvent,
+    ActorKind, BackgroundTaskNotificationEvent, EventEnvelopeV1, EventV1, LiveEventEnvelope,
+    LiveEventV1, ProviderRequestFinishedEvent, ProviderRequestRetryMetadata, ResolvedToolIdentity,
+    ToolCallLifecycleState, UserMessageSubmittedEvent,
 };
+use harness_core::session::AssistantPart;
 
 use super::permissions::PendingPermission;
 use super::{
@@ -60,6 +61,13 @@ impl LiveTurnWatchers {
     }
 }
 
+#[derive(Debug)]
+struct TransientAssistantState {
+    text_start: usize,
+    reasoning_start: usize,
+    tool_call_ids: BTreeSet<String>,
+}
+
 #[derive(Default)]
 pub struct SessionProjection {
     pub(crate) events: Vec<EventEnvelopeV1>,
@@ -79,6 +87,7 @@ pub struct SessionProjection {
     terminal_elapsed_ms: BTreeMap<String, u64>,
     fallback_profile_label: String,
     seen_seqs: BTreeSet<u64>,
+    transient_assistants: BTreeMap<String, TransientAssistantState>,
     pub(crate) pending_permissions: BTreeMap<String, PendingPermission>,
     pub(crate) run_terminal_seen: bool,
     pub(crate) pending_status_notice: Option<String>,
@@ -100,6 +109,7 @@ impl SessionProjection {
         self.completed_turn_request_ids.clear();
         self.terminal_elapsed_ms.clear();
         self.seen_seqs.clear();
+        self.transient_assistants.clear();
         self.pending_permissions.clear();
         self.run_terminal_seen = false;
         self.events_trimmed_count = 0;
@@ -174,6 +184,108 @@ impl SessionProjection {
         let mut labels = self.agent_profiles.values();
         let label = labels.next()?;
         labels.next().is_none().then(|| label.clone())
+    }
+
+    pub(crate) fn ingest_live_event(&mut self, event: &LiveEventEnvelope) {
+        let (provider_request_id, tool_input) = match &event.payload {
+            LiveEventV1::ProviderTextDelta { request_id, .. }
+            | LiveEventV1::ProviderReasoningDelta { request_id, .. } => (request_id.as_str(), None),
+            LiveEventV1::ProviderToolInputDelta {
+                request_id,
+                tool_call_id,
+                ..
+            } => (request_id.as_str(), Some(tool_call_id.as_str())),
+        };
+        let activity_index = self.activities.iter().position(|activity| {
+            event.correlation_id.as_deref() == Some(activity.request_id.as_str())
+                || activity.request_id == provider_request_id
+                || activity
+                    .request_data
+                    .as_ref()
+                    .is_some_and(|request| request.request_id.as_str() == provider_request_id)
+        });
+        let Some(activity_index) = activity_index else {
+            return;
+        };
+
+        let activity = &self.activities[activity_index];
+        self.transient_assistants
+            .entry(provider_request_id.to_string())
+            .or_insert_with(|| TransientAssistantState {
+                text_start: activity.transcript_text.len(),
+                reasoning_start: activity.thinking_text.len(),
+                tool_call_ids: BTreeSet::new(),
+            });
+
+        let activity = &mut self.activities[activity_index];
+        activity.status = ActivityStatus::Streaming;
+        match &event.payload {
+            LiveEventV1::ProviderTextDelta { delta, .. } => {
+                if activity.transcript_text.is_empty() && activity.tool_calls.is_empty() {
+                    activity.finish_thinking_mono(event.mono_ms);
+                }
+                activity.first_delta_mono_ms.get_or_insert(event.mono_ms);
+                activity.transcript_text.push_str(delta);
+            }
+            LiveEventV1::ProviderReasoningDelta { delta, .. } => {
+                activity.thinking_text.push_str(delta);
+                activity.note_thinking_mono(event.mono_ms);
+            }
+            LiveEventV1::ProviderToolInputDelta {
+                tool_call_id,
+                delta,
+                ..
+            } => {
+                let tool_call_id = tool_call_id.as_str();
+                if let Some(tool_call) = activity
+                    .tool_calls
+                    .iter_mut()
+                    .find(|tool_call| tool_call.tool_call_id == tool_call_id)
+                {
+                    tool_call.args_summary.push_str(delta);
+                    tool_call.last_mono_ms = event.mono_ms;
+                    tool_call.last_timestamp.clone_from(&event.ts);
+                } else {
+                    activity.tool_calls.push(ToolCallEntry {
+                        tool_call_id: tool_call_id.to_string(),
+                        tool_id: "tool".to_string(),
+                        canonical_tool_id: None,
+                        alias_source_tool_id: None,
+                        resolved_tool_identity: None,
+                        args_summary: delta.clone(),
+                        args_digest: String::new(),
+                        lifecycle_state: Some(ToolCallLifecycleState::Pending),
+                        status: ToolCallDisplayStatus::Queued,
+                        output_summary: None,
+                        output_digest: None,
+                        output_json: None,
+                        truncated_output: None,
+                        edit: None,
+                        lineage: None,
+                        artifact_refs: Vec::new(),
+                        timing_elapsed_ms: None,
+                        permissions: Vec::new(),
+                        first_seq: activity.last_seq,
+                        last_seq: activity.last_seq,
+                        first_mono_ms: event.mono_ms,
+                        last_mono_ms: event.mono_ms,
+                        first_timestamp: event.ts.clone(),
+                        last_timestamp: event.ts.clone(),
+                    });
+                }
+            }
+        }
+        if let Some(tool_call_id) = tool_input {
+            if let Some(state) = self.transient_assistants.get_mut(provider_request_id) {
+                state.tool_call_ids.insert(tool_call_id.to_string());
+            }
+        }
+        activity.last_mono_ms = event.mono_ms;
+        activity.bump_revision();
+        self.transcript_delta = ProjectionDelta::Activity {
+            index: activity_index,
+        };
+        self.enforce_transcript_memory_cap();
     }
 
     pub(crate) fn ingest_event(&mut self, event: EventEnvelopeV1, historical: bool) -> usize {
@@ -263,6 +375,11 @@ impl SessionProjection {
                 .and_then(request_index)
                 .or_else(|| request_index(data.request_id.as_str())),
             EventV1::ProviderReasoningDelta(data) => event
+                .correlation_id
+                .as_deref()
+                .and_then(request_index)
+                .or_else(|| request_index(data.request_id.as_str())),
+            EventV1::AssistantMessageFinished(data) => event
                 .correlation_id
                 .as_deref()
                 .and_then(request_index)

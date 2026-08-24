@@ -62,14 +62,14 @@ fn struct_fields(source: &str, name: &str) -> BTreeSet<String> {
         .collect()
 }
 
-fn documented_task_scheduled_fields(doc: &str) -> BTreeSet<String> {
+fn documented_event_fields(doc: &str, event_name: &str) -> BTreeSet<String> {
     doc.lines()
-        .find(|line| line.starts_with("- `TaskScheduled`"))
+        .find(|line| line.starts_with(&format!("- `{event_name}`")))
         .unwrap_or_abort()
         .split('`')
         .enumerate()
         .filter_map(|(index, token)| (index % 2 == 1).then_some(token))
-        .filter(|token| *token != "TaskScheduled" && !token.contains('.'))
+        .filter(|token| *token != event_name && !token.contains('.'))
         .map(str::to_string)
         .collect()
 }
@@ -103,8 +103,25 @@ fn architecture_task_scheduled_fields_match_public_event_shape() {
 
     // act: source and documented TaskScheduled fields are extracted.
     let source_fields = struct_fields(&event_source, "TaskScheduledEvent");
-    let documented_fields = documented_task_scheduled_fields(&architecture_doc);
+    let documented_fields = documented_event_fields(&architecture_doc, "TaskScheduled");
 
     // assert: docs name every serialized top-level field exactly once.
+    assert_eq!(documented_fields, source_fields);
+}
+
+#[test]
+fn architecture_assistant_completion_fields_match_public_event_shape() {
+    // arrange: the self-contained durable assistant event and architecture contract.
+    let root = repo_root();
+    let event_source =
+        std::fs::read_to_string(root.join("crates/harness-core/src/event.rs")).unwrap_or_abort();
+    let architecture_doc =
+        std::fs::read_to_string(root.join("docs/architecture/architecture.md")).unwrap_or_abort();
+
+    // act: source and documented AssistantMessageFinished fields are extracted.
+    let source_fields = struct_fields(&event_source, "AssistantMessageFinishedEvent");
+    let documented_fields = documented_event_fields(&architecture_doc, "AssistantMessageFinished");
+
+    // assert: the public docs track every serialized completion field.
     assert_eq!(documented_fields, source_fields);
 }

@@ -203,6 +203,7 @@ impl CoordinatorHandle {
             legacy_profile_hint,
             tool_id: tool_id.into(),
             args_json,
+            reserved_tool_call_id: None,
             respond_to,
         })
         .await

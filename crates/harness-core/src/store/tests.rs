@@ -2,7 +2,10 @@ use super::{
     decode_jsonl_line, scan_events_from_cursor, serialize_jsonl_line, EventEnvelopeWithoutSeqV1,
     EventStore, EventStoreError, EventStream, InMemoryEventStore, JsonlFileEventStore, ScanCursor,
 };
-use crate::event::{ActorKind, EventActor, EventV1, RunStartedEvent, SCHEMA_VERSION};
+use crate::event::{
+    ActorKind, EventActor, EventV1, LiveEventEnvelope, LiveEventV1, RunStartedEvent, RuntimeEvent,
+    SCHEMA_VERSION,
+};
 use crate::UnwrapOrAbort;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
@@ -452,6 +455,61 @@ async fn subscribe_replays_then_streams_live_events() {
         .unwrap_or_abort()
         .unwrap_or_abort();
     assert_eq!(live.seq, 3);
+}
+
+#[tokio::test]
+async fn runtime_subscription_delivers_live_events_without_durable_replay() {
+    // Given: a runtime subscription registered after the only durable event.
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
+    let store = JsonlFileEventStore::open(temp_dir.path(), "run_live", false).unwrap_or_abort();
+    store
+        .append(run_started_draft("run_live", 1))
+        .unwrap_or_abort();
+    let mut subscription = store.subscribe_runtime(2).unwrap_or_abort();
+
+    // When: a typed provider fragment is published through the live-only boundary.
+    store.publish_live(LiveEventEnvelope {
+        event_id: "live-0001".to_string(),
+        run_id: "run_live".into(),
+        mono_ms: 2,
+        ts: None,
+        actor: EventActor::new(ActorKind::Worker, Some("agent_000001".to_string())),
+        correlation_id: Some("turn_000001".to_string()),
+        causation_id: None,
+        stream_key: Some("agent:agent_000001".to_string()),
+        payload: LiveEventV1::ProviderTextDelta {
+            request_id: "provider_request_000001".into(),
+            delta: "hello".to_string(),
+        },
+    });
+
+    let published = timeout(Duration::from_secs(1), subscription.next())
+        .await
+        .unwrap_or_abort()
+        .unwrap_or_abort()
+        .unwrap_or_abort();
+
+    // Then: the subscriber receives it, while replay, JSONL, and durable sequence stay unchanged.
+    let RuntimeEvent::Live(published) = published else {
+        panic!("expected a live runtime event");
+    };
+    assert!(matches!(
+        published.payload,
+        LiveEventV1::ProviderTextDelta { ref delta, .. } if delta == "hello"
+    ));
+    let replayed = collect_stream(store.replay(1).unwrap_or_abort()).await;
+    assert_eq!(
+        replayed.iter().map(|event| event.seq).collect::<Vec<_>>(),
+        vec![1]
+    );
+    assert_eq!(
+        fs::read_to_string(store.file_path())
+            .unwrap_or_abort()
+            .lines()
+            .count(),
+        1
+    );
+    assert_eq!(store.next_seq().unwrap_or_abort(), 2);
 }
 
 #[tokio::test]

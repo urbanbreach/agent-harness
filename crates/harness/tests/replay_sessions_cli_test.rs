@@ -69,3 +69,8 @@ mod part_13_sessions_reopen_json_single_summary_shape_test {
     use super::*;
     include!("replay_sessions_cli/13_sessions_reopen_json_single_summary_shape_test.rs");
 }
+
+mod part_14_export_uses_committed_assistant_content_test {
+    use super::*;
+    include!("replay_sessions_cli/14_export_uses_committed_assistant_content_test.rs");
+}

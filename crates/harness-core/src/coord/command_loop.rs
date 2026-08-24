@@ -205,6 +205,7 @@ impl Coordinator {
                         tool_id,
                         args_json,
                         None,
+                        None,
                     )
                     .await;
                 warn_oneshot_send_failure(respond_to.send(result), "request_tool_call");
@@ -214,6 +215,7 @@ impl Coordinator {
                 legacy_profile_hint,
                 tool_id,
                 args_json,
+                reserved_tool_call_id,
                 respond_to,
             } => {
                 let _ = self
@@ -222,6 +224,7 @@ impl Coordinator {
                         legacy_profile_hint,
                         tool_id,
                         args_json,
+                        reserved_tool_call_id,
                         Some(respond_to),
                     )
                     .await;
@@ -344,8 +347,14 @@ impl Coordinator {
                 request_id,
                 delta,
             } => {
-                let _ =
-                    self.agent_provider_stream_delta_internal(task_id, agent_id, request_id, delta);
+                let _ = self.agent_provider_live_event_internal(
+                    task_id,
+                    agent_id,
+                    LiveEventV1::ProviderTextDelta {
+                        request_id: request_id.into(),
+                        delta,
+                    },
+                );
             }
             Command::AgentProviderReasoningDelta {
                 task_id,
@@ -353,8 +362,31 @@ impl Coordinator {
                 request_id,
                 delta,
             } => {
-                let _ = self
-                    .agent_provider_reasoning_delta_internal(task_id, agent_id, request_id, delta);
+                let _ = self.agent_provider_live_event_internal(
+                    task_id,
+                    agent_id,
+                    LiveEventV1::ProviderReasoningDelta {
+                        request_id: request_id.into(),
+                        delta,
+                    },
+                );
+            }
+            Command::AgentProviderToolInputDelta {
+                task_id,
+                agent_id,
+                request_id,
+                tool_call_id,
+                delta,
+            } => {
+                let _ = self.agent_provider_live_event_internal(
+                    task_id,
+                    agent_id,
+                    LiveEventV1::ProviderToolInputDelta {
+                        request_id: request_id.into(),
+                        tool_call_id,
+                        delta,
+                    },
+                );
             }
             Command::AgentProviderRequestFinished {
                 task_id,
@@ -387,21 +419,11 @@ impl Coordinator {
             Command::AgentAssistantMessageFinished {
                 task_id,
                 agent_id,
-                request_id,
-                assistant_output,
-                tool_call_count,
-                assistant_message,
+                response,
                 respond_to,
             } => {
                 let result = self
-                    .agent_assistant_message_finished_internal(
-                        task_id,
-                        agent_id,
-                        request_id,
-                        assistant_output,
-                        tool_call_count,
-                        assistant_message,
-                    )
+                    .agent_assistant_message_finished_internal(task_id, agent_id, response)
                     .await;
                 warn_oneshot_send_failure(
                     respond_to.send(result),

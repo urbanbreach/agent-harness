@@ -130,7 +130,7 @@ pub(in crate::coord) async fn run_agent_turn_phase_loop(
                 };
             }
         };
-        if let Err(reason) = append_assistant_message_end_phase(
+        let reserved_tool_call_ids = match append_assistant_message_end_phase(
             &job_tx,
             &task.task_id,
             &task.agent_id,
@@ -139,8 +139,9 @@ pub(in crate::coord) async fn run_agent_turn_phase_loop(
         )
         .await
         {
-            return AgentTurnOutcome::failed(reason);
-        }
+            Ok(tool_call_ids) => tool_call_ids,
+            Err(reason) => return AgentTurnOutcome::failed(reason),
+        };
         if cancellation_token.is_cancelled() {
             return AgentTurnOutcome::failed_with_memory(
                 "job cancelled",
@@ -173,6 +174,7 @@ pub(in crate::coord) async fn run_agent_turn_phase_loop(
                     &task.profile,
                     &mut turn_state.messages,
                     tool_intents,
+                    reserved_tool_call_ids,
                 )
                 .await
                 {
@@ -559,6 +561,20 @@ async fn emit_agent_runtime_event_phase(
             })
             .await
             .map_err(|_| "provider reasoning delta channel closed".to_string()),
+        AgentRuntimeEvent::ProviderToolInputDelta {
+            request_id,
+            tool_call_id,
+            delta,
+        } => job_tx
+            .send(Command::AgentProviderToolInputDelta {
+                task_id,
+                agent_id,
+                request_id,
+                tool_call_id,
+                delta,
+            })
+            .await
+            .map_err(|_| "provider tool input delta channel closed".to_string()),
         AgentRuntimeEvent::ProviderRequestFinished(finished) => {
             let (respond_to, response_rx) = oneshot::channel();
             job_tx
@@ -588,7 +604,7 @@ async fn append_assistant_message_end_phase(
     agent_id: &str,
     messages: &mut Vec<CompletionMessage>,
     response: &AssistantResponse,
-) -> Result<(), String> {
+) -> Result<Vec<crate::ids::ToolCallId>, String> {
     let assistant_tool_calls = (!response.tool_intents.is_empty()).then(|| {
         response
             .tool_intents
@@ -614,10 +630,7 @@ async fn append_assistant_message_end_phase(
         .send(Command::AgentAssistantMessageFinished {
             task_id: task_id.to_string(),
             agent_id: agent_id.to_string(),
-            request_id: response.request_id.to_string(),
-            assistant_output: response.text.clone(),
-            tool_call_count: response.tool_intents.len(),
-            assistant_message: response.finished_metadata.assistant_message.clone(),
+            response: Box::new(response.clone()),
             respond_to,
         })
         .await
@@ -656,18 +669,34 @@ async fn run_tool_phase(
     profile: &AgentProfile,
     messages: &mut Vec<CompletionMessage>,
     tool_intents: Vec<AssistantToolIntent>,
+    reserved_tool_call_ids: Vec<crate::ids::ToolCallId>,
 ) -> Result<(), String> {
+    if tool_intents.len() != reserved_tool_call_ids.len() {
+        return Err("assistant tool commit did not reserve every tool call".to_string());
+    }
+
     let mut tool_phase_tasks = tokio::task::JoinSet::new();
     let tool_count = tool_intents.len();
 
-    for (source_index, tool_call) in tool_intents.into_iter().enumerate() {
+    for (source_index, (tool_call, reserved_tool_call_id)) in tool_intents
+        .into_iter()
+        .zip(reserved_tool_call_ids)
+        .enumerate()
+    {
         let job_tx = job_tx.clone();
         let agent_id = agent_id.to_string();
         let tool_id = tool_call.tool_id.clone();
         let args_json = tool_call.arguments.clone();
 
         tool_phase_tasks.spawn(async move {
-            let result = execute_agent_tool_phase(&job_tx, &agent_id, tool_id, args_json).await;
+            let result = execute_agent_tool_phase(
+                &job_tx,
+                &agent_id,
+                tool_id,
+                args_json,
+                reserved_tool_call_id,
+            )
+            .await;
             AgentToolPhaseResult {
                 source_index,
                 tool_call,
@@ -728,6 +757,7 @@ async fn execute_agent_tool_phase(
     agent_id: &str,
     tool_id: String,
     args_json: Value,
+    reserved_tool_call_id: crate::ids::ToolCallId,
 ) -> Result<ToolResult, String> {
     let (respond_to, response_rx) = oneshot::channel();
     job_tx
@@ -736,6 +766,7 @@ async fn execute_agent_tool_phase(
             legacy_profile_hint: None,
             tool_id,
             args_json,
+            reserved_tool_call_id: Some(reserved_tool_call_id),
             respond_to,
         })
         .await

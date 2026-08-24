@@ -6,10 +6,10 @@ use crate::digest::digest12;
 use crate::event::{
     ActorKind, ArtifactWrittenEvent, CompactionFailedEvent, EditAppliedEvent, EditProposedEvent,
     EditRejectedEvent, EventActor, EventBuilder, EventContext, EventEnvelopeV1, EventV1,
-    HookExecutionMetadata, PermissionDecision as EventPermissionDecision,
-    PermissionGrantRecordedEvent, PermissionRequestedArgs, PermissionResolvedEvent,
-    ToolCallFinishedEvent, ToolCallMetadata, ToolCallStartedEvent, ToolCallStatus,
-    ToolIdentityMetadata,
+    HookExecutionMetadata, LiveEventContext, LiveEventV1,
+    PermissionDecision as EventPermissionDecision, PermissionGrantRecordedEvent,
+    PermissionRequestedArgs, PermissionResolvedEvent, ToolCallFinishedEvent, ToolCallMetadata,
+    ToolCallStartedEvent, ToolCallStatus, ToolIdentityMetadata,
 };
 use crate::perm::PermissionGrant;
 use crate::redact::Redactor;
@@ -82,6 +82,40 @@ where
     let context = event_context_with_keys(run_state, actor, stream_key, correlation_id);
     let envelope = builder.build(context, payload)?;
     append_built_event(run_state, envelope)
+}
+
+pub(in crate::coord) struct LiveEventPublishArgs {
+    pub(in crate::coord) actor: EventActor,
+    pub(in crate::coord) stream_key: Option<String>,
+    pub(in crate::coord) correlation_id: Option<String>,
+    pub(in crate::coord) payload: LiveEventV1,
+}
+
+pub(in crate::coord) fn publish_live_event<C, R>(
+    builder: &EventBuilder<'_, C, R>,
+    run_state: &mut RunState,
+    args: LiveEventPublishArgs,
+) -> Result<(), CoordinatorError>
+where
+    C: Clock + ?Sized,
+    R: Redactor + ?Sized,
+{
+    let LiveEventPublishArgs {
+        actor,
+        stream_key,
+        correlation_id,
+        payload,
+    } = args;
+    let mut context = LiveEventContext::new(
+        format!("live_evt-{:020}", run_state.next_live_event_id),
+        actor,
+    );
+    context.correlation_id = correlation_id;
+    context.stream_key = stream_key;
+    let envelope = builder.build_live(context, payload)?;
+    run_state.next_live_event_id += 1;
+    run_state.event_store.publish_live(envelope);
+    Ok(())
 }
 
 fn event_context_with_keys(

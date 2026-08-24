@@ -66,17 +66,6 @@ async fn no_tool_turn_appends_explicit_phase_barriers_in_order() {
             )
         })
         .unwrap_or_abort();
-    let provider_delta_idx = events
-        .iter()
-        .position(|event| {
-            matches!(
-                &event.payload,
-                EventV1::ProviderStreamDelta(data)
-                    if event.correlation_id.as_deref() == Some(request_id.as_str())
-                        && data.delta == "phase complete"
-            )
-        })
-        .unwrap_or_abort();
     let provider_finished_idx = events
         .iter()
         .position(|event| {
@@ -96,6 +85,9 @@ async fn no_tool_turn_appends_explicit_phase_barriers_in_order() {
                 EventV1::AssistantMessageFinished(data)
                     if event.correlation_id.as_deref() == Some(request_id.as_str())
                         && data.tool_call_count == 0
+                        && data.parts == vec![harness_core::session::AssistantPart::Text {
+                            text: "phase complete".to_string(),
+                        }]
             )
         })
         .unwrap_or_abort();
@@ -112,8 +104,7 @@ async fn no_tool_turn_appends_explicit_phase_barriers_in_order() {
         .unwrap_or_abort();
 
     assert!(scheduled_idx < provider_started_idx);
-    assert!(provider_started_idx < provider_delta_idx);
-    assert!(provider_delta_idx < provider_finished_idx);
+    assert!(provider_started_idx < provider_finished_idx);
     assert!(provider_finished_idx < assistant_message_finished_idx);
     assert!(assistant_message_finished_idx < turn_completed_idx);
     assert!(!events.iter().any(|event| {

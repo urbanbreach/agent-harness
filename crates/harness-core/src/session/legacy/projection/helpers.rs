@@ -36,6 +36,19 @@ impl SessionProjector<'_> {
                     request_id: start.request_id.clone(),
                 });
         }
+        if !assistant.finished && assistant.parts.is_empty() {
+            return Ok(());
+        }
+        let provenance = assistant.provenance.or_else(|| {
+            Some(ProviderProvenance {
+                provider_id: assistant.provider_id,
+                model_id: assistant.model_id,
+                request_id: self.namespace.provider_request_id(&start.request_id),
+                response_id: assistant.response_id,
+                stop_reason: assistant.stop_reason,
+                usage: assistant.usage,
+            })
+        });
         self.push_entry(SessionEntry {
             id: assistant.entry_id,
             parent_id: None,
@@ -43,14 +56,7 @@ impl SessionProjector<'_> {
             run_id: self.run_id.clone(),
             payload: SessionEntryPayload::AssistantMessage {
                 parts: assistant.parts.into_iter().map(|(_, part)| part).collect(),
-                provenance: Some(ProviderProvenance {
-                    provider_id: assistant.provider_id,
-                    model_id: assistant.model_id,
-                    request_id: self.namespace.provider_request_id(&start.request_id),
-                    response_id: assistant.response_id,
-                    stop_reason: assistant.stop_reason,
-                    usage: assistant.usage,
-                }),
+                provenance,
             },
         });
         Ok(())

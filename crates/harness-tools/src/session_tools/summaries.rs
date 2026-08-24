@@ -1,7 +1,8 @@
 // allow: SIZE_OK — session management (lineage + projection + inspection)
 use std::collections::BTreeMap;
 
-use harness_core::event::{EventEnvelopeV1, EventV1};
+use harness_core::event::{AssistantMessageFinishedEvent, EventEnvelopeV1, EventV1};
+use harness_core::session::AssistantPart;
 use serde_json::{json, Value};
 
 use super::SessionEntry;
@@ -44,6 +45,7 @@ pub(super) fn safe_event_summary(event: &EventEnvelopeV1) -> Value {
             "event_type": "assistant_message_finished",
             "request_id": data.request_id,
             "tool_call_count": data.tool_call_count,
+            "text": committed_assistant_text(data),
             "assistant_message_present": data.assistant_message.is_some(),
             "assistant_message_metadata": data.assistant_message,
         }),
@@ -111,6 +113,16 @@ pub(super) fn safe_message_summaries(entry: &SessionEntry) -> Vec<Value> {
         .collect()
 }
 
+fn committed_assistant_text(data: &AssistantMessageFinishedEvent) -> String {
+    data.parts
+        .iter()
+        .filter_map(|part| match part {
+            AssistantPart::Text { text } => Some(text.as_str()),
+            AssistantPart::Reasoning { .. } | AssistantPart::ToolCall(_) => None,
+        })
+        .collect()
+}
+
 fn basic_summary(event: &EventEnvelopeV1, event_type: &str, summary: &str) -> Value {
     json!({
         "seq": event.seq,
@@ -154,6 +166,12 @@ pub(super) fn safe_search_documents(entry: &SessionEntry) -> Vec<SearchDocument>
                     "provider_prompt_summary",
                     &data.prompt_summary,
                 ));
+            }
+            EventV1::AssistantMessageFinished(data) => {
+                let text = committed_assistant_text(data);
+                if !text.is_empty() {
+                    documents.push(search_doc(event, "assistant_message", &text));
+                }
             }
             EventV1::ToolCallRequested(data) => {
                 documents.push(search_doc(event, "tool_args_summary", &data.args_summary))

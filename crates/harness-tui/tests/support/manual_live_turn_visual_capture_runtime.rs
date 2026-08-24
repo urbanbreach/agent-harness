@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
 
 use harness_core::event::{
-    EventV1, ProviderRequestStartedEvent, TaskCancelledEvent, TaskScheduleState,
+    EventV1, ProviderRequestStartedEvent, RuntimeEvent, TaskCancelledEvent, TaskScheduleState,
     TaskScheduledEvent, TaskTerminalScope,
 };
 use harness_tui::{
@@ -64,7 +64,9 @@ pub(crate) fn run_capture(config: CaptureScenario) -> Result<(), Box<dyn std::er
                     _ => Vec::new(),
                 };
                 for event in updates {
-                    let _ = transition_tx.send(LiveUpdate::Event(Box::new(event)));
+                    let _ = transition_tx.send(LiveUpdate::Event(Box::new(RuntimeEvent::Durable(
+                        Box::new(event),
+                    ))));
                 }
             }) as Arc<dyn Fn(UiIntent) + Send + Sync>
         });

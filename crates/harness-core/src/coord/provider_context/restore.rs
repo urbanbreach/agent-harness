@@ -17,6 +17,7 @@ use crate::event::{
     TaskCompletedEvent, TaskTerminalScope,
 };
 use crate::provider_args::provider_tool_arguments_json;
+use crate::session::{AssistantPart, ProviderProvenance};
 use crate::session_paths::EVENTS_FILE_NAME;
 use crate::text::non_empty_trimmed;
 
@@ -148,19 +149,31 @@ pub(super) fn collect_historical_agent_turns_until(
             EventV1::ProviderRequestStarted(payload)
                 if event.actor.agent_id.as_deref() == Some(agent_id) =>
             {
-                let request = requests.entry(payload.request_id.to_string()).or_default();
+                let request_id = historical_request_id(&event, payload.request_id.as_str());
+                let request = requests.entry(request_id).or_default();
                 request.first_seq.get_or_insert(event.seq);
                 request.prompt_summary = Some(payload.prompt_summary.clone());
+                request.provider_request_id = Some(payload.request_id.to_string());
                 request.agent_id = Some(agent_id.to_string());
             }
             EventV1::ProviderStreamDelta(payload)
                 if event.actor.agent_id.as_deref() == Some(agent_id) =>
             {
+                let request_id = historical_request_id(&event, payload.request_id.as_str());
                 requests
-                    .entry(payload.request_id.to_string())
+                    .entry(request_id)
                     .or_default()
                     .assistant_output
                     .push_str(&payload.delta);
+            }
+            EventV1::AssistantMessageFinished(payload)
+                if event.actor.agent_id.as_deref() == Some(agent_id) =>
+            {
+                let request_id = historical_request_id(&event, payload.request_id.as_str());
+                requests
+                    .entry(request_id)
+                    .or_default()
+                    .apply_semantic_parts(&payload.parts, event.seq);
             }
             EventV1::TaskScheduled(payload)
                 if event.actor.agent_id.as_deref() == Some(agent_id) =>
@@ -230,7 +243,9 @@ pub(super) fn collect_historical_agent_turns_until(
                     request_state.user_text.clone(),
                     request_state.prompt_summary.clone(),
                 )?;
-                let assistant_response = if payload.result_summary.is_empty() {
+                let assistant_response = if request_state.semantic_parts_authoritative
+                    || payload.result_summary.is_empty()
+                {
                     request_state.assistant_output.clone()
                 } else {
                     payload.result_summary.clone()
@@ -268,6 +283,74 @@ struct HistoricalRequestState {
     provider_request_id: Option<String>,
     provider_finish_reason: Option<String>,
     first_seq: Option<u64>,
+    semantic_parts_authoritative: bool,
+    semantic_tool_requests_seen: usize,
+}
+
+impl HistoricalRequestState {
+    fn apply_semantic_parts(&mut self, parts: &[AssistantPart], seq: u64) {
+        if parts.is_empty() {
+            return;
+        }
+        self.semantic_parts_authoritative = true;
+        self.assistant_output = parts
+            .iter()
+            .filter_map(|part| match part {
+                AssistantPart::Text { text } => Some(text.as_str()),
+                AssistantPart::Reasoning { .. } | AssistantPart::ToolCall(_) => None,
+            })
+            .collect();
+        let tool_calls = parts
+            .iter()
+            .filter_map(|part| match part {
+                AssistantPart::ToolCall(tool_call) => Some(ConversationToolCall {
+                    tool_call_id: tool_call.tool_call_id.clone(),
+                    tool_id: tool_call.tool_id.clone(),
+                    args_summary: provider_tool_arguments_json(&tool_call.args_summary),
+                    args_digest: tool_call.args_digest.clone(),
+                    seq: Some(seq),
+                    metadata: None,
+                }),
+                AssistantPart::Text { .. } | AssistantPart::Reasoning { .. } => None,
+            })
+            .collect::<Vec<_>>();
+        self.tool_ids_by_call_id
+            .extend(tool_calls.iter().map(|tool_call| {
+                (
+                    tool_call.tool_call_id.to_string(),
+                    tool_call.tool_id.clone(),
+                )
+            }));
+        if let Some(index) = self.active_assistant_message_index {
+            if let Some(ConversationMessage::Assistant(assistant)) = self.messages.get_mut(index) {
+                assistant.text.clone_from(&self.assistant_output);
+                assistant.tool_calls = tool_calls;
+                assistant.last_seq = Some(seq);
+            }
+        }
+    }
+
+    fn apply_semantic_provenance(&mut self, provenance: &ProviderProvenance) {
+        self.provider_request_id = Some(provenance.request_id.to_string());
+        self.provider_finish_reason
+            .clone_from(&provenance.stop_reason);
+        if let Some(index) = self.active_assistant_message_index {
+            if let Some(ConversationMessage::Assistant(assistant)) = self.messages.get_mut(index) {
+                assistant.provider_id = Some(provenance.provider_id.clone());
+                assistant.model_id = Some(provenance.model_id.clone());
+                assistant.stop_reason.clone_from(&provenance.stop_reason);
+            }
+        }
+    }
+}
+
+fn historical_request_id(event: &EventEnvelopeV1, provider_request_id: &str) -> String {
+    event
+        .correlation_id
+        .as_deref()
+        .and_then(non_empty_trimmed)
+        .unwrap_or(provider_request_id)
+        .to_string()
 }
 
 #[derive(Debug, Clone)]
@@ -530,12 +613,8 @@ pub(in crate::coord) fn restore_provider_context_from_history(
                 if !replay_agent_event {
                     continue;
                 }
-                let request_id = event
-                    .correlation_id
-                    .as_deref()
-                    .and_then(non_empty_trimmed)
-                    .unwrap_or(payload.request_id.as_str());
-                let request = requests.entry(request_id.to_string()).or_default();
+                let request_id = historical_request_id(event, payload.request_id.as_str());
+                let request = requests.entry(request_id).or_default();
                 request.first_seq.get_or_insert(event.seq);
                 request.provider_request_id = Some(payload.request_id.to_string());
                 request.provider_finish_reason = Some(payload.finish_reason.clone());
@@ -547,6 +626,17 @@ pub(in crate::coord) fn restore_provider_context_from_history(
                         assistant.output_digest = payload.output_digest.clone();
                         assistant.last_seq = Some(event.seq);
                     }
+                }
+            }
+            EventV1::AssistantMessageFinished(payload) => {
+                if !replay_agent_event {
+                    continue;
+                }
+                let request_id = historical_request_id(event, payload.request_id.as_str());
+                let request = requests.entry(request_id).or_default();
+                request.apply_semantic_parts(&payload.parts, event.seq);
+                if let Some(provenance) = payload.provenance.as_ref() {
+                    request.apply_semantic_provenance(provenance);
                 }
             }
             EventV1::TaskScheduled(payload) => {
@@ -611,14 +701,28 @@ pub(in crate::coord) fn restore_provider_context_from_history(
                     if let Some(ConversationMessage::Assistant(assistant)) =
                         request.messages.get_mut(index)
                     {
-                        assistant.tool_calls.push(ConversationToolCall {
-                            tool_call_id: payload.tool_call_id.clone(),
-                            tool_id: payload.tool_id.clone(),
-                            args_summary: provider_tool_arguments_json(&payload.args_summary),
-                            args_digest: payload.args_digest.clone(),
-                            seq: Some(event.seq),
-                            metadata: payload.metadata.clone(),
-                        });
+                        if request.semantic_parts_authoritative {
+                            let index = assistant.tool_calls.iter().position(|tool_call| {
+                                tool_call.tool_call_id == payload.tool_call_id
+                            });
+                            if let Some(index) = index {
+                                let tool_call = &mut assistant.tool_calls[index];
+                                tool_call.tool_call_id = payload.tool_call_id.clone();
+                                tool_call.seq = Some(event.seq);
+                                tool_call.metadata.clone_from(&payload.metadata);
+                                request.semantic_tool_requests_seen =
+                                    request.semantic_tool_requests_seen.saturating_add(1);
+                            }
+                        } else {
+                            assistant.tool_calls.push(ConversationToolCall {
+                                tool_call_id: payload.tool_call_id.clone(),
+                                tool_id: payload.tool_id.clone(),
+                                args_summary: provider_tool_arguments_json(&payload.args_summary),
+                                args_digest: payload.args_digest.clone(),
+                                seq: Some(event.seq),
+                                metadata: payload.metadata.clone(),
+                            });
+                        }
                         assistant.last_seq = Some(event.seq);
                     }
                 }
@@ -709,7 +813,9 @@ pub(in crate::coord) fn restore_provider_context_from_history(
                     request_state.prompt_summary.clone(),
                 )?;
 
-                let assistant_response = if payload.result_summary.is_empty() {
+                let assistant_response = if request_state.semantic_parts_authoritative
+                    || payload.result_summary.is_empty()
+                {
                     request_state.assistant_output.clone()
                 } else {
                     payload.result_summary.clone()

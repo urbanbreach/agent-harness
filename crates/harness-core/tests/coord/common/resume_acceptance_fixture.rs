@@ -133,6 +133,8 @@ pub(super) fn write_resume_acceptance_fixture() -> ResumeAcceptanceFixture {
                     harness_core::event::AssistantMessageFinishedEvent {
                         request_id: "req_000002".into(),
                         tool_call_count: 4,
+                        parts: Vec::new(),
+                        provenance: None,
                         assistant_message: None,
                     },
                 ),
@@ -402,6 +404,8 @@ pub(super) fn write_resume_acceptance_fixture() -> ResumeAcceptanceFixture {
                     harness_core::event::AssistantMessageFinishedEvent {
                         request_id: "req_000003".into(),
                         tool_call_count: 0,
+                        parts: Vec::new(),
+                        provenance: None,
                         assistant_message: None,
                     },
                 ),
@@ -495,6 +499,8 @@ pub(super) fn write_resume_acceptance_fixture() -> ResumeAcceptanceFixture {
                     harness_core::event::AssistantMessageFinishedEvent {
                         request_id: "req_000005".into(),
                         tool_call_count: 0,
+                        parts: Vec::new(),
+                        provenance: None,
                         assistant_message: None,
                     },
                 ),

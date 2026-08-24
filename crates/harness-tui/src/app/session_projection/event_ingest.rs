@@ -2,6 +2,72 @@
 use super::*;
 
 impl SessionProjection {
+    fn settle_assistant_message(
+        &mut self,
+        event: &EventEnvelopeV1,
+        data: &harness_core::event::AssistantMessageFinishedEvent,
+    ) {
+        let Some(index) = self.activity_index_for_provider_event(event, data.request_id.as_str())
+        else {
+            return;
+        };
+        let transient = self.transient_assistants.remove(data.request_id.as_str());
+        let activity = &mut self.activities[index];
+        if let Some(transient) = transient.as_ref() {
+            activity.transcript_text.truncate(transient.text_start);
+            activity.thinking_text.truncate(transient.reasoning_start);
+            activity.tool_calls.retain(|tool_call| {
+                !transient
+                    .tool_call_ids
+                    .contains(tool_call.tool_call_id.as_str())
+            });
+        }
+
+        for part in &data.parts {
+            match part {
+                AssistantPart::Text { text } => activity.transcript_text.push_str(text),
+                AssistantPart::Reasoning { text } => activity.thinking_text.push_str(text),
+                AssistantPart::ToolCall(tool_call) => {
+                    activity.tool_calls.push(ToolCallEntry {
+                        tool_call_id: tool_call.tool_call_id.to_string(),
+                        tool_id: tool_call.tool_id.clone(),
+                        canonical_tool_id: None,
+                        alias_source_tool_id: None,
+                        resolved_tool_identity: None,
+                        args_summary: tool_call.args_summary.clone(),
+                        args_digest: tool_call.args_digest.clone(),
+                        lifecycle_state: Some(ToolCallLifecycleState::Pending),
+                        status: ToolCallDisplayStatus::Queued,
+                        output_summary: None,
+                        output_digest: None,
+                        output_json: None,
+                        truncated_output: None,
+                        edit: None,
+                        lineage: None,
+                        artifact_refs: Vec::new(),
+                        timing_elapsed_ms: None,
+                        permissions: Vec::new(),
+                        first_seq: event.seq,
+                        last_seq: event.seq,
+                        first_mono_ms: event.mono_ms,
+                        last_mono_ms: event.mono_ms,
+                        first_timestamp: event.ts.clone(),
+                        last_timestamp: event.ts.clone(),
+                    });
+                }
+            }
+        }
+        if !activity.thinking_text.is_empty() {
+            activity.note_thinking_mono(event.mono_ms);
+        }
+        if !activity.transcript_text.is_empty() {
+            activity.first_delta_mono_ms.get_or_insert(event.mono_ms);
+        }
+        mark_activity_event(activity, event.seq, event.mono_ms);
+        activity.bump_revision();
+        self.enforce_transcript_memory_cap();
+    }
+
     #[allow(
         deprecated,
         reason = "deprecated event variants kept for backward compatibility with existing session logs"
@@ -251,6 +317,9 @@ impl SessionProjection {
                     }
                 }
                 self.enforce_transcript_memory_cap();
+            }
+            EventV1::AssistantMessageFinished(data) => {
+                self.settle_assistant_message(event, data);
             }
             EventV1::ProviderRequestFinished(data) => {
                 self.note_child_agent_request(event, data.request_id.as_str());
@@ -586,43 +655,66 @@ impl SessionProjection {
                     if entry.transcript_text.is_empty() && entry.tool_calls.is_empty() {
                         entry.finish_thinking_mono(event.mono_ms);
                     }
-                    let tool_entry = ToolCallEntry {
-                        tool_call_id: data.tool_call_id.to_string(),
-                        tool_id: data.tool_id.clone(),
-                        canonical_tool_id: None,
-                        alias_source_tool_id: None,
-                        resolved_tool_identity: None,
-                        args_summary: data.args_summary.clone(),
-                        args_digest: data.args_digest.clone(),
-                        lifecycle_state: Some(harness_core::event::ToolCallLifecycleState::Pending),
-                        status: ToolCallDisplayStatus::Queued,
-                        output_summary: None,
-                        output_digest: None,
-                        output_json: None,
-                        truncated_output: None,
-                        edit: None,
-                        lineage: None,
-                        artifact_refs: Vec::new(),
-                        timing_elapsed_ms: None,
-                        permissions: Vec::new(),
-                        first_seq: event.seq,
-                        last_seq: event.seq,
-                        first_mono_ms: event.mono_ms,
-                        last_mono_ms: event.mono_ms,
-                        first_timestamp: event.ts.clone(),
-                        last_timestamp: event.ts.clone(),
-                    };
-                    let mut tool_entry = tool_entry;
-                    merge_resolved_tool_identity(
-                        &mut tool_entry,
-                        ResolvedToolIdentity::from_tool_call(
-                            Some(data.tool_id.as_str()),
-                            data.metadata.as_ref(),
-                        ),
-                    );
-                    merge_tool_call_metadata(&mut tool_entry, data.metadata.as_ref());
-                    tool_entry.sync_display_status();
-                    entry.tool_calls.push(tool_entry);
+                    let existing_index = entry
+                        .tool_calls
+                        .iter()
+                        .position(|tool_call| tool_call.tool_call_id == data.tool_call_id.as_str());
+                    if let Some(existing_index) = existing_index {
+                        let tool_entry = &mut entry.tool_calls[existing_index];
+                        tool_entry.tool_id.clone_from(&data.tool_id);
+                        tool_entry.args_summary.clone_from(&data.args_summary);
+                        tool_entry.args_digest.clone_from(&data.args_digest);
+                        tool_entry.lifecycle_state = Some(ToolCallLifecycleState::Pending);
+                        tool_entry.last_seq = event.seq;
+                        tool_entry.last_mono_ms = event.mono_ms;
+                        tool_entry.last_timestamp.clone_from(&event.ts);
+                        merge_resolved_tool_identity(
+                            tool_entry,
+                            ResolvedToolIdentity::from_tool_call(
+                                Some(data.tool_id.as_str()),
+                                data.metadata.as_ref(),
+                            ),
+                        );
+                        merge_tool_call_metadata(tool_entry, data.metadata.as_ref());
+                        tool_entry.sync_display_status();
+                    } else {
+                        let mut tool_entry = ToolCallEntry {
+                            tool_call_id: data.tool_call_id.to_string(),
+                            tool_id: data.tool_id.clone(),
+                            canonical_tool_id: None,
+                            alias_source_tool_id: None,
+                            resolved_tool_identity: None,
+                            args_summary: data.args_summary.clone(),
+                            args_digest: data.args_digest.clone(),
+                            lifecycle_state: Some(ToolCallLifecycleState::Pending),
+                            status: ToolCallDisplayStatus::Queued,
+                            output_summary: None,
+                            output_digest: None,
+                            output_json: None,
+                            truncated_output: None,
+                            edit: None,
+                            lineage: None,
+                            artifact_refs: Vec::new(),
+                            timing_elapsed_ms: None,
+                            permissions: Vec::new(),
+                            first_seq: event.seq,
+                            last_seq: event.seq,
+                            first_mono_ms: event.mono_ms,
+                            last_mono_ms: event.mono_ms,
+                            first_timestamp: event.ts.clone(),
+                            last_timestamp: event.ts.clone(),
+                        };
+                        merge_resolved_tool_identity(
+                            &mut tool_entry,
+                            ResolvedToolIdentity::from_tool_call(
+                                Some(data.tool_id.as_str()),
+                                data.metadata.as_ref(),
+                            ),
+                        );
+                        merge_tool_call_metadata(&mut tool_entry, data.metadata.as_ref());
+                        tool_entry.sync_display_status();
+                        entry.tool_calls.push(tool_entry);
+                    }
                     entry.last_seq = event.seq;
                 }
                 self.note_child_task_tool_call(event, data);

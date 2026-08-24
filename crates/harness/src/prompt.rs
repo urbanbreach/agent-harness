@@ -65,7 +65,7 @@ pub struct PromptCommand {
     #[arg(long, default_value_t = false)]
     pub thinking: bool,
 
-    #[arg(long, default_value_t = false, conflicts_with = "resume")]
+    #[arg(long, default_value_t = false)]
     pub mock: bool,
 
     #[arg(long, value_name = "RUN_ID_OR_PATH")]
@@ -549,6 +549,7 @@ async fn run_resumed_prompt(
             recovery.run_id
         ));
     }
+    coordinator_config.session_mode_source = Some(recovery.mode);
 
     let resume_plan = inspect_resume_plan(&run_dir);
     let historical_events = load_events_from_run_dir(&run_dir).map_err(|err| err.to_string())?;

@@ -167,3 +167,8 @@ mod part_25_request_budget_preflight_test {
     use super::*;
     include!("coord/25_request_budget_preflight_test.rs");
 }
+
+mod part_26_semantic_history_test {
+    use super::*;
+    include!("coord/26_semantic_history_test.rs");
+}

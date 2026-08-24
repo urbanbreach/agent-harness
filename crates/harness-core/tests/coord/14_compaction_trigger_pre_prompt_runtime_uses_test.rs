@@ -314,8 +314,8 @@ async fn compaction_no_loop_guards_cover_pre_prompt_overflow_and_failed_response
     failed.stop_run().await.unwrap_or_abort();
     assert_eq!(
         failed_provider.requests().len(),
-        3,
-        "failed-response must not retry the provider turn (2 turns + 1 compaction summary)"
+        2,
+        "failed-response fragments are noncanonical and must not trigger summary or retry calls"
     );
     assert!(failed_events.iter().any(|event| {
         matches!(

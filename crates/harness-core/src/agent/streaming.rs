@@ -89,8 +89,19 @@ pub struct ProviderRequestFinished {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AgentRuntimeEvent {
     ProviderRequestStarted(Box<ProviderRequestStarted>),
-    ProviderStreamDelta { request_id: String, delta: String },
-    ProviderReasoningDelta { request_id: String, delta: String },
+    ProviderStreamDelta {
+        request_id: String,
+        delta: String,
+    },
+    ProviderReasoningDelta {
+        request_id: String,
+        delta: String,
+    },
+    ProviderToolInputDelta {
+        request_id: String,
+        tool_call_id: crate::ids::ToolCallId,
+        delta: String,
+    },
     ProviderRequestFinished(Box<ProviderRequestFinished>),
 }
 
@@ -309,6 +320,8 @@ pub struct StreamAssistantResponseOnceRequest<'a> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct AssistantResponse {
     pub request_id: crate::ids::RequestId,
+    pub provider_id: String,
+    pub model_id: String,
     pub text: String,
     pub reasoning: String,
     pub reasoning_deltas: Vec<String>,
@@ -413,8 +426,21 @@ where
                     .await;
                 }
             }
-            ProviderStreamEvent::ToolCallDelta { .. }
-            | ProviderStreamEvent::ToolCallComplete { .. } => {}
+            ProviderStreamEvent::ToolCallDelta {
+                tool_call_id,
+                arguments_delta,
+                ..
+            } => {
+                if !arguments_delta.is_empty() {
+                    emit(AgentRuntimeEvent::ProviderToolInputDelta {
+                        request_id: request_id.clone(),
+                        tool_call_id: tool_call_id.into(),
+                        delta: arguments_delta,
+                    })
+                    .await;
+                }
+            }
+            ProviderStreamEvent::ToolCallComplete { .. } => {}
             ProviderStreamEvent::Done { usage } => {
                 emit(AgentRuntimeEvent::ProviderRequestFinished(Box::new(
                     ProviderRequestFinished {
@@ -665,11 +691,20 @@ where
                 function_name,
                 arguments_delta,
             } => {
+                let tool_call_id = crate::ids::ToolCallId::from(tool_call_id);
                 tool_call_deltas.push(AssistantToolCallDelta {
-                    tool_call_id: tool_call_id.into(),
+                    tool_call_id: tool_call_id.clone(),
                     function_name,
-                    arguments_delta,
+                    arguments_delta: arguments_delta.clone(),
                 });
+                if !arguments_delta.is_empty() {
+                    emit(AgentRuntimeEvent::ProviderToolInputDelta {
+                        request_id: provider_request_id.clone(),
+                        tool_call_id,
+                        delta: arguments_delta,
+                    })
+                    .await;
+                }
             }
             ProviderStreamEvent::ToolCallComplete {
                 tool_call_id,
@@ -756,6 +791,8 @@ where
         parse_tool_intents(tool_calls, &function_to_tool_id).map_err(AgentTurnFailure::message)?;
     Ok(AssistantResponse {
         request_id: provider_request_id.into(),
+        provider_id: model.provider_id,
+        model_id: model.model_id,
         text: output,
         reasoning,
         reasoning_deltas,

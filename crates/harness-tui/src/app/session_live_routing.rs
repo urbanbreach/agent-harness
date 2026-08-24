@@ -1,11 +1,38 @@
 use std::collections::BTreeSet;
 
-use harness_core::event::{EventEnvelopeV1, EventV1, TaskLineageMetadata, ToolCallFinishedEvent};
+use harness_core::event::{
+    EventEnvelopeV1, EventV1, LiveEventEnvelope, TaskLineageMetadata, ToolCallFinishedEvent,
+};
 
 use super::{task_child_request_id_from_output, task_child_session_id_from_output, AppState};
 use crate::text::non_empty_trimmed;
 
 impl AppState {
+    pub(in crate::app) fn route_live_fragment_while_viewing_child(
+        &self,
+        event: &LiveEventEnvelope,
+    ) -> bool {
+        if !self.replay_mode {
+            return false;
+        }
+        let Some(current_session_id) = self.current_session_id() else {
+            return false;
+        };
+        let Some(parent_snapshot) = self.session_navigation_stack.last() else {
+            return false;
+        };
+        if parent_snapshot.replay_mode {
+            return false;
+        }
+
+        let visible = event.actor.agent_id.as_deref() == Some(current_session_id)
+            || event.correlation_id.as_deref().is_some_and(|request_id| {
+                child_request_ids_for_session(&parent_snapshot.events, current_session_id)
+                    .contains(request_id)
+            });
+        !visible
+    }
+
     pub(in crate::app) fn route_live_event_while_viewing_child(
         &mut self,
         event: &EventEnvelopeV1,

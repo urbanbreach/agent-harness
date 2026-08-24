@@ -1305,6 +1305,7 @@ fn test_run_state(session_dir: &Path, run_id: &str) -> RunState {
         },
         event_store,
         next_event_seq: 1,
+        next_live_event_id: 1,
         next_agent_id: 1,
         next_tool_call_id: 1,
         next_task_id: 1,

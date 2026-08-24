@@ -74,6 +74,8 @@ pub enum AssistantPart {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AssistantToolCall {
     pub tool_call_id: ToolCallId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_tool_call_id: Option<String>,
     pub tool_id: String,
     pub args_summary: String,
     pub args_digest: String,

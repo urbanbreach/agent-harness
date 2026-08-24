@@ -86,6 +86,7 @@ pub(in crate::coord) struct RunState {
     pub(in crate::coord) info: RunInfo,
     pub(in crate::coord) event_store: Arc<JsonlFileEventStore>,
     pub(in crate::coord) next_event_seq: u64,
+    pub(in crate::coord) next_live_event_id: u64,
     pub(in crate::coord) next_agent_id: u64,
     pub(in crate::coord) next_tool_call_id: u64,
     pub(in crate::coord) next_task_id: u64,

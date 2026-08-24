@@ -204,6 +204,8 @@ fn legacy_adapter_preserves_full_provenance_without_writing_source() {
                 harness_core::event::AssistantMessageFinishedEvent {
                     request_id: "provider-1".into(),
                     tool_call_count: 0,
+                    parts: Vec::new(),
+                    provenance: None,
                     assistant_message: None,
                 },
             ),
@@ -413,6 +415,8 @@ fn legacy_adapter_covers_semantic_payload_and_loss_warning_inventory() {
                     harness_core::event::AssistantMessageFinishedEvent {
                         request_id: "provider-1".into(),
                         tool_call_count: 1,
+                        parts: Vec::new(),
+                        provenance: None,
                         assistant_message: None,
                     },
                 ),
@@ -542,6 +546,8 @@ fn legacy_adapter_covers_semantic_payload_and_loss_warning_inventory() {
                 harness_core::event::AssistantMessageFinishedEvent {
                     request_id: "provider-2".into(),
                     tool_call_count: 0,
+                    parts: Vec::new(),
+                    provenance: None,
                     assistant_message: None,
                 },
             ),
@@ -674,6 +680,8 @@ fn legacy_adapter_accepts_real_tool_call_correlation() {
                     harness_core::event::AssistantMessageFinishedEvent {
                         request_id: "provider-1".into(),
                         tool_call_count: 1,
+                        parts: Vec::new(),
+                        provenance: None,
                         assistant_message: None,
                     },
                 ),

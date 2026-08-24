@@ -28,9 +28,10 @@ use harness_core::cron_schedule::{
 use harness_core::edit_attribution::EditAttributionSummary;
 use harness_core::event::{
     ActorKind, EventActor, EventArtifactRef, EventEnvelopeV1, EventV1, ExecutionTimingMetadata,
-    ProviderRequestStartedEvent, ResolvedToolIdentity, RunFinishedEvent, TaskCompletionMetadata,
-    TaskLineageMetadata, TaskScheduleMetadata, ToolCallLifecycleState, ToolCallMetadata,
-    ToolCallStatus, UserMessageSubmittedEvent, SCHEMA_VERSION,
+    LiveEventEnvelope, LiveEventV1, ProviderRequestStartedEvent, ResolvedToolIdentity,
+    RunFinishedEvent, RuntimeEvent, TaskCompletionMetadata, TaskLineageMetadata,
+    TaskScheduleMetadata, ToolCallLifecycleState, ToolCallMetadata, ToolCallStatus,
+    UserMessageSubmittedEvent, SCHEMA_VERSION,
 };
 use harness_core::extension_manifest::{
     ExtensionDiscoverSummary, ExtensionLoadOutcome, ExtensionManifestSummary,
@@ -1566,6 +1567,27 @@ impl AppState {
         self.ingest_event_internal(event, false);
     }
 
+    pub fn ingest_runtime_event(&mut self, event: RuntimeEvent) {
+        match event {
+            RuntimeEvent::Durable(event) => self.ingest_event(*event),
+            RuntimeEvent::Live(event) => self.ingest_live_event(&event),
+        }
+    }
+
+    fn ingest_live_event(&mut self, event: &LiveEventEnvelope) {
+        if self.route_live_fragment_while_viewing_child(event) {
+            return;
+        }
+        self.starting_session_seed = false;
+        self.bump_transcript_render_epoch();
+        self.note_live_fragment_timing(event);
+        self.projection.ingest_live_event(event);
+        self.sync_transcript_integration(true);
+        if self.status_dashboard_is_active() {
+            self.refresh_status_dashboard();
+        }
+    }
+
     fn ingest_event_internal(&mut self, event: EventEnvelopeV1, historical: bool) {
         if !historical && self.route_live_event_while_viewing_child(&event) {
             return;
@@ -1752,6 +1774,52 @@ impl AppState {
                 }
             }
             _ => {}
+        }
+    }
+
+    fn note_live_fragment_timing(&mut self, event: &LiveEventEnvelope) {
+        let turn_id = event
+            .correlation_id
+            .as_deref()
+            .unwrap_or(match &event.payload {
+                LiveEventV1::ProviderTextDelta { request_id, .. }
+                | LiveEventV1::ProviderReasoningDelta { request_id, .. }
+                | LiveEventV1::ProviderToolInputDelta { request_id, .. } => request_id.as_str(),
+            });
+        match &event.payload {
+            LiveEventV1::ProviderReasoningDelta { .. } => {
+                let starts_thinking = self
+                    .activities
+                    .iter()
+                    .rev()
+                    .find(|activity| activity.request_id == turn_id)
+                    .is_none_or(|activity| {
+                        activity.thinking_text.is_empty() && activity.transcript_text.is_empty()
+                    });
+                if starts_thinking {
+                    self.restart_live_turn_phase_timing(turn_id);
+                }
+            }
+            LiveEventV1::ProviderTextDelta { .. } => {
+                let starts_responding = self
+                    .activities
+                    .iter()
+                    .rev()
+                    .find(|activity| activity.request_id == turn_id)
+                    .is_none_or(|activity| activity.transcript_text.is_empty());
+                if starts_responding {
+                    self.transcript_view
+                        .expanded_reasoning_requests
+                        .remove(turn_id);
+                    self.restart_live_turn_phase_timing(turn_id);
+                }
+            }
+            LiveEventV1::ProviderToolInputDelta { .. } => {
+                self.transcript_view
+                    .expanded_reasoning_requests
+                    .remove(turn_id);
+                self.restart_live_turn_phase_timing(turn_id);
+            }
         }
     }
 
