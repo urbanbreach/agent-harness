@@ -14,3 +14,7 @@ mod part_03_resume_plan_uses_latest_lifecycle_segment_test {
     use super::*;
     include!("resume_plan/03_resume_plan_uses_latest_lifecycle_segment_test.rs");
 }
+
+mod part_04_canonical_tool_pairing_test {
+    include!("resume_plan/04_canonical_tool_pairing_test.rs");
+}

@@ -3,6 +3,14 @@
 The target keeps one coordinator-owned append/lifecycle authority and replaces overlapping
 session/context/compaction interpretations with one canonical durable session path.
 
+## Current migration boundary
+
+G004 establishes the typed `CanonicalSession` reducer and a single read-only V1 adapter. It does
+not yet make canonical records the live journal: coordinator writes and most runtime consumers
+remain on V1 `events.jsonl`. G005-G009 move semantic history, provider context/resume, projections,
+and bounded history onto the canonical path. G010 then deletes or confines obsolete compaction,
+checkpoint, event, and projection code after the final consumer has moved.
+
 ## Interactive TUI flow
 
 ```text
