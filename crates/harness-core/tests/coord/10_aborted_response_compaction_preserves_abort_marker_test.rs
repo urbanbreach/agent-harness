@@ -115,10 +115,8 @@ async fn aborted_response_compaction_preserves_abort_marker() {
         events.iter().any(|event| {
             matches!(
                 &event.payload,
-                EventV1::SessionCompaction(data) if data.trigger_reason == "aborted_response"
-            ) || matches!(
-                &event.payload,
-                EventV1::CompactionFailed(data) if data.trigger_reason == "aborted_response"
+                EventV1::TaskCancelled(data)
+                    if data.task_id == task_id && data.reason == "operator cancelled"
             )
         })
     })
@@ -223,14 +221,12 @@ async fn failed_response_compaction_failure_does_not_mask_original_error() {
         .await
         .unwrap_or_abort();
     let events = wait_for_events(&run.events_path, Duration::from_millis(700), |events| {
-        events.iter().any(|event| {
-            matches!(
-                &event.payload,
-                EventV1::CompactionFailed(data)
-                    if data.trigger_reason == "failed_response"
-                        && data.through_request_id.as_deref() == Some(failed_request_id.as_str())
-            )
-        })
+        events.iter().any(|event| matches!(
+            &event.payload,
+            EventV1::TaskCancelled(data)
+                if event.correlation_id.as_deref() == Some(failed_request_id.as_str())
+                    && data.reason == "provider exploded"
+        ))
     })
     .await;
     coordinator.stop_run().await.unwrap_or_abort();
@@ -251,7 +247,7 @@ async fn failed_response_compaction_failure_does_not_mask_original_error() {
     }));
 }
 #[tokio::test]
-async fn critical_compaction_requested_hook_failure_records_compaction_failed() {
+async fn critical_compaction_requested_hook_failure_does_not_commit() {
     // arrange
     // act
     // assert
@@ -330,14 +326,12 @@ async fn critical_compaction_requested_hook_failure_records_compaction_failed() 
         .await
         .unwrap_or_abort();
     let events = wait_for_events(&run.events_path, Duration::from_millis(900), |events| {
-        events.iter().any(|event| {
-            matches!(
-                &event.payload,
-                EventV1::CompactionFailed(data)
-                    if data.trigger_reason == "failed_response"
-                        && data.through_request_id.as_deref() == Some(failed_request_id.as_str())
-            )
-        })
+        events.iter().any(|event| matches!(
+            &event.payload,
+            EventV1::TaskCancelled(data)
+                if event.correlation_id.as_deref() == Some(failed_request_id.as_str())
+                    && data.reason == "provider exploded"
+        ))
     })
     .await;
     coordinator.stop_run().await.unwrap_or_abort();
@@ -353,13 +347,7 @@ async fn critical_compaction_requested_hook_failure_records_compaction_failed() 
     assert!(!events.iter().any(|event| {
         matches!(
             &event.payload,
-            EventV1::CompactionWritten(data) if data.trigger_reason == "failed_response"
-        )
-    }));
-    assert!(!events.iter().any(|event| {
-        matches!(
-            &event.payload,
-            EventV1::CompactionWritten(data) if data.trigger_reason == "failed_response"
+            EventV1::SessionCompaction(data) if data.trigger_reason == "failed_response"
         )
     }));
 }

@@ -9,6 +9,10 @@ mod streaming;
 #[cfg(test)]
 pub(in crate::agent) use provider_boundary::project_provider_context_for_prompt;
 pub(crate) use provider_boundary::tool_result_to_message_content;
+pub(crate) use provider_boundary::{
+    build_committed_provider_context_messages, CommittedPromptLookupError,
+    CommittedProviderMessages,
+};
 pub use provider_boundary::{
     build_provider_context_messages, build_provider_tool_defs, build_provider_tool_defs_for_model,
     transform_context_for_provider, ProviderBoundaryContext, ProviderBoundaryInput,
@@ -81,6 +85,8 @@ impl AgentProfile {
 pub struct AgentRequest {
     pub agent_id: String,
     pub prompt: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attachments: Vec<crate::attachment_transport::AttachmentMetadata>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompt_context: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -879,6 +885,7 @@ mod tests {
         AgentRequest {
             agent_id: "agent_1".to_string(),
             prompt: "Use a tool".to_string(),
+            attachments: Vec::new(),
             prompt_context: None,
             selected_file_tags: Vec::new(),
             selected_agent_tags: Vec::new(),

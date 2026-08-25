@@ -264,6 +264,63 @@ fn interactive_mock_session_continues_offline_from_semantic_commit() {
         }),
     );
     completed.correlation_id = Some("req_000001".to_string());
+    let second_worker = EventActor::new(ActorKind::Worker, Some("agent_000001".to_string()));
+    let mut second_provider_started = envelope_with_actor(
+        "run_mock_continue",
+        9,
+        second_worker.clone(),
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "req_000004".into(),
+            provider_id: "mock".to_string(),
+            model_id: "model-1".to_string(),
+            prompt_summary: "hello".to_string(),
+            request_digest: "digest-request-second".to_string(),
+            metadata: None,
+        }),
+    );
+    second_provider_started.correlation_id = Some("req_000003".to_string());
+    let mut second_provider_finished = envelope_with_actor(
+        "run_mock_continue",
+        10,
+        second_worker.clone(),
+        EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+            request_id: "req_000004".into(),
+            finish_reason: "done".to_string(),
+            output_digest: Some("digest-output-second".to_string()),
+            usage: None,
+            metadata: None,
+        }),
+    );
+    second_provider_finished.correlation_id = Some("req_000003".to_string());
+    let mut second_assistant_finished = envelope_with_actor(
+        "run_mock_continue",
+        11,
+        second_worker.clone(),
+        EventV1::AssistantMessageFinished(
+            harness_core::event::AssistantMessageFinishedEvent {
+                request_id: "req_000004".into(),
+                tool_call_count: 0,
+                parts: vec![harness_core::session::AssistantPart::Text {
+                    text: "Hello again".to_string(),
+                }],
+                provenance: None,
+                assistant_message: None,
+            },
+        ),
+    );
+    second_assistant_finished.correlation_id = Some("req_000003".to_string());
+    let mut second_completed = envelope_with_actor(
+        "run_mock_continue",
+        12,
+        second_worker,
+        EventV1::TaskCompleted(TaskCompletedEvent {
+            task_id: "task_000002".to_string().into(),
+            result_summary: "Hello again".to_string(),
+            result_digest: "digest-output-second".to_string(),
+            metadata: None,
+        }),
+    );
+    second_completed.correlation_id = Some("req_000003".to_string());
     write_events_jsonl(
         &run_dir,
         &[
@@ -299,6 +356,18 @@ fn interactive_mock_session_continues_offline_from_semantic_commit() {
             envelope(
                 "run_mock_continue",
                 8,
+                EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                    request_id: "req_000003".into(),
+                    text: "hello".to_string(),
+                }),
+            ),
+            second_provider_started,
+            second_provider_finished,
+            second_assistant_finished,
+            second_completed,
+            envelope(
+                "run_mock_continue",
+                13,
                 EventV1::RunFinished(RunFinishedEvent {
                     summary: "done".to_string(),
                 }),
@@ -338,7 +407,7 @@ fn interactive_mock_session_continues_offline_from_semantic_commit() {
             .iter()
             .filter(|event| matches!(event.payload, EventV1::AssistantMessageFinished(_)))
             .count(),
-        2
+        3
     );
     assert!(
         !events.iter().any(|event| matches!(

@@ -68,13 +68,12 @@ impl LegacyBoundary {
                 if payload.first_kept_event_seq == 0 {
                     return Err(Self::invalid(event));
                 }
-                Self::fact(
-                    event,
-                    LegacyFactKind::Compaction {
-                        summary: payload.summary.clone(),
-                        first_kept_event_seq: payload.first_kept_event_seq,
-                    },
-                )
+                let mut compaction = super::super::LegacyCompactionFact::from(payload);
+                if compaction.current_intent.is_none() {
+                    compaction.current_intent =
+                        self.current_intent_by_agent.get(&payload.agent_id).cloned();
+                }
+                Self::fact(event, LegacyFactKind::Compaction(compaction))
             }
             EventV1::BranchSummary(payload) => {
                 if payload.from_event_seq == 0 || payload.from_event_seq >= event.seq {
@@ -110,9 +109,15 @@ impl LegacyBoundary {
             | EventV1::EditRejected(_)
             | EventV1::ArtifactWritten(_)
             | EventV1::PolicyViolationDetected(_)
-            | EventV1::UiIntentReceived(_)
             | EventV1::WorkspaceSnapshot(_)
             | EventV1::WorkspaceReverted(_) => self.unsupported(event),
+            EventV1::UiIntentReceived(payload) => {
+                if let Some(agent_id) = event.actor.agent_id.as_ref() {
+                    self.current_intent_by_agent
+                        .insert(agent_id.clone(), payload.clone());
+                }
+                Self::fact(event, LegacyFactKind::CurrentIntent)
+            }
         };
         Ok(fact)
     }

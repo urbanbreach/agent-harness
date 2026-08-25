@@ -75,6 +75,30 @@ impl Coordinator {
         })
     }
 
+    fn record_ui_intent_internal(
+        &mut self,
+        agent_id: String,
+        intent: String,
+        params: BTreeMap<String, String>,
+    ) -> Result<(), CoordinatorError> {
+        let run_state = self
+            .run_state
+            .as_mut()
+            .ok_or(CoordinatorError::RunNotStarted)?;
+        if !run_state.agents.contains_key(&agent_id) {
+            return Err(CoordinatorError::UnknownAgent(agent_id));
+        }
+        append_payload_event(
+            self.clock.as_ref(),
+            self.redactor.as_ref(),
+            run_state,
+            agent_actor(&agent_id),
+            Some(format!("agent:{agent_id}")),
+            EventV1::UiIntentReceived(crate::event::UiIntentReceivedEvent { intent, params }),
+        )?;
+        Ok(())
+    }
+
     async fn handle_command(&mut self, command: Command) {
         match command {
             Command::StartRun {
@@ -114,6 +138,15 @@ impl Coordinator {
             Command::UpdateSessionTitle { title, respond_to } => {
                 let result = self.update_session_title_internal(title);
                 warn_oneshot_send_failure(respond_to.send(result), "update_session_title");
+            }
+            Command::RecordUiIntent {
+                agent_id,
+                intent,
+                params,
+                respond_to,
+            } => {
+                let result = self.record_ui_intent_internal(agent_id, intent, params);
+                warn_oneshot_send_failure(respond_to.send(result), "record_ui_intent");
             }
             Command::GetAgentRuntimeInfo {
                 agent_id,
@@ -442,17 +475,17 @@ impl Coordinator {
                 evidence,
                 respond_to,
             } => {
-                let result = self
-                    .compact_agent_context_internal(CompactAgentContextRequest {
-                        task_id: Some(&task_id),
-                        agent_id: &agent_id,
+                self.start_compaction_generation(
+                    CompactAgentContextRequest {
+                        task_id: Some(task_id),
+                        agent_id,
                         through_request_id: Some(request_id),
-                        trigger_reason: &trigger_reason,
+                        trigger_reason,
                         evidence,
-                    })
-                    .await
-                    .map(CompactAgentContextResult::into_context);
-                warn_oneshot_send_failure(respond_to.send(result), "compact_agent_context");
+                    },
+                    PendingCompactionResponse::Agent(respond_to),
+                )
+                .await;
             }
             Command::ManualCompactAgentContext {
                 agent_id,
@@ -460,17 +493,25 @@ impl Coordinator {
                 trigger_reason,
                 respond_to,
             } => {
-                let result = self
-                    .compact_agent_context_internal(CompactAgentContextRequest {
+                self.start_compaction_generation(
+                    CompactAgentContextRequest {
                         task_id: None,
-                        agent_id: &agent_id,
+                        agent_id,
                         through_request_id,
-                        trigger_reason: &trigger_reason,
+                        trigger_reason,
                         evidence: CompactionRequestEvidence::default(),
-                    })
-                    .await
-                    .map(CompactAgentContextResult::into_manual_outcome);
-                warn_oneshot_send_failure(respond_to.send(result), "manual_compact_agent_context");
+                    },
+                    PendingCompactionResponse::Manual(respond_to),
+                )
+                .await;
+            }
+            Command::CompactionGenerated(completion) => {
+                self.compaction_generated_internal(
+                    completion.agent_id,
+                    completion.generation,
+                    completion.result,
+                )
+                .await;
             }
             Command::AgentTurnFinished {
                 task_id,

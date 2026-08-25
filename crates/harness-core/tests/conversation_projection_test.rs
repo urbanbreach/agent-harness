@@ -26,3 +26,8 @@ mod part_05_semantic_assistant_commit_test {
     use super::*;
     include!("conversation_projection/05_semantic_assistant_commit_test.rs");
 }
+
+mod part_06_compaction_v2_protocol_test {
+    use super::*;
+    include!("conversation_projection/06_compaction_v2_protocol_test.rs");
+}

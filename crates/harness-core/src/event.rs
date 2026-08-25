@@ -748,11 +748,27 @@ pub struct SessionCompactionEvent {
     pub first_kept_event_seq: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub first_kept_request_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_kept_entry_id: Option<crate::ids::EntryId>,
     pub tokens_before: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tokens_after: Option<u32>,
+    #[serde(
+        default,
+        alias = "summary_generation_usage",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub summary_usage: Option<CompletionUsage>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary_provider_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary_model_id: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub read_files: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub modified_files: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_intent: Option<UiIntentReceivedEvent>,
     pub trigger_reason: String,
     pub from_hook: bool,
 }

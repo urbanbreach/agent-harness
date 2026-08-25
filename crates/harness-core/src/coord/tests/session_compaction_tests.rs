@@ -1,12 +1,20 @@
+use super::super::provider_context::reconstruct_provider_context_from_events;
 use super::*;
 use crate::config::CompactionSettings;
-use crate::event::{AssistantMessageFinishedEvent, ProviderRequestStartedEvent};
+use crate::event::{
+    AssistantMessageFinishedEvent, ProviderRequestFinishedEvent, ProviderRequestStartedEvent,
+};
 use crate::ids::RequestId;
 use crate::proj::RecordedRuntimeContext;
 use crate::UnwrapOrAbort;
 use async_trait::async_trait;
 use harness_providers::{CompletionRequest, Provider, ProviderEventStream, ProviderStreamEvent};
-use std::sync::Arc;
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+use tokio::sync::{mpsc, oneshot};
+use tokio::time::timeout;
 use tokio_stream;
 
 // ---------------------------------------------------------------------------
@@ -32,6 +40,36 @@ impl Provider for SummaryMockProvider {
 
     async fn stream_completion(&self, _req: CompletionRequest) -> ProviderEventStream {
         let summary = self.summary.clone();
+        Box::pin(tokio_stream::iter(vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::TextDelta(summary),
+            ProviderStreamEvent::Done { usage: None },
+        ]))
+    }
+}
+
+struct PromptCaptureProvider {
+    requests: Mutex<Vec<CompletionRequest>>,
+    summaries: [String; 2],
+}
+
+#[async_trait]
+impl Provider for PromptCaptureProvider {
+    fn request_budget_semantics(
+        &self,
+        request: &CompletionRequest,
+        pending_prompt_index: usize,
+    ) -> Result<
+        harness_providers::ProviderBudgetSemantics,
+        harness_providers::ProviderRequestCostError,
+    > {
+        harness_providers::generic_request_budget_semantics(request, pending_prompt_index)
+    }
+
+    async fn stream_completion(&self, request: CompletionRequest) -> ProviderEventStream {
+        let mut requests = self.requests.lock().expect("request capture lock");
+        let summary = self.summaries[requests.len()].clone();
+        requests.push(request);
         Box::pin(tokio_stream::iter(vec![
             ProviderStreamEvent::Start,
             ProviderStreamEvent::TextDelta(summary),
@@ -131,6 +169,21 @@ fn append_assistant_finished(
         clock,
         redactor,
         run_state,
+        actor.clone(),
+        Some(format!("agent:{agent_id}")),
+        EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+            request_id: RequestId::new(request_id),
+            finish_reason: "stop".to_string(),
+            output_digest: None,
+            usage: None,
+            metadata: None,
+        }),
+    )
+    .unwrap_or_abort();
+    append_payload_event(
+        clock,
+        redactor,
+        run_state,
         actor,
         Some(format!("agent:{agent_id}")),
         EventV1::AssistantMessageFinished(AssistantMessageFinishedEvent {
@@ -163,9 +216,15 @@ fn append_session_compaction_event(
             summary: summary.to_string(),
             first_kept_event_seq,
             first_kept_request_id: None,
+            first_kept_entry_id: None,
             tokens_before: 1000,
+            tokens_after: None,
+            summary_usage: None,
+            summary_provider_id: None,
+            summary_model_id: None,
             read_files: Vec::new(),
             modified_files: Vec::new(),
+            current_intent: None,
             trigger_reason: "proactive".to_string(),
             from_hook: false,
         }),
@@ -396,8 +455,8 @@ async fn unified_context_budget_boundary_requires_compaction_with_history_allowa
     .unwrap_or_abort()
     .unwrap_or_abort();
 
-    // assert: equality compacts and fixed request components leave two recent turns.
-    assert_eq!(applied.first_kept_event_seq, 5);
+    // assert: equality compacts and the strict summary reserve leaves the latest turn.
+    assert_eq!(applied.first_kept_event_seq, 12);
 }
 
 /// Split-turn compaction: cut point lands on an `AssistantMessageFinished`,
@@ -443,19 +502,29 @@ async fn split_turn_compaction_produces_combined_summary() {
         &large_text('Y', 4000),
     );
     append_provider_started(&clock, &redactor, &mut run_state, agent_id, "req_2");
+    let split_text = format!(
+        "PREFIX_SENTINEL{}TAIL_SENTINEL{}",
+        large_text('B', 3000),
+        large_text('S', 1000)
+    );
     append_stream_delta(
         &clock,
         &redactor,
         &mut run_state,
         agent_id,
         "req_2",
-        &large_text('B', 4000),
+        &split_text,
     );
     append_assistant_finished(&clock, &redactor, &mut run_state, agent_id, "req_2");
 
-    let provider = Arc::new(SummaryMockProvider {
-        summary: "## Goal\nSplit turn summary".to_string(),
+    let provider_impl = Arc::new(PromptCaptureProvider {
+        requests: Mutex::new(Vec::new()),
+        summaries: [
+            "## Goal\nSplit turn summary".to_string(),
+            "## Goal\nSplit prefix summary".to_string(),
+        ],
     });
+    let provider: Arc<dyn Provider> = Arc::<PromptCaptureProvider>::clone(&provider_impl);
 
     let result = compact_session(
         &clock,
@@ -479,8 +548,36 @@ async fn split_turn_compaction_produces_combined_summary() {
     assert_eq!(count_session_compaction_events(&events), 1);
 
     let compaction_event = last_session_compaction_event(&events);
-    // The summary should contain the mock provider's output.
+    let requests = provider_impl.requests.lock().expect("request capture lock");
+    assert_eq!(requests.len(), 2);
+    assert!(!requests[0]
+        .messages
+        .iter()
+        .any(|message| message.content.contains("PREFIX_SENTINEL")));
     assert!(compaction_event.summary.contains("Split turn summary"));
+    assert!(compaction_event.summary.contains("Split prefix summary"));
+
+    assert!(requests[1]
+        .messages
+        .iter()
+        .any(|message| message.content.contains("PREFIX_SENTINEL")));
+    drop(requests);
+
+    let live_context = run_state
+        .provider_context_by_agent
+        .get(agent_id)
+        .expect("live provider context");
+    assert!(live_context.preserved_turns.iter().any(|turn| turn
+        .messages
+        .iter()
+        .any(|message| matches!(message, ConversationMessage::Assistant(assistant) if assistant.text.contains("TAIL_SENTINEL")))));
+
+    let reopened_context = reconstruct_provider_context_from_events(&events, agent_id)
+        .expect("reopened provider context");
+    assert!(reopened_context.preserved_turns.iter().any(|turn| turn
+        .messages
+        .iter()
+        .any(|message| matches!(message, ConversationMessage::Assistant(assistant) if assistant.text.contains("TAIL_SENTINEL")))));
 }
 
 /// Iterative compaction: a second compaction finds the previous summary
@@ -678,4 +775,93 @@ async fn manual_trigger_always_attempts_compaction() {
     assert!(compaction_event
         .summary
         .contains("Manual compaction summary"));
+}
+
+#[tokio::test]
+async fn completion_replay_failure_finishes_and_cancels_pending_compaction() {
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
+    let config = test_config(temp_dir.path());
+    let clock = Arc::new(FakeClock::new());
+    let redactor = Arc::new(DefaultRedactor::default());
+    let (_command_tx, command_rx) = mpsc::channel(1);
+    let (job_tx, job_rx) = mpsc::channel(1);
+    let mut coordinator = Coordinator::new(config, clock, redactor, command_rx, job_tx, job_rx);
+    coordinator
+        .start_run_internal_async(
+            "completion_replay_failure".to_string(),
+            temp_dir.path().to_path_buf(),
+        )
+        .await
+        .unwrap_or_abort();
+
+    let agent_id = "agent_000001".to_string();
+    let (respond_to, response) = oneshot::channel();
+    let (generation, cancellation_token, events_path) = {
+        let run_state = coordinator.run_state.as_mut().unwrap_or_abort();
+        let generation = run_state.next_compaction_generation();
+        let cancellation_token = run_state.shutdown_token.child_token();
+        let base = super::super::CompactionGenerationBase::capture(run_state, None);
+        run_state.pending_compactions.insert(
+            agent_id.clone(),
+            super::super::PendingCompactionState {
+                agent_id: agent_id.clone(),
+                task_id: None,
+                generation,
+                base,
+                cancellation_token: cancellation_token.clone(),
+                trigger: ProviderCompactionTrigger {
+                    agent_id: agent_id.clone(),
+                    profile_name: "alpha".to_string(),
+                    model_ref: "mock:model-1".to_string(),
+                    provider_id: None,
+                    model_id: None,
+                    through_request_id: None,
+                    trigger_reason: "manual".to_string(),
+                    tokens_before: None,
+                    estimate_source: None,
+                },
+                response: super::super::PendingCompactionResponse::Manual(respond_to),
+            },
+        );
+        (
+            generation,
+            cancellation_token,
+            run_state.info.events_path.clone(),
+        )
+    };
+
+    OpenOptions::new()
+        .append(true)
+        .open(events_path)
+        .unwrap_or_abort()
+        .write_all(b"not-json\n")
+        .unwrap_or_abort();
+
+    coordinator
+        .compaction_generated_internal(
+            agent_id.clone(),
+            generation,
+            Box::new(Err(CoordinatorError::CompactionFailed(
+                "summary generation failed".to_string(),
+            ))),
+        )
+        .await;
+
+    let result = timeout(Duration::from_secs(1), response)
+        .await
+        .unwrap_or_abort()
+        .unwrap_or_abort();
+    assert!(matches!(
+        result,
+        Err(CoordinatorError::EventStore(
+            crate::store::EventStoreError::InvalidJsonLine { .. }
+        ))
+    ));
+    assert!(cancellation_token.is_cancelled());
+    assert!(coordinator
+        .run_state
+        .as_ref()
+        .unwrap_or_abort()
+        .pending_compactions
+        .is_empty());
 }

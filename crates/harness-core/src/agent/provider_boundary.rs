@@ -5,6 +5,7 @@ use harness_providers::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use thiserror::Error;
 
 use super::{
     AgentModelRef, AgentModelSettings, AgentProfile, ProviderContext,
@@ -48,6 +49,19 @@ pub struct ProviderBoundaryOutput {
     pub request: CompletionRequest,
 }
 
+#[derive(Debug, Error, PartialEq, Eq)]
+pub(crate) enum CommittedPromptLookupError {
+    #[error("committed provider context has no user message for request `{request_id}`")]
+    Missing { request_id: String },
+    #[error("committed provider context has multiple user messages for request `{request_id}`")]
+    Ambiguous { request_id: String },
+}
+
+pub(crate) struct CommittedProviderMessages {
+    pub(crate) messages: Vec<CompletionMessage>,
+    pub(crate) pending_prompt_index: usize,
+}
+
 pub fn build_provider_context_messages(
     profile: &AgentProfile,
     prior_context: &ProviderContext,
@@ -66,6 +80,44 @@ pub fn build_provider_context_messages(
         tool_choice: None,
     })
     .messages
+}
+
+pub(crate) fn build_committed_provider_context_messages(
+    profile: &AgentProfile,
+    prior_context: &ProviderContext,
+    request_id: &crate::ids::RequestId,
+) -> Result<CommittedProviderMessages, CommittedPromptLookupError> {
+    let projected_context = project_provider_context(prior_context);
+    let mut matching_indices =
+        projected_context
+            .iter()
+            .enumerate()
+            .filter_map(|(index, message)| match message {
+                ConversationMessage::User(user) if user.request_id == *request_id => Some(index),
+                _ => None,
+            });
+    let pending_projected_index =
+        matching_indices
+            .next()
+            .ok_or_else(|| CommittedPromptLookupError::Missing {
+                request_id: request_id.to_string(),
+            })?;
+    if matching_indices.next().is_some() {
+        return Err(CommittedPromptLookupError::Ambiguous {
+            request_id: request_id.to_string(),
+        });
+    }
+    let pending_prompt_index = convert_projected_context_to_provider_messages(
+        profile,
+        &projected_context[..=pending_projected_index],
+    )
+    .len()
+    .saturating_sub(1);
+    let messages = convert_projected_context_to_provider_messages(profile, &projected_context);
+    Ok(CommittedProviderMessages {
+        messages,
+        pending_prompt_index,
+    })
 }
 
 /// Harness provider boundary: transform projected harness-native conversation state
@@ -206,6 +258,17 @@ pub(in crate::agent) fn project_provider_context_for_prompt(
     prior_context: &ProviderContext,
     prompt: &str,
 ) -> Vec<ConversationMessage> {
+    let mut messages = project_provider_context(prior_context);
+    messages.push(ConversationMessage::User(ConversationUserMessage {
+        request_id: String::new().into(),
+        text: prompt.to_string(),
+        seq: None,
+        agent_id: None,
+    }));
+    messages
+}
+
+fn project_provider_context(prior_context: &ProviderContext) -> Vec<ConversationMessage> {
     let summary_message_count = usize::from(
         prior_context
             .compacted_summary
@@ -279,13 +342,6 @@ pub(in crate::agent) fn project_provider_context_for_prompt(
             },
         ));
     }
-
-    messages.push(ConversationMessage::User(ConversationUserMessage {
-        request_id: String::new().into(),
-        text: prompt.to_string(),
-        seq: None,
-        agent_id: None,
-    }));
 
     messages
 }

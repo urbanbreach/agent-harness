@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 
 use super::facts::{LegacyFact, LegacyFactKind, ProjectionIndex};
 use super::{
-    LegacyAdapterError, LegacyAuditReference, LegacyIdentityNamespace, LegacyProvenance,
-    LegacySessionSnapshot, LegacyWarning,
+    LegacyAdapterError, LegacyAuditReference, LegacyCompactionFact, LegacyIdentityNamespace,
+    LegacyProvenance, LegacySessionSnapshot, LegacyWarning,
 };
 use crate::event::SCHEMA_VERSION;
 use crate::ids::{EntryId, RunId, SessionId};
@@ -118,10 +118,8 @@ impl<'a> SessionProjector<'a> {
                     },
                 });
             }
-            LegacyFactKind::Compaction {
-                summary,
-                first_kept_event_seq,
-            } => self.apply_compaction(fact, summary, *first_kept_event_seq),
+            LegacyFactKind::Compaction(compaction) => self.apply_compaction(fact, compaction),
+            LegacyFactKind::CurrentIntent => {}
             LegacyFactKind::BranchSummary(summary) => self.push_entry(SessionEntry {
                 id: self
                     .namespace

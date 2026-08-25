@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use harness_providers::CompletionUsage;
 use serde_json::Value;
 
-use super::LegacyIdentityNamespace;
+use super::{LegacyCompactionFact, LegacyIdentityNamespace};
 use crate::attachment_transport::AttachmentMetadata;
 use crate::ids::{EntryId, ToolCallId};
 use crate::session::{AssistantPart, RunStatus, SessionStatus, ToolResultStatus};
@@ -43,10 +43,8 @@ pub(super) enum LegacyFactKind {
         provenance: Option<crate::session::ProviderProvenance>,
     },
     ToolFinished(ToolFinishFact),
-    Compaction {
-        summary: String,
-        first_kept_event_seq: u64,
-    },
+    Compaction(LegacyCompactionFact),
+    CurrentIntent,
     BranchSummary(String),
     Noop,
 }
@@ -202,7 +200,8 @@ impl ProjectionIndex {
                 | LegacyFactKind::RunTerminal { .. }
                 | LegacyFactKind::User { .. }
                 | LegacyFactKind::ToolFinished(_)
-                | LegacyFactKind::Compaction { .. }
+                | LegacyFactKind::Compaction(_)
+                | LegacyFactKind::CurrentIntent
                 | LegacyFactKind::BranchSummary(_)
                 | LegacyFactKind::Noop => {}
             }
@@ -248,9 +247,10 @@ impl ProjectionIndex {
                 LegacyFactKind::Title(_) => {
                     Some(namespace.entry_id(fact.sequence, &fact.event_id, "session_metadata"))
                 }
-                LegacyFactKind::Compaction { .. } => {
+                LegacyFactKind::Compaction(_) => {
                     Some(namespace.entry_id(fact.sequence, &fact.event_id, "compaction_summary"))
                 }
+                LegacyFactKind::CurrentIntent => None,
                 LegacyFactKind::BranchSummary(_) => {
                     Some(namespace.entry_id(fact.sequence, &fact.event_id, "branch_summary"))
                 }

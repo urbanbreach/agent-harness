@@ -194,6 +194,7 @@ async fn provider_single_call_returns_tool_intents_without_executing_tools() {
     let request = AgentRequest {
         agent_id: "agent_1".to_string(),
         prompt: "single provider call".to_string(),
+        attachments: Vec::new(),
         prompt_context: None,
         selected_file_tags: Vec::new(),
         selected_agent_tags: Vec::new(),

@@ -746,6 +746,7 @@ async fn background_foreground_child_tasks_releases_parent_task_and_keeps_child_
                 agent_id: child_session_id.clone(),
                 request_id: child_request_id.clone(),
                 request_prompt: "work in child".to_string(),
+                attachments: Vec::new(),
                 profile_name: "alpha".to_string(),
                 model_ref: "mock:model-1".to_string(),
                 model_settings: AgentModelSettings {
@@ -893,6 +894,7 @@ async fn demote_foreground_child_task_releases_parent_for_single_handle() {
                 agent_id: child_session_id.clone(),
                 request_id: child_request_id.clone(),
                 request_prompt: "work in child".to_string(),
+                attachments: Vec::new(),
                 profile_name: "alpha".to_string(),
                 model_ref: "mock:model-1".to_string(),
                 model_settings: AgentModelSettings {
@@ -1076,6 +1078,7 @@ async fn demote_all_foreground_child_tasks_releases_multiple_parents() {
                     agent_id: child_session_id.to_string(),
                     request_id: child_request_id.to_string(),
                     request_prompt: "work in child".to_string(),
+                    attachments: Vec::new(),
                     profile_name: "alpha".to_string(),
                     model_ref: "mock:model-1".to_string(),
                     model_settings: AgentModelSettings {
@@ -1311,6 +1314,8 @@ fn test_run_state(session_dir: &Path, run_id: &str) -> RunState {
         next_task_id: 1,
         next_provider_request_id: 1,
         next_permission_id: 1,
+        next_compaction_generation: 1,
+        compaction_boundary_watermark: 0,
         agents: std::collections::BTreeMap::new(),
         provider_context_by_agent: std::collections::BTreeMap::new(),
         tasks: std::collections::BTreeMap::new(),
@@ -1322,10 +1327,12 @@ fn test_run_state(session_dir: &Path, run_id: &str) -> RunState {
         background_notification_child_requests: std::collections::BTreeSet::new(),
         pending_agent_wakeups: std::collections::BTreeMap::new(),
         pending_permissions: std::collections::BTreeMap::new(),
+        tool_call_request_event_ids: std::collections::BTreeMap::new(),
         active_permission_grants: crate::perm::PermissionGrantSet::default(),
         cancelled_running_tasks: std::collections::BTreeSet::new(),
         queued_agent_turns: std::collections::BTreeMap::new(),
         running_agent_turns: std::collections::BTreeMap::new(),
+        pending_compactions: std::collections::BTreeMap::new(),
         failed_terminal_compaction_attempts: std::collections::BTreeSet::new(),
         overflow_retry_compacted_context_by_attempt: std::collections::BTreeMap::new(),
         scheduler: Scheduler::new(SchedulerLimits {

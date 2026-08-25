@@ -221,6 +221,8 @@ impl Coordinator {
             return Err(CoordinatorError::RunNotStarted);
         };
 
+        run_state.cancel_pending_compaction_for_task(&task_id, &reason);
+
         if let Some(queued) = run_state.queued_agent_turns.remove(&task_id) {
             if queued.scheduler_queued {
                 let _ = run_state.scheduler.cancel_queued(&task_id);
@@ -749,6 +751,7 @@ impl Coordinator {
                             hook_executions,
                         ),
                         request_correlation_id: request_correlation_id.as_deref(),
+                        causation_id: None,
                     },
                 )?;
                 if let Some(respond_to) = task.respond_to {

@@ -36,6 +36,9 @@ impl From<ConversationProjectionError> for PromptRewindError {
             ConversationProjectionError::EventsOutOfOrder { previous_seq, seq } => {
                 Self::EventsOutOfOrder { previous_seq, seq }
             }
+            malformed @ ConversationProjectionError::ProviderDeltaBeforeStart { .. } => {
+                Self::Projection(malformed.to_string())
+            }
         }
     }
 }

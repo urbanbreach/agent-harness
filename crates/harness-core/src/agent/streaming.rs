@@ -211,6 +211,7 @@ pub(crate) struct ProviderRequestBudgetContext {
     pub(crate) estimated_token_triggers: bool,
     pub(crate) fallback_input_tokens: u32,
     pub(crate) pending_prompt_index: usize,
+    pub(crate) historical_attachment_tokens: u32,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -245,7 +246,14 @@ pub(crate) fn apply_provider_request_budget(
     request: &mut CompletionRequest,
     context: &ProviderRequestBudgetContext,
 ) -> Result<RequestBudgetSnapshot, ProviderRequestPreflightError> {
-    let provisional = provider.request_budget_semantics(request, context.pending_prompt_index)?;
+    let attachment_tokens = context.historical_attachment_tokens;
+    let mut provisional =
+        provider.request_budget_semantics(request, context.pending_prompt_index)?;
+    provisional.request_cost.attachments_tokens = provisional
+        .request_cost
+        .attachments_tokens
+        .checked_add(attachment_tokens)
+        .ok_or(ProviderRequestCostError::ArithmeticOverflow)?;
     let provisional_budget = compute_request_budget(RequestBudgetInput {
         model_limits: &context.model_limits,
         request_cost: provisional.request_cost,
@@ -257,7 +265,12 @@ pub(crate) fn apply_provider_request_budget(
     })?;
     request.max_tokens = provisional_budget.reserved_output_tokens;
 
-    let current = provider.request_budget_semantics(request, context.pending_prompt_index)?;
+    let mut current = provider.request_budget_semantics(request, context.pending_prompt_index)?;
+    current.request_cost.attachments_tokens = current
+        .request_cost
+        .attachments_tokens
+        .checked_add(attachment_tokens)
+        .ok_or(ProviderRequestCostError::ArithmeticOverflow)?;
     Ok(compute_request_budget(RequestBudgetInput {
         model_limits: &context.model_limits,
         request_cost: current.request_cost,

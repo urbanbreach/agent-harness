@@ -103,6 +103,7 @@ fn event_append_helpers_preserve_correlation_fallbacks_and_stream_keys() {
             output_json: None,
             metadata: None,
             request_correlation_id: Some("req_000001"),
+            causation_id: None,
         },
     )
     .unwrap_or_abort();

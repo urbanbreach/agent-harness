@@ -203,7 +203,8 @@ checks without scheduling work during replay.
 - `ProviderRequestFinished`
 - `AssistantMessageFinished` - Self-contained assistant commit before tool preflight/execution; includes `request_id`, `tool_call_count`, `parts`, `provenance`, and optional `assistant_message`
 - Provider tool-call deltas/completions are normalized before coordinator execution
-- `SessionCompaction` - session-level compaction event; replaces the deprecated `CompactionRequested`/`CompactionWritten`/`CompactionApplied`/`CompactionFailed` sequence. Carries the compaction summary, token estimate before compaction, file lists, trigger reason, and hook provenance in a single event.
+- `SessionCompaction` (`agent_id`, `summary`, `first_kept_event_seq`, `first_kept_request_id`, `first_kept_entry_id`, `tokens_before`, `tokens_after`, `summary_usage`, `summary_provider_id`, `summary_model_id`, `read_files`, `modified_files`, `current_intent`, `trigger_reason`, `from_hook`) - session-level compaction event; replaces the deprecated compaction sequence.
+- Deprecated read-only compatibility variants: `CompactionRequested`, `CompactionWritten`, `CompactionApplied`, `CompactionFailed`.
 - `BranchSummary` - branch-level summary event for forked/child session context.
 
 ### Provider lifecycle metadata contract
@@ -370,8 +371,8 @@ tools on the production coordinator path. The turn loop runs through explicit ph
 1. **Turn start** - the coordinator records the running turn, lifecycle hook state, cancellation
    token, scheduler slot, and stable turn/request correlation id.
 2. **Context projection and provider transform** - provider-visible messages are recomputed at
-   provider-start time from event-derived context plus any applied checkpoint. Queued turns do not
-   carry stale scheduled-time provider input.
+   provider-start time from the canonical event-derived active path plus the latest committed
+   `SessionCompaction` state. Queued turns do not carry stale scheduled-time provider input.
 3. **Provider stream** - the coordinator allocates a fresh provider-call id, invokes the single-call
    provider primitive, and receives provider output through coordinator commands. Text, reasoning,
    and partial tool input are published only as bounded live runtime fragments.
@@ -403,9 +404,9 @@ agent/provider loop bypass.
 Guardrails bound tool-heavy turns by total tool calls per turn, while provider phases continue until
 the assistant completes, fails, is cancelled, or hits that explicit tool-call cap. Overflow-style
 provider failures may trigger one coordinator compaction retry; the retry recomputes provider context
-from the checkpoint without rewriting `events.jsonl`. Pre-prompt compaction uses the same coordinator
-checkpoint path before provider request construction, with deterministic token estimates and a no-loop
-guard when a checkpoint cannot reduce active context.
+from the committed compaction event without rewriting `events.jsonl`. Pre-prompt compaction uses the
+same pipeline before provider request construction, with deterministic token estimates and a no-loop
+guard when a compaction cannot reduce active context.
 
 ## Tool Surface Policy
 
@@ -500,63 +501,108 @@ tail so prior complete events remain readable and the next append uses the expec
 
 ## Provider Context Compaction
 
-Provider-visible conversation state is compacted without rewriting `events.jsonl`.
+Provider-visible conversation state is compacted without rewriting `events.jsonl`. Compaction V2 has
+one active coordinator-owned pipeline:
 
-V1 compaction contract:
+`prepare -> generate -> validate -> commit`
 
-- Threshold policy: proactive and pre-prompt checks consume the prepared request's shared
-  `RequestBudgetSnapshot`. Estimated capacity uses its compaction threshold; missing model limits
-  have no automatic threshold unless `runtime.compaction.fallback_input_tokens` explicitly enables
-  conservative, non-exact pressure. Overflow-style provider failures may still run one overflow
-  retry when `runtime.compaction.auto_retry_overflow=true`.
-- Retained recent turns: `runtime.compaction.keep_recent_tokens` is capped by the snapshot's history allowance
-  after system, tools, attachments, provider framing, and the pending prompt are removed
-  from the shared threshold. Manual `/compact` preserves the latest completed turn verbatim.
-- File-operation context: active session compaction extracts deterministic read-file and
-  modified-file facts from the event-derived messages being summarized. Other tool, skill, todo,
-  and plan details remain represented by those messages rather than a second provider-context planner.
-- Post-compaction restoration: checkpoint summaries and preserved recent turns are replay-derived;
-  preserved recent turns plus the live user prompt take precedence over the lossy recap.
+Manual `/compact`, pre-prompt pressure, and the single overflow retry all call that same pipeline.
+Summary generation runs outside the coordinator command loop. A successful run appends exactly one
+`SessionCompaction` event and rebuilds the in-memory provider context from the committed event. There
+is no trigger-specific compaction bypass, second success event, or active checkpoint-artifact writer.
 
-- `events.jsonl` remains append-only and stays the source of truth.
-- Compaction appends a single `SessionCompaction` event with the generated summary, token estimate, file lists, and trigger reason. No checkpoint artifacts are written — the summary lives entirely in the event and the in-memory `ProviderContext`.
-- The coordinator emits `SessionCompaction` for successful compactions, or `CompactionFailed` (deprecated) when a retry cannot shrink context safely.
-- Resume restores provider context from the latest `SessionCompaction` event, then replays post-compaction deltas from `events.jsonl`.
+### V2 durable contract
 
-Checkpoint payloads carry:
+The canonical active path is typed before cut selection. The success event carries these fields:
 
-- a lossy summary of older turns,
-- recent preserved turns kept verbatim,
-- advisory `pruned_tool_artifacts` metadata for artifacts associated with compacted turns,
-- structured source facts for compacted turns, relevant artifacts, touched files, and previous-checkpoint lineage,
-- tail-boundary metadata describing whether the preserved suffix is whole-turn, oversized whole-turn, or summary-only,
-- summary-source metadata recording hook overrides, optional model-backed summaries, and deterministic fallback,
-- summary contract metadata, including the active contract version when the default Harness sections are enforced,
-- replay-derived operational memory for read files, modified files, generic tool operations, skill
-  loads, todo updates, and plan handoff/edit references,
-- a first-class timeline entry that UIs/replay views can render without parsing prose.
+- `agent_id`, `summary`, `first_kept_event_seq`, and optional `first_kept_request_id` identify the
+  owner and durable boundary;
+- optional `first_kept_entry_id` identifies the canonical `SessionEntry` boundary;
+- `tokens_before` and optional `tokens_after` record the shared budget estimate before and after;
+- optional `summary_usage`, `summary_provider_id`, and `summary_model_id` preserve summary-generation
+  accounting and provenance;
+- `read_files`, `modified_files`, and optional typed `current_intent` preserve operational state;
+- `trigger_reason` and `from_hook` describe the trigger without changing the pipeline.
 
-Failed and aborted provider turns can be kept as recent turns when preserving them helps continuity.
-Checkpoint artifacts carry their status, failure stage, and redacted reason, and replay/debug projections
-surface the same incomplete-turn marker instead of displaying the partial assistant text as a completed answer.
+The optional fields are serde-defaulted so old `SessionCompaction` fixtures remain readable. The
+canonical `CompactionSummary` entry carries the typed boundary, accounting, provenance, and preserved
+state used by the active-path projection. File state and current intent are typed state, not markers
+that a reader must recover by searching summary prose.
 
-The checkpoint recap injected back into provider requests is historical background only. It is intentionally not treated as a system instruction; preserved recent turns and the live user prompt take precedence.
+### Threshold policy
 
-Lifecycle hooks can observe `compaction_requested`. Critical hook failure cancels the checkpoint and records `CompactionFailed`. A successful hook may supply a custom summary by writing output beginning with `compaction_summary:`; hook summaries take precedence over optional model-backed summaries. Model-backed summary calls are disabled by default, run through the provider abstraction without emitting provider request/stream events, and must return the default Harness summary sections when `runtime.compaction.structured_summary_contract=true`. Empty, failing, overflowing, or invalid model summaries fall back to the deterministic rolling summary and record `summary_source.deterministic_fallback=true` on both the checkpoint artifact and `CompactionWritten` event so UI status surfaces can show the fallback path. Overflow-retry and failed-response compaction attempts are bounded to one recorded attempt for the triggering request.
+Manual and automatic pressure consume the prepared request's shared `RequestBudgetSnapshot`. When a
+compaction threshold is known, every trigger uses it for complete-request fit validation. Automatic,
+pre-prompt, and overflow compaction fail closed when the current model has no threshold. Explicit
+manual compaction may still proceed after at least two completed turns and a canonical safe cut: its
+summary allowance is bounded by removable observed history, and commit requires the actual summary
+plus retained history to be strictly smaller than the prepared input. That manual fallback does not
+invent a context window, threshold, remaining-token count, or exact pressure percentage.
 
-Operational memory remains event-derived. The coordinator gathers capped read-file facts, modified-file facts, and compact operation facts from the durable event/artifact stream between checkpoint boundaries, then stores summary counts and facts inside checkpoint metadata. Replay does not scan the workspace or execute tools to rebuild that memory.
+### Retained recent turns
+
+`runtime.compaction.keep_recent_tokens` is capped by the snapshot's history allowance after system
+text, tools, attachments, provider framing, and the pending prompt are charged. Recent typed entries
+remain verbatim when they fit; a single oversized text entry may use the UTF-8 split rule below.
+
+### File-operation context
+
+Active compaction extracts deterministic read-file and modified-file facts from the event-derived
+messages being summarized rather than a second provider-context planner. Tool calls/results,
+attachments, todo state, and plan context remain represented by their typed entries and protocol
+messages.
+
+Threshold and fit checks consume the prepared request's shared `RequestBudgetSnapshot`. The snapshot
+charges system text, tools, attachments, provider framing, pending prompt, retained history, prior
+summary, and requested completion through one budget service. With a known threshold, the complete
+current-model request is validated before commit. For explicit manual compaction without a threshold,
+validation instead requires strict reduction of the prepared input and makes no model-fit claim. A
+model change, stale generation, empty/error/cancelled generation, malformed history, non-fitting known-
+threshold summary, or non-shrinking unknown-threshold manual summary is non-committable: the previous
+durable boundary remains active and no replacement success event is appended. UTF-8 text may split
+only at a valid boundary; attachments, tool calls, and tool results remain atomic pairs.
+
+### Post-compaction restoration
+
+The contract is explicit: preserved recent turns plus the live user prompt take precedence over the
+lossy recap. The recap is historical provider context, not a system instruction, and replay does not
+recover it by scanning the workspace.
+
+### Replay, restart, and compatibility
+
+Restart reconstructs provider context from the latest committed `SessionCompaction` event and the
+post-boundary canonical events. The live post-commit and reopened contexts preserve the same roles,
+ordered tool pairs, attachment metadata, summary, recent suffix, file state, and current intent.
+`events.jsonl` remains append-only and replay remains side-effect free.
+
+The deprecated `CompactionRequested`, `CompactionWritten`, `CompactionApplied`, and `CompactionFailed`
+variants plus checkpoint-artifact readers remain decode/read-only compatibility inputs inside the
+single `session::legacy` adapter boundary until G010. They have no new writers in the active V2 path.
+When a legacy log references a checkpoint artifact, the compatibility reader may import it; new V2
+sessions do not create one. Operational memory is replay-derived from durable events and does not scan
+the workspace or execute tools during replay.
 
 ### Manual `/compact`
 
-Manual `/compact` means "write a checkpoint now, preserving the latest completed turn." It summarizes older turns, keeps the latest turn verbatim, and writes the same checkpoint artifacts and append-only compaction events as normal provider-context compaction. The checkpoint summary is lossy, and the command does not guarantee immediate provider context/token reduction; one-turn sessions no-op because there is no older completed turn to summarize. Automatic proactive compaction and overflow-retry compaction remain separate coordinator paths.
+Manual `/compact` requests the shared V2 pipeline now. It summarizes the older typed active-path
+entries and preserves the configured recent suffix, including the complete latest completed turn and
+its protocol atoms. It appends one `SessionCompaction` only after known-threshold fit validation or,
+when the threshold is unknown, after strict post-compaction shrink validation. A one-turn session may
+no-op because there is no older completed entry to summarize. Manual and automatic triggers have the
+same durable event shape; only `trigger_reason` differs.
 
 ### Overflow retry behavior
 
-After an overflow-style provider failure, the coordinator may compact and retry once. This behavior is enabled by default and can be disabled with `runtime.compaction.autoRetryOverflow=false`. Normal proactive compaction keeps recent turns verbatim and summarizes older turns. Overflow retry can also fall back to a summary-only checkpoint when a single preserved turn is itself too large, but only when the resulting checkpoint is strictly smaller than the active provider context. When `runtime.compaction.splitOversizedTurns=true`, an oversized latest turn can instead be split inside the checkpoint artifact: the earlier portion is summarized and a suffix remains provider-visible as recent context, without adding event variants or rewriting history.
+After an overflow-style provider failure, the coordinator may run the shared pipeline and retry once
+when `runtime.compaction.autoRetryOverflow=true`. `overflow_retry_attempted` is the sole retry guard;
+a second overflow terminates without a third provider request. A single oversized text entry may be
+split at a valid UTF-8 boundary so its prefix is summarized and its suffix remains provider-visible.
+Attachments, tool calls, and tool results are never split or invented, and the event log is never
+rewritten.
 
 ### Session artifacts vs UI memory caps
 
-Compaction is a provider-context persistence feature. It is separate from TUI/session presentation caps that trim or collapse on-screen history for usability. UI memory caps do not rewrite provider context, do not create compaction checkpoints, and should not be treated as compaction.
+Compaction is a provider-context persistence feature. It is separate from TUI/session presentation caps that trim or collapse on-screen history for usability. UI memory caps do not rewrite provider context, do not create `SessionCompaction` events, and should not be treated as compaction.
 
 ## Canonical session and semantic assistant history
 

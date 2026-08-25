@@ -1,13 +1,10 @@
 // allow: SIZE_OK — provider context restore (historical event replay + checkpoint discovery + conversation reconstruction)
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::{self, BufRead, BufReader};
 use std::path::Path;
 
-use crate::agent::{
-    ProviderContext, ProviderContextCheckpoint, ProviderConversationTurn,
-    ProviderConversationTurnStatus,
-};
+use crate::agent::{ProviderContext, ProviderConversationTurn, ProviderConversationTurnStatus};
 use crate::conversation::{
     ConversationAssistantMessage, ConversationMessage, ConversationToolCall,
     ConversationToolResultMessage, ConversationUserMessage,
@@ -17,12 +14,15 @@ use crate::event::{
     TaskCompletedEvent, TaskTerminalScope,
 };
 use crate::provider_args::provider_tool_arguments_json;
+use crate::session::legacy::{
+    discover_legacy_applied_checkpoints, load_legacy_checkpoint, LegacyCheckpointRecord,
+};
 use crate::session::{AssistantPart, ProviderProvenance};
 use crate::session_paths::EVENTS_FILE_NAME;
 use crate::text::non_empty_trimmed;
 
 use super::super::CoordinatorError;
-use super::truncated_failure_reason;
+use super::{reconstruct_provider_context_from_events, truncated_failure_reason};
 
 pub(super) fn read_historical_events_until(
     run_id: &str,
@@ -145,6 +145,13 @@ pub(super) fn collect_historical_agent_turns_until(
                 let request = requests.entry(payload.request_id.to_string()).or_default();
                 request.first_seq.get_or_insert(event.seq);
                 request.user_text = Some(payload.text.clone());
+            }
+            EventV1::PromptAttachmentsSubmitted(payload) => {
+                requests
+                    .entry(payload.request_id.to_string())
+                    .or_default()
+                    .attachments
+                    .extend(payload.attachments.iter().cloned());
             }
             EventV1::ProviderRequestStarted(payload)
                 if event.actor.agent_id.as_deref() == Some(agent_id) =>
@@ -285,6 +292,7 @@ struct HistoricalRequestState {
     first_seq: Option<u64>,
     semantic_parts_authoritative: bool,
     semantic_tool_requests_seen: usize,
+    attachments: Vec<crate::attachment_transport::AttachmentMetadata>,
 }
 
 impl HistoricalRequestState {
@@ -354,17 +362,9 @@ fn historical_request_id(event: &EventEnvelopeV1, provider_request_id: &str) -> 
 }
 
 #[derive(Debug, Clone)]
-struct AppliedCheckpointRecord {
-    checkpoint_id: String,
-    artifact_path: String,
-    through_seq: u64,
-    through_request_id: Option<String>,
-}
-
-#[derive(Debug, Clone)]
 enum AppliedCheckpoint {
-    File(AppliedCheckpointRecord),
-    Inline(SessionCompactionEvent),
+    File(LegacyCheckpointRecord),
+    Inline(Box<SessionCompactionEvent>),
 }
 
 #[derive(Debug, Clone)]
@@ -448,8 +448,26 @@ pub(in crate::coord) fn restore_provider_context_from_history(
     let run_dir = session_dir.join(run_id);
     let events_path = run_dir.join(EVENTS_FILE_NAME);
     let historical_events = read_historical_events_until(run_id, &events_path, u64::MAX)?;
+    let compacted_agents = historical_events
+        .iter()
+        .filter_map(|event| match &event.payload {
+            EventV1::SessionCompaction(compaction) => Some(compaction.agent_id.clone()),
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>();
+    let reconstructed_contexts = compacted_agents
+        .into_iter()
+        .map(|agent_id| {
+            reconstruct_provider_context_from_events(&historical_events, &agent_id)
+                .map(|context| (agent_id, context))
+                .map_err(|error| CoordinatorError::ResumeRestoreFailed {
+                    run_id: run_id.to_string(),
+                    reason: error.to_string(),
+                })
+        })
+        .collect::<Result<BTreeMap<_, _>, _>>()?;
 
-    let applied_checkpoints = discover_applied_checkpoints(run_id, &run_dir, &historical_events)?;
+    let applied_checkpoints = discover_applied_checkpoints(run_id, &historical_events)?;
     let checkpoint_boundaries = applied_checkpoints
         .iter()
         .map(|(agent_id, checkpoint)| {
@@ -468,7 +486,12 @@ pub(in crate::coord) fn restore_provider_context_from_history(
         match checkpoint {
             AppliedCheckpoint::File(record) => {
                 let checkpoint_artifact =
-                    load_provider_context_checkpoint(run_id, &run_dir, record)?;
+                    load_legacy_checkpoint(&run_dir, record).map_err(|error| {
+                        CoordinatorError::ResumeRestoreFailed {
+                            run_id: run_id.to_string(),
+                            reason: error.to_string(),
+                        }
+                    })?;
                 if checkpoint_artifact.metadata.run_id.as_str() != run_id {
                     return Err(CoordinatorError::ResumeRestoreFailed {
                         run_id: run_id.to_string(),
@@ -554,6 +577,13 @@ pub(in crate::coord) fn restore_provider_context_from_history(
                 let request = requests.entry(payload.request_id.to_string()).or_default();
                 request.first_seq.get_or_insert(event.seq);
                 request.user_text = Some(payload.text.clone());
+            }
+            EventV1::PromptAttachmentsSubmitted(payload) => {
+                requests
+                    .entry(payload.request_id.to_string())
+                    .or_default()
+                    .attachments
+                    .extend(payload.attachments.iter().cloned());
             }
             EventV1::ProviderRequestStarted(payload) => {
                 if !replay_agent_event {
@@ -845,6 +875,7 @@ pub(in crate::coord) fn restore_provider_context_from_history(
                         last_seq: Some(event.seq),
                         artifacts,
                         messages,
+                        attachments: request_state.attachments,
                         ..ProviderConversationTurn::default()
                     });
             }
@@ -928,12 +959,14 @@ pub(in crate::coord) fn restore_provider_context_from_history(
                         last_seq: Some(event.seq),
                         artifacts: Vec::new(),
                         messages,
+                        attachments: request_state.attachments,
                     });
             }
             _ => {}
         }
     }
 
+    histories.extend(reconstructed_contexts);
     Ok(histories)
 }
 
@@ -949,104 +982,38 @@ fn should_replay_agent_scoped_event(
     seq > checkpoint_boundaries.get(agent_id).copied().unwrap_or(0)
 }
 
-#[allow(
-    deprecated,
-    reason = "deprecated event variants kept for backward compatibility with existing session logs"
-)]
 fn discover_applied_checkpoints(
     run_id: &str,
-    run_dir: &Path,
     events: &[EventEnvelopeV1],
 ) -> Result<BTreeMap<String, AppliedCheckpoint>, CoordinatorError> {
-    let mut written_by_id = BTreeMap::new();
-    let mut latest_applied_by_agent: BTreeMap<String, (u64, String)> = BTreeMap::new();
+    let legacy = discover_legacy_applied_checkpoints(events).map_err(|error| {
+        CoordinatorError::ResumeRestoreFailed {
+            run_id: run_id.to_string(),
+            reason: error.to_string(),
+        }
+    })?;
     let mut latest_session_compaction_by_agent: BTreeMap<String, (u64, SessionCompactionEvent)> =
         BTreeMap::new();
 
     for event in events {
-        match &event.payload {
-            EventV1::CompactionWritten(payload) => {
-                written_by_id.insert(payload.checkpoint_id.clone(), payload.clone());
-            }
-            EventV1::CompactionApplied(payload) => {
-                latest_applied_by_agent.insert(
-                    payload.agent_id.clone(),
-                    (event.seq, payload.checkpoint_id.clone()),
-                );
-            }
-            EventV1::SessionCompaction(payload) => {
-                latest_session_compaction_by_agent
-                    .insert(payload.agent_id.clone(), (event.seq, payload.clone()));
-            }
-            _ => {}
+        if let EventV1::SessionCompaction(payload) = &event.payload {
+            latest_session_compaction_by_agent
+                .insert(payload.agent_id.clone(), (event.seq, payload.clone()));
         }
     }
 
-    let mut applied = BTreeMap::new();
-    for (agent_id, (_, checkpoint_id)) in latest_applied_by_agent {
-        let Some(written) = written_by_id.get(&checkpoint_id) else {
-            return Err(CoordinatorError::ResumeRestoreFailed {
-                run_id: run_id.to_string(),
-                reason: format!(
-                    "compaction checkpoint `{checkpoint_id}` was applied without a matching written event"
-                ),
-            });
-        };
-
-        if written.agent_id != agent_id {
-            return Err(CoordinatorError::ResumeRestoreFailed {
-                run_id: run_id.to_string(),
-                reason: format!(
-                    "compaction checkpoint `{checkpoint_id}` agent mismatch between applied `{agent_id}` and written `{}`",
-                    written.agent_id
-                ),
-            });
-        }
-
-        applied.insert(
-            agent_id.clone(),
-            AppliedCheckpoint::File(AppliedCheckpointRecord {
-                checkpoint_id: checkpoint_id.clone(),
-                artifact_path: written.artifact_path.clone(),
-                through_seq: written.through_seq,
-                through_request_id: written.through_request_id.clone(),
-            }),
-        );
-    }
+    let mut applied = legacy
+        .into_iter()
+        .map(|(agent_id, record)| (agent_id, AppliedCheckpoint::File(record)))
+        .collect::<BTreeMap<_, _>>();
 
     for (agent_id, (_, compaction)) in latest_session_compaction_by_agent {
         // Inline session compaction always wins over a legacy file checkpoint
         // because it represents the most recent compaction event.
-        applied.insert(agent_id, AppliedCheckpoint::Inline(compaction));
+        applied.insert(agent_id, AppliedCheckpoint::Inline(Box::new(compaction)));
     }
 
-    let _ = run_dir;
     Ok(applied)
-}
-
-fn load_provider_context_checkpoint(
-    run_id: &str,
-    run_dir: &Path,
-    checkpoint: &AppliedCheckpointRecord,
-) -> Result<ProviderContextCheckpoint, CoordinatorError> {
-    let checkpoint_path = run_dir.join(&checkpoint.artifact_path);
-    let body = fs::read_to_string(&checkpoint_path).map_err(|source| {
-        CoordinatorError::ResumeRestoreFailed {
-            run_id: run_id.to_string(),
-            reason: format!(
-                "failed to read checkpoint artifact {}: {source}",
-                checkpoint_path.display()
-            ),
-        }
-    })?;
-
-    serde_json::from_str(&body).map_err(|source| CoordinatorError::ResumeRestoreFailed {
-        run_id: run_id.to_string(),
-        reason: format!(
-            "invalid checkpoint artifact {}: {source}",
-            checkpoint_path.display()
-        ),
-    })
 }
 
 fn historical_task_completion_marks_agent_turn(

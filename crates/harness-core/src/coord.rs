@@ -13,12 +13,13 @@ use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
 
 use crate::agent::{
-    apply_provider_request_budget, build_provider_context_messages,
-    build_provider_tool_defs_for_model, default_model_settings_for_profile, default_provider,
-    reject_compaction_pressure, stream_assistant_response_once,
-    stream_assistant_response_once_with_budget, tool_result_to_message_content,
-    transform_context_for_provider, AgentModelRef, AgentModelSettings, AgentProfile, AgentRequest,
-    AgentRuntimeEvent, AgentTurnFailure, AgentTurnOutcome, AssistantResponse, AssistantToolIntent,
+    apply_provider_request_budget, build_committed_provider_context_messages,
+    build_provider_context_messages, build_provider_tool_defs_for_model,
+    default_model_settings_for_profile, default_provider, reject_compaction_pressure,
+    stream_assistant_response_once, stream_assistant_response_once_with_budget,
+    tool_result_to_message_content, transform_context_for_provider, AgentModelRef,
+    AgentModelSettings, AgentProfile, AgentRequest, AgentRuntimeEvent, AgentTurnFailure,
+    AgentTurnOutcome, AssistantResponse, AssistantToolIntent, CommittedPromptLookupError,
     ProviderBoundaryContext, ProviderBoundaryInput, ProviderContext, ProviderConversationTurn,
     ProviderConversationTurnStatus, ProviderRequestBudgetContext, ProviderRequestPreflightError,
     StreamAssistantResponseOnceRequest, MAX_TOOL_CALLS_TOTAL,
@@ -135,16 +136,20 @@ use self::child_session::{
     restore_child_session_mirrors, ChildSessionMirror,
 };
 pub(in crate::coord) use self::event_helpers::{
-    agent_actor, append_artifact_written_event, append_compaction_artifact_written_event,
-    append_compaction_failed_event, append_edit_applied_event, append_edit_proposed_event,
-    append_edit_rejected_event, append_failed_tool_call_finished_event, append_payload_event,
-    append_payload_event_with_correlation, append_permission_grant_recorded_event,
-    append_permission_requested_event, append_permission_resolved_event,
+    agent_actor, append_artifact_written_event, append_edit_applied_event,
+    append_edit_proposed_event, append_edit_rejected_event, append_failed_tool_call_finished_event,
+    append_payload_event, append_payload_event_with_correlation,
+    append_permission_grant_recorded_event, append_permission_requested_event,
+    append_permission_resolved_event, append_prestart_failed_tool_call_finished_event,
     append_tool_call_finished_event, append_tool_call_requested_event,
     append_tool_call_started_event, publish_live_event, system_actor, LiveEventPublishArgs,
 };
 pub use self::handle::CoordinatorHandle;
-pub(in crate::coord) use self::session_compaction::{compact_session, AppliedCompaction};
+#[cfg(test)]
+pub(in crate::coord) use self::session_compaction::compact_session;
+pub(in crate::coord) use self::session_compaction::{
+    AppliedCompaction, GeneratedSessionCompaction,
+};
 
 use self::permission::{
     call_scoped_external_allow_prefixes, collect_external_directory_paths,
@@ -176,7 +181,8 @@ use self::state::RunningAgentTurn;
 use self::state::{
     agent_turn_child_lineage, cancelled_failure_memory_from_running, push_incomplete_provider_turn,
     AgentProviderRequestFinishedArgs, AgentProviderRequestStartedArgs, ChildTaskTurnState,
-    EditAppliedEventArgs, HookExecutionBatch, HookInvocationContext, PendingAgentWakeup,
+    CompactionGenerationBase, CompactionGenerationToken, EditAppliedEventArgs, HookExecutionBatch,
+    HookInvocationContext, PendingAgentWakeup, PendingCompactionResponse, PendingCompactionState,
     PendingPermissionResolution, PendingPermissionState, PermissionDeniedArgs,
     PermissionRequestedEventArgs, QueuedAgentTurn, RunState, TaskExecutionState, TaskHookState,
     TaskState, ToolCallExecutionArgs, ToolCallFinishedEventArgs, ToolCallRequestedEventArgs,
@@ -341,12 +347,20 @@ pub struct CompactionRequestEvidence {
     pub context_budget: Option<RequestBudgetSnapshot>,
 }
 
-pub(in crate::coord) struct CompactAgentContextRequest<'a> {
-    pub(in crate::coord) task_id: Option<&'a str>,
-    pub(in crate::coord) agent_id: &'a str,
+pub(in crate::coord) struct CompactAgentContextRequest {
+    pub(in crate::coord) task_id: Option<String>,
+    pub(in crate::coord) agent_id: String,
     pub(in crate::coord) through_request_id: Option<String>,
-    pub(in crate::coord) trigger_reason: &'a str,
+    pub(in crate::coord) trigger_reason: String,
     pub(in crate::coord) evidence: CompactionRequestEvidence,
+}
+
+#[doc(hidden)]
+#[derive(Debug)]
+pub struct CompactionGeneratedCommand {
+    agent_id: String,
+    generation: CompactionGenerationToken,
+    result: Box<Result<GeneratedSessionCompaction, CoordinatorError>>,
 }
 
 #[derive(Debug)]
@@ -377,6 +391,12 @@ pub enum Command {
     UpdateSessionTitle {
         title: String,
         respond_to: oneshot::Sender<Result<RunInfo, CoordinatorError>>,
+    },
+    RecordUiIntent {
+        agent_id: String,
+        intent: String,
+        params: BTreeMap<String, String>,
+        respond_to: oneshot::Sender<Result<(), CoordinatorError>>,
     },
     GetAgentRuntimeInfo {
         agent_id: String,
@@ -536,7 +556,7 @@ pub enum Command {
         request_id: String,
         trigger_reason: String,
         evidence: CompactionRequestEvidence,
-        respond_to: oneshot::Sender<Result<ProviderContext, CoordinatorError>>,
+        respond_to: oneshot::Sender<Result<(ProviderContext, bool), CoordinatorError>>,
     },
     ManualCompactAgentContext {
         agent_id: String,
@@ -544,6 +564,7 @@ pub enum Command {
         trigger_reason: String,
         respond_to: oneshot::Sender<Result<ManualCompactionOutcome, CoordinatorError>>,
     },
+    CompactionGenerated(CompactionGeneratedCommand),
     AgentTurnFinished {
         task_id: String,
         agent_id: String,
@@ -633,6 +654,12 @@ pub enum CoordinatorError {
     ResumeRestoreFailed { run_id: String, reason: String },
     #[error("provider context compaction failed: {0}")]
     CompactionFailed(String),
+    #[error("compaction generation is already in progress for agent `{agent_id}`")]
+    CompactionInProgress { agent_id: String },
+    #[error("compaction generation for agent `{agent_id}` was cancelled: {reason}")]
+    CompactionCancelled { agent_id: String, reason: String },
+    #[error("compaction generation for agent `{agent_id}` is stale")]
+    CompactionStale { agent_id: String },
     #[error("lifecycle hook failed: {0}")]
     LifecycleHookFailed(String),
     #[error("workspace snapshot failed: {0}")]
@@ -861,13 +888,23 @@ where
         )?;
     }
 
-    append_failed_tool_call_finished_event(
+    let request_event_id = run_state
+        .tool_call_request_event_ids
+        .get(tool_call_id)
+        .cloned()
+        .ok_or_else(|| {
+            CoordinatorError::PolicyViolation(format!(
+                "missing ToolCallRequested identity for pre-start denial `{tool_call_id}`"
+            ))
+        })?;
+    append_prestart_failed_tool_call_finished_event(
         clock,
         redactor,
         run_state,
         tool_call_id,
         reason,
         request_correlation_id,
+        &request_event_id,
         tool_call_metadata(
             tool_metadata,
             None,

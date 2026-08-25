@@ -289,6 +289,38 @@ fn tui_mock_mode_still_boots_through_launcher() {
     );
 }
 #[test]
+fn tui_cli_accepts_mock_continue_before_session_lookup() {
+    // arrange
+    // act
+    // assert
+    let temp = tempdir().unwrap_or_abort();
+    let output = run_harness_in(
+        temp.path(),
+        [
+            "tui",
+            "--continue",
+            "missing-run",
+            "--mock",
+            "--exit-on-finish",
+        ],
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_ne!(
+        output.status.code(),
+        2,
+        "mock continue must reach session lookup instead of failing Clap validation:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("cannot be used with '--mock'"),
+        "mock continue must be an accepted CLI combination, got:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("continue session is disabled for missing-run"),
+        "mock continue must use the direct continuation path before session lookup, got:\n{stderr}"
+    );
+}
+#[test]
 fn tui_cli_root_help_only_shows_minimal_interactive_overrides() {
     // arrange
     // act

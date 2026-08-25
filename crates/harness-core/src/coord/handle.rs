@@ -114,6 +114,21 @@ impl CoordinatorHandle {
         .await
     }
 
+    pub async fn record_ui_intent(
+        &self,
+        agent_id: impl Into<String>,
+        intent: impl Into<String>,
+        params: BTreeMap<String, String>,
+    ) -> Result<(), CoordinatorError> {
+        self.request(|respond_to| Command::RecordUiIntent {
+            agent_id: agent_id.into(),
+            intent: intent.into(),
+            params,
+            respond_to,
+        })
+        .await
+    }
+
     pub async fn agent_runtime_info(
         &self,
         agent_id: impl Into<String>,

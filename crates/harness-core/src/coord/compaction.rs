@@ -5,6 +5,11 @@
 //! cut-point detection, prompt building, conversation serialization,
 //! and file operation formatting.
 
+#[path = "compaction/active_path_snapshot.rs"]
+mod active_path_snapshot;
+#[cfg(test)]
+#[path = "compaction/active_path_snapshot_tests.rs"]
+mod active_path_snapshot_tests;
 #[path = "compaction/branch_summary.rs"]
 mod branch_summary;
 #[path = "compaction/context_projection.rs"]
@@ -13,11 +18,14 @@ mod context_projection;
 mod cut_point;
 #[path = "compaction/file_ops.rs"]
 mod file_ops;
+#[path = "compaction/snapshot.rs"]
+mod snapshot;
 #[path = "compaction/summary.rs"]
 mod summary;
 #[path = "compaction/tokens.rs"]
 mod tokens;
 
+pub use active_path_snapshot::build_active_path_compaction_snapshot;
 pub use branch_summary::{
     collect_entries_for_branch_summary, generate_branch_summary, prepare_branch_entries,
     BranchPreparation, BranchSummaryResult, CollectEntriesResult, GenerateBranchSummaryOptions,
@@ -27,10 +35,21 @@ pub use context_projection::{
     build_session_context, build_session_context_with_branch_summaries,
     estimate_session_context_tokens,
 };
+pub(crate) use cut_point::{
+    estimate_typed_entries_tokens, find_safe_cut_point, SafeCutError, TypedCutPointPlan,
+    TypedTextSplit,
+};
 pub use cut_point::{find_cut_point, find_manual_cut_point, CutPointResult};
 pub use file_ops::{
     compute_file_lists, extract_file_ops_from_tool_call, merge_file_operations, FileOperation,
     FileOperations,
+};
+pub use snapshot::{
+    ActiveCompactionBranch, ActivePathCompactionPlan, ActivePathCompactionSnapshot,
+    ActivePathCompactionSnapshotInput, CompactionOwner, CompactionPlanBoundary,
+    CompactionSnapshotEntry, CompactionSnapshotError, CurrentCompactionModel,
+    LegacySourceSequences, OwnedSession, PendingCompactionPrompt, PriorActiveCompactionSummary,
+    ToolPairIdentity,
 };
 pub use summary::{
     build_summarization_prompt, build_turn_prefix_prompt, format_file_operations,

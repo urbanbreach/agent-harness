@@ -125,3 +125,17 @@ fn architecture_assistant_completion_fields_match_public_event_shape() {
     // assert: the public docs track every serialized completion field.
     assert_eq!(documented_fields, source_fields);
 }
+
+#[test]
+fn architecture_session_compaction_fields_match_public_event_shape() {
+    let root = repo_root();
+    let event_source =
+        std::fs::read_to_string(root.join("crates/harness-core/src/event.rs")).unwrap_or_abort();
+    let architecture_doc =
+        std::fs::read_to_string(root.join("docs/architecture/architecture.md")).unwrap_or_abort();
+
+    let source_fields = struct_fields(&event_source, "SessionCompactionEvent");
+    let documented_fields = documented_event_fields(&architecture_doc, "SessionCompaction");
+
+    assert_eq!(documented_fields, source_fields);
+}

@@ -2,6 +2,7 @@
 use std::collections::BTreeMap;
 
 use crate::event::{EventEnvelopeV1, EventV1, TaskScheduleState, ToolCallStatus};
+use crate::session::legacy::is_legacy_compaction_event;
 use crate::session::AssistantPart;
 
 mod helpers;
@@ -18,10 +19,6 @@ use helpers::{
     PartLocation, RequestLocations,
 };
 
-#[allow(
-    deprecated,
-    reason = "deprecated event variants kept for backward compatibility with existing session logs"
-)]
 pub fn project_transcript(
     events: &[EventEnvelopeV1],
 ) -> Result<TranscriptProjection, TranscriptProjectionError> {
@@ -813,11 +810,9 @@ pub fn project_transcript(
             | EventV1::EditApplied(_)
             | EventV1::EditRejected(_)
             | EventV1::WorkspaceSnapshot(_)
-            | EventV1::WorkspaceReverted(_)
-            | EventV1::CompactionRequested(_)
-            | EventV1::CompactionWritten(_)
-            | EventV1::CompactionApplied(_)
-            | EventV1::CompactionFailed(_) => {}
+            | EventV1::WorkspaceReverted(_) => {}
+            _ if is_legacy_compaction_event(&event.payload) => {}
+            _ => {}
         }
     }
 
