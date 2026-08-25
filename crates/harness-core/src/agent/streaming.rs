@@ -6,20 +6,23 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use harness_providers::{
-    CompletionRequest, CompletionUsage, Provider, ProviderErrorCategory, ProviderEventStream,
-    ProviderRequestCostError, ProviderStreamEvent, ProviderStreamFinishedMetadata,
-    ProviderStreamStartMetadata, ProviderStreamThinkingMetadata, ToolChoice, ToolDef,
+    CompletionRequest, CompletionUsage, MessageRole, Provider, ProviderErrorCategory,
+    ProviderEventStream, ProviderRequestCostError, ProviderStreamEvent,
+    ProviderStreamFinishedMetadata, ProviderStreamStartMetadata, ProviderStreamThinkingMetadata,
+    ToolChoice, ToolDef,
 };
 use serde_json::Value;
 use tokio_stream::StreamExt;
 
 use super::provider_boundary::{
     apply_provider_request_context, build_provider_tool_defs_for_model,
-    project_provider_context_for_prompt, transform_context_for_provider, ProviderBoundaryContext,
-    ProviderBoundaryInput,
+    canonical_runtime_selection, project_provider_context_for_prompt,
+    transform_context_for_provider, CanonicalRuntimeSelectionInput, LowerProviderContinuationInput,
+    ProviderBoundaryContext, ProviderBoundaryInput,
 };
 use super::{
-    AgentModelSettings, AgentProfile, AgentRequest, ProviderContext, ProviderConversationTurnStatus,
+    AgentModelSettings, AgentProfile, AgentRequest, ProviderContext, ProviderConversationTurn,
+    ProviderConversationTurnStatus,
 };
 use crate::config::{registered_profile_model_metadata, ResolvedModelLimits};
 use crate::context_budget::{
@@ -212,6 +215,7 @@ pub(crate) struct ProviderRequestBudgetContext {
     pub(crate) fallback_input_tokens: u32,
     pub(crate) pending_prompt_index: usize,
     pub(crate) historical_attachment_tokens: u32,
+    pub(crate) has_media: bool,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -326,6 +330,8 @@ pub struct StreamAssistantResponseOnceRequest<'a> {
     pub session_id: Option<String>,
     pub prompt_summary: &'a str,
     pub retry_metadata: Option<ProviderRequestRetryMetadata>,
+    pub canonical_view: Option<&'a crate::session::CanonicalProviderView>,
+    pub transient_operational_turns: &'a [ProviderConversationTurn],
     pub context: ProviderBoundaryContext<'a>,
     pub tool_defs: &'a [ToolDef],
 }
@@ -406,6 +412,7 @@ where
                 &request_id,
                 &request_id,
                 provider_start_metadata.as_ref(),
+                None,
                 None,
                 None,
             )),
@@ -601,6 +608,8 @@ where
         session_id,
         prompt_summary,
         retry_metadata,
+        canonical_view,
+        transient_operational_turns,
         context,
         tool_defs,
     } = request;
@@ -610,15 +619,65 @@ where
         .map(|tool| (tool.function_name.clone(), tool.tool_id.clone()))
         .collect::<BTreeMap<_, _>>();
 
-    let provider_boundary = transform_context_for_provider(ProviderBoundaryInput {
-        profile,
-        model: model.clone(),
-        model_settings,
-        context,
-        tools: (!tool_defs.is_empty()).then(|| tool_defs.to_vec()),
-        tool_choice: (!tool_defs.is_empty()).then_some(ToolChoice::Auto),
-    });
+    let tools = (!tool_defs.is_empty()).then(|| tool_defs.to_vec());
+    let tool_choice = (!tool_defs.is_empty()).then_some(ToolChoice::Auto);
+    let (provider_boundary, runtime_selection) = if let Some(view) = canonical_view {
+        let boundary =
+            super::provider_boundary::lower_provider_continuation(LowerProviderContinuationInput {
+                view,
+                transient_operational_turns,
+                profile,
+                tools,
+                tool_choice,
+                fresh_request_id: &provider_request_id,
+            })
+            .map_err(runtime_selection_failure)?;
+        (boundary, Some(view.runtime_selection.clone()))
+    } else {
+        let runtime_selection = request_budget
+            .as_ref()
+            .map(|budget| {
+                canonical_runtime_selection(CanonicalRuntimeSelectionInput {
+                    profile,
+                    model: &model,
+                    settings: model_settings.clone(),
+                    resolved_limits: budget.model_limits.clone(),
+                    tools: tool_defs,
+                })
+            })
+            .transpose()
+            .map_err(runtime_selection_failure)?;
+        let boundary = transform_context_for_provider(ProviderBoundaryInput {
+            profile,
+            model: model.clone(),
+            model_settings,
+            context,
+            tools,
+            tool_choice,
+        });
+        (boundary, runtime_selection)
+    };
     let mut completion_request = provider_boundary.request;
+    let request_budget = request_budget.map(|mut budget| {
+        if let Some(prompt) = canonical_view.and_then(|view| view.pending_prompt.as_ref()) {
+            let pending_text = crate::attachment_transport::lower_provider_attachments(
+                &prompt.text,
+                &prompt.attachments,
+            );
+            if let Some(index) = completion_request.messages.iter().rposition(|message| {
+                message.role == MessageRole::User && message.content == pending_text
+            }) {
+                budget.pending_prompt_index = index;
+            }
+        }
+        budget
+    });
+    if request_budget
+        .as_ref()
+        .is_some_and(|budget| budget.has_media)
+    {
+        completion_request.context.has_media = true;
+    }
     let context_budget = request_budget
         .as_ref()
         .map(|budget| {
@@ -645,6 +704,7 @@ where
         provider_start_metadata.as_ref(),
         retry_metadata,
         context_budget,
+        runtime_selection,
     );
 
     emit(AgentRuntimeEvent::ProviderRequestStarted(Box::new(
@@ -818,6 +878,16 @@ where
     })
 }
 
+fn runtime_selection_failure(error: impl ToString) -> AgentTurnFailure {
+    AgentTurnFailure::new(
+        ProviderConversationTurnStatus::Failed,
+        "runtime_selection",
+        error.to_string(),
+        String::new(),
+        None,
+    )
+}
+
 /// Compatibility runner for tests and legacy callers that still need a provider
 /// response through the old entry point.
 ///
@@ -877,6 +947,8 @@ where
             session_id: None,
             prompt_summary: &request.prompt,
             retry_metadata: None,
+            canonical_view: None,
+            transient_operational_turns: &[],
             context: ProviderBoundaryContext::ProjectedHarness {
                 messages: &projected_context,
                 checkpoint: prior_context.checkpoint.as_ref(),
@@ -1000,6 +1072,7 @@ fn provider_request_started_metadata(
     provider_metadata: Option<&ProviderStreamStartMetadata>,
     retry_metadata: Option<ProviderRequestRetryMetadata>,
     context_budget: Option<RequestBudgetSnapshot>,
+    runtime_selection: Option<crate::session::CanonicalRuntimeSelection>,
 ) -> ProviderRequestStartedMetadata {
     ProviderRequestStartedMetadata {
         turn_id: Some(turn_request_id.to_string()),
@@ -1020,6 +1093,7 @@ fn provider_request_started_metadata(
         }),
         retry: retry_metadata,
         context_budget,
+        runtime_selection: runtime_selection.map(Box::new),
     }
 }
 

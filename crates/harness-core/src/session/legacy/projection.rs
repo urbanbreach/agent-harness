@@ -18,10 +18,12 @@ pub(super) fn project_facts(
     run_id: RunId,
     facts: &[LegacyFact],
     warnings: Vec<LegacyWarning>,
+    preserve_incomplete_assistant: bool,
 ) -> Result<LegacySessionSnapshot, LegacyAdapterError> {
     let namespace = LegacyIdentityNamespace::new(&run_id);
     let index = ProjectionIndex::build(facts, &namespace);
-    let mut projector = SessionProjector::new(&run_id, index, warnings);
+    let mut projector =
+        SessionProjector::new(&run_id, index, warnings, preserve_incomplete_assistant);
     for fact in facts {
         projector.apply(fact)?;
     }
@@ -35,10 +37,16 @@ struct SessionProjector<'a> {
     warnings: Vec<LegacyWarning>,
     records: Vec<CanonicalRecord>,
     active_leaf: Option<EntryId>,
+    preserve_incomplete_assistant: bool,
 }
 
 impl<'a> SessionProjector<'a> {
-    fn new(run_id: &'a RunId, index: ProjectionIndex, warnings: Vec<LegacyWarning>) -> Self {
+    fn new(
+        run_id: &'a RunId,
+        index: ProjectionIndex,
+        warnings: Vec<LegacyWarning>,
+        preserve_incomplete_assistant: bool,
+    ) -> Self {
         let namespace = LegacyIdentityNamespace::new(run_id);
         let session_id = namespace.session_id();
         let mut projector = Self {
@@ -49,6 +57,7 @@ impl<'a> SessionProjector<'a> {
             warnings,
             records: Vec::new(),
             active_leaf: None,
+            preserve_incomplete_assistant,
         };
         projector.push_record(CanonicalRecordKind::RunStarted {
             attempt: RunAttempt {
@@ -89,7 +98,31 @@ impl<'a> SessionProjector<'a> {
                     },
                 });
             }
-            LegacyFactKind::ProviderStarted(start) => self.apply_assistant(start)?,
+            LegacyFactKind::ProviderStarted(start) => {
+                if let Some(text) = start.inferred_user_text.as_ref() {
+                    self.push_entry(SessionEntry {
+                        id: self.namespace.entry_id(
+                            fact.sequence,
+                            &fact.event_id,
+                            "inferred_user_message",
+                        ),
+                        parent_id: None,
+                        turn_id: Some(self.namespace.turn_id(&start.turn_key)),
+                        run_id: self.run_id.clone(),
+                        payload: SessionEntryPayload::UserMessage {
+                            text: text.clone(),
+                            attachments: self
+                                .index
+                                .attachments
+                                .get(&start.turn_key)
+                                .or_else(|| self.index.attachments.get(&start.request_id))
+                                .cloned()
+                                .unwrap_or_default(),
+                        },
+                    });
+                }
+                self.apply_assistant(start)?;
+            }
             LegacyFactKind::ToolFinished(tool) => {
                 let Some(assistant_id) = self.index.provider_entries.get(&tool.request_id) else {
                     return Err(LegacyAdapterError::InvalidIdentityRelationship {
@@ -118,6 +151,7 @@ impl<'a> SessionProjector<'a> {
                     },
                 });
             }
+            LegacyFactKind::TurnCancelled(cancelled) => self.apply_turn_cancelled(fact, cancelled),
             LegacyFactKind::Compaction(compaction) => self.apply_compaction(fact, compaction),
             LegacyFactKind::CurrentIntent => {}
             LegacyFactKind::BranchSummary(summary) => self.push_entry(SessionEntry {

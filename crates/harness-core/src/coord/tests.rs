@@ -1232,6 +1232,12 @@ delegate_test!(run_state_turn_queue_methods_own_agent_turn_lifecycle_state => ru
 delegate_test!(run_state_permission_methods_own_pending_and_grant_state => run_state_method_tests::run_state_permission_methods_own_pending_and_grant_state);
 delegate_test!(run_state_compaction_methods_own_overflow_retry_attempt_state => run_state_method_tests::run_state_compaction_methods_own_overflow_retry_attempt_state);
 
+#[cfg(test)]
+#[path = "tests/canonical_provider_context_cache_tests.rs"]
+mod canonical_provider_context_cache_tests;
+
+delegate_test!(canonical_provider_context_cache_rejects_every_stale_identity_dimension => canonical_provider_context_cache_tests::canonical_provider_context_cache_rejects_every_stale_identity_dimension);
+
 #[path = "tests/session_compaction_disabled_tests.rs"]
 mod session_compaction_disabled_tests;
 #[cfg(test)]
@@ -1307,6 +1313,7 @@ fn test_run_state(session_dir: &Path, run_id: &str) -> RunState {
             events_path: event_store.file_path().to_path_buf(),
         },
         event_store,
+        canonical_event_history: Vec::new(),
         next_event_seq: 1,
         next_live_event_id: 1,
         next_agent_id: 1,
@@ -1318,6 +1325,10 @@ fn test_run_state(session_dir: &Path, run_id: &str) -> RunState {
         compaction_boundary_watermark: 0,
         agents: std::collections::BTreeMap::new(),
         provider_context_by_agent: std::collections::BTreeMap::new(),
+        canonical_provider_view_by_agent: std::collections::BTreeMap::new(),
+        provider_context_cache_key_by_agent: std::collections::BTreeMap::new(),
+        live_incomplete_provider_turns_by_agent: std::collections::BTreeMap::new(),
+        explicit_runtime_selection_request_ids: std::collections::BTreeSet::new(),
         tasks: std::collections::BTreeMap::new(),
         task_hook_state: std::collections::BTreeMap::new(),
         agent_hook_state: std::collections::BTreeMap::new(),

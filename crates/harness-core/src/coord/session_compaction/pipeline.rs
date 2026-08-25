@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use harness_providers::{CompletionUsage, Provider};
@@ -8,7 +9,7 @@ use crate::event::{EventV1, SessionCompactionEvent};
 use crate::redact::Redactor;
 
 use super::super::compaction::format_file_operations;
-use super::super::provider_context::reconstruct_provider_context_from_events;
+use super::super::provider_context::recover_canonical_provider_context_from_events;
 use super::super::{append_payload_event, system_actor, CoordinatorError, RunState};
 use super::prepared::PreparedSessionCompaction;
 use super::summary::{generate_summary, SummaryGenerationRequest};
@@ -62,8 +63,7 @@ impl GeneratedSessionCompaction {
             retained_history_tokens: prepared.preserved_message_tokens,
             summary: &self.summary,
         })?;
-        reconstruct_provider_context_from_events(&prepared.committed_events, &prepared.agent_id)
-            .map_err(|error| CoordinatorError::CompactionFailed(error.to_string()))?;
+        let runtime_fallbacks = compaction_runtime_fallbacks(&prepared);
         let agent_id = prepared.agent_id.clone();
         let committed = append_payload_event(
             clock,
@@ -90,12 +90,19 @@ impl GeneratedSessionCompaction {
             }),
         )?;
         prepared.committed_events.push(committed);
-        let context =
-            reconstruct_provider_context_from_events(&prepared.committed_events, &agent_id)
-                .map_err(|error| CoordinatorError::CompactionFailed(error.to_string()))?;
-        run_state
-            .provider_context_by_agent
-            .insert(agent_id, context);
+        let mut recovery = recover_canonical_provider_context_from_events(
+            &prepared.committed_events,
+            Vec::new(),
+            run_state.info.run_id.as_ref(),
+            &runtime_fallbacks,
+        )
+        .map_err(|error| CoordinatorError::CompactionFailed(error.to_string()))?;
+        let recovered = recovery.by_agent.remove(&agent_id).ok_or_else(|| {
+            CoordinatorError::CompactionFailed(format!(
+                "canonical provider recovery omitted compacted agent `{agent_id}`"
+            ))
+        })?;
+        run_state.install_canonical_provider_recovery(recovered.view, recovered.context);
         run_state.advance_compaction_boundary();
         Ok(AppliedCompaction {
             summary: self.summary,
@@ -104,6 +111,27 @@ impl GeneratedSessionCompaction {
             tokens_after: self.tokens_after,
         })
     }
+}
+
+fn compaction_runtime_fallbacks(
+    prepared: &PreparedSessionCompaction,
+) -> BTreeMap<String, crate::session::CanonicalRuntimeSelection> {
+    let selection = prepared.committed_events.iter().rev().find_map(|event| {
+        if event.actor.agent_id.as_deref() != Some(prepared.agent_id.as_str()) {
+            return None;
+        }
+        let EventV1::ProviderRequestStarted(started) = &event.payload else {
+            return None;
+        };
+        started
+            .metadata
+            .as_ref()
+            .and_then(|metadata| metadata.runtime_selection.as_deref())
+            .cloned()
+    });
+    selection
+        .map(|selection| BTreeMap::from([(prepared.agent_id.clone(), selection)]))
+        .unwrap_or_default()
 }
 
 pub(in crate::coord) async fn generate_session_compaction(

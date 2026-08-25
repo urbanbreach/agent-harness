@@ -415,6 +415,7 @@ fn replay_new_loop_metadata_is_non_semantic_for_run_summary() {
                     provider_cache_id: Some("provider-cache-digest".to_string()),
                     retry: None,
                     context_budget: None,
+                    runtime_selection: None,
                 }),
             }),
         ),

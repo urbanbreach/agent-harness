@@ -226,3 +226,25 @@ pub(super) fn only_assistant_tool_call_id(request: &CompletionRequest) -> String
     assert_eq!(tool_call_ids.len(), 1);
     tool_call_ids[0].clone()
 }
+
+pub(super) fn provider_tool_call_id(
+    events: &[EventEnvelopeV1],
+    canonical_tool_call_id: &str,
+) -> String {
+    events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::AssistantMessageFinished(finished) => finished.parts.iter().find_map(|part| {
+                match part {
+                    harness_core::session::AssistantPart::ToolCall(call)
+                        if call.tool_call_id.as_str() == canonical_tool_call_id =>
+                    {
+                        call.provider_tool_call_id.clone()
+                    }
+                    _ => None,
+                }
+            }),
+            _ => None,
+        })
+        .unwrap_or_else(|| canonical_tool_call_id.to_string())
+}

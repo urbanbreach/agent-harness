@@ -1,4 +1,6 @@
 // allow: SIZE_OK — coordinator state machine (turn lifecycle + scheduling)
+use super::provider_context::recover_canonical_provider_context_from_events;
+use super::state::ProviderContextCacheKey;
 use super::*;
 
 impl Coordinator {
@@ -93,6 +95,7 @@ impl Coordinator {
         let mut run_state = RunState {
             info: run_info.clone(),
             event_store,
+            canonical_event_history: Vec::new(),
             next_event_seq: 1,
             next_live_event_id: 1,
             next_agent_id,
@@ -104,6 +107,10 @@ impl Coordinator {
             compaction_boundary_watermark: 0,
             agents: BTreeMap::new(),
             provider_context_by_agent: BTreeMap::new(),
+            canonical_provider_view_by_agent: BTreeMap::new(),
+            provider_context_cache_key_by_agent: BTreeMap::new(),
+            live_incomplete_provider_turns_by_agent: BTreeMap::new(),
+            explicit_runtime_selection_request_ids: BTreeSet::new(),
             tasks: BTreeMap::new(),
             task_hook_state: BTreeMap::new(),
             agent_hook_state: BTreeMap::new(),
@@ -209,8 +216,16 @@ impl Coordinator {
             self.config.deterministic_store,
         )?;
         let event_store = Arc::new(event_store);
-
-        let resume_plan = inspect_resume_plan(&run_dir);
+        let recovery = recover_event_history(
+            &run_dir.join(EVENTS_FILE_NAME),
+            &crate::ids::RunId::new(&run_id),
+        )
+        .map_err(|error| CoordinatorError::ResumeRestoreFailed {
+            run_id: run_id.clone(),
+            reason: error.to_string(),
+        })?;
+        let (events, recovery_warnings) = recovery.into_parts();
+        let resume_plan = inspect_resume_plan_from_events(&run_dir, &run_id, &events);
         if !resume_plan.is_resumable {
             let reason = resume_plan
                 .resume_disabled_reason
@@ -239,15 +254,6 @@ impl Coordinator {
             })?;
 
         let next_event_seq = checked_next_counter(resume_plan.max_seq, &run_id, "event sequence")?;
-        let store_next_seq = event_store.next_seq()?;
-        if store_next_seq != next_event_seq {
-            return Err(CoordinatorError::ResumeRestoreFailed {
-                run_id,
-                reason: format!(
-                    "event-store sequence mismatch: resume plan expects {next_event_seq}, store reports {store_next_seq}"
-                ),
-            });
-        }
 
         let mut agents = BTreeMap::new();
         let mut restored_agent_bindings = Vec::new();
@@ -288,8 +294,65 @@ impl Coordinator {
             restored_agent_bindings.push((agent_id.clone(), profile_name.clone(), parent_agent_id));
         }
 
-        let provider_context_by_agent =
-            restore_provider_context_from_history(&self.config.session_dir, &run_id)?;
+        let mut runtime_fallbacks = BTreeMap::new();
+        for (agent_id, profile) in &agents {
+            let target = self.config.agent_model_targets.get(&profile.name);
+            let model_ref =
+                target.map_or(profile.model_ref.as_str(), |value| value.model_ref.as_str());
+            let tools = build_provider_tool_defs_for_model(
+                profile,
+                self.config.tool_registry.as_ref(),
+                model_ref,
+            )
+            .map_err(|reason| CoordinatorError::ResumeRestoreFailed {
+                run_id: run_id.clone(),
+                reason,
+            })?;
+            let model = AgentModelRef::parse(model_ref);
+            let selection = crate::agent::canonical_runtime_selection(
+                crate::agent::CanonicalRuntimeSelectionInput {
+                    profile,
+                    model: &model,
+                    settings: target
+                        .map(AgentModelSettings::from)
+                        .unwrap_or_else(|| default_model_settings_for_profile(&profile.name)),
+                    resolved_limits: target.map(|value| value.limits.clone()).unwrap_or_default(),
+                    tools: &tools,
+                },
+            )
+            .map_err(|error| CoordinatorError::ResumeRestoreFailed {
+                run_id: run_id.clone(),
+                reason: error.to_string(),
+            })?;
+            runtime_fallbacks.insert(agent_id.clone(), selection);
+        }
+        let canonical_recovery = recover_canonical_provider_context_from_events(
+            &events,
+            recovery_warnings,
+            &run_id,
+            &runtime_fallbacks,
+        )?;
+        let mut provider_context_by_agent = BTreeMap::new();
+        let mut canonical_provider_view_by_agent = BTreeMap::new();
+        let mut provider_context_cache_key_by_agent = BTreeMap::new();
+        for (agent_id, recovered) in canonical_recovery.by_agent {
+            provider_context_cache_key_by_agent.insert(
+                agent_id.clone(),
+                ProviderContextCacheKey::from(&recovered.view),
+            );
+            canonical_provider_view_by_agent.insert(agent_id.clone(), recovered.view);
+            provider_context_by_agent.insert(agent_id, recovered.context);
+        }
+
+        let store_next_seq = event_store.next_seq()?;
+        if store_next_seq != next_event_seq {
+            return Err(CoordinatorError::ResumeRestoreFailed {
+                run_id,
+                reason: format!(
+                    "event-store sequence mismatch: resume plan expects {next_event_seq}, store reports {store_next_seq}"
+                ),
+            });
+        }
 
         let next_agent_id =
             next_agent_counter_for_run(&self.config.session_dir, &run_id, max_agent_id)?;
@@ -334,6 +397,7 @@ impl Coordinator {
         let mut run_state = RunState {
             info: run_info.clone(),
             event_store,
+            canonical_event_history: events,
             next_event_seq,
             next_live_event_id: 1,
             next_agent_id,
@@ -345,6 +409,10 @@ impl Coordinator {
             compaction_boundary_watermark: 0,
             agents,
             provider_context_by_agent,
+            canonical_provider_view_by_agent,
+            provider_context_cache_key_by_agent,
+            live_incomplete_provider_turns_by_agent: BTreeMap::new(),
+            explicit_runtime_selection_request_ids: BTreeSet::new(),
             tasks: BTreeMap::new(),
             task_hook_state: BTreeMap::new(),
             agent_hook_state: BTreeMap::new(),

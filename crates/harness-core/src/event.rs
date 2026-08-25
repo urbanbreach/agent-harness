@@ -516,6 +516,8 @@ pub struct ProviderRequestStartedMetadata {
     pub retry: Option<ProviderRequestRetryMetadata>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context_budget: Option<crate::context_budget::RequestBudgetSnapshot>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime_selection: Option<Box<crate::session::CanonicalRuntimeSelection>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

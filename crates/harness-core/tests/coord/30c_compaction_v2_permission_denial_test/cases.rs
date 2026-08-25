@@ -131,7 +131,8 @@ async fn compaction_v2_permission_denial_reopens_with_failed_tool_pair() {
         "live continuation",
     );
     let durable_tool_call_id = only_assistant_tool_call_id(&scenario.followup);
-    assert_eq!(durable_tool_call_id, tool_call_id);
+    let provider_tool_call_id = provider_tool_call_id(&scenario.events, &tool_call_id);
+    assert_eq!(durable_tool_call_id, provider_tool_call_id);
     assert_one_denied_pair(
         &scenario.followup,
         &durable_tool_call_id,
@@ -141,7 +142,7 @@ async fn compaction_v2_permission_denial_reopens_with_failed_tool_pair() {
         .followup
         .messages
         .iter()
-        .find(|message| message.tool_call_id.as_deref() == Some(tool_call_id.as_str()))
+        .find(|message| message.tool_call_id.as_deref() == Some(provider_tool_call_id.as_str()))
         .unwrap_or_abort();
     let finished_summary = match &finished.payload {
         EventV1::ToolCallFinished(payload) => payload.output_summary.as_deref(),

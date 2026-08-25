@@ -28,10 +28,29 @@ provider-request, and tool-call identity. `LegacyEventLogAdapter` projects borro
 that domain without writing files or executing runtime work. For self-contained assistant commits,
 the committed parts replace any earlier compatibility fragments.
 
-The runtime still contains V1-specific provider-context, resume, transcript, session, export,
-catalog, lineage, and compatibility projections. Compaction V2 is the active path; deprecated
-compaction lifecycle variants and checkpoint readers remain read-only until G010. Later projection
-consolidation and deletion are not yet complete.
+G007 now gives provider continuation its own canonical boundary: live turns and reopened runs
+consume an owner-scoped `CanonicalSession::provider_view(...)` selected from the persisted active
+leaf, and the provider boundary lowers that view through one pure continuation path. The runtime
+still contains V1-specific transcript, session, export, catalog, lineage, and compatibility
+projections. Compaction V2 remains the active path; deprecated compaction lifecycle variants and
+checkpoint readers remain read-only until G010. Later projection consolidation and deletion are
+not yet complete.
+
+## G007 canonical provider continuation boundary
+
+The canonical provider view is the single semantic input for a continuation. It carries the owning
+agent/session identity, persisted active leaf and watermark, ordered protocol-safe entries,
+complete tool-call/result pairs, the latest compaction summary, typed attachments, usage boundaries,
+pending prompt, and the redacted runtime selection. The selection preserves provider/model,
+variant, reasoning and thinking settings, resolved limits, and a profile/tool-shape digest. Live
+turn start and restart/reopen recovery use the same provider continuation lowerer; a current
+profile or tool-shape mismatch fails closed before provider dispatch.
+
+This boundary is intentionally transitional. G007 consolidates provider continuation input and
+restart reconstruction only. G008 still owns transcript, conversation, and durable-TUI projection
+consolidation; G009 still owns the rebuildable catalog/index; and G010 still owns deletion of
+legacy compatibility readers and event variants after migration evidence. No provider-ready
+request, raw prompt/tool schema, secret, or hidden reasoning is persisted.
 
 ## G006 Compaction V2 boundary
 

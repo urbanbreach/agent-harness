@@ -7,6 +7,7 @@ mod entry;
 mod error;
 pub mod legacy;
 mod model;
+mod provider_view;
 mod record;
 pub mod reducer;
 
@@ -16,4 +17,10 @@ pub use entry::{
 };
 pub use error::SessionError;
 pub use model::{CanonicalSession, RunAttempt, RunStatus, SessionMetadata, SessionStatus};
+pub(crate) use provider_view::select_active_path as select_provider_active_path;
+pub use provider_view::{
+    CanonicalAttachment, CanonicalCompactionSummary, CanonicalPendingPrompt, CanonicalProviderView,
+    CanonicalRuntimeSelection, CanonicalToolPair, CanonicalUsageBoundary, OwnedSession,
+    ProviderViewError, ProviderViewInput, ProviderViewOwner, UsageBoundaryKind,
+};
 pub use record::{CanonicalRecord, CanonicalRecordKind, RecordSequence};

@@ -1,58 +1,11 @@
 use std::collections::BTreeMap;
 
-use crate::attachment_transport::AttachmentMetadata;
 use crate::ids::{EntryId, SessionId, TurnId};
 use crate::session::{SessionEntry, SessionError};
 
 /// Identifies the agent and root/child session that owns a compaction snapshot.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CompactionOwner {
-    pub agent_id: String,
-    pub session: OwnedSession,
-}
-
-impl CompactionOwner {
-    pub fn root(agent_id: impl Into<String>, session_id: SessionId) -> Self {
-        Self {
-            agent_id: agent_id.into(),
-            session: OwnedSession::Root { session_id },
-        }
-    }
-
-    pub fn child(
-        agent_id: impl Into<String>,
-        session_id: SessionId,
-        root_session_id: SessionId,
-    ) -> Self {
-        Self {
-            agent_id: agent_id.into(),
-            session: OwnedSession::Child {
-                session_id,
-                root_session_id,
-            },
-        }
-    }
-
-    pub fn session_id(&self) -> &SessionId {
-        match &self.session {
-            OwnedSession::Root { session_id } | OwnedSession::Child { session_id, .. } => {
-                session_id
-            }
-        }
-    }
-}
-
-/// Distinguishes a root session from a child owned by that root.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum OwnedSession {
-    Root {
-        session_id: SessionId,
-    },
-    Child {
-        session_id: SessionId,
-        root_session_id: SessionId,
-    },
-}
+pub type CompactionOwner = crate::session::ProviderViewOwner;
+pub type OwnedSession = crate::session::OwnedSession;
 
 /// Provider and model selected for the request that may follow compaction.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -71,12 +24,7 @@ impl CurrentCompactionModel {
 }
 
 /// User input waiting to be appended after the historical snapshot.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PendingCompactionPrompt {
-    pub turn_id: TurnId,
-    pub text: String,
-    pub attachments: Vec<AttachmentMetadata>,
-}
+pub type PendingCompactionPrompt = crate::session::CanonicalPendingPrompt;
 
 /// Optional legacy event sequence annotations keyed by canonical entry identity.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -130,12 +78,7 @@ pub struct CompactionSnapshotEntry {
 }
 
 /// Stable identity shared by a canonical tool call and its sole result.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ToolPairIdentity {
-    pub tool_call_id: crate::ids::ToolCallId,
-    pub assistant_entry_id: EntryId,
-    pub result_entry_id: EntryId,
-}
+pub type ToolPairIdentity = crate::session::CanonicalToolPair;
 
 /// The latest active compaction summary, separated from history to prevent old-summary replay.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -211,6 +154,8 @@ pub enum CompactionSnapshotError {
         expected: SessionId,
         actual: SessionId,
     },
+    #[error(transparent)]
+    InvalidProviderView(crate::session::ProviderViewError),
     #[error("legacy source sequence repeats canonical entry {entry_id}")]
     DuplicateLegacySourceSequence { entry_id: EntryId },
     #[error("compaction boundary entry {entry_id} is not on the protocol-safe active path")]

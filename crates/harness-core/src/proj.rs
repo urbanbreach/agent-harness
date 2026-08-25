@@ -16,6 +16,7 @@ pub use run_projection::{
 };
 
 mod resume_projection;
+pub(crate) use resume_projection::inspect_resume_plan_from_events;
 pub use resume_projection::{
     inspect_resume_plan, project_resume_plan, ChildSessionTerminalState, LifecycleSegmentStatus,
     ResumeArtifactSnapshot, ResumeBackgroundTaskNotificationSnapshot, ResumeChildSessionSnapshot,

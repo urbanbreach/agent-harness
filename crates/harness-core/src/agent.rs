@@ -10,13 +10,15 @@ mod streaming;
 pub(in crate::agent) use provider_boundary::project_provider_context_for_prompt;
 pub(crate) use provider_boundary::tool_result_to_message_content;
 pub(crate) use provider_boundary::{
-    build_committed_provider_context_messages, CommittedPromptLookupError,
-    CommittedProviderMessages,
+    build_committed_provider_context_messages, canonical_historical_attachment_tokens,
+    canonical_recovery_messages, CommittedPromptLookupError, CommittedProviderMessages,
 };
 pub use provider_boundary::{
     build_provider_context_messages, build_provider_tool_defs, build_provider_tool_defs_for_model,
-    transform_context_for_provider, ProviderBoundaryContext, ProviderBoundaryInput,
-    ProviderBoundaryOutput,
+    canonical_provider_messages, canonical_runtime_selection, lower_provider_continuation,
+    profile_tool_shape_digest, transform_context_for_provider, CanonicalRuntimeSelectionInput,
+    LowerProviderContinuationInput, ProviderBoundaryContext, ProviderBoundaryInput,
+    ProviderBoundaryOutput, ProviderContinuationLoweringError,
 };
 pub(in crate::agent) use provider_context::{
     is_allowed_provider_turn_failure_stage, PROVIDER_TURN_FAILURE_REASON_MAX_CHARS,

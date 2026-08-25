@@ -628,9 +628,30 @@ partial logs that only contain `ProviderStreamDelta` or `ProviderReasoningDelta`
 assistant content remains visible with a structured warning. Provider fragments from new runs are
 live-only and cannot become canonical history unless a final assistant commit is written.
 
-The coordinator still writes V1 `events.jsonl`. Provider context, resume, transcript, session,
-export, catalog, lineage, and compaction code still contains several V1-specific projections.
-Later projection consolidation and deletion are not yet complete.
+The coordinator still writes V1 `events.jsonl`. G007 provider continuation now consumes one
+owner-scoped `CanonicalSession::provider_view(...)` from the persisted active leaf and lowers live
+and reopened turns through one pure provider-boundary path. Transcript, session, export, catalog,
+lineage, and compatibility code still contains V1-specific projections; later projection
+consolidation and compatibility deletion are not yet complete.
+
+### G007 canonical provider continuation
+
+The provider continuation view is derived from the selected canonical active path, not from a
+second semantic event reducer. It preserves the owner and session identity, selected leaf,
+watermark, ordered provider-visible entries, complete tool pairs, latest compaction summary,
+typed attachment metadata, usage boundaries, pending prompt, and the redacted runtime selection.
+The runtime selection includes provider/model, variant, reasoning effort, text verbosity, reasoning
+summary, thinking configuration, resolved limits, and a profile/tool-shape digest. The pure
+`lower_provider_continuation` boundary performs the profile/tool-shape check before building the
+provider request and fails closed on drift. Its request context sets media from canonical
+attachments and removes only the fresh physical request id when comparing a live continuation to
+a reopened continuation.
+
+G007 does not consolidate product projections or delete compatibility code. G008 owns transcript,
+conversation, and durable-TUI projection consolidation; G009 owns the rebuildable catalog/index;
+and G010 owns deletion of legacy compatibility readers and event variants after migration evidence.
+Provider-ready requests, raw tool schemas, raw prompts, secrets, and hidden reasoning remain
+outside durable event metadata.
 
 ## Replay Contract
 

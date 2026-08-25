@@ -46,7 +46,15 @@ impl Coordinator {
             .cloned()
             .ok_or_else(|| CoordinatorError::UnknownAgent(agent_id.clone()))?;
 
+        let has_explicit_runtime_selection = model_ref_override.is_some()
+            || model_settings_override.is_some()
+            || model_target_override.is_some();
         let request_id = allocate_provider_request_id(run_state);
+        if has_explicit_runtime_selection {
+            run_state
+                .explicit_runtime_selection_request_ids
+                .insert(request_id.clone());
+        }
         if run_state.child_session_mirrors.contains_key(&agent_id) {
             run_state
                 .child_request_session_by_id
@@ -502,12 +510,90 @@ where
     )
 }
 
-fn recompute_provider_context_for_agent(run_state: &RunState, agent_id: &str) -> ProviderContext {
-    run_state
+fn cached_provider_view_for_task(
+    run_state: &RunState,
+    task: &QueuedAgentTurn,
+    tool_registry: &ToolRegistry,
+    prefer_current_runtime_selection: bool,
+) -> Result<Option<(crate::session::CanonicalProviderView, ProviderContext)>, CoordinatorError> {
+    let model = AgentModelRef::parse(&task.request.model_ref);
+    let tools =
+        build_provider_tool_defs_for_model(&task.profile, tool_registry, &task.request.model_ref)
+            .unwrap_or_default();
+    let runtime_selection =
+        crate::agent::canonical_runtime_selection(crate::agent::CanonicalRuntimeSelectionInput {
+            profile: &task.profile,
+            model: &model,
+            settings: task.request.model_settings.clone(),
+            resolved_limits: task
+                .request
+                .model_target
+                .as_ref()
+                .map(|target| target.limits.clone())
+                .unwrap_or_default(),
+            tools: &tools,
+        })
+        .map_err(|error| CoordinatorError::ResumeRestoreFailed {
+            run_id: run_state.info.run_id.to_string(),
+            reason: error.to_string(),
+        })?;
+    let Some(cached_view) = run_state.cached_canonical_provider_view(&task.agent_id) else {
+        return Ok(None);
+    };
+    let mut view = cached_view.clone();
+    if prefer_current_runtime_selection {
+        view.runtime_selection = runtime_selection;
+    }
+    view.pending_prompt = Some(crate::session::CanonicalPendingPrompt {
+        turn_id: crate::ids::TurnId::new(task.request_id.clone()),
+        text: task.request.provider_prompt(),
+        attachments: task.request.attachments.clone(),
+    });
+    let context = run_state
         .provider_context_by_agent
-        .get(agent_id)
+        .get(&task.agent_id)
         .cloned()
-        .unwrap_or_default()
+        .unwrap_or_default();
+    Ok(Some((view, context)))
+}
+
+fn add_pending_prompt_if_absent(
+    view: &mut crate::session::CanonicalProviderView,
+    task: &QueuedAgentTurn,
+) {
+    let request_id = task.request_id.as_str();
+    let prompt_is_durable = view.entries.iter().any(|entry| {
+        entry
+            .turn_id
+            .as_ref()
+            .is_some_and(|turn_id| turn_id.as_str() == request_id)
+    });
+    if !prompt_is_durable {
+        view.pending_prompt = Some(crate::session::CanonicalPendingPrompt {
+            turn_id: crate::ids::TurnId::new(task.request_id.clone()),
+            text: task.request.provider_prompt(),
+            attachments: task.request.attachments.clone(),
+        });
+    }
+}
+
+fn merge_live_operational_turns(
+    context: &mut ProviderContext,
+    live_turns: &[ProviderConversationTurn],
+) {
+    for live_turn in live_turns {
+        context.preserved_turns.retain(|turn| {
+            turn.user_prompt != live_turn.user_prompt
+                && !turn.messages.iter().any(|message| {
+                    matches!(
+                        message,
+                        crate::conversation::ConversationMessage::User(user)
+                            if user.text == live_turn.user_prompt
+                    )
+                })
+        });
+        context.preserved_turns.push(live_turn.clone());
+    }
 }
 
 pub(in crate::coord) fn provider_request_started_metadata(
@@ -601,7 +687,14 @@ struct AgentContextCompactionRequest<'a> {
 async fn request_agent_context_compaction(
     job_tx: &mpsc::Sender<Command>,
     request: AgentContextCompactionRequest<'_>,
-) -> Result<(ProviderContext, bool), CoordinatorError> {
+) -> Result<
+    (
+        ProviderContext,
+        Option<crate::session::CanonicalProviderView>,
+        bool,
+    ),
+    CoordinatorError,
+> {
     let AgentContextCompactionRequest {
         task,
         trigger_reason,
@@ -646,6 +739,30 @@ where
     C: Clock + ?Sized,
     R: Redactor + ?Sized,
 {
+    let prefer_current_runtime_selection = run_state
+        .explicit_runtime_selection_request_ids
+        .contains(&task.request_id);
+    let canonical = cached_provider_view_for_task(
+        run_state,
+        &task,
+        tool_registry.as_ref(),
+        prefer_current_runtime_selection,
+    )?;
+    let mut provider_context = if let Some((_, context)) = canonical.as_ref() {
+        context.clone()
+    } else {
+        run_state
+            .provider_context_by_agent
+            .get(&task.agent_id)
+            .cloned()
+            .unwrap_or_default()
+    };
+    let live_operational_turns = run_state
+        .live_incomplete_provider_turns_by_agent
+        .get(&task.agent_id)
+        .cloned()
+        .unwrap_or_default();
+    merge_live_operational_turns(&mut provider_context, &live_operational_turns);
     let turn_start = run_turn_start_phase(
         clock,
         hook_command_executor.as_ref(),
@@ -674,8 +791,6 @@ where
         return Ok(());
     }
 
-    let provider_context = recompute_provider_context_for_agent(run_state, &task.agent_id);
-
     tokio::spawn(async move {
         let task_id = task.task_id.clone();
         let agent_id = task.agent_id.clone();
@@ -700,6 +815,7 @@ where
             }
             outcome = async {
                 let mut prior_context = provider_context;
+                let mut canonical_view = canonical.map(|(view, _)| view);
                 let mut overflow_retry_attempted = false;
                 let mut committed_prompt_request_id = None;
 
@@ -713,6 +829,8 @@ where
                         tool_registry: tool_registry.as_ref(),
                         compaction: &compaction_config,
                         committed_prompt_request_id: None,
+                        canonical_view: canonical_view.as_ref(),
+                        transient_operational_turns: &live_operational_turns,
                     };
                     match agent_turn_phases::prepare_provider_transform_phase(
                         provisional_preparation,
@@ -730,13 +848,25 @@ where
                     )
                     .await
                     {
-                        Ok((context, true)) => {
+                        Ok((context, mut view, true)) => {
                             prior_context = context;
-                            committed_prompt_request_id = Some(task.request_id.clone().into());
+                            merge_live_operational_turns(
+                                &mut prior_context,
+                                &live_operational_turns,
+                            );
+                            if let Some(view) = &mut view {
+                                add_pending_prompt_if_absent(view, &task);
+                            }
+                            canonical_view = view;
+                            committed_prompt_request_id = None;
                             None
                         }
-                        Ok((context, false)) => {
+                        Ok((context, _, false)) => {
                             prior_context = context;
+                            merge_live_operational_turns(
+                                &mut prior_context,
+                                &live_operational_turns,
+                            );
                             None
                         }
                         Err(CoordinatorError::LifecycleHookFailed(reason)) => Some(format!(
@@ -777,6 +907,8 @@ where
                         committed_prompt_request_id: committed_prompt_request_id.clone().or_else(|| {
                             overflow_retry_attempted.then(|| task.request_id.clone().into())
                         }),
+                        canonical_view: canonical_view.as_ref(),
+                        transient_operational_turns: &live_operational_turns,
                     })
                     .await;
 
@@ -797,9 +929,17 @@ where
                             )
                                 .await
                             {
-                                Ok(compacted_context) => {
+                                Ok((compacted_context, mut view, _)) => {
                                     overflow_retry_attempted = true;
-                                    prior_context = compacted_context.0;
+                                    prior_context = compacted_context;
+                                    merge_live_operational_turns(
+                                        &mut prior_context,
+                                        &live_operational_turns,
+                                    );
+                                    if let Some(view) = &mut view {
+                                        add_pending_prompt_if_absent(view, &task);
+                                    }
+                                    canonical_view = view;
                                     continue;
                                 }
                                 Err(err) => {

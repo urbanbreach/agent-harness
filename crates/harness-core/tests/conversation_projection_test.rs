@@ -31,3 +31,6 @@ mod part_06_compaction_v2_protocol_test {
     use super::*;
     include!("conversation_projection/06_compaction_v2_protocol_test.rs");
 }
+
+include!("conversation_projection/07_canonical_provider_view_test.rs");
+include!("conversation_projection/08_canonical_provider_view_media_test.rs");

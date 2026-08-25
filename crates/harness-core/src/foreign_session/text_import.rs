@@ -333,6 +333,7 @@ fn synthesize_transcript_events(run_id: &str, messages: &[TranscriptMessage]) ->
                             response_id: None,
                             stop_reason: Some("stop".to_string()),
                             usage: None,
+                            runtime_selection: None,
                         }),
                         assistant_message: Some(ProviderAssistantMessageMetadata {
                             message_id: None,

@@ -88,7 +88,16 @@ impl Coordinator {
                             .get(&agent_id)
                             .cloned()
                             .unwrap_or_default();
-                        Ok(CompactAgentContextResult::Compacted { context, applied })
+                        match run_state.cached_canonical_provider_view(&agent_id).cloned() {
+                            Some(view) => Ok(CompactAgentContextResult::Compacted {
+                                context,
+                                view: Box::new(view),
+                                applied,
+                            }),
+                            None => Err(CoordinatorError::CompactionFailed(format!(
+                                "canonical provider view omitted compacted agent `{agent_id}`"
+                            ))),
+                        }
                     }
                     Err(error) => Err(error),
                 }

@@ -24,7 +24,7 @@ pub enum SessionEntryPayload {
     },
     AssistantMessage {
         parts: Vec<AssistantPart>,
-        provenance: Option<ProviderProvenance>,
+        provenance: Option<Box<ProviderProvenance>>,
     },
     ToolResult {
         tool_call_id: ToolCallId,
@@ -116,6 +116,8 @@ pub struct ProviderProvenance {
     pub stop_reason: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<CompletionUsage>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime_selection: Option<Box<super::CanonicalRuntimeSelection>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

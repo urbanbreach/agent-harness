@@ -272,6 +272,8 @@ async fn provider_single_call_returns_tool_intents_without_executing_tools() {
             session_id: Some("agent-test".to_string()),
             prompt_summary: &request.prompt,
             retry_metadata: None,
+            canonical_view: None,
+            transient_operational_turns: &[],
             context: ProviderBoundaryContext::ProviderMessages {
                 messages: &messages,
             },

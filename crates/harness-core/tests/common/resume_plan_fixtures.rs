@@ -46,7 +46,14 @@ fn write_events(run_dir: &Path, events: &[EventEnvelopeV1]) {
     fs::create_dir_all(run_dir).unwrap_or_abort();
     let mut body = String::new();
     for event in events {
-        let line = serde_json::to_string(event).unwrap_or_abort();
+        let mut event = event.clone();
+        if let Some(run_id) = run_dir.file_name().and_then(|value| value.to_str()) {
+            event.run_id = run_id.into();
+            event.stream_key = event
+                .stream_key
+                .map(|stream_key| stream_key.replace("run_resume_fixture", run_id));
+        }
+        let line = serde_json::to_string(&event).unwrap_or_abort();
         body.push_str(&line);
         body.push('\n');
     }

@@ -62,13 +62,14 @@ async fn compaction_v2_large_tool_result_preserves_protocol() {
         "overflow retry must equal the committed/reopen canonical provider context"
     );
     let normalized_retry = normalize_provider_messages(&retry.messages);
-    let durable_tool_call_id = events
+    let canonical_tool_call_id = events
         .iter()
         .find_map(|event| match &event.payload {
             EventV1::ToolCallFinished(result) => Some(result.tool_call_id.to_string()),
             _ => None,
         })
         .unwrap_or_abort();
+    let durable_tool_call_id = provider_tool_call_id(&events, &canonical_tool_call_id);
     let call_indices = normalized_retry
         .iter()
         .enumerate()

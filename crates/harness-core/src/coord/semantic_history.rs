@@ -66,6 +66,7 @@ where
             response_id,
             stop_reason,
             usage: response.usage.clone(),
+            runtime_selection: response.started_metadata.runtime_selection.clone(),
         }),
         assistant_message,
     }

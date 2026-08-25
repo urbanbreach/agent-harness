@@ -35,14 +35,15 @@ impl LegacyBoundary {
         {
             return Err(Self::invalid(event));
         }
-        if let Some(value) = self.providers.get_mut(request_id) {
-            value.finished = true;
-        }
         let stop_reason = payload
             .metadata
             .as_ref()
             .and_then(|metadata| metadata.provider_stop_reason.clone())
             .unwrap_or_else(|| payload.finish_reason.clone());
+        if let Some(value) = self.providers.get_mut(request_id) {
+            value.finished = true;
+            value.stop_reason = Some(stop_reason.clone());
+        }
         Ok(Self::fact(
             event,
             LegacyFactKind::ProviderFinished(ProviderFinishFact {

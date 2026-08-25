@@ -22,6 +22,17 @@ use crate::tool::{
     build_tool_function_name_mapping, sanitize_tool_function_name, ToolRegistry, ToolResult,
 };
 
+mod continuation;
+
+pub(crate) use continuation::{
+    canonical_historical_attachment_tokens, canonical_recovery_messages,
+};
+pub use continuation::{
+    canonical_provider_messages, canonical_runtime_selection, lower_provider_continuation,
+    profile_tool_shape_digest, CanonicalRuntimeSelectionInput, LowerProviderContinuationInput,
+    ProviderContinuationLoweringError,
+};
+
 #[derive(Debug, Clone)]
 pub enum ProviderBoundaryContext<'a> {
     ProjectedHarness {
@@ -304,7 +315,19 @@ fn project_provider_context(prior_context: &ProviderContext) -> Vec<Conversation
 
     for turn in &prior_context.preserved_turns {
         if !turn.messages.is_empty() {
-            messages.extend(turn.messages.clone());
+            let mut turn_messages = turn.messages.clone();
+            if !turn.attachments.is_empty() {
+                if let Some(ConversationMessage::User(user)) = turn_messages
+                    .iter_mut()
+                    .find(|message| matches!(message, ConversationMessage::User(_)))
+                {
+                    user.text = crate::attachment_transport::lower_provider_attachments(
+                        &user.text,
+                        &turn.attachments,
+                    );
+                }
+            }
+            messages.extend(turn_messages);
             continue;
         }
 
@@ -581,5 +604,4 @@ pub(in crate::agent) fn apply_provider_request_context(
     request.context.session_id = session_id.and_then(non_empty_trimmed).map(str::to_string);
     request.context.request_id = request_id.and_then(non_empty_trimmed).map(str::to_string);
     request.context.initiator = ProviderRequestInitiator::Agent;
-    request.context.has_media = false;
 }
