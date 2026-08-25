@@ -64,6 +64,13 @@ impl CanonicalSession {
     pub fn active_path(&self) -> Result<Vec<&SessionEntry>, SessionError> {
         super::reducer::active_path(self)
     }
+
+    pub fn provider_view(
+        &self,
+        input: super::ProviderViewInput,
+    ) -> Result<super::CanonicalProviderView, super::ProviderViewError> {
+        super::provider_view::build(self, input)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

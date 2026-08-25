@@ -284,19 +284,44 @@ async fn resumed_tool_turn_preserves_tool_messages_for_followup_context() {
     initial.stop_run().await.unwrap_or_abort();
 
     let resumed_provider = CapturingProvider::new(vec!["I used shell.run."]);
-    let resumed =
-        test_resume_coordinator_with_provider(temp_dir.path(), Arc::new(resumed_provider.clone()));
+    let resumed = test_agent_tool_coordinator(
+        temp_dir.path(),
+        Arc::new(resumed_provider.clone()),
+        test_tool_registry(),
+        allow_all_permission_policy(),
+        vec!["shell.run".to_string()],
+        12,
+    );
     resumed
         .resume_run(run.run_id.as_str(), "interactive")
         .await
         .unwrap_or_abort();
-    resumed
+    let resumed_request_id = resumed
         .request_agent_turn(supervisor_actor(), "agent_000001", "what tool did you use?")
         .await
         .unwrap_or_abort();
-    tokio::task::yield_now().await;
+    wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
+        events.iter().any(|event| {
+            event.correlation_id.as_deref() == Some(resumed_request_id.as_str())
+                && matches!(
+                    event.payload,
+                    EventV1::TaskCompleted(_) | EventV1::TaskCancelled(_)
+                )
+        })
+    })
+    .await;
     resumed.stop_run().await.unwrap_or_abort();
 
+    let resumed_events = load_events(&run.events_path);
+    let cancellation = resumed_events.iter().find_map(|event| match &event.payload {
+        EventV1::TaskCancelled(cancelled)
+            if event.correlation_id.as_deref() == Some(resumed_request_id.as_str()) =>
+        {
+            Some(cancelled.reason.as_str())
+        }
+        _ => None,
+    });
+    assert_eq!(cancellation, None, "resumed provider turn was cancelled");
     let requests = resumed_provider.requests();
     assert_eq!(requests.len(), 1, "expected one resumed provider request");
     let followup_messages = &requests[0].messages;

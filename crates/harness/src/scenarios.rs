@@ -14,8 +14,8 @@ use harness_core::perm::PermissionPolicy;
 use harness_core::tool::build_tool_function_name_mapping;
 use harness_providers::mock::{request_digest, MockProvider};
 use harness_providers::{
-    CompletionMessage, CompletionRequest, CompletionUsage, MessageRole, ProviderStreamEvent,
-    ToolChoice, ToolDef,
+    AssistantToolCall, CompletionMessage, CompletionRequest, CompletionUsage, MessageRole,
+    ProviderStreamEvent, ToolChoice, ToolDef,
 };
 use harness_tools::coordinator_registry;
 use serde_json::{json, Value};
@@ -562,7 +562,136 @@ pub fn golden_path_provider() -> MockProvider {
         ],
     );
 
+    insert_m07_context_resume_fixtures(&mut scripted_events);
+
     MockProvider::new(scripted_events)
+}
+
+fn insert_m07_context_resume_fixtures(
+    scripted_events: &mut BTreeMap<String, Vec<ProviderStreamEvent>>,
+) {
+    let tool = demo_edit_tool_def();
+    let arguments_json = golden_path_edit_args().to_string();
+    let provider_tool_call_id = "m07-provider-tool-1";
+    let mut request = CompletionRequest {
+        provider_id: Some("mock".to_string()),
+        model_id: "model-1".to_string(),
+        messages: vec![
+            CompletionMessage {
+                role: MessageRole::System,
+                content: "default-prompt".to_string(),
+                name: None,
+                tool_call_id: None,
+                assistant_tool_calls: None,
+            },
+            CompletionMessage {
+                role: MessageRole::User,
+                content: "m07 tool".to_string(),
+                name: None,
+                tool_call_id: None,
+                assistant_tool_calls: None,
+            },
+        ],
+        temperature: Some(0.0),
+        max_tokens: None,
+        variant: None,
+        reasoning_effort: None,
+        text_verbosity: None,
+        reasoning_summary: None,
+        thinking: None,
+        tools: Some(vec![tool.clone()]),
+        tool_choice: Some(ToolChoice::Auto),
+        context: Default::default(),
+        stream: true,
+    };
+    insert_model_setting_variants(
+        scripted_events,
+        &request,
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::ToolCallComplete {
+                tool_call_id: provider_tool_call_id.to_string(),
+                function_name: tool.function_name.clone(),
+                arguments_json: arguments_json.clone(),
+            },
+            ProviderStreamEvent::Done {
+                usage: Some(CompletionUsage {
+                    prompt_tokens: 12,
+                    completion_tokens: 3,
+                    total_tokens: 15,
+                }),
+            },
+        ],
+    );
+
+    request.messages.extend([
+        CompletionMessage {
+            role: MessageRole::Assistant,
+            content: String::new(),
+            name: None,
+            tool_call_id: None,
+            assistant_tool_calls: Some(vec![AssistantToolCall {
+                tool_call_id: provider_tool_call_id.to_string(),
+                function_name: tool.function_name.clone(),
+                arguments_json,
+            }]),
+        },
+        CompletionMessage {
+            role: MessageRole::Tool,
+            content: "Edit applied successfully.".to_string(),
+            name: Some(tool.function_name),
+            tool_call_id: Some(provider_tool_call_id.to_string()),
+            assistant_tool_calls: None,
+        },
+    ]);
+    insert_model_setting_variants(
+        scripted_events,
+        &request,
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::TextDelta("M07 tool complete".to_string()),
+            ProviderStreamEvent::Done {
+                usage: Some(CompletionUsage {
+                    prompt_tokens: 18,
+                    completion_tokens: 4,
+                    total_tokens: 22,
+                }),
+            },
+        ],
+    );
+
+    request.messages.extend([
+        CompletionMessage {
+            role: MessageRole::Assistant,
+            content: "M07 tool complete".to_string(),
+            name: None,
+            tool_call_id: None,
+            assistant_tool_calls: None,
+        },
+        CompletionMessage {
+            role: MessageRole::User,
+            content: "m07 continue".to_string(),
+            name: None,
+            tool_call_id: None,
+            assistant_tool_calls: None,
+        },
+    ]);
+    insert_model_setting_variants(
+        scripted_events,
+        &request,
+        vec![
+            ProviderStreamEvent::Start,
+            ProviderStreamEvent::ReasoningDelta("m07 continuation reasoning".to_string()),
+            ProviderStreamEvent::TextDelta("M07 continuation complete".to_string()),
+            ProviderStreamEvent::Done {
+                usage: Some(CompletionUsage {
+                    prompt_tokens: 24,
+                    completion_tokens: 5,
+                    total_tokens: 29,
+                }),
+            },
+        ],
+    );
 }
 
 fn insert_default_text_response(

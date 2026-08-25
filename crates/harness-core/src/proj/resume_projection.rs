@@ -1,6 +1,5 @@
 // allow: SIZE_OK — resume projection (plan reconstruction + state)
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -14,7 +13,9 @@ use crate::event::{
     TaskCompletionMetadata, TaskScheduleState, ToolCallLifecycleState, ToolCallMetadata,
     ToolCallStatus,
 };
+use crate::ids::RunId;
 use crate::perm::PermissionGrantSet;
+use crate::session::legacy::recover_event_history;
 use crate::session_paths::EVENTS_FILE_NAME;
 use crate::text::non_empty_trimmed;
 
@@ -247,19 +248,26 @@ struct AgentTurnProjectionState {
 
 pub fn inspect_resume_plan(run_dir: &Path) -> ResumePlan {
     let fallback_run_id = fallback_run_id_from_path(run_dir);
-    let events = match read_events_for_resume_inspection(run_dir) {
+    let events = match read_events_for_resume_inspection(run_dir, &fallback_run_id) {
         Ok(events) => events,
         Err(reason) => return ResumePlan::blocked(fallback_run_id, reason),
     };
-    let metadata = load_run_metadata(run_dir);
+    inspect_resume_plan_from_events(run_dir, &fallback_run_id, &events)
+}
 
-    match project_resume_plan(events.iter(), &fallback_run_id) {
+pub(crate) fn inspect_resume_plan_from_events(
+    run_dir: &Path,
+    fallback_run_id: &str,
+    events: &[EventEnvelopeV1],
+) -> ResumePlan {
+    let metadata = load_run_metadata(run_dir);
+    match project_resume_plan(events.iter(), fallback_run_id) {
         Ok(mut plan) => {
             apply_resume_metadata_fallback(&mut plan, metadata.as_ref());
             plan
         }
         Err(err) => ResumePlan::blocked(
-            fallback_run_id,
+            fallback_run_id.to_string(),
             format!("event log is corrupt or non-monotonic: {err}"),
         ),
     }
@@ -814,24 +822,14 @@ pub fn project_resume_plan<'a>(
     })
 }
 
-fn read_events_for_resume_inspection(run_dir: &Path) -> Result<Vec<EventEnvelopeV1>, String> {
+fn read_events_for_resume_inspection(
+    run_dir: &Path,
+    expected_run_id: &str,
+) -> Result<Vec<EventEnvelopeV1>, String> {
     let events_path = run_dir.join(EVENTS_FILE_NAME);
-    let body = fs::read_to_string(&events_path)
-        .map_err(|source| format!("failed to read {}: {source}", events_path.display()))?;
-
-    let mut events = Vec::new();
-    for (index, line) in body.lines().enumerate() {
-        let event = serde_json::from_str::<EventEnvelopeV1>(line).map_err(|source| {
-            format!(
-                "invalid JSON event at line {} in {}: {source}",
-                index + 1,
-                events_path.display()
-            )
-        })?;
-        events.push(event);
-    }
-
-    Ok(events)
+    recover_event_history(&events_path, &RunId::new(expected_run_id))
+        .map(|recovery| recovery.into_parts().0)
+        .map_err(|error| error.to_string())
 }
 
 fn fallback_run_id_from_path(run_dir: &Path) -> String {

@@ -10,6 +10,9 @@ mod adapter;
 mod compaction;
 mod facts;
 mod projection;
+mod recovery;
+
+pub use recovery::{recover_event_history, LegacyHistoryRecovery, LegacyHistoryRecoveryError};
 
 pub(crate) use compaction::{
     checkpoint_artifact as legacy_checkpoint_artifact,
@@ -199,6 +202,7 @@ pub enum LegacyWarning {
     MissingAttachmentAssociation { request_id: String },
     MissingCompactionBoundary { first_kept_event_seq: u64 },
     UnsupportedLegacyVariant { event_id: String },
+    RecoveredCorruptFinalLine { line_number: usize },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -215,6 +219,12 @@ pub enum LegacyAdapterError {
     DuplicateEvent { event_id: String },
     #[error("legacy event {event_id} has a malformed or foreign identity relationship")]
     InvalidIdentityRelationship { event_id: String },
+    #[error("missing user message for completed request `{request_id}`")]
+    MissingUserMessage { request_id: String },
+    #[error(
+        "missing user message for completed request `{request_id}` and prompt_summary is truncated"
+    )]
+    TruncatedUserPromptSummary { request_id: String },
     #[error("legacy facts violate the canonical session contract: {0}")]
     CanonicalProjection(#[from] SessionError),
 }

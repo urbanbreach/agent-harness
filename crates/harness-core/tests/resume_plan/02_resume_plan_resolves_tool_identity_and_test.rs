@@ -422,17 +422,26 @@ fn resume_plan_rejects_non_monotonic_or_corrupt_logs() {
 
     let corrupt_dir = temp_dir.path().join("run_corrupt");
     fs::create_dir_all(&corrupt_dir).unwrap_or_abort();
-    let valid_first_line = serde_json::to_string(&envelope(
+    let mut first_event = envelope(
         1,
         EventV1::RunStarted(RunStartedEvent {
             run_name: "interactive".into(),
             workspace_root: "/workspace/project".to_string(),
         }),
-    ))
-    .unwrap_or_abort();
+    );
+    first_event.run_id = "run_corrupt".into();
+    let valid_first_line = serde_json::to_string(&first_event).unwrap_or_abort();
+    let mut last_event = envelope(
+        2,
+        EventV1::RunFinished(RunFinishedEvent {
+            summary: "finished".to_string(),
+        }),
+    );
+    last_event.run_id = "run_corrupt".into();
+    let valid_last_line = serde_json::to_string(&last_event).unwrap_or_abort();
     fs::write(
         corrupt_dir.join("events.jsonl"),
-        format!("{valid_first_line}\n{{bad-json}}\n"),
+        format!("{valid_first_line}\n{{bad-json}}\n{valid_last_line}\n"),
     )
     .unwrap_or_abort();
 
@@ -441,5 +450,5 @@ fn resume_plan_rejects_non_monotonic_or_corrupt_logs() {
     assert!(corrupt_plan
         .resume_disabled_reason
         .as_deref()
-        .is_some_and(|reason| reason.contains("invalid JSON event")));
+        .is_some_and(|reason| reason.contains("invalid historical event line")));
 }

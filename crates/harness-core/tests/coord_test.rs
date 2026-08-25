@@ -219,3 +219,13 @@ mod part_32_manual_short_tui_compaction_test {
     use super::*;
     include!("coord/32_manual_short_tui_compaction_test.rs");
 }
+
+mod part_33_canonical_provider_context_resume_test {
+    use super::*;
+    include!("coord/33_canonical_provider_context_resume_test.rs");
+}
+
+mod part_34_canonical_resume_without_checkpoint_artifact_test {
+    use super::*;
+    include!("coord/34_canonical_resume_without_checkpoint_artifact_test.rs");
+}

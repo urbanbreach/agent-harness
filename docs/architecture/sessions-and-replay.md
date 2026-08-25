@@ -44,9 +44,31 @@ structured missing-final-content warning. Defaulted `parts` and `provenance` fie
 `AssistantMessageFinished` records decode unchanged.
 
 The coordinator still appends V1 `events.jsonl`, while new compaction uses the typed
-`SessionCompaction` path. Older provider-context, resume, transcript, session, export, catalog,
-lineage, and compaction shapes remain readable only through their compatibility adapters. Later
-projection consolidation and deletion are not yet complete.
+`SessionCompaction` path. G007 provider continuation is now rebuilt from one owner-scoped
+`CanonicalSession::provider_view(...)` over the persisted selected active path. Older transcript,
+session, export, catalog, lineage, and compatibility shapes remain readable only through their
+compatibility adapters. Later projection consolidation and deletion are not yet complete.
+
+## Canonical provider continuation
+
+Provider continuation uses the same typed view after a live turn and after reopen. The view carries
+the owning agent/session, selected active leaf and watermark, ordered protocol-safe entries, the
+latest compaction summary, complete tool-call/result pairs, typed attachments, usage boundaries,
+pending prompt, and redacted runtime selection. The runtime selection persists provider/model,
+variant, reasoning and thinking settings, resolved limits, and the profile/tool-shape digest;
+`lower_provider_continuation` rejects a current profile/tool-shape mismatch before dispatch.
+
+Replay and restore only derive this view and its provider context. They do not execute a provider,
+tool, hook, MCP server, network request, scheduler, or writer. The lowerer adds the pending prompt
+as a transient continuation input, lowers canonical attachments once, and sets the media flag from
+the canonical attachment set. Request comparison evidence removes only the fresh physical
+`context.request_id`; semantic fields and the full 64-hex request digest remain in scope.
+
+This is a provider-continuation migration boundary, not completion of every session projection.
+G008 still owns transcript/conversation/durable-TUI projection consolidation, G009 owns the
+rebuildable catalog/index, and G010 owns deletion of legacy compatibility readers and event
+variants after migration evidence. Legacy checkpoint and event readers remain read-only inputs
+until that work is complete.
 
 ## CLI inspection
 

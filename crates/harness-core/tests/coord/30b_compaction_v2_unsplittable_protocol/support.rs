@@ -144,6 +144,7 @@ pub(super) fn normalize_provider_messages(
 }
 
 pub(super) fn normalize_committed_messages(events: &[EventEnvelopeV1]) -> Vec<NormalizedProviderMessage> {
+    let provider_ids = provider_tool_call_ids(events);
     harness_core::conversation::project_conversation(events, &[])
         .unwrap_or_abort()
         .messages
@@ -172,7 +173,12 @@ pub(super) fn normalize_committed_messages(events: &[EventEnvelopeV1]) -> Vec<No
                 tool_call_ids: assistant
                     .tool_calls
                     .into_iter()
-                    .map(|call| call.tool_call_id.to_string())
+                    .map(|call| {
+                        provider_ids
+                            .get(call.tool_call_id.as_str())
+                            .cloned()
+                            .unwrap_or_else(|| call.tool_call_id.to_string())
+                    })
                     .collect(),
                 tool_result_id: None,
             },
@@ -180,8 +186,43 @@ pub(super) fn normalize_committed_messages(events: &[EventEnvelopeV1]) -> Vec<No
                 role: MessageRole::Tool,
                 content: result.output_summary.unwrap_or_default(),
                 tool_call_ids: Vec::new(),
-                tool_result_id: Some(result.tool_call_id.to_string()),
+                tool_result_id: Some(
+                    provider_ids
+                        .get(result.tool_call_id.as_str())
+                        .cloned()
+                        .unwrap_or_else(|| result.tool_call_id.to_string()),
+                ),
             },
+        })
+        .collect()
+}
+
+pub(super) fn provider_tool_call_id(
+    events: &[EventEnvelopeV1],
+    canonical_tool_call_id: &str,
+) -> String {
+    provider_tool_call_ids(events)
+        .remove(canonical_tool_call_id)
+        .unwrap_or_else(|| canonical_tool_call_id.to_string())
+}
+
+fn provider_tool_call_ids(events: &[EventEnvelopeV1]) -> std::collections::BTreeMap<String, String> {
+    events
+        .iter()
+        .flat_map(|event| match &event.payload {
+            EventV1::AssistantMessageFinished(finished) => finished.parts.iter().filter_map(|part| {
+                match part {
+                    harness_core::session::AssistantPart::ToolCall(call) => call
+                        .provider_tool_call_id
+                        .as_ref()
+                        .map(|provider_id| {
+                            (call.tool_call_id.to_string(), provider_id.clone())
+                        }),
+                    harness_core::session::AssistantPart::Text { .. }
+                    | harness_core::session::AssistantPart::Reasoning { .. } => None,
+                }
+            }).collect::<Vec<_>>(),
+            _ => Vec::new(),
         })
         .collect()
 }

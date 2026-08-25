@@ -43,6 +43,7 @@ pub(super) enum LegacyFactKind {
         provenance: Option<crate::session::ProviderProvenance>,
     },
     ToolFinished(ToolFinishFact),
+    TurnCancelled(TurnCancelledFact),
     Compaction(LegacyCompactionFact),
     CurrentIntent,
     BranchSummary(String),
@@ -53,8 +54,10 @@ pub(super) enum LegacyFactKind {
 pub(super) struct ProviderStartFact {
     pub request_id: String,
     pub turn_key: String,
+    pub inferred_user_text: Option<String>,
     pub provider_id: String,
     pub model_id: String,
+    pub runtime_selection: Option<Box<crate::session::CanonicalRuntimeSelection>>,
 }
 
 #[derive(Debug, Clone)]
@@ -73,6 +76,14 @@ pub(super) struct ToolFinishFact {
     pub output_summary: Option<String>,
     pub output_digest: Option<String>,
     pub output_json: Option<Value>,
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct TurnCancelledFact {
+    pub turn_key: String,
+    pub status: String,
+    pub stage: String,
+    pub reason: String,
 }
 
 #[derive(Debug)]
@@ -98,6 +109,8 @@ pub(super) struct ProjectionIndex {
     pub source_entries: BTreeMap<u64, EntryId>,
     pub provider_entries: BTreeMap<String, EntryId>,
     pub provider_turns: BTreeMap<String, String>,
+    pub last_provider_by_turn: BTreeMap<String, String>,
+    pub partial_text_by_turn: BTreeMap<String, String>,
 }
 
 impl ProjectionIndex {
@@ -127,6 +140,8 @@ impl ProjectionIndex {
                         .insert(start.request_id.clone(), entry_id.clone());
                     self.provider_turns
                         .insert(start.request_id.clone(), start.turn_key.clone());
+                    self.last_provider_by_turn
+                        .insert(start.turn_key.clone(), start.request_id.clone());
                     self.assistants.insert(
                         start.request_id.clone(),
                         AssistantAggregate {
@@ -174,6 +189,7 @@ impl ProjectionIndex {
                         assistant.response_id.clone_from(&finish.response_id);
                         assistant.stop_reason = Some(finish.stop_reason.clone());
                         assistant.usage.clone_from(&finish.usage);
+                        assistant.finished = finish.stop_reason != "error";
                     }
                 }
                 LegacyFactKind::AssistantFinished {
@@ -200,6 +216,7 @@ impl ProjectionIndex {
                 | LegacyFactKind::RunTerminal { .. }
                 | LegacyFactKind::User { .. }
                 | LegacyFactKind::ToolFinished(_)
+                | LegacyFactKind::TurnCancelled(_)
                 | LegacyFactKind::Compaction(_)
                 | LegacyFactKind::CurrentIntent
                 | LegacyFactKind::BranchSummary(_)
@@ -208,6 +225,20 @@ impl ProjectionIndex {
         }
         for assistant in self.assistants.values_mut() {
             assistant.parts.sort_by_key(|(sequence, _)| *sequence);
+        }
+        for (turn_key, request_id) in &self.last_provider_by_turn {
+            let Some(assistant) = self.assistants.get(request_id) else {
+                continue;
+            };
+            let text = assistant
+                .parts
+                .iter()
+                .filter_map(|(_, part)| match part {
+                    AssistantPart::Text { text } => Some(text.as_str()),
+                    AssistantPart::Reasoning { .. } | AssistantPart::ToolCall(_) => None,
+                })
+                .collect::<String>();
+            self.partial_text_by_turn.insert(turn_key.clone(), text);
         }
     }
 
@@ -232,7 +263,16 @@ impl ProjectionIndex {
                 LegacyFactKind::User { request_id, .. }
                 | LegacyFactKind::Attachments { request_id, .. } => users.get(request_id).cloned(),
                 LegacyFactKind::ProviderStarted(start) => {
-                    self.provider_entries.get(&start.request_id).cloned()
+                    start.inferred_user_text.as_ref().map_or_else(
+                        || self.provider_entries.get(&start.request_id).cloned(),
+                        |_| {
+                            Some(namespace.entry_id(
+                                fact.sequence,
+                                &fact.event_id,
+                                "inferred_user_message",
+                            ))
+                        },
+                    )
                 }
                 LegacyFactKind::AssistantPart { request_id, .. }
                 | LegacyFactKind::AssistantFinished { request_id, .. } => {
@@ -243,6 +283,9 @@ impl ProjectionIndex {
                 }
                 LegacyFactKind::ToolFinished(_) => {
                     Some(namespace.entry_id(fact.sequence, &fact.event_id, "tool_result"))
+                }
+                LegacyFactKind::TurnCancelled(_) => {
+                    Some(namespace.entry_id(fact.sequence, &fact.event_id, "turn_cancelled"))
                 }
                 LegacyFactKind::Title(_) => {
                     Some(namespace.entry_id(fact.sequence, &fact.event_id, "session_metadata"))

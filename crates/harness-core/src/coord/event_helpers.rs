@@ -615,6 +615,7 @@ fn append_built_event(
 
     run_state.next_event_seq += 1;
     mirror_event_to_child_session(run_state, &appended)?;
+    run_state.canonical_event_history.push(appended.clone());
     Ok(appended)
 }
 

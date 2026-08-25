@@ -23,3 +23,12 @@ mod part_05_semantic_history_restart_test {
     use super::*;
     include!("resume_plan/05_semantic_history_restart_test.rs");
 }
+
+mod part_06_canonical_provider_view_resume_test {
+    include!("resume_plan/06_canonical_provider_view_resume_test.rs");
+}
+
+mod part_07_canonical_resume_recovery_test {
+    use super::*;
+    include!("resume_plan/07_canonical_resume_recovery_test.rs");
+}

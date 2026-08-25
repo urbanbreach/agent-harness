@@ -53,16 +53,17 @@ use crate::perm::{
     PermissionGrantScope, PermissionGrantSet, PermissionKind, PermissionPolicy, PolicyDecision,
 };
 use crate::proj::{
-    inspect_resume_plan, load_run_metadata, project_background_request,
-    resolve_background_request_ref, BackgroundRequestProjection, RecordedRuntimeContext,
-    RunMetadata, SessionModeSource,
+    inspect_resume_plan, inspect_resume_plan_from_events, load_run_metadata,
+    project_background_request, resolve_background_request_ref, BackgroundRequestProjection,
+    RecordedRuntimeContext, RunMetadata, SessionModeSource,
 };
 use crate::provider_args::provider_tool_arguments_json;
 use crate::redact::Redactor;
 use crate::sched::{
     ConcurrencyKey, ScheduleDecision, Scheduler, SchedulerLimits, TaskProgressSnapshot,
 };
-use crate::session_paths::{ARTIFACTS_DIR_NAME, META_FILE_NAME};
+use crate::session::legacy::recover_event_history;
+use crate::session_paths::{ARTIFACTS_DIR_NAME, EVENTS_FILE_NAME, META_FILE_NAME};
 use crate::session_title::{
     clean_generated_title, is_parent_default_title, SessionTitleOperationSpec,
     TITLE_GENERATION_USER_PROMPT, TITLE_OPERATION_SYSTEM_PROMPT,
@@ -556,7 +557,16 @@ pub enum Command {
         request_id: String,
         trigger_reason: String,
         evidence: CompactionRequestEvidence,
-        respond_to: oneshot::Sender<Result<(ProviderContext, bool), CoordinatorError>>,
+        respond_to: oneshot::Sender<
+            Result<
+                (
+                    ProviderContext,
+                    Option<crate::session::CanonicalProviderView>,
+                    bool,
+                ),
+                CoordinatorError,
+            >,
+        >,
     },
     ManualCompactAgentContext {
         agent_id: String,

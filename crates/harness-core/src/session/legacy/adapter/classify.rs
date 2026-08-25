@@ -10,6 +10,10 @@ impl LegacyBoundary {
         event: &EventEnvelopeV1,
     ) -> Result<LegacyFact, LegacyAdapterError> {
         if self.terminal {
+            if matches!(event.payload, EventV1::RunStarted(_)) {
+                self.terminal = false;
+                return Ok(Self::fact(event, LegacyFactKind::Noop));
+            }
             return Err(Self::invalid(event));
         }
         let fact = match &event.payload {
@@ -89,11 +93,14 @@ impl LegacyBoundary {
                 self.tool_started(event, payload.tool_call_id.as_str())?
             }
             EventV1::ToolCallFinished(payload) => self.tool_finished(event, payload)?,
+            EventV1::TaskScheduled(payload) => self.task_scheduled(event, payload),
+            EventV1::TaskCompleted(payload) => {
+                self.task_terminal(payload.task_id.as_str());
+                Self::fact(event, LegacyFactKind::Noop)
+            }
+            EventV1::TaskCancelled(payload) => self.task_cancelled(event, payload),
             EventV1::AgentSpawned(_)
             | EventV1::AgentStopped(_)
-            | EventV1::TaskScheduled(_)
-            | EventV1::TaskCancelled(_)
-            | EventV1::TaskCompleted(_)
             | EventV1::TaskResultLate(_)
             | EventV1::BackgroundTaskNotification(_)
             | EventV1::StaleDetected(_)
@@ -191,10 +198,31 @@ impl LegacyBoundary {
         {
             return Err(Self::invalid(event));
         }
-        let turn_key = correlation
-            .or(metadata_turn)
+        let active_turn = event.actor.agent_id.as_ref().and_then(|agent_id| {
+            self.active_agent_turn_by_agent
+                .get(agent_id)
+                .map(|(_, turn_key)| turn_key.as_str())
+        });
+        let turn_key = metadata_turn
+            .or(active_turn)
+            .or(correlation)
             .unwrap_or(request_id)
             .to_string();
+        let inferred_user_text = if self.represented_user_turns.insert(turn_key.clone()) {
+            let prompt = Self::non_empty(&payload.prompt_summary).ok_or_else(|| {
+                LegacyAdapterError::MissingUserMessage {
+                    request_id: request_id.to_string(),
+                }
+            })?;
+            if prompt.ends_with('…') {
+                return Err(LegacyAdapterError::TruncatedUserPromptSummary {
+                    request_id: request_id.to_string(),
+                });
+            }
+            Some(prompt.to_string())
+        } else {
+            None
+        };
         if correlation.is_none() && metadata_turn.is_none() {
             self.warnings.push(LegacyWarning::InferredTurnIdentity {
                 correlation_id: None,
@@ -214,8 +242,10 @@ impl LegacyBoundary {
             request_id.to_string(),
             ProviderRelationship {
                 turn_key: turn_key.clone(),
+                event_correlation: correlation.map(str::to_string),
                 provider_call_id,
                 finished: false,
+                stop_reason: None,
                 assistant_finished: false,
             },
         );
@@ -226,10 +256,86 @@ impl LegacyBoundary {
             LegacyFactKind::ProviderStarted(ProviderStartFact {
                 request_id: request_id.to_string(),
                 turn_key,
+                inferred_user_text,
                 provider_id: payload.provider_id.clone(),
                 model_id: payload.model_id.clone(),
+                runtime_selection: payload
+                    .metadata
+                    .as_ref()
+                    .and_then(|metadata| metadata.runtime_selection.clone()),
             }),
         ))
+    }
+
+    fn task_scheduled(
+        &mut self,
+        event: &EventEnvelopeV1,
+        payload: &crate::event::TaskScheduledEvent,
+    ) -> LegacyFact {
+        if payload
+            .queue_key
+            .as_deref()
+            .is_some_and(|queue| queue.starts_with("provider_model:"))
+        {
+            if let (Some(agent_id), Some(turn_key)) =
+                (event.actor.agent_id.as_ref(), Self::correlation(event))
+            {
+                self.active_agent_turn_by_agent.insert(
+                    agent_id.clone(),
+                    (payload.task_id.to_string(), turn_key.to_string()),
+                );
+                self.agent_turn_agent_by_task
+                    .insert(payload.task_id.to_string(), agent_id.clone());
+            }
+        }
+        Self::fact(event, LegacyFactKind::Noop)
+    }
+
+    fn task_terminal(&mut self, task_id: &str) {
+        let Some(agent_id) = self.agent_turn_agent_by_task.remove(task_id) else {
+            return;
+        };
+        if self
+            .active_agent_turn_by_agent
+            .get(&agent_id)
+            .is_some_and(|(active_task_id, _)| active_task_id == task_id)
+        {
+            self.active_agent_turn_by_agent.remove(&agent_id);
+        }
+    }
+
+    fn task_cancelled(
+        &mut self,
+        event: &EventEnvelopeV1,
+        payload: &crate::event::TaskCancelledEvent,
+    ) -> LegacyFact {
+        let is_agent_turn = matches!(
+            payload.task_scope,
+            Some(crate::event::TaskTerminalScope::AgentTurn)
+        ) || self
+            .agent_turn_agent_by_task
+            .contains_key(payload.task_id.as_str());
+        let turn_key = Self::correlation(event).map(str::to_string);
+        let provider_error = turn_key
+            .as_ref()
+            .and_then(|turn| self.latest_provider_by_turn.get(turn))
+            .and_then(|request_id| self.providers.get(request_id))
+            .and_then(|provider| provider.stop_reason.as_deref())
+            == Some("error");
+        self.task_terminal(payload.task_id.as_str());
+        let Some(turn_key) = turn_key.filter(|_| is_agent_turn) else {
+            return Self::fact(event, LegacyFactKind::Noop);
+        };
+        let (status, stage) = cancelled_turn_status_stage(provider_error, &payload.reason);
+        Self::fact(
+            event,
+            LegacyFactKind::TurnCancelled(super::super::facts::TurnCancelledFact {
+                turn_key,
+                status: status.to_string(),
+                stage: stage.to_string(),
+                reason: payload.reason.clone(),
+            }),
+        )
     }
 
     fn assistant_part(
@@ -250,4 +356,24 @@ impl LegacyBoundary {
             },
         ))
     }
+}
+
+fn cancelled_turn_status_stage(provider_error: bool, reason: &str) -> (&'static str, &'static str) {
+    if provider_error {
+        return ("failed", "provider_error");
+    }
+    if reason.contains("overflow persisted after checkpoint compaction") {
+        return ("failed", "overflow_retry_failed");
+    }
+    if reason.contains("failed closed") {
+        return ("failed", "tool_failure");
+    }
+    if reason.contains("critical lifecycle hook failed") || reason.contains("lifecycle hook failed")
+    {
+        return ("failed", "hook_failure");
+    }
+    if reason.contains("agent turn exceeded profile max_iters=") {
+        return ("aborted", "max_iters");
+    }
+    ("aborted", "cancelled")
 }

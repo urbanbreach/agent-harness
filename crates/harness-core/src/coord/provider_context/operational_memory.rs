@@ -17,7 +17,7 @@ use crate::redact::Redactor;
 use crate::text::non_empty_trimmed;
 
 use super::super::RunState;
-use super::restore::{collect_historical_agent_turns_until, read_historical_events_until};
+use super::history::{collect_historical_agent_turns_until, read_historical_events_until};
 use super::{summarize_compaction_text, ProviderCompactionTrigger};
 
 const PROVIDER_CONTEXT_FILE_OPERATION_FACT_LIMIT: usize = 50;

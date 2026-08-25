@@ -1,5 +1,6 @@
 // allow: SIZE_OK — coordinator turn phase state machine (scheduling + dispatch)
 use super::*;
+use crate::agent::canonical_provider_messages;
 use crate::UnwrapOrAbort;
 use std::time::Duration;
 use tokio_stream::StreamExt;
@@ -14,10 +15,15 @@ pub(in crate::coord) struct AgentTurnPhaseLoopRequest<'a> {
     pub(in crate::coord) provider_retry: ProviderRetryRuntimeConfig,
     pub(in crate::coord) compaction: CompactionSettings,
     pub(in crate::coord) committed_prompt_request_id: Option<crate::ids::RequestId>,
+    pub(in crate::coord) canonical_view: Option<&'a crate::session::CanonicalProviderView>,
+    pub(in crate::coord) transient_operational_turns: &'a [ProviderConversationTurn],
 }
 
 pub(in crate::coord) struct AgentProviderTurnState {
     model: AgentModelRef,
+    model_settings: AgentModelSettings,
+    canonical_view: Option<crate::session::CanonicalProviderView>,
+    transient_operational_turns: Vec<ProviderConversationTurn>,
     tool_defs: Vec<ToolDef>,
     messages: Vec<CompletionMessage>,
     request_budget: ProviderRequestBudgetContext,
@@ -33,6 +39,8 @@ pub(in crate::coord) struct ProviderTurnPreparationRequest<'a> {
     pub(in crate::coord) tool_registry: &'a ToolRegistry,
     pub(in crate::coord) compaction: &'a CompactionSettings,
     pub(in crate::coord) committed_prompt_request_id: Option<&'a crate::ids::RequestId>,
+    pub(in crate::coord) canonical_view: Option<&'a crate::session::CanonicalProviderView>,
+    pub(in crate::coord) transient_operational_turns: &'a [ProviderConversationTurn],
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -57,6 +65,9 @@ struct ProviderStreamPhaseRequest<'a> {
     turn_request_id: &'a str,
     provider_request_id: String,
     model: AgentModelRef,
+    model_settings: AgentModelSettings,
+    canonical_view: Option<&'a crate::session::CanonicalProviderView>,
+    transient_operational_turns: &'a [ProviderConversationTurn],
     messages: &'a [CompletionMessage],
     tool_defs: &'a [ToolDef],
     request_budget: ProviderRequestBudgetContext,
@@ -80,6 +91,8 @@ pub(in crate::coord) async fn run_agent_turn_phase_loop(
         provider_retry,
         compaction,
         committed_prompt_request_id,
+        canonical_view,
+        transient_operational_turns,
     } = request;
 
     let mut turn_state = match prepare_provider_transform_phase(ProviderTurnPreparationRequest {
@@ -89,6 +102,8 @@ pub(in crate::coord) async fn run_agent_turn_phase_loop(
         tool_registry: tool_registry.as_ref(),
         compaction: &compaction,
         committed_prompt_request_id: committed_prompt_request_id.as_ref(),
+        canonical_view,
+        transient_operational_turns,
     }) {
         Ok(turn_state) => turn_state,
         Err(failure) => {
@@ -137,6 +152,7 @@ pub(in crate::coord) async fn run_agent_turn_phase_loop(
                 };
             }
         };
+        turn_state.canonical_view = None;
         let reserved_tool_call_ids = match append_assistant_message_end_phase(
             &job_tx,
             &task.task_id,
@@ -298,39 +314,88 @@ pub(in crate::coord) fn prepare_provider_transform_phase(
         tool_registry,
         compaction,
         committed_prompt_request_id,
+        canonical_view,
+        transient_operational_turns,
     } = preparation;
     let profile = &task.profile;
     let request = &task.request;
-    let model = AgentModelRef::parse(&request.model_ref);
     let tool_defs = build_provider_tool_defs_for_model(profile, tool_registry, &request.model_ref)
         .map_err(ProviderTurnPreparationError::ToolDefinitions)?;
     let provider_prompt = request.provider_prompt();
-    let (messages, pending_prompt_index) = match committed_prompt_request_id {
-        Some(request_id) => {
-            let committed =
-                build_committed_provider_context_messages(profile, prior_context, request_id)?;
-            (committed.messages, committed.pending_prompt_index)
-        }
-        None => {
-            let messages =
-                build_provider_context_messages(profile, prior_context, &provider_prompt);
-            let pending_prompt_index = messages.len().saturating_sub(1);
-            (messages, pending_prompt_index)
-        }
-    };
-    let historical_attachment_tokens = crate::attachment_transport::historical_attachment_tokens(
-        prior_context
-            .preserved_turns
+    let (model, model_settings, model_limits, messages, pending_prompt_index) = if let Some(view) =
+        canonical_view
+    {
+        let messages = if transient_operational_turns.is_empty() {
+            canonical_provider_messages(view, profile)
+        } else {
+            build_provider_context_messages(profile, prior_context, &provider_prompt)
+        };
+        let model = AgentModelRef {
+            provider_id: view.runtime_selection.provider_id.clone(),
+            model_id: view.runtime_selection.model_id.clone(),
+        };
+        let settings = AgentModelSettings {
+            variant: view.runtime_selection.variant.clone(),
+            reasoning_effort: view.runtime_selection.reasoning_effort.clone(),
+            text_verbosity: view.runtime_selection.text_verbosity.clone(),
+            reasoning_summary: view.runtime_selection.reasoning_summary.clone(),
+            thinking: view.runtime_selection.thinking.clone(),
+        };
+        let pending_prompt_index = messages
             .iter()
-            .flat_map(|turn| turn.attachments.iter()),
-    )
+            .rposition(|message| {
+                message.role == harness_providers::MessageRole::User
+                    && message.content == provider_prompt
+            })
+            .unwrap_or_else(|| messages.len().saturating_sub(1));
+        (
+            model,
+            settings,
+            view.runtime_selection.resolved_limits.clone(),
+            messages,
+            pending_prompt_index,
+        )
+    } else if let Some(request_id) = committed_prompt_request_id {
+        let committed =
+            build_committed_provider_context_messages(profile, prior_context, request_id)?;
+        (
+            AgentModelRef::parse(&request.model_ref),
+            request.model_settings.clone(),
+            request
+                .model_target
+                .as_ref()
+                .map(|target| target.limits.clone())
+                .unwrap_or_default(),
+            committed.messages,
+            committed.pending_prompt_index,
+        )
+    } else {
+        let messages = build_provider_context_messages(profile, prior_context, &provider_prompt);
+        let pending_prompt_index = messages.len().saturating_sub(1);
+        (
+            AgentModelRef::parse(&request.model_ref),
+            request.model_settings.clone(),
+            request
+                .model_target
+                .as_ref()
+                .map(|target| target.limits.clone())
+                .unwrap_or_default(),
+            messages,
+            pending_prompt_index,
+        )
+    };
+    let historical_attachment_tokens = match canonical_view {
+        Some(view) => crate::agent::canonical_historical_attachment_tokens(view),
+        None => crate::attachment_transport::historical_attachment_tokens(
+            prior_context
+                .preserved_turns
+                .iter()
+                .flat_map(|turn| turn.attachments.iter()),
+        ),
+    }
     .map_err(ProviderRequestPreflightError::Cost)?;
     let request_budget = ProviderRequestBudgetContext {
-        model_limits: request
-            .model_target
-            .as_ref()
-            .map(|target| target.limits.clone())
-            .unwrap_or_default(),
+        model_limits,
         requested_output_tokens: None,
         safety_margin_tokens: compaction.reserve_tokens,
         estimated_token_triggers: compaction.estimated_token_triggers
@@ -338,11 +403,22 @@ pub(in crate::coord) fn prepare_provider_transform_phase(
         fallback_input_tokens: compaction.fallback_input_tokens,
         pending_prompt_index,
         historical_attachment_tokens,
+        has_media: canonical_view.is_some_and(|view| {
+            !view.attachments.is_empty()
+                || view
+                    .pending_prompt
+                    .as_ref()
+                    .is_some_and(|prompt| !prompt.attachments.is_empty())
+        }) || prior_context
+            .preserved_turns
+            .iter()
+            .any(|turn| !turn.attachments.is_empty())
+            || !task.request.attachments.is_empty(),
     };
     let provider_boundary = transform_context_for_provider(ProviderBoundaryInput {
         profile,
         model: model.clone(),
-        model_settings: request.model_settings.clone(),
+        model_settings: model_settings.clone(),
         context: ProviderBoundaryContext::ProviderMessages {
             messages: &messages,
         },
@@ -355,6 +431,9 @@ pub(in crate::coord) fn prepare_provider_transform_phase(
 
     Ok(AgentProviderTurnState {
         model,
+        model_settings,
+        canonical_view: canonical_view.cloned(),
+        transient_operational_turns: transient_operational_turns.to_vec(),
         tool_defs,
         messages,
         request_budget,
@@ -417,6 +496,9 @@ async fn run_provider_with_retry_phase(
             turn_request_id: &task.request_id,
             provider_request_id,
             model: turn_state.model.clone(),
+            model_settings: turn_state.model_settings.clone(),
+            canonical_view: turn_state.canonical_view.as_ref(),
+            transient_operational_turns: &turn_state.transient_operational_turns,
             messages: &turn_state.messages,
             tool_defs: &turn_state.tool_defs,
             request_budget: turn_state.request_budget.clone(),
@@ -504,6 +586,9 @@ async fn run_provider_stream_phase(
         turn_request_id,
         provider_request_id,
         model,
+        model_settings,
+        canonical_view,
+        transient_operational_turns,
         messages,
         tool_defs,
         request_budget: turn_state_request_budget,
@@ -522,12 +607,14 @@ async fn run_provider_stream_phase(
             provider,
             profile,
             model,
-            model_settings: request.model_settings.clone(),
+            model_settings,
             turn_request_id: turn_request_id.to_string(),
             provider_request_id,
             session_id: Some(session_id.to_string()),
             prompt_summary: &request.prompt,
             retry_metadata: Some(retry_metadata),
+            canonical_view,
+            transient_operational_turns,
             context: ProviderBoundaryContext::ProviderMessages { messages },
             tool_defs,
         },

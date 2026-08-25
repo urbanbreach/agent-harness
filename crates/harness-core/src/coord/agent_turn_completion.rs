@@ -362,21 +362,14 @@ impl Coordinator {
                         } else {
                             let lineage =
                                 agent_turn_child_lineage(run_state, &running, &request_id);
-                            run_state
-                                .provider_context_by_agent
-                                .entry(running.agent_id.clone())
-                                .or_default()
-                                .push_turn(ProviderConversationTurn {
-                                    user_prompt: running.request_prompt.clone(),
-                                    assistant_response: output.clone(),
-                                    attachments: running.attachments.clone(),
-                                    request_id: Some(request_id.clone().into()),
-                                    first_seq: None,
-                                    last_seq: None,
-                                    artifacts: Vec::new(),
-                                    messages,
-                                    ..ProviderConversationTurn::default()
-                                });
+                            let completed_turn = ProviderConversationTurn {
+                                user_prompt: running.request_prompt.clone(),
+                                assistant_response: output.clone(),
+                                request_id: Some(request_id.clone().into()),
+                                messages,
+                                attachments: running.attachments.clone(),
+                                ..ProviderConversationTurn::default()
+                            };
                             let terminal_event = append_payload_event_with_correlation(
                                 self.clock.as_ref(),
                                 self.redactor.as_ref(),
@@ -399,6 +392,9 @@ impl Coordinator {
                                     }),
                                 }),
                             )?;
+                            run_state
+                                .record_completed_provider_turn(&running.agent_id, completed_turn);
+                            run_state.refresh_canonical_provider_cache()?;
                             append_background_task_notification_and_schedule(
                                 self.clock.as_ref(),
                                 self.redactor.as_ref(),
@@ -491,6 +487,9 @@ impl Coordinator {
                 }
             }
 
+            run_state
+                .explicit_runtime_selection_request_ids
+                .remove(&request_id);
             (dequeued, terminal_compaction, finished_agent_id)
         };
 
@@ -576,6 +575,7 @@ pub(in crate::coord) struct ProviderContextCompaction {
 pub(in crate::coord) enum CompactAgentContextResult {
     Compacted {
         context: ProviderContext,
+        view: Box<crate::session::CanonicalProviderView>,
         applied: AppliedCompaction,
     },
     NoOp {

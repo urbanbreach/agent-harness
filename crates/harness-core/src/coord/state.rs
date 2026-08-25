@@ -113,9 +113,22 @@ impl CompactionGenerationBase {
 }
 
 pub(in crate::coord) enum PendingCompactionResponse {
-    Agent(oneshot::Sender<Result<(ProviderContext, bool), CoordinatorError>>),
+    Agent(
+        oneshot::Sender<
+            Result<
+                (
+                    ProviderContext,
+                    Option<crate::session::CanonicalProviderView>,
+                    bool,
+                ),
+                CoordinatorError,
+            >,
+        >,
+    ),
     Manual(oneshot::Sender<Result<ManualCompactionOutcome, CoordinatorError>>),
-    Internal { trigger_reason: String },
+    Internal {
+        trigger_reason: String,
+    },
 }
 
 impl PendingCompactionResponse {
@@ -126,8 +139,10 @@ impl PendingCompactionResponse {
         match self {
             Self::Agent(respond_to) => warn_oneshot_send_failure(
                 respond_to.send(result.map(|outcome| match outcome {
-                    CompactAgentContextResult::Compacted { context, .. } => (context, true),
-                    CompactAgentContextResult::NoOp { context } => (context, false),
+                    CompactAgentContextResult::Compacted { context, view, .. } => {
+                        (context, Some(*view), true)
+                    }
+                    CompactAgentContextResult::NoOp { context } => (context, None, false),
                 })),
                 "compact_agent_context",
             ),
@@ -172,6 +187,7 @@ impl PendingCompactionState {
 pub(in crate::coord) struct RunState {
     pub(in crate::coord) info: RunInfo,
     pub(in crate::coord) event_store: Arc<JsonlFileEventStore>,
+    pub(in crate::coord) canonical_event_history: Vec<EventEnvelopeV1>,
     pub(in crate::coord) next_event_seq: u64,
     pub(in crate::coord) next_live_event_id: u64,
     pub(in crate::coord) next_agent_id: u64,
@@ -183,6 +199,13 @@ pub(in crate::coord) struct RunState {
     pub(in crate::coord) compaction_boundary_watermark: u64,
     pub(in crate::coord) agents: BTreeMap<String, AgentProfile>,
     pub(in crate::coord) provider_context_by_agent: BTreeMap<String, ProviderContext>,
+    pub(in crate::coord) canonical_provider_view_by_agent:
+        BTreeMap<String, crate::session::CanonicalProviderView>,
+    pub(in crate::coord) provider_context_cache_key_by_agent:
+        BTreeMap<String, ProviderContextCacheKey>,
+    pub(in crate::coord) live_incomplete_provider_turns_by_agent:
+        BTreeMap<String, Vec<ProviderConversationTurn>>,
+    pub(in crate::coord) explicit_runtime_selection_request_ids: BTreeSet<String>,
     pub(in crate::coord) tasks: BTreeMap<String, TaskState>,
     pub(in crate::coord) task_hook_state: BTreeMap<String, TaskHookState>,
     pub(in crate::coord) agent_hook_state: BTreeMap<String, Vec<HookExecutionMetadata>>,
@@ -221,6 +244,101 @@ pub(in crate::coord) struct RunState {
 }
 
 impl RunState {
+    pub(in crate::coord) fn canonical_provider_context(
+        &self,
+        key: &ProviderContextCacheKey,
+    ) -> Option<&ProviderContext> {
+        (self
+            .provider_context_cache_key_by_agent
+            .get(&key.owner.agent_id)
+            == Some(key))
+        .then(|| self.provider_context_by_agent.get(&key.owner.agent_id))
+        .flatten()
+    }
+
+    pub(in crate::coord) fn install_canonical_provider_context(
+        &mut self,
+        key: ProviderContextCacheKey,
+        context: ProviderContext,
+    ) {
+        let agent_id = key.owner.agent_id.clone();
+        self.provider_context_by_agent
+            .insert(agent_id.clone(), context);
+        self.provider_context_cache_key_by_agent
+            .insert(agent_id, key);
+    }
+
+    pub(in crate::coord) fn install_canonical_provider_recovery(
+        &mut self,
+        view: crate::session::CanonicalProviderView,
+        context: ProviderContext,
+    ) {
+        let agent_id = view.owner.agent_id.clone();
+        self.install_canonical_provider_context(ProviderContextCacheKey::from(&view), context);
+        self.canonical_provider_view_by_agent
+            .insert(agent_id.clone(), view);
+        if let Some(turns) = self
+            .live_incomplete_provider_turns_by_agent
+            .get_mut(&agent_id)
+        {
+            turns.retain(|turn| !turn.status.is_completed());
+            if turns.is_empty() {
+                self.live_incomplete_provider_turns_by_agent
+                    .remove(&agent_id);
+            }
+        }
+    }
+
+    pub(in crate::coord) fn invalidate_provider_context(&mut self, agent_id: &str) {
+        self.provider_context_by_agent.remove(agent_id);
+        self.canonical_provider_view_by_agent.remove(agent_id);
+        self.provider_context_cache_key_by_agent.remove(agent_id);
+    }
+
+    pub(in crate::coord) fn cached_canonical_provider_view(
+        &self,
+        agent_id: &str,
+    ) -> Option<&crate::session::CanonicalProviderView> {
+        self.canonical_provider_view_by_agent.get(agent_id)
+    }
+
+    pub(in crate::coord) fn record_completed_provider_turn(
+        &mut self,
+        agent_id: &str,
+        turn: ProviderConversationTurn,
+    ) {
+        let turns = self
+            .live_incomplete_provider_turns_by_agent
+            .entry(agent_id.to_string())
+            .or_default();
+        turns.retain(|existing| existing.request_id != turn.request_id);
+        turns.push(turn.clone());
+        let context = self
+            .provider_context_by_agent
+            .entry(agent_id.to_string())
+            .or_default();
+        context
+            .preserved_turns
+            .retain(|existing| existing.request_id != turn.request_id);
+        context.preserved_turns.push(turn);
+    }
+
+    pub(in crate::coord) fn refresh_canonical_provider_cache(
+        &mut self,
+    ) -> Result<(), CoordinatorError> {
+        let run_id = self.info.run_id.to_string();
+        let recovery = super::provider_context::recover_canonical_provider_context_from_events(
+            &self.canonical_event_history,
+            Vec::new(),
+            &run_id,
+            &BTreeMap::new(),
+        )?;
+        for recovered in recovery.by_agent.into_values() {
+            self.install_canonical_provider_recovery(recovered.view, recovered.context);
+        }
+        Ok(())
+    }
+
     pub(in crate::coord) fn next_compaction_generation(&mut self) -> CompactionGenerationToken {
         let generation = CompactionGenerationToken(self.next_compaction_generation);
         self.next_compaction_generation += 1;
@@ -415,6 +533,25 @@ impl RunState {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(in crate::coord) struct ProviderContextCacheKey {
+    pub(in crate::coord) owner: crate::session::ProviderViewOwner,
+    pub(in crate::coord) watermark: Option<crate::session::RecordSequence>,
+    pub(in crate::coord) selected_leaf: crate::ids::EntryId,
+    pub(in crate::coord) runtime_selection: crate::session::CanonicalRuntimeSelection,
+}
+
+impl From<&crate::session::CanonicalProviderView> for ProviderContextCacheKey {
+    fn from(view: &crate::session::CanonicalProviderView) -> Self {
+        Self {
+            owner: view.owner.clone(),
+            watermark: view.watermark,
+            selected_leaf: view.selected_leaf.clone(),
+            runtime_selection: view.runtime_selection.clone(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(in crate::coord) struct QueuedAgentTurn {
     pub(in crate::coord) task_id: String,
@@ -494,29 +631,25 @@ pub(in crate::coord) fn push_incomplete_provider_turn(
         .clone()
         .or_else(|| running.latest_provider_request_id.clone())
         .unwrap_or_else(|| fallback_request_id.to_string());
-    let context = run_state
-        .provider_context_by_agent
+    let turns = run_state
+        .live_incomplete_provider_turns_by_agent
         .entry(running.agent_id.clone())
         .or_default();
-    if context.preserved_turns.iter().any(|turn| {
-        turn.request_id.as_ref().map(|r| r.as_str()) == Some(request_id.as_str())
+    if turns.iter().any(|turn| {
+        turn.request_id.as_ref().map(|value| value.as_str()) == Some(request_id.as_str())
             && !turn.status.is_completed()
     }) {
         return;
     }
-
-    context.push_turn(ProviderConversationTurn {
+    turns.push(ProviderConversationTurn {
         user_prompt: running.request_prompt.clone(),
         assistant_response: memory.partial_assistant_output,
         status: memory.status,
         failure_stage: Some(memory.failure_stage),
         failure_reason: truncated_failure_reason(&memory.failure_reason),
         request_id: Some(request_id.into()),
-        first_seq: None,
-        last_seq: None,
-        artifacts: Vec::new(),
-        messages: Vec::new(),
         attachments: running.attachments.clone(),
+        ..ProviderConversationTurn::default()
     });
 }
 

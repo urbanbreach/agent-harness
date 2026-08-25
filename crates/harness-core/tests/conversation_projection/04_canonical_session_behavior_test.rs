@@ -199,7 +199,7 @@ fn canonical_session_restart_preserves_unicode_attachments_usage_and_provenance(
                             text: "完了".to_string(),
                         },
                     ],
-                    provenance: Some(ProviderProvenance {
+                    provenance: Some(Box::new(ProviderProvenance {
                         provider_id: "mock".to_string(),
                         model_id: "model-unicode".to_string(),
                         request_id: ProviderRequestId::new("provider-request-unicode"),
@@ -210,7 +210,8 @@ fn canonical_session_restart_preserves_unicode_attachments_usage_and_provenance(
                             completion_tokens: 8,
                             total_tokens: 29,
                         }),
-                    }),
+                        runtime_selection: None,
+                    })),
                 },
             },
         ),

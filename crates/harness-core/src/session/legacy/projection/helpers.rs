@@ -1,6 +1,35 @@
 use super::*;
 
 impl SessionProjector<'_> {
+    pub(super) fn apply_turn_cancelled(
+        &mut self,
+        fact: &LegacyFact,
+        cancelled: &super::super::facts::TurnCancelledFact,
+    ) {
+        let partial = self
+            .index
+            .partial_text_by_turn
+            .get(&cancelled.turn_key)
+            .filter(|text| !text.trim().is_empty())
+            .map_or("(none)", String::as_str);
+        let text = format!(
+            "Harness preserved an incomplete provider turn for continuity. Do not treat it as a completed answer.\nStatus: {}\nStage: {}\nReason: {}\nPartial assistant output:\n{partial}",
+            cancelled.status, cancelled.stage, cancelled.reason
+        );
+        self.push_entry(SessionEntry {
+            id: self
+                .namespace
+                .entry_id(fact.sequence, &fact.event_id, "turn_cancelled"),
+            parent_id: None,
+            turn_id: Some(self.namespace.turn_id(&cancelled.turn_key)),
+            run_id: self.run_id.clone(),
+            payload: SessionEntryPayload::AssistantMessage {
+                parts: vec![crate::session::AssistantPart::Text { text }],
+                provenance: None,
+            },
+        });
+    }
+
     pub(super) fn apply_title(&mut self, fact: &LegacyFact, title: &str) {
         self.push_entry(SessionEntry {
             id: self
@@ -25,30 +54,51 @@ impl SessionProjector<'_> {
         &mut self,
         start: &super::super::facts::ProviderStartFact,
     ) -> Result<(), LegacyAdapterError> {
+        let is_final_provider_for_turn = self
+            .index
+            .last_provider_by_turn
+            .get(&start.turn_key)
+            .is_some_and(|request_id| request_id == &start.request_id);
         let Some(assistant) = self.index.assistants.remove(&start.request_id) else {
             return Err(LegacyAdapterError::InvalidIdentityRelationship {
                 event_id: start.request_id.clone(),
             });
         };
+        let has_tool_call = assistant
+            .parts
+            .iter()
+            .any(|(_, part)| matches!(part, crate::session::AssistantPart::ToolCall(_)));
+        if !is_final_provider_for_turn && !has_tool_call {
+            return Ok(());
+        }
         if !assistant.finished || assistant.parts.is_empty() {
             self.warnings
                 .push(LegacyWarning::MissingFinalAssistantContent {
                     request_id: start.request_id.clone(),
                 });
         }
-        if !assistant.finished && assistant.parts.is_empty() {
+        if !assistant.finished
+            && (!self.preserve_incomplete_assistant || assistant.parts.is_empty())
+        {
             return Ok(());
         }
-        let provenance = assistant.provenance.or_else(|| {
-            Some(ProviderProvenance {
+        let provenance = match assistant.provenance {
+            Some(mut provenance) => {
+                if provenance.runtime_selection.is_none() {
+                    provenance.runtime_selection = start.runtime_selection.clone();
+                }
+                Some(provenance)
+            }
+            None => Some(ProviderProvenance {
                 provider_id: assistant.provider_id,
                 model_id: assistant.model_id,
                 request_id: self.namespace.provider_request_id(&start.request_id),
                 response_id: assistant.response_id,
                 stop_reason: assistant.stop_reason,
                 usage: assistant.usage,
-            })
-        });
+                runtime_selection: start.runtime_selection.clone(),
+            }),
+        };
         self.push_entry(SessionEntry {
             id: assistant.entry_id,
             parent_id: None,
@@ -56,7 +106,7 @@ impl SessionProjector<'_> {
             run_id: self.run_id.clone(),
             payload: SessionEntryPayload::AssistantMessage {
                 parts: assistant.parts.into_iter().map(|(_, part)| part).collect(),
-                provenance,
+                provenance: provenance.map(Box::new),
             },
         });
         Ok(())

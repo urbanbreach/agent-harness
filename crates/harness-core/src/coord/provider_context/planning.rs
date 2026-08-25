@@ -16,7 +16,7 @@ use crate::text::{non_empty_trimmed, truncate_with_ellipsis};
 
 use super::super::RunState;
 use super::build_provider_compaction_facts;
-use super::restore::collect_historical_agent_turns_until;
+use super::history::collect_historical_agent_turns_until;
 use super::summary::build_provider_context_summary;
 use super::tokens::{
     approximate_provider_context_tokens, approximate_text_tokens, approximate_turn_tokens,
