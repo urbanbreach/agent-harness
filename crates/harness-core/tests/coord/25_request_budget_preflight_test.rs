@@ -33,6 +33,7 @@ async fn pre_prompt_budget_rebuilds_request_before_dispatch() {
         provider_text_events(&"A".repeat(12_000)),
         provider_text_events(&"B".repeat(12_000)),
         provider_text_events("Compaction summary of earlier turns."),
+        provider_text_events("Compaction prefix of split turn."),
         provider_text_events("rebuilt answer"),
     ]);
     let coordinator = test_agent_coordinator_with_provider_and_compaction(
@@ -114,7 +115,16 @@ async fn pre_prompt_budget_rebuilds_request_before_dispatch() {
     );
 
     let requests = provider.requests();
-    assert_eq!(requests.len(), 4, "three turns plus one summary request");
+    assert_eq!(requests.len(), 5, "three turns plus two split summary requests");
+    let compaction = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::SessionCompaction(payload) => Some(payload),
+            _ => None,
+        })
+        .unwrap_or_abort();
+    assert!(compaction.summary.contains("Compaction summary of earlier turns."));
+    assert!(compaction.summary.contains("Compaction prefix of split turn."));
     let transmitted = requests.last().unwrap_or_abort();
     assert_eq!(transmitted.max_tokens, Some(2_000));
     assert!(transmitted.messages.iter().any(|message| {

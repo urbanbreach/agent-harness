@@ -141,6 +141,7 @@ fn queued_agent_turn_fixture(
         request: crate::agent::AgentRequest {
             agent_id: agent_id.to_string(),
             prompt: format!("prompt for {agent_id}"),
+            attachments: Vec::new(),
             prompt_context: None,
             selected_file_tags: Vec::new(),
             selected_agent_tags: Vec::new(),

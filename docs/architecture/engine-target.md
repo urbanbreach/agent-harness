@@ -29,8 +29,26 @@ that domain without writing files or executing runtime work. For self-contained 
 the committed parts replace any earlier compatibility fragments.
 
 The runtime still contains V1-specific provider-context, resume, transcript, session, export,
-catalog, lineage, and compaction projections. Later projection consolidation and deletion are not
-yet complete.
+catalog, lineage, and compatibility projections. Compaction V2 is the active path; deprecated
+compaction lifecycle variants and checkpoint readers remain read-only until G010. Later projection
+consolidation and deletion are not yet complete.
+
+## G006 Compaction V2 boundary
+
+The current target dispositions are explicit and do not claim later milestone work:
+
+| Disposition | G006 contract |
+|---|---|
+| Keep | one coordinator-owned `prepare -> generate -> validate -> commit` pipeline; one `SessionCompaction` success event; typed canonical active-path entries; replay-derived restart context |
+| Consolidate | manual, pre-prompt, and overflow triggers; shared request-budget accounting; live and reopened provider-context projection |
+| Move | provider-context restoration and consumer projections onto the committed typed event path after equivalence evidence |
+| Disable | trigger-specific compaction bypasses, checkpoint artifact writes, and any second success writer |
+| Delete | no G006 deletion of legacy event variants/readers; compatibility deletion belongs to G010 after migration evidence |
+
+Failure is atomic: empty, failing, cancelled, stale, malformed, or non-fitting summary generation
+leaves the previous boundary active and appends no replacement success event. The optional typed
+`SessionCompactionEvent` fields (`first_kept_entry_id`, `tokens_after`, `summary_usage`, provider/model
+provenance, file state, and current intent) are serde-defaulted so old logs remain readable.
 
 ## Runtime data flow
 
@@ -51,6 +69,18 @@ provider transport
 | Old delta history | Decode-only V1 compatibility paths |
 | Canonical typed session reads | `CanonicalSession` through `LegacyEventLogAdapter` |
 | Provider context and product projections | Existing replay-derived V1 consumers, not yet consolidated |
+
+### Interactive TUI flow
+
+The TUI submits prompts and `/compact` through the coordinator-owned V2 pipeline. It observes live
+fragments for presentation, then reads the committed `SessionCompaction` event and replay-derived
+provider context; it does not write a checkpoint artifact or append a second success event.
+
+### Headless flow
+
+The headless prompt/run surfaces use the same coordinator, request-budget snapshot, typed active-path
+cut, and restart reconstruction. Manual, pre-prompt, and bounded overflow compaction therefore share
+the same durable event shape and failure-atomic commit boundary.
 
 ## Canonical model-limit contract
 

@@ -5,205 +5,6 @@ use super::compaction::{
 use super::*;
 
 impl Coordinator {
-    pub(in crate::coord) async fn compact_agent_context_internal(
-        &mut self,
-        request: CompactAgentContextRequest<'_>,
-    ) -> Result<CompactAgentContextResult, CoordinatorError> {
-        let CompactAgentContextRequest {
-            task_id,
-            agent_id,
-            through_request_id,
-            trigger_reason,
-            evidence,
-        } = request;
-        let prepared_budget = evidence.context_budget;
-        let (existing_context, trigger, hook_context) = {
-            let Some(run_state) = self.run_state.as_ref() else {
-                return Err(CoordinatorError::RunNotStarted);
-            };
-
-            let existing_context = run_state
-                .provider_context_by_agent
-                .get(agent_id)
-                .cloned()
-                .unwrap_or_default();
-            let manual_tokens_before = (trigger_reason == "manual")
-                .then(|| approximate_provider_context_tokens(&existing_context));
-
-            let running_turn = task_id
-                .and_then(|task_id| run_state.running_agent_turns.get(task_id))
-                .or_else(|| {
-                    run_state.running_agent_turns.values().find(|running| {
-                        running.agent_id == agent_id
-                            && through_request_id
-                                .as_deref()
-                                .is_none_or(|request_id| running.request_id == request_id)
-                    })
-                });
-
-            let trigger = if let Some(running) = running_turn {
-                ProviderCompactionTrigger {
-                    agent_id: agent_id.to_string(),
-                    profile_name: running.profile_name.clone(),
-                    model_ref: running.model_ref.clone(),
-                    provider_id: running.latest_provider_id.clone(),
-                    model_id: running.latest_model_id.clone(),
-                    through_request_id,
-                    trigger_reason: trigger_reason.to_string(),
-                    tokens_before: evidence
-                        .usage
-                        .as_ref()
-                        .map(|usage| usage.prompt_tokens)
-                        .or(manual_tokens_before),
-                    estimate_source: None,
-                }
-            } else {
-                let profile = run_state
-                    .agents
-                    .get(agent_id)
-                    .cloned()
-                    .ok_or_else(|| CoordinatorError::UnknownAgent(agent_id.to_string()))?;
-                ProviderCompactionTrigger {
-                    agent_id: agent_id.to_string(),
-                    profile_name: profile.name,
-                    model_ref: profile.model_ref,
-                    provider_id: None,
-                    model_id: None,
-                    through_request_id,
-                    trigger_reason: trigger_reason.to_string(),
-                    tokens_before: evidence
-                        .usage
-                        .as_ref()
-                        .map(|usage| usage.prompt_tokens)
-                        .or(manual_tokens_before),
-                    estimate_source: None,
-                }
-            };
-
-            let hook_context = HookInvocationContext {
-                event: HookLifecycleEvent::CompactionRequested,
-                run_id: run_state.info.run_id.to_string(),
-                workspace_root: run_state.info.workspace_root.clone(),
-                artifacts_dir: run_state.info.artifacts_dir.clone(),
-                actor: Some(agent_actor(agent_id)),
-                agent_id: Some(agent_id.to_string()),
-                request_id: trigger.through_request_id.clone(),
-                permission_id: None,
-                task_id: task_id.map(str::to_string),
-                tool_call_id: None,
-                tool_id: None,
-                provider_id: trigger.provider_id.clone(),
-                model_id: trigger.model_id.clone(),
-                parent_agent_id: run_state.subagent_parent_by_id.get(agent_id).cloned(),
-                profile: Some(trigger.profile_name.clone()),
-                outcome: Some(trigger.trigger_reason.clone()),
-                output_summary: trigger.tokens_before.map(|tokens| tokens.to_string()),
-                failure_reason: None,
-            };
-
-            (existing_context, trigger, hook_context)
-        };
-
-        let requested_hook_batch = hooks::run_lifecycle_hooks(
-            self.clock.as_ref(),
-            self.config.hook_command_executor.as_ref(),
-            &self.config.hook_runtime_config,
-            hook_context,
-        )
-        .await;
-
-        if let Some(reason) = requested_hook_batch.critical_failure {
-            let Some(run_state) = self.run_state.as_mut() else {
-                return Err(CoordinatorError::RunNotStarted);
-            };
-            append_compaction_failed_event(
-                self.clock.as_ref(),
-                self.redactor.as_ref(),
-                run_state,
-                &trigger,
-                &reason,
-                None,
-                None,
-            )?;
-            return Err(CoordinatorError::LifecycleHookFailed(reason));
-        }
-        let Some(run_state) = self.run_state.as_mut() else {
-            return Err(CoordinatorError::RunNotStarted);
-        };
-
-        let applied = match compact_session(
-            self.clock.as_ref(),
-            self.redactor.as_ref(),
-            run_state,
-            Arc::clone(&self.config.provider),
-            agent_id,
-            trigger_reason,
-            &self.config.compaction,
-            prepared_budget,
-        )
-        .await
-        {
-            Ok(Some(applied)) => applied,
-            Ok(None) if trigger_reason == "overflow" => {
-                let reason = "overflow requested compaction, but no cut point reduced the active session context"
-                    .to_string();
-                append_compaction_failed_event(
-                    self.clock.as_ref(),
-                    self.redactor.as_ref(),
-                    run_state,
-                    &trigger,
-                    &reason,
-                    None,
-                    None,
-                )?;
-                return Err(CoordinatorError::CompactionFailed(reason));
-            }
-            Ok(None) => {
-                return Ok(CompactAgentContextResult::NoOp {
-                    context: existing_context,
-                });
-            }
-            Err(err) => {
-                let reason = err.to_string();
-                let _ = append_compaction_failed_event(
-                    self.clock.as_ref(),
-                    self.redactor.as_ref(),
-                    run_state,
-                    &trigger,
-                    &reason,
-                    None,
-                    None,
-                );
-                return Err(err);
-            }
-        };
-
-        let Some(run_state) = self.run_state.as_mut() else {
-            return Err(CoordinatorError::RunNotStarted);
-        };
-
-        if trigger_reason == "overflow" {
-            if let (Some(task_id), Some(request_id)) =
-                (task_id, trigger.through_request_id.as_deref())
-            {
-                let context = run_state
-                    .provider_context_by_agent
-                    .get(agent_id)
-                    .cloned()
-                    .unwrap_or_default();
-                run_state.record_overflow_retry_compacted_context(task_id, request_id, context);
-            }
-        }
-
-        let context = run_state
-            .provider_context_by_agent
-            .get(agent_id)
-            .cloned()
-            .unwrap_or_default();
-
-        Ok(CompactAgentContextResult::Compacted { context, applied })
-    }
-
     pub(in crate::coord) async fn compact_failed_terminal_agent_context(
         &mut self,
         request: FailedTerminalCompactionRequest,
@@ -218,29 +19,18 @@ impl Coordinator {
             return;
         }
 
-        match self
-            .compact_agent_context_internal(CompactAgentContextRequest {
-                task_id: Some(&request.task_id),
-                agent_id: &request.agent_id,
-                through_request_id: Some(request.request_id.clone()),
-                trigger_reason: &request.trigger_reason,
+        let trigger_reason = request.trigger_reason.clone();
+        self.start_compaction_generation(
+            CompactAgentContextRequest {
+                task_id: Some(request.task_id),
+                agent_id: request.agent_id,
+                through_request_id: Some(request.request_id),
+                trigger_reason: trigger_reason.clone(),
                 evidence: CompactionRequestEvidence::default(),
-            })
-            .await
-        {
-            Ok(CompactAgentContextResult::Compacted { .. })
-            | Ok(CompactAgentContextResult::NoOp { .. }) => {}
-            Err(err) => {
-                tracing::warn!(
-                    task_id = %request.task_id,
-                    agent_id = %request.agent_id,
-                    request_id = %request.request_id,
-                    trigger_reason = %request.trigger_reason,
-                    error = %err,
-                    "failed-terminal provider context compaction did not complete; preserving original task terminal outcome"
-                );
-            }
-        }
+            },
+            PendingCompactionResponse::Internal { trigger_reason },
+        )
+        .await;
     }
 
     pub(in crate::coord) async fn summarize_session_branch(
@@ -497,7 +287,6 @@ impl Coordinator {
             }
 
             let mut terminal_compaction = None;
-
             if was_cancelled {
                 let memory = match &outcome {
                     AgentTurnTaskOutcome::Failed { reason, memory } => memory
@@ -580,6 +369,7 @@ impl Coordinator {
                                 .push_turn(ProviderConversationTurn {
                                     user_prompt: running.request_prompt.clone(),
                                     assistant_response: output.clone(),
+                                    attachments: running.attachments.clone(),
                                     request_id: Some(request_id.clone().into()),
                                     first_seq: None,
                                     last_seq: None,
@@ -595,7 +385,7 @@ impl Coordinator {
                                 Some(format!("task:{task_id}")),
                                 Some(request_id.clone()),
                                 EventV1::TaskCompleted(TaskCompletedEvent {
-                                    task_id: task_id.into(),
+                                    task_id: task_id.clone().into(),
                                     result_digest: digest12(output.as_bytes()),
                                     result_summary: output,
                                     metadata: Some(TaskCompletionMetadata {
@@ -626,25 +416,6 @@ impl Coordinator {
                                 &terminal_event_summary(&terminal_event),
                             )
                             .await?;
-
-                            if let Err(err) = compact_session(
-                                self.clock.as_ref(),
-                                self.redactor.as_ref(),
-                                run_state,
-                                Arc::clone(&self.config.provider),
-                                &running.agent_id,
-                                "proactive",
-                                &self.config.compaction,
-                                None,
-                            )
-                            .await
-                            {
-                                tracing::warn!(
-                                    agent_id = %running.agent_id,
-                                    error = %err,
-                                    "proactive session compaction failed after successful agent turn"
-                                );
-                            }
                         }
                     }
                     AgentTurnTaskOutcome::Failed { reason, memory } => {
@@ -726,7 +497,6 @@ impl Coordinator {
         if let Some(request) = terminal_compaction {
             self.compact_failed_terminal_agent_context(request).await;
         }
-
         let Some(run_state) = self.run_state.as_mut() else {
             return Ok(());
         };

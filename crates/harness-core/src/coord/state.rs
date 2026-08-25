@@ -82,6 +82,93 @@ impl From<AgentTurnFailure> for AgentTurnFailureMemory {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(in crate::coord) struct CompactionGenerationToken(u64);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(in crate::coord) struct CompactionGenerationBase {
+    run_id: crate::ids::RunId,
+    durable_agent_tail_seq: Option<u64>,
+}
+
+impl CompactionGenerationBase {
+    pub(in crate::coord) fn capture(
+        run_state: &RunState,
+        durable_agent_tail_seq: Option<u64>,
+    ) -> Self {
+        Self {
+            run_id: run_state.info.run_id.clone(),
+            durable_agent_tail_seq,
+        }
+    }
+
+    pub(in crate::coord) fn is_current(
+        &self,
+        run_state: &RunState,
+        durable_agent_tail_seq: Option<u64>,
+    ) -> bool {
+        self.run_id == run_state.info.run_id
+            && self.durable_agent_tail_seq == durable_agent_tail_seq
+    }
+}
+
+pub(in crate::coord) enum PendingCompactionResponse {
+    Agent(oneshot::Sender<Result<(ProviderContext, bool), CoordinatorError>>),
+    Manual(oneshot::Sender<Result<ManualCompactionOutcome, CoordinatorError>>),
+    Internal { trigger_reason: String },
+}
+
+impl PendingCompactionResponse {
+    pub(in crate::coord) fn finish(
+        self,
+        result: Result<CompactAgentContextResult, CoordinatorError>,
+    ) {
+        match self {
+            Self::Agent(respond_to) => warn_oneshot_send_failure(
+                respond_to.send(result.map(|outcome| match outcome {
+                    CompactAgentContextResult::Compacted { context, .. } => (context, true),
+                    CompactAgentContextResult::NoOp { context } => (context, false),
+                })),
+                "compact_agent_context",
+            ),
+            Self::Manual(respond_to) => warn_oneshot_send_failure(
+                respond_to.send(result.map(CompactAgentContextResult::into_manual_outcome)),
+                "manual_compact_agent_context",
+            ),
+            Self::Internal { trigger_reason } => {
+                if let Err(error) = result {
+                    tracing::warn!(
+                        trigger_reason,
+                        error = %error,
+                        "internal compaction generation did not complete"
+                    );
+                }
+            }
+        }
+    }
+}
+
+pub(in crate::coord) struct PendingCompactionState {
+    pub(in crate::coord) agent_id: String,
+    pub(in crate::coord) task_id: Option<String>,
+    pub(in crate::coord) generation: CompactionGenerationToken,
+    pub(in crate::coord) base: CompactionGenerationBase,
+    pub(in crate::coord) cancellation_token: CancellationToken,
+    pub(in crate::coord) trigger: ProviderCompactionTrigger,
+    pub(in crate::coord) response: PendingCompactionResponse,
+}
+
+impl PendingCompactionState {
+    fn cancel(self, reason: &str) {
+        self.cancellation_token.cancel();
+        self.response
+            .finish(Err(CoordinatorError::CompactionCancelled {
+                agent_id: self.agent_id,
+                reason: reason.to_string(),
+            }));
+    }
+}
+
 pub(in crate::coord) struct RunState {
     pub(in crate::coord) info: RunInfo,
     pub(in crate::coord) event_store: Arc<JsonlFileEventStore>,
@@ -92,6 +179,8 @@ pub(in crate::coord) struct RunState {
     pub(in crate::coord) next_task_id: u64,
     pub(in crate::coord) next_provider_request_id: u64,
     pub(in crate::coord) next_permission_id: u64,
+    pub(in crate::coord) next_compaction_generation: u64,
+    pub(in crate::coord) compaction_boundary_watermark: u64,
     pub(in crate::coord) agents: BTreeMap<String, AgentProfile>,
     pub(in crate::coord) provider_context_by_agent: BTreeMap<String, ProviderContext>,
     pub(in crate::coord) tasks: BTreeMap<String, TaskState>,
@@ -103,10 +192,12 @@ pub(in crate::coord) struct RunState {
     pub(in crate::coord) background_notification_child_requests: BTreeSet<String>,
     pub(in crate::coord) pending_agent_wakeups: BTreeMap<String, Vec<PendingAgentWakeup>>,
     pub(in crate::coord) pending_permissions: BTreeMap<String, PendingPermissionState>,
+    pub(in crate::coord) tool_call_request_event_ids: BTreeMap<String, String>,
     pub(in crate::coord) active_permission_grants: PermissionGrantSet,
     pub(in crate::coord) cancelled_running_tasks: BTreeSet<String>,
     pub(in crate::coord) queued_agent_turns: BTreeMap<String, QueuedAgentTurn>,
     pub(in crate::coord) running_agent_turns: BTreeMap<String, RunningAgentTurn>,
+    pub(in crate::coord) pending_compactions: BTreeMap<String, PendingCompactionState>,
     pub(in crate::coord) failed_terminal_compaction_attempts: BTreeSet<(String, String)>,
     pub(in crate::coord) overflow_retry_compacted_context_by_attempt:
         BTreeMap<(String, String), ProviderContext>,
@@ -130,6 +221,40 @@ pub(in crate::coord) struct RunState {
 }
 
 impl RunState {
+    pub(in crate::coord) fn next_compaction_generation(&mut self) -> CompactionGenerationToken {
+        let generation = CompactionGenerationToken(self.next_compaction_generation);
+        self.next_compaction_generation += 1;
+        generation
+    }
+
+    pub(in crate::coord) fn advance_compaction_boundary(&mut self) {
+        self.compaction_boundary_watermark += 1;
+    }
+
+    pub(in crate::coord) fn cancel_pending_compaction_for_task(
+        &mut self,
+        task_id: &str,
+        reason: &str,
+    ) {
+        let agent_id = self
+            .pending_compactions
+            .iter()
+            .find_map(|(agent_id, pending)| {
+                (pending.task_id.as_deref() == Some(task_id)).then(|| agent_id.clone())
+            });
+        if let Some(agent_id) = agent_id {
+            if let Some(pending) = self.pending_compactions.remove(&agent_id) {
+                pending.cancel(reason);
+            }
+        }
+    }
+
+    pub(in crate::coord) fn cancel_all_pending_compactions(&mut self, reason: &str) {
+        for (_, pending) in std::mem::take(&mut self.pending_compactions) {
+            pending.cancel(reason);
+        }
+    }
+
     pub(in crate::coord) fn agent_has_active_or_queued_turn(&self, agent_id: &str) -> bool {
         self.running_agent_turns
             .values()
@@ -180,6 +305,7 @@ impl RunState {
                 agent_id: task.agent_id.clone(),
                 request_id: task.request_id.clone(),
                 request_prompt: task.request.prompt.clone(),
+                attachments: task.request.attachments.clone(),
                 profile_name: task.profile.name.clone(),
                 model_ref: task.request.model_ref.clone(),
                 model_settings: task.request.model_settings.clone(),
@@ -327,6 +453,7 @@ pub(in crate::coord) struct RunningAgentTurn {
     pub(in crate::coord) agent_id: String,
     pub(in crate::coord) request_id: String,
     pub(in crate::coord) request_prompt: String,
+    pub(in crate::coord) attachments: Vec<crate::attachment_transport::AttachmentMetadata>,
     pub(in crate::coord) profile_name: String,
     pub(in crate::coord) model_ref: String,
     pub(in crate::coord) model_settings: AgentModelSettings,
@@ -389,6 +516,7 @@ pub(in crate::coord) fn push_incomplete_provider_turn(
         last_seq: None,
         artifacts: Vec::new(),
         messages: Vec::new(),
+        attachments: running.attachments.clone(),
     });
 }
 
@@ -574,6 +702,7 @@ pub(in crate::coord) struct ToolCallFinishedEventArgs<'a> {
     pub(in crate::coord) output_json: Option<Value>,
     pub(in crate::coord) metadata: Option<ToolCallMetadata>,
     pub(in crate::coord) request_correlation_id: Option<&'a str>,
+    pub(in crate::coord) causation_id: Option<&'a str>,
 }
 
 pub(in crate::coord) struct EditAppliedEventArgs<'a> {

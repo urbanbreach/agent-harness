@@ -299,6 +299,7 @@ where
             request: AgentRequest {
                 agent_id: parent_agent_id,
                 prompt: notification_text,
+                attachments: Vec::new(),
                 prompt_context: None,
                 selected_file_tags: Vec::new(),
                 selected_agent_tags: Vec::new(),
@@ -364,6 +365,7 @@ where
                 request: AgentRequest {
                     agent_id: agent_id.to_string(),
                     prompt: wakeup.notification_text,
+                    attachments: Vec::new(),
                     prompt_context: None,
                     selected_file_tags: Vec::new(),
                     selected_agent_tags: Vec::new(),

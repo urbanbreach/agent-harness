@@ -40,6 +40,7 @@ async fn overflow_retry_compacts_context_and_retries_with_summary() {
                 usage: None,
             },
         ],
+        provider_text_events("Compaction prefix of split turn."),
         vec![
             ProviderStreamEvent::Start,
             ProviderStreamEvent::TextDelta("recovered answer".to_string()),
@@ -84,7 +85,7 @@ async fn overflow_retry_compacts_context_and_retries_with_summary() {
     tokio::task::yield_now().await;
     tokio::time::timeout(Duration::from_secs(2), async {
         loop {
-            if provider.requests().len() >= 5 {
+            if provider.requests().len() >= 6 {
                 break;
             }
             if load_events(&run.events_path)
@@ -103,8 +104,8 @@ async fn overflow_retry_compacts_context_and_retries_with_summary() {
     let requests = provider.requests();
     assert_eq!(
         requests.len(),
-        5,
-        "third turn should retry once after compaction (3 turns + 1 summary + 1 retry)"
+        6,
+        "third turn should retry once after history and split-prefix summaries"
     );
     let retried_messages = requests
         .last()
@@ -122,9 +123,15 @@ async fn overflow_retry_compacts_context_and_retries_with_summary() {
         .any(|(role, content)| { *role == MessageRole::User && content == "third question" }));
 
     let events = load_events(&run.events_path);
-    assert!(events
+    let compaction = events
         .iter()
-        .any(|event| matches!(event.payload, EventV1::SessionCompaction(_))));
+        .find_map(|event| match &event.payload {
+            EventV1::SessionCompaction(payload) => Some(payload),
+            _ => None,
+        })
+        .unwrap_or_abort();
+    assert!(compaction.summary.contains("Compaction summary of earlier turns."));
+    assert!(compaction.summary.contains("Compaction prefix of split turn."));
     let provider_finishes = events
         .iter()
         .filter(|event| {
@@ -184,6 +191,7 @@ async fn overflow_retry_can_compact_a_single_large_preserved_turn() {
                 usage: None,
             },
         ],
+        provider_text_events("Compaction prefix of split turn."),
         vec![
             ProviderStreamEvent::Start,
             ProviderStreamEvent::TextDelta("recovered answer".to_string()),
@@ -226,8 +234,8 @@ async fn overflow_retry_can_compact_a_single_large_preserved_turn() {
     let requests = provider.requests();
     assert_eq!(
         requests.len(),
-        4,
-        "single preserved turn should still retry once after summary-only compaction (2 turns + 1 summary + 1 retry)"
+        5,
+        "single preserved turn should retry once after history and split-prefix summaries"
     );
     let retried_messages = requests
         .last()
@@ -248,9 +256,15 @@ async fn overflow_retry_can_compact_a_single_large_preserved_turn() {
         .any(|(role, content)| { *role == MessageRole::User && content == "second question" }));
 
     let events = load_events(&run.events_path);
-    assert!(events
+    let compaction = events
         .iter()
-        .any(|event| matches!(event.payload, EventV1::SessionCompaction(_))));
+        .find_map(|event| match &event.payload {
+            EventV1::SessionCompaction(payload) => Some(payload),
+            _ => None,
+        })
+        .unwrap_or_abort();
+    assert!(compaction.summary.contains("Compaction summary of earlier turns."));
+    assert!(compaction.summary.contains("Compaction prefix of split turn."));
     let provider_finishes = events
         .iter()
         .filter(|event| {
@@ -332,10 +346,10 @@ async fn overflow_retry_does_not_resend_same_context_when_compaction_is_noop() {
     );
 
     let events = load_events(&run.events_path);
-    assert!(events.iter().any(|event| {
+    assert!(!events.iter().any(|event| {
         matches!(
             &event.payload,
-            EventV1::CompactionFailed(payload)
+            EventV1::SessionCompaction(payload)
                 if payload.agent_id == "agent_000001"
                     && payload.trigger_reason == "overflow"
         )
@@ -360,7 +374,7 @@ async fn compaction_trigger_pre_prompt_occurs_before_provider_request_started() 
         provider_text_events(&"A".repeat(12_000)),
         provider_text_events(&"B".repeat(12_000)),
         provider_text_events("Compaction summary of earlier turns."),
-        provider_text_events("Preserved split-turn context."),
+        provider_text_events("Compaction prefix of split turn."),
         provider_text_events("third answer"),
     ]);
     let coordinator = test_agent_coordinator_with_provider_and_compaction(
@@ -425,6 +439,17 @@ async fn compaction_trigger_pre_prompt_occurs_before_provider_request_started() 
         pre_prompt_written_idx < provider_started_idx,
         "pre-prompt compaction must be written before the third provider request is constructed"
     );
+    let requests = provider.requests();
+    assert_eq!(requests.len(), 5);
+    let compaction = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::SessionCompaction(payload) => Some(payload),
+            _ => None,
+        })
+        .unwrap_or_abort();
+    assert!(compaction.summary.contains("Compaction summary of earlier turns."));
+    assert!(compaction.summary.contains("Compaction prefix of split turn."));
 }
 #[tokio::test]
 async fn compaction_trigger_pre_prompt_attempts_once_per_turn() {
@@ -437,7 +462,7 @@ async fn compaction_trigger_pre_prompt_attempts_once_per_turn() {
         provider_text_events(&"A".repeat(12_000)),
         provider_text_events(&"B".repeat(12_000)),
         provider_text_events("Compaction summary of earlier turns."),
-        provider_text_events("Preserved split-turn context."),
+        provider_text_events("Compaction prefix of split turn."),
         provider_text_events("third answer"),
     ]);
     let coordinator = test_agent_coordinator_with_provider_and_compaction(
@@ -490,9 +515,15 @@ async fn compaction_trigger_pre_prompt_attempts_once_per_turn() {
         pre_prompt_writes, 1,
         "pre-prompt compaction should write at most one SessionCompaction for a turn"
     );
-    assert_eq!(
-        provider.requests().len(),
-        5,
-        "provider execution should continue once after main and split-turn summaries"
-    );
+    let requests = provider.requests();
+    assert_eq!(requests.len(), 5, "provider execution should continue once");
+    let compaction = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::SessionCompaction(payload) => Some(payload),
+            _ => None,
+        })
+        .unwrap_or_abort();
+    assert!(compaction.summary.contains("Compaction summary of earlier turns."));
+    assert!(compaction.summary.contains("Compaction prefix of split turn."));
 }

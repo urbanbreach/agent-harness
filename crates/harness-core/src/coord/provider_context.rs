@@ -1,7 +1,12 @@
 use crate::text::truncate_with_ellipsis;
 
+mod committed;
 mod restore;
 
+pub(super) use committed::{
+    event_belongs_to_agent, latest_agent_event_seq, project_committed_context,
+    reconstruct_provider_context_from_events,
+};
 pub(super) use restore::restore_provider_context_from_history;
 
 pub(super) const PROVIDER_CONTEXT_COMPACTION_TURN_EXCERPT_MAX_CHARS: usize = 240;

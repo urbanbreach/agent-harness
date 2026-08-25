@@ -414,6 +414,7 @@ fn background_task_notification_run_state(session_dir: &Path, run_id: &str) -> R
             agent_id: "agent_parent".to_string(),
             request_id: "req_parent_active".to_string(),
             request_prompt: "active parent turn".to_string(),
+            attachments: Vec::new(),
             profile_name: "parent".to_string(),
             model_ref: "mock:parent-model".to_string(),
             model_settings: Default::default(),

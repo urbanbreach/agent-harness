@@ -65,22 +65,22 @@ impl SessionProjector<'_> {
     pub(super) fn apply_compaction(
         &mut self,
         fact: &LegacyFact,
-        summary: &str,
-        first_kept_event_seq: u64,
+        compaction: &LegacyCompactionFact,
     ) {
-        let first_kept = self
-            .index
-            .source_entries
-            .get(&first_kept_event_seq)
-            .cloned();
-        if first_kept_event_seq >= fact.sequence || first_kept.is_none() {
+        let first_kept_entry_id = compaction.first_kept_entry_id.clone().or_else(|| {
+            self.index
+                .source_entries
+                .get(&compaction.first_kept_event_seq)
+                .cloned()
+        });
+        if compaction.first_kept_event_seq >= fact.sequence || first_kept_entry_id.is_none() {
             self.warnings
                 .push(LegacyWarning::MissingCompactionBoundary {
-                    first_kept_event_seq,
+                    first_kept_event_seq: compaction.first_kept_event_seq,
                 });
             return;
         }
-        if let Some(first_kept_entry_id) = first_kept {
+        if let Some(first_kept_entry_id) = first_kept_entry_id {
             self.push_entry(SessionEntry {
                 id: self
                     .namespace
@@ -89,8 +89,17 @@ impl SessionProjector<'_> {
                 turn_id: None,
                 run_id: self.run_id.clone(),
                 payload: SessionEntryPayload::CompactionSummary {
-                    summary: summary.to_string(),
+                    summary: compaction.summary.clone(),
                     first_kept_entry_id,
+                    tokens_after: compaction.tokens_after,
+                    summary_usage: compaction.summary_usage.clone(),
+                    summary_provider_id: compaction.summary_provider_id.clone(),
+                    summary_model_id: compaction.summary_model_id.clone(),
+                    preserved_state: Some(Box::new(crate::session::CompactionPreservedState {
+                        read_files: compaction.read_files.clone(),
+                        modified_files: compaction.modified_files.clone(),
+                        current_intent: compaction.current_intent.clone(),
+                    })),
                 },
             });
         }

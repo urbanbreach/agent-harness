@@ -253,14 +253,14 @@ pub struct TuiCommand {
         long = "continue",
         alias = "continue-session",
         value_name = "SESSION",
-        conflicts_with_all = ["replay", "scenario", "mock"]
+        conflicts_with_all = ["replay", "scenario"]
     )]
     pub continue_session: Option<PathBuf>,
 
     #[arg(long, value_enum, conflicts_with = "replay")]
     pub scenario: Option<ScenarioName>,
 
-    #[arg(long, default_value_t = false, conflicts_with_all = ["replay", "continue_session", "scenario"])]
+    #[arg(long, default_value_t = false, conflicts_with_all = ["replay", "scenario"])]
     pub mock: bool,
 
     #[arg(long, default_value_t = false)]
@@ -356,7 +356,7 @@ pub(crate) fn execute_with_io(
     let run_result = match mode {
         ResolvedTuiMode::Replay { .. } => Ok(()),
         ResolvedTuiMode::Continue { settings, run_dir } => {
-            runtime.block_on(run_direct_continue_mode(&cmd, &settings, false, run_dir))
+            runtime.block_on(run_direct_continue_mode(&cmd, &settings, cmd.mock, run_dir))
         }
         ResolvedTuiMode::Interactive { settings } => {
             runtime.block_on(run_interactive_mode(&cmd, &settings, false))

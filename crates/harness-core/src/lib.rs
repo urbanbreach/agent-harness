@@ -62,6 +62,7 @@ pub mod system_power;
 pub mod team_mailbox_journal;
 pub mod team_registry;
 pub(crate) mod text;
+mod token_estimation;
 pub mod tool;
 pub mod transcript_projection;
 pub mod vcs;
@@ -77,4 +78,5 @@ pub use context_budget::{
     RequestBudgetError, RequestBudgetInput, RequestBudgetSnapshot,
 };
 pub use harness_providers::UnwrapOrAbort;
+pub use token_estimation::estimate_text_tokens as estimate_compaction_text_tokens;
 pub use tool::ToolResultExt;

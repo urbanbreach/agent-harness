@@ -16,6 +16,8 @@ use crate::text::non_empty_trimmed;
 pub enum ConversationProjectionError {
     #[error("events are not seq-ordered: event seq {seq} followed {previous_seq}")]
     EventsOutOfOrder { previous_seq: u64, seq: u64 },
+    #[error("provider delta at seq {seq} references request `{request_id}` before its start")]
+    ProviderDeltaBeforeStart { request_id: String, seq: u64 },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -69,6 +71,8 @@ pub struct ConversationCheckpointTurn {
     pub artifacts: Vec<EventArtifactRef>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub messages: Vec<ConversationMessage>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attachments: Vec<crate::attachment_transport::AttachmentMetadata>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -158,36 +162,54 @@ pub fn project_conversation(
     ensure_seq_ordered(events)?;
 
     let mut projection = ConversationProjection::default();
-    let mut checkpoint_refs = checkpoints.iter().collect::<Vec<_>>();
-    checkpoint_refs.sort_by_key(|checkpoint| checkpoint.through_seq);
-
-    for checkpoint in checkpoint_refs {
-        projection.checkpoints.push(checkpoint.metadata());
-        if non_empty_trimmed(&checkpoint.summary).is_some() {
-            projection.messages.push(ConversationMessage::Checkpoint(
-                ConversationCheckpointMessage {
-                    checkpoint_id: checkpoint.checkpoint_id.clone(),
-                    agent_id: checkpoint.agent_id.clone(),
-                    through_seq: checkpoint.through_seq,
-                    summary: checkpoint.summary.clone(),
-                },
-            ));
+    let latest_compaction = events.iter().rev().find_map(|event| {
+        let EventV1::SessionCompaction(compaction) = &event.payload else {
+            return None;
+        };
+        compaction_first_kept_sequence(events, compaction)
+            .map(|first_kept_seq| (event, compaction, first_kept_seq))
+    });
+    let skip_through_seq = if let Some((event, compaction, first_kept_seq)) = latest_compaction {
+        let through_seq = first_kept_seq.saturating_sub(1);
+        projection.messages.push(ConversationMessage::Checkpoint(
+            ConversationCheckpointMessage {
+                checkpoint_id: format!("session-compaction-{}", event.seq),
+                agent_id: compaction.agent_id.clone(),
+                through_seq,
+                summary: compaction.summary.clone(),
+            },
+        ));
+        through_seq
+    } else {
+        let mut checkpoint_refs = checkpoints.iter().collect::<Vec<_>>();
+        checkpoint_refs.sort_by_key(|checkpoint| checkpoint.through_seq);
+        for checkpoint in checkpoint_refs {
+            projection.checkpoints.push(checkpoint.metadata());
+            if non_empty_trimmed(&checkpoint.summary).is_some() {
+                projection.messages.push(ConversationMessage::Checkpoint(
+                    ConversationCheckpointMessage {
+                        checkpoint_id: checkpoint.checkpoint_id.clone(),
+                        agent_id: checkpoint.agent_id.clone(),
+                        through_seq: checkpoint.through_seq,
+                        summary: checkpoint.summary.clone(),
+                    },
+                ));
+            }
+            for turn in &checkpoint.recent_turns {
+                append_checkpoint_turn(&mut projection.messages, checkpoint, turn);
+            }
         }
-
-        for turn in &checkpoint.recent_turns {
-            append_checkpoint_turn(&mut projection.messages, checkpoint, turn);
-        }
-    }
-
-    let skip_through_seq = checkpoints
-        .iter()
-        .map(|checkpoint| checkpoint.through_seq)
-        .max()
-        .unwrap_or(0);
+        checkpoints
+            .iter()
+            .map(|checkpoint| checkpoint.through_seq)
+            .max()
+            .unwrap_or(0)
+    };
     let mut request_states = BTreeMap::<String, RequestProjectionState>::new();
     let mut request_order = Vec::<OrderedConversationItem>::new();
     let mut emitted_users = BTreeSet::<String>::new();
     let mut emitted_assistants = BTreeSet::<String>::new();
+    let mut started_provider_requests = BTreeSet::<String>::new();
     let mut tool_results = BTreeMap::<String, ToolResultProjectionState>::new();
 
     for event in events.iter().filter(|event| event.seq > skip_through_seq) {
@@ -209,6 +231,7 @@ pub fn project_conversation(
                 }
             }
             EventV1::ProviderRequestStarted(payload) => {
+                started_provider_requests.insert(payload.request_id.to_string());
                 let request_id = provider_turn_request_id(event, payload.request_id.as_str());
                 let state = request_states
                     .entry(payload.request_id.to_string())
@@ -220,6 +243,12 @@ pub fn project_conversation(
                 state.assistant.model_id = Some(payload.model_id.clone());
             }
             EventV1::ProviderStreamDelta(payload) => {
+                if !started_provider_requests.contains(payload.request_id.as_str()) {
+                    return Err(ConversationProjectionError::ProviderDeltaBeforeStart {
+                        request_id: payload.request_id.to_string(),
+                        seq: event.seq,
+                    });
+                }
                 let request_id = provider_turn_request_id(event, payload.request_id.as_str());
                 let state_key = payload.request_id.to_string();
                 let state = request_states.entry(state_key.clone()).or_default();
@@ -393,6 +422,37 @@ pub fn project_conversation(
     Ok(projection)
 }
 
+fn typed_boundary_sequence(
+    events: &[EventEnvelopeV1],
+    entry_id: &crate::ids::EntryId,
+) -> Option<u64> {
+    let run_id = &events.first()?.run_id;
+    let namespace = crate::session::legacy::LegacyIdentityNamespace::new(run_id);
+    events.iter().find_map(|event| {
+        let semantic_kind = match event.payload {
+            EventV1::SessionTitleUpdated(_) => "session_metadata",
+            EventV1::UserMessageSubmitted(_) => "user_message",
+            EventV1::ProviderRequestStarted(_) => "assistant_message",
+            EventV1::SessionCompaction(_) => "compaction_summary",
+            EventV1::BranchSummary(_) => "branch_summary",
+            EventV1::ToolCallFinished(_) => "tool_result",
+            _ => return None,
+        };
+        (namespace.entry_id(event.seq, &event.event_id, semantic_kind) == *entry_id)
+            .then_some(event.seq)
+    })
+}
+
+pub(crate) fn compaction_first_kept_sequence(
+    events: &[EventEnvelopeV1],
+    compaction: &crate::event::SessionCompactionEvent,
+) -> Option<u64> {
+    match compaction.first_kept_entry_id.as_ref() {
+        Some(entry_id) => typed_boundary_sequence(events, entry_id),
+        None => Some(compaction.first_kept_event_seq),
+    }
+}
+
 impl ConversationCheckpoint {
     fn metadata(&self) -> ConversationCheckpointMetadata {
         ConversationCheckpointMetadata {
@@ -434,6 +494,7 @@ impl From<&ProviderConversationTurn> for ConversationCheckpointTurn {
             last_seq: turn.last_seq,
             artifacts: turn.artifacts.clone(),
             messages: turn.messages.clone(),
+            attachments: turn.attachments.clone(),
         }
     }
 }

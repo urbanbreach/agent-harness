@@ -6,15 +6,7 @@
 use serde_json::Value;
 
 use crate::conversation::ConversationMessage;
-
-/// Estimate token count from text using Pi's chars/4 heuristic.
-///
-/// Uses byte length (matching Pi's `TextEncoder().encode(text).length`)
-/// divided by 4 with ceiling. Empty text returns 0.
-pub fn estimate_text_tokens(text: &str) -> u32 {
-    let byte_len = u32::try_from(text.len()).unwrap_or(u32::MAX);
-    byte_len.div_ceil(4)
-}
+pub use crate::token_estimation::estimate_text_tokens;
 
 /// Calculate total context tokens from provider usage components.
 ///

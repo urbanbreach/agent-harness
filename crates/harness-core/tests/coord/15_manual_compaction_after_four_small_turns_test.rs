@@ -264,6 +264,7 @@ async fn overflow_retry_split_oversized_latest_turn_preserves_suffix_context() {
             ProviderStreamEvent::error("prompt token count of 128713 exceeds the limit of 128000"),
         ],
         provider_text_events("Compaction summary of earlier turns."),
+        provider_text_events("Compaction prefix of split turn."),
         provider_text_events("recovered answer"),
     ]);
     let coordinator = test_agent_coordinator_with_provider_and_compaction(
@@ -296,7 +297,7 @@ async fn overflow_retry_split_oversized_latest_turn_preserves_suffix_context() {
         .await
         .unwrap_or_abort();
     tokio::task::yield_now().await;
-    coordinator
+    let third_request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id, "third question")
         .await
         .unwrap_or_abort();
@@ -304,16 +305,28 @@ async fn overflow_retry_split_oversized_latest_turn_preserves_suffix_context() {
     coordinator.stop_run().await.unwrap_or_abort();
 
     let events = load_events(&run.events_path);
-    assert!(events.iter().any(|event| {
-        matches!(
-            &event.payload,
-            EventV1::SessionCompaction(payload)
-                if payload.trigger_reason == "overflow"
-        )
-    }));
+    let compaction = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::SessionCompaction(payload) if payload.trigger_reason == "overflow" => {
+                Some(payload)
+            }
+            _ => None,
+        })
+        .unwrap_or_abort();
+    assert!(compaction.summary.contains("Compaction summary of earlier turns."));
+    assert!(compaction.summary.contains("Compaction prefix of split turn."));
+    let requests = provider.requests();
+    assert_eq!(requests.len(), 6, "overflow dispatch still retries exactly once");
     assert_eq!(
-        provider.requests().len(),
-        5,
-        "two turns + overflow error + summary + retry"
+        events
+            .iter()
+            .filter(|event| {
+                event.correlation_id.as_deref() == Some(third_request_id.as_str())
+                    && matches!(event.payload, EventV1::ProviderRequestStarted(_))
+            })
+            .count(),
+        2,
+        "overflow recovery must perform exactly one physical retry"
     );
 }

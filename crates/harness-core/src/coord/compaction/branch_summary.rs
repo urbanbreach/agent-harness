@@ -620,9 +620,15 @@ mod tests {
                 summary: summary.to_string(),
                 first_kept_event_seq: seq,
                 first_kept_request_id: None,
+                first_kept_entry_id: None,
                 tokens_before: 100,
+                tokens_after: None,
+                summary_usage: None,
+                summary_provider_id: None,
+                summary_model_id: None,
                 read_files,
                 modified_files,
+                current_intent: None,
                 trigger_reason: "auto".to_string(),
                 from_hook: false,
             }),
@@ -780,8 +786,9 @@ mod tests {
         // assert
         let events = vec![
             user_msg(1, "agent-1", "req-1", "hello"),
-            stream_delta(2, "agent-1", "req-1", "world"),
-            assistant_finished(3, "agent-1", "req-1"),
+            provider_started(2, "agent-1", "req-1"),
+            stream_delta(3, "agent-1", "req-1", "world"),
+            assistant_finished(4, "agent-1", "req-1"),
         ];
 
         let prep = prepare_branch_entries(&events, 0);

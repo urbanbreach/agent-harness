@@ -11,8 +11,8 @@ mod record;
 pub mod reducer;
 
 pub use entry::{
-    AssistantPart, AssistantToolCall, ProviderProvenance, SessionEntry, SessionEntryPayload,
-    ToolResultStatus,
+    AssistantPart, AssistantToolCall, CompactionPreservedState, ProviderProvenance, SessionEntry,
+    SessionEntryPayload, ToolResultStatus,
 };
 pub use error::SessionError;
 pub use model::{CanonicalSession, RunAttempt, RunStatus, SessionMetadata, SessionStatus};

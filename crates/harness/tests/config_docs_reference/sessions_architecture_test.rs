@@ -95,6 +95,7 @@ fn architecture_docs_cover_compaction_contracts_and_preservation_context() {
     let active_compaction = [
         read_doc("crates/harness-core/src/coord/session_compaction.rs"),
         read_doc("crates/harness-core/src/coord/session_compaction/budget.rs"),
+        read_doc("crates/harness-core/src/coord/session_compaction/preparation.rs"),
         read_doc("crates/harness-core/src/coord/compaction/file_ops.rs"),
         read_doc("crates/harness-core/src/coord/tests/operational_memory_context_tests.rs"),
     ]
@@ -118,7 +119,9 @@ fn architecture_docs_cover_compaction_contracts_and_preservation_context() {
     for doc_anchor in [
         "Threshold policy",
         "RequestBudgetSnapshot",
-        "conservative, non-exact pressure",
+        "fail closed when the current model has no threshold",
+        "strictly smaller than the prepared input",
+        "invent a context window",
         "Retained recent turns",
         "runtime.compaction.keep_recent_tokens",
         "snapshot's history allowance",

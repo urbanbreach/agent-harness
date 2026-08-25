@@ -6,6 +6,7 @@ use thiserror::Error;
 
 use crate::event::{EventEnvelopeV1, EventV1, SCHEMA_VERSION};
 use crate::proj::RunStatus;
+use crate::session::legacy::{legacy_compaction_lifecycle, LegacyCompactionLifecycle};
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum SessionLineageError {
@@ -205,12 +206,20 @@ struct PrefixState {
 }
 
 impl PrefixState {
-    #[allow(
-        deprecated,
-        reason = "deprecated event variants kept for backward compatibility with existing session logs"
-    )]
     fn apply(&mut self, event: &EventEnvelopeV1) {
         self.run_id.get_or_insert_with(|| event.run_id.to_string());
+        if let Some(lifecycle) = legacy_compaction_lifecycle(&event.payload) {
+            match lifecycle {
+                LegacyCompactionLifecycle::Started(checkpoint_id) => {
+                    self.compactions_in_flight.insert(checkpoint_id);
+                }
+                LegacyCompactionLifecycle::Finished(Some(checkpoint_id)) => {
+                    self.compactions_in_flight.remove(&checkpoint_id);
+                }
+                LegacyCompactionLifecycle::Finished(None) => {}
+            }
+            return;
+        }
 
         match &event.payload {
             EventV1::RunStarted(_) => {
@@ -269,21 +278,6 @@ impl PrefixState {
             EventV1::PermissionResolved(payload) => {
                 self.pending_permissions.remove(&payload.permission_id);
             }
-            EventV1::CompactionRequested(payload) => {
-                self.compactions_in_flight
-                    .insert(payload.checkpoint_id.clone());
-            }
-            EventV1::CompactionWritten(payload) => {
-                self.compactions_in_flight.remove(&payload.checkpoint_id);
-            }
-            EventV1::CompactionApplied(payload) => {
-                self.compactions_in_flight.remove(&payload.checkpoint_id);
-            }
-            EventV1::CompactionFailed(payload) => {
-                if let Some(checkpoint_id) = payload.checkpoint_id.as_ref() {
-                    self.compactions_in_flight.remove(checkpoint_id);
-                }
-            }
             EventV1::EditProposed(payload) => {
                 self.edits_in_flight
                     .insert(payload.edit_id.clone(), payload.path.clone());
@@ -317,6 +311,7 @@ impl PrefixState {
             | EventV1::WorkspaceReverted(_)
             | EventV1::SessionCompaction(_)
             | EventV1::BranchSummary(_) => {}
+            _ => {}
         }
     }
 

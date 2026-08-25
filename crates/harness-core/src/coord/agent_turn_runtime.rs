@@ -83,6 +83,7 @@ impl Coordinator {
         let request = AgentRequest {
             agent_id,
             prompt,
+            attachments: attachments.clone(),
             prompt_context,
             selected_file_tags: selected_tags.files,
             selected_agent_tags: selected_tags.agents,
@@ -600,7 +601,7 @@ struct AgentContextCompactionRequest<'a> {
 async fn request_agent_context_compaction(
     job_tx: &mpsc::Sender<Command>,
     request: AgentContextCompactionRequest<'_>,
-) -> Result<ProviderContext, CoordinatorError> {
+) -> Result<(ProviderContext, bool), CoordinatorError> {
     let AgentContextCompactionRequest {
         task,
         trigger_reason,
@@ -700,17 +701,22 @@ where
             outcome = async {
                 let mut prior_context = provider_context;
                 let mut overflow_retry_attempted = false;
+                let mut committed_prompt_request_id = None;
 
-                let provisional_preparation = agent_turn_phases::ProviderTurnPreparationRequest {
-                    provider: provider.as_ref(),
-                    task: &task,
-                    prior_context: &prior_context,
-                    tool_registry: tool_registry.as_ref(),
-                    compaction: &compaction_config,
-                };
-                let pre_prompt_critical_failure = match agent_turn_phases::prepare_provider_transform_phase(
-                    provisional_preparation,
-                ) {
+                let pre_prompt_critical_failure = if compaction_config.suppress_auto_compaction {
+                    None
+                } else {
+                    let provisional_preparation = agent_turn_phases::ProviderTurnPreparationRequest {
+                        provider: provider.as_ref(),
+                        task: &task,
+                        prior_context: &prior_context,
+                        tool_registry: tool_registry.as_ref(),
+                        compaction: &compaction_config,
+                        committed_prompt_request_id: None,
+                    };
+                    match agent_turn_phases::prepare_provider_transform_phase(
+                        provisional_preparation,
+                    ) {
                     Ok(provisional) => match request_agent_context_compaction(
                         &job_tx,
                         AgentContextCompactionRequest {
@@ -724,8 +730,13 @@ where
                     )
                     .await
                     {
-                        Ok(compacted_context) => {
-                            prior_context = compacted_context;
+                        Ok((context, true)) => {
+                            prior_context = context;
+                            committed_prompt_request_id = Some(task.request_id.clone().into());
+                            None
+                        }
+                        Ok((context, false)) => {
+                            prior_context = context;
                             None
                         }
                         Err(CoordinatorError::LifecycleHookFailed(reason)) => Some(format!(
@@ -742,6 +753,7 @@ where
                         }
                     },
                     Err(failure) => Some(failure.to_string()),
+                    }
                 };
 
                 if let Some(reason) = pre_prompt_critical_failure {
@@ -749,6 +761,10 @@ where
                 } else {
                     let mut task = task;
                     loop {
+                    let mut phase_compaction = compaction_config.clone();
+                    if overflow_retry_attempted {
+                        phase_compaction.estimated_token_triggers = false;
+                    }
                     let outcome = run_agent_turn_phase_loop(AgentTurnPhaseLoopRequest {
                         provider: Arc::clone(&provider),
                         tool_registry: Arc::clone(&tool_registry),
@@ -757,7 +773,10 @@ where
                         job_tx: job_tx.clone(),
                         cancellation_token: cancellation_token.clone(),
                         provider_retry: provider_retry_config,
-                        compaction: compaction_config.clone(),
+                        compaction: phase_compaction,
+                        committed_prompt_request_id: committed_prompt_request_id.clone().or_else(|| {
+                            overflow_retry_attempted.then(|| task.request_id.clone().into())
+                        }),
                     })
                     .await;
 
@@ -776,11 +795,11 @@ where
                                     evidence: CompactionRequestEvidence::default(),
                                 },
                             )
-                            .await
+                                .await
                             {
                                 Ok(compacted_context) => {
                                     overflow_retry_attempted = true;
-                                    prior_context = compacted_context;
+                                    prior_context = compacted_context.0;
                                     continue;
                                 }
                                 Err(err) => {

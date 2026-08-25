@@ -8,6 +8,7 @@ fn provider_boundary_preserves_existing_message_shape() {
     let request = AgentRequest {
         agent_id: "agent_1".to_string(),
         prompt: "Use a tool".to_string(),
+        attachments: Vec::new(),
         prompt_context: None,
         selected_file_tags: Vec::new(),
         selected_agent_tags: Vec::new(),
@@ -140,6 +141,7 @@ fn conversation_projection_failed_checkpoint_turn_status() {
             last_seq: Some(9),
             artifacts: Vec::new(),
             messages: Vec::new(),
+            attachments: Vec::new(),
         }],
         pruned_tool_artifacts: Vec::new(),
         facts: ProviderCompactionFacts::default(),

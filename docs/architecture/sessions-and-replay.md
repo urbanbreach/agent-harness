@@ -43,9 +43,10 @@ compatibility projections can preserve their partial assistant text or reasoning
 structured missing-final-content warning. Defaulted `parts` and `provenance` fields also let old
 `AssistantMessageFinished` records decode unchanged.
 
-The coordinator still appends V1 `events.jsonl`, and several provider-context, resume, transcript,
-session, export, catalog, lineage, and compaction readers remain V1-specific. Later projection
-consolidation and deletion are not yet complete.
+The coordinator still appends V1 `events.jsonl`, while new compaction uses the typed
+`SessionCompaction` path. Older provider-context, resume, transcript, session, export, catalog,
+lineage, and compaction shapes remain readable only through their compatibility adapters. Later
+projection consolidation and deletion are not yet complete.
 
 ## CLI inspection
 
@@ -106,7 +107,21 @@ Corrupt events are reported as parse errors where lossy projection is safe. Miss
 
 At the event-store boundary, crash-tail recovery is limited to the final JSONL line while holding the writer lock: a partial unterminated final line is truncated to the previous complete event, and a complete final event missing only the newline terminator is normalized before appends continue. Terminated invalid JSON still fails closed. Recovery reads and repairs the log only; it does not execute providers, tools, hooks, MCP servers, shell commands, or network calls.
 
-Session compaction is observable through a single `SessionCompaction` event. When compaction triggers (manual, pre-prompt, overflow, or proactive), the coordinator calls an LLM to generate a summary of the compacted window, appends the summary as a `SessionCompaction` event, and updates the in-memory provider context. No checkpoint artifacts are written — the summary lives entirely in the event. Overflow retry and failed-response compaction are bounded to one recorded attempt for the triggering request.
+Session compaction is observable through a single `SessionCompaction` event. Manual `/compact`,
+pre-prompt pressure, and the one overflow retry share the coordinator-owned
+`prepare -> generate -> validate -> commit` pipeline. Summary generation runs outside the command
+loop; a successful commit appends one event and rebuilds provider context from the committed event.
+The event's optional typed boundary, token-after estimate, summary usage/provenance, read/modified
+file lists, and current intent preserve the canonical state needed by replay. Empty, failing,
+cancelled, stale, malformed, or non-fitting generation leaves the previous boundary active and
+appends no replacement success event. Overflow retry is bounded to one attempt for the triggering
+request.
+
+The deprecated compaction lifecycle variants and checkpoint-artifact readers remain read-only legacy
+inputs behind `session::legacy`; they are not active V2 writers. New sessions do not create
+checkpoint artifacts. Restart and continue rebuild the same provider-visible roles, ordered tool
+pairs, attachments, recent suffix, summary, file state, and current intent from replay-derived
+events. Replay does not execute providers, tools, hooks, MCP, network, or the CLI.
 
 ## Resume acceptance
 
@@ -137,7 +152,7 @@ Lineage materialization follows the implementation contract in `harness_core::se
 - fork materializes an explicitly validated stable prefix. The selected cutoff is recorded as `source_cutoff_seq` in child metadata.
 - clone selects the latest stable completed prefix, then records the same `source_cutoff_seq` metadata for the copied boundary.
 - Copied events preserve payloads, actors, timestamps, and monotonic times, but `event_id/run_id/seq are regenerated` for the child log. `correlation_id and causation_id are cleared`, and only run-scoped stream keys are rewritten.
-- summaries and compaction checkpoints are copied only when copied source events reference them through `SessionCompaction`, `ArtifactWritten`, or tool metadata. Summary text still describes the source prefix that was copied; it is not reinterpreted as new child work.
+- summaries and compaction checkpoints are copied only when copied source events reference them through `SessionCompaction`, `ArtifactWritten`, or tool metadata. In V2, `SessionCompaction` carries the summary and no checkpoint artifact is written; an artifact reference is therefore a legacy compatibility input. Summary text still describes the source prefix that was copied; it is not reinterpreted as new child work.
 - Referenced artifacts are `copied after byte and digest validation`. Artifact paths must stay under `artifacts/`, must not traverse symlinks, and missing or mismatched artifacts fail materialization instead of producing a partial child.
 - `new child events append after the materialized boundary`. The child replay starts from the rewritten prefix, and future turns add ordinary child-local events after that prefix.
 - `restored context is replay-derived from the child log`: resume, session tools, and TUI replay read the child JSONL plus copied artifacts. They do not execute source providers, tools, hooks, MCP servers, shell commands, or network calls to reconstruct fork/clone state.

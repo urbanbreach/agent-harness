@@ -36,6 +36,7 @@ pub(in crate::coord) fn is_provider_context_overflow_reason(reason: &str) -> boo
     let normalized = reason.to_ascii_lowercase();
     [
         "context length",
+        "context overflow",
         "context window",
         "too many tokens",
         "prompt token count",

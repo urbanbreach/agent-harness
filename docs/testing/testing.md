@@ -204,6 +204,82 @@ cargo nextest run -p harness --test event_docs_reference_test
 
 These deterministic owners don't assert PTY, live-provider, native visual, or dogfood evidence.
 
+## G006 Compaction V2 owner checks
+
+Compaction V2 has one active coordinator pipeline for manual, pre-prompt, and overflow triggers.
+The exact twenty scenario owners are distributed across the coordinator, conversation-projection,
+and memory-queue targets:
+
+```text
+compaction_v2_long_session_preempts_overflow
+compaction_v2_unexpected_overflow_retries_once
+compaction_v2_second_overflow_terminates
+compaction_v2_failed_or_cancelled_generation_preserves_boundary
+compaction_v2_repeated_runs_keep_latest_rolling_summary
+compaction_v2_previous_summary_counted_once
+compaction_v2_old_branch_summary_not_reintroduced
+compaction_v2_huge_turn_splits_utf8_safe_prefix
+compaction_v2_tool_pair_stays_atomic
+compaction_v2_orphan_tool_result_excluded
+compaction_v2_large_tool_result_preserves_protocol
+compaction_v2_unicode_attachment_payload_is_safe
+compaction_v2_attachments_charge_budget_once
+compaction_v2_aborted_usage_not_anchor
+compaction_v2_model_downshift_regenerates_summary
+compaction_v2_root_child_histories_isolated
+compaction_v2_restart_context_equals_live_context
+compaction_v2_current_intent_survives_summary
+compaction_v2_file_state_survives_summary
+compaction_v2_manual_auto_share_event_shape
+```
+
+The unchanged literal owner commands are:
+
+```bash
+cargo nextest run -p harness-core --test coord_test --test conversation_projection_test --test memory_queue_compaction_test
+cargo nextest run -p harness-core --test coord_test --test conversation_projection_test
+cargo nextest run -p harness --test event_docs_reference_test
+cargo fmt --all -- --check
+cargo check -p harness-core
+cargo clippy -p harness-core --all-targets -- -D warnings
+git diff --check
+bash scripts/harness-qa-dogfood.sh --slug m06-compaction-v2
+```
+
+The first two commands are deterministic owner suites; they must report zero skipped tests. The
+dogfood command is an offline mock product check, not live-provider, PTY, or visual evidence. Task
+receipts and the scenario matrix are retained under
+`artifacts/qa-evidence/20260823-engine-simplification-ulw/m06-compaction-v2/` and the active
+attempt evidence directory. The event-doc owner additionally verifies that the documented
+`SessionCompaction` field list exactly matches `SessionCompactionEvent`, including serde-defaulted
+optional fields.
+
+### Static simplification receipts
+
+`engine-metrics-v1` is the reproducible before/after inventory for the verified G005 commit
+`56edaeaa6090fbe33c198013822c66b5497151a3` and the current tree:
+
+```bash
+bash scripts/engine-metrics.sh \
+  --output artifacts/qa-evidence/20260823-engine-simplification-ulw/m06-compaction-v2/engine-metrics-final.json \
+  --baseline 56edaeaa6090fbe33c198013822c66b5497151a3
+```
+
+The receipt records production LOC, frozen-overlap LOC, module/file inventory, compaction and
+event-variant counts, durable reducer/projection count, representative event-log bytes, and
+`SIZE_OK` inventory. The current Task14 tree is expected to show a temporary positive compaction
+bucket delta because V2 introduces typed preparation, generation, validation, commit, and
+read-only-adapter boundaries. This is a measured G006 transition, not a claim that the overall
+G003-G012 overlap is net positive: later approved milestones own projection consolidation,
+bounded indexing, compatibility deletion, and core-boundary cleanup. Do not attribute those later
+deletions to G006.
+
+The static audit must show exactly one active V2 `SessionCompaction` success writer/constructor,
+zero active checkpoint writers, the current `EventV1` variant count, the durable projection/reducer
+count, and the `SIZE_OK` status. Deprecated lifecycle constructors and checkpoint readers may appear
+only in the read-only `session::legacy` adapter or compatibility fixtures until G010; their presence
+does not make them active writers.
+
 ## Deterministic simulation lane
 
 Run this lane when a change needs offline behavioral evidence that agents can diff and inspect:

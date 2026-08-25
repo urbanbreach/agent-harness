@@ -13,6 +13,7 @@ pub(in crate::coord) struct AgentTurnPhaseLoopRequest<'a> {
     pub(in crate::coord) cancellation_token: CancellationToken,
     pub(in crate::coord) provider_retry: ProviderRetryRuntimeConfig,
     pub(in crate::coord) compaction: CompactionSettings,
+    pub(in crate::coord) committed_prompt_request_id: Option<crate::ids::RequestId>,
 }
 
 pub(in crate::coord) struct AgentProviderTurnState {
@@ -22,6 +23,7 @@ pub(in crate::coord) struct AgentProviderTurnState {
     request_budget: ProviderRequestBudgetContext,
     pub(in crate::coord) budget_snapshot: RequestBudgetSnapshot,
     total_tool_calls: usize,
+    current_turn_start_index: usize,
 }
 
 pub(in crate::coord) struct ProviderTurnPreparationRequest<'a> {
@@ -30,6 +32,7 @@ pub(in crate::coord) struct ProviderTurnPreparationRequest<'a> {
     pub(in crate::coord) prior_context: &'a ProviderContext,
     pub(in crate::coord) tool_registry: &'a ToolRegistry,
     pub(in crate::coord) compaction: &'a CompactionSettings,
+    pub(in crate::coord) committed_prompt_request_id: Option<&'a crate::ids::RequestId>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -38,6 +41,8 @@ pub(in crate::coord) enum ProviderTurnPreparationError {
     ToolDefinitions(String),
     #[error(transparent)]
     RequestPreflight(#[from] ProviderRequestPreflightError),
+    #[error(transparent)]
+    CommittedPrompt(#[from] CommittedPromptLookupError),
 }
 
 enum AgentToolPhaseDecision {
@@ -74,6 +79,7 @@ pub(in crate::coord) async fn run_agent_turn_phase_loop(
         cancellation_token,
         provider_retry,
         compaction,
+        committed_prompt_request_id,
     } = request;
 
     let mut turn_state = match prepare_provider_transform_phase(ProviderTurnPreparationRequest {
@@ -82,6 +88,7 @@ pub(in crate::coord) async fn run_agent_turn_phase_loop(
         prior_context,
         tool_registry: tool_registry.as_ref(),
         compaction: &compaction,
+        committed_prompt_request_id: committed_prompt_request_id.as_ref(),
     }) {
         Ok(turn_state) => turn_state,
         Err(failure) => {
@@ -91,11 +98,11 @@ pub(in crate::coord) async fn run_agent_turn_phase_loop(
             }
         }
     };
-    if let Err(error) = reject_compaction_pressure(turn_state.budget_snapshot) {
-        return AgentTurnOutcome::failed(error.to_string());
+    if !compaction.suppress_auto_compaction {
+        if let Err(error) = reject_compaction_pressure(turn_state.budget_snapshot) {
+            return AgentTurnOutcome::failed(error.to_string());
+        }
     }
-    let current_turn_start_index = turn_state.messages.len().saturating_sub(1);
-
     loop {
         if cancellation_token.is_cancelled() {
             return AgentTurnOutcome::failed_with_memory(
@@ -163,7 +170,7 @@ pub(in crate::coord) async fn run_agent_turn_phase_loop(
                         &task.profile,
                         &task.request_id,
                         &task.agent_id,
-                        &turn_state.messages[current_turn_start_index..],
+                        &turn_state.messages[turn_state.current_turn_start_index..],
                     ),
                 };
             }
@@ -290,6 +297,7 @@ pub(in crate::coord) fn prepare_provider_transform_phase(
         prior_context,
         tool_registry,
         compaction,
+        committed_prompt_request_id,
     } = preparation;
     let profile = &task.profile;
     let request = &task.request;
@@ -297,8 +305,26 @@ pub(in crate::coord) fn prepare_provider_transform_phase(
     let tool_defs = build_provider_tool_defs_for_model(profile, tool_registry, &request.model_ref)
         .map_err(ProviderTurnPreparationError::ToolDefinitions)?;
     let provider_prompt = request.provider_prompt();
-    let messages = build_provider_context_messages(profile, prior_context, &provider_prompt);
-    let pending_prompt_index = messages.len().saturating_sub(1);
+    let (messages, pending_prompt_index) = match committed_prompt_request_id {
+        Some(request_id) => {
+            let committed =
+                build_committed_provider_context_messages(profile, prior_context, request_id)?;
+            (committed.messages, committed.pending_prompt_index)
+        }
+        None => {
+            let messages =
+                build_provider_context_messages(profile, prior_context, &provider_prompt);
+            let pending_prompt_index = messages.len().saturating_sub(1);
+            (messages, pending_prompt_index)
+        }
+    };
+    let historical_attachment_tokens = crate::attachment_transport::historical_attachment_tokens(
+        prior_context
+            .preserved_turns
+            .iter()
+            .flat_map(|turn| turn.attachments.iter()),
+    )
+    .map_err(ProviderRequestPreflightError::Cost)?;
     let request_budget = ProviderRequestBudgetContext {
         model_limits: request
             .model_target
@@ -307,9 +333,11 @@ pub(in crate::coord) fn prepare_provider_transform_phase(
             .unwrap_or_default(),
         requested_output_tokens: None,
         safety_margin_tokens: compaction.reserve_tokens,
-        estimated_token_triggers: compaction.estimated_token_triggers,
+        estimated_token_triggers: compaction.estimated_token_triggers
+            && !compaction.suppress_auto_compaction,
         fallback_input_tokens: compaction.fallback_input_tokens,
         pending_prompt_index,
+        historical_attachment_tokens,
     };
     let provider_boundary = transform_context_for_provider(ProviderBoundaryInput {
         profile,
@@ -332,6 +360,7 @@ pub(in crate::coord) fn prepare_provider_transform_phase(
         request_budget,
         budget_snapshot,
         total_tool_calls: 0,
+        current_turn_start_index: pending_prompt_index,
     })
 }
 

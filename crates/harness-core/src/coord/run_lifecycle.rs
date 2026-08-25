@@ -100,6 +100,8 @@ impl Coordinator {
             next_task_id: 1,
             next_provider_request_id: 1,
             next_permission_id: 1,
+            next_compaction_generation: 1,
+            compaction_boundary_watermark: 0,
             agents: BTreeMap::new(),
             provider_context_by_agent: BTreeMap::new(),
             tasks: BTreeMap::new(),
@@ -111,10 +113,12 @@ impl Coordinator {
             background_notification_child_requests: BTreeSet::new(),
             pending_agent_wakeups: BTreeMap::new(),
             pending_permissions: BTreeMap::new(),
+            tool_call_request_event_ids: BTreeMap::new(),
             active_permission_grants: PermissionGrantSet::default(),
             cancelled_running_tasks: BTreeSet::new(),
             queued_agent_turns: BTreeMap::new(),
             running_agent_turns: BTreeMap::new(),
+            pending_compactions: BTreeMap::new(),
             failed_terminal_compaction_attempts: BTreeSet::new(),
             overflow_retry_compacted_context_by_attempt: BTreeMap::new(),
             scheduler: Scheduler::new(SchedulerLimits {
@@ -337,6 +341,8 @@ impl Coordinator {
             next_task_id,
             next_provider_request_id,
             next_permission_id,
+            next_compaction_generation: 1,
+            compaction_boundary_watermark: 0,
             agents,
             provider_context_by_agent,
             tasks: BTreeMap::new(),
@@ -348,10 +354,12 @@ impl Coordinator {
             background_notification_child_requests: BTreeSet::new(),
             pending_agent_wakeups: BTreeMap::new(),
             pending_permissions: BTreeMap::new(),
+            tool_call_request_event_ids: BTreeMap::new(),
             active_permission_grants: resume_plan.active_permission_grants,
             cancelled_running_tasks: BTreeSet::new(),
             queued_agent_turns: BTreeMap::new(),
             running_agent_turns: BTreeMap::new(),
+            pending_compactions: BTreeMap::new(),
             failed_terminal_compaction_attempts: BTreeSet::new(),
             overflow_retry_compacted_context_by_attempt: BTreeMap::new(),
             scheduler: Scheduler::new(SchedulerLimits {
@@ -436,6 +444,7 @@ impl Coordinator {
             .take()
             .ok_or(CoordinatorError::RunNotStarted)?;
 
+        run_state.cancel_all_pending_compactions(&summary);
         run_state.shutdown_token.cancel();
         for task in run_state.tasks.values() {
             task.cancellation_token.cancel();
@@ -505,6 +514,7 @@ impl Coordinator {
             .take()
             .ok_or(CoordinatorError::RunNotStarted)?;
 
+        run_state.cancel_all_pending_compactions(&error);
         run_state.shutdown_token.cancel();
         for task in run_state.tasks.values() {
             task.cancellation_token.cancel();
@@ -762,6 +772,7 @@ impl Coordinator {
                 } else {
                     profile_cfg.system_prompt.clone()
                 },
+                attachments: Vec::new(),
                 prompt_context: None,
                 selected_file_tags: Vec::new(),
                 selected_agent_tags: Vec::new(),

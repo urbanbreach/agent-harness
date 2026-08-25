@@ -1,6 +1,7 @@
 // allow: SIZE_OK — provider context data structures (compaction checkpoint + conversation turn + facts + serde validation)
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+use crate::attachment_transport::AttachmentMetadata;
 use crate::conversation::ConversationMessage;
 use crate::event::EventArtifactRef;
 use crate::text::non_empty_trimmed;
@@ -107,6 +108,8 @@ pub struct ProviderConversationTurn {
     pub artifacts: Vec<EventArtifactRef>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub messages: Vec<ConversationMessage>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attachments: Vec<AttachmentMetadata>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::attachment_transport::AttachmentMetadata;
+use crate::event::UiIntentReceivedEvent;
 use crate::ids::{EntryId, ProviderRequestId, RunId, ToolCallId, TurnId};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -46,6 +47,20 @@ pub enum SessionEntryPayload {
     CompactionSummary {
         summary: String,
         first_kept_entry_id: EntryId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tokens_after: Option<u32>,
+        #[serde(
+            default,
+            alias = "summary_generation_usage",
+            skip_serializing_if = "Option::is_none"
+        )]
+        summary_usage: Option<CompletionUsage>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        summary_provider_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        summary_model_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        preserved_state: Option<Box<CompactionPreservedState>>,
     },
     BranchSummary {
         summary: String,
@@ -61,6 +76,16 @@ pub enum SessionEntryPayload {
     SessionMetadata {
         title: Option<String>,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CompactionPreservedState {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub read_files: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub modified_files: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_intent: Option<UiIntentReceivedEvent>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

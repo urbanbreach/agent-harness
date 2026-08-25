@@ -4,12 +4,12 @@ use std::{collections::BTreeMap, fs};
 use crate::clock::Clock;
 use crate::digest::digest12;
 use crate::event::{
-    ActorKind, ArtifactWrittenEvent, CompactionFailedEvent, EditAppliedEvent, EditProposedEvent,
-    EditRejectedEvent, EventActor, EventBuilder, EventContext, EventEnvelopeV1, EventV1,
-    HookExecutionMetadata, LiveEventContext, LiveEventV1,
-    PermissionDecision as EventPermissionDecision, PermissionGrantRecordedEvent,
-    PermissionRequestedArgs, PermissionResolvedEvent, ToolCallFinishedEvent, ToolCallMetadata,
-    ToolCallStartedEvent, ToolCallStatus, ToolIdentityMetadata,
+    ActorKind, ArtifactWrittenEvent, EditAppliedEvent, EditProposedEvent, EditRejectedEvent,
+    EventActor, EventBuilder, EventContext, EventEnvelopeV1, EventV1, HookExecutionMetadata,
+    LiveEventContext, LiveEventV1, PermissionDecision as EventPermissionDecision,
+    PermissionGrantRecordedEvent, PermissionRequestedArgs, PermissionResolvedEvent,
+    ToolCallFinishedEvent, ToolCallMetadata, ToolCallStartedEvent, ToolCallStatus,
+    ToolIdentityMetadata,
 };
 use crate::perm::PermissionGrant;
 use crate::redact::Redactor;
@@ -18,8 +18,8 @@ use crate::tool::ArtifactRef;
 
 use super::{
     failed_tool_output_json, mirror_event_to_child_session, CoordinatorError, EditAppliedEventArgs,
-    HashlineEditMetadata, PermissionRequestedEventArgs, ProviderCompactionTrigger, RunState,
-    ToolCallFinishedEventArgs, ToolCallRequestedEventArgs, COORDINATOR_AGENT_ID,
+    HashlineEditMetadata, PermissionRequestedEventArgs, RunState, ToolCallFinishedEventArgs,
+    ToolCallRequestedEventArgs, COORDINATOR_AGENT_ID,
 };
 
 pub(in crate::coord) fn append_permission_resolved_event<C, R>(
@@ -217,7 +217,11 @@ where
     let context = tool_call_event_context(run_state, actor, tool_call_id, request_correlation_id);
     let envelope =
         builder.tool_call_requested(context, tool_call_id, tool_id, args_json, tool_metadata)?;
-    append_built_event(run_state, envelope)
+    let appended = append_built_event(run_state, envelope)?;
+    run_state
+        .tool_call_request_event_ids
+        .insert(tool_call_id.to_string(), appended.event_id.clone());
+    Ok(appended)
 }
 
 pub(in crate::coord) fn append_permission_requested_event<C, R>(
@@ -334,15 +338,17 @@ where
         output_json,
         metadata,
         request_correlation_id,
+        causation_id,
     } = args;
     let output_digest = output_summary.as_ref().map(|s| digest12(s.as_bytes()));
     let builder = EventBuilder::new(clock, redactor, run_state.info.run_id.to_string());
-    let context = tool_call_event_context(
+    let mut context = tool_call_event_context(
         run_state,
         system_actor(),
         tool_call_id,
         request_correlation_id,
     );
+    context.causation_id = causation_id.map(str::to_string);
     let envelope = builder.build(
         context,
         EventV1::ToolCallFinished(ToolCallFinishedEvent {
@@ -354,7 +360,9 @@ where
             metadata,
         }),
     )?;
-    append_built_event(run_state, envelope)
+    let appended = append_built_event(run_state, envelope)?;
+    run_state.tool_call_request_event_ids.remove(tool_call_id);
+    Ok(appended)
 }
 
 pub(in crate::coord) fn append_edit_proposed_event<C, R>(
@@ -492,6 +500,42 @@ where
             output_json: Some(failed_tool_output_json(reason, hook_executions)),
             metadata,
             request_correlation_id,
+            causation_id: None,
+        },
+    )
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "pre-start failed terminals carry exact request causation and hook context"
+)]
+pub(in crate::coord) fn append_prestart_failed_tool_call_finished_event<C, R>(
+    clock: &C,
+    redactor: &R,
+    run_state: &mut RunState,
+    tool_call_id: &str,
+    reason: &str,
+    request_correlation_id: Option<&str>,
+    request_event_id: &str,
+    metadata: Option<ToolCallMetadata>,
+    hook_executions: &[HookExecutionMetadata],
+) -> Result<EventEnvelopeV1, CoordinatorError>
+where
+    C: Clock + ?Sized,
+    R: Redactor + ?Sized,
+{
+    append_tool_call_finished_event(
+        clock,
+        redactor,
+        run_state,
+        ToolCallFinishedEventArgs {
+            tool_call_id,
+            status: ToolCallStatus::Failed,
+            output_summary: Some(reason.to_string()),
+            output_json: Some(failed_tool_output_json(reason, hook_executions)),
+            metadata,
+            request_correlation_id,
+            causation_id: Some(request_event_id),
         },
     )
 }
@@ -551,87 +595,6 @@ where
     )?;
 
     append_built_event(run_state, envelope)
-}
-
-pub(in crate::coord) fn append_compaction_artifact_written_event<C, R>(
-    clock: &C,
-    redactor: &R,
-    run_state: &mut RunState,
-    checkpoint: &crate::agent::ProviderContextCheckpoint,
-    artifact: &ArtifactRef,
-) -> Result<EventEnvelopeV1, CoordinatorError>
-where
-    C: Clock + ?Sized,
-    R: Redactor + ?Sized,
-{
-    let artifact_path = run_state.info.run_dir.join(&artifact.path);
-    let bytes = fs::metadata(&artifact_path)
-        .map(|meta| meta.len())
-        .unwrap_or(0);
-    let digest = artifact
-        .digest
-        .clone()
-        .unwrap_or_else(|| digest12(artifact.path.as_bytes()));
-    let mut metadata = BTreeMap::new();
-    metadata.insert(
-        "artifact_kind".to_string(),
-        "provider_context_checkpoint".to_string(),
-    );
-    metadata.insert(
-        "checkpoint_id".to_string(),
-        checkpoint.metadata.checkpoint_id.clone(),
-    );
-    metadata.insert("agent_id".to_string(), checkpoint.metadata.agent_id.clone());
-
-    append_payload_event(
-        clock,
-        redactor,
-        run_state,
-        system_actor(),
-        Some(format!("compaction:{}", checkpoint.metadata.agent_id)),
-        EventV1::ArtifactWritten(ArtifactWrittenEvent {
-            path: artifact.path.clone(),
-            digest,
-            bytes,
-            tool_call_id: None,
-            tool_metadata: None,
-            metadata,
-        }),
-    )
-}
-
-#[allow(
-    deprecated,
-    reason = "deprecated event variants kept for backward compatibility with existing session logs"
-)]
-pub(in crate::coord) fn append_compaction_failed_event<C, R>(
-    clock: &C,
-    redactor: &R,
-    run_state: &mut RunState,
-    trigger: &ProviderCompactionTrigger,
-    reason: &str,
-    checkpoint_id: Option<String>,
-    through_seq: Option<u64>,
-) -> Result<EventEnvelopeV1, CoordinatorError>
-where
-    C: Clock + ?Sized,
-    R: Redactor + ?Sized,
-{
-    append_payload_event(
-        clock,
-        redactor,
-        run_state,
-        system_actor(),
-        Some(format!("compaction:{}", trigger.agent_id)),
-        EventV1::CompactionFailed(CompactionFailedEvent {
-            agent_id: trigger.agent_id.clone(),
-            trigger_reason: trigger.trigger_reason.clone(),
-            reason: reason.to_string(),
-            checkpoint_id,
-            through_seq,
-            through_request_id: trigger.through_request_id.clone(),
-        }),
-    )
 }
 
 fn append_built_event(

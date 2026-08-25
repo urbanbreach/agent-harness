@@ -172,3 +172,50 @@ mod part_26_semantic_history_test {
     use super::*;
     include!("coord/26_semantic_history_test.rs");
 }
+
+mod part_27_compaction_v2_support_test {
+    use super::*;
+    include!("coord/27_compaction_v2_support_test.rs");
+}
+use part_27_compaction_v2_support_test::*;
+
+mod part_27b_compaction_v2_boundary_support_test {
+    use super::*;
+    include!("coord/27b_compaction_v2_boundary_support_test.rs");
+}
+use part_27b_compaction_v2_boundary_support_test::*;
+
+mod part_28_compaction_v2_pressure_overflow_test {
+    use super::*;
+    include!("coord/28_compaction_v2_pressure_overflow_test.rs");
+}
+
+mod part_29_compaction_v2_summary_generation_test {
+    use super::*;
+    include!("coord/29_compaction_v2_summary_generation_test.rs");
+}
+
+mod part_30_compaction_v2_budget_protocol_test {
+    use super::*;
+    include!("coord/30_compaction_v2_budget_protocol_test.rs");
+}
+
+mod part_30b_compaction_v2_unsplittable_protocol_test {
+    use super::*;
+    include!("coord/30b_compaction_v2_unsplittable_protocol_test.rs");
+}
+
+mod part_30c_compaction_v2_permission_denial_test {
+    use super::*;
+    include!("coord/30c_compaction_v2_permission_denial_test.rs");
+}
+
+mod part_31_compaction_v2_lifecycle_isolation_test {
+    use super::*;
+    include!("coord/31_compaction_v2_lifecycle_isolation_test.rs");
+}
+
+mod part_32_manual_short_tui_compaction_test {
+    use super::*;
+    include!("coord/32_manual_short_tui_compaction_test.rs");
+}

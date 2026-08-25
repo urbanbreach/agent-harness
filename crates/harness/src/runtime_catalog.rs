@@ -837,7 +837,7 @@ mod tests {
                     "name": "GPT-5.6",
                     "reasoning": true,
                     "tool_call": true,
-                    "limit": { "context": 1050000 }
+                    "limit": { "context": 1050000, "output": 128000 }
                   }
                 }
               }

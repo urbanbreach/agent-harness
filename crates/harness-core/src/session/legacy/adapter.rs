@@ -63,6 +63,7 @@ struct LegacyBoundary {
     warnings: Vec<LegacyWarning>,
     run_started: bool,
     terminal: bool,
+    current_intent_by_agent: BTreeMap<String, crate::event::UiIntentReceivedEvent>,
 }
 
 impl LegacyBoundary {
@@ -76,6 +77,7 @@ impl LegacyBoundary {
             warnings: vec![LegacyWarning::InferredSessionIdentity],
             run_started: false,
             terminal: false,
+            current_intent_by_agent: BTreeMap::new(),
         }
     }
 

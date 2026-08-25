@@ -13,6 +13,7 @@ use crate::event::{
     RunFinishedEvent, TaskCancelledEvent, SCHEMA_VERSION,
 };
 use crate::path_display::display_path;
+use crate::session::legacy::legacy_checkpoint_artifact;
 use crate::session_paths::{ARTIFACTS_DIR_NAME, EVENTS_FILE_NAME, WRITER_LOCK_FILE_NAME};
 
 use super::stable_prefix::{
@@ -498,27 +499,26 @@ fn project_materialized_live_open_state(events: &[EventEnvelopeV1]) -> Materiali
     state
 }
 
-#[allow(
-    deprecated,
-    reason = "deprecated event variants kept for backward compatibility with existing session logs"
-)]
 fn collect_referenced_artifacts(
     events: &[EventEnvelopeV1],
 ) -> Result<BTreeMap<PathBuf, ArtifactCopySpec>, ChildSessionMaterializationError> {
     let mut specs = BTreeMap::new();
     for event in events {
+        if let Some(artifact) = legacy_checkpoint_artifact(&event.payload) {
+            merge_artifact_spec(
+                &mut specs,
+                &artifact.path,
+                artifact.digest.as_deref(),
+                Some(artifact.bytes),
+            )?;
+            continue;
+        }
         match &event.payload {
             EventV1::ArtifactWritten(payload) => merge_artifact_spec(
                 &mut specs,
                 &payload.path,
                 Some(payload.digest.as_str()),
                 Some(payload.bytes),
-            )?,
-            EventV1::CompactionWritten(payload) => merge_artifact_spec(
-                &mut specs,
-                &payload.artifact_path,
-                payload.artifact_digest.as_deref(),
-                Some(payload.artifact_bytes),
             )?,
             EventV1::ToolCallRequested(payload) => {
                 if let Some(metadata) = payload.metadata.as_ref() {
@@ -549,9 +549,6 @@ fn collect_referenced_artifacts(
             | EventV1::ProviderReasoningDelta(_)
             | EventV1::ProviderRequestFinished(_)
             | EventV1::AssistantMessageFinished(_)
-            | EventV1::CompactionRequested(_)
-            | EventV1::CompactionApplied(_)
-            | EventV1::CompactionFailed(_)
             | EventV1::ToolCallStarted(_)
             | EventV1::PermissionRequested(_)
             | EventV1::PermissionGrantRecorded(_)
@@ -565,6 +562,7 @@ fn collect_referenced_artifacts(
             | EventV1::WorkspaceReverted(_)
             | EventV1::SessionCompaction(_)
             | EventV1::BranchSummary(_) => {}
+            _ => {}
         }
     }
     Ok(specs)

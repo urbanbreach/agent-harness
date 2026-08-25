@@ -2,8 +2,8 @@ use super::*;
 use crate::config::CompactionSettings;
 use crate::event::ToolCallStatus;
 use crate::event::{
-    AssistantMessageFinishedEvent, EditAppliedEvent, ProviderRequestStartedEvent,
-    ToolCallFinishedEvent, ToolCallRequestedEvent,
+    AssistantMessageFinishedEvent, EditAppliedEvent, ProviderRequestFinishedEvent,
+    ProviderRequestStartedEvent, ToolCallFinishedEvent, ToolCallRequestedEvent,
 };
 use crate::ids::RequestId;
 use crate::proj::RecordedRuntimeContext;
@@ -132,6 +132,21 @@ fn append_assistant_finished(
     request_id: &str,
 ) {
     let actor = EventActor::new(ActorKind::Worker, Some(agent_id.to_string()));
+    append_payload_event(
+        clock,
+        redactor,
+        run_state,
+        actor.clone(),
+        Some(format!("agent:{agent_id}")),
+        EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+            request_id: RequestId::new(request_id),
+            finish_reason: "stop".to_string(),
+            output_digest: None,
+            usage: None,
+            metadata: None,
+        }),
+    )
+    .unwrap_or_abort();
     append_payload_event(
         clock,
         redactor,

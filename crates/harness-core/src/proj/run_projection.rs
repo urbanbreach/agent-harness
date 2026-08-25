@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::{Deserialize, Serialize};
 
 use crate::event::{EventEnvelopeV1, EventV1};
+use crate::session::legacy::legacy_compaction_event_type_name;
 
 use super::{enforce_seq, ProjectionError, RunStatus};
 
@@ -141,11 +142,10 @@ fn apply_timeline_event(index: &mut TimelineIndex, event: &EventEnvelopeV1) {
     });
 }
 
-#[allow(
-    deprecated,
-    reason = "deprecated event variants kept for backward compatibility with existing session logs"
-)]
 fn event_type_name(event: &EventV1) -> String {
+    if let Some(name) = legacy_compaction_event_type_name(event) {
+        return name.to_string();
+    }
     match event {
         EventV1::RunStarted(_) => "run_started",
         EventV1::SessionTitleUpdated(_) => "session_title_updated",
@@ -164,10 +164,6 @@ fn event_type_name(event: &EventV1) -> String {
         EventV1::ProviderReasoningDelta(_) => "provider_reasoning_delta",
         EventV1::ProviderRequestFinished(_) => "provider_request_finished",
         EventV1::AssistantMessageFinished(_) => "assistant_message_finished",
-        EventV1::CompactionRequested(_) => "compaction_requested",
-        EventV1::CompactionWritten(_) => "compaction_written",
-        EventV1::CompactionApplied(_) => "compaction_applied",
-        EventV1::CompactionFailed(_) => "compaction_failed",
         EventV1::ToolCallRequested(_) => "tool_call_requested",
         EventV1::ToolCallStarted(_) => "tool_call_started",
         EventV1::ToolCallFinished(_) => "tool_call_finished",
@@ -186,6 +182,7 @@ fn event_type_name(event: &EventV1) -> String {
         EventV1::WorkspaceReverted(_) => "workspace_reverted",
         EventV1::SessionCompaction(_) => "session_compaction",
         EventV1::BranchSummary(_) => "branch_summary",
+        _ => "legacy_compaction",
     }
     .to_string()
 }
