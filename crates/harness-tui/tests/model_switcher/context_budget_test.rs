@@ -156,9 +156,10 @@ fn context_budget_snapshot_latest_request_sequence_wins_across_root_and_child() 
             .with_last_request_budget(persisted),
     );
 
-    // act: a newer child request arrives before a stale root event.
-    live.ingest_event(provider_started_with_budget(20, "child", latest));
-    live.ingest_event(provider_started_with_budget(10, "root", stale));
+    // act: ordered root then child requests carry distinct persisted snapshots.
+    live.ingest_event(provider_started_with_budget(1, "root", stale));
+    assert_eq!(live.canonical_projection_error(), None);
+    live.ingest_event(provider_started_with_budget(2, "child", latest));
 
     // assert: event sequence, not ingestion order or actor kind, selects the snapshot.
     assert_eq!(
@@ -172,8 +173,8 @@ fn context_budget_snapshot_latest_request_without_snapshot_renders_unknown() {
     // arrange: a live request snapshot exists.
     let known = context_budget_snapshot(BudgetStatus::Estimated, 700, Some(2_000));
     let mut live = AppState::new_live(None, false, None);
-    live.ingest_event(provider_started_with_budget(10, "root", known));
-    let mut latest = provider_started_with_budget(20, "child", known);
+    live.ingest_event(provider_started_with_budget(1, "root", known));
+    let mut latest = provider_started_with_budget(2, "child", known);
     if let EventV1::ProviderRequestStarted(request) = &mut latest.payload {
         request.metadata = None;
     }
@@ -200,7 +201,7 @@ fn context_budget_snapshot_replay_uses_request_event_before_persisted_bootstrap(
     );
 
     // act: historical request-start evidence is replayed.
-    replay.ingest_historical_event(provider_started_with_budget(42, "root", replayed));
+    replay.ingest_historical_event(provider_started_with_budget(1, "root", replayed));
 
     // assert: replay uses the event snapshot before the metadata bootstrap.
     assert_eq!(

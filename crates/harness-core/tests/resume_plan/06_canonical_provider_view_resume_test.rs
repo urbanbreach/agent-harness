@@ -136,6 +136,9 @@ fn interrupted_tool_assistant(id: &str, parent_id: &str) -> SessionEntry {
 
 #[test]
 fn resume_plan_preserves_selected_active_leaf_boundaries() {
+    // arrange
+    // act
+    // assert
     // Given: sibling leaves with one selected completed path and one interrupted off-path turn.
     let attachment = AttachmentMetadata::from_bytes(
         "durable-attachment",

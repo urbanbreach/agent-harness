@@ -1516,10 +1516,21 @@ impl AppState {
     }
 
     pub fn replace_events(&mut self, events: Vec<EventEnvelopeV1>) {
+        self.replace_events_with_canonical_history(events, None);
+    }
+
+    fn replace_events_with_canonical_history(
+        &mut self,
+        events: Vec<EventEnvelopeV1>,
+        canonical_history: Option<Vec<EventEnvelopeV1>>,
+    ) {
         self.bump_transcript_render_epoch();
         self.projection.reset();
         self.projection
             .set_fallback_profile_label(self.active_profile().to_string());
+        if let Some(canonical_history) = canonical_history.as_deref() {
+            self.projection.seed_canonical_history(canonical_history);
+        }
         self.dismissed_permissions.clear();
         self.submitted_permission_id = None;
         self.permission_prompt.permission_id = None;
@@ -1539,7 +1550,7 @@ impl AppState {
         self.interrupt_requested_task_ids.clear();
 
         for event in events {
-            self.ingest_historical_event(event);
+            self.ingest_event_internal(event, true, canonical_history.is_none());
         }
         self.resume_live_turn_timing_from_projection();
         self.sync_transcript_integration(false);
@@ -1560,11 +1571,11 @@ impl AppState {
     }
 
     pub fn ingest_historical_event(&mut self, event: EventEnvelopeV1) {
-        self.ingest_event_internal(event, true);
+        self.ingest_event_internal(event, true, true);
     }
 
     pub fn ingest_event(&mut self, event: EventEnvelopeV1) {
-        self.ingest_event_internal(event, false);
+        self.ingest_event_internal(event, false, true);
     }
 
     pub fn ingest_runtime_event(&mut self, event: RuntimeEvent) {
@@ -1588,7 +1599,12 @@ impl AppState {
         }
     }
 
-    fn ingest_event_internal(&mut self, event: EventEnvelopeV1, historical: bool) {
+    fn ingest_event_internal(
+        &mut self,
+        event: EventEnvelopeV1,
+        historical: bool,
+        update_canonical: bool,
+    ) {
         if !historical && self.route_live_event_while_viewing_child(&event) {
             return;
         }
@@ -1635,7 +1651,11 @@ impl AppState {
             self.note_live_turn_status_timing(&event);
         }
         self.update_transient_state_for_event(&event);
-        let trimmed_events = self.projection.ingest_event(event.clone(), historical);
+        let trimmed_events = if update_canonical {
+            self.projection.ingest_event(event.clone(), historical)
+        } else {
+            self.projection.ingest_view_event(event.clone(), historical)
+        };
         if !historical {
             self.reconcile_permission_focus(permission_was_pending);
             self.reconcile_interrupt_request();

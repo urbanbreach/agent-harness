@@ -1,5 +1,8 @@
 #[tokio::test]
 async fn compaction_v2_large_tool_result_preserves_protocol() {
+    // arrange
+    // act
+    // assert
     let (_temp, coordinator, run, agent_id, provider, tool_calls) = large_tool_harness(
         vec![
             provider_text_events(&"A".repeat(12_000)),

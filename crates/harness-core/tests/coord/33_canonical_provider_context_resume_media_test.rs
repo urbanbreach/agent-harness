@@ -78,6 +78,9 @@ fn provider_view_with_attachments(
 
 #[test]
 fn provider_context_media_flag_follows_canonical_attachments() {
+    // arrange
+    // act
+    // assert
     // Given: two ordered historical attachments and one pending attachment.
     let first = AttachmentMetadata::from_bytes("資料-a", "image/png", None, b"one", None);
     let second = AttachmentMetadata::from_bytes("資料-b", "image/jpeg", None, b"two", None);
@@ -115,6 +118,9 @@ fn provider_context_media_flag_follows_canonical_attachments() {
 
 #[test]
 fn resume_rejects_malformed_attachment_metadata_without_provider_call() {
+    // arrange
+    // act
+    // assert
     // Given: persisted attachment metadata with a non-redacted raw content reference.
     let malformed: AttachmentMetadata = serde_json::from_value(serde_json::json!({
         "id": "malformed",

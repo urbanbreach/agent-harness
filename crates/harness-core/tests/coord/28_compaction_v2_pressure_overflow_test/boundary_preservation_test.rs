@@ -3,6 +3,9 @@ use harness_core::UnwrapOrAbort;
 
 #[tokio::test]
 async fn compaction_v2_failed_or_cancelled_generation_preserves_boundary() {
+    // arrange
+    // act
+    // assert
     // Given: one active boundary followed by a failed replacement generation.
     let (failed, _) = CompactionV2Harness::scripted(
         vec![

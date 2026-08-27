@@ -171,6 +171,9 @@ async fn runtime_state_after_reopen() -> (
 
 #[tokio::test]
 async fn compaction_v2_current_intent_survives_summary() {
+    // arrange
+    // act
+    // assert
     let (written, reopened) = runtime_state_after_reopen().await;
     assert_eq!(
         written
@@ -184,6 +187,9 @@ async fn compaction_v2_current_intent_survives_summary() {
 
 #[tokio::test]
 async fn compaction_v2_file_state_survives_summary() {
+    // arrange
+    // act
+    // assert
     let (written, reopened) = runtime_state_after_reopen().await;
     assert_eq!(written.read_files, ["/workspace/read_only.rs"]);
     assert_eq!(written.modified_files, ["/workspace/shared.rs"]);

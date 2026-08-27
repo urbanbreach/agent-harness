@@ -19,7 +19,7 @@ include!("common/coord_fixtures.rs");
 #[path = "memory_queue_compaction/compaction_v2_regression.rs"]
 mod compaction_v2_regression;
 
-#[path = "memory_queue_compaction/compaction_v2_suppression.rs"]
+#[path = "memory_queue_compaction/compaction_v2_suppression_test.rs"]
 mod compaction_v2_suppression;
 
 // ---------------------------------------------------------------------------
@@ -353,5 +353,5 @@ fn queue_edit_operations_persist_across_reopen() {
     assert_eq!(listed[1].text, "first-edited");
 }
 
-#[path = "memory_queue_compaction/extended_persistence.rs"]
+#[path = "memory_queue_compaction/extended_persistence_test.rs"]
 mod extended_persistence;

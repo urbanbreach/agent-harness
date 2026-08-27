@@ -49,7 +49,7 @@ fn requested(seq: u64, agent_id: &str, request_id: &str) -> EventEnvelopeV1 {
         request_id,
         None,
         EventV1::ToolCallRequested(ToolCallRequestedEvent {
-            tool_call_id: ToolCallId::new("duplicate-call"),
+            tool_call_id: ToolCallId::new("toolcall_000001"),
             tool_id: "shell.run".to_string(),
             args_summary: "{}".to_string(),
             args_digest: format!("digest-{request_id}"),
@@ -58,14 +58,19 @@ fn requested(seq: u64, agent_id: &str, request_id: &str) -> EventEnvelopeV1 {
     )
 }
 
-fn assistant(seq: u64, agent_id: &str, request_id: &str) -> EventEnvelopeV1 {
+fn assistant(
+    seq: u64,
+    agent_id: &str,
+    turn_request_id: &str,
+    provider_request_id: &str,
+) -> EventEnvelopeV1 {
     event(
         seq,
         EventActor::new(ActorKind::Worker, Some(agent_id.to_string())),
-        request_id,
+        turn_request_id,
         None,
         EventV1::AssistantMessageFinished(AssistantMessageFinishedEvent {
-            request_id: RequestId::new(&format!("provider-{request_id}")),
+            request_id: RequestId::new(provider_request_id),
             tool_call_count: 1,
             parts: Vec::new(),
             provenance: None,
@@ -77,7 +82,7 @@ fn assistant(seq: u64, agent_id: &str, request_id: &str) -> EventEnvelopeV1 {
 fn lifecycle(seq: u64, request_id: &str, output: Option<&str>) -> EventEnvelopeV1 {
     let payload = match output {
         Some(output) => EventV1::ToolCallFinished(ToolCallFinishedEvent {
-            tool_call_id: ToolCallId::new("duplicate-call"),
+            tool_call_id: ToolCallId::new("toolcall_000001"),
             status: ToolCallStatus::Succeeded,
             output_summary: Some(output.to_string()),
             output_digest: None,
@@ -85,7 +90,7 @@ fn lifecycle(seq: u64, request_id: &str, output: Option<&str>) -> EventEnvelopeV
             metadata: None,
         }),
         None => EventV1::ToolCallStarted(ToolCallStartedEvent {
-            tool_call_id: ToolCallId::new("duplicate-call"),
+            tool_call_id: ToolCallId::new("toolcall_000001"),
         }),
     };
     event(
@@ -111,15 +116,18 @@ fn tool_results(context: &ProviderContext) -> Vec<&str> {
 
 #[test]
 fn compaction_v2_cross_agent_duplicate_tool_result_fails_closed() {
+    // arrange
+    // act
+    // assert
     let events = vec![
-        user(1, "alpha", "turn-alpha"),
-        assistant(2, "alpha", "turn-alpha"),
-        requested(3, "alpha", "turn-alpha"),
-        user(4, "beta", "turn-beta"),
-        assistant(5, "beta", "turn-beta"),
-        requested(6, "beta", "turn-beta"),
-        lifecycle(7, "turn-beta", None),
-        lifecycle(8, "turn-beta", Some("foreign beta result")),
+        user(1, "alpha", "req_000001"),
+        assistant(2, "alpha", "req_000001", "req_000002"),
+        requested(3, "alpha", "req_000001"),
+        user(4, "beta", "req_000003"),
+        assistant(5, "beta", "req_000003", "req_000004"),
+        requested(6, "beta", "req_000003"),
+        lifecycle(7, "req_000003", None),
+        lifecycle(8, "req_000003", Some("foreign beta result")),
     ];
 
     let context = reconstruct_provider_context_from_events(&events, "alpha").unwrap();
@@ -132,15 +140,18 @@ fn compaction_v2_cross_agent_duplicate_tool_result_fails_closed() {
 
 #[test]
 fn compaction_v2_cross_turn_duplicate_tool_result_fails_closed() {
+    // arrange
+    // act
+    // assert
     let events = vec![
-        user(1, "alpha", "turn-one"),
-        assistant(2, "alpha", "turn-one"),
-        requested(3, "alpha", "turn-one"),
-        user(4, "alpha", "turn-two"),
-        assistant(5, "alpha", "turn-two"),
-        requested(6, "alpha", "turn-two"),
-        lifecycle(7, "turn-two", None),
-        lifecycle(8, "turn-two", Some("ambiguous turn-two result")),
+        user(1, "alpha", "req_000001"),
+        assistant(2, "alpha", "req_000001", "req_000002"),
+        requested(3, "alpha", "req_000001"),
+        user(4, "alpha", "req_000003"),
+        assistant(5, "alpha", "req_000003", "req_000004"),
+        requested(6, "alpha", "req_000003"),
+        lifecycle(7, "req_000003", None),
+        lifecycle(8, "req_000003", Some("ambiguous turn-two result")),
     ];
 
     let context = reconstruct_provider_context_from_events(&events, "alpha").unwrap();

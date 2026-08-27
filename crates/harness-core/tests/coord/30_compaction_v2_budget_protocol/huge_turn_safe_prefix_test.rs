@@ -1,5 +1,8 @@
 #[test]
 fn compaction_v2_huge_turn_splits_utf8_safe_prefix() {
+    // arrange
+    // act
+    // assert
     let huge = "🙂漢字e\u{301}".repeat(4_000);
     let candidates = [
         SafeCutCandidate::text("small prior answer"),

@@ -3,8 +3,9 @@ use crate::conversation::{
 };
 use crate::event::EventEnvelopeV1;
 use crate::proj::{
-    inspect_resume_plan_from_events, project_resume_plan, project_run_summary,
-    project_timeline_index, ProjectionError, ResumePlan, RunSummary, TimelineIndex,
+    inspect_resume_plan_from_events, project_resume_plan, project_resume_plan_from_run_history,
+    project_run_summary, project_session_catalog_entry, project_timeline_index, ProjectionError,
+    ResumePlan, RunSummary, SessionCatalogEntry, SessionCatalogMetadata, TimelineIndex,
 };
 use crate::transcript_projection::{
     project_transcript, TranscriptProjection, TranscriptProjectionError,
@@ -44,7 +45,25 @@ impl CanonicalSessionProjection {
         let snapshot = LegacyEventLogAdapter::new().project(events)?;
         let conversation = project_conversation(events, &[])?;
         let transcript = project_transcript(events)?;
-        let (run_summary, resume_plan, timeline) = Self::project_operational(events)?;
+        let (run_summary, resume_plan, timeline) = Self::project_operational_lossy(events)?;
+        Ok(Self::from_parts(
+            snapshot,
+            conversation,
+            run_summary,
+            resume_plan,
+            timeline,
+            transcript,
+            events,
+        ))
+    }
+
+    pub fn from_strict_event_history(
+        events: &[EventEnvelopeV1],
+    ) -> Result<Self, CanonicalSessionProjectionError> {
+        let snapshot = LegacyEventLogAdapter::new().project(events)?;
+        let conversation = project_conversation(events, &[])?;
+        let transcript = project_transcript(events)?;
+        let (run_summary, resume_plan, timeline) = Self::project_operational_strict(events)?;
         Ok(Self::from_parts(
             snapshot,
             conversation,
@@ -78,6 +97,28 @@ impl CanonicalSessionProjection {
         ))
     }
 
+    pub fn from_strict_run_history(
+        run_dir: &Path,
+        fallback_run_id: &str,
+        events: &[EventEnvelopeV1],
+    ) -> Result<Self, CanonicalSessionProjectionError> {
+        let snapshot = LegacyEventLogAdapter::new().project(events)?;
+        let conversation = project_conversation(events, &[])?;
+        let transcript = project_transcript(events)?;
+        let run_summary = project_run_summary(events)?;
+        let resume_plan = project_resume_plan_from_run_history(run_dir, fallback_run_id, events)?;
+        let timeline = project_timeline_index(events)?;
+        Ok(Self::from_parts(
+            snapshot,
+            conversation,
+            run_summary,
+            resume_plan,
+            timeline,
+            transcript,
+            events,
+        ))
+    }
+
     pub(crate) fn from_owner_event_history(
         events: &[EventEnvelopeV1],
         owner_events: &[EventEnvelopeV1],
@@ -86,7 +127,7 @@ impl CanonicalSessionProjection {
         let snapshot = LegacyEventLogAdapter::new().project_owner(events, agent_id)?;
         let conversation = project_conversation(owner_events, &[])?;
         let transcript = project_transcript(events)?;
-        let (run_summary, resume_plan, timeline) = Self::project_operational(events)?;
+        let (run_summary, resume_plan, timeline) = Self::project_operational_strict(events)?;
         Ok(Self::from_parts(
             snapshot,
             conversation,
@@ -125,13 +166,36 @@ impl CanonicalSessionProjection {
         &mut self,
         event: EventEnvelopeV1,
     ) -> Result<(), CanonicalSessionProjectionError> {
+        self.apply_events(std::slice::from_ref(&event))
+    }
+
+    pub fn apply_events(
+        &mut self,
+        new_events: &[EventEnvelopeV1],
+    ) -> Result<(), CanonicalSessionProjectionError> {
         let mut events = self.source_events.clone();
-        events.push(event);
+        events.extend_from_slice(new_events);
         *self = Self::from_event_history(&events)?;
         Ok(())
     }
 
-    fn project_operational(
+    pub fn project_catalog_entry(
+        &self,
+        fallback_run_id: &str,
+        metadata: Option<&SessionCatalogMetadata>,
+        last_updated_at: Option<String>,
+        degraded_reason: Option<String>,
+    ) -> Result<SessionCatalogEntry, ProjectionError> {
+        project_session_catalog_entry(
+            self.source_events.iter(),
+            fallback_run_id,
+            metadata,
+            last_updated_at,
+            degraded_reason,
+        )
+    }
+
+    fn project_operational_lossy(
         events: &[EventEnvelopeV1],
     ) -> Result<(RunSummary, ResumePlan, TimelineIndex), ProjectionError> {
         let fallback_run_id = events
@@ -143,6 +207,20 @@ impl CanonicalSessionProjection {
                 format!("event log cannot resume: {error}"),
             )
         });
+        Ok((
+            project_run_summary(events)?,
+            resume_plan,
+            project_timeline_index(events)?,
+        ))
+    }
+
+    fn project_operational_strict(
+        events: &[EventEnvelopeV1],
+    ) -> Result<(RunSummary, ResumePlan, TimelineIndex), ProjectionError> {
+        let fallback_run_id = events
+            .first()
+            .map_or("unknown", |event| event.run_id.as_str());
+        let resume_plan = project_resume_plan(events, fallback_run_id)?;
         Ok((
             project_run_summary(events)?,
             resume_plan,

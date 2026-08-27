@@ -10,8 +10,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use clap::Args;
 use harness_core::event::{EventEnvelopeV1, EventV1, RunStartedEvent};
 use harness_core::proj::{
-    project_session_catalog_entry, ChildSessionTerminalState, RunStatus, SessionCatalogEntry,
-    SessionCatalogMetadata,
+    ChildSessionTerminalState, RunStatus, SessionCatalogEntry, SessionCatalogMetadata,
 };
 use harness_core::session::CanonicalSessionProjection;
 use serde::Serialize;
@@ -216,14 +215,14 @@ pub fn summarize_session(run_dir: &Path) -> Result<ReplaySummary, String> {
         CanonicalSessionProjection::from_run_history(run_dir, run_id.as_str(), &events)
             .map_err(|err| err.to_string())?;
     let (meta, _meta_error) = load_meta_lossy(run_dir);
-    let catalog = project_session_catalog_entry(
-        events.iter(),
-        run_id.as_str(),
-        meta.as_ref().map(|it| &it.catalog),
-        None,
-        None,
-    )
-    .map_err(|err| err.to_string())?;
+    let catalog = projection
+        .project_catalog_entry(
+            run_id.as_str(),
+            meta.as_ref().map(|it| &it.catalog),
+            None,
+            None,
+        )
+        .map_err(|err| err.to_string())?;
     let run_name = run_started_event(&events).map(|data| data.run_name.to_string());
     let (artifacts, child_sessions) = summarize_recovery_story(run_dir, &events, run_id.as_str());
 
@@ -301,14 +300,22 @@ pub(crate) fn inspect_single_session(run_dir: &Path) -> SessionInspectionEntry {
         .or_else(|| meta.as_ref().and_then(|it| it.created_at.clone()));
 
     let degraded_reason = events_error.map(|err| format!("events unavailable: {err}"));
+    let degraded_fallback = degraded_reason.clone();
 
-    let catalog = match project_session_catalog_entry(
-        events.iter(),
-        run_id_fallback,
-        meta.as_ref().map(|it| &it.catalog),
-        last_updated_at.clone(),
-        degraded_reason,
-    ) {
+    let catalog_result =
+        CanonicalSessionProjection::from_run_history(run_dir, run_id_fallback, &events)
+            .map_err(|error| error.to_string())
+            .and_then(|projection| {
+                projection
+                    .project_catalog_entry(
+                        run_id_fallback,
+                        meta.as_ref().map(|it| &it.catalog),
+                        last_updated_at.clone(),
+                        degraded_reason,
+                    )
+                    .map_err(|error| error.to_string())
+            });
+    let catalog = match catalog_result {
         Ok(entry) => entry,
         Err(err) => SessionCatalogEntry {
             run_id: events
@@ -323,7 +330,9 @@ pub(crate) fn inspect_single_session(run_dir: &Path) -> SessionInspectionEntry {
             provider_model: None,
             mode_source: harness_core::proj::SessionModeSource::Unknown,
             is_resumable: false,
-            resume_disabled_reason: Some(format!("projection unavailable: {err}")),
+            resume_disabled_reason: Some(
+                degraded_fallback.unwrap_or_else(|| format!("projection unavailable: {err}")),
+            ),
             artifact_count: 0,
             child_session_count: 0,
             parent_session_id: None,

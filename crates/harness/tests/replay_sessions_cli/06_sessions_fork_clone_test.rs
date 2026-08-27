@@ -273,7 +273,10 @@ fn sessions_fork_clone_reject_active_or_writer_locked_source() {
 
     let entries = std::fs::read_dir(session_dir.path())
         .unwrap_or_abort()
-        .map(|entry| entry.unwrap_or_abort().file_name())
+        .filter_map(|entry| {
+            let entry = entry.unwrap_or_abort();
+            entry.path().is_dir().then(|| entry.file_name())
+        })
         .collect::<Vec<_>>();
     assert_eq!(
         entries.len(),

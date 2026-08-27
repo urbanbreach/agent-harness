@@ -224,6 +224,14 @@ fn sessions_reopen_json_surfaces_prompt_context_child_sessions_and_artifacts() {
             summary: "done".to_string(),
         }),
     ));
+    let projection =
+        harness_core::session::CanonicalSessionProjection::from_event_history(&events)
+            .unwrap_or_abort();
+    assert!(
+        !projection.resume_plan.known_agents.is_empty(),
+        "canonical resume projection lost agent bindings: {:?}",
+        projection.resume_plan.resume_disabled_reason
+    );
 
     write_events_jsonl(&run_dir, &events);
 

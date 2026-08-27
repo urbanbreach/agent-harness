@@ -3,6 +3,9 @@ use harness_core::UnwrapOrAbort;
 
 #[tokio::test]
 async fn compaction_v2_repeated_runs_keep_latest_rolling_summary() {
+    // arrange
+    // act
+    // assert
     // Given: two successful rolling compactions with distinct summaries.
     let (harness, provider) = CompactionV2Harness::scripted(
         vec![

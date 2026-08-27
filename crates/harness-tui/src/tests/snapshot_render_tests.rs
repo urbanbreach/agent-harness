@@ -36,7 +36,10 @@ pub(super) fn replay_mode_r_key_reports_removed_reload() {
 }
 
 pub(super) fn live_mode_snapshot_renders_grouped_streams() {
-    let mut app = AppState::new_live(None, false, None);
+    harness_core::config::clear_registered_integrations_config();
+    harness_core::config::set_registered_lsp_config(harness_core::config::LspConfig::default());
+    let session_dir = tempfile::tempdir().unwrap_or_abort();
+    let mut app = AppState::new_live(Some(session_dir.path().to_path_buf()), false, None);
     for event in sample_live_events() {
         app.ingest_event(event);
     }

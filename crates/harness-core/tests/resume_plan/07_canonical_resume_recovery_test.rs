@@ -23,6 +23,9 @@ fn recovery_fixture() -> Vec<EventEnvelopeV1> {
 
 #[test]
 fn canonical_resume_recovers_only_supported_final_corrupt_tail() {
+    // arrange
+    // act
+    // assert
     // Given: a contiguous durable prefix followed by one malformed final record.
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_resume_fixture";
@@ -46,6 +49,9 @@ fn canonical_resume_recovers_only_supported_final_corrupt_tail() {
 
 #[test]
 fn canonical_resume_rejects_non_final_corruption_without_side_effects() {
+    // arrange
+    // act
+    // assert
     // Given: malformed JSON between two otherwise valid journal records.
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_resume_fixture";
@@ -74,6 +80,9 @@ fn canonical_resume_rejects_non_final_corruption_without_side_effects() {
 
 #[test]
 fn canonical_resume_rejects_complete_invalid_final_event() {
+    // arrange
+    // act
+    // assert
     // Given: a physically complete final JSON record with an invalid typed payload.
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_complete_invalid_final";
@@ -119,6 +128,9 @@ fn canonical_resume_rejects_complete_invalid_final_event() {
 
 #[test]
 fn canonical_resume_rejects_event_from_unexpected_run() {
+    // arrange
+    // act
+    // assert
     // Given: a valid event envelope from another run.
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let events_path = temp_dir.path().join("events.jsonl");

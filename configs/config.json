@@ -73,10 +73,12 @@
         },
         "estimated_token_triggers": {
           "default": true,
+          "description": "Enables the explicitly conservative fallback only when all model limits are unknown.\nThis mode can trigger compaction but never claims exact model capacity.",
           "type": "boolean"
         },
         "fallback_input_tokens": {
           "default": 32768,
+          "description": "Conservative non-exact input cap used only when all model limits are unknown.",
           "format": "uint32",
           "minimum": 0,
           "type": "integer"

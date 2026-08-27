@@ -467,10 +467,12 @@ fn provider_model_change_sets_fallback_status_banner() {
         }),
     ));
     app.ingest_event(provider_started(3, "req_turn", "default", "model-a"));
+    assert_eq!(app.canonical_projection_error(), None);
     assert!(app.status_banner.is_none());
 
     // When: same request restarts with a different model id (fallback switch)
     app.ingest_event(provider_started(4, "req_turn", "default", "model-b"));
+    assert_eq!(app.canonical_projection_error(), None);
 
     // Then: operator banner reports the model switch
     assert_eq!(

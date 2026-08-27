@@ -9,9 +9,8 @@ use harness_core::crash_recovery::{
     CrashRecoveryApplyResult, PreviousCrashReport,
 };
 use harness_core::event::{ActorKind, EventEnvelopeV1, EventV1};
-use harness_core::proj::{
-    inspect_resume_plan, project_run_summary, ResumePlan, RunStatus, SessionModeSource,
-};
+use harness_core::proj::{ResumePlan, RunStatus, SessionModeSource};
+use harness_core::session::CanonicalSessionProjection;
 use serde::Serialize;
 
 use crate::cli_io::{load_events_from_run_dir, EVENTS_FILE_NAME};
@@ -191,8 +190,16 @@ pub fn inspect_session_recovery(run_dir: &Path) -> Result<SessionRecoverySummary
         return Err(format!("no events found in {}", run_dir.display()));
     }
 
-    let run_summary = project_run_summary(events.iter()).map_err(|err| err.to_string())?;
-    let resume_plan = inspect_resume_plan(run_dir);
+    let projection = CanonicalSessionProjection::from_run_history(
+        run_dir,
+        events
+            .first()
+            .map_or("<unknown-run>", |event| event.run_id.as_str()),
+        &events,
+    )
+    .map_err(|error| error.to_string())?;
+    let run_summary = projection.run_summary;
+    let resume_plan = projection.resume_plan;
     let catalog = inspect_single_catalog_entry(run_dir)?;
     let run_name = latest_run_name(&events).or_else(|| catalog.run_name.clone());
     let resume_agent_id = if catalog.is_resumable {

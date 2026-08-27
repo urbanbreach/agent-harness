@@ -93,7 +93,20 @@ impl LegacyBoundary {
         let correlation = Self::correlation(event);
         let request_id = correlation
             .and_then(|turn_key| self.latest_provider_by_turn.get(turn_key).cloned())
-            .or_else(|| self.latest_provider_request_id.clone());
+            .or_else(|| {
+                let mut open_requests = self
+                    .providers
+                    .iter()
+                    .filter(|(_, relationship)| {
+                        (event.actor.agent_id.is_none()
+                            || relationship.owner_agent_id.as_deref()
+                                == event.actor.agent_id.as_deref())
+                            && (correlation.is_none() || !relationship.assistant_finished)
+                    })
+                    .map(|(request_id, _)| request_id.clone());
+                let request_id = open_requests.next()?;
+                open_requests.next().is_none().then_some(request_id)
+            });
         let Some(request_id) = request_id else {
             self.ambiguous_tools.insert(tool_call_id.to_string());
             self.warnings

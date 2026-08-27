@@ -1,5 +1,8 @@
 #[tokio::test]
 async fn compaction_v2_root_child_histories_isolated() {
+    // arrange
+    // act
+    // assert
     // Given: root and child agents with distinct sentinels and complete histories.
     let (harness, provider) = CompactionV2Harness::scripted(
         vec![
@@ -69,6 +72,9 @@ async fn compaction_v2_root_child_histories_isolated() {
 
 #[tokio::test]
 async fn compaction_v2_lifecycle_command_loop_remains_responsive() {
+    // arrange
+    // act
+    // assert
     // Given: summary generation blocked after its subscribed entry signal.
     let (harness, _provider, entered, release) = lifecycle_harness().await;
     let compaction = support::spawn_compaction(&harness);
@@ -98,6 +104,9 @@ async fn compaction_v2_lifecycle_command_loop_remains_responsive() {
 
 #[tokio::test]
 async fn compaction_v2_lifecycle_rejects_duplicate_generation_without_mutation() {
+    // arrange
+    // act
+    // assert
     // Given: one same-agent generation already in flight.
     let (harness, _provider, entered, release) = lifecycle_harness().await;
     let first = support::spawn_compaction(&harness);
@@ -142,6 +151,9 @@ async fn compaction_v2_lifecycle_rejects_duplicate_generation_without_mutation()
 
 #[tokio::test]
 async fn compaction_v2_lifecycle_other_agent_progresses_during_generation() {
+    // arrange
+    // act
+    // assert
     // Given: root generation is blocked and another agent already exists.
     let (harness, provider, entered, release) = lifecycle_harness().await;
     let other = harness

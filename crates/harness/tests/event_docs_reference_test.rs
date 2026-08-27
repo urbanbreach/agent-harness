@@ -128,6 +128,9 @@ fn architecture_assistant_completion_fields_match_public_event_shape() {
 
 #[test]
 fn architecture_session_compaction_fields_match_public_event_shape() {
+    // arrange
+    // act
+    // assert
     let root = repo_root();
     let event_source =
         std::fs::read_to_string(root.join("crates/harness-core/src/event.rs")).unwrap_or_abort();

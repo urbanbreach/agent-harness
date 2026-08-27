@@ -411,6 +411,9 @@ async fn event_forwarder_stops_after_terminal_event_when_requested() {
 
 #[tokio::test]
 async fn event_forwarder_delivers_live_fragments_without_advancing_durable_sequence() {
+    // arrange
+    // act
+    // assert
     // Given: the forwarder has consumed a durable start barrier.
     let store = Arc::new(InMemoryEventStore::new());
     store

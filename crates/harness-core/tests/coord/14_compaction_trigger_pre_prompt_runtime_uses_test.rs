@@ -436,6 +436,7 @@ async fn manual_compaction_writes_checkpoint_and_manual_events() {
 
 #[tokio::test]
 async fn manual_unknown_budget_does_not_invent_compaction_capacity() {
+    // assert
     // arrange: unknown model limits with conservative estimated triggers disabled.
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![

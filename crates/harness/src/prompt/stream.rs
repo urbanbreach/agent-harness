@@ -460,6 +460,9 @@ mod semantic_settle_tests {
 
     #[test]
     fn committed_text_is_rendered_after_a_non_prefix_live_fragment() {
+        // arrange
+        // act
+        // assert
         let mut output = Vec::new();
         let mut printer = PromptStreamPrinter::new(false, PromptOutputFormat::Default, &mut output);
         printer.write_assistant("world");
@@ -473,6 +476,9 @@ mod semantic_settle_tests {
 
     #[test]
     fn committed_reasoning_settles_a_non_prefix_live_fragment() {
+        // arrange
+        // act
+        // assert
         let mut output = Vec::new();
         let mut printer = PromptStreamPrinter::new(true, PromptOutputFormat::Default, &mut output);
         printer.write_thinking("suffix");

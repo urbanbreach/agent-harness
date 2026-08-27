@@ -341,6 +341,7 @@ pub(super) fn task_child_navigation_opens_inline_subagent_view_without_child_run
     ];
 
     let mut app = AppState::new_replay(parent_dir.clone(), parent_events);
+    assert_eq!(app.canonical_projection_error(), None);
     app.apply_keybindings(default_navigation_keybindings());
     assert!(!render_debug(&app, 140, 40)
         .contains("child subagent transcript is visible only in child view"));

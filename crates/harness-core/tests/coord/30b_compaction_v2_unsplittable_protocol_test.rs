@@ -5,7 +5,7 @@ use harness_core::{estimate_compaction_text_tokens, UnwrapOrAbort};
 
 mod support {
     use super::*;
-    include!("30b_compaction_v2_unsplittable_protocol/support.rs");
+    include!("30b_compaction_v2_unsplittable_protocol/support_test.rs");
 }
 
 mod large_tool_result {

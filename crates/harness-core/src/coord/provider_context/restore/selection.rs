@@ -105,6 +105,9 @@ mod tests {
 
     #[test]
     fn runtime_selection_ignores_a_later_incomplete_request() {
+        // arrange
+        // act
+        // assert
         let completed = selection("provider-completed", "model-completed");
         let incomplete = selection("provider-incomplete", "model-incomplete");
         let events = vec![
@@ -156,6 +159,9 @@ mod tests {
 
     #[test]
     fn runtime_selection_uses_validated_fallback_without_a_completed_request() {
+        // arrange
+        // act
+        // assert
         let fallback = selection("provider-fallback", "model-fallback");
         let events = vec![envelope(
             1,

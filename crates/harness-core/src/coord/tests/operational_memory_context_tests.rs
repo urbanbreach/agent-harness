@@ -327,7 +327,7 @@ pub async fn operational_memory_records_read_and_modified_files_from_events() {
         &mut run_state,
         agent_id,
         "req_1",
-        "toolcall_read",
+        "toolcall_000001",
         "read",
         r#"{"path": "src/lib.rs"}"#,
     );
@@ -337,7 +337,7 @@ pub async fn operational_memory_records_read_and_modified_files_from_events() {
         &mut run_state,
         agent_id,
         "req_1",
-        "toolcall_read",
+        "toolcall_000001",
     );
     append_tool_call_requested(
         &clock,
@@ -345,7 +345,7 @@ pub async fn operational_memory_records_read_and_modified_files_from_events() {
         &mut run_state,
         agent_id,
         "req_1",
-        "toolcall_edit",
+        "toolcall_000002",
         "edit",
         r#"{"path": "src/main.rs"}"#,
     );
@@ -355,7 +355,7 @@ pub async fn operational_memory_records_read_and_modified_files_from_events() {
         &mut run_state,
         agent_id,
         "req_1",
-        "toolcall_edit",
+        "toolcall_000002",
     );
     append_edit_applied(
         &clock,

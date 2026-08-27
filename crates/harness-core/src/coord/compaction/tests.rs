@@ -708,7 +708,7 @@ fn branch_summary_event(seq: u64, agent_id: &str, summary: &str) -> EventEnvelop
         EventV1::BranchSummary(BranchSummaryEvent {
             agent_id: agent_id.to_string(),
             summary: summary.to_string(),
-            from_event_seq: seq,
+            from_event_seq: seq.saturating_sub(1),
             read_files: Vec::new(),
             modified_files: Vec::new(),
             from_hook: false,
@@ -737,8 +737,8 @@ fn build_session_context_no_compaction_returns_all_messages() {
     // act
     // assert
     let events: Vec<EventEnvelopeV1> = [
-        full_turn(1, "agent-1", "req-1", "hello", "hi there"),
-        full_turn(5, "agent-1", "req-2", "how are you", "great"),
+        full_turn(1, "agent-1", "req_000001", "hello", "hi there"),
+        full_turn(5, "agent-1", "req_000002", "how are you", "great"),
     ]
     .concat();
 
@@ -769,15 +769,15 @@ fn build_session_context_with_compaction_includes_summary_and_kept_messages() {
     // act
     // assert
     let events: Vec<EventEnvelopeV1> = [
-        full_turn(1, "agent-1", "req-1", "first", "response1"),
-        full_turn(5, "agent-1", "req-2", "second", "response2"),
+        full_turn(1, "agent-1", "req_000001", "first", "response1"),
+        full_turn(5, "agent-1", "req_000002", "second", "response2"),
         vec![session_compaction(
             9,
             "agent-1",
             "Summary of first two turns",
             5,
         )],
-        full_turn(10, "agent-1", "req-3", "third", "response3"),
+        full_turn(10, "agent-1", "req_000003", "third", "response3"),
     ]
     .concat();
 
@@ -814,11 +814,11 @@ fn build_session_context_multiple_compactions_uses_latest() {
     // act
     // assert
     let events: Vec<EventEnvelopeV1> = [
-        full_turn(1, "agent-1", "req-1", "a", "b"),
+        full_turn(1, "agent-1", "req_000001", "a", "b"),
         vec![session_compaction(5, "agent-1", "First summary", 1)],
-        full_turn(6, "agent-1", "req-2", "c", "d"),
+        full_turn(6, "agent-1", "req_000002", "c", "d"),
         vec![session_compaction(10, "agent-1", "Second summary", 6)],
-        full_turn(11, "agent-1", "req-3", "e", "f"),
+        full_turn(11, "agent-1", "req_000003", "e", "f"),
     ]
     .concat();
 
@@ -854,9 +854,9 @@ fn build_session_context_compaction_keeping_from_first_message() {
     // act
     // assert
     let events: Vec<EventEnvelopeV1> = [
-        full_turn(1, "agent-1", "req-1", "first", "response"),
+        full_turn(1, "agent-1", "req_000001", "first", "response"),
         vec![session_compaction(5, "agent-1", "Empty summary", 1)],
-        full_turn(6, "agent-1", "req-2", "second", "resp2"),
+        full_turn(6, "agent-1", "req_000002", "second", "resp2"),
     ]
     .concat();
 
@@ -879,8 +879,8 @@ fn build_session_context_filters_by_agent_id() {
     // act
     // assert
     let events: Vec<EventEnvelopeV1> = [
-        full_turn(1, "agent-1", "req-1", "hello", "hi"),
-        full_turn(5, "agent-2", "req-2", "other", "agent"),
+        full_turn(1, "agent-1", "req_000001", "hello", "hi"),
+        full_turn(5, "agent-2", "req_000002", "other", "agent"),
     ]
     .concat();
 
@@ -916,13 +916,13 @@ fn build_session_context_with_branch_summaries_injects_summary() {
     // act
     // assert
     let events: Vec<EventEnvelopeV1> = [
-        full_turn(1, "agent-1", "req-1", "start", "response"),
+        full_turn(1, "agent-1", "req_000001", "start", "response"),
         vec![branch_summary_event(
             5,
             "agent-1",
             "Summary of abandoned work",
         )],
-        full_turn(6, "agent-1", "req-2", "new direction", "resp2"),
+        full_turn(6, "agent-1", "req_000002", "new direction", "resp2"),
     ]
     .concat();
 
@@ -959,11 +959,11 @@ fn build_session_context_with_branch_summaries_and_compaction() {
     // act
     // assert
     let events: Vec<EventEnvelopeV1> = [
-        full_turn(1, "agent-1", "req-1", "first", "r1"),
-        full_turn(5, "agent-1", "req-2", "second", "r2"),
+        full_turn(1, "agent-1", "req_000001", "first", "r1"),
+        full_turn(5, "agent-1", "req_000002", "second", "r2"),
         vec![session_compaction(9, "agent-1", "Compacted history", 5)],
         vec![branch_summary_event(10, "agent-1", "Branch context")],
-        full_turn(11, "agent-1", "req-3", "third", "r3"),
+        full_turn(11, "agent-1", "req_000003", "third", "r3"),
     ]
     .concat();
 
@@ -987,8 +987,14 @@ fn estimate_session_context_tokens_returns_nonzero_for_nonempty_context() {
     // arrange
     // act
     // assert
-    let events: Vec<EventEnvelopeV1> =
-        [full_turn(1, "agent-1", "req-1", "abcdefgh", "ijklmnop")].concat();
+    let events: Vec<EventEnvelopeV1> = [full_turn(
+        1,
+        "agent-1",
+        "req_000001",
+        "abcdefgh",
+        "ijklmnop",
+    )]
+    .concat();
 
     let estimate = estimate_session_context_tokens(&events, "agent-1");
 

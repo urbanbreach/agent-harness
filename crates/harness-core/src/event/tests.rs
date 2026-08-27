@@ -189,6 +189,9 @@ fn session_compaction_event_serializes_with_snake_case_tag_and_skips_empty_field
 
 #[test]
 fn session_compaction_event_defaults_optional_v2_fields_when_deserializing_legacy_json() {
+    // arrange
+    // act
+    // assert
     // Given: the durable shape emitted before Compaction V2.
     let json = json!({
         "event_type": "session_compaction",
@@ -224,6 +227,9 @@ fn session_compaction_event_defaults_optional_v2_fields_when_deserializing_legac
 
 #[test]
 fn session_compaction_event_accepts_explicit_summary_generation_usage_alias() {
+    // arrange
+    // act
+    // assert
     // Given: the field spelling used by the typed projection fixture.
     let json = json!({
         "event_type": "session_compaction",

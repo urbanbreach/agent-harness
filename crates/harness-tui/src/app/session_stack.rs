@@ -38,6 +38,7 @@ fn harness_lineage_parent_run_id(run_dir: &Path) -> Option<String> {
 pub(super) struct SessionNavigationSnapshot {
     pub(super) session_path: PathBuf,
     pub(super) events: Vec<EventEnvelopeV1>,
+    canonical_history: Option<Vec<EventEnvelopeV1>>,
     pub(super) launch_metadata: LaunchMetadata,
     pub(super) child_session_ids: Vec<String>,
     pub(super) replay_mode: bool,
@@ -243,9 +244,12 @@ impl AppState {
     }
 
     fn current_session_snapshot(&self) -> Option<SessionNavigationSnapshot> {
+        let canonical_history = (self.projection.canonical_history() != self.events.as_slice())
+            .then(|| self.projection.canonical_history().to_vec());
         Some(SessionNavigationSnapshot {
             session_path: self.session_path.clone()?,
             events: self.events.clone(),
+            canonical_history,
             launch_metadata: self.launch_metadata.clone(),
             child_session_ids: self.child_session_ids(),
             replay_mode: self.replay_mode,
@@ -256,7 +260,7 @@ impl AppState {
         self.replay_mode = snapshot.replay_mode;
         self.session_path = Some(snapshot.session_path);
         self.set_launch_metadata(snapshot.launch_metadata);
-        self.replace_events(snapshot.events);
+        self.replace_events_with_canonical_history(snapshot.events, snapshot.canonical_history);
         let restored_metadata =
             infer_launch_metadata_from_events(&self.events, &self.launch_metadata);
         self.launch_metadata = restored_metadata.clone();
@@ -416,6 +420,7 @@ impl AppState {
         (!events.is_empty()).then(|| SessionNavigationSnapshot {
             session_path,
             events,
+            canonical_history: Some(self.projection.canonical_history().to_vec()),
             launch_metadata: self.launch_metadata.clone(),
             child_session_ids: Vec::new(),
             replay_mode: true,
@@ -639,6 +644,7 @@ fn session_navigation_snapshot_from_path(
     Ok(SessionNavigationSnapshot {
         session_path: session_path.to_path_buf(),
         events,
+        canonical_history: None,
         launch_metadata,
         child_session_ids: replay.child_session_ids(),
         replay_mode: true,

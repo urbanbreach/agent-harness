@@ -190,3 +190,78 @@ fn session_history_index_reuses_rows_and_recovers_deleted_or_corrupt_state() {
         .iter()
         .any(|entry| entry.catalog.run_id == "run_one"));
 }
+
+#[test]
+fn session_history_index_rejects_nested_run_dir_poisoning() {
+    // arrange
+    let session_dir = tempdir().unwrap_or_abort();
+    let run_dir = session_dir.path().join("run_safe");
+    std::fs::create_dir_all(&run_dir).unwrap_or_abort();
+    write_events_jsonl(&run_dir, &resumable_finished_events("run_safe"));
+    harness::inspect_session_catalog_indexed(session_dir.path()).unwrap_or_abort();
+    let index_path = session_dir.path().join(INDEX_FILE_NAME);
+    let mut index: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&index_path).unwrap_or_abort()).unwrap_or_abort();
+    let key = run_dir.to_str().unwrap_or_abort();
+    index["entries"][key]["entry"]["run_dir"] =
+        serde_json::Value::String("/tmp/poisoned-session".to_string());
+    std::fs::write(
+        &index_path,
+        serde_json::to_vec_pretty(&index).unwrap_or_abort(),
+    )
+    .unwrap_or_abort();
+
+    // act
+    let report =
+        harness::inspect_session_catalog_indexed(session_dir.path()).unwrap_or_abort();
+
+    // assert
+    assert_eq!(report.entries.len(), 1);
+    assert_eq!(report.entries[0].run_dir, run_dir);
+    assert_eq!(report.journals_scanned, 1);
+}
+
+#[cfg(unix)]
+#[test]
+fn session_history_index_temp_symlink_cannot_clobber_another_file() {
+    // arrange
+    let session_dir = tempdir().unwrap_or_abort();
+    let run_dir = session_dir.path().join("run_safe");
+    std::fs::create_dir_all(&run_dir).unwrap_or_abort();
+    write_events_jsonl(&run_dir, &resumable_finished_events("run_safe"));
+    let victim = session_dir.path().join("victim.txt");
+    std::fs::write(&victim, "preserve me").unwrap_or_abort();
+    std::os::unix::fs::symlink(
+        &victim,
+        session_dir
+            .path()
+            .join(".session-history-index-v1.json.tmp"),
+    )
+    .unwrap_or_abort();
+
+    // act
+    let rebuild = run_harness([
+        "--session-dir",
+        session_dir.path().to_str().unwrap_or_abort(),
+        "sessions",
+        "rebuild-index",
+        "--json",
+    ]);
+
+    // assert
+    assert!(
+        rebuild.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&rebuild.stderr)
+    );
+    assert_eq!(
+        std::fs::read_to_string(&victim).unwrap_or_abort(),
+        "preserve me"
+    );
+    assert!(
+        !std::fs::symlink_metadata(session_dir.path().join(INDEX_FILE_NAME))
+            .unwrap_or_abort()
+            .file_type()
+            .is_symlink()
+    );
+}

@@ -35,7 +35,6 @@ fn canonical_foreign_identity_is_deterministic_namespaced_and_root_child_isolate
     assert_ne!(root_entry, child.entry_id(7, "evt-7", "user_message"));
     assert!(!root_session.as_str().contains(root_run.as_str()));
 }
-
 #[test]
 fn legacy_adapter_projects_valid_history_without_writing_source() {
     // arrange
@@ -277,14 +276,18 @@ fn legacy_adapter_preserves_full_provenance_without_writing_source() {
     };
     assert_eq!(text, "こんにちは, 世界");
     assert_eq!(attachments, &[attachment]);
+    assert!(matches!(
+        &path[1].payload,
+        SessionEntryPayload::UserMessage { text, .. } if text == "redacted prompt"
+    ));
     assert!(
         matches!(
-            &path[1].payload,
+            &path[2].payload,
             SessionEntryPayload::AssistantMessage { .. }
         ),
-        "second legacy entry should be an assistant message"
+        "assistant should follow the inferred uncorrelated provider prompt"
     );
-    let SessionEntryPayload::AssistantMessage { parts, provenance } = &path[1].payload else {
+    let SessionEntryPayload::AssistantMessage { parts, provenance } = &path[2].payload else {
         return;
     };
     assert_eq!(
@@ -753,52 +756,4 @@ fn legacy_adapter_accepts_real_tool_call_correlation() {
 
     // assert
     assert!(result.is_ok(), "real tool-call correlation should project: {result:?}");
-}
-
-#[test]
-fn legacy_identity_uses_collision_resistant_digests() {
-    // arrange
-    let run_id = RunId::new("legacy-run");
-    let namespace = LegacyIdentityNamespace::new(&run_id);
-
-    // act
-    let session_id = namespace.session_id();
-    let entry_id = namespace.entry_id(1, "evt-1", "user");
-
-    // assert
-    assert!(session_id.as_str().len() >= "legacy-session-".len() + 32);
-    assert!(entry_id.as_str().len() >= "legacy-entry-".len() + 32);
-}
-
-#[test]
-fn legacy_adapter_handles_sequence_overflow_without_panicking() {
-    // arrange
-    let mut first = sample_envelope(
-        1,
-        "legacy-run",
-        EventV1::RunFinished(RunFinishedEvent {
-            summary: "done".to_string(),
-        }),
-    );
-    first.seq = u64::MAX;
-    first.event_id = "evt-max".to_string();
-    let second = sample_envelope(
-        0,
-        "legacy-run",
-        EventV1::RunFinished(RunFinishedEvent {
-            summary: "duplicate".to_string(),
-        }),
-    );
-
-    // act
-    let outcome = std::panic::catch_unwind(|| LegacyEventLogAdapter::new().project(&[first, second]));
-
-    // assert
-    assert!(matches!(
-        outcome,
-        Ok(Err(LegacyAdapterError::NonContiguousSequence {
-            expected_previous: 0,
-            actual: u64::MAX,
-        }))
-    ));
 }

@@ -3,6 +3,9 @@ use harness_core::UnwrapOrAbort;
 
 #[tokio::test]
 async fn compaction_v2_manual_auto_share_event_shape() {
+    // arrange
+    // act
+    // assert
     // Given: equivalent successful manual and pre-prompt trigger paths.
     let (manual, _) = CompactionV2Harness::scripted(
         vec![
