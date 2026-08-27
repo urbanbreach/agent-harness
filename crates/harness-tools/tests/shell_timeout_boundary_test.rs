@@ -58,7 +58,7 @@ async fn assert_process_exited(process: Pid) {
 #[cfg(target_os = "linux")]
 fn process_is_zombie(process: Pid) -> bool {
     let stat_path = format!("/proc/{}/stat", process.as_raw_pid());
-    std::fs::read_to_string(stat_path).ok().is_some_and(|stat| {
+    std::fs::read_to_string(stat_path).is_ok_and(|stat| {
         stat.rsplit_once(')')
             .is_some_and(|(_, state)| state.trim_start().starts_with('Z'))
     })

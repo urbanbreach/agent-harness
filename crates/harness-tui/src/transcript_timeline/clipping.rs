@@ -43,7 +43,7 @@ pub const fn marker_column_width(viewport_width: u16) -> usize {
 /// Measures a label after applying the marker-column budget.
 pub fn marker_label_width(label: &str, max_width: usize) -> u16 {
     let clipped = clip_marker_label(label, max_width);
-    u16::try_from(marker_display_width(&clipped)).map_or(u16::MAX, |width| width)
+    u16::try_from(marker_display_width(&clipped)).unwrap_or(u16::MAX)
 }
 
 #[cfg(test)]

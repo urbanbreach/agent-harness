@@ -137,7 +137,7 @@ pub fn identity_rectangles(viewport: ViewportId, copy: &IdentityCopy<'_>) -> Ide
 fn identity_rect(cursor: &mut u16, line: Rect, text: &str) -> Rect {
     let available = line.right().saturating_sub(*cursor);
     let text_width = display_width(text).min(usize::from(available));
-    let width = u16::try_from(text_width).map_or(u16::MAX, |value| value);
+    let width = u16::try_from(text_width).unwrap_or(u16::MAX);
     let rect = Rect::new(*cursor, line.y, width, line.height);
     *cursor = cursor.saturating_add(width).saturating_add(1);
     rect

@@ -82,15 +82,10 @@ fn marker_rect(
     }
     let y = viewport
         .y
-        .saturating_add(u16::try_from(local_row).map_or(u16::MAX, |row| row));
+        .saturating_add(u16::try_from(local_row).unwrap_or(u16::MAX));
     Some(TimelineMarkerRect {
         turn_id: turn.turn_id(),
-        rect: Rect::new(
-            marker_x,
-            y,
-            u16::try_from(width).map_or(u16::MAX, |value| value),
-            1,
-        ),
+        rect: Rect::new(marker_x, y, u16::try_from(width).unwrap_or(u16::MAX), 1),
         label,
         clipped,
     })

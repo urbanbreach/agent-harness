@@ -1,12 +1,14 @@
 use std::fs;
 use std::path::Path;
 
+use harness::UnwrapOrAbort;
+
 fn read_doc(path: &str) -> String {
     let workspace = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(Path::parent)
-        .expect("workspace root");
-    fs::read_to_string(workspace.join(path)).expect("read engine documentation")
+        .unwrap_or_abort();
+    fs::read_to_string(workspace.join(path)).unwrap_or_abort()
 }
 
 #[test]
