@@ -8,7 +8,7 @@ pub(super) struct CompactionFixture<'a> {
 }
 
 pub(super) fn legacy_user_entry_id(seq: u64) -> EntryId {
-    LegacyIdentityNamespace::new(&RunId::new("run_conversation_projection")).entry_id(
+    EventIdentityNamespace::new(&RunId::new("run_conversation_projection")).entry_id(
         seq,
         &format!("evt-{seq:020}"),
         "user_message",

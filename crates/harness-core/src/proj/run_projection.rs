@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::{Deserialize, Serialize};
 
 use crate::event::{EventEnvelopeV1, EventV1};
-use crate::session::legacy::legacy_compaction_event_type_name;
+use crate::session::classify_compatibility_event;
 
 use super::{enforce_seq, ProjectionError, RunStatus};
 
@@ -143,8 +143,8 @@ fn apply_timeline_event(index: &mut TimelineIndex, event: &EventEnvelopeV1) {
 }
 
 fn event_type_name(event: &EventV1) -> String {
-    if let Some(name) = legacy_compaction_event_type_name(event) {
-        return name.to_string();
+    if let Some(compatibility) = classify_compatibility_event(event) {
+        return compatibility.event_type.to_string();
     }
     match event {
         EventV1::RunStarted(_) => "run_started",

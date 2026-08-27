@@ -76,6 +76,7 @@ mod part_14_export_uses_committed_assistant_content_test {
 }
 
 mod part_15_canonical_projection_ownership_test {
+    use super::*;
     include!("replay_sessions_cli/15_canonical_projection_ownership_test.rs");
 }
 

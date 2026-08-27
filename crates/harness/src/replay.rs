@@ -16,7 +16,9 @@ use harness_core::session::CanonicalSessionProjection;
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::cli_io::{load_events_from_run_dir, EVENTS_FILE_NAME, META_FILE_NAME};
+use crate::cli_io::{
+    load_events_from_run_dir, load_run_metadata, EVENTS_FILE_NAME, META_FILE_NAME,
+};
 use crate::defaults::RESUME_UNAVAILABLE_FALLBACK_REASON;
 
 #[path = "replay/history_index.rs"]
@@ -129,6 +131,68 @@ pub struct ReplaySummary {
     pub child_sessions: Vec<ReplayChildSessionSummary>,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct LoadedSessionRun {
+    pub(crate) events: Vec<EventEnvelopeV1>,
+    pub(crate) metadata: Option<harness_core::proj::RunMetadata>,
+    pub(crate) projection: CanonicalSessionProjection,
+    pub(crate) catalog: SessionCatalogEntry,
+    pub(crate) replay: ReplaySummary,
+}
+
+impl LoadedSessionRun {
+    pub(crate) fn load(run_dir: &Path) -> Result<Self, String> {
+        Self::load_with(
+            run_dir,
+            load_events_from_run_dir,
+            CanonicalSessionProjection::from_run_history,
+        )
+    }
+
+    fn load_with<Load, Project>(
+        run_dir: &Path,
+        load_events: Load,
+        project: Project,
+    ) -> Result<Self, String>
+    where
+        Load: FnOnce(&Path) -> Result<Vec<EventEnvelopeV1>, String>,
+        Project: FnOnce(
+            &Path,
+            &str,
+            &[EventEnvelopeV1],
+        ) -> Result<
+            CanonicalSessionProjection,
+            harness_core::session::CanonicalSessionProjectionError,
+        >,
+    {
+        let events = load_events(run_dir)?;
+        if events.is_empty() {
+            return Err(format!("no events found in {}", run_dir.display()));
+        }
+
+        let run_id = events[0].run_id.to_string();
+        let projection = project(run_dir, &run_id, &events).map_err(|error| error.to_string())?;
+        let (catalog_metadata, _metadata_error) = load_meta_lossy(run_dir);
+        let catalog = projection
+            .project_catalog_entry(
+                &run_id,
+                catalog_metadata.as_ref().map(|metadata| &metadata.catalog),
+                None,
+                None,
+            )
+            .map_err(|error| error.to_string())?;
+        let replay = replay_summary(run_dir, &projection, &catalog);
+
+        Ok(Self {
+            events,
+            metadata: load_run_metadata(run_dir),
+            projection,
+            catalog,
+            replay,
+        })
+    }
+}
+
 #[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub struct SessionInspectionEntry {
     pub run_dir: PathBuf,
@@ -205,51 +269,46 @@ pub fn execute_with_io(
 }
 
 pub fn summarize_session(run_dir: &Path) -> Result<ReplaySummary, String> {
-    let events = load_events_from_run_dir(run_dir)?;
-    if events.is_empty() {
-        return Err(format!("no events found in {}", run_dir.display()));
-    }
+    LoadedSessionRun::load(run_dir).map(|loaded| loaded.replay)
+}
 
-    let run_id = events[0].run_id.clone();
-    let projection =
-        CanonicalSessionProjection::from_run_history(run_dir, run_id.as_str(), &events)
-            .map_err(|err| err.to_string())?;
-    let (meta, _meta_error) = load_meta_lossy(run_dir);
-    let catalog = projection
-        .project_catalog_entry(
-            run_id.as_str(),
-            meta.as_ref().map(|it| &it.catalog),
-            None,
-            None,
-        )
-        .map_err(|err| err.to_string())?;
-    let run_name = run_started_event(&events).map(|data| data.run_name.to_string());
-    let (artifacts, child_sessions) = summarize_recovery_story(run_dir, &events, run_id.as_str());
+fn replay_summary(
+    run_dir: &Path,
+    projection: &CanonicalSessionProjection,
+    catalog: &SessionCatalogEntry,
+) -> ReplaySummary {
+    let (artifacts, child_sessions) = summarize_recovery_story(run_dir, projection);
 
-    Ok(ReplaySummary {
-        run_id: run_id.to_string(),
-        run_name,
+    ReplaySummary {
+        run_id: catalog.run_id.clone(),
+        run_name: projection.transcript.session.run_name.clone(),
         session_path: run_dir.to_path_buf(),
         status: projection.run_summary.status,
-        workspace_root: catalog.workspace_root,
+        workspace_root: catalog.workspace_root.clone(),
         mode_source: catalog.mode_source,
         is_resumable: catalog.is_resumable,
-        resume_disabled_reason: catalog.resume_disabled_reason,
+        resume_disabled_reason: catalog.resume_disabled_reason.clone(),
         artifact_count: artifacts.len(),
         child_session_count: child_sessions.len(),
-        parent_session_id: catalog.parent_session_id,
+        parent_session_id: catalog.parent_session_id.clone(),
         total_events: projection.run_summary.counts.total_events,
-        counts_by_type: projection.run_summary.counts.by_type,
+        counts_by_type: projection.run_summary.counts.by_type.clone(),
         pending_permissions: projection
             .run_summary
             .pending_permissions
-            .into_iter()
+            .iter()
+            .cloned()
             .collect(),
-        tasks_in_flight: projection.run_summary.tasks_in_flight.into_iter().collect(),
-        last_error: projection.run_summary.last_error,
+        tasks_in_flight: projection
+            .run_summary
+            .tasks_in_flight
+            .iter()
+            .cloned()
+            .collect(),
+        last_error: projection.run_summary.last_error.clone(),
         artifacts,
         child_sessions,
-    })
+    }
 }
 
 pub fn inspect_session_catalog(session_dir: &Path) -> Result<Vec<SessionInspectionEntry>, String> {
@@ -302,19 +361,21 @@ pub(crate) fn inspect_single_session(run_dir: &Path) -> SessionInspectionEntry {
     let degraded_reason = events_error.map(|err| format!("events unavailable: {err}"));
     let degraded_fallback = degraded_reason.clone();
 
-    let catalog_result =
-        CanonicalSessionProjection::from_run_history(run_dir, run_id_fallback, &events)
-            .map_err(|error| error.to_string())
-            .and_then(|projection| {
-                projection
-                    .project_catalog_entry(
-                        run_id_fallback,
-                        meta.as_ref().map(|it| &it.catalog),
-                        last_updated_at.clone(),
-                        degraded_reason,
-                    )
-                    .map_err(|error| error.to_string())
-            });
+    let projection_result =
+        CanonicalSessionProjection::from_run_history(run_dir, run_id_fallback, &events);
+    let catalog_result = projection_result
+        .as_ref()
+        .map_err(ToString::to_string)
+        .and_then(|projection| {
+            projection
+                .project_catalog_entry(
+                    run_id_fallback,
+                    meta.as_ref().map(|it| &it.catalog),
+                    last_updated_at.clone(),
+                    degraded_reason,
+                )
+                .map_err(|error| error.to_string())
+        });
     let catalog = match catalog_result {
         Ok(entry) => entry,
         Err(err) => SessionCatalogEntry {
@@ -340,7 +401,9 @@ pub(crate) fn inspect_single_session(run_dir: &Path) -> SessionInspectionEntry {
     };
 
     let (artifact_count, child_session_count) =
-        summarize_recovery_counts(run_dir, &events, run_id_fallback);
+        projection_result.as_ref().map_or((0, 0), |projection| {
+            summarize_recovery_counts(run_dir, projection)
+        });
 
     SessionInspectionEntry {
         run_dir: run_dir.to_path_buf(),
@@ -717,6 +780,42 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         std::fs::write(run_dir.join(EVENTS_FILE_NAME), format!("{body}\n")).unwrap_or_abort();
+    }
+
+    #[test]
+    fn loaded_session_run_loads_and_projects_once() {
+        // Given: counted journal and projection boundaries around one valid run.
+        let run_dir = tempdir().unwrap_or_abort();
+        let events = vec![envelope(
+            "run-counted",
+            1,
+            EventV1::RunStarted(RunStartedEvent {
+                run_name: "counted".into(),
+                workspace_root: "/tmp/workspace".to_string(),
+            }),
+        )];
+        let journal_loads = std::cell::Cell::new(0_u8);
+        let projection_builds = std::cell::Cell::new(0_u8);
+
+        // When: the authoritative CLI read model is loaded.
+        let loaded = LoadedSessionRun::load_with(
+            run_dir.path(),
+            |_| {
+                journal_loads.set(journal_loads.get() + 1);
+                Ok(events.clone())
+            },
+            |path, fallback_run_id, source_events| {
+                projection_builds.set(projection_builds.get() + 1);
+                CanonicalSessionProjection::from_run_history(path, fallback_run_id, source_events)
+            },
+        )
+        .unwrap_or_abort();
+
+        // Then: every downstream view shares the single load and projection result.
+        assert_eq!(journal_loads.get(), 1);
+        assert_eq!(projection_builds.get(), 1);
+        assert_eq!(loaded.replay.run_id, "run-counted");
+        assert_eq!(loaded.projection.run_summary.counts.total_events, 1);
     }
 
     fn inspection_entry(

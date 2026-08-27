@@ -1,7 +1,7 @@
 use crate::conversation::{
     project_conversation, ConversationProjection, ConversationProjectionError,
 };
-use crate::event::EventEnvelopeV1;
+use crate::event::{EventEnvelopeV1, EventV1};
 use crate::proj::{
     inspect_resume_plan_from_events, project_resume_plan, project_resume_plan_from_run_history,
     project_run_summary, project_session_catalog_entry, project_timeline_index, ProjectionError,
@@ -30,6 +30,16 @@ pub struct CanonicalSessionProjection {
     pub source: LegacyProvenance,
     pub compatibility_warnings: Vec<LegacyWarning>,
     pub audit_timeline: Vec<LegacyAuditReference>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CanonicalProviderRequestStart<'a> {
+    pub seq: u64,
+    pub request_id: &'a str,
+    pub agent_id: Option<&'a str>,
+    pub provider_id: &'a str,
+    pub model_id: &'a str,
+    pub prompt_summary: &'a str,
 }
 
 impl CanonicalSessionProjection {
@@ -193,6 +203,24 @@ impl CanonicalSessionProjection {
             last_updated_at,
             degraded_reason,
         )
+    }
+
+    pub fn provider_request_starts(
+        &self,
+    ) -> impl Iterator<Item = CanonicalProviderRequestStart<'_>> {
+        self.source_events.iter().filter_map(|event| {
+            let EventV1::ProviderRequestStarted(payload) = &event.payload else {
+                return None;
+            };
+            Some(CanonicalProviderRequestStart {
+                seq: event.seq,
+                request_id: payload.request_id.as_str(),
+                agent_id: event.actor.agent_id.as_deref(),
+                provider_id: &payload.provider_id,
+                model_id: &payload.model_id,
+                prompt_summary: &payload.prompt_summary,
+            })
+        })
     }
 
     fn project_operational_lossy(

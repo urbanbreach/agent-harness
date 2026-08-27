@@ -2,72 +2,6 @@
 use super::*;
 
 impl SessionProjection {
-    fn settle_assistant_message(
-        &mut self,
-        event: &EventEnvelopeV1,
-        data: &harness_core::event::AssistantMessageFinishedEvent,
-    ) {
-        let Some(index) = self.activity_index_for_provider_event(event, data.request_id.as_str())
-        else {
-            return;
-        };
-        let transient = self.transient_assistants.remove(data.request_id.as_str());
-        let activity = &mut self.activities[index];
-        if let Some(transient) = transient.as_ref() {
-            activity.transcript_text.truncate(transient.text_start);
-            activity.thinking_text.truncate(transient.reasoning_start);
-            activity.tool_calls.retain(|tool_call| {
-                !transient
-                    .tool_call_ids
-                    .contains(tool_call.tool_call_id.as_str())
-            });
-        }
-
-        for part in &data.parts {
-            match part {
-                AssistantPart::Text { text } => activity.transcript_text.push_str(text),
-                AssistantPart::Reasoning { text } => activity.thinking_text.push_str(text),
-                AssistantPart::ToolCall(tool_call) => {
-                    activity.tool_calls.push(ToolCallEntry {
-                        tool_call_id: tool_call.tool_call_id.to_string(),
-                        tool_id: tool_call.tool_id.clone(),
-                        canonical_tool_id: None,
-                        alias_source_tool_id: None,
-                        resolved_tool_identity: None,
-                        args_summary: tool_call.args_summary.clone(),
-                        args_digest: tool_call.args_digest.clone(),
-                        lifecycle_state: Some(ToolCallLifecycleState::Pending),
-                        status: ToolCallDisplayStatus::Queued,
-                        output_summary: None,
-                        output_digest: None,
-                        output_json: None,
-                        truncated_output: None,
-                        edit: None,
-                        lineage: None,
-                        artifact_refs: Vec::new(),
-                        timing_elapsed_ms: None,
-                        permissions: Vec::new(),
-                        first_seq: event.seq,
-                        last_seq: event.seq,
-                        first_mono_ms: event.mono_ms,
-                        last_mono_ms: event.mono_ms,
-                        first_timestamp: event.ts.clone(),
-                        last_timestamp: event.ts.clone(),
-                    });
-                }
-            }
-        }
-        if !activity.thinking_text.is_empty() {
-            activity.note_thinking_mono(event.mono_ms);
-        }
-        if !activity.transcript_text.is_empty() {
-            activity.first_delta_mono_ms.get_or_insert(event.mono_ms);
-        }
-        mark_activity_event(activity, event.seq, event.mono_ms);
-        activity.bump_revision();
-        self.enforce_transcript_memory_cap();
-    }
-
     #[allow(
         deprecated,
         reason = "deprecated event variants kept for backward compatibility with existing session logs"
@@ -78,30 +12,6 @@ impl SessionProjection {
         historical: bool,
     ) {
         match &event.payload {
-            EventV1::PermissionRequested(data) => {
-                self.pending_permissions.insert(
-                    data.permission_id.clone(),
-                    PendingPermission {
-                        seq: event.seq,
-                        kind: data.kind.clone(),
-                        summary: data.summary.clone(),
-                        request_digest: data.request_digest.clone(),
-                        timeout_ms: data.timeout_ms,
-                        default_decision: data.default_decision,
-                        tool_call_id: data.tool_call_id.as_ref().map(|id| id.to_string()),
-                    },
-                );
-                self.attach_permission_request(event);
-            }
-            EventV1::PermissionResolved(data) => {
-                self.pending_permissions.remove(&data.permission_id);
-                self.update_permission_resolution(
-                    &data.permission_id,
-                    data.decision,
-                    data.reason.as_deref(),
-                    event.seq,
-                );
-            }
             EventV1::RunFinished(_) => {
                 if !historical {
                     self.run_terminal_seen = true;
@@ -318,9 +228,6 @@ impl SessionProjection {
                 }
                 self.enforce_transcript_memory_cap();
             }
-            EventV1::AssistantMessageFinished(data) => {
-                self.settle_assistant_message(event, data);
-            }
             EventV1::ProviderRequestFinished(data) => {
                 self.note_child_agent_request(event, data.request_id.as_str());
                 let turn_id = Self::canonical_provider_turn_id(event, data.request_id.as_str());
@@ -373,146 +280,6 @@ impl SessionProjection {
                     }
                 }
             }
-            EventV1::CompactionApplied(data) => {
-                self.active_context_usage = Some(
-                    data.tokens_after_estimate
-                        .map(ActiveContextUsage::estimate)
-                        .unwrap_or_else(ActiveContextUsage::compacted_pending_refresh),
-                );
-                self.compaction_usage_metrics.completed_count = self
-                    .compaction_usage_metrics
-                    .completed_count
-                    .saturating_add(1);
-                self.compaction_usage_metrics.summary_tokens_estimate = self
-                    .compaction_usage_metrics
-                    .summary_tokens_estimate
-                    .saturating_add(u64::from(data.summary_tokens_estimate.unwrap_or(0)));
-                self.compaction_usage_metrics.reduction_tokens_estimate = self
-                    .compaction_usage_metrics
-                    .reduction_tokens_estimate
-                    .saturating_add(u64::from(data.reduction_tokens_estimate.unwrap_or(0)));
-                self.compaction_usage_metrics.last_tokens_before_estimate =
-                    data.tokens_before_estimate;
-                self.compaction_usage_metrics.last_tokens_after_estimate =
-                    data.tokens_after_estimate;
-                self.compaction_usage_metrics
-                    .last_reduction_percent_estimate = data.reduction_percent_estimate;
-                self.compaction_status = Some(CompactionStatus {
-                    agent_id: data.agent_id.clone(),
-                    checkpoint_id: Some(data.checkpoint_id.clone()),
-                    trigger_reason: "applied".to_string(),
-                    state: CompactionState::Applied,
-                    message: data
-                        .tokens_after_estimate
-                        .map(|tokens| format!("compaction applied · active ctx ~{tokens}"))
-                        .unwrap_or_else(|| "compaction applied · refresh pending".to_string()),
-                });
-            }
-            EventV1::CompactionRequested(data) => {
-                self.compaction_status = Some(CompactionStatus {
-                    agent_id: data.agent_id.clone(),
-                    checkpoint_id: Some(data.checkpoint_id.clone()),
-                    trigger_reason: data.trigger_reason.clone(),
-                    state: CompactionState::Requested,
-                    message: format!("compaction requested · {}", data.trigger_reason),
-                });
-            }
-            EventV1::CompactionWritten(data) => {
-                let source_label = data.summary_source.as_ref().and_then(|source| {
-                    source
-                        .deterministic_fallback
-                        .then_some(" · deterministic fallback")
-                });
-                self.compaction_status = Some(CompactionStatus {
-                    agent_id: data.agent_id.clone(),
-                    checkpoint_id: Some(data.checkpoint_id.clone()),
-                    trigger_reason: data.trigger_reason.clone(),
-                    state: CompactionState::Written,
-                    message: format!(
-                        "compaction checkpoint written{} · {} bytes",
-                        source_label.unwrap_or_default(),
-                        data.artifact_bytes,
-                    ),
-                });
-            }
-            EventV1::CompactionFailed(data) => {
-                self.compaction_status = Some(CompactionStatus {
-                    agent_id: data.agent_id.clone(),
-                    checkpoint_id: data.checkpoint_id.clone(),
-                    trigger_reason: data.trigger_reason.clone(),
-                    state: CompactionState::Failed,
-                    message: format!("compaction failed · {}", data.reason),
-                });
-            }
-            EventV1::SessionCompaction(data) => {
-                self.compaction_usage_metrics.completed_count = self
-                    .compaction_usage_metrics
-                    .completed_count
-                    .saturating_add(1);
-                self.compaction_usage_metrics.last_tokens_before_estimate =
-                    Some(data.tokens_before);
-                self.compaction_status = Some(CompactionStatus {
-                    agent_id: data.agent_id.clone(),
-                    checkpoint_id: None,
-                    trigger_reason: data.trigger_reason.clone(),
-                    state: CompactionState::Applied,
-                    message: format!(
-                        "session compacted · {} tokens before · {}",
-                        data.tokens_before, data.trigger_reason
-                    ),
-                });
-            }
-            EventV1::BranchSummary(data) => {
-                self.compaction_status = Some(CompactionStatus {
-                    agent_id: data.agent_id.clone(),
-                    checkpoint_id: None,
-                    trigger_reason: "branch_summary".to_string(),
-                    state: CompactionState::Applied,
-                    message: "branch summary generated".to_string(),
-                });
-            }
-            EventV1::TaskCompleted(data) => {
-                let should_mark_done =
-                    self.is_turn_level_task_completion(data.task_id.as_str(), data);
-                self.update_orchestration_task(event, data.task_id.as_str(), |row| {
-                    row.state = OrchestrationTaskState::Completed;
-                    row.warning = None;
-                    row.result_summary = Some(data.result_summary.clone());
-                    merge_orchestration_task_completion_metadata(row, data.metadata.as_ref());
-                });
-
-                if let Some(request_id) = event.correlation_id.as_deref() {
-                    if should_mark_done {
-                        self.completed_turn_request_ids
-                            .insert(request_id.to_string());
-                        if let Some(elapsed_ms) = data
-                            .metadata
-                            .as_ref()
-                            .and_then(|metadata| metadata.timing.as_ref())
-                            .and_then(|timing| timing.elapsed_ms)
-                        {
-                            self.terminal_elapsed_ms
-                                .insert(request_id.to_string(), elapsed_ms);
-                        }
-                    }
-                    if let Some(index) = self.activity_index_or_local_echo(request_id, event.seq) {
-                        if let Some(entry) = self.activities.get_mut(index) {
-                            if should_mark_done {
-                                entry.status = ActivityStatus::Done;
-                            }
-                            if should_mark_done && entry.transcript_text.is_empty() {
-                                if let Some(result_summary) =
-                                    non_empty_preserved_string(&data.result_summary)
-                                {
-                                    entry.transcript_text = result_summary;
-                                    entry.bump_revision();
-                                }
-                            }
-                            entry.last_seq = event.seq;
-                        }
-                    }
-                }
-            }
             EventV1::TaskScheduled(data) => {
                 if let Some(request_id) = event.correlation_id.as_deref() {
                     self.note_child_agent_request(event, request_id);
@@ -556,47 +323,6 @@ impl SessionProjection {
                             OrchestrationTaskState::Running
                         }
                     };
-                });
-            }
-            EventV1::TaskCancelled(data) => {
-                let send_now = data.reason == "send_now";
-                let should_mark_error =
-                    self.is_turn_level_task_cancellation(data.task_id.as_str(), data);
-                self.update_orchestration_task(event, data.task_id.as_str(), |row| {
-                    row.state = OrchestrationTaskState::Cancelled;
-                    row.warning = non_empty_preserved_string(&data.reason);
-                });
-
-                if should_mark_error {
-                    if let Some(request_id) = event.correlation_id.as_deref() {
-                        if let Some(index) = self.activity_index_for_request(request_id) {
-                            if let Some(entry) = self.activities.get_mut(index) {
-                                entry.status = ActivityStatus::Error;
-                                if send_now {
-                                    entry.error_message = None;
-                                } else {
-                                    let reason = non_empty_preserved_string(&data.reason);
-                                    entry.error_message = match (reason, entry.error_message.take())
-                                    {
-                                        (Some(reason), Some(existing))
-                                            if !existing.contains(&reason) =>
-                                        {
-                                            Some(format!("{reason} · {existing}"))
-                                        }
-                                        (Some(reason), _) => Some(reason),
-                                        (None, existing) => existing,
-                                    };
-                                }
-                                mark_activity_event(entry, event.seq, event.mono_ms);
-                            }
-                        }
-                    }
-                }
-            }
-            EventV1::TaskResultLate(data) => {
-                self.update_orchestration_task(event, data.task_id.as_str(), |row| {
-                    row.state = OrchestrationTaskState::LateResult;
-                    row.warning = Some("late result after stale cancellation".to_string());
                 });
             }
             EventV1::BackgroundTaskNotification(data) => {
@@ -723,43 +449,6 @@ impl SessionProjection {
                 if let Some(tool_entry) = self.find_tool_call_mut(data.tool_call_id.as_str()) {
                     tool_entry.lifecycle_state =
                         Some(harness_core::event::ToolCallLifecycleState::Running);
-                    tool_entry.sync_display_status();
-                    tool_entry.last_seq = event.seq;
-                    tool_entry.last_mono_ms = event.mono_ms;
-                    tool_entry.last_timestamp = event.ts.clone();
-                }
-            }
-            EventV1::ToolCallFinished(data) => {
-                if let Some(tool_entry) = self.find_tool_call_mut(data.tool_call_id.as_str()) {
-                    tool_entry.lifecycle_state = Some(
-                        harness_core::event::ToolCallLifecycleState::from_finish_status(
-                            data.status,
-                        ),
-                    );
-                    tool_entry.output_summary = data.output_summary.clone();
-                    tool_entry.output_digest = data.output_digest.clone();
-                    tool_entry.output_json = data.output_json.clone();
-                    if let Some(summary) = &data.output_summary {
-                        let display_text =
-                            if summary.chars().count() > TOOL_OUTPUT_DISPLAY_MAX_CHARS {
-                                let truncated: String = summary
-                                    .chars()
-                                    .take(TOOL_OUTPUT_DISPLAY_MAX_CHARS)
-                                    .collect();
-                                format!("{}…", truncated)
-                            } else {
-                                summary.clone()
-                            };
-                        tool_entry.truncated_output = Some(display_text);
-                    }
-                    merge_resolved_tool_identity(
-                        tool_entry,
-                        ResolvedToolIdentity::from_tool_call(
-                            Some(tool_entry.tool_id.as_str()),
-                            data.metadata.as_ref(),
-                        ),
-                    );
-                    merge_tool_call_metadata(tool_entry, data.metadata.as_ref());
                     tool_entry.sync_display_status();
                     tool_entry.last_seq = event.seq;
                     tool_entry.last_mono_ms = event.mono_ms;

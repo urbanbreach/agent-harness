@@ -15,7 +15,7 @@ use crate::event::{
 };
 use crate::ids::RunId;
 use crate::perm::PermissionGrantSet;
-use crate::session::legacy::{recover_event_history, LegacyHistoryRecoveryError};
+use crate::session::journal::{recover_event_history, JournalRecoveryError};
 use crate::session_paths::EVENTS_FILE_NAME;
 use crate::text::non_empty_trimmed;
 
@@ -841,7 +841,7 @@ fn read_events_for_resume_inspection(
     let expected_run_id = RunId::new(expected_run_id);
     let recovery = match recover_event_history(&events_path, &expected_run_id) {
         Ok(recovery) => Ok(recovery),
-        Err(LegacyHistoryRecoveryError::RunMismatch {
+        Err(JournalRecoveryError::RunMismatch {
             line_number: 1,
             actual,
             ..

@@ -427,19 +427,9 @@ fn typed_boundary_sequence(
     entry_id: &crate::ids::EntryId,
 ) -> Option<u64> {
     let run_id = &events.first()?.run_id;
-    let namespace = crate::session::legacy::LegacyIdentityNamespace::new(run_id);
+    let namespace = crate::session::EventIdentityNamespace::new(run_id);
     events.iter().find_map(|event| {
-        let semantic_kind = match event.payload {
-            EventV1::SessionTitleUpdated(_) => "session_metadata",
-            EventV1::UserMessageSubmitted(_) => "user_message",
-            EventV1::ProviderRequestStarted(_) => "assistant_message",
-            EventV1::SessionCompaction(_) => "compaction_summary",
-            EventV1::BranchSummary(_) => "branch_summary",
-            EventV1::ToolCallFinished(_) => "tool_result",
-            _ => return None,
-        };
-        (namespace.entry_id(event.seq, &event.event_id, semantic_kind) == *entry_id)
-            .then_some(event.seq)
+        (namespace.source_entry_id(event).as_ref() == Some(entry_id)).then_some(event.seq)
     })
 }
 

@@ -2,8 +2,7 @@
 use std::collections::BTreeMap;
 
 use crate::event::{EventEnvelopeV1, EventV1, TaskScheduleState, ToolCallStatus};
-use crate::session::legacy::is_legacy_compaction_event;
-use crate::session::AssistantPart;
+use crate::session::{classify_compatibility_event, AssistantPart};
 
 mod helpers;
 mod model;
@@ -811,7 +810,7 @@ pub fn project_transcript(
             | EventV1::EditRejected(_)
             | EventV1::WorkspaceSnapshot(_)
             | EventV1::WorkspaceReverted(_) => {}
-            _ if is_legacy_compaction_event(&event.payload) => {}
+            _ if classify_compatibility_event(&event.payload).is_some() => {}
             _ => {}
         }
     }

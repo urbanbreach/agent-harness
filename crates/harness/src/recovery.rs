@@ -11,11 +11,12 @@ use harness_core::crash_recovery::{
 use harness_core::event::{ActorKind, EventEnvelopeV1, EventV1};
 use harness_core::proj::{ResumePlan, RunStatus, SessionModeSource};
 use harness_core::session::CanonicalSessionProjection;
+use harness_core::transcript_projection::{ProjectedMessageRole, ProjectedPart};
 use serde::Serialize;
 
-use crate::cli_io::{load_events_from_run_dir, EVENTS_FILE_NAME};
+use crate::cli_io::EVENTS_FILE_NAME;
 use crate::cli_labels::provider_model_label;
-use crate::replay::inspect_session_catalog;
+use crate::replay::{inspect_session_catalog, LoadedSessionRun};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct RecoveryPromptContextEntry {
@@ -185,27 +186,20 @@ pub fn resolve_session_run_dir(
 }
 
 pub fn inspect_session_recovery(run_dir: &Path) -> Result<SessionRecoverySummary, String> {
-    let events = load_events_from_run_dir(run_dir).map_err(|err| err.to_string())?;
-    if events.is_empty() {
-        return Err(format!("no events found in {}", run_dir.display()));
-    }
-
-    let projection = CanonicalSessionProjection::from_run_history(
-        run_dir,
-        events
-            .first()
-            .map_or("<unknown-run>", |event| event.run_id.as_str()),
-        &events,
-    )
-    .map_err(|error| error.to_string())?;
-    let run_summary = projection.run_summary;
-    let resume_plan = projection.resume_plan;
-    let catalog = inspect_single_catalog_entry(run_dir)?;
-    let run_name = latest_run_name(&events).or_else(|| catalog.run_name.clone());
+    let loaded = LoadedSessionRun::load(run_dir)?;
+    let projection = &loaded.projection;
+    let run_summary = &projection.run_summary;
+    let resume_plan = &projection.resume_plan;
+    let catalog = &loaded.catalog;
+    let run_name = projection
+        .transcript
+        .session
+        .run_name
+        .clone()
+        .or_else(|| catalog.run_name.clone());
     let resume_agent_id = if catalog.is_resumable {
-        Some(select_resume_agent_id(
-            &resume_plan,
-            &events,
+        Some(select_resume_agent_id_from_projection(
+            projection,
             &catalog.run_id,
         )?)
     } else {
@@ -223,21 +217,21 @@ pub fn inspect_session_recovery(run_dir: &Path) -> Result<SessionRecoverySummary
         run_id: catalog.run_id.clone(),
         run_name,
         run_dir: run_dir.to_path_buf(),
-        workspace_root: catalog.workspace_root,
+        workspace_root: catalog.workspace_root.clone(),
         status: catalog.status,
-        last_error: run_summary.last_error,
+        last_error: run_summary.last_error.clone(),
         total_events: run_summary.counts.total_events,
-        profile: catalog.profile_preset,
-        provider_model: catalog.provider_model,
+        profile: catalog.profile_preset.clone(),
+        provider_model: catalog.provider_model.clone(),
         mode: catalog.mode_source,
         resumable: catalog.is_resumable,
-        resume_disabled_reason: catalog.resume_disabled_reason,
+        resume_disabled_reason: catalog.resume_disabled_reason.clone(),
         resume_agent_id: resume_agent_id.clone(),
-        pending_permissions: run_summary.pending_permissions.into_iter().collect(),
-        tasks_in_flight: run_summary.tasks_in_flight.into_iter().collect(),
-        prompt_context: collect_prompt_context(&events),
-        child_sessions: collect_child_sessions(&resume_plan),
-        artifacts: collect_artifacts(&resume_plan),
+        pending_permissions: run_summary.pending_permissions.iter().cloned().collect(),
+        tasks_in_flight: run_summary.tasks_in_flight.iter().cloned().collect(),
+        prompt_context: collect_prompt_context(projection),
+        child_sessions: collect_child_sessions(resume_plan),
+        artifacts: collect_artifacts(resume_plan),
         continue_hint: resume_agent_id.map(|_| {
             format!(
                 "harness prompt{} --resume {} --text \"<next prompt>\"",
@@ -294,51 +288,77 @@ fn ensure_run_dir(run_dir: PathBuf) -> Result<PathBuf, String> {
     Ok(run_dir)
 }
 
-fn inspect_single_catalog_entry(
-    run_dir: &Path,
-) -> Result<harness_core::proj::SessionCatalogEntry, String> {
-    let parent_dir = run_dir.parent().ok_or_else(|| {
-        format!(
-            "failed to resolve parent session directory for {}",
-            run_dir.display()
-        )
-    })?;
-    inspect_session_catalog(parent_dir)?
-        .into_iter()
-        .find(|entry| entry.run_dir == run_dir)
-        .map(|entry| entry.catalog)
-        .ok_or_else(|| {
-            format!(
-                "failed to inspect session catalog entry for {}",
-                run_dir.display()
-            )
-        })
-}
-
-fn collect_prompt_context(events: &[EventEnvelopeV1]) -> Vec<RecoveryPromptContextEntry> {
-    let mut entries = events
+fn collect_prompt_context(
+    projection: &CanonicalSessionProjection,
+) -> Vec<RecoveryPromptContextEntry> {
+    let mut entries = projection
+        .transcript
+        .messages
         .iter()
-        .filter_map(|event| match &event.payload {
-            EventV1::UserMessageSubmitted(payload) => Some(RecoveryPromptContextEntry {
-                seq: event.seq,
-                kind: "user_message".to_string(),
-                request_id: Some(payload.request_id.to_string()),
-                agent_id: None,
-                text: payload.text.clone(),
+        .filter_map(|message| match message.role {
+            ProjectedMessageRole::User => message.parts.iter().find_map(|part| {
+                let ProjectedPart::Text(text) = part else {
+                    return None;
+                };
+                Some(RecoveryPromptContextEntry {
+                    seq: text.provenance.first_seq,
+                    kind: "user_message".to_string(),
+                    request_id: message.request_id.as_ref().map(ToString::to_string),
+                    agent_id: message.agent_id.clone(),
+                    text: text.text.clone(),
+                })
             }),
-            EventV1::ProviderRequestStarted(payload) => Some(RecoveryPromptContextEntry {
-                seq: event.seq,
-                kind: "provider_prompt".to_string(),
-                request_id: Some(payload.request_id.to_string()),
-                agent_id: event.actor.agent_id.clone(),
-                text: payload.prompt_summary.clone(),
-            }),
-            _ => None,
+            ProjectedMessageRole::Assistant | ProjectedMessageRole::System => None,
         })
         .collect::<Vec<_>>();
+    entries.extend(projection.provider_request_starts().map(|request| {
+        RecoveryPromptContextEntry {
+            seq: request.seq,
+            kind: "provider_prompt".to_string(),
+            request_id: Some(request.request_id.to_string()),
+            agent_id: request.agent_id.map(str::to_string),
+            text: request.prompt_summary.to_string(),
+        }
+    }));
+    entries.sort_by_key(|entry| entry.seq);
     let keep_from = entries.len().saturating_sub(6);
     entries.drain(0..keep_from);
     entries
+}
+
+fn select_resume_agent_id_from_projection(
+    projection: &CanonicalSessionProjection,
+    run_id: &str,
+) -> Result<String, String> {
+    projection
+        .transcript
+        .messages
+        .iter()
+        .rev()
+        .filter(|message| {
+            matches!(
+                message.role,
+                ProjectedMessageRole::User | ProjectedMessageRole::Assistant
+            )
+        })
+        .find_map(|message| message.agent_id.as_ref())
+        .filter(|agent_id| projection.resume_plan.known_agents.contains_key(*agent_id))
+        .cloned()
+        .or_else(|| {
+            projection
+                .transcript
+                .session
+                .agent_profiles
+                .keys()
+                .rev()
+                .find(|agent_id| projection.resume_plan.known_agents.contains_key(*agent_id))
+                .cloned()
+        })
+        .ok_or_else(|| {
+            format!(
+                "continue session requires a deterministically targetable conversational agent for {run_id}"
+            )
+        })
 }
 
 fn collect_child_sessions(resume_plan: &ResumePlan) -> Vec<RecoveryChildSessionEntry> {

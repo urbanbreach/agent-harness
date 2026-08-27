@@ -6,7 +6,7 @@ use thiserror::Error;
 
 use crate::event::{EventEnvelopeV1, EventV1, SCHEMA_VERSION};
 use crate::proj::RunStatus;
-use crate::session::legacy::{legacy_compaction_lifecycle, LegacyCompactionLifecycle};
+use crate::session::{classify_compatibility_event, CompatibilityEventLifecycle};
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum SessionLineageError {
@@ -208,15 +208,15 @@ struct PrefixState {
 impl PrefixState {
     fn apply(&mut self, event: &EventEnvelopeV1) {
         self.run_id.get_or_insert_with(|| event.run_id.to_string());
-        if let Some(lifecycle) = legacy_compaction_lifecycle(&event.payload) {
-            match lifecycle {
-                LegacyCompactionLifecycle::Started(checkpoint_id) => {
+        if let Some(compatibility) = classify_compatibility_event(&event.payload) {
+            match compatibility.lifecycle {
+                CompatibilityEventLifecycle::Started(checkpoint_id) => {
                     self.compactions_in_flight.insert(checkpoint_id);
                 }
-                LegacyCompactionLifecycle::Finished(Some(checkpoint_id)) => {
+                CompatibilityEventLifecycle::Finished(Some(checkpoint_id)) => {
                     self.compactions_in_flight.remove(&checkpoint_id);
                 }
-                LegacyCompactionLifecycle::Finished(None) => {}
+                CompatibilityEventLifecycle::Finished(None) => {}
             }
             return;
         }

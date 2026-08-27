@@ -1516,21 +1516,10 @@ impl AppState {
     }
 
     pub fn replace_events(&mut self, events: Vec<EventEnvelopeV1>) {
-        self.replace_events_with_canonical_history(events, None);
-    }
-
-    fn replace_events_with_canonical_history(
-        &mut self,
-        events: Vec<EventEnvelopeV1>,
-        canonical_history: Option<Vec<EventEnvelopeV1>>,
-    ) {
         self.bump_transcript_render_epoch();
         self.projection.reset();
         self.projection
             .set_fallback_profile_label(self.active_profile().to_string());
-        if let Some(canonical_history) = canonical_history.as_deref() {
-            self.projection.seed_canonical_history(canonical_history);
-        }
         self.dismissed_permissions.clear();
         self.submitted_permission_id = None;
         self.permission_prompt.permission_id = None;
@@ -1549,9 +1538,10 @@ impl AppState {
         self.live_turn_request_id = None;
         self.interrupt_requested_task_ids.clear();
 
-        for event in events {
-            self.ingest_event_internal(event, true, canonical_history.is_none());
+        for event in events.iter().cloned() {
+            self.ingest_event_internal(event, true, false);
         }
+        self.projection.replace_settled_projection(&events);
         self.resume_live_turn_timing_from_projection();
         self.sync_transcript_integration(false);
 

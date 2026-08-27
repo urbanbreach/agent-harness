@@ -4,9 +4,10 @@ use std::path::Path;
 use crate::agent::ProviderContext;
 use crate::event::{EventEnvelopeV1, EventV1};
 use crate::ids::RunId;
-use crate::session::legacy::{recover_event_history, LegacyWarning};
+use crate::session::journal::{recover_event_history, JournalRecoveryWarning};
 use crate::session::{
-    CanonicalProviderView, CanonicalSessionProjection, ProviderViewInput, ProviderViewOwner,
+    CanonicalProviderView, CanonicalSessionProjection, CompatibilityWarning, ProviderViewInput,
+    ProviderViewOwner,
 };
 use crate::session_paths::EVENTS_FILE_NAME;
 
@@ -22,7 +23,7 @@ pub(in crate::coord) struct RecoveredProviderContext {
 
 pub(in crate::coord) struct CanonicalProviderRecovery {
     pub(in crate::coord) by_agent: BTreeMap<String, RecoveredProviderContext>,
-    pub(in crate::coord) warnings: Vec<LegacyWarning>,
+    pub(in crate::coord) warnings: Vec<CompatibilityWarning>,
 }
 
 impl CanonicalProviderRecovery {
@@ -71,10 +72,14 @@ pub(in crate::coord) fn recover_canonical_provider_context_from_history_with_fal
 
 pub(in crate::coord) fn recover_canonical_provider_context_from_events(
     events: &[EventEnvelopeV1],
-    mut warnings: Vec<LegacyWarning>,
+    warnings: Vec<JournalRecoveryWarning>,
     run_id: &str,
     runtime_fallbacks: &BTreeMap<String, crate::session::CanonicalRuntimeSelection>,
 ) -> Result<CanonicalProviderRecovery, CoordinatorError> {
+    let mut warnings = warnings
+        .into_iter()
+        .map(CompatibilityWarning::from)
+        .collect();
     let owners = provider_context_owners(events);
     let root_projection =
         CanonicalSessionProjection::from_event_history(events).map_err(|error| {
@@ -143,7 +148,10 @@ pub(in crate::coord) fn recover_canonical_provider_context_from_events(
     Ok(CanonicalProviderRecovery { by_agent, warnings })
 }
 
-fn extend_unique_warnings(target: &mut Vec<LegacyWarning>, warnings: Vec<LegacyWarning>) {
+fn extend_unique_warnings(
+    target: &mut Vec<CompatibilityWarning>,
+    warnings: Vec<CompatibilityWarning>,
+) {
     for warning in warnings {
         if !target.contains(&warning) {
             target.push(warning);
