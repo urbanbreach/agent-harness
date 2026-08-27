@@ -6,11 +6,13 @@ use clap::ValueEnum;
 use harness_core::proj::{RunStatus, SessionCatalogEntry};
 use serde::Serialize;
 
-use crate::replay::{inspect_session_catalog, SessionInspectionEntry};
+use crate::replay::{
+    inspect_session_catalog, rebuild_session_catalog_index, SessionInspectionEntry,
+};
 
 use super::{
     ensure_session_dir_exists, mode_source_label, resumable_label, session_dir, status_label,
-    SessionsListCommand,
+    SessionsListCommand, SessionsRebuildIndexCommand, SessionsSearchCommand,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -79,6 +81,7 @@ impl SessionListSort {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 struct SessionListJsonEntry {
     run_dir: PathBuf,
+    cursor: String,
     #[serde(flatten)]
     catalog: SessionCatalogEntry,
 }
@@ -87,6 +90,7 @@ impl From<&SessionInspectionEntry> for SessionListJsonEntry {
     fn from(entry: &SessionInspectionEntry) -> Self {
         Self {
             run_dir: entry.run_dir.clone(),
+            cursor: entry_cursor(entry),
             catalog: entry.catalog.clone(),
         }
     }
@@ -130,6 +134,54 @@ pub(super) fn list_sessions(
     0
 }
 
+pub(super) fn search_sessions(
+    mut command: SessionsSearchCommand,
+    global_session_dir: Option<PathBuf>,
+    stdout: &mut dyn std::io::Write,
+    stderr: &mut dyn std::io::Write,
+) -> i32 {
+    command.list.search = Some(command.query);
+    list_sessions(command.list, global_session_dir, stdout, stderr)
+}
+
+pub(super) fn rebuild_index(
+    command: SessionsRebuildIndexCommand,
+    global_session_dir: Option<PathBuf>,
+    stdout: &mut dyn std::io::Write,
+    stderr: &mut dyn std::io::Write,
+) -> i32 {
+    let session_dir = session_dir(global_session_dir);
+    if let Err(code) = ensure_session_dir_exists(&session_dir, stderr) {
+        return code;
+    }
+    match rebuild_session_catalog_index(&session_dir) {
+        Ok(report) if command.json => {
+            let body = serde_json::json!({
+                "entry_count": report.entries.len(),
+                "journals_scanned": report.journals_scanned,
+                "recovery_reason": report.recovery_reason,
+                "index_path": report.index_path,
+            });
+            let _ = writeln!(stdout, "{body}");
+            0
+        }
+        Ok(report) => {
+            let _ = writeln!(
+                stdout,
+                "rebuilt {} session entries from {} journals at {}",
+                report.entries.len(),
+                report.journals_scanned,
+                report.index_path.display()
+            );
+            0
+        }
+        Err(error) => {
+            let _ = writeln!(stderr, "{error}");
+            1
+        }
+    }
+}
+
 pub(super) fn collect_list_entries(
     entries: Vec<SessionInspectionEntry>,
     command: &SessionsListCommand,
@@ -140,7 +192,25 @@ pub(super) fn collect_list_entries(
         .filter(|entry| matches_list_filters(entry, command))
         .collect::<Vec<_>>();
     command.sort.sort_entries(&mut entries);
+    let entries = if let Some(cursor) = command.cursor.as_deref() {
+        entries
+            .iter()
+            .position(|entry| entry_cursor(entry) == cursor)
+            .map_or_else(Vec::new, |index| {
+                entries.into_iter().skip(index + 1).collect()
+            })
+    } else {
+        entries
+    };
     entries
+        .into_iter()
+        .skip(command.offset)
+        .take(command.limit)
+        .collect()
+}
+
+fn entry_cursor(entry: &SessionInspectionEntry) -> String {
+    format!("{:032x}:{}", entry.sort_unix_ms, entry.catalog.run_id)
 }
 
 fn matches_list_filters(entry: &SessionInspectionEntry, command: &SessionsListCommand) -> bool {
@@ -154,6 +224,17 @@ fn matches_list_filters(entry: &SessionInspectionEntry, command: &SessionsListCo
         && command
             .resumable
             .is_none_or(|resumable| entry.catalog.is_resumable == resumable)
+        && command.search.as_deref().is_none_or(|query| {
+            let query = query.to_ascii_lowercase();
+            [
+                entry.catalog.run_id.as_str(),
+                entry.catalog.run_name.as_deref().unwrap_or_default(),
+                entry.catalog.workspace_root.as_deref().unwrap_or_default(),
+                entry.catalog.profile_preset.as_deref().unwrap_or_default(),
+            ]
+            .iter()
+            .any(|value| value.to_ascii_lowercase().contains(&query))
+        })
 }
 
 pub(super) fn render_json_session_list(

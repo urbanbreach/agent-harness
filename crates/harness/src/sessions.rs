@@ -51,6 +51,10 @@ pub use list::{SessionListSort, SessionStatusFilter};
 pub enum SessionsCommand {
     /// List saved sessions with optional status/profile/resumable filters.
     List(SessionsListCommand),
+    /// Search the bounded session-history index.
+    Search(SessionsSearchCommand),
+    /// Rebuild the session-history index from durable journals.
+    RebuildIndex(SessionsRebuildIndexCommand),
     /// Inspect one saved session and summarize replay-derived state.
     Inspect(InspectSessionCommand),
     /// Reopen one session by resolving its run id to a stored run directory.
@@ -108,7 +112,7 @@ pub struct CrashScanSessionCommand {
     pub json: bool,
 }
 
-#[derive(Debug, Args, Clone, Default)]
+#[derive(Debug, Args, Clone)]
 pub struct SessionsListCommand {
     #[arg(long, default_value_t = false)]
     pub json: bool,
@@ -124,6 +128,49 @@ pub struct SessionsListCommand {
 
     #[arg(long, value_enum, default_value_t = SessionListSort::UpdatedDesc)]
     pub sort: SessionListSort,
+
+    #[arg(long, default_value_t = 50)]
+    pub limit: usize,
+
+    #[arg(long, default_value_t = 0)]
+    pub offset: usize,
+
+    #[arg(long)]
+    pub cursor: Option<String>,
+
+    #[arg(long)]
+    pub search: Option<String>,
+}
+
+impl Default for SessionsListCommand {
+    fn default() -> Self {
+        Self {
+            json: false,
+            status: None,
+            profile: None,
+            resumable: None,
+            sort: SessionListSort::UpdatedDesc,
+            limit: 50,
+            offset: 0,
+            cursor: None,
+            search: None,
+        }
+    }
+}
+
+#[derive(Debug, Args, Clone)]
+pub struct SessionsSearchCommand {
+    #[arg(value_name = "QUERY")]
+    pub query: String,
+
+    #[command(flatten)]
+    pub list: SessionsListCommand,
+}
+
+#[derive(Debug, Args, Clone)]
+pub struct SessionsRebuildIndexCommand {
+    #[arg(long, default_value_t = false)]
+    pub json: bool,
 }
 
 #[derive(Debug, Args, Clone)]
@@ -201,6 +248,12 @@ pub fn execute_with_io(
     match command {
         SessionsCommand::List(command) => {
             list::list_sessions(command, global_session_dir, stdout, stderr)
+        }
+        SessionsCommand::Search(command) => {
+            list::search_sessions(command, global_session_dir, stdout, stderr)
+        }
+        SessionsCommand::RebuildIndex(command) => {
+            list::rebuild_index(command, global_session_dir, stdout, stderr)
         }
         SessionsCommand::Inspect(command) => {
             inspect_session(command, global_session_dir, stdout, stderr)
