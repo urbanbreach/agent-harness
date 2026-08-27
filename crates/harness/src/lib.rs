@@ -81,6 +81,7 @@ use update_cmd::UpdateCommand;
 pub use harness_core::UnwrapOrAbort;
 
 pub use crate::tui::replay_workspace_root_from_events;
+pub use replay::{inspect_session_catalog_indexed, SessionHistoryIndexReport};
 
 #[doc(hidden)]
 pub use auth_cmd::AuthBackendOutput;

@@ -1,0 +1,192 @@
+use harness::UnwrapOrAbort;
+
+const INDEX_FILE_NAME: &str = ".session-history-index-v1.json";
+
+#[test]
+fn session_history_cli_builds_paginates_searches_and_rebuilds_index() {
+    // arrange
+    let session_dir = tempdir().unwrap_or_abort();
+    for run_id in ["run_alpha", "run_beta", "run_gamma"] {
+        let run_dir = session_dir.path().join(run_id);
+        std::fs::create_dir_all(&run_dir).unwrap_or_abort();
+        write_events_jsonl(&run_dir, &resumable_finished_events(run_id));
+    }
+
+    // act
+    let first_page = run_harness([
+        "--session-dir",
+        session_dir.path().to_str().unwrap_or_abort(),
+        "sessions",
+        "list",
+        "--json",
+        "--limit",
+        "2",
+        "--offset",
+        "0",
+    ]);
+
+    // assert
+    assert!(
+        first_page.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&first_page.stderr)
+    );
+    assert!(
+        session_dir.path().join(INDEX_FILE_NAME).is_file(),
+        "listing must persist the rebuildable history index"
+    );
+    let first_rows: serde_json::Value =
+        serde_json::from_slice(&first_page.stdout).unwrap_or_abort();
+    assert_eq!(first_rows.as_array().map(Vec::len), Some(2));
+    let cursor = first_rows[1]["cursor"].as_str().unwrap_or_abort();
+
+    let second_page = run_harness([
+        "--session-dir",
+        session_dir.path().to_str().unwrap_or_abort(),
+        "sessions",
+        "list",
+        "--json",
+        "--limit",
+        "2",
+        "--cursor",
+        cursor,
+    ]);
+    assert!(second_page.status.success());
+    let second_rows: serde_json::Value =
+        serde_json::from_slice(&second_page.stdout).unwrap_or_abort();
+    assert_eq!(second_rows.as_array().map(Vec::len), Some(1));
+    assert_ne!(first_rows[0]["run_id"], second_rows[0]["run_id"]);
+
+    let search = run_harness([
+        "--session-dir",
+        session_dir.path().to_str().unwrap_or_abort(),
+        "sessions",
+        "search",
+        "beta",
+        "--json",
+    ]);
+    assert!(
+        search.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&search.stderr)
+    );
+    let search_rows: serde_json::Value =
+        serde_json::from_slice(&search.stdout).unwrap_or_abort();
+    assert_eq!(search_rows.as_array().map(Vec::len), Some(1));
+    assert_eq!(search_rows[0]["run_id"], "run_beta");
+
+    std::fs::write(
+        session_dir.path().join(INDEX_FILE_NAME),
+        "{corrupt index",
+    )
+    .unwrap_or_abort();
+    let rebuild = run_harness([
+        "--session-dir",
+        session_dir.path().to_str().unwrap_or_abort(),
+        "sessions",
+        "rebuild-index",
+        "--json",
+    ]);
+    assert!(
+        rebuild.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&rebuild.stderr)
+    );
+    let rebuilt: serde_json::Value =
+        serde_json::from_slice(&rebuild.stdout).unwrap_or_abort();
+    assert_eq!(rebuilt["entry_count"], 3);
+}
+
+#[test]
+fn session_history_index_reuses_rows_and_recovers_deleted_or_corrupt_state() {
+    // arrange
+    let session_dir = tempdir().unwrap_or_abort();
+    for run_id in ["run_one", "run_two"] {
+        let run_dir = session_dir.path().join(run_id);
+        std::fs::create_dir_all(&run_dir).unwrap_or_abort();
+        write_events_jsonl(&run_dir, &resumable_finished_events(run_id));
+    }
+
+    // act
+    let first =
+        harness::inspect_session_catalog_indexed(session_dir.path()).unwrap_or_abort();
+    let second =
+        harness::inspect_session_catalog_indexed(session_dir.path()).unwrap_or_abort();
+
+    // assert
+    assert!(first.rebuilt);
+    assert_eq!(first.journals_scanned, 2);
+    assert_eq!(first.recovery_reason.as_deref(), Some("missing"));
+    assert!(!second.rebuilt);
+    assert_eq!(
+        second.journals_scanned, 0,
+        "unchanged listing must not full-scan durable journals"
+    );
+    assert_eq!(
+        first
+            .entries
+            .iter()
+            .map(|entry| entry.catalog.run_id.as_str())
+            .collect::<Vec<_>>(),
+        second
+            .entries
+            .iter()
+            .map(|entry| entry.catalog.run_id.as_str())
+            .collect::<Vec<_>>()
+    );
+
+    std::fs::remove_file(session_dir.path().join(INDEX_FILE_NAME)).unwrap_or_abort();
+    let rebuilt_deleted =
+        harness::inspect_session_catalog_indexed(session_dir.path()).unwrap_or_abort();
+    assert!(rebuilt_deleted.rebuilt);
+    assert_eq!(rebuilt_deleted.journals_scanned, 2);
+    assert_eq!(
+        rebuilt_deleted.recovery_reason.as_deref(),
+        Some("missing")
+    );
+
+    std::fs::write(
+        session_dir.path().join(INDEX_FILE_NAME),
+        "not valid json",
+    )
+    .unwrap_or_abort();
+    let rebuilt_corrupt =
+        harness::inspect_session_catalog_indexed(session_dir.path()).unwrap_or_abort();
+    assert!(rebuilt_corrupt.rebuilt);
+    assert_eq!(rebuilt_corrupt.journals_scanned, 2);
+    assert_eq!(
+        rebuilt_corrupt.recovery_reason.as_deref(),
+        Some("corrupt")
+    );
+
+    std::fs::write(session_dir.path().join(INDEX_FILE_NAME), "{").unwrap_or_abort();
+    let rebuilt_truncated =
+        harness::inspect_session_catalog_indexed(session_dir.path()).unwrap_or_abort();
+    assert_eq!(
+        rebuilt_truncated.recovery_reason.as_deref(),
+        Some("truncated")
+    );
+
+    std::fs::write(
+        session_dir.path().join(INDEX_FILE_NAME),
+        r#"{"schema_version":999,"entries":{}}"#,
+    )
+    .unwrap_or_abort();
+    let rebuilt_unsupported =
+        harness::inspect_session_catalog_indexed(session_dir.path()).unwrap_or_abort();
+    assert_eq!(
+        rebuilt_unsupported.recovery_reason.as_deref(),
+        Some("unsupported_version")
+    );
+
+    let malformed_dir = session_dir.path().join("run_malformed");
+    std::fs::create_dir_all(&malformed_dir).unwrap_or_abort();
+    write_events_lines(&malformed_dir, &["{invalid journal"]);
+    let with_malformed =
+        harness::inspect_session_catalog_indexed(session_dir.path()).unwrap_or_abort();
+    assert_eq!(with_malformed.entries.len(), 3);
+    assert!(with_malformed
+        .entries
+        .iter()
+        .any(|entry| entry.catalog.run_id == "run_one"));
+}

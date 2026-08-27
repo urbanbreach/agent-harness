@@ -20,9 +20,15 @@ use serde_json::Value;
 use crate::cli_io::{load_events_from_run_dir, EVENTS_FILE_NAME, META_FILE_NAME};
 use crate::defaults::RESUME_UNAVAILABLE_FALLBACK_REASON;
 
+#[path = "replay/history_index.rs"]
+mod history_index;
 #[path = "replay/recovery_story.rs"]
 mod recovery_story;
 
+pub use history_index::{
+    inspect_session_catalog_indexed, rebuild_session_catalog_index, SessionHistoryIndexReport,
+    SESSION_HISTORY_INDEX_FILE_NAME,
+};
 use recovery_story::{summarize_recovery_counts, summarize_recovery_story};
 
 #[derive(Debug, Args, Clone)]
@@ -124,7 +130,7 @@ pub struct ReplaySummary {
     pub child_sessions: Vec<ReplayChildSessionSummary>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub struct SessionInspectionEntry {
     pub run_dir: PathBuf,
     pub catalog: SessionCatalogEntry,
@@ -135,11 +141,23 @@ pub struct SessionInspectionEntry {
 
 impl SessionInspectionEntry {
     pub(crate) fn sort_by_updated_desc(entries: &mut [Self]) {
-        entries.sort_by_key(|entry| (Reverse(entry.sort_unix_ms), entry.run_dir.clone()));
+        entries.sort_by_key(|entry| {
+            (
+                Reverse(entry.sort_unix_ms),
+                entry.catalog.run_id.clone(),
+                entry.run_dir.clone(),
+            )
+        });
     }
 
     pub(crate) fn sort_by_updated_asc(entries: &mut [Self]) {
-        entries.sort_by_key(|entry| (entry.sort_unix_ms, entry.run_dir.clone()));
+        entries.sort_by_key(|entry| {
+            (
+                entry.sort_unix_ms,
+                entry.catalog.run_id.clone(),
+                entry.run_dir.clone(),
+            )
+        });
     }
 
     pub(crate) fn is_visible_in_operator_history(&self) -> bool {
@@ -236,23 +254,7 @@ pub fn summarize_session(run_dir: &Path) -> Result<ReplaySummary, String> {
 }
 
 pub fn inspect_session_catalog(session_dir: &Path) -> Result<Vec<SessionInspectionEntry>, String> {
-    let read_dir = fs::read_dir(session_dir).map_err(|err| {
-        format!(
-            "failed to read session directory {}: {err}",
-            session_dir.display()
-        )
-    })?;
-
-    let mut entries = read_dir
-        .filter_map(|entry| entry.ok().map(|item| item.path()))
-        .filter(|path| path.is_dir() && path.join(EVENTS_FILE_NAME).exists())
-        .map(|run_dir| inspect_single_session(&run_dir))
-        .map(SessionInspectionEntry::normalize_lineage)
-        .collect::<Vec<_>>();
-
-    SessionInspectionEntry::sort_by_updated_desc(&mut entries);
-
-    Ok(entries)
+    inspect_session_catalog_indexed(session_dir).map(|report| report.entries)
 }
 
 fn harness_lineage_parent_run_id(run_dir: &Path) -> Option<String> {
@@ -268,7 +270,7 @@ fn harness_lineage_parent_run_id(run_dir: &Path) -> Option<String> {
         .map(str::to_string)
 }
 
-fn inspect_single_session(run_dir: &Path) -> SessionInspectionEntry {
+pub(crate) fn inspect_single_session(run_dir: &Path) -> SessionInspectionEntry {
     let run_id_fallback = run_dir
         .file_name()
         .and_then(|name| name.to_str())
