@@ -569,7 +569,7 @@ fn live_control_dock_keeps_current_runtime_primary_and_next_turn_secondary() {
 
     assert_eq!(
         app.runtime_context_summary_segment_text(),
-        Some("Next turns: GPT-5.4 Mini".to_string())
+        Some("Next turns: GPT-5.4 Mini · Creative".to_string())
     );
 
     let debug = render_debug(&app, 160, 24);
@@ -640,7 +640,7 @@ fn continued_live_control_dock_preserves_continued_runtime_after_switch() {
 
     assert_eq!(
         app.runtime_context_summary_segment_text(),
-        Some("Next turns: GPT-5.4 Mini".to_string())
+        Some("Next turns: GPT-5.4 Mini · Creative".to_string())
     );
 
     let debug = render_debug(&app, 160, 24);

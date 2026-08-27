@@ -564,14 +564,6 @@ impl Coordinator {
 }
 
 #[derive(Debug, Clone)]
-pub(in crate::coord) struct ProviderContextCompaction {
-    pub(in crate::coord) updated_context: ProviderContext,
-    checkpoint_id: String,
-    tokens_before_estimate: Option<u32>,
-    tokens_after_estimate: Option<u32>,
-}
-
-#[derive(Debug, Clone)]
 pub(in crate::coord) enum CompactAgentContextResult {
     Compacted {
         context: ProviderContext,

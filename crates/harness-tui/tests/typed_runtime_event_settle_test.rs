@@ -9,7 +9,8 @@ use harness_core::event::{
     LiveEventEnvelope, LiveEventV1, ProviderRequestStartedEvent, RuntimeEvent,
     UserMessageSubmittedEvent, SCHEMA_VERSION,
 };
-use harness_core::session::{AssistantPart, AssistantToolCall};
+use harness_core::session::legacy::LegacyWarning;
+use harness_core::session::{AssistantPart, AssistantToolCall, SessionEntryPayload};
 use harness_tui::app::AppState;
 use harness_tui::render_test::render_to_string;
 use harness_tui::ui;
@@ -138,4 +139,50 @@ fn typed_live_fragments_render_then_final_commit_settles_them() {
     assert!(!settled.contains("draft answer"), "{settled}");
     assert_eq!(settled.matches("Reading 1 file").count(), 1, "{settled}");
     assert_eq!(app.selected_event().map(|event| event.seq), Some(3));
+
+    let canonical = app
+        .canonical_projection()
+        .expect("durable events must update the core projection");
+    let canonical_text = canonical
+        .session
+        .entries()
+        .values()
+        .filter_map(|entry| match &entry.payload {
+            SessionEntryPayload::AssistantMessage { parts, .. } => Some(parts.as_slice()),
+            _ => None,
+        })
+        .flatten()
+        .filter_map(|part| match part {
+            AssistantPart::Text { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(canonical_text, vec!["final answer"]);
+    assert!(canonical
+        .compatibility_warnings
+        .contains(&LegacyWarning::MissingProviderFinish {
+            request_id: "provider-1".to_string(),
+        }));
+    assert_eq!(app.canonical_projection_error(), None);
+}
+
+#[test]
+fn tui_durable_content_uses_core_canonical_projection() {
+    // arrange
+    let projection_source = include_str!("../src/app/session_projection.rs");
+
+    // act
+    let uses_core_projection = projection_source.contains("CanonicalSessionProjection");
+    let owns_raw_durable_history =
+        projection_source.contains("pub(crate) events: Vec<EventEnvelopeV1>");
+
+    // assert
+    assert!(
+        uses_core_projection,
+        "TUI durable content must consume CanonicalSessionProjection"
+    );
+    assert!(
+        !owns_raw_durable_history,
+        "TUI must not own a second raw durable event history"
+    );
 }

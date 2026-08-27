@@ -15,12 +15,9 @@ mod recovery;
 pub use recovery::{recover_event_history, LegacyHistoryRecovery, LegacyHistoryRecoveryError};
 
 pub(crate) use compaction::{
-    checkpoint_artifact as legacy_checkpoint_artifact,
     compaction_lifecycle as legacy_compaction_lifecycle,
-    discover_applied_checkpoints as discover_legacy_applied_checkpoints,
     event_type_name as legacy_compaction_event_type_name,
-    is_compaction_event as is_legacy_compaction_event, load_checkpoint as load_legacy_checkpoint,
-    LegacyCheckpointRecord, LegacyCompactionLifecycle,
+    is_compaction_event as is_legacy_compaction_event, LegacyCompactionLifecycle,
 };
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -201,6 +198,10 @@ pub enum LegacyWarning {
     MissingFinalAssistantContent { request_id: String },
     MissingAttachmentAssociation { request_id: String },
     MissingCompactionBoundary { first_kept_event_seq: u64 },
+    MissingProviderFinish { request_id: String },
+    MissingProviderAssociation { tool_call_id: String },
+    MissingToolRequest { tool_call_id: String },
+    DuplicateToolIdentity { tool_call_id: String },
     UnsupportedLegacyVariant { event_id: String },
     RecoveredCorruptFinalLine { line_number: usize },
 }

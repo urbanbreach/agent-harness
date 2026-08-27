@@ -38,15 +38,15 @@ use crate::conversation::{
 use crate::counter_id::parse_prefixed_counter;
 use crate::digest::digest12;
 use crate::event::{
-    ActorKind, AgentSpawnedEvent, BackgroundTaskNotificationStatus, CompactionAppliedEvent,
-    CompactionRequestedEvent, CompactionWrittenEvent, EventActor, EventBuildError, EventEnvelopeV1,
-    EventV1, HookExecutionMetadata, LiveEventV1, PermissionDecision as EventPermissionDecision,
-    PolicyViolationDetectedEvent, ProviderRequestFinishedMetadata, ProviderRequestRetryMetadata,
-    ProviderRequestStartedMetadata, RunFailedEvent, RunFinishedEvent, RunStartedEvent,
-    SessionTitleUpdatedEvent, StaleDetectedEvent, TaskCancelledEvent, TaskCompletedEvent,
-    TaskCompletionMetadata, TaskLineageMetadata, TaskResultLateEvent, TaskScheduleMetadata,
-    TaskScheduleState, TaskScheduledEvent, TaskTerminalScope, ToolCallMetadata, ToolCallStatus,
-    ToolIdentityMetadata, UserMessageSubmittedEvent,
+    ActorKind, AgentSpawnedEvent, BackgroundTaskNotificationStatus, EventActor, EventBuildError,
+    EventEnvelopeV1, EventV1, HookExecutionMetadata, LiveEventV1,
+    PermissionDecision as EventPermissionDecision, PolicyViolationDetectedEvent,
+    ProviderRequestFinishedMetadata, ProviderRequestRetryMetadata, ProviderRequestStartedMetadata,
+    RunFailedEvent, RunFinishedEvent, RunStartedEvent, SessionTitleUpdatedEvent,
+    StaleDetectedEvent, TaskCancelledEvent, TaskCompletedEvent, TaskCompletionMetadata,
+    TaskLineageMetadata, TaskResultLateEvent, TaskScheduleMetadata, TaskScheduleState,
+    TaskScheduledEvent, TaskTerminalScope, ToolCallMetadata, ToolCallStatus, ToolIdentityMetadata,
+    UserMessageSubmittedEvent,
 };
 use crate::perm::{
     permission_kind_for_tool_call, PermissionDecision, PermissionGrant, PermissionGrantRequest,

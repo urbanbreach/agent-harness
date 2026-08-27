@@ -11,11 +11,10 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::conversation::{
-    project_conversation, ConversationProjection, ConversationProjectionError,
-};
+use crate::conversation::ConversationProjection;
 use crate::digest::digest12;
 use crate::event::EventEnvelopeV1;
+use crate::session::CanonicalSessionProjection;
 
 /// Failures planning a prompt-level rewind.
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
@@ -28,19 +27,6 @@ pub enum PromptRewindError {
     EventsOutOfOrder { previous_seq: u64, seq: u64 },
     #[error("conversation projection failed: {0}")]
     Projection(String),
-}
-
-impl From<ConversationProjectionError> for PromptRewindError {
-    fn from(value: ConversationProjectionError) -> Self {
-        match value {
-            ConversationProjectionError::EventsOutOfOrder { previous_seq, seq } => {
-                Self::EventsOutOfOrder { previous_seq, seq }
-            }
-            malformed @ ConversationProjectionError::ProviderDeltaBeforeStart { .. } => {
-                Self::Projection(malformed.to_string())
-            }
-        }
-    }
 }
 
 /// Result of a prompt-level rewind plan (read-only over the event log).
@@ -79,7 +65,9 @@ pub fn plan_prompt_rewind(
         .filter(|event| event.seq <= cutoff_seq)
         .collect();
     let retained_owned: Vec<EventEnvelopeV1> = retained.into_iter().cloned().collect();
-    let conversation = project_conversation(&retained_owned, &[])?;
+    let conversation = CanonicalSessionProjection::from_event_history(&retained_owned)
+        .map_err(|error| PromptRewindError::Projection(error.to_string()))?
+        .conversation;
     let retained_event_count = retained_owned.len();
     let discarded_event_count = events.len().saturating_sub(retained_event_count);
 

@@ -8,8 +8,9 @@ use crate::coord::compaction::{
 use crate::coord::provider_context::event_belongs_to_agent;
 use crate::event::{EventEnvelopeV1, EventV1};
 use crate::ids::EntryId;
-use crate::session::legacy::{LegacyEventLogAdapter, LegacyIdentityNamespace};
-use crate::session::SessionEntryPayload;
+use crate::session::{
+    legacy::LegacyIdentityNamespace, CanonicalSessionProjection, SessionEntryPayload,
+};
 
 use super::super::CoordinatorError;
 use super::budget::{CompactionBudget, CompactionBudgetPlanInput, CompleteRequestBudget};
@@ -42,9 +43,8 @@ pub(super) fn prepare_typed_compaction(
         keep_recent_tokens,
         preserve_latest_completed_turn,
     } = request;
-    let projected = LegacyEventLogAdapter::new()
-        .project(events)
-        .map_err(compaction_error)?;
+    let projected =
+        CanonicalSessionProjection::from_event_history(events).map_err(compaction_error)?;
     let active_path = projected.session.active_path().map_err(compaction_error)?;
     let run_id = events.first().map(|event| &event.run_id).ok_or_else(|| {
         CoordinatorError::CompactionFailed("canonical compaction requires a run event".to_string())
