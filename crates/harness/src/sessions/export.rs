@@ -9,8 +9,7 @@ use harness_core::proj::{RunMetadata, SessionCatalogEntry};
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::cli_io::{load_events_from_run_dir, load_run_metadata};
-use crate::replay::{summarize_session, ReplayArtifactSummary, ReplaySummary};
+use crate::replay::{LoadedSessionRun, ReplayArtifactSummary, ReplaySummary};
 use crate::CliDeps;
 
 use super::{ensure_session_dir_exists, resolve_session, session_dir, ExportSessionCommand};
@@ -88,19 +87,8 @@ pub(super) fn export_session(
         }
     };
 
-    let events = match load_events_from_run_dir(&session.run_dir) {
-        Ok(events) => events,
-        Err(err) => {
-            let _ = writeln!(
-                stderr,
-                "failed to export session {}: {err}",
-                session.catalog.run_id
-            );
-            return 1;
-        }
-    };
-    let replay = match summarize_session(&session.run_dir) {
-        Ok(summary) => summary,
+    let loaded = match LoadedSessionRun::load(&session.run_dir) {
+        Ok(loaded) => loaded,
         Err(err) => {
             let _ = writeln!(
                 stderr,
@@ -112,8 +100,7 @@ pub(super) fn export_session(
     };
 
     let run_dir = session.run_dir;
-    let metadata = load_run_metadata(&run_dir);
-    let session_workspace_root = replay.workspace_root.as_deref().map(PathBuf::from);
+    let session_workspace_root = loaded.replay.workspace_root.as_deref().map(PathBuf::from);
     let readiness = readiness::session_export_readiness(
         config_path.as_deref(),
         session_dir_override,
@@ -123,13 +110,19 @@ pub(super) fn export_session(
     let mut credential_values = deps.credential_env_values();
     credential_values.extend(readiness.credential_values.clone());
     let credential_values = credentials::dedupe_credential_values(credential_values);
+    let support = session_export_support(
+        &loaded.projection,
+        &loaded.replay,
+        &loaded.catalog,
+        readiness,
+    );
     let export = SessionExportBundle {
         run_dir,
-        support: session_export_support(&events, &replay, &session.catalog, readiness),
-        catalog: session.catalog,
-        metadata,
-        replay,
-        events,
+        support,
+        catalog: loaded.catalog,
+        metadata: loaded.metadata,
+        replay: loaded.replay,
+        events: loaded.events,
     };
 
     redaction::write_redacted_export_output(
@@ -142,7 +135,7 @@ pub(super) fn export_session(
 }
 
 fn session_export_support(
-    events: &[harness_core::event::EventEnvelopeV1],
+    projection: &harness_core::session::CanonicalSessionProjection,
     replay: &ReplaySummary,
     catalog: &SessionCatalogEntry,
     readiness: SessionExportReadiness,
@@ -156,7 +149,7 @@ fn session_export_support(
         native_tool_catalog_summary: readiness.native_tool_catalog_summary,
         session_tool_readiness: readiness.session_tool_readiness,
         credential_store_manifest: readiness.credential_store_manifest,
-        route_metadata: route_metadata::session_export_route_metadata(events, replay, catalog),
+        route_metadata: route_metadata::session_export_route_metadata(projection, replay, catalog),
         artifact_index: replay.artifacts.clone(),
     }
 }

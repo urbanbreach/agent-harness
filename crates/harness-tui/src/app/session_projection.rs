@@ -30,6 +30,7 @@ use crate::view_model;
 #[path = "session_projection/background_notification.rs"]
 mod background_notification;
 mod event_ingest;
+mod settled_presentation;
 
 use self::background_notification::{
     activity_is_background_notification_reminder, background_task_notification_text,
@@ -114,8 +115,8 @@ pub struct SessionProjection {
     pub(crate) events: EventDetailsCache,
     canonical_projection: Option<CanonicalSessionProjection>,
     canonical_projection_error: Option<String>,
-    canonical_pending_events: Vec<EventEnvelopeV1>,
-    canonical_history: Vec<EventEnvelopeV1>,
+    unsettled_durable_events: Vec<EventEnvelopeV1>,
+    canonical_projection_generation: u64,
     pub(crate) activities: VecDeque<ActivityEntry>,
     pub(crate) active_context_usage: Option<ActiveContextUsage>,
     latest_request_budget: Option<(u64, Option<RequestBudgetSnapshot>)>,
@@ -144,8 +145,8 @@ impl SessionProjection {
         self.events.clear();
         self.canonical_projection = None;
         self.canonical_projection_error = None;
-        self.canonical_pending_events.clear();
-        self.canonical_history.clear();
+        self.unsettled_durable_events.clear();
+        self.canonical_projection_generation = 0;
         self.activities.clear();
         self.active_context_usage = None;
         self.latest_request_budget = None;
@@ -338,7 +339,12 @@ impl SessionProjection {
     }
 
     pub(crate) fn ingest_event(&mut self, event: EventEnvelopeV1, historical: bool) -> usize {
-        let canonical_updated = self.update_canonical_projection(&event);
+        self.unsettled_durable_events.push(event.clone());
+        let canonical_updated = if is_settlement_boundary(&event.payload) {
+            self.settle_durable_events()
+        } else {
+            self.canonical_projection_error.is_none()
+        };
         self.ingest_derived_event(event, historical, canonical_updated)
     }
 
@@ -372,62 +378,52 @@ impl SessionProjection {
         self.enforce_event_memory_cap()
     }
 
-    pub(crate) fn seed_canonical_history(&mut self, events: &[EventEnvelopeV1]) {
-        self.canonical_history = events.to_vec();
+    pub(crate) fn replace_settled_projection(&mut self, events: &[EventEnvelopeV1]) {
         match CanonicalSessionProjection::from_event_history(events) {
             Ok(projection) => {
                 self.canonical_projection = Some(projection);
                 self.canonical_projection_error = None;
-                self.canonical_pending_events.clear();
+                self.unsettled_durable_events.clear();
+                self.canonical_projection_generation =
+                    self.canonical_projection_generation.saturating_add(1);
+                self.rebuild_settled_presentation();
             }
             Err(error) => {
                 self.canonical_projection = None;
                 self.canonical_projection_error = Some(error.to_string());
-                self.canonical_pending_events = events.to_vec();
+                self.unsettled_durable_events = events.to_vec();
             }
         }
     }
 
     pub(crate) fn ingest_canonical_event(&mut self, event: &EventEnvelopeV1) {
-        let _ = self.update_canonical_projection(event);
+        self.unsettled_durable_events.push(event.clone());
+        if is_settlement_boundary(&event.payload) {
+            let _ = self.settle_durable_events();
+        }
     }
 
-    pub(crate) fn canonical_history(&self) -> &[EventEnvelopeV1] {
-        &self.canonical_history
-    }
-
-    fn update_canonical_projection(&mut self, event: &EventEnvelopeV1) -> bool {
-        self.canonical_history.push(event.clone());
-        let result = if self.canonical_projection_error.is_some() {
-            self.canonical_pending_events.push(event.clone());
-            match self.canonical_projection.as_mut() {
-                Some(projection) => projection.apply_events(&self.canonical_pending_events),
-                None => {
-                    CanonicalSessionProjection::from_event_history(&self.canonical_pending_events)
-                        .map(|projection| {
-                            self.canonical_projection = Some(projection);
-                        })
-                }
-            }
-        } else {
-            match self.canonical_projection.as_mut() {
-                Some(projection) => projection.apply_event(event.clone()),
-                None => CanonicalSessionProjection::from_event_history(std::slice::from_ref(event))
-                    .map(|projection| {
-                        self.canonical_projection = Some(projection);
-                    }),
-            }
+    fn settle_durable_events(&mut self) -> bool {
+        if self.unsettled_durable_events.is_empty() {
+            return self.canonical_projection_error.is_none();
+        }
+        let result = match self.canonical_projection.as_mut() {
+            Some(projection) => projection.apply_events(&self.unsettled_durable_events),
+            None => CanonicalSessionProjection::from_event_history(&self.unsettled_durable_events)
+                .map(|projection| {
+                    self.canonical_projection = Some(projection);
+                }),
         };
         match result {
             Ok(()) => {
                 self.canonical_projection_error = None;
-                self.canonical_pending_events.clear();
+                self.unsettled_durable_events.clear();
+                self.canonical_projection_generation =
+                    self.canonical_projection_generation.saturating_add(1);
+                self.rebuild_settled_presentation();
                 true
             }
             Err(error) => {
-                if self.canonical_pending_events.is_empty() {
-                    self.canonical_pending_events.push(event.clone());
-                }
                 self.canonical_projection_error = Some(error.to_string());
                 false
             }
@@ -444,6 +440,14 @@ impl SessionProjection {
 
     pub fn canonical_projection_error(&self) -> Option<&str> {
         self.canonical_projection_error.as_deref()
+    }
+
+    pub const fn canonical_projection_generation(&self) -> u64 {
+        self.canonical_projection_generation
+    }
+
+    pub fn settled_compaction_status(&self) -> Option<&CompactionStatus> {
+        self.compaction_status.as_ref()
     }
 
     #[expect(
@@ -1459,6 +1463,54 @@ impl SessionProjection {
             }
             self.transcript_trimmed_count += trimmed;
         }
+    }
+}
+
+#[expect(
+    deprecated,
+    reason = "legacy durable compaction events remain decode-only compatibility inputs"
+)]
+fn is_settlement_boundary(event: &EventV1) -> bool {
+    match event {
+        EventV1::RunStarted(_)
+        | EventV1::TaskScheduled(_)
+        | EventV1::UserMessageSubmitted(_)
+        | EventV1::PromptAttachmentsSubmitted(_)
+        | EventV1::ProviderRequestStarted(_)
+        | EventV1::ProviderStreamDelta(_)
+        | EventV1::ProviderReasoningDelta(_)
+        | EventV1::ToolCallRequested(_)
+        | EventV1::ToolCallStarted(_)
+        | EventV1::CompactionRequested(_) => false,
+        EventV1::SessionTitleUpdated(_)
+        | EventV1::RunFinished(_)
+        | EventV1::RunFailed(_)
+        | EventV1::AgentSpawned(_)
+        | EventV1::AgentStopped(_)
+        | EventV1::TaskCancelled(_)
+        | EventV1::TaskCompleted(_)
+        | EventV1::TaskResultLate(_)
+        | EventV1::BackgroundTaskNotification(_)
+        | EventV1::StaleDetected(_)
+        | EventV1::ProviderRequestFinished(_)
+        | EventV1::AssistantMessageFinished(_)
+        | EventV1::CompactionWritten(_)
+        | EventV1::CompactionApplied(_)
+        | EventV1::CompactionFailed(_)
+        | EventV1::SessionCompaction(_)
+        | EventV1::BranchSummary(_)
+        | EventV1::ToolCallFinished(_)
+        | EventV1::PermissionRequested(_)
+        | EventV1::PermissionGrantRecorded(_)
+        | EventV1::PermissionResolved(_)
+        | EventV1::EditProposed(_)
+        | EventV1::EditApplied(_)
+        | EventV1::EditRejected(_)
+        | EventV1::ArtifactWritten(_)
+        | EventV1::PolicyViolationDetected(_)
+        | EventV1::UiIntentReceived(_)
+        | EventV1::WorkspaceSnapshot(_)
+        | EventV1::WorkspaceReverted(_) => true,
     }
 }
 

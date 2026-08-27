@@ -5,6 +5,8 @@
 
 mod entry;
 mod error;
+mod identity;
+pub mod journal;
 pub mod legacy;
 mod model;
 mod projection;
@@ -17,6 +19,11 @@ pub use entry::{
     SessionEntryPayload, ToolResultStatus,
 };
 pub use error::SessionError;
+pub use identity::EventIdentityNamespace;
+pub use legacy::LegacyWarning as CompatibilityWarning;
+pub(crate) use legacy::{
+    classify_compatibility_event, CompatibilityEvent, CompatibilityEventLifecycle,
+};
 pub use model::{CanonicalSession, RunAttempt, RunStatus, SessionMetadata, SessionStatus};
 pub use projection::{CanonicalSessionProjection, CanonicalSessionProjectionError};
 pub(crate) use provider_view::select_active_path as select_provider_active_path;

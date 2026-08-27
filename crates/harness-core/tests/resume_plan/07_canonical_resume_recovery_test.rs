@@ -1,6 +1,6 @@
 use harness_core::ids::RunId;
-use harness_core::session::legacy::{
-    recover_event_history, LegacyHistoryRecoveryError, LegacyWarning,
+use harness_core::session::journal::{
+    recover_event_history, JournalRecoveryError, JournalRecoveryWarning,
 };
 
 fn recovery_fixture() -> Vec<EventEnvelopeV1> {
@@ -43,7 +43,7 @@ fn canonical_resume_recovers_only_supported_final_corrupt_tail() {
     assert_eq!(recovered.events(), recovery_fixture());
     assert_eq!(
         recovered.warnings(),
-        &[LegacyWarning::RecoveredCorruptFinalLine { line_number: 3 }]
+        &[JournalRecoveryWarning::RecoveredCorruptFinalLine { line_number: 3 }]
     );
 }
 
@@ -73,7 +73,7 @@ fn canonical_resume_rejects_non_final_corruption_without_side_effects() {
     // Then: rejection is typed and the journal remains byte-for-byte unchanged.
     assert!(matches!(
         error,
-        LegacyHistoryRecoveryError::InvalidEvent { line_number: 2, .. }
+        JournalRecoveryError::InvalidEvent { line_number: 2, .. }
     ));
     assert_eq!(std::fs::read(&events_path).unwrap_or_abort(), before);
 }
@@ -122,7 +122,7 @@ fn canonical_resume_rejects_complete_invalid_final_event() {
     // Then: it is rejected instead of being classified as a truncated append.
     assert!(matches!(
         error,
-        LegacyHistoryRecoveryError::InvalidEvent { line_number: 2, .. }
+        JournalRecoveryError::InvalidEvent { line_number: 2, .. }
     ));
 }
 
@@ -161,7 +161,7 @@ fn canonical_resume_rejects_event_from_unexpected_run() {
     // Then: the typed run mismatch identifies both ids.
     assert!(matches!(
         error,
-        LegacyHistoryRecoveryError::RunMismatch {
+        JournalRecoveryError::RunMismatch {
             line_number: 1,
             ref expected,
             ref actual,

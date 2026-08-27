@@ -10,8 +10,9 @@ use harness_core::event::{
     ToolCallStatus,
 };
 use harness_core::ids::{EntryId, RunId, ToolCallId};
-use harness_core::session::legacy::LegacyIdentityNamespace;
-use harness_core::session::{AssistantPart, AssistantToolCall as CanonicalAssistantToolCall};
+use harness_core::session::{
+    AssistantPart, AssistantToolCall as CanonicalAssistantToolCall, EventIdentityNamespace,
+};
 use harness_core::UnwrapOrAbort;
 use harness_providers::CompletionRequest;
 use serde_json::json;

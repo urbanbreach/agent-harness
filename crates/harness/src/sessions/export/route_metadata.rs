@@ -1,7 +1,8 @@
 use std::collections::BTreeSet;
 
-use harness_core::event::{EventEnvelopeV1, EventV1};
 use harness_core::proj::SessionCatalogEntry;
+use harness_core::session::CanonicalSessionProjection;
+use harness_core::transcript_projection::{ProjectedPart, ProjectedPermissionState};
 use serde_json::{json, Value};
 
 use crate::cli_labels::provider_model_label;
@@ -10,37 +11,23 @@ use crate::replay::ReplaySummary;
 use super::SessionExportRouteMetadata;
 
 pub(super) fn session_export_route_metadata(
-    events: &[EventEnvelopeV1],
+    projection: &CanonicalSessionProjection,
     replay: &ReplaySummary,
     catalog: &SessionCatalogEntry,
 ) -> Vec<SessionExportRouteMetadata> {
-    let mut metadata = vec![session_replay_route_metadata(events, replay, catalog)];
-    metadata.extend(events.iter().filter_map(|event| {
-        let EventV1::ToolCallFinished(payload) = &event.payload else {
+    let mut metadata = vec![session_replay_route_metadata(projection, replay, catalog)];
+    metadata.extend(projected_parts(projection).filter_map(|part| {
+        let ProjectedPart::ToolCall(tool_call) = part else {
             return None;
         };
-        let output_json = payload.output_json.as_ref()?;
-        let route = output_json.get("route")?.clone();
-        Some(SessionExportRouteMetadata {
-            source: "task_output".to_string(),
-            tool_call_id: Some(payload.tool_call_id.to_string()),
-            child_session_id: output_string_field(output_json, "child_session_id")
-                .or_else(|| output_string_field(output_json, "session_id"))
-                .or_else(|| output_string_field(output_json, "task_id")),
-            child_request_id: output_string_field(output_json, "child_request_id")
-                .or_else(|| output_string_field(output_json, "request_id")),
-            route,
-        })
+        let output_json = tool_call.output_json.as_ref()?;
+        task_output_route_metadata(tool_call.tool_call_id.as_str(), output_json)
     }));
     metadata
 }
 
-#[allow(
-    deprecated,
-    reason = "deprecated event variants kept for backward compatibility with existing session logs"
-)]
 fn session_replay_route_metadata(
-    events: &[EventEnvelopeV1],
+    projection: &CanonicalSessionProjection,
     replay: &ReplaySummary,
     catalog: &SessionCatalogEntry,
 ) -> SessionExportRouteMetadata {
@@ -49,76 +36,61 @@ fn session_replay_route_metadata(
     let mut tools = Vec::new();
     let mut permissions = Vec::new();
 
-    for event in events {
-        match &event.payload {
-            EventV1::AgentSpawned(payload) => {
-                profiles.insert(payload.profile.clone());
+    profiles.extend(
+        projection
+            .transcript
+            .session
+            .agent_profiles
+            .values()
+            .cloned(),
+    );
+    provider_models.extend(projection.provider_request_starts().filter_map(|request| {
+        provider_model_label(Some(request.provider_id), Some(request.model_id))
+    }));
+    for message in &projection.transcript.messages {
+        if let Some(provider) = message.provider.as_ref() {
+            if let Some(label) = provider_model_label(
+                provider.provider_id.as_deref(),
+                provider.model_id.as_deref(),
+            ) {
+                provider_models.insert(label);
             }
-            EventV1::ProviderRequestStarted(payload) => {
-                if let Some(label) =
-                    provider_model_label(Some(&payload.provider_id), Some(&payload.model_id))
-                {
-                    provider_models.insert(label);
+        }
+        for part in &message.parts {
+            match part {
+                ProjectedPart::ToolCall(payload) => {
+                    tools.push(json!({
+                        "tool_call_id": payload.tool_call_id,
+                        "tool_id": payload.tool_id,
+                        "seq": payload.requested_seq,
+                    }));
                 }
+                ProjectedPart::Permission(payload) => {
+                    permissions.push(json!({
+                        "permission_id": payload.permission_id,
+                        "kind": payload.kind,
+                        "tool_call_id": payload.tool_call_id,
+                        "default_decision": payload.default_decision,
+                        "seq": payload.provenance.first_seq,
+                    }));
+                    if matches!(payload.state, ProjectedPermissionState::Resolved) {
+                        permissions.push(json!({
+                            "permission_id": payload.permission_id,
+                            "decision": payload.decision,
+                            "reason": payload.reason,
+                            "seq": payload.provenance.last_seq,
+                        }));
+                    }
+                }
+                ProjectedPart::Text(_)
+                | ProjectedPart::Reasoning(_)
+                | ProjectedPart::Compaction(_)
+                | ProjectedPart::Artifact(_)
+                | ProjectedPart::Lifecycle(_)
+                | ProjectedPart::Task(_)
+                | ProjectedPart::PolicyViolation(_)
+                | ProjectedPart::UiIntent(_) => {}
             }
-            EventV1::ToolCallRequested(payload) => {
-                tools.push(json!({
-                    "tool_call_id": payload.tool_call_id,
-                    "tool_id": payload.tool_id,
-                    "seq": event.seq,
-                }));
-            }
-            EventV1::PermissionRequested(payload) => {
-                permissions.push(json!({
-                    "permission_id": payload.permission_id,
-                    "kind": payload.kind,
-                    "tool_call_id": payload.tool_call_id,
-                    "default_decision": payload.default_decision,
-                    "seq": event.seq,
-                }));
-            }
-            EventV1::PermissionResolved(payload) => {
-                permissions.push(json!({
-                    "permission_id": payload.permission_id,
-                    "decision": payload.decision,
-                    "reason": payload.reason,
-                    "seq": event.seq,
-                }));
-            }
-            EventV1::WorkspaceReverted(_)
-            | EventV1::RunStarted(_)
-            | EventV1::SessionTitleUpdated(_)
-            | EventV1::RunFinished(_)
-            | EventV1::RunFailed(_)
-            | EventV1::AgentStopped(_)
-            | EventV1::TaskScheduled(_)
-            | EventV1::TaskCancelled(_)
-            | EventV1::TaskCompleted(_)
-            | EventV1::TaskResultLate(_)
-            | EventV1::BackgroundTaskNotification(_)
-            | EventV1::StaleDetected(_)
-            | EventV1::UserMessageSubmitted(_)
-            | EventV1::PromptAttachmentsSubmitted(_)
-            | EventV1::ProviderStreamDelta(_)
-            | EventV1::ProviderReasoningDelta(_)
-            | EventV1::ProviderRequestFinished(_)
-            | EventV1::AssistantMessageFinished(_)
-            | EventV1::CompactionRequested(_)
-            | EventV1::CompactionWritten(_)
-            | EventV1::CompactionApplied(_)
-            | EventV1::CompactionFailed(_)
-            | EventV1::ToolCallStarted(_)
-            | EventV1::ToolCallFinished(_)
-            | EventV1::PermissionGrantRecorded(_)
-            | EventV1::EditProposed(_)
-            | EventV1::EditApplied(_)
-            | EventV1::EditRejected(_)
-            | EventV1::ArtifactWritten(_)
-            | EventV1::PolicyViolationDetected(_)
-            | EventV1::UiIntentReceived(_)
-            | EventV1::WorkspaceSnapshot(_)
-            | EventV1::SessionCompaction(_)
-            | EventV1::BranchSummary(_) => {}
         }
     }
 
@@ -144,6 +116,32 @@ fn session_replay_route_metadata(
             "resume_disabled_reason": replay.resume_disabled_reason,
         }),
     }
+}
+
+fn projected_parts(
+    projection: &CanonicalSessionProjection,
+) -> impl Iterator<Item = &ProjectedPart> {
+    projection
+        .transcript
+        .messages
+        .iter()
+        .flat_map(|message| message.parts.iter())
+}
+
+fn task_output_route_metadata(
+    tool_call_id: &str,
+    output_json: &Value,
+) -> Option<SessionExportRouteMetadata> {
+    Some(SessionExportRouteMetadata {
+        source: "task_output".to_string(),
+        tool_call_id: Some(tool_call_id.to_string()),
+        child_session_id: output_string_field(output_json, "child_session_id")
+            .or_else(|| output_string_field(output_json, "session_id"))
+            .or_else(|| output_string_field(output_json, "task_id")),
+        child_request_id: output_string_field(output_json, "child_request_id")
+            .or_else(|| output_string_field(output_json, "request_id")),
+        route: output_json.get("route")?.clone(),
+    })
 }
 
 fn output_string_field(output_json: &Value, key: &str) -> Option<String> {

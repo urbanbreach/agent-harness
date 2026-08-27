@@ -61,7 +61,7 @@ use crate::redact::Redactor;
 use crate::sched::{
     ConcurrencyKey, ScheduleDecision, Scheduler, SchedulerLimits, TaskProgressSnapshot,
 };
-use crate::session::{legacy::recover_event_history, CanonicalSessionProjection};
+use crate::session::{journal::recover_event_history, CanonicalSessionProjection};
 use crate::session_paths::{ARTIFACTS_DIR_NAME, EVENTS_FILE_NAME, META_FILE_NAME};
 use crate::session_title::{
     clean_generated_title, is_parent_default_title, SessionTitleOperationSpec,

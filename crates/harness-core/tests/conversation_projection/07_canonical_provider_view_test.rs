@@ -483,10 +483,9 @@ fn canonical_provider_view_legacy_adapter_maps_runtime_selection_into_provenance
         ),
     ];
 
-    let snapshot = harness_core::session::legacy::LegacyEventLogAdapter::new()
-        .project(&events)
+    let projection = harness_core::session::CanonicalSessionProjection::from_event_history(&events)
         .unwrap_or_abort();
-    let persisted = snapshot.session.entries().values().find_map(|entry| {
+    let persisted = projection.session.entries().values().find_map(|entry| {
         let SessionEntryPayload::AssistantMessage { provenance, .. } = &entry.payload else {
             return None;
         };

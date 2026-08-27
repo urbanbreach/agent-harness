@@ -17,7 +17,11 @@ use harness_tui::ui;
 use ratatui::layout::Rect;
 
 fn durable(seq: u64, payload: EventV1) -> RuntimeEvent {
-    RuntimeEvent::Durable(Box::new(EventEnvelopeV1 {
+    RuntimeEvent::Durable(Box::new(durable_envelope(seq, payload)))
+}
+
+fn durable_envelope(seq: u64, payload: EventV1) -> EventEnvelopeV1 {
+    EventEnvelopeV1 {
         schema_version: SCHEMA_VERSION,
         event_id: format!("evt-durable-{seq}"),
         seq,
@@ -29,7 +33,7 @@ fn durable(seq: u64, payload: EventV1) -> RuntimeEvent {
         causation_id: None,
         stream_key: Some("agent:agent-1".to_string()),
         payload,
-    }))
+    }
 }
 
 fn live(event_id: &str, payload: LiveEventV1) -> RuntimeEvent {
@@ -171,21 +175,150 @@ fn typed_live_fragments_render_then_final_commit_settles_them() {
 
 #[test]
 fn tui_durable_content_uses_core_canonical_projection() {
-    // arrange
-    let projection_source = include_str!("../src/app/session_projection.rs");
+    // Given: one settled history with distinct user and assistant identities.
+    let events = vec![
+        durable_envelope(
+            1,
+            EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                request_id: "turn-1".into(),
+                text: "canonical question".to_string(),
+            }),
+        ),
+        durable_envelope(
+            2,
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: "provider-1".into(),
+                provider_id: "mock".to_string(),
+                model_id: "model".to_string(),
+                prompt_summary: "canonical question".to_string(),
+                request_digest: "request-digest".to_string(),
+                metadata: None,
+            }),
+        ),
+        durable_envelope(
+            3,
+            EventV1::AssistantMessageFinished(AssistantMessageFinishedEvent {
+                request_id: "provider-1".into(),
+                tool_call_count: 0,
+                parts: vec![AssistantPart::Text {
+                    text: "canonical answer".to_string(),
+                }],
+                provenance: None,
+                assistant_message: None,
+            }),
+        ),
+    ];
+    let expected = harness_core::session::CanonicalSessionProjection::from_event_history(&events)
+        .expect("fixture must project");
 
-    // act
-    let uses_core_projection = projection_source.contains("CanonicalSessionProjection");
-    let owns_raw_durable_history =
-        projection_source.contains("pub(crate) events: Vec<EventEnvelopeV1>");
+    // When: the TUI replaces its settled history in one boundary operation.
+    let mut app = AppState::new_live(None, false, None);
+    app.replace_events(events);
 
-    // assert
-    assert!(
-        uses_core_projection,
-        "TUI durable content must consume CanonicalSessionProjection"
+    // Then: its canonical identity/order/content and rendered settled content agree.
+    let actual = app
+        .canonical_projection()
+        .expect("settled history must have a canonical projection");
+    assert_eq!(actual.session.entries(), expected.session.entries());
+    assert_eq!(actual.transcript.messages, expected.transcript.messages);
+    assert_eq!(actual.run_summary.status, expected.run_summary.status);
+    let rendered = render(&app);
+    assert!(rendered.contains("canonical question"), "{rendered}");
+    assert!(rendered.contains("canonical answer"), "{rendered}");
+    assert_eq!(app.canonical_projection_generation(), 1);
+}
+
+#[test]
+fn live_settlement_projects_once_without_replaying_each_durable_event() {
+    // Given: an empty live TUI projection.
+    let mut app = AppState::new_live(None, false, None);
+
+    // When: two durable setup events and one semantic settlement arrive.
+    app.ingest_runtime_event(durable(
+        1,
+        EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+            request_id: "turn-1".into(),
+            text: "question".to_string(),
+        }),
+    ));
+    app.ingest_runtime_event(durable(
+        2,
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: "provider-1".into(),
+            provider_id: "mock".to_string(),
+            model_id: "model".to_string(),
+            prompt_summary: "question".to_string(),
+            request_digest: "request-digest".to_string(),
+            metadata: None,
+        }),
+    ));
+    app.ingest_runtime_event(durable(
+        3,
+        EventV1::AssistantMessageFinished(AssistantMessageFinishedEvent {
+            request_id: "provider-1".into(),
+            tool_call_count: 0,
+            parts: vec![AssistantPart::Text {
+                text: "answer".to_string(),
+            }],
+            provenance: None,
+            assistant_message: None,
+        }),
+    ));
+
+    // Then: the complete transaction was projected at the settlement boundary once.
+    assert_eq!(app.canonical_projection_generation(), 1);
+    assert_eq!(
+        app.canonical_projection()
+            .and_then(|projection| projection.session.watermark())
+            .map(|seq| seq.get()),
+        Some(3)
     );
-    assert!(
-        !owns_raw_durable_history,
-        "TUI must not own a second raw durable event history"
+}
+
+#[test]
+fn legacy_compaction_display_is_derived_from_canonical_compatibility_projection() {
+    // Given: a shipped legacy compaction envelope decoded through the event boundary.
+    let payload = serde_json::from_value(serde_json::json!({
+        "event_type": "compaction_applied",
+        "data": {
+            "checkpoint_id": "checkpoint-legacy",
+            "agent_id": "agent-1",
+            "through_seq": 1,
+            "through_request_id": "turn-1",
+            "tokens_before_estimate": 600,
+            "tokens_after_estimate": 240,
+            "summary_tokens_estimate": 40,
+            "compacted_turns": 1,
+            "preserved_turns": 1,
+            "reduction_tokens_estimate": 360,
+            "reduction_percent_estimate": 60,
+            "estimate_source": "legacy"
+        }
+    }))
+    .expect("legacy fixture must decode");
+    let mut app = AppState::new_live(None, false, None);
+
+    // When: the legacy history is installed as one settled batch.
+    app.replace_events(vec![durable_envelope(1, payload)]);
+
+    // Then: both canonical compatibility metadata and TUI presentation agree.
+    let canonical = app
+        .canonical_projection()
+        .expect("legacy history must project through compatibility");
+    assert_eq!(
+        canonical
+            .run_summary
+            .counts
+            .by_type
+            .get("compaction_applied"),
+        Some(&1)
     );
+    assert!(canonical.compatibility_warnings.iter().any(|warning| {
+        matches!(warning, LegacyWarning::UnsupportedLegacyVariant { event_id } if event_id == "evt-durable-1")
+    }));
+    assert_eq!(app.canonical_projection_generation(), 1);
+    let status = app
+        .settled_compaction_status()
+        .expect("compatibility projection must yield a read-only status");
+    assert_eq!(status.message, "compaction applied · legacy compatibility");
 }

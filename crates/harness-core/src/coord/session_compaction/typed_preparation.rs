@@ -8,9 +8,7 @@ use crate::coord::compaction::{
 use crate::coord::provider_context::event_belongs_to_agent;
 use crate::event::{EventEnvelopeV1, EventV1};
 use crate::ids::EntryId;
-use crate::session::{
-    legacy::LegacyIdentityNamespace, CanonicalSessionProjection, SessionEntryPayload,
-};
+use crate::session::{CanonicalSessionProjection, EventIdentityNamespace, SessionEntryPayload};
 
 use super::super::CoordinatorError;
 use super::budget::{CompactionBudget, CompactionBudgetPlanInput, CompleteRequestBudget};
@@ -49,13 +47,14 @@ pub(super) fn prepare_typed_compaction(
     let run_id = events.first().map(|event| &event.run_id).ok_or_else(|| {
         CoordinatorError::CompactionFailed("canonical compaction requires a run event".to_string())
     })?;
-    let namespace = LegacyIdentityNamespace::new(run_id);
+    let namespace = EventIdentityNamespace::new(run_id);
     let active_entry_ids = active_path
         .iter()
         .map(|entry| entry.id.clone())
         .collect::<std::collections::BTreeSet<_>>();
     let source_sequences = LegacySourceSequences::new(events.iter().filter_map(|event| {
-        source_entry_id(&namespace, event)
+        namespace
+            .source_entry_id(event)
             .filter(|entry_id| active_entry_ids.contains(entry_id))
             .map(|entry_id| (entry_id, event.seq))
     }))
@@ -167,22 +166,6 @@ fn latest_completed_turn_tokens(snapshot: &ActivePathCompactionSnapshot) -> Opti
         .iter()
         .position(|entry| entry.entry.turn_id.as_ref() == Some(latest_turn_id))?;
     Some(estimate_typed_entries_tokens(&snapshot.entries[first_entry..]).max(1))
-}
-
-fn source_entry_id(
-    namespace: &LegacyIdentityNamespace<'_>,
-    event: &EventEnvelopeV1,
-) -> Option<EntryId> {
-    let semantic_kind = match event.payload {
-        EventV1::SessionTitleUpdated(_) => "session_metadata",
-        EventV1::UserMessageSubmitted(_) => "user_message",
-        EventV1::ProviderRequestStarted(_) => "assistant_message",
-        EventV1::SessionCompaction(_) => "compaction_summary",
-        EventV1::BranchSummary(_) => "branch_summary",
-        EventV1::ToolCallFinished(_) => "tool_result",
-        _ => return None,
-    };
-    Some(namespace.entry_id(event.seq, &event.event_id, semantic_kind))
 }
 
 fn compaction_error(error: impl std::fmt::Display) -> CoordinatorError {

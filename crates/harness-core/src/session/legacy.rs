@@ -2,9 +2,8 @@ use harness_providers::CompletionUsage;
 use serde::{Deserialize, Serialize};
 
 use super::{CanonicalSession, SessionError};
-use crate::digest::digest32;
-use crate::event::{EventEnvelopeV1, EventV1, SessionCompactionEvent, UiIntentReceivedEvent};
-use crate::ids::{EntryId, ProviderRequestId, RunId, SessionId, TurnId};
+use crate::event::{SessionCompactionEvent, UiIntentReceivedEvent};
+use crate::ids::{EntryId, RunId};
 
 mod adapter;
 mod compaction;
@@ -14,10 +13,9 @@ mod recovery;
 
 pub use recovery::{recover_event_history, LegacyHistoryRecovery, LegacyHistoryRecoveryError};
 
+pub use super::EventIdentityNamespace as LegacyIdentityNamespace;
 pub(crate) use compaction::{
-    compaction_lifecycle as legacy_compaction_lifecycle,
-    event_type_name as legacy_compaction_event_type_name,
-    is_compaction_event as is_legacy_compaction_event, LegacyCompactionLifecycle,
+    classify_compatibility_event, CompatibilityEvent, CompatibilityEventLifecycle,
 };
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -27,11 +25,6 @@ impl LegacyEventLogAdapter {
     pub const fn new() -> Self {
         Self
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct LegacyIdentityNamespace<'a> {
-    run_id: &'a RunId,
 }
 
 #[derive(Debug, Clone)]
@@ -62,110 +55,6 @@ impl From<&SessionCompactionEvent> for LegacyCompactionFact {
             modified_files: event.modified_files.clone(),
             current_intent: event.current_intent.clone(),
         }
-    }
-}
-
-impl<'a> LegacyIdentityNamespace<'a> {
-    pub const fn new(run_id: &'a RunId) -> Self {
-        Self { run_id }
-    }
-
-    pub fn session_id(&self) -> SessionId {
-        SessionId::new(format!(
-            "legacy-session-{}",
-            digest32(format!("session\0{}", self.run_id).as_bytes())
-        ))
-    }
-
-    pub fn entry_id(&self, sequence: u64, event_id: &str, semantic_kind: &str) -> EntryId {
-        EntryId::new(format!(
-            "legacy-entry-{}",
-            digest32(
-                format!(
-                    "entry\0{}\0{sequence}\0{event_id}\0{semantic_kind}",
-                    self.run_id
-                )
-                .as_bytes()
-            )
-        ))
-    }
-
-    #[expect(
-        deprecated,
-        reason = "the V1 compatibility boundary must exhaust deprecated V1 variants"
-    )]
-    pub(crate) fn compaction_boundary_entry_id(
-        &self,
-        events: &[EventEnvelopeV1],
-        sequence: u64,
-    ) -> Option<EntryId> {
-        let boundary = events.iter().find(|event| event.seq == sequence)?;
-        match &boundary.payload {
-            EventV1::UserMessageSubmitted(_) => {
-                Some(self.entry_id(boundary.seq, &boundary.event_id, "user_message"))
-            }
-            EventV1::AssistantMessageFinished(finished) => events
-                .iter()
-                .find(|event| {
-                    matches!(
-                        &event.payload,
-                        EventV1::ProviderRequestStarted(started)
-                            if started.request_id.as_str() == finished.request_id.as_str()
-                    )
-                })
-                .map(|started| self.entry_id(started.seq, &started.event_id, "assistant_message")),
-            EventV1::RunStarted(_)
-            | EventV1::SessionTitleUpdated(_)
-            | EventV1::RunFinished(_)
-            | EventV1::RunFailed(_)
-            | EventV1::AgentSpawned(_)
-            | EventV1::AgentStopped(_)
-            | EventV1::TaskScheduled(_)
-            | EventV1::TaskCancelled(_)
-            | EventV1::TaskCompleted(_)
-            | EventV1::TaskResultLate(_)
-            | EventV1::BackgroundTaskNotification(_)
-            | EventV1::StaleDetected(_)
-            | EventV1::PromptAttachmentsSubmitted(_)
-            | EventV1::ProviderRequestStarted(_)
-            | EventV1::ProviderStreamDelta(_)
-            | EventV1::ProviderReasoningDelta(_)
-            | EventV1::ProviderRequestFinished(_)
-            | EventV1::CompactionRequested(_)
-            | EventV1::CompactionWritten(_)
-            | EventV1::CompactionApplied(_)
-            | EventV1::CompactionFailed(_)
-            | EventV1::SessionCompaction(_)
-            | EventV1::BranchSummary(_)
-            | EventV1::ToolCallRequested(_)
-            | EventV1::ToolCallStarted(_)
-            | EventV1::ToolCallFinished(_)
-            | EventV1::PermissionRequested(_)
-            | EventV1::PermissionGrantRecorded(_)
-            | EventV1::PermissionResolved(_)
-            | EventV1::EditProposed(_)
-            | EventV1::EditApplied(_)
-            | EventV1::EditRejected(_)
-            | EventV1::ArtifactWritten(_)
-            | EventV1::PolicyViolationDetected(_)
-            | EventV1::UiIntentReceived(_)
-            | EventV1::WorkspaceSnapshot(_)
-            | EventV1::WorkspaceReverted(_) => None,
-        }
-    }
-
-    pub fn turn_id(&self, correlation_id: &str) -> TurnId {
-        TurnId::new(format!(
-            "legacy-turn-{}",
-            digest32(format!("turn\0{}\0{correlation_id}", self.run_id).as_bytes())
-        ))
-    }
-
-    pub fn provider_request_id(&self, request_id: &str) -> ProviderRequestId {
-        ProviderRequestId::new(format!(
-            "legacy-provider-request-{}",
-            digest32(format!("provider-request\0{}\0{request_id}", self.run_id).as_bytes())
-        ))
     }
 }
 
@@ -204,6 +93,16 @@ pub enum LegacyWarning {
     DuplicateToolIdentity { tool_call_id: String },
     UnsupportedLegacyVariant { event_id: String },
     RecoveredCorruptFinalLine { line_number: usize },
+}
+
+impl From<super::journal::JournalRecoveryWarning> for LegacyWarning {
+    fn from(warning: super::journal::JournalRecoveryWarning) -> Self {
+        match warning {
+            super::journal::JournalRecoveryWarning::RecoveredCorruptFinalLine { line_number } => {
+                Self::RecoveredCorruptFinalLine { line_number }
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
