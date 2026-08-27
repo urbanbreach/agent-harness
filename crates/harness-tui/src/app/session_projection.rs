@@ -9,7 +9,7 @@ use harness_core::event::{
     LiveEventV1, ProviderRequestFinishedEvent, ProviderRequestRetryMetadata, ResolvedToolIdentity,
     ToolCallLifecycleState, UserMessageSubmittedEvent,
 };
-use harness_core::session::AssistantPart;
+use harness_core::session::{AssistantPart, CanonicalSessionProjection};
 
 use super::permissions::PendingPermission;
 use super::{
@@ -69,8 +69,51 @@ struct TransientAssistantState {
 }
 
 #[derive(Default)]
+pub(crate) struct EventDetailsCache(Vec<EventEnvelopeV1>);
+
+impl std::ops::Deref for EventDetailsCache {
+    type Target = Vec<EventEnvelopeV1>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for EventDetailsCache {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl<'a> IntoIterator for &'a EventDetailsCache {
+    type Item = &'a EventEnvelopeV1;
+    type IntoIter = std::slice::Iter<'a, EventEnvelopeV1>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a mut EventDetailsCache {
+    type Item = &'a mut EventEnvelopeV1;
+    type IntoIter = std::slice::IterMut<'a, EventEnvelopeV1>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter_mut()
+    }
+}
+
+impl From<Vec<EventEnvelopeV1>> for EventDetailsCache {
+    fn from(events: Vec<EventEnvelopeV1>) -> Self {
+        Self(events)
+    }
+}
+
+#[derive(Default)]
 pub struct SessionProjection {
-    pub(crate) events: Vec<EventEnvelopeV1>,
+    pub(crate) events: EventDetailsCache,
+    canonical_projection: Option<CanonicalSessionProjection>,
+    canonical_projection_error: Option<String>,
     pub(crate) activities: VecDeque<ActivityEntry>,
     pub(crate) active_context_usage: Option<ActiveContextUsage>,
     latest_request_budget: Option<(u64, Option<RequestBudgetSnapshot>)>,
@@ -97,6 +140,8 @@ pub struct SessionProjection {
 impl SessionProjection {
     pub(crate) fn reset(&mut self) {
         self.events.clear();
+        self.canonical_projection = None;
+        self.canonical_projection_error = None;
         self.activities.clear();
         self.active_context_usage = None;
         self.latest_request_budget = None;
@@ -291,6 +336,7 @@ impl SessionProjection {
     pub(crate) fn ingest_event(&mut self, event: EventEnvelopeV1, historical: bool) -> usize {
         let previous_activity_count = self.activities.len();
         let previous_trimmed_count = self.transcript_trimmed_count;
+        self.update_canonical_projection(&event);
         self.seen_seqs.insert(event.seq);
         self.update_derived_state_for_event(&event, historical);
         self.transcript_delta = if historical {
@@ -302,8 +348,30 @@ impl SessionProjection {
         self.enforce_event_memory_cap()
     }
 
+    fn update_canonical_projection(&mut self, event: &EventEnvelopeV1) {
+        let result = match self.canonical_projection.as_mut() {
+            Some(projection) => projection.apply_event(event.clone()),
+            None => CanonicalSessionProjection::from_event_history(std::slice::from_ref(event))
+                .map(|projection| {
+                    self.canonical_projection = Some(projection);
+                }),
+        };
+        match result {
+            Ok(()) => self.canonical_projection_error = None,
+            Err(error) => self.canonical_projection_error = Some(error.to_string()),
+        }
+    }
+
     pub(crate) fn take_transcript_delta(&mut self) -> ProjectionDelta {
         std::mem::take(&mut self.transcript_delta)
+    }
+
+    pub fn canonical_projection(&self) -> Option<&CanonicalSessionProjection> {
+        self.canonical_projection.as_ref()
+    }
+
+    pub fn canonical_projection_error(&self) -> Option<&str> {
+        self.canonical_projection_error.as_deref()
     }
 
     #[expect(

@@ -10,9 +10,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use clap::Args;
 use harness_core::event::{EventEnvelopeV1, EventV1, RunStartedEvent};
 use harness_core::proj::{
-    project_run_summary, project_session_catalog_entry, ChildSessionTerminalState, RunStatus,
-    SessionCatalogEntry, SessionCatalogMetadata,
+    project_session_catalog_entry, ChildSessionTerminalState, RunStatus, SessionCatalogEntry,
+    SessionCatalogMetadata,
 };
+use harness_core::session::CanonicalSessionProjection;
 use serde::Serialize;
 use serde_json::Value;
 
@@ -192,8 +193,10 @@ pub fn summarize_session(run_dir: &Path) -> Result<ReplaySummary, String> {
         return Err(format!("no events found in {}", run_dir.display()));
     }
 
-    let projection = project_run_summary(events.iter()).map_err(|err| err.to_string())?;
     let run_id = events[0].run_id.clone();
+    let projection =
+        CanonicalSessionProjection::from_run_history(run_dir, run_id.as_str(), &events)
+            .map_err(|err| err.to_string())?;
     let (meta, _meta_error) = load_meta_lossy(run_dir);
     let catalog = project_session_catalog_entry(
         events.iter(),
@@ -210,7 +213,7 @@ pub fn summarize_session(run_dir: &Path) -> Result<ReplaySummary, String> {
         run_id: run_id.to_string(),
         run_name,
         session_path: run_dir.to_path_buf(),
-        status: projection.status,
+        status: projection.run_summary.status,
         workspace_root: catalog.workspace_root,
         mode_source: catalog.mode_source,
         is_resumable: catalog.is_resumable,
@@ -218,11 +221,15 @@ pub fn summarize_session(run_dir: &Path) -> Result<ReplaySummary, String> {
         artifact_count: artifacts.len(),
         child_session_count: child_sessions.len(),
         parent_session_id: catalog.parent_session_id,
-        total_events: projection.counts.total_events,
-        counts_by_type: projection.counts.by_type,
-        pending_permissions: projection.pending_permissions.into_iter().collect(),
-        tasks_in_flight: projection.tasks_in_flight.into_iter().collect(),
-        last_error: projection.last_error,
+        total_events: projection.run_summary.counts.total_events,
+        counts_by_type: projection.run_summary.counts.by_type,
+        pending_permissions: projection
+            .run_summary
+            .pending_permissions
+            .into_iter()
+            .collect(),
+        tasks_in_flight: projection.run_summary.tasks_in_flight.into_iter().collect(),
+        last_error: projection.run_summary.last_error,
         artifacts,
         child_sessions,
     })

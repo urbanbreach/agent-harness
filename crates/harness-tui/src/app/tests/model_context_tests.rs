@@ -202,7 +202,7 @@ pub(super) fn live_switch_model_labels_next_turn_only() {
         dock.summary_segment,
         Some(view_model::ControlDockSummarySegment {
             kind: view_model::ControlDockSummarySegmentKind::Orchestration,
-            text: "Next turns: GPT-5.4 Mini".to_string(),
+            text: "Next turns: GPT-5.4 Mini · Creative".to_string(),
             tone: view_model::ControlDockSummaryTone::Secondary,
         })
     );

@@ -423,7 +423,7 @@ mod tests {
         // assert
         let mut app = AppState::default();
         app.activities = std::collections::VecDeque::from(vec![make_test_activity("request-1", 1)]);
-        app.events = vec![make_session_compaction_event(2)];
+        app.events = vec![make_session_compaction_event(2)].into();
 
         let sections = super::super::ui_transcript_sections::build_transcript_sections(&app);
 
@@ -444,7 +444,7 @@ mod tests {
         // assert
         let mut app = AppState::default();
         app.activities = std::collections::VecDeque::from(vec![make_test_activity("request-1", 1)]);
-        app.events = vec![make_session_compaction_event(2)];
+        app.events = vec![make_session_compaction_event(2)].into();
 
         let theme = Theme::default();
         let sections = super::super::ui_transcript_sections::build_transcript_sections(&app);

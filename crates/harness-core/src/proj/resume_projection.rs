@@ -214,7 +214,7 @@ impl ResumePlan {
         self.latest_lifecycle_status.run_status()
     }
 
-    fn blocked(run_id: String, reason: String) -> Self {
+    pub(crate) fn blocked(run_id: String, reason: String) -> Self {
         Self {
             run_id,
             latest_lifecycle_status: LifecycleSegmentStatus::Missing,

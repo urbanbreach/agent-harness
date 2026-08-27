@@ -13,7 +13,6 @@ use crate::event::{
     RunFinishedEvent, TaskCancelledEvent, SCHEMA_VERSION,
 };
 use crate::path_display::display_path;
-use crate::session::legacy::legacy_checkpoint_artifact;
 use crate::session_paths::{ARTIFACTS_DIR_NAME, EVENTS_FILE_NAME, WRITER_LOCK_FILE_NAME};
 
 use super::stable_prefix::{
@@ -504,15 +503,6 @@ fn collect_referenced_artifacts(
 ) -> Result<BTreeMap<PathBuf, ArtifactCopySpec>, ChildSessionMaterializationError> {
     let mut specs = BTreeMap::new();
     for event in events {
-        if let Some(artifact) = legacy_checkpoint_artifact(&event.payload) {
-            merge_artifact_spec(
-                &mut specs,
-                &artifact.path,
-                artifact.digest.as_deref(),
-                Some(artifact.bytes),
-            )?;
-            continue;
-        }
         match &event.payload {
             EventV1::ArtifactWritten(payload) => merge_artifact_spec(
                 &mut specs,

@@ -24,4 +24,4 @@ expression: "render_live_lines(&app, 80, 24)"
   │ ❯ Build anything                                                         │  
   ╰──────────────────────────────────────────────────────────────────────────╯  
                                                                                 
-  Enter:send  │  Ctrl+x:shortcuts
+  ctx ~0 · capacity unknown  Enter:send  │  Ctrl+x:shortcuts

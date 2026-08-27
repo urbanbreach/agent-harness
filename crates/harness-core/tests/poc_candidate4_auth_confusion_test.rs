@@ -113,7 +113,11 @@ fn poc_codex_has_browser_pkce_and_device_code() {
             "codex": {
                 "name": "Codex",
                 "options": {"baseURL": "https://api.openai.com/v1", "apiKeyEnv": ["OPENAI_API_KEY"]},
-                "models": {}
+                "models": {
+                    "safe": {
+                        "limit": {"context": 8192, "output": 1024}
+                    }
+                }
             }
         }
     }"#;

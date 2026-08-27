@@ -251,6 +251,7 @@ impl LegacyBoundary {
         );
         self.latest_provider_by_turn
             .insert(turn_key.clone(), request_id.to_string());
+        self.latest_provider_request_id = Some(request_id.to_string());
         Ok(Self::fact(
             event,
             LegacyFactKind::ProviderStarted(ProviderStartFact {

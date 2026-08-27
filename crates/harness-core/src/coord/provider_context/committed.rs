@@ -2,10 +2,9 @@ use thiserror::Error;
 
 use crate::agent::{ProviderContext, ProviderConversationTurn};
 use crate::attachment_transport::{lower_provider_attachments, AttachmentOrderingError};
-use crate::conversation::{
-    project_conversation, ConversationMessage, ConversationProjection, ConversationProjectionError,
-};
+use crate::conversation::{ConversationMessage, ConversationProjection};
 use crate::event::{EventEnvelopeV1, EventV1};
+use crate::session::{CanonicalSessionProjection, CanonicalSessionProjectionError};
 
 use self::attachments::attachments_by_request;
 use self::tool_lifecycle::admitted_tool_lifecycle_event_ids;
@@ -19,7 +18,7 @@ mod tests;
 #[derive(Debug, Error, PartialEq, Eq)]
 pub(in crate::coord) enum ProviderContextReconstructionError {
     #[error(transparent)]
-    Conversation(#[from] ConversationProjectionError),
+    Projection(#[from] CanonicalSessionProjectionError),
     #[error("attachments for request `{request_id}` are malformed: {source}")]
     Attachments {
         request_id: String,
@@ -87,7 +86,7 @@ pub(in crate::coord) fn reconstruct_provider_context_from_events(
 pub(in crate::coord) fn project_committed_context(
     events: &[EventEnvelopeV1],
     agent_id: &str,
-) -> Result<ConversationProjection, ConversationProjectionError> {
+) -> Result<ConversationProjection, CanonicalSessionProjectionError> {
     let stream_key = format!("agent:{agent_id}");
     let lifecycle_event_ids = admitted_tool_lifecycle_event_ids(events, agent_id);
     let agent_events = events
@@ -98,7 +97,8 @@ pub(in crate::coord) fn project_committed_context(
         })
         .cloned()
         .collect::<Vec<_>>();
-    project_conversation(&agent_events, &[])
+    CanonicalSessionProjection::from_owner_event_history(events, &agent_events, agent_id)
+        .map(|projection| projection.conversation)
 }
 
 pub(in crate::coord) fn latest_agent_event_seq(

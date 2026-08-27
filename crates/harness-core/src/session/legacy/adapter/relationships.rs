@@ -62,10 +62,16 @@ impl LegacyBoundary {
     ) -> Result<LegacyFact, LegacyAdapterError> {
         let request_id = payload.request_id.as_str();
         let relationship = self.provider_relationship(event, request_id)?;
-        if !relationship.finished || relationship.assistant_finished {
+        if relationship.assistant_finished {
             return Err(Self::invalid(event));
         }
+        if !relationship.finished {
+            self.warnings.push(LegacyWarning::MissingProviderFinish {
+                request_id: request_id.to_string(),
+            });
+        }
         if let Some(value) = self.providers.get_mut(request_id) {
+            value.finished = true;
             value.assistant_finished = true;
         }
         Ok(Self::fact(
@@ -84,18 +90,38 @@ impl LegacyBoundary {
         payload: &crate::event::ToolCallRequestedEvent,
     ) -> Result<LegacyFact, LegacyAdapterError> {
         let tool_call_id = payload.tool_call_id.as_str();
-        let Some(turn_key) = Self::correlation(event) else {
-            return Err(Self::invalid(event));
+        let correlation = Self::correlation(event);
+        let request_id = correlation
+            .and_then(|turn_key| self.latest_provider_by_turn.get(turn_key).cloned())
+            .or_else(|| self.latest_provider_request_id.clone());
+        let Some(request_id) = request_id else {
+            self.ambiguous_tools.insert(tool_call_id.to_string());
+            self.warnings
+                .push(LegacyWarning::MissingProviderAssociation {
+                    tool_call_id: tool_call_id.to_string(),
+                });
+            return Ok(Self::fact(event, LegacyFactKind::Noop));
         };
-        let Some(request_id) = self.latest_provider_by_turn.get(turn_key).cloned() else {
-            return Err(Self::invalid(event));
-        };
+        let turn_key = correlation
+            .map(str::to_string)
+            .or_else(|| {
+                self.providers
+                    .get(&request_id)
+                    .map(|provider| provider.turn_key.clone())
+            })
+            .ok_or_else(|| Self::invalid(event))?;
         if Self::non_empty(tool_call_id).is_none()
             || Self::non_empty(&payload.tool_id).is_none()
             || Self::non_empty(&payload.args_digest).is_none()
-            || self.tools.contains_key(tool_call_id)
         {
             return Err(Self::invalid(event));
+        }
+        if self.tools.contains_key(tool_call_id) {
+            self.ambiguous_tools.insert(tool_call_id.to_string());
+            self.warnings.push(LegacyWarning::DuplicateToolIdentity {
+                tool_call_id: tool_call_id.to_string(),
+            });
+            return Ok(Self::fact(event, LegacyFactKind::Noop));
         }
         self.tools.insert(
             tool_call_id.to_string(),
@@ -126,6 +152,9 @@ impl LegacyBoundary {
         event: &EventEnvelopeV1,
         tool_call_id: &str,
     ) -> Result<LegacyFact, LegacyAdapterError> {
+        if self.ambiguous_tools.contains(tool_call_id) {
+            return Ok(Self::fact(event, LegacyFactKind::Noop));
+        }
         let Some(relationship) = self.tools.get(tool_call_id) else {
             return Err(Self::invalid(event));
         };
@@ -143,8 +172,14 @@ impl LegacyBoundary {
         payload: &crate::event::ToolCallFinishedEvent,
     ) -> Result<LegacyFact, LegacyAdapterError> {
         let tool_call_id = payload.tool_call_id.as_str();
+        if self.ambiguous_tools.contains(tool_call_id) {
+            return Ok(Self::fact(event, LegacyFactKind::Noop));
+        }
         let Some(relationship) = self.tools.get(tool_call_id).cloned() else {
-            return Err(Self::invalid(event));
+            self.warnings.push(LegacyWarning::MissingToolRequest {
+                tool_call_id: tool_call_id.to_string(),
+            });
+            return Ok(Self::fact(event, LegacyFactKind::Noop));
         };
         if relationship.finished
             || Self::correlation(event)

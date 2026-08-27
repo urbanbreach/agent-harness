@@ -40,4 +40,4 @@ expression: trim_trailing_snapshot_whitespace(&rendered)
   │ ❯                                                                                                                                                                            │
   ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── model-1 ─╯
 
-  Enter:send  │  Shift+Tab:mode  │  Ctrl+x:shortcuts
+  ctx ~0 · capacity unknown  Enter:send  │  Shift+Tab:mode  │  Ctrl+x:shortcuts

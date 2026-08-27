@@ -13,10 +13,9 @@ use harness_providers::{
 use serde_json::Value;
 use tokio_stream::StreamExt;
 
-use crate::conversation::{
-    project_conversation, ConversationCheckpointMessage, ConversationMessage,
-};
+use crate::conversation::{ConversationCheckpointMessage, ConversationMessage};
 use crate::event::{EventEnvelopeV1, EventV1};
+use crate::session::CanonicalSessionProjection;
 
 use super::file_ops::{
     compute_file_lists, extract_file_ops_from_tool_call, merge_file_operations, FileOperations,
@@ -381,10 +380,11 @@ fn extract_file_ops_from_message(msg: &ConversationMessage, file_ops: &mut FileO
 /// Convert events to conversation messages, including checkpoint messages
 /// for `BranchSummary` and `SessionCompaction` events.
 ///
-/// Uses [`project_conversation`] for regular conversation events, then
-/// inserts checkpoint messages at the correct chronological position.
+/// Uses the canonical session projection for regular conversation events,
+/// then inserts checkpoint messages at the correct chronological position.
 fn events_to_messages(events: &[EventEnvelopeV1]) -> Vec<ConversationMessage> {
-    let projection = project_conversation(events, &[]).unwrap_or_default();
+    let projection =
+        CanonicalSessionProjection::conversation_from_event_history(events).unwrap_or_default();
     let mut messages = projection.messages;
 
     // Create checkpoint messages for summary events and insert at the correct position.

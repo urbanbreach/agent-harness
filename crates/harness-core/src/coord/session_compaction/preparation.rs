@@ -1,9 +1,10 @@
 use tokio_stream::StreamExt;
 
-use crate::conversation::{project_conversation, ConversationMessage};
+use crate::conversation::ConversationMessage;
 use std::collections::BTreeSet;
 
 use crate::event::{EventEnvelopeV1, EventV1, UiIntentReceivedEvent};
+use crate::session::CanonicalSessionProjection;
 use crate::store::EventStore;
 
 use super::super::compaction::{
@@ -74,7 +75,7 @@ pub(super) fn build_agent_conversation_messages(
         .filter(|event| event_belongs_to_agent(event, agent_id, &stream_key))
         .cloned()
         .collect::<Vec<_>>();
-    project_conversation(&agent_events, &[])
+    CanonicalSessionProjection::conversation_from_event_history(&agent_events)
         .unwrap_or_default()
         .messages
 }
