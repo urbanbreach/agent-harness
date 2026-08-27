@@ -233,7 +233,7 @@ impl CodexOAuthClient {
         let tokens = self
             .exchange_authorization_code(code, &session.redirect_uri, &session.pkce)
             .await?;
-        self.store_tokens(store, tokens).await
+        self.store_tokens(store, tokens)
     }
 
     pub async fn exchange_authorization_code(
@@ -313,7 +313,7 @@ impl CodexOAuthClient {
                             &pkce,
                         )
                         .await?;
-                    return self.store_tokens(store, tokens).await;
+                    return self.store_tokens(store, tokens);
                 }
             }
         }
@@ -415,7 +415,7 @@ impl CodexOAuthClient {
         Ok(response)
     }
 
-    pub async fn store_tokens(
+    pub fn store_tokens(
         &self,
         store: &CredentialStore,
         tokens: CodexTokenResponse,

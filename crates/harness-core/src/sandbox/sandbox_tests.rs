@@ -715,7 +715,7 @@ fn probe_os_sandbox_product_multi_policy_walk_is_honest() {
     assert!(probe.landlock.one_line().contains("Landlock:"));
     assert!(probe.one_line().contains("OS sandbox product:"));
     assert!(probe.one_line().contains("last_plan=strict"));
-    assert!(probe.profiles[0].policy_id() == "off");
+    assert_eq!(probe.profiles[0].policy_id(), "off");
 }
 
 #[test]

@@ -39,3 +39,23 @@ The 42 convention findings were distributed exactly as follows: 1 in
 `harness-core/src/agent.rs`, 4 in `harness-core/src/store/tests.rs`, 2 in
 `harness-providers/src/openai/sse.rs`, 1 in `harness-tools/src/fs_grep.rs`, and 34 in
 `harness-tui` (18 of those in `app/tests/permission_modal_tests_part3_test.rs`).
+
+## G008-G012 completion
+
+The final migration tail uses accepted baseline `2f0b2a9a` and preserves all earlier invariants.
+
+- G008 introduced `CanonicalSessionProjection`, routed durable consumers through it, kept live
+  fragments as an ephemeral TUI overlay, and deleted detached checkpoint builders/loaders.
+- G009 added `.session-history-index-v1.json`, deterministic newest-first cursor pages,
+  `sessions search`, and `sessions rebuild-index`. Continuation still validates source history.
+- G010 reduced the two live/recovery `ProviderContext` constructors to one shared builder and
+  retained old compaction variants as compatibility-only decode input.
+- G011 renamed the active event-level cut owner from `legacy` to `turn_boundary`, retained
+  coordinator authority, and passed zero-skip coordinator/replay/permission/task/integration
+  owners.
+- G012 records final docs, metrics, deterministic lanes, dogfood, PTY/TUI receipts, and the final
+  review in one evidence directory.
+
+Removed production paths are the checkpoint artifact writer/loader/copy flow, detached planning
+and summary builders, duplicate context constructors, and orphan checkpoint tests. Compatibility
+modules may decode old bytes; they cannot append legacy events or supply a second source of truth.

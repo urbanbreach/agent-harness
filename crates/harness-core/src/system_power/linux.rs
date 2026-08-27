@@ -110,7 +110,7 @@ mod tests {
 
         // assert
         if let Some(listener) = listener {
-            assert!(std::mem::size_of_val(&listener) == 0);
+            assert_eq!(std::mem::size_of_val(&listener), 0);
         }
     }
 }

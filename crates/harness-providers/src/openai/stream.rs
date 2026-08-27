@@ -16,7 +16,7 @@ pub async fn stream_completion(
 ) -> crate::ProviderEventStream {
     let credential = match provider.provider_credential().await {
         Ok(credential) => credential,
-        Err(event) => return Box::pin(stream::iter(vec![event])),
+        Err(event) => return Box::pin(stream::iter(vec![*event])),
     };
     let req = match crate::schema_compat::prepare_request_tools(req) {
         Ok(req) => req,

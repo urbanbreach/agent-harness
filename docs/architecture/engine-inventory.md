@@ -120,8 +120,19 @@ and deletion of those mirrors remain assigned to M03.
 
 ## Current compaction and reducer inventory
 
-`EventV1` has legacy `CompactionRequested`, `CompactionWritten`, and `CompactionApplied` variants,
-plus the active session-compaction pair `SessionCompaction` and deprecated `CompactionFailed`.
-`BranchSummary` is a separate branch-summary event, not a session-compaction variant. The five
-durable reducer paths are conversation projection, transcript projection, resume projection,
-provider-context restore fold, and TUI `SessionProjection`.
+`EventV1` retains `CompactionRequested`, `CompactionWritten`, `CompactionApplied`, and
+`CompactionFailed` as compatibility-only decode variants. `SessionCompaction` is the sole active
+Compaction V2 success event; `BranchSummary` remains a separate branch-summary event. The five
+measured durable read-model paths are composed behind `CanonicalSessionProjection`; active
+provider/restart/replay/export/TUI consumers no longer select independent durable truth.
+
+The corrected accepted-tree comparison uses baseline `2f0b2a9a`. Production LOC is net-negative:
+234,607 to 232,694 (-1,913) at the G010 measurement, including harness-core 67,861 to 65,573
+(-2,288), coordinator bucket -2,346, compaction bucket -117, and SIZE_OK markers 191 to 187.
+Event variants remain 39 so shipped legacy journals still deserialize.
+
+The persistent bounded history surface is `.session-history-index-v1.json`. Warm reads compare
+directory entries and journal metadata, reuse unchanged rows without opening each `events.jsonl`,
+and rescan only missing or changed fingerprints. Missing, stale, unsupported-version, truncated,
+and corrupt index states rebuild from journals; malformed journals produce unavailable rows
+without poisoning healthy sessions.

@@ -687,3 +687,21 @@ projections. Support export adds local-readiness evidence from doctor plus agent
 catalog, native tool catalog, session-tool readiness, route metadata, artifact
 index, redaction manifest, and secret-scan status so failures can be debugged
 without exposing raw credentials.
+
+## Final session projection and history boundaries
+
+`CanonicalSessionProjection` is the sole durable composition facade for semantic session,
+conversation, resume, run summary, timeline, transcript, task, permission, and lineage state.
+Provider continuation and restart lower that projection through one shared `ProviderContext`
+constructor. The coordinator remains the only event append, compaction, scheduling, permission,
+hook, and lifecycle authority.
+
+Compaction V2 has one success writer: `EventV1::SessionCompaction`. The older
+`CompactionRequested`, `CompactionWritten`, `CompactionApplied`, and `CompactionFailed` variants
+are compatibility-only decode inputs. No production checkpoint artifact loader, writer, or copy
+path remains.
+
+The CLI history index is a rebuildable bounded read accelerator, not event truth. It supports
+cursor pages, indexed metadata search, and explicit rebuild while inspect/replay/export/continue
+still read the selected journal. TUI live fragments remain ephemeral presentation state and are
+replaced by the durable assistant commit at settlement.

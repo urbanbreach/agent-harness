@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use crate::agent::{ProviderContext, ProviderConversationTurn};
+use crate::agent::ProviderContext;
 use crate::attachment_transport::{lower_provider_attachments, AttachmentOrderingError};
 use crate::conversation::{ConversationMessage, ConversationProjection};
 use crate::event::{EventEnvelopeV1, EventV1};
@@ -53,34 +53,22 @@ pub(in crate::coord) fn reconstruct_provider_context_from_events(
             | ConversationMessage::ToolResult(_) => suffix.push(message),
         }
     }
-    let preserved_turns = (!suffix.is_empty())
-        .then(|| {
-            let attachments = suffix
-                .iter()
-                .filter_map(|message| match message {
-                    ConversationMessage::User(user) => {
-                        attachments_by_request.get(user.request_id.as_str())
-                    }
-                    ConversationMessage::Checkpoint(_)
-                    | ConversationMessage::Assistant(_)
-                    | ConversationMessage::ToolResult(_) => None,
-                })
-                .flatten()
-                .cloned()
-                .collect();
-            ProviderConversationTurn {
-                messages: suffix,
-                attachments,
-                ..ProviderConversationTurn::default()
-            }
+    let attachments = suffix
+        .iter()
+        .filter_map(|message| match message {
+            ConversationMessage::User(user) => attachments_by_request.get(user.request_id.as_str()),
+            ConversationMessage::Checkpoint(_)
+            | ConversationMessage::Assistant(_)
+            | ConversationMessage::ToolResult(_) => None,
         })
-        .into_iter()
+        .flatten()
+        .cloned()
         .collect();
-    Ok(ProviderContext {
+    Ok(super::build_provider_context(
+        suffix,
+        attachments,
         compacted_summary,
-        preserved_turns,
-        checkpoint: None,
-    })
+    ))
 }
 
 pub(in crate::coord) fn project_committed_context(

@@ -269,8 +269,7 @@ fn validate_no_traversal(path: &str) -> Result<(), VcsError> {
 
 fn is_git_repository(path: &Path) -> bool {
     git_output(path, &["rev-parse", "--is-inside-work-tree"])
-        .ok()
-        .is_some_and(|text| text.trim() == "true")
+        .is_ok_and(|text| text.trim() == "true")
 }
 
 fn git_output(cwd: &Path, args: &[&str]) -> Result<String, String> {

@@ -138,6 +138,11 @@ impl AgentTurnOutcome {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentTurnFailure {
+    details: Box<AgentTurnFailureDetails>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentTurnFailureDetails {
     pub status: ProviderConversationTurnStatus,
     pub failure_stage: String,
     pub reason: String,
@@ -148,7 +153,25 @@ pub struct AgentTurnFailure {
     pub retry_after_ms: Option<u64>,
 }
 
+impl std::ops::Deref for AgentTurnFailure {
+    type Target = AgentTurnFailureDetails;
+
+    fn deref(&self) -> &Self::Target {
+        &self.details
+    }
+}
+
+impl std::ops::DerefMut for AgentTurnFailure {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.details
+    }
+}
+
 impl AgentTurnFailure {
+    pub fn into_details(self) -> AgentTurnFailureDetails {
+        *self.details
+    }
+
     pub fn new(
         status: ProviderConversationTurnStatus,
         failure_stage: impl Into<String>,
@@ -157,14 +180,16 @@ impl AgentTurnFailure {
         provider_request_id: Option<String>,
     ) -> Self {
         Self {
-            status,
-            failure_stage: failure_stage.into(),
-            reason: reason.into(),
-            partial_assistant_output: partial_assistant_output.into(),
-            provider_request_id,
-            provider_error_category: None,
-            provider_error_remediation: None,
-            retry_after_ms: None,
+            details: Box::new(AgentTurnFailureDetails {
+                status,
+                failure_stage: failure_stage.into(),
+                reason: reason.into(),
+                partial_assistant_output: partial_assistant_output.into(),
+                provider_request_id,
+                provider_error_category: None,
+                provider_error_remediation: None,
+                retry_after_ms: None,
+            }),
         }
     }
 

@@ -230,7 +230,6 @@ fn start_browser_oidc_flow_wires_launch_browser_for_real_values() {
             token_endpoint,
             client_id,
             port,
-            manual_url_fallback: _,
             ..
         } => {
             assert!(authorization_url.contains("https://issuer.example/authorize"));
