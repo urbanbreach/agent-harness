@@ -1,5 +1,8 @@
 #[test]
 fn compaction_v2_old_branch_summary_not_reintroduced() {
+    // arrange
+    // act
+    // assert
     let first_kept_entry_id = legacy_user_entry_id(3);
     let events = vec![
         user_event(1, "old", "old turn"),
@@ -44,6 +47,9 @@ fn compaction_v2_old_branch_summary_not_reintroduced() {
 
 #[test]
 fn compaction_v2_first_kept_entry_id_is_the_typed_boundary() {
+    // arrange
+    // act
+    // assert
     let typed_boundary = legacy_user_entry_id(3);
     let events = vec![
         user_event(1, "legacy-cut", "must be summarized"),
@@ -75,6 +81,9 @@ fn compaction_v2_first_kept_entry_id_is_the_typed_boundary() {
 
 #[test]
 fn compaction_v2_legacy_sequence_boundary_remains_read_only_fallback() {
+    // arrange
+    // act
+    // assert
     let payload = serde_json::from_value(json!({
         "event_type": "session_compaction",
         "data": {
@@ -112,6 +121,9 @@ fn compaction_v2_legacy_sequence_boundary_remains_read_only_fallback() {
 
 #[test]
 fn compaction_v2_unknown_typed_boundary_preserves_prior_valid_boundary() {
+    // arrange
+    // act
+    // assert
     let valid_boundary = legacy_user_entry_id(3);
     let unknown_boundary = EntryId::new("entry-not-present-on-active-path");
     let events = vec![
@@ -150,6 +162,9 @@ fn compaction_v2_unknown_typed_boundary_preserves_prior_valid_boundary() {
 
 #[test]
 fn compaction_v2_orphan_tool_result_excluded() {
+    // arrange
+    // act
+    // assert
     let events = vec![envelope(
         1,
         worker(),
@@ -171,6 +186,9 @@ fn compaction_v2_orphan_tool_result_excluded() {
 
 #[test]
 fn compaction_v2_malformed_trailing_event_has_no_side_effects() {
+    // arrange
+    // act
+    // assert
     let first_kept_entry_id = legacy_user_entry_id(1);
     let mut events = vec![
         user_event(1, "kept", "kept turn"),

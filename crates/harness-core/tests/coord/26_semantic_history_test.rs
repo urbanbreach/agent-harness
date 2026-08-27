@@ -148,6 +148,7 @@ async fn semantic_history_commits_final_sanitized_facts_without_durable_deltas()
 
 #[tokio::test]
 async fn provider_chunk_boundaries_produce_identical_durable_history() {
+    // act
     // arrange
     let one_chunk = run_semantic_script(successful_semantic_events(&["hello world"])).await;
     let many_chunks = run_semantic_script(successful_semantic_events(&["hello ", "world"])).await;

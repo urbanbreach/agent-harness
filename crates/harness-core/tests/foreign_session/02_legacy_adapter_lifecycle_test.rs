@@ -1,8 +1,8 @@
 use super::*;
-use harness_core::session::legacy::{LegacyAdapterError, LegacyEventLogAdapter};
+use harness_core::session::legacy::{LegacyAdapterError, LegacyEventLogAdapter, LegacyWarning};
 
 #[test]
-fn legacy_adapter_rejects_out_of_order_provider_lifecycle() {
+fn legacy_adapter_rejects_late_delta_and_warns_on_missing_provider_finish() {
     // arrange
     let started = sample_envelope(
         1,
@@ -62,10 +62,12 @@ fn legacy_adapter_rejects_out_of_order_provider_lifecycle() {
             event_id: "evt-3".to_string(),
         })
     );
-    assert_eq!(
-        premature_assistant_result,
-        Err(LegacyAdapterError::InvalidIdentityRelationship {
-            event_id: "evt-2".to_string(),
-        })
+    let snapshot = premature_assistant_result.unwrap_or_abort();
+    assert!(
+        snapshot
+            .warnings
+            .contains(&LegacyWarning::MissingProviderFinish {
+                request_id: "provider-1".to_string(),
+            })
     );
 }

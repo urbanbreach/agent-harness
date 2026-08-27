@@ -459,6 +459,9 @@ async fn subscribe_replays_then_streams_live_events() {
 
 #[tokio::test]
 async fn runtime_subscription_delivers_live_events_without_durable_replay() {
+    // arrange
+    // act
+    // assert
     // Given: a runtime subscription registered after the only durable event.
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let store = JsonlFileEventStore::open(temp_dir.path(), "run_live", false).unwrap_or_abort();

@@ -3,6 +3,9 @@ use harness_core::UnwrapOrAbort;
 
 #[tokio::test]
 async fn compaction_v2_unexpected_overflow_retries_once() {
+    // arrange
+    // act
+    // assert
     // Given: the first provider attempt overflows on one huge current text entry.
     let (harness, provider) = CompactionV2Harness::scripted(
         vec![

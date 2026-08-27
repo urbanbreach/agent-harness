@@ -3,6 +3,9 @@ use harness_core::UnwrapOrAbort;
 
 #[tokio::test]
 async fn compaction_v2_second_overflow_terminates() {
+    // arrange
+    // act
+    // assert
     // Given: both the initial provider request and its sole retry overflow.
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let hook_counter_path = temp_dir.path().join("agent-turn-started.count");

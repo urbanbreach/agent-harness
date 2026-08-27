@@ -212,6 +212,7 @@ impl LegacyOwnership {
 #[derive(Debug, Clone)]
 struct ProviderRelationship {
     turn_key: String,
+    owner_agent_id: Option<String>,
     event_correlation: Option<String>,
     provider_call_id: Option<String>,
     finished: bool,
@@ -232,7 +233,6 @@ struct LegacyBoundary {
     seen_users: BTreeSet<String>,
     providers: BTreeMap<String, ProviderRelationship>,
     latest_provider_by_turn: BTreeMap<String, String>,
-    latest_provider_request_id: Option<String>,
     active_agent_turn_by_agent: BTreeMap<String, (String, String)>,
     agent_turn_agent_by_task: BTreeMap<String, String>,
     tools: BTreeMap<String, ToolRelationship>,
@@ -251,7 +251,6 @@ impl LegacyBoundary {
             seen_users: BTreeSet::new(),
             providers: BTreeMap::new(),
             latest_provider_by_turn: BTreeMap::new(),
-            latest_provider_request_id: None,
             active_agent_turn_by_agent: BTreeMap::new(),
             agent_turn_agent_by_task: BTreeMap::new(),
             tools: BTreeMap::new(),

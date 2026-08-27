@@ -1,5 +1,8 @@
 #[test]
 fn compaction_v2_aborted_usage_not_anchor() {
+    // arrange
+    // act
+    // assert
     let completed_usage = CompletionUsage {
         prompt_tokens: 7_777,
         completion_tokens: 1,

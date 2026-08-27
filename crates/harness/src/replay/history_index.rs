@@ -1,15 +1,20 @@
 use std::collections::BTreeMap;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt;
 
 use super::{inspect_single_session, SessionInspectionEntry};
 use crate::cli_io::EVENTS_FILE_NAME;
 
 pub const SESSION_HISTORY_INDEX_FILE_NAME: &str = ".session-history-index-v1.json";
 const SESSION_HISTORY_INDEX_SCHEMA_VERSION: u16 = 1;
+static INDEX_TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone)]
 pub struct SessionHistoryIndexReport {
@@ -76,10 +81,9 @@ fn update_index(
 
     let mut journals_scanned = 0;
     for (run_dir, fingerprint) in journals {
-        let unchanged = index
-            .entries
-            .get(&run_dir)
-            .is_some_and(|indexed| indexed.fingerprint == fingerprint);
+        let unchanged = index.entries.get(&run_dir).is_some_and(|indexed| {
+            indexed.fingerprint == fingerprint && indexed.entry.run_dir == run_dir
+        });
         if unchanged {
             continue;
         }
@@ -186,17 +190,58 @@ fn modified_unix_nanos(value: Option<SystemTime>) -> u128 {
 fn write_index(path: &Path, index: &SessionHistoryIndex) -> Result<(), String> {
     let body = serde_json::to_vec_pretty(index)
         .map_err(|error| format!("failed to serialize history index: {error}"))?;
-    let temp_path = path.with_extension("json.tmp");
-    fs::write(&temp_path, body).map_err(|error| {
+    let temp_path = unique_temp_path(path);
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    options.mode(0o600);
+    let mut temp_file = options.open(&temp_path).map_err(|error| {
+        format!(
+            "failed to create history index {}: {error}",
+            temp_path.display()
+        )
+    })?;
+    temp_file.write_all(&body).map_err(|error| {
         format!(
             "failed to write history index {}: {error}",
             temp_path.display()
         )
     })?;
+    temp_file.sync_all().map_err(|error| {
+        format!(
+            "failed to sync history index {}: {error}",
+            temp_path.display()
+        )
+    })?;
+    drop(temp_file);
     fs::rename(&temp_path, path).map_err(|error| {
         format!(
             "failed to install history index {}: {error}",
             path.display()
         )
-    })
+    })?;
+    let Some(parent) = path.parent() else {
+        return Ok(());
+    };
+    fs::File::open(parent)
+        .and_then(|directory| directory.sync_all())
+        .map_err(|error| {
+            format!(
+                "failed to sync history index directory {}: {error}",
+                parent.display()
+            )
+        })
+}
+
+fn unique_temp_path(path: &Path) -> PathBuf {
+    let counter = INDEX_TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let file_name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or(SESSION_HISTORY_INDEX_FILE_NAME);
+    path.with_file_name(format!(
+        ".{file_name}.{}.{}.tmp",
+        std::process::id(),
+        counter
+    ))
 }

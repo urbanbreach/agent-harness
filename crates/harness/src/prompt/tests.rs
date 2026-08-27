@@ -440,6 +440,9 @@ async fn prompt_tracker_waits_for_agent_turn_end_not_provider_finish() {
 
 #[tokio::test]
 async fn prompt_stream_preserves_typed_live_variants_until_durable_completion() {
+    // arrange
+    // act
+    // assert
     // Given: a prompt waiter has subscribed to the typed runtime stream.
     let store = Arc::new(CountingEventStore::new());
     let wait_store: Arc<dyn EventStore> = Arc::<CountingEventStore>::clone(&store);

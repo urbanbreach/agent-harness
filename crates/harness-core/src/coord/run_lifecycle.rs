@@ -225,7 +225,13 @@ impl Coordinator {
             reason: error.to_string(),
         })?;
         let (events, recovery_warnings) = recovery.into_parts();
-        let resume_plan = inspect_resume_plan_from_events(&run_dir, &run_id, &events);
+        let projection =
+            CanonicalSessionProjection::from_strict_run_history(&run_dir, &run_id, &events)
+                .map_err(|error| CoordinatorError::ResumeRestoreFailed {
+                    run_id: run_id.clone(),
+                    reason: error.to_string(),
+                })?;
+        let resume_plan = projection.resume_plan;
         if !resume_plan.is_resumable {
             let reason = resume_plan
                 .resume_disabled_reason

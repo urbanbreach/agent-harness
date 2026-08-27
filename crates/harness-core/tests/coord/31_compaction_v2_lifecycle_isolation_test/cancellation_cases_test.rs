@@ -1,5 +1,8 @@
 #[tokio::test]
 async fn compaction_v2_lifecycle_cancel_then_late_result_is_inert() {
+    // arrange
+    // act
+    // assert
     // Given: a blocked generation and its exact pre-generation journal hash.
     let (harness, _provider, entered, release) = lifecycle_harness().await;
     let boundary_before = active_compaction_boundary(&harness.events(), &harness.agent_id);
@@ -41,6 +44,9 @@ async fn compaction_v2_lifecycle_cancel_then_late_result_is_inert() {
 
 #[tokio::test]
 async fn compaction_v2_lifecycle_unrelated_agent_boundary_does_not_stale_completion() {
+    // arrange
+    // act
+    // assert
     // Given: populated root/child histories and a blocked root generation.
     let (provider, entered, release) = BlockingSummaryProvider::new(
         vec![
@@ -111,6 +117,9 @@ async fn compaction_v2_lifecycle_unrelated_agent_boundary_does_not_stale_complet
 
 #[tokio::test]
 async fn compaction_v2_lifecycle_stale_completion_preserves_newer_boundary() {
+    // arrange
+    // act
+    // assert
     // Given: a blocked generation prepared from a completed same-agent history.
     let (provider, entered, release) = BlockingSummaryProvider::new(
         vec![

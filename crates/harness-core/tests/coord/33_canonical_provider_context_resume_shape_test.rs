@@ -1,5 +1,8 @@
 #[test]
 fn resume_rejects_profile_shape_drift_before_provider_dispatch() {
+    // arrange
+    // act
+    // assert
     // Given: a canonical view persisted against the original profile/tool shape.
     let provider = CapturingProvider::new(vec!["must not dispatch"]);
     let mut original_profile = agent_profiles().remove("default").unwrap_or_abort();
@@ -88,6 +91,9 @@ fn resume_rejects_profile_shape_drift_before_provider_dispatch() {
 
 #[tokio::test]
 async fn provider_request_started_persists_canonical_runtime_selection() {
+    // arrange
+    // act
+    // assert
     // Given: a configured target whose optional settings are all distinct.
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let target = drift_target(

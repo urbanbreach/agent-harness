@@ -60,9 +60,7 @@ impl SessionProjector<'_> {
             .get(&start.turn_key)
             .is_some_and(|request_id| request_id == &start.request_id);
         let Some(assistant) = self.index.assistants.remove(&start.request_id) else {
-            return Err(LegacyAdapterError::InvalidIdentityRelationship {
-                event_id: start.request_id.clone(),
-            });
+            return Ok(());
         };
         let has_tool_call = assistant
             .parts

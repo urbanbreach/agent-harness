@@ -53,16 +53,15 @@ use crate::perm::{
     PermissionGrantScope, PermissionGrantSet, PermissionKind, PermissionPolicy, PolicyDecision,
 };
 use crate::proj::{
-    inspect_resume_plan, inspect_resume_plan_from_events, load_run_metadata,
-    project_background_request, resolve_background_request_ref, BackgroundRequestProjection,
-    RecordedRuntimeContext, RunMetadata, SessionModeSource,
+    load_run_metadata, project_background_request, resolve_background_request_ref,
+    BackgroundRequestProjection, RecordedRuntimeContext, RunMetadata, SessionModeSource,
 };
 use crate::provider_args::provider_tool_arguments_json;
 use crate::redact::Redactor;
 use crate::sched::{
     ConcurrencyKey, ScheduleDecision, Scheduler, SchedulerLimits, TaskProgressSnapshot,
 };
-use crate::session::legacy::recover_event_history;
+use crate::session::{legacy::recover_event_history, CanonicalSessionProjection};
 use crate::session_paths::{ARTIFACTS_DIR_NAME, EVENTS_FILE_NAME, META_FILE_NAME};
 use crate::session_title::{
     clean_generated_title, is_parent_default_title, SessionTitleOperationSpec,

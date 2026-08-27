@@ -18,7 +18,7 @@ use serde_json::json;
 
 mod support {
     use super::*;
-    include!("06_compaction_v2_protocol/support.rs");
+    include!("06_compaction_v2_protocol/support_test.rs");
 }
 
 mod runtime_support {

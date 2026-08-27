@@ -54,6 +54,9 @@ fn render(app: &AppState) -> String {
 
 #[test]
 fn typed_live_fragments_render_then_final_commit_settles_them() {
+    // arrange
+    // act
+    // assert
     // Given: a live turn with its durable request barrier.
     let mut app = AppState::new_live(None, false, None);
     app.ingest_runtime_event(durable(

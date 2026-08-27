@@ -1,5 +1,8 @@
 #[test]
 fn compaction_v2_attachments_charge_budget_once() {
+    // arrange
+    // act
+    // assert
     let base = CompleteRequestComponents {
         system_tokens: 20,
         tools_tokens: 30,

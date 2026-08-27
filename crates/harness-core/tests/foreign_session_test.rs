@@ -498,3 +498,7 @@ mod part_01_legacy_adapter_behavior_test {
 mod part_02_legacy_adapter_lifecycle_test {
     include!("foreign_session/02_legacy_adapter_lifecycle_test.rs");
 }
+
+mod part_03_legacy_adapter_boundary_test {
+    include!("foreign_session/03_legacy_adapter_boundary_test.rs");
+}

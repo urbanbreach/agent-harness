@@ -218,7 +218,7 @@ pub(super) fn multi_turn_transcript_fixture_app() -> app::AppState {
             "The shell is transcript-first and calm.",
         ),
         (
-            10_u64,
+            5_u64,
             "req_turn_two",
             "Tighten the transcript spacing",
             "Spacing is collapsed without losing turn boundaries.",

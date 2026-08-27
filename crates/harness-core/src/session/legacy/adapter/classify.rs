@@ -194,7 +194,6 @@ impl LegacyBoundary {
             || correlation
                 .zip(metadata_turn)
                 .is_some_and(|(left, right)| left != right)
-            || self.providers.contains_key(request_id)
         {
             return Err(Self::invalid(event));
         }
@@ -208,21 +207,32 @@ impl LegacyBoundary {
             .or(correlation)
             .unwrap_or(request_id)
             .to_string();
-        let inferred_user_text = if self.represented_user_turns.insert(turn_key.clone()) {
-            let prompt = Self::non_empty(&payload.prompt_summary).ok_or_else(|| {
-                LegacyAdapterError::MissingUserMessage {
-                    request_id: request_id.to_string(),
+        let existing = self.providers.get(request_id).cloned();
+        if existing.as_ref().is_some_and(|existing| {
+            existing.finished
+                || existing.assistant_finished
+                || existing.turn_key != turn_key
+                || existing.owner_agent_id != event.actor.agent_id
+                || existing.event_correlation.as_deref() != correlation
+        }) {
+            return Err(Self::invalid(event));
+        }
+        let inferred_user_text =
+            if existing.is_none() && self.represented_user_turns.insert(turn_key.clone()) {
+                let prompt = Self::non_empty(&payload.prompt_summary).ok_or_else(|| {
+                    LegacyAdapterError::MissingUserMessage {
+                        request_id: request_id.to_string(),
+                    }
+                })?;
+                if prompt.ends_with('…') {
+                    return Err(LegacyAdapterError::TruncatedUserPromptSummary {
+                        request_id: request_id.to_string(),
+                    });
                 }
-            })?;
-            if prompt.ends_with('…') {
-                return Err(LegacyAdapterError::TruncatedUserPromptSummary {
-                    request_id: request_id.to_string(),
-                });
-            }
-            Some(prompt.to_string())
-        } else {
-            None
-        };
+                Some(prompt.to_string())
+            } else {
+                None
+            };
         if correlation.is_none() && metadata_turn.is_none() {
             self.warnings.push(LegacyWarning::InferredTurnIdentity {
                 correlation_id: None,
@@ -242,6 +252,7 @@ impl LegacyBoundary {
             request_id.to_string(),
             ProviderRelationship {
                 turn_key: turn_key.clone(),
+                owner_agent_id: event.actor.agent_id.clone(),
                 event_correlation: correlation.map(str::to_string),
                 provider_call_id,
                 finished: false,
@@ -251,7 +262,6 @@ impl LegacyBoundary {
         );
         self.latest_provider_by_turn
             .insert(turn_key.clone(), request_id.to_string());
-        self.latest_provider_request_id = Some(request_id.to_string());
         Ok(Self::fact(
             event,
             LegacyFactKind::ProviderStarted(ProviderStartFact {

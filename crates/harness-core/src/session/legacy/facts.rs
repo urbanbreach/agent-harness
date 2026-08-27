@@ -137,14 +137,20 @@ impl ProjectionIndex {
                     let entry_id =
                         namespace.entry_id(fact.sequence, &fact.event_id, "assistant_message");
                     self.provider_entries
-                        .insert(start.request_id.clone(), entry_id.clone());
+                        .entry(start.request_id.clone())
+                        .or_insert_with(|| entry_id.clone());
                     self.provider_turns
-                        .insert(start.request_id.clone(), start.turn_key.clone());
+                        .entry(start.request_id.clone())
+                        .or_insert_with(|| start.turn_key.clone());
                     self.last_provider_by_turn
                         .insert(start.turn_key.clone(), start.request_id.clone());
-                    self.assistants.insert(
-                        start.request_id.clone(),
-                        AssistantAggregate {
+                    self.assistants
+                        .entry(start.request_id.clone())
+                        .and_modify(|assistant| {
+                            assistant.provider_id.clone_from(&start.provider_id);
+                            assistant.model_id.clone_from(&start.model_id);
+                        })
+                        .or_insert_with(|| AssistantAggregate {
                             entry_id,
                             turn_key: start.turn_key.clone(),
                             provider_id: start.provider_id.clone(),
@@ -157,8 +163,7 @@ impl ProjectionIndex {
                             semantic_parts_authoritative: false,
                             semantic_tool_requests_seen: 0,
                             provenance: None,
-                        },
-                    );
+                        });
                 }
                 LegacyFactKind::AssistantPart { request_id, part } => {
                     if let Some(assistant) = self.assistants.get_mut(request_id) {

@@ -4,7 +4,8 @@ use std::fs;
 use std::path::Path;
 
 use harness_core::event::{EventEnvelopeV1, EventV1};
-use harness_core::proj::{project_resume_plan, ChildSessionTerminalState};
+use harness_core::proj::ChildSessionTerminalState;
+use harness_core::session::CanonicalSessionProjection;
 use serde_json::Value;
 
 use crate::cli_labels::provider_model_label;
@@ -25,9 +26,13 @@ pub(super) fn summarize_recovery_story(
     events: &[EventEnvelopeV1],
     fallback_run_id: &str,
 ) -> (Vec<ReplayArtifactSummary>, Vec<ReplayChildSessionSummary>) {
-    let resume_plan = project_resume_plan(events.iter(), fallback_run_id).ok();
+    let projection =
+        CanonicalSessionProjection::from_run_history(run_dir, fallback_run_id, events).ok();
+    let resume_plan = projection
+        .as_ref()
+        .map(|projection| &projection.resume_plan);
 
-    let mut artifacts = artifact_inventory(run_dir, events, resume_plan.as_ref());
+    let mut artifacts = artifact_inventory(run_dir, events, resume_plan);
     artifacts.sort_by(|left, right| {
         left.path
             .cmp(&right.path)
@@ -38,7 +43,7 @@ pub(super) fn summarize_recovery_story(
     let mut child_artifact_paths: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     let mut child_tool_call_ids: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     let mut child_routes: BTreeMap<String, Value> = BTreeMap::new();
-    if let Some(resume_plan) = resume_plan.as_ref() {
+    if let Some(resume_plan) = resume_plan {
         for (tool_call_id, tool_call) in &resume_plan.tool_calls {
             let Some(metadata) = tool_call.metadata.as_ref() else {
                 continue;
@@ -75,7 +80,6 @@ pub(super) fn summarize_recovery_story(
     }
 
     let mut child_sessions = resume_plan
-        .as_ref()
         .map(|resume_plan| {
             resume_plan
                 .child_sessions

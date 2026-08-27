@@ -114,6 +114,8 @@ pub struct SessionProjection {
     pub(crate) events: EventDetailsCache,
     canonical_projection: Option<CanonicalSessionProjection>,
     canonical_projection_error: Option<String>,
+    canonical_pending_events: Vec<EventEnvelopeV1>,
+    canonical_history: Vec<EventEnvelopeV1>,
     pub(crate) activities: VecDeque<ActivityEntry>,
     pub(crate) active_context_usage: Option<ActiveContextUsage>,
     latest_request_budget: Option<(u64, Option<RequestBudgetSnapshot>)>,
@@ -142,6 +144,8 @@ impl SessionProjection {
         self.events.clear();
         self.canonical_projection = None;
         self.canonical_projection_error = None;
+        self.canonical_pending_events.clear();
+        self.canonical_history.clear();
         self.activities.clear();
         self.active_context_usage = None;
         self.latest_request_budget = None;
@@ -334,12 +338,32 @@ impl SessionProjection {
     }
 
     pub(crate) fn ingest_event(&mut self, event: EventEnvelopeV1, historical: bool) -> usize {
+        let canonical_updated = self.update_canonical_projection(&event);
+        self.ingest_derived_event(event, historical, canonical_updated)
+    }
+
+    pub(crate) fn ingest_view_event(&mut self, event: EventEnvelopeV1, historical: bool) -> usize {
+        let canonical_updated = self.canonical_projection_error.is_none();
+        self.ingest_derived_event(event, historical, canonical_updated)
+    }
+
+    fn ingest_derived_event(
+        &mut self,
+        event: EventEnvelopeV1,
+        historical: bool,
+        canonical_updated: bool,
+    ) -> usize {
         let previous_activity_count = self.activities.len();
         let previous_trimmed_count = self.transcript_trimmed_count;
-        self.update_canonical_projection(&event);
+        let derived_allowed =
+            canonical_updated || !canonical_failure_blocks_derived_state(&event.payload);
         self.seen_seqs.insert(event.seq);
-        self.update_derived_state_for_event(&event, historical);
-        self.transcript_delta = if historical {
+        if derived_allowed {
+            self.update_derived_state_for_event(&event, historical);
+        }
+        self.transcript_delta = if !derived_allowed {
+            ProjectionDelta::FullRebuild
+        } else if historical {
             ProjectionDelta::ReplayPending
         } else {
             self.transcript_delta_for_event(&event, previous_activity_count, previous_trimmed_count)
@@ -348,17 +372,65 @@ impl SessionProjection {
         self.enforce_event_memory_cap()
     }
 
-    fn update_canonical_projection(&mut self, event: &EventEnvelopeV1) {
-        let result = match self.canonical_projection.as_mut() {
-            Some(projection) => projection.apply_event(event.clone()),
-            None => CanonicalSessionProjection::from_event_history(std::slice::from_ref(event))
-                .map(|projection| {
-                    self.canonical_projection = Some(projection);
-                }),
+    pub(crate) fn seed_canonical_history(&mut self, events: &[EventEnvelopeV1]) {
+        self.canonical_history = events.to_vec();
+        match CanonicalSessionProjection::from_event_history(events) {
+            Ok(projection) => {
+                self.canonical_projection = Some(projection);
+                self.canonical_projection_error = None;
+                self.canonical_pending_events.clear();
+            }
+            Err(error) => {
+                self.canonical_projection = None;
+                self.canonical_projection_error = Some(error.to_string());
+                self.canonical_pending_events = events.to_vec();
+            }
+        }
+    }
+
+    pub(crate) fn ingest_canonical_event(&mut self, event: &EventEnvelopeV1) {
+        let _ = self.update_canonical_projection(event);
+    }
+
+    pub(crate) fn canonical_history(&self) -> &[EventEnvelopeV1] {
+        &self.canonical_history
+    }
+
+    fn update_canonical_projection(&mut self, event: &EventEnvelopeV1) -> bool {
+        self.canonical_history.push(event.clone());
+        let result = if self.canonical_projection_error.is_some() {
+            self.canonical_pending_events.push(event.clone());
+            match self.canonical_projection.as_mut() {
+                Some(projection) => projection.apply_events(&self.canonical_pending_events),
+                None => {
+                    CanonicalSessionProjection::from_event_history(&self.canonical_pending_events)
+                        .map(|projection| {
+                            self.canonical_projection = Some(projection);
+                        })
+                }
+            }
+        } else {
+            match self.canonical_projection.as_mut() {
+                Some(projection) => projection.apply_event(event.clone()),
+                None => CanonicalSessionProjection::from_event_history(std::slice::from_ref(event))
+                    .map(|projection| {
+                        self.canonical_projection = Some(projection);
+                    }),
+            }
         };
         match result {
-            Ok(()) => self.canonical_projection_error = None,
-            Err(error) => self.canonical_projection_error = Some(error.to_string()),
+            Ok(()) => {
+                self.canonical_projection_error = None;
+                self.canonical_pending_events.clear();
+                true
+            }
+            Err(error) => {
+                if self.canonical_pending_events.is_empty() {
+                    self.canonical_pending_events.push(event.clone());
+                }
+                self.canonical_projection_error = Some(error.to_string());
+                false
+            }
         }
     }
 
@@ -1387,6 +1459,74 @@ impl SessionProjection {
             }
             self.transcript_trimmed_count += trimmed;
         }
+    }
+}
+
+#[expect(
+    deprecated,
+    reason = "legacy durable compaction events remain decode-only compatibility inputs"
+)]
+fn canonical_failure_blocks_derived_state(event: &EventV1) -> bool {
+    matches!(
+        event,
+        EventV1::UserMessageSubmitted(_)
+            | EventV1::PromptAttachmentsSubmitted(_)
+            | EventV1::ProviderRequestStarted(_)
+            | EventV1::ProviderStreamDelta(_)
+            | EventV1::ProviderReasoningDelta(_)
+            | EventV1::ProviderRequestFinished(_)
+            | EventV1::AssistantMessageFinished(_)
+            | EventV1::ToolCallRequested(_)
+            | EventV1::ToolCallStarted(_)
+            | EventV1::ToolCallFinished(_)
+            | EventV1::CompactionRequested(_)
+            | EventV1::CompactionWritten(_)
+            | EventV1::CompactionApplied(_)
+            | EventV1::CompactionFailed(_)
+            | EventV1::SessionCompaction(_)
+            | EventV1::BranchSummary(_)
+    )
+}
+
+#[cfg(test)]
+mod canonical_failure_tests {
+    use super::canonical_failure_blocks_derived_state;
+    use harness_core::event::{
+        CompactionFailedEvent, EventV1, ProviderStreamDeltaEvent, RunFinishedEvent,
+    };
+
+    #[test]
+    #[expect(
+        deprecated,
+        reason = "the regression proves legacy durable compaction inputs fail closed"
+    )]
+    fn canonical_failure_blocks_semantic_fragments_and_legacy_compaction() {
+        // arrange
+        let provider_delta = EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+            request_id: "req_000001".into(),
+            delta: "partial".to_string(),
+        });
+        let legacy_compaction = EventV1::CompactionFailed(CompactionFailedEvent {
+            agent_id: "agent_000001".to_string(),
+            trigger_reason: "manual".to_string(),
+            reason: "fixture".to_string(),
+            checkpoint_id: None,
+            through_seq: None,
+            through_request_id: None,
+        });
+        let operational = EventV1::RunFinished(RunFinishedEvent {
+            summary: "finished".to_string(),
+        });
+
+        // act
+        let provider_blocked = canonical_failure_blocks_derived_state(&provider_delta);
+        let compaction_blocked = canonical_failure_blocks_derived_state(&legacy_compaction);
+        let operational_blocked = canonical_failure_blocks_derived_state(&operational);
+
+        // assert
+        assert!(provider_blocked);
+        assert!(compaction_blocked);
+        assert!(!operational_blocked);
     }
 }
 

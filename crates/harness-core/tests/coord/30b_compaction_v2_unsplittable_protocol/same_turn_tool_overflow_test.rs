@@ -1,5 +1,8 @@
 #[tokio::test]
 async fn compaction_v2_same_turn_tool_overflow_retries_without_replay() {
+    // arrange
+    // act
+    // assert
     let hook_root = tempfile::tempdir().unwrap_or_abort();
     let hook_counter_path = hook_root.path().join("agent-turn-started.count");
     let hook_runtime = HookRuntimeConfig {

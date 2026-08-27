@@ -1,5 +1,8 @@
 #[tokio::test]
 async fn compaction_v2_permission_denial_reopens_with_failed_tool_pair() {
+    // arrange
+    // act
+    // assert
     let scenario = capture_denial_scenario().await;
 
     let (requested, tool_call_id) = scenario

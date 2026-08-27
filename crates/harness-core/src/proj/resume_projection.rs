@@ -15,7 +15,7 @@ use crate::event::{
 };
 use crate::ids::RunId;
 use crate::perm::PermissionGrantSet;
-use crate::session::legacy::recover_event_history;
+use crate::session::legacy::{recover_event_history, LegacyHistoryRecoveryError};
 use crate::session_paths::EVENTS_FILE_NAME;
 use crate::text::non_empty_trimmed;
 
@@ -271,6 +271,17 @@ pub(crate) fn inspect_resume_plan_from_events(
             format!("event log is corrupt or non-monotonic: {err}"),
         ),
     }
+}
+
+pub(crate) fn project_resume_plan_from_run_history(
+    run_dir: &Path,
+    fallback_run_id: &str,
+    events: &[EventEnvelopeV1],
+) -> Result<ResumePlan, ProjectionError> {
+    let metadata = load_run_metadata(run_dir);
+    let mut plan = project_resume_plan(events, fallback_run_id)?;
+    apply_resume_metadata_fallback(&mut plan, metadata.as_ref());
+    Ok(plan)
 }
 
 fn apply_resume_metadata_fallback(plan: &mut ResumePlan, metadata: Option<&RunMetadata>) {
@@ -827,7 +838,17 @@ fn read_events_for_resume_inspection(
     expected_run_id: &str,
 ) -> Result<Vec<EventEnvelopeV1>, String> {
     let events_path = run_dir.join(EVENTS_FILE_NAME);
-    recover_event_history(&events_path, &RunId::new(expected_run_id))
+    let expected_run_id = RunId::new(expected_run_id);
+    let recovery = match recover_event_history(&events_path, &expected_run_id) {
+        Ok(recovery) => Ok(recovery),
+        Err(LegacyHistoryRecoveryError::RunMismatch {
+            line_number: 1,
+            actual,
+            ..
+        }) => recover_event_history(&events_path, &actual),
+        Err(error) => Err(error),
+    };
+    recovery
         .map(|recovery| recovery.into_parts().0)
         .map_err(|error| error.to_string())
 }

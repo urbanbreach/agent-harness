@@ -1,5 +1,8 @@
 #[tokio::test]
 async fn compaction_v2_previous_summary_counted_once() {
+    // arrange
+    // act
+    // assert
     const PREVIOUS_SUMMARY: &str = "PPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPP";
     let (harness, provider) = CompactionV2Harness::scripted(
         vec![

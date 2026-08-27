@@ -42,6 +42,9 @@ async fn run_summary_generation(events: Vec<ProviderStreamEvent>) -> SummaryGene
 
 #[tokio::test]
 async fn compaction_v2_summary_generation_success_captures_usage_and_provenance() {
+    // arrange
+    // act
+    // assert
     // Given: a real file-tool turn and summary usage deliberately unrelated to stored text size.
     let file_path = "/workspace/accounting.rs".to_string();
     let summary_events = vec![
@@ -121,6 +124,9 @@ async fn compaction_v2_summary_generation_success_captures_usage_and_provenance(
 
 #[tokio::test]
 async fn compaction_v2_summary_generation_empty_is_not_committable() {
+    // arrange
+    // act
+    // assert
     // Given: an empty terminal summary stream.
     let run = run_summary_generation(vec![
         ProviderStreamEvent::Start,
@@ -135,6 +141,9 @@ async fn compaction_v2_summary_generation_empty_is_not_committable() {
 
 #[tokio::test]
 async fn compaction_v2_non_fitting_summary_preserves_previous_boundary() {
+    // arrange
+    // act
+    // assert
     // Given: one active boundary followed by a generated replacement larger than the current
     // model's complete request budget.
     let oversized_summary = "S".repeat(80_000);
@@ -178,6 +187,9 @@ async fn compaction_v2_non_fitting_summary_preserves_previous_boundary() {
 
 #[tokio::test]
 async fn compaction_v2_summary_generation_provider_error_is_not_committable() {
+    // arrange
+    // act
+    // assert
     // Given: provider text followed by a provider error rather than completion.
     let run = run_summary_generation(vec![
         ProviderStreamEvent::Start,
@@ -193,6 +205,9 @@ async fn compaction_v2_summary_generation_provider_error_is_not_committable() {
 
 #[tokio::test]
 async fn compaction_v2_summary_generation_duplicate_terminal_is_not_committable() {
+    // arrange
+    // act
+    // assert
     // Given: a stream containing two terminal completion events.
     let run = run_summary_generation(vec![
         ProviderStreamEvent::Start,
@@ -212,6 +227,9 @@ async fn compaction_v2_summary_generation_duplicate_terminal_is_not_committable(
 
 #[tokio::test]
 async fn compaction_v2_summary_generation_late_delta_is_not_committable() {
+    // arrange
+    // act
+    // assert
     // Given: text arriving after the terminal completion event.
     let run = run_summary_generation(vec![
         ProviderStreamEvent::Start,
@@ -234,6 +252,9 @@ async fn compaction_v2_summary_generation_late_delta_is_not_committable() {
 
 #[tokio::test]
 async fn compaction_v2_summary_generation_cancelled_is_not_committable() {
+    // arrange
+    // act
+    // assert
     // Given: the production reducer owns a bounded, still-open event stream.
     let (events_tx, events_rx) = tokio::sync::mpsc::channel(1);
     let cancellation = CancellationToken::new();

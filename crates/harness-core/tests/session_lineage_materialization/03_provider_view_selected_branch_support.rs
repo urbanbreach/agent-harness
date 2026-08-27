@@ -68,6 +68,6 @@ pub(super) fn tool_pair_json(pair: &ToolPairIdentity) -> Value {
 }
 
 mod fixture {
-    include!("03_provider_view_selected_branch_fixture.rs");
+    include!("03_provider_view_selected_branch_fixture_test.rs");
 }
 pub(super) use fixture::fixture_records;
