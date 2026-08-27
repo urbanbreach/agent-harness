@@ -1,3 +1,6 @@
+use crate::agent::{ProviderContext, ProviderConversationTurn};
+use crate::attachment_transport::AttachmentMetadata;
+use crate::conversation::ConversationMessage;
 use crate::text::truncate_with_ellipsis;
 
 mod committed;
@@ -16,6 +19,26 @@ pub(super) use restore::{
 };
 
 pub(super) const PROVIDER_CONTEXT_COMPACTION_TURN_EXCERPT_MAX_CHARS: usize = 240;
+
+fn build_provider_context(
+    messages: Vec<ConversationMessage>,
+    attachments: Vec<AttachmentMetadata>,
+    compacted_summary: Option<String>,
+) -> ProviderContext {
+    let preserved_turns = (!messages.is_empty())
+        .then_some(ProviderConversationTurn {
+            messages,
+            attachments,
+            ..ProviderConversationTurn::default()
+        })
+        .into_iter()
+        .collect();
+    ProviderContext {
+        compacted_summary,
+        preserved_turns,
+        checkpoint: None,
+    }
+}
 
 pub(super) fn truncated_failure_reason(reason: &str) -> Option<String> {
     let reason = reason.trim();

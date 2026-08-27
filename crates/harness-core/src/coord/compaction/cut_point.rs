@@ -1,12 +1,12 @@
-//! Typed compaction cut planning plus compatibility event cut points.
+//! Typed compaction cut planning plus event-level turn boundaries.
 
-#[path = "cut_point/legacy.rs"]
-mod legacy;
 #[path = "cut_point/safe.rs"]
 mod safe;
+#[path = "cut_point/turn_boundary.rs"]
+mod turn_boundary;
 
-pub use legacy::{find_cut_point, find_manual_cut_point, CutPointResult};
 pub(crate) use safe::SafeCutError;
+pub use turn_boundary::{find_cut_point, find_manual_cut_point, CutPointResult};
 
 use crate::ids::EntryId;
 use crate::session::{AssistantPart, SessionEntryPayload};

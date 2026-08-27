@@ -259,7 +259,7 @@ async fn run_codex_device_login(
                     Ok(tokens) => tokens,
                     Err(err) => return auth_oauth_error("auth login failed", err, io.stderr),
                 };
-                let _credential = match client.store_tokens(store, token_response).await {
+                let _credential = match client.store_tokens(store, token_response) {
                     Ok(credential) => credential,
                     Err(err) => return auth_oauth_error("auth login failed", err, io.stderr),
                 };

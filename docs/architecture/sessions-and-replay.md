@@ -178,3 +178,24 @@ Lineage materialization follows the implementation contract in `harness_core::se
 - Referenced artifacts are `copied after byte and digest validation`. Artifact paths must stay under `artifacts/`, must not traverse symlinks, and missing or mismatched artifacts fail materialization instead of producing a partial child.
 - `new child events append after the materialized boundary`. The child replay starts from the rewritten prefix, and future turns add ordinary child-local events after that prefix.
 - `restored context is replay-derived from the child log`: resume, session tools, and TUI replay read the child JSONL plus copied artifacts. They do not execute source providers, tools, hooks, MCP servers, shell commands, or network calls to reconstruct fork/clone state.
+
+## Bounded history index and TUI overlays
+
+`harness sessions list` reads the versioned `.session-history-index-v1.json`. The default page is
+bounded to 50 rows; `--limit`, `--offset`, and the opaque `cursor` returned on each JSON row provide
+deterministic newest-first pagination. `harness sessions search QUERY` filters indexed run id,
+title, workspace, and profile fields. `harness sessions rebuild-index --json` rebuilds from
+durable journals and reports entry count, journal scan count, index path, and recovery reason.
+
+Warm list/search requests still enumerate immediate session directories and compare journal
+length/mtime fingerprints, but they do not open every unchanged `events.jsonl`. Missing, stale,
+unsupported-version, truncated, and corrupt indexes rebuild. A malformed journal fails closed as
+an unavailable catalog row and does not remove healthy rows.
+
+The index is advisory. Inspect, replay, export, reopen, and continue resolve the selected run
+directory and validate its source history directly. Replay remains side-effect free and the index
+never stores provider continuation authority.
+
+Live provider text, reasoning, and tool-input fragments are an ephemeral TUI overlay. Settling a
+turn removes that overlay and displays the single durable semantic assistant commit from
+`CanonicalSessionProjection`; replay never reconstructs draft fragments as durable messages.

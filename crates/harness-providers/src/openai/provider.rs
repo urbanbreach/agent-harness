@@ -122,26 +122,28 @@ impl OpenAiCompatibleProvider {
 
     pub(crate) async fn provider_credential(
         &self,
-    ) -> Result<ProviderBearerToken, ProviderStreamEvent> {
+    ) -> Result<ProviderBearerToken, Box<ProviderStreamEvent>> {
         if let Some(source) = &self.credential_source {
-            let credential = source
-                .bearer_token()
-                .await
-                .map_err(|err| ProviderStreamEvent::categorized_error(err.message, err.category))?;
+            let credential = source.bearer_token().await.map_err(|err| {
+                Box::new(ProviderStreamEvent::categorized_error(
+                    err.message,
+                    err.category,
+                ))
+            })?;
             if credential.token.trim().is_empty() {
-                return Err(ProviderStreamEvent::categorized_error(
+                return Err(Box::new(ProviderStreamEvent::categorized_error(
                     "openai_compatible credential source returned an empty bearer token",
                     ProviderErrorCategory::MissingCredentials,
-                ));
+                )));
             }
             return Ok(credential);
         }
 
         if self.api_key.trim().is_empty() {
-            return Err(ProviderStreamEvent::categorized_error(
+            return Err(Box::new(ProviderStreamEvent::categorized_error(
                 "openai_compatible credentials are missing",
                 ProviderErrorCategory::MissingCredentials,
-            ));
+            )));
         }
 
         Ok(ProviderBearerToken {

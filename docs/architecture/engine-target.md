@@ -111,3 +111,24 @@ never creates numeric limits. Variant resolution changes only explicitly overrid
 Request-budget math is separate from limit resolution. `RequestBudget` derives per-request
 allowances from the resolved limits and the request's system, tool, attachment, framing, output,
 and compaction inputs.
+
+## G008-G012 final ownership matrix
+
+`CanonicalSessionProjection` is the durable read owner. It composes the canonical semantic
+session, conversation, resume plan, run summary, timeline, transcript, tasks, permissions, and
+lineage once for provider continuation, restart, replay/export, catalog inspection, and settled
+TUI state. Provider text, reasoning, and tool-input fragments are an **ephemeral TUI overlay**;
+the semantic assistant commit replaces those fragments exactly once.
+
+| Surface | Status | Shipped behavior |
+|---|---|---|
+| canonical durable projection and provider-context builder | supported | all active consumers enter through `CanonicalSessionProjection`; one shared builder constructs `ProviderContext` |
+| Compaction V2 | supported | the coordinator appends one atomic `SessionCompaction`; no checkpoint artifact or second success event is written |
+| bounded history index | supported | `.session-history-index-v1.json` serves newest-first cursor pages and metadata search without reopening unchanged journals |
+| `sessions search` and `sessions rebuild-index` | supported | search reads bounded index fields; rebuild reports scan count and missing/stale/version/truncated/corrupt recovery reason |
+| live provider fragments | experimental | presentation-only TUI state; never durable session truth |
+| `CompactionRequested`, `CompactionWritten`, `CompactionApplied`, `CompactionFailed` | compatibility-only | serde/replay decoding for shipped logs; production never appends them |
+| checkpoint artifact loader/writer/copy path and detached context builders | removed | no active production reachability |
+
+Legacy logs remain read-only compatibility input. Replay and continuation validate source
+`events.jsonl`; index rows locate and summarize sessions but never become continuation authority.

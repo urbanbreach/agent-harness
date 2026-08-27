@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use crate::agent::{ProviderContext, ProviderConversationTurn};
+use crate::agent::ProviderContext;
 use crate::conversation::ConversationMessage;
 use crate::ids::EntryId;
 use crate::session::{CanonicalProviderView, CanonicalSession, SessionEntryPayload};
@@ -34,21 +34,12 @@ pub(super) fn provider_context(
         .filter(|attachment| kept_ids.contains(&attachment.entry_id))
         .map(|attachment| attachment.attachment.clone())
         .collect::<Vec<_>>();
-    let preserved_turns = (!messages.is_empty())
-        .then_some(ProviderConversationTurn {
-            messages,
-            attachments,
-            ..ProviderConversationTurn::default()
-        })
-        .into_iter()
-        .collect();
-    Ok(ProviderContext {
-        compacted_summary: view
-            .latest_compaction_summary
+    Ok(super::super::build_provider_context(
+        messages,
+        attachments,
+        view.latest_compaction_summary
             .map(|compaction| compaction.summary),
-        preserved_turns,
-        checkpoint: None,
-    })
+    ))
 }
 
 fn restore_legacy_request_ids(

@@ -72,6 +72,7 @@ impl AgentTurnFailureMemory {
 
 impl From<AgentTurnFailure> for AgentTurnFailureMemory {
     fn from(failure: AgentTurnFailure) -> Self {
+        let failure = failure.into_details();
         Self::new(
             failure.status,
             failure.failure_stage,

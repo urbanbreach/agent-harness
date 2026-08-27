@@ -302,8 +302,7 @@ fn generate_slug() -> String {
 
 fn is_git_repository(path: &Path) -> bool {
     git_output(path, &["rev-parse", "--is-inside-work-tree"])
-        .ok()
-        .is_some_and(|text| text.trim() == "true")
+        .is_ok_and(|text| text.trim() == "true")
 }
 
 fn branch_exists(repository_root: &Path, branch: &str) -> bool {

@@ -34,11 +34,7 @@ pub fn find_manual_cut_point(events: &[EventEnvelopeV1], agent_id: &str) -> Opti
     let turn_ids: std::collections::HashSet<&str> = events
         .iter()
         .filter(|e| e.actor.agent_id.as_deref() == Some(agent_id))
-        .filter_map(|e| {
-            e.correlation_id
-                .as_deref()
-                .and_then(|s| if s.is_empty() { None } else { Some(s) })
-        })
+        .filter_map(|e| e.correlation_id.as_deref().filter(|s| !s.is_empty()))
         .collect();
 
     let agent_events: Vec<&EventEnvelopeV1> = events
@@ -101,11 +97,7 @@ pub fn find_cut_point(
     let turn_ids: std::collections::HashSet<&str> = events
         .iter()
         .filter(|e| e.actor.agent_id.as_deref() == Some(agent_id))
-        .filter_map(|e| {
-            e.correlation_id
-                .as_deref()
-                .and_then(|s| if s.is_empty() { None } else { Some(s) })
-        })
+        .filter_map(|e| e.correlation_id.as_deref().filter(|s| !s.is_empty()))
         .collect();
 
     let agent_events: Vec<&EventEnvelopeV1> = events

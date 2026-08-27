@@ -122,3 +122,70 @@ fn legacy_decoder_isolated_from_active_runtime_consumers() {
         "legacy compatibility may decode events but must not load checkpoint artifacts"
     );
 }
+
+#[test]
+fn one_provider_context_builder_and_compaction_writer_remain() {
+    // arrange
+    let source_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let provider_context = std::fs::read_to_string(
+        source_root.join("coord/provider_context.rs"),
+    )
+    .expect("read provider context owner");
+    let committed = std::fs::read_to_string(
+        source_root.join("coord/provider_context/committed.rs"),
+    )
+    .expect("read committed context adapter");
+    let recovery = std::fs::read_to_string(
+        source_root.join("coord/provider_context/restore/lower.rs"),
+    )
+    .expect("read recovery context adapter");
+    let compaction = std::fs::read_to_string(
+        source_root.join("coord/session_compaction/pipeline.rs"),
+    )
+    .expect("read compaction pipeline");
+
+    // act
+    let context_builder_count = [&provider_context, &committed, &recovery]
+        .iter()
+        .map(|source| source.matches("checkpoint: None,").count())
+        .sum::<usize>();
+    let compaction_writer_count = compaction
+        .matches("EventV1::SessionCompaction(SessionCompactionEvent")
+        .count();
+
+    // assert
+    assert_eq!(
+        context_builder_count, 1,
+        "provider context construction must have one production owner"
+    );
+    assert_eq!(
+        compaction_writer_count, 1,
+        "Compaction V2 must have exactly one success writer"
+    );
+}
+
+#[test]
+fn compaction_boundary_has_no_active_legacy_module() {
+    // arrange
+    let source_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let cut_point =
+        std::fs::read_to_string(source_root.join("coord/compaction/cut_point.rs"))
+            .expect("read compaction cut-point boundary");
+    let session_projection =
+        std::fs::read_to_string(source_root.join("session/projection.rs"))
+            .expect("read canonical session projection");
+
+    // act
+    let active_legacy_module = cut_point.contains("mod legacy;");
+    let session_depends_on_coordinator = session_projection.contains("crate::coord");
+
+    // assert
+    assert!(
+        !active_legacy_module,
+        "active Compaction V2 boundaries must not route through a legacy-named module"
+    );
+    assert!(
+        !session_depends_on_coordinator,
+        "pure session projection must not depend on coordinator authority"
+    );
+}
