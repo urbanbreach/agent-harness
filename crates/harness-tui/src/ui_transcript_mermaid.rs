@@ -629,18 +629,15 @@ fn parse_sequence(body: &str) -> Option<SequenceDiagram> {
         if statement.starts_with("rect ") || statement.starts_with("box ") {
             continue;
         }
-        if let Some(message) = sequence_message(
+        let message = sequence_message(
             statement,
             &mut participants,
             &aliases,
             autonumber,
             messages.len(),
-        ) {
-            messages.push(message);
-            rows.push(SequenceRow::Message(messages.len() - 1));
-        } else {
-            return None;
-        }
+        )?;
+        messages.push(message);
+        rows.push(SequenceRow::Message(messages.len() - 1));
     }
     (!participants.is_empty() && !rows.is_empty()).then_some(SequenceDiagram {
         participants,

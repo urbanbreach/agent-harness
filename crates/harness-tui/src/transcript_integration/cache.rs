@@ -47,9 +47,9 @@ pub struct CachedLayout {
 impl CachedLayout {
     pub fn new(rows: usize, cells: usize, payload_bytes: usize) -> Self {
         Self {
-            rows: u32::try_from(rows).map_or(u32::MAX, |value| value),
-            cells: u32::try_from(cells).map_or(u32::MAX, |value| value),
-            payload_bytes: u32::try_from(payload_bytes).map_or(u32::MAX, |value| value),
+            rows: u32::try_from(rows).unwrap_or(u32::MAX),
+            cells: u32::try_from(cells).unwrap_or(u32::MAX),
+            payload_bytes: u32::try_from(payload_bytes).unwrap_or(u32::MAX),
         }
     }
 }
@@ -199,7 +199,7 @@ pub(crate) fn build_turns(
                         .map_or(height, |block| {
                             height.saturating_add(
                                 usize::try_from(super::cached_layout(block, width, cache).rows)
-                                    .map_or(usize::MAX, |value| value),
+                                    .unwrap_or(usize::MAX),
                             )
                         })
                 })

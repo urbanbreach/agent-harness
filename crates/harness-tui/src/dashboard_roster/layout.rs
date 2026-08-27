@@ -202,9 +202,9 @@ fn row_layout(
     } else {
         marker.preferred.to_string()
     };
-    let indent = responsive.indent_width().saturating_mul(
-        u16::try_from(row.relationship.lineage_depth).map_or(u16::MAX, |value| value),
-    );
+    let indent = responsive
+        .indent_width()
+        .saturating_mul(u16::try_from(row.relationship.lineage_depth).unwrap_or(u16::MAX));
     let pin_width = if state.is_pinned(&row.selection_key) {
         2
     } else {

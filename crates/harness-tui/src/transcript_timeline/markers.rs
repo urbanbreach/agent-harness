@@ -178,15 +178,12 @@ fn state_binding(state: LifecycleState) -> StateColorBinding {
         .iter()
         .find(|binding| binding.state == state)
         .copied()
-        .map_or(
-            StateColorBinding {
-                state,
-                foreground: ColorRole::TextPrimary,
-                background: ColorRole::Shell,
-                glyph: GlyphRole::Done,
-            },
-            |binding| binding,
-        )
+        .unwrap_or(StateColorBinding {
+            state,
+            foreground: ColorRole::TextPrimary,
+            background: ColorRole::Shell,
+            glyph: GlyphRole::Done,
+        })
 }
 
 fn focus_style(theme: &Theme, role: FocusRole, glyph: &'static str) -> TimelineMarkerStyle {

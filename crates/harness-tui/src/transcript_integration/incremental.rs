@@ -171,9 +171,7 @@ impl TranscriptComposite {
             return Ok(updates);
         };
 
-        if blocks.len()
-            < usize::try_from(previous.replay.block_count).map_or(usize::MAX, |count| count)
-        {
+        if blocks.len() < usize::try_from(previous.replay.block_count).unwrap_or(usize::MAX) {
             return Err(TranscriptIntegrationError::IncrementalSync(
                 "turn sync cannot remove blocks incrementally",
             ));

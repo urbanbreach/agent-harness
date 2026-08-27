@@ -114,7 +114,7 @@ impl TimelineNavigation {
         self.scroll_top = match (previous_anchor, self.selected_turn_id) {
             (Some(anchor), Some(_)) => anchor
                 .resolve(&self.identity, &self.turns)
-                .map_or(fallback_scroll, |scroll_top| scroll_top),
+                .unwrap_or(fallback_scroll),
             _ => 0,
         };
         self.anchor = self.selected_turn_id.and_then(|turn_id| {

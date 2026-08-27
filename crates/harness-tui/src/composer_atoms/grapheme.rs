@@ -81,7 +81,7 @@ fn cluster_display_width(text: &str) -> u16 {
             .filter(|character| !is_grapheme_extend(**character) && **character != '\u{200D}')
             .map(|character| display_width(*character))
             .max()
-            .map_or(0, |width| width);
+            .unwrap_or(0);
     }
     chars
         .iter()

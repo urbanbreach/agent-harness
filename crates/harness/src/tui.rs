@@ -221,9 +221,7 @@ fn connect_provider_options(
             }
         } else if !oc.api_key_env.is_empty() {
             let env_var = oc.api_key_env[0].clone();
-            let already_set = std::env::var(&env_var)
-                .ok()
-                .is_some_and(|v| !v.trim().is_empty());
+            let already_set = std::env::var(&env_var).is_ok_and(|v| !v.trim().is_empty());
             if !already_set {
                 if let Some(id) = ProviderId::parse(provider_id.as_str()) {
                     provider_ids.insert(provider_id.clone());
