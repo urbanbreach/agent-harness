@@ -977,6 +977,15 @@ fn execute_export(
             Ok(e) => e,
             Err(_) => continue,
         };
+        if let Some(fragment) =
+            harness_core::session::canonical_provider_fragment_for_event(&envelope)
+        {
+            if fragment.kind == harness_core::session::CanonicalProviderFragmentKind::Text {
+                legacy_assistant_text.push_str(fragment.delta);
+                has_legacy_assistant = true;
+            }
+            continue;
+        }
         match envelope.payload {
             EventV1::UserMessageSubmitted(ev) => {
                 if has_legacy_assistant {
@@ -987,10 +996,6 @@ fn execute_export(
                 }
                 use std::fmt::Write as _;
                 let _ = writeln!(&mut markdown, "## User\n\n{}\n\n", ev.text);
-            }
-            EventV1::ProviderStreamDelta(ev) => {
-                legacy_assistant_text.push_str(&ev.delta);
-                has_legacy_assistant = true;
             }
             EventV1::AssistantMessageFinished(ev) => {
                 let committed_text = ev
