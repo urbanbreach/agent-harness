@@ -13,6 +13,8 @@ use crate::transcript_projection::{
 use std::path::Path;
 
 use super::legacy::{
+    canonical_provider_fragment_for_event, latest_legacy_compaction,
+    legacy_projection_update_for_event, CanonicalLegacyCompaction, CanonicalProviderFragment,
     LegacyAdapterError, LegacyAuditReference, LegacyEventLogAdapter, LegacyProvenance,
     LegacySessionSnapshot, LegacyWarning,
 };
@@ -35,11 +37,57 @@ pub struct CanonicalSessionProjection {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CanonicalProviderRequestStart<'a> {
     pub seq: u64,
+    pub mono_ms: u64,
+    pub turn_request_id: Option<&'a str>,
     pub request_id: &'a str,
     pub agent_id: Option<&'a str>,
     pub provider_id: &'a str,
     pub model_id: &'a str,
     pub prompt_summary: &'a str,
+    pub request_digest: &'a str,
+    pub metadata: Option<&'a crate::event::ProviderRequestStartedMetadata>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CanonicalProviderRequestFinish<'a> {
+    pub seq: u64,
+    pub mono_ms: u64,
+    pub turn_request_id: Option<&'a str>,
+    pub payload: &'a crate::event::ProviderRequestFinishedEvent,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct CanonicalBackgroundNotification<'a> {
+    pub seq: u64,
+    pub mono_ms: u64,
+    pub timestamp: Option<&'a str>,
+    pub actor_kind: crate::event::ActorKind,
+    pub actor_agent_id: Option<&'a str>,
+    pub correlation_id: Option<&'a str>,
+    pub payload: &'a crate::event::BackgroundTaskNotificationEvent,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct CanonicalStaleDetection<'a> {
+    pub seq: u64,
+    pub mono_ms: u64,
+    pub timestamp: Option<&'a str>,
+    pub task_id: &'a str,
+    pub stale_for_ms: u64,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum CanonicalEditPayload<'a> {
+    Proposed(&'a crate::event::EditProposedEvent),
+    Applied(&'a crate::event::EditAppliedEvent),
+    Rejected(&'a crate::event::EditRejectedEvent),
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct CanonicalEditEvent<'a> {
+    pub seq: u64,
+    pub tool_call_id: Option<&'a str>,
+    pub payload: CanonicalEditPayload<'a>,
 }
 
 impl CanonicalSessionProjection {
@@ -214,11 +262,91 @@ impl CanonicalSessionProjection {
             };
             Some(CanonicalProviderRequestStart {
                 seq: event.seq,
+                mono_ms: event.mono_ms,
+                turn_request_id: event.correlation_id.as_deref(),
                 request_id: payload.request_id.as_str(),
                 agent_id: event.actor.agent_id.as_deref(),
                 provider_id: &payload.provider_id,
                 model_id: &payload.model_id,
                 prompt_summary: &payload.prompt_summary,
+                request_digest: &payload.request_digest,
+                metadata: payload.metadata.as_ref(),
+            })
+        })
+    }
+
+    pub fn provider_request_finishes(
+        &self,
+    ) -> impl Iterator<Item = CanonicalProviderRequestFinish<'_>> {
+        self.source_events.iter().filter_map(|event| {
+            let EventV1::ProviderRequestFinished(payload) = &event.payload else {
+                return None;
+            };
+            Some(CanonicalProviderRequestFinish {
+                seq: event.seq,
+                mono_ms: event.mono_ms,
+                turn_request_id: event.correlation_id.as_deref(),
+                payload,
+            })
+        })
+    }
+
+    pub fn provider_fragments(&self) -> impl Iterator<Item = CanonicalProviderFragment<'_>> {
+        self.source_events
+            .iter()
+            .filter_map(canonical_provider_fragment_for_event)
+    }
+
+    pub fn latest_legacy_compaction(&self) -> Option<CanonicalLegacyCompaction> {
+        latest_legacy_compaction(&self.source_events)
+    }
+
+    pub fn background_notifications(
+        &self,
+    ) -> impl Iterator<Item = CanonicalBackgroundNotification<'_>> {
+        self.source_events.iter().filter_map(|event| {
+            let EventV1::BackgroundTaskNotification(payload) = &event.payload else {
+                return None;
+            };
+            Some(CanonicalBackgroundNotification {
+                seq: event.seq,
+                mono_ms: event.mono_ms,
+                timestamp: event.ts.as_deref(),
+                actor_kind: event.actor.kind,
+                actor_agent_id: event.actor.agent_id.as_deref(),
+                correlation_id: event.correlation_id.as_deref(),
+                payload,
+            })
+        })
+    }
+
+    pub fn stale_detections(&self) -> impl Iterator<Item = CanonicalStaleDetection<'_>> {
+        self.source_events.iter().filter_map(|event| {
+            let EventV1::StaleDetected(payload) = &event.payload else {
+                return None;
+            };
+            Some(CanonicalStaleDetection {
+                seq: event.seq,
+                mono_ms: event.mono_ms,
+                timestamp: event.ts.as_deref(),
+                task_id: payload.task_id.as_str(),
+                stale_for_ms: payload.stale_for_ms,
+            })
+        })
+    }
+
+    pub fn edit_events(&self) -> impl Iterator<Item = CanonicalEditEvent<'_>> {
+        self.source_events.iter().filter_map(|event| {
+            let payload = match &event.payload {
+                EventV1::EditProposed(payload) => CanonicalEditPayload::Proposed(payload),
+                EventV1::EditApplied(payload) => CanonicalEditPayload::Applied(payload),
+                EventV1::EditRejected(payload) => CanonicalEditPayload::Rejected(payload),
+                _ => return None,
+            };
+            Some(CanonicalEditEvent {
+                seq: event.seq,
+                tool_call_id: event.correlation_id.as_deref(),
+                payload,
             })
         })
     }
@@ -267,4 +395,26 @@ pub enum CanonicalSessionProjectionError {
     Transcript(#[from] TranscriptProjectionError),
     #[error(transparent)]
     Operational(#[from] ProjectionError),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CanonicalProjectionUpdate {
+    Buffer,
+    Settle,
+}
+
+pub const fn canonical_projection_update_for_event(event: &EventV1) -> CanonicalProjectionUpdate {
+    if let Some(update) = legacy_projection_update_for_event(event) {
+        return update;
+    }
+    match event {
+        EventV1::RunStarted(_)
+        | EventV1::TaskScheduled(_)
+        | EventV1::UserMessageSubmitted(_)
+        | EventV1::PromptAttachmentsSubmitted(_)
+        | EventV1::ProviderRequestStarted(_)
+        | EventV1::ToolCallRequested(_)
+        | EventV1::ToolCallStarted(_) => CanonicalProjectionUpdate::Buffer,
+        _ => CanonicalProjectionUpdate::Settle,
+    }
 }
