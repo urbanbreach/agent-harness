@@ -1595,12 +1595,12 @@ impl AppState {
         historical: bool,
         update_canonical: bool,
     ) {
-        let inline_live_child_view = !historical
-            && self.replay_mode
+        let inline_live_child_view = self.replay_mode
+            && !self.session_navigation_stack.is_empty()
             && self
-                .session_navigation_stack
-                .last()
-                .is_some_and(|snapshot| !snapshot.replay_mode);
+                .session_path
+                .as_ref()
+                .is_some_and(|path| !path.is_dir());
         if !historical && self.route_live_event_while_viewing_child(&event) {
             return;
         }
@@ -1647,11 +1647,19 @@ impl AppState {
             self.note_live_turn_status_timing(&event);
         }
         self.update_transient_state_for_event(&event);
+        let run_terminal_seen_before_historical_ingest = self.projection.run_terminal_seen;
         let trimmed_events = if update_canonical && !inline_live_child_view {
             self.projection.ingest_event(event.clone(), historical)
+        } else if inline_live_child_view {
+            self.projection
+                .ingest_transient_view_event(event.clone(), historical)
         } else {
-            self.projection.ingest_view_event(event.clone(), historical)
+            self.projection
+                .cache_event_details(event.clone(), historical)
         };
+        if historical && update_canonical {
+            self.projection.run_terminal_seen = run_terminal_seen_before_historical_ingest;
+        }
         if !historical {
             self.reconcile_permission_focus(permission_was_pending);
             self.reconcile_interrupt_request();

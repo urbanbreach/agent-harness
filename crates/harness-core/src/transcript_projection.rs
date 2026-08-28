@@ -138,26 +138,35 @@ pub fn project_transcript(
                     }),
                 );
             }
-            EventV1::TaskScheduled(payload) => append_task_part(
-                &mut projection,
-                event,
-                ProjectedTaskPart {
-                    task_id: payload.task_id.clone(),
-                    state: match payload.state {
-                        TaskScheduleState::Queued => ProjectedTaskState::Queued,
-                        TaskScheduleState::Started => ProjectedTaskState::Started,
+            EventV1::TaskScheduled(payload) => {
+                let lineage = payload
+                    .metadata
+                    .as_ref()
+                    .and_then(|metadata| lineage_projection(metadata.lineage.as_ref(), event));
+                if let Some(lineage) = lineage.as_ref() {
+                    push_unique_lineage(&mut projection.session_lineage, lineage.clone());
+                }
+                append_task_part(
+                    &mut projection,
+                    event,
+                    ProjectedTaskPart {
+                        task_id: payload.task_id.clone(),
+                        state: match payload.state {
+                            TaskScheduleState::Queued => ProjectedTaskState::Queued,
+                            TaskScheduleState::Started => ProjectedTaskState::Started,
+                        },
+                        queue_key: payload.queue_key.clone(),
+                        reason: None,
+                        result_summary: None,
+                        result_digest: None,
+                        lineage,
+                        terminal_scope: None,
+                        timing_elapsed_ms: None,
+                        terminal_mono_ms: None,
+                        provenance: ProvenanceRange::from_event(event),
                     },
-                    queue_key: payload.queue_key.clone(),
-                    reason: None,
-                    result_summary: None,
-                    result_digest: None,
-                    lineage: None,
-                    terminal_scope: None,
-                    timing_elapsed_ms: None,
-                    terminal_mono_ms: None,
-                    provenance: ProvenanceRange::from_event(event),
-                },
-            ),
+                );
+            }
             EventV1::TaskCancelled(payload) => append_task_part(
                 &mut projection,
                 event,
@@ -327,32 +336,39 @@ pub fn project_transcript(
                 } else {
                     ProjectedMessageState::Complete
                 };
-                let locations = request_locations.entry(request_id).or_default();
-                locations.pending_state = Some(state);
-                let provider = locations
-                    .pending_provider
-                    .get_or_insert_with(Default::default);
-                provider.provider_request_id = Some(payload.request_id.to_string());
-                provider.finish_reason = Some(payload.finish_reason.clone());
-                provider.output_digest.clone_from(&payload.output_digest);
-                if let Some(assistant_message) = payload
-                    .metadata
-                    .as_ref()
-                    .and_then(|metadata| metadata.assistant_message.as_ref())
-                {
-                    apply_assistant_message_metadata(provider, assistant_message);
-                }
-                if let Some(provenance) = locations.pending_provenance.as_mut() {
-                    provenance.extend(event);
-                } else {
-                    locations.pending_provenance = Some(ProvenanceRange::from_event(event));
-                }
-                if let Some(message_index) = locations.assistant_message_index {
-                    let message = &mut projection.messages[message_index];
-                    message.state = state;
-                    message.provider.clone_from(&locations.pending_provider);
-                    message.provenance.extend(event);
-                }
+                let pending_provider = {
+                    let locations = request_locations.entry(request_id.clone()).or_default();
+                    locations.pending_state = Some(state);
+                    let provider = locations
+                        .pending_provider
+                        .get_or_insert_with(Default::default);
+                    provider.provider_request_id = Some(payload.request_id.to_string());
+                    provider.finish_reason = Some(payload.finish_reason.clone());
+                    provider.output_digest.clone_from(&payload.output_digest);
+                    if let Some(assistant_message) = payload
+                        .metadata
+                        .as_ref()
+                        .and_then(|metadata| metadata.assistant_message.as_ref())
+                    {
+                        apply_assistant_message_metadata(provider, assistant_message);
+                    }
+                    if let Some(provenance) = locations.pending_provenance.as_mut() {
+                        provenance.extend(event);
+                    } else {
+                        locations.pending_provenance = Some(ProvenanceRange::from_event(event));
+                    }
+                    locations.pending_provider.clone()
+                };
+                let message_index = ensure_assistant_message(
+                    &mut projection,
+                    &mut request_locations,
+                    event,
+                    &request_id,
+                );
+                let message = &mut projection.messages[message_index];
+                message.state = state;
+                message.provider = pending_provider;
+                message.provenance.extend(event);
             }
             EventV1::AssistantMessageFinished(payload) => {
                 let request_id = provider_turn_request_id(event, payload.request_id.as_str());

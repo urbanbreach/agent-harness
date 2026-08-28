@@ -9,7 +9,11 @@ use harness_core::event::{
     LiveEventV1, ProviderRequestFinishedEvent, ProviderRequestRetryMetadata, ResolvedToolIdentity,
     ToolCallLifecycleState, UserMessageSubmittedEvent,
 };
-use harness_core::session::{AssistantPart, CanonicalSessionProjection};
+use harness_core::session::{
+    canonical_projection_update_for_event, canonical_provider_fragment_for_event, AssistantPart,
+    CanonicalProjectionUpdate, CanonicalProviderFragment, CanonicalProviderFragmentKind,
+    CanonicalSessionProjection,
+};
 
 use super::permissions::PendingPermission;
 use super::{
@@ -30,6 +34,9 @@ use crate::view_model;
 #[path = "session_projection/background_notification.rs"]
 mod background_notification;
 mod event_ingest;
+mod live_lifecycle;
+mod live_orchestration;
+mod live_tool;
 mod settled_presentation;
 
 use self::background_notification::{
@@ -340,38 +347,43 @@ impl SessionProjection {
 
     pub(crate) fn ingest_event(&mut self, event: EventEnvelopeV1, historical: bool) -> usize {
         self.unsettled_durable_events.push(event.clone());
-        let canonical_updated = if is_settlement_boundary(&event.payload) {
-            self.settle_durable_events()
-        } else {
-            self.canonical_projection_error.is_none()
-        };
-        self.ingest_derived_event(event, historical, canonical_updated)
+        let should_settle = canonical_projection_update_for_event(&event.payload)
+            == CanonicalProjectionUpdate::Settle;
+        let trimmed = self.ingest_transient_view_event(event, historical);
+        if should_settle && !self.settle_durable_events() {
+            self.transcript_delta = ProjectionDelta::FullRebuild;
+        }
+        trimmed
     }
 
-    pub(crate) fn ingest_view_event(&mut self, event: EventEnvelopeV1, historical: bool) -> usize {
-        self.ingest_derived_event(event, historical, true)
-    }
-
-    fn ingest_derived_event(
+    pub(crate) fn ingest_transient_view_event(
         &mut self,
         event: EventEnvelopeV1,
         historical: bool,
-        canonical_updated: bool,
     ) -> usize {
         let previous_activity_count = self.activities.len();
         let previous_trimmed_count = self.transcript_trimmed_count;
-        let derived_allowed =
-            canonical_updated || !canonical_failure_blocks_derived_state(&event.payload);
         self.seen_seqs.insert(event.seq);
-        if derived_allowed {
-            self.update_derived_state_for_event(&event, historical);
-        }
-        self.transcript_delta = if !derived_allowed {
-            ProjectionDelta::FullRebuild
-        } else if historical {
+        self.update_live_presentation_for_event(&event, historical);
+        self.transcript_delta = if historical {
             ProjectionDelta::ReplayPending
         } else {
             self.transcript_delta_for_event(&event, previous_activity_count, previous_trimmed_count)
+        };
+        self.events.push(event);
+        self.enforce_event_memory_cap()
+    }
+
+    pub(crate) fn cache_event_details(
+        &mut self,
+        event: EventEnvelopeV1,
+        historical: bool,
+    ) -> usize {
+        self.seen_seqs.insert(event.seq);
+        self.transcript_delta = if historical {
+            ProjectionDelta::ReplayPending
+        } else {
+            ProjectionDelta::None
         };
         self.events.push(event);
         self.enforce_event_memory_cap()
@@ -448,10 +460,6 @@ impl SessionProjection {
         self.compaction_status.as_ref()
     }
 
-    #[expect(
-        deprecated,
-        reason = "legacy compaction events still require replay-safe transcript fallback"
-    )]
     fn transcript_delta_for_event(
         &self,
         event: &EventEnvelopeV1,
@@ -470,12 +478,7 @@ impl SessionProjection {
                 ProjectionDelta::FullRebuild
             };
         }
-        if matches!(
-            event.payload,
-            EventV1::CompactionApplied(_)
-                | EventV1::CompactionWritten(_)
-                | EventV1::SessionCompaction(_)
-        ) {
+        if matches!(event.payload, EventV1::SessionCompaction(_)) {
             return ProjectionDelta::FullRebuild;
         }
         self.transcript_activity_index_for_event(event)
@@ -507,16 +510,6 @@ impl SessionProjection {
                 .and_then(request_index)
                 .or_else(|| request_index(data.request_id.as_str())),
             EventV1::ProviderRequestFinished(data) => event
-                .correlation_id
-                .as_deref()
-                .and_then(request_index)
-                .or_else(|| request_index(data.request_id.as_str())),
-            EventV1::ProviderStreamDelta(data) => event
-                .correlation_id
-                .as_deref()
-                .and_then(request_index)
-                .or_else(|| request_index(data.request_id.as_str())),
-            EventV1::ProviderReasoningDelta(data) => event
                 .correlation_id
                 .as_deref()
                 .and_then(request_index)
@@ -1461,122 +1454,6 @@ impl SessionProjection {
             }
             self.transcript_trimmed_count += trimmed;
         }
-    }
-}
-
-#[expect(
-    deprecated,
-    reason = "legacy durable compaction events remain decode-only compatibility inputs"
-)]
-fn is_settlement_boundary(event: &EventV1) -> bool {
-    match event {
-        EventV1::RunStarted(_)
-        | EventV1::TaskScheduled(_)
-        | EventV1::UserMessageSubmitted(_)
-        | EventV1::PromptAttachmentsSubmitted(_)
-        | EventV1::ProviderRequestStarted(_)
-        | EventV1::ProviderStreamDelta(_)
-        | EventV1::ProviderReasoningDelta(_)
-        | EventV1::ToolCallRequested(_)
-        | EventV1::ToolCallStarted(_)
-        | EventV1::CompactionRequested(_) => false,
-        EventV1::SessionTitleUpdated(_)
-        | EventV1::RunFinished(_)
-        | EventV1::RunFailed(_)
-        | EventV1::AgentSpawned(_)
-        | EventV1::AgentStopped(_)
-        | EventV1::TaskCancelled(_)
-        | EventV1::TaskCompleted(_)
-        | EventV1::TaskResultLate(_)
-        | EventV1::BackgroundTaskNotification(_)
-        | EventV1::StaleDetected(_)
-        | EventV1::ProviderRequestFinished(_)
-        | EventV1::AssistantMessageFinished(_)
-        | EventV1::CompactionWritten(_)
-        | EventV1::CompactionApplied(_)
-        | EventV1::CompactionFailed(_)
-        | EventV1::SessionCompaction(_)
-        | EventV1::BranchSummary(_)
-        | EventV1::ToolCallFinished(_)
-        | EventV1::PermissionRequested(_)
-        | EventV1::PermissionGrantRecorded(_)
-        | EventV1::PermissionResolved(_)
-        | EventV1::EditProposed(_)
-        | EventV1::EditApplied(_)
-        | EventV1::EditRejected(_)
-        | EventV1::ArtifactWritten(_)
-        | EventV1::PolicyViolationDetected(_)
-        | EventV1::UiIntentReceived(_)
-        | EventV1::WorkspaceSnapshot(_)
-        | EventV1::WorkspaceReverted(_) => true,
-    }
-}
-
-#[expect(
-    deprecated,
-    reason = "legacy durable compaction events remain decode-only compatibility inputs"
-)]
-fn canonical_failure_blocks_derived_state(event: &EventV1) -> bool {
-    matches!(
-        event,
-        EventV1::UserMessageSubmitted(_)
-            | EventV1::PromptAttachmentsSubmitted(_)
-            | EventV1::ProviderRequestStarted(_)
-            | EventV1::ProviderStreamDelta(_)
-            | EventV1::ProviderReasoningDelta(_)
-            | EventV1::ProviderRequestFinished(_)
-            | EventV1::AssistantMessageFinished(_)
-            | EventV1::ToolCallRequested(_)
-            | EventV1::ToolCallStarted(_)
-            | EventV1::ToolCallFinished(_)
-            | EventV1::CompactionRequested(_)
-            | EventV1::CompactionWritten(_)
-            | EventV1::CompactionApplied(_)
-            | EventV1::CompactionFailed(_)
-            | EventV1::SessionCompaction(_)
-            | EventV1::BranchSummary(_)
-    )
-}
-
-#[cfg(test)]
-mod canonical_failure_tests {
-    use super::canonical_failure_blocks_derived_state;
-    use harness_core::event::{
-        CompactionFailedEvent, EventV1, ProviderStreamDeltaEvent, RunFinishedEvent,
-    };
-
-    #[test]
-    #[expect(
-        deprecated,
-        reason = "the regression proves legacy durable compaction inputs fail closed"
-    )]
-    fn canonical_failure_blocks_semantic_fragments_and_legacy_compaction() {
-        // arrange
-        let provider_delta = EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
-            request_id: "req_000001".into(),
-            delta: "partial".to_string(),
-        });
-        let legacy_compaction = EventV1::CompactionFailed(CompactionFailedEvent {
-            agent_id: "agent_000001".to_string(),
-            trigger_reason: "manual".to_string(),
-            reason: "fixture".to_string(),
-            checkpoint_id: None,
-            through_seq: None,
-            through_request_id: None,
-        });
-        let operational = EventV1::RunFinished(RunFinishedEvent {
-            summary: "finished".to_string(),
-        });
-
-        // act
-        let provider_blocked = canonical_failure_blocks_derived_state(&provider_delta);
-        let compaction_blocked = canonical_failure_blocks_derived_state(&legacy_compaction);
-        let operational_blocked = canonical_failure_blocks_derived_state(&operational);
-
-        // assert
-        assert!(provider_blocked);
-        assert!(compaction_blocked);
-        assert!(!operational_blocked);
     }
 }
 

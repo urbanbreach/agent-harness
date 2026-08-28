@@ -9,13 +9,19 @@ mod adapter;
 mod compaction;
 mod facts;
 mod projection;
+mod provider_fragments;
 mod recovery;
 
 pub use recovery::{recover_event_history, LegacyHistoryRecovery, LegacyHistoryRecoveryError};
 
 pub use super::EventIdentityNamespace as LegacyIdentityNamespace;
 pub(crate) use compaction::{
-    classify_compatibility_event, CompatibilityEvent, CompatibilityEventLifecycle,
+    classify_compatibility_event, latest_legacy_compaction, legacy_projection_update_for_event,
+    CompatibilityEvent, CompatibilityEventLifecycle,
+};
+pub use compaction::{CanonicalLegacyCompaction, CanonicalLegacyCompactionStatus};
+pub use provider_fragments::{
+    canonical_provider_fragment_for_event, CanonicalProviderFragment, CanonicalProviderFragmentKind,
 };
 
 #[derive(Debug, Clone, Copy, Default)]
