@@ -909,6 +909,14 @@ fn resolve_session_run_dir(
     stderr: &mut dyn std::io::Write,
 ) -> Option<PathBuf> {
     let sdir = session_dir.unwrap_or_else(|| PathBuf::from(crate::defaults::DEFAULT_SESSION_DIR));
+    if !sdir.is_dir() {
+        let _ = writeln!(
+            stderr,
+            "no session matched `{session_id}` in {}",
+            sdir.display()
+        );
+        return None;
+    }
     let entries = match replay::inspect_session_catalog(&sdir) {
         Ok(entries) => entries,
         Err(err) => {
