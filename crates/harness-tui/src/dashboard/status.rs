@@ -3,6 +3,7 @@ use harness_core::event::{
     TaskScheduledEvent,
 };
 use harness_core::proj::RunStatus;
+use harness_core::session::canonical_provider_fragment_payload;
 
 use super::model::DashboardStatus;
 
@@ -35,12 +36,9 @@ pub(super) fn derive_status(
             })
         ) {
             DashboardStatus::Running
-        } else if matches!(
-            event.payload,
-            EventV1::ProviderRequestStarted(_)
-                | EventV1::ProviderStreamDelta(_)
-                | EventV1::ProviderReasoningDelta(_)
-        ) {
+        } else if matches!(event.payload, EventV1::ProviderRequestStarted(_))
+            || canonical_provider_fragment_payload(&event.payload).is_some()
+        {
             DashboardStatus::Streaming
         } else if matches!(event.payload, EventV1::RunFinished(_)) {
             DashboardStatus::Completed

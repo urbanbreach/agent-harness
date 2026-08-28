@@ -11,6 +11,7 @@ use crate::event::{
     RunFinishedEvent, RunStartedEvent,
 };
 use crate::redact::Redactor;
+use crate::session::canonical_provider_fragment_for_event;
 use crate::session_paths::{EVENTS_FILE_NAME, META_FILE_NAME};
 use crate::session_title::create_default_title;
 use crate::store::{EventEnvelopeWithoutSeqV1, EventStore, JsonlFileEventStore};
@@ -262,16 +263,15 @@ fn child_session_id_for_event(run_state: &RunState, event: &EventEnvelopeV1) -> 
         }
     }
 
+    if let Some(fragment) = canonical_provider_fragment_for_event(event) {
+        return run_state
+            .child_request_session_by_id
+            .get(fragment.request_id)
+            .cloned();
+    }
+
     match &event.payload {
         EventV1::ProviderRequestStarted(payload) => run_state
-            .child_request_session_by_id
-            .get(payload.request_id.as_str())
-            .cloned(),
-        EventV1::ProviderStreamDelta(payload) => run_state
-            .child_request_session_by_id
-            .get(payload.request_id.as_str())
-            .cloned(),
-        EventV1::ProviderReasoningDelta(payload) => run_state
             .child_request_session_by_id
             .get(payload.request_id.as_str())
             .cloned(),

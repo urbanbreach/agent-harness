@@ -15,6 +15,7 @@ use crate::event::{
 };
 use crate::ids::RunId;
 use crate::perm::PermissionGrantSet;
+use crate::session::canonical_provider_fragment_for_event;
 use crate::session::journal::{recover_event_history, JournalRecoveryError};
 use crate::session_paths::EVENTS_FILE_NAME;
 use crate::text::non_empty_trimmed;
@@ -346,6 +347,16 @@ pub fn project_resume_plan<'a>(
             }
         }
 
+        if let Some(fragment) = canonical_provider_fragment_for_event(event) {
+            update_id_watermark(
+                &mut id_watermarks.max_request_id,
+                fragment.request_id,
+                REQUEST_ID_PREFIX,
+                "request",
+            )?;
+            continue;
+        }
+
         match &event.payload {
             EventV1::RunStarted(payload) => {
                 latest_lifecycle_status = LifecycleSegmentStatus::Active;
@@ -587,22 +598,6 @@ pub fn project_resume_plan<'a>(
                             .latest_started = Some(metadata);
                     }
                 }
-            }
-            EventV1::ProviderStreamDelta(payload) => {
-                update_id_watermark(
-                    &mut id_watermarks.max_request_id,
-                    payload.request_id.as_str(),
-                    REQUEST_ID_PREFIX,
-                    "request",
-                )?;
-            }
-            EventV1::ProviderReasoningDelta(payload) => {
-                update_id_watermark(
-                    &mut id_watermarks.max_request_id,
-                    payload.request_id.as_str(),
-                    REQUEST_ID_PREFIX,
-                    "request",
-                )?;
             }
             EventV1::ProviderRequestFinished(payload) => {
                 update_id_watermark(

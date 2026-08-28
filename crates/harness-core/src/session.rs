@@ -23,8 +23,9 @@ pub use error::SessionError;
 pub use identity::EventIdentityNamespace;
 pub use legacy::LegacyWarning as CompatibilityWarning;
 pub use legacy::{
-    canonical_provider_fragment_for_event, CanonicalLegacyCompaction,
-    CanonicalLegacyCompactionStatus, CanonicalProviderFragment, CanonicalProviderFragmentKind,
+    canonical_provider_fragment_for_event, canonical_provider_fragment_payload,
+    CanonicalLegacyCompaction, CanonicalLegacyCompactionStatus, CanonicalProviderFragment,
+    CanonicalProviderFragmentKind, CanonicalProviderFragmentPayload,
 };
 pub(crate) use legacy::{
     classify_compatibility_event, CompatibilityEvent, CompatibilityEventLifecycle,

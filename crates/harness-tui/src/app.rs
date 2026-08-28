@@ -57,6 +57,7 @@ use harness_core::proj::{SessionCatalogEntry, SessionModeSource};
 use harness_core::sandbox::{
     LandlockSupport, OsSandboxProfilesSummary, SandboxFsPlanSummary, SandboxPrepareResult,
 };
+use harness_core::session::{canonical_provider_fragment_for_event, CanonicalProviderFragmentKind};
 use harness_core::sleep_wake_auth::{
     SleepWakeCredentialPolicy, SleepWakeHostEvent, SleepWakeObservation,
     SleepWakeObservationSummary, SleepWakeRefreshDecision,
@@ -1725,6 +1726,34 @@ impl AppState {
     }
 
     fn note_live_turn_status_timing(&mut self, event: &EventEnvelopeV1) {
+        if let Some(fragment) = canonical_provider_fragment_for_event(event) {
+            let turn_id = event
+                .correlation_id
+                .as_deref()
+                .unwrap_or(fragment.request_id);
+            let activity = self
+                .activities
+                .iter()
+                .rev()
+                .find(|activity| activity.request_id == turn_id);
+            let starts_phase = match fragment.kind {
+                CanonicalProviderFragmentKind::Reasoning => activity.is_none_or(|activity| {
+                    activity.thinking_text.is_empty() && activity.transcript_text.is_empty()
+                }),
+                CanonicalProviderFragmentKind::Text => {
+                    activity.is_none_or(|activity| activity.transcript_text.is_empty())
+                }
+            };
+            if starts_phase {
+                if fragment.kind == CanonicalProviderFragmentKind::Text {
+                    self.transcript_view
+                        .expanded_reasoning_requests
+                        .remove(turn_id);
+                }
+                self.restart_live_turn_phase_timing(turn_id);
+            }
+            return;
+        }
         match &event.payload {
             EventV1::UserMessageSubmitted(data) => {
                 if !self.live_turn_timing_owned_by_other_request(data.request_id.as_str()) {
@@ -1738,41 +1767,6 @@ impl AppState {
                     .unwrap_or(data.request_id.as_str());
                 if !self.live_turn_timing_owned_by_other_request(turn_id) {
                     self.begin_live_turn_timing(Some(turn_id));
-                }
-            }
-            EventV1::ProviderReasoningDelta(data) => {
-                let turn_id = event
-                    .correlation_id
-                    .as_deref()
-                    .unwrap_or(data.request_id.as_str());
-                let starts_thinking = self
-                    .activities
-                    .iter()
-                    .rev()
-                    .find_map(|activity| (activity.request_id == turn_id).then_some(activity))
-                    .is_none_or(|activity| {
-                        activity.thinking_text.is_empty() && activity.transcript_text.is_empty()
-                    });
-                if starts_thinking {
-                    self.restart_live_turn_phase_timing(turn_id);
-                }
-            }
-            EventV1::ProviderStreamDelta(data) => {
-                let turn_id = event
-                    .correlation_id
-                    .as_deref()
-                    .unwrap_or(data.request_id.as_str());
-                let starts_responding = self
-                    .activities
-                    .iter()
-                    .rev()
-                    .find_map(|activity| (activity.request_id == turn_id).then_some(activity))
-                    .is_none_or(|activity| activity.transcript_text.is_empty());
-                if starts_responding {
-                    self.transcript_view
-                        .expanded_reasoning_requests
-                        .remove(turn_id);
-                    self.restart_live_turn_phase_timing(turn_id);
                 }
             }
             EventV1::ToolCallRequested(_) => {

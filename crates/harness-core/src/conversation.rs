@@ -9,7 +9,9 @@ use crate::agent::{
     ProviderContextCheckpoint, ProviderConversationTurn, ProviderConversationTurnStatus,
 };
 use crate::event::{EventArtifactRef, EventEnvelopeV1, EventV1, ToolCallMetadata, ToolCallStatus};
-use crate::session::AssistantPart;
+use crate::session::{
+    canonical_provider_fragment_for_event, AssistantPart, CanonicalProviderFragmentKind,
+};
 use crate::text::non_empty_trimmed;
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -213,6 +215,26 @@ pub fn project_conversation(
     let mut tool_results = BTreeMap::<String, ToolResultProjectionState>::new();
 
     for event in events.iter().filter(|event| event.seq > skip_through_seq) {
+        if let Some(fragment) = canonical_provider_fragment_for_event(event) {
+            if fragment.kind == CanonicalProviderFragmentKind::Text {
+                if !started_provider_requests.contains(fragment.request_id) {
+                    return Err(ConversationProjectionError::ProviderDeltaBeforeStart {
+                        request_id: fragment.request_id.to_string(),
+                        seq: event.seq,
+                    });
+                }
+                let request_id = provider_turn_request_id(event, fragment.request_id);
+                let state_key = fragment.request_id.to_string();
+                let state = request_states.entry(state_key.clone()).or_default();
+                state.assistant.request_id = request_id.into();
+                state.assistant.text.push_str(fragment.delta);
+                state.assistant.last_seq = Some(event.seq);
+                if emitted_assistants.insert(state_key.clone()) {
+                    request_order.push(OrderedConversationItem::Assistant(state_key));
+                }
+            }
+            continue;
+        }
         match &event.payload {
             EventV1::UserMessageSubmitted(payload) => {
                 let state = request_states
@@ -241,23 +263,6 @@ pub fn project_conversation(
                 state.assistant.agent_id = event.actor.agent_id.clone();
                 state.assistant.provider_id = Some(payload.provider_id.clone());
                 state.assistant.model_id = Some(payload.model_id.clone());
-            }
-            EventV1::ProviderStreamDelta(payload) => {
-                if !started_provider_requests.contains(payload.request_id.as_str()) {
-                    return Err(ConversationProjectionError::ProviderDeltaBeforeStart {
-                        request_id: payload.request_id.to_string(),
-                        seq: event.seq,
-                    });
-                }
-                let request_id = provider_turn_request_id(event, payload.request_id.as_str());
-                let state_key = payload.request_id.to_string();
-                let state = request_states.entry(state_key.clone()).or_default();
-                state.assistant.request_id = request_id.into();
-                state.assistant.text.push_str(&payload.delta);
-                state.assistant.last_seq = Some(event.seq);
-                if emitted_assistants.insert(state_key.clone()) {
-                    request_order.push(OrderedConversationItem::Assistant(state_key));
-                }
             }
             EventV1::ProviderRequestFinished(payload) => {
                 let request_id = provider_turn_request_id(event, payload.request_id.as_str());

@@ -31,9 +31,11 @@ the committed parts replace any earlier compatibility fragments.
 For each journal load or settled durable-event batch, the runtime constructs one authoritative composed `CanonicalSessionProjection` facade per journal load or settlement. The facade composes focused pure reducers; it is neither a monolithic reducer nor a single physical pass. Provider continuation, restart, replay, export, catalog inspection, and settled TUI state consume its typed views. The TUI retains only ephemeral overlays and presentation enrichment; it does not define durable session semantics.
 
 The facade is the active read boundary, while legacy conversion is deliberately narrow: deprecated
-`EventV1` shapes are matched only inside the read-only `session::legacy` compatibility boundary.
-The shipped `EventV1` variant count remains 39; this preserves old journal decoding without
-allowing a legacy writer or a second durable source of truth.
+provider-fragment payloads and compaction details are decoded through helpers owned by the read-only
+`session::legacy` compatibility boundary. Structural observers may still name a deprecated event or
+use its request identity for ordering, live output, and cut-point safety; they do not reconstruct
+settled durable content. The shipped `EventV1` variant count remains 39; this preserves old journal
+decoding without allowing a legacy writer or a second durable source of truth.
 
 ## G007 canonical provider continuation boundary
 

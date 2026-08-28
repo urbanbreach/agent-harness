@@ -560,16 +560,13 @@ fn build_ordered_assistant_parts_from_events(
             && event.seq <= activity.last_seq
             && turn_event_matches_activity(event, &activity.request_id)
     }) {
-        match &event.payload {
-            harness_core::event::EventV1::ProviderReasoningDelta(data)
-                if provider_event_matches_activity(
-                    event,
-                    data.request_id.as_str(),
-                    &activity.request_id,
-                ) =>
-            {
-                saw_turn_event = true;
-                if thinking_visible {
+        if let Some(fragment) = harness_core::session::canonical_provider_fragment_for_event(event)
+        {
+            saw_turn_event = true;
+            match fragment.kind {
+                harness_core::session::CanonicalProviderFragmentKind::Reasoning
+                    if thinking_visible =>
+                {
                     saw_reasoning_event = true;
                     settle_trailing_body(&mut parts);
                     push_sequenced_text_part(
@@ -577,33 +574,29 @@ fn build_ordered_assistant_parts_from_events(
                         &mut next_index,
                         event.seq,
                         TranscriptAssistantTextKind::Reasoning,
-                        &data.delta,
+                        fragment.delta,
                     );
                 }
-            }
-            harness_core::event::EventV1::ProviderStreamDelta(data)
-                if provider_event_matches_activity(
-                    event,
-                    data.request_id.as_str(),
-                    &activity.request_id,
-                ) =>
-            {
-                saw_turn_event = true;
-                if saw_tool_call {
+                harness_core::session::CanonicalProviderFragmentKind::Text if saw_tool_call => {
                     saw_body_event = true;
                     push_sequenced_text_part(
                         &mut parts,
                         &mut next_index,
                         event.seq,
                         TranscriptAssistantTextKind::Body,
-                        &data.delta,
+                        fragment.delta,
                     );
-                } else {
+                }
+                harness_core::session::CanonicalProviderFragmentKind::Text => {
                     let pending =
                         pending_pre_tool_stream.get_or_insert_with(|| (event.seq, String::new()));
-                    pending.1.push_str(&data.delta);
+                    pending.1.push_str(fragment.delta);
                 }
+                harness_core::session::CanonicalProviderFragmentKind::Reasoning => {}
             }
+            continue;
+        }
+        match &event.payload {
             harness_core::event::EventV1::AssistantMessageFinished(data)
                 if provider_event_matches_activity(
                     event,

@@ -2,7 +2,10 @@
 use std::collections::BTreeMap;
 
 use crate::event::{EventEnvelopeV1, EventV1, TaskScheduleState, ToolCallMetadata, ToolCallStatus};
-use crate::session::{classify_compatibility_event, AssistantPart};
+use crate::session::{
+    canonical_provider_fragment_for_event, classify_compatibility_event, AssistantPart,
+    CanonicalProviderFragmentKind,
+};
 
 mod helpers;
 mod model;
@@ -36,6 +39,23 @@ pub fn project_transcript(
             .run_id
             .get_or_insert(event.run_id.to_string());
         projection.session.max_seq = Some(event.seq);
+
+        if let Some(fragment) = canonical_provider_fragment_for_event(event) {
+            let request_id = provider_turn_request_id(event, fragment.request_id);
+            let kind = match fragment.kind {
+                CanonicalProviderFragmentKind::Reasoning => AssistantTextKind::Reasoning,
+                CanonicalProviderFragmentKind::Text => AssistantTextKind::Text,
+            };
+            append_or_extend_assistant_text(
+                &mut projection,
+                &mut request_locations,
+                event,
+                &request_id,
+                fragment.delta,
+                kind,
+            );
+            continue;
+        }
 
         match &event.payload {
             EventV1::RunStarted(payload) => {
@@ -306,28 +326,6 @@ pub fn project_transcript(
                 } else {
                     locations.pending_provenance = Some(ProvenanceRange::from_event(event));
                 }
-            }
-            EventV1::ProviderStreamDelta(payload) => {
-                let request_id = provider_turn_request_id(event, payload.request_id.as_str());
-                append_or_extend_assistant_text(
-                    &mut projection,
-                    &mut request_locations,
-                    event,
-                    &request_id,
-                    &payload.delta,
-                    AssistantTextKind::Text,
-                );
-            }
-            EventV1::ProviderReasoningDelta(payload) => {
-                let request_id = provider_turn_request_id(event, payload.request_id.as_str());
-                append_or_extend_assistant_text(
-                    &mut projection,
-                    &mut request_locations,
-                    event,
-                    &request_id,
-                    &payload.delta,
-                    AssistantTextKind::Reasoning,
-                );
             }
             EventV1::ProviderRequestFinished(payload) => {
                 let request_id = provider_turn_request_id(event, payload.request_id.as_str());
