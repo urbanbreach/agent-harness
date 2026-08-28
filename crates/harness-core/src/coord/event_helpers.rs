@@ -1,5 +1,5 @@
 // allow: SIZE_OK — coordinator state machine (turn lifecycle + scheduling)
-use std::{collections::BTreeMap, fs};
+use std::{collections::BTreeMap, fs, path::Path};
 
 use crate::clock::Clock;
 use crate::digest::digest12;
@@ -616,6 +616,17 @@ fn append_built_event(
     run_state.next_event_seq += 1;
     mirror_event_to_child_session(run_state, &appended)?;
     run_state.canonical_event_history.push(appended.clone());
+    let session_dir = run_state.info.run_dir.parent().map(Path::to_path_buf);
+    if let Some(session_dir) = session_dir {
+        if let Err(error) = crate::session::history_index::persist_committed_history_row(
+            &session_dir,
+            &run_state.info.events_path,
+            &mut run_state.history_index_row,
+            &appended,
+        ) {
+            tracing::warn!(error = %error, "session history index update failed after durable commit");
+        }
+    }
     Ok(appended)
 }
 

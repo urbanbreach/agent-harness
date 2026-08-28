@@ -42,6 +42,8 @@ fn perf_large_session_list_reopen_and_session_search_write_artifact() {
             "sessions".to_string(),
             "list".to_string(),
             "--json".to_string(),
+            "--limit".to_string(),
+            SESSION_COUNT.to_string(),
         ])
         .output();
     // act
@@ -78,7 +80,10 @@ fn perf_large_session_list_reopen_and_session_search_write_artifact() {
     let reopen_json: serde_json::Value =
         serde_json::from_slice(&reopen_output.stdout).unwrap_or_abort();
     assert_eq!(reopen_json["summary"]["run_id"], target_run_id);
-    assert_eq!(reopen_json["summary"]["resumable"], true);
+    assert_eq!(
+        reopen_json["summary"]["resumable"], true,
+        "reopen response: {reopen_json}"
+    );
 
     let registry = coordinator_registry(ShellAllowlist::default());
     let search_started = Instant::now();
@@ -189,6 +194,19 @@ fn write_large_session_corpus(session_root: &Path, workspace_root: &Path) {
             .collect::<Vec<_>>()
             .join("\n");
         fs::write(run_dir.join("events.jsonl"), format!("{body}\n")).unwrap_or_abort();
+        fs::write(
+            run_dir.join("meta.json"),
+            serde_json::to_vec_pretty(&json!({
+                "run_id": run_id,
+                "run_name": "interactive",
+                "workspace_root": workspace_root.display().to_string(),
+                "config_digest": "perf-fixture",
+                "harness_version": env!("CARGO_PKG_VERSION"),
+                "mode_source": "interactive_mock"
+            }))
+            .unwrap_or_abort(),
+        )
+        .unwrap_or_abort();
     }
 }
 
@@ -211,7 +229,7 @@ fn large_session_events(run_id: &str, index: usize, workspace_root: &Path) -> Ve
             EventActor::new(ActorKind::Worker, Some(agent_id.to_string())),
             EventV1::AgentSpawned(AgentSpawnedEvent {
                 agent_id: agent_id.to_string(),
-                profile: "build".to_string(),
+                profile: "default".to_string(),
                 parent_agent_id: None,
             }),
         ),

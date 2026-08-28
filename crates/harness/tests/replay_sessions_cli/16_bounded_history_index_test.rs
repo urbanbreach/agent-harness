@@ -1,4 +1,6 @@
 use harness::UnwrapOrAbort;
+use std::fs::FileTimes;
+use std::time::{Duration, UNIX_EPOCH};
 
 const INDEX_FILE_NAME: &str = ".session-history-index-v1.json";
 
@@ -264,4 +266,78 @@ fn session_history_index_temp_symlink_cannot_clobber_another_file() {
             .file_type()
             .is_symlink()
     );
+}
+
+#[test]
+fn cursor_distinguishes_equal_timestamp_and_run_id_by_run_dir() {
+    // arrange
+    let session_dir = tempdir().unwrap_or_abort();
+    let modified = UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    for directory in ["copy-a", "copy-b"] {
+        let run_dir = session_dir.path().join(directory);
+        std::fs::create_dir_all(&run_dir).unwrap_or_abort();
+        write_events_jsonl(&run_dir, &resumable_finished_events("run_same"));
+        std::fs::File::options()
+            .write(true)
+            .open(run_dir.join("events.jsonl"))
+            .unwrap_or_abort()
+            .set_times(FileTimes::new().set_modified(modified))
+            .unwrap_or_abort();
+    }
+
+    // act
+    let output = run_harness([
+        "--session-dir",
+        session_dir.path().to_str().unwrap_or_abort(),
+        "sessions",
+        "list",
+        "--json",
+    ]);
+
+    // assert
+    assert!(output.status.success());
+    let rows: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap_or_abort();
+    assert_ne!(rows[0]["cursor"], rows[1]["cursor"]);
+}
+
+#[test]
+fn invalid_or_stale_cursor_fails_closed() {
+    // arrange
+    let session_dir = tempdir().unwrap_or_abort();
+    let run_dir = session_dir.path().join("run_cursor");
+    std::fs::create_dir_all(&run_dir).unwrap_or_abort();
+    write_events_jsonl(&run_dir, &resumable_finished_events("run_cursor"));
+
+    // act
+    let output = run_harness([
+        "--session-dir",
+        session_dir.path().to_str().unwrap_or_abort(),
+        "sessions",
+        "list",
+        "--json",
+        "--cursor",
+        "not-a-current-cursor",
+    ]);
+
+    // assert
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("cursor"));
+}
+
+#[test]
+fn warm_list_opens_zero_journals_through_counted_source() {
+    // arrange
+    let session_dir = tempdir().unwrap_or_abort();
+    let run_dir = session_dir.path().join("run_warm");
+    std::fs::create_dir_all(&run_dir).unwrap_or_abort();
+    write_events_jsonl(&run_dir, &resumable_finished_events("run_warm"));
+    let cold = harness::inspect_session_catalog_indexed(session_dir.path()).unwrap_or_abort();
+
+    // act
+    let warm = harness::inspect_session_catalog_indexed(session_dir.path()).unwrap_or_abort();
+
+    // assert
+    assert_eq!(cold.journals_opened, 1);
+    assert_eq!(warm.journals_opened, 0);
 }

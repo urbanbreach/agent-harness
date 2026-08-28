@@ -554,6 +554,72 @@ async fn fresh_run_agent_ids_skip_existing_child_session_directories() {
     assert!(run.run_dir.ends_with("run_000001"));
 }
 
+#[tokio::test]
+async fn canonical_commit_updates_history_index_before_first_list() {
+    // arrange
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
+    let config = test_config(temp_dir.path());
+    let handle = spawn_coordinator(
+        config,
+        Arc::new(FakeClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+
+    // act
+    let run = handle
+        .start_run("indexed immediately", temp_dir.path())
+        .await
+        .unwrap_or_abort();
+
+    // assert
+    let index_path = temp_dir.path().join(".session-history-index-v1.json");
+    let index: serde_json::Value =
+        serde_json::from_slice(&fs::read(index_path).unwrap_or_abort()).unwrap_or_abort();
+    assert_eq!(
+        index["entries"][run.run_dir.to_str().unwrap_or_abort()]["entry"]["catalog"]["run_id"],
+        run.run_id.to_string()
+    );
+}
+
+#[tokio::test]
+async fn concurrent_commit_updates_do_not_lose_rows() {
+    // arrange
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
+    let mut first_config = test_config(temp_dir.path());
+    first_config.run_id_override = Some("run_index_first".to_string());
+    let mut second_config = test_config(temp_dir.path());
+    second_config.run_id_override = Some("run_index_second".to_string());
+    let first = spawn_coordinator(
+        first_config,
+        Arc::new(FakeClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    let second = spawn_coordinator(
+        second_config,
+        Arc::new(FakeClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+
+    // act
+    let (first_run, second_run) = tokio::join!(
+        first.start_run("first", temp_dir.path()),
+        second.start_run("second", temp_dir.path())
+    );
+    let first_run = first_run.unwrap_or_abort();
+    let second_run = second_run.unwrap_or_abort();
+
+    // assert
+    let index_path = temp_dir.path().join(".session-history-index-v1.json");
+    let index: serde_json::Value =
+        serde_json::from_slice(&fs::read(index_path).unwrap_or_abort()).unwrap_or_abort();
+    assert!(index["entries"]
+        .get(first_run.run_dir.to_str().unwrap_or_abort())
+        .is_some());
+    assert!(index["entries"]
+        .get(second_run.run_dir.to_str().unwrap_or_abort())
+        .is_some());
+}
+
 fn shell_permission_policy(shell_mode: PermissionMode) -> PermissionPolicy {
     PermissionPolicy::new(PermissionMode::Deny, shell_mode, PermissionMode::Deny)
 }
@@ -1308,12 +1374,19 @@ fn test_run_state(session_dir: &Path, run_id: &str) -> RunState {
             run_id: run_id.to_string().into(),
             run_name: "interactive".into(),
             workspace_root: Path::new("/workspace/project").to_path_buf(),
-            run_dir,
+            run_dir: run_dir.clone(),
             artifacts_dir,
             events_path: event_store.file_path().to_path_buf(),
         },
         event_store,
         canonical_event_history: Vec::new(),
+        history_index_row: crate::session::history_index::SessionHistoryRowReducer::new(
+            run_dir.clone(),
+            run_id.to_string(),
+            "interactive".to_string(),
+            "/workspace/project".to_string(),
+            Some(crate::proj::SessionModeSource::InteractiveMock),
+        ),
         next_event_seq: 1,
         next_live_event_id: 1,
         next_agent_id: 1,

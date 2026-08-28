@@ -29,6 +29,7 @@ pub mod file_tag;
 pub mod folder_trust;
 pub mod foreground_demote;
 pub mod foreign_session;
+pub(crate) mod fslock;
 pub mod ids;
 pub mod integrations;
 pub mod jujutsu;
