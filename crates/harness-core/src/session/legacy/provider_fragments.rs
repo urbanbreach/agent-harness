@@ -16,10 +16,17 @@ pub struct CanonicalProviderFragment<'a> {
     pub delta: &'a str,
 }
 
-pub fn canonical_provider_fragment_for_event(
-    event: &EventEnvelopeV1,
-) -> Option<CanonicalProviderFragment<'_>> {
-    let (request_id, kind, delta) = match &event.payload {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CanonicalProviderFragmentPayload<'a> {
+    pub request_id: &'a str,
+    pub kind: CanonicalProviderFragmentKind,
+    pub delta: &'a str,
+}
+
+pub fn canonical_provider_fragment_payload(
+    event: &EventV1,
+) -> Option<CanonicalProviderFragmentPayload<'_>> {
+    let (request_id, kind, delta) = match event {
         EventV1::ProviderReasoningDelta(payload) => (
             payload.request_id.as_str(),
             CanonicalProviderFragmentKind::Reasoning,
@@ -32,12 +39,23 @@ pub fn canonical_provider_fragment_for_event(
         ),
         _ => return None,
     };
+    Some(CanonicalProviderFragmentPayload {
+        request_id,
+        kind,
+        delta,
+    })
+}
+
+pub fn canonical_provider_fragment_for_event(
+    event: &EventEnvelopeV1,
+) -> Option<CanonicalProviderFragment<'_>> {
+    let fragment = canonical_provider_fragment_payload(&event.payload)?;
     Some(CanonicalProviderFragment {
         seq: event.seq,
         mono_ms: event.mono_ms,
         turn_request_id: event.correlation_id.as_deref(),
-        request_id,
-        kind,
-        delta,
+        request_id: fragment.request_id,
+        kind: fragment.kind,
+        delta: fragment.delta,
     })
 }

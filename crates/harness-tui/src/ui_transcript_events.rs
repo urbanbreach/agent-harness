@@ -13,13 +13,10 @@ pub(super) fn turn_event_matches_activity(
     event: &harness_core::event::EventEnvelopeV1,
     request_id: &str,
 ) -> bool {
+    if let Some(fragment) = harness_core::session::canonical_provider_fragment_for_event(event) {
+        return provider_event_matches_activity(event, fragment.request_id, request_id);
+    }
     match &event.payload {
-        harness_core::event::EventV1::ProviderReasoningDelta(data) => {
-            provider_event_matches_activity(event, data.request_id.as_str(), request_id)
-        }
-        harness_core::event::EventV1::ProviderStreamDelta(data) => {
-            provider_event_matches_activity(event, data.request_id.as_str(), request_id)
-        }
         harness_core::event::EventV1::TaskCompleted(_)
         | harness_core::event::EventV1::ToolCallRequested(_) => {
             event.correlation_id.as_deref() == Some(request_id)

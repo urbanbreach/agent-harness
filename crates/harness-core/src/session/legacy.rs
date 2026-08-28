@@ -21,7 +21,8 @@ pub(crate) use compaction::{
 };
 pub use compaction::{CanonicalLegacyCompaction, CanonicalLegacyCompactionStatus};
 pub use provider_fragments::{
-    canonical_provider_fragment_for_event, CanonicalProviderFragment, CanonicalProviderFragmentKind,
+    canonical_provider_fragment_for_event, canonical_provider_fragment_payload,
+    CanonicalProviderFragment, CanonicalProviderFragmentKind, CanonicalProviderFragmentPayload,
 };
 
 #[derive(Debug, Clone, Copy, Default)]

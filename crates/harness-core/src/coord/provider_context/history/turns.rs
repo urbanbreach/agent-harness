@@ -3,7 +3,9 @@ use std::io::{BufRead, BufReader};
 use std::path::Path;
 
 use crate::event::{EventArtifactRef, EventV1, TaskCompletedEvent, TaskTerminalScope};
-use crate::session::AssistantPart;
+use crate::session::{
+    canonical_provider_fragment_for_event, AssistantPart, CanonicalProviderFragmentKind,
+};
 use crate::text::non_empty_trimmed;
 
 use super::super::super::CoordinatorError;
@@ -37,6 +39,19 @@ pub(in crate::coord::provider_context) fn collect_historical_agent_turns_until(
             continue;
         }
 
+        if let Some(fragment) = canonical_provider_fragment_for_event(&event) {
+            if fragment.kind == CanonicalProviderFragmentKind::Text
+                && event.actor.agent_id.as_deref() == Some(agent_id)
+            {
+                requests
+                    .entry(historical_request_id(&event, fragment.request_id))
+                    .or_default()
+                    .assistant_output
+                    .push_str(fragment.delta);
+            }
+            continue;
+        }
+
         match &event.payload {
             EventV1::UserMessageSubmitted(payload) => {
                 requests
@@ -51,15 +66,6 @@ pub(in crate::coord::provider_context) fn collect_historical_agent_turns_until(
                     .entry(historical_request_id(&event, payload.request_id.as_str()))
                     .or_default()
                     .prompt_summary = Some(payload.prompt_summary.clone());
-            }
-            EventV1::ProviderStreamDelta(payload)
-                if event.actor.agent_id.as_deref() == Some(agent_id) =>
-            {
-                requests
-                    .entry(historical_request_id(&event, payload.request_id.as_str()))
-                    .or_default()
-                    .assistant_output
-                    .push_str(&payload.delta);
             }
             EventV1::AssistantMessageFinished(payload)
                 if event.actor.agent_id.as_deref() == Some(agent_id) =>

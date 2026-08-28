@@ -2,6 +2,7 @@ use std::io::Write;
 use std::time::Instant;
 
 use harness_core::event::{BackgroundTaskNotificationStatus, EventEnvelopeV1, EventV1};
+use harness_core::session::{canonical_provider_fragment_for_event, CanonicalProviderFragmentKind};
 
 use crate::app::AppState;
 use crate::contextual_tips::{TipContext, TipManager};
@@ -68,6 +69,13 @@ impl RuntimeExperience {
     }
 
     pub fn on_event(&mut self, event: &EventEnvelopeV1) {
+        if let Some(fragment) = canonical_provider_fragment_for_event(event) {
+            if fragment.kind == CanonicalProviderFragmentKind::Text {
+                self.title_state.set_activity(TitleActivity::Streaming);
+                self.submit_media(fragment.delta, event.seq);
+            }
+            return;
+        }
         match &event.payload {
             EventV1::RunStarted(data) => {
                 self.session_name = data.run_name.to_string();
@@ -79,10 +87,6 @@ impl RuntimeExperience {
                 self.title_state.set_activity(TitleActivity::Streaming);
                 self.transition(LifecycleState::Streaming);
                 self.submit_media(&data.text, event.seq);
-            }
-            EventV1::ProviderStreamDelta(data) => {
-                self.title_state.set_activity(TitleActivity::Streaming);
-                self.submit_media(&data.delta, event.seq);
             }
             EventV1::ToolCallRequested(data) => {
                 self.title_state.set_activity(TitleActivity::ToolRunning);
