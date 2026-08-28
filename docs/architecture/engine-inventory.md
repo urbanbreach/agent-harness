@@ -90,24 +90,24 @@ owner surface when present; `none recorded` is deliberate, not an implied pass.
 | provider request construction | `agent/provider_boundary.rs::build_provider_context_messages`, providers request modules | yes/yes | provider boundary owners; no PTY | golden mock request | canonical boundary; Keep |
 | prompt/system-context construction | `dynamic_prompt.rs`, `agent/provider_boundary.rs` | yes/yes | prompt owners; no PTY | golden mock request | duplicated context assembly; Consolidate |
 | session persistence | `store.rs::JsonlFileEventStore::append` | yes/yes | store owners; no PTY | golden `events.jsonl` | canonical journal; Keep |
-| session listing | `harness/src/{sessions.rs,replay.rs::inspect_session_catalog}` | yes/yes | replay/session owners; no PTY | corpus metric unavailable | linear read model; Move |
-| session continuation | `run.rs`, `coord/handle.rs::resume_run` | yes/yes | resume owners; TUI replay owner | none recorded | supported; Consolidate |
-| replay | `harness/src/replay.rs::summarize_session` | yes/yes | replay owners; no PTY | golden log is inspectable | canonical read-only boundary; Keep |
-| conversation projection | `conversation.rs::project_conversation` | yes/yes | conversation projection owners; no PTY | replay path | duplicated reducer; Consolidate |
-| transcript projection | `transcript_projection.rs::project_transcript` | yes/yes | transcript owners; TUI PTY owner | replay path | duplicated reducer; Consolidate |
-| TUI session projection | `harness-tui/src/app/session_projection.rs::SessionProjection::ingest_event` | yes/no | TUI owner; PTY owner | none recorded | duplicated reducer; Move |
+| session listing | `harness/src/{replay/history_index.rs,sessions/list.rs}` | yes/yes | indexed replay/session owners; no PTY | counted cold/warm open seam | supported advisory index; Keep |
+| session continuation | `run.rs`, `coord/handle.rs::resume_run` | yes/yes | resume owners; TUI replay owner | canonical resume owner | supported canonical view; Keep |
+| replay | `harness/src/replay.rs::LoadedSessionRun` | yes/yes | replay owners; no PTY | golden log is inspectable | canonical settled read boundary; Keep |
+| conversation projection | `session/projection.rs` composes `conversation.rs::project_conversation` | yes/yes | conversation projection owners; no PTY | canonical facade owner | focused pure reducer; Keep |
+| transcript projection | `session/projection.rs` composes `transcript_projection.rs::project_transcript` | yes/yes | transcript owners; TUI PTY owner | canonical facade owner | focused pure reducer; Keep |
+| TUI session projection | `harness-tui/src/app/session_projection.rs::SessionProjection` | yes/no | settled-TUI owner; PTY owner | typed runtime settlement owner | canonical durable projection plus ephemeral overlay; Keep |
 | prompt queue | `harness/src/prompt_queue_cmd.rs`, core prompt queue modules | yes/yes | command owners; no PTY | none recorded | supported; Keep |
 | tool execution | `coord/tool_execution.rs`, `coord/handle.rs::execute_agent_tool_call` | yes/yes | tool/coord owners; PTY owner | golden tool batch | canonical authority; Keep |
 | permissions | `perm.rs`, `coord/permission.rs` | yes/yes | permission owners; PTY owner | golden permission path | canonical authority; Keep |
 | subagents and child sessions | `coord/child_session.rs`, `session_lineage.rs` | yes/yes | lineage/coord owners; no PTY | none recorded | supported; Consolidate |
 | background tasks | `coord/{task_lifecycle.rs,background_notifications.rs}`, `proj/background_projection.rs` | yes/yes | background owners; no PTY | none recorded | duplicated views; Consolidate |
-| compaction | `coord/session_compaction.rs`, `coord/compaction/` | yes/yes | compaction owners; no PTY | none recorded | overlapping active/legacy; Consolidate |
-| provider-context checkpoints | `coord/provider_context/restore.rs` reads legacy checkpoints; writer helper has no callers | legacy-only/legacy-only | checkpoint restore owners; no PTY | none recorded | legacy read path; Disable writer helper then Delete |
+| compaction | `coord/session_compaction.rs`, `coord/compaction/` | yes/yes | compaction owners; no PTY | typed compaction owner | one active V2 event; legacy decode only; Keep |
+| provider-context checkpoints | `session::legacy` compatibility readers | legacy-only/legacy-only | checkpoint restore owners; no PTY | read-only legacy fixtures | compatibility-only decoder; writer/copy paths removed |
 | operational memory | active `coord/{session_compaction.rs,compaction/file_ops.rs}`; orphan `coord/provider_context/operational_memory.rs` is uncompiled | yes/yes | `operational_memory_context_tests`; no PTY | no separate runtime capture | active behavior Keep; dead duplicate Delete |
 | branching/fork/clone/rewind | `session_lineage/`, `prompt_rewind.rs`, CLI sessions | yes/yes | lineage owners; TUI navigation owner | none recorded | supported; Move |
-| crash recovery | `crash_recovery.rs`, session reopen | yes/yes | recovery owners; no PTY | none recorded | supported; Keep |
+| crash recovery | `session::journal`, session reopen | yes/yes | recovery owners; no PTY | corrupt-tail owner | supported neutral journal recovery; Keep |
 | extension/hook paths | `integrations/`, `coord/hooks.rs` | yes/yes | integration/hook owners; no PTY | none recorded | incomplete boundary; Disable dynamic execution claims |
-| legacy compatibility code | legacy event/checkpoint/replay readers | yes/yes | replay/session owners; TUI replay owner | none recorded | legacy; Disable mutation then Delete adapter after migration |
+| legacy compatibility code | `session::legacy` decode-only event/checkpoint readers | yes/yes | replay/session owners; TUI replay owner | compatibility fixtures | compatibility-only; no active mutation |
 
 ## M02 model-limit inventory receipt
 
@@ -122,17 +122,23 @@ and deletion of those mirrors remain assigned to M03.
 
 `EventV1` retains `CompactionRequested`, `CompactionWritten`, `CompactionApplied`, and
 `CompactionFailed` as compatibility-only decode variants. `SessionCompaction` is the sole active
-Compaction V2 success event; `BranchSummary` remains a separate branch-summary event. The five
-measured durable read-model paths are composed behind `CanonicalSessionProjection`; active
-provider/restart/replay/export/TUI consumers no longer select independent durable truth.
+Compaction V2 success event; `BranchSummary` remains a separate branch-summary event. One
+authoritative composed `CanonicalSessionProjection` facade is built at each journal load or
+settlement. It composes focused pure reducers rather than becoming a single monolithic pass;
+provider/restart/replay/export/catalog/settled-TUI consumers no longer select independent durable
+truth. TUI-only overlays and presentation enrichment remain non-durable.
 
-The corrected accepted-tree comparison uses baseline `2f0b2a9a`. Production LOC is net-negative:
-234,607 to 232,694 (-1,913) at the G010 measurement, including harness-core 67,861 to 65,573
-(-2,288), coordinator bucket -2,346, compaction bucket -117, and SIZE_OK markers 191 to 187.
-Event variants remain 39 so shipped legacy journals still deserialize.
+The corrected accepted-tree comparison uses baseline `2f0b2a9a75b368cf94ac20a26f2321a398cb19cd`.
+The current G012 measurement preserves that baseline and is net-negative: production LOC is
+234,607 to 233,598 (-1,009), frozen-overlap production LOC is 66,517 to 65,195 (-1,322),
+harness-core is 67,861 to 66,053 (-1,808), and SIZE_OK markers are 191 to 187. The metric script
+also records baseline-contract drift instead of silently rebasing it. Event variants remain 39 so
+shipped legacy journals still deserialize.
 
-The persistent bounded history surface is `.session-history-index-v1.json`. Warm reads compare
-directory entries and journal metadata, reuse unchanged rows without opening each `events.jsonl`,
-and rescan only missing or changed fingerprints. Missing, stale, unsupported-version, truncated,
-and corrupt index states rebuild from journals; malformed journals produce unavailable rows
-without poisoning healthy sessions.
+The persistent bounded history surface is `.session-history-index-v1.json`. Each successful durable
+commit updates its row under the index lock. Warm reads compare directory entries and journal
+metadata, reuse unchanged rows without opening each `events.jsonl`, and the counted seam reports
+zero warm journal opens. Cursors carry timestamp, run id, and run-directory bytes; invalid or stale
+cursors fail closed. Missing, stale, unsupported-version, truncated, and corrupt index states
+rebuild from journals; malformed journals produce unavailable rows without poisoning healthy
+sessions. The index remains advisory and never carries continuation truth.

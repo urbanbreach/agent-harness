@@ -41,3 +41,38 @@ fn engine_docs_name_canonical_projection_bounded_index_and_compatibility_matrix(
         "docs must distinguish legacy decode variants from Compaction V2"
     );
 }
+
+#[test]
+fn engine_docs_describe_shipped_settled_read_and_advisory_index_boundaries() {
+    // arrange
+    let documents = [
+        read_doc("docs/architecture/engine-inventory.md"),
+        read_doc("docs/architecture/engine-target.md"),
+        read_doc("docs/architecture/engine-migration.md"),
+        read_doc("docs/architecture/architecture.md"),
+        read_doc("docs/architecture/sessions-and-replay.md"),
+    ]
+    .join("\n");
+    let required_contracts = [
+        "one authoritative composed `CanonicalSessionProjection` facade per journal load or settlement",
+        "focused pure reducers; it is neither a monolithic reducer nor a single physical pass",
+        "history-index row is updated after each successful durable commit",
+        "warm journal opens: 0",
+        "timestamp, run id, and run-directory bytes",
+        "invalid or stale cursor fails closed",
+        "`EventV1` variant count remains 39",
+        "only inside the read-only `session::legacy` compatibility boundary",
+        "No live-provider assertion is made without configured credentials and a live signoff",
+    ];
+
+    // act
+    let missing = required_contracts
+        .iter()
+        .find(|contract| !documents.contains(**contract));
+
+    // assert
+    assert_eq!(
+        missing, None,
+        "engine docs must state every shipped boundary"
+    );
+}

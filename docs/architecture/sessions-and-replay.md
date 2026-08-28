@@ -44,10 +44,9 @@ structured missing-final-content warning. Defaulted `parts` and `provenance` fie
 `AssistantMessageFinished` records decode unchanged.
 
 The coordinator still appends V1 `events.jsonl`, while new compaction uses the typed
-`SessionCompaction` path. G007 provider continuation is now rebuilt from one owner-scoped
-`CanonicalSession::provider_view(...)` over the persisted selected active path. Older transcript,
-session, export, catalog, lineage, and compatibility shapes remain readable only through their
-compatibility adapters. Later projection consolidation and deletion are not yet complete.
+`SessionCompaction` path. The shipped `EventV1` variant count remains 39 for journal
+compatibility. Deprecated shapes are read-only compatibility input and are matched only inside the
+`session::legacy` boundary; active writers do not append them.
 
 ## Canonical provider continuation
 
@@ -64,11 +63,7 @@ as a transient continuation input, lowers canonical attachments once, and sets t
 the canonical attachment set. Request comparison evidence removes only the fresh physical
 `context.request_id`; semantic fields and the full 64-hex request digest remain in scope.
 
-This is a provider-continuation migration boundary, not completion of every session projection.
-G008 still owns transcript/conversation/durable-TUI projection consolidation, G009 owns the
-rebuildable catalog/index, and G010 owns deletion of legacy compatibility readers and event
-variants after migration evidence. Legacy checkpoint and event readers remain read-only inputs
-until that work is complete.
+The settled read boundary now constructs one authoritative composed `CanonicalSessionProjection` facade per journal load or settlement. Its focused pure reducers remain independently evaluated; it is neither a monolithic reducer nor a single physical pass. Provider continuation, restart, replay, export, catalog inspection, and settled TUI state read that facade. The TUI owns only ephemeral overlays and presentation enrichment, never durable session semantics.
 
 ## CLI inspection
 
@@ -125,7 +120,7 @@ All five tools return structured JSON with `source: "event_replay"`, are redacte
 
 ## Failure boundaries
 
-Corrupt events are reported as parse errors where lossy projection is safe. Missing or ambiguous sessions fail with actionable errors. Replay-only inspection does not prove provider authentication; use a live prompt or live signoff lane for transport/authentication claims.
+Corrupt events are reported as parse errors where lossy projection is safe. Missing or ambiguous sessions fail with actionable errors. Replay-only inspection does not prove provider authentication; use a live prompt or live signoff lane for transport/authentication claims. No live-provider assertion is made without configured credentials and a live signoff.
 
 At the event-store boundary, crash-tail recovery is limited to the final JSONL line while holding the writer lock: a partial unterminated final line is truncated to the previous complete event, and a complete final event missing only the newline terminator is normalized before appends continue. Terminated invalid JSON still fails closed. Recovery reads and repairs the log only; it does not execute providers, tools, hooks, MCP servers, shell commands, or network calls.
 
@@ -140,7 +135,7 @@ appends no replacement success event. Overflow retry is bounded to one attempt f
 request.
 
 The deprecated compaction lifecycle variants and checkpoint-artifact readers remain read-only legacy
-inputs behind `session::legacy`; they are not active V2 writers. New sessions do not create
+inputs behind `session::legacy`; they are not active V2 writers. Deprecated variants are matched only inside the read-only `session::legacy` compatibility boundary. New sessions do not create
 checkpoint artifacts. Restart and continue rebuild the same provider-visible roles, ordered tool
 pairs, attachments, recent suffix, summary, file state, and current intent from replay-derived
 events. Replay does not execute providers, tools, hooks, MCP, network, or the CLI.
@@ -181,16 +176,13 @@ Lineage materialization follows the implementation contract in `harness_core::se
 
 ## Bounded history index and TUI overlays
 
-`harness sessions list` reads the versioned `.session-history-index-v1.json`. The default page is
-bounded to 50 rows; `--limit`, `--offset`, and the opaque `cursor` returned on each JSON row provide
-deterministic newest-first pagination. `harness sessions search QUERY` filters indexed run id,
-title, workspace, and profile fields. `harness sessions rebuild-index --json` rebuilds from
-durable journals and reports entry count, journal scan count, index path, and recovery reason.
+`harness sessions list` reads the versioned `.session-history-index-v1.json`. A history-index row is updated after each successful durable commit. The default page is bounded to 50 rows; `--limit`, `--offset`, and the opaque `cursor` returned on each JSON row provide deterministic newest-first pagination. A cursor encodes the timestamp, run id, and run-directory bytes so equal-time copies cannot collide. An invalid or stale cursor fails closed with no successful JSON page. `harness sessions search QUERY` filters indexed run id, title, workspace, and profile fields. `harness sessions rebuild-index --json` rebuilds from durable journals and reports entry count, journal scan count, journal open count, index path, and recovery reason.
 
 Warm list/search requests still enumerate immediate session directories and compare journal
-length/mtime fingerprints, but they do not open every unchanged `events.jsonl`. Missing, stale,
-unsupported-version, truncated, and corrupt indexes rebuild. A malformed journal fails closed as
-an unavailable catalog row and does not remove healthy rows.
+length/mtime fingerprints, but they do not open every unchanged `events.jsonl`: the counted warm
+seam reports `warm journal opens: 0`. Missing, stale, unsupported-version, truncated, and corrupt
+indexes rebuild. A malformed journal fails closed as an unavailable catalog row and does not remove
+healthy rows.
 
 The index is advisory. Inspect, replay, export, reopen, and continue resolve the selected run
 directory and validate its source history directly. Replay remains side-effect free and the index

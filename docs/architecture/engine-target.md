@@ -28,13 +28,12 @@ provider-request, and tool-call identity. `LegacyEventLogAdapter` projects borro
 that domain without writing files or executing runtime work. For self-contained assistant commits,
 the committed parts replace any earlier compatibility fragments.
 
-G007 now gives provider continuation its own canonical boundary: live turns and reopened runs
-consume an owner-scoped `CanonicalSession::provider_view(...)` selected from the persisted active
-leaf, and the provider boundary lowers that view through one pure continuation path. The runtime
-still contains V1-specific transcript, session, export, catalog, lineage, and compatibility
-projections. Compaction V2 remains the active path; deprecated compaction lifecycle variants and
-checkpoint readers remain read-only until G010. Later projection consolidation and deletion are
-not yet complete.
+For each journal load or settled durable-event batch, the runtime constructs one authoritative composed `CanonicalSessionProjection` facade per journal load or settlement. The facade composes focused pure reducers; it is neither a monolithic reducer nor a single physical pass. Provider continuation, restart, replay, export, catalog inspection, and settled TUI state consume its typed views. The TUI retains only ephemeral overlays and presentation enrichment; it does not define durable session semantics.
+
+The facade is the active read boundary, while legacy conversion is deliberately narrow: deprecated
+`EventV1` shapes are matched only inside the read-only `session::legacy` compatibility boundary.
+The shipped `EventV1` variant count remains 39; this preserves old journal decoding without
+allowing a legacy writer or a second durable source of truth.
 
 ## G007 canonical provider continuation boundary
 
@@ -46,11 +45,9 @@ variant, reasoning and thinking settings, resolved limits, and a profile/tool-sh
 turn start and restart/reopen recovery use the same provider continuation lowerer; a current
 profile or tool-shape mismatch fails closed before provider dispatch.
 
-This boundary is intentionally transitional. G007 consolidates provider continuation input and
-restart reconstruction only. G008 still owns transcript, conversation, and durable-TUI projection
-consolidation; G009 still owns the rebuildable catalog/index; and G010 still owns deletion of
-legacy compatibility readers and event variants after migration evidence. No provider-ready
-request, raw prompt/tool schema, secret, or hidden reasoning is persisted.
+The migration work is complete for the shipped boundary described here. Focused reducers remain
+intentionally separate so their independent error contracts and tests remain explicit. No
+provider-ready request, raw prompt/tool schema, secret, or hidden reasoning is persisted.
 
 ## G006 Compaction V2 boundary
 
@@ -116,18 +113,18 @@ and compaction inputs.
 
 `CanonicalSessionProjection` is the durable read owner. It composes the canonical semantic
 session, conversation, resume plan, run summary, timeline, transcript, tasks, permissions, and
-lineage once for provider continuation, restart, replay/export, catalog inspection, and settled
-TUI state. Provider text, reasoning, and tool-input fragments are an **ephemeral TUI overlay**;
-the semantic assistant commit replaces those fragments exactly once.
+lineage once at a load or settlement boundary for provider continuation, restart, replay/export,
+catalog inspection, and settled TUI state. Provider text, reasoning, and tool-input fragments are
+an **ephemeral TUI overlay**; the semantic assistant commit replaces those fragments exactly once.
 
 | Surface | Status | Shipped behavior |
 |---|---|---|
-| canonical durable projection and provider-context builder | supported | all active consumers enter through `CanonicalSessionProjection`; one shared builder constructs `ProviderContext` |
+| canonical durable projection and provider-context builder | supported | one authoritative composed facade is constructed at each journal load or settlement; focused pure reducers remain deliberately separate |
 | Compaction V2 | supported | the coordinator appends one atomic `SessionCompaction`; no checkpoint artifact or second success event is written |
-| bounded history index | supported | `.session-history-index-v1.json` serves newest-first cursor pages and metadata search without reopening unchanged journals |
-| `sessions search` and `sessions rebuild-index` | supported | search reads bounded index fields; rebuild reports scan count and missing/stale/version/truncated/corrupt recovery reason |
-| live provider fragments | experimental | presentation-only TUI state; never durable session truth |
-| `CompactionRequested`, `CompactionWritten`, `CompactionApplied`, `CompactionFailed` | compatibility-only | serde/replay decoding for shipped logs; production never appends them |
+| bounded history index | supported | a history-index row is updated after each successful durable commit; unchanged warm lists use the index and `warm journal opens: 0` |
+| `sessions search`, `sessions list`, and `sessions rebuild-index` | supported | cursors include timestamp, run id, and run-directory bytes; an invalid or stale cursor fails closed, and rebuild reports scan/open counts and recovery reason |
+| live provider fragments | experimental | presentation-only TUI state, never durable session truth; No live-provider assertion is made without configured credentials and a live signoff |
+| `CompactionRequested`, `CompactionWritten`, `CompactionApplied`, `CompactionFailed` | compatibility-only | serde/replay decoding for shipped logs only inside the read-only `session::legacy` compatibility boundary; production never appends them |
 | checkpoint artifact loader/writer/copy path and detached context builders | removed | no active production reachability |
 
 Legacy logs remain read-only compatibility input. Replay and continuation validate source

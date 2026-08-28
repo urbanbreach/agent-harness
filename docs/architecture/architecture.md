@@ -37,6 +37,21 @@ Core runtime and domain logic:
 - **clock** - Clock abstraction (real and fake for determinism)
 - **redact** - Secret redaction before persistence
 
+### Session read boundary
+
+One journal load or settled durable-event batch builds one authoritative composed
+`CanonicalSessionProjection` facade. Its focused pure reducers derive canonical session state,
+conversation, transcript, resume plan, run summary, timeline, task/permission state, and lineage;
+the facade is not a monolithic reducer or a claim that all projections share one physical pass.
+Provider continuation, restart, replay, export, catalog inspection, and settled TUI views consume
+that facade. The TUI retains ephemeral live-fragment overlays and presentation enrichment only.
+
+The bounded history index is advisory metadata updated after a successful durable commit. List and
+search validate its fingerprinted rows, rebuild unusable state, and still validate source journals
+for inspect, replay, export, reopen, and continuation. Compatibility-only old event shapes remain
+inside the read-only `session::legacy` boundary; active production code neither appends them nor
+uses them as durable truth.
+
 ### Agent prompt assets and instructions
 
 Interactive agent runtime settings come from structured config, while the prompt body is resolved separately from the shipped asset and project instructions:
@@ -628,11 +643,11 @@ partial logs that only contain `ProviderStreamDelta` or `ProviderReasoningDelta`
 assistant content remains visible with a structured warning. Provider fragments from new runs are
 live-only and cannot become canonical history unless a final assistant commit is written.
 
-The coordinator still writes V1 `events.jsonl`. G007 provider continuation now consumes one
-owner-scoped `CanonicalSession::provider_view(...)` from the persisted active leaf and lowers live
-and reopened turns through one pure provider-boundary path. Transcript, session, export, catalog,
-lineage, and compatibility code still contains V1-specific projections; later projection
-consolidation and compatibility deletion are not yet complete.
+The coordinator still writes V1 `events.jsonl`. Provider continuation consumes the persisted active
+leaf through one pure provider-boundary path, and settled product reads enter through one composed
+`CanonicalSessionProjection` facade per journal load or durable settlement. Transcript, session,
+export, catalog, lineage, and TUI durable state consume its focused pure reducers; compatibility
+decoding remains isolated to the read-only `session::legacy` boundary.
 
 ### G007 canonical provider continuation
 
@@ -647,11 +662,10 @@ provider request and fails closed on drift. Its request context sets media from 
 attachments and removes only the fresh physical request id when comparing a live continuation to
 a reopened continuation.
 
-G007 does not consolidate product projections or delete compatibility code. G008 owns transcript,
-conversation, and durable-TUI projection consolidation; G009 owns the rebuildable catalog/index;
-and G010 owns deletion of legacy compatibility readers and event variants after migration evidence.
-Provider-ready requests, raw tool schemas, raw prompts, secrets, and hidden reasoning remain
-outside durable event metadata.
+G008-G011 complete the settled projection, bounded-index, and compatibility-isolation work. The
+facade composes focused reducers rather than a new monolithic pass; the TUI owns only ephemeral
+overlays and presentation enrichment. Provider-ready requests, raw tool schemas, raw prompts,
+secrets, and hidden reasoning remain outside durable event metadata.
 
 ## Replay Contract
 
