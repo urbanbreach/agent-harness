@@ -40,22 +40,29 @@ The 42 convention findings were distributed exactly as follows: 1 in
 `harness-providers/src/openai/sse.rs`, 1 in `harness-tools/src/fs_grep.rs`, and 34 in
 `harness-tui` (18 of those in `app/tests/permission_modal_tests_part3_test.rs`).
 
-## G008-G012 completion
+## G008-G012 shipped boundary
 
 The final migration tail uses accepted baseline `2f0b2a9a` and preserves all earlier invariants.
 
-- G008 introduced `CanonicalSessionProjection`, routed durable consumers through it, kept live
-  fragments as an ephemeral TUI overlay, and deleted detached checkpoint builders/loaders.
-- G009 added `.session-history-index-v1.json`, deterministic newest-first cursor pages,
-  `sessions search`, and `sessions rebuild-index`. Continuation still validates source history.
-- G010 reduced the two live/recovery `ProviderContext` constructors to one shared builder and
-  retained old compaction variants as compatibility-only decode input.
-- G011 renamed the active event-level cut owner from `legacy` to `turn_boundary`, retained
-  coordinator authority, and passed zero-skip coordinator/replay/permission/task/integration
-  owners.
-- G012 records final docs, metrics, deterministic lanes, dogfood, PTY/TUI receipts, and the final
-  review in one evidence directory.
+- G008 is recorded by commit `8c375d31`: one composed `CanonicalSessionProjection` facade serves
+  settled CLI and TUI reads. Its focused reducers remain pure and separate; live TUI fragments stay
+  presentation-only.
+- G009 is recorded by commit `9c3274b5`: `.session-history-index-v1.json` rows update after
+  successful durable commits, pagination uses a run-directory tie-break, and the warm open seam is
+  observable. Continuation still validates source history.
+- G010 retains old compaction and stream variants as compatibility-only decode input. Their matching
+  remains inside the read-only `session::legacy` boundary; no legacy writer is introduced.
+- G011 keeps the coordinator as the event append, scheduling, permission, and lifecycle authority
+  while neutral crash-tail recovery and identity helpers use canonical namespaces.
+- G012 updates the public architecture documents and records current metrics/report evidence. Its
+  final lane, dogfood, PTY/TUI, and independent-review entries are status **PENDING** until they run
+  against the final source SHA; earlier artifacts are historical context, not reused final proof.
 
 Removed production paths are the checkpoint artifact writer/loader/copy flow, detached planning
 and summary builders, duplicate context constructors, and orphan checkpoint tests. Compatibility
 modules may decode old bytes; they cannot append legacy events or supply a second source of truth.
+
+The final feature matrix classifies canonical reads, Compaction V2, and the advisory history index
+as supported; live presentation fragments as experimental; shipped old event decoding as
+compatibility-only; and obsolete checkpoint/copy/context paths as removed. The `EventV1` count stays
+at 39 for shipped journal compatibility rather than being silently rebased.
