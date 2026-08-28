@@ -25,6 +25,7 @@ impl SessionProjection {
         let mut activity_by_request = BTreeMap::new();
         let mut pending_permissions = BTreeMap::new();
         let mut orchestration_tasks = BTreeMap::new();
+        let mut turn_terminals = BTreeMap::new();
 
         for message in &transcript.messages {
             let request_id = message
@@ -112,15 +113,18 @@ impl SessionProjection {
                         }
                     });
                 }
-                for part in &message.parts {
-                    apply_message_part(
-                        activity,
-                        part,
-                        &mut pending_permissions,
-                        &mut orchestration_tasks,
-                        message.agent_id.as_deref(),
-                        &request_id,
-                    );
+                if message.role == ProjectedMessageRole::Assistant {
+                    for part in &message.parts {
+                        apply_message_part(
+                            activity,
+                            part,
+                            &mut pending_permissions,
+                            &mut orchestration_tasks,
+                            &mut turn_terminals,
+                            message.agent_id.as_deref(),
+                            &request_id,
+                        );
+                    }
                 }
             } else {
                 for part in &message.parts {
@@ -128,6 +132,7 @@ impl SessionProjection {
                         part,
                         &mut pending_permissions,
                         &mut orchestration_tasks,
+                        &mut turn_terminals,
                         message.agent_id.as_deref(),
                         message.request_id.as_ref().map(|id| id.as_str()),
                     );
@@ -136,6 +141,12 @@ impl SessionProjection {
         }
 
         merge_presentation_enrichment(&mut activities, &presentation_enrichment);
+        apply_turn_terminals(
+            &mut activities,
+            &turn_terminals,
+            &mut self.completed_turn_request_ids,
+            &mut self.terminal_elapsed_ms,
+        );
         self.activities = activities;
         self.pending_permissions = pending_permissions;
         self.orchestration_tasks = orchestration_tasks;
@@ -217,6 +228,9 @@ impl SessionProjection {
         let Some((_, state, label)) = status else {
             return;
         };
+        if state == CompactionState::Applied {
+            self.active_context_usage = Some(ActiveContextUsage::compacted_pending_refresh());
+        }
         self.compaction_status = Some(CompactionStatus {
             agent_id: "legacy".to_string(),
             checkpoint_id: None,
@@ -231,6 +245,27 @@ fn merge_presentation_enrichment(
     activities: &mut VecDeque<ActivityEntry>,
     prior: &VecDeque<ActivityEntry>,
 ) {
+    for activity in activities.iter_mut() {
+        let Some(existing) = prior
+            .iter()
+            .find(|candidate| candidate.request_id == activity.request_id)
+        else {
+            continue;
+        };
+        activity.user_timestamp.clone_from(&existing.user_timestamp);
+        activity.request_data.clone_from(&existing.request_data);
+        activity.thinking_first_mono_ms = existing.thinking_first_mono_ms;
+        activity.thinking_last_mono_ms = existing.thinking_last_mono_ms;
+        activity.first_delta_mono_ms = existing.first_delta_mono_ms;
+        activity.usage = existing.usage;
+        activity.cache_usage = existing.cache_usage;
+        activity.error_message.clone_from(&existing.error_message);
+        activity.first_mono_ms = existing.first_mono_ms;
+        activity.last_mono_ms = existing.last_mono_ms;
+        activity.request_started_mono_ms = existing.request_started_mono_ms;
+        activity.revision = existing.revision;
+    }
+
     for tool in activities
         .iter_mut()
         .flat_map(|activity| activity.tool_calls.iter_mut())
@@ -279,6 +314,7 @@ fn apply_message_part(
     part: &ProjectedPart,
     pending_permissions: &mut BTreeMap<String, PendingPermission>,
     orchestration_tasks: &mut BTreeMap<String, OrchestrationTaskRow>,
+    turn_terminals: &mut BTreeMap<String, SettledTurnTerminal>,
     agent_id: Option<&str>,
     request_id: &str,
 ) {
@@ -289,9 +325,13 @@ fn apply_message_part(
         ProjectedPart::Permission(permission) => {
             add_permission(activity, permission, pending_permissions)
         }
-        ProjectedPart::Task(task) => {
-            add_task(task, orchestration_tasks, agent_id, Some(request_id))
-        }
+        ProjectedPart::Task(task) => add_task(
+            task,
+            orchestration_tasks,
+            turn_terminals,
+            agent_id,
+            Some(request_id),
+        ),
         ProjectedPart::Compaction(_)
         | ProjectedPart::Artifact(_)
         | ProjectedPart::Lifecycle(_)
@@ -304,6 +344,7 @@ fn apply_system_part(
     part: &ProjectedPart,
     pending_permissions: &mut BTreeMap<String, PendingPermission>,
     orchestration_tasks: &mut BTreeMap<String, OrchestrationTaskRow>,
+    turn_terminals: &mut BTreeMap<String, SettledTurnTerminal>,
     agent_id: Option<&str>,
     request_id: Option<&str>,
 ) {
@@ -316,7 +357,13 @@ fn apply_system_part(
                 pending_permission(permission),
             );
         }
-        ProjectedPart::Task(task) => add_task(task, orchestration_tasks, agent_id, request_id),
+        ProjectedPart::Task(task) => add_task(
+            task,
+            orchestration_tasks,
+            turn_terminals,
+            agent_id,
+            request_id,
+        ),
         ProjectedPart::Text(_)
         | ProjectedPart::Reasoning(_)
         | ProjectedPart::ToolCall(_)
@@ -472,13 +519,15 @@ fn pending_permission(permission: &ProjectedPermissionPart) -> PendingPermission
 fn add_task(
     task: &harness_core::transcript_projection::ProjectedTaskPart,
     rows: &mut BTreeMap<String, OrchestrationTaskRow>,
+    turn_terminals: &mut BTreeMap<String, SettledTurnTerminal>,
     agent_id: Option<&str>,
     request_id: Option<&str>,
 ) {
     let lineage = task.lineage.as_ref();
-    rows.insert(
-        task.task_id.to_string(),
-        OrchestrationTaskRow {
+    let task_id = task.task_id.to_string();
+    let row = rows
+        .entry(task_id.clone())
+        .or_insert_with(|| OrchestrationTaskRow {
             task_id: task.task_id.to_string(),
             queue_key: task.queue_key.clone(),
             state: task_state(task.state),
@@ -493,15 +542,109 @@ fn add_task(
             result_summary: task.result_summary.clone(),
             child_tool_call_count: 0,
             current_child_tool_title: None,
-            timing_elapsed_ms: None,
+            timing_elapsed_ms: task.timing_elapsed_ms,
             first_seq: task.provenance.first_seq,
             last_seq: task.provenance.last_seq,
             first_mono_ms: task.provenance.first_seq,
             last_mono_ms: task.provenance.last_seq,
             first_timestamp: None,
             last_timestamp: None,
-        },
-    );
+        });
+    row.state = task_state(task.state);
+    if task.queue_key.is_some() {
+        row.queue_key.clone_from(&task.queue_key);
+    }
+    if task.reason.is_some() {
+        row.warning.clone_from(&task.reason);
+    }
+    if task.result_summary.is_some() {
+        row.result_summary.clone_from(&task.result_summary);
+    }
+    if let Some(lineage) = lineage {
+        if lineage.parent_tool_call_id.is_some() {
+            row.parent_tool_call_id
+                .clone_from(&lineage.parent_tool_call_id);
+        }
+        if lineage.parent_request_id.is_some() {
+            row.parent_request_id.clone_from(&lineage.parent_request_id);
+        }
+        if lineage.child_session_id.is_some() {
+            row.child_session_id.clone_from(&lineage.child_session_id);
+        }
+        if lineage.child_request_id.is_some() {
+            row.child_request_id.clone_from(&lineage.child_request_id);
+        }
+    }
+    if request_id.is_some() {
+        row.request_id = request_id.map(str::to_string);
+    }
+    if task.timing_elapsed_ms.is_some() {
+        row.timing_elapsed_ms = task.timing_elapsed_ms;
+    }
+    row.last_seq = task.provenance.last_seq;
+    row.last_mono_ms = task.terminal_mono_ms.unwrap_or(task.provenance.last_seq);
+
+    if task.terminal_scope == Some(harness_core::event::TaskTerminalScope::AgentTurn) {
+        if let Some(request_id) = request_id {
+            turn_terminals.insert(
+                request_id.to_string(),
+                SettledTurnTerminal {
+                    state: task.state,
+                    reason: task.reason.clone(),
+                    elapsed_ms: task.timing_elapsed_ms,
+                    terminal_mono_ms: task.terminal_mono_ms,
+                },
+            );
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct SettledTurnTerminal {
+    state: ProjectedTaskState,
+    reason: Option<String>,
+    elapsed_ms: Option<u64>,
+    terminal_mono_ms: Option<u64>,
+}
+
+fn apply_turn_terminals(
+    activities: &mut VecDeque<ActivityEntry>,
+    terminals: &BTreeMap<String, SettledTurnTerminal>,
+    completed: &mut std::collections::BTreeSet<String>,
+    elapsed: &mut BTreeMap<String, u64>,
+) {
+    for (request_id, terminal) in terminals {
+        let Some(activity) = activities
+            .iter_mut()
+            .find(|activity| activity.request_id == *request_id)
+        else {
+            continue;
+        };
+        if let Some(terminal_mono_ms) = terminal.terminal_mono_ms {
+            activity.last_mono_ms = terminal_mono_ms;
+        }
+        if let Some(value) = terminal.elapsed_ms.or_else(|| {
+            terminal
+                .terminal_mono_ms
+                .map(|terminal| terminal.saturating_sub(activity.first_mono_ms))
+        }) {
+            elapsed.insert(request_id.clone(), value);
+        }
+        match terminal.state {
+            ProjectedTaskState::Completed => {
+                activity.status = ActivityStatus::Done;
+                completed.insert(request_id.clone());
+            }
+            ProjectedTaskState::Cancelled => {
+                activity.status = ActivityStatus::Error;
+                activity.error_message.clone_from(&terminal.reason);
+                completed.insert(request_id.clone());
+            }
+            ProjectedTaskState::Queued
+            | ProjectedTaskState::Started
+            | ProjectedTaskState::LateResult => {}
+        }
+    }
 }
 
 const fn task_state(state: ProjectedTaskState) -> OrchestrationTaskState {

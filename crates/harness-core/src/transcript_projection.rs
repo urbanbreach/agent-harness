@@ -152,6 +152,9 @@ pub fn project_transcript(
                     result_summary: None,
                     result_digest: None,
                     lineage: None,
+                    terminal_scope: None,
+                    timing_elapsed_ms: None,
+                    terminal_mono_ms: None,
                     provenance: ProvenanceRange::from_event(event),
                 },
             ),
@@ -166,6 +169,9 @@ pub fn project_transcript(
                     result_summary: None,
                     result_digest: None,
                     lineage: None,
+                    terminal_scope: payload.task_scope,
+                    timing_elapsed_ms: None,
+                    terminal_mono_ms: Some(event.mono_ms),
                     provenance: ProvenanceRange::from_event(event),
                 },
             ),
@@ -188,6 +194,16 @@ pub fn project_transcript(
                         result_summary: Some(payload.result_summary.clone()),
                         result_digest: Some(payload.result_digest.clone()),
                         lineage,
+                        terminal_scope: payload
+                            .metadata
+                            .as_ref()
+                            .and_then(|metadata| metadata.task_scope),
+                        timing_elapsed_ms: payload
+                            .metadata
+                            .as_ref()
+                            .and_then(|metadata| metadata.timing.as_ref())
+                            .and_then(|timing| timing.elapsed_ms),
+                        terminal_mono_ms: Some(event.mono_ms),
                         provenance: ProvenanceRange::from_event(event),
                     },
                 );
@@ -203,6 +219,9 @@ pub fn project_transcript(
                     result_summary: None,
                     result_digest: Some(payload.result_digest.clone()),
                     lineage: None,
+                    terminal_scope: None,
+                    timing_elapsed_ms: None,
+                    terminal_mono_ms: Some(event.mono_ms),
                     provenance: ProvenanceRange::from_event(event),
                 },
             ),

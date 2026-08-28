@@ -379,6 +379,12 @@ impl SessionProjection {
     }
 
     pub(crate) fn replace_settled_projection(&mut self, events: &[EventEnvelopeV1]) {
+        if events.is_empty() {
+            self.canonical_projection = None;
+            self.canonical_projection_error = None;
+            self.unsettled_durable_events.clear();
+            return;
+        }
         match CanonicalSessionProjection::from_event_history(events) {
             Ok(projection) => {
                 self.canonical_projection = Some(projection);
