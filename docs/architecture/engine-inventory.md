@@ -130,8 +130,8 @@ truth. TUI-only overlays and presentation enrichment remain non-durable.
 
 The corrected accepted-tree comparison uses baseline `2f0b2a9a75b368cf94ac20a26f2321a398cb19cd`.
 The current G012 measurement preserves that baseline and is net-negative: production LOC is
-234,607 to 233,770 (-837), frozen-overlap production LOC is 66,517 to 65,367 (-1,150),
-harness-core is 67,861 to 66,080 (-1,781), and SIZE_OK markers are 191 to 187. The metric script
+234,607 to 233,946 (-661), frozen-overlap production LOC is 66,517 to 65,537 (-980),
+harness-core is 67,861 to 66,116 (-1,745), and SIZE_OK markers are 191 to 187. The metric script
 also records baseline-contract drift instead of silently rebasing it. Event variants remain 39 so
 shipped legacy journals still deserialize.
 

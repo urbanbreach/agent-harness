@@ -1343,7 +1343,7 @@ mod tests {
             json!([
                 {
                     "run_dir": "/tmp/run-json",
-                    "cursor": "0000000000000000000000000000002a:run-json",
+                    "cursor": "0000000000000000000000000000002a:run-json:2f746d702f72756e2d6a736f6e",
                     "run_id": "run-json",
                     "run_name": "run-json-name",
                     "status": "running",

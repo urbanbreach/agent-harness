@@ -349,8 +349,7 @@ impl SessionProjection {
     }
 
     pub(crate) fn ingest_view_event(&mut self, event: EventEnvelopeV1, historical: bool) -> usize {
-        let canonical_updated = self.canonical_projection_error.is_none();
-        self.ingest_derived_event(event, historical, canonical_updated)
+        self.ingest_derived_event(event, historical, true)
     }
 
     fn ingest_derived_event(
@@ -399,13 +398,6 @@ impl SessionProjection {
                 self.canonical_projection_error = Some(error.to_string());
                 self.unsettled_durable_events = events.to_vec();
             }
-        }
-    }
-
-    pub(crate) fn ingest_canonical_event(&mut self, event: &EventEnvelopeV1) {
-        self.unsettled_durable_events.push(event.clone());
-        if is_settlement_boundary(&event.payload) {
-            let _ = self.settle_durable_events();
         }
     }
 

@@ -65,9 +65,6 @@ impl AppState {
             );
         }
 
-        if !visible_in_current_child {
-            self.projection.ingest_canonical_event(event);
-        }
         !visible_in_current_child
     }
 }

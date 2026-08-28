@@ -1595,6 +1595,12 @@ impl AppState {
         historical: bool,
         update_canonical: bool,
     ) {
+        let inline_live_child_view = !historical
+            && self.replay_mode
+            && self
+                .session_navigation_stack
+                .last()
+                .is_some_and(|snapshot| !snapshot.replay_mode);
         if !historical && self.route_live_event_while_viewing_child(&event) {
             return;
         }
@@ -1641,7 +1647,7 @@ impl AppState {
             self.note_live_turn_status_timing(&event);
         }
         self.update_transient_state_for_event(&event);
-        let trimmed_events = if update_canonical {
+        let trimmed_events = if update_canonical && !inline_live_child_view {
             self.projection.ingest_event(event.clone(), historical)
         } else {
             self.projection.ingest_view_event(event.clone(), historical)

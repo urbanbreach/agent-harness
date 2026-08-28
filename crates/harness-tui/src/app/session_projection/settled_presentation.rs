@@ -21,7 +21,8 @@ impl SessionProjection {
         let transcript = canonical.transcript.clone();
         let run_summary = canonical.run_summary.clone();
         let presentation_enrichment = std::mem::take(&mut self.activities);
-        let mut activities = VecDeque::new();
+        let mut presentation_orchestration = std::mem::take(&mut self.orchestration_tasks);
+        let mut settled_activities = VecDeque::new();
         let mut activity_by_request = BTreeMap::new();
         let mut pending_permissions = BTreeMap::new();
         let mut orchestration_tasks = BTreeMap::new();
@@ -42,8 +43,8 @@ impl SessionProjection {
                             _ => None,
                         })
                         .collect::<String>();
-                    let index = activities.len();
-                    activities.push_back(new_streaming_activity_entry(
+                    let index = settled_activities.len();
+                    settled_activities.push_back(new_streaming_activity_entry(
                         NewStreamingActivityEntryArgs {
                             request_id: request_id.clone(),
                             profile_label: profile_label(&transcript, message.agent_id.as_deref()),
@@ -68,8 +69,8 @@ impl SessionProjection {
                         .get(&request_id)
                         .copied()
                         .unwrap_or_else(|| {
-                            let index = activities.len();
-                            activities.push_back(new_streaming_activity_entry(
+                            let index = settled_activities.len();
+                            settled_activities.push_back(new_streaming_activity_entry(
                                 NewStreamingActivityEntryArgs {
                                     request_id: request_id.clone(),
                                     profile_label: profile_label(
@@ -95,7 +96,7 @@ impl SessionProjection {
             };
 
             if let Some(index) = activity_index {
-                let activity = &mut activities[index];
+                let activity = &mut settled_activities[index];
                 activity.last_seq = message.provenance.last_seq;
                 activity.last_mono_ms = message.provenance.last_seq;
                 activity.status = activity_status(message.state);
@@ -128,6 +129,28 @@ impl SessionProjection {
                 }
             } else {
                 for part in &message.parts {
+                    if let ProjectedPart::Permission(permission) = part {
+                        if let Some(index) = message
+                            .request_id
+                            .as_ref()
+                            .and_then(|id| activity_by_request.get(id.as_str()))
+                            .copied()
+                        {
+                            add_permission(
+                                &mut settled_activities[index],
+                                permission,
+                                &mut pending_permissions,
+                            );
+                            continue;
+                        }
+                    }
+                    if let ProjectedPart::ToolCall(tool) = part {
+                        if let Some(activity) = settled_activities.back_mut() {
+                            activity.tool_calls.push(tool_entry(tool));
+                            activity.last_seq = activity.last_seq.max(tool.provenance.last_seq);
+                            continue;
+                        }
+                    }
                     apply_system_part(
                         part,
                         &mut pending_permissions,
@@ -140,7 +163,10 @@ impl SessionProjection {
             }
         }
 
-        merge_presentation_enrichment(&mut activities, &presentation_enrichment);
+        merge_presentation_enrichment(&mut settled_activities, &presentation_enrichment);
+        let mut activities = presentation_enrichment;
+        merge_settled_activities(&mut activities, settled_activities);
+        merge_orchestration_presentation(&mut presentation_orchestration, orchestration_tasks);
         apply_turn_terminals(
             &mut activities,
             &turn_terminals,
@@ -149,11 +175,8 @@ impl SessionProjection {
         );
         self.activities = activities;
         self.pending_permissions = pending_permissions;
-        self.orchestration_tasks = orchestration_tasks;
-        self.run_terminal_seen = matches!(
-            run_summary.status,
-            harness_core::proj::RunStatus::Finished | harness_core::proj::RunStatus::Failed
-        );
+        self.orchestration_tasks = presentation_orchestration;
+        self.enforce_orchestration_retention();
         self.rebuild_compaction_presentation(&transcript.compaction_checkpoints);
         if self.compaction_status.is_none() {
             self.rebuild_legacy_compaction_presentation(&run_summary.counts.by_type);
@@ -241,6 +264,75 @@ impl SessionProjection {
     }
 }
 
+fn merge_settled_activities(
+    activities: &mut VecDeque<ActivityEntry>,
+    settled: VecDeque<ActivityEntry>,
+) {
+    for activity in settled {
+        if let Some(existing) = activities
+            .iter_mut()
+            .find(|candidate| candidate.request_id == activity.request_id)
+        {
+            *existing = activity;
+        } else {
+            activities.push_back(activity);
+        }
+    }
+}
+
+fn merge_orchestration_presentation(
+    prior: &mut BTreeMap<String, OrchestrationTaskRow>,
+    settled: BTreeMap<String, OrchestrationTaskRow>,
+) {
+    for (task_id, mut row) in settled {
+        if let Some(existing) = prior.get(&task_id) {
+            row.owner_kind = existing.owner_kind;
+            row.owner_agent_id.clone_from(&existing.owner_agent_id);
+            if !row.state.is_terminal()
+                && matches!(
+                    existing.state,
+                    OrchestrationTaskState::Stale
+                        | OrchestrationTaskState::Failed
+                        | OrchestrationTaskState::TimedOut
+                )
+            {
+                row.state = existing.state;
+                row.warning.clone_from(&existing.warning);
+            } else if row.warning.is_none() {
+                row.warning.clone_from(&existing.warning);
+            }
+            if row.request_id.is_none() {
+                row.request_id.clone_from(&existing.request_id);
+            }
+            if row.parent_tool_call_id.is_none() {
+                row.parent_tool_call_id
+                    .clone_from(&existing.parent_tool_call_id);
+            }
+            if row.parent_request_id.is_none() {
+                row.parent_request_id
+                    .clone_from(&existing.parent_request_id);
+            }
+            if row.child_session_id.is_none() {
+                row.child_session_id.clone_from(&existing.child_session_id);
+            }
+            if row.child_request_id.is_none() {
+                row.child_request_id.clone_from(&existing.child_request_id);
+            }
+            row.child_tool_call_count = existing.child_tool_call_count;
+            row.current_child_tool_title
+                .clone_from(&existing.current_child_tool_title);
+            if row.timing_elapsed_ms.is_none() {
+                row.timing_elapsed_ms = existing.timing_elapsed_ms;
+            }
+            row.first_mono_ms = existing.first_mono_ms;
+            row.last_mono_ms = existing.last_mono_ms;
+            row.first_timestamp.clone_from(&existing.first_timestamp);
+            row.last_timestamp.clone_from(&existing.last_timestamp);
+        }
+        prior.insert(task_id, row);
+    }
+}
+
 fn merge_presentation_enrichment(
     activities: &mut VecDeque<ActivityEntry>,
     prior: &VecDeque<ActivityEntry>,
@@ -253,6 +345,9 @@ fn merge_presentation_enrichment(
             continue;
         };
         activity.user_timestamp.clone_from(&existing.user_timestamp);
+        if activity.user_message.is_none() {
+            activity.user_message.clone_from(&existing.user_message);
+        }
         activity.request_data.clone_from(&existing.request_data);
         activity.thinking_first_mono_ms = existing.thinking_first_mono_ms;
         activity.thinking_last_mono_ms = existing.thinking_last_mono_ms;
@@ -260,6 +355,10 @@ fn merge_presentation_enrichment(
         activity.usage = existing.usage;
         activity.cache_usage = existing.cache_usage;
         activity.error_message.clone_from(&existing.error_message);
+        activity.status = existing.status;
+        if activity.permissions.is_empty() {
+            activity.permissions.clone_from(&existing.permissions);
+        }
         activity.first_mono_ms = existing.first_mono_ms;
         activity.last_mono_ms = existing.last_mono_ms;
         activity.request_started_mono_ms = existing.request_started_mono_ms;
@@ -448,6 +547,7 @@ fn add_permission(
     permission: &ProjectedPermissionPart,
     pending_permissions: &mut BTreeMap<String, PendingPermission>,
 ) {
+    activity.last_seq = activity.last_seq.max(permission.provenance.last_seq);
     if let Some(tool_call_id) = permission.tool_call_id.as_ref() {
         if let Some(tool) = activity
             .tool_calls
@@ -584,13 +684,21 @@ fn add_task(
     row.last_seq = task.provenance.last_seq;
     row.last_mono_ms = task.terminal_mono_ms.unwrap_or(task.provenance.last_seq);
 
-    if task.terminal_scope == Some(harness_core::event::TaskTerminalScope::AgentTurn) {
+    let is_turn_terminal = task.terminal_scope
+        == Some(harness_core::event::TaskTerminalScope::AgentTurn)
+        || task.terminal_scope.is_none()
+            && task.state == ProjectedTaskState::Completed
+            && lineage
+                .and_then(|value| value.parent_tool_call_id.as_ref())
+                .is_none();
+    if is_turn_terminal {
         if let Some(request_id) = request_id {
             turn_terminals.insert(
                 request_id.to_string(),
                 SettledTurnTerminal {
                     state: task.state,
                     reason: task.reason.clone(),
+                    result_summary: task.result_summary.clone(),
                     elapsed_ms: task.timing_elapsed_ms,
                     terminal_mono_ms: task.terminal_mono_ms,
                 },
@@ -603,6 +711,7 @@ fn add_task(
 struct SettledTurnTerminal {
     state: ProjectedTaskState,
     reason: Option<String>,
+    result_summary: Option<String>,
     elapsed_ms: Option<u64>,
     terminal_mono_ms: Option<u64>,
 }
@@ -633,11 +742,24 @@ fn apply_turn_terminals(
         match terminal.state {
             ProjectedTaskState::Completed => {
                 activity.status = ActivityStatus::Done;
+                if activity.transcript_text.is_empty() {
+                    if let Some(result_summary) = terminal.result_summary.as_ref() {
+                        activity.transcript_text.clone_from(result_summary);
+                        activity.bump_revision();
+                    }
+                }
                 completed.insert(request_id.clone());
             }
             ProjectedTaskState::Cancelled => {
                 activity.status = ActivityStatus::Error;
-                activity.error_message.clone_from(&terminal.reason);
+                activity.error_message =
+                    match (terminal.reason.as_deref(), activity.error_message.take()) {
+                        (Some(reason), Some(existing)) if !existing.contains(reason) => {
+                            Some(format!("{reason} · {existing}"))
+                        }
+                        (Some(reason), _) => Some(reason.to_string()),
+                        (None, existing) => existing,
+                    };
                 completed.insert(request_id.clone());
             }
             ProjectedTaskState::Queued
