@@ -8,7 +8,9 @@ use harness_core::proj::{
     resolve_all_background_request_refs, BackgroundRequestProjection, BackgroundToolCallCounts,
 };
 use harness_core::redact::{DefaultRedactor, Redactor};
-use harness_core::session::AssistantPart;
+use harness_core::session::{
+    canonical_provider_fragment_for_event, AssistantPart, CanonicalProviderFragmentKind,
+};
 use harness_core::tool::{ArtifactRef, ToolContext, ToolError, ToolResult};
 use harness_core::ToolResultExt;
 use serde_json::{json, Value};
@@ -914,15 +916,18 @@ fn build_thinking_artifact(
         let mut current_request_id: Option<String> = None;
         let mut current_text = String::new();
         for event in events {
-            if let EventV1::ProviderReasoningDelta(data) = &event.payload {
-                let req_id = data.request_id.to_string();
+            if let Some(fragment) = canonical_provider_fragment_for_event(event) {
+                if fragment.kind != CanonicalProviderFragmentKind::Reasoning {
+                    continue;
+                }
+                let req_id = fragment.request_id.to_string();
                 if current_request_id.as_deref() != Some(req_id.as_str()) {
                     if let Some(prev_id) = current_request_id.take() {
                         thinking_blocks.push((prev_id, std::mem::take(&mut current_text)));
                     }
                     current_request_id = Some(req_id);
                 }
-                current_text.push_str(&data.delta);
+                current_text.push_str(fragment.delta);
             }
         }
         if let Some(req_id) = current_request_id {

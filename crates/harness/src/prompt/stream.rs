@@ -8,7 +8,9 @@ use harness_core::event::{
     EventEnvelopeV1, EventV1, LiveEventEnvelope, LiveEventV1, RuntimeEvent, TaskCancelledEvent,
     TaskCompletedEvent,
 };
-use harness_core::session::AssistantPart;
+use harness_core::session::{
+    canonical_provider_fragment_for_event, AssistantPart, CanonicalProviderFragmentKind,
+};
 use harness_core::store::{EventStore, EventStoreError};
 
 use super::PromptOutputFormat;
@@ -161,26 +163,25 @@ impl<'a, W: Write + ?Sized> PromptStreamPrinter<'a, W> {
             return;
         }
 
+        if let Some(fragment) = canonical_provider_fragment_for_event(event) {
+            if !provider_event_matches_prompt(event, fragment.request_id, request_id) {
+                return;
+            }
+            match fragment.kind {
+                CanonicalProviderFragmentKind::Reasoning if self.show_thinking => {
+                    self.write_thinking(fragment.delta);
+                }
+                CanonicalProviderFragmentKind::Text => self.write_assistant(fragment.delta),
+                CanonicalProviderFragmentKind::Reasoning => {}
+            }
+            return;
+        }
+
         match &event.payload {
             EventV1::AssistantMessageFinished(data)
                 if provider_event_matches_prompt(event, data.request_id.as_str(), request_id) =>
             {
                 self.settle_assistant(&data.parts);
-            }
-            EventV1::ProviderReasoningDelta(data)
-                if self.show_thinking
-                    && provider_event_matches_prompt(
-                        event,
-                        data.request_id.as_str(),
-                        request_id,
-                    ) =>
-            {
-                self.write_thinking(&data.delta);
-            }
-            EventV1::ProviderStreamDelta(data)
-                if provider_event_matches_prompt(event, data.request_id.as_str(), request_id) =>
-            {
-                self.write_assistant(&data.delta);
             }
             _ => {}
         }
@@ -296,30 +297,27 @@ impl<'a, W: Write + ?Sized> PromptStreamPrinter<'a, W> {
     }
 
     fn write_json(&mut self, event: &EventEnvelopeV1, request_id: &str) {
-        let include = match &event.payload {
-            EventV1::ProviderReasoningDelta(data) => {
-                provider_event_matches_prompt(event, data.request_id.as_str(), request_id)
-            }
-            EventV1::ProviderStreamDelta(data) => {
-                provider_event_matches_prompt(event, data.request_id.as_str(), request_id)
-            }
-            EventV1::ProviderRequestStarted(data) => {
-                provider_event_matches_prompt(event, data.request_id.as_str(), request_id)
-            }
-            EventV1::ProviderRequestFinished(data) => {
-                provider_finish_matches_prompt(event, data, request_id)
-            }
-            EventV1::AssistantMessageFinished(data) => {
-                provider_event_matches_prompt(event, data.request_id.as_str(), request_id)
-            }
-            EventV1::ToolCallRequested(_)
-            | EventV1::ToolCallStarted(_)
-            | EventV1::ToolCallFinished(_)
-            | EventV1::TaskCompleted(_)
-            | EventV1::TaskCancelled(_) => event_matches_request(event, request_id),
-            EventV1::RunFailed(_) => true,
-            _ => false,
-        };
+        let include = canonical_provider_fragment_for_event(event).map_or_else(
+            || match &event.payload {
+                EventV1::ProviderRequestStarted(data) => {
+                    provider_event_matches_prompt(event, data.request_id.as_str(), request_id)
+                }
+                EventV1::ProviderRequestFinished(data) => {
+                    provider_finish_matches_prompt(event, data, request_id)
+                }
+                EventV1::AssistantMessageFinished(data) => {
+                    provider_event_matches_prompt(event, data.request_id.as_str(), request_id)
+                }
+                EventV1::ToolCallRequested(_)
+                | EventV1::ToolCallStarted(_)
+                | EventV1::ToolCallFinished(_)
+                | EventV1::TaskCompleted(_)
+                | EventV1::TaskCancelled(_) => event_matches_request(event, request_id),
+                EventV1::RunFailed(_) => true,
+                _ => false,
+            },
+            |fragment| provider_event_matches_prompt(event, fragment.request_id, request_id),
+        );
 
         if !include {
             return;
@@ -332,30 +330,27 @@ impl<'a, W: Write + ?Sized> PromptStreamPrinter<'a, W> {
     }
 
     fn buffer_json(&mut self, event: &EventEnvelopeV1, request_id: &str) {
-        let include = match &event.payload {
-            EventV1::ProviderReasoningDelta(data) => {
-                provider_event_matches_prompt(event, data.request_id.as_str(), request_id)
-            }
-            EventV1::ProviderStreamDelta(data) => {
-                provider_event_matches_prompt(event, data.request_id.as_str(), request_id)
-            }
-            EventV1::ProviderRequestStarted(data) => {
-                provider_event_matches_prompt(event, data.request_id.as_str(), request_id)
-            }
-            EventV1::ProviderRequestFinished(data) => {
-                provider_finish_matches_prompt(event, data, request_id)
-            }
-            EventV1::AssistantMessageFinished(data) => {
-                provider_event_matches_prompt(event, data.request_id.as_str(), request_id)
-            }
-            EventV1::ToolCallRequested(_)
-            | EventV1::ToolCallStarted(_)
-            | EventV1::ToolCallFinished(_)
-            | EventV1::TaskCompleted(_)
-            | EventV1::TaskCancelled(_) => event_matches_request(event, request_id),
-            EventV1::RunFailed(_) => true,
-            _ => false,
-        };
+        let include = canonical_provider_fragment_for_event(event).map_or_else(
+            || match &event.payload {
+                EventV1::ProviderRequestStarted(data) => {
+                    provider_event_matches_prompt(event, data.request_id.as_str(), request_id)
+                }
+                EventV1::ProviderRequestFinished(data) => {
+                    provider_finish_matches_prompt(event, data, request_id)
+                }
+                EventV1::AssistantMessageFinished(data) => {
+                    provider_event_matches_prompt(event, data.request_id.as_str(), request_id)
+                }
+                EventV1::ToolCallRequested(_)
+                | EventV1::ToolCallStarted(_)
+                | EventV1::ToolCallFinished(_)
+                | EventV1::TaskCompleted(_)
+                | EventV1::TaskCancelled(_) => event_matches_request(event, request_id),
+                EventV1::RunFailed(_) => true,
+                _ => false,
+            },
+            |fragment| provider_event_matches_prompt(event, fragment.request_id, request_id),
+        );
 
         if !include {
             return;
