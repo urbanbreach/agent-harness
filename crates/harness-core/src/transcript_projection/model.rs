@@ -6,7 +6,9 @@ use serde_json::Value;
 use thiserror::Error;
 
 use crate::attachment_transport::AttachmentMetadata;
-use crate::event::{EventEnvelopeV1, PermissionDecision, ToolCallMetadata, ToolCallStatus};
+use crate::event::{
+    EventEnvelopeV1, PermissionDecision, TaskTerminalScope, ToolCallMetadata, ToolCallStatus,
+};
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum TranscriptProjectionError {
@@ -281,6 +283,12 @@ pub struct ProjectedTaskPart {
     pub result_digest: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lineage: Option<SessionLineageProjection>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal_scope: Option<TaskTerminalScope>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timing_elapsed_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal_mono_ms: Option<u64>,
     pub provenance: ProvenanceRange,
 }
 
