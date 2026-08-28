@@ -26,6 +26,7 @@ fn legacy_compaction_replay_is_presentation_silent() {
         }
     }
 
+    // arrange
     let events = vec![
         event(
             1,
@@ -74,10 +75,12 @@ fn legacy_compaction_replay_is_presentation_silent() {
         ),
     ];
 
+    // act
     let stable = validate_stable_prefix(&events, 4).unwrap_or_abort();
     let transcript = project_transcript(&events).unwrap_or_abort();
     let timeline = project_timeline_index(&events).unwrap_or_abort();
 
+    // assert
     assert_eq!(stable.cutoff_seq, 4);
     assert!(transcript.compaction_checkpoints.is_empty());
     assert_eq!(
