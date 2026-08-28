@@ -185,14 +185,14 @@ fn mixed_canonical_events(run_id: &str) -> Vec<EventEnvelopeV1> {
 
 #[test]
 fn mixed_canonical_journal_keeps_identity_order_and_status_across_cli_views() {
-    // Given: one journal containing every durable semantic family consumed by CLI read models.
+    // arrange
     let session_dir = tempdir().unwrap_or_abort();
     let run_dir = session_dir.path().join("run_mixed_canonical");
     std::fs::create_dir_all(&run_dir).unwrap_or_abort();
     write_events_jsonl(&run_dir, &mixed_canonical_events("run_mixed_canonical"));
     let export_path = session_dir.path().join("mixed-export.json");
 
-    // When: replay, recovery/catalog, and support export inspect that same journal.
+    // act
     let replay_output = run_harness([
         "replay",
         "--session",
@@ -218,7 +218,7 @@ fn mixed_canonical_journal_keeps_identity_order_and_status_across_cli_views() {
         export_path.to_str().unwrap_or_abort(),
     ]);
 
-    // Then: all exposed views preserve one durable identity/status and route ordering.
+    // assert
     assert!(
         replay_output.status.success(),
         "replay stderr:\n{}",

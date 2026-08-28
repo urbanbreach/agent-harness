@@ -116,7 +116,7 @@ fn legacy_decoder_isolated_from_active_runtime_consumers() {
         }
     }
 
-    // Given: a shipped V1 compaction lifecycle inside an otherwise canonical journal.
+    // arrange
     let events = vec![
         event(
             1,
@@ -165,12 +165,13 @@ fn legacy_decoder_isolated_from_active_runtime_consumers() {
         ),
     ];
 
-    // When: active projections consume the compatibility classification.
+    // act
     let stable = validate_stable_prefix(&events, 4).unwrap_or_abort();
     let transcript = project_transcript(&events).unwrap_or_abort();
     let timeline = project_timeline_index(&events).unwrap_or_abort();
 
-    // Then: lifecycle state is stable, deprecated records stay presentation-silent, and audit
+    // assert
+    // Lifecycle state is stable, deprecated records stay presentation-silent, and audit
     // naming remains exact for the immutable journal.
     assert_eq!(stable.cutoff_seq, 4);
     assert!(transcript.compaction_checkpoints.is_empty());
