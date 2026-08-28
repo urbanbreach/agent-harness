@@ -784,7 +784,7 @@ mod tests {
 
     #[test]
     fn loaded_session_run_loads_and_projects_once() {
-        // Given: counted journal and projection boundaries around one valid run.
+        // arrange
         let run_dir = tempdir().unwrap_or_abort();
         let events = vec![envelope(
             "run-counted",
@@ -797,7 +797,7 @@ mod tests {
         let journal_loads = std::cell::Cell::new(0_u8);
         let projection_builds = std::cell::Cell::new(0_u8);
 
-        // When: the authoritative CLI read model is loaded.
+        // act
         let loaded = LoadedSessionRun::load_with(
             run_dir.path(),
             |_| {
@@ -811,7 +811,7 @@ mod tests {
         )
         .unwrap_or_abort();
 
-        // Then: every downstream view shares the single load and projection result.
+        // assert
         assert_eq!(journal_loads.get(), 1);
         assert_eq!(projection_builds.get(), 1);
         assert_eq!(loaded.replay.run_id, "run-counted");

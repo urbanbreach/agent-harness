@@ -175,7 +175,7 @@ fn typed_live_fragments_render_then_final_commit_settles_them() {
 
 #[test]
 fn tui_durable_content_uses_core_canonical_projection() {
-    // Given: one settled history with distinct user and assistant identities.
+    // arrange
     let events = vec![
         durable_envelope(
             1,
@@ -211,11 +211,11 @@ fn tui_durable_content_uses_core_canonical_projection() {
     let expected = harness_core::session::CanonicalSessionProjection::from_event_history(&events)
         .expect("fixture must project");
 
-    // When: the TUI replaces its settled history in one boundary operation.
+    // act
     let mut app = AppState::new_live(None, false, None);
     app.replace_events(events);
 
-    // Then: its canonical identity/order/content and rendered settled content agree.
+    // assert
     let actual = app
         .canonical_projection()
         .expect("settled history must have a canonical projection");
@@ -230,10 +230,10 @@ fn tui_durable_content_uses_core_canonical_projection() {
 
 #[test]
 fn live_settlement_projects_once_without_replaying_each_durable_event() {
-    // Given: an empty live TUI projection.
+    // arrange
     let mut app = AppState::new_live(None, false, None);
 
-    // When: two durable setup events and one semantic settlement arrive.
+    // act
     app.ingest_runtime_event(durable(
         1,
         EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
@@ -265,7 +265,7 @@ fn live_settlement_projects_once_without_replaying_each_durable_event() {
         }),
     ));
 
-    // Then: the complete transaction was projected at the settlement boundary once.
+    // assert
     assert_eq!(app.canonical_projection_generation(), 1);
     assert_eq!(
         app.canonical_projection()
@@ -277,7 +277,7 @@ fn live_settlement_projects_once_without_replaying_each_durable_event() {
 
 #[test]
 fn legacy_compaction_display_is_derived_from_canonical_compatibility_projection() {
-    // Given: a shipped legacy compaction envelope decoded through the event boundary.
+    // arrange
     let payload = serde_json::from_value(serde_json::json!({
         "event_type": "compaction_applied",
         "data": {
@@ -298,10 +298,10 @@ fn legacy_compaction_display_is_derived_from_canonical_compatibility_projection(
     .expect("legacy fixture must decode");
     let mut app = AppState::new_live(None, false, None);
 
-    // When: the legacy history is installed as one settled batch.
+    // act
     app.replace_events(vec![durable_envelope(1, payload)]);
 
-    // Then: both canonical compatibility metadata and TUI presentation agree.
+    // assert
     let canonical = app
         .canonical_projection()
         .expect("legacy history must project through compatibility");
