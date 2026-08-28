@@ -115,7 +115,13 @@ pub(super) fn list_sessions(
         }
     };
 
-    let entries = collect_list_entries(entries, &command);
+    let entries = match collect_list_entries_checked(entries, &command) {
+        Ok(entries) => entries,
+        Err(error) => {
+            let _ = writeln!(stderr, "{error}");
+            return 1;
+        }
+    };
 
     if command.json {
         match render_json_session_list(&entries) {
@@ -159,6 +165,7 @@ pub(super) fn rebuild_index(
             let body = serde_json::json!({
                 "entry_count": report.entries.len(),
                 "journals_scanned": report.journals_scanned,
+                "journals_opened": report.journals_opened,
                 "recovery_reason": report.recovery_reason,
                 "index_path": report.index_path,
             });
@@ -186,6 +193,13 @@ pub(super) fn collect_list_entries(
     entries: Vec<SessionInspectionEntry>,
     command: &SessionsListCommand,
 ) -> Vec<SessionInspectionEntry> {
+    collect_list_entries_checked(entries, command).unwrap_or_default()
+}
+
+fn collect_list_entries_checked(
+    entries: Vec<SessionInspectionEntry>,
+    command: &SessionsListCommand,
+) -> Result<Vec<SessionInspectionEntry>, String> {
     let mut entries = entries
         .into_iter()
         .filter(SessionInspectionEntry::is_visible_in_operator_history)
@@ -193,24 +207,38 @@ pub(super) fn collect_list_entries(
         .collect::<Vec<_>>();
     command.sort.sort_entries(&mut entries);
     let entries = if let Some(cursor) = command.cursor.as_deref() {
-        entries
+        let index = entries
             .iter()
             .position(|entry| entry_cursor(entry) == cursor)
-            .map_or_else(Vec::new, |index| {
-                entries.into_iter().skip(index + 1).collect()
-            })
+            .ok_or_else(|| format!("session list cursor is invalid or stale: {cursor}"))?;
+        entries.into_iter().skip(index + 1).collect()
     } else {
         entries
     };
-    entries
+    Ok(entries
         .into_iter()
         .skip(command.offset)
         .take(command.limit)
-        .collect()
+        .collect())
 }
 
 fn entry_cursor(entry: &SessionInspectionEntry) -> String {
-    format!("{:032x}:{}", entry.sort_unix_ms, entry.catalog.run_id)
+    format!(
+        "{:032x}:{}:{}",
+        entry.sort_unix_ms,
+        entry.catalog.run_id,
+        hex_path(&entry.run_dir)
+    )
+}
+
+fn hex_path(path: &std::path::Path) -> String {
+    path.as_os_str()
+        .as_encoded_bytes()
+        .iter()
+        .fold(String::new(), |mut encoded, byte| {
+            write!(encoded, "{byte:02x}").unwrap_or_abort();
+            encoded
+        })
 }
 
 fn matches_list_filters(entry: &SessionInspectionEntry, command: &SessionsListCommand) -> bool {

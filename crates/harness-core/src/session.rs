@@ -5,6 +5,7 @@
 
 mod entry;
 mod error;
+pub mod history_index;
 mod identity;
 pub mod journal;
 pub mod legacy;

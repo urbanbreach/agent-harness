@@ -1,46 +1,48 @@
 use std::collections::BTreeMap;
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use serde::{Deserialize, Serialize};
-#[cfg(unix)]
-use std::os::unix::fs::OpenOptionsExt;
+use harness_core::session::history_index::{
+    acquire_history_index_lock, write_history_index, IndexedSessionHistoryEntry,
+    JournalFingerprint, SessionHistoryEntry, SessionHistoryIndex,
+    SESSION_HISTORY_INDEX_SCHEMA_VERSION,
+};
+
+pub use harness_core::session::history_index::SESSION_HISTORY_INDEX_FILE_NAME;
 
 use super::{inspect_single_session, SessionInspectionEntry};
 use crate::cli_io::EVENTS_FILE_NAME;
-
-pub const SESSION_HISTORY_INDEX_FILE_NAME: &str = ".session-history-index-v1.json";
-const SESSION_HISTORY_INDEX_SCHEMA_VERSION: u16 = 1;
-static INDEX_TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone)]
 pub struct SessionHistoryIndexReport {
     pub entries: Vec<SessionInspectionEntry>,
     pub journals_scanned: usize,
+    pub journals_opened: usize,
     pub rebuilt: bool,
     pub recovery_reason: Option<String>,
     pub index_path: PathBuf,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct SessionHistoryIndex {
-    schema_version: u16,
-    entries: BTreeMap<PathBuf, IndexedSession>,
+trait JournalSource {
+    fn open_session(&mut self, run_dir: &Path) -> SessionInspectionEntry;
+    fn opened(&self) -> usize;
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct IndexedSession {
-    fingerprint: JournalFingerprint,
-    entry: SessionInspectionEntry,
+#[derive(Debug, Default)]
+struct FileJournalSource {
+    opened: usize,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-struct JournalFingerprint {
-    bytes: u64,
-    modified_unix_nanos: u128,
+impl JournalSource for FileJournalSource {
+    fn open_session(&mut self, run_dir: &Path) -> SessionInspectionEntry {
+        self.opened += 1;
+        inspect_single_session(run_dir)
+    }
+
+    fn opened(&self) -> usize {
+        self.opened
+    }
 }
 
 pub fn inspect_session_catalog_indexed(
@@ -59,6 +61,16 @@ fn update_index(
     session_dir: &Path,
     force_rebuild: bool,
 ) -> Result<SessionHistoryIndexReport, String> {
+    let mut source = FileJournalSource::default();
+    update_index_with_source(session_dir, force_rebuild, &mut source)
+}
+
+fn update_index_with_source(
+    session_dir: &Path,
+    force_rebuild: bool,
+    source: &mut dyn JournalSource,
+) -> Result<SessionHistoryIndexReport, String> {
+    let _lock = acquire_history_index_lock(session_dir)?;
     let index_path = session_dir.join(SESSION_HISTORY_INDEX_FILE_NAME);
     let (loaded, load_reason) = load_index(&index_path)?;
     let rebuilt = force_rebuild || loaded.is_none();
@@ -90,9 +102,9 @@ fn update_index(
         journals_scanned += 1;
         index.entries.insert(
             run_dir.clone(),
-            IndexedSession {
+            IndexedSessionHistoryEntry {
                 fingerprint,
-                entry: inspect_single_session(&run_dir).normalize_lineage(),
+                entry: source.open_session(&run_dir).normalize_lineage().into(),
             },
         );
     }
@@ -101,17 +113,18 @@ fn update_index(
         recovery_reason = Some("stale".to_string());
     }
     if rebuilt || removed || journals_scanned > 0 {
-        write_index(&index_path, &index)?;
+        write_history_index(&index_path, &index)?;
     }
     let mut entries = index
         .entries
         .into_values()
-        .map(|indexed| indexed.entry)
+        .map(|indexed| indexed.entry.into())
         .collect::<Vec<_>>();
     SessionInspectionEntry::sort_by_updated_desc(&mut entries);
     Ok(SessionHistoryIndexReport {
         entries,
         journals_scanned,
+        journals_opened: source.opened(),
         rebuilt,
         recovery_reason,
         index_path,
@@ -119,10 +132,7 @@ fn update_index(
 }
 
 fn empty_index() -> SessionHistoryIndex {
-    SessionHistoryIndex {
-        schema_version: SESSION_HISTORY_INDEX_SCHEMA_VERSION,
-        entries: BTreeMap::new(),
-    }
+    SessionHistoryIndex::empty()
 }
 
 fn load_index(path: &Path) -> Result<(Option<SessionHistoryIndex>, Option<String>), String> {
@@ -187,61 +197,26 @@ fn modified_unix_nanos(value: Option<SystemTime>) -> u128 {
         .map_or(0, |duration| duration.as_nanos())
 }
 
-fn write_index(path: &Path, index: &SessionHistoryIndex) -> Result<(), String> {
-    let body = serde_json::to_vec_pretty(index)
-        .map_err(|error| format!("failed to serialize history index: {error}"))?;
-    let temp_path = unique_temp_path(path);
-    let mut options = fs::OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    options.mode(0o600);
-    let mut temp_file = options.open(&temp_path).map_err(|error| {
-        format!(
-            "failed to create history index {}: {error}",
-            temp_path.display()
-        )
-    })?;
-    temp_file.write_all(&body).map_err(|error| {
-        format!(
-            "failed to write history index {}: {error}",
-            temp_path.display()
-        )
-    })?;
-    temp_file.sync_all().map_err(|error| {
-        format!(
-            "failed to sync history index {}: {error}",
-            temp_path.display()
-        )
-    })?;
-    drop(temp_file);
-    fs::rename(&temp_path, path).map_err(|error| {
-        format!(
-            "failed to install history index {}: {error}",
-            path.display()
-        )
-    })?;
-    let Some(parent) = path.parent() else {
-        return Ok(());
-    };
-    fs::File::open(parent)
-        .and_then(|directory| directory.sync_all())
-        .map_err(|error| {
-            format!(
-                "failed to sync history index directory {}: {error}",
-                parent.display()
-            )
-        })
+impl From<SessionInspectionEntry> for SessionHistoryEntry {
+    fn from(entry: SessionInspectionEntry) -> Self {
+        Self {
+            run_dir: entry.run_dir,
+            catalog: entry.catalog,
+            sort_unix_ms: entry.sort_unix_ms,
+            artifact_count: entry.artifact_count,
+            child_session_count: entry.child_session_count,
+        }
+    }
 }
 
-fn unique_temp_path(path: &Path) -> PathBuf {
-    let counter = INDEX_TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let file_name = path
-        .file_name()
-        .and_then(|value| value.to_str())
-        .unwrap_or(SESSION_HISTORY_INDEX_FILE_NAME);
-    path.with_file_name(format!(
-        ".{file_name}.{}.{}.tmp",
-        std::process::id(),
-        counter
-    ))
+impl From<SessionHistoryEntry> for SessionInspectionEntry {
+    fn from(entry: SessionHistoryEntry) -> Self {
+        Self {
+            run_dir: entry.run_dir,
+            catalog: entry.catalog,
+            sort_unix_ms: entry.sort_unix_ms,
+            artifact_count: entry.artifact_count,
+            child_session_count: entry.child_session_count,
+        }
+    }
 }

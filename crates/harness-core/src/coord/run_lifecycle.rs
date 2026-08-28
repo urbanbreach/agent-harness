@@ -96,6 +96,13 @@ impl Coordinator {
             info: run_info.clone(),
             event_store,
             canonical_event_history: Vec::new(),
+            history_index_row: crate::session::history_index::SessionHistoryRowReducer::new(
+                run_info.run_dir.clone(),
+                run_id.clone(),
+                run_name.clone(),
+                workspace_root.display().to_string(),
+                self.config.session_mode_source,
+            ),
             next_event_seq: 1,
             next_live_event_id: 1,
             next_agent_id,
@@ -388,8 +395,15 @@ impl Coordinator {
             }
         })?;
 
-        let recorded_runtime_context =
-            load_run_metadata(&run_dir).and_then(|metadata| metadata.recorded_runtime_context);
+        let run_metadata = load_run_metadata(&run_dir);
+        let recorded_runtime_context = run_metadata
+            .as_ref()
+            .and_then(|metadata| metadata.recorded_runtime_context.clone());
+        let history_mode_source = self.config.session_mode_source.or_else(|| {
+            run_metadata
+                .as_ref()
+                .and_then(|metadata| metadata.mode_source)
+        });
         let events_path = event_store.file_path().to_path_buf();
         let run_info = RunInfo {
             run_id: crate::ids::RunId::from(run_id.clone()),
@@ -403,6 +417,15 @@ impl Coordinator {
         let mut run_state = RunState {
             info: run_info.clone(),
             event_store,
+            history_index_row:
+                crate::session::history_index::SessionHistoryRowReducer::from_history(
+                    run_info.run_dir.clone(),
+                    run_id.clone(),
+                    run_name.clone(),
+                    workspace_root.display().to_string(),
+                    history_mode_source,
+                    &events,
+                ),
             canonical_event_history: events,
             next_event_seq,
             next_live_event_id: 1,
