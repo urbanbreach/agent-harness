@@ -280,6 +280,24 @@ impl SessionProjection {
                     }
                 }
             }
+            EventV1::CompactionWritten(data) => {
+                let source_label = data.summary_source.as_ref().and_then(|source| {
+                    source
+                        .deterministic_fallback
+                        .then_some(" · deterministic fallback")
+                });
+                self.compaction_status = Some(CompactionStatus {
+                    agent_id: data.agent_id.clone(),
+                    checkpoint_id: Some(data.checkpoint_id.clone()),
+                    trigger_reason: data.trigger_reason.clone(),
+                    state: CompactionState::Written,
+                    message: format!(
+                        "compaction written · {}{}",
+                        data.trigger_reason,
+                        source_label.unwrap_or_default()
+                    ),
+                });
+            }
             EventV1::TaskScheduled(data) => {
                 if let Some(request_id) = event.correlation_id.as_deref() {
                     self.note_child_agent_request(event, request_id);

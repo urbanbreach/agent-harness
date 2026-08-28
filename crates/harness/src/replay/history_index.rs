@@ -70,6 +70,12 @@ fn update_index_with_source(
     force_rebuild: bool,
     source: &mut dyn JournalSource,
 ) -> Result<SessionHistoryIndexReport, String> {
+    fs::read_dir(session_dir).map_err(|error| {
+        format!(
+            "failed to read session directory {}: {error}",
+            session_dir.display()
+        )
+    })?;
     let _lock = acquire_history_index_lock(session_dir)?;
     let index_path = session_dir.join(SESSION_HISTORY_INDEX_FILE_NAME);
     let (loaded, load_reason) = load_index(&index_path)?;

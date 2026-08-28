@@ -1,7 +1,7 @@
 // allow: SIZE_OK — transcript projection (pure replay state derivation)
 use std::collections::BTreeMap;
 
-use crate::event::{EventEnvelopeV1, EventV1, TaskScheduleState, ToolCallStatus};
+use crate::event::{EventEnvelopeV1, EventV1, TaskScheduleState, ToolCallMetadata, ToolCallStatus};
 use crate::session::{classify_compatibility_event, AssistantPart};
 
 mod helpers;
@@ -215,7 +215,7 @@ pub fn project_transcript(
                     task_id: payload.task_id.clone(),
                     state: ProjectedTaskState::LateResult,
                     queue_key: None,
-                    reason: None,
+                    reason: Some("late result after stale cancellation".to_string()),
                     result_summary: None,
                     result_digest: Some(payload.result_digest.clone()),
                     lineage: None,
@@ -657,9 +657,10 @@ pub fn project_transcript(
                         tool_call.output_digest = payload.output_digest.clone();
                         tool_call.output_json = payload.output_json.clone();
                         tool_call.finished_seq = Some(event.seq);
-                        if tool_call.metadata.is_none() {
-                            tool_call.metadata = payload.metadata.clone();
-                        }
+                        merge_tool_call_metadata(
+                            &mut tool_call.metadata,
+                            payload.metadata.as_ref(),
+                        );
                         if tool_call.lineage.is_none() {
                             tool_call.lineage = payload.metadata.as_ref().and_then(|metadata| {
                                 lineage_projection(metadata.lineage.as_ref(), event)
@@ -835,4 +836,40 @@ pub fn project_transcript(
     }
 
     Ok(projection)
+}
+
+fn merge_tool_call_metadata(
+    current: &mut Option<ToolCallMetadata>,
+    incoming: Option<&ToolCallMetadata>,
+) {
+    let Some(incoming) = incoming else {
+        return;
+    };
+    let metadata = current.get_or_insert_with(ToolCallMetadata::default);
+    if metadata.canonical_tool_id.is_none() {
+        metadata
+            .canonical_tool_id
+            .clone_from(&incoming.canonical_tool_id);
+    }
+    if metadata.alias_source_tool_id.is_none() {
+        metadata
+            .alias_source_tool_id
+            .clone_from(&incoming.alias_source_tool_id);
+    }
+    if metadata.lineage.is_none() {
+        metadata.lineage.clone_from(&incoming.lineage);
+    }
+    if incoming.timing.is_some() {
+        metadata.timing.clone_from(&incoming.timing);
+    }
+    for artifact in &incoming.artifact_refs {
+        if !metadata.artifact_refs.contains(artifact) {
+            metadata.artifact_refs.push(artifact.clone());
+        }
+    }
+    for hook in &incoming.hook_executions {
+        if !metadata.hook_executions.contains(hook) {
+            metadata.hook_executions.push(hook.clone());
+        }
+    }
 }
