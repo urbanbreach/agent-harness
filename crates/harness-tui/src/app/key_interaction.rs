@@ -37,88 +37,70 @@ impl AppState {
             return;
         }
 
-        if self.overlay_stack().top() == Some(OverlayKind::ReleaseNotes) {
-            self.handle_release_notes_key(key);
-            self.maybe_auto_exit();
-            return;
-        }
-
-        if self.overlay_stack().top() == Some(OverlayKind::PermissionModal) {
-            self.handle_permission_modal_key(key);
-            return;
-        }
-
-        if self.overlay_stack().top() == Some(OverlayKind::AuthDialog) {
-            self.handle_connect_dialog_key(key);
-            return;
-        }
-
-        if self.overlay_stack().top() == Some(OverlayKind::NewWorktreeDialog) {
-            self.handle_new_worktree_dialog_key(key);
-            self.maybe_auto_exit();
-            return;
-        }
-
-        if self.overlay_stack().top() == Some(OverlayKind::StatusDialog) {
-            if key.code == KeyCode::Char('q') && key.modifiers == KeyModifiers::CONTROL {
-                self.execute_action(Action::Quit);
-            } else {
-                self.handle_status_dashboard_key(key);
+        let handled_overlay = match self.overlay_stack().top() {
+            Some(OverlayKind::ReleaseNotes) => {
+                self.handle_release_notes_key(key);
+                true
             }
-            self.maybe_auto_exit();
-            return;
-        }
-
-        if self.overlay_stack().top() == Some(OverlayKind::SubagentActions) {
-            self.handle_subagent_actions_key(key);
-            self.maybe_auto_exit();
-            return;
-        }
-
-        if self.overlay_stack().top() == Some(OverlayKind::ThemeDialog) {
-            self.handle_theme_dialog_key(key);
-            self.maybe_auto_exit();
-            return;
-        }
-
-        if self.overlay_stack().top() == Some(OverlayKind::ErrorDetails) {
-            self.handle_error_details_key(key);
-            self.maybe_auto_exit();
-            return;
-        }
-
-        if self.overlay_stack().top() == Some(OverlayKind::PromptStashList) {
-            self.handle_prompt_stash_list_key(key);
-            self.maybe_auto_exit();
-            return;
-        }
-
-        if self.overlay_stack().top() == Some(OverlayKind::SettingsEditor) {
-            self.handle_settings_editor_key(key);
-            self.maybe_auto_exit();
-            return;
-        }
-
-        if self.overlay_stack().top() == Some(OverlayKind::PlanView) {
-            self.handle_plan_view_key(key);
-            self.maybe_auto_exit();
-            return;
-        }
-
-        if self.overlay_stack().top() == Some(OverlayKind::MemoryBrowser) {
-            self.handle_memory_browser_key(key);
-            self.maybe_auto_exit();
-            return;
-        }
-
-        if self.overlay_stack().top() == Some(OverlayKind::WorktreePicker) {
-            self.handle_worktree_picker_key(key);
-            self.maybe_auto_exit();
-            return;
-        }
-
-        if self.overlay_stack().top() == Some(OverlayKind::ForeignImportPicker) {
-            self.handle_foreign_import_picker_key(&key);
+            Some(OverlayKind::PermissionModal) => {
+                self.handle_permission_modal_key(key);
+                return;
+            }
+            Some(OverlayKind::AuthDialog) => {
+                self.handle_connect_dialog_key(key);
+                return;
+            }
+            Some(OverlayKind::NewWorktreeDialog) => {
+                self.handle_new_worktree_dialog_key(key);
+                true
+            }
+            Some(OverlayKind::StatusDialog) => {
+                if key.code == KeyCode::Char('q') && key.modifiers == KeyModifiers::CONTROL {
+                    self.execute_action(Action::Quit);
+                } else {
+                    self.handle_status_dashboard_key(key);
+                }
+                true
+            }
+            Some(OverlayKind::SubagentActions) => {
+                self.handle_subagent_actions_key(key);
+                true
+            }
+            Some(OverlayKind::ThemeDialog) => {
+                self.handle_theme_dialog_key(key);
+                true
+            }
+            Some(OverlayKind::ErrorDetails) => {
+                self.handle_error_details_key(key);
+                true
+            }
+            Some(OverlayKind::PromptStashList) => {
+                self.handle_prompt_stash_list_key(key);
+                true
+            }
+            Some(OverlayKind::SettingsEditor) => {
+                self.handle_settings_editor_key(key);
+                true
+            }
+            Some(OverlayKind::PlanView) => {
+                self.handle_plan_view_key(key);
+                true
+            }
+            Some(OverlayKind::MemoryBrowser) => {
+                self.handle_memory_browser_key(key);
+                true
+            }
+            Some(OverlayKind::WorktreePicker) => {
+                self.handle_worktree_picker_key(key);
+                true
+            }
+            Some(OverlayKind::ForeignImportPicker) => {
+                self.handle_foreign_import_picker_key(&key);
+                true
+            }
+            _ => false,
+        };
+        if handled_overlay {
             self.maybe_auto_exit();
             return;
         }
