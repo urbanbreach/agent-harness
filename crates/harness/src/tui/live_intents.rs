@@ -106,118 +106,17 @@ pub(super) async fn handle_ui_intents(
                 }
             }
             UiIntent::CompactSession => {
-                let Some(live_agent_target) = live_agent_target.as_ref() else {
-                    let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
-                        message: "manual compaction unavailable: no live agent target".to_string(),
-                        level: OperatorNoticeLevel::Error,
-                    });
-                    continue;
-                };
-
-                let (agent_id, through_request_id) = live_agent_target
-                    .lock()
-                    .map_err(|_| "live agent target lock poisoned".to_string())
-                    .map(|target| (target.agent_id.clone(), target.last_request_id.clone()))?;
-
-                let Some(agent_id) = agent_id else {
-                    let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
-                        message: "manual compaction unavailable: no active live agent".to_string(),
-                        level: OperatorNoticeLevel::Error,
-                    });
-                    continue;
-                };
-
-                let (message, level) = match coordinator
-                    .compact_agent_context(agent_id, through_request_id, "manual")
-                    .await
-                {
-                    Ok(ManualCompactionOutcome::Compacted {
-                        tokens_before,
-                        tokens_after,
-                        summary_preview,
-                    }) => (
-                        manual_compaction_success_message(
-                            &summary_preview,
-                            tokens_before,
-                            tokens_after,
-                        ),
-                        OperatorNoticeLevel::Info,
-                    ),
-                    Ok(ManualCompactionOutcome::NoOp) => (
-                        "manual compaction skipped: need at least two completed turns".to_string(),
-                        OperatorNoticeLevel::Info,
-                    ),
-                    Err(err) => (
-                        format!("manual compaction failed: {err}"),
-                        OperatorNoticeLevel::Error,
-                    ),
-                };
+                let (message, level) =
+                    manual_compaction_notice(&coordinator, live_agent_target.as_ref()).await?;
                 let _ = live_update_tx.send(LiveUpdate::OperatorNotice { message, level });
             }
             UiIntent::BackgroundForegroundSubagents => {
-                let (message, level) = match coordinator.demote_all_foreground_child_tasks().await {
-                    Ok(results) => {
-                        let summary =
-                            harness_core::foreground_demote::summarize_demote_outcomes(&results);
-                        if summary.demoted == 0 {
-                            (
-                                "no foreground subagent is currently blocking this session"
-                                    .to_string(),
-                                OperatorNoticeLevel::Error,
-                            )
-                        } else {
-                            (
-                                format!(
-                                    "{}; {}",
-                                    foreground_background_success_message(summary.demoted),
-                                    summary.one_line()
-                                ),
-                                OperatorNoticeLevel::Info,
-                            )
-                        }
-                    }
-                    Err(err) => (
-                        format!("foreground subagent backgrounding failed: {err}"),
-                        OperatorNoticeLevel::Error,
-                    ),
-                };
+                let (message, level) = background_foreground_notice(&coordinator).await;
                 let _ = live_update_tx.send(LiveUpdate::OperatorNotice { message, level });
             }
             UiIntent::DemoteForegroundChildTask { handle_id } => {
-                let (message, level) = match coordinator
-                    .demote_foreground_child_task(handle_id.clone())
-                    .await
-                {
-                    Ok(result) => match result {
-                        harness_core::foreground_demote::DemoteToBackgroundResult::Demoted {
-                            background_id,
-                            ..
-                        } => (
-                            format!(
-                                "foreground subagent demoted to background ({background_id})"
-                            ),
-                            OperatorNoticeLevel::Info,
-                        ),
-                        harness_core::foreground_demote::DemoteToBackgroundResult::Rejected {
-                            reason,
-                            ..
-                        } => (
-                            format!("foreground subagent demote rejected: {reason}"),
-                            OperatorNoticeLevel::Error,
-                        ),
-                        harness_core::foreground_demote::DemoteToBackgroundResult::Unavailable {
-                            reason,
-                            ..
-                        } => (
-                            format!("foreground subagent demote unavailable: {reason}"),
-                            OperatorNoticeLevel::Error,
-                        ),
-                    },
-                    Err(err) => (
-                        format!("foreground subagent demote failed: {err}"),
-                        OperatorNoticeLevel::Error,
-                    ),
-                };
+                let (message, level) =
+                    demote_foreground_child_notice(&coordinator, handle_id).await;
                 let _ = live_update_tx.send(LiveUpdate::OperatorNotice { message, level });
             }
             UiIntent::OpenAuthManager { args, stdin } => {
@@ -231,17 +130,7 @@ pub(super) async fn handle_ui_intents(
                 );
             }
             UiIntent::InterruptSession { task_ids, reason } => {
-                for task_id in task_ids {
-                    if let Err(err) = coordinator
-                        .cancel_task(task_id, reason.coordinator_reason())
-                        .await
-                    {
-                        let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
-                            message: format!("interrupt failed: {err}"),
-                            level: OperatorNoticeLevel::Error,
-                        });
-                    }
-                }
+                interrupt_tasks(&coordinator, &live_update_tx, task_ids, reason).await;
             }
             UiIntent::ForkSession {
                 source_run_dir,
@@ -263,29 +152,7 @@ pub(super) async fn handle_ui_intents(
                 let _ = live_update_tx.send(notice);
             }
             UiIntent::SwitchModel { profile, .. } => {
-                let Some(live_agent_target) = live_agent_target.as_ref() else {
-                    continue;
-                };
-
-                let already_selected = live_agent_target
-                    .lock()
-                    .map_err(|_| "live agent target lock poisoned".to_string())?
-                    .profile
-                    == profile;
-                if already_selected {
-                    continue;
-                }
-
-                let agent_id = coordinator
-                    .spawn_agent_idle(supervisor_actor(), profile.clone(), None)
-                    .await
-                    .map_err(|err| err.to_string())?;
-                let mut target = live_agent_target
-                    .lock()
-                    .map_err(|_| "live agent target lock poisoned".to_string())?;
-                target.agent_id = Some(agent_id);
-                target.profile = profile;
-                target.last_request_id = None;
+                switch_live_model(&coordinator, live_agent_target.as_ref(), profile).await?;
             }
             UiIntent::NewSession
             | UiIntent::NewWorktreeSession { .. }
@@ -317,33 +184,8 @@ pub(super) async fn handle_ui_intents(
             UiIntent::RevertWorkspace {
                 snapshot_request_id,
             } => {
-                let (message, level) = match coordinator.revert_workspace(snapshot_request_id).await
-                {
-                    Ok(summary) => {
-                        let mut parts = Vec::new();
-                        if !summary.restored_paths.is_empty() {
-                            parts.push(format!("{} restored", summary.restored_paths.len()));
-                        }
-                        if !summary.removed_paths.is_empty() {
-                            parts.push(format!("{} removed", summary.removed_paths.len()));
-                        }
-                        let msg = if parts.is_empty() {
-                            "workspace reverted (no paths affected)".to_string()
-                        } else {
-                            format!("workspace reverted: {}", parts.join(", "))
-                        };
-                        let lvl = if summary.failed_paths.is_empty() {
-                            OperatorNoticeLevel::Info
-                        } else {
-                            OperatorNoticeLevel::Error
-                        };
-                        (msg, lvl)
-                    }
-                    Err(err) => (
-                        format!("workspace revert failed: {err}"),
-                        OperatorNoticeLevel::Error,
-                    ),
-                };
+                let (message, level) =
+                    revert_workspace_notice(&coordinator, snapshot_request_id).await;
                 let _ = live_update_tx.send(LiveUpdate::OperatorNotice { message, level });
             }
             UiIntent::ExportSession => {}
@@ -412,6 +254,196 @@ pub(super) async fn handle_ui_intents(
         }
     }
     Ok(())
+}
+
+async fn interrupt_tasks(
+    coordinator: &CoordinatorHandle,
+    live_update_tx: &LiveUpdateSender,
+    task_ids: Vec<String>,
+    reason: harness_tui::app::InterruptReason,
+) {
+    for task_id in task_ids {
+        if let Err(err) = coordinator
+            .cancel_task(task_id, reason.coordinator_reason())
+            .await
+        {
+            let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
+                message: format!("interrupt failed: {err}"),
+                level: OperatorNoticeLevel::Error,
+            });
+        }
+    }
+}
+
+async fn switch_live_model(
+    coordinator: &CoordinatorHandle,
+    live_agent_target: Option<&LiveAgentTargetState>,
+    profile: String,
+) -> Result<(), String> {
+    let Some(live_agent_target) = live_agent_target else {
+        return Ok(());
+    };
+    if live_agent_target
+        .lock()
+        .map_err(|_| "live agent target lock poisoned".to_string())?
+        .profile
+        == profile
+    {
+        return Ok(());
+    }
+
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), profile.clone(), None)
+        .await
+        .map_err(|err| err.to_string())?;
+    let mut target = live_agent_target
+        .lock()
+        .map_err(|_| "live agent target lock poisoned".to_string())?;
+    target.agent_id = Some(agent_id);
+    target.profile = profile;
+    target.last_request_id = None;
+    Ok(())
+}
+
+async fn manual_compaction_notice(
+    coordinator: &CoordinatorHandle,
+    live_agent_target: Option<&LiveAgentTargetState>,
+) -> Result<(String, OperatorNoticeLevel), String> {
+    let Some(live_agent_target) = live_agent_target else {
+        return Ok((
+            "manual compaction unavailable: no live agent target".to_string(),
+            OperatorNoticeLevel::Error,
+        ));
+    };
+    let (agent_id, through_request_id) = live_agent_target
+        .lock()
+        .map_err(|_| "live agent target lock poisoned".to_string())
+        .map(|target| (target.agent_id.clone(), target.last_request_id.clone()))?;
+    let Some(agent_id) = agent_id else {
+        return Ok((
+            "manual compaction unavailable: no active live agent".to_string(),
+            OperatorNoticeLevel::Error,
+        ));
+    };
+
+    Ok(
+        match coordinator
+            .compact_agent_context(agent_id, through_request_id, "manual")
+            .await
+        {
+            Ok(ManualCompactionOutcome::Compacted {
+                tokens_before,
+                tokens_after,
+                summary_preview,
+            }) => (
+                manual_compaction_success_message(&summary_preview, tokens_before, tokens_after),
+                OperatorNoticeLevel::Info,
+            ),
+            Ok(ManualCompactionOutcome::NoOp) => (
+                "manual compaction skipped: need at least two completed turns".to_string(),
+                OperatorNoticeLevel::Info,
+            ),
+            Err(err) => (
+                format!("manual compaction failed: {err}"),
+                OperatorNoticeLevel::Error,
+            ),
+        },
+    )
+}
+
+async fn background_foreground_notice(
+    coordinator: &CoordinatorHandle,
+) -> (String, OperatorNoticeLevel) {
+    match coordinator.demote_all_foreground_child_tasks().await {
+        Ok(results) => {
+            let summary = harness_core::foreground_demote::summarize_demote_outcomes(&results);
+            if summary.demoted == 0 {
+                (
+                    "no foreground subagent is currently blocking this session".to_string(),
+                    OperatorNoticeLevel::Error,
+                )
+            } else {
+                (
+                    format!(
+                        "{}; {}",
+                        foreground_background_success_message(summary.demoted),
+                        summary.one_line()
+                    ),
+                    OperatorNoticeLevel::Info,
+                )
+            }
+        }
+        Err(err) => (
+            format!("foreground subagent backgrounding failed: {err}"),
+            OperatorNoticeLevel::Error,
+        ),
+    }
+}
+
+async fn demote_foreground_child_notice(
+    coordinator: &CoordinatorHandle,
+    handle_id: String,
+) -> (String, OperatorNoticeLevel) {
+    match coordinator.demote_foreground_child_task(handle_id).await {
+        Ok(result) => match result {
+            harness_core::foreground_demote::DemoteToBackgroundResult::Demoted {
+                background_id,
+                ..
+            } => (
+                format!("foreground subagent demoted to background ({background_id})"),
+                OperatorNoticeLevel::Info,
+            ),
+            harness_core::foreground_demote::DemoteToBackgroundResult::Rejected {
+                reason, ..
+            } => (
+                format!("foreground subagent demote rejected: {reason}"),
+                OperatorNoticeLevel::Error,
+            ),
+            harness_core::foreground_demote::DemoteToBackgroundResult::Unavailable {
+                reason,
+                ..
+            } => (
+                format!("foreground subagent demote unavailable: {reason}"),
+                OperatorNoticeLevel::Error,
+            ),
+        },
+        Err(err) => (
+            format!("foreground subagent demote failed: {err}"),
+            OperatorNoticeLevel::Error,
+        ),
+    }
+}
+
+async fn revert_workspace_notice(
+    coordinator: &CoordinatorHandle,
+    snapshot_request_id: String,
+) -> (String, OperatorNoticeLevel) {
+    match coordinator.revert_workspace(snapshot_request_id).await {
+        Ok(summary) => {
+            let mut parts = Vec::new();
+            if !summary.restored_paths.is_empty() {
+                parts.push(format!("{} restored", summary.restored_paths.len()));
+            }
+            if !summary.removed_paths.is_empty() {
+                parts.push(format!("{} removed", summary.removed_paths.len()));
+            }
+            let message = if parts.is_empty() {
+                "workspace reverted (no paths affected)".to_string()
+            } else {
+                format!("workspace reverted: {}", parts.join(", "))
+            };
+            let level = if summary.failed_paths.is_empty() {
+                OperatorNoticeLevel::Info
+            } else {
+                OperatorNoticeLevel::Error
+            };
+            (message, level)
+        }
+        Err(err) => (
+            format!("workspace revert failed: {err}"),
+            OperatorNoticeLevel::Error,
+        ),
+    }
 }
 
 fn prompt_attachment_metadata(
