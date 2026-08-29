@@ -23,6 +23,7 @@ pub const BUILTIN_COPILOT_PROVIDER_LABEL: &str = "GitHub Copilot";
 const DEFAULT_BUILTIN_MODEL: &str = "gpt-5.4-mini";
 const CODEX_BASE_URL: &str = "https://api.openai.com/v1";
 const COPILOT_BASE_URL: &str = "https://api.githubcopilot.com";
+const GPT5_6_CODEX_DEFAULT_MAX_INPUT_TOKENS: u32 = 369_384;
 
 #[derive(Debug, Clone)]
 pub struct RuntimeCatalogResolution {
@@ -172,7 +173,7 @@ fn merge_live_codex_models(config: &mut HarnessConfig, catalog: &ProviderCatalog
     let discovered = source
         .models
         .iter()
-        .filter(|(model_id, _)| codex_oauth_model_allowed(model_id))
+        .filter(|(model_id, _)| codex_catalog_model_allowed(model_id))
         .filter(|(model_id, _)| !codex.models.contains_key(*model_id))
         .map(|(model_id, metadata)| {
             (
@@ -239,7 +240,7 @@ fn apply_provider_filters(config: &mut HarnessConfig) {
 fn builtin_codex_provider() -> Result<ProviderConfig, String> {
     let models = generated_provider_models("openai")?
         .into_iter()
-        .filter(|(model, _)| codex_oauth_model_allowed(model))
+        .filter(|(model, _)| codex_catalog_model_allowed(model))
         .map(|(model_id, cfg)| {
             (
                 model_id.clone(),
@@ -256,7 +257,17 @@ fn builtin_codex_provider() -> Result<ProviderConfig, String> {
     ))
 }
 
+fn codex_catalog_model_allowed(model_id: &str) -> bool {
+    model_id != "gpt-5.6" && codex_oauth_model_allowed(model_id)
+}
+
 fn normalize_codex_model_variants(model_id: &str, mut cfg: ModelConfig) -> ModelConfig {
+    if model_id.starts_with("gpt-5.6-") {
+        cfg.limit.input = Some(GPT5_6_CODEX_DEFAULT_MAX_INPUT_TOKENS);
+        cfg.max_input_tokens = Some(GPT5_6_CODEX_DEFAULT_MAX_INPUT_TOKENS);
+        cfg.limit_provenance =
+            ModelLimitProvenance::compatibility("GPT-5.6 Codex default context profile");
+    }
     if let Some(efforts) = codex_reasoning_efforts(model_id) {
         retain_codex_variants(&mut cfg.variants, efforts);
         insert_missing_codex_variants(&mut cfg.variants, efforts);
@@ -556,6 +567,8 @@ mod tests {
 
     use harness_core::auth::{CredentialClock, StoredCredential, SystemCredentialClock};
     use harness_core::config::configured_model_catalog;
+    use harness_core::context_budget::{compute_request_budget, RequestBudgetInput};
+    use harness_providers::{ProviderOutputCapDisposition, ProviderRequestCost};
 
     use super::*;
 
@@ -821,7 +834,7 @@ mod tests {
     }
 
     #[test]
-    fn live_models_dev_catalog_adds_new_codex_models_to_explicit_config() {
+    fn live_models_dev_catalog_adds_only_named_gpt_5_6_tiers_with_default_context() {
         // arrange
         let dir = tempdir().unwrap_or_abort();
         let catalog_path = dir.path().join("models.json");
@@ -837,7 +850,28 @@ mod tests {
                     "name": "GPT-5.6",
                     "reasoning": true,
                     "tool_call": true,
-                    "limit": { "context": 1050000, "output": 128000 }
+                    "limit": { "context": 1050000, "input": 922000, "output": 128000 }
+                  },
+                  "gpt-5.6-luna": {
+                    "id": "gpt-5.6-luna",
+                    "name": "GPT-5.6 Luna",
+                    "reasoning": true,
+                    "tool_call": true,
+                    "limit": { "context": 1050000, "input": 922000, "output": 128000 }
+                  },
+                  "gpt-5.6-terra": {
+                    "id": "gpt-5.6-terra",
+                    "name": "GPT-5.6 Terra",
+                    "reasoning": true,
+                    "tool_call": true,
+                    "limit": { "context": 1050000, "input": 922000, "output": 128000 }
+                  },
+                  "gpt-5.6-sol": {
+                    "id": "gpt-5.6-sol",
+                    "name": "GPT-5.6 Sol",
+                    "reasoning": true,
+                    "tool_call": true,
+                    "limit": { "context": 1050000, "input": 922000, "output": 128000 }
                   }
                 }
               }
@@ -876,9 +910,33 @@ mod tests {
         else {
             panic!("expected OpenAI-compatible Codex provider");
         };
-        assert_eq!(codex.models["gpt-5.6"].display_name, "GPT-5.6");
-        assert_eq!(codex.models["gpt-5.6"].limit.context, Some(1_050_000));
-        assert!(codex.models["gpt-5.6"].variants.contains_key("xhigh"));
+        assert!(!codex.models.contains_key("gpt-5.6"));
+        for model_id in ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"] {
+            assert_eq!(
+                codex.models[model_id].metadata.context_window_tokens,
+                Some(1_050_000)
+            );
+            assert_eq!(codex.models[model_id].limit.context, Some(1_050_000));
+            assert_eq!(codex.models[model_id].limit.input, Some(369_384));
+            assert_eq!(codex.models[model_id].max_input_tokens, Some(369_384));
+            assert!(codex.models[model_id].variants.contains_key("xhigh"));
+        }
+
+        let luna = configured_model_catalog(&config)
+            .into_iter()
+            .find(|entry| entry.model == "gpt-5.6-luna" && entry.variant.is_none())
+            .unwrap_or_abort();
+        let budget = compute_request_budget(RequestBudgetInput {
+            model_limits: &luna.limits,
+            request_cost: ProviderRequestCost::default(),
+            requested_output_tokens: None,
+            safety_margin_tokens: 16_384,
+            estimated_token_triggers: true,
+            fallback_input_tokens: 32_768,
+            output_cap_disposition: ProviderOutputCapDisposition::ProviderDefaulted(128_000),
+        })
+        .unwrap_or_abort();
+        assert_eq!(budget.compaction_threshold_tokens, Some(353_000));
     }
 
     #[test]
@@ -958,23 +1016,23 @@ mod tests {
             "gpt-5.4 should have 'xhigh' variant with reasoning_effort=xhigh"
         );
 
-        let gpt52_entries: Vec<_> = entries
+        let spark_entries: Vec<_> = entries
             .iter()
-            .filter(|e| e.provider == BUILTIN_CODEX_PROVIDER_ID && e.model == "gpt-5.2")
+            .filter(|e| e.provider == BUILTIN_CODEX_PROVIDER_ID && e.model == "gpt-5.3-codex-spark")
             .collect();
         assert!(
-            gpt52_entries.iter().any(|e| {
+            spark_entries.iter().any(|e| {
                 e.variant.as_deref() == Some("xhigh")
                     && e.reasoning_effort.as_deref() == Some("xhigh")
             }),
-            "gpt-5.2 should have 'xhigh' variant"
+            "gpt-5.3-codex-spark should have 'xhigh' variant"
         );
         assert!(
-            gpt52_entries.iter().any(|e| {
+            spark_entries.iter().any(|e| {
                 e.variant.as_deref() == Some("none")
                     && e.reasoning_effort.as_deref() == Some("none")
             }),
-            "gpt-5.2 should have 'none' variant with reasoning_effort=none"
+            "gpt-5.3-codex-spark should have 'none' variant with reasoning_effort=none"
         );
 
         let gpt55 = entries
@@ -989,22 +1047,11 @@ mod tests {
         assert_eq!(gpt55.limits.max_input_tokens(), Some(922_000));
         assert_eq!(gpt55.limits.max_output_tokens(), Some(128_000));
 
-        let gpt55_pro_entries: Vec<_> = entries
-            .iter()
-            .filter(|e| e.provider == BUILTIN_CODEX_PROVIDER_ID && e.model == "gpt-5.5-pro")
-            .collect();
-        assert!(gpt55_pro_entries.iter().any(|e| {
-            e.variant.as_deref() == Some("medium")
-                && e.reasoning_effort.as_deref() == Some("medium")
-        }));
-        assert!(gpt55_pro_entries.iter().any(|e| {
-            e.variant.as_deref() == Some("xhigh") && e.reasoning_effort.as_deref() == Some("xhigh")
-        }));
         assert!(
-            !gpt55_pro_entries
+            !entries
                 .iter()
-                .any(|e| e.variant.as_deref() == Some("low")),
-            "versioned GPT-5 Pro models should not expose low reasoning"
+                .any(|e| e.provider == BUILTIN_CODEX_PROVIDER_ID && e.model == "gpt-5.5-pro"),
+            "Codex subscriptions should not expose Pro models"
         );
     }
 }
