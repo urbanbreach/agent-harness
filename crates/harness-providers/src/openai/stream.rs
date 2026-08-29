@@ -124,6 +124,30 @@ pub(crate) fn warn_stream_send_failure(context: &str) {
     );
 }
 
+pub(crate) async fn send_stream_event(
+    tx: &mpsc::Sender<ProviderStreamEvent>,
+    event: ProviderStreamEvent,
+    context: &str,
+) -> bool {
+    if tx.send(event).await.is_ok() {
+        true
+    } else {
+        warn_stream_send_failure(context);
+        false
+    }
+}
+
+pub(crate) async fn send_optional_delta(
+    tx: &mpsc::Sender<ProviderStreamEvent>,
+    delta: Option<String>,
+    event: fn(String) -> ProviderStreamEvent,
+) -> bool {
+    match delta.filter(|delta| !delta.is_empty()) {
+        Some(delta) => tx.send(event(delta)).await.is_ok(),
+        None => true,
+    }
+}
+
 pub(crate) fn warn_stream_processing_failure(context: &str, message: &str) {
     tracing::warn!(
         context,
