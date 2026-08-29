@@ -109,6 +109,116 @@ async fn tool_task_lifecycle_events_preserve_owner_actor() {
         assert_task_event_context(event, &owner_actor, &request_id);
     }
 }
+
+#[tokio::test]
+async fn cancelled_tool_outcome_preserves_terminal_event_metadata() {
+    // arrange
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
+    let release = Arc::new(Notify::new());
+    let coordinator = test_tool_lifecycle_coordinator(
+        temp_dir.path(),
+        Arc::new(FakeClock::new()),
+        lifecycle_tool_registry(Arc::clone(&release)),
+        Duration::from_millis(100),
+        15_000,
+        5,
+        1,
+    );
+    let run = coordinator
+        .start_run(
+            "cancelled_tool_outcome_preserves_terminal_event_metadata",
+            temp_dir.path().to_path_buf(),
+        )
+        .await
+        .unwrap_or_abort();
+    let tool_call_id = coordinator
+        .request_tool_call(
+            supervisor_actor(),
+            Some("deep".to_string()),
+            "shell.block",
+            json!({"cmd": "wait"}),
+        )
+        .await
+        .unwrap_or_abort();
+    let events = wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::TaskScheduled(data)
+                    if data.queue_key.as_deref() == Some("tool:shell.block")
+            )
+        })
+    })
+    .await;
+    let task_id = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::TaskScheduled(data)
+                if data.queue_key.as_deref() == Some("tool:shell.block") =>
+            {
+                Some(data.task_id.clone())
+            }
+            _ => None,
+        })
+        .unwrap_or_abort();
+
+    // act
+    coordinator
+        .job_finished(
+            task_id.clone(),
+            JobOutcome::Cancelled {
+                reason: "operator cancelled".to_string(),
+            },
+        )
+        .await
+        .unwrap_or_abort();
+    let events = wait_for_events(&run.events_path, Duration::from_millis(500), |events| {
+        events.iter().any(|event| {
+            matches!(
+                &event.payload,
+                EventV1::ToolCallFinished(data) if data.tool_call_id.as_str() == tool_call_id
+            )
+        })
+    })
+    .await;
+    release.notify_waiters();
+    coordinator.stop_run().await.unwrap_or_abort();
+
+    // assert
+    assert!(events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::TaskCancelled(data)
+                if data.task_id == task_id && data.reason == "operator cancelled"
+        )
+    }));
+    assert!(!events.iter().any(|event| {
+        matches!(
+            &event.payload,
+            EventV1::TaskCompleted(data) if data.task_id == task_id
+        )
+    }));
+    let finished = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::ToolCallFinished(data) if data.tool_call_id.as_str() == tool_call_id => {
+                Some(data)
+            }
+            _ => None,
+        })
+        .unwrap_or_abort();
+    assert_eq!(finished.status, ToolCallStatus::Failed);
+    assert_eq!(finished.output_summary.as_deref(), Some("operator cancelled"));
+    assert!(
+        finished
+            .metadata
+            .as_ref()
+            .and_then(|metadata| metadata.timing.as_ref())
+            .is_some(),
+        "cancelled tool outcome should preserve timing metadata"
+    );
+}
+
 #[tokio::test]
 async fn stale_tool_task_late_result_preserves_owner_actor() {
     // arrange

@@ -272,7 +272,7 @@ fn is_git_repository(path: &Path) -> bool {
         .is_ok_and(|text| text.trim() == "true")
 }
 
-fn git_output(cwd: &Path, args: &[&str]) -> Result<String, String> {
+pub(crate) fn git_output(cwd: &Path, args: &[&str]) -> Result<String, String> {
     let output = Command::new("git")
         .args([
             "--no-optional-locks",
