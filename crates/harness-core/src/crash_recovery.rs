@@ -9,10 +9,8 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::session_paths::{
-    ARTIFACTS_DIR_NAME, EVENTS_FILE_NAME, META_FILE_NAME, WRITER_LOCK_FILE_NAME,
-};
-use crate::store::{EventStoreError, JsonlFileEventStore};
+use crate::session_paths::{EVENTS_FILE_NAME, WRITER_LOCK_FILE_NAME};
+use crate::store::{unborn_run_dir, EventStoreError, JsonlFileEventStore};
 
 const WRITER_LOCK_RECOVERY_FILE_NAME: &str = ".writer.lock.recovering";
 
@@ -398,27 +396,6 @@ fn parse_writer_lock_pid(contents: &str) -> Option<u32> {
     contents.lines().find_map(|line| {
         line.strip_prefix("pid=")
             .and_then(|pid| pid.parse::<u32>().ok())
-    })
-}
-
-fn unborn_run_dir(run_dir: &Path) -> bool {
-    if run_dir.join(EVENTS_FILE_NAME).exists()
-        || run_dir.join(META_FILE_NAME).exists()
-        || run_dir.join(ARTIFACTS_DIR_NAME).exists()
-    {
-        return false;
-    }
-
-    let Ok(entries) = fs::read_dir(run_dir) else {
-        return false;
-    };
-    entries.into_iter().all(|entry| {
-        entry
-            .ok()
-            .and_then(|entry| entry.file_name().into_string().ok())
-            .is_some_and(|name| {
-                name == WRITER_LOCK_FILE_NAME || name == WRITER_LOCK_RECOVERY_FILE_NAME
-            })
     })
 }
 

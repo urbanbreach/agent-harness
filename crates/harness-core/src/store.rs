@@ -401,7 +401,7 @@ fn stale_writer_lock(run_dir: &Path, path: &Path) -> bool {
     !process_exists(pid)
 }
 
-fn unborn_run_dir(run_dir: &Path) -> bool {
+pub(crate) fn unborn_run_dir(run_dir: &Path) -> bool {
     if run_dir.join(EVENTS_FILE_NAME).exists()
         || run_dir.join(META_FILE_NAME).exists()
         || run_dir.join(ARTIFACTS_DIR_NAME).exists()

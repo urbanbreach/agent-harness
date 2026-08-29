@@ -8,10 +8,11 @@
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use thiserror::Error;
+
+use crate::vcs::git_output;
 
 /// Default relative base for session worktrees under a repository root.
 pub const DEFAULT_WORKTREE_RELATIVE_BASE: &str = ".agent-harness/worktrees";
@@ -445,34 +446,6 @@ fn parse_worktree_list_porcelain(porcelain: &str, parent_canon: &Path) -> Vec<Li
         &mut out,
     );
     out
-}
-
-fn git_output(cwd: &Path, args: &[&str]) -> Result<String, String> {
-    let output = Command::new("git")
-        .args([
-            "--no-optional-locks",
-            "-c",
-            "core.fsmonitor=false",
-            "-c",
-            "core.quotepath=false",
-        ])
-        .args(args)
-        .current_dir(cwd)
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .output()
-        .map_err(|err| format!("failed to spawn git: {err}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let detail = [stderr.trim(), stdout.trim()]
-            .into_iter()
-            .find(|text| !text.is_empty())
-            .unwrap_or("git command failed");
-        return Err(detail.to_string());
-    }
-
-    String::from_utf8(output.stdout).map_err(|err| format!("git output was not utf-8: {err}"))
 }
 
 #[cfg(test)]

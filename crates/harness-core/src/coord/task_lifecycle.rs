@@ -470,6 +470,7 @@ impl Coordinator {
         let request_correlation_id = task.request_correlation_id.clone();
         let finished_mono_ms = self.clock.mono_ms();
         let timing = execution_timing_metadata(task.started_mono_ms, finished_mono_ms);
+        let failed = matches!(&outcome, JobOutcome::Failed { .. });
 
         match outcome {
             JobOutcome::Succeeded { result } => {
@@ -758,93 +759,13 @@ impl Coordinator {
                     let _ = respond_to.send(Ok(result_for_response));
                 }
             }
-            JobOutcome::Failed { error } => {
-                let mut final_error = error.clone();
-                if let Some(metadata) = task.hashline_edit.as_ref() {
-                    append_edit_rejected_event(
-                        self.clock.as_ref(),
-                        self.redactor.as_ref(),
-                        run_state,
-                        &task.tool_call_id,
-                        metadata,
-                        error.clone(),
-                        request_correlation_id.as_deref(),
-                    )?;
-                }
-
-                let mut hook_executions = task_hook_state.hook_executions.clone();
-                let finish_hook_batch = hooks::run_lifecycle_hooks(
-                    self.clock.as_ref(),
-                    self.config.hook_command_executor.as_ref(),
-                    &self.config.hook_runtime_config,
-                    HookInvocationContext {
-                        event: HookLifecycleEvent::ToolCallFinished,
-                        run_id: run_state.info.run_id.to_string(),
-                        workspace_root: run_state.info.workspace_root.clone(),
-                        artifacts_dir: run_state.info.artifacts_dir.clone(),
-                        actor: Some(task.owner_actor.clone()),
-                        agent_id: task.owner_actor.agent_id.clone(),
-                        request_id: request_correlation_id.clone(),
-                        permission_id: None,
-                        task_id: Some(task_id.clone()),
-                        tool_call_id: Some(task.tool_call_id.clone()),
-                        tool_id: Some(task_hook_state.tool_id.clone()),
-                        provider_id: None,
-                        model_id: None,
-                        parent_agent_id: None,
-                        profile: task_hook_state.profile.clone(),
-                        outcome: Some("failed".to_string()),
-                        output_summary: None,
-                        failure_reason: Some(final_error.clone()),
-                    },
-                )
-                .await;
-                hook_executions.extend(finish_hook_batch.hook_executions.clone());
-                if let Some(hook_reason) = finish_hook_batch.critical_failure {
-                    final_error =
-                        format!("{final_error}; critical lifecycle hook failed: {hook_reason}");
-                }
-
-                append_payload_event_with_correlation(
-                    self.clock.as_ref(),
-                    self.redactor.as_ref(),
-                    run_state,
-                    task.owner_actor.clone(),
-                    Some(format!("task:{task_id}")),
-                    request_correlation_id.clone(),
-                    EventV1::TaskCancelled(TaskCancelledEvent {
-                        task_id: task_id.into(),
-                        reason: final_error.clone(),
-                        task_scope: Some(TaskTerminalScope::ToolCall),
-                    }),
-                )?;
-
-                append_failed_tool_call_finished_event(
-                    self.clock.as_ref(),
-                    self.redactor.as_ref(),
-                    run_state,
-                    &task.tool_call_id,
-                    &final_error,
-                    request_correlation_id.as_deref(),
-                    tool_call_metadata(
-                        task.tool_metadata.as_ref(),
-                        Some(tool_task_lineage_metadata(
-                            &task.tool_call_id,
-                            task.request_correlation_id.as_deref(),
-                            None,
-                        )),
-                        Vec::new(),
-                        Some(timing.clone()),
-                        hook_executions.clone(),
-                    ),
-                    &hook_executions,
-                )?;
-                if let Some(respond_to) = task.respond_to {
-                    let _ = respond_to.send(Err(format!("tool execution failed: {final_error}")));
-                }
-            }
-            JobOutcome::Cancelled { reason } => {
+            JobOutcome::Failed { error: reason } | JobOutcome::Cancelled { reason } => {
                 let mut final_reason = reason.clone();
+                let (hook_outcome, response_prefix) = if failed {
+                    ("failed", "tool execution failed")
+                } else {
+                    ("cancelled", "tool call cancelled")
+                };
                 if let Some(metadata) = task.hashline_edit.as_ref() {
                     append_edit_rejected_event(
                         self.clock.as_ref(),
@@ -852,7 +773,7 @@ impl Coordinator {
                         run_state,
                         &task.tool_call_id,
                         metadata,
-                        reason.clone(),
+                        reason,
                         request_correlation_id.as_deref(),
                     )?;
                 }
@@ -878,7 +799,7 @@ impl Coordinator {
                         model_id: None,
                         parent_agent_id: None,
                         profile: task_hook_state.profile.clone(),
-                        outcome: Some("cancelled".to_string()),
+                        outcome: Some(hook_outcome.to_string()),
                         output_summary: None,
                         failure_reason: Some(final_reason.clone()),
                     },
@@ -919,13 +840,13 @@ impl Coordinator {
                             None,
                         )),
                         Vec::new(),
-                        Some(timing),
+                        Some(timing.clone()),
                         hook_executions.clone(),
                     ),
                     &hook_executions,
                 )?;
                 if let Some(respond_to) = task.respond_to {
-                    let _ = respond_to.send(Err(format!("tool call cancelled: {final_reason}")));
+                    let _ = respond_to.send(Err(format!("{response_prefix}: {final_reason}")));
                 }
             }
         }
