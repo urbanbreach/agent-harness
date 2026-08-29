@@ -551,10 +551,8 @@ async fn compact_intent_reports_unavailable_when_no_live_agent_target_exists() {
 }
 
 #[test]
-fn live_ui_router_forwards_compact_intent_without_switching_workflow() {
+fn live_ui_router_forwards_runtime_intents_without_switching_workflow() {
     // arrange
-    // act
-    // assert
     let (intent_tx, mut intent_rx) = mpsc::unbounded_channel::<UiIntent>();
     let launch_selection = Arc::new(Mutex::new(LaunchMetadata::default()));
     let (selected_workflow, sink) = build_live_ui_intent_router(
@@ -563,90 +561,26 @@ fn live_ui_router_forwards_compact_intent_without_switching_workflow() {
         false,
         "test-digest".to_string(),
     );
-
-    sink(UiIntent::CompactSession);
-
-    assert!(recover_mutex_lock(&selected_workflow).is_none());
-    assert_eq!(intent_rx.try_recv().ok(), Some(UiIntent::CompactSession));
-}
-
-#[test]
-fn live_ui_router_forwards_interrupt_intent_without_switching_workflow() {
-    // arrange
-    // act
-    // assert
-    let (intent_tx, mut intent_rx) = mpsc::unbounded_channel::<UiIntent>();
-    let launch_selection = Arc::new(Mutex::new(LaunchMetadata::default()));
-    let (selected_workflow, sink) = build_live_ui_intent_router(
-        intent_tx,
-        Arc::clone(&launch_selection),
-        false,
-        "test-digest".to_string(),
-    );
-
-    sink(UiIntent::InterruptSession {
-        task_ids: vec!["task_active".to_string()],
-        reason: harness_tui::app::InterruptReason::User,
-    });
-
-    assert!(recover_mutex_lock(&selected_workflow).is_none());
-    assert_eq!(
-        intent_rx.try_recv().ok(),
-        Some(UiIntent::InterruptSession {
+    let intents = [
+        UiIntent::CompactSession,
+        UiIntent::InterruptSession {
             task_ids: vec!["task_active".to_string()],
             reason: harness_tui::app::InterruptReason::User,
-        })
-    );
-}
-
-#[test]
-fn live_ui_router_forwards_foreground_background_intent_without_switching_workflow() {
-    // arrange
-    // act
-    // assert
-    let (intent_tx, mut intent_rx) = mpsc::unbounded_channel::<UiIntent>();
-    let launch_selection = Arc::new(Mutex::new(LaunchMetadata::default()));
-    let (selected_workflow, sink) = build_live_ui_intent_router(
-        intent_tx,
-        Arc::clone(&launch_selection),
-        false,
-        "test-digest".to_string(),
-    );
-
-    sink(UiIntent::BackgroundForegroundSubagents);
-
-    assert!(recover_mutex_lock(&selected_workflow).is_none());
-    assert_eq!(
-        intent_rx.try_recv().ok(),
-        Some(UiIntent::BackgroundForegroundSubagents)
-    );
-}
-
-#[test]
-fn live_ui_router_forwards_single_handle_demote_intent_without_switching_workflow() {
-    // arrange
-    // act
-    // assert
-    let (intent_tx, mut intent_rx) = mpsc::unbounded_channel::<UiIntent>();
-    let launch_selection = Arc::new(Mutex::new(LaunchMetadata::default()));
-    let (selected_workflow, sink) = build_live_ui_intent_router(
-        intent_tx,
-        Arc::clone(&launch_selection),
-        false,
-        "test-digest".to_string(),
-    );
-
-    sink(UiIntent::DemoteForegroundChildTask {
-        handle_id: "req_child_demote".to_string(),
-    });
-
-    assert!(recover_mutex_lock(&selected_workflow).is_none());
-    assert_eq!(
-        intent_rx.try_recv().ok(),
-        Some(UiIntent::DemoteForegroundChildTask {
+        },
+        UiIntent::BackgroundForegroundSubagents,
+        UiIntent::DemoteForegroundChildTask {
             handle_id: "req_child_demote".to_string(),
-        })
-    );
+        },
+    ];
+
+    for intent in intents {
+        // act
+        sink(intent.clone());
+
+        // assert
+        assert!(recover_mutex_lock(&selected_workflow).is_none());
+        assert_eq!(intent_rx.try_recv().ok(), Some(intent));
+    }
 }
 
 #[test]
