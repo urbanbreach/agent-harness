@@ -265,13 +265,41 @@ fn codex_account_id_extracts_claim_precedence() {
 }
 
 #[test]
-fn codex_oauth_model_filter_matches_reference_gpt5_family() {
+fn codex_oauth_model_filter_allows_current_gpt5_family() {
     // arrange
     // act
     // assert
+    assert!(codex_oauth_model_allowed("gpt-5.4"));
     assert!(codex_oauth_model_allowed("gpt-5.5"));
-    assert!(codex_oauth_model_allowed("gpt-5.6-experimental"));
-    assert!(codex_oauth_model_allowed("gpt-5.3-codex"));
+    assert!(codex_oauth_model_allowed("gpt-5.6-luna"));
     assert!(!codex_oauth_model_allowed("gpt-4.1"));
     assert!(!codex_oauth_model_allowed("claude-sonnet-4"));
+}
+
+#[test]
+fn codex_oauth_model_filter_rejects_pro_models() {
+    // arrange
+    // act
+    // assert
+    assert!(!codex_oauth_model_allowed("gpt-5.4-pro"));
+    assert!(!codex_oauth_model_allowed("gpt-5.5-pro"));
+    assert!(!codex_oauth_model_allowed("gpt-5.6-sol-pro"));
+}
+
+#[test]
+fn codex_oauth_model_filter_rejects_pre_5_4_models() {
+    // arrange
+    // act
+    // assert
+    assert!(!codex_oauth_model_allowed("gpt-5.1"));
+    assert!(!codex_oauth_model_allowed("gpt-5.2"));
+    assert!(!codex_oauth_model_allowed("gpt-5.3-codex"));
+}
+
+#[test]
+fn codex_oauth_model_filter_keeps_5_3_spark_exception() {
+    // arrange
+    // act
+    // assert
+    assert!(codex_oauth_model_allowed("gpt-5.3-codex-spark"));
 }

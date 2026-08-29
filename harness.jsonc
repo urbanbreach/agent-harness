@@ -13,19 +13,15 @@
         "timeoutMs": 1800000,
       },
       "models": {
-        "gpt-5.3-codex": {
-          "name": "GPT 5.3 Codex",
-          "limit": { "context": 272000, "output": 128000 },
+        "gpt-5.3-codex-spark": {
+          "name": "GPT 5.3 Codex Spark",
+          "limit": { "context": 128000, "input": 100000, "output": 32000 },
           "modalities": {
             "input": ["text", "image", "pdf"],
             "output": ["text"],
           },
           "options": { "serviceTier": "priority" },
           "variants": {
-            "none": {
-              "name": "None",
-              "metadata": { "reasoningEffort": "none" },
-            },
             "low": { "name": "Low", "metadata": { "reasoningEffort": "low" } },
             "medium": {
               "name": "Medium",
@@ -34,10 +30,6 @@
             "high": {
               "name": "High",
               "metadata": { "reasoningEffort": "high" },
-            },
-            "xhigh": {
-              "name": "XHigh",
-              "metadata": { "reasoningEffort": "xhigh" },
             },
           },
         },
@@ -69,7 +61,53 @@
           "name": "GPT 5.6 Luna",
           "limit": {
             "context": 1050000,
-            "input": 1050000,
+            "input": 369384,
+            "output": 128000,
+          },
+          "modalities": {
+            "input": ["text", "image", "pdf"],
+            "output": ["text"],
+          },
+          "options": { "serviceTier": "priority" },
+          "variants": {
+            "low": {
+              "name": "Low",
+              "metadata": { "reasoningEffort": "low" },
+            },
+            "max": {
+              "name": "Max",
+              "metadata": { "reasoningEffort": "max" },
+            },
+          },
+        },
+        "gpt-5.6-terra": {
+          "name": "GPT 5.6 Terra",
+          "limit": {
+            "context": 1050000,
+            "input": 369384,
+            "output": 128000,
+          },
+          "modalities": {
+            "input": ["text", "image", "pdf"],
+            "output": ["text"],
+          },
+          "options": { "serviceTier": "priority" },
+          "variants": {
+            "low": {
+              "name": "Low",
+              "metadata": { "reasoningEffort": "low" },
+            },
+            "max": {
+              "name": "Max",
+              "metadata": { "reasoningEffort": "max" },
+            },
+          },
+        },
+        "gpt-5.6-sol": {
+          "name": "GPT 5.6 Sol",
+          "limit": {
+            "context": 1050000,
+            "input": 369384,
             "output": 128000,
           },
           "modalities": {
@@ -160,121 +198,6 @@
             },
           },
         },
-        "gpt-5.2": {
-          "name": "GPT 5.2",
-          "limit": { "context": 272000, "output": 128000 },
-          "modalities": {
-            "input": ["text", "image", "pdf"],
-            "output": ["text"],
-          },
-          "options": { "serviceTier": "priority" },
-          "variants": {
-            "low": { "name": "Low", "metadata": { "reasoningEffort": "low" } },
-            "medium": {
-              "name": "Medium",
-              "metadata": { "reasoningEffort": "medium" },
-            },
-            "high": {
-              "name": "High",
-              "metadata": { "reasoningEffort": "high" },
-            },
-            "xhigh": {
-              "name": "XHigh",
-              "metadata": { "reasoningEffort": "xhigh" },
-            },
-            "max": {
-              "name": "Max",
-              "metadata": { "reasoningEffort": "max" },
-            },
-          },
-        },
-        "gpt-5.1-codex-max": {
-          "name": "GPT 5.1 Codex Max",
-          "limit": { "context": 272000, "output": 128000 },
-          "modalities": {
-            "input": ["text", "image", "pdf"],
-            "output": ["text"],
-          },
-          "options": { "serviceTier": "priority" },
-          "variants": {
-            "low": { "name": "Low", "metadata": { "reasoningEffort": "low" } },
-            "medium": {
-              "name": "Medium",
-              "metadata": { "reasoningEffort": "medium" },
-            },
-            "high": {
-              "name": "High",
-              "metadata": { "reasoningEffort": "high" },
-            },
-            "xhigh": {
-              "name": "XHigh",
-              "metadata": { "reasoningEffort": "xhigh" },
-            },
-          },
-        },
-        "gpt-5.1-codex": {
-          "name": "GPT 5.1 Codex",
-          "limit": { "context": 272000, "output": 128000 },
-          "modalities": {
-            "input": ["text", "image", "pdf"],
-            "output": ["text"],
-          },
-          "options": { "serviceTier": "priority" },
-          "variants": {
-            "low": { "name": "Low", "metadata": { "reasoningEffort": "low" } },
-            "medium": {
-              "name": "Medium",
-              "metadata": { "reasoningEffort": "medium" },
-            },
-            "high": {
-              "name": "High",
-              "metadata": { "reasoningEffort": "high" },
-            },
-          },
-        },
-        "gpt-5.1-codex-mini": {
-          "name": "GPT 5.1 Codex Mini",
-          "limit": { "context": 272000, "output": 128000 },
-          "modalities": {
-            "input": ["text", "image", "pdf"],
-            "output": ["text"],
-          },
-          "options": { "serviceTier": "priority" },
-          "variants": {
-            "medium": {
-              "name": "Medium",
-              "metadata": { "reasoningEffort": "medium" },
-            },
-            "high": {
-              "name": "High",
-              "metadata": { "reasoningEffort": "high" },
-            },
-          },
-        },
-        "gpt-5.1": {
-          "name": "GPT 5.1",
-          "limit": { "context": 272000, "output": 128000 },
-          "modalities": {
-            "input": ["text", "image", "pdf"],
-            "output": ["text"],
-          },
-          "options": { "serviceTier": "priority" },
-          "variants": {
-            "none": {
-              "name": "None",
-              "metadata": { "reasoningEffort": "none" },
-            },
-            "low": { "name": "Low", "metadata": { "reasoningEffort": "low" } },
-            "medium": {
-              "name": "Medium",
-              "metadata": { "reasoningEffort": "medium" },
-            },
-            "high": {
-              "name": "High",
-              "metadata": { "reasoningEffort": "high" },
-            },
-          },
-        },
       },
     },
     "default": {
@@ -286,7 +209,7 @@
         "timeoutMs": 1800000,
       },
       "models": {
-        "gpt-5.3-codex": { "name": "GPT 5.3 Codex" },
+        "gpt-5.3-codex-spark": { "name": "GPT 5.3 Codex Spark" },
         "gpt-5.5": {
           "name": "GPT 5.5",
           "variants": {
@@ -342,11 +265,6 @@
             },
           },
         },
-        "gpt-5.2": { "name": "GPT 5.2" },
-        "gpt-5.1-codex-max": { "name": "GPT 5.1 Codex Max" },
-        "gpt-5.1-codex": { "name": "GPT 5.1 Codex" },
-        "gpt-5.1-codex-mini": { "name": "GPT 5.1 Codex Mini" },
-        "gpt-5.1": { "name": "GPT 5.1" },
       },
     },
     "umans-ai-coding-plan": {

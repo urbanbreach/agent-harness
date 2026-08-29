@@ -6,6 +6,14 @@ Harness V1 executes through the OpenAI-compatible provider path. Larger provider
 
 Provider requests flow through configured provider/model ids, the coordinator, and the `harness-providers` stream interface. Deterministic tests use mock/faux providers by default; live lanes are env-gated.
 
+## Codex context profiles
+
+Catalog-derived GPT-5.6 models on the built-in `openai-codex` provider use a 369,384-token maximum input profile. With the default 16,384-token compaction reserve, this exposes the Codex default usable context budget of 353,000 tokens. This applies to the Luna, Terra, and Sol tiers; the nonexistent unsuffixed `gpt-5.6` alias is not exposed. Other OpenAI-compatible providers retain their configured or discovered API limits.
+
+## Codex subscription model availability
+
+The built-in `openai-codex` catalog exposes GPT-5.4 and newer non-Pro models. Pro models are excluded because Codex subscriptions cannot use them. Models older than GPT-5.4 are also excluded, with `gpt-5.3-codex-spark` retained as the sole legacy exception.
+
 ## Known limits
 
 The runtime does not implement new provider protocols in this slice. Doctor validates local configuration and credential presence but does not prove authentication because it makes no provider call.
