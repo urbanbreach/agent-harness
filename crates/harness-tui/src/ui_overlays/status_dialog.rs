@@ -345,36 +345,30 @@ struct PluginDialogSummary {
     last_load: Option<String>,
 }
 
+macro_rules! sanitized_one_lines {
+    ($app:expr; $($field:ident => $method:ident),+ $(,)?) => {
+        $(
+            let $field = $app
+                .$method()
+                .map(|value| sanitize_status_dialog_text(&value.one_line()));
+        )+
+    };
+    (@text $app:expr; $($field:ident => $method:ident),+ $(,)?) => {
+        $(let $field = $app.$method().map(sanitize_status_dialog_text);)+
+    };
+}
+
 fn status_dialog_plugin_summary(app: &AppState) -> PluginDialogSummary {
-    let extension_descriptor = app.extension_manifest_summary().map(|summary| {
-        let line = summary.one_line();
-        sanitize_status_dialog_text(&line)
-    });
-    let last_install = app.plugin_last_install().map(|outcome| {
-        let line = outcome.one_line();
-        sanitize_status_dialog_text(&line)
-    });
-    let last_activate = app.plugin_last_activate().map(|outcome| {
-        let line = outcome.one_line();
-        sanitize_status_dialog_text(&line)
-    });
-    let last_deactivate = app.plugin_last_deactivate().map(|outcome| {
-        let line = outcome.one_line();
-        sanitize_status_dialog_text(&line)
-    });
-    let last_remove = app.plugin_last_remove().map(|outcome| {
-        let line = outcome.one_line();
-        sanitize_status_dialog_text(&line)
-    });
-    let first_plugin = app.plugin_first_line().map(sanitize_status_dialog_text);
-    let discover = app.extension_discover_summary().map(|summary| {
-        let line = summary.one_line();
-        sanitize_status_dialog_text(&line)
-    });
-    let last_load = app.extension_last_load().map(|outcome| {
-        let line = outcome.one_line();
-        sanitize_status_dialog_text(&line)
-    });
+    sanitized_one_lines!(app;
+        extension_descriptor => extension_manifest_summary,
+        last_install => plugin_last_install,
+        last_activate => plugin_last_activate,
+        last_deactivate => plugin_last_deactivate,
+        last_remove => plugin_last_remove,
+        discover => extension_discover_summary,
+        last_load => extension_last_load,
+    );
+    sanitized_one_lines!(@text app; first_plugin => plugin_first_line);
     match app.plugin_lifecycle_summary() {
         Some(summary) => PluginDialogSummary {
             installed: summary.installed,
@@ -410,190 +404,168 @@ struct EditAttributionDialogSummary {
     total: usize,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-struct OperatorDialogSummary {
-    crash_or_recovery: Option<String>,
-    provider_fallback: Option<String>,
-    fallback_chain: Option<String>,
-    fallback_outcome: Option<String>,
-    fallback_banner: Option<String>,
-    fallback_models: Option<String>,
-    demote_handle: Option<String>,
-    demote_outcomes: Option<String>,
-    demote_last: Option<String>,
-    demote_last_task: Option<String>,
-    settings_bound: bool,
-    settings_writable_paths: usize,
-    settings_editable: usize,
-    settings_total: usize,
-    settings_registry: Option<String>,
-    crash_scan: Option<String>,
-    crash_recovery_next: Option<String>,
-    crash_recovery_action: Option<String>,
-    crash_recovery_report: Option<String>,
-    teams: Option<String>,
-    team_last_create: Option<String>,
-    team_first: Option<String>,
-    team_last_send: Option<String>,
-    team_last_message: Option<String>,
-    team_add_member: Option<String>,
-    team_cancel: Option<String>,
-    cron: Option<String>,
-    cron_last_register: Option<String>,
-    cron_first_schedule: Option<String>,
-    cron_last_remove: Option<String>,
-    workspace_hub: Option<String>,
-    workspace_hub_availability: Option<String>,
-    workspace_hub_connect: Option<String>,
-    workspace_hub_bind: Option<String>,
-    workspace_hub_upload: Option<String>,
-    workspace_hub_recover: Option<String>,
-    graph_batch: Option<String>,
-    graph_query_last: Option<String>,
-    graph_batch_first: Option<String>,
-    persistent_graph: Option<String>,
-    cow_clone: Option<String>,
-    cow_clone_last: Option<String>,
-    cow_fastpath: Option<String>,
-    browser_oidc: Option<String>,
-    browser_oidc_availability: Option<String>,
-    browser_oidc_start: Option<String>,
-    browser_oidc_complete: Option<String>,
-    mcp_oauth: Option<String>,
-    mcp_oauth_remote_availability: Option<String>,
-    mcp_oauth_begin: Option<String>,
-    mcp_oauth_exchange: Option<String>,
-    mcp_oauth_open: Option<String>,
-    sleep_wake: Option<String>,
-    sleep_wake_policy: Option<String>,
-    sleep_wake_last: Option<String>,
-    sleep_wake_decision: Option<String>,
-    sleep_wake_availability: Option<String>,
-    binary_update: Option<String>,
-    binary_update_policy: Option<String>,
-    binary_update_check: Option<String>,
-    binary_version: Option<String>,
-    foreign_discover: Option<String>,
-    foreign_import_next: Option<String>,
-    foreign_import_last: Option<String>,
-    jujutsu: Option<String>,
-    jujutsu_cli: Option<String>,
-    jujutsu_workspace: Option<String>,
-    jujutsu_last_command: Option<String>,
-    sandbox: Option<String>,
-    landlock: Option<String>,
-    os_sandbox_profiles: Option<String>,
-    os_sandbox_first_profile: Option<String>,
-    sandbox_last_prepare: Option<String>,
-    acp: Option<String>,
-    acp_state: Option<String>,
-    acp_session: Option<String>,
-    acp_last_connect: Option<String>,
-    acp_last_bind: Option<String>,
-    edit_attribution: Option<String>,
-    edit_attribution_first: Option<String>,
-    edit_attribution_last: Option<String>,
-    plan_view: Option<String>,
-    plan_view_first: Option<String>,
+macro_rules! define_operator_dialog_summary {
+    (
+        primary { $($primary_field:ident => $primary_label:literal,)* }
+        demote { $($demote_field:ident => $demote_label:literal,)* }
+        trailing { $($trailing_field:ident => $trailing_label:literal,)* }
+    ) => {
+        #[derive(Debug, Clone, PartialEq, Eq, Default)]
+        struct OperatorDialogSummary {
+            $(pub $primary_field: Option<String>,)*
+            demote_handle: Option<String>,
+            $(pub $demote_field: Option<String>,)*
+            settings_bound: bool,
+            settings_writable_paths: usize,
+            settings_editable: usize,
+            settings_total: usize,
+            $(pub $trailing_field: Option<String>,)*
+        }
+
+        impl OperatorDialogSummary {
+            fn bound_probe_counts(&self) -> (usize, usize) {
+                let probes = [
+                    $(self.$primary_field.is_some(),)*
+                    self.demote_handle.is_some(),
+                    $(self.$demote_field.is_some(),)*
+                    $(self.$trailing_field.is_some(),)*
+                ];
+                let bound = probes.iter().filter(|bound| **bound).count()
+                    + usize::from(self.settings_bound);
+                (bound, probes.len() + 1)
+            }
+
+            fn dashboard_one_line(&self) -> String {
+                let (bound, total) = self.bound_probe_counts();
+                format!("operator dashboard: {bound} bound of {total} probes")
+            }
+
+            fn append_rows(&self, lines: &mut Vec<Line<'static>>, theme: &Theme) {
+                append_optional_status_dialog_rows(
+                    lines,
+                    &[$(($primary_label, self.$primary_field.as_deref()),)*],
+                    theme,
+                );
+                lines.push(status_dialog_plain_line(
+                    format!(
+                        "Demote focus: {}",
+                        self.demote_handle
+                            .as_deref()
+                            .unwrap_or("none (Ctrl+B bulk when available)")
+                    ),
+                    theme,
+                ));
+                append_optional_status_dialog_rows(
+                    lines,
+                    &[$(($demote_label, self.$demote_field.as_deref()),)*],
+                    theme,
+                );
+                let settings = if self.settings_bound {
+                    format!(
+                        "Settings: bound, {}/{} writable editable (registry {})",
+                        self.settings_editable, self.settings_writable_paths, self.settings_total
+                    )
+                } else {
+                    format!(
+                        "Settings: unbound, {} write paths (registry {})",
+                        self.settings_writable_paths, self.settings_total
+                    )
+                };
+                lines.push(status_dialog_plain_line(settings, theme));
+                append_optional_status_dialog_rows(
+                    lines,
+                    &[$(($trailing_label, self.$trailing_field.as_deref()),)*],
+                    theme,
+                );
+            }
+        }
+    };
 }
 
-impl OperatorDialogSummary {
-    /// Count optional operator probe fields that are currently bound (Some),
-    /// plus the settings project-config bind surface.
-    fn bound_probe_counts(&self) -> (usize, usize) {
-        let probes = [
-            self.crash_or_recovery.is_some(),
-            self.provider_fallback.is_some(),
-            self.fallback_chain.is_some(),
-            self.fallback_outcome.is_some(),
-            self.fallback_banner.is_some(),
-            self.fallback_models.is_some(),
-            self.demote_handle.is_some(),
-            self.demote_outcomes.is_some(),
-            self.demote_last.is_some(),
-            self.demote_last_task.is_some(),
-            self.crash_scan.is_some(),
-            self.crash_recovery_next.is_some(),
-            self.crash_recovery_action.is_some(),
-            self.crash_recovery_report.is_some(),
-            self.teams.is_some(),
-            self.team_last_create.is_some(),
-            self.team_first.is_some(),
-            self.team_last_send.is_some(),
-            self.team_last_message.is_some(),
-            self.team_add_member.is_some(),
-            self.team_cancel.is_some(),
-            self.cron.is_some(),
-            self.cron_last_register.is_some(),
-            self.cron_first_schedule.is_some(),
-            self.cron_last_remove.is_some(),
-            self.workspace_hub.is_some(),
-            self.workspace_hub_availability.is_some(),
-            self.workspace_hub_connect.is_some(),
-            self.workspace_hub_bind.is_some(),
-            self.workspace_hub_upload.is_some(),
-            self.workspace_hub_recover.is_some(),
-            self.graph_batch.is_some(),
-            self.graph_query_last.is_some(),
-            self.graph_batch_first.is_some(),
-            self.persistent_graph.is_some(),
-            self.cow_clone.is_some(),
-            self.cow_clone_last.is_some(),
-            self.cow_fastpath.is_some(),
-            self.browser_oidc.is_some(),
-            self.browser_oidc_availability.is_some(),
-            self.browser_oidc_start.is_some(),
-            self.browser_oidc_complete.is_some(),
-            self.mcp_oauth.is_some(),
-            self.mcp_oauth_remote_availability.is_some(),
-            self.mcp_oauth_begin.is_some(),
-            self.mcp_oauth_exchange.is_some(),
-            self.mcp_oauth_open.is_some(),
-            self.sleep_wake.is_some(),
-            self.sleep_wake_policy.is_some(),
-            self.sleep_wake_last.is_some(),
-            self.sleep_wake_decision.is_some(),
-            self.sleep_wake_availability.is_some(),
-            self.binary_update.is_some(),
-            self.binary_update_policy.is_some(),
-            self.binary_update_check.is_some(),
-            self.binary_version.is_some(),
-            self.foreign_discover.is_some(),
-            self.foreign_import_next.is_some(),
-            self.foreign_import_last.is_some(),
-            self.jujutsu.is_some(),
-            self.jujutsu_cli.is_some(),
-            self.jujutsu_workspace.is_some(),
-            self.jujutsu_last_command.is_some(),
-            self.sandbox.is_some(),
-            self.landlock.is_some(),
-            self.os_sandbox_profiles.is_some(),
-            self.os_sandbox_first_profile.is_some(),
-            self.sandbox_last_prepare.is_some(),
-            self.acp.is_some(),
-            self.acp_state.is_some(),
-            self.acp_session.is_some(),
-            self.acp_last_connect.is_some(),
-            self.acp_last_bind.is_some(),
-            self.edit_attribution.is_some(),
-            self.edit_attribution_first.is_some(),
-            self.edit_attribution_last.is_some(),
-            self.plan_view.is_some(),
-            self.plan_view_first.is_some(),
-            self.settings_registry.is_some(),
-        ];
-        let mut bound = probes.iter().filter(|b| **b).count();
-        let mut total = probes.len();
-        total = total.saturating_add(1);
-        if self.settings_bound {
-            bound = bound.saturating_add(1);
-        }
-        (bound, total)
+define_operator_dialog_summary! {
+    primary {
+        crash_or_recovery => "Crash/recovery",
+        provider_fallback => "Fallback",
+        fallback_chain => "Fallback chain",
+        fallback_outcome => "Fallback outcome",
+        fallback_banner => "Fallback banner",
+        fallback_models => "Fallback models",
     }
-
-    fn dashboard_one_line(&self) -> String {
-        let (bound, total) = self.bound_probe_counts();
-        format!("operator dashboard: {bound} bound of {total} probes")
+    demote {
+        demote_outcomes => "Demote outcomes",
+        demote_last => "Demote last",
+        demote_last_task => "Demote last task",
+    }
+    trailing {
+        settings_registry => "Settings registry",
+        crash_scan => "Crash scan",
+        crash_recovery_next => "Crash recovery",
+        crash_recovery_action => "Crash recovery action",
+        crash_recovery_report => "Crash recovery report",
+        teams => "Teams",
+        team_last_create => "Team create",
+        team_first => "Team first",
+        team_last_send => "Team send",
+        team_last_message => "Team mailbox last",
+        team_add_member => "Team add-member",
+        team_cancel => "Team cancel",
+        cron => "Cron",
+        cron_last_register => "Cron register",
+        cron_first_schedule => "Cron first",
+        cron_last_remove => "Cron remove",
+        workspace_hub => "Workspace hub",
+        workspace_hub_availability => "Workspace hub availability",
+        workspace_hub_connect => "Workspace hub connect",
+        workspace_hub_bind => "Workspace hub bind",
+        workspace_hub_upload => "Workspace hub upload",
+        workspace_hub_recover => "Workspace hub recover",
+        graph_batch => "Graph batch",
+        graph_query_last => "Graph query last",
+        graph_batch_first => "Graph batch first",
+        persistent_graph => "Persistent graph",
+        cow_clone => "COW clone",
+        cow_clone_last => "COW clone last",
+        cow_fastpath => "COW fastpath",
+        browser_oidc => "Browser OIDC",
+        browser_oidc_availability => "Browser OIDC availability",
+        browser_oidc_start => "Browser OIDC start",
+        browser_oidc_complete => "Browser OIDC complete",
+        mcp_oauth => "MCP OAuth",
+        mcp_oauth_remote_availability => "MCP OAuth remote availability",
+        mcp_oauth_begin => "MCP OAuth begin",
+        mcp_oauth_exchange => "MCP OAuth exchange",
+        mcp_oauth_open => "MCP OAuth open",
+        sleep_wake => "Sleep/wake",
+        sleep_wake_policy => "Sleep/wake policy",
+        sleep_wake_last => "Sleep/wake last",
+        sleep_wake_decision => "Sleep/wake decision",
+        sleep_wake_availability => "Sleep/wake availability",
+        binary_update => "Binary update",
+        binary_update_policy => "Binary update policy",
+        binary_update_check => "Binary update check",
+        binary_version => "Binary version",
+        foreign_discover => "Foreign discover",
+        foreign_import_next => "Foreign import",
+        foreign_import_last => "Foreign import last",
+        jujutsu => "Jujutsu",
+        jujutsu_cli => "Jujutsu CLI",
+        jujutsu_workspace => "Jujutsu workspace",
+        jujutsu_last_command => "Jujutsu command last",
+        sandbox => "Sandbox",
+        landlock => "Landlock",
+        os_sandbox_profiles => "OS sandbox profiles",
+        os_sandbox_first_profile => "OS sandbox first profile",
+        sandbox_last_prepare => "Sandbox prepare last",
+        acp => "ACP",
+        acp_state => "ACP state",
+        acp_session => "ACP session",
+        acp_last_connect => "ACP connect",
+        acp_last_bind => "ACP bind",
+        edit_attribution => "Edit attribution",
+        edit_attribution_first => "Edit attribution first",
+        edit_attribution_last => "Edit attribution last",
+        plan_view => "Plan view",
+        plan_view_first => "Plan view first",
     }
 }
 
@@ -669,12 +641,10 @@ fn status_dialog_operator_summary(app: &AppState) -> OperatorDialogSummary {
         }
     });
     let settings = app.settings_editor_summary();
-    let settings_registry = app
-        .settings_registry_summary()
-        .map(|summary| sanitize_status_dialog_text(&summary.one_line()));
-    let crash_scan = app
-        .crash_recovery_scan_summary()
-        .map(|summary| sanitize_status_dialog_text(&summary.one_line()));
+    sanitized_one_lines!(app;
+        settings_registry => settings_registry_summary,
+        crash_scan => crash_recovery_scan_summary,
+    );
     let crash_recovery_next = app.crash_recovery_first_report().map(|report| {
         let run_id = report
             .run_dir
@@ -700,159 +670,70 @@ fn status_dialog_operator_summary(app: &AppState) -> OperatorDialogSummary {
         let line = format!("{} — {}", action.as_str(), action.operator_hint(run_id));
         sanitize_status_dialog_text(&line)
     });
-    let crash_recovery_report = app
-        .crash_recovery_first_report_line()
-        .map(sanitize_status_dialog_text);
-    let teams = app
-        .team_registry_summary()
-        .map(|summary| sanitize_status_dialog_text(&summary.one_line()));
-    let team_last_create = app
-        .team_last_create()
-        .map(|outcome| sanitize_status_dialog_text(&outcome.one_line()));
-    let team_first = app.team_first_line().map(sanitize_status_dialog_text);
-    let team_last_send = app
-        .team_last_send()
-        .map(|outcome| sanitize_status_dialog_text(&outcome.one_line()));
-    let team_last_message = app
-        .team_last_message_line()
-        .map(sanitize_status_dialog_text);
-    let team_add_member = app
-        .team_last_add_member()
-        .map(|outcome| sanitize_status_dialog_text(&outcome.one_line()));
-    let team_cancel = app
-        .team_last_cancel()
-        .map(|outcome| sanitize_status_dialog_text(&outcome.one_line()));
-    let cron = app
-        .cron_schedule_summary()
-        .map(|summary| sanitize_status_dialog_text(&summary.one_line()));
-    let cron_last_register = app
-        .cron_last_register()
-        .map(|outcome| sanitize_status_dialog_text(&outcome.one_line()));
-    let cron_first_schedule = app
-        .cron_first_schedule_line()
-        .map(sanitize_status_dialog_text);
-    let cron_last_remove = app
-        .cron_last_remove()
-        .map(|outcome| sanitize_status_dialog_text(&outcome.one_line()));
-    let demote_outcomes = app
-        .demote_outcome_summary()
-        .map(|summary| sanitize_status_dialog_text(&summary.one_line()));
-    let demote_last = app
-        .demote_last_result()
-        .map(|result| sanitize_status_dialog_text(&result.one_line()));
-    let demote_last_task = app
-        .demote_last_task_result()
-        .map(|result| sanitize_status_dialog_text(&result.one_line()));
-    let fallback_chain = app
-        .auto_fallback_summary()
-        .map(|summary| sanitize_status_dialog_text(&summary.one_line()));
+    sanitized_one_lines!(@text app;
+        crash_recovery_report => crash_recovery_first_report_line,
+        team_first => team_first_line,
+        team_last_message => team_last_message_line,
+        cron_first_schedule => cron_first_schedule_line,
+        fallback_banner => auto_fallback_last_banner,
+        fallback_models => auto_fallback_chain_label,
+        graph_batch_first => graph_query_batch_first_line,
+        os_sandbox_first_profile => os_sandbox_first_profile_line,
+        edit_attribution_first => edit_attribution_first_line,
+        edit_attribution_last => edit_attribution_last_line,
+    );
+    sanitized_one_lines!(app;
+        teams => team_registry_summary,
+        team_last_create => team_last_create,
+        team_last_send => team_last_send,
+        team_add_member => team_last_add_member,
+        team_cancel => team_last_cancel,
+        cron => cron_schedule_summary,
+        cron_last_register => cron_last_register,
+        cron_last_remove => cron_last_remove,
+        demote_outcomes => demote_outcome_summary,
+        demote_last => demote_last_result,
+        demote_last_task => demote_last_task_result,
+        fallback_chain => auto_fallback_summary,
+    );
     let fallback_outcome = app.auto_fallback_last_outcome().map(|outcome| {
         sanitize_status_dialog_text(
             &harness_core::auto_fallback::describe_auto_fallback_outcome(outcome),
         )
     });
-    let fallback_banner = app
-        .auto_fallback_last_banner()
-        .map(sanitize_status_dialog_text);
-    let fallback_models = app
-        .auto_fallback_chain_label()
-        .map(sanitize_status_dialog_text);
-    let workspace_hub = app
-        .workspace_hub_outcome_summary()
-        .map(|summary| sanitize_status_dialog_text(&summary.one_line()));
-    let workspace_hub_availability = app
-        .workspace_hub_availability()
-        .map(|availability| sanitize_status_dialog_text(&availability.one_line()));
-    let workspace_hub_connect = app
-        .workspace_hub_last_connect()
-        .map(|result| sanitize_status_dialog_text(&result.one_line()));
-    let workspace_hub_bind = app
-        .workspace_hub_last_bind()
-        .map(|result| sanitize_status_dialog_text(&result.one_line()));
-    let workspace_hub_upload = app
-        .workspace_hub_last_upload()
-        .map(|result| sanitize_status_dialog_text(&result.one_line()));
-    let workspace_hub_recover = app
-        .workspace_hub_last_recover()
-        .map(|result| sanitize_status_dialog_text(&result.one_line()));
-    let graph_batch = app
-        .graph_query_batch_summary()
-        .map(|summary| sanitize_status_dialog_text(&summary.one_line()));
-    let graph_query_last = app
-        .graph_query_last_result()
-        .map(|result| sanitize_status_dialog_text(&result.one_line()));
-    let graph_batch_first = app
-        .graph_query_batch_first_line()
-        .map(sanitize_status_dialog_text);
-    let persistent_graph = app
-        .persistent_graph_availability()
-        .map(|availability| sanitize_status_dialog_text(&availability.one_line()));
-    let cow_clone = app
-        .cow_clone_outcome_summary()
-        .map(|summary| sanitize_status_dialog_text(&summary.one_line()));
-    let cow_clone_last = app
-        .cow_clone_last_result()
-        .map(|result| sanitize_status_dialog_text(&result.one_line()));
-    let cow_fastpath = app
-        .cow_worktree_availability()
-        .map(|availability| sanitize_status_dialog_text(&availability.one_line()));
-    let browser_oidc = app
-        .browser_oidc_outcome_summary()
-        .map(|summary| sanitize_status_dialog_text(&summary.one_line()));
-    let browser_oidc_availability = app
-        .browser_oidc_availability()
-        .map(|availability| sanitize_status_dialog_text(&availability.one_line()));
-    let browser_oidc_start = app
-        .browser_oidc_last_start()
-        .map(|result| sanitize_status_dialog_text(&result.one_line()));
-    let browser_oidc_complete = app
-        .browser_oidc_last_complete()
-        .map(|result| sanitize_status_dialog_text(&result.one_line()));
-    let mcp_oauth = app
-        .mcp_oauth_outcome_summary()
-        .map(|summary| sanitize_status_dialog_text(&summary.one_line()));
-    let mcp_oauth_remote_availability = app
-        .mcp_oauth_remote_availability()
-        .map(|availability| sanitize_status_dialog_text(&availability.one_line()));
-    let mcp_oauth_begin = app
-        .mcp_oauth_last_begin()
-        .map(|result| sanitize_status_dialog_text(&result.one_line()));
-    let mcp_oauth_exchange = app
-        .mcp_oauth_last_exchange()
-        .map(|result| sanitize_status_dialog_text(&result.one_line()));
-    let mcp_oauth_open = app
-        .mcp_oauth_last_open()
-        .map(|result| sanitize_status_dialog_text(&result.one_line()));
-    let sleep_wake = app
-        .sleep_wake_observation_summary()
-        .map(|summary| sanitize_status_dialog_text(&summary.one_line()));
-    let sleep_wake_policy = app
-        .sleep_wake_credential_policy()
-        .map(|policy| sanitize_status_dialog_text(&policy.one_line()));
-    let sleep_wake_last = app
-        .sleep_wake_last_observation()
-        .map(|observation| sanitize_status_dialog_text(&observation.one_line()));
-    let sleep_wake_decision = app
-        .sleep_wake_last_decision()
-        .map(|decision| sanitize_status_dialog_text(&decision.one_line()));
-    let sleep_wake_availability = app
-        .sleep_wake_availability()
-        .map(|availability| sanitize_status_dialog_text(&availability.one_line()));
-    let binary_update = app
-        .binary_update_summary()
-        .map(|summary| sanitize_status_dialog_text(&summary.one_line()));
-    let binary_update_policy = app
-        .binary_update_policy()
-        .map(|policy| sanitize_status_dialog_text(&policy.one_line()));
-    let binary_update_check = app
-        .binary_update_check()
-        .map(|check| sanitize_status_dialog_text(&check.one_line()));
-    let binary_version = app
-        .binary_version_info()
-        .map(|info| sanitize_status_dialog_text(&info.one_line()));
-    let foreign_discover = app
-        .foreign_discover_summary()
-        .map(|summary| sanitize_status_dialog_text(&summary.one_line()));
+    sanitized_one_lines!(app;
+        workspace_hub => workspace_hub_outcome_summary,
+        workspace_hub_availability => workspace_hub_availability,
+        workspace_hub_connect => workspace_hub_last_connect,
+        workspace_hub_bind => workspace_hub_last_bind,
+        workspace_hub_upload => workspace_hub_last_upload,
+        workspace_hub_recover => workspace_hub_last_recover,
+        graph_batch => graph_query_batch_summary,
+        graph_query_last => graph_query_last_result,
+        persistent_graph => persistent_graph_availability,
+        cow_clone => cow_clone_outcome_summary,
+        cow_clone_last => cow_clone_last_result,
+        cow_fastpath => cow_worktree_availability,
+        browser_oidc => browser_oidc_outcome_summary,
+        browser_oidc_availability => browser_oidc_availability,
+        browser_oidc_start => browser_oidc_last_start,
+        browser_oidc_complete => browser_oidc_last_complete,
+        mcp_oauth => mcp_oauth_outcome_summary,
+        mcp_oauth_remote_availability => mcp_oauth_remote_availability,
+        mcp_oauth_begin => mcp_oauth_last_begin,
+        mcp_oauth_exchange => mcp_oauth_last_exchange,
+        mcp_oauth_open => mcp_oauth_last_open,
+        sleep_wake => sleep_wake_observation_summary,
+        sleep_wake_policy => sleep_wake_credential_policy,
+        sleep_wake_last => sleep_wake_last_observation,
+        sleep_wake_decision => sleep_wake_last_decision,
+        sleep_wake_availability => sleep_wake_availability,
+        binary_update => binary_update_summary,
+        binary_update_policy => binary_update_policy,
+        binary_update_check => binary_update_check,
+        binary_version => binary_version_info,
+        foreign_discover => foreign_discover_summary,
+    );
     let foreign_import_next = app.foreign_import_first_candidate().map(|candidate| {
         let path = candidate.path().display().to_string();
         let line = match candidate {
@@ -870,60 +751,23 @@ fn status_dialog_operator_summary(app: &AppState) -> OperatorDialogSummary {
         };
         sanitize_status_dialog_text(&line)
     });
-    let foreign_import_last = app
-        .foreign_import_last_outcome()
-        .map(|outcome| sanitize_status_dialog_text(&outcome.one_line()));
-    let jujutsu = app
-        .jujutsu_probe()
-        .map(|probe| sanitize_status_dialog_text(&probe.one_line()));
-    let jujutsu_cli = app
-        .jujutsu_cli()
-        .map(|cli| sanitize_status_dialog_text(&cli.one_line()));
-    let jujutsu_workspace = app
-        .jujutsu_workspace()
-        .map(|workspace| sanitize_status_dialog_text(&workspace.one_line()));
-    let jujutsu_last_command = app
-        .jujutsu_last_command()
-        .map(|outcome| sanitize_status_dialog_text(&outcome.one_line()));
-    let sandbox = app
-        .sandbox_fs_plan_summary()
-        .map(|summary| sanitize_status_dialog_text(&summary.one_line()));
-    let landlock = app
-        .landlock_support()
-        .map(|support| sanitize_status_dialog_text(&support.one_line()));
-    let os_sandbox_profiles = app
-        .os_sandbox_profiles_summary()
-        .map(|summary| sanitize_status_dialog_text(&summary.one_line()));
-    let os_sandbox_first_profile = app
-        .os_sandbox_first_profile_line()
-        .map(sanitize_status_dialog_text);
-    let sandbox_last_prepare = app
-        .sandbox_last_prepare()
-        .map(|result| sanitize_status_dialog_text(&result.one_line()));
-    let acp = app
-        .acp_connection_summary()
-        .map(|summary| sanitize_status_dialog_text(&summary.one_line()));
-    let acp_state = app
-        .acp_connection_state()
-        .map(|state| sanitize_status_dialog_text(&state.one_line()));
-    let acp_session = app
-        .acp_session_info()
-        .map(|session| sanitize_status_dialog_text(&session.one_line()));
-    let acp_last_connect = app
-        .acp_last_connect()
-        .map(|outcome| sanitize_status_dialog_text(&outcome.one_line()));
-    let acp_last_bind = app
-        .acp_last_bind()
-        .map(|outcome| sanitize_status_dialog_text(&outcome.one_line()));
-    let edit_attribution = app
-        .edit_attribution_summary()
-        .map(|summary| sanitize_status_dialog_text(&summary.one_line()));
-    let edit_attribution_first = app
-        .edit_attribution_first_line()
-        .map(sanitize_status_dialog_text);
-    let edit_attribution_last = app
-        .edit_attribution_last_line()
-        .map(sanitize_status_dialog_text);
+    sanitized_one_lines!(app;
+        foreign_import_last => foreign_import_last_outcome,
+        jujutsu => jujutsu_probe,
+        jujutsu_cli => jujutsu_cli,
+        jujutsu_workspace => jujutsu_workspace,
+        jujutsu_last_command => jujutsu_last_command,
+        sandbox => sandbox_fs_plan_summary,
+        landlock => landlock_support,
+        os_sandbox_profiles => os_sandbox_profiles_summary,
+        sandbox_last_prepare => sandbox_last_prepare,
+        acp => acp_connection_summary,
+        acp_state => acp_connection_state,
+        acp_session => acp_session_info,
+        acp_last_connect => acp_last_connect,
+        acp_last_bind => acp_last_bind,
+        edit_attribution => edit_attribution_summary,
+    );
     let plan_view = {
         let summary = app.plan_view_summary();
         let line = summary.one_line();
@@ -1066,184 +910,7 @@ fn append_status_dialog_operator_section(
         summary.dashboard_one_line(),
         theme,
     ));
-    append_optional_status_dialog_rows(
-        lines,
-        &[
-            ("Crash/recovery", summary.crash_or_recovery.as_deref()),
-            ("Fallback", summary.provider_fallback.as_deref()),
-            ("Fallback chain", summary.fallback_chain.as_deref()),
-            ("Fallback outcome", summary.fallback_outcome.as_deref()),
-            ("Fallback banner", summary.fallback_banner.as_deref()),
-            ("Fallback models", summary.fallback_models.as_deref()),
-        ],
-        theme,
-    );
-    lines.push(status_dialog_plain_line(
-        format!(
-            "Demote focus: {}",
-            summary
-                .demote_handle
-                .as_deref()
-                .unwrap_or("none (Ctrl+B bulk when available)")
-        ),
-        theme,
-    ));
-    append_optional_status_dialog_rows(
-        lines,
-        &[
-            ("Demote outcomes", summary.demote_outcomes.as_deref()),
-            ("Demote last", summary.demote_last.as_deref()),
-            ("Demote last task", summary.demote_last_task.as_deref()),
-        ],
-        theme,
-    );
-    let settings_line = if summary.settings_bound {
-        format!(
-            "Settings: bound, {}/{} writable editable (registry {})",
-            summary.settings_editable, summary.settings_writable_paths, summary.settings_total
-        )
-    } else {
-        format!(
-            "Settings: unbound, {} write paths (registry {})",
-            summary.settings_writable_paths, summary.settings_total
-        )
-    };
-    lines.push(status_dialog_plain_line(settings_line, theme));
-    append_optional_status_dialog_rows(
-        lines,
-        &[
-            ("Settings registry", summary.settings_registry.as_deref()),
-            ("Crash scan", summary.crash_scan.as_deref()),
-            ("Crash recovery", summary.crash_recovery_next.as_deref()),
-            (
-                "Crash recovery action",
-                summary.crash_recovery_action.as_deref(),
-            ),
-            (
-                "Crash recovery report",
-                summary.crash_recovery_report.as_deref(),
-            ),
-            ("Teams", summary.teams.as_deref()),
-            ("Team create", summary.team_last_create.as_deref()),
-            ("Team first", summary.team_first.as_deref()),
-            ("Team send", summary.team_last_send.as_deref()),
-            ("Team mailbox last", summary.team_last_message.as_deref()),
-            ("Team add-member", summary.team_add_member.as_deref()),
-            ("Team cancel", summary.team_cancel.as_deref()),
-            ("Cron", summary.cron.as_deref()),
-            ("Cron register", summary.cron_last_register.as_deref()),
-            ("Cron first", summary.cron_first_schedule.as_deref()),
-            ("Cron remove", summary.cron_last_remove.as_deref()),
-            ("Workspace hub", summary.workspace_hub.as_deref()),
-            (
-                "Workspace hub availability",
-                summary.workspace_hub_availability.as_deref(),
-            ),
-            (
-                "Workspace hub connect",
-                summary.workspace_hub_connect.as_deref(),
-            ),
-            ("Workspace hub bind", summary.workspace_hub_bind.as_deref()),
-            (
-                "Workspace hub upload",
-                summary.workspace_hub_upload.as_deref(),
-            ),
-            (
-                "Workspace hub recover",
-                summary.workspace_hub_recover.as_deref(),
-            ),
-            ("Graph batch", summary.graph_batch.as_deref()),
-            ("Graph query last", summary.graph_query_last.as_deref()),
-            ("Graph batch first", summary.graph_batch_first.as_deref()),
-            ("Persistent graph", summary.persistent_graph.as_deref()),
-            ("COW clone", summary.cow_clone.as_deref()),
-            ("COW clone last", summary.cow_clone_last.as_deref()),
-            ("COW fastpath", summary.cow_fastpath.as_deref()),
-            ("Browser OIDC", summary.browser_oidc.as_deref()),
-            (
-                "Browser OIDC availability",
-                summary.browser_oidc_availability.as_deref(),
-            ),
-            ("Browser OIDC start", summary.browser_oidc_start.as_deref()),
-            (
-                "Browser OIDC complete",
-                summary.browser_oidc_complete.as_deref(),
-            ),
-            ("MCP OAuth", summary.mcp_oauth.as_deref()),
-            (
-                "MCP OAuth remote availability",
-                summary.mcp_oauth_remote_availability.as_deref(),
-            ),
-            ("MCP OAuth begin", summary.mcp_oauth_begin.as_deref()),
-            ("MCP OAuth exchange", summary.mcp_oauth_exchange.as_deref()),
-            ("MCP OAuth open", summary.mcp_oauth_open.as_deref()),
-            ("Sleep/wake", summary.sleep_wake.as_deref()),
-            ("Sleep/wake policy", summary.sleep_wake_policy.as_deref()),
-            ("Sleep/wake last", summary.sleep_wake_last.as_deref()),
-            (
-                "Sleep/wake decision",
-                summary.sleep_wake_decision.as_deref(),
-            ),
-            (
-                "Sleep/wake availability",
-                summary.sleep_wake_availability.as_deref(),
-            ),
-            ("Binary update", summary.binary_update.as_deref()),
-            (
-                "Binary update policy",
-                summary.binary_update_policy.as_deref(),
-            ),
-            (
-                "Binary update check",
-                summary.binary_update_check.as_deref(),
-            ),
-            ("Binary version", summary.binary_version.as_deref()),
-            ("Foreign discover", summary.foreign_discover.as_deref()),
-            ("Foreign import", summary.foreign_import_next.as_deref()),
-            (
-                "Foreign import last",
-                summary.foreign_import_last.as_deref(),
-            ),
-            ("Jujutsu", summary.jujutsu.as_deref()),
-            ("Jujutsu CLI", summary.jujutsu_cli.as_deref()),
-            ("Jujutsu workspace", summary.jujutsu_workspace.as_deref()),
-            (
-                "Jujutsu command last",
-                summary.jujutsu_last_command.as_deref(),
-            ),
-            ("Sandbox", summary.sandbox.as_deref()),
-            ("Landlock", summary.landlock.as_deref()),
-            (
-                "OS sandbox profiles",
-                summary.os_sandbox_profiles.as_deref(),
-            ),
-            (
-                "OS sandbox first profile",
-                summary.os_sandbox_first_profile.as_deref(),
-            ),
-            (
-                "Sandbox prepare last",
-                summary.sandbox_last_prepare.as_deref(),
-            ),
-            ("ACP", summary.acp.as_deref()),
-            ("ACP state", summary.acp_state.as_deref()),
-            ("ACP session", summary.acp_session.as_deref()),
-            ("ACP connect", summary.acp_last_connect.as_deref()),
-            ("ACP bind", summary.acp_last_bind.as_deref()),
-            ("Edit attribution", summary.edit_attribution.as_deref()),
-            (
-                "Edit attribution first",
-                summary.edit_attribution_first.as_deref(),
-            ),
-            (
-                "Edit attribution last",
-                summary.edit_attribution_last.as_deref(),
-            ),
-            ("Plan view", summary.plan_view.as_deref()),
-            ("Plan view first", summary.plan_view_first.as_deref()),
-        ],
-        theme,
-    );
+    summary.append_rows(lines, theme);
 }
 
 fn append_status_dialog_mcp_section(

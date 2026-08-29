@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use super::*;
+use crate::app::task_child_session_id_from_output;
 use crate::text::{
     has_trimmed_content, trimmed_json_nested_string_field, trimmed_json_string_field,
 };
@@ -443,7 +444,7 @@ fn subagent_child_session_id(tool_call: &crate::app::ToolCallEntry) -> Option<St
         .lineage
         .as_ref()
         .and_then(|lineage| lineage.child_session_id.clone())
-        .or_else(|| subagent_child_session_id_from_output(tool_call.output_json.as_ref()))
+        .or_else(|| task_child_session_id_from_output(tool_call.output_json.as_ref()))
 }
 
 fn subagent_child_request_id(tool_call: &crate::app::ToolCallEntry) -> Option<String> {
@@ -452,38 +453,6 @@ fn subagent_child_request_id(tool_call: &crate::app::ToolCallEntry) -> Option<St
         .as_ref()
         .and_then(|lineage| lineage.child_request_id.clone())
         .or_else(|| subagent_child_request_id_from_output(tool_call.output_json.as_ref()))
-}
-
-fn subagent_child_session_id_from_output(
-    output_json: Option<&serde_json::Value>,
-) -> Option<String> {
-    trimmed_json_string_field(
-        output_json,
-        &[
-            "child_session_id",
-            "session_id",
-            "task_id",
-            "childSessionId",
-            "sessionId",
-            "taskId",
-        ],
-    )
-    .or_else(|| trimmed_json_nested_string_field(output_json, &["child_session", "session_id"]))
-    .or_else(|| trimmed_json_nested_string_field(output_json, &["childSession", "sessionId"]))
-    .or_else(|| trimmed_json_nested_string_field(output_json, &["metadata", "sessionId"]))
-    .or_else(|| trimmed_json_nested_string_field(output_json, &["metadata", "session_id"]))
-    .or_else(|| trimmed_json_nested_string_field(output_json, &["lineage", "child_session_id"]))
-    .or_else(|| trimmed_json_nested_string_field(output_json, &["lineage", "session_id"]))
-    .or_else(|| trimmed_json_nested_string_field(output_json, &["lineage", "sessionId"]))
-    .or_else(|| {
-        trimmed_json_nested_string_field(output_json, &["_harness", "lineage", "child_session_id"])
-    })
-    .or_else(|| {
-        trimmed_json_nested_string_field(output_json, &["_harness", "lineage", "session_id"])
-    })
-    .or_else(|| {
-        trimmed_json_nested_string_field(output_json, &["_harness", "lineage", "sessionId"])
-    })
 }
 
 fn subagent_child_request_id_from_output(

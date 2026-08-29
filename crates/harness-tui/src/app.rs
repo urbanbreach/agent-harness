@@ -215,9 +215,9 @@ pub use self::tool_call::{
     EditDisplayStatus, EditEntry, TaskLineageEntry, ToolArtifactEntry, ToolCallDisplayStatus,
     ToolCallEntry, ToolCallPresentation, ToolCallPresentationStatus,
 };
+pub(crate) use self::tool_output::task_child_session_id_from_output;
 use self::tool_output::{
-    json_string_field, task_child_request_id_from_output, task_child_session_id_from_output,
-    tool_call_has_expandable_output,
+    json_string_field, task_child_request_id_from_output, tool_call_has_expandable_output,
 };
 pub use self::transcript_state::TranscriptInteractionSnapshot;
 pub(crate) use self::transcript_state::{ToastState, ToastVariant};

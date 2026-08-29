@@ -419,16 +419,11 @@ pub(in crate::ui) fn question_permission_body_text(
     let active_row_style = Style::default()
         .fg(theme.question_prompt.primary)
         .bg(theme.question_prompt.selected);
-    let active_number_style = active_row_style
-        .fg(question_accent)
-        .add_modifier(Modifier::BOLD);
-    let active_label_style = active_row_style.add_modifier(Modifier::BOLD);
     let selected_style = Style::default()
         .fg(theme.question_prompt.primary)
         .bg(surface)
         .add_modifier(Modifier::BOLD);
     let error_style = Style::default().fg(theme.status.error).bg(surface);
-    let glyphs = theme.live_shell.transcript_glyphs;
     let tab = app
         .question_prompt_tab(&permission.permission_id)
         .min(prompts.len().saturating_sub(1));
@@ -503,32 +498,9 @@ pub(in crate::ui) fn question_permission_body_text(
         let picked = current_answers.iter().any(|value| value == &option.label);
         let active = index == selected;
         let hovered = hovered == Some(index);
-        let row_background = if hovered {
-            theme.surface.hover
-        } else if active {
-            theme.question_prompt.selected
-        } else {
-            surface
-        };
-        let marker = if prompt.multiple {
-            if picked {
-                "[x]".to_string()
-            } else {
-                "[ ]".to_string()
-            }
-        } else if picked {
-            format!("({})", glyphs.choice_selected)
-        } else {
-            format!("({})", glyphs.choice_unselected)
-        };
-        let row_style = (if active {
-            active_label_style
-        } else if picked {
-            selected_style
-        } else {
-            primary_style
-        })
-        .bg(row_background);
+        let row_background = question_row_background(theme, surface, hovered, active);
+        let marker = question_choice_marker(theme, prompt.multiple, picked);
+        let row_style = question_row_style(theme, row_background, active, picked);
         let number_style = Style::default().fg(question_accent).bg(row_background);
         let marker_style = (if picked { selected_style } else { muted_style }).bg(row_background);
         let shortcut =
@@ -634,70 +606,20 @@ pub(in crate::ui) fn question_permission_body_text(
         }
     }
 
-    if prompt.custom {
-        let custom_value = app
-            .question_prompt_custom(&permission.permission_id, tab)
-            .unwrap_or_default();
-        let picked = app.question_prompt_custom_selected(&permission.permission_id, tab);
-        let active = selected == prompt.options.len();
-        let hovered = hovered == Some(prompt.options.len());
-        let row_background = if hovered {
-            theme.surface.hover
-        } else if active {
-            theme.question_prompt.selected
-        } else {
-            surface
-        };
-        let marker = if prompt.multiple {
-            if picked {
-                "[x]".to_string()
-            } else {
-                "[ ]".to_string()
-            }
-        } else if picked {
-            format!("({})", glyphs.choice_selected)
-        } else {
-            format!("({})", glyphs.choice_unselected)
-        };
-        let row_style = (if active {
-            active_label_style
-        } else if picked {
-            selected_style
-        } else {
-            primary_style
-        })
-        .bg(row_background);
-        let number_style = (if active {
-            active_number_style
-        } else {
-            Style::default().fg(question_accent).bg(surface)
-        })
-        .bg(row_background);
-        let editing = app.question_prompt_editing(&permission.permission_id) && active;
-        let (text, text_style) = if editing {
-            (
-                format!(
-                    "{} {}",
-                    glyphs.user_marker,
-                    app.question_answer_preview(&permission.permission_id)
-                ),
-                row_style,
-            )
-        } else if picked {
-            (format!("{} {custom_value}", glyphs.user_marker), row_style)
-        } else if !custom_value.is_empty() {
-            (custom_value.to_string(), muted_style.bg(row_background))
-        } else {
-            ("Type your answer here".to_string(), row_style)
-        };
-        lines.push(truncate_question_line_with_ellipsis(
-            Line::from(vec![
-                Span::styled(format!("z {marker} "), number_style),
-                Span::styled(text, text_style),
-            ])
-            .style(Style::default().bg(row_background)),
-            usize::from(content_width.max(1)),
-        ));
+    if let Some(custom_row) = question_custom_row(
+        app,
+        permission,
+        prompt,
+        theme,
+        QuestionCustomRowLayout {
+            surface,
+            content_width,
+            tab,
+            selected,
+            hovered,
+        },
+    ) {
+        lines.push(custom_row);
     }
 
     if let Some(error) = app.question_answer_error(&permission.permission_id) {
@@ -709,6 +631,114 @@ pub(in crate::ui) fn question_permission_body_text(
     }
 
     Text::from(lines)
+}
+
+fn question_row_background(theme: &Theme, surface: Color, hovered: bool, active: bool) -> Color {
+    if hovered {
+        theme.surface.hover
+    } else if active {
+        theme.question_prompt.selected
+    } else {
+        surface
+    }
+}
+
+fn question_choice_marker(theme: &Theme, multiple: bool, picked: bool) -> String {
+    if multiple {
+        return if picked { "[x]" } else { "[ ]" }.to_string();
+    }
+    let glyphs = theme.live_shell.transcript_glyphs;
+    format!(
+        "({})",
+        if picked {
+            glyphs.choice_selected
+        } else {
+            glyphs.choice_unselected
+        }
+    )
+}
+
+fn question_row_style(theme: &Theme, background: Color, active: bool, picked: bool) -> Style {
+    let style = Style::default()
+        .fg(theme.question_prompt.primary)
+        .bg(background);
+    if active || picked {
+        style.add_modifier(Modifier::BOLD)
+    } else {
+        style
+    }
+}
+
+struct QuestionCustomRowLayout {
+    surface: Color,
+    content_width: u16,
+    tab: usize,
+    selected: usize,
+    hovered: Option<usize>,
+}
+
+fn question_custom_row(
+    app: &AppState,
+    permission: &crate::app::ActivePermissionView,
+    prompt: &crate::app::QuestionPromptView,
+    theme: &Theme,
+    layout: QuestionCustomRowLayout,
+) -> Option<Line<'static>> {
+    if !prompt.custom {
+        return None;
+    }
+    let custom_value = app
+        .question_prompt_custom(&permission.permission_id, layout.tab)
+        .unwrap_or_default();
+    let picked = app.question_prompt_custom_selected(&permission.permission_id, layout.tab);
+    let active = layout.selected == prompt.options.len();
+    let background = question_row_background(
+        theme,
+        layout.surface,
+        layout.hovered == Some(prompt.options.len()),
+        active,
+    );
+    let marker = question_choice_marker(theme, prompt.multiple, picked);
+    let row_style = question_row_style(theme, background, active, picked);
+    let number_style = Style::default()
+        .fg(ui_chrome::question_prompt_accent(theme))
+        .bg(background)
+        .add_modifier(if active {
+            Modifier::BOLD
+        } else {
+            Modifier::empty()
+        });
+    let editing = app.question_prompt_editing(&permission.permission_id) && active;
+    let glyphs = theme.live_shell.transcript_glyphs;
+    let (text, text_style) = if editing {
+        (
+            format!(
+                "{} {}",
+                glyphs.user_marker,
+                app.question_answer_preview(&permission.permission_id)
+            ),
+            row_style,
+        )
+    } else if picked {
+        (format!("{} {custom_value}", glyphs.user_marker), row_style)
+    } else if !custom_value.is_empty() {
+        (
+            custom_value.to_string(),
+            Style::default()
+                .fg(theme.question_prompt.secondary)
+                .bg(background),
+        )
+    } else {
+        ("Type your answer here".to_string(), row_style)
+    };
+    Some(truncate_question_line_with_ellipsis(
+        Line::from(vec![
+            Span::styled(format!("z {marker} "), number_style),
+            Span::styled(text, text_style),
+        ])
+        .style(Style::default().bg(background)),
+        usize::from(layout.content_width.max(1)),
+    ))
 }
 
 #[derive(Debug, Clone)]

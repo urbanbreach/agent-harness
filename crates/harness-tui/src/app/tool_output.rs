@@ -11,7 +11,7 @@ pub(super) fn json_string_field(
     trimmed_json_string_field(output_json, keys)
 }
 
-pub(super) fn task_child_session_id_from_output(
+pub(crate) fn task_child_session_id_from_output(
     output_json: Option<&serde_json::Value>,
 ) -> Option<String> {
     trimmed_json_string_field(
