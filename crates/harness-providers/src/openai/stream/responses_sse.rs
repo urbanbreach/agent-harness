@@ -1,6 +1,9 @@
 use tokio::sync::mpsc;
 
-use crate::{CompletionUsage, ProviderStreamEvent, ProviderStreamStartMetadata};
+use crate::{
+    CompletionUsage, ProviderStreamEvent, ProviderStreamFinishedMetadata,
+    ProviderStreamStartMetadata,
+};
 
 use super::super::sse::next_sse_event;
 use super::super::stream_event::{
@@ -14,21 +17,22 @@ use super::super::tool_call::{
     handle_responses_tool_item_added, handle_responses_tool_item_done, ResponsesToolCallState,
 };
 use super::super::transport::OpenAiHttpResponse;
-use super::{warn_stream_processing_failure, warn_stream_send_failure};
+use super::{send_optional_delta, send_stream_event, warn_stream_processing_failure};
 
 pub(super) async fn consume_responses_sse_stream(
     response: OpenAiHttpResponse,
     tx: mpsc::Sender<ProviderStreamEvent>,
     start_metadata: Option<ProviderStreamStartMetadata>,
 ) {
-    if tx
-        .send(ProviderStreamEvent::Started {
+    if !send_stream_event(
+        &tx,
+        ProviderStreamEvent::Started {
             metadata: start_metadata.clone(),
-        })
-        .await
-        .is_err()
+        },
+        "responses.start",
+    )
+    .await
     {
-        warn_stream_send_failure("responses.start");
         return;
     }
 
@@ -45,15 +49,9 @@ pub(super) async fn consume_responses_sse_stream(
             Ok(Some(event)) => event,
             Ok(None) => break,
             Err(message) => {
-                warn_stream_processing_failure(
-                    "responses.transport",
-                    &format!("openai_compatible SSE stream transport error: {message}"),
-                );
-                let _ = tx
-                    .send(transport_failure_error(format!(
-                        "openai_compatible SSE stream transport error: {message}"
-                    )))
-                    .await;
+                let message = format!("openai_compatible SSE stream transport error: {message}");
+                warn_stream_processing_failure("responses.transport", &message);
+                let _ = tx.send(transport_failure_error(message)).await;
                 return;
             }
         };
@@ -70,93 +68,45 @@ pub(super) async fn consume_responses_sse_stream(
                 let _ = tx.send(unsupported_tool_call_error(message)).await;
                 return;
             }
-            if tx
-                .send(ProviderStreamEvent::DoneWithMetadata {
+            send_stream_event(
+                &tx,
+                ProviderStreamEvent::DoneWithMetadata {
                     usage,
                     metadata: non_empty_finished_metadata(finished_metadata),
-                })
-                .await
-                .is_err()
-            {
-                warn_stream_send_failure("responses.done");
-            }
+                },
+                "responses.done",
+            )
+            .await;
             return;
         }
 
         let parsed: OpenAiResponsesEvent = match serde_json::from_str(data) {
             Ok(parsed) => parsed,
             Err(err) => {
-                warn_stream_processing_failure(
-                    "responses.invalid_json",
-                    &format!(
-                        "openai_compatible returned invalid SSE JSON chunk: {err}; sample={}",
-                        summarize_sse_data(data)
-                    ),
+                let message = format!(
+                    "openai_compatible returned invalid SSE JSON chunk: {err}; sample={}",
+                    summarize_sse_data(data)
                 );
-                let _ = tx
-                    .send(malformed_stream_error(format!(
-                        "openai_compatible returned invalid SSE JSON chunk: {err}; sample={}",
-                        summarize_sse_data(data)
-                    )))
-                    .await;
+                warn_stream_processing_failure("responses.invalid_json", &message);
+                let _ = tx.send(malformed_stream_error(message)).await;
                 return;
             }
         };
 
         match parsed.event_type.as_str() {
             "response.reasoning_summary_text.delta" => {
-                if let Some(mut delta) = parsed.delta {
-                    if let Some(summary_index) = parsed.summary_index {
-                        let next_key = (parsed.item_id.clone(), summary_index);
-                        let starts_new_summary = reasoning_summary_key
-                            .as_ref()
-                            .is_some_and(|current_key| current_key != &next_key);
-                        reasoning_summary_key = Some(next_key);
-                        if starts_new_summary {
-                            let leading_newlines = delta
-                                .chars()
-                                .take_while(|character| *character == '\n')
-                                .take(2)
-                                .count();
-                            let missing_newlines = 2usize
-                                .saturating_sub(reasoning_trailing_newlines + leading_newlines);
-                            match missing_newlines {
-                                2 => delta.insert_str(0, "\n\n"),
-                                1 => delta.insert(0, '\n'),
-                                _ => {}
-                            }
-                        }
-                    }
-                    reasoning_trailing_newlines =
-                        delta
-                            .chars()
-                            .fold(reasoning_trailing_newlines, |count, character| {
-                                if character == '\n' {
-                                    count.saturating_add(1).min(2)
-                                } else {
-                                    0
-                                }
-                            });
-                    if !delta.is_empty()
-                        && tx
-                            .send(ProviderStreamEvent::ReasoningDelta(delta))
-                            .await
-                            .is_err()
-                    {
-                        return;
-                    }
+                let delta = format_reasoning_delta(
+                    parsed,
+                    &mut reasoning_summary_key,
+                    &mut reasoning_trailing_newlines,
+                );
+                if !send_optional_delta(&tx, delta, ProviderStreamEvent::ReasoningDelta).await {
+                    return;
                 }
             }
             "response.output_text.delta" => {
-                if let Some(delta) = parsed.delta {
-                    if !delta.is_empty()
-                        && tx
-                            .send(ProviderStreamEvent::TextDelta(delta))
-                            .await
-                            .is_err()
-                    {
-                        return;
-                    }
+                if !send_optional_delta(&tx, parsed.delta, ProviderStreamEvent::TextDelta).await {
+                    return;
                 }
             }
             "response.output_item.added" => {
@@ -175,15 +125,7 @@ pub(super) async fn consume_responses_sse_stream(
                 }
             }
             "response.completed" | "response.done" | "response.incomplete" => {
-                finished_metadata.provider_stop_reason = Some(parsed.event_type.clone());
-                if let Some(response) = parsed.response {
-                    response.merge_finished_metadata(&mut finished_metadata);
-                    if let Some(completion_usage) =
-                        response.usage.map(|usage| usage.completion_usage())
-                    {
-                        usage = Some(completion_usage);
-                    }
-                }
+                apply_response_completion(parsed, &mut usage, &mut finished_metadata);
             }
             "response.error" => {
                 warn_stream_processing_failure(
@@ -206,15 +148,64 @@ pub(super) async fn consume_responses_sse_stream(
         let _ = tx.send(unsupported_tool_call_error(message)).await;
         return;
     }
-    if tx
-        .send(ProviderStreamEvent::DoneWithMetadata {
+    send_stream_event(
+        &tx,
+        ProviderStreamEvent::DoneWithMetadata {
             usage,
             metadata: non_empty_finished_metadata(finished_metadata),
-        })
-        .await
-        .is_err()
-    {
-        warn_stream_send_failure("responses.done_after_stream_end");
+        },
+        "responses.done_after_stream_end",
+    )
+    .await;
+}
+
+fn format_reasoning_delta(
+    parsed: OpenAiResponsesEvent,
+    summary_key: &mut Option<(Option<String>, usize)>,
+    trailing_newlines: &mut usize,
+) -> Option<String> {
+    let mut delta = parsed.delta?;
+    if let Some(summary_index) = parsed.summary_index {
+        let next_key = (parsed.item_id, summary_index);
+        let starts_new_summary = summary_key
+            .as_ref()
+            .is_some_and(|current_key| current_key != &next_key);
+        *summary_key = Some(next_key);
+        if starts_new_summary {
+            let leading_newlines = delta
+                .chars()
+                .take_while(|character| *character == '\n')
+                .take(2)
+                .count();
+            match 2usize.saturating_sub(*trailing_newlines + leading_newlines) {
+                2 => delta.insert_str(0, "\n\n"),
+                1 => delta.insert(0, '\n'),
+                _ => {}
+            }
+        }
+    }
+    *trailing_newlines = delta.chars().fold(*trailing_newlines, |count, character| {
+        if character == '\n' {
+            count.saturating_add(1).min(2)
+        } else {
+            0
+        }
+    });
+    Some(delta)
+}
+
+fn apply_response_completion(
+    parsed: OpenAiResponsesEvent,
+    usage: &mut Option<CompletionUsage>,
+    finished_metadata: &mut ProviderStreamFinishedMetadata,
+) {
+    finished_metadata.provider_stop_reason = Some(parsed.event_type);
+    let Some(response) = parsed.response else {
+        return;
+    };
+    response.merge_finished_metadata(finished_metadata);
+    if let Some(completion_usage) = response.usage.map(|usage| usage.completion_usage()) {
+        *usage = Some(completion_usage);
     }
 }
 

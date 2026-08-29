@@ -1,153 +1,62 @@
 use super::*;
 
 #[tokio::test]
-async fn chat_sse_stream_without_usage_chunk_emits_done_with_usage_none() {
-    // arrange: an SSE transcript whose chunks contain no usage object
-    let transport =
-        ScriptedOpenAiTransport::new([ScriptedOpenAiResponse::sse(no_usage_sse_transcript())]);
-    let provider = provider_for_transport(Arc::clone(&transport), "test-secret-key");
+async fn chat_sse_stream_reports_usage_for_supported_shapes() {
+    // arrange
+    let cases = [
+        ("no usage chunk", no_usage_sse_transcript(), None),
+        (
+            "final usage chunk",
+            deterministic_sse_transcript(),
+            Some(CompletionUsage {
+                prompt_tokens: 4,
+                completion_tokens: 2,
+                total_tokens: 6,
+            }),
+        ),
+        (
+            "zero total token fallback",
+            zero_total_tokens_sse_transcript(),
+            Some(CompletionUsage {
+                prompt_tokens: 100,
+                completion_tokens: 50,
+                total_tokens: 150,
+            }),
+        ),
+        (
+            "usage after finish reason",
+            usage_after_finish_sse_transcript(),
+            Some(CompletionUsage {
+                prompt_tokens: 4,
+                completion_tokens: 2,
+                total_tokens: 6,
+            }),
+        ),
+        (
+            "usage after finish reason without sentinel",
+            usage_after_finish_no_done_sse_transcript(),
+            Some(CompletionUsage {
+                prompt_tokens: 3,
+                completion_tokens: 1,
+                total_tokens: 4,
+            }),
+        ),
+    ];
 
-    // act: collect the provider stream events
-    let events = collect_events(&provider, basic_request("gpt-4o-mini")).await;
+    for (name, transcript, expected) in cases {
+        let transport = ScriptedOpenAiTransport::new([ScriptedOpenAiResponse::sse(transcript)]);
+        let provider = provider_for_transport(transport, "test-secret-key");
 
-    // assert: the terminating DoneWithMetadata event has usage: None
-    let done = events
-        .iter()
-        .find(|event| matches!(event, ProviderStreamEvent::DoneWithMetadata { .. }));
-    let usage =
-        match done.unwrap_or_else(|| panic!("expected DoneWithMetadata event, got: {events:?}")) {
-            ProviderStreamEvent::DoneWithMetadata { usage, .. } => usage,
-            other => panic!("expected DoneWithMetadata event, got: {other:?}"),
-        };
-    assert_eq!(
-        *usage, None,
-        "usage should be None when no usage chunk is emitted"
-    );
-}
+        // act
+        let events = collect_events(&provider, basic_request("gpt-4o-mini")).await;
 
-#[tokio::test]
-async fn chat_sse_stream_with_usage_chunk_emits_done_with_usage_some() {
-    // arrange: an SSE transcript whose final chunk contains usage
-    let transport =
-        ScriptedOpenAiTransport::new([ScriptedOpenAiResponse::sse(deterministic_sse_transcript())]);
-    let provider = provider_for_transport(Arc::clone(&transport), "test-secret-key");
-
-    // act: collect the provider stream events
-    let events = collect_events(&provider, basic_request("gpt-4o-mini")).await;
-
-    // assert: the terminating DoneWithMetadata event carries the reported usage
-    let done = events
-        .iter()
-        .find(|event| matches!(event, ProviderStreamEvent::DoneWithMetadata { .. }));
-    let usage =
-        match done.unwrap_or_else(|| panic!("expected DoneWithMetadata event, got: {events:?}")) {
-            ProviderStreamEvent::DoneWithMetadata { usage, .. } => usage,
-            other => panic!("expected DoneWithMetadata event, got: {other:?}"),
-        };
-    assert_eq!(
-        *usage,
-        Some(CompletionUsage {
-            prompt_tokens: 4,
-            completion_tokens: 2,
-            total_tokens: 6,
-        }),
-        "usage should be Some when a usage chunk is emitted"
-    );
-}
-
-#[tokio::test]
-async fn chat_sse_stream_with_zero_total_tokens_falls_back_to_prompt_plus_completion() {
-    // arrange: an SSE transcript whose final chunk reports total_tokens: 0
-    // but non-zero prompt_tokens and completion_tokens
-    let transport = ScriptedOpenAiTransport::new([ScriptedOpenAiResponse::sse(
-        zero_total_tokens_sse_transcript(),
-    )]);
-    let provider = provider_for_transport(Arc::clone(&transport), "test-secret-key");
-
-    // act: collect the provider stream events
-    let events = collect_events(&provider, basic_request("gpt-4o-mini")).await;
-
-    // assert: total_tokens falls back to prompt_tokens + completion_tokens
-    let done = events
-        .iter()
-        .find(|event| matches!(event, ProviderStreamEvent::DoneWithMetadata { .. }));
-    let usage =
-        match done.unwrap_or_else(|| panic!("expected DoneWithMetadata event, got: {events:?}")) {
-            ProviderStreamEvent::DoneWithMetadata { usage, .. } => usage,
-            other => panic!("expected DoneWithMetadata event, got: {other:?}"),
-        };
-    assert_eq!(
-        *usage,
-        Some(CompletionUsage {
-            prompt_tokens: 100,
-            completion_tokens: 50,
-            total_tokens: 150,
-        }),
-        "total_tokens should fall back to prompt + completion when provider reports 0"
-    );
-}
-
-#[tokio::test]
-async fn chat_sse_stream_with_usage_chunk_after_finish_reason_emits_usage() {
-    // arrange: an SSE transcript following the standard OpenAI streaming protocol
-    // where usage arrives in a separate chunk AFTER the finish_reason chunk.
-    let transport = ScriptedOpenAiTransport::new([ScriptedOpenAiResponse::sse(
-        usage_after_finish_sse_transcript(),
-    )]);
-    let provider = provider_for_transport(Arc::clone(&transport), "test-secret-key");
-
-    // act: collect the provider stream events
-    let events = collect_events(&provider, basic_request("gpt-4o-mini")).await;
-
-    // assert: the terminating DoneWithMetadata event carries the reported usage
-    let done = events
-        .iter()
-        .find(|event| matches!(event, ProviderStreamEvent::DoneWithMetadata { .. }));
-    let usage =
-        match done.unwrap_or_else(|| panic!("expected DoneWithMetadata event, got: {events:?}")) {
-            ProviderStreamEvent::DoneWithMetadata { usage, .. } => usage,
-            other => panic!("expected DoneWithMetadata event, got: {other:?}"),
-        };
-    assert_eq!(
-        *usage,
-        Some(CompletionUsage {
-            prompt_tokens: 4,
-            completion_tokens: 2,
-            total_tokens: 6,
-        }),
-        "usage should be Some when a separate usage chunk arrives after finish_reason"
-    );
-}
-
-#[tokio::test]
-async fn chat_sse_stream_with_usage_chunk_after_finish_reason_no_done_sentinel_emits_usage() {
-    // arrange: same separate-usage shape but the stream ends without a [DONE] sentinel
-    let transport = ScriptedOpenAiTransport::new([ScriptedOpenAiResponse::sse(
-        usage_after_finish_no_done_sse_transcript(),
-    )]);
-    let provider = provider_for_transport(Arc::clone(&transport), "test-secret-key");
-
-    // act: collect the provider stream events
-    let events = collect_events(&provider, basic_request("gpt-4o-mini")).await;
-
-    // assert: the terminating DoneWithMetadata event carries the reported usage
-    let done = events
-        .iter()
-        .find(|event| matches!(event, ProviderStreamEvent::DoneWithMetadata { .. }));
-    let usage =
-        match done.unwrap_or_else(|| panic!("expected DoneWithMetadata event, got: {events:?}")) {
-            ProviderStreamEvent::DoneWithMetadata { usage, .. } => usage,
-            other => panic!("expected DoneWithMetadata event, got: {other:?}"),
-        };
-    assert_eq!(
-        *usage,
-        Some(CompletionUsage {
-            prompt_tokens: 3,
-            completion_tokens: 1,
-            total_tokens: 4,
-        }),
-        "usage should be Some when usage chunk arrives after finish_reason without [DONE]"
-    );
+        // assert
+        let usage = events.iter().find_map(|event| match event {
+            ProviderStreamEvent::DoneWithMetadata { usage, .. } => Some(usage),
+            _ => None,
+        });
+        assert_eq!(usage, Some(&expected), "{name}: events={events:?}");
+    }
 }
 
 fn zero_total_tokens_sse_transcript() -> String {
