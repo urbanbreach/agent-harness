@@ -79,563 +79,156 @@ pub(super) struct CommandMetadata {
     pub(super) description: &'static str,
 }
 
-const COMMAND_METADATA: &[CommandMetadata] = &[
-    CommandMetadata {
-        id: "palette",
-        label: "Command palette",
-        description: "Browse and run available commands",
-    },
-    CommandMetadata {
-        id: "new_session",
-        label: "New session",
-        description: "Start a fresh live session",
-    },
-    CommandMetadata {
-        id: "resume_session",
-        label: "Continue session",
-        description: "Continue a prior session when resumable",
-    },
-    CommandMetadata {
-        id: "replay_session",
-        label: "Replay session",
-        description: "Replay a previous session as read-only",
-    },
-    CommandMetadata {
-        id: "switch_model",
-        label: "Switch model",
-        description: "Browse available provider/model options",
-    },
-    CommandMetadata {
-        id: "cycle_variant",
-        label: "Cycle reasoning preset",
-        description: "Cycle the configured model variant/reasoning preset",
-    },
-    CommandMetadata {
-        id: "toggles",
-        label: "Toggles",
-        description: "Toggle profiles, tools, hooks, MCP, YOLO",
-    },
-    CommandMetadata {
-        id: "auth",
-        label: "Auth",
-        description: "Manage provider login, logout, and auth status",
-    },
-    CommandMetadata {
-        id: "connect",
-        label: "Connect",
-        description: "Connect a provider",
-    },
-    CommandMetadata {
-        id: "close_review_surface",
-        label: "Session shell",
-        description: "Return to the transcript-first session shell",
-    },
-    CommandMetadata {
-        id: "toggle_terminal_panel",
-        label: "Toggle terminal panel",
-        description: "Show or hide shell command output below the transcript",
-    },
-    CommandMetadata {
-        id: "toggle_follow",
-        label: "Toggle follow",
-        description: "Toggle follow mode",
-    },
-    CommandMetadata {
-        id: "show_thinking",
-        label: "Show thinking",
-        description: "Restore inline thinking rows in the transcript",
-    },
-    CommandMetadata {
-        id: "hide_thinking",
-        label: "Hide thinking",
-        description: "Hide inline thinking rows in the transcript",
-    },
-    CommandMetadata {
-        id: "show_timestamps",
-        label: "Show timestamps",
-        description: "Reveal user message timestamps in the transcript",
-    },
-    CommandMetadata {
-        id: "hide_timestamps",
-        label: "Hide timestamps",
-        description: "Hide user message timestamps in the transcript",
-    },
-    CommandMetadata {
-        id: "show_tool_details",
-        label: "Show tool details",
-        description: "Show completed successful tools in the transcript",
-    },
-    CommandMetadata {
-        id: "hide_tool_details",
-        label: "Hide tool details",
-        description: "Hide completed successful tools in the transcript",
-    },
-    CommandMetadata {
-        id: "show_generic_tool_output",
-        label: "Show generic tool output",
-        description: "Expand generic tool payload blocks in the transcript",
-    },
-    CommandMetadata {
-        id: "hide_generic_tool_output",
-        label: "Hide generic tool output",
-        description: "Collapse generic tool payload blocks in the transcript",
-    },
-    CommandMetadata {
-        id: "expand_selected_turn_results",
-        label: "Expand turn results",
-        description: "Expand overflow tool output in the selected turn",
-    },
-    CommandMetadata {
-        id: "collapse_selected_turn_results",
-        label: "Collapse turn results",
-        description: "Collapse overflow tool output in the selected turn",
-    },
-    CommandMetadata {
-        id: "stack_transcript_diffs",
-        label: "Use stacked diffs",
-        description: "Force unified stacked transcript diffs",
-    },
-    CommandMetadata {
-        id: "split_transcript_diffs",
-        label: "Use split diffs",
-        description: "Allow side-by-side transcript diffs when wide",
-    },
-    CommandMetadata {
-        id: "diff_hunk_next",
-        label: "Next diff hunk",
-        description: "Jump to the next transcript diff hunk",
-    },
-    CommandMetadata {
-        id: "diff_hunk_previous",
-        label: "Previous diff hunk",
-        description: "Jump to the previous transcript diff hunk",
-    },
-    CommandMetadata {
-        id: "focus_next",
-        label: "Next focus",
-        description: "Cycle focus forward",
-    },
-    CommandMetadata {
-        id: "focus_prev",
-        label: "Previous focus",
-        description: "Cycle focus backward",
-    },
-    CommandMetadata {
-        id: "submit_prompt",
-        label: "Submit prompt",
-        description: "Submit the current prompt",
-    },
-    CommandMetadata {
-        id: "insert_newline",
-        label: "Insert newline",
-        description: "Insert newline",
-    },
-    CommandMetadata {
-        id: "clear_prompt",
-        label: "Clear prompt",
-        description: "Clear prompt",
-    },
-    CommandMetadata {
-        id: "move_down",
-        label: "Move down",
-        description: "Move down in list",
-    },
-    CommandMetadata {
-        id: "move_up",
-        label: "Move up",
-        description: "Move up in list",
-    },
-    CommandMetadata {
-        id: "reload",
-        label: "Reload",
-        description: "Reload session",
-    },
-    CommandMetadata {
-        id: "allow_permission",
-        label: "Allow permission",
-        description: "Allow permission",
-    },
-    CommandMetadata {
-        id: "always_approve_permission",
-        label: "Always approve permission",
-        description: "Open always-approve confirm for the active permission",
-    },
-    CommandMetadata {
-        id: "deny_permission",
-        label: "Deny permission",
-        description: "Deny permission",
-    },
-    CommandMetadata {
-        id: "dismiss_modal",
-        label: "Reject permission",
-        description: "Reject permission",
-    },
-    CommandMetadata {
-        id: "history_up",
-        label: "History up",
-        description: "History up",
-    },
-    CommandMetadata {
-        id: "history_down",
-        label: "History down",
-        description: "History down",
-    },
-    CommandMetadata {
-        id: "help",
-        label: "Help",
-        description: "Show shortcuts and TUI controls",
-    },
-    CommandMetadata {
-        id: "quit",
-        label: "Quit",
-        description: "Quit the application",
-    },
-    CommandMetadata {
-        id: "revert_workspace",
-        label: "Revert workspace",
-        description: "Revert workspace to the most recent snapshot",
-    },
-    CommandMetadata {
-        id: "scroll_up",
-        label: "Scroll up",
-        description: "Scroll the active transcript or detail surface up",
-    },
-    CommandMetadata {
-        id: "scroll_down",
-        label: "Scroll down",
-        description: "Scroll the active transcript or detail surface down",
-    },
-    CommandMetadata {
-        id: "half_page_down",
-        label: "Half page down",
-        description: "Scroll the transcript down by half a viewport",
-    },
-    CommandMetadata {
-        id: "cursor_left",
-        label: "Cursor left",
-        description: "Move the composer cursor one character left",
-    },
-    CommandMetadata {
-        id: "cursor_right",
-        label: "Cursor right",
-        description: "Move the composer cursor one character right",
-    },
-    CommandMetadata {
-        id: "backspace",
-        label: "Backspace",
-        description: "Delete the character before the composer cursor",
-    },
-    CommandMetadata {
-        id: "delete",
-        label: "Delete",
-        description: "Delete the character after the composer cursor",
-    },
-    CommandMetadata {
-        id: "toggle_prompt_focus",
-        label: "Toggle prompt focus",
-        description: "Switch focus between the composer and transcript",
-    },
-    CommandMetadata {
-        id: "toggle_tasks",
-        label: "Toggle tasks",
-        description: "Show or hide the task and operator details surface",
-    },
-    CommandMetadata {
-        id: "open_theme_dialog",
-        label: "Theme",
-        description: "Open the theme selector",
-    },
-    CommandMetadata {
-        id: "open_model_switcher",
-        label: "Switch model",
-        description: "Open the model selector",
-    },
-    CommandMetadata {
-        id: "first_message",
-        label: "First message",
-        description: "Jump to the first transcript message",
-    },
-    CommandMetadata {
-        id: "last_message",
-        label: "Last message",
-        description: "Jump to the last transcript message",
-    },
-    CommandMetadata {
-        id: "next_message",
-        label: "Next message",
-        description: "Jump to the next transcript message",
-    },
-    CommandMetadata {
-        id: "previous_message",
-        label: "Previous message",
-        description: "Jump to the previous transcript message",
-    },
-    CommandMetadata {
-        id: "copy_message",
-        label: "Copy message",
-        description: "Copy the selected transcript message",
-    },
-    CommandMetadata {
-        id: "export_session",
-        label: "Export session",
-        description: "Export the current session transcript",
-    },
-    CommandMetadata {
-        id: "open_error_details",
-        label: "Error details",
-        description: "Open details for the selected failed activity",
-    },
-    CommandMetadata {
-        id: "open_session_history",
-        label: "Session history",
-        description: "Browse saved sessions",
-    },
-    CommandMetadata {
-        id: "slash_new",
-        label: "New",
-        description: "Return to the home shell",
-    },
-    CommandMetadata {
-        id: "slash_sessions",
-        label: "Sessions",
-        description: "Switch session",
-    },
-    CommandMetadata {
-        id: "slash_resume",
-        label: "Resume",
-        description: "Continue a saved session",
-    },
-    CommandMetadata {
-        id: "slash_replay",
-        label: "Replay",
-        description: "Replay a saved session",
-    },
-    CommandMetadata {
-        id: "slash_fork",
-        label: "Fork",
-        description: "Fork session",
-    },
-    CommandMetadata {
-        id: "slash_tree",
-        label: "Tree",
-        description: "View the Harness session tree",
-    },
-    CommandMetadata {
-        id: "slash_clone",
-        label: "Clone",
-        description: "Prepare a Harness session clone",
-    },
-    CommandMetadata {
-        id: "slash_status",
-        label: "Status",
-        description: "View status",
-    },
-    CommandMetadata {
-        id: "slash_compact",
-        label: "Compact",
-        description: "Write a manual context checkpoint",
-    },
-    CommandMetadata {
-        id: "slash_rename",
-        label: "Rename",
-        description: "Rename the current session",
-    },
-    CommandMetadata {
-        id: "select_char_left",
-        label: "Select char left",
-        description: "Extend selection one char left",
-    },
-    CommandMetadata {
-        id: "select_char_right",
-        label: "Select char right",
-        description: "Extend selection one char right",
-    },
-    CommandMetadata {
-        id: "select_word_left",
-        label: "Select word left",
-        description: "Extend selection one word left",
-    },
-    CommandMetadata {
-        id: "select_word_right",
-        label: "Select word right",
-        description: "Extend selection one word right",
-    },
-    CommandMetadata {
-        id: "select_line",
-        label: "Select line",
-        description: "Select the current line",
-    },
-    CommandMetadata {
-        id: "select_all",
-        label: "Select all",
-        description: "Select the entire prompt buffer",
-    },
-    CommandMetadata {
-        id: "move_word_left",
-        label: "Move word left",
-        description: "Move cursor one word left",
-    },
-    CommandMetadata {
-        id: "move_word_right",
-        label: "Move word right",
-        description: "Move cursor one word right",
-    },
-    CommandMetadata {
-        id: "move_line_start",
-        label: "Move line start",
-        description: "Move cursor to line start",
-    },
-    CommandMetadata {
-        id: "move_line_end",
-        label: "Move line end",
-        description: "Move cursor to line end",
-    },
-    CommandMetadata {
-        id: "move_buffer_start",
-        label: "Move buffer start",
-        description: "Move cursor to buffer start",
-    },
-    CommandMetadata {
-        id: "move_buffer_end",
-        label: "Move buffer end",
-        description: "Move cursor to buffer end",
-    },
-    CommandMetadata {
-        id: "delete_word_forward",
-        label: "Delete word forward",
-        description: "Delete the word after the cursor",
-    },
-    CommandMetadata {
-        id: "delete_word_backward",
-        label: "Delete word backward",
-        description: "Delete the word before the cursor",
-    },
-    CommandMetadata {
-        id: "delete_line",
-        label: "Delete line",
-        description: "Delete the current line",
-    },
-    CommandMetadata {
-        id: "kill_to_line_start",
-        label: "Kill to line start",
-        description: "Delete from cursor to line start",
-    },
-    CommandMetadata {
-        id: "kill_to_line_end",
-        label: "Kill to line end",
-        description: "Delete from cursor to line end",
-    },
-    CommandMetadata {
-        id: "undo",
-        label: "Undo",
-        description: "Undo the last edit",
-    },
-    CommandMetadata {
-        id: "redo",
-        label: "Redo",
-        description: "Redo the last undone edit",
-    },
-    CommandMetadata {
-        id: "prompt_stash",
-        label: "Stash prompt",
-        description: "Stash the current composer draft to the prompt stash",
-    },
-    CommandMetadata {
-        id: "prompt_stash_pop",
-        label: "Pop stashed prompt",
-        description: "Restore the most recently stashed prompt to the composer",
-    },
-    CommandMetadata {
-        id: "prompt_stash_list",
-        label: "Prompt stash list",
-        description: "Open the prompt stash dialog to browse stashed prompts",
-    },
-    CommandMetadata {
-        id: "open_settings",
-        label: "Settings",
-        description: "Browse typed settings registry entries (read-only)",
-    },
-    CommandMetadata {
-        id: "open_view_plan",
-        label: "View Plan",
-        description: "View plan files for this workspace/session",
-    },
-    CommandMetadata {
-        id: "open_status_dialog",
-        label: "Status dialog",
-        description: "Open the status dialog",
-    },
-    CommandMetadata {
-        id: "open_lineage_browser",
-        label: "Session tree",
-        description: "Open the Harness session lineage browser",
-    },
-    CommandMetadata {
-        id: "open_memory_browser",
-        label: "Memory",
-        description: "Open the durable memory browser",
-    },
-    CommandMetadata {
-        id: "open_worktree_picker",
-        label: "Switch worktree",
-        description: "Switch the active session worktree",
-    },
-    CommandMetadata {
-        id: "session_child_first",
-        label: "First child session",
-        description: "Open the first child session of the current session",
-    },
-    CommandMetadata {
-        id: "session_child_cycle",
-        label: "Next child session",
-        description: "Cycle to the next sibling child session",
-    },
-    CommandMetadata {
-        id: "session_child_cycle_reverse",
-        label: "Previous child session",
-        description: "Cycle to the previous sibling child session",
-    },
-    CommandMetadata {
-        id: "session_parent",
-        label: "Parent session",
-        description: "Return to the parent session",
-    },
-    CommandMetadata {
-        id: "session_background",
-        label: "Background subagents",
-        description: "Move foreground subagents to the background",
-    },
-    CommandMetadata {
-        id: "variant_cycle",
-        label: "Cycle variant",
-        description: "Cycle to the next model variant",
-    },
-    CommandMetadata {
-        id: "slash_copy",
-        label: "Copy transcript",
-        description: "Copy the session transcript to clipboard",
-    },
-    CommandMetadata {
-        id: "slash_export",
-        label: "Export transcript",
-        description: "Export the session transcript to a file",
-    },
-    CommandMetadata {
-        id: "slash_timestamps",
-        label: "Toggle timestamps",
-        description: "Toggle user message timestamps",
-    },
-    CommandMetadata {
-        id: "slash_thinking",
-        label: "Toggle thinking",
-        description: "Toggle inline thinking rows",
-    },
-    CommandMetadata {
-        id: "slash_import",
-        label: "Import foreign session",
-        description: "Discover and import a foreign session as replay-only",
-    },
-];
+macro_rules! define_command_metadata {
+    ($(($id:literal, $label:literal, $description:literal),)*) => {
+        const COMMAND_METADATA: &[CommandMetadata] = &[
+            $(CommandMetadata {
+                id: $id,
+                label: $label,
+                description: $description,
+            },)*
+        ];
+    };
+}
+
+macro_rules! define_slash_commands {
+    ($(($id:literal, $metadata_id:literal, $aliases:expr),)*) => {
+        const SLASH_COMMANDS: &[SlashCommand] = &[
+            $(SlashCommand {
+                id: $id,
+                metadata_id: $metadata_id,
+                aliases: $aliases,
+            },)*
+        ];
+    };
+}
+
+macro_rules! define_palette_commands {
+    ($(($id:literal, $metadata_id:literal, $shortcut:literal, $section:path),)*) => {
+        const PALETTE_COMMANDS: &[PaletteCommand] = &[
+            $(PaletteCommand {
+                id: $id,
+                metadata_id: $metadata_id,
+                shortcut: $shortcut,
+                section: $section,
+            },)*
+        ];
+    };
+}
+
+define_command_metadata! {
+    ("palette", "Command palette", "Browse and run available commands"),
+    ("new_session", "New session", "Start a fresh live session"),
+    ("resume_session", "Continue session", "Continue a prior session when resumable"),
+    ("replay_session", "Replay session", "Replay a previous session as read-only"),
+    ("switch_model", "Switch model", "Browse available provider/model options"),
+    ("cycle_variant", "Cycle reasoning preset", "Cycle the configured model variant/reasoning preset"),
+    ("toggles", "Toggles", "Toggle profiles, tools, hooks, MCP, YOLO"),
+    ("auth", "Auth", "Manage provider login, logout, and auth status"),
+    ("connect", "Connect", "Connect a provider"),
+    ("close_review_surface", "Session shell", "Return to the transcript-first session shell"),
+    ("toggle_terminal_panel", "Toggle terminal panel", "Show or hide shell command output below the transcript"),
+    ("toggle_follow", "Toggle follow", "Toggle follow mode"),
+    ("show_thinking", "Show thinking", "Restore inline thinking rows in the transcript"),
+    ("hide_thinking", "Hide thinking", "Hide inline thinking rows in the transcript"),
+    ("show_timestamps", "Show timestamps", "Reveal user message timestamps in the transcript"),
+    ("hide_timestamps", "Hide timestamps", "Hide user message timestamps in the transcript"),
+    ("show_tool_details", "Show tool details", "Show completed successful tools in the transcript"),
+    ("hide_tool_details", "Hide tool details", "Hide completed successful tools in the transcript"),
+    ("show_generic_tool_output", "Show generic tool output", "Expand generic tool payload blocks in the transcript"),
+    ("hide_generic_tool_output", "Hide generic tool output", "Collapse generic tool payload blocks in the transcript"),
+    ("expand_selected_turn_results", "Expand turn results", "Expand overflow tool output in the selected turn"),
+    ("collapse_selected_turn_results", "Collapse turn results", "Collapse overflow tool output in the selected turn"),
+    ("stack_transcript_diffs", "Use stacked diffs", "Force unified stacked transcript diffs"),
+    ("split_transcript_diffs", "Use split diffs", "Allow side-by-side transcript diffs when wide"),
+    ("diff_hunk_next", "Next diff hunk", "Jump to the next transcript diff hunk"),
+    ("diff_hunk_previous", "Previous diff hunk", "Jump to the previous transcript diff hunk"),
+    ("focus_next", "Next focus", "Cycle focus forward"),
+    ("focus_prev", "Previous focus", "Cycle focus backward"),
+    ("submit_prompt", "Submit prompt", "Submit the current prompt"),
+    ("insert_newline", "Insert newline", "Insert newline"),
+    ("clear_prompt", "Clear prompt", "Clear prompt"),
+    ("move_down", "Move down", "Move down in list"),
+    ("move_up", "Move up", "Move up in list"),
+    ("reload", "Reload", "Reload session"),
+    ("allow_permission", "Allow permission", "Allow permission"),
+    ("always_approve_permission", "Always approve permission", "Open always-approve confirm for the active permission"),
+    ("deny_permission", "Deny permission", "Deny permission"),
+    ("dismiss_modal", "Reject permission", "Reject permission"),
+    ("history_up", "History up", "History up"),
+    ("history_down", "History down", "History down"),
+    ("help", "Help", "Show shortcuts and TUI controls"),
+    ("quit", "Quit", "Quit the application"),
+    ("revert_workspace", "Revert workspace", "Revert workspace to the most recent snapshot"),
+    ("scroll_up", "Scroll up", "Scroll the active transcript or detail surface up"),
+    ("scroll_down", "Scroll down", "Scroll the active transcript or detail surface down"),
+    ("half_page_down", "Half page down", "Scroll the transcript down by half a viewport"),
+    ("cursor_left", "Cursor left", "Move the composer cursor one character left"),
+    ("cursor_right", "Cursor right", "Move the composer cursor one character right"),
+    ("backspace", "Backspace", "Delete the character before the composer cursor"),
+    ("delete", "Delete", "Delete the character after the composer cursor"),
+    ("toggle_prompt_focus", "Toggle prompt focus", "Switch focus between the composer and transcript"),
+    ("toggle_tasks", "Toggle tasks", "Show or hide the task and operator details surface"),
+    ("open_theme_dialog", "Theme", "Open the theme selector"),
+    ("open_model_switcher", "Switch model", "Open the model selector"),
+    ("first_message", "First message", "Jump to the first transcript message"),
+    ("last_message", "Last message", "Jump to the last transcript message"),
+    ("next_message", "Next message", "Jump to the next transcript message"),
+    ("previous_message", "Previous message", "Jump to the previous transcript message"),
+    ("copy_message", "Copy message", "Copy the selected transcript message"),
+    ("export_session", "Export session", "Export the current session transcript"),
+    ("open_error_details", "Error details", "Open details for the selected failed activity"),
+    ("open_session_history", "Session history", "Browse saved sessions"),
+    ("slash_new", "New", "Return to the home shell"),
+    ("slash_sessions", "Sessions", "Switch session"),
+    ("slash_resume", "Resume", "Continue a saved session"),
+    ("slash_replay", "Replay", "Replay a saved session"),
+    ("slash_fork", "Fork", "Fork session"),
+    ("slash_tree", "Tree", "View the Harness session tree"),
+    ("slash_clone", "Clone", "Prepare a Harness session clone"),
+    ("slash_status", "Status", "View status"),
+    ("slash_compact", "Compact", "Write a manual context checkpoint"),
+    ("slash_rename", "Rename", "Rename the current session"),
+    ("select_char_left", "Select char left", "Extend selection one char left"),
+    ("select_char_right", "Select char right", "Extend selection one char right"),
+    ("select_word_left", "Select word left", "Extend selection one word left"),
+    ("select_word_right", "Select word right", "Extend selection one word right"),
+    ("select_line", "Select line", "Select the current line"),
+    ("select_all", "Select all", "Select the entire prompt buffer"),
+    ("move_word_left", "Move word left", "Move cursor one word left"),
+    ("move_word_right", "Move word right", "Move cursor one word right"),
+    ("move_line_start", "Move line start", "Move cursor to line start"),
+    ("move_line_end", "Move line end", "Move cursor to line end"),
+    ("move_buffer_start", "Move buffer start", "Move cursor to buffer start"),
+    ("move_buffer_end", "Move buffer end", "Move cursor to buffer end"),
+    ("delete_word_forward", "Delete word forward", "Delete the word after the cursor"),
+    ("delete_word_backward", "Delete word backward", "Delete the word before the cursor"),
+    ("delete_line", "Delete line", "Delete the current line"),
+    ("kill_to_line_start", "Kill to line start", "Delete from cursor to line start"),
+    ("kill_to_line_end", "Kill to line end", "Delete from cursor to line end"),
+    ("undo", "Undo", "Undo the last edit"),
+    ("redo", "Redo", "Redo the last undone edit"),
+    ("prompt_stash", "Stash prompt", "Stash the current composer draft to the prompt stash"),
+    ("prompt_stash_pop", "Pop stashed prompt", "Restore the most recently stashed prompt to the composer"),
+    ("prompt_stash_list", "Prompt stash list", "Open the prompt stash dialog to browse stashed prompts"),
+    ("open_settings", "Settings", "Browse typed settings registry entries (read-only)"),
+    ("open_view_plan", "View Plan", "View plan files for this workspace/session"),
+    ("open_status_dialog", "Status dialog", "Open the status dialog"),
+    ("open_lineage_browser", "Session tree", "Open the Harness session lineage browser"),
+    ("open_memory_browser", "Memory", "Open the durable memory browser"),
+    ("open_worktree_picker", "Switch worktree", "Switch the active session worktree"),
+    ("session_child_first", "First child session", "Open the first child session of the current session"),
+    ("session_child_cycle", "Next child session", "Cycle to the next sibling child session"),
+    ("session_child_cycle_reverse", "Previous child session", "Cycle to the previous sibling child session"),
+    ("session_parent", "Parent session", "Return to the parent session"),
+    ("session_background", "Background subagents", "Move foreground subagents to the background"),
+    ("variant_cycle", "Cycle variant", "Cycle to the next model variant"),
+    ("slash_copy", "Copy transcript", "Copy the session transcript to clipboard"),
+    ("slash_export", "Export transcript", "Export the session transcript to a file"),
+    ("slash_timestamps", "Toggle timestamps", "Toggle user message timestamps"),
+    ("slash_thinking", "Toggle thinking", "Toggle inline thinking rows"),
+    ("slash_import", "Import foreign session", "Discover and import a foreign session as replay-only"),
+}
 
 pub(super) fn command_metadata(id: &str) -> Option<&'static CommandMetadata> {
     COMMAND_METADATA.iter().find(|entry| entry.id == id)
@@ -727,138 +320,34 @@ pub(super) const fn help_category(action: Action) -> Option<HelpCategory> {
     }
 }
 
-const SLASH_COMMANDS: [SlashCommand; 26] = [
-    SlashCommand {
-        id: "new",
-        metadata_id: "slash_new",
-        aliases: &["clear"],
-    },
-    SlashCommand {
-        id: "sessions",
-        metadata_id: "slash_sessions",
-        aliases: &["resume", "continue"],
-    },
-    SlashCommand {
-        id: "fork",
-        metadata_id: "slash_fork",
-        aliases: &[],
-    },
-    SlashCommand {
-        id: "tree",
-        metadata_id: "slash_tree",
-        aliases: &[],
-    },
-    SlashCommand {
-        id: "clone",
-        metadata_id: "slash_clone",
-        aliases: &[],
-    },
-    SlashCommand {
-        id: "models",
-        metadata_id: "switch_model",
-        aliases: &["mo"],
-    },
-    SlashCommand {
-        id: "agents",
-        metadata_id: "switch_model",
-        aliases: &[],
-    },
-    SlashCommand {
-        id: "mcps",
-        metadata_id: "toggles",
-        aliases: &[],
-    },
-    SlashCommand {
-        id: "toggles",
-        metadata_id: "toggles",
-        aliases: &[],
-    },
-    SlashCommand {
-        id: "auth",
-        metadata_id: "auth",
-        aliases: &["login"],
-    },
-    SlashCommand {
-        id: "connect",
-        metadata_id: "connect",
-        aliases: &[],
-    },
-    SlashCommand {
-        id: "help",
-        metadata_id: "help",
-        aliases: &[],
-    },
-    SlashCommand {
-        id: "feedback",
-        metadata_id: "help",
-        aliases: &[],
-    },
-    SlashCommand {
-        id: "shell",
-        metadata_id: "close_review_surface",
-        aliases: &["session-shell"],
-    },
-    SlashCommand {
-        id: "follow",
-        metadata_id: "toggle_follow",
-        aliases: &[],
-    },
-    SlashCommand {
-        id: "compact",
-        metadata_id: "slash_compact",
-        aliases: &["summarize"],
-    },
-    SlashCommand {
-        id: "exit",
-        metadata_id: "quit",
-        aliases: &["quit", "q"],
-    },
-    SlashCommand {
-        id: "rename",
-        metadata_id: "slash_rename",
-        aliases: &[],
-    },
-    SlashCommand {
-        id: "copy",
-        metadata_id: "slash_copy",
-        aliases: &[],
-    },
-    SlashCommand {
-        id: "export",
-        metadata_id: "slash_export",
-        aliases: &[],
-    },
-    SlashCommand {
-        id: "timestamps",
-        metadata_id: "slash_timestamps",
-        aliases: &["toggle-timestamps"],
-    },
-    SlashCommand {
-        id: "thinking",
-        metadata_id: "slash_thinking",
-        aliases: &["toggle-thinking"],
-    },
-    SlashCommand {
-        id: "settings",
-        metadata_id: "open_settings",
-        aliases: &[],
-    },
-    SlashCommand {
-        id: "view-plan",
-        metadata_id: "open_view_plan",
-        aliases: &["view_plan"],
-    },
-    SlashCommand {
-        id: "dashboard",
-        metadata_id: "open_status_dialog",
-        aliases: &["status"],
-    },
-    SlashCommand {
-        id: "import",
-        metadata_id: "slash_import",
-        aliases: &["import-session"],
-    },
-];
+define_slash_commands! {
+    ("new", "slash_new", &["clear"]),
+    ("sessions", "slash_sessions", &["resume", "continue"]),
+    ("fork", "slash_fork", &[]),
+    ("tree", "slash_tree", &[]),
+    ("clone", "slash_clone", &[]),
+    ("models", "switch_model", &["mo"]),
+    ("agents", "switch_model", &[]),
+    ("mcps", "toggles", &[]),
+    ("toggles", "toggles", &[]),
+    ("auth", "auth", &["login"]),
+    ("connect", "connect", &[]),
+    ("help", "help", &[]),
+    ("feedback", "help", &[]),
+    ("shell", "close_review_surface", &["session-shell"]),
+    ("follow", "toggle_follow", &[]),
+    ("compact", "slash_compact", &["summarize"]),
+    ("exit", "quit", &["quit", "q"]),
+    ("rename", "slash_rename", &[]),
+    ("copy", "slash_copy", &[]),
+    ("export", "slash_export", &[]),
+    ("timestamps", "slash_timestamps", &["toggle-timestamps"]),
+    ("thinking", "slash_thinking", &["toggle-thinking"]),
+    ("settings", "open_settings", &[]),
+    ("view-plan", "open_view_plan", &["view_plan"]),
+    ("dashboard", "open_status_dialog", &["status"]),
+    ("import", "slash_import", &["import-session"]),
+}
 
 pub fn slash_commands() -> &'static [SlashCommand] {
     &SLASH_COMMANDS
@@ -880,224 +369,44 @@ pub fn slash_command_aliases(command: &str) -> &'static [&'static str] {
         .unwrap_or(&[])
 }
 
-const PALETTE_COMMANDS: &[PaletteCommand] = &[
-    PaletteCommand {
-        id: "new_session",
-        metadata_id: "new_session",
-        shortcut: "new",
-        section: PaletteCommandSection::Suggested,
-    },
-    PaletteCommand {
-        id: "resume_session",
-        metadata_id: "resume_session",
-        shortcut: "resume",
-        section: PaletteCommandSection::Session,
-    },
-    PaletteCommand {
-        id: "replay_session",
-        metadata_id: "replay_session",
-        shortcut: "replay",
-        section: PaletteCommandSection::Session,
-    },
-    PaletteCommand {
-        id: "switch_model",
-        metadata_id: "switch_model",
-        shortcut: "models",
-        section: PaletteCommandSection::Agent,
-    },
-    PaletteCommand {
-        id: "cycle_variant",
-        metadata_id: "cycle_variant",
-        shortcut: "ctrl+t",
-        section: PaletteCommandSection::Agent,
-    },
-    PaletteCommand {
-        id: "toggles",
-        metadata_id: "toggles",
-        shortcut: "toggles",
-        section: PaletteCommandSection::Agent,
-    },
-    PaletteCommand {
-        id: "auth",
-        metadata_id: "auth",
-        shortcut: "auth",
-        section: PaletteCommandSection::System,
-    },
-    PaletteCommand {
-        id: "close_review_surface",
-        metadata_id: "close_review_surface",
-        shortcut: "esc",
-        section: PaletteCommandSection::Session,
-    },
-    PaletteCommand {
-        id: "revert_workspace",
-        metadata_id: "revert_workspace",
-        shortcut: "",
-        section: PaletteCommandSection::Session,
-    },
-    PaletteCommand {
-        id: "toggle_terminal_panel",
-        metadata_id: "toggle_terminal_panel",
-        shortcut: "4",
-        section: PaletteCommandSection::Session,
-    },
-    PaletteCommand {
-        id: "toggle_follow",
-        metadata_id: "toggle_follow",
-        shortcut: "space",
-        section: PaletteCommandSection::Agent,
-    },
-    PaletteCommand {
-        id: "show_thinking",
-        metadata_id: "show_thinking",
-        shortcut: "",
-        section: PaletteCommandSection::Agent,
-    },
-    PaletteCommand {
-        id: "hide_thinking",
-        metadata_id: "hide_thinking",
-        shortcut: "",
-        section: PaletteCommandSection::Agent,
-    },
-    PaletteCommand {
-        id: "show_timestamps",
-        metadata_id: "show_timestamps",
-        shortcut: "",
-        section: PaletteCommandSection::Agent,
-    },
-    PaletteCommand {
-        id: "hide_timestamps",
-        metadata_id: "hide_timestamps",
-        shortcut: "",
-        section: PaletteCommandSection::Agent,
-    },
-    PaletteCommand {
-        id: "show_tool_details",
-        metadata_id: "show_tool_details",
-        shortcut: "",
-        section: PaletteCommandSection::Agent,
-    },
-    PaletteCommand {
-        id: "hide_tool_details",
-        metadata_id: "hide_tool_details",
-        shortcut: "",
-        section: PaletteCommandSection::Agent,
-    },
-    PaletteCommand {
-        id: "show_generic_tool_output",
-        metadata_id: "show_generic_tool_output",
-        shortcut: "",
-        section: PaletteCommandSection::Agent,
-    },
-    PaletteCommand {
-        id: "hide_generic_tool_output",
-        metadata_id: "hide_generic_tool_output",
-        shortcut: "",
-        section: PaletteCommandSection::Agent,
-    },
-    PaletteCommand {
-        id: "expand_selected_turn_results",
-        metadata_id: "expand_selected_turn_results",
-        shortcut: "",
-        section: PaletteCommandSection::Agent,
-    },
-    PaletteCommand {
-        id: "collapse_selected_turn_results",
-        metadata_id: "collapse_selected_turn_results",
-        shortcut: "",
-        section: PaletteCommandSection::Agent,
-    },
-    PaletteCommand {
-        id: "stack_transcript_diffs",
-        metadata_id: "stack_transcript_diffs",
-        shortcut: "",
-        section: PaletteCommandSection::Agent,
-    },
-    PaletteCommand {
-        id: "split_transcript_diffs",
-        metadata_id: "split_transcript_diffs",
-        shortcut: "",
-        section: PaletteCommandSection::Agent,
-    },
-    PaletteCommand {
-        id: "help",
-        metadata_id: "help",
-        shortcut: "?",
-        section: PaletteCommandSection::System,
-    },
-    PaletteCommand {
-        id: "open_settings",
-        metadata_id: "open_settings",
-        shortcut: "",
-        section: PaletteCommandSection::System,
-    },
-    PaletteCommand {
-        id: "open_view_plan",
-        metadata_id: "open_view_plan",
-        shortcut: "",
-        section: PaletteCommandSection::Session,
-    },
-    PaletteCommand {
-        id: "quit",
-        metadata_id: "quit",
-        shortcut: "q",
-        section: PaletteCommandSection::System,
-    },
-    PaletteCommand {
-        id: "prompt_stash",
-        metadata_id: "prompt_stash",
-        shortcut: "",
-        section: PaletteCommandSection::Session,
-    },
-    PaletteCommand {
-        id: "prompt_stash_pop",
-        metadata_id: "prompt_stash_pop",
-        shortcut: "",
-        section: PaletteCommandSection::Session,
-    },
-    PaletteCommand {
-        id: "prompt_stash_list",
-        metadata_id: "prompt_stash_list",
-        shortcut: "",
-        section: PaletteCommandSection::Session,
-    },
-    PaletteCommand {
-        id: "open_lineage_browser",
-        metadata_id: "open_lineage_browser",
-        shortcut: "ctrl+x g",
-        section: PaletteCommandSection::Session,
-    },
-    PaletteCommand {
-        id: "session_child_first",
-        metadata_id: "session_child_first",
-        shortcut: "ctrl+x ↓",
-        section: PaletteCommandSection::Session,
-    },
-    PaletteCommand {
-        id: "session_child_cycle",
-        metadata_id: "session_child_cycle",
-        shortcut: "right",
-        section: PaletteCommandSection::Session,
-    },
-    PaletteCommand {
-        id: "session_child_cycle_reverse",
-        metadata_id: "session_child_cycle_reverse",
-        shortcut: "left",
-        section: PaletteCommandSection::Session,
-    },
-    PaletteCommand {
-        id: "session_parent",
-        metadata_id: "session_parent",
-        shortcut: "up",
-        section: PaletteCommandSection::Session,
-    },
-    PaletteCommand {
-        id: "session_background",
-        metadata_id: "session_background",
-        shortcut: "ctrl+b",
-        section: PaletteCommandSection::Session,
-    },
-];
+define_palette_commands! {
+    ("new_session", "new_session", "new", PaletteCommandSection::Suggested),
+    ("resume_session", "resume_session", "resume", PaletteCommandSection::Session),
+    ("replay_session", "replay_session", "replay", PaletteCommandSection::Session),
+    ("switch_model", "switch_model", "models", PaletteCommandSection::Agent),
+    ("cycle_variant", "cycle_variant", "ctrl+t", PaletteCommandSection::Agent),
+    ("toggles", "toggles", "toggles", PaletteCommandSection::Agent),
+    ("auth", "auth", "auth", PaletteCommandSection::System),
+    ("close_review_surface", "close_review_surface", "esc", PaletteCommandSection::Session),
+    ("revert_workspace", "revert_workspace", "", PaletteCommandSection::Session),
+    ("toggle_terminal_panel", "toggle_terminal_panel", "4", PaletteCommandSection::Session),
+    ("toggle_follow", "toggle_follow", "space", PaletteCommandSection::Agent),
+    ("show_thinking", "show_thinking", "", PaletteCommandSection::Agent),
+    ("hide_thinking", "hide_thinking", "", PaletteCommandSection::Agent),
+    ("show_timestamps", "show_timestamps", "", PaletteCommandSection::Agent),
+    ("hide_timestamps", "hide_timestamps", "", PaletteCommandSection::Agent),
+    ("show_tool_details", "show_tool_details", "", PaletteCommandSection::Agent),
+    ("hide_tool_details", "hide_tool_details", "", PaletteCommandSection::Agent),
+    ("show_generic_tool_output", "show_generic_tool_output", "", PaletteCommandSection::Agent),
+    ("hide_generic_tool_output", "hide_generic_tool_output", "", PaletteCommandSection::Agent),
+    ("expand_selected_turn_results", "expand_selected_turn_results", "", PaletteCommandSection::Agent),
+    ("collapse_selected_turn_results", "collapse_selected_turn_results", "", PaletteCommandSection::Agent),
+    ("stack_transcript_diffs", "stack_transcript_diffs", "", PaletteCommandSection::Agent),
+    ("split_transcript_diffs", "split_transcript_diffs", "", PaletteCommandSection::Agent),
+    ("help", "help", "?", PaletteCommandSection::System),
+    ("open_settings", "open_settings", "", PaletteCommandSection::System),
+    ("open_view_plan", "open_view_plan", "", PaletteCommandSection::Session),
+    ("quit", "quit", "q", PaletteCommandSection::System),
+    ("prompt_stash", "prompt_stash", "", PaletteCommandSection::Session),
+    ("prompt_stash_pop", "prompt_stash_pop", "", PaletteCommandSection::Session),
+    ("prompt_stash_list", "prompt_stash_list", "", PaletteCommandSection::Session),
+    ("open_lineage_browser", "open_lineage_browser", "ctrl+x g", PaletteCommandSection::Session),
+    ("session_child_first", "session_child_first", "ctrl+x ↓", PaletteCommandSection::Session),
+    ("session_child_cycle", "session_child_cycle", "right", PaletteCommandSection::Session),
+    ("session_child_cycle_reverse", "session_child_cycle_reverse", "left", PaletteCommandSection::Session),
+    ("session_parent", "session_parent", "up", PaletteCommandSection::Session),
+    ("session_background", "session_background", "ctrl+b", PaletteCommandSection::Session),
+}
 
 pub(super) fn palette_commands() -> &'static [PaletteCommand] {
     PALETTE_COMMANDS
