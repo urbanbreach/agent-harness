@@ -53,6 +53,7 @@ fn run_deterministic_scenario_produces_events_file() {
     }"#;
     let config_path = write_config(temp.path(), config);
     let out_path = temp.path().join("events.jsonl");
+    let session_dir = temp.path().join("sessions");
     let deps = CliDeps::real()
         .with_current_dir(temp.path().to_path_buf())
         .with_env("HOME", temp.path().to_string_lossy())
@@ -70,6 +71,8 @@ fn run_deterministic_scenario_produces_events_file() {
             "--scenario",
             "golden_path",
             "--deterministic",
+            "--session-dir",
+            session_dir.to_str().unwrap_or_abort(),
             "--out",
             out_path.to_str().unwrap_or_abort(),
         ],
