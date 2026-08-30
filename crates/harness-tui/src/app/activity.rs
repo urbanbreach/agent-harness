@@ -1,6 +1,7 @@
 // allow: SIZE_OK — TUI app state (session projection + interaction)
 use super::*;
 
+#[derive(Clone)]
 pub struct ActivityEntry {
     pub request_id: String,
     pub profile_label: String,

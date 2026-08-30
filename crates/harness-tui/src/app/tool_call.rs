@@ -389,7 +389,7 @@ pub(in crate::app) fn merge_resolved_tool_identity(
     }
 }
 
-fn display_status_for_tool_call(
+pub(in crate::app) fn display_status_for_tool_call(
     lifecycle_state: ToolCallLifecycleState,
     permissions: &[PermissionEntry],
 ) -> ToolCallDisplayStatus {

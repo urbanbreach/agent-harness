@@ -16,14 +16,14 @@ use harness_core::session::{
 };
 
 use super::permissions::PendingPermission;
+use super::tool_call::display_status_for_tool_call;
 use super::{
     mark_activity_event, merge_orchestration_task_completion_metadata,
     merge_orchestration_task_event, merge_orchestration_task_lineage, merge_resolved_tool_identity,
     merge_tool_call_metadata, new_streaming_activity_entry, task_child_request_id_from_output,
-    task_child_session_id_from_output, task_completed_updates_assistant_transcript,
-    tool_call_is_foreground_child_wait, ActiveContextUsage, ActivityCacheUsage, ActivityEntry,
-    ActivityStatus, ActivityUsage, AppState, CompactionState, CompactionStatus,
-    CompactionUsageMetrics, EditDisplayStatus, EditEntry, Focus, MemoryCaps,
+    task_child_session_id_from_output, tool_call_is_foreground_child_wait, ActiveContextUsage,
+    ActivityCacheUsage, ActivityEntry, ActivityStatus, ActivityUsage, AppState, CompactionState,
+    CompactionStatus, CompactionUsageMetrics, EditDisplayStatus, EditEntry, Focus, MemoryCaps,
     NewStreamingActivityEntryArgs, OrchestrationOwnerLabels, OrchestrationSummary,
     OrchestrationTaskRow, OrchestrationTaskState, ToolCallDisplayStatus, ToolCallEntry,
     TOOL_OUTPUT_DISPLAY_MAX_CHARS,
@@ -765,74 +765,6 @@ impl SessionProjection {
         }
     }
 
-    fn attach_permission_request(&mut self, event: &EventEnvelopeV1) {
-        let EventV1::PermissionRequested(data) = &event.payload else {
-            return;
-        };
-
-        let permission_entry = super::PermissionEntry {
-            permission_id: data.permission_id.clone(),
-            kind: data.kind.clone(),
-            tool_call_id: data.tool_call_id.as_ref().map(|id| id.to_string()),
-            summary: data.summary.clone(),
-            request_digest: data.request_digest.clone(),
-            timeout_ms: data.timeout_ms,
-            default_decision: data.default_decision,
-            resolved_decision: None,
-            resolution_reason: None,
-            first_seq: event.seq,
-            last_seq: event.seq,
-        };
-
-        if let Some(tool_call_id) = data.tool_call_id.as_ref().map(|id| id.as_str()) {
-            if let Some(tool_entry) = self.find_tool_call_mut(tool_call_id) {
-                tool_entry.permissions.push(permission_entry);
-                tool_entry.sync_display_status();
-                return;
-            }
-            if is_question_permission_kind(&permission_entry.kind) {
-                let activity_index = event
-                    .correlation_id
-                    .as_deref()
-                    .and_then(|request_id| {
-                        self.activities
-                            .iter()
-                            .position(|activity| activity.request_id == request_id)
-                    })
-                    .or_else(|| self.activities.len().checked_sub(1));
-                if let Some(activity_index) = activity_index {
-                    if self.push_orphan_question_tool_call(
-                        activity_index,
-                        tool_call_id,
-                        permission_entry,
-                        event.seq,
-                        event.mono_ms,
-                        event.ts.clone(),
-                    ) {
-                        return;
-                    }
-                }
-                return;
-            }
-        }
-
-        let found_by_correlation = event.correlation_id.as_deref().and_then(|request_id| {
-            self.activities
-                .iter()
-                .position(|activity| activity.request_id == request_id)
-        });
-
-        if let Some(idx) = found_by_correlation {
-            if let Some(activity) = self.activities.get_mut(idx) {
-                activity.permissions.push(permission_entry);
-                activity.last_seq = event.seq;
-            }
-        } else if let Some(activity) = self.activities.back_mut() {
-            activity.permissions.push(permission_entry);
-            activity.last_seq = event.seq;
-        }
-    }
-
     fn ensure_orphan_question_tool_calls(&mut self) {
         let Some(latest_index) = self.activities.len().checked_sub(1) else {
             return;
@@ -959,36 +891,6 @@ impl SessionProjection {
         }
         activity.last_mono_ms = activity.last_mono_ms.max(mono_ms);
         true
-    }
-
-    fn update_permission_resolution(
-        &mut self,
-        permission_id: &str,
-        decision: harness_core::event::PermissionDecision,
-        reason: Option<&str>,
-        seq: u64,
-    ) {
-        for activity in &mut self.activities {
-            for permission in &mut activity.permissions {
-                if permission.permission_id == permission_id {
-                    permission.mark_resolved(decision, reason, seq);
-                    activity.last_seq = seq;
-                    return;
-                }
-            }
-
-            for tool_call in &mut activity.tool_calls {
-                for permission in &mut tool_call.permissions {
-                    if permission.permission_id == permission_id {
-                        permission.mark_resolved(decision, reason, seq);
-                        tool_call.sync_display_status();
-                        tool_call.last_seq = seq;
-                        activity.last_seq = seq;
-                        return;
-                    }
-                }
-            }
-        }
     }
 
     fn orchestration_task_row_mut(
@@ -1223,42 +1125,6 @@ impl SessionProjection {
         row.queue_key
             .as_deref()
             .is_some_and(|queue_key| queue_key.starts_with("provider_model:"))
-    }
-
-    fn task_scope_is_turn_level(scope: harness_core::event::TaskTerminalScope) -> bool {
-        matches!(scope, harness_core::event::TaskTerminalScope::AgentTurn)
-    }
-
-    fn is_turn_level_task_completion(
-        &self,
-        task_id: &str,
-        data: &harness_core::event::TaskCompletedEvent,
-    ) -> bool {
-        data.metadata
-            .as_ref()
-            .and_then(|metadata| metadata.task_scope)
-            .map(Self::task_scope_is_turn_level)
-            .or_else(|| {
-                self.orchestration_tasks
-                    .get(task_id)
-                    .map(Self::task_row_is_turn_level)
-            })
-            .unwrap_or_else(|| task_completed_updates_assistant_transcript(data))
-    }
-
-    fn is_turn_level_task_cancellation(
-        &self,
-        task_id: &str,
-        data: &harness_core::event::TaskCancelledEvent,
-    ) -> bool {
-        data.task_scope
-            .map(Self::task_scope_is_turn_level)
-            .or_else(|| {
-                self.orchestration_tasks
-                    .get(task_id)
-                    .map(Self::task_row_is_turn_level)
-            })
-            .unwrap_or(false)
     }
 
     pub(crate) fn transcript_task_row_for_tool_call(

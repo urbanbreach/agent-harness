@@ -114,36 +114,7 @@ pub(super) fn merge_presentation_enrichment(
         .iter()
         .filter(|activity| activity.request_id.is_empty())
     {
-        activities.push_back(clone_local_prompt_echo(local_echo));
-    }
-}
-
-fn clone_local_prompt_echo(activity: &ActivityEntry) -> ActivityEntry {
-    ActivityEntry {
-        request_id: activity.request_id.clone(),
-        profile_label: activity.profile_label.clone(),
-        model_id: activity.model_id.clone(),
-        provider_id: activity.provider_id.clone(),
-        status: activity.status,
-        user_message: activity.user_message.clone(),
-        user_timestamp: activity.user_timestamp.clone(),
-        request_data: activity.request_data.clone(),
-        thinking_text: activity.thinking_text.clone(),
-        thinking_first_mono_ms: activity.thinking_first_mono_ms,
-        thinking_last_mono_ms: activity.thinking_last_mono_ms,
-        transcript_text: activity.transcript_text.clone(),
-        first_delta_mono_ms: activity.first_delta_mono_ms,
-        usage: activity.usage,
-        cache_usage: activity.cache_usage,
-        error_message: activity.error_message.clone(),
-        permissions: activity.permissions.clone(),
-        tool_calls: activity.tool_calls.clone(),
-        first_seq: activity.first_seq,
-        last_seq: activity.last_seq,
-        first_mono_ms: activity.first_mono_ms,
-        last_mono_ms: activity.last_mono_ms,
-        request_started_mono_ms: activity.request_started_mono_ms,
-        revision: activity.revision,
+        activities.push_back(local_echo.clone());
     }
 }
 
