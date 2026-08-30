@@ -20,7 +20,6 @@ coord/
 ├── tool_execution.rs      # tool execution dispatch and result capture
 ├── provider_lifecycle.rs  # provider connect/retry/stream lifecycle
 ├── session_compaction.rs  # session compaction trigger and checkpointing
-├── prompt_queue_drain.rs  # prompt queue drain scheduling
 ├── background_notifications.rs # background request projection wakeups
 ├── permission.rs, question.rs # permission and question resolution
 ├── hooks.rs               # lifecycle hook execution summaries
@@ -39,7 +38,7 @@ coord/
 - New command handling starts at `Command` in `coord.rs`, dispatches in `command_loop.rs`, and mutates only `RunState`/owned helper state. `CoordinatorHandle` in `handle.rs` is the only public command boundary.
 - Event appends go through `event_helpers.rs` or the existing lifecycle helper for that domain; do not write events from ad hoc helper code.
 - Permission checks precede tool execution in `tool_execution.rs`; provider lifecycle transitions and retries stay in `provider_lifecycle.rs`.
-- Session compaction, prompt queue drain, and provider-context planning are coordinator-owned paths; do not move them into tools or replay.
+- Session compaction and provider-context planning are coordinator-owned paths; do not move them into tools or replay.
 - Child session mirrors copy stable event prefixes/artifacts only through `child_session.rs`; do not let worker actors spawn agents directly.
 
 ## WHERE TO LOOK
@@ -52,7 +51,6 @@ coord/
 | Permissions/questions | `permission.rs`, `question.rs` | `cargo nextest run -p harness-core --test permission_policy_supports_native_tool_permission_kinds_test` |
 | Task/background lifecycle | `task_lifecycle.rs`, `background_notifications.rs` | `cargo nextest run -p harness-tools --test native_agent_spawn_and_batch_preserve_lineage_permissions_and_order_test` |
 | Session compaction/context | `session_compaction.rs`, `compaction/`, `compaction_support.rs`, `provider_context/`, `agent_turn_completion.rs` | `cargo nextest run -p harness-core --test coord_test compaction` |
-| Prompt queue drain | `prompt_queue_drain.rs` | `cargo nextest run -p harness-core --test memory_queue_compaction_test` |
 | Replay metadata | `tool_metadata.rs`, `event_helpers.rs` | `cargo nextest run -p harness-core --test native_metadata_replay_test` |
 | Snapshots/reverts | `snapshot.rs`, `revert.rs` | `cargo nextest run -p harness-core --test coord_test workspace` |
 
