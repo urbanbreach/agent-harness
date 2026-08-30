@@ -185,8 +185,7 @@ impl Provider for MockProvider {
 
 pub fn request_digest(request: &CompletionRequest) -> String {
     let normalized = normalize_request(request);
-    let normalized_bytes = serde_json::to_vec(&normalized).unwrap_or_else(|_| b"null".to_vec());
-    blake3::hash(&normalized_bytes).to_hex().to_string()
+    normalized_request_digest(&normalized)
 }
 
 fn context_agnostic_request_digest(request: &CompletionRequest) -> String {
@@ -199,8 +198,12 @@ fn context_agnostic_request_digest(request: &CompletionRequest) -> String {
             }
         }
     }
-    let normalized_bytes = serde_json::to_vec(&normalized).unwrap_or_else(|_| b"null".to_vec());
-    blake3::hash(&normalized_bytes).to_hex().to_string()
+    normalized_request_digest(&normalized)
+}
+
+fn normalized_request_digest(normalized: &Value) -> String {
+    let bytes = serde_json::to_vec(normalized).unwrap_or_else(|_| b"null".to_vec());
+    blake3::hash(&bytes).to_hex().to_string()
 }
 
 fn normalize_request(request: &CompletionRequest) -> Value {
@@ -637,28 +640,11 @@ mod tests {
     #[tokio::test]
     async fn abort_mid_tool_call_emits_error_without_tool_call_complete() {
         // arrange
-        let request = CompletionRequest {
-            provider_id: None,
-            model_id: "model-mock-abort".to_string(),
-            messages: vec![CompletionMessage {
-                role: MessageRole::User,
-                content: "Abort mid tool call residual.".to_string(),
-                name: None,
-                tool_call_id: None,
-                assistant_tool_calls: None,
-            }],
-            temperature: Some(0.0),
-            max_tokens: Some(16),
-            variant: None,
-            reasoning_effort: None,
-            text_verbosity: None,
-            reasoning_summary: None,
-            thinking: None,
-            tools: None,
-            tool_choice: None,
-            context: Default::default(),
-            stream: true,
-        };
+        let request = fixture_request(
+            "model-mock-abort",
+            &[(MessageRole::User, "Abort mid tool call residual.")],
+            16,
+        );
         let digest = request_digest(&request);
         let mut scripted = BTreeMap::new();
         scripted.insert(
@@ -706,28 +692,11 @@ mod tests {
     #[tokio::test]
     async fn richer_multi_chunk_tool_call_stream_splits_arguments_across_deltas() {
         // arrange
-        let request = CompletionRequest {
-            provider_id: None,
-            model_id: "model-mock-multi-chunk".to_string(),
-            messages: vec![CompletionMessage {
-                role: MessageRole::User,
-                content: "Multi-chunk tool call residual.".to_string(),
-                name: None,
-                tool_call_id: None,
-                assistant_tool_calls: None,
-            }],
-            temperature: Some(0.0),
-            max_tokens: Some(32),
-            variant: None,
-            reasoning_effort: None,
-            text_verbosity: None,
-            reasoning_summary: None,
-            thinking: None,
-            tools: None,
-            tool_choice: None,
-            context: Default::default(),
-            stream: true,
-        };
+        let request = fixture_request(
+            "model-mock-multi-chunk",
+            &[(MessageRole::User, "Multi-chunk tool call residual.")],
+            32,
+        );
         let digest = request_digest(&request);
         let mut scripted = BTreeMap::new();
         scripted.insert(
@@ -938,27 +907,62 @@ mod tests {
     }
 
     fn fixture_known_request() -> CompletionRequest {
+        fixture_request(
+            "model-mock-1",
+            &[
+                (MessageRole::System, "You are deterministic."),
+                (MessageRole::User, "Say hello."),
+            ],
+            32,
+        )
+    }
+
+    fn fixture_tool_call_request() -> CompletionRequest {
+        let mut request = fixture_request(
+            "model-mock-1",
+            &[
+                (MessageRole::System, "You are deterministic."),
+                (MessageRole::User, "Read /tmp/demo.txt using a tool call."),
+            ],
+            64,
+        );
+        request.tools = Some(vec![crate::ToolDef {
+            tool_id: "fs.read".to_string(),
+            function_name: "filesystem_read".to_string(),
+            description: Some("Read file content by absolute path".to_string()),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "filePath": {"type": "string"}
+                },
+                "required": ["filePath"],
+                "additionalProperties": false
+            }),
+        }]);
+        request.tool_choice = Some(crate::ToolChoice::Auto);
+        request
+    }
+
+    fn fixture_request(
+        model_id: &str,
+        messages: &[(MessageRole, &str)],
+        max_tokens: u32,
+    ) -> CompletionRequest {
         CompletionRequest {
             provider_id: None,
-            model_id: "model-mock-1".to_string(),
-            messages: vec![
-                CompletionMessage {
-                    role: MessageRole::System,
-                    content: "You are deterministic.".to_string(),
+            model_id: model_id.to_string(),
+            messages: messages
+                .iter()
+                .map(|(role, content)| CompletionMessage {
+                    role: role.clone(),
+                    content: (*content).to_string(),
                     name: None,
                     tool_call_id: None,
                     assistant_tool_calls: None,
-                },
-                CompletionMessage {
-                    role: MessageRole::User,
-                    content: "Say hello.".to_string(),
-                    name: None,
-                    tool_call_id: None,
-                    assistant_tool_calls: None,
-                },
-            ],
+                })
+                .collect(),
             temperature: Some(0.0),
-            max_tokens: Some(32),
+            max_tokens: Some(max_tokens),
             variant: None,
             reasoning_effort: None,
             text_verbosity: None,
@@ -966,52 +970,6 @@ mod tests {
             thinking: None,
             tools: None,
             tool_choice: None,
-            context: Default::default(),
-            stream: true,
-        }
-    }
-
-    fn fixture_tool_call_request() -> CompletionRequest {
-        CompletionRequest {
-            provider_id: None,
-            model_id: "model-mock-1".to_string(),
-            messages: vec![
-                CompletionMessage {
-                    role: MessageRole::System,
-                    content: "You are deterministic.".to_string(),
-                    name: None,
-                    tool_call_id: None,
-                    assistant_tool_calls: None,
-                },
-                CompletionMessage {
-                    role: MessageRole::User,
-                    content: "Read /tmp/demo.txt using a tool call.".to_string(),
-                    name: None,
-                    tool_call_id: None,
-                    assistant_tool_calls: None,
-                },
-            ],
-            temperature: Some(0.0),
-            max_tokens: Some(64),
-            variant: None,
-            reasoning_effort: None,
-            text_verbosity: None,
-            reasoning_summary: None,
-            thinking: None,
-            tools: Some(vec![crate::ToolDef {
-                tool_id: "fs.read".to_string(),
-                function_name: "filesystem_read".to_string(),
-                description: Some("Read file content by absolute path".to_string()),
-                parameters: serde_json::json!({
-                    "type": "object",
-                    "properties": {
-                        "filePath": {"type": "string"}
-                    },
-                    "required": ["filePath"],
-                    "additionalProperties": false
-                }),
-            }]),
-            tool_choice: Some(crate::ToolChoice::Auto),
             context: Default::default(),
             stream: true,
         }
