@@ -88,8 +88,13 @@ pub(super) fn apply_system_part(
 }
 
 pub(super) fn tool_entry(tool: &ProjectedToolCallPart) -> ToolCallEntry {
-    let permissions = tool.permissions.iter().map(permission_entry).collect();
+    let permissions = tool
+        .permissions
+        .iter()
+        .map(permission_entry)
+        .collect::<Vec<_>>();
     let metadata = tool.metadata.as_ref();
+    let lifecycle_state = tool_lifecycle(tool.state);
     ToolCallEntry {
         tool_call_id: tool.tool_call_id.to_string(),
         tool_id: tool.tool_id.clone(),
@@ -98,8 +103,8 @@ pub(super) fn tool_entry(tool: &ProjectedToolCallPart) -> ToolCallEntry {
         resolved_tool_identity: None,
         args_summary: tool.args_summary.clone(),
         args_digest: tool.args_digest.clone(),
-        lifecycle_state: Some(tool_lifecycle(tool.state)),
-        status: tool_status(tool.state, &tool.permissions),
+        lifecycle_state: Some(lifecycle_state),
+        status: display_status_for_tool_call(lifecycle_state, &permissions),
         output_summary: tool.output_summary.clone(),
         output_digest: tool.output_digest.clone(),
         output_json: tool.output_json.clone(),
@@ -136,24 +141,6 @@ const fn tool_lifecycle(state: ProjectedToolCallState) -> ToolCallLifecycleState
     }
 }
 
-fn tool_status(
-    state: ProjectedToolCallState,
-    permissions: &[ProjectedPermissionPart],
-) -> ToolCallDisplayStatus {
-    if permissions
-        .iter()
-        .any(|permission| permission.state == ProjectedPermissionState::Pending)
-    {
-        return ToolCallDisplayStatus::PendingPermission;
-    }
-    match state {
-        ProjectedToolCallState::Pending => ToolCallDisplayStatus::Queued,
-        ProjectedToolCallState::Running => ToolCallDisplayStatus::Running,
-        ProjectedToolCallState::Succeeded => ToolCallDisplayStatus::Succeeded,
-        ProjectedToolCallState::Failed => ToolCallDisplayStatus::Failed,
-    }
-}
-
 pub(super) fn add_permission(
     activity: &mut ActivityEntry,
     permission: &ProjectedPermissionPart,
@@ -173,7 +160,7 @@ pub(super) fn add_permission(
             {
                 tool.permissions.push(permission_entry(permission));
             }
-            tool.status = tool_status_from_permissions(tool.status, &tool.permissions);
+            tool.status = display_status_for_tool_call(tool.lifecycle_state(), &tool.permissions);
         }
     } else {
         activity.permissions.push(permission_entry(permission));
@@ -183,20 +170,6 @@ pub(super) fn add_permission(
             permission.permission_id.clone(),
             pending_permission(permission),
         );
-    }
-}
-
-fn tool_status_from_permissions(
-    current: ToolCallDisplayStatus,
-    permissions: &[PermissionEntry],
-) -> ToolCallDisplayStatus {
-    if permissions
-        .iter()
-        .any(|permission| permission.resolved_decision.is_none())
-    {
-        ToolCallDisplayStatus::PendingPermission
-    } else {
-        current
     }
 }
 
