@@ -15,7 +15,7 @@ Read `../../AGENTS.md` and `../app/AGENTS.md` first.
 | Status dialog | `status_dialog.rs` | `render_status_dialog_overlay`; operator summary (MCP/LSP/workspace/todos); `exact_test_status_dialog_*` helpers. |
 | Session history/lineage | `session_history.rs` | History list, fork selector, rename dialog, lineage browser. |
 | Model switcher | `model_switcher.rs` | `render_model_switcher_overlay`; overlay title helper. |
-| Other modal owners | `foreign_import_picker.rs`, `memory_browser.rs`, `new_worktree_dialog.rs`, `plan_view.rs`, `prompt_stash_dialog.rs`, `settings_editor.rs`, `theme_dialog.rs`, `toggles_menu.rs`, `trust_folder_prompt.rs`, `worktree_picker.rs` | One focused render module per overlay kind. |
+| Other modal owners | `foreign_import_picker.rs`, `memory_browser.rs`, `new_worktree_dialog.rs`, `plan_view.rs`, `prompt_stash_dialog.rs`, `settings_editor.rs`, `theme_dialog.rs`, `toggles_menu.rs`, `worktree_picker.rs` | One focused render module per overlay kind. |
 | Dashboard surfaces | `../dashboard/`, `../dashboard_peek/`, `../dashboard_roster/`, `../dashboard_details/` | Not overlay files; the dashboard peek/details/disclosure surfaces render from these modules and stay out of the overlay stack. |
 | Overlay stack/focus | `../overlay.rs` | `OverlayKind`, `OverlayState`, `OverlayStack`, `OverlayController`; pointer/focus blocking. |
 | Overlay geometry | `../layout.rs`, `../layout/overlays.rs` | `FrameLayoutPlan` overlay rects (`plan.root`, `plan.slash_overlay`, `plan.palette_overlay`). |
