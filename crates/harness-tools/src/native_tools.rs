@@ -45,6 +45,38 @@ use self::tree::{build_recursive_tree, resolve_directory_path};
 
 const DEFAULT_LIST_LIMIT: usize = 100;
 
+macro_rules! declare_executor_tools {
+    ($($tool:ident => $executor:ty),+ $(,)?) => {
+        $(
+            pub(crate) struct $tool {
+                executor: Arc<$executor>,
+            }
+
+            impl $tool {
+                pub(crate) fn new(executor: Arc<$executor>) -> Self {
+                    Self { executor }
+                }
+            }
+        )+
+    };
+}
+
+declare_executor_tools! {
+    WebFetchTool => NetworkExecutor,
+    TodoWriteTool => ControlPlaneExecutor,
+    TodoReadTool => ControlPlaneExecutor,
+    TaskTool => AgentOpsExecutor,
+    BackgroundOutputTool => AgentOpsExecutor,
+    BackgroundCancelTool => AgentOpsExecutor,
+    BatchTool => AgentOpsExecutor,
+    SkillTool => ControlPlaneExecutor,
+    InvalidTool => ControlPlaneExecutor,
+    WebSearchTool => NetworkExecutor,
+    CodeSearchTool => NetworkExecutor,
+    QuestionTool => ControlPlaneExecutor,
+    LspTool => CodeLspExecutor,
+}
+
 pub(crate) struct ReadTool {
     default_hashline_anchors: bool,
 }
@@ -55,105 +87,11 @@ pub(crate) struct BashTool {
     allowlist: ShellAllowlist,
     runner: Arc<dyn ShellCommandRunner>,
 }
-pub(crate) struct WebFetchTool {
-    executor: Arc<NetworkExecutor>,
-}
-pub(crate) struct TodoWriteTool {
-    executor: Arc<ControlPlaneExecutor>,
-}
-pub(crate) struct TodoReadTool {
-    executor: Arc<ControlPlaneExecutor>,
-}
-pub(crate) struct TaskTool {
-    executor: Arc<AgentOpsExecutor>,
-}
-pub(crate) struct BackgroundOutputTool {
-    executor: Arc<AgentOpsExecutor>,
-}
-pub(crate) struct BackgroundCancelTool {
-    executor: Arc<AgentOpsExecutor>,
-}
-pub(crate) struct BatchTool {
-    executor: Arc<AgentOpsExecutor>,
-}
-pub(crate) struct SkillTool {
-    executor: Arc<ControlPlaneExecutor>,
-}
-pub(crate) struct InvalidTool {
-    executor: Arc<ControlPlaneExecutor>,
-}
-pub(crate) struct WebSearchTool {
-    executor: Arc<NetworkExecutor>,
-}
-pub(crate) struct CodeSearchTool {
-    executor: Arc<NetworkExecutor>,
-}
-pub(crate) struct QuestionTool {
-    executor: Arc<ControlPlaneExecutor>,
-}
-pub(crate) struct LspTool {
-    executor: Arc<CodeLspExecutor>,
-}
-
-impl WebFetchTool {
-    pub(crate) fn new(executor: Arc<NetworkExecutor>) -> Self {
-        Self { executor }
-    }
-}
-
 impl ReadTool {
     pub(crate) fn new(default_hashline_anchors: bool) -> Self {
         Self {
             default_hashline_anchors,
         }
-    }
-}
-
-impl TodoWriteTool {
-    pub(crate) fn new(executor: Arc<ControlPlaneExecutor>) -> Self {
-        Self { executor }
-    }
-}
-
-impl TodoReadTool {
-    pub(crate) fn new(executor: Arc<ControlPlaneExecutor>) -> Self {
-        Self { executor }
-    }
-}
-
-impl TaskTool {
-    pub(crate) fn new(executor: Arc<AgentOpsExecutor>) -> Self {
-        Self { executor }
-    }
-}
-
-impl BackgroundOutputTool {
-    pub(crate) fn new(executor: Arc<AgentOpsExecutor>) -> Self {
-        Self { executor }
-    }
-}
-
-impl BackgroundCancelTool {
-    pub(crate) fn new(executor: Arc<AgentOpsExecutor>) -> Self {
-        Self { executor }
-    }
-}
-
-impl BatchTool {
-    pub(crate) fn new(executor: Arc<AgentOpsExecutor>) -> Self {
-        Self { executor }
-    }
-}
-
-impl SkillTool {
-    pub(crate) fn new(executor: Arc<ControlPlaneExecutor>) -> Self {
-        Self { executor }
-    }
-}
-
-impl InvalidTool {
-    pub(crate) fn new(executor: Arc<ControlPlaneExecutor>) -> Self {
-        Self { executor }
     }
 }
 
@@ -163,30 +101,6 @@ impl BashTool {
         runner: Arc<dyn ShellCommandRunner>,
     ) -> Self {
         Self { allowlist, runner }
-    }
-}
-
-impl WebSearchTool {
-    pub(crate) fn new(executor: Arc<NetworkExecutor>) -> Self {
-        Self { executor }
-    }
-}
-
-impl CodeSearchTool {
-    pub(crate) fn new(executor: Arc<NetworkExecutor>) -> Self {
-        Self { executor }
-    }
-}
-
-impl QuestionTool {
-    pub(crate) fn new(executor: Arc<ControlPlaneExecutor>) -> Self {
-        Self { executor }
-    }
-}
-
-impl LspTool {
-    pub(crate) fn new(executor: Arc<CodeLspExecutor>) -> Self {
-        Self { executor }
     }
 }
 
