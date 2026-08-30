@@ -55,6 +55,66 @@ const COMPACTION_STRUCTURED_SUMMARY_CONTRACT_ID: &str =
 const COMPACTION_ESTIMATED_TOKEN_TRIGGERS_ID: &str = "runtime.compaction.estimated_token_triggers";
 const DETERMINISTIC_ENABLED_ID: &str = "runtime.deterministic.enabled";
 
+struct BoolSetting {
+    id: &'static str,
+    parents: &'static [&'static str],
+    key: &'static str,
+    legacy_root_alias: Option<&'static str>,
+    default: bool,
+    effective: fn(&crate::config::HarnessConfig) -> bool,
+}
+
+static BOOL_SETTINGS: [BoolSetting; 6] = [
+    BoolSetting {
+        id: HASHLINE_EDIT_ID,
+        parents: &[],
+        key: HASHLINE_EDIT_ID,
+        legacy_root_alias: Some("hashlineEdit"),
+        default: true,
+        effective: |config| config.hashline_edit,
+    },
+    BoolSetting {
+        id: COMPACTION_ENABLED_ID,
+        parents: &["runtime", "compaction"],
+        key: "enabled",
+        legacy_root_alias: None,
+        default: true,
+        effective: |config| config.runtime.compaction.enabled,
+    },
+    BoolSetting {
+        id: COMPACTION_AUTO_RETRY_OVERFLOW_ID,
+        parents: &["runtime", "compaction"],
+        key: "auto_retry_overflow",
+        legacy_root_alias: None,
+        default: true,
+        effective: |config| config.runtime.compaction.auto_retry_overflow,
+    },
+    BoolSetting {
+        id: COMPACTION_STRUCTURED_SUMMARY_CONTRACT_ID,
+        parents: &["runtime", "compaction"],
+        key: "structured_summary_contract",
+        legacy_root_alias: None,
+        default: true,
+        effective: |config| config.runtime.compaction.structured_summary_contract,
+    },
+    BoolSetting {
+        id: COMPACTION_ESTIMATED_TOKEN_TRIGGERS_ID,
+        parents: &["runtime", "compaction"],
+        key: "estimated_token_triggers",
+        legacy_root_alias: None,
+        default: true,
+        effective: |config| config.runtime.compaction.estimated_token_triggers,
+    },
+    BoolSetting {
+        id: DETERMINISTIC_ENABLED_ID,
+        parents: &["runtime", "deterministic"],
+        key: "enabled",
+        legacy_root_alias: None,
+        default: false,
+        effective: |config| config.runtime.deterministic.enabled,
+    },
+];
+
 fn guard_writable(setting_id: &str) -> Result<(), SettingWriteError> {
     let Some(def) = setting_definition(setting_id) else {
         return Err(SettingWriteError::UnknownSetting(setting_id.to_string()));
@@ -111,36 +171,6 @@ fn reload_config(path: &Path) -> Result<crate::config::HarnessConfig, SettingWri
     })
 }
 
-fn reload_hashline_edit(path: &Path) -> Result<bool, SettingWriteError> {
-    Ok(reload_config(path)?.hashline_edit)
-}
-
-fn reload_compaction_enabled(path: &Path) -> Result<bool, SettingWriteError> {
-    Ok(reload_config(path)?.runtime.compaction.enabled)
-}
-
-fn reload_compaction_auto_retry_overflow(path: &Path) -> Result<bool, SettingWriteError> {
-    Ok(reload_config(path)?.runtime.compaction.auto_retry_overflow)
-}
-
-fn reload_compaction_structured_summary_contract(path: &Path) -> Result<bool, SettingWriteError> {
-    Ok(reload_config(path)?
-        .runtime
-        .compaction
-        .structured_summary_contract)
-}
-
-fn reload_compaction_estimated_token_triggers(path: &Path) -> Result<bool, SettingWriteError> {
-    Ok(reload_config(path)?
-        .runtime
-        .compaction
-        .estimated_token_triggers)
-}
-
-fn reload_deterministic_enabled(path: &Path) -> Result<bool, SettingWriteError> {
-    Ok(reload_config(path)?.runtime.deterministic.enabled)
-}
-
 fn ensure_object_mut<'a>(
     parent: &'a mut serde_json::Map<String, serde_json::Value>,
     key: &str,
@@ -159,40 +189,68 @@ fn ensure_object_mut<'a>(
         })
 }
 
+fn bool_setting(setting_id: &str) -> Result<&'static BoolSetting, SettingWriteError> {
+    let canonical = resolve_setting_id(setting_id).unwrap_or(setting_id);
+    guard_writable(canonical)?;
+    BOOL_SETTINGS
+        .iter()
+        .find(|setting| setting.id == canonical)
+        .ok_or_else(|| SettingWriteError::UnsupportedWrite(canonical.to_string()))
+}
+
+fn read_bool(path: &Path, setting: &BoolSetting) -> Result<bool, SettingWriteError> {
+    Ok((setting.effective)(&reload_config(path)?))
+}
+
+fn write_bool(path: &Path, setting: &BoolSetting, value: bool) -> Result<bool, SettingWriteError> {
+    let mut root = parse_root_object(path)?;
+    let mut object = &mut root;
+    for parent in setting.parents {
+        object = ensure_object_mut(object, parent)?;
+    }
+    object.insert(setting.key.to_string(), serde_json::Value::Bool(value));
+    if let Some(alias) = setting.legacy_root_alias {
+        root.remove(alias);
+    }
+    write_root_object(path, &root)?;
+    read_bool(path, setting)
+}
+
+fn reset_bool(path: &Path, setting: &BoolSetting) -> Result<bool, SettingWriteError> {
+    let def = setting_definition(setting.id)
+        .ok_or_else(|| SettingWriteError::UnknownSetting(setting.id.to_string()))?;
+    let default = def
+        .default_value
+        .map(|raw| raw == "true")
+        .unwrap_or(setting.default);
+    write_bool(path, setting, default)
+}
+
 /// Read the effective `hashline_edit` value after loading a project runtime config file.
 pub fn read_effective_hashline_edit(path: &Path) -> Result<bool, SettingWriteError> {
-    guard_writable(HASHLINE_EDIT_ID)?;
-    reload_hashline_edit(path)
+    read_bool(path, bool_setting(HASHLINE_EDIT_ID)?)
 }
 
 /// Read the effective `runtime.compaction.enabled` value after loading a project runtime config.
 pub fn read_effective_compaction_enabled(path: &Path) -> Result<bool, SettingWriteError> {
-    guard_writable(COMPACTION_ENABLED_ID)?;
-    reload_compaction_enabled(path)
+    read_bool(path, bool_setting(COMPACTION_ENABLED_ID)?)
 }
 
 /// Read the effective `runtime.compaction.auto_retry_overflow` value after loading a project runtime config.
 pub fn read_effective_compaction_auto_retry_overflow(
     path: &Path,
 ) -> Result<bool, SettingWriteError> {
-    guard_writable(COMPACTION_AUTO_RETRY_OVERFLOW_ID)?;
-    reload_compaction_auto_retry_overflow(path)
+    read_bool(path, bool_setting(COMPACTION_AUTO_RETRY_OVERFLOW_ID)?)
 }
 
 /// Read the effective `runtime.deterministic.enabled` value after loading a project runtime config.
 pub fn read_effective_deterministic_enabled(path: &Path) -> Result<bool, SettingWriteError> {
-    guard_writable(DETERMINISTIC_ENABLED_ID)?;
-    reload_deterministic_enabled(path)
+    read_bool(path, bool_setting(DETERMINISTIC_ENABLED_ID)?)
 }
 
 /// Persist `hashline_edit` to a project runtime config file and return the reloaded value.
 pub fn write_project_hashline_edit(path: &Path, value: bool) -> Result<bool, SettingWriteError> {
-    guard_writable(HASHLINE_EDIT_ID)?;
-    let mut root = parse_root_object(path)?;
-    root.insert(HASHLINE_EDIT_ID.to_string(), serde_json::Value::Bool(value));
-    root.remove("hashlineEdit");
-    write_root_object(path, &root)?;
-    reload_hashline_edit(path)
+    write_bool(path, bool_setting(HASHLINE_EDIT_ID)?, value)
 }
 
 /// Persist `runtime.compaction.enabled` under `runtime.compaction.enabled` and reload.
@@ -200,13 +258,7 @@ pub fn write_project_compaction_enabled(
     path: &Path,
     value: bool,
 ) -> Result<bool, SettingWriteError> {
-    guard_writable(COMPACTION_ENABLED_ID)?;
-    let mut root = parse_root_object(path)?;
-    let runtime = ensure_object_mut(&mut root, "runtime")?;
-    let compaction = ensure_object_mut(runtime, "compaction")?;
-    compaction.insert("enabled".to_string(), serde_json::Value::Bool(value));
-    write_root_object(path, &root)?;
-    reload_compaction_enabled(path)
+    write_bool(path, bool_setting(COMPACTION_ENABLED_ID)?, value)
 }
 
 /// Persist `runtime.compaction.auto_retry_overflow` and reload.
@@ -214,24 +266,21 @@ pub fn write_project_compaction_auto_retry_overflow(
     path: &Path,
     value: bool,
 ) -> Result<bool, SettingWriteError> {
-    guard_writable(COMPACTION_AUTO_RETRY_OVERFLOW_ID)?;
-    let mut root = parse_root_object(path)?;
-    let runtime = ensure_object_mut(&mut root, "runtime")?;
-    let compaction = ensure_object_mut(runtime, "compaction")?;
-    compaction.insert(
-        "auto_retry_overflow".to_string(),
-        serde_json::Value::Bool(value),
-    );
-    write_root_object(path, &root)?;
-    reload_compaction_auto_retry_overflow(path)
+    write_bool(
+        path,
+        bool_setting(COMPACTION_AUTO_RETRY_OVERFLOW_ID)?,
+        value,
+    )
 }
 
 /// Read the effective `runtime.compaction.structured_summary_contract` value after loading a project runtime config.
 pub fn read_effective_compaction_structured_summary_contract(
     path: &Path,
 ) -> Result<bool, SettingWriteError> {
-    guard_writable(COMPACTION_STRUCTURED_SUMMARY_CONTRACT_ID)?;
-    reload_compaction_structured_summary_contract(path)
+    read_bool(
+        path,
+        bool_setting(COMPACTION_STRUCTURED_SUMMARY_CONTRACT_ID)?,
+    )
 }
 
 /// Persist `runtime.compaction.structured_summary_contract` and reload.
@@ -239,36 +288,28 @@ pub fn write_project_compaction_structured_summary_contract(
     path: &Path,
     value: bool,
 ) -> Result<bool, SettingWriteError> {
-    guard_writable(COMPACTION_STRUCTURED_SUMMARY_CONTRACT_ID)?;
-    let mut root = parse_root_object(path)?;
-    let runtime = ensure_object_mut(&mut root, "runtime")?;
-    let compaction = ensure_object_mut(runtime, "compaction")?;
-    compaction.insert(
-        "structured_summary_contract".to_string(),
-        serde_json::Value::Bool(value),
-    );
-    write_root_object(path, &root)?;
-    reload_compaction_structured_summary_contract(path)
+    write_bool(
+        path,
+        bool_setting(COMPACTION_STRUCTURED_SUMMARY_CONTRACT_ID)?,
+        value,
+    )
 }
 
 /// Reset `runtime.compaction.structured_summary_contract` to the registry default (`true`) and reload.
 pub fn reset_project_compaction_structured_summary_contract(
     path: &Path,
 ) -> Result<bool, SettingWriteError> {
-    guard_writable(COMPACTION_STRUCTURED_SUMMARY_CONTRACT_ID)?;
-    let def = setting_definition(COMPACTION_STRUCTURED_SUMMARY_CONTRACT_ID).ok_or_else(|| {
-        SettingWriteError::UnknownSetting(COMPACTION_STRUCTURED_SUMMARY_CONTRACT_ID.to_string())
-    })?;
-    let default = def.default_value.map(|raw| raw == "true").unwrap_or(true);
-    write_project_compaction_structured_summary_contract(path, default)
+    reset_bool(
+        path,
+        bool_setting(COMPACTION_STRUCTURED_SUMMARY_CONTRACT_ID)?,
+    )
 }
 
 /// Read the effective `runtime.compaction.estimated_token_triggers` value after loading a project runtime config.
 pub fn read_effective_compaction_estimated_token_triggers(
     path: &Path,
 ) -> Result<bool, SettingWriteError> {
-    guard_writable(COMPACTION_ESTIMATED_TOKEN_TRIGGERS_ID)?;
-    reload_compaction_estimated_token_triggers(path)
+    read_bool(path, bool_setting(COMPACTION_ESTIMATED_TOKEN_TRIGGERS_ID)?)
 }
 
 /// Persist `runtime.compaction.estimated_token_triggers` and reload.
@@ -276,28 +317,18 @@ pub fn write_project_compaction_estimated_token_triggers(
     path: &Path,
     value: bool,
 ) -> Result<bool, SettingWriteError> {
-    guard_writable(COMPACTION_ESTIMATED_TOKEN_TRIGGERS_ID)?;
-    let mut root = parse_root_object(path)?;
-    let runtime = ensure_object_mut(&mut root, "runtime")?;
-    let compaction = ensure_object_mut(runtime, "compaction")?;
-    compaction.insert(
-        "estimated_token_triggers".to_string(),
-        serde_json::Value::Bool(value),
-    );
-    write_root_object(path, &root)?;
-    reload_compaction_estimated_token_triggers(path)
+    write_bool(
+        path,
+        bool_setting(COMPACTION_ESTIMATED_TOKEN_TRIGGERS_ID)?,
+        value,
+    )
 }
 
 /// Reset `runtime.compaction.estimated_token_triggers` to the registry default (`true`) and reload.
 pub fn reset_project_compaction_estimated_token_triggers(
     path: &Path,
 ) -> Result<bool, SettingWriteError> {
-    guard_writable(COMPACTION_ESTIMATED_TOKEN_TRIGGERS_ID)?;
-    let def = setting_definition(COMPACTION_ESTIMATED_TOKEN_TRIGGERS_ID).ok_or_else(|| {
-        SettingWriteError::UnknownSetting(COMPACTION_ESTIMATED_TOKEN_TRIGGERS_ID.to_string())
-    })?;
-    let default = def.default_value.map(|raw| raw == "true").unwrap_or(true);
-    write_project_compaction_estimated_token_triggers(path, default)
+    reset_bool(path, bool_setting(COMPACTION_ESTIMATED_TOKEN_TRIGGERS_ID)?)
 }
 
 /// Persist `runtime.deterministic.enabled` under `runtime.deterministic.enabled` and reload.
@@ -305,52 +336,29 @@ pub fn write_project_deterministic_enabled(
     path: &Path,
     value: bool,
 ) -> Result<bool, SettingWriteError> {
-    guard_writable(DETERMINISTIC_ENABLED_ID)?;
-    let mut root = parse_root_object(path)?;
-    let runtime = ensure_object_mut(&mut root, "runtime")?;
-    let deterministic = ensure_object_mut(runtime, "deterministic")?;
-    deterministic.insert("enabled".to_string(), serde_json::Value::Bool(value));
-    write_root_object(path, &root)?;
-    reload_deterministic_enabled(path)
+    write_bool(path, bool_setting(DETERMINISTIC_ENABLED_ID)?, value)
 }
 
 /// Reset `hashline_edit` to the registry default (`true`) in the project file and reload.
 pub fn reset_project_hashline_edit(path: &Path) -> Result<bool, SettingWriteError> {
-    guard_writable(HASHLINE_EDIT_ID)?;
-    let def = setting_definition(HASHLINE_EDIT_ID)
-        .ok_or_else(|| SettingWriteError::UnknownSetting(HASHLINE_EDIT_ID.to_string()))?;
-    let default = def.default_value.map(|raw| raw == "true").unwrap_or(true);
-    write_project_hashline_edit(path, default)
+    reset_bool(path, bool_setting(HASHLINE_EDIT_ID)?)
 }
 
 /// Reset `runtime.compaction.enabled` to the registry default (`true`) and reload.
 pub fn reset_project_compaction_enabled(path: &Path) -> Result<bool, SettingWriteError> {
-    guard_writable(COMPACTION_ENABLED_ID)?;
-    let def = setting_definition(COMPACTION_ENABLED_ID)
-        .ok_or_else(|| SettingWriteError::UnknownSetting(COMPACTION_ENABLED_ID.to_string()))?;
-    let default = def.default_value.map(|raw| raw == "true").unwrap_or(true);
-    write_project_compaction_enabled(path, default)
+    reset_bool(path, bool_setting(COMPACTION_ENABLED_ID)?)
 }
 
 /// Reset `runtime.compaction.auto_retry_overflow` to the registry default (`true`) and reload.
 pub fn reset_project_compaction_auto_retry_overflow(
     path: &Path,
 ) -> Result<bool, SettingWriteError> {
-    guard_writable(COMPACTION_AUTO_RETRY_OVERFLOW_ID)?;
-    let def = setting_definition(COMPACTION_AUTO_RETRY_OVERFLOW_ID).ok_or_else(|| {
-        SettingWriteError::UnknownSetting(COMPACTION_AUTO_RETRY_OVERFLOW_ID.to_string())
-    })?;
-    let default = def.default_value.map(|raw| raw == "true").unwrap_or(true);
-    write_project_compaction_auto_retry_overflow(path, default)
+    reset_bool(path, bool_setting(COMPACTION_AUTO_RETRY_OVERFLOW_ID)?)
 }
 
 /// Reset `runtime.deterministic.enabled` to the registry default (`false`) and reload.
 pub fn reset_project_deterministic_enabled(path: &Path) -> Result<bool, SettingWriteError> {
-    guard_writable(DETERMINISTIC_ENABLED_ID)?;
-    let def = setting_definition(DETERMINISTIC_ENABLED_ID)
-        .ok_or_else(|| SettingWriteError::UnknownSetting(DETERMINISTIC_ENABLED_ID.to_string()))?;
-    let default = def.default_value.map(|raw| raw == "true").unwrap_or(false);
-    write_project_deterministic_enabled(path, default)
+    reset_bool(path, bool_setting(DETERMINISTIC_ENABLED_ID)?)
 }
 
 /// Fail-closed write entry for supported bool settings.
@@ -359,23 +367,7 @@ pub fn write_project_setting_bool(
     setting_id: &str,
     value: bool,
 ) -> Result<bool, SettingWriteError> {
-    let canonical = resolve_setting_id(setting_id).unwrap_or(setting_id);
-    guard_writable(canonical)?;
-    match canonical {
-        HASHLINE_EDIT_ID => write_project_hashline_edit(path, value),
-        COMPACTION_ENABLED_ID => write_project_compaction_enabled(path, value),
-        COMPACTION_AUTO_RETRY_OVERFLOW_ID => {
-            write_project_compaction_auto_retry_overflow(path, value)
-        }
-        COMPACTION_STRUCTURED_SUMMARY_CONTRACT_ID => {
-            write_project_compaction_structured_summary_contract(path, value)
-        }
-        COMPACTION_ESTIMATED_TOKEN_TRIGGERS_ID => {
-            write_project_compaction_estimated_token_triggers(path, value)
-        }
-        DETERMINISTIC_ENABLED_ID => write_project_deterministic_enabled(path, value),
-        other => Err(SettingWriteError::UnsupportedWrite(other.to_string())),
-    }
+    write_bool(path, bool_setting(setting_id)?, value)
 }
 
 /// Fail-closed reset entry for supported bool settings.
@@ -383,33 +375,5 @@ pub fn reset_project_setting_to_default(
     path: &Path,
     setting_id: &str,
 ) -> Result<String, SettingWriteError> {
-    let canonical = resolve_setting_id(setting_id).unwrap_or(setting_id);
-    guard_writable(canonical)?;
-    match canonical {
-        HASHLINE_EDIT_ID => {
-            let value = reset_project_hashline_edit(path)?;
-            Ok(if value { "true" } else { "false" }.to_string())
-        }
-        COMPACTION_ENABLED_ID => {
-            let value = reset_project_compaction_enabled(path)?;
-            Ok(if value { "true" } else { "false" }.to_string())
-        }
-        COMPACTION_AUTO_RETRY_OVERFLOW_ID => {
-            let value = reset_project_compaction_auto_retry_overflow(path)?;
-            Ok(if value { "true" } else { "false" }.to_string())
-        }
-        COMPACTION_STRUCTURED_SUMMARY_CONTRACT_ID => {
-            let value = reset_project_compaction_structured_summary_contract(path)?;
-            Ok(if value { "true" } else { "false" }.to_string())
-        }
-        COMPACTION_ESTIMATED_TOKEN_TRIGGERS_ID => {
-            let value = reset_project_compaction_estimated_token_triggers(path)?;
-            Ok(if value { "true" } else { "false" }.to_string())
-        }
-        DETERMINISTIC_ENABLED_ID => {
-            let value = reset_project_deterministic_enabled(path)?;
-            Ok(if value { "true" } else { "false" }.to_string())
-        }
-        other => Err(SettingWriteError::UnsupportedWrite(other.to_string())),
-    }
+    Ok(reset_bool(path, bool_setting(setting_id)?)?.to_string())
 }
