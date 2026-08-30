@@ -143,21 +143,24 @@ pub(crate) fn execute_with_io(command: WorktreeCommand, io: &mut CliIo<'_>, deps
     }
 }
 
-fn resolve_repository(
+fn list_repository_worktrees(
     workspace: Option<PathBuf>,
     io: &mut CliIo<'_>,
     deps: &CliDeps,
-) -> Result<PathBuf, i32> {
-    match workspace {
-        Some(path) => Ok(path),
+) -> Result<(PathBuf, Vec<ListedWorktree>), i32> {
+    let repository_root = match workspace {
+        Some(path) => path,
         None => deps.current_dir().map_err(|err| {
             let _ = writeln!(
                 io.stderr,
                 "worktree: failed to resolve current working directory: {err}"
             );
             2
-        }),
-    }
+        })?,
+    };
+    let worktrees = list_session_worktrees(&repository_root, None)
+        .map_err(|err| map_worktree_error(io, err))?;
+    Ok((repository_root, worktrees))
 }
 
 fn write_json(io: &mut CliIo<'_>, value: &impl Serialize) -> i32 {
@@ -179,13 +182,9 @@ fn map_worktree_error(io: &mut CliIo<'_>, err: WorktreeError) -> i32 {
 }
 
 fn run_list(cmd: WorktreeListCommand, io: &mut CliIo<'_>, deps: &CliDeps) -> i32 {
-    let repository_root = match resolve_repository(cmd.workspace, io, deps) {
-        Ok(path) => path,
+    let (repository_root, listed) = match list_repository_worktrees(cmd.workspace, io, deps) {
+        Ok(repository) => repository,
         Err(code) => return code,
-    };
-    let listed = match list_session_worktrees(&repository_root, None) {
-        Ok(listed) => listed,
-        Err(err) => return map_worktree_error(io, err),
     };
     let managed_count = listed.iter().filter(|item| item.harness_managed).count();
     let worktrees: Vec<WorktreeEntryJson> = listed
@@ -204,13 +203,9 @@ fn run_list(cmd: WorktreeListCommand, io: &mut CliIo<'_>, deps: &CliDeps) -> i32
 }
 
 fn run_remove(cmd: WorktreeRemoveCommand, io: &mut CliIo<'_>, deps: &CliDeps) -> i32 {
-    let repository_root = match resolve_repository(cmd.workspace, io, deps) {
-        Ok(path) => path,
+    let (repository_root, listed) = match list_repository_worktrees(cmd.workspace, io, deps) {
+        Ok(repository) => repository,
         Err(code) => return code,
-    };
-    let listed = match list_session_worktrees(&repository_root, None) {
-        Ok(listed) => listed,
-        Err(err) => return map_worktree_error(io, err),
     };
     let Some(entry) = listed
         .iter()
@@ -250,13 +245,9 @@ fn run_remove(cmd: WorktreeRemoveCommand, io: &mut CliIo<'_>, deps: &CliDeps) ->
 }
 
 fn run_cleanup(cmd: WorktreeCleanupCommand, io: &mut CliIo<'_>, deps: &CliDeps) -> i32 {
-    let repository_root = match resolve_repository(cmd.workspace, io, deps) {
-        Ok(path) => path,
+    let (repository_root, listed) = match list_repository_worktrees(cmd.workspace, io, deps) {
+        Ok(repository) => repository,
         Err(code) => return code,
-    };
-    let listed = match list_session_worktrees(&repository_root, None) {
-        Ok(listed) => listed,
-        Err(err) => return map_worktree_error(io, err),
     };
     let managed: Vec<ListedWorktree> = listed
         .into_iter()
@@ -305,170 +296,4 @@ fn run_cleanup(cmd: WorktreeCleanupCommand, io: &mut CliIo<'_>, deps: &CliDeps) 
         },
     );
     emit_code.max(if failed_count == 0 { 0 } else { 1 })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::UnwrapOrAbort;
-    use harness_core::worktree::{create_session_worktree, CreateWorktreeOptions};
-    use std::fs;
-    use std::io::Cursor;
-    use std::path::Path;
-    use std::process::Command as GitCommand;
-    use tempfile::tempdir;
-
-    fn run_git(cwd: &Path, args: &[&str]) {
-        let output = GitCommand::new("git")
-            .args(args)
-            .current_dir(cwd)
-            .env("GIT_TERMINAL_PROMPT", "0")
-            .output()
-            .unwrap_or_abort();
-        assert!(
-            output.status.success(),
-            "git {:?} failed: {}",
-            args,
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-
-    fn init_git_repo(path: &Path) {
-        run_git(path, &["init", "-b", "main"]);
-        run_git(path, &["config", "user.email", "worktree@example.com"]);
-        run_git(path, &["config", "user.name", "Worktree Test"]);
-        fs::write(path.join("README.md"), "seed\n").unwrap_or_abort();
-        run_git(path, &["add", "README.md"]);
-        run_git(path, &["commit", "-m", "seed"]);
-    }
-
-    fn create_slug(repo: &Path, slug: &str) {
-        create_session_worktree(CreateWorktreeOptions {
-            repository_root: repo,
-            worktree_parent: None,
-            slug: Some(slug),
-            start_point: None,
-        })
-        .unwrap_or_abort();
-    }
-
-    fn branch_exists(repo: &Path, branch: &str) -> bool {
-        GitCommand::new("git")
-            .args([
-                "show-ref",
-                "--verify",
-                "--quiet",
-                &format!("refs/heads/{branch}"),
-            ])
-            .current_dir(repo)
-            .env("GIT_TERMINAL_PROMPT", "0")
-            .output()
-            .map(|output| output.status.success())
-            .unwrap_or(false)
-    }
-
-    fn run_cli(cwd: &Path, args: &[&str]) -> (i32, String, String) {
-        let mut stdin = Cursor::new(Vec::<u8>::new());
-        let mut stdout = Vec::new();
-        let mut stderr = Vec::new();
-        let mut io = CliIo::new(&mut stdin, &mut stdout, &mut stderr);
-        let deps = CliDeps::real().with_current_dir(cwd.to_path_buf());
-        let mut argv: Vec<&str> = vec!["harness", "worktree"];
-        argv.extend_from_slice(args);
-        let outcome = crate::run(argv, &mut io, deps);
-        (
-            outcome.code,
-            String::from_utf8_lossy(&stdout).to_string(),
-            String::from_utf8_lossy(&stderr).to_string(),
-        )
-    }
-
-    #[test]
-    fn list_remove_cleanup_roundtrip_via_cli_handlers() {
-        // arrange — a real git repo with two managed session worktrees
-        let dir = tempdir().unwrap_or_abort();
-        let repo = dir.path().join("repo");
-        fs::create_dir_all(&repo).unwrap_or_abort();
-        init_git_repo(&repo);
-        create_slug(&repo, "alpha");
-        create_slug(&repo, "beta");
-
-        // act + assert — list shows both managed worktrees
-        let (code, stdout, stderr) = run_cli(&repo, &["list"]);
-        assert_eq!(code, 0, "stderr: {stderr}");
-        assert!(stdout.contains("\"managed_count\": 2"), "stdout: {stdout}");
-        assert!(stdout.contains("\"slug\": \"alpha\""), "stdout: {stdout}");
-        assert!(stdout.contains("\"slug\": \"beta\""), "stdout: {stdout}");
-
-        // act + assert — select + remove alpha (path and branch gone)
-        let (code, stdout, stderr) = run_cli(&repo, &["remove", "alpha", "--force"]);
-        assert_eq!(code, 0, "stderr: {stderr}");
-        assert!(stdout.contains("\"slug\": \"alpha\""), "stdout: {stdout}");
-        assert!(stdout.contains("\"removed\": true"), "stdout: {stdout}");
-        assert!(!repo.join(".agent-harness/worktrees/alpha").exists());
-        assert!(!branch_exists(&repo, "harness/wt-alpha"));
-
-        // act + assert — cleanup removes the remaining beta worktree
-        let (code, stdout, stderr) = run_cli(&repo, &["cleanup", "--force"]);
-        assert_eq!(code, 0, "stderr: {stderr}");
-        assert!(stdout.contains("\"removed_count\": 1"), "stdout: {stdout}");
-        assert!(!repo.join(".agent-harness/worktrees/beta").exists());
-        assert!(!branch_exists(&repo, "harness/wt-beta"));
-
-        // assert — nothing managed remains
-        let (code, stdout, stderr) = run_cli(&repo, &["list"]);
-        assert_eq!(code, 0, "stderr: {stderr}");
-        assert!(stdout.contains("\"managed_count\": 0"), "stdout: {stdout}");
-    }
-
-    #[test]
-    fn remove_unknown_slug_fails_closed() {
-        // arrange
-        let dir = tempdir().unwrap_or_abort();
-        let repo = dir.path().join("repo");
-        fs::create_dir_all(&repo).unwrap_or_abort();
-        init_git_repo(&repo);
-        create_slug(&repo, "alpha");
-
-        // act
-        let (code, _stdout, stderr) = run_cli(&repo, &["remove", "ghost"]);
-
-        // assert
-        assert_eq!(code, 1);
-        assert!(stderr.contains("no managed session worktree with slug `ghost`"));
-        // the unrelated worktree survives
-        assert!(repo.join(".agent-harness/worktrees/alpha").exists());
-    }
-
-    #[test]
-    fn list_fails_closed_on_non_git_repository() {
-        // arrange
-        let dir = tempdir().unwrap_or_abort();
-        let not_a_repo = dir.path().join("plain");
-        fs::create_dir_all(&not_a_repo).unwrap_or_abort();
-
-        // act
-        let (code, _stdout, stderr) = run_cli(&not_a_repo, &["list"]);
-
-        // assert
-        assert_eq!(code, 1);
-        assert!(stderr.contains("not a git repository"));
-    }
-
-    #[test]
-    fn cleanup_on_empty_repo_reports_zero_removed() {
-        // arrange — a git repo with no session worktrees
-        let dir = tempdir().unwrap_or_abort();
-        let repo = dir.path().join("repo");
-        fs::create_dir_all(&repo).unwrap_or_abort();
-        init_git_repo(&repo);
-
-        // act
-        let (code, stdout, stderr) = run_cli(&repo, &["cleanup"]);
-
-        // assert
-        assert_eq!(code, 0, "stderr: {stderr}");
-        assert!(stdout.contains("\"removed_count\": 0"), "stdout: {stdout}");
-        assert!(stdout.contains("\"failed_count\": 0"), "stdout: {stdout}");
-    }
 }

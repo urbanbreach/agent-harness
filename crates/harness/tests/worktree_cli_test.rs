@@ -205,3 +205,20 @@ fn worktree_list_fails_closed_on_non_git_repository_via_cli() {
     assert_eq!(code, 1);
     assert!(stderr.contains("not a git repository"), "stderr: {stderr}");
 }
+
+#[test]
+fn worktree_cleanup_on_empty_repo_reports_zero_removed_via_cli() {
+    // arrange
+    let dir = tempdir().unwrap_or_abort();
+    let repo = dir.path().join("repo");
+    fs::create_dir_all(&repo).unwrap_or_abort();
+    init_git_repo(&repo);
+
+    // act
+    let (code, stdout, stderr) = worktree_cli(&repo, &["cleanup"]);
+
+    // assert
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert!(stdout.contains("\"removed_count\": 0"), "stdout: {stdout}");
+    assert!(stdout.contains("\"failed_count\": 0"), "stdout: {stdout}");
+}
