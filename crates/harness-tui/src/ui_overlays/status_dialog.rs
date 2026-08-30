@@ -1162,6 +1162,35 @@ fn status_dialog_mcp_rows_from_config(
         .collect()
 }
 
+fn status_dialog_test_line_text(line: &Line<'_>) -> String {
+    line.spans
+        .iter()
+        .map(|span| span.content.as_ref())
+        .collect()
+}
+
+fn status_dialog_test_text(lines: &[Line<'_>]) -> String {
+    lines
+        .iter()
+        .map(status_dialog_test_line_text)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn render_operator_summary_for_test(summary: &OperatorDialogSummary) -> String {
+    let theme = Theme::default();
+    let mut lines = Vec::new();
+    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
+    status_dialog_test_text(&lines)
+}
+
+fn render_plugin_summary_for_test(summary: &PluginDialogSummary) -> String {
+    let theme = Theme::default();
+    let mut lines = Vec::new();
+    append_status_dialog_plugins_section(&mut lines, summary.clone(), &theme);
+    status_dialog_test_text(&lines)
+}
+
 #[cfg(test)]
 fn status_dialog_edit_applied_envelope(
     seq: u64,
@@ -1218,16 +1247,7 @@ pub(crate) fn exact_test_status_dialog_edit_attribution_counts_external_on_disk_
     let theme = Theme::default();
     let mut lines = Vec::new();
     append_status_dialog_edit_attribution_section(&mut lines, summary, &theme);
-    let rendered = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.clone())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = status_dialog_test_text(&lines);
     assert!(
         rendered.contains("Edit attribution: 0 agent-tool, 1 external"),
         "expected external drift line: {rendered}"
@@ -1291,19 +1311,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_fallback_and_no
     assert_eq!(summary.settings_writable_paths, 6);
     assert!(summary.settings_total >= 38);
 
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary, &theme);
-    let rendered = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.clone())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
     assert!(
         rendered.contains("Fallback: provider fallback: model-a → model-b"),
         "expected fallback line: {rendered}"
@@ -1363,19 +1371,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_bound_settings_
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.clone())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     assert!(summary.settings_bound);
@@ -1405,19 +1401,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_settings_regist
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.clone())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     assert!(
@@ -1481,22 +1465,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_dashboard() {
         "graph query unavailable: symbol_def `(probe)` (no backend)".to_string(),
     ));
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered: String = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join(
-            "
-",
-        );
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     let (bound, total) = summary.bound_probe_counts();
@@ -1536,19 +1505,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_dashboard_after
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered: String = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
     let (bound, total) = summary.bound_probe_counts();
 
     // Then: seed binds a large operator probe surface on the dashboard
@@ -1600,19 +1557,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_crash_scan_coun
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.clone())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     assert!(
@@ -1656,19 +1601,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_edit_attributio
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered: String = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     let line = summary
@@ -1705,19 +1638,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_crash_recovery_
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered: String = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then: operator next-step includes previous-crash + reopen hint
     let next = summary
@@ -1747,19 +1668,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_team_registry_c
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.clone())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     assert!(
@@ -1812,19 +1721,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_edit_attributio
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered: String = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     let first = summary
@@ -1864,19 +1761,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_plan_view() {
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered: String = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     let plan = summary.plan_view.as_deref().expect("plan view summary");
@@ -1920,19 +1805,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_crash_recovery_
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered: String = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     let action = summary
@@ -1984,19 +1857,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_team_create() {
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered: String = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     let create = summary.team_last_create.as_deref().expect("team create");
@@ -2050,19 +1911,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_team_send() {
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered: String = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     let send = summary.team_last_send.as_deref().expect("team send");
@@ -2110,19 +1959,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_team_add_cancel
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered: String = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     let add = summary.team_add_member.as_deref().expect("team add-member");
@@ -2155,19 +1992,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_acp_connection(
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.clone())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     assert!(
@@ -2208,19 +2033,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_acp_session() {
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered: String = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     let state = summary.acp_state.as_deref().expect("acp state");
@@ -2247,19 +2060,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_sandbox_fs_plan
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.clone())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     assert!(
@@ -2306,19 +2107,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_acp_connect_bin
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered: String = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     let connect = summary.acp_last_connect.as_deref().expect("acp connect");
@@ -2357,19 +2146,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_jujutsu_probe()
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.clone())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     assert!(
@@ -2417,19 +2194,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_jujutsu_compone
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered: String = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     let cli = summary.jujutsu_cli.as_deref().expect("jujutsu cli");
@@ -2469,22 +2234,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_jujutsu_last_co
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered: String = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join(
-            "
-",
-        );
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     let line = summary
@@ -2521,19 +2271,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_foreign_discove
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.clone())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     assert!(
@@ -2575,19 +2313,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_foreign_import_
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered: String = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     let next = summary
@@ -2617,19 +2343,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_binary_update_c
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.clone())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     assert!(
@@ -2677,19 +2391,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_foreign_import_
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered: String = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     let text = summary
@@ -2731,19 +2433,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_binary_update_p
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered: String = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     let policy_line = summary
@@ -2794,19 +2484,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_sleep_wake_obse
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.clone())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     assert!(
@@ -2844,19 +2522,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_binary_version(
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered: String = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     let version = summary.binary_version.as_deref().expect("binary version");
@@ -2898,19 +2564,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_sleep_wake_poli
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered: String = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     let policy = summary
@@ -2945,19 +2599,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_mcp_oauth_outco
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.clone())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     assert!(
@@ -3003,19 +2645,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_sleep_wake_avai
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered: String = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     let availability = summary
@@ -3063,19 +2693,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_mcp_oauth_remot
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered: String = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     let availability = summary
@@ -3114,19 +2732,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_browser_oidc_ou
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.clone())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     assert!(
@@ -3173,19 +2779,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_mcp_oauth_excha
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered: String = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     let exchange = summary
@@ -3239,19 +2833,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_browser_oidc_av
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered: String = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     let availability = summary
@@ -3294,19 +2876,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_cow_clone_outco
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.clone())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     assert!(
@@ -3350,19 +2920,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_browser_oidc_co
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered: String = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     let text = summary
@@ -3403,19 +2961,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_cow_clone_last(
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered: String = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     let line = summary.cow_clone_last.as_deref().expect("cow clone last");
@@ -3441,19 +2987,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_graph_query_bat
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.clone())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     assert!(
@@ -3495,19 +3029,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_graph_query_las
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered: String = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     let line = summary
@@ -3542,22 +3064,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_graph_batch_fir
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered: String = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join(
-            "
-",
-        );
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     let line = summary
@@ -3591,19 +3098,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_workspace_hub_o
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.clone())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     assert!(
@@ -3646,19 +3141,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_workspace_hub_a
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered: String = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     let availability = summary
@@ -3699,19 +3182,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_auto_fallback_c
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.clone())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     assert!(
@@ -3763,19 +3234,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_workspace_hub_b
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered: String = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     let bind = summary.workspace_hub_bind.as_deref().expect("bind");
@@ -3827,19 +3286,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_fallback_outcom
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered: String = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     let line = summary
@@ -3871,19 +3318,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_fallback_banner
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered: String = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     let line = summary
@@ -3911,19 +3346,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_fallback_models
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered: String = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     let line = summary
@@ -3952,19 +3375,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_demote_outcome_
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.clone())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     assert!(
@@ -4005,19 +3416,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_demote_last() {
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered: String = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     let text = summary.demote_last.as_deref().expect("demote last");
@@ -4048,22 +3447,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_demote_last_tas
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered: String = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join(
-            "
-",
-        );
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     let line = summary
@@ -4098,19 +3482,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_cron_schedule_c
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.clone())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     assert!(
@@ -4162,19 +3534,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_cron_register()
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered: String = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     let reg = summary
@@ -4211,19 +3571,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_cron_remove() {
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered: String = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     let remove = summary.cron_last_remove.as_deref().expect("cron remove");
@@ -4266,19 +3614,7 @@ pub(crate) fn exact_test_status_dialog_plugins_section_surfaces_extension_descri
 
     // When
     let summary = status_dialog_plugin_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_plugins_section(&mut lines, summary.clone(), &theme);
-    let rendered = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.clone())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_plugin_summary_for_test(&summary);
 
     // Then
     assert!(
@@ -4314,20 +3650,9 @@ pub(crate) fn exact_test_status_dialog_plugins_section_surfaces_lifecycle_summar
     }));
 
     // When
-    let summary = status_dialog_plugin_summary(&app);
     let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_plugins_section(&mut lines, summary.clone(), &theme);
-    let rendered = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.clone())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let summary = status_dialog_plugin_summary(&app);
+    let rendered = render_plugin_summary_for_test(&summary);
 
     // Then
     assert_eq!(
@@ -4356,16 +3681,7 @@ pub(crate) fn exact_test_status_dialog_plugins_section_surfaces_lifecycle_summar
     let empty = status_dialog_plugin_summary(&app);
     let mut empty_lines = Vec::new();
     append_status_dialog_plugins_section(&mut empty_lines, empty, &theme);
-    let empty_rendered = empty_lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.clone())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let empty_rendered = status_dialog_test_text(&empty_lines);
     assert!(
         empty_rendered.contains("No Plugins"),
         "expected empty plugins line: {empty_rendered}"
@@ -4400,19 +3716,7 @@ pub(crate) fn exact_test_status_dialog_plugins_section_surfaces_plugin_install()
 
     // When
     let summary = status_dialog_plugin_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_plugins_section(&mut lines, summary.clone(), &theme);
-    let rendered: String = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_plugin_summary_for_test(&summary);
 
     // Then
     let install = summary.last_install.as_deref().expect("plugin install");
@@ -4453,19 +3757,7 @@ pub(crate) fn exact_test_status_dialog_plugins_section_surfaces_plugin_activate(
 
     // When
     let summary = status_dialog_plugin_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_plugins_section(&mut lines, summary.clone(), &theme);
-    let rendered: String = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_plugin_summary_for_test(&summary);
 
     // Then
     let activate = summary.last_activate.as_deref().expect("plugin activate");
@@ -4501,19 +3793,7 @@ pub(crate) fn exact_test_status_dialog_plugins_section_surfaces_plugin_deactivat
 
     // When
     let summary = status_dialog_plugin_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_plugins_section(&mut lines, summary.clone(), &theme);
-    let rendered: String = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_plugin_summary_for_test(&summary);
 
     // Then
     let deactivate = summary
@@ -4555,19 +3835,7 @@ pub(crate) fn exact_test_status_dialog_plugins_section_surfaces_plugin_remove() 
 
     // When
     let summary = status_dialog_plugin_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_plugins_section(&mut lines, summary.clone(), &theme);
-    let rendered: String = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_plugin_summary_for_test(&summary);
 
     // Then
     let remove = summary.last_remove.as_deref().expect("plugin remove");
@@ -4610,19 +3878,7 @@ pub(crate) fn exact_test_status_dialog_plugins_section_surfaces_extension_discov
 
     // When
     let summary = status_dialog_plugin_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_plugins_section(&mut lines, summary.clone(), &theme);
-    let rendered: String = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_plugin_summary_for_test(&summary);
 
     // Then
     let discover = summary.discover.as_deref().expect("extension discover");
@@ -4709,11 +3965,7 @@ pub(crate) fn exact_test_status_dialog_formatters_section_disabled_when_none() {
     let mut lines = Vec::new();
     append_status_dialog_formatters_section(&mut lines, &theme, None);
     assert_eq!(lines.len(), 2);
-    let row = lines[0]
-        .spans
-        .iter()
-        .map(|span| span.content.clone())
-        .collect::<String>();
+    let row = status_dialog_test_line_text(&lines[0]);
     assert!(row.contains("disabled"), "expected disabled label: {row}");
 }
 
@@ -4738,11 +3990,7 @@ pub(crate) fn exact_test_status_dialog_formatters_section_lists_enabled_language
     append_status_dialog_formatters_section(&mut lines, &theme, Some(&config));
 
     assert_eq!(lines.len(), 2);
-    let row = lines[0]
-        .spans
-        .iter()
-        .map(|span| span.content.clone())
-        .collect::<String>();
+    let row = status_dialog_test_line_text(&lines[0]);
     assert!(row.contains("rust"), "expected rust language label: {row}");
     assert!(
         row.contains("configured"),
@@ -4909,19 +4157,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_cow_fastpath() 
 
     // When: operator summary is built and status dialog is rendered
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered: String = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then: COW fastpath one_line is surfaced honestly
     assert!(
@@ -4962,19 +4198,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_persistent_grap
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.clone())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     assert!(
@@ -5011,19 +4235,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_landlock_suppor
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.clone())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     assert!(
@@ -5063,19 +4275,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_os_sandbox_prof
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered: String = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     let text = summary
@@ -5121,19 +4321,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_os_sandbox_firs
 
     // When
     let summary = status_dialog_operator_summary(&app);
-    let theme = Theme::default();
-    let mut lines = Vec::new();
-    append_status_dialog_operator_section(&mut lines, summary.clone(), &theme);
-    let rendered: String = lines
-        .iter()
-        .map(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let rendered = render_operator_summary_for_test(&summary);
 
     // Then
     let first = summary
