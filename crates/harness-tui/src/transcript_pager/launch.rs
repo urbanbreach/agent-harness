@@ -102,11 +102,7 @@ pub fn launch_pager(
         .ok_or_else(|| PagerError::Write {
             detail: "pager stdin was not available".to_owned(),
         })?;
-    stdin
-        .write_all(snapshot.as_bytes())
-        .map_err(|error| PagerError::Write {
-            detail: error.to_string(),
-        })?;
+    write_snapshot(&mut stdin, snapshot.as_bytes())?;
     drop(stdin);
 
     let deadline = Instant::now() + stdio.timeout;
@@ -139,6 +135,16 @@ pub fn launch_pager(
     }
     let (stdout, stderr) = join_readers(stdout, stderr)?;
     Ok(exit_from_status(status, stdout, stderr))
+}
+
+fn write_snapshot(writer: &mut impl Write, snapshot: &[u8]) -> Result<(), PagerError> {
+    match writer.write_all(snapshot) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
+        Err(error) => Err(PagerError::Write {
+            detail: error.to_string(),
+        }),
+    }
 }
 
 fn configure_process_group(command: &mut Command) {
@@ -203,5 +209,36 @@ fn exit_from_status(status: ExitStatus, stdout: Vec<u8>, stderr: Vec<u8>) -> Pag
         signal: None,
         stdout,
         stderr,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::{self, Write};
+
+    use super::write_snapshot;
+
+    struct ClosedPagerStdin;
+
+    impl Write for ClosedPagerStdin {
+        fn write(&mut self, _buffer: &[u8]) -> io::Result<usize> {
+            Err(io::Error::from(io::ErrorKind::BrokenPipe))
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn closed_pager_stdin_defers_to_exit_status() {
+        // arrange
+        let mut stdin = ClosedPagerStdin;
+
+        // act
+        let result = write_snapshot(&mut stdin, b"snapshot");
+
+        // assert
+        assert!(result.is_ok());
     }
 }
