@@ -37,95 +37,13 @@ impl AppState {
             return;
         }
 
-        let handled_overlay = match self.overlay_stack().top() {
-            Some(OverlayKind::ReleaseNotes) => {
-                self.handle_release_notes_key(key);
-                true
-            }
-            Some(OverlayKind::PermissionModal) => {
-                self.handle_permission_modal_key(key);
-                return;
-            }
-            Some(OverlayKind::AuthDialog) => {
-                self.handle_connect_dialog_key(key);
-                return;
-            }
-            Some(OverlayKind::NewWorktreeDialog) => {
-                self.handle_new_worktree_dialog_key(key);
-                true
-            }
-            Some(OverlayKind::StatusDialog) => {
-                if key.code == KeyCode::Char('q') && key.modifiers == KeyModifiers::CONTROL {
-                    self.execute_action(Action::Quit);
-                } else {
-                    self.handle_status_dashboard_key(key);
-                }
-                true
-            }
-            Some(OverlayKind::SubagentActions) => {
-                self.handle_subagent_actions_key(key);
-                true
-            }
-            Some(OverlayKind::ThemeDialog) => {
-                self.handle_theme_dialog_key(key);
-                true
-            }
-            Some(OverlayKind::ErrorDetails) => {
-                self.handle_error_details_key(key);
-                true
-            }
-            Some(OverlayKind::PromptStashList) => {
-                self.handle_prompt_stash_list_key(key);
-                true
-            }
-            Some(OverlayKind::SettingsEditor) => {
-                self.handle_settings_editor_key(key);
-                true
-            }
-            Some(OverlayKind::PlanView) => {
-                self.handle_plan_view_key(key);
-                true
-            }
-            Some(OverlayKind::MemoryBrowser) => {
-                self.handle_memory_browser_key(key);
-                true
-            }
-            Some(OverlayKind::WorktreePicker) => {
-                self.handle_worktree_picker_key(key);
-                true
-            }
-            Some(OverlayKind::ForeignImportPicker) => {
-                self.handle_foreign_import_picker_key(&key);
-                true
-            }
-            _ => false,
-        };
-        if handled_overlay {
-            self.maybe_auto_exit();
+        if self.handle_top_overlay_key(key) {
             return;
         }
 
-        if self.composer_completion_active() {
-            match key.code {
-                KeyCode::Esc => self.composer_cancel_completion(),
-                KeyCode::Up => self.composer_move_completion(
-                    crate::completion_controller::SelectionDirection::Previous,
-                ),
-                KeyCode::Down => self.composer_move_completion(
-                    crate::completion_controller::SelectionDirection::Next,
-                ),
-                KeyCode::Enter => {
-                    let _ = self.composer_accept_completion_keyboard();
-                }
-                _ => {}
-            }
-            if matches!(
-                key.code,
-                KeyCode::Esc | KeyCode::Up | KeyCode::Down | KeyCode::Enter
-            ) {
-                self.maybe_auto_exit();
-                return;
-            }
+        if self.handle_composer_completion_key(key) {
+            self.maybe_auto_exit();
+            return;
         }
 
         if self.handle_transcript_viewer_key(key) {
@@ -141,35 +59,8 @@ impl AppState {
             return;
         }
 
-        if clipboard::copy_on_select_disabled()
-            && (self.transcript_view.transcript_selection.is_some()
-                || self.secondary_surfaces.selection.is_some())
-        {
-            if key.modifiers.contains(KeyModifiers::CONTROL)
-                && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('C'))
-            {
-                if let Some(frame_area) = self.last_frame_area() {
-                    if !self.copy_active_selection(frame_area) {
-                        self.clear_operator_sidebar_selection();
-                        self.clear_transcript_selection();
-                        return;
-                    }
-                }
-                self.clear_operator_sidebar_selection();
-                self.clear_transcript_selection();
-                self.maybe_auto_exit();
-                return;
-            }
-
-            if key.code == KeyCode::Esc {
-                self.clear_operator_sidebar_selection();
-                self.clear_transcript_selection();
-                self.maybe_auto_exit();
-                return;
-            }
-
-            self.clear_operator_sidebar_selection();
-            self.clear_transcript_selection();
+        if self.handle_active_selection_key(key) {
+            return;
         }
 
         if self.handle_navigation_overlay_key(&key) {
@@ -275,72 +166,9 @@ impl AppState {
             self.keymap.get_action(&key)
         };
 
-        if self.startup_shell_visible()
-            && self.focus != Focus::Prompt
-            && !self.composer_disabled()
-            && !key.modifiers.contains(KeyModifiers::CONTROL)
-            && !key.modifiers.contains(KeyModifiers::ALT)
-            && matches!(key.code, KeyCode::Char(_))
-        {
-            if mapped_action.is_some_and(|action| action_preempts_text_input(action, key)) {
-                self.execute_action_from_key(mapped_action.unwrap_or_abort(), key);
-                self.maybe_auto_exit();
-                return;
-            }
-
-            if let KeyCode::Char(c) = key.code {
-                self.focus = Focus::Prompt;
-                self.execute_action(Action::Char(c));
-                self.maybe_auto_exit();
-                return;
-            }
-        }
-
-        if self.focus == Focus::Details
-            && !self.composer_disabled()
-            && !self.replay_mode
-            && !key.modifiers.contains(KeyModifiers::CONTROL)
-            && !key.modifiers.contains(KeyModifiers::ALT)
-            && matches!(key.code, KeyCode::Char(_))
-        {
-            if mapped_action.is_some_and(|action| action_preempts_text_input(action, key)) {
-                self.execute_action_from_key(mapped_action.unwrap_or_abort(), key);
-                self.maybe_auto_exit();
-                return;
-            }
-
-            if let KeyCode::Char(c) = key.code {
-                self.focus = Focus::Prompt;
-                self.execute_action(Action::Char(c));
-                self.maybe_auto_exit();
-                return;
-            }
-        }
-
-        if self.focus == Focus::Prompt
-            && !self.composer_disabled()
-            && !key.modifiers.contains(KeyModifiers::CONTROL)
-            && !key.modifiers.contains(KeyModifiers::ALT)
-            && matches!(key.code, KeyCode::Char(_))
-        {
-            if mapped_action.is_some_and(|action| {
-                action != Action::TogglePromptFocus && action_preempts_text_input(action, key)
-            }) {
-                self.execute_action_from_key(mapped_action.unwrap_or_abort(), key);
-                self.maybe_auto_exit();
-                return;
-            }
-
-            if let KeyCode::Char(c) = key.code {
-                if c == '!' && self.composer.prompt_buffer.is_empty() && !self.composer.shell_mode {
-                    self.composer.shell_mode = true;
-                    self.maybe_auto_exit();
-                    return;
-                }
-                self.execute_action(Action::Char(c));
-                self.maybe_auto_exit();
-                return;
-            }
+        if self.handle_text_input_key(key, mapped_action) {
+            self.maybe_auto_exit();
+            return;
         }
 
         let Some(action) = mapped_action else {
@@ -349,6 +177,155 @@ impl AppState {
 
         self.execute_action_from_key(action, key);
         self.maybe_auto_exit();
+    }
+
+    fn handle_top_overlay_key(&mut self, key: KeyEvent) -> bool {
+        match self.overlay_stack().top() {
+            Some(OverlayKind::ReleaseNotes) => {
+                self.handle_release_notes_key(key);
+            }
+            Some(OverlayKind::PermissionModal) => {
+                self.handle_permission_modal_key(key);
+                return true;
+            }
+            Some(OverlayKind::AuthDialog) => {
+                self.handle_connect_dialog_key(key);
+                return true;
+            }
+            Some(OverlayKind::NewWorktreeDialog) => {
+                self.handle_new_worktree_dialog_key(key);
+            }
+            Some(OverlayKind::StatusDialog) => {
+                if key.code == KeyCode::Char('q') && key.modifiers == KeyModifiers::CONTROL {
+                    self.execute_action(Action::Quit);
+                } else {
+                    self.handle_status_dashboard_key(key);
+                }
+            }
+            Some(OverlayKind::SubagentActions) => {
+                self.handle_subagent_actions_key(key);
+            }
+            Some(OverlayKind::ThemeDialog) => {
+                self.handle_theme_dialog_key(key);
+            }
+            Some(OverlayKind::ErrorDetails) => {
+                self.handle_error_details_key(key);
+            }
+            Some(OverlayKind::PromptStashList) => {
+                self.handle_prompt_stash_list_key(key);
+            }
+            Some(OverlayKind::SettingsEditor) => {
+                self.handle_settings_editor_key(key);
+            }
+            Some(OverlayKind::PlanView) => {
+                self.handle_plan_view_key(key);
+            }
+            Some(OverlayKind::MemoryBrowser) => {
+                self.handle_memory_browser_key(key);
+            }
+            Some(OverlayKind::WorktreePicker) => {
+                self.handle_worktree_picker_key(key);
+            }
+            Some(OverlayKind::ForeignImportPicker) => {
+                self.handle_foreign_import_picker_key(&key);
+            }
+            _ => return false,
+        }
+
+        self.maybe_auto_exit();
+        true
+    }
+
+    fn handle_composer_completion_key(&mut self, key: KeyEvent) -> bool {
+        if !self.composer_completion_active() {
+            return false;
+        }
+        match key.code {
+            KeyCode::Esc => self.composer_cancel_completion(),
+            KeyCode::Up => self.composer_move_completion(
+                crate::completion_controller::SelectionDirection::Previous,
+            ),
+            KeyCode::Down => self
+                .composer_move_completion(crate::completion_controller::SelectionDirection::Next),
+            KeyCode::Enter => {
+                let _ = self.composer_accept_completion_keyboard();
+            }
+            _ => return false,
+        }
+        true
+    }
+
+    fn handle_active_selection_key(&mut self, key: KeyEvent) -> bool {
+        if !clipboard::copy_on_select_disabled()
+            || (self.transcript_view.transcript_selection.is_none()
+                && self.secondary_surfaces.selection.is_none())
+        {
+            return false;
+        }
+
+        let copy_requested = key.modifiers.contains(KeyModifiers::CONTROL)
+            && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('C'));
+        if copy_requested {
+            if self
+                .last_frame_area()
+                .is_some_and(|area| !self.copy_active_selection(area))
+            {
+                self.clear_operator_sidebar_selection();
+                self.clear_transcript_selection();
+                return true;
+            }
+            self.clear_operator_sidebar_selection();
+            self.clear_transcript_selection();
+            self.maybe_auto_exit();
+            return true;
+        }
+
+        self.clear_operator_sidebar_selection();
+        self.clear_transcript_selection();
+        if key.code == KeyCode::Esc {
+            self.maybe_auto_exit();
+            return true;
+        }
+        false
+    }
+
+    fn handle_text_input_key(&mut self, key: KeyEvent, mapped_action: Option<Action>) -> bool {
+        if self.composer_disabled()
+            || key.modifiers.contains(KeyModifiers::CONTROL)
+            || key.modifiers.contains(KeyModifiers::ALT)
+        {
+            return false;
+        }
+        let KeyCode::Char(c) = key.code else {
+            return false;
+        };
+
+        if self.focus == Focus::Prompt {
+            if mapped_action.is_some_and(|action| {
+                action != Action::TogglePromptFocus && action_preempts_text_input(action, key)
+            }) {
+                self.execute_action_from_key(mapped_action.unwrap_or_abort(), key);
+            } else if c == '!'
+                && self.composer.prompt_buffer.is_empty()
+                && !self.composer.shell_mode
+            {
+                self.composer.shell_mode = true;
+            } else {
+                self.execute_action(Action::Char(c));
+            }
+            return true;
+        }
+
+        if !self.startup_shell_visible() && (self.focus != Focus::Details || self.replay_mode) {
+            return false;
+        }
+        if mapped_action.is_some_and(|action| action_preempts_text_input(action, key)) {
+            self.execute_action_from_key(mapped_action.unwrap_or_abort(), key);
+        } else {
+            self.focus = Focus::Prompt;
+            self.execute_action(Action::Char(c));
+        }
+        true
     }
 
     pub(in crate::app) fn overlay_backspace(&mut self, on_change: fn(&mut Self)) {
