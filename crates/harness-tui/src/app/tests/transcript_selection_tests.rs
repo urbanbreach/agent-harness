@@ -353,11 +353,89 @@ pub(super) fn expanded_edit_ctrl_c_copies_canonical_unified_patches() {
     assert!(patch.contains("+created line"));
     assert!(patch.contains("-old line\n+new line"));
     assert!(patch.contains("-deleted line"));
+    assert!(!patch.contains("\n\nLinks:\n"));
     assert_eq!(
         crate::ui::structured_diff_stats(&patch, None, false),
         Some((2, 2))
     );
     crate::clipboard::set_copy_override(None);
+}
+
+#[test]
+fn ordinary_transcript_copy_exports_selected_destinations_but_patch_copy_does_not() {
+    // Given: an assistant response containing a safe markdown link.
+    let _guard = ClipboardModeGuard::disabled_copy_on_select();
+    let copied = Arc::new(Mutex::new(None::<String>));
+    let sink = Arc::clone(&copied);
+    crate::clipboard::set_copy_override(Some(Box::new(move |text| {
+        *sink.lock().unwrap_or_abort() = Some(text.to_string());
+        Ok(())
+    })));
+    let mut app = transcript_selection_test_app_with_text(
+        "Read [docs](https://example.com/docs) before applying the patch.",
+    );
+    drag_transcript_selection(&mut app, "docs");
+    app.set_frame_area(TEST_FRAME_AREA);
+
+    // When: ordinary transcript copy is invoked through the production key path.
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char('c'),
+        KeyModifiers::CONTROL,
+    ));
+
+    // Then: selected destination export is explicit on ordinary copy.
+    assert_eq!(
+        copied.lock().unwrap_or_abort().clone(),
+        Some("docs\n\nLinks:\nhttps://example.com/docs".to_string())
+    );
+    crate::clipboard::set_copy_override(None);
+}
+
+#[test]
+fn production_render_app_emits_only_balanced_safe_osc8_through_frame_backend() {
+    // Given: production transcript rendering with one safe and one unsafe destination.
+    let app = transcript_selection_test_app_with_text(
+        "[safe](https://example.com/safe) [bad](javascript:alert(1))",
+    );
+    let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap_or_abort();
+
+    // When: render_app paints ordinary cells and frame output physically serializes them.
+    terminal
+        .draw(|frame| render_app(frame, &app))
+        .unwrap_or_abort();
+    let cells = terminal
+        .backend()
+        .buffer()
+        .content
+        .iter()
+        .enumerate()
+        .map(|(index, cell)| {
+            (
+                u16::try_from(index % 120).unwrap_or_abort(),
+                u16::try_from(index / 120).unwrap_or_abort(),
+                cell.clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+    let (mut output, writer, receiver) = crate::terminal::FrameOutput::bounded(1);
+    let mut backend = crate::terminal::FrameOutputBackend::new(writer);
+    output.begin_frame().unwrap_or_abort();
+    ratatui::backend::Backend::draw(
+        &mut backend,
+        cells.iter().map(|(x, y, cell)| (*x, *y, cell)),
+    )
+    .unwrap_or_abort();
+    output.finish_frame().unwrap_or_abort();
+    let frame = receiver.try_recv().unwrap_or_abort();
+    let bytes = String::from_utf8_lossy(&frame.bytes);
+
+    // Then: only the safe target is emitted and every OSC-8 open has a close.
+    assert!(bytes.contains("https://example.com/safe"), "{bytes:?}");
+    assert!(!bytes.contains("javascript:"), "{bytes:?}");
+    let opens = bytes.matches("]8;;https://").count();
+    let markers = bytes.matches("]8;;").count();
+    assert!(opens > 0);
+    assert_eq!(markers, opens.saturating_mul(2));
 }
 
 pub(super) fn transcript_selection_hit_testing_reuses_cached_snapshot_during_drag() {

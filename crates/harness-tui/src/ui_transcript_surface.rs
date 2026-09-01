@@ -893,6 +893,82 @@ pub(super) fn nested_surface_prefix_width(indent: &str) -> usize {
     display_width(indent) + display_width(TRANSCRIPT_RAIL_GLYPH) + 1
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct SurfaceLinkRun {
+    pub(super) start_cell: usize,
+    pub(super) end_cell: usize,
+    pub(super) destination: String,
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct WrappedSurfaceRow {
+    pub(super) spans: Vec<Span<'static>>,
+    pub(super) links: Vec<SurfaceLinkRun>,
+}
+
+pub(super) fn wrap_surface_spans_with_links(
+    spans: Vec<Span<'static>>,
+    links: &[SurfaceLinkRun],
+    width: usize,
+) -> Vec<WrappedSurfaceRow> {
+    let source = spans
+        .iter()
+        .flat_map(|span| split_graphemes(span.content.as_ref()))
+        .scan(0usize, |cell, cluster| {
+            let start_cell = *cell;
+            *cell = cell.saturating_add(usize::from(cluster.display_width()));
+            Some((cluster.as_str().to_string(), start_cell, *cell))
+        })
+        .collect::<Vec<_>>();
+    let rows = wrap_surface_spans(spans, width);
+    let mut source_index = 0usize;
+
+    rows.into_iter()
+        .map(|spans| {
+            let mut projected = Vec::<SurfaceLinkRun>::new();
+            let mut output_cell = 0usize;
+            for cluster in spans
+                .iter()
+                .flat_map(|span| split_graphemes(span.content.as_ref()))
+            {
+                while source
+                    .get(source_index)
+                    .is_some_and(|(text, _, _)| text != cluster.as_str())
+                {
+                    source_index = source_index.saturating_add(1);
+                }
+                let Some((_, source_start, source_end)) = source.get(source_index) else {
+                    break;
+                };
+                let cluster_width = usize::from(cluster.display_width());
+                for link in links
+                    .iter()
+                    .filter(|link| link.start_cell < *source_end && link.end_cell > *source_start)
+                {
+                    let output_end = output_cell.saturating_add(cluster_width);
+                    if let Some(previous) = projected.last_mut().filter(|previous| {
+                        previous.destination == link.destination && previous.end_cell == output_cell
+                    }) {
+                        previous.end_cell = output_end;
+                    } else {
+                        projected.push(SurfaceLinkRun {
+                            start_cell: output_cell,
+                            end_cell: output_end,
+                            destination: link.destination.clone(),
+                        });
+                    }
+                }
+                output_cell = output_cell.saturating_add(cluster_width);
+                source_index = source_index.saturating_add(1);
+            }
+            WrappedSurfaceRow {
+                spans,
+                links: projected,
+            }
+        })
+        .collect()
+}
+
 pub(super) fn wrap_surface_spans(
     spans: Vec<Span<'static>>,
     width: usize,

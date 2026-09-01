@@ -108,6 +108,31 @@ fn backend_repaints_same_label_when_url_changes_or_link_is_removed() {
 }
 
 #[test]
+fn backend_rejects_control_characters_inside_http_destination_at_final_admission() {
+    // Given: an HTTP-looking destination containing BEL after its scheme.
+    let (mut output, writer, receiver) = FrameOutput::bounded(1);
+    let mut backend = FrameOutputBackend::new(writer);
+
+    // When: backend admission processes the internally supplied run.
+    let bytes = draw_frame(
+        &mut output,
+        &mut backend,
+        &receiver,
+        &[(0, 0, Cell::new("x"))],
+        vec![FrameHyperlink {
+            row: 0,
+            start_column: 0,
+            end_column: 1,
+            destination: "https://example.com/\u{7}evil".to_string(),
+        }],
+    );
+
+    // Then: neither OSC-8 nor the control-bearing target reaches output.
+    let output = String::from_utf8_lossy(&bytes);
+    assert!(!output.contains("]8;;") && !output.contains("example.com"));
+}
+
+#[test]
 fn backend_rejects_unsafe_link_metadata_at_final_admission() {
     // Given: a control-bearing javascript destination in otherwise ordinary cells.
     let (mut output, writer, receiver) = FrameOutput::bounded(1);

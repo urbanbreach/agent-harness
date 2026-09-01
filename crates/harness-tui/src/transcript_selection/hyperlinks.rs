@@ -102,12 +102,13 @@ impl HyperlinkMap {
 }
 
 pub(crate) fn safe_external_url(url: &str) -> bool {
-    ["http://", "https://"].into_iter().any(|scheme| {
-        url.len() > scheme.len()
-            && url
-                .get(..scheme.len())
-                .is_some_and(|prefix| prefix.eq_ignore_ascii_case(scheme))
-    })
+    !url.chars().any(char::is_control)
+        && ["http://", "https://"].into_iter().any(|scheme| {
+            url.len() > scheme.len()
+                && url
+                    .get(..scheme.len())
+                    .is_some_and(|prefix| prefix.eq_ignore_ascii_case(scheme))
+        })
 }
 
 pub fn hyperlink_sequence(link: &Hyperlink, route: TmuxSequence) -> Result<String, HyperlinkError> {
