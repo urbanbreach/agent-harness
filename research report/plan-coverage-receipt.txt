@@ -1,0 +1,19 @@
+PLAN COVERAGE RED
+command: python3 -c <coverage validator over research identifiers and plan traceability>
+exit_code: 1
+expected: 218
+covered: 0
+uncovered: 218
+unsourced: 0
+reason: approved plan skeleton intentionally has no traceability section yet
+missing: C001-C056; E1-E4; O001-O077; P0-01-P0-06; P1-01-P1-04; S001-S071
+
+PLAN COVERAGE GREEN
+command: python3 -c 'from pathlib import Path; import re, sys; research=Path(".omo/ulw-research/20260831-044447"); plan=Path(".omo/plans/grok-build-harness-parity.md"); blob="\n".join(p.read_text(encoding="utf-8") for p in sorted(research.glob("*")) if p.suffix in {".md", ".html", ".txt"}); pat=r"\b(?:C\d{3}|O\d{3}|S\d{3}|P[01]-\d{2}|E[1-4])\b"; expected=set(re.findall(pat,blob)); text=plan.read_text(encoding="utf-8"); covered=set(re.findall(pat,text)); missing=sorted(expected-covered); tasks=re.split(r"(?m)(?=^- \[ \] \d+\. )",text.split("## Todos",1)[1].split("## Final verification wave",1)[0]); unsourced=[re.match(r"^- \[ \] \d+\. (.+)",b).group(1) for b in tasks if re.match(r"^- \[ \] \d+\. (.+)",b) and "References (executor has NO interview context - be exhaustive):" not in b]; print(f"expected={len(expected)} covered={len(covered)} uncovered={len(missing)} unsourced={len(unsourced)}"); sys.exit(1 if missing or unsourced else 0)'
+exit_code: 0
+expected: 218
+covered: 218
+uncovered: 0
+unsourced: 0
+missing:
+unsourced_tasks:
