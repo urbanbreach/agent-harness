@@ -161,3 +161,23 @@ fn boxed_table_wraps_cells_without_exceeding_narrow_width() {
             && link.start_cell < link.end_cell
     }));
 }
+
+#[test]
+fn boxed_table_falls_back_when_minimum_geometry_exceeds_width() {
+    // Given: a two-column table and fewer cells than its nine-cell box minimum.
+    let theme = Theme::default();
+    let rows = ["| A | B |", "| --- | --- |", "| x | y |"];
+
+    // When: the table cannot fit both bordered columns and their content cells.
+    let too_narrow = try_render_markdown_table_block(&rows, theme.text.primary, "", &theme, 8);
+
+    // Then: the boxed renderer declines so the caller can use its bounded text fallback.
+    assert!(too_narrow.is_none());
+
+    // And: the exact minimum remains a bounded boxed table.
+    let (lines, _, _) = try_render_markdown_table_block(&rows, theme.text.primary, "", &theme, 9)
+        .expect("minimum-width box");
+    assert!(rendered_text(&lines)
+        .iter()
+        .all(|line| display_width(line) == 9));
+}

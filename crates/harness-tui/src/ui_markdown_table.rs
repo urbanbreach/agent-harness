@@ -50,9 +50,12 @@ pub(super) fn try_render_markdown_table_block(
     }
 
     let column_count = header.len();
-    let available = usize::from(width)
-        .saturating_sub(display_width(prefix))
-        .max(column_count.saturating_mul(3).saturating_add(1));
+    let available = usize::from(width).saturating_sub(display_width(prefix));
+    let border_and_padding = column_count.saturating_mul(3).saturating_add(1);
+    let minimum_box_width = border_and_padding.saturating_add(column_count);
+    if available < minimum_box_width {
+        return None;
+    }
     let column_widths = bounded_column_widths(&header, &body, column_count, available);
     let border_style = Style::default().fg(theme.border.subtle);
     let mut rendered = Vec::new();
@@ -214,7 +217,7 @@ fn bounded_column_widths(
     }
 
     let overhead = column_count.saturating_mul(3).saturating_add(1);
-    let content_budget = available.saturating_sub(overhead).max(column_count);
+    let content_budget = available.saturating_sub(overhead);
     while widths.iter().sum::<usize>() > content_budget {
         let Some((index, _)) = widths
             .iter()

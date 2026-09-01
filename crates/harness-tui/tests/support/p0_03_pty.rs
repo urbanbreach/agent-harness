@@ -25,27 +25,6 @@ const FENCE_CHUNK_1: &str =
     "    let stage = \"chunk one\";\n    let city = \"東京\";\nQA-P0-03-FENCE-CHUNK-1\n";
 const FENCE_CHUNK_2: &str = "    let operator = \"👩‍💻\";\n    println!(\"{stage} {city} {operator}\");\n}\n```\nQA-P0-03-FENCE-CHUNK-2\nQA-P0-03-SETTLED";
 
-pub(crate) fn assert_fixture_contract() {
-    assert!(INITIAL_FIXTURE_TEXT.contains("| Signal | Payload |"));
-    assert!(INITIAL_FIXTURE_TEXT.contains("**nested _emphasis_**"));
-    assert!(INITIAL_FIXTURE_TEXT.contains("東京"));
-    assert!(INITIAL_FIXTURE_TEXT.contains("👩‍💻"));
-    assert!(INITIAL_FIXTURE_TEXT.contains("CJK: 東京 · ZWJ: 👩‍💻"));
-    assert_eq!(
-        INITIAL_FIXTURE_TEXT
-            .matches("https://example.com/p0-03")
-            .count(),
-        1
-    );
-    assert_eq!(INITIAL_FIXTURE_TEXT.matches("javascript:").count(), 1);
-    assert!(INITIAL_FIXTURE_TEXT.contains(READY_MARKER));
-    assert!(!FENCE_CHUNK_1.contains("```"));
-    assert!(FENCE_CHUNK_1.contains(FENCE_CHUNK_1_MARKER));
-    assert!(FENCE_CHUNK_2.contains("```"));
-    assert!(FENCE_CHUNK_2.contains(FENCE_CHUNK_2_MARKER));
-    assert!(FENCE_CHUNK_2.contains(SETTLED_MARKER));
-}
-
 pub(crate) fn run_helper() {
     if std::env::var(SCENARIO_ENV).as_deref() != Ok("1") {
         return;

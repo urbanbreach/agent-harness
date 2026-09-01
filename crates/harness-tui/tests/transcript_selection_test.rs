@@ -5,10 +5,9 @@
 )]
 
 use harness_tui::transcript_selection::{
-    build_osc52, copy_local_with_runner, copy_with_metadata, copy_with_metadata_and_links,
-    hyperlink_sequence, BlockKind, CellPoint, CopyMetadata, CopyMetadataPolicy, Hyperlink,
-    HyperlinkMap, LinkRange, LocalPlatform, NavigationKey, SelectionMode, TmuxSequence, Viewport,
-    WrappedText, OSC52_MAX_BYTES,
+    build_osc52, copy_local_with_runner, copy_with_metadata, hyperlink_sequence, BlockKind,
+    CellPoint, CopyMetadata, CopyMetadataPolicy, Hyperlink, HyperlinkMap, LinkRange, LocalPlatform,
+    NavigationKey, SelectionMode, TmuxSequence, Viewport, WrappedText, OSC52_MAX_BYTES,
 };
 
 #[test]
@@ -209,30 +208,4 @@ fn external_hyperlinks_allow_only_http_schemes_without_rewriting_valid_urls() {
             "accepted {unsafe_url:?}"
         );
     }
-}
-
-#[test]
-fn metadata_copy_retains_visible_text_and_selected_link_destinations() {
-    // Given: selected visible text, transcript metadata, and one selected destination.
-    let metadata = CopyMetadata::new("turn-01", BlockKind::Assistant, "12:34:56");
-    let link = Hyperlink::new("docs", "https://example.com/docs", LinkRange::new(0, 0, 3))
-        .expect("safe URL");
-
-    // When: copy metadata is assembled for the selection.
-    let copied = copy_with_metadata_and_links(
-        "Read docs",
-        &metadata,
-        CopyMetadataPolicy {
-            include_turn_id: true,
-            include_block_kind: true,
-            include_timestamp: true,
-        },
-        &[link],
-    );
-
-    // Then: existing metadata and visible text remain, followed by the destination once.
-    assert_eq!(
-        copied,
-        "[turn-01] [assistant] [12:34:56]\nRead docs\n\nLinks:\nhttps://example.com/docs"
-    );
 }

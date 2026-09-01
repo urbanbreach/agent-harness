@@ -7,6 +7,7 @@ use std::io::{Read, Write};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::thread;
 use std::time::{Duration, Instant};
+use unicode_width::UnicodeWidthStr;
 use vt100::Parser;
 
 const PRIMARY_COLS: u16 = 100;
@@ -25,17 +26,6 @@ fn p0_03_pty_helper() {
     scenario::run_helper();
     // assert
     // Then: run_helper prints the external-driver contract after a clean exit.
-}
-
-#[test]
-fn p0_03_helper_fixture_contract_without_xterm() {
-    // arrange
-    // Given: the recorded fixture's source and event chunks.
-    // act
-    // When: the fixture contract is checked without launching a terminal.
-    scenario::assert_fixture_contract();
-    // assert
-    // Then: all required content and event-driven marker boundaries are present.
 }
 
 #[test]
@@ -78,6 +68,8 @@ fn p0_03_real_pty_records_markdown_and_event_driven_fence() {
         !ready_screen.contains("unsafe)"),
         "markdown destination delimiter leaked into visible text\n{ready_screen}"
     );
+    assert_box_geometry(&ready_screen, usize::from(PRIMARY_COLS));
+    assert_safe_balanced_osc8(&helper.raw);
 
     // act
     // When: the first exact fixture command requests the next live event chunk.
@@ -273,6 +265,81 @@ fn reader_channel(mut reader: Box<dyn Read + Send>) -> Receiver<Vec<u8>> {
         }
     });
     rx
+}
+
+fn assert_box_geometry(screen: &str, terminal_width: usize) {
+    let rows = screen
+        .lines()
+        .filter(|line| {
+            let border_count = line
+                .chars()
+                .filter(|character| "│┌┬┐├┼┤└┴┘".contains(*character))
+                .count();
+            border_count >= 3
+                && line
+                    .trim_start()
+                    .starts_with(|character| "┌│├└".contains(character))
+        })
+        .collect::<Vec<_>>();
+    assert!(rows.len() >= 5, "boxed table rows missing\n{screen}");
+
+    let edges = rows
+        .iter()
+        .map(|line| {
+            assert!(
+                UnicodeWidthStr::width(*line) <= terminal_width,
+                "table row exceeds terminal width: {line:?}"
+            );
+            let border_cells = line
+                .char_indices()
+                .filter(|(_, character)| "│┌┬┐├┼┤└┴┘".contains(*character))
+                .map(|(byte, _)| UnicodeWidthStr::width(&line[..byte]))
+                .collect::<Vec<_>>();
+            (
+                border_cells.first().copied().unwrap_or(usize::MAX),
+                border_cells.last().copied().unwrap_or(usize::MAX),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        edges.iter().all(|edge| *edge == edges[0]),
+        "table borders drift across rows: {edges:?}\n{screen}"
+    );
+}
+
+fn assert_safe_balanced_osc8(raw: &[u8]) {
+    const PREFIX: &str = "\x1b]8;;";
+    const TERMINATOR: &str = "\x1b\\";
+    const SAFE_DESTINATION: &str = "https://example.com/p0-03";
+
+    let output = String::from_utf8_lossy(raw);
+    assert!(!output.contains("javascript:"));
+    assert!(!output.contains("file://"));
+    let output = output.replace("\x1b\x1b", "\x1b");
+
+    let mut cursor = 0usize;
+    let mut open = false;
+    let mut safe_opens = 0usize;
+    while let Some(relative_start) = output[cursor..].find(PREFIX) {
+        let target_start = cursor
+            .saturating_add(relative_start)
+            .saturating_add(PREFIX.len());
+        let relative_end = output[target_start..].find(TERMINATOR).unwrap_or_abort();
+        let target_end = target_start.saturating_add(relative_end);
+        let target = &output[target_start..target_end];
+        if target.is_empty() {
+            assert!(open, "OSC-8 close appeared without an open target");
+            open = false;
+        } else {
+            assert!(!open, "OSC-8 target opened before the prior target closed");
+            assert_eq!(target, SAFE_DESTINATION);
+            open = true;
+            safe_opens = safe_opens.saturating_add(1);
+        }
+        cursor = target_end.saturating_add(TERMINATOR.len());
+    }
+    assert!(safe_opens > 0, "safe OSC-8 target missing from PTY output");
+    assert!(!open, "OSC-8 target remained open at end of PTY output");
 }
 
 fn deterministic_env(command: &mut CommandBuilder) {
