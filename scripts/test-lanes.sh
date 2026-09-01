@@ -569,6 +569,9 @@ run_signoff_pty() {
     if [[ ! -f "${repo_root}/crates/harness-tui/tests/p0_03_pty_recorded.rs" ]]; then
       missing+=("missing owner crates/harness-tui/tests/p0_03_pty_recorded.rs (silent skip is forbidden)")
     fi
+    if [[ ! -f "${repo_root}/crates/harness-tui/tests/p0_04_pty_recorded.rs" ]]; then
+      missing+=("missing owner crates/harness-tui/tests/p0_04_pty_recorded.rs (silent skip is forbidden)")
+    fi
     if [[ ! -f "${repo_root}/crates/harness/tests/pty_happy_path_recorded.rs" ]]; then
       missing+=("missing owner crates/harness/tests/pty_happy_path_recorded.rs (silent skip is forbidden)")
     fi
@@ -581,7 +584,7 @@ run_signoff_pty() {
         printf 'lane=signoff-pty\n'
         printf 'result=FAIL\n'
         printf 'reason=missing_prerequisites\n'
-        printf 'stages=prerequisites,testkit_pty,tui_pty,p0_03,happy_path\n'
+        printf 'stages=prerequisites,testkit_pty,tui_pty,p0_03,p0_04,happy_path\n'
         printf 'owns=deterministic_pty_journeys\n'
       } >"${tui_happy_path_artifacts_dir}/pty-lane-verdict.txt"
       return 1
@@ -594,6 +597,8 @@ run_signoff_pty() {
     env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 cargo nextest run -p harness-tui --test pty_e2e --test-threads 1 --ignore-default-filter
   run_stage "$mode_name" harness_tui_p0_03_pty_recorded "$repo_root" \
     env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 cargo nextest run -p harness-tui --test p0_03_pty_recorded --test-threads 1 --ignore-default-filter
+  run_stage "$mode_name" harness_tui_p0_04_pty_recorded "$repo_root" \
+    env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 cargo nextest run -p harness-tui --test p0_04_pty_recorded --test-threads 1 --ignore-default-filter
   run_stage "$mode_name" harness_tui_happy_path_pty "$repo_root" \
     env RUST_TEST_THREADS=1 HARNESS_TUI_HAPPY_PATH_ARTIFACT_DIR="$tui_happy_path_artifacts_dir" \
     cargo nextest run -p harness --test pty_happy_path_recorded --test-threads 1 -- --ignored --exact scripted_tui_happy_path_records_start_prompt_permission_tool_edit_resume_and_quit
@@ -610,7 +615,7 @@ run_signoff_pty() {
       printf 'lane=signoff-pty\n'
       printf 'result=PASS\n'
       printf 'reason=owners_green\n'
-      printf 'stages=testkit_pty,tui_pty,p0_03,happy_path\n'
+      printf 'stages=testkit_pty,tui_pty,p0_03,p0_04,happy_path\n'
       printf 'owns=deterministic_pty_journeys\n'
     } >"${tui_happy_path_artifacts_dir}/pty-lane-verdict.txt"
   else
@@ -618,7 +623,7 @@ run_signoff_pty() {
       printf 'lane=signoff-pty\n'
       printf 'result=FAIL\n'
       printf 'reason=stage_failure\n'
-      printf 'stages=testkit_pty,tui_pty,p0_03,happy_path\n'
+      printf 'stages=testkit_pty,tui_pty,p0_03,p0_04,happy_path\n'
       printf 'owns=deterministic_pty_journeys\n'
     } >"${tui_happy_path_artifacts_dir}/pty-lane-verdict.txt"
     return 1
