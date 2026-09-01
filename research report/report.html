@@ -1,0 +1,315 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Harness × Grok Build parity audit</title><style>:root{color-scheme:dark;--bg:#090b10;--panel:#11151d;--text:#e7e9ee;--muted:#a9b0bd;--accent:#7ee787;--line:#30363d;--code:#161b22}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:16px/1.62 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}article{max-width:1100px;margin:0 auto;padding:56px 64px 96px}h1{font-size:2.55rem;line-height:1.12;margin:0 0 1rem;color:#fff}h2{font-size:1.65rem;margin-top:3rem;padding-bottom:.45rem;border-bottom:1px solid var(--line)}h3{font-size:1.22rem;margin-top:2.2rem;color:var(--accent)}p,li{max-width:92ch}a{color:#8ab4f8}code{font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Consolas,monospace;background:var(--code);padding:.14rem .32rem;border-radius:4px;overflow-wrap:anywhere}pre{background:var(--code);border:1px solid var(--line);padding:1rem;border-radius:8px;overflow:auto}pre code{padding:0}table{width:100%;border-collapse:collapse;margin:1.25rem 0;font-size:.91rem;display:block;overflow-x:auto}th,td{border:1px solid var(--line);padding:.62rem .72rem;text-align:left;vertical-align:top}th{background:var(--panel);color:#fff}tr:nth-child(even) td{background:#0d1117}blockquote{border-left:3px solid var(--accent);padding-left:1rem;color:var(--muted)}strong{color:#fff}@media(max-width:760px){article{padding:30px 20px}h1{font-size:2rem}table{font-size:.82rem}}</style></head><body><article><h1>Harness × Grok Build visual parity audit</h1>
+<p>STATUS: final research handoff</p>
+<h2>Executive summary</h2>
+<p>Harness is not one rewrite away from Grok Build parity. Its event model, exact transcript anchors, global reduced-motion policy, command-palette ranking, question-card grammar, operator sidebar, and branded startup mark are strengths worth keeping. The gap is the presentation and interaction layer around those strengths: Grok Build treats dashboard, transcript, composer, modal, recovery, and terminal verification as one coherent visual system.</p>
+<p>The recommended path is ten bounded changes. The first six are parity blockers: full-surface dashboard ownership with exact return restoration; richer transcript folding and position memory; rich content and links; a truthful composer state machine; truthful reconnect/recovery states; and emulator-backed PTY proof. Four P1 changes complete the polish: command argument UX, reusable modal chrome, Harness-branded startup motion, and responsive/terminal finishing.</p>
+<p>“1:1” here means matching Grok Build&#39;s observable spatial hierarchy, interaction semantics, motion cadence, responsive behavior, and finish. It <strong>doesn&#39;t</strong> mean copying the Grok name, wordmark, logo, text voice, or palette. Preserve the Harness name, logo, brand assets, accent palette, operator terminology, stronger palette ranking, exact anchor behavior, and global reduced motion.</p>
+<h2>What 1:1 parity means</h2>
+<table>
+<thead>
+<tr>
+<th>Dimension</th>
+<th>Required parity</th>
+<th>Harness constraint</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Visual</td>
+<td>Same information hierarchy, density, alignment, modal framing, table quality, and state legibility</td>
+<td>Preserve Harness colors, logo, names, and iconography</td>
+</tr>
+<tr>
+<td>Spatial</td>
+<td>Full-surface dashboard, stable transcript/composer geometry, predictable pane ownership, responsive minimums</td>
+<td>Preserve Harness&#39;s named viewport contract and operator sidebar</td>
+</tr>
+<tr>
+<td>Interaction</td>
+<td>Equivalent send/cancel/interject, folding, navigation, command completion, capability-gated mouse behavior, and modal behavior</td>
+<td>Preserve deterministic Harness command ranking and accessibility shortcuts</td>
+</tr>
+<tr>
+<td>Motion</td>
+<td>Equivalent progress rhythm, follow feedback, startup treatment, and transition smoothness</td>
+<td>Preserve global reduced motion; don&#39;t add decorative coasting without proof</td>
+</tr>
+<tr>
+<td>Polish</td>
+<td>Typed recovery copy, terminal-safe glyphs, rich links/tables, and real-terminal evidence</td>
+<td>No visual claim without emulator-backed PTY artifacts</td>
+</tr>
+</tbody></table>
+<h2>Prioritized findings</h2>
+<h3>P0-01 Make dashboard a true full-surface mode with exact return restoration</h3>
+<p>Claims: C021, C051.</p>
+<p><strong>What</strong>: Replace the capped centered dashboard overlay with a top-level surface and restore the exact transcript position on exit.</p>
+<p><strong>Why</strong>: Grok Build changes the active view and preserves pane-owned scroll state; Harness constrains the dashboard and currently stores <code>transcript_anchor: None</code>. The result is a smaller-feeling shell and weaker return continuity.</p>
+<p><strong>Where</strong>: Harness <code>crates/harness-tui/src/dashboard_integration/responsive.rs:62</code>, <code>crates/harness-tui/src/app.rs:908</code>, and <code>crates/harness-tui/src/dashboard_integration/state.rs:63</code>; reference <code>inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/app_view.rs:4914</code>, <code>inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/actions.rs:751</code>, and <code>inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/agent_view/panes.rs:507</code>.</p>
+<p><strong>How</strong>: Promote dashboard to an explicit shell mode; let it own the content viewport; capture <code>TranscriptContentAnchor</code> before entry; restore that anchor and focus on exit; retain the Harness operator sidebar as a composable rail rather than replacing it.</p>
+<p><strong>Verify</strong>: Add exact-render snapshots at 80×24, 120×40, and 160×50; in a PTY, open dashboard from a mid-transcript detached position, resize, close it, and assert that the viewport returns to the same transcript anchor and <code>display_column</code>.</p>
+<p><strong>Dependencies</strong>: P0-06 PTY evidence; existing dashboard state and transcript anchor APIs.</p>
+<p><strong>Risks</strong>: Overlay hit maps and focus precedence can leak into the full-surface mode. Don&#39;t copy Grok&#39;s logo, names, or dashboard labels.</p>
+<h3>P0-02 Add dense transcript folding and response navigation; gate pin reserve on proof</h3>
+<p>Claims: C006, C008, C016, C044, C052.</p>
+<p><strong>What</strong>: Keep one authoritative Harness fold projection, expose its existing dense-run truncation as an “N more” expand/collapse affordance, and add final-response navigation and turn-position display. Add persistent pin-reserve state only after a deterministic detached-streaming test reproduces anchor failure.</p>
+<p><strong>Why</strong>: Harness already groups adjacent verbs, so a second aggregation layer would corrupt source-of-truth semantics. Grok Build&#39;s persistent pin reserve is a candidate for retaining a detached viewport during streaming, but its necessity in Harness remains unproved.</p>
+<p><strong>Where</strong>: Harness <code>crates/harness-tui/src/ui_transcript_block_grammar_normalize.rs:6</code>, <code>crates/harness-tui/src/transcript_blocks/folds.rs:13</code>, and <code>crates/harness-tui/src/transcript_scroll/follow.rs:28</code>; reference <code>inspirations/grok-build/crates/codegen/xai-grok-pager/src/scrollback/state/groups.rs:56</code>, <code>inspirations/grok-build/crates/codegen/xai-grok-pager/src/scrollback/state/pin_reserve.rs:10</code>, and <code>inspirations/grok-build/crates/codegen/xai-grok-pager/src/actions/defaults.rs:134</code>.</p>
+<p><strong>How</strong>: Extend the existing fold model with a visible-count contract and toggle action; render folded-count affordances at layout time; add next/previous final-response commands. First write a detached-streaming reproduction; introduce persisted pin-reserve state only if Harness&#39;s existing exact anchors don&#39;t hold. Don&#39;t port Grok <code>wrap_restore.rs</code>, which restores terminal modes rather than scrollback.</p>
+<p><strong>Verify</strong>: Deterministic tests for 0/1/many tool groups, expand/collapse, compaction, reflow, and streaming growth while detached; PTY assertions that follow mode remains detached and newly streamed bottom content stays outside the viewport.</p>
+<p><strong>Dependencies</strong>: P0-01 anchor restoration and P0-06 PTY lane.</p>
+<p><strong>Risks</strong>: Double folding and anchor drift. Preserve Harness&#39;s exact <code>display_column</code> anchor contract.</p>
+<h3>P0-03 Bring tables, links, and open streaming fences to parity</h3>
+<p>Claims: C013, C014, C015, C045, C053.</p>
+<p><strong>What</strong>: Preserve inline table-cell formatting, wrap boxed tables, propagate OSC-8 links through production rendering and selection, and incrementally highlight open code fences.</p>
+<p><strong>Why</strong>: Grok renders rich content as a first-class terminal document. Harness currently strips table-cell markdown and underlines link labels while dropping destinations, despite already owning an OSC-8 encoder.</p>
+<p><strong>Where</strong>: Harness <code>crates/harness-tui/src/ui_markdown_table.rs:73</code>, <code>crates/harness-tui/src/ui_markdown.rs:66</code>, <code>crates/harness-tui/src/ui_streaming_markdown.rs:34</code>, and <code>crates/harness-tui/src/ui_fenced_text.rs:103</code>; reference <code>inspirations/grok-build/crates/codegen/xai-grok-markdown/src/render.rs:736</code>, <code>inspirations/grok-build/crates/codegen/xai-grok-markdown/src/render.rs:1493</code>, <code>inspirations/grok-build/crates/codegen/xai-grok-markdown/src/parse.rs:1113</code>, and <code>inspirations/grok-build/crates/codegen/xai-grok-markdown/src/streaming.rs:281</code>.</p>
+<p><strong>How</strong>: Carry structured spans through table measurement; add boxed-width wrapping; thread link targets into transcript rows plus selection and copy metadata; retain Harness&#39;s structural diff fence handling; incrementally normalize the unfinished fence tail.</p>
+<p><strong>Verify</strong>: Golden tests for CJK, emoji, nested emphasis, links in table cells, malformed/open fences, and copied rich rows. In a PTY, assert that emitted OSC-8 targets and rendered table widths are correct.</p>
+<p><strong>Dependencies</strong>: Selection-row mapping and P0-06 terminal evidence.</p>
+<p><strong>Risks</strong>: Width accounting, unsafe link targets, and streaming flicker. Sanitize external targets at the rendering boundary.</p>
+<h3>P0-04 Make existing composer modes visible and submission semantics explicit</h3>
+<p>Claims: C017, C022, C027, C046.</p>
+<p><strong>What</strong>: Surface Harness&#39;s existing persistent multiline mode in the composer geometry and define distinct actions for send, cancel-and-replace, and non-cancelling interject.</p>
+<p><strong>Why</strong>: Harness already toggles <code>composer.multiline_mode</code>, but the state and submission intent are less legible at the input boundary. Harness&#39;s current interject cancels before submission, while Grok Build&#39;s interject doesn&#39;t cancel.</p>
+<p><strong>Where</strong>: Harness <code>crates/harness-tui/src/app/key_interaction.rs:145</code>, <code>crates/harness-tui/src/app/key_interaction.rs:853</code>, <code>crates/harness-tui/src/app/prompt_input.rs:21</code>, and <code>crates/harness-tui/src/ui_composer/bordered.rs:54</code>; reference <code>inspirations/grok-build/crates/codegen/xai-grok-pager/src/agent_view/prompt.rs:531</code>, <code>inspirations/grok-build/crates/codegen/xai-grok-pager/src/agent_view/prompt.rs:575</code>, and <code>inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/commands/multiline.rs:1</code>.</p>
+<p><strong>How</strong>: Keep the existing multiline boolean or migrate it into a typed mode only if more modes land; route Enter by mode; show multiline and queued-state indicators; preserve buffer history. Treat send-now promotion/requeue as unproved until targeted tests exist; don&#39;t claim loss. Require an explicit runtime contract before exposing each separately named cancel-and-replace or interject action.</p>
+<p><strong>Verify</strong>: State-machine tests for idle/running/cancelling/disconnected, empty and non-empty multiline buffers, queue order, and cancellation failure; PTY tests for valid and invalid input paths.</p>
+<p><strong>Dependencies</strong>: P0-05 runtime state taxonomy.</p>
+<p><strong>Risks</strong>: Duplicate sends and lost drafts. Don&#39;t flatten Harness&#39;s bordered brand treatment merely to copy Grok&#39;s borderless prompt.</p>
+<h3>P0-05 Replace false reconnect copy with a real recovery state machine</h3>
+<p>Claims: C032, C034, C037, C049, C055.</p>
+<p><strong>What</strong>: Distinguish Disconnected, Reconnecting, Reloading, Recovered, and Failed; either wire a re-entrant live-update reconnect path or remove “Reconnecting…” and require explicit reopen.</p>
+<p><strong>Why</strong>: Harness retries individual provider requests but doesn&#39;t re-enter live updates without a manual reopen while the TUI claims it is reconnecting. Grok has explicit re-entry and reload transitions.</p>
+<p><strong>Where</strong>: Harness <code>crates/harness-tui/src/runtime.rs:734</code>, <code>crates/harness-tui/src/ui_live_turn_status.rs:62</code>, <code>crates/harness-tui/src/app/lifecycle.rs:633</code>, and <code>crates/harness-core/src/coord/agent_turn_phases.rs:460</code>; reference <code>inspirations/grok-build/crates/xai-grok-shell/src/agent/mvp_agent/agent_ops.rs:3061</code>, <code>inspirations/grok-build/crates/xai-grok-shell/src/agent/mvp_agent/agent_ops.rs:2743</code>, and <code>inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/event_loop.rs:2836</code>.</p>
+<p><strong>How</strong>: Introduce typed runtime recovery states; feed them from coordinator/provider events; disable Stop while disconnected; map typed failures to actionable copy; add replay/rollback only in coordinator-owned code, never in replay inspection.</p>
+<p><strong>Verify</strong>: Deterministic disconnect-before-stream, mid-stream disconnect, retry success/exhaustion, reopen, and reload tests. In a live PTY, assert each label and each action&#39;s enabled state.</p>
+<p><strong>Dependencies</strong>: Coordinator event authority and provider typed errors.</p>
+<p><strong>Risks</strong>: Side effects during replay and duplicate provider work. Preserve event-sourced invariants.</p>
+<h3>P0-06 Establish emulator-backed PTY visual evidence as the parity oracle</h3>
+<p>Claims: C036, C041, C050, C056.</p>
+<p><strong>What</strong>: Extend the existing TUI PTY owner with terminal-emulator screen assertions, durable screenshots/transcripts, terminal metadata, and artifact provenance.</p>
+<p><strong>Why</strong>: TestBackend snapshots can&#39;t detect CSI, alternate-screen, mouse-mode, wrap, or query-response failures. Harness&#39;s parser lane doesn&#39;t forward terminal query replies; Grok reconstructs terminal state.</p>
+<p><strong>Where</strong>: Harness <code>crates/harness-tui/tests/pty_e2e.rs:6</code>, <code>crates/harness-tui/tests/support/pty_e2e_impl.rs:1</code>, and <code>crates/harness-tui/src/terminal/frame_output/backend.rs:51</code>; reference <code>inspirations/grok-build/crates/codegen/xai-grok-pager-pty-harness/src/screen.rs:34</code>, <code>inspirations/grok-build/crates/codegen/xai-grok-pager-pty-harness/src/screen.rs:163</code>, and <code>inspirations/grok-build/crates/codegen/xai-grok-pager/tests/pty_e2e/common.rs:16</code>.</p>
+<p><strong>How</strong>: Feed PTY bytes into an emulator capable of replies; assert cells, cursor, alternate screen, modes, and scrollback; capture before/after surfaces at canonical sizes; record command, binary hash, terminal capabilities, dimensions, and artifact hashes.</p>
+<p><strong>Verify</strong>: <code>RUST_TEST_THREADS=1 cargo nextest run -p harness-tui --test pty_e2e --test-threads 1</code> and <code>scripts/test-lanes.sh signoff-pty</code>.</p>
+<p><strong>Dependencies</strong>: Testkit artifact contract.</p>
+<p><strong>Risks</strong>: Timing-flaky tests. Subscribe to exact output/state transitions; never use fixed sleeps as proof.</p>
+<h3>P1-01 Upgrade slash completion without weakening Harness ranking</h3>
+<p>Claims: C023, C047, C048, C054.</p>
+<p><strong>What</strong>: Add <code>takes_args</code> and <code>args_required</code>, argument-phase suggestions, match highlighting, and mid-text slash detection while preserving Harness&#39;s static deterministic registry and stronger palette ranking.</p>
+<p><strong>Why</strong>: Grok slash completion is richer, but its palette substring matching is not superior to Harness&#39;s Skim-based palette. The surfaces must not be conflated.</p>
+<p><strong>Where</strong>: Harness <code>crates/harness-tui/src/slash.rs:18</code>, <code>crates/harness-tui/src/app/session_navigation.rs:512</code>, and <code>crates/harness-tui/src/slash/commands.rs:26</code>; reference <code>inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/matcher.rs:40</code>, <code>inspirations/grok-build/crates/codegen/xai-grok-pager/src/slash/mod.rs:761</code>, and <code>inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/agent_view/prompt.rs:156</code>.</p>
+<p><strong>How</strong>: Extend static metadata; score/highlight slash matches; switch to argument suggestions after matching a complete command name; recognize slash commands only at input start or immediately after whitespace, excluding URL-like tokens and escaped slashes; keep Tab as text acceptance and Enter as execution. Don&#39;t port dynamic ACP replacement without a real command source and collision policy.</p>
+<p><strong>Verify</strong>: Unit tests for aliases, incomplete required args, Unicode, input-start and post-whitespace slashes, URL-like tokens, escaped slashes, Tab/Enter, and deterministic ordering.</p>
+<p><strong>Dependencies</strong>: Composer routing.</p>
+<p><strong>Risks</strong>: Executing incomplete commands or degrading palette search.</p>
+<h3>P1-02 Consolidate reusable modal chrome and tabbed settings</h3>
+<p>Claims: C020, C025, C040.</p>
+<p><strong>What</strong>: Centralize modal frame, optional tabs, breadcrumbs, shortcut footer, focus, and parent overlay snapshot restoration; adapt the settings editor to the reusable tab model.</p>
+<p><strong>Why</strong>: Grok&#39;s consistent modal grammar makes the interface feel finished. Harness already has a larger close target and a strong question-card grammar; those should be retained.</p>
+<p><strong>Where</strong>: Harness <code>crates/harness-tui/src/ui_overlays/settings_editor.rs:51</code>, <code>crates/harness-tui/src/ui_overlays/modal_interaction.rs:887</code>, and <code>crates/harness-tui/src/overlay.rs:190</code>; reference <code>inspirations/grok-build/crates/codegen/xai-grok-pager/src/views/modal_window.rs:429</code>, <code>inspirations/grok-build/crates/codegen/xai-grok-pager/src/views/modal_window.rs:464</code>, and <code>inspirations/grok-build/crates/codegen/xai-grok-pager/src/views/modal.rs:152</code>.</p>
+<p><strong>How</strong>: Create one geometry/chrome contract consumed by actual modal surfaces such as settings, help, model, and command dialogs; keep tabs optional; preserve per-modal content renderers and the 6-cell Harness close target.</p>
+<p><strong>Verify</strong>: Exact-render and hit-map tests at 80×24, 120×40, and 160×50; keyboard and mouse focus restoration tests.</p>
+<p><strong>Dependencies</strong>: Shell mode and key routing.</p>
+<p><strong>Risks</strong>: One oversized abstraction. Share chrome, not domain state.</p>
+<h3>P1-03 Align material roles and animate the Harness startup identity</h3>
+<p>Claims: C026, C029, C035.</p>
+<p><strong>What</strong>: Align runtime contrast/elevation roles with Harness&#39;s canonical tokens, then give the existing Harness <code>H</code> and startup copy a short staged reveal with reduced-motion fallback.</p>
+<p><strong>Why</strong>: Grok&#39;s animated welcome screen establishes polish before interaction. Copying its lettering would violate the branding requirement; animating Harness&#39;s own identity achieves the same experiential role.</p>
+<p><strong>Where</strong>: Harness <code>crates/harness-tui/src/startup_logo.rs:6</code>, <code>crates/harness-tui/src/app/motion.rs:78</code>, and <code>crates/harness-tui/src/theme_tokens.rs:57</code>; reference <code>inspirations/grok-build/crates/codegen/xai-grok-pager/src/views/welcome/logo.rs:51</code>, <code>inspirations/grok-build/crates/codegen/xai-grok-pager-render/src/appearance/config.rs:536</code>, and <code>inspirations/grok-build/crates/codegen/xai-grok-pager-render/src/theme/groknight.rs:43</code>.</p>
+<p><strong>How</strong>: Route surface, border, muted-text, and elevation consumers through canonical Harness tokens; preserve Harness accents. Stage mark, product name, and first-input affordance on the existing scheduler; freeze to the final frame when reduced motion is active; keep Harness logo, name, palette, and voice unchanged.</p>
+<p><strong>Verify</strong>: Runtime-theme snapshots for contrast and elevation, frame-sequence snapshots, a reduced-motion static snapshot, and PTY captures at first paint and ready state.</p>
+<p><strong>Dependencies</strong>: Existing 33 ms scheduler, which already matches Grok cadence.</p>
+<p><strong>Risks</strong>: Startup latency and terminal flicker. Never block input on animation.</p>
+<h3>P1-04 Finish responsive feedback: live resize debounce, follow dimming, and glyph fallback</h3>
+<p>Claims: C028, C029, C030, C031, C038; debate dispositions D2d and D2f.</p>
+<p><strong>What</strong>: Wire the dormant resize debouncer, blend the scrollbar thumb style toward the track style while following, and route status glyphs, spinner frames, footer diamonds, and scrollbar rail characters through terminal-safe glyph selection.</p>
+<p><strong>Why</strong>: These are small but visible discontinuities. Harness already owns exact width-sensitive anchors and matching animation cadence; the fix is integration, not a new architecture.</p>
+<p><strong>Where</strong>: Harness <code>crates/harness-tui/src/input/resize.rs:5</code>, <code>crates/harness-tui/src/runtime.rs:1079</code>, and <code>crates/harness-tui/src/ui_transcript_scrollbar.rs:139</code>; reference <code>inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/event_loop.rs:2604</code>, <code>inspirations/grok-build/crates/codegen/xai-grok-pager-render/src/render/scrollbar.rs:222</code>, and <code>inspirations/grok-build/crates/codegen/xai-grok-pager-render/src/glyphs.rs:225</code>.</p>
+<p><strong>How</strong>: Route live resize events through the existing debouncer; preserve <code>display_column</code> during reflow; blend follow thumb toward track; use Harness <code>GlyphMode</code> for live status, spinners, rails, and low-capability terminals.</p>
+<p><strong>Verify</strong>: Resize burst tests without sleeps, anchor preservation across width changes, <code>Basic</code>/<code>Unicode</code> terminal snapshots, and reduced-motion checks.</p>
+<p><strong>Dependencies</strong>: P0-02 transcript state and P0-06 PTY evidence.</p>
+<p><strong>Risks</strong>: Added input latency or anchor regression. Don&#39;t replace exact full-history measurement with Grok&#39;s estimated off-screen heights without separate performance proof.</p>
+<h2>Detailed comparison by surface</h2>
+<table>
+<thead>
+<tr>
+<th>Surface</th>
+<th>Harness today</th>
+<th>Grok Build reference</th>
+<th>Required disposition</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Shell/layout</td>
+<td>Named viewport and fixed dock (<code>crates/harness-tui/src/layout.rs:251</code>)</td>
+<td>Swappable full-terminal views (<code>inspirations/grok-build/crates/codegen/xai-grok-pager/src/app/app_view.rs:221</code>)</td>
+<td>Adapt full-surface ownership; preserve viewport contract</td>
+</tr>
+<tr>
+<td>Dashboard/navigation</td>
+<td>Capped responsive overlay; operator sidebar</td>
+<td>Grouped full view and stable pane state</td>
+<td>Promote the dashboard and compose the sidebar rather than replacing it</td>
+</tr>
+<tr>
+<td>Transcript</td>
+<td>Exact anchors and model-time grouping</td>
+<td>Visible folding, response navigation, pin reserve</td>
+<td>Add affordances in one projection layer</td>
+</tr>
+<tr>
+<td>Rich content</td>
+<td>Borderless tables, lost link targets</td>
+<td>Formatted wrapped tables and propagated links</td>
+<td>Port rendering semantics, keep diff grammar</td>
+</tr>
+<tr>
+<td>Composer</td>
+<td>Bordered Harness card; ambiguous modes</td>
+<td>Legible mode/action routing</td>
+<td>Make modes explicit; keep Harness visual identity</td>
+</tr>
+<tr>
+<td>Commands</td>
+<td>Strong palette ranking, sparse slash metadata</td>
+<td>Rich slash scoring/highlights/args</td>
+<td>Extend slash; preserve palette</td>
+</tr>
+<tr>
+<td>Tools/tasks</td>
+<td>Strong event truth, narrower presentation</td>
+<td>Denser pane and status affordances</td>
+<td>Deferred: define owned acceptance criteria after transcript grammar lands</td>
+</tr>
+<tr>
+<td>Overlays</td>
+<td>Strong question cards, uneven chrome</td>
+<td>Reusable tabbed modal grammar</td>
+<td>Share chrome only</td>
+</tr>
+<tr>
+<td>Theme/material</td>
+<td>Harness tokens and brand accents</td>
+<td>GrokNight material hierarchy</td>
+<td>Match contrast roles, not brand colors</td>
+</tr>
+<tr>
+<td>Motion</td>
+<td>Matching 30 fps status cadence; global reduced motion</td>
+<td>Polished welcome/follow feedback</td>
+<td>Add startup/follow feedback; preserve reduced motion</td>
+</tr>
+<tr>
+<td>Responsive geometry</td>
+<td>Exact full-history measurement; dormant debounce</td>
+<td>Active debounce; estimated off-screen layout</td>
+<td>Wire debounce; reject weaker estimation by default</td>
+</tr>
+<tr>
+<td>Accessibility</td>
+<td>Global reduced motion and capability fallback</td>
+<td>Mouse override and per-block controls</td>
+<td>Preserve capability-gated mouse behavior; defer an explicit override until a concrete requirement exists</td>
+</tr>
+<tr>
+<td>Recovery</td>
+<td>Raw/substring errors and false reconnect copy</td>
+<td>Typed visible recovery states</td>
+<td>Implement typed truthful state machine</td>
+</tr>
+<tr>
+<td>Verification</td>
+<td>TestBackend plus limited PTY smoke</td>
+<td>Emulator-owned screen assertions</td>
+<td>Make emulator PTY the parity oracle</td>
+</tr>
+<tr>
+<td>Branding/assets</td>
+<td>Static Harness <code>H</code></td>
+<td>Animated Grok wordmark</td>
+<td>Animate only Harness assets</td>
+</tr>
+</tbody></table>
+<h2>Implementation roadmap</h2>
+<ol>
+<li><strong>Evidence foundation</strong>: P0-06 first. Add emulator PTY assertions and canonical 80×24, 120×40, 160×50 artifacts.</li>
+<li><strong>Shell and state</strong>: P0-01 and P0-05. Establish full-surface ownership and truthful recovery before polishing child surfaces.</li>
+<li><strong>Transcript document</strong>: P0-02 and P0-03. Land folding and navigation, adding pin reserve only if the detached-streaming reproduction exposes anchor instability; then land rich content and selection semantics.</li>
+<li><strong>Input grammar</strong>: P0-04 and P1-01. Make composer state explicit, then slash argument UX.</li>
+<li><strong>Consistent chrome</strong>: P1-02 and P1-04. Consolidate modal grammar and finish responsive/terminal feedback.</li>
+<li><strong>Brand polish</strong>: P1-03. Add Harness-native material integration and startup motion after scheduler and reduced-motion checks pass.</li>
+</ol>
+<p>For each phase, run:</p>
+<pre><code class="language-bash">cargo fmt --all -- --check
+cargo clippy -p harness-tui -p harness-testkit --all-targets -- -D warnings
+cargo nextest run -p harness-tui
+RUST_TEST_THREADS=1 cargo nextest run -p harness-tui --test pty_e2e --test-threads 1
+scripts/test-lanes.sh signoff-pty
+bash scripts/harness-qa-dogfood.sh --self-test
+</code></pre>
+<h2>Verification matrix</h2>
+<table>
+<thead>
+<tr>
+<th>Gate</th>
+<th>Observable proof</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Visual fidelity</td>
+<td>Canonical-size emulator screenshots reviewed against Harness-brand expectations</td>
+</tr>
+<tr>
+<td>Spatial stability</td>
+<td>Dashboard round-trip and resize preserve exact transcript anchor</td>
+</tr>
+<tr>
+<td>Interaction</td>
+<td>Composer/command/modal state-machine tests plus PTY tests for valid and invalid input paths</td>
+</tr>
+<tr>
+<td>Motion</td>
+<td>First/last frame captures, scheduler cadence, reduced-motion static output</td>
+</tr>
+<tr>
+<td>Rich content</td>
+<td>Golden CJK/emoji/table/link/open-fence fixtures and OSC-8 PTY bytes</td>
+</tr>
+<tr>
+<td>Recovery</td>
+<td>Deterministic disconnect/retry/reload states and action availability</td>
+</tr>
+<tr>
+<td>Performance</td>
+<td>On Linux x64 release builds with a 10,000-block transcript, run 100 alternating 80↔160-column resizes after 10 warmups; p95 resize-to-render stays within one 33 ms frame without weakening anchors</td>
+</tr>
+<tr>
+<td>Accessibility</td>
+<td><code>Basic</code>/<code>Unicode</code> terminals, keyboard-only operation, reduced motion, and capability-gated mouse behavior</td>
+</tr>
+<tr>
+<td>Branding</td>
+<td>Automated checks that shipped product names and logo assets remain Harness-owned, plus visual confirmation that no Grok marks appear</td>
+</tr>
+<tr>
+<td>Release evidence</td>
+<td>Command, binary hash, terminal metadata, dimensions, screenshot/transcript hashes</td>
+</tr>
+</tbody></table>
+<h2>Unresolved and refuted claims (claim dispositions)</h2>
+<ul>
+<li><strong>Refuted</strong>: Harness lacks aggregation. It already groups adjacent transcript verbs; add only visible folding.</li>
+<li><strong>Refuted</strong>: Harness lacks OSC-8 support. The encoder exists but is not wired through production rich rendering.</li>
+<li><strong>Refuted</strong>: Harness status animation cadence is behind Grok. Both use a 33 ms/30 fps base.</li>
+<li><strong>Refuted</strong>: Grok&#39;s close target is larger. Harness&#39;s six-cell target is already larger.</li>
+<li><strong>Refuted</strong>: Harness terminal-native quantization differs materially. The current <code>Basic</code> capability behavior matches.</li>
+<li><strong>Refuted</strong>: Grok&#39;s estimated off-screen heights are automatically better. Harness exact anchors are a stronger contract.</li>
+<li><strong>Rejected transfer</strong>: Grok <code>wrap_restore.rs</code>; it owns child terminal modes, not transcript navigation.</li>
+<li><strong>Rejected transfer</strong>: Dynamic ACP command replacement without a Harness provider source and collision policy.</li>
+<li><strong>Conditional/dead-end until reproduced</strong>: Persistent pin reserve should land only after a deterministic detached-streaming test reproduces anchor instability.</li>
+<li><strong>Excluded as unproved</strong>: Send-now cancellation promotion loss and failed-send requeue loss; source review shows interrupt tracking but not the claimed failure.</li>
+<li><strong>Conditional</strong>: Scroll coasting is a redesign, not a parity patch; follow dimming is the supported transfer.</li>
+</ul>
+<h2>Methodology</h2>
+<p>The audit used an opening DAG with 64 nodes, a first EXPAND wave with 12 groups, a second wave with 11 leads, adversarial counterchecks, and direct review of source anchors in both trees. The claim graph classified statements as supported, refined, refuted, conditional, or unresolved. Named coverage included shell/layout, transcript, rich content, composer, navigation, overlays, tools/tasks, typography/color/material, motion, responsiveness, accessibility, performance, tests, architecture, assets/branding, and sequencing. Research artifacts and debate history live beside this report in <code>.omo/ulw-research/20260831-044447/</code>.</p></article></body></html>

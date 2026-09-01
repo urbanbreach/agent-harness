@@ -1,0 +1,39 @@
+PLAN STRUCTURE RED
+command: python3 -c <plan task-grammar and required-field validator>
+exit_code: 1
+implementation_tasks: 0
+final_verifiers: 4
+errors: no implementation task rows
+reason: canonical plan skeleton exists but executable task batches have not been appended
+
+PLAN STRUCTURE GREEN
+command: python3 -c <plan task-grammar, ordering, and required-field validator>
+exit_code: 0
+implementation_tasks: 12
+final_verifiers: 4
+errors: 0
+tasks:
+1. Establish reply-capable emulator PTY evidence
+2. Add browser-rendered xterm visual capture
+3. Unify truthful terminal disconnect handling
+4. Promote dashboard to an exact-restoring full surface
+5. Add dense folds and completed-response navigation
+6. Derive explicit composer submission semantics
+7. Preserve rich tables, links, and streaming fences
+8. Make slash completion argument-aware and deterministic
+9. Introduce shared modal chrome without shared domain state
+10. Align task and live-status presentation grammar
+11. Complete token-to-runtime theme integration
+12. Wire live resize debounce and follow/glyph feedback
+final_verifiers:
+F1. Plan compliance audit
+F2. Code quality review
+F3. Real manual QA
+F4. Scope fidelity
+
+PLAN CONSUMER SURFACE PASS
+invocation: python3 -c <canonical section/task parser> .omo/plans/grok-build-harness-parity.md
+implementation_tasks: 12
+final_verifiers: 4
+parse_errors: 0
+selectable_tasks: 16
