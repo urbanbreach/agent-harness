@@ -13,6 +13,8 @@ const PRIMARY_COLS: u16 = 100;
 const PRIMARY_ROWS: u16 = 30;
 const MARKER_TIMEOUT: Duration = Duration::from_secs(12);
 const EXIT_TIMEOUT: Duration = Duration::from_secs(5);
+const SYNC_OUTPUT_START: &[u8] = b"\x1b[?2026h";
+const SYNC_OUTPUT_END: &[u8] = b"\x1b[?2026l";
 
 #[test]
 fn p0_03_pty_helper() {
@@ -111,6 +113,8 @@ struct Helper {
     output_rx: Receiver<Vec<u8>>,
     parser: Parser,
     raw: Vec<u8>,
+    synchronized_output: bool,
+    control_tail: Vec<u8>,
 }
 
 impl Drop for Helper {
@@ -146,6 +150,8 @@ impl Helper {
             output_rx: reader_channel(reader),
             parser: Parser::new(PRIMARY_ROWS, PRIMARY_COLS, 0),
             raw: Vec::new(),
+            synchronized_output: false,
+            control_tail: Vec::new(),
         }
     }
 
@@ -166,7 +172,7 @@ impl Helper {
         let deadline = Instant::now() + MARKER_TIMEOUT;
         loop {
             let screen = self.screen();
-            if screen.contains(needle) == present {
+            if screen.contains(needle) == present && !self.synchronized_output {
                 return;
             }
             let remaining = deadline.saturating_duration_since(Instant::now());
@@ -234,6 +240,16 @@ impl Helper {
     fn process(&mut self, chunk: Vec<u8>) {
         self.parser.process(&chunk);
         self.raw.extend_from_slice(&chunk);
+        let mut controls = std::mem::take(&mut self.control_tail);
+        controls.extend_from_slice(&chunk);
+        for window in controls.windows(SYNC_OUTPUT_START.len()) {
+            if window == SYNC_OUTPUT_START {
+                self.synchronized_output = true;
+            } else if window == SYNC_OUTPUT_END {
+                self.synchronized_output = false;
+            }
+        }
+        self.control_tail = controls[controls.len().saturating_sub(7)..].to_vec();
     }
 }
 
