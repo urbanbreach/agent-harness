@@ -36,6 +36,7 @@ pub use env::TerminalEnv;
 pub use event::{FocusEvent, KeyCode, KeyEvent, KeyModifiers, ResizeEvent, TerminalInputEvent};
 pub use fallback::{terminal_capability_fallback, TerminalContext};
 pub use frame_clock::{FrameClock, FramePhase, DEFAULT_FRAME_TICK_MS};
+pub(crate) use frame_output::{set_frame_hyperlinks, FrameHyperlink};
 pub use frame_output::{
     FrameAck, FrameAckOutcome, FrameBackendMetrics, FrameKind, FrameOutput, FrameOutputBackend,
     FrameOutputFailure, FrameOutputMetrics, FrameOutputReceiver, FrameOutputWriter,

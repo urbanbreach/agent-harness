@@ -31,6 +31,7 @@ pub struct Hyperlink {
 pub enum HyperlinkError {
     EmptyUrl,
     ControlCharacter,
+    UnsafeScheme,
     ReversedRange,
 }
 
@@ -39,6 +40,7 @@ impl Display for HyperlinkError {
         let message = match self {
             Self::EmptyUrl => "hyperlink URL is empty",
             Self::ControlCharacter => "hyperlink URL contains a control character",
+            Self::UnsafeScheme => "hyperlink URL scheme is not allowed",
             Self::ReversedRange => "hyperlink range is reversed",
         };
         formatter.write_str(message)
@@ -57,6 +59,9 @@ impl Hyperlink {
         }
         if url.chars().any(char::is_control) {
             return Err(HyperlinkError::ControlCharacter);
+        }
+        if !safe_external_url(url) {
+            return Err(HyperlinkError::UnsafeScheme);
         }
         if range.start_cell > range.end_cell {
             return Err(HyperlinkError::ReversedRange);
@@ -94,6 +99,15 @@ impl HyperlinkMap {
     pub fn click(&self, point: CellPoint) -> Option<&Hyperlink> {
         self.hover(point)
     }
+}
+
+pub(crate) fn safe_external_url(url: &str) -> bool {
+    ["http://", "https://"].into_iter().any(|scheme| {
+        url.len() > scheme.len()
+            && url
+                .get(..scheme.len())
+                .is_some_and(|prefix| prefix.eq_ignore_ascii_case(scheme))
+    })
 }
 
 pub fn hyperlink_sequence(link: &Hyperlink, route: TmuxSequence) -> Result<String, HyperlinkError> {

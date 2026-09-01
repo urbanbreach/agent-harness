@@ -28,6 +28,106 @@ fn is_flanking_pair(prev: Option<char>, content: &str, after_close: &str) -> boo
             .is_some_and(char::is_alphanumeric)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct InlineMarkdownLink {
+    pub(super) label: String,
+    pub(super) destination: String,
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct ParsedInlineMarkdown {
+    pub(super) spans: Vec<Span<'static>>,
+    pub(super) links: Vec<InlineMarkdownLink>,
+}
+
+pub(super) fn parse_inline_markdown(
+    text: &str,
+    base_style: Style,
+    base_color: Color,
+    theme: &Theme,
+) -> ParsedInlineMarkdown {
+    let spans = parse_inline_markdown_spans(text, base_style, base_color, theme);
+    let mut links = Vec::new();
+    let mut position = 0;
+    while position < text.len() {
+        let remaining = &text[position..];
+        if let Some(rest) = remaining.strip_prefix('[') {
+            if let Some(label_end) = rest.find("](") {
+                let destination_start = label_end + 2;
+                if let Some(destination_end) = rest[destination_start..].find(')') {
+                    let destination = &rest[destination_start..destination_start + destination_end];
+                    let label = parse_inline_markdown_spans(
+                        &rest[..label_end],
+                        base_style,
+                        base_color,
+                        theme,
+                    )
+                    .into_iter()
+                    .map(|span| span.content.into_owned())
+                    .collect::<String>();
+                    let start_cell = parse_inline_markdown_spans(
+                        &text[..position],
+                        base_style,
+                        base_color,
+                        theme,
+                    )
+                    .iter()
+                    .map(Span::width)
+                    .sum();
+                    let label_width = display_width(&label);
+                    if crate::transcript_selection::Hyperlink::new(
+                        &label,
+                        destination,
+                        crate::transcript_selection::LinkRange::new(
+                            0,
+                            start_cell,
+                            start_cell.saturating_add(label_width.saturating_sub(1)),
+                        ),
+                    )
+                    .is_ok()
+                    {
+                        links.push(InlineMarkdownLink {
+                            label,
+                            destination: destination.to_string(),
+                        });
+                    }
+                    position += 1 + destination_start + destination_end + 1;
+                    continue;
+                }
+            }
+        }
+        if let Some(url_len) = raw_url_length(remaining) {
+            let destination = &remaining[..url_len];
+            let start_cell =
+                parse_inline_markdown_spans(&text[..position], base_style, base_color, theme)
+                    .iter()
+                    .map(Span::width)
+                    .sum();
+            let destination_width = display_width(destination);
+            if crate::transcript_selection::Hyperlink::new(
+                destination,
+                destination,
+                crate::transcript_selection::LinkRange::new(
+                    0,
+                    start_cell,
+                    start_cell.saturating_add(destination_width.saturating_sub(1)),
+                ),
+            )
+            .is_ok()
+            {
+                links.push(InlineMarkdownLink {
+                    label: destination.to_string(),
+                    destination: destination.to_string(),
+                });
+            }
+            position += url_len;
+            continue;
+        }
+        position += remaining.chars().next().map_or(1, char::len_utf8);
+    }
+    ParsedInlineMarkdown { spans, links }
+}
+
 pub(super) fn parse_inline_markdown_spans(
     text: &str,
     base_style: Style,
@@ -49,11 +149,14 @@ pub(super) fn parse_inline_markdown_spans(
             if let Some(label_end) = rest.find("](") {
                 let after_label = &rest[label_end + 2..];
                 if let Some(url_end) = after_label.find(')') {
-                    spans.push(Span::styled(
-                        rest[..label_end].to_string(),
-                        base_style
-                            .fg(theme.markdown.link_text)
-                            .add_modifier(Modifier::UNDERLINED),
+                    let link_style = base_style
+                        .fg(theme.markdown.link_text)
+                        .add_modifier(Modifier::UNDERLINED);
+                    spans.extend(parse_inline_markdown_spans(
+                        &rest[..label_end],
+                        link_style,
+                        theme.markdown.link_text,
+                        theme,
                     ));
                     pos += 1 + label_end + 2 + url_end + 1;
                     continue;
@@ -326,7 +429,7 @@ pub(super) fn append_markdownish_text_block(
     let rows = text.lines().collect::<Vec<_>>();
     let mut index = 0;
     while let Some(line) = rows.get(index).copied() {
-        if let Some((table_lines, consumed)) =
+        if let Some((table_lines, consumed, _links)) =
             try_render_markdown_table_block(&rows[index..], color, prefix, theme, width)
         {
             lines.extend(table_lines);
@@ -543,6 +646,41 @@ mod tests {
         assert_eq!(spans[0].content.as_ref(), "label");
         assert_eq!(spans[0].style.fg, Some(theme.markdown.link_text));
         assert!(spans[0].style.add_modifier.contains(Modifier::UNDERLINED));
+    }
+
+    #[test]
+    fn inline_parser_preserves_safe_destinations_and_rejects_unsafe_targets() {
+        // Given: labeled links, a raw URL, and executable/local destinations.
+        let theme = Theme::default();
+        let base = Style::default().fg(theme.text.primary);
+
+        // When: inline markdown crosses the rendering boundary.
+        let parsed = parse_inline_markdown(
+            "[docs](https://example.com/docs) http://example.com/raw [bad](javascript:alert(1)) [file](file:///tmp/x)",
+            base,
+            theme.text.primary,
+            &theme,
+        );
+
+        // Then: safe raw destinations survive unchanged and unsafe targets carry no metadata.
+        assert_eq!(
+            parsed
+                .links
+                .iter()
+                .map(|link| (link.label.as_str(), link.destination.as_str()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("docs", "https://example.com/docs"),
+                ("http://example.com/raw", "http://example.com/raw"),
+            ]
+        );
+        let visible = parsed
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect::<String>();
+        assert!(visible.contains("docs") && visible.contains("bad") && visible.contains("file"));
+        assert!(!visible.contains("javascript:") && !visible.contains("file:///"));
     }
 
     #[test]
@@ -981,7 +1119,7 @@ mod tests {
         // assert
         let theme = Theme::default();
         let rows = ["Name | Value", "--- | ---", "foo | bar"];
-        let (lines, _) =
+        let (lines, _, _) =
             try_render_markdown_table_block(&rows, theme.text.primary, "", &theme, 80).unwrap();
         let spans = collect_spans(&lines);
         assert!(

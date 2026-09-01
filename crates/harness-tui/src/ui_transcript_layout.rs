@@ -1306,6 +1306,7 @@ mod pin_tests {
             cells: vec!["x".to_string(); width],
             continues_previous,
             copy_offset: 0,
+            links: Vec::new(),
         }
     }
 }

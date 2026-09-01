@@ -5,10 +5,25 @@ use ratatui::{
 
 use crate::theme::Theme;
 
+use self::parse::{is_table_separator_row, parse_table_row};
 use super::ui_chrome::display_width;
-use super::ui_transcript_surface::append_prefixed_wrapped_spans_line;
+use super::ui_markdown::parse_inline_markdown;
 
-const TABLE_COLUMN_GAP: &str = "  ";
+#[path = "ui_markdown_table_parse.rs"]
+mod parse;
+use super::ui_transcript_surface::wrap_surface_spans;
+
+#[cfg(test)]
+#[path = "ui_markdown_table_tests.rs"]
+mod tests;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct TableLinkRun {
+    pub(super) row: usize,
+    pub(super) start_cell: usize,
+    pub(super) end_cell: usize,
+    pub(super) destination: String,
+}
 
 pub(super) fn try_render_markdown_table_block(
     rows: &[&str],
@@ -16,25 +31,38 @@ pub(super) fn try_render_markdown_table_block(
     prefix: &str,
     theme: &Theme,
     width: u16,
-) -> Option<(Vec<Line<'static>>, usize)> {
+) -> Option<(Vec<Line<'static>>, usize, Vec<TableLinkRun>)> {
     let header = parse_table_row(rows.first().copied()?)?;
     let separator = rows.get(1).copied()?;
     if !is_table_separator_row(separator, header.len()) {
         return None;
     }
 
-    let body_rows = rows
+    let body = rows
         .iter()
         .skip(2)
         .map_while(|row| parse_table_row(row))
         .collect::<Vec<_>>();
-    if body_rows.is_empty() {
+    if body.is_empty() {
         return None;
     }
 
     let column_count = header.len();
-    let column_widths = table_column_widths(&header, &body_rows, column_count);
-    let mut rendered = Vec::with_capacity(body_rows.len() + 1);
+    let available = usize::from(width)
+        .saturating_sub(display_width(prefix))
+        .max(column_count.saturating_mul(3).saturating_add(1));
+    let column_widths = bounded_column_widths(&header, &body, column_count, available);
+    let border_style = Style::default().fg(theme.border.subtle);
+    let mut rendered = Vec::new();
+    let mut links = Vec::new();
+    rendered.push(border_line(
+        prefix,
+        &column_widths,
+        '┌',
+        '┬',
+        '┐',
+        border_style,
+    ));
     append_table_row(
         &mut rendered,
         &header,
@@ -43,20 +71,40 @@ pub(super) fn try_render_markdown_table_block(
         Style::default()
             .fg(theme.markdown.heading_h1)
             .add_modifier(Modifier::BOLD),
-        width,
+        border_style,
+        theme,
+        &mut links,
     );
-    for row in &body_rows {
+    rendered.push(border_line(
+        prefix,
+        &column_widths,
+        '├',
+        '┼',
+        '┤',
+        border_style,
+    ));
+    for row in &body {
         append_table_row(
             &mut rendered,
             row,
             &column_widths,
             prefix,
             Style::default().fg(color),
-            width,
+            border_style,
+            theme,
+            &mut links,
         );
     }
+    rendered.push(border_line(
+        prefix,
+        &column_widths,
+        '└',
+        '┴',
+        '┘',
+        border_style,
+    ));
 
-    Some((rendered, body_rows.len() + 2))
+    Some((rendered, body.len() + 2, links))
 }
 
 fn append_table_row(
@@ -65,117 +113,133 @@ fn append_table_row(
     column_widths: &[usize],
     prefix: &str,
     style: Style,
-    width: u16,
+    border_style: Style,
+    theme: &Theme,
+    links: &mut Vec<TableLinkRun>,
 ) {
-    let mut spans = Vec::new();
-    for (index, column_width) in column_widths.iter().copied().enumerate() {
-        if index > 0 {
-            spans.push(Span::styled(TABLE_COLUMN_GAP.to_string(), style));
+    let wrapped = column_widths
+        .iter()
+        .copied()
+        .enumerate()
+        .map(|(index, width)| {
+            let cell = row.get(index).map_or("", String::as_str);
+            let parsed =
+                parse_inline_markdown(cell, style, style.fg.unwrap_or(Color::Reset), theme);
+            let rows = wrap_surface_spans(parsed.spans, width);
+            (
+                if rows.is_empty() {
+                    vec![Vec::new()]
+                } else {
+                    rows
+                },
+                parsed.links,
+            )
+        })
+        .collect::<Vec<_>>();
+    let height = wrapped
+        .iter()
+        .map(|(rows, _)| rows.len())
+        .max()
+        .unwrap_or(1);
+
+    for line_index in 0..height {
+        let mut spans = vec![
+            Span::raw(prefix.to_string()),
+            Span::styled("│", border_style),
+        ];
+        for (column_index, column_width) in column_widths.iter().copied().enumerate() {
+            spans.push(Span::styled(" ", style));
+            let cell_start = spans.iter().map(Span::width).sum::<usize>();
+            let cell_spans = wrapped[column_index]
+                .0
+                .get(line_index)
+                .cloned()
+                .unwrap_or_default();
+            let used = cell_spans.iter().map(Span::width).sum::<usize>();
+            let cell_text = cell_spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect::<String>();
+            for link in &wrapped[column_index].1 {
+                for fragment in link.label.split_whitespace() {
+                    if let Some(byte_start) = cell_text.find(fragment) {
+                        let start_cell =
+                            cell_start.saturating_add(display_width(&cell_text[..byte_start]));
+                        links.push(TableLinkRun {
+                            row: rendered.len(),
+                            start_cell,
+                            end_cell: start_cell.saturating_add(display_width(fragment)),
+                            destination: link.destination.clone(),
+                        });
+                    }
+                }
+            }
+            spans.extend(cell_spans);
+            spans.push(Span::styled(
+                " ".repeat(column_width.saturating_sub(used).saturating_add(1)),
+                style,
+            ));
+            spans.push(Span::styled("│", border_style));
         }
-        let cell = row.get(index).map(String::as_str).unwrap_or(" ");
-        spans.push(Span::styled(pad_cell(cell, column_width), style));
+        rendered.push(Line::from(spans));
     }
-    append_prefixed_wrapped_spans_line(rendered, prefix, style, spans, width);
 }
 
-fn table_column_widths(
+fn border_line(
+    prefix: &str,
+    column_widths: &[usize],
+    left: char,
+    join: char,
+    right: char,
+    style: Style,
+) -> Line<'static> {
+    let mut text = String::from(prefix);
+    text.push(left);
+    for (index, width) in column_widths.iter().copied().enumerate() {
+        if index > 0 {
+            text.push(join);
+        }
+        text.push_str(&"─".repeat(width.saturating_add(2)));
+    }
+    text.push(right);
+    Line::from(Span::styled(text, style))
+}
+
+fn bounded_column_widths(
     header: &[String],
-    body_rows: &[Vec<String>],
+    body: &[Vec<String>],
     column_count: usize,
+    available: usize,
 ) -> Vec<usize> {
     let mut widths = vec![1; column_count];
-    for row in std::iter::once(header).chain(body_rows.iter().map(Vec::as_slice)) {
+    for row in std::iter::once(header).chain(body.iter().map(Vec::as_slice)) {
         for (index, cell) in row.iter().take(column_count).enumerate() {
-            widths[index] = widths[index].max(display_width(cell));
+            let visible = parse_visible_cell(cell);
+            widths[index] = widths[index].max(display_width(&visible));
         }
+    }
+
+    let overhead = column_count.saturating_mul(3).saturating_add(1);
+    let content_budget = available.saturating_sub(overhead).max(column_count);
+    while widths.iter().sum::<usize>() > content_budget {
+        let Some((index, _)) = widths
+            .iter()
+            .enumerate()
+            .filter(|(_, width)| **width > 1)
+            .max_by_key(|(_, width)| **width)
+        else {
+            break;
+        };
+        widths[index] = widths[index].saturating_sub(1);
     }
     widths
 }
 
-fn pad_cell(cell: &str, width: usize) -> String {
-    let padding = width.saturating_sub(display_width(cell));
-    format!("{cell}{}", " ".repeat(padding))
-}
-
-fn parse_table_row(row: &str) -> Option<Vec<String>> {
-    let trimmed = row.trim();
-    if !trimmed.contains('|') {
-        return None;
-    }
-
-    let content = trimmed.trim_matches('|');
-    let cells = split_unescaped_pipes(content)
+fn parse_visible_cell(cell: &str) -> String {
+    let theme = Theme::default();
+    parse_inline_markdown(cell, Style::default(), Color::Reset, &theme)
+        .spans
         .into_iter()
-        .map(|cell| conceal_table_cell(cell.trim()))
-        .collect::<Vec<_>>();
-    (cells.len() >= 2).then_some(cells)
-}
-
-fn split_unescaped_pipes(content: &str) -> Vec<String> {
-    let mut cells = Vec::new();
-    let mut cell = String::new();
-    let mut escaped = false;
-    for ch in content.chars() {
-        if escaped {
-            cell.push(ch);
-            escaped = false;
-            continue;
-        }
-        if ch == '\\' {
-            escaped = true;
-            continue;
-        }
-        if ch == '|' {
-            cells.push(std::mem::take(&mut cell));
-            continue;
-        }
-        cell.push(ch);
-    }
-    cells.push(cell);
-    cells
-}
-
-fn conceal_table_cell(cell: &str) -> String {
-    let mut text = conceal_links(cell);
-    for marker in ["**", "__", "~~", "`", "*", "_"] {
-        text = text.replace(marker, "");
-    }
-    text
-}
-
-fn conceal_links(cell: &str) -> String {
-    let mut output = String::new();
-    let mut remaining = cell;
-    while let Some(start) = remaining.find('[') {
-        output.push_str(&remaining[..start]);
-        let after_open = &remaining[start + 1..];
-        let Some(label_end) = after_open.find("](") else {
-            output.push_str(&remaining[start..]);
-            return output;
-        };
-        let after_label = &after_open[label_end + 2..];
-        let Some(url_end) = after_label.find(')') else {
-            output.push_str(&remaining[start..]);
-            return output;
-        };
-        output.push_str(&after_open[..label_end]);
-        remaining = &after_label[url_end + 1..];
-    }
-    output.push_str(remaining);
-    output
-}
-
-fn is_table_separator_row(row: &str, column_count: usize) -> bool {
-    let Some(cells) = parse_table_row(row) else {
-        return false;
-    };
-    cells.len() == column_count
-        && cells.iter().all(|cell| {
-            let marker = cell.trim();
-            marker.len() >= 3
-                && marker
-                    .chars()
-                    .all(|ch| matches!(ch, '-' | ':') || ch.is_whitespace())
-                && marker.chars().any(|ch| ch == '-')
-        })
+        .map(|span| span.content.into_owned())
+        .collect()
 }

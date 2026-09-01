@@ -557,6 +557,7 @@ fn render_measured_transcript_pane(
                 app.transcript_animation_phase(),
                 theme,
             );
+            register_transcript_hyperlinks(layout, surface_area, transcript_scroll);
             render_transcript_selection(
                 frame,
                 app.transcript_selection(),
@@ -818,6 +819,41 @@ fn with_transcript_selection_snapshot<R>(
     )
 }
 
+fn register_transcript_hyperlinks(
+    layout: &MeasuredTranscriptLayout,
+    viewport: Rect,
+    scroll_top: usize,
+) {
+    let (rows, _, _) = transcript_selection_rows(layout, usize::from(viewport.width));
+    let viewport_rows = transcript_viewport_rows(layout, usize::from(viewport.height), scroll_top);
+    let mut links = Vec::new();
+    for local_row in 0..usize::from(viewport.height) {
+        let Some(absolute_row) = viewport_rows.absolute_row(local_row) else {
+            continue;
+        };
+        let Some(row) = rows.get(absolute_row) else {
+            continue;
+        };
+        for link in &row.links {
+            let Ok(start_column) = u16::try_from(link.start_cell) else {
+                continue;
+            };
+            let Ok(end_column) = u16::try_from(link.end_cell.saturating_add(1)) else {
+                continue;
+            };
+            links.push(crate::terminal::FrameHyperlink {
+                row: viewport
+                    .y
+                    .saturating_add(u16::try_from(local_row).unwrap_or(u16::MAX)),
+                start_column: viewport.x.saturating_add(start_column),
+                end_column: viewport.x.saturating_add(end_column).min(viewport.right()),
+                destination: link.destination.clone(),
+            });
+        }
+    }
+    crate::terminal::set_frame_hyperlinks(links);
+}
+
 fn transcript_selection_rows(
     layout: &MeasuredTranscriptLayout,
     width: usize,
@@ -831,6 +867,7 @@ fn transcript_selection_rows(
             line_index,
             start_cell: 1,
             end_cell: 0,
+            links: Vec::new(),
         })
         .collect();
     let mut line_texts = vec![" ".repeat(width); layout.total_height];
@@ -882,6 +919,7 @@ fn transcript_surface_selection_rows(
                     cells: row,
                     continues_previous: idx > 0,
                     copy_offset: 1,
+                    links: Vec::new(),
                 }
             }));
         } else {
@@ -894,6 +932,7 @@ fn transcript_surface_selection_rows(
                     cells: row,
                     continues_previous: idx > 0,
                     copy_offset: 0,
+                    links: Vec::new(),
                 }
             }));
         }
@@ -904,6 +943,7 @@ fn transcript_surface_selection_rows(
             cells: vec![" ".to_string(); surface_width],
             continues_previous: false,
             copy_offset: 0,
+            links: Vec::new(),
         });
     }
 

@@ -68,3 +68,23 @@ pub fn copy_with_metadata(
         format!("[{}]\n{text}", fields.join("] ["))
     }
 }
+
+pub fn copy_with_metadata_and_links(
+    text: &str,
+    metadata: &CopyMetadata,
+    policy: CopyMetadataPolicy,
+    links: &[super::hyperlinks::Hyperlink],
+) -> String {
+    let mut copied = copy_with_metadata(text, metadata, policy);
+    let mut destinations = Vec::new();
+    for link in links {
+        if !destinations.contains(&link.url()) {
+            destinations.push(link.url());
+        }
+    }
+    if !destinations.is_empty() {
+        copied.push_str("\n\nLinks:\n");
+        copied.push_str(&destinations.join("\n"));
+    }
+    copied
+}
