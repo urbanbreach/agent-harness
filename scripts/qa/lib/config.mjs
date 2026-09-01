@@ -3,6 +3,8 @@ const SCENARIOS = [
   "transcript-response-navigation",
   "transcript-active-block",
   "composer-multiline-actions",
+  "disconnect-truth",
+  "disconnect-duplicate",
 ];
 
 const VALUE_OPTIONS = new Set([
@@ -55,6 +57,9 @@ export function parseArgs(argv) {
 export function scenarioContract(options, environment) {
   if (options.scenario === "smoke") return smokeContract(options);
   if (options.scenario === "composer-multiline-actions") return composerMultilineActionsContract(options);
+  if (options.scenario === "disconnect-truth" || options.scenario === "disconnect-duplicate") {
+    return disconnectContract(options);
+  }
   const stem = options.scenario.replaceAll("-", "_").toUpperCase();
   const command = options.command ?? environment[`HARNESS_QA_${stem}_COMMAND`];
   if (!command) {
@@ -104,6 +109,36 @@ function smokeContract(options) {
     ],
     assertions: ["Commands", "P0-06 canonical"],
     expectNaturalExit: false,
+  };
+}
+
+function disconnectContract(options) {
+  const mode = options.scenario === "disconnect-duplicate" ? "duplicate" : "truth";
+  return {
+    name: options.scenario,
+    title: options.title ?? `Harness ${options.scenario}`,
+    command: `env HARNESS_TUI_P0_05_SCENARIO=${mode} cargo test --manifest-path $HARNESS_QA_REPO_ROOT/Cargo.toml -p harness-tui --test runtime_wait_set_test -- --exact p0_05_disconnect_pty_helper --nocapture`,
+    actions: [
+      { kind: "wait", value: "Connection lost" },
+      { kind: "wait", value: "reopen required" },
+      { kind: "wait", value: "disconnect draft preserved" },
+      { kind: "waitAbsent", value: "Reconnecting" },
+      { kind: "waitAbsent", value: "[stop]" },
+      { kind: "waitAbsent", value: "[send to bg]" },
+      { kind: "assertCount", value: "Reconnecting", count: 0 },
+      { kind: "assertCount", value: "[stop]", count: 0 },
+      { kind: "assertCount", value: "[send to bg]", count: 0 },
+      { kind: "assertCount", value: "reopen required", count: 1 },
+      { kind: "capture" },
+      { kind: "type", value: "attempted send" },
+      { kind: "key", value: "Enter" },
+      { kind: "waitAbsent", value: "attempted send" },
+      { kind: "capture" },
+      { kind: "key", value: "Control+Q" },
+      { kind: "key", value: "Control+Q" },
+    ],
+    assertions: ["Connection lost", "reopen required", "disconnect draft preserved"],
+    expectNaturalExit: true,
   };
 }
 
@@ -172,11 +207,15 @@ function parseAction(value) {
 
 function normalizeAction(value) {
   if (typeof value === "string") return parseAction(value);
-  if (!value || typeof value !== "object" || !["wait", "waitAbsent", "waitTitle", "waitCount", "type", "key", "click", "capture"].includes(value.kind)) {
+  if (!value || typeof value !== "object" || !["wait", "waitAbsent", "waitTitle", "waitCount", "assertCount", "type", "key", "click", "capture"].includes(value.kind)) {
     throw new CliError("invalid fixture action");
   }
   if (value.kind !== "capture" && typeof value.value !== "string") {
     throw new CliError(`fixture action ${value.kind} requires a string value`);
+  }
+  if ((value.kind === "waitCount" || value.kind === "assertCount")
+    && (!Number.isSafeInteger(value.count) || value.count < 0)) {
+    throw new CliError(`fixture action ${value.kind} requires a non-negative integer count`);
   }
   return value;
 }

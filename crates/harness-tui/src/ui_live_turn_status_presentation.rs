@@ -44,12 +44,12 @@ impl LiveTurnStatus {
         }
     }
 
-    pub(super) fn reconnecting(theme: &Theme) -> Self {
+    pub(super) fn disconnected(theme: &Theme) -> Self {
         Self {
-            label: "Reconnecting live state…".to_string(),
-            style: Style::default().fg(theme.status.warning),
+            label: "Connection lost · reopen required".to_string(),
+            style: Style::default().fg(theme.status.error),
             phase_elapsed_ms: None,
-            allows_stop: true,
+            allows_stop: false,
             allows_send_now: false,
         }
     }

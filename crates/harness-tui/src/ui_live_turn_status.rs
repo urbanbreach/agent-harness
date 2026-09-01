@@ -2,7 +2,7 @@ use ratatui::{
     layout::{Alignment, Rect},
     style::Style,
     text::{Line, Span},
-    widgets::{Block, Paragraph},
+    widgets::{Clear, Paragraph},
     Frame,
 };
 
@@ -63,7 +63,7 @@ pub(super) fn render_live_turn_status(
     } else {
         match runtime_kind {
             RuntimeStateKind::Degraded => LiveTurnStatus::recovering(theme),
-            RuntimeStateKind::Disconnected => LiveTurnStatus::reconnecting(theme),
+            RuntimeStateKind::Disconnected => LiveTurnStatus::disconnected(theme),
             RuntimeStateKind::Sending | RuntimeStateKind::Streaming => activity.map_or_else(
                 || {
                     if background_tasks > 0 && !foreground_work {
@@ -228,7 +228,7 @@ pub(super) fn render_live_turn_status(
         .saturating_sub(fixed_left_width);
     let label = truncate_plain_text(&status.label, label_width.max(1));
 
-    frame.render_widget(Block::default().style(Style::default()), area);
+    frame.render_widget(Clear, area);
     let spinner_style = if uses_monitor_pulse {
         Style::default().fg(theme.status.info)
     } else {
