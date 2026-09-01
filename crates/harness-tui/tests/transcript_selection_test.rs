@@ -5,9 +5,10 @@
 )]
 
 use harness_tui::transcript_selection::{
-    build_osc52, copy_local_with_runner, copy_with_metadata, hyperlink_sequence, BlockKind,
-    CellPoint, CopyMetadata, CopyMetadataPolicy, Hyperlink, HyperlinkMap, LinkRange, LocalPlatform,
-    NavigationKey, SelectionMode, TmuxSequence, Viewport, WrappedText, OSC52_MAX_BYTES,
+    build_osc52, copy_local_with_runner, copy_with_metadata, copy_with_metadata_and_links,
+    hyperlink_sequence, BlockKind, CellPoint, CopyMetadata, CopyMetadataPolicy, Hyperlink,
+    HyperlinkMap, LinkRange, LocalPlatform, NavigationKey, SelectionMode, TmuxSequence, Viewport,
+    WrappedText, OSC52_MAX_BYTES,
 };
 
 #[test]
@@ -183,4 +184,55 @@ fn hyperlink_hover_click_and_tmux_osc8_are_sanitized() {
     assert!(sequence.contains("docs"));
     assert!(sequence.starts_with("\x1bPtmux;"));
     assert!(Hyperlink::new("bad", "https://example.com\n", LinkRange::new(0, 0, 1)).is_err());
+}
+
+#[test]
+fn external_hyperlinks_allow_only_http_schemes_without_rewriting_valid_urls() {
+    // Given: safe web destinations and executable/local URI schemes.
+    let range = LinkRange::new(0, 0, 3);
+
+    // When: destinations cross the hyperlink rendering boundary.
+    let http = Hyperlink::new("http", "http://example.com/a?b=1#c", range).expect("http URL");
+    let https = Hyperlink::new("https", "https://例え.test/資料", range).expect("https URL");
+
+    // Then: valid raw URLs are preserved and unsafe schemes are rejected.
+    assert_eq!(http.url(), "http://example.com/a?b=1#c");
+    assert_eq!(https.url(), "https://例え.test/資料");
+    for unsafe_url in [
+        "javascript:alert(1)",
+        "file:///etc/passwd",
+        "ftp://example.com/file",
+        "https://example.com/\u{1b}]8;;evil",
+    ] {
+        assert!(
+            Hyperlink::new("unsafe", unsafe_url, range).is_err(),
+            "accepted {unsafe_url:?}"
+        );
+    }
+}
+
+#[test]
+fn metadata_copy_retains_visible_text_and_selected_link_destinations() {
+    // Given: selected visible text, transcript metadata, and one selected destination.
+    let metadata = CopyMetadata::new("turn-01", BlockKind::Assistant, "12:34:56");
+    let link = Hyperlink::new("docs", "https://example.com/docs", LinkRange::new(0, 0, 3))
+        .expect("safe URL");
+
+    // When: copy metadata is assembled for the selection.
+    let copied = copy_with_metadata_and_links(
+        "Read docs",
+        &metadata,
+        CopyMetadataPolicy {
+            include_turn_id: true,
+            include_block_kind: true,
+            include_timestamp: true,
+        },
+        &[link],
+    );
+
+    // Then: existing metadata and visible text remain, followed by the destination once.
+    assert_eq!(
+        copied,
+        "[turn-01] [assistant] [12:34:56]\nRead docs\n\nLinks:\nhttps://example.com/docs"
+    );
 }
