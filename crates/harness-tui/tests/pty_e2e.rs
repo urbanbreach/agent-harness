@@ -1,5 +1,11 @@
 #[path = "support/manual_live_turn_visual_capture_events.rs"]
 mod capture_events;
+#[path = "support/p0_06_artifact_support.rs"]
+mod p0_06_artifact_support;
+#[path = "support/p0_06_artifacts.rs"]
+mod p0_06_artifacts;
+#[path = "support/p0_06_terminal_emulator.rs"]
+mod p0_06_terminal_emulator;
 #[path = "support/pty_e2e_impl.rs"]
 mod pty_e2e_impl;
 
@@ -49,6 +55,38 @@ fn pty_draft_esc_esc_clears_composer() {
     // act
     // assert
     pty_e2e_impl::pty_draft_esc_esc_clears_composer();
+}
+
+#[test]
+fn p0_06_native_pty_forwards_terminal_query_replies() {
+    // arrange
+    // act
+    // assert
+    p0_06_terminal_emulator::native_pty_forwards_terminal_query_replies();
+}
+
+#[test]
+fn p0_06_emulator_replies_at_query_position_within_one_chunk() {
+    // arrange
+    // act
+    // assert
+    p0_06_terminal_emulator::emulator_replies_with_cursor_state_at_query_in_same_chunk();
+}
+
+#[test]
+fn p0_06_native_pty_writes_canonical_artifacts_and_provenance() {
+    // arrange
+    // act
+    // assert
+    p0_06_artifacts::native_pty_writes_canonical_artifacts_and_provenance();
+}
+
+#[test]
+fn p0_06_emulator_structures_terminal_state_and_scrollback() {
+    // arrange
+    // act
+    // assert
+    p0_06_terminal_emulator::emulator_structures_terminal_state_and_scrollback();
 }
 
 #[test]

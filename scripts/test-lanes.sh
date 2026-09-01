@@ -552,11 +552,37 @@ run_signoff_binary() {
   run_stage signoff-binary harness_binary_smoke "$repo_root" env HARNESS_BINARY_SMOKE=1 HARNESS_BINARY_SMOKE_ARTIFACT_DIR="$binary_smoke_artifacts_dir" cargo nextest run -p harness --test binary_smoke --ignore-default-filter -- --ignored --exact || true
 }
 
+run_p0_06_xterm_capture() {
+  local mode_name="$1"
+  local stage_name="$2"
+  local cols="$3"
+  local rows="$4"
+  local destination="$(stage_dir_for "$mode_name" "$stage_name")/artifacts"
+  local temporary="/tmp/harness-xterm-${timestamp}-${cols}x${rows}-$$"
+  mkdir -p "$destination"
+  run_stage "$mode_name" "$stage_name" "$repo_root" \
+    bash -c 'set -euo pipefail
+      temporary="$1"; destination="$2"; cols="$3"; rows="$4"; root="$5"
+      trap '\''rm -rf "$temporary"'\'' EXIT
+      node "$root/scripts/qa/web-terminal-visual-qa.mjs" \
+        --scenario smoke --evidence-dir "$temporary" \
+        --cols "$cols" --rows "$rows"
+      cp -a "$temporary/." "$destination/"
+      {
+        printf "binary=%s\\n" "$root/target/debug/harness"
+        printf "sha256=%s\\n" "$(sha256sum "$root/target/debug/harness" | awk '\''{print $1}'\'')"
+      } >"$destination/harness-binary-provenance.txt"
+      sha256sum "$destination/harness-binary-provenance.txt" >"$destination/harness-binary-provenance.sha256"' \
+    bash "$temporary" "$destination" "$cols" "$rows" "$repo_root"
+}
+
 run_signoff_pty() {
   local mode_name="signoff-pty"
   local tui_happy_path_artifacts_dir
+  local p0_06_artifacts_dir
   tui_happy_path_artifacts_dir="$(stage_dir_for signoff-pty harness_tui_happy_path_pty)/artifacts"
-  mkdir -p "$tui_happy_path_artifacts_dir"
+  p0_06_artifacts_dir="$(stage_dir_for signoff-pty harness_tui_pty_e2e)/artifacts/p0-06"
+  mkdir -p "$tui_happy_path_artifacts_dir" "$p0_06_artifacts_dir"
 
   if [[ "$dry_run" -eq 0 ]]; then
     local missing=()
@@ -575,8 +601,17 @@ run_signoff_pty() {
     if [[ ! -f "${repo_root}/crates/harness/tests/pty_happy_path_recorded.rs" ]]; then
       missing+=("missing owner crates/harness/tests/pty_happy_path_recorded.rs (silent skip is forbidden)")
     fi
+    if [[ ! -f "${repo_root}/scripts/qa/web-terminal-visual-qa.mjs" || ! -f "${repo_root}/scripts/qa/p0-06-xterm.test.mjs" ]]; then
+      missing+=("missing xterm.js P0-06 QA owners (silent skip is forbidden)")
+    fi
     if ! command -v cargo >/dev/null 2>&1; then
       missing+=("cargo is not available on PATH")
+    fi
+    if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
+      missing+=("node and npm are required for xterm.js QA")
+    fi
+    if [[ ! -x /usr/bin/chromium ]]; then
+      missing+=("/usr/bin/chromium is required for real-browser xterm.js QA")
     fi
     if [[ "${#missing[@]}" -ne 0 ]]; then
       record_gate_failure "$mode_name" pty_prerequisites "${missing[@]}"
@@ -584,7 +619,7 @@ run_signoff_pty() {
         printf 'lane=signoff-pty\n'
         printf 'result=FAIL\n'
         printf 'reason=missing_prerequisites\n'
-        printf 'stages=prerequisites,testkit_pty,tui_pty,p0_03,p0_04,happy_path\n'
+        printf 'stages=prerequisites,testkit_pty,tui_pty,p0_03,p0_04,happy_path,xterm_dependencies,xterm_tests,xterm_80x24,xterm_120x40,xterm_160x50\n'
         printf 'owns=deterministic_pty_journeys\n'
       } >"${tui_happy_path_artifacts_dir}/pty-lane-verdict.txt"
       return 1
@@ -594,7 +629,9 @@ run_signoff_pty() {
   run_stage "$mode_name" harness_testkit_pty_e2e "$repo_root" \
     env RUST_TEST_THREADS=1 cargo nextest run -p harness-testkit --test pty_e2e --test-threads 1 --ignore-default-filter
   run_stage "$mode_name" harness_tui_pty_e2e "$repo_root" \
-    env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 cargo nextest run -p harness-tui --test pty_e2e --test-threads 1 --ignore-default-filter
+    env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 \
+    HARNESS_P0_06_ARTIFACT_DIR="$p0_06_artifacts_dir" \
+    cargo nextest run -p harness-tui --test pty_e2e --test-threads 1 --ignore-default-filter
   run_stage "$mode_name" harness_tui_p0_03_pty_recorded "$repo_root" \
     env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 cargo nextest run -p harness-tui --test p0_03_pty_recorded --test-threads 1 --ignore-default-filter
   run_stage "$mode_name" harness_tui_p0_04_pty_recorded "$repo_root" \
@@ -602,6 +639,11 @@ run_signoff_pty() {
   run_stage "$mode_name" harness_tui_happy_path_pty "$repo_root" \
     env RUST_TEST_THREADS=1 HARNESS_TUI_HAPPY_PATH_ARTIFACT_DIR="$tui_happy_path_artifacts_dir" \
     cargo nextest run -p harness --test pty_happy_path_recorded --test-threads 1 -- --ignored --exact scripted_tui_happy_path_records_start_prompt_permission_tool_edit_resume_and_quit
+  run_stage "$mode_name" p0_06_xterm_dependencies "$repo_root" npm ci --prefix scripts/qa
+  run_stage "$mode_name" p0_06_xterm_tests "$repo_root" npm test --prefix scripts/qa
+  run_p0_06_xterm_capture "$mode_name" p0_06_xterm_80x24 80 24
+  run_p0_06_xterm_capture "$mode_name" p0_06_xterm_120x40 120 40
+  run_p0_06_xterm_capture "$mode_name" p0_06_xterm_160x50 160 50
   local mode_failed=0
   local stage_status
   for stage_status in "$(mode_dir_for signoff-pty)"/stages/*/status.txt; do
@@ -615,7 +657,7 @@ run_signoff_pty() {
       printf 'lane=signoff-pty\n'
       printf 'result=PASS\n'
       printf 'reason=owners_green\n'
-      printf 'stages=testkit_pty,tui_pty,p0_03,p0_04,happy_path\n'
+      printf 'stages=testkit_pty,tui_pty,p0_03,p0_04,happy_path,xterm_tests,xterm_80x24,xterm_120x40,xterm_160x50\n'
       printf 'owns=deterministic_pty_journeys\n'
     } >"${tui_happy_path_artifacts_dir}/pty-lane-verdict.txt"
   else
@@ -623,7 +665,7 @@ run_signoff_pty() {
       printf 'lane=signoff-pty\n'
       printf 'result=FAIL\n'
       printf 'reason=stage_failure\n'
-      printf 'stages=testkit_pty,tui_pty,p0_03,p0_04,happy_path\n'
+      printf 'stages=testkit_pty,tui_pty,p0_03,p0_04,happy_path,xterm_tests,xterm_80x24,xterm_120x40,xterm_160x50\n'
       printf 'owns=deterministic_pty_journeys\n'
     } >"${tui_happy_path_artifacts_dir}/pty-lane-verdict.txt"
     return 1

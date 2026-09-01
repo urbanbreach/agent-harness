@@ -39,6 +39,7 @@ export async function mountTerminal(page, settings) {
     let renderCount = 0;
     let parsedCount = 0;
     let lastRender = null;
+    let cursorVisible = true;
     let latestTitle = initialTitle;
     const titleHistory = [initialTitle];
     terminal.onRender((range) => {
@@ -49,6 +50,14 @@ export async function mountTerminal(page, settings) {
     terminal.onTitleChange((title) => {
       latestTitle = title;
       titleHistory.push(title);
+    });
+    terminal.parser.registerCsiHandler({ prefix: "?", final: "h" }, (params) => {
+      if (params.includes(25)) cursorVisible = true;
+      return false;
+    });
+    terminal.parser.registerCsiHandler({ prefix: "?", final: "l" }, (params) => {
+      if (params.includes(25)) cursorVisible = false;
+      return false;
     });
     const rowsText = () => {
       const buffer = terminal.buffer.active;
@@ -99,32 +108,40 @@ export async function mountTerminal(page, settings) {
       snapshot: () => {
         const buffer = terminal.buffer.active;
         const rows = rowsText();
+        const lines = rows.map((text, row) => {
+          const line = buffer.getLine(buffer.viewportY + row);
+          const cells = [];
+          for (let column = 0; column < terminal.cols; column += 1) {
+            const cell = line?.getCell(column);
+            const chars = cell?.getChars() ?? "";
+            const width = cell?.getWidth() ?? 1;
+            if (chars.trim().length > 0 || width !== 1) {
+              const style = { invisible: cell.isInvisible(), fgColor: cell.getFgColor(), bgColor: cell.getBgColor(), fgColorMode: cell.getFgColorMode(), bgColorMode: cell.getBgColorMode(), fgRgb: cell.isFgRGB(), bgRgb: cell.isBgRGB(), fgPalette: cell.isFgPalette(), bgPalette: cell.isBgPalette(), fgDefault: cell.isFgDefault(), bgDefault: cell.isBgDefault() };
+              cells.push({ row, column, chars, width, ...style });
+            }
+          }
+          return { row, text, wrapped: line?.isWrapped ?? false, cells };
+        });
+        const bufferText = Array.from(
+          { length: buffer.length },
+          (_, row) => buffer.getLine(row)?.translateToString(true) ?? "",
+        ).join("\n");
         return {
           cols: terminal.cols,
           rows: terminal.rows,
           title: latestTitle,
           titleHistory: [...titleHistory],
           activeBuffer: terminal.buffer.active === terminal.buffer.alternate ? "alternate" : "normal",
-          cursor: { x: buffer.cursorX, y: buffer.cursorY, baseY: buffer.baseY, viewportY: buffer.viewportY },
+          cursor: { x: buffer.cursorX, y: buffer.cursorY, baseY: buffer.baseY, viewportY: buffer.viewportY, visible: cursorVisible },
           modes: terminal.modes,
           renderCount,
           parsedCount,
           lastRender,
           text: rows.join("\n"),
-          lines: rows.map((text, row) => {
-            const line = buffer.getLine(buffer.viewportY + row);
-            const cells = [];
-            for (let column = 0; column < terminal.cols; column += 1) {
-              const cell = line?.getCell(column);
-              const chars = cell?.getChars() ?? "";
-              const width = cell?.getWidth() ?? 1;
-              if (chars.trim().length > 0 || width !== 1) {
-                const style = { invisible: cell.isInvisible(), fgColor: cell.getFgColor(), bgColor: cell.getBgColor(), fgColorMode: cell.getFgColorMode(), bgColorMode: cell.getBgColorMode(), fgRgb: cell.isFgRGB(), bgRgb: cell.isBgRGB(), fgPalette: cell.isFgPalette(), bgPalette: cell.isBgPalette(), fgDefault: cell.isFgDefault(), bgDefault: cell.isBgDefault() };
-                cells.push({ column, chars, width, ...style });
-              }
-            }
-            return { row, text, wrapped: line?.isWrapped ?? false, cells };
-          }),
+          cells: lines.flatMap((line) => line.cells),
+          wrappedRows: lines.filter((line) => line.wrapped).map((line) => line.row),
+          scrollback: { lines: buffer.baseY, length: buffer.length, text: bufferText },
+          lines,
         };
       },
       renderDimensions: () => {

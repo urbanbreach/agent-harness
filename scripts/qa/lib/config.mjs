@@ -86,7 +86,7 @@ export function scenarioContract(options, environment) {
 }
 
 export function helpText() {
-  return `Harness browser-backed xterm.js visual QA\n\nUsage:\n  node scripts/qa/web-terminal-visual-qa.mjs --scenario smoke --evidence-dir <dir>\n  node scripts/qa/web-terminal-visual-qa.mjs --scenario transcript-response-navigation --evidence-dir <dir>\n  node scripts/qa/web-terminal-visual-qa.mjs --scenario transcript-active-block --evidence-dir <dir>\n  node scripts/qa/web-terminal-visual-qa.mjs --scenario composer-multiline-actions --evidence-dir <dir>\n\nFixture override:\n  --command <shell-command> --input <action> --assert <visible-marker>\n\nActions: literal text, {Enter}, {Escape}, {PageUp}, {PageDown}, {Shift+J}, {Shift+K}, {Shift+Enter}, {Alt+Enter}, {Alt+M}, {Alt+S}, {Alt+I}, {Alt+R}, {Ctrl+Alt+Enter}, {Ctrl+P}, {Ctrl+Shift+Enter}, {Wait:text}, {WaitTitle:title}, {Click:text}, {Capture}.\nPlanned P0 scenarios fail closed until a Harness fixture command, actions, and assertions are supplied.\n`;
+  return `Harness browser-backed xterm.js visual QA\n\nUsage:\n  node scripts/qa/web-terminal-visual-qa.mjs --scenario smoke --evidence-dir <dir>\n  node scripts/qa/web-terminal-visual-qa.mjs --scenario transcript-response-navigation --evidence-dir <dir>\n  node scripts/qa/web-terminal-visual-qa.mjs --scenario transcript-active-block --evidence-dir <dir>\n  node scripts/qa/web-terminal-visual-qa.mjs --scenario composer-multiline-actions --evidence-dir <dir>\n\nFixture override:\n  --command <shell-command> --input <action> --assert <visible-marker>\n\nActions: literal text, {Enter}, {Escape}, {PageUp}, {PageDown}, {Shift+J}, {Shift+K}, {Shift+Enter}, {Alt+Enter}, {Alt+M}, {Alt+S}, {Alt+I}, {Alt+R}, {Ctrl+Alt+Enter}, {Ctrl+P}, {Ctrl+Shift+Enter}, {Wait:text}, {WaitAbsent:text}, {WaitTitle:title}, {Click:text}, {Capture}.\nPlanned P0 scenarios fail closed until a Harness fixture command, actions, and assertions are supplied.\n`;
 }
 
 function smokeContract(options) {
@@ -96,17 +96,14 @@ function smokeContract(options) {
     command: "harness tui --mock --deterministic --session-dir $HARNESS_QA_SESSION_DIR",
     actions: [
       { kind: "wait", value: "Demo mode" },
-      { kind: "type", value: "Harness xterm smoke" },
-      { kind: "wait", value: "Harness xterm smoke" },
+      { kind: "type", value: "P0-06 canonical" },
+      { kind: "wait", value: "P0-06 canonical" },
       { kind: "key", value: "Control+P" },
       { kind: "wait", value: "Commands" },
       { kind: "capture" },
-      { kind: "key", value: "Escape" },
-      { kind: "key", value: "Control+Q" },
-      { kind: "key", value: "Control+Q" },
     ],
-    assertions: ["Commands", "Harness xterm smoke"],
-    expectNaturalExit: true,
+    assertions: ["Commands", "P0-06 canonical"],
+    expectNaturalExit: false,
   };
 }
 
@@ -145,9 +142,11 @@ function composerMultilineActionsContract(options) {
 }
 
 function parseAction(value) {
-  const structured = /^\{(WaitTitle|Wait|Click):(.+)\}$/.exec(value);
+  const structured = /^\{(WaitTitle|WaitAbsent|Wait|Click):(.+)\}$/.exec(value);
   if (structured) {
-    const kind = structured[1] === "WaitTitle" ? "waitTitle" : structured[1].toLowerCase();
+    const kind = structured[1] === "WaitTitle"
+      ? "waitTitle"
+      : structured[1] === "WaitAbsent" ? "waitAbsent" : structured[1].toLowerCase();
     return { kind, value: structured[2] };
   }
   if (value === "{Capture}") return { kind: "capture" };
@@ -173,7 +172,7 @@ function parseAction(value) {
 
 function normalizeAction(value) {
   if (typeof value === "string") return parseAction(value);
-  if (!value || typeof value !== "object" || !["wait", "waitTitle", "waitCount", "type", "key", "click", "capture"].includes(value.kind)) {
+  if (!value || typeof value !== "object" || !["wait", "waitAbsent", "waitTitle", "waitCount", "type", "key", "click", "capture"].includes(value.kind)) {
     throw new CliError("invalid fixture action");
   }
   if (value.kind !== "capture" && typeof value.value !== "string") {

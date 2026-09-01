@@ -393,10 +393,14 @@ Fail-closed stages (no `|| true`):
 |-------|----------------|
 | `pty_prerequisites` | owner files exist; `cargo` on `PATH` (missing owner = FAIL) |
 | `harness_testkit_pty_e2e` | testkit PTY E2E + visual artifact provenance |
-| `harness_tui_pty_e2e` | harness-tui PTY E2E under `HARNESS_TUI_PTY_SIGNOFF=1` |
+| `harness_tui_pty_e2e` | harness-tui PTY E2E under `HARNESS_TUI_PTY_SIGNOFF=1`, including reply-capable emulation and canonical P0-06 artifacts |
 | `harness_tui_p0_03_pty_recorded` | P0-03 boxed markdown, OSC-8, and event-driven streaming-fence PTY regression |
 | `harness_tui_p0_04_pty_recorded` | P0-04 persistent multiline, queued send, interject, and cancel-and-replace PTY regression |
 | `harness_tui_happy_path_pty` | compiled `harness` CLI mock happy path (`pty_happy_path_recorded`) |
+| `p0_06_xterm_tests` | xterm.js structured collector, canonical viewport, runtime-branding, and evidence contract tests in real Chromium |
+| `p0_06_xterm_80x24`, `p0_06_xterm_120x40`, `p0_06_xterm_160x50` | the compiled Harness mock TUI driven through a native PTY into xterm.js at each canonical size |
+
+The P0-06 owner feeds native PTY output into a reply-capable vt100 emulator and forwards generated cursor-position reports to the child. It asserts cells, cursor position/visibility, alternate-screen transitions, input modes, wrapping, and emulator scrollback. Under the lane-provided absolute `HARNESS_P0_06_ARTIFACT_DIR`, it records before/after ANSI, text, and structured-screen captures at 80x24, 120x40, and 160x50 plus a hash-verified manifest and aggregate cleanup receipt. Native captures truthfully identify the hashed `harness-tui` integration-test executable and its direct production entrypoint, `harness_tui::run_tui_with_options`; they do not relabel that owner binary as the shipped `harness` CLI. The xterm stages separately drive the compiled `target/debug/harness` binary in Chromium at every canonical size, persist screenshot/ANSI/text/structured evidence plus a hashed shipped-binary provenance sidecar in their lane stage artifacts, and fail when collected runtime state lacks Harness branding or contains Grok/xAI marks.
 
 For a combined deterministic closeout, use:
 

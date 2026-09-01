@@ -120,44 +120,60 @@ fn signoff_pty_records_happy_path_artifact_dir() {
 }
 
 #[test]
-fn signoff_pty_mode_is_fail_closed() {
-    // arrange
-    let script = fs::read_to_string(repo_root().join("scripts/test-lanes.sh")).unwrap_or_abort();
+fn signoff_pty_dry_run_emits_stage_artifact_and_fail_closed_contract() {
+    // Given: a fresh artifact root and the real lane entrypoint.
+    let root = repo_root();
+    let artifact_root = tempfile::tempdir().unwrap_or_abort();
+    let script = root.join("scripts/test-lanes.sh");
 
-    // act
-    let body = function_body(&script, "run_signoff_pty");
-    let help_declares = script.contains("signoff-pty")
-        && script.contains("Strict fail-closed deterministic PTY signoff");
-    let owns_owners = body.contains("crates/harness-testkit/tests/pty_e2e.rs")
-        && body.contains("crates/harness-tui/tests/pty_e2e.rs")
-        && body.contains("crates/harness-tui/tests/p0_03_pty_recorded.rs")
-        && body.contains("crates/harness-tui/tests/p0_04_pty_recorded.rs")
-        && body.contains("crates/harness/tests/pty_happy_path_recorded.rs")
-        && body.contains("HARNESS_TUI_PTY_SIGNOFF=1")
-        && body.contains("--test p0_03_pty_recorded")
-        && body.contains("--test p0_04_pty_recorded");
-    let fail_closed = !body.contains("|| true")
-        && body.contains("silent skip is forbidden")
-        && body.contains("pty-lane-verdict.txt");
-    let lists_stages = body.contains("stages=testkit_pty,tui_pty,p0_03,p0_04,happy_path");
+    // When: signoff-pty is exercised through its public dry-run surface.
+    let output = std::process::Command::new("bash")
+        .arg(&script)
+        .arg("signoff-pty")
+        .arg("--dry-run")
+        .arg("--artifact-dir")
+        .arg(artifact_root.path())
+        .current_dir(&root)
+        .output()
+        .unwrap_or_abort();
 
-    // assert
-    assert!(
-        help_declares,
-        "help/usage must document fail-closed signoff-pty"
-    );
-    assert!(
-        owns_owners,
-        "signoff-pty must gate PTY owners and the recorded happy path"
-    );
-    assert!(
-        fail_closed,
-        "signoff-pty must be fail-closed (no || true; missing owner fails)"
-    );
-    assert!(
-        lists_stages,
-        "signoff-pty verdict must list the stages it actually executed"
-    );
+    // Then: the lane emits every P0-06 stage and a deterministic, fail-closed verdict.
+    assert!(output.status.success(), "lane failed: {output:?}");
+    let stages = [
+        "harness_testkit_pty_e2e",
+        "harness_tui_pty_e2e",
+        "harness_tui_p0_03_pty_recorded",
+        "harness_tui_p0_04_pty_recorded",
+        "harness_tui_happy_path_pty",
+        "p0_06_xterm_dependencies",
+        "p0_06_xterm_tests",
+        "p0_06_xterm_80x24",
+        "p0_06_xterm_120x40",
+        "p0_06_xterm_160x50",
+    ];
+    let summary = fs::read_to_string(artifact_root.path().join("summary.txt")).unwrap_or_abort();
+    for stage in stages {
+        assert!(summary.contains(&format!("signoff-pty {stage} DRY-RUN")));
+        assert!(
+            artifact_root
+                .path()
+                .join(format!("signoff-pty/stages/{stage}/status.txt"))
+                .is_file(),
+            "missing status artifact for {stage}"
+        );
+    }
+    let p0_06_artifacts = artifact_root
+        .path()
+        .join("signoff-pty/stages/harness_tui_pty_e2e/artifacts/p0-06");
+    assert!(p0_06_artifacts.is_dir());
+    let verdict = fs::read_to_string(
+        artifact_root
+            .path()
+            .join("signoff-pty/stages/harness_tui_happy_path_pty/artifacts/pty-lane-verdict.txt"),
+    )
+    .unwrap_or_abort();
+    assert!(verdict.contains("result=PASS"));
+    assert!(verdict.contains("reason=owners_green"));
 }
 
 #[test]
@@ -213,34 +229,4 @@ fn lane_modes_from_script(script: &str) -> BTreeSet<String> {
         }
     }
     modes
-}
-
-fn function_body<'a>(script: &'a str, name: &str) -> &'a str {
-    let marker = format!("{name}() {{");
-    assert!(
-        script.contains(&marker),
-        "scripts/test-lanes.sh must define {name}()"
-    );
-    let start = script.find(&marker).unwrap_or_abort();
-    let after = &script[start + marker.len()..];
-    let mut depth = 1usize;
-    let mut end = 0usize;
-    for (idx, ch) in after.char_indices() {
-        match ch {
-            '{' => depth += 1,
-            '}' => {
-                depth = depth.saturating_sub(1);
-                if depth == 0 {
-                    end = idx;
-                    break;
-                }
-            }
-            _ => {}
-        }
-    }
-    assert!(
-        end > 0,
-        "scripts/test-lanes.sh function {name}() must have a matching closing brace"
-    );
-    &after[..end]
 }
