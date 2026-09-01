@@ -12,9 +12,7 @@ mod osc52;
 mod selection;
 mod selection_types;
 
-pub use copy_metadata::{
-    copy_with_metadata, copy_with_metadata_and_links, BlockKind, CopyMetadata, CopyMetadataPolicy,
-};
+pub use copy_metadata::{copy_with_metadata, BlockKind, CopyMetadata, CopyMetadataPolicy};
 pub(crate) use hyperlinks::safe_external_url;
 pub use hyperlinks::{hyperlink_sequence, Hyperlink, HyperlinkError, HyperlinkMap, LinkRange};
 pub use local_clipboard::{
