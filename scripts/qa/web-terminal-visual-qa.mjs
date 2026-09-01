@@ -172,6 +172,13 @@ export async function executeActions(settings) {
       else if (action.kind === "waitCount") {
         result = await settings.terminal.waitForTextCount(action.value, action.count);
       }
+      else if (action.kind === "assertCount") {
+        result = await settings.terminal.snapshot();
+        const actual = result.text.split(action.value).length - 1;
+        if (actual !== action.count) {
+          throw new Error(`expected ${action.count} occurrence(s) of ${action.value}, found ${actual}`);
+        }
+      }
       else if (action.kind === "type") await settings.terminal.type(action.value);
       else if (action.kind === "key") await settings.terminal.key(action.value);
       else if (action.kind === "click") result = await settings.terminal.clickText(action.value);

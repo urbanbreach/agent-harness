@@ -217,6 +217,29 @@ fn agent_spawn_wait_advertises_queued_prompt_promotion() {
 }
 
 #[test]
+fn disconnected_status_requires_reopen_and_hides_live_controls() {
+    // Given: an active transcript and local draft when the live event stream closes.
+    let mut app = active_app();
+    app.handle_paste("preserved draft");
+    app.set_status_banner(Some("live event stream disconnected".to_string()));
+
+    // When: the disconnected live status is rendered.
+    let row = status_text(&app, WIDE_WIDTH).expect("disconnected status row");
+
+    // Then: the copy is truthful, sending is paused, and stale live controls are unavailable.
+    assert!(row.contains("Connection lost"), "status row: {row:?}");
+    assert!(row.contains("reopen required"), "status row: {row:?}");
+    assert!(
+        !row.to_ascii_lowercase().contains("reconnecting"),
+        "status row: {row:?}"
+    );
+    assert!(!row.contains("[stop]"), "status row: {row:?}");
+    assert!(!row.contains("[send to bg]"), "status row: {row:?}");
+    assert_eq!(app.composer.prompt_buffer, "preserved draft");
+    assert!(app.composer_disabled());
+}
+
+#[test]
 fn narrow_width_keeps_the_activity_and_stop_before_optional_metadata() {
     // arrange
     // Given: the same active turn with optional queued-input metadata.

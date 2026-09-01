@@ -4,7 +4,52 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { openBrowserTerminal } from "./lib/browser-terminal.mjs";
+import { parseArgs, scenarioContract } from "./lib/config.mjs";
 import { writePassEvidence } from "./lib/evidence.mjs";
+import { executeActions } from "./web-terminal-visual-qa.mjs";
+
+test("disconnect scenarios drive the native PTY helper with truthful copy and controls", () => {
+  // Given: both explicit disconnect journeys use their shipped scenario names.
+  const truth = scenarioContract(
+    parseArgs(["--scenario", "disconnect-truth", "--evidence-dir", "/tmp/evidence"]),
+    {},
+  );
+  const duplicate = scenarioContract(
+    parseArgs(["--scenario", "disconnect-duplicate", "--evidence-dir", "/tmp/evidence"]),
+    {},
+  );
+
+  // When/Then: each contract runs the Harness helper and pins copy, action, and duplicate-state semantics.
+  assert.match(truth.command, /p0_05_disconnect_pty_helper/);
+  assert.match(duplicate.command, /HARNESS_TUI_P0_05_SCENARIO=duplicate/);
+  for (const contract of [truth, duplicate]) {
+    assert.deepEqual(contract.assertions, [
+      "Connection lost",
+      "reopen required",
+      "disconnect draft preserved",
+    ]);
+    assert.ok(contract.actions.some((action) => action.kind === "waitAbsent" && action.value === "Reconnecting"));
+    assert.ok(contract.actions.some((action) => action.kind === "waitAbsent" && action.value === "[stop]"));
+    assert.ok(contract.actions.some((action) => action.kind === "assertCount" && action.value === "reopen required" && action.count === 1));
+  }
+});
+
+test("assertCount rejects duplicate terminal state", async () => {
+  // Given: a duplicated disconnect marker in the xterm snapshot.
+  const interactions = [];
+
+  // When/Then: exact-count semantics fail rather than accepting at-least-one output.
+  await assert.rejects(executeActions({
+    actions: [{ kind: "assertCount", value: "reopen required", count: 1 }],
+    terminal: {
+      async snapshot() { return { text: "reopen required\nreopen required" }; },
+      async capture() { return { text: "Harness" }; },
+    },
+    pty: { flush: async () => {} },
+    interactions,
+    evidenceDir: "/tmp",
+  }), (error) => error.cause?.message === "expected 1 occurrence(s) of reopen required, found 2");
+});
 
 const canonicalViewports = [
   { cols: 80, rows: 24 },

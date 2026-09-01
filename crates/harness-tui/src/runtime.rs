@@ -892,6 +892,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                         return Err(error.into());
                     }
                     RuntimeWake::LiveDisconnected => {
+                        app.apply_runtime_event_stream_closed();
                         live_updates = None;
                         None
                     }

@@ -567,6 +567,15 @@ impl AppState {
 }
 
 impl AppState {
+    pub fn apply_runtime_event_stream_closed(&mut self) -> bool {
+        const MESSAGE: &str = "live event stream disconnected";
+        if self.status_banner.as_deref() == Some(MESSAGE) {
+            return false;
+        }
+        self.set_status_banner(Some(MESSAGE.to_string()));
+        true
+    }
+
     pub fn runtime_state(&self) -> RuntimeState {
         let active_permission = self.active_permission().map(|(permission_id, summary)| {
             view_model::PermissionRuntimeInput {
@@ -876,7 +885,9 @@ impl AppState {
     }
 
     pub(crate) fn live_turn_stop_available(&self) -> bool {
-        !self.replay_mode && self.has_active_interrupt_task()
+        !self.replay_mode
+            && !matches!(self.runtime_state().kind, RuntimeStateKind::Disconnected)
+            && self.has_active_interrupt_task()
     }
 
     pub(crate) fn interrupt_requested(&self) -> bool {
@@ -901,7 +912,9 @@ impl AppState {
     }
 
     pub(crate) fn live_turn_background_available(&self) -> bool {
-        !self.replay_mode && self.live_turn_demote_handle_id().is_some()
+        !self.replay_mode
+            && !matches!(self.runtime_state().kind, RuntimeStateKind::Disconnected)
+            && self.live_turn_demote_handle_id().is_some()
     }
 
     pub(in crate::app) fn live_turn_demote_handle_id(&self) -> Option<String> {

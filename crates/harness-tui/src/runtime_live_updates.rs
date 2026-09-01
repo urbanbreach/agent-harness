@@ -150,11 +150,7 @@ fn drain_with_limit(
             }
             Err(TryRecvError::Empty) => break,
             Err(TryRecvError::Disconnected) => {
-                let message = "live event stream disconnected";
-                if app.status_banner.as_deref() != Some(message) {
-                    app.set_status_banner(Some(message.to_string()));
-                    state.changed = true;
-                }
+                state.changed |= app.apply_runtime_event_stream_closed();
                 state.disconnected = true;
                 break;
             }

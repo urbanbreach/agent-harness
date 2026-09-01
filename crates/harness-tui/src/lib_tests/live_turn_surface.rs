@@ -405,8 +405,46 @@ pub(super) fn live_shell_degraded_bootstrap_snapshot() {
 
 pub(super) fn live_shell_disconnected_stream_snapshot() {
     let mut app = app::AppState::new_live(None, false, None);
-    app.set_status_banner(Some("live event stream disconnected".to_string()));
-    println!("{}", render_live_lines(&app, 80, 24));
+    app.handle_paste("disconnect draft preserved");
+    app.ingest_event(envelope(
+        1,
+        Some("req_disconnect_surface"),
+        harness_core::event::EventV1::UserMessageSubmitted(
+            harness_core::event::UserMessageSubmittedEvent {
+                request_id: "req_disconnect_surface".into(),
+                text: "Preserve this transcript".to_string(),
+            },
+        ),
+    ));
+    app.ingest_event(envelope(
+        2,
+        Some("req_disconnect_surface"),
+        harness_core::event::EventV1::ProviderRequestStarted(
+            harness_core::event::ProviderRequestStartedEvent {
+                request_id: "req_disconnect_surface".into(),
+                provider_id: "mock".to_string(),
+                model_id: "model-disconnect".to_string(),
+                prompt_summary: "Preserve this transcript".to_string(),
+                request_digest: "digest-disconnect-surface".to_string(),
+                metadata: None,
+            },
+        ),
+    ));
+    app.ingest_event(envelope(
+        3,
+        Some("req_disconnect_surface"),
+        harness_core::event::EventV1::ProviderStreamDelta(
+            harness_core::event::ProviderStreamDeltaEvent {
+                request_id: "req_disconnect_surface".into(),
+                delta: "Transcript remains visible".to_string(),
+            },
+        ),
+    ));
+
+    assert!(app.apply_runtime_event_stream_closed());
+    assert!(!app.apply_runtime_event_stream_closed());
+    let rendered = render_live_lines(&app, 80, 24);
+    println!("{rendered}");
 
     assert_live_shell_contains(
         &app,
@@ -416,10 +454,20 @@ pub(super) fn live_shell_disconnected_stream_snapshot() {
             "Disconnected",
             "live event stream disconnected",
             "Reopen the TUI, then continue from the transcript.",
+            "disconnect draft preserved",
         ],
     );
-    assert!(!render_live_lines(&app, 80, 24)
-        .contains("Draft preserved locally — reopen the TUI to reconnect."));
+    assert_eq!(app.composer.prompt_buffer, "disconnect draft preserved");
+    assert_eq!(
+        app.activities
+            .back()
+            .map(|activity| activity.transcript_text.as_str()),
+        Some("Transcript remains visible")
+    );
+    assert!(app.composer_disabled());
+    assert!(!rendered.contains("Reconnecting"));
+    assert!(!rendered.contains("[stop]"));
+    assert!(!rendered.contains("Draft preserved locally — reopen the TUI to reconnect."));
 }
 
 pub(super) fn live_status_strip_suppresses_request_digest_banner_details() {
