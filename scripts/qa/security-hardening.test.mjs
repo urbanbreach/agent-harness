@@ -184,7 +184,8 @@ test("secret scanning decodes buffers and blocks secret-bearing screenshots", ()
 function passSettings(evidenceDir, secret) {
   return {
     evidenceDir, raw: Buffer.from(secret),
-    capture: { cols: 2, rows: 1, activeBuffer: "normal", cursor: {}, modes: {}, text: secret,
+    capture: { cols: 2, rows: 1, activeBuffer: "normal", cursor: {}, modes: {},
+      text: `Harness runtime\n${secret}`, title: "Harness security fixture",
       renderCount: 1, parsedCount: 1 },
     captures: [], interactions: [{ action: { kind: "type", value: secret } }],
     contract: { name: "test", title: secret, command: `TOKEN=${secret}` },

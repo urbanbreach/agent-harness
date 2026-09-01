@@ -167,6 +167,7 @@ export async function executeActions(settings) {
     try {
       let result;
       if (action.kind === "wait") result = await settings.terminal.waitForText(action.value);
+      else if (action.kind === "waitAbsent") result = await settings.terminal.waitForTextAbsent(action.value);
       else if (action.kind === "waitTitle") result = await settings.terminal.waitForTitle(action.value);
       else if (action.kind === "waitCount") {
         result = await settings.terminal.waitForTextCount(action.value, action.count);

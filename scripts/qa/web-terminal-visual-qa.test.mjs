@@ -191,6 +191,9 @@ test("smoke keeps its explicit assertion capture through post-capture cleanup", 
     async waitForText() {
       return selected;
     },
+    async waitForTextAbsent() {
+      return { text: "" };
+    },
     async type() {},
     async key() {},
     async capture(path) {
@@ -239,7 +242,7 @@ test("pass evidence receipts include indexed captures with PNG dimensions and ha
   );
   await writeFile(join(evidenceDir, "capture-001.png"), png);
   await writeFile(join(evidenceDir, "terminal.png"), png);
-  const capture = { cols: 2, rows: 1, activeBuffer: "normal", cursor: {}, modes: {}, text: "final", renderCount: 1, parsedCount: 1 };
+  const capture = { cols: 2, rows: 1, title: "Harness manifest fixture", activeBuffer: "normal", cursor: {}, modes: {}, text: "Harness final", renderCount: 1, parsedCount: 1 };
 
   try {
     // When: PASS evidence is serialized.
@@ -320,7 +323,7 @@ test("waitForText drains queued writes before returning the final cursor", async
     await Promise.all([firstWrite, secondWrite]);
 
     // Then: the returned snapshot includes the trailing cursor update.
-    assert.deepEqual(snapshot.cursor, { x: 95, y: 3, baseY: 0, viewportY: 0 });
+    assert.deepEqual(snapshot.cursor, { x: 95, y: 3, baseY: 0, viewportY: 0, visible: true });
   } finally {
     await terminal.close();
   }
@@ -397,17 +400,15 @@ test("scenarioContract exposes the deterministic Harness smoke journey", () => {
 
   // Then: it drives the real Harness mock TUI through observable markers.
   assert.match(contract.command, /harness tui --mock --deterministic/);
-  assert.deepEqual(contract.actions.map(({ kind }) => kind), [
-    "wait",
-    "type",
-    "wait",
-    "key",
-    "wait",
-    "capture",
-    "key",
-    "key",
-    "key",
+  assert.deepEqual(contract.actions, [
+    { kind: "wait", value: "Demo mode" },
+    { kind: "type", value: "P0-06 canonical" },
+    { kind: "wait", value: "P0-06 canonical" },
+    { kind: "key", value: "Control+P" },
+    { kind: "wait", value: "Commands" },
+    { kind: "capture" },
   ]);
+  assert.equal(contract.expectNaturalExit, false);
 });
 
 test("scenarioContract normalizes multiline composer modifier tokens", () => {

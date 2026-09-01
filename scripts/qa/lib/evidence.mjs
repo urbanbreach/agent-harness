@@ -11,6 +11,11 @@ export async function prepareEvidence(path) {
 
 export async function writePassEvidence(settings) {
   assertCleanup(settings.cleanup);
+  const runtimeBranding = runtimeBrandingReceipt(
+    settings.capture,
+    settings.browserMetadata,
+    settings.interactions,
+  );
   const generatedAt = new Date().toISOString();
   const safeRaw = redactEvidence(settings.raw);
   const safeCapture = redactEvidence(settings.capture);
@@ -58,14 +63,19 @@ export async function writePassEvidence(settings) {
       browser: settings.browserMetadata,
     },
     terminal: {
-      cols: settings.capture.cols,
-      rows: settings.capture.rows,
-      activeBuffer: settings.capture.activeBuffer,
-      cursor: settings.capture.cursor,
-      modes: settings.capture.modes,
-      renderCount: settings.capture.renderCount,
-      parsedCount: settings.capture.parsedCount,
+      cols: safeCapture.cols,
+      rows: safeCapture.rows,
+      title: safeCapture.title,
+      activeBuffer: safeCapture.activeBuffer,
+      cursor: safeCapture.cursor,
+      modes: safeCapture.modes,
+      cells: safeCapture.cells,
+      wrappedRows: safeCapture.wrappedRows,
+      scrollback: safeCapture.scrollback,
+      renderCount: safeCapture.renderCount,
+      parsedCount: safeCapture.parsedCount,
     },
+    runtimeBranding,
     assertions: settings.assertions,
     screenshot: {
       width: screenshot.width,
@@ -159,6 +169,34 @@ async function writeJson(path, value) {
 async function writePrivate(path, value) {
   await writeFile(path, value, { mode: 0o600 });
   await chmod(path, 0o600);
+}
+
+function runtimeBrandingReceipt(capture, browserMetadata, interactions) {
+  const terminalMetadata = browserMetadata?.terminal;
+  const renderedInteractions = (interactions ?? []).map(({ result }) => result);
+  const renderedRuntime = [capture, terminalMetadata, ...renderedInteractions]
+    .flatMap((terminal) => [
+      terminal?.text,
+      terminal?.scrollback?.text,
+      ...(terminal?.titleHistory ?? []).slice(1),
+      ...(terminal?.cells ?? []).map((cell) => cell.chars ?? cell.text ?? ""),
+    ])
+    .filter((value) => typeof value === "string")
+    .join("\n");
+  const requiredMarkPresent = /\bHarness\b/i.test(renderedRuntime);
+  const forbiddenMarksPresent = /Grok|xAI/i.test(renderedRuntime);
+  if (forbiddenMarksPresent) {
+    throw new Error("Grok branding found in collected xterm runtime evidence");
+  }
+  if (!requiredMarkPresent) {
+    throw new Error("Harness branding missing from collected xterm runtime evidence");
+  }
+  return {
+    requiredMark: "Harness",
+    requiredMarkPresent,
+    forbiddenMarks: ["Grok", "xAI"],
+    forbiddenMarksPresent,
+  };
 }
 
 function assertCleanup(cleanup) {

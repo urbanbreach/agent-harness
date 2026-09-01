@@ -68,6 +68,16 @@ export async function openBrowserTerminal(settings) {
       await waitForWrites();
       return this.snapshot();
     },
+    async waitForTextAbsent(needle) {
+      await waitForWrites();
+      await page.waitForFunction(
+        (text) => !window.qaTerminal.text().includes(text),
+        needle,
+        { timeout: settings.timeoutMs },
+      );
+      await waitForWrites();
+      return this.snapshot();
+    },
     async waitForTextCount(needle, count) {
       await waitForWrites();
       await page.waitForFunction(
