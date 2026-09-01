@@ -65,6 +65,10 @@ files with `source:` metadata must point at an existing source file with an inst
 referenced by snapshot name in crate Rust code. Acceptance requires the strict command without
 `--report-only` to return zero violations.
 
+Real-world dependencies are permitted only in repository Rust test files whose basename ends in
+`_recorded.rs`. This is explicit non-default real-world/signoff evidence and remains opt-in;
+ordinary `_test.rs` and unsuffixed test files remain subject to the no-real-world-deps gate.
+
 ## Fast default developer lane
 
 Run this first for ordinary local changes:
@@ -390,12 +394,14 @@ Fail-closed stages (no `|| true`):
 | `pty_prerequisites` | owner files exist; `cargo` on `PATH` (missing owner = FAIL) |
 | `harness_testkit_pty_e2e` | testkit PTY E2E + visual artifact provenance |
 | `harness_tui_pty_e2e` | harness-tui PTY E2E under `HARNESS_TUI_PTY_SIGNOFF=1` |
+| `harness_tui_p0_03_pty_recorded` | P0-03 boxed markdown, OSC-8, and event-driven streaming-fence PTY regression |
 | `harness_tui_happy_path_pty` | compiled `harness` CLI mock happy path (`pty_happy_path_recorded`) |
 
 For a combined deterministic closeout, use:
 
 - `env RUST_TEST_THREADS=1 cargo nextest run -p harness-testkit --test pty_e2e --test-threads 1`
 - `env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 cargo nextest run -p harness-tui --test pty_e2e --test-threads 1`
+- `env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 cargo nextest run -p harness-tui --test p0_03_pty_recorded --test-threads 1 --ignore-default-filter`
 - `env RUST_TEST_THREADS=1 HARNESS_TUI_HAPPY_PATH_ARTIFACT_DIR=<dir> cargo nextest run -p harness --test pty_happy_path_recorded --test-threads 1 -- --ignored --exact scripted_tui_happy_path_records_start_prompt_permission_tool_edit_resume_and_quit`
 
 
