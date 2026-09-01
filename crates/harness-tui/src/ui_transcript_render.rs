@@ -1093,18 +1093,14 @@ fn resolve_assistant_body_content(
     } else {
         0
     };
-    let selection_rows = if *streaming {
-        None
-    } else {
-        selection_rows_for_rich_text_block(
-            text,
-            theme.text.primary,
-            TRANSCRIPT_ASSISTANT_BODY_PREFIX,
-            theme,
-            content_width,
-            false,
-        )
-    };
+    let selection_rows = selection_rows_for_rich_text_block(
+        text,
+        theme.text.primary,
+        TRANSCRIPT_ASSISTANT_BODY_PREFIX,
+        theme,
+        content_width,
+        *streaming,
+    );
     if let Some(clock) = wall_clock.as_deref().filter(|_| pack_clock) {
         append_plain_body_with_clock(&mut lines, text, clock, content_width, theme);
     } else if *streaming {

@@ -1,6 +1,7 @@
 use ratatui::style::Modifier;
 
 use super::try_render_markdown_table_block;
+use crate::composer_atoms::split_graphemes;
 use crate::theme::Theme;
 use crate::ui::ui_chrome::display_width;
 
@@ -73,6 +74,60 @@ fn boxed_table_aligns_cjk_and_zwj_emoji_within_normal_width() {
         .collect::<Vec<_>>();
     assert!(widths.iter().all(|width| *width == widths[0]));
     assert!(widths[0] <= 32);
+}
+
+#[test]
+fn boxed_table_projects_complete_repeated_and_whitespace_link_ranges_through_wrapping() {
+    // Given: repeated labels, plain duplicate text, whitespace, CJK, and ZWJ graphemes in cells.
+    let theme = Theme::default();
+    let rows = [
+        "| Name | Value |",
+        "| --- | --- |",
+        "| same [same](https://example.com/one) | 👩‍💻中 [same](https://example.com/two) [two words](https://example.com/words) |",
+    ];
+
+    // When: the table is wrapped narrowly.
+    let (lines, _, links) =
+        try_render_markdown_table_block(&rows, theme.text.primary, "", &theme, 16)
+            .expect("markdown table");
+    let text = rendered_text(&lines);
+
+    // Then: every complete label cell, including its internal space, is linked exactly once.
+    assert_eq!(
+        links
+            .iter()
+            .filter(|link| link.destination == "https://example.com/one")
+            .count(),
+        1
+    );
+    assert_eq!(
+        links
+            .iter()
+            .filter(|link| link.destination == "https://example.com/two")
+            .count(),
+        1
+    );
+    let linked_words = links
+        .iter()
+        .filter(|link| link.destination == "https://example.com/words")
+        .flat_map(|link| {
+            let mut cell = 0usize;
+            split_graphemes(&text[link.row])
+                .into_iter()
+                .filter_map(move |cluster| {
+                    let start = cell;
+                    cell = cell.saturating_add(usize::from(cluster.display_width()));
+                    (start < link.end_cell && cell > link.start_cell)
+                        .then(|| cluster.as_str().to_string())
+                })
+        })
+        .collect::<String>();
+    assert_eq!(linked_words, "two words");
+    assert!(links.iter().all(|link| {
+        link.start_cell > 0
+            && link.start_cell < link.end_cell
+            && link.end_cell < display_width(&text[link.row])
+    }));
 }
 
 #[test]

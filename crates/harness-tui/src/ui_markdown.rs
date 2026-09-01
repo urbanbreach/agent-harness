@@ -31,6 +31,8 @@ fn is_flanking_pair(prev: Option<char>, content: &str, after_close: &str) -> boo
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct InlineMarkdownLink {
     pub(super) label: String,
+    pub(super) start_cell: usize,
+    pub(super) end_cell: usize,
     pub(super) destination: String,
 }
 
@@ -88,6 +90,8 @@ pub(super) fn parse_inline_markdown(
                     {
                         links.push(InlineMarkdownLink {
                             label,
+                            start_cell,
+                            end_cell: start_cell.saturating_add(label_width),
                             destination: destination.to_string(),
                         });
                     }
@@ -117,6 +121,8 @@ pub(super) fn parse_inline_markdown(
             {
                 links.push(InlineMarkdownLink {
                     label: destination.to_string(),
+                    start_cell,
+                    end_cell: start_cell.saturating_add(destination_width),
                     destination: destination.to_string(),
                 });
             }

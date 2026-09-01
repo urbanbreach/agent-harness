@@ -9,6 +9,7 @@ use ratatui::{
     Frame,
 };
 
+use crate::composer_atoms::split_graphemes;
 use crate::theme::Theme;
 
 use super::ui_chrome::display_width;
@@ -18,11 +19,13 @@ use super::ui_fenced_text::{
 use super::ui_lifecycle::LifecycleSelectionSurface;
 use super::ui_markdown::{
     markdown_heading_text, markdown_list_prefix, markdown_rule, parse_inline_markdown,
-    parse_inline_markdown_spans, InlineMarkdownLink,
+    ParsedInlineMarkdown,
 };
 use super::ui_markdown_table::{try_render_markdown_table_block, TableLinkRun};
 use super::ui_transcript_mermaid::is_mermaid_language;
-use super::ui_transcript_surface::wrap_surface_spans;
+use super::ui_transcript_surface::{
+    wrap_surface_spans, wrap_surface_spans_with_links, SurfaceLinkRun,
+};
 
 const TRANSCRIPT_SELECTION_RAIL_GLYPH: &str = " ";
 
@@ -149,8 +152,10 @@ impl TranscriptSelectionSnapshot {
         self.selection_text_inner(selection, false)
     }
 
-    #[cfg(test)]
-    fn selection_text_with_destinations(&self, selection: TranscriptSelection) -> Option<String> {
+    pub(super) fn selection_text_with_destinations(
+        &self,
+        selection: TranscriptSelection,
+    ) -> Option<String> {
         self.selection_text_inner(selection, true)
     }
 
@@ -215,7 +220,7 @@ impl TranscriptSelectionSnapshot {
 
             for link in &row.links {
                 if link.start_cell <= row_end
-                    && link.end_cell >= row_start
+                    && link.end_cell > row_start
                     && !destinations.contains(&link.destination)
                 {
                     destinations.push(link.destination.clone());
@@ -312,15 +317,15 @@ pub(super) fn selection_row_line_text(row: &TranscriptSelectionRow) -> String {
 
 fn extract_text_by_display_columns(text: &str, start_col: usize, end_col: usize) -> String {
     let mut result = String::new();
-    let mut col = 0;
-    for ch in text.chars() {
-        let ch_str = ch.to_string();
-        let ch_width = display_width(&ch_str).max(1);
-        if col >= start_col && col <= end_col {
-            result.push(ch);
+    let mut cell = 0usize;
+    for cluster in split_graphemes(text) {
+        let cluster_width = usize::from(cluster.display_width());
+        let cluster_end = cell.saturating_add(cluster_width);
+        if cell <= end_col && cluster_end > start_col {
+            result.push_str(cluster.as_str());
         }
-        col += ch_width;
-        if col > end_col {
+        cell = cluster_end;
+        if cell > end_col {
             break;
         }
     }
@@ -377,19 +382,24 @@ pub(super) fn transcript_selection_line_rows(
     line: &Line<'static>,
     width: usize,
 ) -> Vec<Vec<String>> {
-    let mut row = Vec::new();
+    let mut row = Vec::<String>::new();
     let mut rows = Vec::new();
 
     for span in &line.spans {
-        for ch in span.content.chars() {
-            let display = ch.to_string();
-            let cell_width = display_width(&display).max(1);
+        for cluster in split_graphemes(span.content.as_ref()) {
+            let cell_width = usize::from(cluster.display_width());
+            if cell_width == 0 {
+                if let Some(cell) = row.iter_mut().rev().find(|cell| !cell.is_empty()) {
+                    cell.push_str(cluster.as_str());
+                }
+                continue;
+            }
             if row.len() + cell_width > width {
                 row.resize(width, " ".to_string());
                 rows.push(std::mem::take(&mut row));
             }
 
-            row.push(display);
+            row.push(cluster.as_str().to_string());
             for _ in 1..cell_width {
                 if row.len() == width {
                     rows.push(std::mem::take(&mut row));
@@ -459,12 +469,9 @@ pub(super) fn selection_rows_for_markdownish_text_block(
             continue;
         }
 
-        let row_start = rows.len();
         rows.extend(selection_rows_for_markdownish_line(
             line, color, prefix, base_style, theme, width,
         ));
-        let links = parse_inline_markdown(line, base_style, color, theme).links;
-        attach_inline_links(&mut rows[row_start..], &links);
         index += 1;
     }
 
@@ -544,25 +551,6 @@ pub(super) fn selection_rows_for_rich_text_block(
     Some(rows)
 }
 
-fn attach_inline_links(rows: &mut [TranscriptSelectionRow], links: &[InlineMarkdownLink]) {
-    for link in links {
-        for row in rows.iter_mut() {
-            let visible = selection_row_line_text(row);
-            let Some(byte_start) = visible.find(&link.label) else {
-                continue;
-            };
-            let start_cell = display_width(&visible[..byte_start]);
-            let label_width = display_width(&link.label);
-            row.links.push(TranscriptSelectionLink {
-                start_cell,
-                end_cell: start_cell.saturating_add(label_width.saturating_sub(1)),
-                destination: link.destination.clone(),
-            });
-            break;
-        }
-    }
-}
-
 fn selection_row_is_blank(row: &TranscriptSelectionRow) -> bool {
     row.cells
         .iter()
@@ -591,7 +579,7 @@ fn selection_rows_for_rendered_table_lines(
                         .filter(|link| link.row == line_index)
                         .map(|link| TranscriptSelectionLink {
                             start_cell: link.start_cell,
-                            end_cell: link.end_cell.saturating_sub(1),
+                            end_cell: link.end_cell,
                             destination: link.destination.clone(),
                         })
                         .collect(),
@@ -626,10 +614,10 @@ fn selection_rows_for_markdownish_line(
         .max(1);
 
     if let Some(text) = markdown_heading_text(trimmed) {
-        return selection_rows_for_prefixed_wrapped_spans(
+        return selection_rows_for_prefixed_wrapped_inline(
             &format!("{prefix}{indent}"),
             base_style,
-            parse_inline_markdown_spans(
+            parse_inline_markdown(
                 text,
                 base_style
                     .fg(theme.text.accent)
@@ -656,10 +644,10 @@ fn selection_rows_for_markdownish_line(
     }
 
     if let Some(text) = trimmed.strip_prefix("> ") {
-        return selection_rows_for_prefixed_wrapped_spans(
+        return selection_rows_for_prefixed_wrapped_inline(
             &format!("{prefix}{indent}▍ "),
             Style::default().fg(theme.text.secondary),
-            parse_inline_markdown_spans(
+            parse_inline_markdown(
                 text,
                 Style::default()
                     .fg(theme.text.secondary)
@@ -674,22 +662,67 @@ fn selection_rows_for_markdownish_line(
 
     if let Some((list_prefix, text, list_style, text_style)) = markdown_list_prefix(trimmed, theme)
     {
-        return selection_rows_for_prefixed_wrapped_spans(
+        return selection_rows_for_prefixed_wrapped_inline(
             &format!("{prefix}{indent}{list_prefix}"),
             list_style,
-            parse_inline_markdown_spans(text, text_style, color, theme),
+            parse_inline_markdown(text, text_style, color, theme),
             width,
             display_width(prefix),
         );
     }
 
-    selection_rows_for_prefixed_wrapped_spans(
+    selection_rows_for_prefixed_wrapped_inline(
         prefix,
         base_style,
-        parse_inline_markdown_spans(trimmed, base_style, color, theme),
+        parse_inline_markdown(trimmed, base_style, color, theme),
         width,
         display_width(prefix),
     )
+}
+
+fn selection_rows_for_prefixed_wrapped_inline(
+    prefix: &str,
+    prefix_style: Style,
+    parsed: ParsedInlineMarkdown,
+    width: u16,
+    copy_offset: usize,
+) -> Vec<TranscriptSelectionRow> {
+    let prefix_width = display_width(prefix);
+    let content_width = usize::from(width).saturating_sub(prefix_width).max(1);
+    let source_links = parsed
+        .links
+        .into_iter()
+        .map(|link| SurfaceLinkRun {
+            start_cell: link.start_cell,
+            end_cell: link.end_cell,
+            destination: link.destination,
+        })
+        .collect::<Vec<_>>();
+    wrap_surface_spans_with_links(parsed.spans, &source_links, content_width)
+        .into_iter()
+        .enumerate()
+        .map(|(index, row)| {
+            let mut spans = vec![Span::styled(prefix.to_string(), prefix_style)];
+            spans.extend(row.spans);
+            TranscriptSelectionRow {
+                cells: transcript_selection_line_rows(&Line::from(spans), usize::from(width))
+                    .into_iter()
+                    .next()
+                    .unwrap_or_else(|| vec![" ".to_string(); usize::from(width)]),
+                continues_previous: index > 0,
+                copy_offset,
+                links: row
+                    .links
+                    .into_iter()
+                    .map(|link| TranscriptSelectionLink {
+                        start_cell: prefix_width.saturating_add(link.start_cell),
+                        end_cell: prefix_width.saturating_add(link.end_cell),
+                        destination: link.destination,
+                    })
+                    .collect(),
+            }
+        })
+        .collect()
 }
 
 fn selection_rows_for_prefixed_wrapped_spans(
@@ -1026,6 +1059,148 @@ mod tests {
 
         // Then: visible text and the safe destination survive together.
         assert_eq!(copied, "Read docs\n\nLinks:\nhttps://example.com/docs");
+    }
+
+    #[test]
+    fn destination_export_includes_only_half_open_runs_intersecting_selection() {
+        // Given: one safe link occupying display cells [3, 7).
+        let row = TranscriptSelectionRow {
+            cells: "aa link zz".chars().map(|ch| ch.to_string()).collect(),
+            continues_previous: false,
+            copy_offset: 0,
+            links: vec![TranscriptSelectionLink {
+                start_cell: 3,
+                end_cell: 7,
+                destination: "https://example.com/link".to_string(),
+            }],
+        };
+        let snapshot_for = |anchor, focus| TranscriptSelectionSnapshot {
+            viewport: Rect::new(0, 0, 10, 1),
+            visible_rows: vec![0],
+            rows: vec![compact_selection_row(&row, 0)],
+            line_texts: vec![selection_row_line_text(&row)],
+            continues_previous: vec![false],
+            row_width: 10,
+            resolved_selection: Cell::new(Some(TranscriptSelection {
+                anchor: TranscriptSelectionCell {
+                    row: 0,
+                    column: anchor,
+                },
+                focus: TranscriptSelectionCell {
+                    row: 0,
+                    column: focus,
+                },
+            })),
+        };
+
+        // When: selections land before, after, and on the final linked cell.
+        let before = snapshot_for(0, 1)
+            .selection_text_with_destinations(TranscriptSelection {
+                anchor: TranscriptSelectionCell { row: 0, column: 0 },
+                focus: TranscriptSelectionCell { row: 0, column: 1 },
+            })
+            .expect("before text");
+        let after = snapshot_for(8, 9)
+            .selection_text_with_destinations(TranscriptSelection {
+                anchor: TranscriptSelectionCell { row: 0, column: 8 },
+                focus: TranscriptSelectionCell { row: 0, column: 9 },
+            })
+            .expect("after text");
+        let boundary = snapshot_for(6, 7)
+            .selection_text_with_destinations(TranscriptSelection {
+                anchor: TranscriptSelectionCell { row: 0, column: 6 },
+                focus: TranscriptSelectionCell { row: 0, column: 7 },
+            })
+            .expect("boundary text");
+
+        // Then: only the exact half-open overlap exports the destination.
+        assert!(!before.contains("Links:") && !after.contains("Links:"));
+        assert!(boundary.ends_with("Links:\nhttps://example.com/link"));
+    }
+
+    #[test]
+    fn inline_link_ranges_survive_repeated_labels_wrapping_and_wide_graphemes() {
+        // Given: plain duplicate text, repeated linked labels, whitespace, CJK, and a ZWJ emoji.
+        let rows = selection_rows_for_markdownish_text_block(
+            "same [same](https://example.com/one) 👩‍💻中 [same](https://example.com/two) [two words](https://example.com/words)",
+            Color::White,
+            "",
+            &Theme::default(),
+            7,
+        );
+
+        // When: rendered row-local link runs are inspected.
+        let links = rows
+            .iter()
+            .flat_map(|row| row.links.iter().map(move |link| (row, link)))
+            .collect::<Vec<_>>();
+
+        // Then: each URL has its own exact non-empty run, including both words when wrapped.
+        assert_eq!(
+            links
+                .iter()
+                .map(|(_, link)| link.destination.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "https://example.com/one",
+                "https://example.com/two",
+                "https://example.com/words",
+                "https://example.com/words",
+            ]
+        );
+        for (row, link) in links {
+            assert!(link.start_cell < link.end_cell);
+            assert!(link.end_cell <= row.cells.len());
+        }
+    }
+
+    #[test]
+    fn selection_cells_treat_combining_and_zwj_sequences_as_single_graphemes() {
+        // Given: combining text and a ZWJ emoji before a trailing link-like label.
+        let line = Line::from("e\u{301}👩‍💻x");
+
+        // When: the rendered line is projected into terminal cells.
+        let rows = transcript_selection_line_rows(&line, 8);
+
+        // Then: each grapheme starts in one cell and wide continuation cells stay empty.
+        assert_eq!(rows[0][0], "e\u{301}");
+        assert_eq!(rows[0][1], "👩‍💻");
+        assert_eq!(rows[0][2], "");
+        assert_eq!(rows[0][3], "x");
+        assert_eq!(extract_text_by_display_columns("e\u{301}👩‍💻x", 1, 2), "👩‍💻");
+    }
+
+    #[test]
+    fn streaming_and_settled_rows_preserve_link_metadata_before_open_fence() {
+        // Given: visible linked prose before an unfinished code fence.
+        let theme = Theme::default();
+        let streaming = selection_rows_for_rich_text_block(
+            "See [docs](https://example.com/docs)\n```rust\nfn main() {}",
+            Color::White,
+            "  ",
+            &theme,
+            40,
+            true,
+        )
+        .expect("streaming rows");
+
+        // When: the closing fence settles the same document.
+        let settled = selection_rows_for_rich_text_block(
+            "See [docs](https://example.com/docs)\n```rust\nfn main() {}\n```",
+            Color::White,
+            "  ",
+            &theme,
+            40,
+            false,
+        )
+        .expect("settled rows");
+
+        // Then: already-visible link geometry and destination stay stable.
+        assert_eq!(streaming[0].links, settled[0].links);
+        assert_eq!(
+            streaming[0].links[0].destination,
+            "https://example.com/docs"
+        );
     }
 
     #[test]

@@ -11,7 +11,9 @@ use super::ui_markdown::parse_inline_markdown;
 
 #[path = "ui_markdown_table_parse.rs"]
 mod parse;
-use super::ui_transcript_surface::wrap_surface_spans;
+use super::ui_transcript_surface::{
+    wrap_surface_spans_with_links, SurfaceLinkRun, WrappedSurfaceRow,
+};
 
 #[cfg(test)]
 #[path = "ui_markdown_table_tests.rs"]
@@ -125,22 +127,27 @@ fn append_table_row(
             let cell = row.get(index).map_or("", String::as_str);
             let parsed =
                 parse_inline_markdown(cell, style, style.fg.unwrap_or(Color::Reset), theme);
-            let rows = wrap_surface_spans(parsed.spans, width);
-            (
-                if rows.is_empty() {
-                    vec![Vec::new()]
-                } else {
-                    rows
-                },
-                parsed.links,
-            )
+            let source_links = parsed
+                .links
+                .into_iter()
+                .map(|link| SurfaceLinkRun {
+                    start_cell: link.start_cell,
+                    end_cell: link.end_cell,
+                    destination: link.destination,
+                })
+                .collect::<Vec<_>>();
+            let rows = wrap_surface_spans_with_links(parsed.spans, &source_links, width);
+            if rows.is_empty() {
+                vec![WrappedSurfaceRow {
+                    spans: Vec::new(),
+                    links: Vec::new(),
+                }]
+            } else {
+                rows
+            }
         })
         .collect::<Vec<_>>();
-    let height = wrapped
-        .iter()
-        .map(|(rows, _)| rows.len())
-        .max()
-        .unwrap_or(1);
+    let height = wrapped.iter().map(Vec::len).max().unwrap_or(1);
 
     for line_index in 0..height {
         let mut spans = vec![
@@ -150,29 +157,16 @@ fn append_table_row(
         for (column_index, column_width) in column_widths.iter().copied().enumerate() {
             spans.push(Span::styled(" ", style));
             let cell_start = spans.iter().map(Span::width).sum::<usize>();
-            let cell_spans = wrapped[column_index]
-                .0
-                .get(line_index)
-                .cloned()
-                .unwrap_or_default();
+            let cell = wrapped[column_index].get(line_index);
+            let cell_spans = cell.map(|row| row.spans.clone()).unwrap_or_default();
             let used = cell_spans.iter().map(Span::width).sum::<usize>();
-            let cell_text = cell_spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>();
-            for link in &wrapped[column_index].1 {
-                for fragment in link.label.split_whitespace() {
-                    if let Some(byte_start) = cell_text.find(fragment) {
-                        let start_cell =
-                            cell_start.saturating_add(display_width(&cell_text[..byte_start]));
-                        links.push(TableLinkRun {
-                            row: rendered.len(),
-                            start_cell,
-                            end_cell: start_cell.saturating_add(display_width(fragment)),
-                            destination: link.destination.clone(),
-                        });
-                    }
-                }
+            if let Some(cell) = cell {
+                links.extend(cell.links.iter().map(|link| TableLinkRun {
+                    row: rendered.len(),
+                    start_cell: cell_start.saturating_add(link.start_cell),
+                    end_cell: cell_start.saturating_add(link.end_cell),
+                    destination: link.destination.clone(),
+                }));
             }
             spans.extend(cell_spans);
             spans.push(Span::styled(

@@ -838,7 +838,7 @@ fn register_transcript_hyperlinks(
             let Ok(start_column) = u16::try_from(link.start_cell) else {
                 continue;
             };
-            let Ok(end_column) = u16::try_from(link.end_cell.saturating_add(1)) else {
+            let Ok(end_column) = u16::try_from(link.end_cell) else {
                 continue;
             };
             links.push(crate::terminal::FrameHyperlink {
@@ -1281,6 +1281,17 @@ pub(crate) fn transcript_selection_text(
 ) -> Option<String> {
     with_transcript_selection_snapshot(app, area, |snapshot| snapshot.selection_text(selection))
         .flatten()
+}
+
+pub(crate) fn transcript_selection_text_with_destinations(
+    app: &AppState,
+    area: Rect,
+    selection: TranscriptSelection,
+) -> Option<String> {
+    with_transcript_selection_snapshot(app, area, |snapshot| {
+        snapshot.selection_text_with_destinations(selection)
+    })
+    .flatten()
 }
 
 pub(crate) fn transcript_selection_patch_text(

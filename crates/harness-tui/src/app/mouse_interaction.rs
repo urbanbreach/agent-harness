@@ -316,8 +316,10 @@ impl AppState {
         let Some(selection) = self.transcript_view.transcript_selection else {
             return false;
         };
-        let Some(text) = ui::transcript_selection_patch_text(self, frame_area, selection)
-            .or_else(|| ui::transcript_selection_text(self, frame_area, selection))
+        let Some(text) =
+            ui::transcript_selection_patch_text(self, frame_area, selection).or_else(|| {
+                ui::transcript_selection_text_with_destinations(self, frame_area, selection)
+            })
         else {
             return false;
         };

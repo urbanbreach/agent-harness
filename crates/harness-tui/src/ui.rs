@@ -147,6 +147,7 @@ pub(crate) use ui_transcript::transcript_selection_debug_snapshot;
 pub(crate) use ui_transcript::transcript_timeline_turn_at;
 pub(crate) use ui_transcript::{
     transcript_selection_cell, transcript_selection_patch_text, transcript_selection_text,
+    transcript_selection_text_with_destinations,
 };
 pub use ui_transcript_interaction::hovered_wheel_target;
 pub(crate) use ui_transcript_interaction::TranscriptMouseTarget;
