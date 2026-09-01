@@ -135,6 +135,7 @@ T5_PATH_PARTS: Final[tuple[str, ...]] = (
     "crates/harness-tui/tests/pty_e2e.rs",
     "crates/harness-tui/tests/support/pty_e2e_impl.rs",
 )
+RECORDED_TEST_SUFFIX: Final[str] = "_recorded.rs"
 
 HOST_PATH_LITERAL: Final[re.Pattern[str]] = re.compile(
     r'"/(?:tmp|var|home|srv|Users|private/tmp)[^"\\n]*"'
@@ -207,6 +208,12 @@ def rust_files(root: Path) -> list[Path]:
 def is_t5_path(relative: str) -> bool:
     """Return True if the path belongs to the T5 signoff lane."""
     return any(part in relative for part in T5_PATH_PARTS)
+
+
+def is_recorded_real_world_test(path: Path, root: Path) -> bool:
+    """Return True for an explicitly recorded repository test file."""
+    relative = rel(path, root)
+    return "/tests/" in f"/{relative}" and path.name.endswith(RECORDED_TEST_SUFFIX)
 
 
 def is_source_test_module_path(path: Path, root: Path) -> bool:
@@ -301,6 +308,8 @@ def scan_pattern_gate(root: Path, gate: str) -> list[Violation]:
             continue
         relative = rel(path, root)
         if relative in PROCESS_GLOBAL_STATE_EXEMPTIONS:
+            continue
+        if gate == "no-real-world-deps" and is_recorded_real_world_test(path, root):
             continue
         for line_number, line in test_code_lines(path, root):
             for pattern in PATTERNS[gate]:
@@ -909,6 +918,27 @@ def self_test() -> int:
             "    let _ = MockServer::start();\n"
             "}\n"
         )
+        recorded_pty_path = test_dir / "pty_import_recorded.rs"
+        ordinary_pty_test_path = test_dir / "pty_import_test.rs"
+        ordinary_pty_path = test_dir / "pty_import.rs"
+        _ = recorded_pty_path.write_text(
+            "use portable_pty::native_pty_system;\n"
+            "#[test]\n"
+            "fn recorded_portable_pty_import_is_allowed() {}\n"
+        )
+        _ = ordinary_pty_test_path.write_text(
+            "use portable_pty::native_pty_system;\n"
+            "#[test]\n"
+            "fn ordinary_portable_pty_import_is_rejected() {}\n"
+        )
+        _ = ordinary_pty_path.write_text(
+            "use portable_pty::native_pty_system;\n"
+            "#[test]\n"
+            "fn unsuffixed_portable_pty_import_is_rejected() {}\n"
+        )
+        source_recorded_path = (
+            root / "crates" / "demo" / "src" / "pty_import_recorded.rs"
+        )
         _ = (test_dir / "path_leak_test.rs").write_text(
             'use std::fs;\n'
             "#[test]\n"
@@ -935,6 +965,12 @@ def self_test() -> int:
             "tokio::time::sleep("
             "std::time::Duration::from_millis(1)).await; }\n"
         )
+        _ = source_recorded_path.write_text(
+            "#[cfg(test)]\n"
+            "mod tests {\n"
+            "    use portable_pty::native_pty_system;\n"
+            "}\n"
+        )
         _ = (test_dir / "oversized_test.rs").write_text(
             "#[test]\nfn t() {}\n" + "// filler\n" * 605
         )
@@ -950,6 +986,23 @@ def self_test() -> int:
         if scan_t5_line_budget(root, 2):
             print(
                 "self-test counted non-T5 harness-testkit tests in T5 budget",
+                file=sys.stderr,
+            )
+            return 1
+        portable_pty_violations = {
+            violation.path
+            for violation in scan_pattern_gate(root, "no-real-world-deps")
+            if violation.detail == r"\bportable_pty\b"
+        }
+        expected_portable_pty_violations = {
+            rel(ordinary_pty_test_path, root),
+            rel(ordinary_pty_path, root),
+            rel(source_recorded_path, root),
+        }
+        if portable_pty_violations != expected_portable_pty_violations:
+            print(
+                "self-test recorded-tier policy mismatch: "
+                f"{sorted(portable_pty_violations)}",
                 file=sys.stderr,
             )
             return 1

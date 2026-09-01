@@ -131,13 +131,15 @@ fn signoff_pty_mode_is_fail_closed() {
     let owns_owners = body.contains("crates/harness-testkit/tests/pty_e2e.rs")
         && body.contains("crates/harness-tui/tests/pty_e2e.rs")
         && body.contains("crates/harness-tui/tests/p0_03_pty_recorded.rs")
+        && body.contains("crates/harness-tui/tests/p0_04_pty_recorded.rs")
         && body.contains("crates/harness/tests/pty_happy_path_recorded.rs")
         && body.contains("HARNESS_TUI_PTY_SIGNOFF=1")
-        && body.contains("--test p0_03_pty_recorded");
+        && body.contains("--test p0_03_pty_recorded")
+        && body.contains("--test p0_04_pty_recorded");
     let fail_closed = !body.contains("|| true")
         && body.contains("silent skip is forbidden")
         && body.contains("pty-lane-verdict.txt");
-    let lists_stages = body.contains("stages=testkit_pty,tui_pty,p0_03,happy_path");
+    let lists_stages = body.contains("stages=testkit_pty,tui_pty,p0_03,p0_04,happy_path");
 
     // assert
     assert!(

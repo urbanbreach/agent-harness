@@ -1,0 +1,12 @@
+{
+  "name": "harness-xterm-visual-qa",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test *.test.mjs"
+  },
+  "dependencies": {
+    "@xterm/xterm": "6.0.0",
+    "playwright-core": "1.55.0"
+  }
+}
