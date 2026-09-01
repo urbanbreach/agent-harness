@@ -1,3 +1,4 @@
+// allow: SIZE_OK — incremental transcript reflow state machine
 use std::collections::HashMap;
 
 use crate::shell_geometry::layout_for_rect;
@@ -320,6 +321,7 @@ impl TranscriptComposite {
         self.view.turns.clone_from(&self.turns);
         self.view.hit_map = TimelineHitMap::from_geometry(&timeline);
         self.view.timeline = timeline;
+        self.view.response_position = self.timeline.response_position();
         self.view.layout.clone_from(&self.layout);
         self.view.scroll_top = self.scroll_top;
         self.view.follow = self.follow;
@@ -366,6 +368,7 @@ impl TranscriptComposite {
         );
         self.view.hit_map = TimelineHitMap::from_geometry(&timeline);
         self.view.timeline = timeline;
+        self.view.response_position = self.timeline.response_position();
         self.view.scroll_top = self.scroll_top;
         self.view.follow = self.follow;
         if let Some(lifecycle) = self.lifecycle.snapshot(snapshot.id) {

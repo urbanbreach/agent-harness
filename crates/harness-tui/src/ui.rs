@@ -216,6 +216,12 @@ pub fn render_app(frame: &mut Frame, app: &AppState) {
         area,
     );
 
+    if app.status_dashboard_is_active() {
+        ui_overlays::render_status_dashboard_surface(frame, app, theme, area);
+        render_toast(frame, app, area, theme);
+        return;
+    }
+
     render_header(frame, app, &plan, theme);
     render_content(frame, app, plan.content, theme, &plan);
     render_footer(frame, app, &plan, theme);

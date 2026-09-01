@@ -40,10 +40,17 @@ impl ScrollAnchor {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ResponsePosition {
+    pub index: usize,
+    pub total: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TimelineNavigationSnapshot {
     pub selected_turn_id: Option<TurnId>,
     pub scroll_top: usize,
     pub anchor: Option<ScrollAnchor>,
+    pub response_position: Option<ResponsePosition>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

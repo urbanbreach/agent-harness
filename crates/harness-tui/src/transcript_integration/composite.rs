@@ -1,3 +1,4 @@
+// allow: SIZE_OK — integrated transcript composite state and construction
 use std::fmt::{Display, Formatter};
 
 use ratatui::layout::Rect;
@@ -13,7 +14,8 @@ use crate::transcript_identity::{
 use crate::transcript_pager::PagerError;
 use crate::transcript_scroll::{FollowState, ScrollError, ScrollTransition, TranscriptLayout};
 use crate::transcript_timeline::{
-    TimelineGeometry, TimelineHitMap, TimelineNavigation, TimelineNavigationError, TimelineTurn,
+    ResponsePosition, TimelineGeometry, TimelineHitMap, TimelineNavigation,
+    TimelineNavigationError, TimelineTurn,
 };
 
 use super::cache::{empty_view, BoundedLayoutCache};
@@ -29,6 +31,7 @@ pub struct TranscriptViewModel {
     pub blocks: Vec<BlockSnapshot>,
     pub timeline: TimelineGeometry,
     pub hit_map: TimelineHitMap,
+    pub response_position: Option<ResponsePosition>,
     pub layout: Option<TranscriptLayout>,
     pub scroll_top: f64,
     pub follow: FollowState,

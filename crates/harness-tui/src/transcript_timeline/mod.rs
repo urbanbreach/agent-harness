@@ -6,9 +6,11 @@
 pub mod clipping;
 pub mod geometry;
 pub mod hit_map;
+mod key_navigation;
 pub mod markers;
 pub mod navigation;
 mod navigation_state;
+mod response_navigation;
 
 pub use clipping::{clip_marker_label, marker_display_width, marker_label_width};
 pub use geometry::{
@@ -19,4 +21,6 @@ pub use markers::{
     MarkerInteraction, TimelineMarker, TimelineMarkerStyle, TimelineStatus, TimelineTurn,
 };
 pub use navigation::{KeyJump, TimelineJump, TimelineNavigation};
-pub use navigation_state::{ScrollAnchor, TimelineNavigationError, TimelineNavigationSnapshot};
+pub use navigation_state::{
+    ResponsePosition, ScrollAnchor, TimelineNavigationError, TimelineNavigationSnapshot,
+};

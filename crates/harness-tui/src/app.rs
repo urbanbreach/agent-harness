@@ -86,6 +86,7 @@ use crate::dashboard_controls::DashboardControlState;
 use crate::dashboard_details::{DashboardDetails, RosterState as DetailsRosterState};
 use crate::dashboard_integration::{
     DashboardIntegration, DashboardIntegrationParts, DashboardReturnState,
+    DashboardTranscriptAnchor,
 };
 use crate::dashboard_peek::DashboardPeek;
 use crate::dashboard_roster::RosterState;
@@ -910,7 +911,10 @@ impl AppState {
                 dashboard.capture_return_state(DashboardReturnState::new(
                     TranscriptFocus::Transcript,
                     self.transcript_view.follow_mode,
-                    None,
+                    self.transcript_view
+                        .measured_anchor
+                        .get()
+                        .map(DashboardTranscriptAnchor::capture),
                 ));
                 self.dashboard = Some(dashboard);
                 self.dashboard_return_focus = Some(return_focus);
@@ -923,8 +927,17 @@ impl AppState {
     }
 
     pub fn close_status_dashboard(&mut self) {
+        let transcript_return = self.dashboard.as_ref().map(DashboardIntegration::leave);
         self.dashboard = None;
         self.secondary_surfaces.close_status_dialog();
+        if let Some(return_state) = transcript_return {
+            self.transcript_view.follow_mode = return_state.transcript_follow;
+            self.transcript_view.measured_anchor.set(
+                return_state
+                    .transcript_anchor
+                    .map(DashboardTranscriptAnchor::into_content_anchor),
+            );
+        }
         if let Some(focus) = self.dashboard_return_focus.take() {
             self.focus = focus;
         }

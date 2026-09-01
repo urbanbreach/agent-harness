@@ -223,6 +223,17 @@ pub(crate) fn pty_status_dialog_opens_without_sidebar_copy() {
             || leader_status.contains("Plugins"),
         "PTY status dialog must show operator status content\n{leader_status}"
     );
+    assert_dashboard_full_surface(&leader_status, PRIMARY_COLS, PRIMARY_ROWS);
+
+    helper
+        .master
+        .resize(pty_size(MINIMUM_COLS, MINIMUM_ROWS))
+        .unwrap_or_abort();
+    helper.parser = Parser::new(MINIMUM_ROWS, MINIMUM_COLS, 0);
+    helper.wait_for("Status · Harness dashboard");
+    helper.wait_for("No MCP Servers");
+    let compact_status = helper.screen_text();
+    assert_dashboard_full_surface(&compact_status, MINIMUM_COLS, MINIMUM_ROWS);
 
     send_bytes(helper.writer.as_mut(), b"\x1b").unwrap_or_abort();
     helper.wait_until_absent("Status · Harness dashboard");
@@ -237,6 +248,7 @@ pub(crate) fn pty_status_dialog_opens_without_sidebar_copy() {
     helper.wait_for("No MCP Servers");
     let palette_status = helper.screen_text();
     assert_no_sidebar_copy(&palette_status, "status dialog via palette");
+    assert_dashboard_full_surface(&palette_status, MINIMUM_COLS, MINIMUM_ROWS);
 
     send_bytes(helper.writer.as_mut(), b"\x1b").unwrap_or_abort();
     helper.wait_until_absent("Status · Harness dashboard");
@@ -572,6 +584,35 @@ fn assert_no_sidebar_copy(screen: &str, context: &str) {
             && !lower.contains("hide sidebar")
             && !lower.contains("operator sidebar"),
         "PTY {context} must not advertise sidebar chrome copy\n{screen}"
+    );
+}
+
+fn assert_dashboard_full_surface(screen: &str, cols: u16, rows: u16) {
+    let lines = screen.lines().collect::<Vec<_>>();
+    assert_eq!(
+        lines.len(),
+        usize::from(rows),
+        "PTY dashboard must paint every terminal row\n{screen}"
+    );
+    assert!(
+        lines
+            .first()
+            .is_some_and(|line| line.starts_with("┌─ Status · Harness dashboard")),
+        "PTY dashboard title border must start at the first terminal cell\n{screen}"
+    );
+    let bottom = lines.last().unwrap_or_abort();
+    assert!(
+        bottom.starts_with('└') && bottom.ends_with('┘'),
+        "PTY dashboard bottom border must own the final terminal row\n{screen}"
+    );
+    assert_eq!(
+        bottom.chars().count(),
+        usize::from(cols),
+        "PTY dashboard bottom border must span the terminal width\n{screen}"
+    );
+    assert!(
+        !screen.contains("Ask Harness to inspect, edit, or explain"),
+        "PTY dashboard must replace, not overlay, the session surface\n{screen}"
     );
 }
 

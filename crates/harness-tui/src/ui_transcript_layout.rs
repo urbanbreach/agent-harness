@@ -1246,6 +1246,83 @@ mod pin_tests {
     }
 
     #[test]
+    fn detached_streaming_overflow_requires_pin_reserve() {
+        // arrange
+        // Given: a detached viewport on a wrapped assistant line with streaming rows below it.
+        let mut before = scroll_turn_layout(4, 3);
+        let section = Rc::make_mut(&mut before.sections[0]);
+        section.surfaces[1].selection_rows = Some(vec![
+            selection_row(5, false),
+            selection_row(5, true),
+            selection_row(5, true),
+        ]);
+        section.surfaces[1].lines = vec![
+            Line::from("abcde"),
+            Line::from("fghij"),
+            Line::from("klmno"),
+        ];
+        let mut streaming = section.surfaces[1].clone();
+        streaming.metadata.id = TranscriptVisualEntryId::Part {
+            activity_first_seq: 0,
+            semantic_key: 2,
+        };
+        streaming.metadata.lifecycle = TranscriptVisualEntryLifecycle::Active;
+        streaming.height = 1;
+        streaming.top_offset = 7;
+        streaming.lines = vec![Line::from("streaming")];
+        streaming.selection_rows = None;
+        streaming.hit_region = test_hit_region(7, 120, 1);
+        section.surfaces.push(streaming);
+        section.content_height = 8;
+        before.total_height = 8;
+
+        let viewport_height = 1;
+        let detached_top = 6;
+        assert!(detached_top < before.total_height - viewport_height);
+        let content_anchor = before
+            .capture_content_anchor(detached_top)
+            .expect("detached content anchor");
+        let selection_anchor = before
+            .capture_selection_anchor(TranscriptSelectionCell {
+                row: detached_top,
+                column: 2,
+            })
+            .expect("detached display-column anchor");
+        assert_eq!(selection_anchor.display_column, 12);
+
+        // When: streaming appends below the detached viewport while the width reflows the line.
+        let mut after = before.clone();
+        {
+            let section = Rc::make_mut(&mut after.sections[0]);
+            section.surfaces[1].selection_rows =
+                Some(vec![selection_row(7, false), selection_row(7, true)]);
+            section.surfaces[1].height = 2;
+            section.surfaces[1].lines = vec![Line::from("abcdefg"), Line::from("hijklmn")];
+            section.surfaces[2].top_offset = 6;
+            section.surfaces[2].height = 3;
+            section.surfaces[2].lines = vec![
+                Line::from("streaming"),
+                Line::from("content"),
+                Line::from("appended"),
+            ];
+            section.surfaces[2].hit_region = test_hit_region(6, 120, 3);
+            section.content_height = 9;
+            after.total_height = 9;
+        }
+        let streaming_top = after.sections[0].surfaces[2].top_offset;
+
+        // act
+        // Then: exact anchors retain the logical row and display column without pin reserve.
+        // assert
+        assert_eq!(after.resolve_content_anchor(content_anchor), Some(5));
+        assert_eq!(
+            after.resolve_selection_anchor(selection_anchor),
+            Some(TranscriptSelectionCell { row: 5, column: 5 })
+        );
+        assert!(5 + viewport_height <= streaming_top);
+    }
+
+    #[test]
     fn rendered_anchor_tracks_logical_position_through_long_line_rewrap() {
         // arrange
         // Given: a detached viewport on the third wrapped row of one logical line.

@@ -15,7 +15,12 @@ pub(super) fn render_status_dialog_overlay(
     theme: &Theme,
     root: Rect,
 ) {
-    let Some(overlay) = status_dialog_area(root) else {
+    if app.status_dashboard().is_some() {
+        render_status_dashboard_surface(frame, app, theme, root);
+        return;
+    }
+
+    let Some(overlay) = centered_status_dialog_area(root) else {
         return;
     };
 
@@ -24,18 +29,37 @@ pub(super) fn render_status_dialog_overlay(
         return;
     }
 
+    let content = inset_rect(overlay, 2, 1);
+    if content.width == 0 || content.height == 0 {
+        return;
+    }
+
+    render_status_dialog_body(frame, theme, content, status_dialog_body(app, theme));
+}
+
+pub(crate) fn render_status_dashboard_surface(
+    frame: &mut Frame,
+    app: &AppState,
+    theme: &Theme,
+    root: Rect,
+) {
+    let Some(dashboard) = app.status_dashboard() else {
+        return;
+    };
+    let Some(surface) = status_dialog_area(root) else {
+        return;
+    };
+    if !paint_overlay_panel_titled(frame, theme, surface, "Status · Harness dashboard", None) {
+        return;
+    }
     let Some(content) = crate::dashboard_integration::dashboard_content_viewport(root) else {
         return;
     };
 
-    if let Some(dashboard) = app.status_dashboard() {
-        render_interactive_dashboard(frame, app, theme, overlay);
-        render_dashboard_summary(frame, app, theme, dashboard.layout().shell.composer);
-        if dashboard.help_visible() {
-            render_dashboard_help(frame, theme, content, dashboard);
-        }
-    } else {
-        render_status_dialog_body(frame, theme, content, status_dialog_body(app, theme));
+    render_interactive_dashboard(frame, app, theme, surface);
+    render_dashboard_summary(frame, app, theme, dashboard.layout().shell.composer);
+    if dashboard.help_visible() {
+        render_dashboard_help(frame, theme, content, dashboard);
     }
 }
 
@@ -50,6 +74,25 @@ fn render_status_dialog_body(frame: &mut Frame, theme: &Theme, area: Rect, body:
 
 fn status_dialog_area(root: Rect) -> Option<Rect> {
     crate::dashboard_integration::dashboard_viewport(root)
+}
+
+fn centered_status_dialog_area(root: Rect) -> Option<Rect> {
+    let width = root.width.saturating_sub(4).min(88).max(32.min(root.width));
+    let height = root
+        .height
+        .saturating_sub(2)
+        .min(36)
+        .max(12.min(root.height));
+    if width < 32 || height < 8 {
+        return None;
+    }
+    Some(Rect::new(
+        root.x.saturating_add(root.width.saturating_sub(width) / 2),
+        root.y
+            .saturating_add(root.height.saturating_sub(height) / 2),
+        width,
+        height,
+    ))
 }
 
 fn render_interactive_dashboard(frame: &mut Frame, app: &AppState, theme: &Theme, overlay: Rect) {

@@ -30,6 +30,10 @@ pub struct ComposerState {
 }
 
 impl ComposerState {
+    pub fn composer_multiline_mode(&self) -> bool {
+        self.multiline_mode
+    }
+
     pub(super) fn editor_text(&self) -> String {
         self.slice.editor().text()
     }

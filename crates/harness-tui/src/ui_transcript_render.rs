@@ -22,16 +22,6 @@ const USER_MESSAGE_COLLAPSED_MAX_LINES: usize = 3;
 const USER_TIMESTAMP_RESERVED_WIDTH: u16 = 10;
 const USER_TIMESTAMP_RIGHT_PADDING_WIDTH: u16 =
     super::super::ui_transcript_surface::TRANSCRIPT_SURFACE_TRAILING_GAP_WIDTH;
-const DENSE_GROUP_VISIBLE_MEMBERS: usize = 10;
-
-fn dense_group_start(member_count: usize, command_group: bool, expanded: bool) -> usize {
-    if command_group && !expanded {
-        member_count.saturating_sub(DENSE_GROUP_VISIBLE_MEMBERS)
-    } else {
-        0
-    }
-}
-
 #[expect(
     clippy::manual_unwrap_or_default,
     reason = "invalid grammar atomically omits the section; keep the error policy explicit"
@@ -1557,14 +1547,17 @@ fn build_context_tool_group_render_surface(
             TRANSCRIPT_ASSISTANT_BODY_PREFIX.to_string()
         };
         let preview_index = context_group_preview_index(tool_calls);
-        let dense_start = policy.visible_start;
+        let dense_start = policy.hidden_count();
         if dense_start > 0 {
             append_surface_row(
                 &mut lines,
                 &detail_prefix,
                 surface,
                 vec![Span::styled(
-                    format!("… {dense_start} earlier operations"),
+                    format!(
+                        "{} {dense_start} more",
+                        theme.live_shell.transcript_glyphs.disclosure_closed
+                    ),
                     muted_meta_style(theme),
                 )],
                 transcript_surface_content_width(width, false),
@@ -2958,13 +2951,58 @@ mod tests {
     }
 
     #[test]
-    fn dense_command_groups_keep_only_the_latest_ten_members_when_collapsed() {
+    fn dense_command_group_renders_exact_hidden_member_affordance() {
         // arrange
+        let mut activity = super::super::transcript_section_model_test_activity(
+            "request-dense-command-group",
+            ActivityStatus::Done,
+            "",
+        );
+        activity.tool_calls = (0_u64..11)
+            .map(|index| {
+                let mut tool = super::super::transcript_section_model_test_tool_call(
+                    &format!("dense-command-{index}"),
+                    "bash",
+                );
+                tool.status = ToolCallDisplayStatus::Succeeded;
+                tool.args_summary = format!(r#"{{"command":"echo {index}"}}"#);
+                tool.output_summary = Some(format!("command {index} complete"));
+                tool.first_seq = index.saturating_add(1);
+                tool.last_seq = index.saturating_add(1);
+                tool
+            })
+            .collect();
+        let mut app = AppState::default();
+        app.activities.push_back(activity);
+        let sections = super::super::build_transcript_sections(&app);
+        let theme = Theme::default();
+
         // act
+        let surfaces = build_transcript_render_surfaces(
+            &sections[0],
+            &theme,
+            120,
+            ratatui::style::Color::Reset,
+        );
+        let affordance = surfaces
+            .iter()
+            .flat_map(|surface| surface.lines.iter())
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<String>()
+            })
+            .find(|line| line.contains("1 more"))
+            .expect("dense fold affordance");
+
         // assert
-        assert_eq!(super::dense_group_start(12, true, false), 2);
-        assert_eq!(super::dense_group_start(10, true, false), 0);
-        assert_eq!(super::dense_group_start(12, true, true), 0);
-        assert_eq!(super::dense_group_start(12, false, false), 0);
+        assert_eq!(
+            affordance.trim(),
+            format!(
+                "{} 1 more",
+                theme.live_shell.transcript_glyphs.disclosure_closed
+            )
+        );
     }
 }

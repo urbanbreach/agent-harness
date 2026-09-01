@@ -146,7 +146,10 @@ define_command_metadata! {
     ("focus_next", "Next focus", "Cycle focus forward"),
     ("focus_prev", "Previous focus", "Cycle focus backward"),
     ("submit_prompt", "Submit prompt", "Submit the current prompt"),
+    ("interject_prompt", "interject", "Submit the draft without cancelling the active turn"),
+    ("cancel_and_replace_prompt", "cancel & replace", "Cancel the active turn and submit the draft"),
     ("insert_newline", "Insert newline", "Insert newline"),
+    ("toggle_multiline", "Toggle multiline input", "Toggle persistent multiline composer mode"),
     ("clear_prompt", "Clear prompt", "Clear prompt"),
     ("move_down", "Move down", "Move down in list"),
     ("move_up", "Move up", "Move up in list"),
@@ -309,6 +312,7 @@ pub(super) const fn help_category(action: Action) -> Option<HelpCategory> {
         | Action::OpenLineageBrowser => Some(HelpCategory::Session),
         Action::ToggleTasks => Some(HelpCategory::Dashboard),
         Action::InterjectPrompt
+        | Action::CancelAndReplacePrompt
         | Action::ToggleMultiline
         | Action::OpenEventLog
         | Action::AllowPermission

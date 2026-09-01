@@ -26,7 +26,10 @@ pub use responsive::{
     DashboardHooks, DashboardLayout, DashboardNotification, DashboardNotificationKind,
     DashboardPaneVisibility,
 };
-pub use state::{DashboardIntegrationError, DashboardIntegrationParts, DashboardReturnState};
+pub use state::{
+    DashboardIntegrationError, DashboardIntegrationParts, DashboardReturnState,
+    DashboardTranscriptAnchor,
+};
 
 use crate::app::Focus;
 use crate::dashboard::{DashboardReadModel, SelectionKey};

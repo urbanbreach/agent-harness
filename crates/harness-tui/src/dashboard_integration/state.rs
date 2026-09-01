@@ -6,7 +6,7 @@ use crate::dashboard_details::{DashboardDetails, NavigationError};
 use crate::dashboard_peek::{DashboardPeek, DashboardPeekError};
 use crate::dashboard_roster::RosterState;
 use crate::transcript_identity::TranscriptFocus;
-use crate::transcript_scroll::LogicalAnchor;
+use crate::ui::TranscriptContentAnchor;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DashboardIntegrationError {
@@ -66,18 +66,31 @@ pub struct DashboardIntegrationParts {
     pub controls: DashboardControlState,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DashboardTranscriptAnchor(TranscriptContentAnchor);
+
+impl DashboardTranscriptAnchor {
+    pub(crate) const fn capture(anchor: TranscriptContentAnchor) -> Self {
+        Self(anchor)
+    }
+
+    pub(crate) const fn into_content_anchor(self) -> TranscriptContentAnchor {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DashboardReturnState {
     pub transcript_focus: TranscriptFocus,
     pub transcript_follow: bool,
-    pub transcript_anchor: Option<LogicalAnchor>,
+    pub transcript_anchor: Option<DashboardTranscriptAnchor>,
 }
 
 impl DashboardReturnState {
     pub const fn new(
         transcript_focus: TranscriptFocus,
         transcript_follow: bool,
-        transcript_anchor: Option<LogicalAnchor>,
+        transcript_anchor: Option<DashboardTranscriptAnchor>,
     ) -> Self {
         Self {
             transcript_focus,

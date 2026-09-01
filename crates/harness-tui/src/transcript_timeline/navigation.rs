@@ -1,15 +1,21 @@
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+// allow: SIZE_OK — timeline navigation keeps selection and exact-anchor transitions together
+use crossterm::event::KeyEvent;
 
 use crate::transcript_identity::{TranscriptIdentity, TurnId};
 
 use super::hit_map::TimelineHitMap;
+pub use super::key_navigation::key_jump;
 use super::markers::{TimelineStatus, TimelineTurn};
-use super::navigation_state::{ScrollAnchor, TimelineNavigationError, TimelineNavigationSnapshot};
+use super::navigation_state::{
+    ResponsePosition, ScrollAnchor, TimelineNavigationError, TimelineNavigationSnapshot,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TimelineJump {
     NextTurn,
     PreviousTurn,
+    NextResponse,
+    PreviousResponse,
     JumpToFailed,
     JumpToStreaming,
 }
@@ -163,6 +169,22 @@ impl TimelineNavigation {
         self.anchor
     }
 
+    pub fn response_position(&self) -> Option<ResponsePosition> {
+        super::response_navigation::position(&self.turns, self.selected_turn_id)
+    }
+
+    pub fn resize(&mut self, viewport_height: u16) {
+        self.viewport_height = usize::from(viewport_height);
+        let Some(turn) = self
+            .selected_turn_id
+            .and_then(|turn_id| self.turns.iter().find(|turn| turn.turn_id() == turn_id))
+        else {
+            return;
+        };
+        self.scroll_top = ensure_visible(self.scroll_top, turn.row, self.viewport_height);
+        self.anchor = Some(ScrollAnchor::capture(turn, self.scroll_top));
+    }
+
     fn target_index(&self, jump: TimelineJump) -> Result<Option<usize>, TimelineNavigationError> {
         if self.turns.is_empty() {
             return Ok(None);
@@ -173,6 +195,12 @@ impl TimelineNavigation {
                 Some(current.map_or(0, |index| (index + 1).min(self.turns.len() - 1)))
             }
             TimelineJump::PreviousTurn => Some(current.map_or(0, |index| index.saturating_sub(1))),
+            TimelineJump::NextResponse => {
+                super::response_navigation::target(&self.turns, current, true)
+            }
+            TimelineJump::PreviousResponse => {
+                super::response_navigation::target(&self.turns, current, false)
+            }
             TimelineJump::JumpToFailed => self.find_status(current, TimelineStatus::Failed),
             TimelineJump::JumpToStreaming => self.find_status(current, TimelineStatus::Streaming),
         };
@@ -208,25 +236,13 @@ impl TimelineNavigation {
             })
     }
 
-    const fn snapshot(&self) -> TimelineNavigationSnapshot {
+    fn snapshot(&self) -> TimelineNavigationSnapshot {
         TimelineNavigationSnapshot {
             selected_turn_id: self.selected_turn_id,
             scroll_top: self.scroll_top,
             anchor: self.anchor,
+            response_position: self.response_position(),
         }
-    }
-}
-
-pub fn key_jump(key: KeyEvent) -> Option<TimelineJump> {
-    if key.modifiers != KeyModifiers::NONE {
-        return None;
-    }
-    match key.code {
-        KeyCode::Down | KeyCode::Right => Some(TimelineJump::NextTurn),
-        KeyCode::Up | KeyCode::Left => Some(TimelineJump::PreviousTurn),
-        KeyCode::Char('f') | KeyCode::Char('F') => Some(TimelineJump::JumpToFailed),
-        KeyCode::Char('s') | KeyCode::Char('S') => Some(TimelineJump::JumpToStreaming),
-        _ => None,
     }
 }
 

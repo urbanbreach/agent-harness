@@ -40,6 +40,18 @@ fn many_turns() -> Vec<TimelineTurn> {
     ]
 }
 
+fn response_turns() -> Vec<TimelineTurn> {
+    vec![
+        event_turn(0, TimelineStatus::Queued, LifecycleState::Queued),
+        event_turn(1, TimelineStatus::Completed, LifecycleState::Completed),
+        event_turn(2, TimelineStatus::Streaming, LifecycleState::Streaming),
+        event_turn(3, TimelineStatus::Completed, LifecycleState::Completed),
+        event_turn(4, TimelineStatus::Failed, LifecycleState::Failed),
+        checkpoint_turn(5),
+        event_turn(6, TimelineStatus::Completed, LifecycleState::Completed),
+    ]
+}
+
 #[test]
 fn empty_transcript_has_a_rail_but_no_markers() {
     // arrange
@@ -298,4 +310,110 @@ fn reflowed_event_turns_preserve_selected_id_and_scroll_anchor() {
     // assert
     assert_eq!(updated.selected_turn_id, initial.selected_turn_id);
     assert_eq!(updated.scroll_top, initial.scroll_top.saturating_add(2));
+}
+
+#[test]
+fn final_response_navigation_orders_stable_ids_and_skips_non_final_entries() {
+    // arrange
+    let turns = response_turns();
+    let expected = [turns[1].turn_id(), turns[3].turn_id(), turns[6].turn_id()];
+    let mut navigation = TimelineNavigation::from_turns(turns, 4).unwrap_or_abort();
+
+    // act
+    let selected = expected
+        .iter()
+        .map(|_| {
+            navigation
+                .jump(TimelineJump::NextResponse)
+                .unwrap_or_abort()
+                .selected_turn_id
+        })
+        .collect::<Vec<_>>();
+
+    // assert
+    assert_eq!(selected, expected.into_iter().map(Some).collect::<Vec<_>>());
+}
+
+#[test]
+fn final_response_navigation_clamps_at_first_and_last_targets() {
+    // arrange
+    let turns = response_turns();
+    let first = turns[1].turn_id();
+    let last = turns[6].turn_id();
+    let mut navigation = TimelineNavigation::from_turns(turns, 4).unwrap_or_abort();
+
+    // act
+    let before_first = navigation
+        .jump(TimelineJump::PreviousResponse)
+        .unwrap_or_abort();
+    let mut after_last = before_first;
+    for _ in 0..4 {
+        after_last = navigation
+            .jump(TimelineJump::NextResponse)
+            .unwrap_or_abort();
+    }
+    let clamped_last = navigation
+        .jump(TimelineJump::NextResponse)
+        .unwrap_or_abort();
+
+    // assert
+    assert_eq!(before_first.selected_turn_id, Some(first));
+    assert_eq!(after_last.selected_turn_id, Some(last));
+    assert_eq!(clamped_last.selected_turn_id, Some(last));
+}
+
+#[test]
+fn final_response_position_stays_stable_after_reflow_resize_and_compaction() {
+    // arrange
+    let turns = response_turns();
+    let selected_id = turns[3].turn_id();
+    let mut navigation = TimelineNavigation::from_turns(turns, 4).unwrap_or_abort();
+    navigation
+        .jump(TimelineJump::NextResponse)
+        .unwrap_or_abort();
+    let initial = navigation
+        .jump(TimelineJump::NextResponse)
+        .unwrap_or_abort();
+
+    // act
+    navigation.resize(8);
+    let updated_turns = vec![
+        checkpoint_turn(50),
+        event_turn(1, TimelineStatus::Completed, LifecycleState::Completed),
+        event_turn(2, TimelineStatus::Streaming, LifecycleState::Streaming),
+        event_turn(3, TimelineStatus::Completed, LifecycleState::Completed),
+        event_turn(4, TimelineStatus::Failed, LifecycleState::Failed),
+        checkpoint_turn(5),
+        event_turn(6, TimelineStatus::Completed, LifecycleState::Completed),
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(index, turn)| {
+        TimelineTurn::from_replay(
+            turn.replay_turn(),
+            index.saturating_mul(5),
+            turn.height,
+            turn.marker.status,
+            turn.marker.lifecycle_state,
+        )
+    })
+    .collect::<Vec<_>>();
+    let identity =
+        TranscriptIdentity::from_replay(updated_turns.iter().map(TimelineTurn::replay_turn))
+            .unwrap_or_abort();
+    let updated = navigation
+        .update_document(identity, updated_turns)
+        .unwrap_or_abort();
+
+    // assert
+    assert_eq!(initial.selected_turn_id, Some(selected_id));
+    assert_eq!(updated.selected_turn_id, Some(selected_id));
+    assert_eq!(
+        initial.response_position.map(|p| (p.index, p.total)),
+        Some((2, 3))
+    );
+    assert_eq!(
+        updated.response_position.map(|p| (p.index, p.total)),
+        Some((2, 3))
+    );
 }

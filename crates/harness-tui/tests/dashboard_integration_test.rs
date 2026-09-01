@@ -13,10 +13,11 @@ use harness_tui::dashboard::{
 };
 use harness_tui::dashboard_controls::DashboardControlState;
 use harness_tui::dashboard_integration::{
-    layout_for_rect, DashboardBreakpoint, DashboardFocus, DashboardInput, DashboardInputRouter,
-    DashboardIntegration, DashboardIntegrationParts, DashboardModal, DashboardModalKind,
-    DashboardMouseContext, DashboardOverlayRoute, DashboardOverlayState, DashboardPane,
-    DashboardReturnState, FocusDirection, SearchContext,
+    dashboard_content_viewport, dashboard_viewport, layout_for_rect, DashboardBreakpoint,
+    DashboardFocus, DashboardInput, DashboardInputRouter, DashboardIntegration,
+    DashboardIntegrationParts, DashboardModal, DashboardModalKind, DashboardMouseContext,
+    DashboardOverlayRoute, DashboardOverlayState, DashboardPane, DashboardReturnState,
+    FocusDirection, SearchContext,
 };
 use harness_tui::overlay::OverlayKind;
 use harness_tui::shell_geometry::ShellState;
@@ -151,6 +152,23 @@ fn responsive_layout_uses_shell_geometry_and_hides_details_at_narrow_widths() {
     assert_eq!(wide.breakpoint, DashboardBreakpoint::Wide);
     assert!(wide.visibility.details);
     assert!(wide.visibility.roster && wide.visibility.peek && wide.visibility.reply);
+}
+
+#[test]
+fn dashboard_owns_the_full_terminal_surface_at_parity_viewports() {
+    for root in [
+        Rect::new(0, 0, 80, 24),
+        Rect::new(0, 0, 120, 40),
+        Rect::new(0, 0, 160, 50),
+    ] {
+        assert_eq!(dashboard_viewport(root), Some(root));
+
+        let content = dashboard_content_viewport(root).expect("dashboard content viewport");
+        assert_eq!(content.x, root.x.saturating_add(2));
+        assert_eq!(content.y, root.y.saturating_add(1));
+        assert_eq!(content.width, root.width.saturating_sub(4));
+        assert_eq!(content.height, root.height.saturating_sub(2));
+    }
 }
 
 #[test]

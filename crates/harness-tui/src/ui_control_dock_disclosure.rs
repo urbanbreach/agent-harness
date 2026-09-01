@@ -771,6 +771,30 @@ fn live_freeze_shortcut_disclosure_row(
     let mode_key = freeze_preferred_binding(app, Action::VariantCycle, "Shift+Tab");
     let help_key = freeze_preferred_binding(app, Action::Help, "Ctrl+x");
     let active_turn = app.active_turn_in_progress();
+    if active_turn && app.composer.composer_multiline_mode() {
+        return vec![
+            Span::styled("Enter", bold),
+            Span::styled(":newline", normal),
+            Span::styled("  │  ", dim),
+            Span::styled(
+                freeze_preferred_binding(app, Action::SubmitPrompt, "Alt+s"),
+                bold,
+            ),
+            Span::styled(":send", normal),
+            Span::styled("  │  ", dim),
+            Span::styled(
+                freeze_preferred_binding(app, Action::InterjectPrompt, "Alt+i"),
+                bold,
+            ),
+            Span::styled(":interject", normal),
+            Span::styled("  │  ", dim),
+            Span::styled(
+                freeze_preferred_binding(app, Action::CancelAndReplacePrompt, "Alt+r"),
+                bold,
+            ),
+            Span::styled(":replace", normal),
+        ];
+    }
     let mut spans = vec![
         Span::styled(
             freeze_preferred_binding(app, Action::SubmitPrompt, "Enter"),
