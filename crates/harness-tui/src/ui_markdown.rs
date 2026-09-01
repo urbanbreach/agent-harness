@@ -28,6 +28,25 @@ fn is_flanking_pair(prev: Option<char>, content: &str, after_close: &str) -> boo
             .is_some_and(char::is_alphanumeric)
 }
 
+fn markdown_link_destination_end(destination: &str) -> Option<usize> {
+    let mut nested_parentheses = 0usize;
+    let mut escaped = false;
+    for (index, ch) in destination.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' => escaped = true,
+            '(' => nested_parentheses = nested_parentheses.saturating_add(1),
+            ')' if nested_parentheses == 0 => return Some(index),
+            ')' => nested_parentheses = nested_parentheses.saturating_sub(1),
+            _ => {}
+        }
+    }
+    None
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct InlineMarkdownLink {
     pub(super) label: String,
@@ -56,7 +75,9 @@ pub(super) fn parse_inline_markdown(
         if let Some(rest) = remaining.strip_prefix('[') {
             if let Some(label_end) = rest.find("](") {
                 let destination_start = label_end + 2;
-                if let Some(destination_end) = rest[destination_start..].find(')') {
+                if let Some(destination_end) =
+                    markdown_link_destination_end(&rest[destination_start..])
+                {
                     let destination = &rest[destination_start..destination_start + destination_end];
                     let label = parse_inline_markdown_spans(
                         &rest[..label_end],
@@ -154,7 +175,7 @@ pub(super) fn parse_inline_markdown_spans(
         if let Some(rest) = remaining.strip_prefix('[') {
             if let Some(label_end) = rest.find("](") {
                 let after_label = &rest[label_end + 2..];
-                if let Some(url_end) = after_label.find(')') {
+                if let Some(url_end) = markdown_link_destination_end(after_label) {
                     let link_style = base_style
                         .fg(theme.markdown.link_text)
                         .add_modifier(Modifier::UNDERLINED);
@@ -662,7 +683,7 @@ mod tests {
 
         // When: inline markdown crosses the rendering boundary.
         let parsed = parse_inline_markdown(
-            "[docs](https://example.com/docs) http://example.com/raw [bad](javascript:alert(1)) [file](file:///tmp/x)",
+            "[docs](https://example.com/docs) http://example.com/raw [nested](https://example.com/a_(b)) [bad](javascript:alert(1)) [file](file:///tmp/x)",
             base,
             theme.text.primary,
             &theme,
@@ -678,6 +699,7 @@ mod tests {
             vec![
                 ("docs", "https://example.com/docs"),
                 ("http://example.com/raw", "http://example.com/raw"),
+                ("nested", "https://example.com/a_(b)"),
             ]
         );
         let visible = parsed
@@ -685,7 +707,7 @@ mod tests {
             .iter()
             .map(|span| span.content.as_ref())
             .collect::<String>();
-        assert!(visible.contains("docs") && visible.contains("bad") && visible.contains("file"));
+        assert_eq!(visible, "docs http://example.com/raw nested bad file");
         assert!(!visible.contains("javascript:") && !visible.contains("file:///"));
     }
 

@@ -72,6 +72,10 @@ fn p0_03_real_pty_records_markdown_and_event_driven_fence() {
         ready_screen.contains("unsafe"),
         "unsafe link label must remain visible\n{ready_screen}"
     );
+    assert!(
+        !ready_screen.contains("unsafe)"),
+        "markdown destination delimiter leaked into visible text\n{ready_screen}"
+    );
 
     // act
     // When: the first exact fixture command requests the next live event chunk.
