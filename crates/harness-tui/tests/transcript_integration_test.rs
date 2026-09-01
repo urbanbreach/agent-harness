@@ -148,3 +148,49 @@ fn interleaved_lifecycle_fold_scroll_resize_compaction_and_viewer_exit_settle_de
     );
     Ok(())
 }
+
+#[test]
+fn response_jumps_preserve_streaming_composite_state() -> TestResult {
+    // arrange
+    let mut composite = TranscriptComposite::new(Rect::new(0, 0, 80, 24))?;
+    let replay = ReplayTurn::event(30, 0, 1);
+    composite.apply(TranscriptEvent::TurnStarted(TurnSeed::new(
+        replay,
+        TimelineStatus::Streaming,
+        LifecycleState::Thinking,
+    )))?;
+    composite.apply(TranscriptEvent::BlockCreated(BlockSeed {
+        id: replay.block_id(0),
+        turn_id: replay.turn_id(),
+        kind: BlockKind::Assistant,
+        lifecycle: BlockLifecycle::Streaming,
+        content: "streaming line\n".repeat(64),
+        raw: None,
+    }))?;
+    let selection = composite.select_turn(replay.turn_id())?;
+    composite.scroll_by(2.0)?;
+    let before_screen = composite.screen();
+    let before_focus = before_screen.focus_follow();
+    let before_follow = composite.view().follow;
+    let before_scroll = composite.scroll_top();
+    let before_view = composite.view().clone();
+
+    // act
+    for jump in [
+        harness_tui::transcript_timeline::TimelineJump::NextResponse,
+        harness_tui::transcript_timeline::TimelineJump::PreviousResponse,
+    ] {
+        let snapshot = composite.jump(jump)?;
+
+        // assert
+        assert_eq!(snapshot, selection);
+        assert_eq!(snapshot.selected_turn_id, Some(replay.turn_id()));
+        assert_eq!(snapshot.response_position, None);
+        assert_eq!(composite.screen(), before_screen);
+        assert_eq!(composite.screen().focus_follow(), before_focus);
+        assert_eq!(composite.view().follow, before_follow);
+        assert_eq!(composite.scroll_top().to_bits(), before_scroll.to_bits());
+        assert_eq!(composite.view(), &before_view);
+    }
+    Ok(())
+}

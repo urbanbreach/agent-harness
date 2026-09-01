@@ -32,6 +32,9 @@ pub(crate) fn render_bordered_composer(
     if let Some(completion) = composer_view.completion.as_ref() {
         extra_identity.push(format!("{} suggestions", completion.items.len()));
     }
+    if app.composer.composer_multiline_mode() {
+        extra_identity.push("MULTILINE".to_string());
+    }
     let badge = composer_model_badge(
         app,
         &extra_identity,

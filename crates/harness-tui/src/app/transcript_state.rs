@@ -313,14 +313,45 @@ impl AppState {
         let Some(jump) = crate::transcript_timeline::navigation::key_jump(key) else {
             return false;
         };
-        let jumped = self
+        self.jump_transcript_timeline(jump)
+    }
+
+    pub(crate) fn jump_transcript_timeline(
+        &mut self,
+        jump: crate::transcript_timeline::TimelineJump,
+    ) -> bool {
+        let response_jump = matches!(
+            jump,
+            crate::transcript_timeline::TimelineJump::NextResponse
+                | crate::transcript_timeline::TimelineJump::PreviousResponse
+        );
+        let Some(snapshot) = self
             .transcript_integration
             .as_mut()
-            .is_some_and(|composite| composite.jump(jump).is_ok());
-        if jumped {
-            self.cancel_transcript_page_flip();
+            .and_then(|composite| composite.jump(jump).ok())
+        else {
+            return false;
+        };
+        if response_jump && snapshot.response_position.is_none() {
+            return false;
         }
-        jumped
+        if let Some(selected) = snapshot.selected_turn_id {
+            if let Some(index) = self.transcript_view_model().and_then(|view| {
+                view.turns
+                    .iter()
+                    .position(|turn| turn.turn_id() == selected)
+            }) {
+                self.transcript_view.selected_activity_index = index;
+            }
+        }
+        let max_scroll = self.transcript_view.last_transcript_max_scroll.get();
+        self.transcript_view
+            .set_measured_viewport(MeasuredTranscriptViewport::detached(
+                snapshot.scroll_top,
+                max_scroll,
+            ));
+        self.cancel_transcript_page_flip();
+        true
     }
 
     pub(crate) fn transcript_thinking_visible(&self) -> bool {

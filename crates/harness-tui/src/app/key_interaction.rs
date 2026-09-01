@@ -152,15 +152,17 @@ impl AppState {
             && self.composer.multiline_mode
             && key.code == KeyCode::Enter
         {
-            if key.modifiers == KeyModifiers::NONE {
-                Some(Action::InsertNewline)
-            } else if key
-                .modifiers
-                .intersects(KeyModifiers::SHIFT | KeyModifiers::ALT)
-            {
-                Some(Action::SubmitPrompt)
-            } else {
-                self.keymap.get_action(&key)
+            match key.modifiers {
+                KeyModifiers::NONE => Some(Action::InsertNewline),
+                KeyModifiers::SHIFT => Some(Action::SubmitPrompt),
+                KeyModifiers::ALT => Some(Action::InsertNewline),
+                modifiers if modifiers == (KeyModifiers::CONTROL | KeyModifiers::ALT) => {
+                    Some(Action::InterjectPrompt)
+                }
+                modifiers if modifiers == (KeyModifiers::CONTROL | KeyModifiers::SHIFT) => {
+                    Some(Action::CancelAndReplacePrompt)
+                }
+                _ => self.keymap.get_action(&key),
             }
         } else {
             self.keymap.get_action(&key)
@@ -735,6 +737,18 @@ impl AppState {
         if action != Action::Quit {
             self.clear_quit_confirmation();
         }
+        if self.replay_mode
+            && matches!(
+                action,
+                Action::ToggleMultiline
+                    | Action::SubmitPrompt
+                    | Action::InterjectPrompt
+                    | Action::CancelAndReplacePrompt
+                    | Action::InsertNewline
+            )
+        {
+            return;
+        }
 
         if self.execute_permission_action(action) {
             return;
@@ -799,6 +813,7 @@ impl AppState {
                 match action {
                     Action::SubmitPrompt
                     | Action::InterjectPrompt
+                    | Action::CancelAndReplacePrompt
                     | Action::InsertNewline
                     | Action::ToggleMultiline
                     | Action::ClearPrompt
@@ -851,6 +866,19 @@ impl AppState {
                     return;
                 }
                 Action::InterjectPrompt => {
+                    self.submit_prompt();
+                    return;
+                }
+                Action::CancelAndReplacePrompt => {
+                    if self.composer_submission().is_err()
+                        || (self.launch_metadata.model().is_none()
+                            && self.launch_metadata.provider() == "local"
+                            && self.launch_metadata.configured_profile().is_some())
+                    {
+                        self.submit_prompt();
+                        return;
+                    }
+
                     let task_ids: Vec<String> =
                         self.active_interrupt_task_ids().into_iter().collect();
                     if !task_ids.is_empty() {
@@ -1559,13 +1587,25 @@ impl AppState {
             return false;
         }
 
-        if key.modifiers == KeyModifiers::NONE
-            && matches!(
-                key.code,
-                KeyCode::Char('f') | KeyCode::Char('F') | KeyCode::Char('s') | KeyCode::Char('S')
+        if matches!(
+            crate::transcript_timeline::navigation::key_jump(key),
+            Some(
+                crate::transcript_timeline::TimelineJump::JumpToFailed
+                    | crate::transcript_timeline::TimelineJump::JumpToStreaming
             )
-            && self.handle_transcript_timeline_key(key)
+        ) && self.handle_transcript_timeline_key(key)
         {
+            return true;
+        }
+
+        if matches!(
+            crate::transcript_timeline::navigation::key_jump(key),
+            Some(
+                crate::transcript_timeline::TimelineJump::NextResponse
+                    | crate::transcript_timeline::TimelineJump::PreviousResponse
+            )
+        ) {
+            let _ = self.handle_transcript_timeline_key(key);
             return true;
         }
 
@@ -1751,6 +1791,121 @@ mod tests {
             }
             other => panic!("expected RunShellCommand intent, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn completed_response_key_routes_from_transcript_focus() {
+        // arrange
+        let mut app = AppState::new_live(None, false, None);
+        let mut composite = crate::transcript_integration::TranscriptComposite::new(
+            ratatui::layout::Rect::new(0, 0, 80, 24),
+        )
+        .unwrap_or_abort();
+        for index in 0..2 {
+            let replay = crate::transcript_identity::ReplayTurn::event(index + 1, index, 1);
+            composite
+                .apply(crate::transcript_integration::TranscriptEvent::TurnStarted(
+                    crate::transcript_integration::TurnSeed::new(
+                        replay,
+                        crate::transcript_timeline::TimelineStatus::Completed,
+                        crate::theme_tokens::LifecycleState::Completed,
+                    ),
+                ))
+                .unwrap_or_abort();
+            composite
+                .apply(
+                    crate::transcript_integration::TranscriptEvent::BlockCreated(
+                        crate::transcript_integration::BlockSeed {
+                            id: replay.block_id(0),
+                            turn_id: replay.turn_id(),
+                            kind: crate::transcript_blocks::BlockKind::Assistant,
+                            lifecycle: crate::transcript_blocks::BlockLifecycle::Completed,
+                            content: format!("response {index}"),
+                            raw: None,
+                        },
+                    ),
+                )
+                .unwrap_or_abort();
+        }
+        app.transcript_integration = Some(composite);
+        app.focus = Focus::Details;
+
+        // act
+        app.handle_key(KeyEvent::new(KeyCode::Char('J'), KeyModifiers::SHIFT));
+
+        // assert
+        let position = app
+            .transcript_view_model()
+            .and_then(|view| view.response_position);
+        assert_eq!(
+            position.map(|position| (position.index, position.total)),
+            Some((1, 2))
+        );
+    }
+
+    #[test]
+    fn response_keys_no_op_without_completed_responses() {
+        // arrange
+        let mut app = AppState::new_live(None, false, None);
+        let mut composite = crate::transcript_integration::TranscriptComposite::new(
+            ratatui::layout::Rect::new(0, 0, 80, 24),
+        )
+        .unwrap_or_abort();
+        let replay = crate::transcript_identity::ReplayTurn::event(1, 0, 1);
+        composite
+            .apply(crate::transcript_integration::TranscriptEvent::TurnStarted(
+                crate::transcript_integration::TurnSeed::new(
+                    replay,
+                    crate::transcript_timeline::TimelineStatus::Streaming,
+                    crate::theme_tokens::LifecycleState::Thinking,
+                ),
+            ))
+            .unwrap_or_abort();
+        composite
+            .apply(
+                crate::transcript_integration::TranscriptEvent::BlockCreated(
+                    crate::transcript_integration::BlockSeed {
+                        id: replay.block_id(0),
+                        turn_id: replay.turn_id(),
+                        kind: crate::transcript_blocks::BlockKind::Assistant,
+                        lifecycle: crate::transcript_blocks::BlockLifecycle::Streaming,
+                        content: "streaming response".to_string(),
+                        raw: None,
+                    },
+                ),
+            )
+            .unwrap_or_abort();
+        app.transcript_integration = Some(composite);
+        app.focus = Focus::Details;
+        app.transcript_view.last_transcript_max_scroll.set(10);
+        app.transcript_view.set_measured_viewport(
+            crate::app::transcript_viewport::MeasuredTranscriptViewport::following(10),
+        );
+        let before_viewport = app.transcript_view.measured_viewport();
+        let before_following = app.transcript_following();
+        let before_page_flip = app.transcript_page_flip_state();
+
+        // act
+        let next_handled = app.handle_transcript_navigation_key(KeyEvent::new(
+            KeyCode::Char('J'),
+            KeyModifiers::SHIFT,
+        ));
+        let previous_handled = app.handle_transcript_navigation_key(KeyEvent::new(
+            KeyCode::Char('K'),
+            KeyModifiers::SHIFT,
+        ));
+
+        // assert
+        assert!(next_handled);
+        assert!(previous_handled);
+        assert_eq!(
+            app.transcript_view_model()
+                .and_then(|view| view.response_position),
+            None
+        );
+        assert_eq!(app.transcript_view.measured_viewport(), before_viewport);
+        assert_eq!(app.transcript_following(), before_following);
+        assert_eq!(app.transcript_page_flip_state(), before_page_flip);
     }
 
     #[test]

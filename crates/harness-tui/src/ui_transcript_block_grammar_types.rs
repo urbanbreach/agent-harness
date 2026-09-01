@@ -96,6 +96,12 @@ pub(in crate::ui) struct TranscriptToolPolicy {
     pub(in crate::ui) trailing_gap_cells: u16,
 }
 
+impl TranscriptToolPolicy {
+    pub(in crate::ui) const fn hidden_count(&self) -> usize {
+        self.visible_start
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::ui) struct TranscriptBlockChrome {
     pub(in crate::ui) accent: bool,

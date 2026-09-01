@@ -565,6 +565,7 @@ fn render_measured_transcript_pane(
                 surface_area,
                 theme,
             );
+            render_response_position_affordance(frame, surface_area, app);
             render_transcript_scrollbar(
                 frame,
                 viewport,
@@ -627,6 +628,32 @@ fn render_integrated_timeline(frame: &mut Frame, app: &AppState, area: Rect) {
             marker.rect,
         );
     }
+}
+
+fn render_response_position_affordance(frame: &mut Frame, area: Rect, app: &AppState) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+    let Some(position) = app
+        .transcript_view_model()
+        .and_then(|view| view.response_position)
+    else {
+        return;
+    };
+    let theme = app.theme();
+    let label = format!("Harness {}/{}", position.index, position.total);
+    let width = u16::try_from(label.len())
+        .unwrap_or(u16::MAX)
+        .min(area.width);
+    let rect = Rect::new(area.right().saturating_sub(width), area.y, width, 1);
+    frame.render_widget(
+        Paragraph::new(label).alignment(Alignment::Right).style(
+            Style::default()
+                .fg(theme.text.accent)
+                .bg(theme.surface.shell),
+        ),
+        rect,
+    );
 }
 
 fn transcript_surface_area(viewport: Rect, scroll_position: TranscriptScrollPosition) -> Rect {
@@ -1380,6 +1407,72 @@ pub(crate) fn transcript_selection_debug_snapshot(
 #[cfg(test)]
 pub(crate) fn transcript_selection_row_count(app: &AppState, area: Rect) -> Option<usize> {
     with_transcript_selection_snapshot(app, area, |snapshot| snapshot.rows.len())
+}
+
+#[cfg(test)]
+mod response_position_tests {
+    use super::*;
+    use ratatui::{backend::TestBackend, Terminal};
+
+    #[test]
+    fn response_position_affordance_paints_index_and_total_with_contrast() {
+        // arrange
+        let mut app = AppState::new_live(None, false, None);
+        let mut composite =
+            crate::transcript_integration::TranscriptComposite::new(Rect::new(0, 0, 30, 2))
+                .unwrap_or_abort();
+        for index in 0..3 {
+            let replay = crate::transcript_identity::ReplayTurn::event(index + 1, index, 1);
+            composite
+                .apply(crate::transcript_integration::TranscriptEvent::TurnStarted(
+                    crate::transcript_integration::TurnSeed::new(
+                        replay,
+                        crate::transcript_timeline::TimelineStatus::Completed,
+                        crate::theme_tokens::LifecycleState::Completed,
+                    ),
+                ))
+                .unwrap_or_abort();
+            composite
+                .apply(
+                    crate::transcript_integration::TranscriptEvent::BlockCreated(
+                        crate::transcript_integration::BlockSeed {
+                            id: replay.block_id(0),
+                            turn_id: replay.turn_id(),
+                            kind: crate::transcript_blocks::BlockKind::Assistant,
+                            lifecycle: crate::transcript_blocks::BlockLifecycle::Completed,
+                            content: index.to_string(),
+                            raw: None,
+                        },
+                    ),
+                )
+                .unwrap_or_abort();
+        }
+        composite
+            .jump(crate::transcript_timeline::TimelineJump::NextResponse)
+            .unwrap_or_abort();
+        composite
+            .jump(crate::transcript_timeline::TimelineJump::NextResponse)
+            .unwrap_or_abort();
+        app.transcript_integration = Some(composite);
+        let backend = TestBackend::new(30, 2);
+        let mut terminal = Terminal::new(backend).unwrap_or_abort();
+
+        // act
+        terminal
+            .draw(|frame| {
+                render_response_position_affordance(frame, Rect::new(0, 0, 30, 2), &app);
+            })
+            .unwrap_or_abort();
+
+        // assert
+        let buffer = terminal.backend().buffer();
+        let row = (0..30).map(|x| buffer[(x, 0)].symbol()).collect::<String>();
+        let index_start = row.find("2/3").unwrap_or_abort();
+        for x in index_start..index_start + 3 {
+            let cell = &buffer[(u16::try_from(x).unwrap_or_abort(), 0)];
+            assert_ne!(cell.fg, cell.bg);
+        }
+    }
 }
 
 #[cfg(test)]

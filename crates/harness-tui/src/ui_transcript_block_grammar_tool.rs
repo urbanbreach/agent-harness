@@ -182,3 +182,67 @@ fn group_status(summary: &TranscriptToolGroupSummary) -> TranscriptToolStatus {
         TranscriptToolStatus::Succeeded
     }
 }
+
+#[cfg(test)]
+mod dense_fold_tests {
+    use super::*;
+    use crate::app::{ToolCallDisplayStatus, ToolCallPresentation};
+
+    fn tool(id: &str, status: ToolCallDisplayStatus) -> TranscriptToolCallSection {
+        TranscriptToolCallSection {
+            tool_call_id: id.to_string(),
+            coalesced_tool_call_ids: vec![id.to_string()],
+            child_session_id: None,
+            subagent_background: false,
+            output_truncated: false,
+            replay_read_only: false,
+            hovered_target: None,
+            header: TranscriptToolCallHeader {
+                tool_id: "bash".to_string(),
+                title: id.to_string(),
+                subtitle: None,
+                path_metadata: None,
+                icon: None,
+                presentation: ToolCallPresentation::from_display_status(status),
+                visual_style: TranscriptToolCallVisualStyle::Block,
+                struck_out: false,
+                disclosure_state: None,
+            },
+            detail_blocks: Vec::new(),
+            details_collapsed_by_default: false,
+            details_preview_visible: false,
+            animation_phase: 0,
+            expanded: false,
+            rail_motion: ToolRailMotion::Settled,
+        }
+    }
+
+    fn summary(tools: &[TranscriptToolCallSection]) -> TranscriptToolGroupSummary {
+        let tools = tools.iter().collect::<Vec<_>>();
+        TranscriptToolGroupSummary::from_tool_calls(&tools).expect("non-empty command group")
+    }
+
+    #[test]
+    fn dense_fold_hidden_count_is_zero_one_or_many_completed_members() {
+        // arrange
+        let one = vec![tool("one", ToolCallDisplayStatus::Succeeded)];
+        let many = (0..11)
+            .map(|index| {
+                tool(
+                    &format!("completed-{index}"),
+                    ToolCallDisplayStatus::Succeeded,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        // act
+        let one_policy = group_policy(&summary(&one));
+        let many_policy = group_policy(&summary(&many));
+
+        // assert
+        assert!(TranscriptToolGroupSummary::from_tool_calls(&[]).is_none());
+        assert_eq!(one_policy.visible_start, 0);
+        assert_eq!(many_policy.visible_start, 1);
+        assert_eq!(many_policy.hidden_count(), 1);
+    }
+}

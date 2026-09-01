@@ -1,3 +1,4 @@
+// allow: SIZE_OK — transcript composite command surface
 #![allow(
     clippy::module_name_repetitions,
     reason = "task 29 facade names the integrated transcript state explicitly"
@@ -187,9 +188,23 @@ impl TranscriptComposite {
         jump: TimelineJump,
     ) -> Result<TimelineNavigationSnapshot, TranscriptIntegrationError> {
         let snapshot = self.timeline.jump(jump)?;
+        if matches!(
+            jump,
+            TimelineJump::NextResponse | TimelineJump::PreviousResponse
+        ) && snapshot.response_position.is_none()
+        {
+            return Ok(snapshot);
+        }
         self.screen = self
             .screen
             .with_focus_follow(FocusFollowState::new(TranscriptFocus::Timeline, false));
+        self.scroll_top = f64::from(u32::try_from(snapshot.scroll_top).unwrap_or(u32::MAX));
+        self.follow.scroll_by(
+            self.scroll_top - self.follow.offset(),
+            self.layout
+                .as_ref()
+                .map_or(0.0, TranscriptLayout::max_scroll),
+        )?;
         self.refresh_view();
         Ok(snapshot)
     }
@@ -337,6 +352,7 @@ impl TranscriptComposite {
             blocks: self.blocks.snapshot(),
             timeline,
             hit_map,
+            response_position: self.timeline.response_position(),
             layout: self.layout.clone(),
             scroll_top: self.scroll_top,
             follow: self.follow,

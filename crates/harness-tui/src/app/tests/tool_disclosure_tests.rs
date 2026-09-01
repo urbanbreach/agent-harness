@@ -100,6 +100,75 @@ pub(super) fn transcript_enter_toggles_effective_failed_output_state() {
     assert!(tool_output_is_expanded(&app, "tc_enter_toggle"));
 }
 
+#[test]
+fn group_keyboard_and_mouse_toggle_the_same_disclosure_state() {
+    // arrange
+    let app = || {
+        let mut app = failed_tool_disclosure_app("req_shared_group", "tc_shared_first");
+        app.ingest_event(envelope(
+            4,
+            "req_shared_group",
+            EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                tool_call_id: "tc_shared_second".into(),
+                tool_id: "shell.run".to_string(),
+                args_summary: r#"{"cmd":"exit 2"}"#.to_string(),
+                args_digest: "digest-tc-shared-second-args".to_string(),
+                metadata: None,
+            }),
+        ));
+        app.ingest_event(envelope(
+            5,
+            "req_shared_group",
+            EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                tool_call_id: "tc_shared_second".into(),
+                status: ToolCallStatus::Failed,
+                output_summary: Some("exit code: 2\nstderr: second failed".to_string()),
+                output_digest: None,
+                output_json: None,
+                metadata: None,
+            }),
+        ));
+        app
+    };
+    let mut mouse_app = app();
+    let mut keyboard_app = app();
+    keyboard_app.focus = Focus::Details;
+
+    // act
+    let (column, row) = transcript_click_position(&mouse_app, "Ran 2 commands");
+    mouse_app.handle_mouse(
+        MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        },
+        TEST_FRAME_AREA,
+        None,
+        None,
+        None,
+    );
+    keyboard_app.handle_key(key(KeyCode::Enter));
+
+    // assert
+    assert_eq!(
+        mouse_app.transcript_view.expanded_tool_outputs,
+        keyboard_app.transcript_view.expanded_tool_outputs
+    );
+    assert_eq!(
+        mouse_app.transcript_view.collapsed_tool_outputs,
+        keyboard_app.transcript_view.collapsed_tool_outputs
+    );
+    assert!(mouse_app
+        .transcript_view
+        .collapsed_tool_outputs
+        .contains("tc_shared_first"));
+    assert!(mouse_app
+        .transcript_view
+        .collapsed_tool_outputs
+        .contains("tc_shared_second"));
+}
+
 fn tool_output_is_expanded(app: &AppState, tool_call_id: &str) -> bool {
     app.activities
         .iter()

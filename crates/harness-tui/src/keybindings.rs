@@ -41,8 +41,10 @@ pub enum Action {
     ToggleFollow,
     /// Submit the prompt
     SubmitPrompt,
-    /// Cancel the active turn and submit the current prompt immediately
+    /// Submit the current prompt while preserving the active turn
     InterjectPrompt,
+    /// Cancel the active turn and submit the current prompt immediately
+    CancelAndReplacePrompt,
     InsertNewline,
     ToggleMultiline,
     /// Clear the prompt
@@ -169,6 +171,7 @@ action_ids! {
     ToggleFollow => "toggle_follow",
     SubmitPrompt => "submit_prompt",
     InterjectPrompt => "interject_prompt",
+    CancelAndReplacePrompt => "cancel_and_replace_prompt",
     InsertNewline => "insert_newline",
     ToggleMultiline => "toggle_multiline",
     ClearPrompt => "clear_prompt",
@@ -602,6 +605,30 @@ impl KeyMap {
         keymap.bind(
             KeyBinding::new(KeyCode::Enter, KeyModifiers::ALT),
             Action::InsertNewline,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Enter, KeyModifiers::CONTROL | KeyModifiers::ALT),
+            Action::InterjectPrompt,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Enter, KeyModifiers::CONTROL | KeyModifiers::SHIFT),
+            Action::CancelAndReplacePrompt,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('m'), KeyModifiers::ALT),
+            Action::ToggleMultiline,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('s'), KeyModifiers::ALT),
+            Action::SubmitPrompt,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('i'), KeyModifiers::ALT),
+            Action::InterjectPrompt,
+        );
+        keymap.bind(
+            KeyBinding::new(KeyCode::Char('r'), KeyModifiers::ALT),
+            Action::CancelAndReplacePrompt,
         );
         keymap.bind(
             KeyBinding::new(KeyCode::Esc, KeyModifiers::NONE),

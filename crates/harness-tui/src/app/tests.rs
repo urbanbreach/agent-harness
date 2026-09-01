@@ -1105,6 +1105,7 @@ delegate_test!(status_dashboard_h_key_opens_help => secondary_surface_ownership_
 delegate_test!(status_dashboard_help_stays_open_on_down_key => secondary_surface_ownership_tests::status_dashboard_help_stays_open_on_down_key);
 delegate_test!(status_dashboard_renders_empty_sections_from_app_state => secondary_surface_ownership_tests::status_dashboard_renders_empty_sections_from_app_state);
 delegate_test!(status_dashboard_renders_populated_sections_from_app_state => secondary_surface_ownership_tests::status_dashboard_renders_populated_sections_from_app_state);
+delegate_test!(status_dashboard_captures_and_restores_detached_transcript_anchor => secondary_surface_ownership_tests::status_dashboard_captures_and_restores_detached_transcript_anchor);
 
 #[cfg(test)]
 #[path = "tests/render_purity_tests.rs"]
@@ -1330,6 +1331,10 @@ delegate_test!(queued_prompt_indicator_renders_when_count_positive => prompt_sta
 #[cfg(test)]
 #[path = "tests/composer_editing_tests.rs"]
 mod composer_editing_tests;
+
+#[cfg(test)]
+#[path = "tests/p0_04_composer_tests.rs"]
+mod p0_04_composer_tests;
 
 delegate_test!(move_word_left_skips_separators_then_word => composer_editing_tests::move_word_left_skips_separators_then_word);
 delegate_test!(move_word_right_skips_word_then_separators => composer_editing_tests::move_word_right_skips_word_then_separators);

@@ -64,6 +64,7 @@ use session_history::{
     render_session_history_overlay, render_session_rename_dialog, session_history_overlay_title,
 };
 use settings_editor::render_settings_editor_overlay;
+pub(crate) use status_dialog::render_status_dashboard_surface;
 use status_dialog::render_status_dialog_overlay;
 #[cfg(test)]
 pub(crate) use status_dialog::{

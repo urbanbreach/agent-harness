@@ -257,6 +257,7 @@ pub(crate) fn empty_view(
         blocks: Vec::new(),
         hit_map: TimelineHitMap::from_geometry(&timeline),
         timeline,
+        response_position: None,
         layout: None,
         scroll_top: 0.0,
         follow,

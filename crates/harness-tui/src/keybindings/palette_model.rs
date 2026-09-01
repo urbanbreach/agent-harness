@@ -378,7 +378,7 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         title: DynamicTitle::Static("Multiline Input"),
         description: "Toggle multiline input mode in the composer",
         suggested: SuggestedRule::Never,
-        dispatch: PaletteDispatch::Action(Action::InsertNewline),
+        dispatch: PaletteDispatch::Action(Action::ToggleMultiline),
     },
     // === Tools ===
     PaletteCommandEntry {

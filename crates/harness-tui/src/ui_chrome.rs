@@ -196,6 +196,14 @@ pub(super) fn render_footer(
     }
 
     let mut footer_hints = app.footer_hints_view_model();
+    let active_turn = footer_hints.hints.iter().any(|hint| {
+        hint.action == crate::keybindings::Action::SubmitPrompt && hint.label == ":queue"
+    }) || app.has_live_turn_activity()
+        || matches!(
+            app.runtime_state().kind,
+            crate::app::RuntimeStateKind::Sending | crate::app::RuntimeStateKind::Streaming
+        );
+    let multiline_active_turn = app.composer.composer_multiline_mode() && active_turn;
     if clear_prompt_confirmation_pending {
         footer_hints.hints = vec![crate::view_model::FooterHint {
             action: crate::keybindings::Action::DismissModal,
@@ -224,42 +232,60 @@ pub(super) fn render_footer(
         && !app.startup_shell_visible()
         && !app.composer.prompt_buffer.is_empty()
     {
-        let active_turn = app.has_live_turn_activity()
-            || matches!(
-                app.runtime_state().kind,
-                crate::app::RuntimeStateKind::Sending | crate::app::RuntimeStateKind::Streaming
-            );
-        footer_hints.hints = crate::composer_integration::compact_draft_hint_priority(active_turn)
-            .iter()
-            .copied()
-            .map(|action| crate::view_model::FooterHint {
-                action,
-                label: match action {
-                    crate::keybindings::Action::SubmitPrompt if active_turn => ":queue",
-                    crate::keybindings::Action::SubmitPrompt => ":send",
-                    crate::keybindings::Action::InsertNewline => ":newline",
-                    crate::keybindings::Action::VariantCycle => ":mode",
-                    crate::keybindings::Action::DismissModal => ":cancel",
-                    crate::keybindings::Action::Help => ":shortcuts",
-                    _ => "",
+        footer_hints.hints = if multiline_active_turn {
+            vec![
+                crate::view_model::FooterHint {
+                    action: crate::keybindings::Action::InsertNewline,
+                    label: ":newline",
                 },
-            })
-            .collect();
+                crate::view_model::FooterHint {
+                    action: crate::keybindings::Action::SubmitPrompt,
+                    label: ":send",
+                },
+                crate::view_model::FooterHint {
+                    action: crate::keybindings::Action::InterjectPrompt,
+                    label: ":interject",
+                },
+                crate::view_model::FooterHint {
+                    action: crate::keybindings::Action::CancelAndReplacePrompt,
+                    label: ":replace",
+                },
+            ]
+        } else {
+            crate::composer_integration::compact_draft_hint_priority(active_turn)
+                .iter()
+                .copied()
+                .map(|action| crate::view_model::FooterHint {
+                    action,
+                    label: match action {
+                        crate::keybindings::Action::SubmitPrompt if active_turn => ":queue",
+                        crate::keybindings::Action::SubmitPrompt => ":send",
+                        crate::keybindings::Action::InsertNewline => ":newline",
+                        crate::keybindings::Action::VariantCycle => ":mode",
+                        crate::keybindings::Action::DismissModal => ":cancel",
+                        crate::keybindings::Action::Help => ":shortcuts",
+                        _ => "",
+                    },
+                })
+                .collect()
+        };
     }
     let compact_draft = !app.composer.prompt_buffer.is_empty()
         && !matches!(
             plan.session_contract.footer_mode,
             SessionFooterMode::Standard
         );
-    match plan.session_contract.footer_mode {
-        SessionFooterMode::Standard => {}
-        SessionFooterMode::Reduced => {
-            footer_hints.hints = compact_footer_hints(&footer_hints.hints, 4);
-        }
-        SessionFooterMode::Minimal => {
-            footer_hints.hints =
-                compact_footer_hints(&footer_hints.hints, if compact_draft { 3 } else { 2 });
-            footer_hints.prefix = None;
+    if !multiline_active_turn {
+        match plan.session_contract.footer_mode {
+            SessionFooterMode::Standard => {}
+            SessionFooterMode::Reduced => {
+                footer_hints.hints = compact_footer_hints(&footer_hints.hints, 4);
+            }
+            SessionFooterMode::Minimal => {
+                footer_hints.hints =
+                    compact_footer_hints(&footer_hints.hints, if compact_draft { 3 } else { 2 });
+                footer_hints.prefix = None;
+            }
         }
     }
     let key_style = Style::default()
@@ -344,11 +370,27 @@ pub(super) fn render_footer(
 }
 
 fn composer_footer_binding(app: &AppState, action: crate::keybindings::Action) -> String {
-    if action == crate::keybindings::Action::InsertNewline {
+    if app.composer.composer_multiline_mode() && action == crate::keybindings::Action::InsertNewline
+    {
+        return "Enter".to_string();
+    }
+    let preferred = if app.composer.composer_multiline_mode() {
+        match action {
+            crate::keybindings::Action::SubmitPrompt => Some("Alt+s"),
+            crate::keybindings::Action::InterjectPrompt => Some("Alt+i"),
+            crate::keybindings::Action::CancelAndReplacePrompt => Some("Alt+r"),
+            _ => None,
+        }
+    } else if action == crate::keybindings::Action::InsertNewline {
+        Some("Alt+Enter")
+    } else {
+        None
+    };
+    if let Some(preferred) = preferred {
         app.keymap
             .get_binding_strs(action)
             .into_iter()
-            .find(|binding| binding == "Alt+Enter")
+            .find(|binding| binding == preferred)
             .unwrap_or_else(|| app.keymap.get_binding_str(action))
     } else {
         app.keymap.get_binding_str(action)
