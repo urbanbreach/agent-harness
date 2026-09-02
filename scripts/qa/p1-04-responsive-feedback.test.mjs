@@ -52,7 +52,8 @@ test("P1-04 contract drives the copied shipped binary through both production ca
     ]);
     const contract = scenarioContract(options, {});
 
-    assert.match(contract.command, /harness tui --mock --deterministic/);
+    assert.match(contract.command, /HARNESS_TUI_P1_04_SCENARIO=1/);
+    assert.match(contract.command, /--exact p1_04_pty_helper/);
     assert.equal(contract.capabilityVariant, variant.name);
     assert.deepEqual(contract.environment, variant.expectedEnvironment);
     assert.deepEqual(contract.classification, variant.expectedClassification);
