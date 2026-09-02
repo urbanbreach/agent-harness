@@ -258,7 +258,7 @@ fn render_browse_footer(frame: &mut Frame, app: &AppState, theme: &Theme, layout
     } else {
         "f filter"
     };
-    let primary = format!("↑/↓ nav  |  {filter}  |  e/Space/→ expand  |  ← collapse");
+    let primary = format!("↑/↓ nav · {filter} · e/Space/→ expand · ← collapse");
     let secondary = crate::ui::ui_overlays::HELP_CHROME.footer;
     if UnicodeWidthStr::width(primary.as_str()) <= usize::from(layout.primary_footer.width) {
         render_footer_line(frame, theme, layout.primary_footer, &primary);
@@ -268,23 +268,23 @@ fn render_browse_footer(frame: &mut Frame, app: &AppState, theme: &Theme, layout
             frame,
             theme,
             layout.primary_footer,
-            &format!("↑/↓ nav | {filter} | e/Space/→ expand"),
+            &format!("↑/↓ nav · {filter} · e/Space/→ expand"),
         );
         render_footer_line(
             frame,
             theme,
             layout.secondary_footer,
-            "← collapse | Enter details | / search | Esc close",
+            "← collapse · Enter details · / search · Esc close",
         );
     }
 }
 
 fn render_detail_footer(frame: &mut Frame, theme: &Theme, layout: HelpModalRects) {
-    let footer = "Esc back  |  ↑/↓ scroll  |  Ctrl+./X close";
+    let footer = "Esc back · ↑/↓ scroll · Ctrl+./X close";
     if UnicodeWidthStr::width(footer) <= usize::from(layout.primary_footer.width) {
         render_footer_line(frame, theme, layout.primary_footer, footer);
     } else {
-        render_footer_line(frame, theme, layout.primary_footer, "Esc back | ↑/↓ scroll");
+        render_footer_line(frame, theme, layout.primary_footer, "Esc back · ↑/↓ scroll");
         render_footer_line(frame, theme, layout.secondary_footer, "Ctrl+./X close");
     }
 }

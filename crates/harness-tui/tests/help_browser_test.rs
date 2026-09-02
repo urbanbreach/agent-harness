@@ -114,6 +114,8 @@ fn help_compact_footer_keeps_every_action_visible() {
     assert!(rendered.contains("← collapse"), "{rendered}");
     assert!(rendered.contains("Enter details"), "{rendered}");
     assert!(rendered.contains("Esc close"), "{rendered}");
+    assert!(rendered.contains(" · "), "{rendered}");
+    assert!(!rendered.contains(" | "), "{rendered}");
 }
 
 #[test]
@@ -132,8 +134,9 @@ fn help_compact_detail_footer_keeps_close_hint_visible() {
     let rendered = render_at(&app, 60, 17);
 
     // assert
-    assert!(rendered.contains("Esc back | ↑/↓ scroll"), "{rendered}");
+    assert!(rendered.contains("Esc back · ↑/↓ scroll"), "{rendered}");
     assert!(rendered.contains("Ctrl+./X close"), "{rendered}");
+    assert!(!rendered.contains(" | "), "{rendered}");
 }
 
 #[test]
