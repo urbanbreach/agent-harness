@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { execFileSync } from "node:child_process";
-import { access, chmod, copyFile, mkdtemp } from "node:fs/promises";
+import { access, chmod, copyFile, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -111,6 +111,8 @@ async function main() {
       cwd: fixture.workspace,
       sessionDir: fixture.sessionDir,
       tempRoot,
+      environment: contract.environment,
+      disableAnimations: contract.classification?.motion !== "full",
       onOutput: (bytes) => terminal.write(bytes),
     });
     cleanupOwner.ownPty(pty);
@@ -236,16 +238,37 @@ export async function executeActions(settings) {
       else if (action.kind === "mouseUp") {
         result = await settings.terminal.mouseCell("up", action.column, action.row);
       }
+      else if (action.kind === "resize") {
+        const pty = await settings.pty.resize(action.cols, action.rows);
+        const xterm = await settings.terminal.resize(action.cols, action.rows);
+        result = { pty, xterm };
+      }
       else if (action.kind === "capture") {
         await settings.pty.flush();
         captureIndex += 1;
-        const capturePath = join(
-          settings.evidenceDir,
-          `capture-${String(captureIndex).padStart(3, "0")}.png`,
-        );
+        const suffix = action.state ? `-${captureState(action.state)}` : "";
+        const stem = `capture-${String(captureIndex).padStart(3, "0")}${suffix}`;
+        const capturePath = join(settings.evidenceDir, `${stem}.png`);
+        const bufferPath = join(settings.evidenceDir, `${stem}.buffer.json`);
+        const textPath = join(settings.evidenceDir, `${stem}.txt`);
         capture = await settings.terminal.capture(capturePath);
-        captures.push({ index: captureIndex, path: capturePath });
-        result = { screenshot: `capture-${String(captureIndex).padStart(3, "0")}.png` };
+        await Promise.all([
+          writeFile(bufferPath, `${JSON.stringify(capture, null, 2)}\n`, { mode: 0o600 }),
+          writeFile(textPath, `${capture.text.replace(/[ ]+$/gm, "")}\n`, { mode: 0o600 }),
+        ]);
+        captures.push({
+          index: captureIndex,
+          state: action.state ?? null,
+          path: capturePath,
+          bufferPath,
+          textPath,
+        });
+        result = {
+          screenshot: `${stem}.png`,
+          buffer: `${stem}.buffer.json`,
+          text: `${stem}.txt`,
+          state: action.state ?? null,
+        };
       } else throw new Error(`unsupported action kind: ${action.kind}`);
       const after = capture && action.kind === "capture" ? capture : await settings.terminal.snapshot();
       const interaction = {
@@ -301,6 +324,13 @@ export async function persistTopLevelFailureEvidence(argv, error, alreadyWritten
     scenario: argumentValue(argv, "--scenario"),
     error,
   });
+}
+
+function captureState(value) {
+  if (typeof value !== "string" || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value)) {
+    throw new Error(`invalid capture state: ${value}`);
+  }
+  return value;
 }
 
 function argumentValue(argv, option) {

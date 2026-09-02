@@ -152,6 +152,12 @@ export async function mountTerminal(page, settings) {
           cellWidthTimesCols: dimensions.css.cell.width * terminal.cols,
         };
       },
+      resize: async (cols, rows) => {
+        const before = { cols: terminal.cols, rows: terminal.rows };
+        terminal.resize(cols, rows);
+        await window.qaTerminal.waitForVisualSync();
+        return { before, after: { cols: terminal.cols, rows: terminal.rows } };
+      },
       focus: () => terminal.focus(),
     };
     terminal.focus();
