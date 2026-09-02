@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { execFileSync } from "node:child_process";
 import { access, chmod, copyFile, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -7,7 +8,7 @@ import { openBrowserTerminal } from "./lib/browser-terminal.mjs";
 import { helpText, parseArgs, scenarioContract } from "./lib/config.mjs";
 import { prepareEvidence, writeFailureEvidence, writePassEvidence } from "./lib/evidence.mjs";
 import {
-  assertStableExecutable,
+  assertBuiltExecutable,
   currentTree,
   fileReceipt,
   sha256,
@@ -63,16 +64,27 @@ async function main() {
   let runError;
   let exitResult;
   let binaryProvenance = null;
+  let sourceBinary = null;
+  let sourceBefore = null;
+  let testedBinary = null;
+  let testedBefore = null;
 
   try {
     fixture = await prepareHarnessWorkspace(tempRoot);
-    let testedBinary = null;
-    let binaryBefore = null;
     if (contract.command.startsWith("harness ")) {
+      if (sourceTree.dirty) {
+        throw new Error("refusing shipped-binary QA from a dirty source tree");
+      }
+      execFileSync("cargo", ["build", "-p", "harness"], {
+        cwd: repoRoot,
+        stdio: "inherit",
+      });
+      sourceBinary = resolve(repoRoot, "target/debug/harness");
+      sourceBefore = await fileReceipt(sourceBinary, repoRoot);
       testedBinary = join(tempRoot, "harness-under-test");
-      await copyFile(resolve(repoRoot, "target/debug/harness"), testedBinary);
+      await copyFile(sourceBinary, testedBinary);
       await chmod(testedBinary, 0o700);
-      binaryBefore = await fileReceipt(testedBinary, tempRoot);
+      testedBefore = await fileReceipt(testedBinary, tempRoot);
     }
     command = await resolveCommand(contract.command, repoRoot, testedBinary);
     terminal = await openBrowserTerminal({
@@ -116,15 +128,14 @@ async function main() {
       exitResult = await pty.waitForExit(options.timeoutMs);
       if (exitResult.code !== 0) throw new Error(`Harness PTY exited with code ${exitResult.code}`);
     }
-    if (testedBinary && binaryBefore) {
-      binaryProvenance = {
-        source: "target/debug/harness",
-        testedCopy: binaryBefore.path,
-        ...assertStableExecutable(
-          binaryBefore,
-          await fileReceipt(testedBinary, tempRoot),
-        ),
-      };
+    if (sourceBinary && sourceBefore && testedBinary && testedBefore) {
+      binaryProvenance = assertBuiltExecutable({
+        sourceTree,
+        sourceBefore,
+        sourceAfter: await fileReceipt(sourceBinary, repoRoot),
+        testedBefore,
+        testedAfter: await fileReceipt(testedBinary, tempRoot),
+      });
     }
     browserMetadata = await terminal.metadata();
   } catch (error) {
