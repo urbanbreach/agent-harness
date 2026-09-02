@@ -716,7 +716,8 @@ fn monitor_still_running_row(
     theme: &Theme,
     surface: Color,
 ) -> Vec<Span<'static>> {
-    let frame = super::ui_transcript_style::monitor_pulse_frame(animation_phase);
+    let frame =
+        super::ui_transcript_style::glyph_routed_monitor_pulse_frame(theme, animation_phase, true);
     let noun = if count == 1 { "task" } else { "tasks" };
     vec![
         Span::styled(
@@ -739,7 +740,11 @@ fn starting_session_seed_row(
         Span::styled(
             format!(
                 "{} ",
-                super::ui_transcript_style::transcript_streaming_spinner_frame(animation_phase)
+                super::ui_transcript_style::glyph_routed_streaming_spinner_frame(
+                    theme,
+                    animation_phase,
+                    true,
+                )
             ),
             Style::default().fg(theme.text.accent).bg(surface),
         ),

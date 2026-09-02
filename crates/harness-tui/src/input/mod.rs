@@ -20,6 +20,7 @@ pub use normalizer::{InputNormalizer, NormalizedInput, NormalizerError};
 pub use paste::{
     NormalizedPaste, PasteDetector, PasteKind, PasteOutput, PASTE_BURST_WINDOW, PASTE_START_WINDOW,
 };
+pub(crate) use resize::RuntimeInputIngress;
 pub use resize::{ResizeDebouncer, RESIZE_DEBOUNCE};
 pub use scroll_normalizer::{
     NormalizedScroll, ScrollConfigOverrides, ScrollInputMode, ScrollNormalizer,

@@ -89,6 +89,7 @@ pub(super) fn build_transcript_tool_call_section(
     let mut header_path_metadata = None;
 
     let animation_phase = app.transcript_animation_phase();
+    let theme = app.theme();
 
     let (mut title, icon, visual_style, uses_generic_output_visibility) = match display_tool_id {
         "fs.read" | "read" => {
@@ -107,9 +108,11 @@ pub(super) fn build_transcript_tool_call_section(
                 ),
             };
             let icon = match tool_call.status {
-                ToolCallDisplayStatus::Running => {
-                    Some(transcript_streaming_spinner_frame(animation_phase))
-                }
+                ToolCallDisplayStatus::Running => Some(glyph_routed_streaming_spinner_frame(
+                    theme,
+                    animation_phase,
+                    app.transcript_motion_enabled(),
+                )),
                 ToolCallDisplayStatus::PendingPermission | ToolCallDisplayStatus::Queued
                     if path.is_none() =>
                 {
@@ -239,7 +242,7 @@ pub(super) fn build_transcript_tool_call_section(
             false,
         ),
         "agent.spawn" | "task" => {
-            build_agent_spawn_tool_row(tool_call, task_row, &mut detail_blocks, animation_phase)
+            build_agent_spawn_tool_row(tool_call, task_row, &mut detail_blocks, app)
         }
         "background_output" => (
             background_output_tool_title(tool_call),
@@ -468,9 +471,9 @@ pub(super) fn build_transcript_tool_call_section(
                     search_result_count_suffix(tool_call, display_tool_id)
                 ),
                 Some(if display_tool_id == "search.web" {
-                    "◈"
+                    theme.live_shell.transcript_glyphs.group_marker
                 } else {
-                    "◇"
+                    theme.live_shell.transcript_glyphs.thought_marker
                 }),
                 TranscriptToolCallVisualStyle::Inline,
                 true,
@@ -949,7 +952,7 @@ pub(super) fn build_agent_spawn_tool_row(
     tool_call: &crate::app::ToolCallEntry,
     task_row: Option<&crate::app::OrchestrationTaskRow>,
     detail_blocks: &mut Vec<TranscriptToolCallDetailBlock>,
-    animation_phase: usize,
+    app: &AppState,
 ) -> (
     String,
     Option<&'static str>,
@@ -1001,15 +1004,22 @@ pub(super) fn build_agent_spawn_tool_row(
             }
         }
     }
+    let theme = app.theme();
     let icon = match tool_call.status {
-        ToolCallDisplayStatus::Failed => Some("│"),
-        ToolCallDisplayStatus::Succeeded => Some("✓"),
-        ToolCallDisplayStatus::Running
-        | ToolCallDisplayStatus::PendingPermission
-        | ToolCallDisplayStatus::Queued => Some("│"),
+        ToolCallDisplayStatus::Failed => Some(theme.live_shell.glyphs.failed),
+        ToolCallDisplayStatus::Succeeded => Some(theme.live_shell.transcript_glyphs.success_marker),
+        ToolCallDisplayStatus::Running => Some(theme.live_shell.glyphs.running),
+        ToolCallDisplayStatus::PendingPermission => {
+            Some(theme.live_shell.glyphs.pending_permission)
+        }
+        ToolCallDisplayStatus::Queued => Some(theme.live_shell.glyphs.queued),
     };
     let icon = if active_task_row {
-        Some(transcript_streaming_spinner_frame(animation_phase))
+        Some(glyph_routed_streaming_spinner_frame(
+            theme,
+            app.transcript_animation_phase(),
+            app.transcript_motion_enabled(),
+        ))
     } else {
         icon
     };
@@ -1278,6 +1288,27 @@ mod presentation_section_tests {
             false,
             None,
         )
+    }
+
+    #[test]
+    fn search_markers_use_ascii_catalog_when_requested() {
+        // Given: an ASCII-mode app and search rows that normally use Unicode diamonds.
+        let mut app = AppState::default();
+        app.set_glyph_mode(crate::theme::GlyphMode::Ascii);
+        let web = transcript_section_model_test_tool_call("web", "search.web");
+        let code = transcript_section_model_test_tool_call("code", "search.code");
+
+        // When: the search markers are projected.
+        let markers = [&web, &code].map(|tool_call| {
+            build_transcript_tool_call_section(
+                tool_call, &app, None, false, false, false, false, None,
+            )
+            .header
+            .icon
+        });
+
+        // Then: both use the catalog's ASCII-safe marker.
+        assert_eq!(markers, [Some("*"), Some("*")]);
     }
 
     #[test]

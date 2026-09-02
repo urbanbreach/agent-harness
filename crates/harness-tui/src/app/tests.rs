@@ -173,6 +173,8 @@ delegate_test!(legacy_glyph_mode_reaches_question_permission_surfaces => theme_r
 delegate_test!(arbitrary_viewport_composer_mouse_uses_rendered_geometry => theme_runtime_tests::arbitrary_viewport_composer_mouse_uses_rendered_geometry);
 delegate_test!(thinking_phase_clock_advances_between_provider_deltas => live_turn_status_tests::thinking_phase_clock_advances_between_provider_deltas);
 delegate_test!(responding_phase_clock_advances_between_provider_deltas => live_turn_status_tests::responding_phase_clock_advances_between_provider_deltas);
+delegate_test!(live_status_spinner_uses_ascii_catalog_when_requested => live_turn_status_tests::live_status_spinner_uses_ascii_catalog_when_requested);
+delegate_test!(reduced_motion_keeps_live_status_spinner_static => live_turn_status_tests::reduced_motion_keeps_live_status_spinner_static);
 delegate_test!(thinking_spinner_advances_on_animation_tick => live_turn_status_tests::thinking_spinner_advances_on_animation_tick);
 delegate_test!(unrelated_request_delta_does_not_reset_active_phase_clock => live_turn_status_tests::unrelated_request_delta_does_not_reset_active_phase_clock);
 delegate_test!(local_fresh_turn_resets_total_clock_before_request_id_arrives => live_turn_status_tests::local_fresh_turn_resets_total_clock_before_request_id_arrives);
@@ -1096,6 +1098,17 @@ delegate_test!(submitted_turn_omits_named_profile_badge => model_context_tests::
 mod interaction_tests;
 
 #[cfg(test)]
+#[path = "tests/resize_performance_tests.rs"]
+mod resize_performance_tests;
+
+#[test]
+#[ignore = "P1-04 Linux x64 release performance signoff"]
+fn resize_to_render_p95_stays_within_one_frame_and_preserves_detached_anchor(
+) -> Result<(), Box<dyn std::error::Error>> {
+    resize_performance_tests::resize_to_render_p95_stays_within_one_frame_and_preserves_detached_anchor()
+}
+
+#[cfg(test)]
 #[path = "tests/secondary_surface_ownership_tests.rs"]
 mod secondary_surface_ownership_tests;
 
@@ -1156,6 +1169,7 @@ delegate_test!(resize_invalidates_geometry_dependent_pointer_state => interactio
 delegate_test!(pointer_drag_suppresses_stale_hover_feedback => interaction_tests::pointer_drag_suppresses_stale_hover_feedback);
 
 delegate_test!(transcript_navigation_keys_match_scroll_expectations => interaction_tests::transcript_navigation_keys_match_scroll_expectations);
+delegate_test!(debounced_resize_preserves_detached_wide_glyph_display_column_anchor => interaction_tests::debounced_resize_preserves_detached_wide_glyph_display_column_anchor);
 delegate_test!(detached_page_flip_reconciles_when_resize_reaches_bottom => interaction_tests::detached_page_flip_reconciles_when_resize_reaches_bottom);
 delegate_test!(detached_page_flip_survives_resize_with_remaining_overflow => interaction_tests::detached_page_flip_survives_resize_with_remaining_overflow);
 delegate_test!(active_stream_more_below_click_returns_to_live => interaction_tests::active_stream_more_below_click_returns_to_live);

@@ -83,7 +83,7 @@ use super::ui_transcript_scrollbar::{
     current_transcript_scroll_top, render_transcript_more_below_affordance,
     render_transcript_scrollbar, transcript_more_below_rect, transcript_scroll_offset,
     transcript_scrollbar_geometry, transcript_scrollbar_needed, transcript_viewport_layout,
-    TranscriptScrollbarHit,
+    TranscriptScrollbarHit, TranscriptScrollbarRenderSpec,
 };
 use super::ui_transcript_selection::{
     blank_selection_row, compact_selection_row, lifecycle_selection_snapshot,
@@ -95,10 +95,9 @@ use super::ui_transcript_selection::{
 };
 use super::ui_transcript_style::{
     assistant_footer_label, assistant_primary_label_color, assistant_primary_rail_color,
-    blend_color, selected_foreground_for_badge, thinking_header_color,
-    transcript_emphasized_surface, transcript_nested_rail_color,
-    transcript_running_tool_marker_color, transcript_streaming_spinner_frame,
-    transcript_streaming_spinner_frame_with_motion,
+    blend_color, glyph_routed_streaming_spinner_frame, selected_foreground_for_badge,
+    thinking_header_color, transcript_emphasized_surface, transcript_nested_rail_color,
+    transcript_running_tool_marker_color,
 };
 use super::ui_transcript_surface::{
     append_nested_surface_row, append_prebuilt_nested_surface_lines, append_prebuilt_surface_lines,
@@ -482,12 +481,15 @@ fn render_measured_transcript_pane(
                 if app.active_permission_view().is_some() {
                     render_transcript_scrollbar(
                         frame,
-                        viewport,
-                        0,
-                        0,
                         theme,
-                        empty_surface,
-                        app.transcript_scrollbar_dragging(),
+                        TranscriptScrollbarRenderSpec {
+                            viewport,
+                            scroll_top: 0,
+                            max_scroll: 0,
+                            base_surface: empty_surface,
+                            following: app.transcript_following(),
+                            drag_active: app.transcript_scrollbar_dragging(),
+                        },
                     );
                     return;
                 }
@@ -505,12 +507,15 @@ fn render_measured_transcript_pane(
                 }
                 render_transcript_scrollbar(
                     frame,
-                    viewport,
-                    0,
-                    0,
                     theme,
-                    empty_surface,
-                    app.transcript_scrollbar_dragging(),
+                    TranscriptScrollbarRenderSpec {
+                        viewport,
+                        scroll_top: 0,
+                        max_scroll: 0,
+                        base_surface: empty_surface,
+                        following: app.transcript_following(),
+                        drag_active: app.transcript_scrollbar_dragging(),
+                    },
                 );
                 return;
             }
@@ -568,12 +573,15 @@ fn render_measured_transcript_pane(
             render_response_position_affordance(frame, surface_area, app);
             render_transcript_scrollbar(
                 frame,
-                viewport,
-                transcript_scroll,
-                max_scroll,
                 theme,
-                empty_surface,
-                app.transcript_scrollbar_dragging(),
+                TranscriptScrollbarRenderSpec {
+                    viewport,
+                    scroll_top: transcript_scroll,
+                    max_scroll,
+                    base_surface: empty_surface,
+                    following: app.transcript_following(),
+                    drag_active: app.transcript_scrollbar_dragging(),
+                },
             );
             render_transcript_more_below_affordance(
                 frame,
@@ -851,17 +859,16 @@ fn register_transcript_hyperlinks(
     viewport: Rect,
     scroll_top: usize,
 ) {
-    let (rows, _, _) = transcript_selection_rows(layout, usize::from(viewport.width));
     let viewport_rows = transcript_viewport_rows(layout, usize::from(viewport.height), scroll_top);
     let mut links = Vec::new();
     for local_row in 0..usize::from(viewport.height) {
         let Some(absolute_row) = viewport_rows.absolute_row(local_row) else {
             continue;
         };
-        let Some(row) = rows.get(absolute_row) else {
+        let Some(row) = transcript_selection_row_at(layout, absolute_row) else {
             continue;
         };
-        for link in &row.links {
+        for link in row.links {
             let Ok(start_column) = u16::try_from(link.start_cell) else {
                 continue;
             };
@@ -874,11 +881,33 @@ fn register_transcript_hyperlinks(
                     .saturating_add(u16::try_from(local_row).unwrap_or(u16::MAX)),
                 start_column: viewport.x.saturating_add(start_column),
                 end_column: viewport.x.saturating_add(end_column).min(viewport.right()),
-                destination: link.destination.clone(),
+                destination: link.destination,
             });
         }
     }
     crate::terminal::set_frame_hyperlinks(links);
+}
+
+fn transcript_selection_row_at(
+    layout: &MeasuredTranscriptLayout,
+    absolute_row: usize,
+) -> Option<SelectionRow> {
+    let section_index = layout
+        .sections
+        .partition_point(|section| section.top_row <= absolute_row)
+        .checked_sub(1)?;
+    let section = layout.sections.get(section_index)?;
+    let section_top = section.top_row.saturating_add(section.leading_gap_height);
+    let content_row = absolute_row.checked_sub(section_top)?;
+    let surface = section.surfaces.iter().find(|surface| {
+        content_row >= surface.top_offset
+            && content_row < surface.top_offset.saturating_add(surface.height)
+    })?;
+    let row = surface
+        .selection_rows
+        .as_ref()?
+        .get(content_row.saturating_sub(surface.top_offset))?;
+    Some(compact_selection_row(row, absolute_row))
 }
 
 fn transcript_selection_rows(

@@ -67,16 +67,21 @@ pub(crate) const fn should_apply_live_update(
 mod tests {
     use std::collections::VecDeque;
     use std::io::Write;
-    use std::time::Instant;
+    use std::time::{Duration, Instant};
 
     use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 
     use super::InputPresentation;
     use crate::event::TuiEvent;
+    use crate::input::{RuntimeInputIngress, TerminalEnvelope, TerminalSequence};
     use crate::scheduling::{
         FrameNow, MotionPlan, RuntimeArbiter, RuntimeDecision, RuntimePacer, RuntimeReady,
     };
     use crate::terminal::{FrameKind, FrameOutput, FrameSubmission, Presenter};
+
+    fn envelope(sequence: u64, event: TuiEvent) -> TerminalEnvelope {
+        TerminalEnvelope::new(TerminalSequence::new(sequence), Instant::now(), event)
+    }
 
     fn click(kind: MouseEventKind) -> TuiEvent {
         TuiEvent::Mouse(MouseEvent {
@@ -85,6 +90,67 @@ mod tests {
             row: 8,
             modifiers: KeyModifiers::NONE,
         })
+    }
+
+    #[test]
+    fn resize_burst_emits_only_latest_dimensions_after_quiet_boundary() {
+        // Given: three production resize events inside one 16 ms burst.
+        let mut ingress = RuntimeInputIngress::default();
+        assert!(ingress
+            .ingest_at(Duration::ZERO, envelope(1, TuiEvent::Resize(80, 24)))
+            .is_none());
+        assert!(ingress
+            .ingest_at(
+                Duration::from_millis(5),
+                envelope(2, TuiEvent::Resize(100, 30)),
+            )
+            .is_none());
+        assert!(ingress
+            .ingest_at(
+                Duration::from_millis(10),
+                envelope(3, TuiEvent::Resize(120, 40)),
+            )
+            .is_none());
+
+        // When: the explicit runtime clock reaches the final event's quiet boundary.
+        let before = ingress.flush_due(Duration::from_millis(25));
+        let due = ingress.flush_due(Duration::from_millis(26));
+
+        // Then: no early resize escapes and only the latest dimensions become ready.
+        assert!(before.is_none());
+        assert!(matches!(
+            due.map(|envelope| envelope.event),
+            Some(TuiEvent::Resize(120, 40))
+        ));
+    }
+
+    #[test]
+    fn non_resize_input_bypasses_pending_resize_quiet_boundary() {
+        // Given: a resize waiting for its 16 ms quiet boundary.
+        let mut ingress = RuntimeInputIngress::default();
+        assert!(ingress
+            .ingest_at(Duration::ZERO, envelope(1, TuiEvent::Resize(80, 24)))
+            .is_none());
+        let key = crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::Char('x'),
+            KeyModifiers::NONE,
+        );
+
+        // When: ordinary input arrives one millisecond later.
+        let ready = ingress.ingest_at(Duration::from_millis(1), envelope(2, TuiEvent::Key(key)));
+
+        // Then: the key is immediate while the resize remains pending.
+        assert!(matches!(
+            ready.map(|envelope| envelope.event),
+            Some(TuiEvent::Key(ready_key)) if ready_key == key
+        ));
+        assert!(ingress.flush_due(Duration::from_millis(15)).is_none());
+        assert!(matches!(
+            ingress
+                .flush_due(Duration::from_millis(16))
+                .map(|envelope| envelope.event),
+            Some(TuiEvent::Resize(80, 24))
+        ));
     }
 
     #[test]
@@ -162,7 +228,6 @@ mod tests {
 
     #[test]
     fn coalesced_terminal_resize_is_ready_without_a_second_flush_deadline() {
-        // arrange
         // Given: TerminalQueue already reduced a resize burst to its newest dimensions.
         let now = Instant::now();
         let mut presenter = Presenter::new();
@@ -173,9 +238,7 @@ mod tests {
         // When: the visible resize reaches the production presentation boundary.
         InputPresentation::for_event(&resize).request(true, &mut presenter, &mut pacer, now);
 
-        // act
         // Then: it can render immediately instead of paying another 16 ms coalescing deadline.
-        // assert
         assert!(presenter.should_present(true));
         assert_eq!(pacer.next_wait_ms(FrameNow::default()), None);
         assert!(!pacer.needs_poll(FrameNow::default(), MotionPlan::none()));

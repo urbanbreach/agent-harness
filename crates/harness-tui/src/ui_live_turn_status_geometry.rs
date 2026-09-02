@@ -2,7 +2,9 @@ use ratatui::layout::Rect;
 
 use crate::app::{ActivityStatus, AppState};
 
-use super::super::{ui_chrome::display_width, ui_transcript_style::monitor_pulse_frame};
+use super::super::{
+    ui_chrome::display_width, ui_transcript_style::glyph_routed_monitor_pulse_frame,
+};
 use super::status_model::format_still_running;
 
 pub(super) const STOP_LABEL: &str = "[stop]";
@@ -24,8 +26,12 @@ pub(super) fn live_turn_control_visibility(
     if live_turn_is_parked(app) {
         return LiveTurnControlVisibility::default();
     }
-    let spinner_width =
-        display_width(monitor_pulse_frame(app.transcript_animation_phase())).saturating_add(1);
+    let spinner_width = display_width(glyph_routed_monitor_pulse_frame(
+        app.theme(),
+        app.transcript_animation_phase(),
+        app.transcript_motion_enabled(),
+    ))
+    .saturating_add(1);
     let stop = app.live_turn_stop_available()
         && spinner_width
             .saturating_add(MIN_STATUS_LABEL_WIDTH)
@@ -123,14 +129,18 @@ pub(crate) fn live_turn_watching_rect(app: &AppState, frame_area: Rect) -> Optio
     let area = crate::layout::FrameLayoutPlan::for_app(app, frame_area).status?;
     let area = crate::layout::live_turn_status_content_area(area, app.theme());
     let suffix = parked.then(|| parked_suffix(app));
-    let cue_width = display_width(monitor_pulse_frame(app.transcript_animation_phase()))
-        .saturating_add(1)
-        .saturating_add(display_width(&format_still_running(watchers)))
-        .saturating_add(
-            suffix
-                .as_deref()
-                .map_or(0, |value| display_width(value).saturating_add(1)),
-        );
+    let cue_width = display_width(glyph_routed_monitor_pulse_frame(
+        app.theme(),
+        app.transcript_animation_phase(),
+        app.transcript_motion_enabled(),
+    ))
+    .saturating_add(1)
+    .saturating_add(display_width(&format_still_running(watchers)))
+    .saturating_add(
+        suffix
+            .as_deref()
+            .map_or(0, |value| display_width(value).saturating_add(1)),
+    );
     Some(Rect::new(
         area.x,
         area.y,
