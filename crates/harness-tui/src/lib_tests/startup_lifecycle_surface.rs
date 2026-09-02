@@ -14,6 +14,7 @@ pub(super) fn startup_surface_renders_primary_actions() {
     app.set_launch_metadata(
         app::LaunchMetadata::from_model_ref("worker", "mock:model-1").with_mode_label("Demo"),
     );
+    settle_startup_reveal(&mut app);
 
     let rendered = render_live_lines(&app, 100, 24);
     assert_eq!(app.focus, app::Focus::Prompt);
@@ -46,6 +47,7 @@ pub(super) fn startup_surface_projects_clipboard_capability() {
         app::LaunchMetadata::from_model_ref("worker", "mock:model-1").with_mode_label("Demo"),
     );
     crate::runtime::apply_startup_capability_notice(&mut app, true);
+    settle_startup_reveal(&mut app);
 
     for (width, height) in [(80, 24), (100, 30), (120, 40)] {
         let buffer = render_live_cells(&app, width, height);
@@ -85,7 +87,7 @@ pub(super) fn startup_surface_projects_clipboard_capability() {
         loading_rows
             .iter()
             .position(|row| row.iter().any(|cell| cell.symbol() == "╭")),
-        Some(8)
+        Some(7)
     );
     let loading_text = loading
         .content
@@ -110,7 +112,7 @@ pub(super) fn startup_surface_projects_clipboard_capability() {
         ready_rows
             .iter()
             .position(|row| row.iter().any(|cell| cell.symbol() == "╭")),
-        Some(8)
+        Some(7)
     );
     assert!(loading
         .content
@@ -760,7 +762,8 @@ pub(super) fn new_session_resets_transcript_but_keeps_unsent_draft() {
 }
 
 pub(super) fn startup_first_run_shows_onboarding_hint() {
-    let app = app::AppState::new_startup(Vec::new(), None);
+    let mut app = app::AppState::new_startup(Vec::new(), None);
+    settle_startup_reveal(&mut app);
 
     assert!(app.is_first_run());
 
@@ -777,7 +780,7 @@ pub(super) fn startup_first_run_shows_onboarding_hint() {
 }
 
 pub(super) fn startup_returning_user_hides_onboarding_hint() {
-    let app = app::AppState::new_startup(
+    let mut app = app::AppState::new_startup(
         vec![startup_session_entry(
             "run_resume",
             "/tmp/sessions/run_resume",
@@ -786,6 +789,7 @@ pub(super) fn startup_returning_user_hides_onboarding_hint() {
         )],
         None,
     );
+    settle_startup_reveal(&mut app);
 
     assert!(!app.is_first_run());
 
@@ -807,7 +811,8 @@ pub(super) fn startup_returning_user_hides_onboarding_hint() {
 }
 
 pub(super) fn startup_hints_stay_compose_first() {
-    let app = app::AppState::new_startup(Vec::new(), None);
+    let mut app = app::AppState::new_startup(Vec::new(), None);
+    settle_startup_reveal(&mut app);
 
     let rendered = render_live_lines(&app, 100, 24);
     assert!(

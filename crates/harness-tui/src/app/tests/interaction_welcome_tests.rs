@@ -1,5 +1,11 @@
-pub(super) fn welcome_mouse_move_applies_hover_state_to_the_action_row() {
+fn startup_with_affordances_visible() -> AppState {
     let mut app = AppState::new_startup(Vec::new(), None);
+    app.advance_wall_clock_for_motion_evidence(Duration::from_millis(200));
+    app
+}
+
+pub(super) fn welcome_mouse_move_applies_hover_state_to_the_action_row() {
+    let mut app = startup_with_affordances_visible();
     let (column, row) = transcript_click_position(&app, "New worktree");
 
     let changed = app.handle_mouse(
@@ -26,7 +32,7 @@ pub(super) fn welcome_mouse_move_applies_hover_state_to_the_action_row() {
 }
 
 pub(super) fn welcome_mouse_move_away_clears_hover_state_and_row_surface() {
-    let mut app = AppState::new_startup(Vec::new(), None);
+    let mut app = startup_with_affordances_visible();
     let (column, row) = transcript_click_position(&app, "New worktree");
     app.handle_mouse(
         MouseEvent {
@@ -66,7 +72,7 @@ pub(super) fn welcome_mouse_move_away_clears_hover_state_and_row_surface() {
 
 pub(super) fn welcome_changelog_mouse_down_expands_the_startup_panel() {
     // arrange
-    let mut app = AppState::new_startup(Vec::new(), None);
+    let mut app = startup_with_affordances_visible();
     let (column, row) = transcript_click_position(&app, "Changelog");
 
     // act
@@ -154,7 +160,7 @@ pub(super) fn welcome_changelog_expanded_mouse_down_opens_release_notes_and_up_i
 
 pub(super) fn welcome_changelog_release_away_cancels_modal_activation() {
     // Given: Changelog is pressed at its collapsed-menu location.
-    let mut app = AppState::new_startup(Vec::new(), None);
+    let mut app = startup_with_affordances_visible();
     let frame_area = Rect::new(0, 0, 100, 30);
     let (column, row) = transcript_click_position_in_area(&app, frame_area, "Changelog");
     app.handle_mouse(
@@ -190,7 +196,7 @@ pub(super) fn welcome_changelog_release_away_cancels_modal_activation() {
 }
 
 pub(super) fn welcome_changelog_drag_cancels_modal_activation() {
-    let mut app = AppState::new_startup(Vec::new(), None);
+    let mut app = startup_with_affordances_visible();
     let frame_area = Rect::new(0, 0, 100, 30);
     let (column, row) = transcript_click_position_in_area(&app, frame_area, "Changelog");
     for event in [
@@ -240,7 +246,7 @@ pub(super) fn welcome_changelog_keyboard_activation_opens_modal_and_restores_foc
 
 pub(super) fn welcome_changelog_mouse_down_preserves_pointer_hover_for_inline_preview() {
     // Given: the pointer presses the collapsed Changelog action at the canonical viewport.
-    let mut app = AppState::new_startup(Vec::new(), None);
+    let mut app = startup_with_affordances_visible();
     let frame_area = Rect::new(0, 0, 100, 30);
     let (column, row) = transcript_click_position_in_area(&app, frame_area, "Changelog");
 
@@ -264,7 +270,7 @@ pub(super) fn welcome_changelog_mouse_down_preserves_pointer_hover_for_inline_pr
 
 pub(super) fn welcome_changelog_mouse_down_renders_a_bright_expanded_header() {
     // Given: Changelog was activated by a real pointer down/up at 100x30.
-    let mut app = AppState::new_startup(Vec::new(), None);
+    let mut app = startup_with_affordances_visible();
     let frame_area = Rect::new(0, 0, 100, 30);
     let (column, row) = transcript_click_position_in_area(&app, frame_area, "Changelog");
     app.handle_mouse(
@@ -291,7 +297,7 @@ pub(super) fn welcome_changelog_mouse_down_renders_a_bright_expanded_header() {
 
 pub(super) fn welcome_changelog_pointer_move_away_restores_the_dim_header() {
     // Given: a pointer click expanded Changelog and retained its hover state.
-    let mut app = AppState::new_startup(Vec::new(), None);
+    let mut app = startup_with_affordances_visible();
     let frame_area = Rect::new(0, 0, 100, 30);
     let (column, row) = transcript_click_position_in_area(&app, frame_area, "Changelog");
     app.handle_mouse(
@@ -343,7 +349,7 @@ pub(super) fn welcome_changelog_keyboard_activation_does_not_synthesize_pointer_
 
 pub(super) fn welcome_changelog_click_brightens_the_compact_section_header() {
     // Given: the compact 80x24 startup surface exposes the Changelog action.
-    let mut app = AppState::new_startup(Vec::new(), None);
+    let mut app = startup_with_affordances_visible();
     let frame_area = Rect::new(0, 0, 80, 24);
     let (column, row) = transcript_click_position_in_area(&app, frame_area, "Changelog");
 

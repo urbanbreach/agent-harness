@@ -1,6 +1,7 @@
 pub(super) fn trust_folder_prompt_preempts_lower_pointer_targets() {
     // Given: the startup action is covered by the trust-folder prompt.
     let mut app = AppState::new_startup(Vec::new(), None);
+    app.advance_wall_clock_for_motion_evidence(Duration::from_millis(200));
     let (column, row) = transcript_click_position(&app, "New worktree");
     app.trust_folder_prompt_visible = true;
 

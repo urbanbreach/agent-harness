@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use harness_tui::app::{AppState, LaunchMetadata};
+use harness_tui::app::{AppState, Focus, LaunchMetadata};
 use harness_tui::scheduling::{MotionCadence, MotionPlan};
 use harness_tui::theme::{ColorLevel, GlyphMode};
 use harness_tui::welcome_surface::WelcomeLayout;
@@ -181,6 +181,122 @@ fn startup_logo_stays_on_one_color_during_welcome_expansion() {
     // assert
     assert!(initial.contains(&colors[0]), "rest colors: {initial:?}");
     assert_eq!(colors.len(), 1, "startup identity colors: {colors:?}");
+}
+
+#[test]
+fn startup_welcome_reveals_mark_then_name_then_affordances_then_changelog() {
+    // arrange
+    // Given: a visible wide startup welcome at first paint.
+    let mut app = AppState::new_startup(Vec::new(), None);
+
+    // act + assert: Mark stage at first paint — logo only, no identity, no affordances.
+    let mark = startup_text(&app, 120, 32);
+    assert!(
+        mark.contains("██╗"),
+        "mark stage must paint the Harness mark\n{mark}"
+    );
+    assert!(
+        !mark.contains("Thanks for trying Harness"),
+        "mark stage must not paint welcome copy\n{mark}"
+    );
+    assert!(
+        !mark.contains("New worktree"),
+        "mark stage must not paint first-input affordances\n{mark}"
+    );
+
+    // Name stage — product identity and welcome copy join the mark.
+    app.advance_wall_clock_for_motion_evidence(Duration::from_millis(100));
+    let name = startup_text(&app, 120, 32);
+    assert!(
+        name.contains("Thanks for trying Harness"),
+        "name stage must paint welcome copy\n{name}"
+    );
+    assert!(
+        !name.contains("New worktree"),
+        "name stage must not paint first-input affordances\n{name}"
+    );
+
+    // Affordances stage — first-input affordances join the identity.
+    app.advance_wall_clock_for_motion_evidence(Duration::from_millis(100));
+    let affordances = startup_text(&app, 120, 32);
+    assert!(
+        affordances.contains("New worktree") && affordances.contains("Resume session"),
+        "affordance stage must paint first-input affordances\n{affordances}"
+    );
+    assert!(
+        !affordances.contains("Subagent spawning"),
+        "affordance stage must not paint the expanded changelog\n{affordances}"
+    );
+
+    // Complete stage — changelog expansion settles the welcome.
+    app.advance_wall_clock_for_motion_evidence(Duration::from_millis(100));
+    let complete = startup_text(&app, 120, 32);
+    assert!(
+        complete.contains("Changelog") && complete.contains("Subagent spawning"),
+        "complete stage must paint the expanded changelog\n{complete}"
+    );
+    assert!(
+        app.motion_plan_for_evidence().is_none(),
+        "settled reveal must not keep a decorative deadline armed"
+    );
+}
+
+#[test]
+fn reduced_motion_freezes_startup_reveal_on_the_final_frame() {
+    // arrange
+    // Given: reduced motion active before the first startup paint.
+    let mut app = AppState::new_startup(Vec::new(), None);
+    app.set_reduced_motion_for_evidence(true);
+
+    // act
+    let frozen = startup_text(&app, 120, 32);
+
+    // assert
+    assert!(
+        frozen.contains("██╗"),
+        "reduced motion must still paint the Harness mark\n{frozen}"
+    );
+    assert!(
+        frozen.contains("Thanks for trying Harness") || frozen.contains("Changelog"),
+        "reduced motion must freeze on the final reveal frame\n{frozen}"
+    );
+    assert!(
+        frozen.contains("New worktree"),
+        "reduced motion must show first-input affordances immediately\n{frozen}"
+    );
+    assert!(
+        frozen.contains("Changelog") && frozen.contains("Subagent spawning"),
+        "reduced motion must freeze on the expanded final frame\n{frozen}"
+    );
+    assert!(
+        app.motion_plan_for_evidence().is_none(),
+        "reduced motion must not arm a reveal deadline"
+    );
+}
+
+#[test]
+fn startup_input_is_never_blocked_by_the_reveal() {
+    // arrange
+    // Given: a welcome still in its Mark reveal stage.
+    let mut app = AppState::new_startup(Vec::new(), None);
+    assert_eq!(app.focus, Focus::Prompt);
+
+    // act
+    app.handle_key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE));
+    let rendered = startup_text(&app, 120, 32);
+
+    // assert
+    assert_eq!(app.composer.prompt_buffer, "x");
+    assert_eq!(app.composer.prompt_cursor, 1);
+    assert_eq!(app.focus, Focus::Prompt);
+    assert!(
+        rendered.contains('x'),
+        "typing during the reveal must reach the composer\n{rendered}"
+    );
+    assert!(
+        !rendered.contains("New worktree"),
+        "typing during the reveal must dismiss the welcome affordances\n{rendered}"
+    );
 }
 
 #[test]

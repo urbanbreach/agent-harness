@@ -195,6 +195,7 @@ pub use self::lifecycle::{
 pub(crate) use self::modal_interaction::{
     ModalAction, ModalInteractionState, ModalSurfaceKey, ModalTarget, ModalViewKey,
 };
+pub(crate) use self::motion::StartupReveal;
 use self::new_worktree_dialog::NewWorktreeDialogState;
 use self::permission_prompt::PermissionPromptState;
 use self::permissions::{

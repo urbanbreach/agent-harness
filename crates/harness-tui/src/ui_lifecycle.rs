@@ -1,6 +1,7 @@
 // allow: SIZE_OK — TUI rendering (indivisible view model)
 use super::*;
 
+use crate::app::StartupReveal;
 use crate::welcome_surface::{WelcomeFocus, WelcomeLayout};
 use ratatui::widgets::{BorderType, Clear};
 use unicode_width::UnicodeWidthStr;
@@ -521,7 +522,8 @@ fn welcome_inner_lines(
     let logo =
         crate::startup_logo::full_logo(theme.glyph_mode() == crate::theme::GlyphMode::Preferred);
     let logo_width = logo.map_or(0, crate::startup_logo::Logo::width);
-    let expanded = app.startup_welcome_expanded();
+    let reveal = app.startup_reveal();
+    let expanded = reveal == StartupReveal::Complete;
     let line_count = logo.map_or(7, crate::startup_logo::Logo::height);
     for idx in 0..line_count {
         let mut spans = logo
@@ -533,7 +535,7 @@ fn welcome_inner_lines(
             span.style = span.style.bg(surface);
         }
         match idx {
-            0 if inline_copy => {
+            0 if inline_copy && reveal >= StartupReveal::Identity => {
                 let title_text = format!("   {:<10}  ", identity.title);
                 let version_text = welcome_text_after_logo(
                     &format!("{title_text}{}", identity.version),
@@ -552,14 +554,16 @@ fn welcome_inner_lines(
                     spans.push(Span::styled(version_text, title_style));
                 }
             }
-            1 if inline_copy && !expanded => spans.push(Span::styled(
-                welcome_text_after_logo(
-                    "   Thanks for trying Harness, give feedback with /feedback!",
-                    inner_width,
-                    logo_width,
-                ),
-                body,
-            )),
+            1 if inline_copy && !expanded && reveal >= StartupReveal::Identity => {
+                spans.push(Span::styled(
+                    welcome_text_after_logo(
+                        "   Thanks for trying Harness, give feedback with /feedback!",
+                        inner_width,
+                        logo_width,
+                    ),
+                    body,
+                ))
+            }
             2 if inline_copy && expanded => spans.push(Span::styled(
                 welcome_text_after_logo("   Changelog", inner_width, logo_width),
                 section,
@@ -572,7 +576,7 @@ fn welcome_inner_lines(
                 ),
                 body,
             )),
-            3..=6 if !expanded => {
+            3..=6 if !expanded && reveal >= StartupReveal::Affordances => {
                 let (label, shortcut, action_index) = match idx {
                     3 => ("New worktree", "ctrl+w", Some(0)),
                     4 => ("Resume session", "ctrl+s", Some(1)),
@@ -654,29 +658,33 @@ fn compact_welcome_lines(
     let section_style = welcome_changelog_section_style(theme, app);
 
     let mut lines = Vec::new();
-    for (label, shortcut, action_index) in [
-        ("New worktree", "ctrl+w", Some(0)),
-        ("Resume session", "ctrl+s", Some(1)),
-        ("Changelog", "", Some(2)),
-        ("Quit", "ctrl+q", Some(3)),
-    ] {
-        if lines.len() >= max_lines {
-            break;
+    if app.startup_reveal() >= StartupReveal::Affordances {
+        for (label, shortcut, action_index) in [
+            ("New worktree", "ctrl+w", Some(0)),
+            ("Resume session", "ctrl+s", Some(1)),
+            ("Changelog", "", Some(2)),
+            ("Quit", "ctrl+q", Some(3)),
+        ] {
+            if lines.len() >= max_lines {
+                break;
+            }
+            lines.push(Line::from(welcome_action_spans(
+                theme,
+                WelcomeActionLine {
+                    label,
+                    shortcut,
+                    width: inner_width,
+                    emphasis: action_index.map_or(WelcomeActionEmphasis::Default, |index| {
+                        welcome_action_emphasis(app, index)
+                    }),
+                },
+            )));
         }
-        lines.push(Line::from(welcome_action_spans(
-            theme,
-            WelcomeActionLine {
-                label,
-                shortcut,
-                width: inner_width,
-                emphasis: action_index.map_or(WelcomeActionEmphasis::Default, |index| {
-                    welcome_action_emphasis(app, index)
-                }),
-            },
-        )));
     }
     let changelog_min_lines = 2 + 1 + 1 + 1;
-    if max_lines.saturating_sub(lines.len()) >= changelog_min_lines {
+    if app.startup_welcome_expanded()
+        && max_lines.saturating_sub(lines.len()) >= changelog_min_lines
+    {
         lines.push(Line::from(Span::styled(" ", muted)));
         lines.push(Line::from(Span::styled("Changelog", section_style)));
         lines.push(Line::from(Span::styled(" ", muted)));
@@ -734,23 +742,26 @@ fn render_welcome_copy(
     }
     let surface = theme.surface.canvas;
     let identity = welcome::welcome_identity(theme.live_shell.startup.title);
-    frame.render_widget(
-        Paragraph::new(Line::from(vec![
-            Span::styled(
-                format!("{:<10}  ", identity.title),
-                Style::default()
-                    .fg(theme.text.primary)
-                    .bg(surface)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(
-                identity.version,
-                Style::default().fg(theme.text.secondary).bg(surface),
-            ),
-        ])),
-        Rect::new(x, inner.y.saturating_add(1), width, 1),
-    );
-    let (row, text, style) = if app.startup_welcome_expanded() {
+    let reveal = app.startup_reveal();
+    if reveal >= StartupReveal::Identity {
+        frame.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled(
+                    format!("{:<10}  ", identity.title),
+                    Style::default()
+                        .fg(theme.text.primary)
+                        .bg(surface)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    identity.version,
+                    Style::default().fg(theme.text.secondary).bg(surface),
+                ),
+            ])),
+            Rect::new(x, inner.y.saturating_add(1), width, 1),
+        );
+    }
+    let (row, text, style) = if reveal == StartupReveal::Complete {
         (
             layout
                 .changelog_header_rect
@@ -758,12 +769,14 @@ fn render_welcome_copy(
             "Changelog",
             welcome_changelog_section_style(theme, app),
         )
-    } else {
+    } else if reveal >= StartupReveal::Identity {
         (
             inner.y.saturating_add(2),
             "Thanks for trying Harness, give feedback with /feedback!",
             Style::default().fg(theme.text.primary).bg(surface),
         )
+    } else {
+        return;
     };
     frame.render_widget(
         Paragraph::new(Span::styled(

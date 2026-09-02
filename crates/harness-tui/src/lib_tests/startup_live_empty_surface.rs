@@ -30,6 +30,7 @@ pub(super) fn lifecycle_shell_narrow_layout_renders_primary_cta() {
         "worker",
         "mock:model-1",
     ));
+    settle_startup_reveal(&mut app);
 
     let rendered = render_live_lines(&app, 80, 24);
     assert_live_shell_frame_invariants(&rendered, 80, 24);
@@ -215,6 +216,7 @@ pub(super) fn startup_home_matches_live_empty_shell_language() {
         "worker",
         "mock:model-1",
     ));
+    settle_startup_reveal(&mut startup);
 
     let mut live = app::AppState::new_live(None, false, None);
     live.set_launch_metadata(app::LaunchMetadata::from_model_ref(
@@ -297,6 +299,7 @@ pub(super) fn startup_and_live_empty_share_spacing_contract() {
         "worker",
         "mock:model-1",
     ));
+    settle_startup_reveal(&mut startup);
 
     let mut live = app::AppState::new_live(None, false, None);
     live.set_launch_metadata(app::LaunchMetadata::from_model_ref(

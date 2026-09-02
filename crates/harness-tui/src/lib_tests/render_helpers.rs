@@ -461,6 +461,10 @@ pub(crate) fn render_live_lines(app: &app::AppState, width: u16, height: u16) ->
         .join("\n")
 }
 
+pub(crate) fn settle_startup_reveal(app: &mut app::AppState) {
+    app.advance_wall_clock_for_motion_evidence(std::time::Duration::from_millis(300));
+}
+
 pub(crate) fn transcript_turn_group_test_activity(
     request_id: &str,
     status: app::ActivityStatus,
