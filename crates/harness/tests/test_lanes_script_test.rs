@@ -120,13 +120,24 @@ fn signoff_pty_records_happy_path_artifact_dir() {
 }
 
 #[test]
+fn signoff_pty_p1_02_xterm_uses_security_allowlisted_temp_prefix() {
+    // Given: the signoff lane source consumed by the evidence-path security boundary.
+    let script = fs::read_to_string(repo_root().join("scripts/test-lanes.sh")).unwrap_or_abort();
+
+    // When/Then: P1-02 stays under the allowlisted harness-xterm prefix and cannot drift back.
+    assert!(script
+        .contains("local temporary=\"/tmp/harness-xterm-p1-02-${timestamp}-${cols}x${rows}-$$\""));
+    assert!(!script.contains("/tmp/harness-p1-02-xterm-"));
+}
+
+#[test]
 fn signoff_pty_dry_run_emits_stage_artifact_and_fail_closed_contract() {
-    // Given: a fresh artifact root and the real lane entrypoint.
+    // arrange
     let root = repo_root();
     let artifact_root = tempfile::tempdir().unwrap_or_abort();
     let script = root.join("scripts/test-lanes.sh");
 
-    // When: signoff-pty is exercised through its public dry-run surface.
+    // act
     let output = std::process::Command::new("bash")
         .arg(&script)
         .arg("signoff-pty")
@@ -137,19 +148,24 @@ fn signoff_pty_dry_run_emits_stage_artifact_and_fail_closed_contract() {
         .output()
         .unwrap_or_abort();
 
-    // Then: the lane emits every P0-06 stage and a deterministic, fail-closed verdict.
+    // assert
     assert!(output.status.success(), "lane failed: {output:?}");
     let stages = [
         "harness_testkit_pty_e2e",
         "harness_tui_pty_e2e",
         "harness_tui_p0_03_pty_recorded",
         "harness_tui_p0_04_pty_recorded",
+        "harness_tui_p1_02_pty_recorded",
         "harness_tui_happy_path_pty",
         "p0_06_xterm_dependencies",
         "p0_06_xterm_tests",
+        "p1_02_xterm_tests",
         "p0_06_xterm_80x24",
         "p0_06_xterm_120x40",
         "p0_06_xterm_160x50",
+        "p1_02_xterm_80x24",
+        "p1_02_xterm_120x40",
+        "p1_02_xterm_160x50",
     ];
     let summary = fs::read_to_string(artifact_root.path().join("summary.txt")).unwrap_or_abort();
     for stage in stages {

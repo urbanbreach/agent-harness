@@ -7,6 +7,7 @@ const SCENARIOS = [
   "slash-completion-edge",
   "disconnect-truth",
   "disconnect-duplicate",
+  "p1-02-modal-chrome",
 ];
 
 const VALUE_OPTIONS = new Set([
@@ -64,6 +65,7 @@ export function scenarioContract(options, environment) {
   if (options.scenario === "disconnect-truth" || options.scenario === "disconnect-duplicate") {
     return disconnectContract(options);
   }
+  if (options.scenario === "p1-02-modal-chrome") return p102ModalChromeContract(options);
   const stem = options.scenario.replaceAll("-", "_").toUpperCase();
   const command = options.command ?? environment[`HARNESS_QA_${stem}_COMMAND`];
   if (!command) {
@@ -95,7 +97,7 @@ export function scenarioContract(options, environment) {
 }
 
 export function helpText() {
-  return `Harness browser-backed xterm.js visual QA\n\nUsage:\n  node scripts/qa/web-terminal-visual-qa.mjs --scenario smoke --evidence-dir <dir>\n  node scripts/qa/web-terminal-visual-qa.mjs --scenario transcript-response-navigation --evidence-dir <dir>\n  node scripts/qa/web-terminal-visual-qa.mjs --scenario transcript-active-block --evidence-dir <dir>\n  node scripts/qa/web-terminal-visual-qa.mjs --scenario composer-multiline-actions --evidence-dir <dir>\n\nFixture override:\n  --command <shell-command> --input <action> --assert <visible-marker>\n\nActions: literal text, {Enter}, {Escape}, {PageUp}, {PageDown}, {Shift+J}, {Shift+K}, {Shift+Enter}, {Alt+Enter}, {Alt+M}, {Alt+S}, {Alt+I}, {Alt+R}, {Ctrl+Alt+Enter}, {Ctrl+P}, {Ctrl+Shift+Enter}, {Wait:text}, {WaitAbsent:text}, {WaitTitle:title}, {Click:text}, {Capture}.\nPlanned P0 scenarios fail closed until a Harness fixture command, actions, and assertions are supplied.\n`;
+  return `Harness browser-backed xterm.js visual QA\n\nUsage:\n  node scripts/qa/web-terminal-visual-qa.mjs --scenario smoke --evidence-dir <dir>\n  node scripts/qa/web-terminal-visual-qa.mjs --scenario p1-02-modal-chrome --evidence-dir <dir> --cols 120 --rows 40\n  node scripts/qa/web-terminal-visual-qa.mjs --scenario transcript-response-navigation --evidence-dir <dir>\n  node scripts/qa/web-terminal-visual-qa.mjs --scenario transcript-active-block --evidence-dir <dir>\n  node scripts/qa/web-terminal-visual-qa.mjs --scenario composer-multiline-actions --evidence-dir <dir>\n\nFixture override:\n  --command <shell-command> --input <action> --assert <visible-marker>\n\nActions: literal text, {Enter}, {Escape}, {PageUp}, {PageDown}, {Shift+J}, {Shift+K}, {Shift+Enter}, {Alt+Enter}, {Alt+M}, {Alt+S}, {Alt+I}, {Alt+R}, {Ctrl+Alt+Enter}, {Ctrl+P}, {Ctrl+Shift+Enter}, {Wait:text}, {WaitAbsent:text}, {WaitTitle:title}, {Click:text}, {Capture}.\nPlanned scenarios fail closed until a Harness fixture command, actions, and assertions are supplied.\n`;
 }
 
 function smokeContract(options) {
@@ -143,6 +145,69 @@ function disconnectContract(options) {
     ],
     assertions: ["Connection lost", "reopen required", "disconnect draft preserved"],
     expectNaturalExit: true,
+  };
+}
+
+function p102ModalChromeContract(options) {
+  const popupWidth = Math.min(options.cols, 88);
+  const popupHeight = Math.min(options.rows, 28);
+  const popupColumn = Math.floor((options.cols - popupWidth) / 2) + 1;
+  const popupRow = Math.floor((options.rows - popupHeight) / 2) + 1;
+  return {
+    name: "p1-02-modal-chrome",
+    title: options.title ?? `Harness P1-02 modal chrome ${options.cols}x${options.rows}`,
+    command: "harness tui --mock --deterministic --session-dir $HARNESS_QA_SESSION_DIR",
+    actions: [
+      { kind: "wait", value: "Demo mode" },
+      { kind: "key", value: "Control+P" },
+      { kind: "wait", value: "Commands" },
+      { kind: "type", value: "settings" },
+      { kind: "wait", value: "Settings" },
+      { kind: "key", value: "Enter" },
+      { kind: "wait", value: "Commands / Settings" },
+      { kind: "capture" },
+      { kind: "key", value: "Tab" },
+      { kind: "wait", value: "Runtime  [TUI]" },
+      { kind: "capture" },
+      { kind: "key", value: "Shift+Tab" },
+      { kind: "wait", value: "[Runtime]  TUI" },
+      { kind: "key", value: "Escape" },
+      { kind: "wait", value: "Commands" },
+      { kind: "waitAbsent", value: "Commands / Settings" },
+      { kind: "key", value: "Enter" },
+      { kind: "wait", value: "Commands / Settings" },
+      { kind: "mouseDown", column: 1, row: 1 },
+      { kind: "mouseUp", column: popupColumn + 2, row: popupRow + 3 },
+      { kind: "wait", value: "Commands / Settings" },
+      { kind: "clickCell", column: popupColumn + popupWidth - 3, row: popupRow },
+      { kind: "wait", value: "Commands" },
+      { kind: "waitAbsent", value: "Commands / Settings" },
+      { kind: "capture" },
+      { kind: "key", value: "Escape" },
+      { kind: "waitAbsent", value: "Commands" },
+      { kind: "key", value: "Control+x" },
+      { kind: "wait", value: "Keyboard Shortcuts" },
+      { kind: "capture" },
+      { kind: "key", value: "Escape" },
+      { kind: "waitAbsent", value: "Keyboard Shortcuts" },
+      { kind: "key", value: "Control+x" },
+      { kind: "type", value: "m" },
+      { kind: "wait", value: "Models" },
+      { kind: "capture" },
+      { kind: "key", value: "Escape" },
+      { kind: "waitAbsent", value: "Models" },
+    ],
+    assertions: [
+      "Settings",
+      "Commands / Settings",
+      "Runtime",
+      "TUI",
+      "Keyboard Shortcuts",
+      "Models",
+      "navigate",
+      "Esc close",
+    ],
+    expectNaturalExit: false,
   };
 }
 
@@ -265,10 +330,15 @@ function parseAction(value) {
 
 function normalizeAction(value) {
   if (typeof value === "string") return parseAction(value);
-  if (!value || typeof value !== "object" || !["wait", "waitAbsent", "waitTitle", "waitCount", "assertCount", "assertTitleCount", "type", "key", "click", "capture"].includes(value.kind)) {
+  if (!value || typeof value !== "object" || !["wait", "waitAbsent", "waitTitle", "waitCount", "assertCount", "assertTitleCount", "type", "key", "click", "clickCell", "mouseDown", "mouseUp", "capture"].includes(value.kind)) {
     throw new CliError("invalid fixture action");
   }
-  if (value.kind !== "capture" && typeof value.value !== "string") {
+  if (["clickCell", "mouseDown", "mouseUp"].includes(value.kind)) {
+    if (!Number.isSafeInteger(value.column) || value.column <= 0
+      || !Number.isSafeInteger(value.row) || value.row <= 0) {
+      throw new CliError(`fixture action ${value.kind} requires positive cell coordinates`);
+    }
+  } else if (value.kind !== "capture" && typeof value.value !== "string") {
     throw new CliError(`fixture action ${value.kind} requires a string value`);
   }
   if ((value.kind === "waitCount" || value.kind === "assertCount" || value.kind === "assertTitleCount")

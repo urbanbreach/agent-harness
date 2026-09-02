@@ -206,6 +206,7 @@ pub use self::session_history::SessionHistoryEntry;
 pub(crate) use self::session_projection::LiveTurnWatchers;
 use self::session_projection::SessionProjection;
 use self::session_stack::SessionNavigationSnapshot;
+pub(crate) use self::settings_editor::SettingsTab;
 use self::terminal_panel::terminal_panel_event_is_shell;
 use self::terminal_panel::TerminalPanelState;
 pub use self::terminal_panel::{TerminalPanelEntry, TerminalPanelStatus};
@@ -391,6 +392,8 @@ pub struct AppState {
     pub theme_dialog_selected: usize,
     pub settings_editor_visible: bool,
     pub settings_editor_selected: usize,
+    pub(crate) settings_editor_tab: settings_editor::SettingsTab,
+    pub(crate) settings_parent: Option<settings_editor::SettingsParent>,
     pub(crate) settings_project_config_path: Option<PathBuf>,
     pub(crate) settings_hashline_edit: bool,
     pub(crate) settings_compaction_enabled: bool,
@@ -712,6 +715,8 @@ impl Default for AppState {
             theme_dialog_selected: 0,
             settings_editor_visible: false,
             settings_editor_selected: 0,
+            settings_editor_tab: settings_editor::SettingsTab::default(),
+            settings_parent: None,
             settings_project_config_path: None,
             settings_hashline_edit: true,
             settings_compaction_enabled: true,

@@ -401,6 +401,7 @@ pub(super) fn footer_suppressed_by_overlay(app: &AppState) -> bool {
     app.review_surface().is_some()
         || app.overlay_state().command_palette_channel_visible()
         || app.overlay_state().permission_pending
+        || app.settings_editor_is_visible()
 }
 
 fn render_startup_footer(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {

@@ -822,6 +822,9 @@ impl AppState {
 
         let cmd = cmd.clone();
         let filter_length = self.palette_input.len();
+        if cmd.strip_prefix("suggested:").unwrap_or(cmd.as_str()) == "settings.list" {
+            self.capture_settings_palette_parent();
+        }
         self.palette_input.clear();
         self.palette_cursor = 0;
         self.palette_filtered.clear();

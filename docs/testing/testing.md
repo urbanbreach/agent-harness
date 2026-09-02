@@ -396,9 +396,29 @@ Fail-closed stages (no `|| true`):
 | `harness_tui_pty_e2e` | harness-tui PTY E2E under `HARNESS_TUI_PTY_SIGNOFF=1`, including reply-capable emulation and canonical P0-06 artifacts |
 | `harness_tui_p0_03_pty_recorded` | P0-03 boxed markdown, OSC-8, and event-driven streaming-fence PTY regression |
 | `harness_tui_p0_04_pty_recorded` | P0-04 persistent multiline, queued send, interject, and cancel-and-replace PTY regression |
+| `harness_tui_p1_02_pty_recorded` | P1-02 reply-capable native PTY journey for Commands -> Settings chrome, tabs, restoration, stale pointer input, six-cell close target, and 80x24/120x40/160x50 alignment |
 | `harness_tui_happy_path_pty` | compiled `harness` CLI mock happy path (`pty_happy_path_recorded`) |
 | `p0_06_xterm_tests` | xterm.js structured collector, canonical viewport, runtime-branding, and evidence contract tests in real Chromium |
+| `p1_02_xterm_tests` | dedicated JS owner for the shipped-binary P1-02 scenario, canonical close coordinates, and interaction contract |
 | `p0_06_xterm_80x24`, `p0_06_xterm_120x40`, `p0_06_xterm_160x50` | the compiled Harness mock TUI driven through a native PTY into xterm.js at each canonical size |
+| `p1_02_xterm_80x24`, `p1_02_xterm_120x40`, `p1_02_xterm_160x50` | `target/debug/harness` driven through util-linux `script` into Chromium+xterm.js; captures modal/tab/breadcrumb/footer states and keyboard/mouse restoration history at each canonical size |
+
+The dedicated P1-02 owners can also be run directly:
+
+```bash
+env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 \
+  cargo nextest run -p harness-tui --test p1_02_pty_recorded --test-threads 1 --ignore-default-filter
+node --test scripts/qa/p1-02-modal-chrome.test.mjs
+cargo build -p harness
+node scripts/qa/web-terminal-visual-qa.mjs \
+  --scenario p1-02-modal-chrome \
+  --evidence-dir target/artifacts/p1-02-modal-chrome-120x40 \
+  --cols 120 --rows 40
+```
+
+Repeat the browser command with `80 24` and `160 50` for the other canonical geometries. Prerequisites are Linux PTY support, `cargo`, Node/npm, util-linux `script`, and executable `/usr/bin/chromium`; `npm ci --prefix scripts/qa` installs the pinned local xterm.js/Playwright packages. The scenario opens Settings only through Commands, verifies Harness-owned frame/title, Runtime/TUI tabs, breadcrumb, shortcut footer, Tab/Shift+Tab, Escape restoration, stale outside input, and mouse-close restoration. Automated assertions establish interaction and evidence contracts; visual parity still requires reviewing the emitted screenshots.
+
+Each P1-02 xterm stage writes into the lane's ignored `target/test-lanes/.../signoff-pty/stages/<stage>/artifacts/` tree. Evidence includes indexed and final PNGs, `terminal.ansi`, `terminal-ansi.txt`, `terminal.txt`, `buffer.json`, `interactions.json`, `metadata.json`, `artifact-manifest.json`, `PASS.json`, `cleanup.json`, and shipped-binary hash sidecars. PASS is refused unless PTY/browser/profile/temp-root cleanup receipts are complete, visible runtime evidence contains Harness, and collected runtime text contains neither Grok nor xAI branding. Temporary security-allowlisted `/tmp/harness-xterm-p1-02-*` roots are trap-cleaned after evidence is copied.
 
 The P0-06 owner feeds native PTY output into a reply-capable vt100 emulator and forwards generated cursor-position reports to the child. It asserts cells, cursor position/visibility, alternate-screen transitions, input modes, wrapping, and emulator scrollback. Under the lane-provided absolute `HARNESS_P0_06_ARTIFACT_DIR`, it records before/after ANSI, text, and structured-screen captures at 80x24, 120x40, and 160x50 plus a hash-verified manifest and aggregate cleanup receipt. Native captures truthfully identify the hashed `harness-tui` integration-test executable and its direct production entrypoint, `harness_tui::run_tui_with_options`; they do not relabel that owner binary as the shipped `harness` CLI. The xterm stages separately drive the compiled `target/debug/harness` binary in Chromium at every canonical size, persist screenshot/ANSI/text/structured evidence plus a hashed shipped-binary provenance sidecar in their lane stage artifacts, and fail when collected runtime state lacks Harness branding or contains Grok/xAI marks.
 
@@ -408,6 +428,8 @@ For a combined deterministic closeout, use:
 - `env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 cargo nextest run -p harness-tui --test pty_e2e --test-threads 1`
 - `env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 cargo nextest run -p harness-tui --test p0_03_pty_recorded --test-threads 1 --ignore-default-filter`
 - `env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 cargo nextest run -p harness-tui --test p0_04_pty_recorded --test-threads 1 --ignore-default-filter`
+- `env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 cargo nextest run -p harness-tui --test p1_02_pty_recorded --test-threads 1 --ignore-default-filter`
+- `node --test scripts/qa/p1-02-modal-chrome.test.mjs`
 - `env RUST_TEST_THREADS=1 HARNESS_TUI_HAPPY_PATH_ARTIFACT_DIR=<dir> cargo nextest run -p harness --test pty_happy_path_recorded --test-threads 1 -- --ignored --exact scripted_tui_happy_path_records_start_prompt_permission_tool_edit_resume_and_quit`
 
 

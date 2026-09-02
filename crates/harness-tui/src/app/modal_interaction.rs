@@ -351,7 +351,7 @@ impl AppState {
             ModalSurfaceKey::Overlay {
                 kind: OverlayKind::SettingsEditor,
                 ..
-            } => std::mem::replace(&mut self.settings_editor_selected, index),
+            } => self.settings_editor_select_row(index),
             ModalSurfaceKey::Overlay {
                 kind: OverlayKind::PlanView,
                 view: ModalViewKey::Primary,

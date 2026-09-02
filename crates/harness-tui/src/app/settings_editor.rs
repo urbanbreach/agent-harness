@@ -23,7 +23,47 @@ use harness_core::config::{
     write_project_hashline_edit, SettingDefinition, SettingSensitivity, SettingWriteError,
 };
 
-use super::{AppState, ToastVariant};
+use super::{AppState, Focus, ToastVariant};
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) enum SettingsTab {
+    #[default]
+    Runtime,
+    Tui,
+}
+
+impl SettingsTab {
+    pub(crate) const fn surface(self) -> harness_core::config::SettingSurface {
+        match self {
+            Self::Runtime => harness_core::config::SettingSurface::Runtime,
+            Self::Tui => harness_core::config::SettingSurface::Tui,
+        }
+    }
+
+    pub(crate) const fn next(self) -> Self {
+        match self {
+            Self::Runtime => Self::Tui,
+            Self::Tui => Self::Runtime,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CommandPaletteSnapshot {
+    visible: bool,
+    input: String,
+    cursor: usize,
+    filtered: Vec<String>,
+    selected: usize,
+    focus: Focus,
+    focus_return: Option<Focus>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum SettingsParent {
+    Palette(CommandPaletteSnapshot),
+    Focus(Focus),
+}
 
 /// One row in the settings editor (registry-bound; effective value when known).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -103,9 +143,29 @@ fn is_writable_setting(setting_id: &str) -> bool {
 }
 
 impl AppState {
+    pub(in crate::app) fn capture_settings_palette_parent(&mut self) {
+        self.settings_parent = Some(SettingsParent::Palette(CommandPaletteSnapshot {
+            visible: self.palette_visible,
+            input: self.palette_input.clone(),
+            cursor: self.palette_cursor,
+            filtered: self.palette_filtered.clone(),
+            selected: self.palette_selected,
+            focus: self.focus,
+            focus_return: self.palette_focus_return,
+        }));
+    }
+
     pub(in crate::app) fn open_settings_editor(&mut self) {
+        if !self.settings_editor_visible && self.settings_parent.is_none() {
+            if self.palette_visible {
+                self.capture_settings_palette_parent();
+            } else {
+                self.settings_parent = Some(SettingsParent::Focus(self.focus));
+            }
+        }
         self.settings_editor_visible = true;
-        self.settings_editor_selected = 0;
+        self.settings_editor_tab = SettingsTab::Runtime;
+        self.settings_editor_selected = self.settings_indices().next().unwrap_or_default();
         self.theme_dialog_visible = false;
         self.error_details_visible = false;
         self.prompt_stash.list_visible = false;
@@ -119,6 +179,19 @@ impl AppState {
 
     pub(in crate::app) fn close_settings_editor(&mut self) {
         self.settings_editor_visible = false;
+        match self.settings_parent.take() {
+            Some(SettingsParent::Palette(snapshot)) => {
+                self.palette_visible = snapshot.visible;
+                self.palette_input = snapshot.input;
+                self.palette_cursor = snapshot.cursor;
+                self.palette_filtered = snapshot.filtered;
+                self.palette_selected = snapshot.selected;
+                self.focus = snapshot.focus;
+                self.palette_focus_return = snapshot.focus_return;
+            }
+            Some(SettingsParent::Focus(focus)) => self.focus = focus,
+            None => {}
+        }
     }
 
     pub fn bind_settings_project_config(
@@ -169,15 +242,40 @@ impl AppState {
         self.settings_deterministic_enabled
     }
 
+    pub(in crate::app) fn settings_editor_switch_tab(&mut self) {
+        self.settings_editor_tab = self.settings_editor_tab.next();
+        self.settings_editor_selected = self.settings_indices().next().unwrap_or_default();
+        self.modal_interaction.invalidate();
+    }
+
+    pub(crate) const fn settings_editor_tab(&self) -> SettingsTab {
+        self.settings_editor_tab
+    }
+
     pub(in crate::app) fn settings_editor_move(&mut self, delta: isize) {
-        let len = settings_registry().len();
-        if len == 0 {
+        let indices = self.settings_indices().collect::<Vec<_>>();
+        if indices.is_empty() {
             self.settings_editor_selected = 0;
             return;
         }
-        let current = isize::try_from(self.settings_editor_selected.min(len - 1)).unwrap_or(0);
-        let next = (current + delta).clamp(0, isize::try_from(len - 1).unwrap_or(0));
-        self.settings_editor_selected = usize::try_from(next).unwrap_or(0);
+        let current = indices
+            .iter()
+            .position(|index| *index == self.settings_editor_selected)
+            .unwrap_or_default();
+        let next = (isize::try_from(current).unwrap_or_default() + delta).clamp(
+            0,
+            isize::try_from(indices.len().saturating_sub(1)).unwrap_or_default(),
+        );
+        self.settings_editor_selected = indices[usize::try_from(next).unwrap_or_default()];
+    }
+
+    fn settings_indices(&self) -> impl Iterator<Item = usize> {
+        let surface = self.settings_editor_tab.surface();
+        settings_registry()
+            .iter()
+            .enumerate()
+            .filter(move |(_, definition)| definition.surface == surface)
+            .map(|(index, _)| index)
     }
 
     pub fn settings_editor_rows(&self) -> Vec<SettingsEditorRow> {
@@ -186,6 +284,7 @@ impl AppState {
         settings_registry()
             .iter()
             .enumerate()
+            .filter(|(_, definition)| definition.surface == self.settings_editor_tab.surface())
             .map(|(index, def)| {
                 let id = def.setting_id.as_str();
                 SettingsEditorRow {
@@ -201,7 +300,17 @@ impl AppState {
     }
 
     pub fn settings_editor_selected_index(&self) -> usize {
-        self.settings_editor_selected
+        self.settings_indices()
+            .position(|index| index == self.settings_editor_selected)
+            .unwrap_or_default()
+    }
+
+    pub(in crate::app) fn settings_editor_select_row(&mut self, row: usize) -> usize {
+        let previous = self.settings_editor_selected_index();
+        if let Some(index) = self.settings_indices().nth(row) {
+            self.settings_editor_selected = index;
+        }
+        previous
     }
 
     pub fn settings_editor_is_visible(&self) -> bool {
@@ -215,25 +324,26 @@ impl AppState {
     }
 
     pub fn settings_editor_summary(&self) -> SettingsEditorSummary {
-        let rows = self.settings_editor_rows();
+        let bound = self.settings_project_config_path.is_some();
         let mut summary = SettingsEditorSummary {
-            total: rows.len(),
-            bound: self.settings_project_config_path.is_some(),
+            total: settings_registry().len(),
+            bound,
             ..SettingsEditorSummary::default()
         };
-        for row in &rows {
-            if row.editable {
+        for definition in settings_registry() {
+            let setting_id = definition.setting_id.as_str();
+            if definition.is_editable() && is_writable_setting(setting_id) && bound {
                 summary.editable = summary.editable.saturating_add(1);
             } else {
                 summary.read_only = summary.read_only.saturating_add(1);
             }
-            if row.sensitivity == "secret" {
+            if matches!(definition.sensitivity, SettingSensitivity::Secret) {
                 summary.secret = summary.secret.saturating_add(1);
             }
-            if is_writable_setting(&row.setting_id) {
+            if is_writable_setting(setting_id) {
                 summary.writable_paths = summary.writable_paths.saturating_add(1);
             }
-            if row.effective_value.is_some() {
+            if self.effective_value_for(setting_id).is_some() {
                 summary.with_effective_value = summary.with_effective_value.saturating_add(1);
             }
         }

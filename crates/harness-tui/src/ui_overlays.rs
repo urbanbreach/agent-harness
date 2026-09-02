@@ -8,6 +8,8 @@ mod auth_dialog;
 mod foreign_import_picker;
 #[path = "ui_overlays/memory_browser.rs"]
 mod memory_browser;
+#[path = "ui_overlays/modal_chrome.rs"]
+mod modal_chrome;
 #[path = "ui_overlays/modal_interaction.rs"]
 mod modal_interaction;
 #[path = "ui_overlays/modal_list_row.rs"]
@@ -41,6 +43,7 @@ use auth_dialog::render_auth_dialog_overlay;
 pub(crate) use auth_dialog::waiting_authorization_detail_at;
 use foreign_import_picker::render_foreign_import_picker_overlay;
 use memory_browser::render_memory_browser_overlay;
+pub(crate) use modal_chrome::HELP_CHROME;
 pub(crate) use modal_interaction::{modal_surface_model, ModalSurfaceModel, OutsideDismissPolicy};
 pub(crate) use modal_list_row::{
     modal_list_row, modal_list_row_layout, modal_list_row_text_style, modal_scrollbar_geometry,
@@ -327,7 +330,7 @@ fn render_command_palette_overlay(
     } else if app.fork_selector_visible {
         "Fork session".to_string()
     } else {
-        "Commands".to_string()
+        modal_chrome::COMMANDS_CHROME.title.to_string()
     };
     let surface_key = ModalSurfaceKey::Overlay {
         kind: app
@@ -404,7 +407,12 @@ fn render_command_palette_overlay(
         render_command_palette_input(frame, app, theme, input);
         render_command_palette_list(frame, app, theme, list);
         if let Some(footer) = command_palette_footer_area(overlay) {
-            render_command_palette_footer(frame, theme, footer);
+            render_command_palette_footer(
+                frame,
+                theme,
+                footer,
+                modal_chrome::COMMANDS_CHROME.footer,
+            );
         }
     }
 }
@@ -827,7 +835,7 @@ fn command_palette_footer_area(overlay: Rect) -> Option<Rect> {
     ))
 }
 
-fn render_command_palette_footer(frame: &mut Frame, theme: &Theme, area: Rect) {
+fn render_command_palette_footer(frame: &mut Frame, theme: &Theme, area: Rect, footer: &str) {
     if area.width == 0 || area.height == 0 {
         return;
     }
@@ -835,20 +843,8 @@ fn render_command_palette_footer(frame: &mut Frame, theme: &Theme, area: Rect) {
     let muted = Style::default()
         .fg(ui_chrome::command_palette_muted(theme))
         .bg(surface);
-    let key = Style::default()
-        .fg(ui_chrome::command_palette_title(theme))
-        .bg(surface)
-        .add_modifier(Modifier::BOLD);
-    let spans = vec![
-        Span::styled("↑/↓".to_string(), key),
-        Span::styled(" nav  |  ".to_string(), muted),
-        Span::styled("Enter".to_string(), key),
-        Span::styled(" select  |  ".to_string(), muted),
-        Span::styled("Esc".to_string(), key),
-        Span::styled(" close".to_string(), muted),
-    ];
     frame.render_widget(
-        Paragraph::new(Line::from(spans))
+        Paragraph::new(Line::from(Span::styled(footer, muted)))
             .alignment(Alignment::Center)
             .style(Style::default().bg(surface)),
         area,

@@ -109,16 +109,27 @@ export async function openBrowserTerminal(settings) {
     async clickText(needle) {
       const location = await page.evaluate((text) => window.qaTerminal.find(text), needle);
       if (!location) throw new Error(`visible click target not found: ${needle}`);
-      const screen = page.locator(".xterm-screen");
-      const bounds = await screen.boundingBox();
-      if (!bounds) throw new Error("xterm screen has no browser bounds");
-      const cellWidth = bounds.width / settings.cols;
-      const cellHeight = bounds.height / settings.rows;
-      await page.mouse.click(
-        bounds.x + (location.column + 0.5) * cellWidth,
-        bounds.y + (location.row + 0.5) * cellHeight,
-      );
+      await this.mouseCell("click", location.column + 1, location.row + 1);
       return location;
+    },
+    async mouseCell(kind, column, row) {
+      if (!Number.isSafeInteger(column) || column < 1 || column > settings.cols
+        || !Number.isSafeInteger(row) || row < 1 || row > settings.rows) {
+        throw new Error(`terminal cell is outside ${settings.cols}x${settings.rows}: ${column},${row}`);
+      }
+      const bounds = await page.locator(".xterm-screen").boundingBox();
+      if (!bounds) throw new Error("xterm screen has no browser bounds");
+      const x = bounds.x + (column - 0.5) * bounds.width / settings.cols;
+      const y = bounds.y + (row - 0.5) * bounds.height / settings.rows;
+      if (kind === "click") await page.mouse.click(x, y);
+      else if (kind === "down") {
+        await page.mouse.move(x, y);
+        await page.mouse.down();
+      } else if (kind === "up") {
+        await page.mouse.move(x, y);
+        await page.mouse.up();
+      } else throw new Error(`unsupported terminal mouse action: ${kind}`);
+      return { kind, column, row };
     },
     async snapshot() {
       await waitForWrites();
@@ -196,9 +207,7 @@ export async function openBrowserTerminal(settings) {
 }
 
 async function screenshotTarget(page) {
-  const root = page.locator(".xterm");
   const screen = page.locator(".xterm-screen");
-  const [rootBounds, screenBounds] = await Promise.all([root.boundingBox(), screen.boundingBox()]);
-  if (!rootBounds || !screenBounds) throw new Error("xterm screenshot surfaces have no bounds");
-  return screenBounds.width > rootBounds.width ? screen : root;
+  if (!await screen.boundingBox()) throw new Error("xterm screenshot surface has no bounds");
+  return screen;
 }
