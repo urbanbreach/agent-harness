@@ -616,6 +616,7 @@ run_p1_04_xterm_capture() {
 run_p1_03_xterm_capture() {
   local mode_name="$1"
   local stage_name="$2"
+  local capability_variant="$3"
   local geometry="${stage_name##*_}"
   local cols="${geometry%x*}"
   local rows="${geometry#*x}"
@@ -625,13 +626,13 @@ run_p1_03_xterm_capture() {
   mkdir -p "$destination"
   run_stage "$mode_name" "$stage_name" "$repo_root" \
     bash -c 'set -euo pipefail
-      temporary="$(mktemp -d "$1")"; destination="$2"; cols="$3"; rows="$4"; root="$5"
+      temporary="$(mktemp -d "$1")"; destination="$2"; cols="$3"; rows="$4"; variant="$5"; root="$6"
       trap '\''rm -rf "$temporary"'\'' EXIT
       node "$root/scripts/qa/web-terminal-visual-qa.mjs" \
         --scenario p1-03-startup-reveal --evidence-dir "$temporary" \
-        --capability-variant unicode --cols "$cols" --rows "$rows"
+        --capability-variant "$variant" --cols "$cols" --rows "$rows"
       cp -a "$temporary/." "$destination/"' \
-    bash "$temporary_template" "$destination" "$cols" "$rows" "$repo_root"
+    bash "$temporary_template" "$destination" "$cols" "$rows" "$capability_variant" "$repo_root"
 }
 
 run_signoff_pty() {
@@ -702,7 +703,7 @@ run_signoff_pty() {
         printf 'lane=signoff-pty\n'
         printf 'result=FAIL\n'
         printf 'reason=missing_prerequisites\n'
-        printf 'stages=prerequisites,testkit_pty,tui_pty,p0_03,p0_04,p1_02,p1_03,p1_04,happy_path,xterm_dependencies,xterm_tests,p1_02_xterm_tests,p1_03_xterm_tests,p1_04_xterm_tests,xterm_80x24,xterm_120x40,xterm_160x50,p1_02_xterm_80x24,p1_02_xterm_120x40,p1_02_xterm_160x50,p1_03_xterm_80x24,p1_03_xterm_120x40,p1_03_xterm_160x50,p1_04_xterm_80x24,p1_04_xterm_120x40,p1_04_xterm_160x50\n'
+        printf 'stages=prerequisites,testkit_pty,tui_pty,p0_03,p0_04,p1_02,p1_03,p1_04,happy_path,xterm_dependencies,xterm_tests,p1_02_xterm_tests,p1_03_xterm_tests,p1_04_xterm_tests,xterm_80x24,xterm_120x40,xterm_160x50,p1_02_xterm_80x24,p1_02_xterm_120x40,p1_02_xterm_160x50,p1_03_xterm_80x24,p1_03_xterm_120x40,p1_03_xterm_160x50,p1_03_xterm_basic_ascii,p1_04_xterm_80x24,p1_04_xterm_120x40,p1_04_xterm_160x50\n'
         printf 'owns=deterministic_pty_journeys\n'
       } >"${tui_happy_path_artifacts_dir}/pty-lane-verdict.txt"
       return 1
@@ -742,9 +743,10 @@ run_signoff_pty() {
   run_p1_02_xterm_capture "$mode_name" p1_02_xterm_80x24 80 24
   run_p1_02_xterm_capture "$mode_name" p1_02_xterm_120x40 120 40
   run_p1_02_xterm_capture "$mode_name" p1_02_xterm_160x50 160 50
-  run_p1_03_xterm_capture "$mode_name" p1_03_xterm_80x24
-  run_p1_03_xterm_capture "$mode_name" p1_03_xterm_120x40
-  run_p1_03_xterm_capture "$mode_name" p1_03_xterm_160x50
+  run_p1_03_xterm_capture "$mode_name" p1_03_xterm_80x24 unicode
+  run_p1_03_xterm_capture "$mode_name" p1_03_xterm_120x40 unicode
+  run_p1_03_xterm_capture "$mode_name" p1_03_xterm_160x50 unicode
+  run_p1_03_xterm_capture "$mode_name" p1_03_xterm_basic_ascii basic-ascii
   run_p1_04_xterm_capture "$mode_name" p1_04_xterm_80x24
   run_p1_04_xterm_capture "$mode_name" p1_04_xterm_120x40
   run_p1_04_xterm_capture "$mode_name" p1_04_xterm_160x50
