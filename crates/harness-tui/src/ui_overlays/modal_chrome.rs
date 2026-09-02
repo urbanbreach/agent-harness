@@ -21,7 +21,7 @@ pub(super) const COMMANDS_CHROME: ModalChrome = ModalChrome {
     title: "Commands",
     breadcrumb: None,
     tabs: None,
-    footer: "↑/↓ nav  |  Enter select  |  Esc close",
+    footer: "↑/↓ nav · Enter select · Esc close",
 };
 
 pub(super) const MODELS_CHROME: ModalChrome = ModalChrome {
@@ -35,7 +35,7 @@ pub(crate) const HELP_CHROME: ModalChrome = ModalChrome {
     title: "Keyboard Shortcuts",
     breadcrumb: None,
     tabs: None,
-    footer: "Enter details  |  / search  |  Esc close",
+    footer: "Enter details · / search · Esc close",
 };
 
 pub(super) const fn settings_chrome(tab: SettingsTab) -> ModalChrome {

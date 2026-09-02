@@ -135,6 +135,31 @@ export async function openBrowserTerminal(settings) {
       await waitForWrites();
       return page.evaluate(() => window.qaTerminal.snapshot());
     },
+    async waitForFrame(frame) {
+      await waitForWrites();
+      const handle = await page.waitForFunction(
+        ({ marker, left, top, right, bottom }) => {
+          const current = window.qaTerminal.snapshot();
+          const lines = current.text.split("\n");
+          const cell = (row, column) => Array.from(lines[row - 1] ?? "")[column - 1];
+          const verticalEdgesComplete = Array.from(
+            { length: Math.max(0, bottom - top - 1) },
+            (_, index) => top + index + 1,
+          ).every((row) => cell(row, left) === "│" && cell(row, right) === "│");
+          return current.text.includes(marker)
+            && cell(top, left) === "┌"
+            && cell(top, right) === "┐"
+            && verticalEdgesComplete
+            && cell(bottom, left) === "└"
+            && cell(bottom, right) === "┘";
+        },
+        frame,
+        { timeout: settings.timeoutMs },
+      );
+      await page.evaluate((timeoutMs) => window.qaTerminal.waitForVisualSync(timeoutMs), settings.timeoutMs);
+      await handle.dispose();
+      return this.snapshot();
+    },
     async screenshot(path) {
       await waitForWrites();
       await page.evaluate((timeoutMs) => window.qaTerminal.waitForVisualSync(timeoutMs), settings.timeoutMs);

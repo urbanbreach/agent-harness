@@ -7,7 +7,7 @@ import { openBrowserTerminal } from "./lib/browser-terminal.mjs";
 import { parseArgs, scenarioContract } from "./lib/config.mjs";
 import { writePassEvidence } from "./lib/evidence.mjs";
 import { resolveCommand } from "./lib/pty-session.mjs";
-import { sha256 } from "./lib/provenance.mjs";
+import { assertStableExecutable, sha256 } from "./lib/provenance.mjs";
 import { executeActions } from "./web-terminal-visual-qa.mjs";
 
 const scenario = "transcript-response-navigation";
@@ -260,6 +260,13 @@ test("pass evidence receipts include indexed captures with PNG dimensions and ha
       browserMetadata: {},
       sourceTree: { hash: "tree" },
       scriptSha256: "script",
+      binaryProvenance: {
+        source: "target/debug/harness",
+        testedCopy: "harness-under-test",
+        before: { bytes: 42, sha256: "abc" },
+        after: { bytes: 42, sha256: "abc" },
+        unchanged: true,
+      },
       assertions: [],
       cleanup: {
         pty: {
@@ -296,9 +303,21 @@ test("pass evidence receipts include indexed captures with PNG dimensions and ha
     assert.equal(manifest.artifacts["capture-001"].png.width, 1);
     assert.equal(manifest.artifacts["capture-001"].png.height, 1);
     assert.equal(manifest.artifacts["capture-001"].sha256, metadata.captures[0].sha256);
+    assert.equal(metadata.provenance.binary.unchanged, true);
+    assert.equal(manifest.artifacts.binaryProvenance.path, "harness-binary-provenance.txt");
   } finally {
     await rm(evidenceDir, { recursive: true, force: true });
   }
+});
+
+test("executable provenance fails closed when tested bytes change", () => {
+  const before = { path: "harness-under-test", bytes: 42, sha256: "before" };
+  const after = { path: "harness-under-test", bytes: 42, sha256: "after" };
+
+  assert.throws(
+    () => assertStableExecutable(before, after),
+    /executable changed during QA/,
+  );
 });
 
 test("waitForText drains queued writes before returning the final cursor", async () => {

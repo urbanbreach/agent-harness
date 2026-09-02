@@ -1,12 +1,17 @@
 #!/usr/bin/env node
-import { access, copyFile, mkdtemp } from "node:fs/promises";
+import { access, chmod, copyFile, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { openBrowserTerminal } from "./lib/browser-terminal.mjs";
 import { helpText, parseArgs, scenarioContract } from "./lib/config.mjs";
 import { prepareEvidence, writeFailureEvidence, writePassEvidence } from "./lib/evidence.mjs";
-import { currentTree, fileReceipt, sha256 } from "./lib/provenance.mjs";
+import {
+  assertStableExecutable,
+  currentTree,
+  fileReceipt,
+  sha256,
+} from "./lib/provenance.mjs";
 import { createCleanupOwner } from "./lib/cleanup.mjs";
 import {
   prepareHarnessWorkspace,
@@ -57,10 +62,19 @@ async function main() {
   let browserMetadata;
   let runError;
   let exitResult;
+  let binaryProvenance = null;
 
   try {
     fixture = await prepareHarnessWorkspace(tempRoot);
-    command = await resolveCommand(contract.command, repoRoot);
+    let testedBinary = null;
+    let binaryBefore = null;
+    if (contract.command.startsWith("harness ")) {
+      testedBinary = join(tempRoot, "harness-under-test");
+      await copyFile(resolve(repoRoot, "target/debug/harness"), testedBinary);
+      await chmod(testedBinary, 0o700);
+      binaryBefore = await fileReceipt(testedBinary, tempRoot);
+    }
+    command = await resolveCommand(contract.command, repoRoot, testedBinary);
     terminal = await openBrowserTerminal({
       browser: options.browser,
       cols: options.cols,
@@ -101,6 +115,16 @@ async function main() {
     if (contract.expectNaturalExit) {
       exitResult = await pty.waitForExit(options.timeoutMs);
       if (exitResult.code !== 0) throw new Error(`Harness PTY exited with code ${exitResult.code}`);
+    }
+    if (testedBinary && binaryBefore) {
+      binaryProvenance = {
+        source: "target/debug/harness",
+        testedCopy: binaryBefore.path,
+        ...assertStableExecutable(
+          binaryBefore,
+          await fileReceipt(testedBinary, tempRoot),
+        ),
+      };
     }
     browserMetadata = await terminal.metadata();
   } catch (error) {
@@ -148,6 +172,7 @@ async function main() {
     browserMetadata,
     sourceTree,
     scriptSha256,
+    binaryProvenance,
     raw,
     capture,
     interactions,
@@ -171,6 +196,9 @@ export async function executeActions(settings) {
       else if (action.kind === "waitTitle") result = await settings.terminal.waitForTitle(action.value);
       else if (action.kind === "waitCount") {
         result = await settings.terminal.waitForTextCount(action.value, action.count);
+      }
+      else if (action.kind === "waitFrame") {
+        result = await settings.terminal.waitForFrame(action);
       }
       else if (action.kind === "assertCount") {
         result = await settings.terminal.snapshot();
