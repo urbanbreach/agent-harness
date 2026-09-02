@@ -656,9 +656,39 @@ fn compact_welcome_lines(
     let surface = theme.surface.canvas;
     let muted = Style::default().fg(theme.text.secondary).bg(surface);
     let section_style = welcome_changelog_section_style(theme, app);
+    let identity = welcome::welcome_identity(theme.live_shell.startup.title);
+    let reveal = app.startup_reveal();
 
     let mut lines = Vec::new();
-    if app.startup_reveal() >= StartupReveal::Affordances {
+    if reveal >= StartupReveal::Mark {
+        let mut spans = vec![Span::styled(
+            truncate_plain_text(identity.title, inner_width),
+            Style::default()
+                .fg(theme.text.primary)
+                .bg(surface)
+                .add_modifier(Modifier::BOLD),
+        )];
+        if reveal >= StartupReveal::Identity {
+            spans.push(Span::styled(
+                truncate_plain_text(
+                    &format!(" {}", identity.version),
+                    inner_width.saturating_sub(identity.title.chars().count()),
+                ),
+                muted,
+            ));
+        }
+        lines.push(Line::from(spans));
+    }
+    if reveal >= StartupReveal::Identity && lines.len() < max_lines {
+        lines.push(Line::from(Span::styled(
+            truncate_plain_text(
+                "Thanks for trying Harness, give feedback with /feedback!",
+                inner_width,
+            ),
+            muted,
+        )));
+    }
+    if reveal >= StartupReveal::Affordances {
         for (label, shortcut, action_index) in [
             ("New worktree", "ctrl+w", Some(0)),
             ("Resume session", "ctrl+s", Some(1)),

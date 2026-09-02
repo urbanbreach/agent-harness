@@ -1,6 +1,7 @@
 const TWO_COLUMN_MIN_WIDTH: u16 = 90;
 const WIDE_ACTION_MARKER_OFFSET: u16 = 17;
 const WIDE_PANEL_MIN_HEIGHT: u16 = 15;
+const COMPACT_IDENTITY_ROWS: u16 = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum WelcomeRegion {
@@ -106,7 +107,7 @@ impl WelcomeLayout {
         let action_start = if panel_rect.is_some() {
             content.1.saturating_add(if expanded { 9 } else { 4 })
         } else {
-            content.1
+            content.1.saturating_add(COMPACT_IDENTITY_ROWS)
         };
         let action_x = if panel_rect.is_some() {
             content
@@ -132,7 +133,10 @@ impl WelcomeLayout {
             let (header_x, header_y) = if panel_rect.is_some() {
                 (content.0.saturating_add(18), content.1.saturating_add(3))
             } else {
-                (content.0, content.1.saturating_add(5))
+                (
+                    content.0,
+                    content.1.saturating_add(COMPACT_IDENTITY_ROWS + 4 + 1),
+                )
             };
             bound(
                 (
