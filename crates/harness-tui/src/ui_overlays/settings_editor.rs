@@ -12,55 +12,33 @@ pub(super) fn render_settings_editor_overlay(
 
     render_overlay_dim_backdrop(frame, root);
 
-    let overlay_width = root.width.clamp(48, 88);
-    let overlay_height = root.height.clamp(10, 28);
-    let overlay_x = root.x + (root.width.saturating_sub(overlay_width)) / 2;
-    let overlay_y = root.y + (root.height.saturating_sub(overlay_height)) / 2;
-    let overlay = Rect::new(overlay_x, overlay_y, overlay_width, overlay_height);
-
+    let overlay = modal_chrome::centered_popup(root, 48, 88, 10, 28);
+    let chrome = modal_chrome::settings_chrome(app.settings_editor_tab());
     let surface = ui_chrome::command_palette_surface(theme);
-    let title_style = Style::default()
-        .fg(theme.text.primary)
-        .bg(surface)
-        .add_modifier(Modifier::BOLD);
     let muted_style = Style::default().fg(theme.text.secondary).bg(surface);
+    let key = ModalSurfaceKey::Overlay {
+        kind: OverlayKind::SettingsEditor,
+        view: ModalViewKey::Primary,
+    };
 
-    if !paint_modal_panel(
-        frame,
-        app,
-        theme,
-        overlay,
-        ModalSurfaceKey::Overlay {
-            kind: OverlayKind::SettingsEditor,
-            view: ModalViewKey::Primary,
-        },
-        "Commands",
-    ) {
+    if !paint_modal_panel(frame, app, theme, overlay, key, chrome.title) {
         return;
     }
+    modal_chrome::render_body(frame, theme, overlay, chrome);
     let inner = inset_rect(overlay, 1.min(overlay.width.saturating_sub(1)), 1);
     if inner.width == 0 || inner.height == 0 {
         return;
     }
 
-    let title = "Settings";
-    let title_area = Rect::new(inner.x, inner.y, inner.width, 1);
-    frame.render_widget(
-        Paragraph::new(Line::from(vec![
-            Span::styled(title, title_style),
-            Span::styled(
-                " ".repeat(usize::from(inner.width).saturating_sub(title.len() + 3)),
-                Style::default().bg(surface),
-            ),
-            Span::styled("esc", muted_style),
-        ])),
-        title_area,
-    );
-
     let summary = app.settings_editor_summary();
     let summary_line = summary.overlay_line();
-    let summary_area = Rect::new(inner.x, inner.y.saturating_add(1), inner.width, 1);
-    if inner.height >= 2 {
+    let summary_area = Rect::new(
+        overlay.x.saturating_add(2),
+        overlay.y.saturating_add(3),
+        overlay.width.saturating_sub(4),
+        1,
+    );
+    if inner.height >= 4 {
         frame.render_widget(
             Paragraph::new(Line::from(Span::styled(summary_line, muted_style))),
             summary_area,
@@ -68,8 +46,9 @@ pub(super) fn render_settings_editor_overlay(
     }
 
     let rows = app.settings_editor_rows();
-    let list_y = inner.y.saturating_add(2);
-    let list_height = inner.height.saturating_sub(2);
+    let list_y = overlay.y.saturating_add(4);
+    let list_bottom = overlay.bottom().saturating_sub(2);
+    let list_height = list_bottom.saturating_sub(list_y);
 
     if rows.is_empty() {
         if list_height == 0 {
@@ -106,10 +85,6 @@ pub(super) fn render_settings_editor_overlay(
         let row_y = list_y + u16::try_from(row - scroll).unwrap_or(u16::MAX);
         let row_area = Rect::new(inner.x, row_y, inner.width, 1);
         let is_selected = row == selected;
-        let key = ModalSurfaceKey::Overlay {
-            kind: OverlayKind::SettingsEditor,
-            view: ModalViewKey::Primary,
-        };
         let presentation = modal_list_row(
             theme,
             ModalListRowSpec {

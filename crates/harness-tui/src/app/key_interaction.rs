@@ -1348,6 +1348,9 @@ impl AppState {
             KeyCode::Down => {
                 self.settings_editor_move(1);
             }
+            KeyCode::Tab | KeyCode::BackTab | KeyCode::Left | KeyCode::Right => {
+                self.settings_editor_switch_tab();
+            }
             KeyCode::Enter | KeyCode::Char(' ') => {
                 self.settings_editor_activate_selected();
             }

@@ -584,10 +584,10 @@ fn settings_model(app: &AppState, root: Rect) -> Option<ModalSurfaceModel> {
             view: ModalViewKey::Primary,
         },
         centered_clamped(root, 48, 88, 10, 28),
-        2,
+        3,
         app.settings_editor_rows().len(),
         app.settings_editor_selected_index(),
-        0,
+        1,
     )
 }
 
@@ -790,14 +790,7 @@ fn centered_clamped(
     min_height: u16,
     max_height: u16,
 ) -> Rect {
-    let width = root.width.clamp(min_width, max_width);
-    let height = root.height.clamp(min_height, max_height);
-    Rect::new(
-        root.x + root.width.saturating_sub(width) / 2,
-        root.y + root.height.saturating_sub(height) / 2,
-        width,
-        height,
-    )
+    super::modal_chrome::centered_popup(root, min_width, max_width, min_height, max_height)
 }
 
 fn command_palette_model(app: &AppState, popup: Rect) -> Option<ModalSurfaceModel> {
@@ -885,14 +878,8 @@ fn theme_dialog_model(app: &AppState, root: Rect) -> Option<ModalSurfaceModel> {
 }
 
 fn modal_chrome_regions(popup: Rect) -> Vec<ModalHitRegion> {
-    let close_width = 6.min(popup.width);
     vec![ModalHitRegion {
         target: ModalTarget::Close,
-        area: Rect::new(
-            popup.right().saturating_sub(close_width),
-            popup.y,
-            close_width,
-            1,
-        ),
+        area: super::modal_chrome::close_area(popup),
     }]
 }

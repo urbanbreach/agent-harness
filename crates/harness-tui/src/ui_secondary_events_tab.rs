@@ -132,7 +132,10 @@ fn paint_panel(frame: &mut Frame, app: &AppState, theme: &Theme, popup: Rect) {
             .style(panel)
             .title(Line::from(vec![
                 Span::styled("─ ", border),
-                Span::styled("Keyboard Shortcuts", panel.add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    crate::ui::ui_overlays::HELP_CHROME.title,
+                    panel.add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(" ", border),
             ]))
             .title(
@@ -256,7 +259,7 @@ fn render_browse_footer(frame: &mut Frame, app: &AppState, theme: &Theme, layout
         "f filter"
     };
     let primary = format!("↑/↓ nav  |  {filter}  |  e/Space/→ expand  |  ← collapse");
-    let secondary = "Enter details  |  / search  |  Esc close";
+    let secondary = crate::ui::ui_overlays::HELP_CHROME.footer;
     if UnicodeWidthStr::width(primary.as_str()) <= usize::from(layout.primary_footer.width) {
         render_footer_line(frame, theme, layout.primary_footer, &primary);
         render_footer_line(frame, theme, layout.secondary_footer, secondary);

@@ -92,7 +92,9 @@ async function main() {
     captures = actionResult.captures;
     const assertions = contract.assertions.map((marker) => ({
       marker,
-      visible: capture.text.includes(marker),
+      visible: capture.text.includes(marker) || interactions.some((interaction) =>
+        interaction.result?.text?.includes(marker)
+        || interaction.bufferSnapshot?.text?.includes(marker)),
     }));
     const failed = assertions.filter(({ visible }) => !visible);
     if (failed.length > 0) {
@@ -189,6 +191,15 @@ export async function executeActions(settings) {
       else if (action.kind === "type") await settings.terminal.type(action.value);
       else if (action.kind === "key") await settings.terminal.key(action.value);
       else if (action.kind === "click") result = await settings.terminal.clickText(action.value);
+      else if (action.kind === "clickCell") {
+        result = await settings.terminal.mouseCell("click", action.column, action.row);
+      }
+      else if (action.kind === "mouseDown") {
+        result = await settings.terminal.mouseCell("down", action.column, action.row);
+      }
+      else if (action.kind === "mouseUp") {
+        result = await settings.terminal.mouseCell("up", action.column, action.row);
+      }
       else if (action.kind === "capture") {
         await settings.pty.flush();
         captureIndex += 1;

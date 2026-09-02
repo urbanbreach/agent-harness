@@ -46,6 +46,7 @@ pub(super) fn render_model_switcher_overlay(
     render_command_palette_input(frame, app, theme, input);
     render_model_switcher_list(frame, app, theme, list);
     render_model_switcher_status(frame, app, theme, status);
+    modal_chrome::render_body(frame, theme, overlay, modal_chrome::MODELS_CHROME);
 }
 
 fn render_model_switcher_status(frame: &mut Frame, app: &AppState, theme: &Theme, area: Rect) {
@@ -205,7 +206,7 @@ fn render_model_switcher_list(frame: &mut Frame, app: &AppState, theme: &Theme, 
 
 pub(super) fn model_switcher_overlay_title(app: &AppState) -> String {
     let _ = app;
-    "Select model".to_string()
+    modal_chrome::MODELS_CHROME.title.to_string()
 }
 
 fn model_switcher_row(

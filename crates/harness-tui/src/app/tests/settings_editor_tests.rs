@@ -14,7 +14,12 @@ pub(super) fn settings_editor_opens_and_lists_registry_rows() {
     assert_eq!(app.overlay_stack().top(), Some(OverlayKind::SettingsEditor));
     let rows = app.settings_editor_rows();
     assert!(!rows.is_empty());
-    assert_eq!(rows.len(), settings_registry().len());
+    let runtime_count = settings_registry()
+        .iter()
+        .filter(|entry| entry.surface == harness_core::config::SettingSurface::Runtime)
+        .count();
+    assert_eq!(rows.len(), runtime_count);
+    assert!(rows.iter().all(|row| row.surface == "runtime"));
     assert!(rows.iter().any(|row| !row.setting_id.is_empty()));
     assert!(rows
         .iter()

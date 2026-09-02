@@ -148,6 +148,10 @@ mod help_browser_mouse_tests;
 mod modal_press_invalidation_tests;
 
 #[cfg(test)]
+#[path = "tests/p1_02_modal_chrome_tests.rs"]
+mod p1_02_modal_chrome_tests;
+
+#[cfg(test)]
 #[path = "tests/transcript_return_to_live_tests.rs"]
 mod transcript_return_to_live_tests;
 
