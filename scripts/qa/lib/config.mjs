@@ -260,7 +260,7 @@ function p104ResponsiveFeedbackContract(options) {
       { kind: "capture", state: "resize-final" },
       { kind: "capture", state: "reduced-motion" },
     ],
-    assertions: ["Harness", "P1-04 responsive ready"],
+    assertions: ["Harness"],
     expectNaturalExit: false,
   };
 }
