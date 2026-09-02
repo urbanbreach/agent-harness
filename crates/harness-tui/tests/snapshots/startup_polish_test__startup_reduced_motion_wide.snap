@@ -1,0 +1,35 @@
+---
+source: crates/harness-tui/tests/startup_polish_test.rs
+expression: frozen
+---
+
+  <cwd-breadcrumb>
+
+
+   ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+   │                                                                                                                │
+   │  ██╗  ██╗         Harness     0.1.0                                                                            │
+   │  ██║  ██║                                                                                                      │
+   │  ██║  ██║         Changelog                                                                                    │
+   │  ███████║                                                                                                      │
+   │  ██╔══██║          • Subagent spawning is dramatically faster when you have many sessio…                       │
+   │  ██║  ██║          • /session-info now lets you click any row to copy its value, with h…                       │
+   │  ╚═╝  ╚═╝          • TUI rendering now automatically matches high-refresh displays (120…                       │
+   │                                                                                                                │
+   │                   New worktree                                                                         ctrl+w  │
+   │                   Resume session                                                                       ctrl+s  │
+   │                   Changelog                                                                                    │
+   │                   Quit                                                                                 ctrl+q  │
+   │                                                                                                                │
+   ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+
+
+
+
+  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ ❯                                                                                                                │
+  ╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────  ─╯
+
+                                                                                       Provider not connected  │  Beta

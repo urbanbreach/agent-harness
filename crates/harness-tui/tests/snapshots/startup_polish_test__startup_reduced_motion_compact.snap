@@ -1,0 +1,27 @@
+---
+source: crates/harness-tui/tests/startup_polish_test.rs
+expression: frozen
+---
+
+  <cwd-breadcrumb>
+
+
+
+
+
+               Harness 0.1.0
+               Thanks for trying Harness, give feedback with /fee…
+                New worktree                               ctrl+w
+                Resume session                             ctrl+s
+                Changelog
+                Quit                                       ctrl+q
+
+               Changelog
+
+               • Subagent spawning is dramatically faster when yo…
+               • /session-info now lets you click any row to copy…
+  ╭──────────────────────────────────────────────────────────────────────────╮
+  │ ❯                                                                        │
+  ╰───────────────────────────────────────────────────────────────────────  ─╯
+
+                                               Provider not connected  │  Beta
