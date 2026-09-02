@@ -426,12 +426,7 @@ fn model_switcher_model(app: &AppState, popup: Rect) -> Option<ModalSurfaceModel
         popup.width.saturating_sub(8),
         1,
     );
-    let list = Rect::new(
-        popup.x.saturating_add(1),
-        popup.y.saturating_add(5),
-        popup.width.saturating_sub(2),
-        popup.height.saturating_sub(6),
-    );
+    let list = super::model_switcher::model_switcher_list_area(popup);
     let rows = super::model_switcher::model_switcher_rows(app);
     visual_rows_model(
         app,

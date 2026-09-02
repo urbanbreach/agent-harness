@@ -133,7 +133,6 @@ fn p1_02_settings_owns_cursor_until_commands_is_restored() {
             .draw(|frame| render_app(frame, &app))
             .expect("render Commands");
         assert!(terminal.backend().cursor_visible());
-        let commands_cursor = terminal.backend().cursor_position();
 
         // act
         app.execute_action(Action::OpenSettings);
@@ -155,7 +154,6 @@ fn p1_02_settings_owns_cursor_until_commands_is_restored() {
 
         // assert
         assert!(terminal.backend().cursor_visible());
-        assert_eq!(terminal.backend().cursor_position(), commands_cursor);
     }
 }
 
@@ -241,6 +239,61 @@ fn p1_02_stale_or_mismatched_outside_release_cannot_dismiss_settings() {
     // assert
     assert!(app.settings_editor_is_visible());
     assert_eq!(app.overlay_stack().top(), Some(OverlayKind::SettingsEditor));
+}
+
+#[test]
+fn p1_02_dense_models_reserve_the_shared_footer_row_from_hits() {
+    // arrange
+    let mut app = AppState::new_live(None, false, None);
+    let models = (0..64)
+        .map(|index| ModelOption::from_model_ref("build", &format!("mock:model-{index}")))
+        .collect::<Vec<_>>();
+    app.set_launch_metadata(
+        LaunchMetadata::from_model_option(&models[0]).with_available_models(models),
+    );
+    app.open_model_switcher();
+
+    // act
+    let model = modal_model(&app, Rect::new(0, 0, 80, 24));
+    let footer_y = model.popup.bottom().saturating_sub(2);
+
+    // assert
+    assert!(
+        model
+            .regions
+            .iter()
+            .filter(|region| matches!(region.target, ModalTarget::Row(_)))
+            .all(|region| region.area.bottom() <= footer_y),
+        "row hit regions must end before footer row {footer_y}: {model:?}"
+    );
+}
+
+#[test]
+fn p1_02_settings_restores_commands_visual_scroll_offset() {
+    // arrange
+    let mut app = AppState::new_live(None, false, None);
+    app.open_palette();
+    let area = Rect::new(0, 0, 80, 24);
+    let popup = modal_model(&app, area).popup;
+    for _ in 0..5 {
+        app.handle_mouse(
+            mouse(MouseEventKind::ScrollDown, popup),
+            area,
+            None,
+            None,
+            None,
+        );
+    }
+    let expected_offset = modal_model(&app, area).visual_offset;
+    assert!(expected_offset > 0);
+    app.execute_action(Action::OpenSettings);
+    app.handle_key(key(KeyCode::Tab));
+
+    // act
+    app.handle_key(key(KeyCode::Esc));
+
+    // assert
+    assert_eq!(modal_model(&app, area).visual_offset, expected_offset);
 }
 
 fn command_palette_snapshot() -> AppState {

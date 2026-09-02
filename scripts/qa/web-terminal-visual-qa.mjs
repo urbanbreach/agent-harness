@@ -92,9 +92,7 @@ async function main() {
     captures = actionResult.captures;
     const assertions = contract.assertions.map((marker) => ({
       marker,
-      visible: capture.text.includes(marker) || interactions.some((interaction) =>
-        interaction.result?.text?.includes(marker)
-        || interaction.bufferSnapshot?.text?.includes(marker)),
+      visible: capture.text.includes(marker),
     }));
     const failed = assertions.filter(({ visible }) => !visible);
     if (failed.length > 0) {
