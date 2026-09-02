@@ -255,8 +255,10 @@ fn startup_welcome_reveals_mark_then_name_then_affordances_then_changelog() {
     // Given: a visible wide startup welcome at first paint.
     let mut app = AppState::new_startup(Vec::new(), None);
 
-    // act + assert: Mark stage at first paint — logo only, no identity, no affordances.
+    // act
+    // Mark stage at first paint — logo only, no identity, no affordances.
     let mark = startup_text(&app, 120, 32);
+    // assert
     assert!(
         mark.contains("██╗"),
         "mark stage must paint the Harness mark\n{mark}"
