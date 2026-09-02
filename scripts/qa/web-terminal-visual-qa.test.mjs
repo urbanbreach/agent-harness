@@ -7,7 +7,11 @@ import { openBrowserTerminal } from "./lib/browser-terminal.mjs";
 import { parseArgs, scenarioContract } from "./lib/config.mjs";
 import { writePassEvidence } from "./lib/evidence.mjs";
 import { resolveCommand } from "./lib/pty-session.mjs";
-import { assertStableExecutable, sha256 } from "./lib/provenance.mjs";
+import {
+  assertBuiltExecutable,
+  assertStableExecutable,
+  sha256,
+} from "./lib/provenance.mjs";
 import { executeActions } from "./web-terminal-visual-qa.mjs";
 
 const scenario = "transcript-response-navigation";
@@ -317,6 +321,39 @@ test("executable provenance fails closed when tested bytes change", () => {
   assert.throws(
     () => assertStableExecutable(before, after),
     /executable changed during QA/,
+  );
+});
+
+test("built executable provenance binds clean source, build output, and tested copy", () => {
+  const source = { path: "target/debug/harness", bytes: 42, sha256: "built" };
+  const tested = { path: "harness-under-test", bytes: 42, sha256: "built" };
+
+  assert.equal(assertBuiltExecutable({
+    sourceTree: { dirty: false, head: "commit", headTree: "tree" },
+    sourceBefore: source,
+    sourceAfter: source,
+    testedBefore: tested,
+    testedAfter: tested,
+  }).testedCopy.execution.unchanged, true);
+  assert.throws(
+    () => assertBuiltExecutable({
+      sourceTree: { dirty: true, head: "commit", headTree: "tree" },
+      sourceBefore: source,
+      sourceAfter: source,
+      testedBefore: tested,
+      testedAfter: tested,
+    }),
+    /dirty source tree/,
+  );
+  assert.throws(
+    () => assertBuiltExecutable({
+      sourceTree: { dirty: false, head: "commit", headTree: "tree" },
+      sourceBefore: source,
+      sourceAfter: source,
+      testedBefore: { ...tested, sha256: "replacement" },
+      testedAfter: tested,
+    }),
+    /executable changed/,
   );
 });
 

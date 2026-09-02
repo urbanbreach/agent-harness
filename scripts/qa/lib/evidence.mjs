@@ -1,12 +1,14 @@
-import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileReceipt, sha256 } from "./provenance.mjs";
 import { assertSecretFree, redactEvidence } from "./security.mjs";
 
 export async function prepareEvidence(path) {
-  await rm(path, { recursive: true, force: true });
   await mkdir(path, { recursive: true, mode: 0o700 });
   await chmod(path, 0o700);
+  for (const entry of await readdir(path)) {
+    await rm(join(path, entry), { recursive: true, force: true });
+  }
 }
 
 export async function writePassEvidence(settings) {

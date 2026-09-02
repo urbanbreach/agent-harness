@@ -558,18 +558,18 @@ run_p0_06_xterm_capture() {
   local cols="$3"
   local rows="$4"
   local destination="$(stage_dir_for "$mode_name" "$stage_name")/artifacts"
-  local temporary="/tmp/harness-xterm-${timestamp}-${cols}x${rows}-$$"
+  local temporary_template="/tmp/harness-xterm-${timestamp}-${cols}x${rows}-XXXXXX"
   rm -rf "$destination"
   mkdir -p "$destination"
   run_stage "$mode_name" "$stage_name" "$repo_root" \
     bash -c 'set -euo pipefail
-      temporary="$1"; destination="$2"; cols="$3"; rows="$4"; root="$5"
+      temporary="$(mktemp -d "$1")"; destination="$2"; cols="$3"; rows="$4"; root="$5"
       trap '\''rm -rf "$temporary"'\'' EXIT
       node "$root/scripts/qa/web-terminal-visual-qa.mjs" \
         --scenario smoke --evidence-dir "$temporary" \
         --cols "$cols" --rows "$rows"
       cp -a "$temporary/." "$destination/"' \
-    bash "$temporary" "$destination" "$cols" "$rows" "$repo_root"
+    bash "$temporary_template" "$destination" "$cols" "$rows" "$repo_root"
 }
 
 run_p1_02_xterm_capture() {
@@ -578,18 +578,18 @@ run_p1_02_xterm_capture() {
   local cols="$3"
   local rows="$4"
   local destination="$(stage_dir_for "$mode_name" "$stage_name")/artifacts"
-  local temporary="/tmp/harness-xterm-p1-02-${timestamp}-${cols}x${rows}-$$"
+  local temporary_template="/tmp/harness-xterm-p1-02-${timestamp}-${cols}x${rows}-XXXXXX"
   rm -rf "$destination"
   mkdir -p "$destination"
   run_stage "$mode_name" "$stage_name" "$repo_root" \
     bash -c 'set -euo pipefail
-      temporary="$1"; destination="$2"; cols="$3"; rows="$4"; root="$5"
+      temporary="$(mktemp -d "$1")"; destination="$2"; cols="$3"; rows="$4"; root="$5"
       trap '\''rm -rf "$temporary"'\'' EXIT
       node "$root/scripts/qa/web-terminal-visual-qa.mjs" \
         --scenario p1-02-modal-chrome --evidence-dir "$temporary" \
         --cols "$cols" --rows "$rows"
       cp -a "$temporary/." "$destination/"' \
-    bash "$temporary" "$destination" "$cols" "$rows" "$repo_root"
+    bash "$temporary_template" "$destination" "$cols" "$rows" "$repo_root"
 }
 
 run_signoff_pty() {

@@ -55,6 +55,29 @@ export function assertStableExecutable(before, after) {
   };
 }
 
+export function assertBuiltExecutable(settings) {
+  if (settings.sourceTree.dirty) {
+    throw new Error("refusing executable provenance from a dirty source tree");
+  }
+  return {
+    build: {
+      command: "cargo build -p harness",
+      head: settings.sourceTree.head,
+      headTree: settings.sourceTree.headTree,
+    },
+    source: {
+      path: settings.sourceBefore.path,
+      ...assertStableExecutable(settings.sourceBefore, settings.sourceAfter),
+    },
+    testedCopy: {
+      path: settings.testedBefore.path,
+      ...assertStableExecutable(settings.sourceBefore, settings.testedBefore),
+      execution: assertStableExecutable(settings.testedBefore, settings.testedAfter),
+    },
+    unchanged: true,
+  };
+}
+
 function git(cwd, args) {
   return execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
 }

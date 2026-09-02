@@ -12,18 +12,11 @@ export async function openBrowserTerminal(settings) {
     width: Math.max(1200, settings.cols * 24 + 64),
     height: Math.max(800, settings.rows * 24 + 64),
   };
-  const context = await chromium.launchPersistentContext(profilePath, {
-    executablePath: settings.browser,
-    headless: true,
-    viewport: initialViewport,
-    deviceScaleFactor: 1,
-    args: ["--disable-background-timer-throttling", "--force-device-scale-factor=1"],
-  });
-  const browser = context.browser();
-  const page = context.pages()[0] ?? await context.newPage();
+  let context;
+  let browser;
+  let page;
   const consoleMessages = [];
   let pendingWrites = Promise.resolve();
-  page.on("console", (message) => consoleMessages.push({ type: message.type(), text: message.text() }));
   const waitForWrites = async () => {
     let current;
     do {
@@ -31,8 +24,18 @@ export async function openBrowserTerminal(settings) {
       await current;
     } while (current !== pendingWrites);
   };
-  page.on("pageerror", (error) => consoleMessages.push({ type: "pageerror", text: error.message }));
   try {
+    context = await chromium.launchPersistentContext(profilePath, {
+      executablePath: settings.browser,
+      headless: true,
+      viewport: initialViewport,
+      deviceScaleFactor: 1,
+      args: ["--disable-background-timer-throttling", "--force-device-scale-factor=1"],
+    });
+    browser = context.browser();
+    page = context.pages()[0] ?? await context.newPage();
+    page.on("console", (message) => consoleMessages.push({ type: message.type(), text: message.text() }));
+    page.on("pageerror", (error) => consoleMessages.push({ type: "pageerror", text: error.message }));
     await page.exposeBinding("qaPtyInput", (_, data) => settings.onInput(data));
     const surface = await mountTerminal(page, {
       ...settings,
@@ -44,7 +47,7 @@ export async function openBrowserTerminal(settings) {
       height: Math.max(initialViewport.height, Math.ceil(surface.height + 32)),
     });
   } catch (error) {
-    await context.close();
+    if (context) await context.close();
     await rm(profilePath, { recursive: true, force: true });
     throw error;
   }

@@ -117,6 +117,23 @@ test("evidence directories and artifacts use private modes", async () => {
   }
 });
 
+test("evidence preparation preserves its atomically allocated root", async () => {
+  // Given: an atomically created private root containing stale evidence.
+  const evidenceDir = await mkdtemp(join(tmpdir(), "harness-xterm-atomic-root-"));
+  const before = await stat(evidenceDir);
+  await writeFile(join(evidenceDir, "stale.json"), "{}");
+  try {
+    // When: evidence is prepared for a fresh capture.
+    await prepareEvidence(evidenceDir);
+    // Then: the owned root remains the same inode while stale contents are removed.
+    const after = await stat(evidenceDir);
+    assert.equal(after.ino, before.ino);
+    await assert.rejects(readFile(join(evidenceDir, "stale.json")), /ENOENT/);
+  } finally {
+    await rm(evidenceDir, { recursive: true, force: true });
+  }
+});
+
 test("writePassEvidence refuses PASS when any cleanup invariant failed", async () => {
   // Given: otherwise valid evidence with a process group still alive.
   const evidenceDir = await mkdtemp(join(tmpdir(), "harness-xterm-cleanup-refusal-"));
