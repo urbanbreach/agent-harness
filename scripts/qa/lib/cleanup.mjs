@@ -1,3 +1,22 @@
+export function initialCleanupState() {
+  return {
+    pty: {
+      childExited: false,
+      processGroupAlive: true,
+      stdinClosed: false,
+      temporarySockets: [],
+    },
+    browser: {
+      pageClosed: false,
+      contextClosed: false,
+      browserConnectedAfterClose: true,
+      profileRemoved: false,
+      boundPorts: [],
+    },
+    tempRootRemoved: false,
+  };
+}
+
 export function createCleanupOwner(state, dependencies = {}) {
   const removeTempRoot = dependencies.removeTempRoot ?? (async () => true);
   const beforeTempRootRemoval = dependencies.beforeTempRootRemoval ?? (async () => {});

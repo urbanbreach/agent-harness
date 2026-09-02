@@ -13,7 +13,10 @@ import {
   fileReceipt,
   sha256,
 } from "./lib/provenance.mjs";
-import { createCleanupOwner } from "./lib/cleanup.mjs";
+import {
+  createCleanupOwner,
+  initialCleanupState,
+} from "./lib/cleanup.mjs";
 import {
   prepareHarnessWorkspace,
   removeTempRoot,
@@ -40,17 +43,7 @@ async function main() {
   const scriptSha256 = (await fileReceipt(scriptPath, dirname(scriptPath))).sha256;
   const tempRoot = await mkdtemp(join(tmpdir(), "harness-xterm-qa-"));
   const interactions = [];
-  const cleanup = {
-    pty: { childExited: true, processGroupAlive: false, stdinClosed: true, temporarySockets: [] },
-    browser: {
-      pageClosed: true,
-      contextClosed: true,
-      browserConnectedAfterClose: false,
-      profileRemoved: true,
-      boundPorts: [],
-    },
-    tempRootRemoved: false,
-  };
+  const cleanup = initialCleanupState();
   const cleanupOwner = createCleanupOwner(cleanup, {
     beforeTempRootRemoval: async () => {
       if (sourceBefore && testedBinary && testedBefore) {

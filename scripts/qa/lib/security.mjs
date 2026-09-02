@@ -25,8 +25,9 @@ const SAFE_ENV_KEYS = [
 ];
 
 const PRIVATE_KEY = /-----BEGIN [^-]*(?:PRIVATE KEY|OPENSSH PRIVATE KEY)-----[\s\S]*?-----END [^-]*(?:PRIVATE KEY|OPENSSH PRIVATE KEY)-----/gi;
-const AUTHORIZATION = /(authorization\s*:\s*bearer\s+)([^\s"',}]+)/gi;
+const AUTHORIZATION = /(authorization\s*:\s*)([^\r\n]+)/gi;
 const COOKIE_HEADER = /((?:set-)?cookie\s*:\s*)([^\r\n]+)/gi;
+const SENSITIVE_HEADER = /((?:x-)?(?:api[-_]?key|auth[-_]?token|access[-_]?token)\s*:\s*)([^\r\n]+)/gi;
 const CREDENTIAL = /\b([A-Z0-9_]*(?:API[_-]?KEY|TOKEN|SECRET|PASSWORD|PASSWD|COOKIE)[A-Z0-9_]*)\s*=\s*("[^"]*"|'[^']*'|[^\s,;]+)/gi;
 const OPENAI_TOKEN = /\bsk-[A-Za-z0-9_-]{20,}\b/g;
 const GITHUB_TOKEN = /\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b/g;
@@ -76,6 +77,7 @@ export function assertSecretFree(value) {
     PRIVATE_KEY,
     AUTHORIZATION,
     COOKIE_HEADER,
+    SENSITIVE_HEADER,
     CREDENTIAL,
     OPENAI_TOKEN,
     GITHUB_TOKEN,
@@ -96,6 +98,7 @@ function redactText(value) {
     .replace(PRIVATE_KEY, "[REDACTED PRIVATE KEY]")
     .replace(AUTHORIZATION, "$1[REDACTED]")
     .replace(COOKIE_HEADER, "$1[REDACTED]")
+    .replace(SENSITIVE_HEADER, "$1[REDACTED]")
     .replace(CREDENTIAL, "$1=[REDACTED]")
     .replace(OPENAI_TOKEN, "[REDACTED TOKEN]")
     .replace(GITHUB_TOKEN, "[REDACTED TOKEN]")

@@ -3,7 +3,10 @@ import { chmod, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "n
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { createCleanupOwner } from "./lib/cleanup.mjs";
+import {
+  createCleanupOwner,
+  initialCleanupState,
+} from "./lib/cleanup.mjs";
 import { prepareEvidence, writeFailureEvidence, writePassEvidence } from "./lib/evidence.mjs";
 import {
   assertScreenshotSafe,
@@ -199,6 +202,17 @@ test("resources acquired after signal cleanup are rejected and closed", async ()
   assert.deepEqual(calls, ["late-pty"]);
 });
 
+test("cleanup failures retain pessimistic unverified receipts", async () => {
+  const state = initialCleanupState();
+  const owner = createCleanupOwner(state);
+  owner.ownBrowser({ close: async () => { throw new Error("close failed"); } });
+
+  await assert.rejects(owner.cleanup(), /cleanup failed/);
+  assert.equal(state.browser.contextClosed, false);
+  assert.equal(state.browser.profileRemoved, false);
+  assert.equal(state.browser.browserConnectedAfterClose, true);
+});
+
 test("secret scanning decodes buffers and blocks secret-bearing screenshots", () => {
   // Given: recognized credentials in raw PTY bytes and visible terminal text.
   const secret = "Authorization: Bearer visible-secret";
@@ -210,6 +224,8 @@ test("secret scanning decodes buffers and blocks secret-bearing screenshots", ()
     "sk-1234567890abcdefghijklmnop",
     "ghp_1234567890abcdefghijklmnop",
     "AKIA1234567890ABCDEF",
+    "Authorization: Basic dXNlcjpwYXNz",
+    "X-API-Key: supersecret",
   ]) {
     assert.throws(() => assertSecretFree(standalone), /secret scan/);
   }

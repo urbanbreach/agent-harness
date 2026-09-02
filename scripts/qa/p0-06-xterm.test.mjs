@@ -177,6 +177,26 @@ test("PASS evidence rejects Harness only in title, QA font, typed input, command
   }
 });
 
+test("PASS evidence rejects forbidden branding in earlier capture snapshots", async () => {
+  const evidenceDir = await mkdtemp(join(tmpdir(), "harness-xterm-p0-06-capture-brand-reject-"));
+  const settings = await passSettings(evidenceDir, {
+    text: "Harness final runtime",
+    title: "Harness P0-06",
+  });
+  settings.interactions = [{
+    action: { kind: "capture", value: "capture-001.png" },
+    result: { screenshot: "capture-001.png" },
+    bufferSnapshot: { text: "Harness prior Grok runtime", cells: [], scrollback: { text: "" } },
+  }];
+
+  try {
+    await assert.rejects(writePassEvidence(settings), /Grok branding/);
+    await assert.rejects(readFile(join(evidenceDir, "PASS.json")), /ENOENT/);
+  } finally {
+    await rm(evidenceDir, { recursive: true, force: true });
+  }
+});
+
 test("runtime branding checks ignore source-reference paths and command arguments", async () => {
   // Given: Harness-only runtime state plus non-runtime provenance containing a reference name.
   const evidenceDir = await mkdtemp(join(tmpdir(), "harness-xterm-p0-06-brand-scope-"));
