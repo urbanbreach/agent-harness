@@ -242,6 +242,27 @@ function p103StartupRevealContract(options) {
         TERM_PROGRAM: "WezTerm",
         COLORTERM: "truecolor",
       };
+  const actions = basicAscii
+    ? [
+        { kind: "wait", value: "Beta" },
+        { kind: "type", value: "draft during reveal" },
+        { kind: "wait", value: "Enter:send" },
+        { kind: "waitAbsent", value: "New worktree" },
+        { kind: "capture", state: "early-input" },
+      ]
+    : [
+        { kind: "wait", value: "Beta" },
+        { kind: "capture", state: "first-paint" },
+        { kind: "wait", value: "New worktree" },
+        { kind: "wait", value: "Subagent spawning" },
+        { kind: "capture", state: "welcome-complete" },
+        { kind: "type", value: "draft 川山 during reveal" },
+        { kind: "waitAbsent", value: "New worktree" },
+        { kind: "capture", state: "after-input" },
+      ];
+  const assertions = basicAscii
+    ? ["draft during reveal", "Enter:send"]
+    : ["draft 川山 during reveal", "Enter:send"];
   return {
     name: "p1-03-startup-reveal",
     title: options.title ?? `Harness P1-03 startup reveal ${options.capabilityVariant}`,
@@ -255,15 +276,8 @@ function p103StartupRevealContract(options) {
     classification: basicAscii
       ? { color: "no_color", glyphs: "ascii", width: "compact", motion: "reduced" }
       : { color: "true_color", glyphs: "preferred", width: "unicode11", motion: "full" },
-    actions: [
-      { kind: "wait", value: "New worktree" },
-      { kind: "wait", value: "Subagent spawning" },
-      { kind: "capture", state: "welcome-complete" },
-      { kind: "type", value: "draft during reveal" },
-      { kind: "waitAbsent", value: "New worktree" },
-      { kind: "capture", state: "after-input" },
-    ],
-    assertions: ["draft during reveal", "Enter:send"],
+    actions,
+    assertions,
     expectNaturalExit: false,
   };
 }

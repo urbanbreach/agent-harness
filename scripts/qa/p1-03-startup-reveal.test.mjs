@@ -1,9 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import test from "node:test";
 import { parseArgs, scenarioContract } from "./lib/config.mjs";
+import test from "node:test";
 
 const variants = [
   {
@@ -19,6 +16,8 @@ const variants = [
       width: "unicode11",
       motion: "full",
     },
+    expectedCaptures: ["first-paint", "welcome-complete", "after-input"],
+    expectedDraft: "draft 川山 during reveal",
   },
   {
     name: "basic-ascii",
@@ -35,6 +34,8 @@ const variants = [
       width: "compact",
       motion: "reduced",
     },
+    expectedCaptures: ["early-input"],
+    expectedDraft: "draft during reveal",
   },
 ];
 
@@ -61,16 +62,31 @@ test("P1-03 contract binds the startup reveal to the built owner with staged cap
     assert.deepEqual(contract.classification, variant.expectedClassification);
     assert.deepEqual(
       contract.actions.filter(({ kind }) => kind === "capture").map(({ state }) => state),
-      ["welcome-complete", "after-input"],
+      variant.expectedCaptures,
     );
-    assert.ok(contract.actions.some(({ kind, value }) => kind === "wait" && value === "Subagent spawning"));
-    assert.ok(
-      contract.actions.some(({ kind, value }) => kind === "type" && value === "draft during reveal"),
-    );
+    assert.ok(contract.actions.some(({ kind, value }) => kind === "wait" && value === "Beta"));
     assert.ok(
       contract.actions.some(({ kind, value }) => kind === "waitAbsent" && value === "New worktree"),
     );
-    assert.deepEqual(contract.assertions, ["draft during reveal", "Enter:send"]);
+    assert.ok(
+      contract.actions.some(({ kind, value }) => kind === "type" && value === variant.expectedDraft),
+    );
+    assert.deepEqual(contract.assertions, [variant.expectedDraft, "Enter:send"]);
     assert.equal(contract.expectNaturalExit, false);
+
+    if (variant.name === "unicode") {
+      assert.ok(
+        contract.actions.some(({ kind, value }) => kind === "wait" && value === "Subagent spawning"),
+      );
+    } else {
+      const typeIndex = contract.actions.findIndex(({ kind }) => kind === "type");
+      const waitIndex = contract.actions.findIndex(
+        ({ kind, value }) => kind === "wait" && value === "Enter:send",
+      );
+      assert.ok(
+        typeIndex > -1 && waitIndex > typeIndex,
+        "basic-ascii must type the draft before waiting for the composer echo",
+      );
+    }
   }
 });
