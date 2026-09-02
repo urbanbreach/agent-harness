@@ -26,6 +26,7 @@ pub(crate) fn record_startup_reveal_terminal_states() {
     for variant in [TerminalVariant::Unicode, TerminalVariant::BasicAscii] {
         for (cols, rows) in CANONICAL_SIZES {
             captures.push(capture_full_motion(&root, &binary, variant, cols, rows));
+            captures.push(capture_early_input(&root, &binary, variant, cols, rows));
             captures.push(capture_reduced_motion(&root, &binary, variant, cols, rows));
         }
     }
@@ -55,12 +56,18 @@ pub(crate) fn record_startup_reveal_terminal_states() {
         },
         "canonicalSizes": CANONICAL_SIZES.into_iter().map(|(cols, rows)| json!({ "cols": cols, "rows": rows })).collect::<Vec<_>>(),
         "variants": ["Unicode", "Basic/Ascii"],
-        "states": ["first-paint", "complete", "after-input", "reduced-motion-first-paint"],
+        "states": [
+            "first-paint",
+            "complete",
+            "after-input",
+            "early-input",
+            "reduced-motion-first-paint"
+        ],
         "captures": captures,
         "cleanupReceipt": artifacts::receipt(&root, &cleanup),
     });
     artifacts::write_json(root.join("manifest.json"), &manifest);
-    assert_eq!(captures.len(), 12);
+    assert_eq!(captures.len(), 18);
     assert_manifest_receipts(&root, &manifest);
 }
 
@@ -85,7 +92,11 @@ fn capture_full_motion(
         },
     );
 
-    session.wait_for("git:test-workspace");
+    // The footer mode marker is painted on the first chrome frame in every
+    // geometry and variant, unlike the cwd breadcrumb, so it is the hermetic
+    // first-paint sync point.
+    session.wait_for("Beta");
+    session.wait_for_alternate_screen();
     let first_paint = session.persist(root, &directory, "first-paint");
     let first_paint_text = session.text();
     assert!(
@@ -98,7 +109,7 @@ fn capture_full_motion(
     // reads, so ordering is proven from first-seen offsets: the raw-stream
     // length recorded when each marker first appears in the assembled screen.
     let (required, optional) = session.first_seen_offsets(
-        &["New worktree", "Subagent spawning"],
+        &["0.1.0", "New worktree", "Subagent spawning"],
         &["Thanks for trying Harness"],
     );
     let reveal_timeline = reveal_timeline_receipt(&required, &optional, root, &directory);
@@ -147,6 +158,12 @@ fn reveal_timeline_receipt(
         clippy::panic,
         reason = "timeline markers are load-bearing ordering evidence"
     )]
+    let identity = offset("0.1.0")
+        .unwrap_or_else(|| panic!("identity marker missing from first-seen timeline"));
+    #[expect(
+        clippy::panic,
+        reason = "timeline markers are load-bearing ordering evidence"
+    )]
     let affordances = offset("New worktree")
         .unwrap_or_else(|| panic!("affordance marker missing from first-seen timeline"));
     #[expect(
@@ -155,13 +172,11 @@ fn reveal_timeline_receipt(
     )]
     let changelog = offset("Subagent spawning")
         .unwrap_or_else(|| panic!("changelog marker missing from first-seen timeline"));
-    let identity = offset("Thanks for trying Harness");
-    // Compact layouts (80x24) never paint the wide identity copy, so the
-    // identity marker is optional; affordance-before-changelog is the
-    // universal staged-ordering proof.
+    // Every geometry now paints the versioned identity row (compact included),
+    // so the full staged order is required evidence in all captures.
     assert!(
-        identity.is_none_or(|seen| seen < affordances) && affordances < changelog,
-        "reveal stages appeared out of order: identity={identity:?} affordances={affordances} changelog={changelog}"
+        identity < affordances && affordances < changelog,
+        "reveal stages appeared out of order: identity={identity} affordances={affordances} changelog={changelog}"
     );
     let path = directory.join("reveal-timeline.json");
     artifacts::write_json(
@@ -170,10 +185,73 @@ fn reveal_timeline_receipt(
             "identityFirstSeen": identity,
             "affordancesFirstSeen": affordances,
             "changelogFirstSeen": changelog,
-            "stagedOrder": "identity? < affordances < changelog",
+            "stagedOrder": "identity < affordances < changelog",
         }),
     );
     artifacts::receipt(root, &path)
+}
+
+fn capture_early_input(
+    root: &Path,
+    binary: &Path,
+    variant: TerminalVariant,
+    cols: u16,
+    rows: u16,
+) -> Value {
+    let directory = root
+        .join(variant.directory())
+        .join(format!("{cols}x{rows}-early"));
+    fs::create_dir_all(&directory).unwrap_or_abort();
+    let mut session = Session::spawn(
+        binary,
+        CaptureTarget {
+            variant,
+            reduced_motion: false,
+            cols,
+            rows,
+        },
+    );
+
+    // Typing lands during the reveal: the alternate screen is the earliest
+    // input-safe sync point, before any identity text is required to exist.
+    session.wait_for_alternate_screen();
+    session.send("early-川".as_bytes());
+    session.wait_for("Enter:send");
+    session.wait_until_absent("New worktree");
+    let early_input = session.persist(root, &directory, "early-input");
+    let early_text = session.text();
+    assert!(
+        !early_text.contains("New worktree"),
+        "typing during the reveal must dismiss the affordances\n{early_text}"
+    );
+
+    let screen_path = root.join(early_input["screen"]["path"].as_str().unwrap_or_abort());
+    let screen: Value =
+        serde_json::from_str(&fs::read_to_string(&screen_path).unwrap_or_abort()).unwrap_or_abort();
+    let cjk_width = screen["cells"]
+        .as_array()
+        .unwrap_or_abort()
+        .iter()
+        .find(|cell| cell["text"].as_str() == Some("川"))
+        .map(|cell| cell["width"].as_u64().unwrap_or_abort());
+    assert_eq!(
+        cjk_width,
+        Some(2),
+        "the CJK glyph must render at double width\n{early_text}"
+    );
+
+    session.exit();
+    write_cleanup(&directory);
+    json!({
+        "variant": variant.label(),
+        "dimensions": { "cols": cols, "rows": rows },
+        "reducedMotion": false,
+        "states": {
+            "earlyInput": early_input,
+            "cjkCellWidth": cjk_width,
+        },
+        "cleanup": artifacts::receipt(root, &directory.join("cleanup.json")),
+    })
 }
 
 fn capture_reduced_motion(
@@ -228,12 +306,10 @@ fn write_cleanup(directory: &Path) {
     );
 }
 
-fn assert_brand(variant: TerminalVariant, text: &str, ansi: &[u8]) {
-    // Compact layouts omit the wide identity block, so the Harness brand is
-    // read from the painted copy when present and from the OSC-2 terminal
-    // title otherwise.
-    let branded = text.contains("Harness") || title_reports_harness(ansi);
-    assert!(branded, "Harness brand missing\n{text}");
+fn assert_brand(variant: TerminalVariant, text: &str, _ansi: &[u8]) {
+    // Compact layouts paint the wordmark row from the Mark stage onward, so
+    // the painted copy is the brand proof at every size.
+    assert!(text.contains("Harness"), "Harness brand missing\n{text}");
     assert!(
         !text.to_ascii_lowercase().contains("grok"),
         "forbidden brand appeared\n{text}"
@@ -252,42 +328,25 @@ fn assert_brand(variant: TerminalVariant, text: &str, ansi: &[u8]) {
     }
 }
 
-fn title_reports_harness(ansi: &[u8]) -> bool {
-    let mut scan = ansi;
-    while let Some(start) = scan.windows(3).position(|window| window == b"\x1b]2") {
-        let after = &scan[start + 3..];
-        if let Some(end) = after.iter().position(|byte| *byte == 0x07) {
-            let title = &after[..end];
-            if title
-                .to_ascii_lowercase()
-                .windows(7)
-                .any(|window| window == b"harness")
-            {
-                return true;
-            }
-            scan = &after[end + 1..];
-        } else {
-            return false;
-        }
-    }
-    false
-}
-
 fn assert_manifest_receipts(root: &Path, manifest: &Value) {
     let full_motion_keys: [&str; 3] = ["firstPaint", "complete", "afterInput"];
+    let early_input_keys: [&str; 1] = ["earlyInput"];
     let reduced_keys: [&str; 1] = ["firstPaint"];
     for capture in manifest["captures"].as_array().unwrap_or_abort() {
-        let keys = if capture["reducedMotion"].is_boolean() {
+        let states = &capture["states"];
+        let keys = if states.get("afterInput").is_some() {
             &full_motion_keys[..]
+        } else if states.get("earlyInput").is_some() {
+            &early_input_keys[..]
         } else {
             &reduced_keys[..]
         };
         for state in keys {
             for artifact in ["ansi", "text", "screen"] {
-                assert_receipt(root, &capture["states"][state][artifact]);
+                assert_receipt(root, &states[state][artifact]);
             }
         }
-        if capture["reducedMotion"].is_boolean() {
+        if capture.get("revealTimeline").is_some() {
             assert_receipt(root, &capture["revealTimeline"]);
         }
         assert_receipt(root, &capture["cleanup"]);

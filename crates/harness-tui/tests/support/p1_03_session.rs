@@ -111,6 +111,10 @@ impl Session {
         self.wait_until(|terminal| terminal.text().contains(needle), needle);
     }
 
+    pub(crate) fn wait_for_alternate_screen(&mut self) {
+        self.wait_until(RecordedTerminal::alternate_screen, "alternate screen");
+    }
+
     pub(crate) fn wait_until_absent(&mut self, needle: &str) {
         self.wait_until(
             |terminal| !terminal.text().contains(needle),
@@ -218,6 +222,7 @@ impl Session {
             Ok(Err(error)) => panic!("helper wait failed: {error}"),
             Err(_) => {
                 let _ = killer.kill();
+                let _ = rx.recv_timeout(EXIT_TIMEOUT);
                 panic!("helper did not exit within {EXIT_TIMEOUT:?}");
             }
         }
@@ -247,6 +252,15 @@ impl Session {
 
     fn process(&mut self, bytes: &[u8]) {
         self.terminal.process(bytes);
+    }
+}
+
+impl Drop for Session {
+    fn drop(&mut self) {
+        if let Some(mut child) = self.child.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
     }
 }
 
