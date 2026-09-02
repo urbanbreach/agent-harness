@@ -1,5 +1,6 @@
 export function createCleanupOwner(state, dependencies = {}) {
   const removeTempRoot = dependencies.removeTempRoot ?? (async () => true);
+  const beforeTempRootRemoval = dependencies.beforeTempRootRemoval ?? (async () => {});
   let pty;
   let browser;
   let tempRoot;
@@ -63,6 +64,11 @@ export function createCleanupOwner(state, dependencies = {}) {
       }
     }
     if (tempRoot) {
+      try {
+        await beforeTempRootRemoval(tempRoot);
+      } catch (error) {
+        failures.push(error);
+      }
       try {
         state.tempRootRemoved = await removeTempRoot(tempRoot);
       } catch (error) {

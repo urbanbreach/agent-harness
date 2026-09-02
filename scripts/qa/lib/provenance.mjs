@@ -56,26 +56,31 @@ export function assertStableExecutable(before, after) {
 }
 
 export function assertBuiltExecutable(settings) {
-  if (settings.sourceTree.dirty) {
-    throw new Error("refusing executable provenance from a dirty source tree");
-  }
+  const sourceTree = assertStableSourceTree(settings.sourceTree, settings.sourceTreeAfter);
   return {
     build: {
       command: "cargo build -p harness",
-      head: settings.sourceTree.head,
-      headTree: settings.sourceTree.headTree,
+      sourceTree,
     },
-    source: {
-      path: settings.sourceBefore.path,
-      ...assertStableExecutable(settings.sourceBefore, settings.sourceAfter),
-    },
+    source: settings.sourceBefore,
     testedCopy: {
       path: settings.testedBefore.path,
-      ...assertStableExecutable(settings.sourceBefore, settings.testedBefore),
+      binding: assertStableExecutable(settings.sourceBefore, settings.testedBefore),
       execution: assertStableExecutable(settings.testedBefore, settings.testedAfter),
     },
     unchanged: true,
   };
+}
+
+export function assertStableSourceTree(before, after) {
+  if (before.dirty || after.dirty) {
+    throw new Error("refusing executable provenance from a dirty source tree");
+  }
+  const fields = ["algorithm", "hash", "files", "head", "headTree"];
+  if (fields.some((field) => before[field] !== after[field])) {
+    throw new Error("source tree changed during shipped-binary QA");
+  }
+  return { before, after, unchanged: true };
 }
 
 function git(cwd, args) {
