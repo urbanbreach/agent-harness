@@ -243,14 +243,14 @@ function p104ResponsiveFeedbackContract(options) {
   return {
     name: "p1-04-responsive-feedback",
     title: options.title ?? `Harness P1-04 responsive feedback ${options.capabilityVariant}`,
-    command: "harness tui --mock --deterministic --session-dir $HARNESS_QA_SESSION_DIR",
+    command: "env HARNESS_TUI_P1_04_SCENARIO=1 cargo test --manifest-path $HARNESS_QA_REPO_ROOT/Cargo.toml -p harness-tui --test p1_04_pty_recorded -- --exact p1_04_pty_helper --nocapture",
     capabilityVariant: options.capabilityVariant,
     environment,
     classification: basicAscii
       ? { color: "no_color", glyphs: "ascii", width: "compact", motion: "reduced" }
       : { color: "true_color", glyphs: "preferred", width: "unicode11", motion: "full" },
     actions: [
-      { kind: "wait", value: "Demo mode" },
+      { kind: "wait", value: "P1-04 responsive ready" },
       { kind: "capture", state: "following" },
       { kind: "key", value: "PageUp" },
       { kind: "capture", state: "detached" },
@@ -260,7 +260,7 @@ function p104ResponsiveFeedbackContract(options) {
       { kind: "capture", state: "resize-final" },
       { kind: "capture", state: "reduced-motion" },
     ],
-    assertions: ["Harness", "Demo mode"],
+    assertions: ["Harness", "P1-04 responsive ready"],
     expectNaturalExit: false,
   };
 }
