@@ -105,21 +105,35 @@ export async function openBrowserTerminal(settings) {
       return { ...await this.snapshot(), matchedTitle: title };
     },
     async type(text) {
+      const before = await this.snapshot();
       await page.evaluate(() => window.qaTerminal.focus());
       await page.keyboard.insertText(text);
+      return { parsedCountBefore: before.parsedCount };
     },
     async key(key) {
+      const before = await this.snapshot();
       await page.evaluate(() => window.qaTerminal.focus());
       await page.keyboard.press(key);
+      return { parsedCountBefore: before.parsedCount };
     },
     async resize(cols, rows) {
       await waitForWrites();
       if (!Number.isSafeInteger(cols) || cols <= 0 || !Number.isSafeInteger(rows) || rows <= 0) {
         throw new Error("xterm resize requires positive integer dimensions");
       }
-      return page.evaluate(
+      const before = await this.snapshot();
+      const receipt = await page.evaluate(
         ({ nextCols, nextRows }) => window.qaTerminal.resize(nextCols, nextRows),
         { nextCols: cols, nextRows: rows },
+      );
+      return { ...receipt, parsedCountBefore: before.parsedCount };
+    },
+    async waitForStableFrame(options = {}) {
+      await waitForWrites();
+      return page.evaluate(
+        ({ stableOptions, timeoutMs }) =>
+          window.qaTerminal.waitForStableFrame(stableOptions, timeoutMs),
+        { stableOptions: options, timeoutMs: settings.timeoutMs },
       );
     },
     async clickText(needle) {

@@ -41,7 +41,7 @@ const variants = [
   },
 ];
 
-test("P1-04 contract drives the copied shipped binary through both production capability classifiers", () => {
+test("P1-04 contract binds the exact built owner through both production capability classifiers", () => {
   for (const variant of variants) {
     const options = parseArgs([
       "--scenario", "p1-04-responsive-feedback",
@@ -52,6 +52,11 @@ test("P1-04 contract drives the copied shipped binary through both production ca
     ]);
     const contract = scenarioContract(options, {});
 
+    assert.deepEqual(contract.binaryTarget, {
+      package: "harness-tui",
+      test: "p1_04_pty_recorded",
+    });
+    assert.match(contract.command, /HARNESS_QA_TEST_BINARY/);
     assert.match(contract.command, /HARNESS_TUI_P1_04_SCENARIO=1/);
     assert.match(contract.command, /--exact p1_04_pty_helper/);
     assert.equal(contract.capabilityVariant, variant.name);
@@ -70,7 +75,7 @@ test("P1-04 contract drives the copied shipped binary through both production ca
   }
 });
 
-test("P1-04 resize action mutates the live PTY before resizing xterm and records state artifacts", async () => {
+test("P1-04 capture waits for the resized xterm frame before recording state artifacts", async () => {
   const evidenceDir = await mkdtemp(join(tmpdir(), "harness-xterm-p1-04-actions-"));
   const order = [];
   const snapshot = {
@@ -83,7 +88,15 @@ test("P1-04 resize action mutates the live PTY before resizing xterm and records
   const terminal = {
     async resize(cols, rows) {
       order.push(`xterm:${cols}x${rows}`);
-      return { before: { cols: 120, rows: 40 }, after: { cols, rows } };
+      return {
+        before: { cols: 120, rows: 40 },
+        after: { cols, rows },
+        parsedCountBefore: 7,
+      };
+    },
+    async waitForStableFrame(options) {
+      order.push(`stable:${options.parsedCountBefore}`);
+      return snapshot;
     },
     async snapshot() { return snapshot; },
     async capture(path) {
@@ -115,7 +128,7 @@ test("P1-04 resize action mutates the live PTY before resizing xterm and records
       evidenceDir,
     });
 
-    assert.deepEqual(order, ["pty:80x24", "xterm:80x24"]);
+    assert.deepEqual(order, ["xterm:80x24", "pty:80x24", "stable:7"]);
     assert.equal(interactions[0].result.pty.mechanism, "TIOCSWINSZ");
     assert.equal(result.captures[0].state, "resize-final");
     assert.deepEqual(
@@ -151,6 +164,7 @@ test("P1-04 Chromium xterm resize preserves structured cells at the final dimens
     assert.deepEqual(receipt, {
       before: { cols: 120, rows: 40 },
       after: { cols: 80, rows: 24 },
+      parsedCountBefore: 1,
     });
     assert.equal(snapshot.cols, 80);
     assert.equal(snapshot.rows, 24);

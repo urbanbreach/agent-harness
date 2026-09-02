@@ -283,6 +283,15 @@ fn assert_box_geometry(screen: &str, terminal_width: usize) {
         .collect::<Vec<_>>();
     assert!(rows.len() >= 5, "boxed table rows missing\n{screen}");
 
+    let table_right = rows
+        .iter()
+        .find(|line| line.trim_start().starts_with('┌'))
+        .and_then(|line| {
+            line.char_indices()
+                .find(|(_, character)| *character == '┐')
+                .map(|(byte, _)| UnicodeWidthStr::width(&line[..byte]))
+        })
+        .unwrap_or(usize::MAX);
     let edges = rows
         .iter()
         .map(|line| {
@@ -297,7 +306,11 @@ fn assert_box_geometry(screen: &str, terminal_width: usize) {
                 .collect::<Vec<_>>();
             (
                 border_cells.first().copied().unwrap_or(usize::MAX),
-                border_cells.last().copied().unwrap_or(usize::MAX),
+                border_cells
+                    .into_iter()
+                    .filter(|cell| *cell <= table_right)
+                    .next_back()
+                    .unwrap_or(usize::MAX),
             )
         })
         .collect::<Vec<_>>();

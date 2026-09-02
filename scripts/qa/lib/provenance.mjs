@@ -59,7 +59,7 @@ export function assertBuiltExecutable(settings) {
   const sourceTree = assertStableSourceTree(settings.sourceTree, settings.sourceTreeAfter);
   return {
     build: {
-      command: "cargo build -p harness",
+      command: settings.buildCommand ?? "cargo build -p harness",
       sourceTree,
     },
     source: settings.sourceBefore,
@@ -78,7 +78,7 @@ export function assertStableSourceTree(before, after) {
   }
   const fields = ["algorithm", "hash", "files", "head", "headTree"];
   if (fields.some((field) => before[field] !== after[field])) {
-    throw new Error("source tree changed during shipped-binary QA");
+    throw new Error("source tree changed during executable QA");
   }
   return { before, after, unchanged: true };
 }

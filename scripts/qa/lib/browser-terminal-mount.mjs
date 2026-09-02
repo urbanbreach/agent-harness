@@ -95,6 +95,31 @@ export async function mountTerminal(page, settings) {
           window.requestAnimationFrame(resolve);
         }));
       },
+      waitForStableFrame: async (options = {}, timeoutMs = 10000) => {
+        const deadline = performance.now() + timeoutMs;
+        const linePattern = options.linePattern ? new RegExp(options.linePattern) : null;
+        let previousSignature = null;
+        while (performance.now() < deadline) {
+          await window.qaTerminal.waitForVisualSync(timeoutMs);
+          const current = window.qaTerminal.snapshot();
+          const parsed = options.parsedCountBefore == null
+            || current.parsedCount > options.parsedCountBefore;
+          const coherent = linePattern == null
+            || current.text.split("\n").some((line) => linePattern.test(line));
+          const signature = JSON.stringify({
+            cols: current.cols,
+            rows: current.rows,
+            text: current.text,
+            cells: current.cells,
+            cursor: current.cursor,
+            modes: current.modes,
+          });
+          if (parsed && coherent && signature === previousSignature) return current;
+          previousSignature = signature;
+          await new Promise((resolve) => window.requestAnimationFrame(resolve));
+        }
+        throw new Error("xterm stable frame timed out");
+      },
       write: (base64) => new Promise((resolve, reject) => {
         const bytes = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
         const deadline = window.setTimeout(() => reject(new Error("xterm write callback timed out")), 10000);

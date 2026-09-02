@@ -227,6 +227,9 @@ function p102ModalChromeContract(options) {
 
 function p104ResponsiveFeedbackContract(options) {
   const basicAscii = options.capabilityVariant === "basic-ascii";
+  const detachedTranscriptLine = options.cols < 100
+    ? "❯ Harness responsive prompt [0-9]+"
+    : "Harness response [0-9]+: .*terminal-safe status feedback\\.";
   const environment = basicAscii
     ? {
         TERM: "dumb",
@@ -243,7 +246,11 @@ function p104ResponsiveFeedbackContract(options) {
   return {
     name: "p1-04-responsive-feedback",
     title: options.title ?? `Harness P1-04 responsive feedback ${options.capabilityVariant}`,
-    command: "env HARNESS_TUI_P1_04_SCENARIO=1 cargo test --manifest-path $HARNESS_QA_REPO_ROOT/Cargo.toml -p harness-tui --test p1_04_pty_recorded -- --exact p1_04_pty_helper --nocapture",
+    command: "env HARNESS_TUI_P1_04_SCENARIO=1 \"$HARNESS_QA_TEST_BINARY\" --exact p1_04_pty_helper --nocapture",
+    binaryTarget: {
+      package: "harness-tui",
+      test: "p1_04_pty_recorded",
+    },
     capabilityVariant: options.capabilityVariant,
     environment,
     classification: basicAscii
@@ -251,13 +258,21 @@ function p104ResponsiveFeedbackContract(options) {
       : { color: "true_color", glyphs: "preferred", width: "unicode11", motion: "full" },
     actions: [
       { kind: "wait", value: "P1-04 responsive ready" },
-      { kind: "capture", state: "following" },
+      {
+        kind: "capture",
+        state: "following",
+        linePattern: "Harness active responsive prompt",
+      },
       { kind: "key", value: "PageUp" },
-      { kind: "capture", state: "detached" },
+      { kind: "capture", state: "detached", linePattern: detachedTranscriptLine },
       { kind: "resize", cols: 80, rows: 24 },
       { kind: "resize", cols: 160, rows: 50 },
       { kind: "resize", cols: 120, rows: 40 },
-      { kind: "capture", state: "resize-final" },
+      {
+        kind: "capture",
+        state: "resize-final",
+        linePattern: "Harness response [0-9]+: .*terminal-safe status feedback\\.",
+      },
       { kind: "capture", state: "reduced-motion" },
     ],
     assertions: ["Harness"],
