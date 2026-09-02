@@ -252,7 +252,6 @@ function p103StartupRevealContract(options) {
       ]
     : [
         { kind: "wait", value: "Beta" },
-        { kind: "capture", state: "first-paint" },
         { kind: "wait", value: "New worktree" },
         { kind: "wait", value: "Subagent spawning" },
         { kind: "capture", state: "welcome-complete" },
