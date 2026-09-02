@@ -84,6 +84,10 @@ impl RecordedTerminal {
         &self.raw
     }
 
+    pub(crate) fn alternate_screen(&self) -> bool {
+        self.parser.screen().alternate_screen()
+    }
+
     pub(crate) fn state_size(&self) -> (u16, u16) {
         self.parser.screen().size()
     }
