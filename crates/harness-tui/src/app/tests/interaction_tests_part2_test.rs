@@ -408,6 +408,75 @@ fn detached_resize_app() -> AppState {
     app
 }
 
+pub(super) fn debounced_resize_preserves_detached_wide_glyph_display_column_anchor() {
+    // Given: a detached measured viewport anchored inside a long Unicode source line.
+    let long_line = "界e\u{301}🙂 anchor segment ".repeat(24);
+    let mut lines = vec![
+        "prefix row 0".to_string(),
+        "prefix row 1".to_string(),
+        "prefix row 2".to_string(),
+        long_line,
+    ];
+    lines.extend((0..30).map(|row| format!("tail row {row}")));
+    let transcript = lines.join("\n");
+    let mut app = transcript_selection_test_app_with_text(&transcript);
+    let initial = Rect::new(0, 0, 64, 14);
+    app.set_frame_area(initial);
+    let _ = render_text(&app, initial.width, initial.height);
+    let max_scroll = app.transcript_view.last_transcript_max_scroll.get();
+    app.transcript_view.set_measured_viewport(
+        super::super::transcript_viewport::MeasuredTranscriptViewport::detached(6, max_scroll),
+    );
+    let _ = render_text(&app, initial.width, initial.height);
+    let anchor_before = app
+        .transcript_view
+        .measured_anchor
+        .get()
+        .expect("detached long line must have a measured content anchor");
+    let mut ingress = crate::input::RuntimeInputIngress::default();
+
+    // When: a resize burst settles at its final width on an explicit clock.
+    assert!(ingress
+        .ingest_at(
+            std::time::Duration::ZERO,
+            crate::input::TerminalEnvelope::new(
+                crate::input::TerminalSequence::new(1),
+                std::time::Instant::now(),
+                crate::event::TuiEvent::Resize(72, 14),
+            ),
+        )
+        .is_none());
+    assert!(ingress
+        .ingest_at(
+            std::time::Duration::from_millis(7),
+            crate::input::TerminalEnvelope::new(
+                crate::input::TerminalSequence::new(2),
+                std::time::Instant::now(),
+                crate::event::TuiEvent::Resize(80, 14),
+            ),
+        )
+        .is_none());
+    assert!(ingress
+        .flush_due(std::time::Duration::from_millis(22))
+        .is_none());
+    let crate::event::TuiEvent::Resize(width, height) = ingress
+        .flush_due(std::time::Duration::from_millis(23))
+        .expect("final resize must become ready at the quiet boundary")
+        .event
+    else {
+        panic!("resize ingress emitted a non-resize event");
+    };
+    let resized = Rect::new(0, 0, width, height);
+    app.set_frame_area(resized);
+    let _ = render_text(&app, resized.width, resized.height);
+
+    // Then: measured reflow retains the exact logical line and source display column.
+    assert_eq!(
+        app.transcript_view.measured_anchor.get(),
+        Some(anchor_before)
+    );
+}
+
 pub(super) fn detached_page_flip_reconciles_when_resize_reaches_bottom() {
     // Given: detached transcript navigation in a compact viewport with scrollable history.
     let mut app = detached_resize_app();

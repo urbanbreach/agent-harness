@@ -159,6 +159,63 @@ pub(super) fn responding_phase_clock_advances_between_provider_deltas() {
     assert!(status_row(&screen, "Responding…").contains("Responding… 0.5s"));
 }
 
+pub(super) fn live_status_spinner_uses_ascii_catalog_when_requested() {
+    // Given: a live thinking indicator on an ASCII-only terminal.
+    let (mut app, _clock) = live_app_with_clock();
+    app.set_glyph_mode(crate::theme::GlyphMode::Ascii);
+    app.ingest_event(provider_started(
+        1,
+        "req_ascii_spinner",
+        "default",
+        "gpt-5.4-mini",
+    ));
+    app.ingest_event(envelope(
+        2,
+        "req_ascii_spinner",
+        EventV1::ProviderReasoningDelta(ProviderReasoningDeltaEvent {
+            request_id: "req_ascii_spinner".into(),
+            delta: "Planning the response".to_string(),
+        }),
+    ));
+
+    // When: the named live status surface is rendered.
+    let screen = render_text(&app, 140, 40);
+
+    // Then: its spinner is the selected ASCII catalog glyph.
+    assert_eq!(status_spinner_glyph(&screen, "Thinking…"), Some('o'));
+}
+
+pub(super) fn reduced_motion_keeps_live_status_spinner_static() {
+    // Given: a live thinking indicator with reduced motion enabled.
+    let (mut app, _clock) = live_app_with_clock();
+    app.set_reduced_motion_for_evidence(true);
+    app.ingest_event(provider_started(
+        1,
+        "req_static_spinner",
+        "default",
+        "gpt-5.4-mini",
+    ));
+    app.ingest_event(envelope(
+        2,
+        "req_static_spinner",
+        EventV1::ProviderReasoningDelta(ProviderReasoningDeltaEvent {
+            request_id: "req_static_spinner".into(),
+            delta: "Planning the response".to_string(),
+        }),
+    ));
+    let before = render_text(&app, 140, 40);
+
+    // When: the shared motion clock is sampled after time advances.
+    app.advance_wall_clock_for_motion_evidence(Duration::from_millis(330));
+    let after = render_text(&app, 140, 40);
+
+    // Then: the live spinner stays on its static first frame.
+    assert_eq!(
+        status_spinner_glyph(&before, "Thinking…"),
+        status_spinner_glyph(&after, "Thinking…")
+    );
+}
+
 pub(super) fn thinking_spinner_advances_on_animation_tick() {
     // Given: a live thinking indicator rendered between provider deltas.
     let (mut app, _clock) = live_app_with_clock();

@@ -590,14 +590,7 @@ fn build_assistant_render_surfaces(
             "queued",
         ),
         ActivityStatus::Streaming => (
-            if theme.glyph_mode() == crate::theme::GlyphMode::Ascii {
-                theme.live_shell.glyphs.streaming
-            } else {
-                transcript_streaming_spinner_frame_with_motion(
-                    turn.animation_phase,
-                    turn.motion_enabled,
-                )
-            },
+            glyph_routed_streaming_spinner_frame(theme, turn.animation_phase, turn.motion_enabled),
             agent_accent,
             "active",
         ),
@@ -1756,19 +1749,8 @@ fn build_context_tool_group_render_surface(
     Ok(raw)
 }
 
-fn context_group_rail_glyph(status: ToolCallPresentationStatus, theme: &Theme) -> &'static str {
-    if theme.glyph_mode() == crate::theme::GlyphMode::Ascii {
-        "|"
-    } else if matches!(
-        status,
-        ToolCallPresentationStatus::Running
-            | ToolCallPresentationStatus::Queued
-            | ToolCallPresentationStatus::Failed
-    ) {
-        "┃"
-    } else {
-        "❙"
-    }
+fn context_group_rail_glyph(_status: ToolCallPresentationStatus, theme: &Theme) -> &'static str {
+    theme.live_shell.transcript_glyphs.rail
 }
 
 fn context_group_preview_index(tool_calls: &[&TranscriptToolCallSection]) -> usize {
@@ -2054,10 +2036,13 @@ fn format_thought_duration_ms(duration_ms: u64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_transcript_render_surfaces, build_user_surface_lines, reasoning_summary};
+    use super::{
+        build_transcript_render_surfaces, build_user_surface_lines, context_group_rail_glyph,
+        reasoning_summary,
+    };
     use crate::{
         app::{ActivityStatus, ActivityUsage, AppState, ToolCallDisplayStatus},
-        theme::Theme,
+        theme::{GlyphMode, Theme},
     };
     use harness_core::event::{
         ActorKind, EventActor, EventEnvelopeV1, EventV1, ProviderRequestFinishedEvent,
@@ -2065,6 +2050,25 @@ mod tests {
         ToolCallRequestedEvent, ToolCallStartedEvent, ToolCallStatus, SCHEMA_VERSION,
     };
     use ratatui::{backend::TestBackend, layout::Rect, Terminal};
+
+    #[test]
+    fn context_group_rails_follow_the_theme_glyph_catalog() {
+        // Given: preferred and ASCII themes.
+        let preferred = Theme::default();
+        let ascii = preferred.with_glyph_mode(GlyphMode::Ascii);
+
+        // When: a non-scrollbar transcript rail is selected.
+        let rails = [
+            context_group_rail_glyph(
+                crate::app::ToolCallPresentationStatus::Succeeded,
+                &preferred,
+            ),
+            context_group_rail_glyph(crate::app::ToolCallPresentationStatus::Running, &ascii),
+        ];
+
+        // Then: preferred remains one cell and fallback is ASCII-safe.
+        assert_eq!(rails, [preferred.live_shell.transcript_glyphs.rail, "|"]);
+    }
 
     fn lifecycle_event(seq: u64, request_id: &str, payload: EventV1) -> EventEnvelopeV1 {
         EventEnvelopeV1 {

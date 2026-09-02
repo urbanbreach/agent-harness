@@ -18,24 +18,34 @@ fn animation_phase_f32(animation_phase: usize) -> f32 {
     f32::from(u16::try_from(wrapped).unwrap_or_default())
 }
 
-pub(super) fn transcript_streaming_spinner_frame(animation_phase: usize) -> &'static str {
-    transcript_streaming_spinner_frame_with_motion(animation_phase, true)
-}
-
-pub(super) fn monitor_pulse_frame(animation_phase: usize) -> &'static str {
-    let frame = animation_phase / MONITOR_PULSE_TICK_DIVISOR;
-    MONITOR_PULSE_FRAMES[frame % MONITOR_PULSE_FRAMES.len()]
-}
-
-pub(super) fn transcript_streaming_spinner_frame_with_motion(
+pub(super) fn glyph_routed_streaming_spinner_frame(
+    theme: &Theme,
     animation_phase: usize,
     motion_enabled: bool,
 ) -> &'static str {
+    if theme.glyph_mode() == crate::theme::GlyphMode::Ascii {
+        return theme.live_shell.glyphs.streaming;
+    }
     if !motion_enabled {
         return TRANSCRIPT_BRAILLE_SPINNER_FRAMES[0];
     }
     let frame = animation_phase / TRANSCRIPT_SPINNER_TICK_DIVISOR;
     TRANSCRIPT_BRAILLE_SPINNER_FRAMES[frame % TRANSCRIPT_BRAILLE_SPINNER_FRAMES.len()]
+}
+
+pub(super) fn glyph_routed_monitor_pulse_frame(
+    theme: &Theme,
+    animation_phase: usize,
+    motion_enabled: bool,
+) -> &'static str {
+    if theme.glyph_mode() == crate::theme::GlyphMode::Ascii {
+        return theme.live_shell.glyphs.running;
+    }
+    if !motion_enabled {
+        return MONITOR_PULSE_FRAMES[0];
+    }
+    let frame = animation_phase / MONITOR_PULSE_TICK_DIVISOR;
+    MONITOR_PULSE_FRAMES[frame % MONITOR_PULSE_FRAMES.len()]
 }
 
 pub(super) fn thinking_header_color(theme: &Theme, _surface: Color) -> Color {
@@ -140,10 +150,11 @@ pub(super) fn transcript_emphasized_surface(theme: &Theme, base_surface: Color) 
 #[cfg(test)]
 mod tests {
     use super::{
-        assistant_footer_label, blend_color, pending_diamond_color, thinking_header_color,
-        transcript_running_tool_marker_color, transcript_streaming_spinner_frame_with_motion,
-        Theme,
+        assistant_footer_label, blend_color, glyph_routed_monitor_pulse_frame,
+        glyph_routed_streaming_spinner_frame, pending_diamond_color, thinking_header_color,
+        transcript_running_tool_marker_color, Theme,
     };
+    use crate::theme::GlyphMode;
     use ratatui::style::Color;
 
     #[test]
@@ -229,18 +240,57 @@ mod tests {
     }
 
     #[test]
-    fn reduced_motion_keeps_active_spinner_static() {
-        // arrange
-        // Given: two different shared animation phases.
-        // When: reduced motion resolves their active marker.
-        let first = transcript_streaming_spinner_frame_with_motion(0, false);
-        let later = transcript_streaming_spinner_frame_with_motion(40, false);
+    fn preferred_motion_glyphs_are_single_cell_unicode() {
+        // Given: the preferred Harness glyph catalog.
+        let theme = Theme::default();
 
-        // act
-        // Then: the active state remains clear without continuous movement.
-        // assert
-        assert_eq!(first, "⠋");
-        assert_eq!(later, first);
+        // When: active status frames are selected.
+        let frames = [
+            glyph_routed_streaming_spinner_frame(&theme, 4, true),
+            glyph_routed_monitor_pulse_frame(&theme, 8, true),
+        ];
+
+        // Then: each preferred frame occupies exactly one terminal cell.
+        assert!(frames
+            .into_iter()
+            .all(|frame| unicode_width::UnicodeWidthStr::width(frame) == 1));
+    }
+
+    #[test]
+    fn ascii_motion_glyphs_are_ascii_safe() {
+        // Given: the ASCII Harness glyph catalog.
+        let theme = Theme::default().with_glyph_mode(GlyphMode::Ascii);
+
+        // When: active status frames are selected at moving phases.
+        let frames = [
+            glyph_routed_streaming_spinner_frame(&theme, 4, true),
+            glyph_routed_monitor_pulse_frame(&theme, 8, true),
+        ];
+
+        // Then: no terminal-sensitive Unicode escapes the capability boundary.
+        assert!(frames.into_iter().all(str::is_ascii));
+    }
+
+    #[test]
+    fn reduced_motion_keeps_routed_frames_static() {
+        // Given: preferred and ASCII Harness glyph catalogs.
+        let preferred = Theme::default();
+        let ascii = preferred.with_glyph_mode(GlyphMode::Ascii);
+
+        // When: reduced motion resolves distant animation phases.
+        let frames = [
+            (
+                glyph_routed_streaming_spinner_frame(&preferred, 0, false),
+                glyph_routed_streaming_spinner_frame(&preferred, 40, false),
+            ),
+            (
+                glyph_routed_monitor_pulse_frame(&ascii, 0, false),
+                glyph_routed_monitor_pulse_frame(&ascii, 40, false),
+            ),
+        ];
+
+        // Then: both catalogs retain a static one-cell status cue.
+        assert!(frames.into_iter().all(|(first, later)| first == later));
     }
 
     #[test]

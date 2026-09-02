@@ -18,8 +18,8 @@ use ratatui::Terminal;
 use crate::app::{AppState, LaunchMetadata, SessionHistoryEntry, TogglesConfig, UiIntent};
 use crate::event;
 use crate::input::{
-    ScrollConfigOverrides, ScrollNormalizer, ScrollNormalizerConfig, ScrollSampleDirection,
-    TerminalEnvelope, TerminalIngressReader, TerminalQueue, TerminalReaderStatus,
+    RuntimeInputIngress, ScrollConfigOverrides, ScrollNormalizer, ScrollNormalizerConfig,
+    ScrollSampleDirection, TerminalIngressReader, TerminalReaderStatus,
 };
 use crate::presentation::{
     CauseId, InteractionId, PresentationCauseKind, PresentationClock, RenderDemand, RenderReason,
@@ -102,17 +102,6 @@ fn mouse_presentation_kind(
 fn refresh_motion_plan(app: &mut AppState) -> MotionPlan {
     app.refresh_motion_state();
     app.motion_plan()
-}
-
-fn prioritize_terminal_before_present(
-    queue: &mut TerminalQueue,
-    pending: &mut Option<TerminalEnvelope>,
-    input_priority: &mut bool,
-) {
-    if !*input_priority && pending.is_none() {
-        *pending = queue.try_recv().ok();
-        *input_priority = pending.is_some();
-    }
 }
 
 const fn runtime_quit_ready(app_should_quit: bool, presenter: &Presenter) -> bool {
@@ -645,6 +634,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         .with_overrides(scroll_overrides);
         let mut scroll_normalizer = ScrollNormalizer::new(scroll_config);
         let mut presenter = Presenter::new();
+        let mut runtime_input = RuntimeInputIngress::default();
         let mut pending_terminal = None;
         let mut arbiter = RuntimeArbiter::default();
         let mut input_budget = None;
@@ -679,7 +669,11 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                 session.record_acknowledgements(frame_output.take_acknowledgements());
             }
             if pending_terminal.is_none() {
-                pending_terminal = terminal_ingress.queue.try_recv().ok();
+                pending_terminal = runtime_input.take_ready(
+                    &mut terminal_ingress.queue,
+                    pacing_epoch,
+                    Instant::now(),
+                );
             }
             if let Some(signal) = scheduling_readiness.as_mut() {
                 let stream_active = app.active_turn_in_progress();
@@ -791,11 +785,14 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                     None => {}
                 }
             }
-            prioritize_terminal_before_present(
-                &mut terminal_ingress.queue,
-                &mut pending_terminal,
-                &mut input_priority,
-            );
+            if !input_priority && pending_terminal.is_none() {
+                pending_terminal = runtime_input.take_ready(
+                    &mut terminal_ingress.queue,
+                    pacing_epoch,
+                    Instant::now(),
+                );
+                input_priority = pending_terminal.is_some();
+            }
             if !input_priority && presenter.should_present(frame_ready) {
                 let demand = presenter.take_render_demand().or_else(|| {
                     presentation_session
@@ -857,9 +854,18 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                 envelope.map(|envelope| envelope.event)
             } else if matches!(decision, RuntimeDecision::Park) {
                 let now = Instant::now();
-                let deadline = pacer
+                let pacing_deadline = pacer
                     .next_wait_ms(runtime_frame_now(pacing_epoch, now))
                     .map(|millis| now + Duration::from_millis(millis));
+                let resize_deadline = runtime_input
+                    .deadline()
+                    .map(|elapsed| pacing_epoch + elapsed);
+                let deadline = match (pacing_deadline, resize_deadline) {
+                    (Some(pacing), Some(resize)) => Some(pacing.min(resize)),
+                    (Some(pacing), None) => Some(pacing),
+                    (None, Some(resize)) => Some(resize),
+                    (None, None) => None,
+                };
                 let wait_set = RuntimeWaitSet {
                     frame: frame_output.acknowledgement_receiver(),
                     reader: &terminal_ingress.status,
@@ -868,7 +874,9 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                 };
                 match wait_set.wait(deadline) {
                     RuntimeWake::Terminal(envelope) => {
-                        pending_terminal = Some(envelope);
+                        let received_at =
+                            envelope.received_at.saturating_duration_since(pacing_epoch);
+                        pending_terminal = runtime_input.ingest_at(received_at, envelope);
                         None
                     }
                     RuntimeWake::Live(update) => {
@@ -1485,8 +1493,6 @@ mod tests {
         // Given: lower-priority work won arbitration just before a click reaches ingress.
         let (sender, receiver) = crossbeam_channel::bounded(2);
         let mut queue = crate::input::TerminalQueue::new(receiver);
-        let mut pending = None;
-        let mut input_priority = false;
         sender
             .send(crate::input::TerminalEnvelope::new(
                 crate::input::TerminalSequence::new(1),
@@ -1501,7 +1507,10 @@ mod tests {
             .expect("terminal queue remains connected");
 
         // When: production reaches the last boundary before an expensive frame build.
-        prioritize_terminal_before_present(&mut queue, &mut pending, &mut input_priority);
+        let mut ingress = RuntimeInputIngress::default();
+        let now = Instant::now();
+        let pending = ingress.take_ready(&mut queue, now, now);
+        let input_priority = pending.is_some();
 
         // act
         // Then: the click is dispatched before lower-priority rendering starts.

@@ -17,7 +17,7 @@ use super::ui_transcript::{
 };
 use super::ui_transcript_layout::TranscriptVisualEntry;
 use super::ui_transcript_style::{
-    blend_color, pending_diamond_color, transcript_streaming_spinner_frame,
+    blend_color, glyph_routed_streaming_spinner_frame, pending_diamond_color,
 };
 use crate::composer_atoms::split_graphemes;
 use crate::terminal::char_display_width;
@@ -102,19 +102,26 @@ fn apply_surface_animation_phase(
                 span.content.as_ref(),
                 "⠋" | "⠙" | "⠹" | "⠸" | "⠼" | "⠴" | "⠦" | "⠧"
             ) {
-                span.content = transcript_streaming_spinner_frame(animation_phase).into();
+                span.content =
+                    glyph_routed_streaming_spinner_frame(theme, animation_phase, true).into();
             }
         }
         let absolute_row = local_scroll.saturating_add(local_row);
-        apply_tool_header_motion_color(line, surface, absolute_row, animation_phase);
+        apply_tool_header_motion_color(line, surface, absolute_row, animation_phase, theme);
         if matches!(
             surface.kind,
             TranscriptRenderSurfaceKind::User | TranscriptRenderSurfaceKind::AssistantFooter
         ) {
+            let marker_glyphs = [
+                theme.live_shell.glyphs.pending_permission,
+                theme.live_shell.transcript_glyphs.tool_marker,
+                theme.live_shell.transcript_glyphs.thought_marker,
+                theme.live_shell.transcript_glyphs.group_marker,
+            ];
             if let Some(marker) = line
                 .spans
                 .iter_mut()
-                .find(|span| span.content.trim() == "◆")
+                .find(|span| marker_glyphs.contains(&span.content.trim()))
             {
                 marker.style = marker
                     .style
@@ -307,6 +314,7 @@ fn apply_tool_header_motion_color(
     surface: &TranscriptVisualEntry,
     absolute_row: usize,
     animation_phase: usize,
+    theme: &Theme,
 ) {
     let Some(motion) = surface.tool_rail_motion else {
         return;
@@ -331,10 +339,11 @@ fn apply_tool_header_motion_color(
         return;
     }
     let semantic_group_surface = surface.lines.first().is_some_and(|header| {
-        let marker_index = header
-            .spans
-            .iter()
-            .position(|span| span.content.trim_start().starts_with('◈'));
+        let marker_index = header.spans.iter().position(|span| {
+            span.content
+                .trim_start()
+                .starts_with(theme.live_shell.transcript_glyphs.group_marker)
+        });
         marker_index.is_some_and(|marker_index| {
             header
                 .spans
@@ -347,11 +356,15 @@ fn apply_tool_header_motion_color(
     if semantic_group_surface && absolute_row != 0 {
         return;
     }
+    let marker_glyphs = [
+        theme.live_shell.transcript_glyphs.tool_marker,
+        theme.live_shell.transcript_glyphs.thought_marker,
+        theme.live_shell.transcript_glyphs.group_marker,
+    ];
     let marker_index = line.spans.iter().position(|span| {
-        matches!(
-            span.content.trim_start().chars().next(),
-            Some('◆' | '◇' | '◈')
-        )
+        marker_glyphs
+            .iter()
+            .any(|marker| span.content.trim_start().starts_with(marker))
     });
     let Some(marker_index) = marker_index else {
         return;

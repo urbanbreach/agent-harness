@@ -14,7 +14,7 @@ use crate::{
 use super::{
     ui_chrome::{display_width, truncate_plain_text},
     ui_context_budget::ContextBudget,
-    ui_transcript_style::{monitor_pulse_frame, transcript_streaming_spinner_frame},
+    ui_transcript_style::{glyph_routed_monitor_pulse_frame, glyph_routed_streaming_spinner_frame},
 };
 
 #[path = "ui_live_turn_status_presentation.rs"]
@@ -134,10 +134,15 @@ pub(super) fn render_live_turn_status(
             .then(|| format!("· {} queued — Enter to send now", app.queued_prompt_count))
     };
     let uses_monitor_pulse = parked || (background_tasks > 0 && !foreground_work);
+    let motion_enabled = app.transcript_motion_enabled();
     let spinner = if uses_monitor_pulse {
-        monitor_pulse_frame(app.transcript_animation_phase())
+        glyph_routed_monitor_pulse_frame(theme, app.transcript_animation_phase(), motion_enabled)
     } else {
-        transcript_streaming_spinner_frame(app.transcript_animation_phase())
+        glyph_routed_streaming_spinner_frame(
+            theme,
+            app.transcript_animation_phase(),
+            motion_enabled,
+        )
     };
     let spinner_width = display_width(spinner).saturating_add(1);
     let full_label_width = display_width(&status.label);

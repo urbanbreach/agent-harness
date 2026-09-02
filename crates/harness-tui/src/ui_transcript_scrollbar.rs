@@ -1,18 +1,18 @@
 use ratatui::{
     layout::Rect,
-    style::{Color, Style},
+    style::{Color, Modifier, Style},
     widgets::Block,
     Frame,
 };
 
+use super::ui_transcript_style::blend_color;
 use crate::theme::Theme;
 
 const TRANSCRIPT_SCROLLBAR_GUTTER_WIDTH: u16 = 0;
 const TRANSCRIPT_SCROLLBAR_TRACK_WIDTH: u16 = 1;
 const TRANSCRIPT_SCROLLBAR_THUMB_WIDTH: u16 = 1;
 const TRANSCRIPT_SCROLLBAR_MIN_THUMB_HEIGHT: usize = 3;
-const TRANSCRIPT_SCROLLBAR_THUMB_GLYPH: &str = "█";
-const TRANSCRIPT_MORE_BELOW_GLYPH: &str = "▼";
+const TRANSCRIPT_SCROLLBAR_FOLLOWING_THUMB_BLEND: f32 = 0.45;
 
 #[derive(Debug, Clone, Copy)]
 pub(super) struct TranscriptViewportLayout {
@@ -29,46 +29,69 @@ pub(crate) struct TranscriptScrollbarHit {
     pub max_scroll: usize,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(super) struct TranscriptScrollbarRenderSpec {
+    pub(super) viewport: TranscriptViewportLayout,
+    pub(super) scroll_top: usize,
+    pub(super) max_scroll: usize,
+    pub(super) base_surface: Color,
+    pub(super) following: bool,
+    pub(super) drag_active: bool,
+}
+
 pub(super) fn render_transcript_scrollbar(
     frame: &mut Frame,
-    viewport: TranscriptViewportLayout,
-    scroll_top: usize,
-    max_scroll: usize,
     theme: &Theme,
-    base_surface: Color,
-    drag_active: bool,
+    spec: TranscriptScrollbarRenderSpec,
 ) {
-    if let Some(chrome) = viewport.scrollbar_chrome {
+    if let Some(chrome) = spec.viewport.scrollbar_chrome {
         frame.render_widget(
-            Block::default().style(Style::default().bg(base_surface)),
+            Block::default().style(Style::default().bg(spec.base_surface)),
             chrome,
         );
     }
 
-    let Some(scrollbar) = transcript_scrollbar_geometry(viewport, scroll_top, max_scroll) else {
+    let Some(scrollbar) =
+        transcript_scrollbar_geometry(spec.viewport, spec.scroll_top, spec.max_scroll)
+    else {
         return;
     };
 
+    let glyphs = theme.live_shell.transcript_glyphs;
     let buffer = frame.buffer_mut();
     for y in scrollbar.track.y..scrollbar.track.bottom() {
         for x in scrollbar.track.x..scrollbar.track.right() {
             let cell = &mut buffer[(x, y)];
-            cell.set_symbol(" ");
-            cell.set_bg(theme.scrollbar.track);
+            cell.set_symbol(glyphs.scrollbar_track);
+            cell.set_fg(theme.scrollbar.track);
+            cell.set_bg(spec.base_surface);
         }
     }
 
-    let thumb_color = if drag_active {
-        theme.scrollbar.thumb_active
+    let thumb_style = if spec.drag_active {
+        Style::default()
+            .fg(theme.scrollbar.thumb_active)
+            .bg(spec.base_surface)
+            .add_modifier(Modifier::BOLD)
+    } else if spec.following {
+        Style::default()
+            .fg(blend_color(
+                theme.scrollbar.track,
+                theme.scrollbar.thumb,
+                TRANSCRIPT_SCROLLBAR_FOLLOWING_THUMB_BLEND,
+            ))
+            .bg(spec.base_surface)
+            .add_modifier(Modifier::DIM)
     } else {
-        theme.scrollbar.thumb
+        Style::default()
+            .fg(theme.scrollbar.thumb)
+            .bg(spec.base_surface)
     };
     for y in scrollbar.thumb.y..scrollbar.thumb.bottom() {
         for x in scrollbar.thumb.x..scrollbar.thumb.right() {
             let cell = &mut buffer[(x, y)];
-            cell.set_symbol(TRANSCRIPT_SCROLLBAR_THUMB_GLYPH);
-            cell.set_fg(thumb_color);
-            cell.set_bg(theme.scrollbar.track);
+            cell.set_symbol(glyphs.scrollbar_thumb);
+            cell.set_style(thumb_style);
         }
     }
 }
@@ -87,7 +110,7 @@ pub(super) fn render_transcript_more_below_affordance(
     };
 
     let cell = &mut frame.buffer_mut()[(area.x, area.y)];
-    cell.set_symbol(TRANSCRIPT_MORE_BELOW_GLYPH);
+    cell.set_symbol(theme.live_shell.transcript_glyphs.more_below);
     cell.set_fg(if hovered {
         theme.text.primary
     } else {
@@ -255,7 +278,137 @@ pub(super) fn transcript_scroll_offset(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ratatui::{backend::TestBackend, Terminal};
+    use ratatui::{backend::TestBackend, buffer::Buffer, style::Modifier, Terminal};
+    use unicode_width::UnicodeWidthStr;
+
+    fn render_scrollbar_cells(theme: &Theme, following: bool, drag_active: bool) -> Buffer {
+        let backend = TestBackend::new(6, 6);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        let viewport = transcript_viewport_layout(Rect::new(0, 0, 6, 6), true);
+
+        terminal
+            .draw(|frame| {
+                render_transcript_scrollbar(
+                    frame,
+                    theme,
+                    TranscriptScrollbarRenderSpec {
+                        viewport,
+                        scroll_top: 3,
+                        max_scroll: 6,
+                        base_surface: Color::Black,
+                        following,
+                        drag_active,
+                    },
+                );
+                render_transcript_more_below_affordance(
+                    frame,
+                    viewport.content,
+                    3,
+                    6,
+                    theme,
+                    Color::Black,
+                    false,
+                );
+            })
+            .expect("draw");
+
+        terminal.backend().buffer().clone()
+    }
+
+    #[test]
+    fn following_thumb_is_dimmed_toward_the_track() {
+        // Given: the transcript is following new output.
+        let theme = Theme::default();
+
+        // When: the scrollbar cells are rendered.
+        let buffer = render_scrollbar_cells(&theme, true, false);
+        let track = &buffer[(5, 0)];
+        let thumb = &buffer[(5, 2)];
+
+        // Then: the rail remains visible while the normal thumb token is dimmed.
+        assert_eq!(track.symbol(), "│");
+        assert_eq!(track.fg, theme.scrollbar.track);
+        assert_eq!(thumb.symbol(), "█");
+        assert_eq!(
+            thumb.fg,
+            blend_color(
+                theme.scrollbar.track,
+                theme.scrollbar.thumb,
+                TRANSCRIPT_SCROLLBAR_FOLLOWING_THUMB_BLEND,
+            )
+        );
+        assert_ne!(thumb.fg, theme.scrollbar.track);
+        assert_ne!(thumb.fg, theme.scrollbar.thumb);
+        assert!(thumb.modifier.contains(Modifier::DIM));
+        assert!(!thumb.modifier.contains(Modifier::BOLD));
+    }
+
+    #[test]
+    fn detached_thumb_uses_normal_scrollbar_emphasis() {
+        // Given: the transcript is detached from new output.
+        let theme = Theme::default();
+
+        // When: the scrollbar cells are rendered.
+        let buffer = render_scrollbar_cells(&theme, false, false);
+        let thumb = &buffer[(5, 2)];
+
+        // Then: the thumb uses the normal token without emphasis modifiers.
+        assert_eq!(thumb.symbol(), "█");
+        assert_eq!(thumb.fg, theme.scrollbar.thumb);
+        assert!(!thumb.modifier.intersects(Modifier::DIM | Modifier::BOLD));
+    }
+
+    #[test]
+    fn drag_active_thumb_uses_strongest_scrollbar_emphasis() {
+        // Given: the transcript scrollbar is being dragged.
+        let theme = Theme::default();
+
+        // When: the scrollbar cells are rendered.
+        let buffer = render_scrollbar_cells(&theme, true, true);
+        let thumb = &buffer[(5, 2)];
+
+        // Then: dragging overrides following with the active token and bold emphasis.
+        assert_eq!(thumb.symbol(), "█");
+        assert_eq!(thumb.fg, theme.scrollbar.thumb_active);
+        assert!(thumb.modifier.contains(Modifier::BOLD));
+        assert!(!thumb.modifier.contains(Modifier::DIM));
+    }
+
+    #[test]
+    fn preferred_scrollbar_glyphs_are_exactly_one_cell_wide() {
+        // Given: the preferred Harness glyph mode.
+        let theme = Theme::default();
+
+        // When: scrollbar and more-below cells are rendered.
+        let buffer = render_scrollbar_cells(&theme, false, false);
+        let symbols = [
+            buffer[(5, 0)].symbol(),
+            buffer[(5, 2)].symbol(),
+            buffer[(2, 5)].symbol(),
+        ];
+
+        // Then: the semantic catalog supplies the expected narrow glyphs.
+        assert_eq!(symbols, ["│", "█", "▼"]);
+        assert!(symbols.iter().all(|symbol| symbol.width() == 1));
+    }
+
+    #[test]
+    fn ascii_scrollbar_glyphs_are_exactly_one_cell_wide() {
+        // Given: the ASCII Harness glyph mode.
+        let theme = Theme::default().with_glyph_mode(crate::theme::GlyphMode::Ascii);
+
+        // When: scrollbar and more-below cells are rendered.
+        let buffer = render_scrollbar_cells(&theme, false, false);
+        let symbols = [
+            buffer[(5, 0)].symbol(),
+            buffer[(5, 2)].symbol(),
+            buffer[(2, 5)].symbol(),
+        ];
+
+        // Then: each fallback is exact ASCII and occupies one terminal cell.
+        assert_eq!(symbols, ["|", "#", "v"]);
+        assert!(symbols.iter().all(|symbol| symbol.width() == 1));
+    }
 
     #[test]
     fn transcript_scrollbar_layout_matches_shell_lane_width() {
@@ -299,7 +452,7 @@ mod tests {
         let cell = &buffer[(center_x, bottom_y)];
         assert_eq!(
             cell.symbol(),
-            TRANSCRIPT_MORE_BELOW_GLYPH,
+            theme.live_shell.transcript_glyphs.more_below,
             "mid-scroll viewport must paint centered more-below affordance at ({center_x},{bottom_y})"
         );
     }
@@ -334,7 +487,7 @@ mod tests {
         let cell = &buffer[(center_x, bottom_y)];
         assert_ne!(
             cell.symbol(),
-            TRANSCRIPT_MORE_BELOW_GLYPH,
+            theme.live_shell.transcript_glyphs.more_below,
             "bottom-pinned viewport must not paint more-below affordance"
         );
     }
