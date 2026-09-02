@@ -272,8 +272,11 @@ impl AppState {
         self.reset_clear_prompt_confirmation();
         self.continued_live_reopen_surface_active = false;
         if c == '/'
-            && self.composer.prompt_cursor == 0
-            && !self.composer.prompt_buffer.starts_with('/')
+            && (self.composer.prompt_cursor == 0
+                || self.composer.prompt_buffer[..self.prompt_cursor_byte_index()]
+                    .chars()
+                    .next_back()
+                    .is_some_and(char::is_whitespace))
         {
             self.slash_draft_snapshot = Some(self.composer.prompt_buffer.clone());
         }

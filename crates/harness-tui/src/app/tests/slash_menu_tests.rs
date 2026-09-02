@@ -4,14 +4,18 @@ use crate::UnwrapOrAbort;
 pub(super) fn slash_menu_closes_after_whitespace() {
     let mut app = AppState::new_startup(Vec::new(), None);
 
-    app.handle_key(key(KeyCode::Char('/')));
-    app.handle_key(key(KeyCode::Char('n')));
+    // Given ordinary text followed by whitespace
+    app.insert_prompt_char('h');
+    app.insert_prompt_char('i');
+    app.insert_prompt_char(' ');
+
+    // When a slash command token is typed after the whitespace
+    app.insert_prompt_char('/');
+    app.insert_prompt_char('n');
+
+    // Then the exact post-whitespace token was inserted before checking visibility
+    assert_eq!(app.composer.prompt_buffer, "hi /n");
     assert!(app.slash_visible);
-
-    app.handle_key(key(KeyCode::Char(' ')));
-
-    assert!(!app.slash_visible);
-    assert_eq!(app.composer.prompt_buffer, "/n ");
 }
 
 pub(super) fn slash_menu_resets_selection_when_filter_changes() {
@@ -27,6 +31,32 @@ pub(super) fn slash_menu_resets_selection_when_filter_changes() {
 
     assert_eq!(app.slash_filtered, vec!["sessions".to_string()]);
     assert_eq!(app.slash_selected, 0);
+}
+
+pub(super) fn slash_menu_ignores_url_and_escaped_tokens() {
+    let mut url = AppState::new_startup(Vec::new(), None);
+    for character in "https://example.com".chars() {
+        url.insert_prompt_char(character);
+    }
+    assert!(!url.slash_visible);
+
+    let mut escaped = AppState::new_startup(Vec::new(), None);
+    for character in "\\/help".chars() {
+        escaped.insert_prompt_char(character);
+    }
+    assert!(!escaped.slash_visible);
+}
+
+pub(super) fn slash_menu_handles_unicode_query_deterministically() {
+    let mut app = AppState::new_startup(Vec::new(), None);
+    for character in "/名".chars() {
+        app.insert_prompt_char(character);
+    }
+    let first = app.slash_filtered.clone();
+
+    app.sync_slash_overlay();
+
+    assert_eq!(app.slash_filtered, first);
 }
 
 pub(super) fn slash_menu_matches_descriptions_and_boosts_prefixes() {
@@ -443,6 +473,98 @@ pub(super) fn rename_slash_command_emits_update_session_title_intent() {
     );
 }
 
+pub(super) fn slash_tab_accepts_command_without_executing() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().unwrap_or_abort().push(intent);
+        })
+    };
+
+    // Given a partial required-argument command in the live composer.
+    let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, Some(sink));
+    app.replace_prompt_input("/ren".to_string());
+    app.sync_slash_overlay();
+    assert!(app.slash_filtered.iter().any(|command| command == "rename"));
+
+    // When Tab accepts the selected slash completion.
+    app.handle_key(key(KeyCode::Tab));
+
+    // Then text is accepted into argument phase without executing the command.
+    assert_eq!(app.composer.prompt_buffer, "/rename ");
+    assert!(app.slash_visible);
+    assert_eq!(app.slash_argument_required("rename"), Some(true));
+    assert!(intents.lock().unwrap_or_abort().is_empty());
+}
+
+pub(super) fn slash_mid_text_required_argument_executes_once_and_restores_draft() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().unwrap_or_abort().push(intent);
+        })
+    };
+    let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, Some(sink));
+    for character in "draft /ren".chars() {
+        app.insert_prompt_char(character);
+    }
+
+    app.handle_key(key(KeyCode::Tab));
+    for character in "Parity Title".chars() {
+        app.insert_prompt_char(character);
+    }
+    app.handle_key(key(KeyCode::Enter));
+
+    assert_eq!(app.composer.prompt_buffer, "draft ");
+    assert_eq!(
+        intents.lock().unwrap_or_abort().as_slice(),
+        &[UiIntent::UpdateSessionTitle {
+            title: "Parity Title".to_string(),
+        }]
+    );
+}
+
+pub(super) fn slash_tab_replaces_the_full_command_token_from_mid_token_cursor() {
+    let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, None);
+    app.replace_prompt_input("draft /renX Existing".to_string());
+    app.composer.prompt_cursor = "draft /ren".chars().count();
+    app.sync_slash_overlay();
+
+    app.handle_key(key(KeyCode::Tab));
+
+    assert_eq!(app.composer.prompt_buffer, "draft /rename Existing");
+    assert_eq!(app.composer.prompt_cursor, "draft /rename ".chars().count());
+    assert_eq!(app.slash_argument_required("rename"), Some(true));
+}
+
+pub(super) fn slash_enter_uses_required_arguments_after_the_cursor() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().unwrap_or_abort().push(intent);
+        })
+    };
+    let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, Some(sink));
+    for character in "draft /rename Parity Title".chars() {
+        app.insert_prompt_char(character);
+    }
+    app.composer.prompt_cursor = "draft /rename Parity".chars().count();
+    app.sync_slash_overlay();
+
+    app.handle_key(key(KeyCode::Enter));
+
+    assert_eq!(app.composer.prompt_buffer, "draft ");
+    assert_eq!(
+        intents.lock().unwrap_or_abort().as_slice(),
+        &[UiIntent::UpdateSessionTitle {
+            title: "Parity Title".to_string(),
+        }]
+    );
+}
+
 pub(super) fn rename_slash_empty_title_emits_error_toast() {
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let sink: Arc<dyn Fn(UiIntent) + Send + Sync> = {
@@ -464,7 +586,10 @@ pub(super) fn rename_slash_empty_title_emits_error_toast() {
         .unwrap_or_abort()
         .iter()
         .any(|intent| matches!(intent, UiIntent::UpdateSessionTitle { .. })));
-    assert_eq!(
+    assert!(app.slash_visible);
+    assert_eq!(app.composer.prompt_buffer, "/rename  ");
+    assert_eq!(app.slash_argument_required("rename"), Some(true));
+    assert_ne!(
         app.status_banner.as_deref(),
         Some("session title cannot be empty")
     );

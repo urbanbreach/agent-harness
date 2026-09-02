@@ -179,6 +179,13 @@ export async function executeActions(settings) {
           throw new Error(`expected ${action.count} occurrence(s) of ${action.value}, found ${actual}`);
         }
       }
+      else if (action.kind === "assertTitleCount") {
+        result = await settings.terminal.snapshot();
+        const actual = result.titleHistory.filter((title) => title === action.value).length;
+        if (actual !== action.count) {
+          throw new Error(`expected ${action.count} title occurrence(s) of ${action.value}, found ${actual}`);
+        }
+      }
       else if (action.kind === "type") await settings.terminal.type(action.value);
       else if (action.kind === "key") await settings.terminal.key(action.value);
       else if (action.kind === "click") result = await settings.terminal.clickText(action.value);

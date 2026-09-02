@@ -3,6 +3,8 @@ const SCENARIOS = [
   "transcript-response-navigation",
   "transcript-active-block",
   "composer-multiline-actions",
+  "slash-completion-happy",
+  "slash-completion-edge",
   "disconnect-truth",
   "disconnect-duplicate",
 ];
@@ -57,6 +59,8 @@ export function parseArgs(argv) {
 export function scenarioContract(options, environment) {
   if (options.scenario === "smoke") return smokeContract(options);
   if (options.scenario === "composer-multiline-actions") return composerMultilineActionsContract(options);
+  if (options.scenario === "slash-completion-happy") return slashCompletionHappyContract(options);
+  if (options.scenario === "slash-completion-edge") return slashCompletionEdgeContract(options);
   if (options.scenario === "disconnect-truth" || options.scenario === "disconnect-duplicate") {
     return disconnectContract(options);
   }
@@ -176,6 +180,60 @@ function composerMultilineActionsContract(options) {
   };
 }
 
+function slashCompletionCommand() {
+  return "env HARNESS_TUI_P1_01_SCENARIO=1 cargo test --manifest-path $HARNESS_QA_REPO_ROOT/Cargo.toml -p harness-tui --test p1_01_pty_recorded -- --exact p1_01_pty_helper --nocapture";
+}
+
+function slashCompletionHappyContract(options) {
+  const renamedTitle = "P1-01 renamed:Parity Title";
+  return {
+    name: "slash-completion-happy",
+    title: options.title ?? "Harness slash completion happy path",
+    command: slashCompletionCommand(),
+    actions: [
+      { kind: "wait", value: "P1-01 slash ready" },
+      { kind: "type", value: "draft /ren" },
+      { kind: "wait", value: "/rename" },
+      { kind: "capture" },
+      { kind: "key", value: "Tab" },
+      { kind: "wait", value: "argument required" },
+      { kind: "capture" },
+      { kind: "type", value: "Parity Title" },
+      { kind: "key", value: "Enter" },
+      { kind: "waitTitle", value: renamedTitle },
+      { kind: "assertTitleCount", value: renamedTitle, count: 1 },
+      { kind: "wait", value: "draft" },
+      { kind: "capture" },
+    ],
+    assertions: ["P1-01 slash ready", "draft"],
+    expectNaturalExit: false,
+  };
+}
+
+function slashCompletionEdgeContract(options) {
+  return {
+    name: "slash-completion-edge",
+    title: options.title ?? "Harness slash completion edge path",
+    command: slashCompletionCommand(),
+    actions: [
+      { kind: "wait", value: "P1-01 slash ready" },
+      { kind: "type", value: "/rename" },
+      { kind: "key", value: "Tab" },
+      { kind: "wait", value: "argument required" },
+      { kind: "key", value: "Enter" },
+      { kind: "wait", value: "argument required" },
+      { kind: "waitAbsent", value: "session title cannot be empty" },
+      { kind: "capture" },
+      { kind: "key", value: "Escape" },
+      { kind: "type", value: "https://example.com \\/help /名" },
+      { kind: "wait", value: "No matching items" },
+      { kind: "capture" },
+    ],
+    assertions: ["P1-01 slash ready", "https://example.com", "\\/help", "No matching items"],
+    expectNaturalExit: false,
+  };
+}
+
 function parseAction(value) {
   const structured = /^\{(WaitTitle|WaitAbsent|Wait|Click):(.+)\}$/.exec(value);
   if (structured) {
@@ -207,13 +265,13 @@ function parseAction(value) {
 
 function normalizeAction(value) {
   if (typeof value === "string") return parseAction(value);
-  if (!value || typeof value !== "object" || !["wait", "waitAbsent", "waitTitle", "waitCount", "assertCount", "type", "key", "click", "capture"].includes(value.kind)) {
+  if (!value || typeof value !== "object" || !["wait", "waitAbsent", "waitTitle", "waitCount", "assertCount", "assertTitleCount", "type", "key", "click", "capture"].includes(value.kind)) {
     throw new CliError("invalid fixture action");
   }
   if (value.kind !== "capture" && typeof value.value !== "string") {
     throw new CliError(`fixture action ${value.kind} requires a string value`);
   }
-  if ((value.kind === "waitCount" || value.kind === "assertCount")
+  if ((value.kind === "waitCount" || value.kind === "assertCount" || value.kind === "assertTitleCount")
     && (!Number.isSafeInteger(value.count) || value.count < 0)) {
     throw new CliError(`fixture action ${value.kind} requires a non-negative integer count`);
   }

@@ -119,16 +119,75 @@ impl AppState {
         self.slash_overlay_should_render() && self.handle_slash_key(key)
     }
 
-    fn active_slash_query(&self) -> Option<&str> {
-        if self.composer.prompt_cursor == 0
-            || self.composer.prompt_buffer.chars().any(char::is_whitespace)
-        {
-            return None;
-        }
-
+    fn active_slash_start(&self) -> Option<usize> {
         let cursor_byte = self.prompt_cursor_byte_index();
-        let query = self.composer.prompt_buffer[..cursor_byte].strip_prefix('/')?;
-        (!query.chars().any(char::is_whitespace)).then_some(query)
+        let input = &self.composer.prompt_buffer[..cursor_byte];
+        input.char_indices().rev().find_map(|(index, character)| {
+            if character != '/' {
+                return None;
+            }
+            let at_boundary = index == 0
+                || input[..index]
+                    .chars()
+                    .next_back()
+                    .is_some_and(char::is_whitespace);
+            at_boundary.then_some(index)
+        })
+    }
+
+    fn active_slash_parts(&self) -> Option<(&str, Option<&str>)> {
+        let cursor_byte = self.prompt_cursor_byte_index();
+        let slash_start = self.active_slash_start()?;
+        let input = &self.composer.prompt_buffer[..cursor_byte];
+        let expression = &input[slash_start + 1..];
+        let (command, args) = expression
+            .split_once(char::is_whitespace)
+            .map_or((expression, None), |(command, args)| (command, Some(args)));
+        Some((command, args))
+    }
+
+    fn active_slash_parts_full(&self) -> Option<(&str, Option<&str>)> {
+        let slash_start = self.active_slash_start()?;
+        let expression = &self.composer.prompt_buffer[slash_start + 1..];
+        let (command, args) = expression
+            .split_once(char::is_whitespace)
+            .map_or((expression, None), |(command, args)| (command, Some(args)));
+        Some((command, args))
+    }
+
+    fn active_slash_query(&self) -> Option<&str> {
+        self.active_slash_parts().map(|(command, _)| command)
+    }
+
+    pub(crate) fn slash_match_query(&self) -> &str {
+        self.active_slash_parts()
+            .filter(|(_, args)| args.is_none())
+            .map_or("", |(command, _)| command)
+    }
+
+    pub(crate) fn slash_argument_required(&self, command: &str) -> Option<bool> {
+        let (active_command, args) = self.active_slash_parts()?;
+        args?;
+        keybindings::slash_commands()
+            .iter()
+            .find(|entry| {
+                entry.id == command
+                    && (entry.id == active_command || entry.aliases.contains(&active_command))
+            })
+            .map(|entry| entry.args_required)
+    }
+
+    fn active_slash_command_range(&self) -> Option<(usize, usize)> {
+        let slash_start = self.active_slash_start()?;
+        let command_len = self.composer.prompt_buffer[slash_start + 1..]
+            .find(char::is_whitespace)
+            .unwrap_or_else(|| {
+                self.composer
+                    .prompt_buffer
+                    .len()
+                    .saturating_sub(slash_start + 1)
+            });
+        Some((slash_start, slash_start + 1 + command_len))
     }
 
     pub(in crate::app) fn clear_slash_menu(&mut self) {
@@ -158,9 +217,25 @@ impl AppState {
             return;
         }
 
-        let slash_query = self.active_slash_query().unwrap_or_default().to_lowercase();
+        let (slash_query, has_args) = self
+            .active_slash_parts()
+            .map(|(query, args)| (query.to_lowercase(), args.is_some()))
+            .unwrap_or_default();
 
         self.slash_visible = true;
+        if has_args {
+            let exact = keybindings::slash_commands().iter().find(|command| {
+                command.id == slash_query
+                    || command.aliases.iter().any(|alias| *alias == slash_query)
+            });
+            if let Some(command) = exact.filter(|command| command.takes_args) {
+                self.slash_filtered = vec![command.id.to_string()];
+                self.slash_selected = 0;
+                return;
+            }
+            self.clear_slash_menu();
+            return;
+        }
         let mut filtered = keybindings::slash_commands()
             .iter()
             .filter(|command| self.slash_command_available(command.id))
@@ -343,12 +418,12 @@ impl AppState {
                 self.emit_ui_intent(UiIntent::CompactSession);
             }
             "rename" => {
-                let prompt = self.composer.prompt_buffer.clone();
-                let title = prompt
-                    .trim_start_matches('/')
-                    .split_once(|ch: char| ch.is_whitespace())
-                    .map(|(_, rest)| rest.trim())
-                    .unwrap_or("")
+                let title = self
+                    .active_slash_parts_full()
+                    .and_then(|(active_command, args)| {
+                        (active_command == "rename").then_some(args.unwrap_or("").trim())
+                    })
+                    .unwrap_or_default()
                     .to_string();
                 self.restore_slash_draft(preserved_draft);
                 if title.is_empty() {
@@ -502,10 +577,65 @@ impl AppState {
         }
     }
 
+    fn selected_slash_command(&self) -> Option<&'static keybindings::SlashCommand> {
+        let selected = self.slash_filtered.get(self.slash_selected)?;
+        keybindings::slash_commands()
+            .iter()
+            .find(|command| command.id == selected)
+    }
+
     pub(in crate::app) fn apply_selected_slash_completion(&mut self) {
+        let Some(command) = self.selected_slash_command() else {
+            return;
+        };
+        let Some((start, end)) = self.active_slash_command_range() else {
+            return;
+        };
+        let cursor_byte = self.prompt_cursor_byte_index();
+        let argument_separator_len = self.composer.prompt_buffer[end..]
+            .chars()
+            .next()
+            .filter(|character| character.is_whitespace())
+            .map_or(0, char::len_utf8);
+        let append_space = command.takes_args && argument_separator_len == 0;
+        let replacement = if append_space {
+            format!("/{} ", command.id)
+        } else {
+            format!("/{}", command.id)
+        };
+        self.composer.push_undo();
+        self.composer
+            .prompt_buffer
+            .replace_range(start..end, &replacement);
+        let cursor_byte = if cursor_byte <= end {
+            start + replacement.len() + argument_separator_len
+        } else {
+            start + replacement.len() + cursor_byte.saturating_sub(end)
+        };
+        self.composer.prompt_cursor = self.composer.prompt_buffer[..cursor_byte].chars().count();
+        self.composer.selection_anchor = None;
+        self.sync_slash_overlay();
+        self.sync_file_mention_overlay();
+    }
+
+    fn execute_selected_slash_completion(&mut self) {
         let Some(command) = self.slash_filtered.get(self.slash_selected).cloned() else {
             return;
         };
+        let Some(metadata) = keybindings::slash_commands()
+            .iter()
+            .find(|entry| entry.id == command)
+        else {
+            return;
+        };
+        if metadata.args_required
+            && self
+                .active_slash_parts_full()
+                .is_none_or(|(_, args)| args.is_none_or(|args| args.trim().is_empty()))
+        {
+            self.apply_selected_slash_completion();
+            return;
+        }
         self.execute_slash_command(&command, self.slash_draft_snapshot.clone());
     }
 
@@ -515,7 +645,11 @@ impl AppState {
                 self.restore_slash_draft(self.slash_draft_snapshot.clone());
                 true
             }
-            (KeyCode::Enter, _) | (KeyCode::Tab, _) => {
+            (KeyCode::Enter, _) => {
+                self.execute_selected_slash_completion();
+                true
+            }
+            (KeyCode::Tab, _) => {
                 self.apply_selected_slash_completion();
                 true
             }

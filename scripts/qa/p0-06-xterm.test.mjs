@@ -34,6 +34,26 @@ test("disconnect scenarios drive the native PTY helper with truthful copy and co
   }
 });
 
+test("slash completion scenarios drive Tab acceptance, required args, and edge grammar", () => {
+  const happy = scenarioContract(
+    parseArgs(["--scenario", "slash-completion-happy", "--evidence-dir", "/tmp/evidence"]),
+    {},
+  );
+  const edge = scenarioContract(
+    parseArgs(["--scenario", "slash-completion-edge", "--evidence-dir", "/tmp/evidence"]),
+    {},
+  );
+
+  assert.match(happy.command, /p1_01_pty_helper/);
+  assert.ok(happy.actions.some((action) => action.kind === "key" && action.value === "Tab"));
+  assert.ok(happy.actions.some((action) => action.kind === "assertTitleCount" && action.count === 1));
+  assert.ok(edge.actions.some((action) => action.kind === "waitAbsent"
+    && action.value === "session title cannot be empty"));
+  assert.ok(edge.actions.some((action) => action.kind === "type"
+    && action.value.includes("https://example.com")));
+  assert.ok(edge.assertions.includes("\\/help"));
+});
+
 test("assertCount rejects duplicate terminal state", async () => {
   // Given: a duplicated disconnect marker in the xterm snapshot.
   const interactions = [];
