@@ -185,7 +185,8 @@ async function writePrivate(path, value) {
 
 function runtimeBrandingReceipt(capture, browserMetadata, interactions) {
   const terminalMetadata = browserMetadata?.terminal;
-  const renderedInteractions = (interactions ?? []).map(({ result }) => result);
+  const renderedInteractions = (interactions ?? [])
+    .flatMap(({ result, bufferSnapshot }) => [result, bufferSnapshot]);
   const renderedRuntime = [capture, terminalMetadata, ...renderedInteractions]
     .flatMap((terminal) => [
       terminal?.text,
