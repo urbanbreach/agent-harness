@@ -48,6 +48,7 @@ async function main() {
     beforeTempRootRemoval: async () => {
       if (sourceBefore && testedBinary && testedBefore) {
         binaryProvenance = assertBuiltExecutable({
+          buildCommand,
           sourceTree,
           sourceTreeAfter: await currentTree(repoRoot),
           sourceBefore,
@@ -71,6 +72,7 @@ async function main() {
   let runError;
   let exitResult;
   let binaryProvenance = null;
+  let buildCommand = null;
   let sourceBinary = null;
   let sourceBefore = null;
   let testedBinary = null;
@@ -78,7 +80,20 @@ async function main() {
 
   try {
     fixture = await prepareHarnessWorkspace(tempRoot);
-    if (contract.command.startsWith("harness ")) {
+    if (contract.binaryTarget) {
+      if (sourceTree.dirty) {
+        throw new Error("refusing executable provenance from a dirty source tree");
+      }
+      const built = buildRustTestExecutable(contract.binaryTarget);
+      buildCommand = built.command;
+      sourceBinary = built.executable;
+      sourceBefore = await fileReceipt(sourceBinary, repoRoot);
+      testedBinary = join(tempRoot, "harness-qa-test-owner");
+      await copyFile(sourceBinary, testedBinary);
+      await chmod(testedBinary, 0o700);
+      testedBefore = await fileReceipt(testedBinary, tempRoot);
+      contract.environment.HARNESS_QA_TEST_BINARY = testedBinary;
+    } else if (contract.command.startsWith("harness ")) {
       if (sourceTree.dirty) {
         throw new Error("refusing shipped-binary QA from a dirty source tree");
       }
@@ -92,6 +107,7 @@ async function main() {
       await copyFile(sourceBinary, testedBinary);
       await chmod(testedBinary, 0o700);
       testedBefore = await fileReceipt(testedBinary, tempRoot);
+      buildCommand = "cargo build -p harness";
     }
     command = await resolveCommand(contract.command, repoRoot, testedBinary);
     terminal = await openBrowserTerminal({
@@ -195,10 +211,47 @@ async function main() {
   process.stdout.write(`PASS scenario=${contract.name} evidence=${evidenceDir} manifest=${manifest}\n`);
 }
 
+function buildRustTestExecutable(target) {
+  const args = [
+    "test",
+    "-p",
+    target.package,
+    "--test",
+    target.test,
+    "--no-run",
+    "--message-format=json",
+  ];
+  const stdout = execFileSync("cargo", args, {
+    cwd: repoRoot,
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  let executable = null;
+  for (const line of stdout.split("\n")) {
+    if (!line.startsWith("{")) continue;
+    const message = JSON.parse(line);
+    if (
+      message.reason === "compiler-artifact"
+      && message.target?.name === target.test
+      && typeof message.executable === "string"
+    ) {
+      executable = resolve(repoRoot, message.executable);
+    }
+  }
+  if (!executable) {
+    throw new Error(`cargo did not report executable for integration test ${target.test}`);
+  }
+  return {
+    command: `cargo ${args.join(" ")}`,
+    executable,
+  };
+}
+
 export async function executeActions(settings) {
   const captures = [];
   let capture;
   let captureIndex = 0;
+  let parsedCountBefore = null;
   for (const [index, action] of settings.actions.entries()) {
     const startedAt = new Date().toISOString();
     try {
@@ -226,8 +279,14 @@ export async function executeActions(settings) {
           throw new Error(`expected ${action.count} title occurrence(s) of ${action.value}, found ${actual}`);
         }
       }
-      else if (action.kind === "type") await settings.terminal.type(action.value);
-      else if (action.kind === "key") await settings.terminal.key(action.value);
+      else if (action.kind === "type") {
+        result = await settings.terminal.type(action.value);
+        parsedCountBefore = result?.parsedCountBefore ?? null;
+      }
+      else if (action.kind === "key") {
+        result = await settings.terminal.key(action.value);
+        parsedCountBefore = result?.parsedCountBefore ?? null;
+      }
       else if (action.kind === "click") result = await settings.terminal.clickText(action.value);
       else if (action.kind === "clickCell") {
         result = await settings.terminal.mouseCell("click", action.column, action.row);
@@ -239,12 +298,18 @@ export async function executeActions(settings) {
         result = await settings.terminal.mouseCell("up", action.column, action.row);
       }
       else if (action.kind === "resize") {
-        const pty = await settings.pty.resize(action.cols, action.rows);
         const xterm = await settings.terminal.resize(action.cols, action.rows);
+        const pty = await settings.pty.resize(action.cols, action.rows);
+        parsedCountBefore = xterm.parsedCountBefore ?? null;
         result = { pty, xterm };
       }
       else if (action.kind === "capture") {
         await settings.pty.flush();
+        await settings.terminal.waitForStableFrame({
+          parsedCountBefore,
+          linePattern: action.linePattern ?? null,
+        });
+        parsedCountBefore = null;
         captureIndex += 1;
         const suffix = action.state ? `-${captureState(action.state)}` : "";
         const stem = `capture-${String(captureIndex).padStart(3, "0")}${suffix}`;
