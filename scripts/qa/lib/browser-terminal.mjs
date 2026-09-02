@@ -112,6 +112,16 @@ export async function openBrowserTerminal(settings) {
       await page.evaluate(() => window.qaTerminal.focus());
       await page.keyboard.press(key);
     },
+    async resize(cols, rows) {
+      await waitForWrites();
+      if (!Number.isSafeInteger(cols) || cols <= 0 || !Number.isSafeInteger(rows) || rows <= 0) {
+        throw new Error("xterm resize requires positive integer dimensions");
+      }
+      return page.evaluate(
+        ({ nextCols, nextRows }) => window.qaTerminal.resize(nextCols, nextRows),
+        { nextCols: cols, nextRows: rows },
+      );
+    },
     async clickText(needle) {
       const location = await page.evaluate((text) => window.qaTerminal.find(text), needle);
       if (!location) throw new Error(`visible click target not found: ${needle}`);
@@ -119,14 +129,18 @@ export async function openBrowserTerminal(settings) {
       return location;
     },
     async mouseCell(kind, column, row) {
-      if (!Number.isSafeInteger(column) || column < 1 || column > settings.cols
-        || !Number.isSafeInteger(row) || row < 1 || row > settings.rows) {
-        throw new Error(`terminal cell is outside ${settings.cols}x${settings.rows}: ${column},${row}`);
+      const dimensions = await page.evaluate(() => {
+        const snapshot = window.qaTerminal.snapshot();
+        return { cols: snapshot.cols, rows: snapshot.rows };
+      });
+      if (!Number.isSafeInteger(column) || column < 1 || column > dimensions.cols
+        || !Number.isSafeInteger(row) || row < 1 || row > dimensions.rows) {
+        throw new Error(`terminal cell is outside ${dimensions.cols}x${dimensions.rows}: ${column},${row}`);
       }
       const bounds = await page.locator(".xterm-screen").boundingBox();
       if (!bounds) throw new Error("xterm screen has no browser bounds");
-      const x = bounds.x + (column - 0.5) * bounds.width / settings.cols;
-      const y = bounds.y + (row - 0.5) * bounds.height / settings.rows;
+      const x = bounds.x + (column - 0.5) * bounds.width / dimensions.cols;
+      const y = bounds.y + (row - 0.5) * bounds.height / dimensions.rows;
       if (kind === "click") await page.mouse.click(x, y);
       else if (kind === "down") {
         await page.mouse.move(x, y);

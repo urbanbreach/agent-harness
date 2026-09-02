@@ -35,7 +35,9 @@ export async function writePassEvidence(settings) {
   if (settings.binaryProvenance) {
     files.binaryProvenance = join(settings.evidenceDir, "harness-binary-provenance.txt");
   }
-  for (const path of [files.screenshot, ...(settings.captures ?? []).map(({ path }) => path)]) {
+  const capturePaths = (settings.captures ?? []).flatMap(({ path, bufferPath, textPath }) =>
+    [path, bufferPath, textPath].filter(Boolean));
+  for (const path of [files.screenshot, ...capturePaths]) {
     await chmod(path, 0o600);
   }
   await Promise.all([
@@ -48,7 +50,13 @@ export async function writePassEvidence(settings) {
   ]);
   const screenshot = await pngReceipt(files.screenshot, settings.evidenceDir);
   const captures = await Promise.all(
-    (settings.captures ?? []).map(({ index, path }) => pngReceipt(path, settings.evidenceDir).then((receipt) => ({ index, ...receipt }))),
+    (settings.captures ?? []).map(async ({ index, state, path, bufferPath, textPath }) => {
+      const receipt = { index, ...await pngReceipt(path, settings.evidenceDir) };
+      if (state) receipt.state = state;
+      if (bufferPath) receipt.buffer = await fileReceipt(bufferPath, settings.evidenceDir);
+      if (textPath) receipt.text = await fileReceipt(textPath, settings.evidenceDir);
+      return receipt;
+    }),
   );
   const metadata = redactEvidence({
     schemaVersion: "harness-xterm-visual-qa-v1",
@@ -68,6 +76,13 @@ export async function writePassEvidence(settings) {
       browserExecutable: settings.browser,
       browser: settings.browserMetadata,
     },
+    capability: settings.contract.classification
+      ? {
+          variant: settings.contract.capabilityVariant,
+          classification: settings.contract.classification,
+          environment: settings.contract.environment,
+        }
+      : null,
     terminal: {
       cols: safeCapture.cols,
       rows: safeCapture.rows,
@@ -113,7 +128,8 @@ export async function writePassEvidence(settings) {
       : await fileReceipt(path, settings.evidenceDir);
   }
   for (const capture of captures) {
-    artifacts[`capture-${String(capture.index).padStart(3, "0")}`] = {
+    const key = `capture-${String(capture.index).padStart(3, "0")}`;
+    artifacts[key] = {
       ...capture,
       png: {
         width: capture.width,
@@ -121,6 +137,8 @@ export async function writePassEvidence(settings) {
         pngSignatureValid: capture.pngSignatureValid,
       },
     };
+    if (capture.buffer) artifacts[`${key}-buffer`] = capture.buffer;
+    if (capture.text) artifacts[`${key}-text`] = capture.text;
   }
   const manifestPath = join(settings.evidenceDir, "artifact-manifest.json");
   await writeJson(manifestPath, {

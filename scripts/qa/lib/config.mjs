@@ -8,6 +8,7 @@ const SCENARIOS = [
   "disconnect-truth",
   "disconnect-duplicate",
   "p1-02-modal-chrome",
+  "p1-04-responsive-feedback",
 ];
 
 const VALUE_OPTIONS = new Set([
@@ -21,6 +22,7 @@ const VALUE_OPTIONS = new Set([
   "--rows",
   "--timeout-ms",
   "--title",
+  "--capability-variant",
 ]);
 
 export class CliError extends Error {
@@ -54,6 +56,10 @@ export function parseArgs(argv) {
   values.rows = positiveInteger(values.rows ?? "30", "--rows");
   values.timeoutMs = positiveInteger(values.timeoutMs ?? "20000", "--timeout-ms");
   values.browser ??= "/usr/bin/chromium";
+  values.capabilityVariant ??= "unicode";
+  if (!new Set(["unicode", "basic-ascii"]).has(values.capabilityVariant)) {
+    throw new CliError(`unknown capability variant: ${values.capabilityVariant}`);
+  }
   return values;
 }
 
@@ -66,6 +72,7 @@ export function scenarioContract(options, environment) {
     return disconnectContract(options);
   }
   if (options.scenario === "p1-02-modal-chrome") return p102ModalChromeContract(options);
+  if (options.scenario === "p1-04-responsive-feedback") return p104ResponsiveFeedbackContract(options);
   const stem = options.scenario.replaceAll("-", "_").toUpperCase();
   const command = options.command ?? environment[`HARNESS_QA_${stem}_COMMAND`];
   if (!command) {
@@ -218,6 +225,46 @@ function p102ModalChromeContract(options) {
   };
 }
 
+function p104ResponsiveFeedbackContract(options) {
+  const basicAscii = options.capabilityVariant === "basic-ascii";
+  const environment = basicAscii
+    ? {
+        TERM: "dumb",
+        TERM_PROGRAM: "",
+        COLORTERM: "",
+        NO_COLOR: "1",
+        HARNESS_TUI_REDUCED_MOTION: "1",
+      }
+    : {
+        TERM: "xterm-256color",
+        TERM_PROGRAM: "WezTerm",
+        COLORTERM: "truecolor",
+      };
+  return {
+    name: "p1-04-responsive-feedback",
+    title: options.title ?? `Harness P1-04 responsive feedback ${options.capabilityVariant}`,
+    command: "harness tui --mock --deterministic --session-dir $HARNESS_QA_SESSION_DIR",
+    capabilityVariant: options.capabilityVariant,
+    environment,
+    classification: basicAscii
+      ? { color: "no_color", glyphs: "ascii", width: "compact", motion: "reduced" }
+      : { color: "true_color", glyphs: "preferred", width: "unicode11", motion: "full" },
+    actions: [
+      { kind: "wait", value: "Demo mode" },
+      { kind: "capture", state: "following" },
+      { kind: "key", value: "PageUp" },
+      { kind: "capture", state: "detached" },
+      { kind: "resize", cols: 100, rows: 30 },
+      { kind: "resize", cols: 90, rows: 26 },
+      { kind: "resize", cols: 80, rows: 24 },
+      { kind: "capture", state: "resize-final" },
+      { kind: "capture", state: "reduced-motion" },
+    ],
+    assertions: ["Harness", "Demo mode"],
+    expectNaturalExit: false,
+  };
+}
+
 function composerMultilineActionsContract(options) {
   return {
     name: "composer-multiline-actions",
@@ -337,10 +384,15 @@ function parseAction(value) {
 
 function normalizeAction(value) {
   if (typeof value === "string") return parseAction(value);
-  if (!value || typeof value !== "object" || !["wait", "waitAbsent", "waitTitle", "waitCount", "assertCount", "assertTitleCount", "type", "key", "click", "clickCell", "mouseDown", "mouseUp", "capture"].includes(value.kind)) {
+  if (!value || typeof value !== "object" || !["wait", "waitAbsent", "waitTitle", "waitCount", "assertCount", "assertTitleCount", "type", "key", "click", "clickCell", "mouseDown", "mouseUp", "resize", "capture"].includes(value.kind)) {
     throw new CliError("invalid fixture action");
   }
-  if (["clickCell", "mouseDown", "mouseUp"].includes(value.kind)) {
+  if (value.kind === "resize") {
+    if (!Number.isSafeInteger(value.cols) || value.cols <= 0
+      || !Number.isSafeInteger(value.rows) || value.rows <= 0) {
+      throw new CliError("fixture action resize requires positive cols and rows");
+    }
+  } else if (["clickCell", "mouseDown", "mouseUp"].includes(value.kind)) {
     if (!Number.isSafeInteger(value.column) || value.column <= 0
       || !Number.isSafeInteger(value.row) || value.row <= 0) {
       throw new CliError(`fixture action ${value.kind} requires positive cell coordinates`);

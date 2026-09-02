@@ -37,23 +37,31 @@ export function spawnHarnessPty(settings) {
   const chunks = [];
   const stderr = [];
   const shellCommand = `stty cols ${settings.cols} rows ${settings.rows}; exec ${settings.command}`;
+  const environment = safePtyEnvironment(process.env, {
+    HARNESS_DATA_HOME: join(settings.tempRoot, "data"),
+    HARNESS_DETERMINISTIC: "1",
+    HARNESS_QA_SESSION_DIR: settings.sessionDir,
+    HARNESS_SEED: "42",
+    LANG: "C.UTF-8",
+    LC_ALL: "C.UTF-8",
+    TERM: "xterm-256color",
+    TZ: "UTC",
+  });
+  if (settings.disableAnimations !== false) environment.HARNESS_DISABLE_ANIMATIONS = "1";
+  if (settings.environment) {
+    for (const key of ["TERM", "TERM_PROGRAM", "COLORTERM", "NO_COLOR", "HARNESS_TUI_REDUCED_MOTION"]) {
+      delete environment[key];
+    }
+    Object.assign(environment, settings.environment);
+  }
   const child = spawn("script", ["-qefc", shellCommand, "/dev/null"], {
     cwd: settings.cwd,
     detached: true,
-    env: safePtyEnvironment(process.env, {
-      HARNESS_DATA_HOME: join(settings.tempRoot, "data"),
-      HARNESS_DETERMINISTIC: "1",
-      HARNESS_DISABLE_ANIMATIONS: "1",
-      HARNESS_QA_SESSION_DIR: settings.sessionDir,
-      HARNESS_SEED: "42",
-      LANG: "C.UTF-8",
-      LC_ALL: "C.UTF-8",
-      TERM: "xterm-256color",
-      TZ: "UTC",
-    }),
+    env: environment,
     stdio: ["pipe", "pipe", "pipe"],
   });
   const startedAt = new Date().toISOString();
+  let dimensions = { cols: settings.cols, rows: settings.rows };
   actions.push({ at: startedAt, action: "spawn", pid: child.pid, command: settings.command });
   let outputChain = Promise.resolve();
   let outputFailure;
@@ -79,6 +87,22 @@ export function spawnHarnessPty(settings) {
       child.stdin.write(data);
       actions.push({ at: new Date().toISOString(), action: "pty-input", bytes: Buffer.byteLength(data) });
       return true;
+    },
+    async resize(cols, rows) {
+      if (!Number.isSafeInteger(cols) || cols <= 0 || !Number.isSafeInteger(rows) || rows <= 0) {
+        throw new Error("PTY resize requires positive integer dimensions");
+      }
+      const tty = childTty(child.pid);
+      const before = { ...dimensions };
+      execFileSync("stty", ["--file", tty, "cols", String(cols), "rows", String(rows)]);
+      const after = ttySize(tty);
+      if (after.cols !== cols || after.rows !== rows) {
+        throw new Error(`PTY resize did not apply ${cols}x${rows}; got ${after.cols}x${after.rows}`);
+      }
+      dimensions = after;
+      const receipt = { before, after, mechanism: "TIOCSWINSZ", tty };
+      actions.push({ at: new Date().toISOString(), action: "pty-resize", ...receipt });
+      return receipt;
     },
     async flush() {
       await outputChain;
@@ -153,6 +177,25 @@ function bounded(promise, timeoutMs, label) {
 
 function run(command, args, cwd) {
   execFileSync(command, args, { cwd, stdio: "ignore" });
+}
+
+function childTty(pid) {
+  const entries = execFileSync("ps", ["-o", "tty=", "--ppid", String(pid)], { encoding: "utf8" })
+    .split("\n")
+    .map((value) => value.trim())
+    .filter((value) => value && value !== "?");
+  const tty = entries.find((value) => value.startsWith("pts/")) ?? entries[0];
+  if (!tty || !/^[A-Za-z0-9/_-]+$/.test(tty)) {
+    throw new Error(`unable to resolve live PTY for process ${pid}`);
+  }
+  return `/dev/${tty}`;
+}
+
+function ttySize(tty) {
+  const output = execFileSync("stty", ["--file", tty, "size"], { encoding: "utf8" }).trim();
+  const match = /^(\d+)\s+(\d+)$/.exec(output);
+  if (!match) throw new Error(`invalid PTY size receipt: ${output}`);
+  return { cols: Number(match[2]), rows: Number(match[1]) };
 }
 
 function quote(value) {

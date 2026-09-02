@@ -120,6 +120,25 @@ fn signoff_pty_records_happy_path_artifact_dir() {
 }
 
 #[test]
+fn signoff_pty_wires_p1_04_native_and_xterm_owners_with_artifact_roots() {
+    // arrange
+    let script = fs::read_to_string(repo_root().join("scripts/test-lanes.sh")).unwrap_or_abort();
+
+    // act
+    let p1_04_contract = script.contains(
+        "p1_04_artifacts_dir=\"$(stage_dir_for signoff-pty harness_tui_p1_04_pty_recorded)/artifacts\"",
+    ) && script.contains("HARNESS_P1_04_ARTIFACT_DIR=\"$p1_04_artifacts_dir\"")
+        && script.contains("cargo nextest run -p harness-tui --test p1_04_pty_recorded")
+        && script.contains("p1_04_xterm_tests")
+        && script.contains("--scenario p1-04-responsive-feedback");
+
+    // assert
+    assert!(p1_04_contract);
+    assert!(script.contains("run_stage \"$mode_name\" p1_04_xterm_tests"));
+    assert!(!script.contains("p1_04_pty_recorded --test-threads 1 --ignore-default-filter || true"));
+}
+
+#[test]
 fn signoff_pty_dry_run_emits_stage_artifact_and_fail_closed_contract() {
     // arrange
     let root = repo_root();
@@ -145,10 +164,12 @@ fn signoff_pty_dry_run_emits_stage_artifact_and_fail_closed_contract() {
         "harness_tui_p0_03_pty_recorded",
         "harness_tui_p0_04_pty_recorded",
         "harness_tui_p1_02_pty_recorded",
+        "harness_tui_p1_04_pty_recorded",
         "harness_tui_happy_path_pty",
         "p0_06_xterm_dependencies",
         "p0_06_xterm_tests",
         "p1_02_xterm_tests",
+        "p1_04_xterm_tests",
         "xterm_harness_binary",
         "p0_06_xterm_80x24",
         "p0_06_xterm_120x40",
@@ -156,6 +177,9 @@ fn signoff_pty_dry_run_emits_stage_artifact_and_fail_closed_contract() {
         "p1_02_xterm_80x24",
         "p1_02_xterm_120x40",
         "p1_02_xterm_160x50",
+        "p1_04_xterm_80x24",
+        "p1_04_xterm_120x40",
+        "p1_04_xterm_160x50",
     ];
     let summary = fs::read_to_string(artifact_root.path().join("summary.txt")).unwrap_or_abort();
     for stage in stages {
@@ -172,6 +196,23 @@ fn signoff_pty_dry_run_emits_stage_artifact_and_fail_closed_contract() {
         .path()
         .join("signoff-pty/stages/harness_tui_pty_e2e/artifacts/p0-06");
     assert!(p0_06_artifacts.is_dir());
+    let p1_04_artifacts = artifact_root
+        .path()
+        .join("signoff-pty/stages/harness_tui_p1_04_pty_recorded/artifacts");
+    assert!(p1_04_artifacts.is_dir());
+    for stage in [
+        "p1_04_xterm_80x24",
+        "p1_04_xterm_120x40",
+        "p1_04_xterm_160x50",
+    ] {
+        assert!(
+            artifact_root
+                .path()
+                .join(format!("signoff-pty/stages/{stage}/artifacts"))
+                .is_dir(),
+            "missing artifact root for {stage}"
+        );
+    }
     let verdict = fs::read_to_string(
         artifact_root
             .path()
@@ -180,6 +221,7 @@ fn signoff_pty_dry_run_emits_stage_artifact_and_fail_closed_contract() {
     .unwrap_or_abort();
     assert!(verdict.contains("result=PASS"));
     assert!(verdict.contains("reason=owners_green"));
+    assert!(verdict.contains("p1_04_xterm_80x24"));
 }
 
 #[test]
