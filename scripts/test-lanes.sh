@@ -613,15 +613,38 @@ run_p1_04_xterm_capture() {
     bash "$temporary_template" "$destination" "$cols" "$rows" "$repo_root"
 }
 
+run_p1_03_xterm_capture() {
+  local mode_name="$1"
+  local stage_name="$2"
+  local geometry="${stage_name##*_}"
+  local cols="${geometry%x*}"
+  local rows="${geometry#*x}"
+  local destination="$(stage_dir_for "$mode_name" "$stage_name")/artifacts"
+  local temporary_template="${TMPDIR:-/tmp}/harness-xterm-p1-03-${timestamp}-${cols}x${rows}-XXXXXX"
+  rm -rf "$destination"
+  mkdir -p "$destination"
+  run_stage "$mode_name" "$stage_name" "$repo_root" \
+    bash -c 'set -euo pipefail
+      temporary="$(mktemp -d "$1")"; destination="$2"; cols="$3"; rows="$4"; root="$5"
+      trap '\''rm -rf "$temporary"'\'' EXIT
+      node "$root/scripts/qa/web-terminal-visual-qa.mjs" \
+        --scenario p1-03-startup-reveal --evidence-dir "$temporary" \
+        --capability-variant unicode --cols "$cols" --rows "$rows"
+      cp -a "$temporary/." "$destination/"' \
+    bash "$temporary_template" "$destination" "$cols" "$rows" "$repo_root"
+}
+
 run_signoff_pty() {
   local mode_name="signoff-pty"
   local tui_happy_path_artifacts_dir
   local p0_06_artifacts_dir
+  local p1_03_artifacts_dir
   local p1_04_artifacts_dir
   tui_happy_path_artifacts_dir="$(stage_dir_for signoff-pty harness_tui_happy_path_pty)/artifacts"
   p0_06_artifacts_dir="$(stage_dir_for signoff-pty harness_tui_pty_e2e)/artifacts/p0-06"
+  p1_03_artifacts_dir="$(stage_dir_for signoff-pty harness_tui_p1_03_pty_recorded)/artifacts"
   p1_04_artifacts_dir="$(stage_dir_for signoff-pty harness_tui_p1_04_pty_recorded)/artifacts"
-  mkdir -p "$tui_happy_path_artifacts_dir" "$p0_06_artifacts_dir" "$p1_04_artifacts_dir"
+  mkdir -p "$tui_happy_path_artifacts_dir" "$p0_06_artifacts_dir" "$p1_03_artifacts_dir" "$p1_04_artifacts_dir"
 
   if [[ "$dry_run" -eq 0 ]]; then
     local missing=()
@@ -640,6 +663,9 @@ run_signoff_pty() {
     if [[ ! -f "${repo_root}/crates/harness-tui/tests/p1_02_pty_recorded.rs" ]]; then
       missing+=("missing owner crates/harness-tui/tests/p1_02_pty_recorded.rs (silent skip is forbidden)")
     fi
+    if [[ ! -f "${repo_root}/crates/harness-tui/tests/p1_03_pty_recorded.rs" ]]; then
+      missing+=("missing owner crates/harness-tui/tests/p1_03_pty_recorded.rs (silent skip is forbidden)")
+    fi
     if [[ ! -f "${repo_root}/crates/harness-tui/tests/p1_04_pty_recorded.rs" ]]; then
       missing+=("missing owner crates/harness-tui/tests/p1_04_pty_recorded.rs (silent skip is forbidden)")
     fi
@@ -651,6 +677,9 @@ run_signoff_pty() {
     fi
     if [[ ! -f "${repo_root}/scripts/qa/p1-02-modal-chrome.test.mjs" ]]; then
       missing+=("missing xterm.js P1-02 QA owner (silent skip is forbidden)")
+    fi
+    if [[ ! -f "${repo_root}/scripts/qa/p1-03-startup-reveal.test.mjs" ]]; then
+      missing+=("missing xterm.js P1-03 QA owner (silent skip is forbidden)")
     fi
     if [[ ! -f "${repo_root}/scripts/qa/p1-04-responsive-feedback.test.mjs" ]]; then
       missing+=("missing xterm.js P1-04 QA owner (silent skip is forbidden)")
@@ -673,7 +702,7 @@ run_signoff_pty() {
         printf 'lane=signoff-pty\n'
         printf 'result=FAIL\n'
         printf 'reason=missing_prerequisites\n'
-        printf 'stages=prerequisites,testkit_pty,tui_pty,p0_03,p0_04,p1_02,p1_04,happy_path,xterm_dependencies,xterm_tests,p1_02_xterm_tests,p1_04_xterm_tests,xterm_80x24,xterm_120x40,xterm_160x50,p1_02_xterm_80x24,p1_02_xterm_120x40,p1_02_xterm_160x50,p1_04_xterm_80x24,p1_04_xterm_120x40,p1_04_xterm_160x50\n'
+        printf 'stages=prerequisites,testkit_pty,tui_pty,p0_03,p0_04,p1_02,p1_03,p1_04,happy_path,xterm_dependencies,xterm_tests,p1_02_xterm_tests,p1_03_xterm_tests,p1_04_xterm_tests,xterm_80x24,xterm_120x40,xterm_160x50,p1_02_xterm_80x24,p1_02_xterm_120x40,p1_02_xterm_160x50,p1_03_xterm_80x24,p1_03_xterm_120x40,p1_03_xterm_160x50,p1_04_xterm_80x24,p1_04_xterm_120x40,p1_04_xterm_160x50\n'
         printf 'owns=deterministic_pty_journeys\n'
       } >"${tui_happy_path_artifacts_dir}/pty-lane-verdict.txt"
       return 1
@@ -692,6 +721,9 @@ run_signoff_pty() {
     env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 cargo nextest run -p harness-tui --test p0_04_pty_recorded --test-threads 1 --ignore-default-filter
   run_stage "$mode_name" harness_tui_p1_02_pty_recorded "$repo_root" \
     env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 cargo nextest run -p harness-tui --test p1_02_pty_recorded --test-threads 1 --ignore-default-filter
+  run_stage "$mode_name" harness_tui_p1_03_pty_recorded "$repo_root" \
+    env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 HARNESS_P1_03_ARTIFACT_DIR="$p1_03_artifacts_dir" \
+    cargo nextest run -p harness-tui --test p1_03_pty_recorded --test-threads 1 --ignore-default-filter
   run_stage "$mode_name" harness_tui_p1_04_pty_recorded "$repo_root" \
     env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 HARNESS_P1_04_ARTIFACT_DIR="$p1_04_artifacts_dir" \
     cargo nextest run -p harness-tui --test p1_04_pty_recorded --test-threads 1 --ignore-default-filter
@@ -701,6 +733,7 @@ run_signoff_pty() {
   run_stage "$mode_name" p0_06_xterm_dependencies "$repo_root" npm ci --prefix scripts/qa
   run_stage "$mode_name" p0_06_xterm_tests "$repo_root" npm test --prefix scripts/qa
   run_stage "$mode_name" p1_02_xterm_tests "$repo_root" node --test scripts/qa/p1-02-modal-chrome.test.mjs
+  run_stage "$mode_name" p1_03_xterm_tests "$repo_root" node --test scripts/qa/p1-03-startup-reveal.test.mjs
   run_stage "$mode_name" p1_04_xterm_tests "$repo_root" node --test scripts/qa/p1-04-responsive-feedback.test.mjs
   run_stage "$mode_name" xterm_harness_binary "$repo_root" cargo build -p harness
   run_p0_06_xterm_capture "$mode_name" p0_06_xterm_80x24 80 24
@@ -709,6 +742,9 @@ run_signoff_pty() {
   run_p1_02_xterm_capture "$mode_name" p1_02_xterm_80x24 80 24
   run_p1_02_xterm_capture "$mode_name" p1_02_xterm_120x40 120 40
   run_p1_02_xterm_capture "$mode_name" p1_02_xterm_160x50 160 50
+  run_p1_03_xterm_capture "$mode_name" p1_03_xterm_80x24
+  run_p1_03_xterm_capture "$mode_name" p1_03_xterm_120x40
+  run_p1_03_xterm_capture "$mode_name" p1_03_xterm_160x50
   run_p1_04_xterm_capture "$mode_name" p1_04_xterm_80x24
   run_p1_04_xterm_capture "$mode_name" p1_04_xterm_120x40
   run_p1_04_xterm_capture "$mode_name" p1_04_xterm_160x50

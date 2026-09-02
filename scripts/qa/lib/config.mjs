@@ -8,6 +8,7 @@ const SCENARIOS = [
   "disconnect-truth",
   "disconnect-duplicate",
   "p1-02-modal-chrome",
+  "p1-03-startup-reveal",
   "p1-04-responsive-feedback",
 ];
 
@@ -72,6 +73,7 @@ export function scenarioContract(options, environment) {
     return disconnectContract(options);
   }
   if (options.scenario === "p1-02-modal-chrome") return p102ModalChromeContract(options);
+  if (options.scenario === "p1-03-startup-reveal") return p103StartupRevealContract(options);
   if (options.scenario === "p1-04-responsive-feedback") return p104ResponsiveFeedbackContract(options);
   const stem = options.scenario.replaceAll("-", "_").toUpperCase();
   const command = options.command ?? environment[`HARNESS_QA_${stem}_COMMAND`];
@@ -221,6 +223,47 @@ function p102ModalChromeContract(options) {
       { kind: "waitAbsent", value: "Models" },
     ],
     assertions: ["Models", "navigate", "Esc close"],
+    expectNaturalExit: false,
+  };
+}
+
+function p103StartupRevealContract(options) {
+  const basicAscii = options.capabilityVariant === "basic-ascii";
+  const environment = basicAscii
+    ? {
+        TERM: "dumb",
+        TERM_PROGRAM: "",
+        COLORTERM: "",
+        NO_COLOR: "1",
+        HARNESS_TUI_REDUCED_MOTION: "1",
+      }
+    : {
+        TERM: "xterm-256color",
+        TERM_PROGRAM: "WezTerm",
+        COLORTERM: "truecolor",
+      };
+  return {
+    name: "p1-03-startup-reveal",
+    title: options.title ?? `Harness P1-03 startup reveal ${options.capabilityVariant}`,
+    command: "env HARNESS_TUI_P1_03_SCENARIO=1 \"$HARNESS_QA_TEST_BINARY\" --exact p1_03_pty_helper --nocapture",
+    binaryTarget: {
+      package: "harness-tui",
+      test: "p1_03_pty_recorded",
+    },
+    capabilityVariant: options.capabilityVariant,
+    environment,
+    classification: basicAscii
+      ? { color: "no_color", glyphs: "ascii", width: "compact", motion: "reduced" }
+      : { color: "true_color", glyphs: "preferred", width: "unicode11", motion: "full" },
+    actions: [
+      { kind: "wait", value: "New worktree" },
+      { kind: "wait", value: "Subagent spawning" },
+      { kind: "capture", state: "welcome-complete" },
+      { kind: "type", value: "draft during reveal" },
+      { kind: "waitAbsent", value: "New worktree" },
+      { kind: "capture", state: "after-input" },
+    ],
+    assertions: ["draft during reveal", "Enter:send"],
     expectNaturalExit: false,
   };
 }
