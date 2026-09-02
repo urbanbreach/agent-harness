@@ -7,8 +7,20 @@ use super::{ActivityStatus, AppState, ToolCallDisplayStatus};
 const FAST_CADENCE: Duration = Duration::from_millis(33);
 const STREAM_CADENCE: Duration = Duration::from_millis(133);
 const STARTUP_CADENCE: Duration = Duration::from_millis(83);
+const STARTUP_NAME_DELAY: Duration = Duration::from_millis(100);
+const STARTUP_AFFORDANCE_DELAY: Duration = Duration::from_millis(200);
 const STARTUP_EXPANSION_DELAY: Duration = Duration::from_millis(300);
 const BACKGROUND_CADENCE: Duration = Duration::from_millis(264);
+
+/// Staged startup reveal: mark first, then identity, then input affordances,
+/// then the expanded changelog frame. Reduced motion freezes on [`Self::Complete`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum StartupReveal {
+    Mark,
+    Identity,
+    Affordances,
+    Complete,
+}
 
 impl AppState {
     pub(crate) fn set_reduced_motion(&mut self, reduced_motion: bool) {
@@ -138,8 +150,21 @@ impl AppState {
         self.sampled_motion_elapsed
     }
 
+    pub(crate) fn startup_reveal(&self) -> StartupReveal {
+        let elapsed = self.startup_motion_elapsed();
+        if self.reduced_motion || elapsed >= STARTUP_EXPANSION_DELAY {
+            StartupReveal::Complete
+        } else if elapsed >= STARTUP_AFFORDANCE_DELAY {
+            StartupReveal::Affordances
+        } else if elapsed >= STARTUP_NAME_DELAY {
+            StartupReveal::Identity
+        } else {
+            StartupReveal::Mark
+        }
+    }
+
     pub(crate) fn startup_welcome_expanded(&self) -> bool {
-        self.reduced_motion || self.startup_motion_elapsed() >= STARTUP_EXPANSION_DELAY
+        self.startup_reveal() == StartupReveal::Complete
     }
 
     pub(in crate::app) fn expand_startup_changelog(&mut self) {

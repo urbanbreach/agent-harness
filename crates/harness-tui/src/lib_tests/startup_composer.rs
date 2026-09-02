@@ -11,6 +11,7 @@ pub(super) fn startup_home_screen_renders_compose_first_shell() {
             ])
             .with_mode_label("Demo"),
     );
+    settle_startup_reveal(&mut app);
 
     let rendered = render_live_lines(&app, 160, 48);
     assert!(
