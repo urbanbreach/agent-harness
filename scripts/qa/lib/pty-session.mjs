@@ -17,10 +17,10 @@ export async function prepareHarnessWorkspace(tempRoot) {
   return { workspace, sessionDir };
 }
 
-export async function resolveCommand(command, repoRoot) {
+export async function resolveCommand(command, repoRoot, harnessBinary = null) {
   const rootedCommand = command.replaceAll("$HARNESS_QA_REPO_ROOT", quote(repoRoot));
   if (!rootedCommand.startsWith("harness ")) return rootedCommand;
-  const binary = resolve(repoRoot, "target/debug/harness");
+  const binary = harnessBinary ?? resolve(repoRoot, "target/debug/harness");
   try {
     await access(binary);
   } catch (error) {

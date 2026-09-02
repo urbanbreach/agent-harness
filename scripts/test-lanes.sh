@@ -559,6 +559,7 @@ run_p0_06_xterm_capture() {
   local rows="$4"
   local destination="$(stage_dir_for "$mode_name" "$stage_name")/artifacts"
   local temporary="/tmp/harness-xterm-${timestamp}-${cols}x${rows}-$$"
+  rm -rf "$destination"
   mkdir -p "$destination"
   run_stage "$mode_name" "$stage_name" "$repo_root" \
     bash -c 'set -euo pipefail
@@ -567,12 +568,7 @@ run_p0_06_xterm_capture() {
       node "$root/scripts/qa/web-terminal-visual-qa.mjs" \
         --scenario smoke --evidence-dir "$temporary" \
         --cols "$cols" --rows "$rows"
-      cp -a "$temporary/." "$destination/"
-      {
-        printf "binary=%s\\n" "$root/target/debug/harness"
-        printf "sha256=%s\\n" "$(sha256sum "$root/target/debug/harness" | awk '\''{print $1}'\'')"
-      } >"$destination/harness-binary-provenance.txt"
-      sha256sum "$destination/harness-binary-provenance.txt" >"$destination/harness-binary-provenance.sha256"' \
+      cp -a "$temporary/." "$destination/"' \
     bash "$temporary" "$destination" "$cols" "$rows" "$repo_root"
 }
 
@@ -583,6 +579,7 @@ run_p1_02_xterm_capture() {
   local rows="$4"
   local destination="$(stage_dir_for "$mode_name" "$stage_name")/artifacts"
   local temporary="/tmp/harness-xterm-p1-02-${timestamp}-${cols}x${rows}-$$"
+  rm -rf "$destination"
   mkdir -p "$destination"
   run_stage "$mode_name" "$stage_name" "$repo_root" \
     bash -c 'set -euo pipefail
@@ -591,12 +588,7 @@ run_p1_02_xterm_capture() {
       node "$root/scripts/qa/web-terminal-visual-qa.mjs" \
         --scenario p1-02-modal-chrome --evidence-dir "$temporary" \
         --cols "$cols" --rows "$rows"
-      cp -a "$temporary/." "$destination/"
-      {
-        printf "binary=%s\\n" "$root/target/debug/harness"
-        printf "sha256=%s\\n" "$(sha256sum "$root/target/debug/harness" | awk '\''{print $1}'\'')"
-      } >"$destination/harness-binary-provenance.txt"
-      sha256sum "$destination/harness-binary-provenance.txt" >"$destination/harness-binary-provenance.sha256"' \
+      cp -a "$temporary/." "$destination/"' \
     bash "$temporary" "$destination" "$cols" "$rows" "$repo_root"
 }
 
@@ -677,6 +669,7 @@ run_signoff_pty() {
   run_stage "$mode_name" p0_06_xterm_dependencies "$repo_root" npm ci --prefix scripts/qa
   run_stage "$mode_name" p0_06_xterm_tests "$repo_root" npm test --prefix scripts/qa
   run_stage "$mode_name" p1_02_xterm_tests "$repo_root" node --test scripts/qa/p1-02-modal-chrome.test.mjs
+  run_stage "$mode_name" xterm_harness_binary "$repo_root" cargo build -p harness
   run_p0_06_xterm_capture "$mode_name" p0_06_xterm_80x24 80 24
   run_p0_06_xterm_capture "$mode_name" p0_06_xterm_120x40 120 40
   run_p0_06_xterm_capture "$mode_name" p0_06_xterm_160x50 160 50

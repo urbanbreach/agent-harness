@@ -30,6 +30,9 @@ export async function writePassEvidence(settings) {
     cleanup: join(settings.evidenceDir, "cleanup.json"),
     screenshot: join(settings.evidenceDir, "terminal.png"),
   };
+  if (settings.binaryProvenance) {
+    files.binaryProvenance = join(settings.evidenceDir, "harness-binary-provenance.txt");
+  }
   for (const path of [files.screenshot, ...(settings.captures ?? []).map(({ path }) => path)]) {
     await chmod(path, 0o600);
   }
@@ -58,6 +61,7 @@ export async function writePassEvidence(settings) {
       repoRoot: settings.repoRoot,
       sourceTree: settings.sourceTree,
       scriptSha256: settings.scriptSha256,
+      binary: settings.binaryProvenance ?? null,
       ptyProvider: "util-linux script",
       browserExecutable: settings.browser,
       browser: settings.browserMetadata,
@@ -93,6 +97,12 @@ export async function writePassEvidence(settings) {
     interactions: safeInteractions,
     metadata,
   }))]));
+  if (settings.binaryProvenance) {
+    await writePrivate(
+      files.binaryProvenance,
+      `${JSON.stringify(settings.binaryProvenance, null, 2)}\n`,
+    );
+  }
   await writeJson(files.metadata, metadata);
   const artifacts = {};
   for (const [name, path] of Object.entries(files)) {

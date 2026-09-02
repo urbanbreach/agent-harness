@@ -84,6 +84,14 @@ fn p1_02_modal_surfaces_share_title_footer_and_six_cell_close_metadata() {
             rows[usize::from(model.popup.bottom() - 2)].contains("Esc close"),
             "title={title}"
         );
+        assert!(
+            rows[usize::from(model.popup.bottom() - 2)].contains(" · "),
+            "footer separators must use shared middle-dot grammar: title={title}"
+        );
+        assert!(
+            !rows[usize::from(model.popup.bottom() - 2)].contains(" | "),
+            "footer separators must not retain legacy pipe grammar: title={title}"
+        );
         assert_eq!(
             close,
             Rect::new(model.popup.right() - 6, model.popup.y, 6, 1)

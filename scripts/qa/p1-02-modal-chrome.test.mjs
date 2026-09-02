@@ -23,7 +23,43 @@ test("P1-02 modal chrome drives the shipped Harness binary and complete interact
   assert.ok(contract.actions.some((action) => action.kind === "mouseDown"));
   assert.ok(contract.actions.some((action) => action.kind === "mouseUp"));
   assert.ok(contract.actions.some((action) => action.kind === "clickCell"));
+  assert.equal(contract.actions.filter((action) => action.kind === "waitFrame").length, 2);
   assert.equal(contract.actions.filter((action) => action.kind === "capture").length, 5);
+});
+
+test("P1-02 frame wait observes a complete rendered modal", async () => {
+  const tempRoot = await mkdtemp(join(tmpdir(), "harness-xterm-p1-02-frame-wait-"));
+  const terminal = await openBrowserTerminal({
+    browser: "/usr/bin/chromium",
+    cols: 20,
+    rows: 8,
+    timeoutMs: 5000,
+    title: "Harness P1-02 frame wait",
+    profilePath: join(tempRoot, "profile"),
+    onInput: () => false,
+  });
+
+  try {
+    await terminal.write(Buffer.from([
+      "\u001b[2;3H┌────────┐",
+      "\u001b[3;3H│ [TUI]  │",
+      "\u001b[4;3H│        │",
+      "\u001b[5;3H└────────┘",
+    ].join("")));
+
+    const snapshot = await terminal.waitForFrame({
+      marker: "[TUI]",
+      left: 3,
+      top: 2,
+      right: 12,
+      bottom: 5,
+    });
+
+    assert.match(snapshot.text, /\[TUI\]/);
+  } finally {
+    await terminal.close();
+    await rm(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test("P1-02 screenshots tightly frame the full xterm surface at every canonical size", async () => {

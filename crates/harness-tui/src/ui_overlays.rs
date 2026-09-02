@@ -778,7 +778,9 @@ fn paint_overlay_panel_titled(
         let close_style = if close_hovered {
             ui_chrome::overlay_focus_row_style(theme).add_modifier(Modifier::BOLD)
         } else {
-            border_style
+            Style::default()
+                .fg(ui_chrome::command_palette_muted(theme))
+                .bg(surface)
         };
         block = block.title(
             Line::from(vec![

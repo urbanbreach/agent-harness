@@ -42,6 +42,19 @@ export async function fileReceipt(path, root) {
   };
 }
 
+export function assertStableExecutable(before, after) {
+  if (before.bytes !== after.bytes || before.sha256 !== after.sha256) {
+    throw new Error(
+      `executable changed during QA: before=${before.sha256}/${before.bytes} after=${after.sha256}/${after.bytes}`,
+    );
+  }
+  return {
+    before,
+    after,
+    unchanged: true,
+  };
+}
+
 function git(cwd, args) {
   return execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
 }

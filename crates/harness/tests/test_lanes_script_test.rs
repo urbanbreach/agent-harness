@@ -149,6 +149,7 @@ fn signoff_pty_dry_run_emits_stage_artifact_and_fail_closed_contract() {
         "p0_06_xterm_dependencies",
         "p0_06_xterm_tests",
         "p1_02_xterm_tests",
+        "xterm_harness_binary",
         "p0_06_xterm_80x24",
         "p0_06_xterm_120x40",
         "p0_06_xterm_160x50",
