@@ -187,6 +187,7 @@ test("capture actions preserve indexed PNGs and finish with a final screenshot",
     async snapshot() {
       return snapshots.at(-1);
     },
+    async waitForStableFrame() {},
   };
   const interactions = [];
 
@@ -238,6 +239,7 @@ test("smoke keeps its explicit assertion capture through post-capture cleanup", 
     },
     async type() {},
     async key() {},
+    async waitForStableFrame() {},
     async capture(path) {
       screenshotPaths.push(path);
       await writeFile(path, png);
