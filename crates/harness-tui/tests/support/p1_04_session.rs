@@ -125,18 +125,34 @@ impl Session {
             ),
             (final_cols, final_rows),
         ];
-        for (cols, rows) in sequence {
+        let output_before_prime = self.raw().len();
+        let (prime_cols, prime_rows) = sequence[0];
+        self.master
+            .resize(size(prime_cols, prime_rows))
+            .unwrap_or_abort();
+        self.terminal.resize(prime_cols, prime_rows);
+        self.wait_until(
+            |terminal| terminal.raw().len() > output_before_prime,
+            "priming resize frame",
+        );
+
+        let output_before_burst = self.raw().len();
+        for (cols, rows) in sequence[1..].iter().copied() {
             self.master.resize(size(cols, rows)).unwrap_or_abort();
             self.terminal.resize(cols, rows);
         }
-        self.send(&[0x10]);
-        self.wait_for("Commands");
-        self.send(b"\x1b");
-        self.wait_until_absent("Commands");
+        self.wait_until(
+            |terminal| terminal.raw().len() > output_before_burst,
+            "debounced resize frame",
+        );
+        self.send(b"\x1b[6~");
+        self.wait_for(scenario::READY_MARKER);
         assert_eq!(self.terminal.state_size(), (final_rows, final_cols));
         json!({
-            "events": sequence.into_iter().map(|(cols, rows)| json!({ "cols": cols, "rows": rows })).collect::<Vec<_>>(),
+            "primingResize": { "cols": prime_cols, "rows": prime_rows },
+            "events": sequence[1..].iter().map(|(cols, rows)| json!({ "cols": cols, "rows": rows })).collect::<Vec<_>>(),
             "final": { "cols": final_cols, "rows": final_rows },
+            "inputAfterDebouncedResize": true,
             "parserStatePreserved": true,
             "masterPtyResize": true,
         })
@@ -175,11 +191,8 @@ impl Session {
         reason = "bounded PTY shutdown failures must retain exact wait evidence"
     )]
     pub(crate) fn exit(&mut self) {
-        self.send(&[0x10]);
-        self.wait_for("Commands");
-        self.send(b"exit the app");
-        self.wait_for("Exit the app");
-        self.send(b"\r");
+        self.send(&[0x11]);
+        self.send(&[0x11]);
         let mut child = self.child.take().unwrap_or_abort();
         let mut killer = child.clone_killer();
         let (tx, rx) = mpsc::sync_channel(1);
