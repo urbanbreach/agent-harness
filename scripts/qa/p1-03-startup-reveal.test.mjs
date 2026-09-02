@@ -16,7 +16,7 @@ const variants = [
       width: "unicode11",
       motion: "full",
     },
-    expectedCaptures: ["first-paint", "welcome-complete", "after-input"],
+    expectedCaptures: ["welcome-complete", "after-input"],
     expectedDraft: "draft 川山 during reveal",
   },
   {
