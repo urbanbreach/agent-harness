@@ -28,6 +28,9 @@ const PRIVATE_KEY = /-----BEGIN [^-]*(?:PRIVATE KEY|OPENSSH PRIVATE KEY)-----[\s
 const AUTHORIZATION = /(authorization\s*:\s*bearer\s+)([^\s"',}]+)/gi;
 const COOKIE_HEADER = /((?:set-)?cookie\s*:\s*)([^\r\n]+)/gi;
 const CREDENTIAL = /\b([A-Z0-9_]*(?:API[_-]?KEY|TOKEN|SECRET|PASSWORD|PASSWD|COOKIE)[A-Z0-9_]*)\s*=\s*("[^"]*"|'[^']*'|[^\s,;]+)/gi;
+const OPENAI_TOKEN = /\bsk-[A-Za-z0-9_-]{20,}\b/g;
+const GITHUB_TOKEN = /\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b/g;
+const AWS_ACCESS_KEY = /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g;
 
 export async function validateEvidenceDir(input, repoRoot) {
   const candidate = resolve(input);
@@ -74,6 +77,9 @@ export function assertSecretFree(value) {
     AUTHORIZATION,
     COOKIE_HEADER,
     CREDENTIAL,
+    OPENAI_TOKEN,
+    GITHUB_TOKEN,
+    AWS_ACCESS_KEY,
   ].some((pattern) => {
     pattern.lastIndex = 0;
     return Array.from(text.matchAll(pattern)).some((match) => !match[0].includes("[REDACTED]"));
@@ -90,7 +96,10 @@ function redactText(value) {
     .replace(PRIVATE_KEY, "[REDACTED PRIVATE KEY]")
     .replace(AUTHORIZATION, "$1[REDACTED]")
     .replace(COOKIE_HEADER, "$1[REDACTED]")
-    .replace(CREDENTIAL, "$1=[REDACTED]");
+    .replace(CREDENTIAL, "$1=[REDACTED]")
+    .replace(OPENAI_TOKEN, "[REDACTED TOKEN]")
+    .replace(GITHUB_TOKEN, "[REDACTED TOKEN]")
+    .replace(AWS_ACCESS_KEY, "[REDACTED TOKEN]");
 }
 
 function isStrictDescendant(candidate, root) {

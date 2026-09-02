@@ -85,7 +85,9 @@ test("evidence persistence redacts terminal and structured secrets", async () =>
   const evidenceDir = await mkdtemp(join(tmpdir(), "harness-xterm-redaction-"));
   await writeFile(join(evidenceDir, "terminal.png"), png);
   const secret = ["Authorization: Bearer abc.def.ghi", "Cookie: session=top-secret",
-    "PASSWORD=hunter2", "-----BEGIN PRIVATE KEY-----\nprivate-material\n-----END PRIVATE KEY-----"].join("\n");
+    "PASSWORD=hunter2", "sk-1234567890abcdefghijklmnop",
+    "ghp_1234567890abcdefghijklmnop", "AKIA1234567890ABCDEF",
+    "-----BEGIN PRIVATE KEY-----\nprivate-material\n-----END PRIVATE KEY-----"].join("\n");
   try {
     // When: passing evidence is durably serialized.
     await writePassEvidence(passSettings(evidenceDir, secret));
@@ -93,7 +95,12 @@ test("evidence persistence redacts terminal and structured secrets", async () =>
       "buffer.json", "interactions.json", "metadata.json"]
       .map((name) => readFile(join(evidenceDir, name), "utf8")));
     // Then: no original secret survives in raw, text, metadata, or interactions.
-    for (const contents of durable) assert.doesNotMatch(contents, /abc\.def\.ghi|top-secret|hunter2|private-material/);
+    for (const contents of durable) {
+      assert.doesNotMatch(
+        contents,
+        /abc\.def\.ghi|top-secret|hunter2|private-material|sk-123|ghp_123|AKIA123/,
+      );
+    }
     assert.match(durable.join("\n"), /\[REDACTED\]/);
   } finally {
     await rm(evidenceDir, { recursive: true, force: true });
@@ -153,10 +160,13 @@ test("signal cleanup owns each active resource exactly once", async () => {
   // Given: active PTY, browser, and temp resources with observable cleanup calls.
   const calls = [];
   const state = {};
-  const owner = createCleanupOwner(state, { removeTempRoot: async (path) => {
-    calls.push(`temp:${path}`);
-    return true;
-  } });
+  const owner = createCleanupOwner(state, {
+    beforeTempRootRemoval: async () => calls.push("after-resources"),
+    removeTempRoot: async (path) => {
+      calls.push(`temp:${path}`);
+      return true;
+    },
+  });
   owner.ownPty({ cleanup: async () => { calls.push("pty"); return { childExited: true }; } });
   owner.ownBrowser({ close: async () => { calls.push("browser"); return { contextClosed: true }; } });
   owner.ownTempRoot("/tmp/harness-xterm-owned");
@@ -164,7 +174,7 @@ test("signal cleanup owns each active resource exactly once", async () => {
   // When: SIGINT cleanup and normal-finally cleanup race for ownership.
   await Promise.all([owner.handleSignal("SIGINT", target), owner.cleanup(), owner.cleanup()]);
   // Then: each cleanup executes once and the signal exit status is retained.
-  assert.deepEqual(calls, ["pty", "browser", "temp:/tmp/harness-xterm-owned"]);
+  assert.deepEqual(calls, ["pty", "browser", "after-resources", "temp:/tmp/harness-xterm-owned"]);
   assert.equal(target.exitCode, 130);
   assert.equal(state.tempRootRemoved, true);
 });
@@ -196,6 +206,13 @@ test("secret scanning decodes buffers and blocks secret-bearing screenshots", ()
   // When/Then: neither durable bytes nor screenshot pixels can cross the evidence boundary.
   assert.throws(() => assertSecretFree(Buffer.from(secret)), /secret scan/);
   assert.throws(() => assertScreenshotSafe({ text: secret }), /secret scan/);
+  for (const standalone of [
+    "sk-1234567890abcdefghijklmnop",
+    "ghp_1234567890abcdefghijklmnop",
+    "AKIA1234567890ABCDEF",
+  ]) {
+    assert.throws(() => assertSecretFree(standalone), /secret scan/);
+  }
 });
 
 function passSettings(evidenceDir, secret) {

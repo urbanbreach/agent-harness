@@ -327,19 +327,27 @@ test("executable provenance fails closed when tested bytes change", () => {
 test("built executable provenance binds clean source, build output, and tested copy", () => {
   const source = { path: "target/debug/harness", bytes: 42, sha256: "built" };
   const tested = { path: "harness-under-test", bytes: 42, sha256: "built" };
+  const tree = {
+    algorithm: "sha256",
+    hash: "source",
+    files: 1,
+    dirty: false,
+    head: "commit",
+    headTree: "tree",
+  };
 
   assert.equal(assertBuiltExecutable({
-    sourceTree: { dirty: false, head: "commit", headTree: "tree" },
+    sourceTree: tree,
+    sourceTreeAfter: tree,
     sourceBefore: source,
-    sourceAfter: source,
     testedBefore: tested,
     testedAfter: tested,
   }).testedCopy.execution.unchanged, true);
   assert.throws(
     () => assertBuiltExecutable({
-      sourceTree: { dirty: true, head: "commit", headTree: "tree" },
+      sourceTree: { ...tree, dirty: true },
+      sourceTreeAfter: tree,
       sourceBefore: source,
-      sourceAfter: source,
       testedBefore: tested,
       testedAfter: tested,
     }),
@@ -347,13 +355,23 @@ test("built executable provenance binds clean source, build output, and tested c
   );
   assert.throws(
     () => assertBuiltExecutable({
-      sourceTree: { dirty: false, head: "commit", headTree: "tree" },
+      sourceTree: tree,
+      sourceTreeAfter: tree,
       sourceBefore: source,
-      sourceAfter: source,
       testedBefore: { ...tested, sha256: "replacement" },
       testedAfter: tested,
     }),
     /executable changed/,
+  );
+  assert.throws(
+    () => assertBuiltExecutable({
+      sourceTree: tree,
+      sourceTreeAfter: { ...tree, head: "other-commit" },
+      sourceBefore: source,
+      testedBefore: tested,
+      testedAfter: tested,
+    }),
+    /source tree changed/,
   );
 });
 

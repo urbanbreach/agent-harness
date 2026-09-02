@@ -50,7 +50,20 @@ async function main() {
     },
     tempRootRemoved: false,
   };
-  const cleanupOwner = createCleanupOwner(cleanup, { removeTempRoot });
+  const cleanupOwner = createCleanupOwner(cleanup, {
+    beforeTempRootRemoval: async () => {
+      if (sourceBefore && testedBinary && testedBefore) {
+        binaryProvenance = assertBuiltExecutable({
+          sourceTree,
+          sourceTreeAfter: await currentTree(repoRoot),
+          sourceBefore,
+          testedBefore,
+          testedAfter: await fileReceipt(testedBinary, tempRoot),
+        });
+      }
+    },
+    removeTempRoot,
+  });
   cleanupOwner.ownTempRoot(tempRoot);
   const uninstallSignals = cleanupOwner.installSignalHandlers();
   let fixture;
@@ -127,15 +140,6 @@ async function main() {
     if (contract.expectNaturalExit) {
       exitResult = await pty.waitForExit(options.timeoutMs);
       if (exitResult.code !== 0) throw new Error(`Harness PTY exited with code ${exitResult.code}`);
-    }
-    if (sourceBinary && sourceBefore && testedBinary && testedBefore) {
-      binaryProvenance = assertBuiltExecutable({
-        sourceTree,
-        sourceBefore,
-        sourceAfter: await fileReceipt(sourceBinary, repoRoot),
-        testedBefore,
-        testedAfter: await fileReceipt(testedBinary, tempRoot),
-      });
     }
     browserMetadata = await terminal.metadata();
   } catch (error) {
