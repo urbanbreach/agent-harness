@@ -111,6 +111,72 @@ fn compact_startup_omits_the_wide_identity_logo_at_every_height() {
 }
 
 #[test]
+fn compact_startup_reveals_mark_then_identity_before_affordances() {
+    // arrange: compact width so the welcome renders without the wide panel.
+    let mut app = AppState::new_startup(Vec::new(), None);
+
+    // act: sample the compact reveal at each staged delay.
+    let mark = startup_text(&app, 80, 24);
+
+    // assert: Mark stage paints the wordmark, not the identity or affordances.
+    assert!(
+        mark.contains("Harness"),
+        "compact mark stage must paint the wordmark\n{mark}"
+    );
+    assert!(
+        !mark.contains(env!("CARGO_PKG_VERSION")),
+        "compact mark stage must not paint the version\n{mark}"
+    );
+    assert!(
+        !mark.contains("New worktree"),
+        "compact mark stage must not paint affordances\n{mark}"
+    );
+
+    // act: advance to the Identity stage.
+    app.advance_wall_clock_for_motion_evidence(Duration::from_millis(100));
+    let identity = startup_text(&app, 80, 24);
+
+    // assert: identity joins the wordmark, affordances stay hidden.
+    assert!(
+        identity.contains(env!("CARGO_PKG_VERSION"))
+            && identity.contains("Thanks for trying Harness"),
+        "compact identity stage must paint version and welcome copy\n{identity}"
+    );
+    assert!(
+        !identity.contains("New worktree"),
+        "compact identity stage must not paint affordances\n{identity}"
+    );
+
+    // act: advance to the Affordances stage.
+    app.advance_wall_clock_for_motion_evidence(Duration::from_millis(100));
+    let affordances = startup_text(&app, 80, 24);
+
+    // assert: affordances join, changelog stays hidden.
+    assert!(
+        affordances.contains("New worktree") && affordances.contains("Resume session"),
+        "compact affordance stage must paint the actions\n{affordances}"
+    );
+    assert!(
+        !affordances.contains("Subagent spawning"),
+        "compact affordance stage must not paint the changelog\n{affordances}"
+    );
+
+    // act: advance to the Complete stage.
+    app.advance_wall_clock_for_motion_evidence(Duration::from_millis(100));
+    let complete = startup_text(&app, 80, 24);
+
+    // assert: the changelog settles the compact welcome within its row budget.
+    assert!(
+        complete.contains("Changelog") && complete.contains("Subagent spawning"),
+        "compact complete stage must paint the changelog\n{complete}"
+    );
+    assert!(
+        !complete.contains("██╗  ██╗"),
+        "compact complete stage must stay logo-free\n{complete}"
+    );
+}
+
+#[test]
 fn compact_startup_composer_is_flush_while_live_composer_keeps_its_inset() {
     // arrange
     let startup = AppState::new_startup(Vec::new(), None);
