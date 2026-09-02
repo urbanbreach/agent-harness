@@ -18,11 +18,8 @@ static OWNER_LOCK: Mutex<()> = Mutex::new(());
 
 pub(crate) fn record_startup_reveal_terminal_states() {
     let _owner = OWNER_LOCK.lock().unwrap_or_abort();
-    let root = artifacts::artifact_root();
-    if root.exists() {
-        fs::remove_dir_all(&root).unwrap_or_abort();
-    }
-    fs::create_dir_all(&root).unwrap_or_abort();
+    let root = artifacts::validated_artifact_root(&artifacts::artifact_root());
+    artifacts::reset_artifact_root(&root);
     let binary = std::env::current_exe().unwrap_or_abort();
     let mut captures = Vec::new();
 

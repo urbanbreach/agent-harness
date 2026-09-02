@@ -1,3 +1,5 @@
+#[path = "support/p1_04_artifact_guard_test.rs"]
+mod artifact_guard_test;
 #[path = "support/p1_04_pty.rs"]
 mod scenario;
 #[path = "support/p1_04_recorded_owner.rs"]
@@ -5,10 +7,10 @@ mod support;
 
 #[test]
 fn p1_04_pty_helper() {
-    // Given: direct invocation opts into the deterministic responsive fixture.
-    // When: the helper test is launched by the native PTY owner.
+    // arrange: direct invocation opts into the deterministic responsive fixture.
+    // act: the helper test is launched by the native PTY owner.
+    // assert: the owner drives and terminates the real TUI through its PTY.
     scenario::run_helper();
-    // Then: the owner drives and terminates the real TUI through its PTY.
 }
 
 #[test]
@@ -18,8 +20,8 @@ fn p1_04_native_pty_owner_records_responsive_terminal_states() {
         return;
     }
 
-    // Given: an isolated artifact root selected by the signoff lane.
-    // When: the serialized native PTY owner captures every variant and size.
-    // Then: the complete manifest-backed artifact tree and receipts are verified.
+    // arrange: an isolated artifact root selected by the signoff lane.
+    // act: the serialized native PTY owner captures every variant and size.
+    // assert: the complete manifest-backed artifact tree and receipts are verified.
     support::record_responsive_terminal_states();
 }
