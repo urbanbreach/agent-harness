@@ -47,8 +47,11 @@ export async function openBrowserTerminal(settings) {
       height: Math.max(initialViewport.height, Math.ceil(surface.height + 32)),
     });
   } catch (error) {
-    if (context) await context.close();
-    await rm(profilePath, { recursive: true, force: true });
+    try {
+      await closeBrowserResources({ context, browser, page, profilePath });
+    } catch (cleanupError) {
+      throw new AggregateError([error, cleanupError], "browser acquisition and cleanup failed");
+    }
     throw error;
   }
 
@@ -219,18 +222,45 @@ export async function openBrowserTerminal(settings) {
       };
     },
     async close() {
-      await context.close();
-      const connected = browser?.isConnected() ?? false;
-      await rm(profilePath, { recursive: true, force: true });
-      return {
-        pageClosed: page.isClosed(),
-        contextClosed: true,
-        browserConnectedAfterClose: connected,
-        profileRemoved: true,
-        profilePath,
-        boundPorts: [],
-      };
+      return closeBrowserResources({ context, browser, page, profilePath });
     },
+  };
+}
+
+export async function closeBrowserResources(settings) {
+  const failures = [];
+  let contextClosed = !settings.context;
+  try {
+    if (settings.context) await settings.context.close();
+    contextClosed = true;
+  } catch (error) {
+    failures.push(error);
+    try {
+      if (settings.browser) await settings.browser.close();
+    } catch (browserError) {
+      failures.push(browserError);
+    }
+  }
+  const connected = settings.browser?.isConnected() ?? false;
+  let profileRemoved = false;
+  try {
+    const removeProfile = settings.removeProfile
+      ?? ((path) => rm(path, { recursive: true, force: true }));
+    await removeProfile(settings.profilePath);
+    profileRemoved = true;
+  } catch (error) {
+    failures.push(error);
+  }
+  if (failures.length > 0) {
+    throw new AggregateError(failures, "browser cleanup failed");
+  }
+  return {
+    pageClosed: settings.page?.isClosed() ?? true,
+    contextClosed,
+    browserConnectedAfterClose: connected,
+    profileRemoved,
+    profilePath: settings.profilePath,
+    boundPorts: [],
   };
 }
 
