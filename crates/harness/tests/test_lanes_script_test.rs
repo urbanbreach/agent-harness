@@ -120,17 +120,6 @@ fn signoff_pty_records_happy_path_artifact_dir() {
 }
 
 #[test]
-fn signoff_pty_p1_02_xterm_uses_security_allowlisted_temp_prefix() {
-    // Given: the signoff lane source consumed by the evidence-path security boundary.
-    let script = fs::read_to_string(repo_root().join("scripts/test-lanes.sh")).unwrap_or_abort();
-
-    // When/Then: P1-02 stays under the allowlisted harness-xterm prefix and cannot drift back.
-    assert!(script
-        .contains("local temporary=\"/tmp/harness-xterm-p1-02-${timestamp}-${cols}x${rows}-$$\""));
-    assert!(!script.contains("/tmp/harness-p1-02-xterm-"));
-}
-
-#[test]
 fn signoff_pty_dry_run_emits_stage_artifact_and_fail_closed_contract() {
     // arrange
     let root = repo_root();

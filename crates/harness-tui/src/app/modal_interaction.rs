@@ -106,9 +106,42 @@ impl ModalInteractionState {
             default.min(max)
         }
     }
+
+    fn snapshot_visual_offset(&self, owner: ModalSurfaceKey) -> Option<usize> {
+        (self.owner == Some(owner)).then_some(self.visual_offset)
+    }
+
+    fn restore_visual_offset(&mut self, owner: ModalSurfaceKey, visual_offset: usize) {
+        self.owner = Some(owner);
+        self.hovered = None;
+        self.pressed = None;
+        self.visual_offset = visual_offset;
+    }
 }
 
 impl AppState {
+    fn command_palette_surface_key() -> ModalSurfaceKey {
+        ModalSurfaceKey::Overlay {
+            kind: OverlayKind::CommandPalette,
+            view: ModalViewKey::Primary,
+        }
+    }
+
+    pub(in crate::app) fn command_palette_visual_offset(&self) -> Option<usize> {
+        self.modal_interaction
+            .snapshot_visual_offset(Self::command_palette_surface_key())
+    }
+
+    pub(in crate::app) fn restore_command_palette_visual_offset(
+        &mut self,
+        visual_offset: Option<usize>,
+    ) {
+        if let Some(visual_offset) = visual_offset {
+            self.modal_interaction
+                .restore_visual_offset(Self::command_palette_surface_key(), visual_offset);
+        }
+    }
+
     pub(crate) fn modal_visual_offset(
         &self,
         owner: ModalSurfaceKey,

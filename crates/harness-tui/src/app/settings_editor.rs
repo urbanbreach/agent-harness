@@ -57,6 +57,7 @@ pub(crate) struct CommandPaletteSnapshot {
     selected: usize,
     focus: Focus,
     focus_return: Option<Focus>,
+    visual_offset: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -152,6 +153,7 @@ impl AppState {
             selected: self.palette_selected,
             focus: self.focus,
             focus_return: self.palette_focus_return,
+            visual_offset: self.command_palette_visual_offset(),
         }));
     }
 
@@ -188,6 +190,7 @@ impl AppState {
                 self.palette_selected = snapshot.selected;
                 self.focus = snapshot.focus;
                 self.palette_focus_return = snapshot.focus_return;
+                self.restore_command_palette_visual_offset(snapshot.visual_offset);
             }
             Some(SettingsParent::Focus(focus)) => self.focus = focus,
             None => {}

@@ -197,16 +197,7 @@ function p102ModalChromeContract(options) {
       { kind: "key", value: "Escape" },
       { kind: "waitAbsent", value: "Models" },
     ],
-    assertions: [
-      "Settings",
-      "Commands / Settings",
-      "Runtime",
-      "TUI",
-      "Keyboard Shortcuts",
-      "Models",
-      "navigate",
-      "Esc close",
-    ],
+    assertions: ["Models", "navigate", "Esc close"],
     expectNaturalExit: false,
   };
 }

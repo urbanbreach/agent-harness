@@ -26,12 +26,7 @@ pub(super) fn render_model_switcher_overlay(
         overlay.width.saturating_sub(8),
         1,
     );
-    let list = Rect::new(
-        overlay.x.saturating_add(1),
-        overlay.y.saturating_add(5),
-        overlay.width.saturating_sub(2),
-        overlay.height.saturating_sub(6),
-    );
+    let list = model_switcher_list_area(overlay);
     let visible_model_rows = u16::try_from(app.model_switcher_visual_row_count())
         .unwrap_or(u16::MAX)
         .min(list.height.saturating_sub(1));
@@ -47,6 +42,15 @@ pub(super) fn render_model_switcher_overlay(
     render_model_switcher_list(frame, app, theme, list);
     render_model_switcher_status(frame, app, theme, status);
     modal_chrome::render_body(frame, theme, overlay, modal_chrome::MODELS_CHROME);
+}
+
+pub(super) fn model_switcher_list_area(overlay: Rect) -> Rect {
+    Rect::new(
+        overlay.x.saturating_add(1),
+        overlay.y.saturating_add(5),
+        overlay.width.saturating_sub(2),
+        overlay.height.saturating_sub(8),
+    )
 }
 
 fn render_model_switcher_status(frame: &mut Frame, app: &AppState, theme: &Theme, area: Rect) {

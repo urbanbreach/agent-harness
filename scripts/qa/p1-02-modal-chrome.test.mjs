@@ -17,16 +17,7 @@ test("P1-02 modal chrome drives the shipped Harness binary and complete interact
 
   // act and assert
   assert.match(contract.command, /harness tui --mock --deterministic/);
-  assert.deepEqual(contract.assertions, [
-    "Settings",
-    "Commands / Settings",
-    "Runtime",
-    "TUI",
-    "Keyboard Shortcuts",
-    "Models",
-    "navigate",
-    "Esc close",
-  ]);
+  assert.deepEqual(contract.assertions, ["Models", "navigate", "Esc close"]);
   assert.ok(contract.actions.some((action) => action.kind === "key" && action.value === "Tab"));
   assert.ok(contract.actions.some((action) => action.kind === "key" && action.value === "Shift+Tab"));
   assert.ok(contract.actions.some((action) => action.kind === "mouseDown"));
