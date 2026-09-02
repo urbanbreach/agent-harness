@@ -558,7 +558,7 @@ run_p0_06_xterm_capture() {
   local cols="$3"
   local rows="$4"
   local destination="$(stage_dir_for "$mode_name" "$stage_name")/artifacts"
-  local temporary_template="/tmp/harness-xterm-${timestamp}-${cols}x${rows}-XXXXXX"
+  local temporary_template="${TMPDIR:-/tmp}/harness-xterm-${timestamp}-${cols}x${rows}-XXXXXX"
   rm -rf "$destination"
   mkdir -p "$destination"
   run_stage "$mode_name" "$stage_name" "$repo_root" \
@@ -578,7 +578,7 @@ run_p1_02_xterm_capture() {
   local cols="$3"
   local rows="$4"
   local destination="$(stage_dir_for "$mode_name" "$stage_name")/artifacts"
-  local temporary_template="/tmp/harness-xterm-p1-02-${timestamp}-${cols}x${rows}-XXXXXX"
+  local temporary_template="${TMPDIR:-/tmp}/harness-xterm-p1-02-${timestamp}-${cols}x${rows}-XXXXXX"
   rm -rf "$destination"
   mkdir -p "$destination"
   run_stage "$mode_name" "$stage_name" "$repo_root" \
@@ -599,7 +599,7 @@ run_p1_04_xterm_capture() {
   local cols="${geometry%x*}"
   local rows="${geometry#*x}"
   local destination="$(stage_dir_for "$mode_name" "$stage_name")/artifacts"
-  local temporary_template="/tmp/harness-xterm-p1-04-${timestamp}-${cols}x${rows}-XXXXXX"
+  local temporary_template="${TMPDIR:-/tmp}/harness-xterm-p1-04-${timestamp}-${cols}x${rows}-XXXXXX"
   rm -rf "$destination"
   mkdir -p "$destination"
   run_stage "$mode_name" "$stage_name" "$repo_root" \
