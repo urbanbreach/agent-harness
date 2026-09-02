@@ -70,6 +70,8 @@ pub struct SlashCommand {
     pub id: &'static str,
     pub metadata_id: &'static str,
     pub aliases: &'static [&'static str],
+    pub takes_args: bool,
+    pub args_required: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -92,12 +94,14 @@ macro_rules! define_command_metadata {
 }
 
 macro_rules! define_slash_commands {
-    ($(($id:literal, $metadata_id:literal, $aliases:expr),)*) => {
+    ($(($id:literal, $metadata_id:literal, $aliases:expr, $takes_args:literal, $args_required:literal),)*) => {
         const SLASH_COMMANDS: &[SlashCommand] = &[
             $(SlashCommand {
                 id: $id,
                 metadata_id: $metadata_id,
                 aliases: $aliases,
+                takes_args: $takes_args,
+                args_required: $args_required,
             },)*
         ];
     };
@@ -325,32 +329,32 @@ pub(super) const fn help_category(action: Action) -> Option<HelpCategory> {
 }
 
 define_slash_commands! {
-    ("new", "slash_new", &["clear"]),
-    ("sessions", "slash_sessions", &["resume", "continue"]),
-    ("fork", "slash_fork", &[]),
-    ("tree", "slash_tree", &[]),
-    ("clone", "slash_clone", &[]),
-    ("models", "switch_model", &["mo"]),
-    ("agents", "switch_model", &[]),
-    ("mcps", "toggles", &[]),
-    ("toggles", "toggles", &[]),
-    ("auth", "auth", &["login"]),
-    ("connect", "connect", &[]),
-    ("help", "help", &[]),
-    ("feedback", "help", &[]),
-    ("shell", "close_review_surface", &["session-shell"]),
-    ("follow", "toggle_follow", &[]),
-    ("compact", "slash_compact", &["summarize"]),
-    ("exit", "quit", &["quit", "q"]),
-    ("rename", "slash_rename", &[]),
-    ("copy", "slash_copy", &[]),
-    ("export", "slash_export", &[]),
-    ("timestamps", "slash_timestamps", &["toggle-timestamps"]),
-    ("thinking", "slash_thinking", &["toggle-thinking"]),
-    ("settings", "open_settings", &[]),
-    ("view-plan", "open_view_plan", &["view_plan"]),
-    ("dashboard", "open_status_dialog", &["status"]),
-    ("import", "slash_import", &["import-session"]),
+    ("new", "slash_new", &["clear"], false, false),
+    ("sessions", "slash_sessions", &["resume", "continue"], false, false),
+    ("fork", "slash_fork", &[], false, false),
+    ("tree", "slash_tree", &[], false, false),
+    ("clone", "slash_clone", &[], false, false),
+    ("models", "switch_model", &["mo"], false, false),
+    ("agents", "switch_model", &[], false, false),
+    ("mcps", "toggles", &[], false, false),
+    ("toggles", "toggles", &[], false, false),
+    ("auth", "auth", &["login"], true, false),
+    ("connect", "connect", &[], false, false),
+    ("help", "help", &[], false, false),
+    ("feedback", "help", &[], false, false),
+    ("shell", "close_review_surface", &["session-shell"], false, false),
+    ("follow", "toggle_follow", &[], false, false),
+    ("compact", "slash_compact", &["summarize"], false, false),
+    ("exit", "quit", &["quit", "q"], false, false),
+    ("rename", "slash_rename", &[], true, true),
+    ("copy", "slash_copy", &[], false, false),
+    ("export", "slash_export", &[], false, false),
+    ("timestamps", "slash_timestamps", &["toggle-timestamps"], false, false),
+    ("thinking", "slash_thinking", &["toggle-thinking"], false, false),
+    ("settings", "open_settings", &[], false, false),
+    ("view-plan", "open_view_plan", &["view_plan"], false, false),
+    ("dashboard", "open_status_dialog", &["status"], false, false),
+    ("import", "slash_import", &["import-session"], false, false),
 }
 
 pub fn slash_commands() -> &'static [SlashCommand] {
@@ -414,4 +418,63 @@ define_palette_commands! {
 
 pub(super) fn palette_commands() -> &'static [PaletteCommand] {
     PALETTE_COMMANDS
+}
+
+#[cfg(test)]
+mod tests {
+    use super::slash_commands;
+
+    #[test]
+    fn slash_commands_expose_argument_metadata_and_preserve_order() {
+        // Given
+        let commands = slash_commands();
+
+        // When
+        let metadata = |id| {
+            commands
+                .iter()
+                .find(|command| command.id == id)
+                .map(|command| (command.takes_args, command.args_required))
+        };
+        let ids: Vec<_> = commands.iter().map(|command| command.id).collect();
+
+        // Then
+        assert_eq!(metadata("help"), Some((false, false)));
+        assert_eq!(metadata("auth"), Some((true, false)));
+        assert_eq!(metadata("rename"), Some((true, true)));
+        assert!(commands
+            .iter()
+            .all(|command| !command.args_required || command.takes_args));
+        assert_eq!(
+            ids,
+            [
+                "new",
+                "sessions",
+                "fork",
+                "tree",
+                "clone",
+                "models",
+                "agents",
+                "mcps",
+                "toggles",
+                "auth",
+                "connect",
+                "help",
+                "feedback",
+                "shell",
+                "follow",
+                "compact",
+                "exit",
+                "rename",
+                "copy",
+                "export",
+                "timestamps",
+                "thinking",
+                "settings",
+                "view-plan",
+                "dashboard",
+                "import",
+            ]
+        );
+    }
 }

@@ -593,7 +593,17 @@ fn render_slash_commands_list(frame: &mut Frame, app: &AppState, theme: &Theme, 
         frame.render_widget(
             Paragraph::new(slash_command_row(
                 command,
-                crate::keybindings::slash_command_description(command),
+                app.slash_argument_required(command).map_or_else(
+                    || crate::keybindings::slash_command_description(command),
+                    |required| {
+                        if required {
+                            "argument required · Enter to run"
+                        } else {
+                            "argument optional · Enter to run"
+                        }
+                    },
+                ),
+                app.slash_match_query(),
                 is_selected,
                 theme,
                 row_area.width,
@@ -607,6 +617,7 @@ fn render_slash_commands_list(frame: &mut Frame, app: &AppState, theme: &Theme, 
 fn slash_command_row(
     command: &str,
     description: &str,
+    match_query: &str,
     is_selected: bool,
     theme: &Theme,
     width: u16,
@@ -645,9 +656,7 @@ fn slash_command_row(
     if side_padding > 0 {
         spans.push(Span::styled(" ".repeat(side_padding), row_style));
     }
-    if !label.is_empty() {
-        spans.push(Span::styled(label, label_style));
-    }
+    spans.extend(highlight_slash_label(&label, match_query, label_style));
     if label_padding > 0 {
         spans.push(Span::styled(" ".repeat(label_padding), row_style));
     }
@@ -659,6 +668,36 @@ fn slash_command_row(
     }
 
     Line::from(spans)
+}
+
+fn highlight_slash_label(label: &str, query: &str, label_style: Style) -> Vec<Span<'static>> {
+    let query = query
+        .chars()
+        .map(|character| character.to_lowercase().collect::<String>())
+        .collect::<Vec<_>>();
+    let highlight_style = label_style.add_modifier(Modifier::BOLD | Modifier::UNDERLINED);
+    let mut query_index = 0;
+
+    label
+        .chars()
+        .map(|character| {
+            let folded = character.to_lowercase().collect::<String>();
+            let matches = query
+                .get(query_index)
+                .is_some_and(|expected| *expected == folded);
+            if matches {
+                query_index += 1;
+            }
+            Span::styled(
+                character.to_string(),
+                if matches {
+                    highlight_style
+                } else {
+                    label_style
+                },
+            )
+        })
+        .collect()
 }
 
 fn slash_command_display(command: &str) -> String {
@@ -1354,4 +1393,27 @@ fn render_error_details_overlay(frame: &mut Frame, app: &AppState, theme: &Theme
             .wrap(Wrap { trim: true }),
         inner,
     );
+}
+
+#[cfg(test)]
+mod slash_highlight_tests {
+    use super::highlight_slash_label;
+    use ratatui::style::{Modifier, Style};
+
+    #[test]
+    fn slash_match_characters_are_bold_and_underlined() {
+        let spans = highlight_slash_label("/rename", "ren", Style::default());
+
+        let highlighted = spans
+            .iter()
+            .filter(|span| span.style.add_modifier.contains(Modifier::UNDERLINED))
+            .map(|span| span.content.as_ref())
+            .collect::<String>();
+
+        assert_eq!(highlighted, "ren");
+        assert!(spans
+            .iter()
+            .filter(|span| span.style.add_modifier.contains(Modifier::UNDERLINED))
+            .all(|span| span.style.add_modifier.contains(Modifier::BOLD)));
+    }
 }
