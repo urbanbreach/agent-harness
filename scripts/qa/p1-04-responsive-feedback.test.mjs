@@ -61,9 +61,12 @@ test("P1-04 contract drives the copied shipped binary through both production ca
       contract.actions.filter(({ kind }) => kind === "capture").map(({ state }) => state),
       ["following", "detached", "resize-final", "reduced-motion"],
     );
-    assert.ok(contract.actions.some(({ kind }) => kind === "resize"));
-    assert.equal(contract.actions.filter(({ kind }) => kind === "resize").at(-1).cols, 80);
-    assert.equal(contract.actions.filter(({ kind }) => kind === "resize").at(-1).rows, 24);
+    assert.deepEqual(
+      contract.actions
+        .filter(({ kind }) => kind === "resize")
+        .map(({ cols, rows }) => [cols, rows]),
+      [[80, 24], [160, 50], [120, 40]],
+    );
   }
 });
 
