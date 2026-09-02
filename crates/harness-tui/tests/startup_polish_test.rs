@@ -340,6 +340,85 @@ fn reduced_motion_freezes_startup_reveal_on_the_final_frame() {
     );
 }
 
+fn normalized_startup_snapshot(app: &AppState, width: u16, height: u16) -> String {
+    let rendered = startup_text(app, width, height);
+    rendered
+        .lines()
+        .map(|line| {
+            if line.contains("git:") {
+                "  <cwd-breadcrumb>"
+            } else {
+                line.trim_end()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[test]
+fn startup_reveal_frame_sequence_snapshots_wide_and_compact() {
+    // arrange: the staged reveal sampled at each stage boundary in both geometries.
+    let geometries: [(&str, u16, u16); 2] = [("wide", 120, 32), ("compact", 80, 24)];
+
+    for (geometry_name, width, height) in geometries {
+        let mut app = AppState::new_startup(Vec::new(), None);
+        for (stage_index, stage_name) in ["mark", "identity", "affordances", "complete"]
+            .into_iter()
+            .enumerate()
+        {
+            // act
+            if stage_index > 0 {
+                app.advance_wall_clock_for_motion_evidence(Duration::from_millis(100));
+            }
+            let snapshot = normalized_startup_snapshot(&app, width, height);
+
+            // assert
+            insta::assert_snapshot!(
+                format!("startup_reveal_{geometry_name}_{stage_name}"),
+                snapshot
+            );
+        }
+    }
+}
+
+#[test]
+fn reduced_motion_startup_snapshots_freeze_the_complete_frame() {
+    // arrange: reduced motion active before the first startup paint in both geometries.
+    let geometries: [(&str, u16, u16); 2] = [("wide", 120, 32), ("compact", 80, 24)];
+
+    for (geometry_name, width, height) in geometries {
+        let mut app = AppState::new_startup(Vec::new(), None);
+        app.set_reduced_motion_for_evidence(true);
+
+        // act
+        let frozen = normalized_startup_snapshot(&app, width, height);
+
+        // assert
+        insta::assert_snapshot!(format!("startup_reduced_motion_{geometry_name}"), frozen);
+    }
+}
+
+#[test]
+fn reduced_motion_freeze_equals_the_full_motion_complete_frame() {
+    // arrange: reduced motion freezes instantly while full motion settles after the cadence.
+    let mut reduced = AppState::new_startup(Vec::new(), None);
+    reduced.set_reduced_motion_for_evidence(true);
+    let mut full = AppState::new_startup(Vec::new(), None);
+    full.advance_wall_clock_for_motion_evidence(Duration::from_millis(300));
+
+    for (width, height) in [(120u16, 32u16), (80, 24)] {
+        // act
+        let frozen = normalized_startup_snapshot(&reduced, width, height);
+        let settled = normalized_startup_snapshot(&full, width, height);
+
+        // assert
+        assert_eq!(
+            frozen, settled,
+            "reduced motion must freeze on the exact complete frame at {width}x{height}"
+        );
+    }
+}
+
 #[test]
 fn startup_input_is_never_blocked_by_the_reveal() {
     // arrange

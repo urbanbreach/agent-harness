@@ -1,0 +1,27 @@
+---
+source: crates/harness-tui/tests/startup_polish_test.rs
+expression: snapshot
+---
+
+  <cwd-breadcrumb>
+
+
+
+
+
+               Harness 0.1.0
+               Thanks for trying Harness, give feedback with /fee…
+
+
+
+
+
+
+
+
+
+  ╭──────────────────────────────────────────────────────────────────────────╮
+  │ ❯                                                                        │
+  ╰───────────────────────────────────────────────────────────────────────  ─╯
+
+                                               Provider not connected  │  Beta
