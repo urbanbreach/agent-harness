@@ -3,7 +3,10 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { openBrowserTerminal } from "./lib/browser-terminal.mjs";
+import {
+  closeBrowserResources,
+  openBrowserTerminal,
+} from "./lib/browser-terminal.mjs";
 import { parseArgs, scenarioContract } from "./lib/config.mjs";
 import { writePassEvidence } from "./lib/evidence.mjs";
 import { resolveCommand } from "./lib/pty-session.mjs";
@@ -12,7 +15,10 @@ import {
   assertStableExecutable,
   sha256,
 } from "./lib/provenance.mjs";
-import { executeActions } from "./web-terminal-visual-qa.mjs";
+import {
+  executeActions,
+  persistTopLevelFailureEvidence,
+} from "./web-terminal-visual-qa.mjs";
 
 const scenario = "transcript-response-navigation";
 
@@ -25,6 +31,38 @@ test("parseArgs rejects an unknown scenario when input crosses the CLI boundary"
 
   // Then: the unsupported scenario is rejected before resources are spawned.
   assert.throws(action, /unknown scenario/);
+});
+
+test("top-level parse failures replace stale PASS and failure evidence", async () => {
+  const evidenceDir = await mkdtemp(join(tmpdir(), "harness-xterm-top-level-"));
+  await writeFile(join(evidenceDir, "PASS.json"), "OLD_PASS");
+  await writeFile(join(evidenceDir, "failure.json"), "OLD_FAILURE");
+  try {
+    await persistTopLevelFailureEvidence(
+      ["--scenario", "unknown", "--evidence-dir", evidenceDir],
+      new Error("current parse failure"),
+      false,
+    );
+    await assert.rejects(readFile(join(evidenceDir, "PASS.json")), /ENOENT/);
+    assert.match(await readFile(join(evidenceDir, "failure.json"), "utf8"), /current parse failure/);
+  } finally {
+    await rm(evidenceDir, { recursive: true, force: true });
+  }
+});
+
+test("browser cleanup removes its profile even when context close fails", async () => {
+  let profileRemoved = false;
+  await assert.rejects(
+    closeBrowserResources({
+      context: { close: async () => { throw new Error("close failed"); } },
+      browser: null,
+      page: { isClosed: () => false },
+      profilePath: "/tmp/harness-xterm-profile",
+      removeProfile: async () => { profileRemoved = true; },
+    }),
+    /browser cleanup failed/,
+  );
+  assert.equal(profileRemoved, true);
 });
 
 test("scenarioContract requires an explicit fixture for a planned P0 scenario", () => {

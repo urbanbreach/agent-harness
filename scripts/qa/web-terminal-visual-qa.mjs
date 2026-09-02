@@ -24,6 +24,7 @@ import { validateEvidenceDir } from "./lib/security.mjs";
 
 const scriptPath = fileURLToPath(import.meta.url);
 const repoRoot = resolve(dirname(scriptPath), "..", "..");
+let failureEvidenceWritten = false;
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
@@ -174,6 +175,7 @@ async function main() {
         terminalText: browserMetadata?.terminal?.text ?? null,
       },
     });
+    failureEvidenceWritten = true;
     throw runError;
   }
   const assertions = contract.assertions.map((marker) => ({ marker, visible: true }));
@@ -279,33 +281,32 @@ export async function executeActions(settings) {
 
 if (resolve(process.argv[1] ?? "") === scriptPath) {
   main().catch(async (error) => {
-    const evidenceArgument = argumentValue(process.argv.slice(2), "--evidence-dir");
-    if (evidenceArgument) {
-      let evidenceDir;
-      try {
-        evidenceDir = await validateEvidenceDir(evidenceArgument, repoRoot);
-        const failurePath = resolve(evidenceDir, "failure.json");
-        try {
-          await access(failurePath);
-        } catch (accessError) {
-          if (!(accessError instanceof Error && "code" in accessError && accessError.code === "ENOENT")) {
-            throw accessError;
-          }
-          await prepareEvidence(evidenceDir);
-          await writeFailureEvidence({
-            evidenceDir,
-            scenario: argumentValue(process.argv.slice(2), "--scenario"),
-            error,
-          });
-        }
-      } catch (evidenceError) {
-        if (!(evidenceError instanceof Error && evidenceError.message.startsWith("unsafe evidence directory:"))) {
-          process.stderr.write(`failure evidence error: ${evidenceError instanceof Error ? evidenceError.message : String(evidenceError)}\n`);
-        }
+    try {
+      await persistTopLevelFailureEvidence(
+        process.argv.slice(2),
+        error,
+        failureEvidenceWritten,
+      );
+    } catch (evidenceError) {
+      if (!(evidenceError instanceof Error && evidenceError.message.startsWith("unsafe evidence directory:"))) {
+        process.stderr.write(`failure evidence error: ${evidenceError instanceof Error ? evidenceError.message : String(evidenceError)}\n`);
       }
     }
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     process.exitCode = 1;
+  });
+}
+
+export async function persistTopLevelFailureEvidence(argv, error, alreadyWritten) {
+  if (alreadyWritten) return;
+  const evidenceArgument = argumentValue(argv, "--evidence-dir");
+  if (!evidenceArgument) return;
+  const evidenceDir = await validateEvidenceDir(evidenceArgument, repoRoot);
+  await prepareEvidence(evidenceDir);
+  await writeFailureEvidence({
+    evidenceDir,
+    scenario: argumentValue(argv, "--scenario"),
+    error,
   });
 }
 
