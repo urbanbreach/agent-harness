@@ -1,5 +1,6 @@
 ---
 source: crates/harness-tui/tests/deterministic_render_test.rs
+assertion_line: 90
 expression: trim_trailing_snapshot_whitespace(&rendered)
 ---
 
@@ -28,6 +29,6 @@ expression: trim_trailing_snapshot_whitespace(&rendered)
 
   ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
   │ ❯                                                                                                                                                        │
-  ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── gpt-5.4-mini ─╯
+  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── gpt-5.4-mini ╯
 
   ctx ~0 · capacity unknown  Enter:send  │  Shift+Tab:mode  │  Ctrl+x:shortcuts
