@@ -1,5 +1,6 @@
 ---
 source: crates/harness-tui/src/lib_tests/startup_lifecycle_surface.rs
+assertion_line: 641
 expression: "completed_shell_render.lines().map(str::trim_end).collect::<Vec<_>>().join(\"\\n\")"
 ---
 
@@ -22,6 +23,6 @@ expression: "completed_shell_render.lines().map(str::trim_end).collect::<Vec<_>>
 
   ╭──────────────────────────────────────────────────────────────────────────────────────────────╮
   │ ❯ keep this draft                                                                            │
-  ╰──────────────────────────────────────────────────────────────────────────────────── unknown ─╯
+  ╰───────────────────────────────────────────────────────────────────────────────────── unknown ╯
 
   Enter:send  │  Shift+Tab:mode  │  Ctrl+x:shortcuts

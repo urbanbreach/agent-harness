@@ -41,7 +41,7 @@ pub(crate) fn render_bordered_composer(
         usize::from(area.width.saturating_sub(5)),
     );
     let badge = if context.dock.variant == crate::view_model::ControlDockVariant::Startup {
-        startup_composer_badge(badge, area.width)
+        startup_composer_badge(badge)
     } else {
         badge
     };
@@ -120,16 +120,21 @@ pub(crate) fn render_bordered_composer(
     {
         let badge = resolved.surface.right_label().unwrap_or(badge.as_str());
         let (badge_title, badge_style) = if badge.is_empty() {
-            ("  ─".to_string(), border_style)
+            (String::new(), border_style)
         } else {
             (
-                format!(" {badge} ─"),
+                format!(" {badge} "),
                 Style::default()
                     .fg(live_composer_caption_color(theme, focused))
                     .bg(surface),
             )
         };
-        block.title_bottom(Line::from(Span::styled(badge_title, badge_style)).right_aligned())
+        let block = if badge_title.is_empty() {
+            block
+        } else {
+            block.title_bottom(Line::from(Span::styled(badge_title, badge_style)).right_aligned())
+        };
+        block
     } else {
         block
     };
@@ -229,18 +234,10 @@ pub(crate) fn render_bordered_composer(
     }
 }
 
-fn startup_composer_badge(badge: String, area_width: u16) -> String {
-    if badge.is_empty() {
-        return badge;
-    }
-    let badge = badge
+fn startup_composer_badge(badge: String) -> String {
+    badge
         .strip_suffix("Demo")
-        .map_or(badge.clone(), |prefix| format!("{prefix}Demo mode"));
-    let field_width = 48.min(usize::from(area_width.saturating_sub(5)));
-    format!(
-        "{}{badge}",
-        " ".repeat(field_width.saturating_sub(display_width(&badge)))
-    )
+        .map_or(badge.clone(), |prefix| format!("{prefix}Demo mode"))
 }
 
 pub(crate) fn connect_waiting_owns_input(app: &AppState) -> bool {
@@ -285,7 +282,7 @@ mod active_thinking_color_tests {
 
         // act
         // When: startup reserves its right-aligned identity field.
-        let rendered = startup_composer_badge(badge, 120);
+        let rendered = startup_composer_badge(badge);
 
         // assert
         // Then: the empty title path remains truly empty so Ratatui draws the whole border.
