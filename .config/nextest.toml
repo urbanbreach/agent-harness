@@ -43,3 +43,9 @@ slow-timeout = { period = "30s", terminate-after = 4 }
 [[profile.default.overrides]]
 filter = 'test(p1_03_native_pty_owner_records_startup_reveal_terminal_states)'
 slow-timeout = { period = "30s", terminate-after = 6 }
+
+# The P1-04 recorded PTY owner drives six real TUI sessions through
+# resize bursts; its wall time sits at the default 20s terminate boundary.
+[[profile.default.overrides]]
+filter = 'test(p1_04_native_pty_owner_records_responsive_terminal_states)'
+slow-timeout = { period = "30s", terminate-after = 6 }
