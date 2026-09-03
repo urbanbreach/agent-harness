@@ -113,6 +113,15 @@ impl AppState {
         self.motion_revision = self.motion_revision.wrapping_add(1);
     }
 
+    pub fn restart_motion_epoch_for_evidence(&mut self) {
+        let frozen_now = self.now();
+        self.now_fn = std::sync::Arc::new(move || frozen_now);
+        self.motion_epoch_started_at = frozen_now;
+        self.sampled_motion_elapsed = Duration::ZERO;
+        self.motion_revision = self.motion_revision.wrapping_add(1);
+        self.sample_motion_clock();
+    }
+
     pub fn set_reduced_motion_for_evidence(&mut self, reduced_motion: bool) {
         self.set_reduced_motion(reduced_motion);
     }
