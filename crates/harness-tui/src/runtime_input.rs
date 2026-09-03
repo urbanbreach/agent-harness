@@ -73,7 +73,7 @@ mod tests {
 
     use super::InputPresentation;
     use crate::event::TuiEvent;
-    use crate::input::{RuntimeInputIngress, TerminalEnvelope, TerminalSequence};
+    use crate::input::{RuntimeInputIngress, TerminalEnvelope, TerminalQueue, TerminalSequence};
     use crate::scheduling::{
         FrameNow, MotionPlan, RuntimeArbiter, RuntimeDecision, RuntimePacer, RuntimeReady,
     };
@@ -112,15 +112,72 @@ mod tests {
             )
             .is_none());
 
-        // When: the explicit runtime clock reaches the final event's quiet boundary.
-        let before = ingress.flush_due(Duration::from_millis(25));
-        let due = ingress.flush_due(Duration::from_millis(26));
+        // When: the explicit runtime clock reaches the first event's quiet boundary.
+        let before = ingress.flush_due(Duration::from_millis(15));
+        let due = ingress.flush_due(Duration::from_millis(16));
 
         // Then: no early resize escapes and only the latest dimensions become ready.
         assert!(before.is_none());
         assert!(matches!(
             due.map(|envelope| envelope.event),
             Some(TuiEvent::Resize(120, 40))
+        ));
+    }
+
+    #[test]
+    fn sustained_resize_storm_still_flushes_from_the_first_event_window() {
+        // Given: resize events arriving every 5 ms, faster than the 16 ms debounce.
+        let mut ingress = RuntimeInputIngress::default();
+        for tick in 0..8u64 {
+            let at = Duration::from_millis(tick * 5);
+            let cols = 80 + u16::try_from(tick).expect("storm tick fits u16");
+            assert!(
+                ingress
+                    .ingest_at(at, envelope(tick + 1, TuiEvent::Resize(cols, 24)))
+                    .is_none(),
+                "resize at {at:?} must never bypass the debounce window"
+            );
+        }
+
+        // When: the clock passes the first event's quiet boundary mid-storm.
+        let due = ingress.flush_due(Duration::from_millis(40));
+
+        // Then: the newest dimensions flush even though the storm never paused.
+        assert!(matches!(
+            due.map(|envelope| envelope.event),
+            Some(TuiEvent::Resize(87, 24))
+        ));
+    }
+
+    #[test]
+    fn due_resize_flushes_before_backlogged_input_is_drained() {
+        // Given: a resize whose quiet boundary passed while input kept arriving.
+        let epoch = Instant::now();
+        let (queue_tx, queue_rx) = crossbeam_channel::unbounded();
+        let mut queue = TerminalQueue::new(queue_rx);
+        let mut ingress = RuntimeInputIngress::default();
+        let key = crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::Char('x'),
+            KeyModifiers::NONE,
+        );
+        ingress.ingest_at(Duration::ZERO, envelope(1, TuiEvent::Resize(80, 24)));
+        queue_tx
+            .send(envelope(2, TuiEvent::Key(key)))
+            .expect("queue key");
+
+        // When: take_ready runs well past the boundary with backlog still queued.
+        let now = epoch + Duration::from_millis(500);
+        let first = ingress.take_ready(&mut queue, epoch, now);
+        let second = ingress.take_ready(&mut queue, epoch, now);
+
+        // Then: the due resize is served before the queued key, and the key follows.
+        assert!(matches!(
+            first.map(|envelope| envelope.event),
+            Some(TuiEvent::Resize(80, 24))
+        ));
+        assert!(matches!(
+            second.map(|envelope| envelope.event),
+            Some(TuiEvent::Key(ready)) if ready == key
         ));
     }
 

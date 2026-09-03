@@ -135,11 +135,11 @@ fn resize_storm_emits_only_the_latest_after_sixteen_ms_quiet() {
             .is_empty());
     }
     assert!(normalizer
-        .flush_at(Duration::from_millis(25))
+        .flush_at(Duration::from_millis(15))
         .unwrap()
         .is_empty());
     assert_eq!(
-        normalizer.flush_at(Duration::from_millis(26)).unwrap(),
+        normalizer.flush_at(Duration::from_millis(16)).unwrap(),
         vec![NormalizedInput::Resize(ResizeEvent::new(120, 40))]
     );
 }

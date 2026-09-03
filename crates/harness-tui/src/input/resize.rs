@@ -37,6 +37,12 @@ impl RuntimeInputIngress {
         epoch: Instant,
         now: Instant,
     ) -> Option<TerminalEnvelope> {
+        // A due resize outranks queued input: without this check first, a
+        // sustained input stream would starve the resize indefinitely.
+        let elapsed = now.saturating_duration_since(epoch);
+        if let Some(due) = self.resize.flush_due(elapsed) {
+            return Some(due);
+        }
         while let Ok(envelope) = queue.try_recv() {
             let received_at = envelope.received_at.saturating_duration_since(epoch);
             if let Some(ready) = self.ingest_at(received_at, envelope) {
@@ -67,8 +73,14 @@ impl<T> Default for ResizeDebouncer<T> {
 }
 
 impl<T> ResizeDebouncer<T> {
+    /// Replaces the pending payload but keeps the window anchored to the
+    /// first unseen event, so a storm faster than the debounce still
+    /// flushes at the first event's quiet boundary.
     pub fn push(&mut self, at: Duration, event: T) {
-        self.pending = Some((at, event));
+        match &mut self.pending {
+            Some((_, pending)) => *pending = event,
+            None => self.pending = Some((at, event)),
+        }
     }
 
     pub fn flush_due(&mut self, at: Duration) -> Option<T> {
