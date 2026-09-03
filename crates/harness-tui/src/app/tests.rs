@@ -152,6 +152,10 @@ mod modal_press_invalidation_tests;
 mod p1_02_modal_chrome_tests;
 
 #[cfg(test)]
+#[path = "tests/modal_hit_map_parity_tests.rs"]
+mod modal_hit_map_parity_tests;
+
+#[cfg(test)]
 #[path = "tests/transcript_return_to_live_tests.rs"]
 mod transcript_return_to_live_tests;
 
@@ -163,6 +167,8 @@ delegate_test!(toggles_menu_sanitizes_config_derived_text => toggles_menu_tests:
 delegate_test!(help_mouse_hover_preserves_keyboard_selection_and_click_opens_detail => help_browser_mouse_tests::help_mouse_hover_preserves_keyboard_selection_and_click_opens_detail);
 delegate_test!(help_mouse_search_close_and_scroll_use_modal_hit_regions => help_browser_mouse_tests::help_mouse_search_close_and_scroll_use_modal_hit_regions);
 delegate_test!(help_detail_mouse_wheel_uses_single_row_steps_and_clamps => help_browser_mouse_tests::help_detail_mouse_wheel_uses_single_row_steps_and_clamps);
+delegate_test!(settings_and_help_hit_maps_are_bounded_at_canonical_viewports => modal_hit_map_parity_tests::settings_and_help_hit_maps_are_bounded_at_canonical_viewports);
+delegate_test!(settings_and_help_close_restore_focus_at_canonical_viewports => modal_hit_map_parity_tests::settings_and_help_close_restore_focus_at_canonical_viewports);
 delegate_test!(default_app_uses_harness_dark_theme => theme_runtime_tests::default_app_uses_harness_dark_theme);
 delegate_test!(explicit_harness_dark_selection_uses_harness_dark_theme => theme_runtime_tests::explicit_harness_dark_selection_uses_harness_dark_theme);
 delegate_test!(explicit_harness_dark_selection_remains_available => theme_runtime_tests::explicit_harness_dark_selection_remains_available);
@@ -491,6 +497,10 @@ fn provider_model_change_sets_fallback_status_banner() {
 #[path = "tests/tool_disclosure_tests.rs"]
 mod tool_disclosure_tests;
 
+#[cfg(test)]
+#[path = "tests/tool_group_folding_parity_tests.rs"]
+mod tool_group_folding_parity_tests;
+
 delegate_test!(mouse_click_toggles_transcript_tool_disclosure => tool_disclosure_tests::mouse_click_toggles_transcript_tool_disclosure);
 delegate_test!(palette_turn_result_commands_override_failed_output_default => tool_disclosure_tests::palette_turn_result_commands_override_failed_output_default);
 delegate_test!(transcript_enter_toggles_effective_failed_output_state => tool_disclosure_tests::transcript_enter_toggles_effective_failed_output_state);
@@ -498,6 +508,10 @@ delegate_test!(explicit_tool_disclosure_survives_replay_replacement => tool_disc
 delegate_test!(context_group_disclosure_preserves_detached_anchor => tool_disclosure_tests::context_group_disclosure_preserves_detached_anchor);
 delegate_test!(mouse_click_toggles_apply_patch_file_disclosure => tool_disclosure_tests::mouse_click_toggles_apply_patch_file_disclosure);
 delegate_test!(apply_patch_default_expansion_skips_deleted_files => tool_disclosure_tests::apply_patch_default_expansion_skips_deleted_files);
+delegate_test!(zero_tool_groups_render_without_fold_affordance => tool_group_folding_parity_tests::zero_tool_groups_render_without_fold_affordance);
+delegate_test!(one_tool_group_member_renders_once_without_more_affordance => tool_group_folding_parity_tests::one_tool_group_member_renders_once_without_more_affordance);
+delegate_test!(many_tool_group_members_render_one_exact_hidden_count_affordance => tool_group_folding_parity_tests::many_tool_group_members_render_one_exact_hidden_count_affordance);
+delegate_test!(tool_group_fold_round_trip_survives_compaction_and_narrow_reflow => tool_group_folding_parity_tests::tool_group_fold_round_trip_survives_compaction_and_narrow_reflow);
 
 #[cfg(test)]
 #[path = "tests/subagent_navigation_tests.rs"]
@@ -1241,6 +1255,15 @@ delegate_test!(slash_new_then_submit_bootstraps_fresh_session_instead_of_live_tu
 #[cfg(test)]
 #[path = "tests/activity_lifecycle_tests.rs"]
 mod activity_lifecycle_tests;
+
+#[cfg(test)]
+#[path = "tests/recovery_state_machine_tests.rs"]
+mod recovery_state_machine_tests;
+
+delegate_test!(disconnect_before_stream_preserves_draft_and_refuses_submission => recovery_state_machine_tests::disconnect_before_stream_preserves_draft_and_refuses_submission);
+delegate_test!(mid_stream_disconnect_preserves_transcript_and_refuses_submission => recovery_state_machine_tests::mid_stream_disconnect_preserves_transcript_and_refuses_submission);
+delegate_test!(stop_affordance_is_disabled_while_disconnected => recovery_state_machine_tests::stop_affordance_is_disabled_while_disconnected);
+delegate_test!(failure_banner_maps_to_actionable_retry_copy => recovery_state_machine_tests::failure_banner_maps_to_actionable_retry_copy);
 
 delegate_test!(provider_reasoning_delta_populates_thinking_stream_without_overwriting_answer_text => activity_lifecycle_tests::provider_reasoning_delta_populates_thinking_stream_without_overwriting_answer_text);
 
