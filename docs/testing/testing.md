@@ -398,7 +398,7 @@ Fail-closed stages (no `|| true`):
 | `harness_tui_p0_01_pty_recorded` | P0-01 full-surface dashboard round-trip: detach, open dashboard over the transcript, resize while owned, close, and restore the detached anchor display column and focus without losing the composer |
 | `harness_tui_p0_02_pty_recorded` | P0-02 dense transcript navigation, reflow, detached-append, and helper lifecycle PTY regression |
 | `harness_tui_p0_03_pty_recorded` | P0-03 boxed markdown, OSC-8, and event-driven streaming-fence PTY regression |
-| `harness_tui_p0_04_pty_recorded` | P0-04 persistent multiline, queued send, interject, and cancel-and-replace PTY regression |
+| `harness_tui_p0_04_pty_recorded` | P0-04 persistent multiline, queued send, interject, cancel-and-replace, and malformed-input decoder-coherence PTY regression |
 | `harness_tui_p1_01_pty_recorded` | P1-01 slash-command palette with Tab text-accept and required-argument supply PTY regression |
 | `harness_tui_p1_02_pty_recorded` | P1-02 reply-capable native PTY journey for Commands -> Settings chrome, tabs, restoration, stale pointer input, six-cell close target, and 80x24/120x40/160x50 alignment |
 | `harness_tui_p1_03_pty_recorded` | serialized P1-03 native PTY owner for the staged startup reveal: first-seen identity/affordance/changelog ordering in every geometry, reduced-motion freeze on the complete frame, early CJK input during the reveal with double-width cell proof, and Unicode + Basic/Ascii artifacts at 80x24/120x40/160x50 |
