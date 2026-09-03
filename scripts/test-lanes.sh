@@ -659,6 +659,12 @@ run_signoff_pty() {
     if [[ ! -f "${repo_root}/crates/harness-tui/tests/pty_e2e.rs" ]]; then
       missing+=("missing owner crates/harness-tui/tests/pty_e2e.rs (silent skip is forbidden)")
     fi
+    if [[ ! -f "${repo_root}/crates/harness-tui/tests/p0_01_pty_recorded.rs" ]]; then
+      missing+=("missing owner crates/harness-tui/tests/p0_01_pty_recorded.rs (silent skip is forbidden)")
+    fi
+    if [[ ! -f "${repo_root}/crates/harness-tui/tests/p0_02_pty_recorded.rs" ]]; then
+      missing+=("missing owner crates/harness-tui/tests/p0_02_pty_recorded.rs (silent skip is forbidden)")
+    fi
     if [[ ! -f "${repo_root}/crates/harness-tui/tests/p0_03_pty_recorded.rs" ]]; then
       missing+=("missing owner crates/harness-tui/tests/p0_03_pty_recorded.rs (silent skip is forbidden)")
     fi
@@ -667,6 +673,9 @@ run_signoff_pty() {
     fi
     if [[ ! -f "${repo_root}/crates/harness-tui/tests/p1_02_pty_recorded.rs" ]]; then
       missing+=("missing owner crates/harness-tui/tests/p1_02_pty_recorded.rs (silent skip is forbidden)")
+    fi
+    if [[ ! -f "${repo_root}/crates/harness-tui/tests/p1_01_pty_recorded.rs" ]]; then
+      missing+=("missing owner crates/harness-tui/tests/p1_01_pty_recorded.rs (silent skip is forbidden)")
     fi
     if [[ ! -f "${repo_root}/crates/harness-tui/tests/p1_03_pty_recorded.rs" ]]; then
       missing+=("missing owner crates/harness-tui/tests/p1_03_pty_recorded.rs (silent skip is forbidden)")
@@ -707,7 +716,7 @@ run_signoff_pty() {
         printf 'lane=signoff-pty\n'
         printf 'result=FAIL\n'
         printf 'reason=missing_prerequisites\n'
-        printf 'stages=prerequisites,testkit_pty,tui_pty,p0_03,p0_04,p1_02,p1_03,p1_04,happy_path,xterm_dependencies,xterm_tests,p1_02_xterm_tests,p1_03_xterm_tests,p1_04_xterm_tests,xterm_80x24,xterm_120x40,xterm_160x50,p1_02_xterm_80x24,p1_02_xterm_120x40,p1_02_xterm_160x50,p1_03_xterm_80x24,p1_03_xterm_120x40,p1_03_xterm_160x50,p1_03_xterm_basic_ascii,p1_04_xterm_80x24,p1_04_xterm_120x40,p1_04_xterm_160x50\n'
+        printf 'stages=prerequisites,testkit_pty,tui_pty,p0_01,p0_02,p0_03,p0_04,p1_01,p1_02,p1_03,p1_04,happy_path,p0_06_xterm_dependencies,p0_06_xterm_tests,p1_02_xterm_tests,p1_03_xterm_tests,p1_04_xterm_tests,xterm_harness_binary,p0_06_xterm_80x24,p0_06_xterm_120x40,p0_06_xterm_160x50,p1_02_xterm_80x24,p1_02_xterm_120x40,p1_02_xterm_160x50,p1_03_xterm_80x24,p1_03_xterm_120x40,p1_03_xterm_160x50,p1_03_xterm_basic_ascii,p1_04_xterm_80x24,p1_04_xterm_120x40,p1_04_xterm_160x50\n'
         printf 'owns=deterministic_pty_journeys\n'
       } >"${tui_happy_path_artifacts_dir}/pty-lane-verdict.txt"
       return 1
@@ -720,10 +729,16 @@ run_signoff_pty() {
     env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 \
     HARNESS_P0_06_ARTIFACT_DIR="$p0_06_artifacts_dir" \
     cargo nextest run -p harness-tui --test pty_e2e --test-threads 1 --ignore-default-filter
+  run_stage "$mode_name" harness_tui_p0_01_pty_recorded "$repo_root" \
+    env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 cargo nextest run -p harness-tui --test p0_01_pty_recorded --test-threads 1 --ignore-default-filter
+  run_stage "$mode_name" harness_tui_p0_02_pty_recorded "$repo_root" \
+    env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 cargo nextest run -p harness-tui --test p0_02_pty_recorded --test-threads 1 --ignore-default-filter
   run_stage "$mode_name" harness_tui_p0_03_pty_recorded "$repo_root" \
     env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 cargo nextest run -p harness-tui --test p0_03_pty_recorded --test-threads 1 --ignore-default-filter
   run_stage "$mode_name" harness_tui_p0_04_pty_recorded "$repo_root" \
     env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 cargo nextest run -p harness-tui --test p0_04_pty_recorded --test-threads 1 --ignore-default-filter
+  run_stage "$mode_name" harness_tui_p1_01_pty_recorded "$repo_root" \
+    env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 cargo nextest run -p harness-tui --test p1_01_pty_recorded --test-threads 1 --ignore-default-filter
   run_stage "$mode_name" harness_tui_p1_02_pty_recorded "$repo_root" \
     env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 cargo nextest run -p harness-tui --test p1_02_pty_recorded --test-threads 1 --ignore-default-filter
   run_stage "$mode_name" harness_tui_p1_03_pty_recorded "$repo_root" \
@@ -767,7 +782,7 @@ run_signoff_pty() {
       printf 'lane=signoff-pty\n'
       printf 'result=PASS\n'
       printf 'reason=owners_green\n'
-      printf 'stages=testkit_pty,tui_pty,p0_03,p0_04,p1_02,p1_04,happy_path,xterm_tests,p1_02_xterm_tests,p1_04_xterm_tests,xterm_80x24,xterm_120x40,xterm_160x50,p1_02_xterm_80x24,p1_02_xterm_120x40,p1_02_xterm_160x50,p1_04_xterm_80x24,p1_04_xterm_120x40,p1_04_xterm_160x50\n'
+      printf 'stages=prerequisites,testkit_pty,tui_pty,p0_01,p0_02,p0_03,p0_04,p1_01,p1_02,p1_03,p1_04,happy_path,p0_06_xterm_dependencies,p0_06_xterm_tests,p1_02_xterm_tests,p1_03_xterm_tests,p1_04_xterm_tests,xterm_harness_binary,p0_06_xterm_80x24,p0_06_xterm_120x40,p0_06_xterm_160x50,p1_02_xterm_80x24,p1_02_xterm_120x40,p1_02_xterm_160x50,p1_03_xterm_80x24,p1_03_xterm_120x40,p1_03_xterm_160x50,p1_03_xterm_basic_ascii,p1_04_xterm_80x24,p1_04_xterm_120x40,p1_04_xterm_160x50\n'
       printf 'owns=deterministic_pty_journeys\n'
     } >"${tui_happy_path_artifacts_dir}/pty-lane-verdict.txt"
   else
@@ -775,7 +790,7 @@ run_signoff_pty() {
       printf 'lane=signoff-pty\n'
       printf 'result=FAIL\n'
       printf 'reason=stage_failure\n'
-      printf 'stages=testkit_pty,tui_pty,p0_03,p0_04,p1_02,p1_04,happy_path,xterm_tests,p1_02_xterm_tests,p1_04_xterm_tests,xterm_80x24,xterm_120x40,xterm_160x50,p1_02_xterm_80x24,p1_02_xterm_120x40,p1_02_xterm_160x50,p1_04_xterm_80x24,p1_04_xterm_120x40,p1_04_xterm_160x50\n'
+      printf 'stages=prerequisites,testkit_pty,tui_pty,p0_01,p0_02,p0_03,p0_04,p1_01,p1_02,p1_03,p1_04,happy_path,p0_06_xterm_dependencies,p0_06_xterm_tests,p1_02_xterm_tests,p1_03_xterm_tests,p1_04_xterm_tests,xterm_harness_binary,p0_06_xterm_80x24,p0_06_xterm_120x40,p0_06_xterm_160x50,p1_02_xterm_80x24,p1_02_xterm_120x40,p1_02_xterm_160x50,p1_03_xterm_80x24,p1_03_xterm_120x40,p1_03_xterm_160x50,p1_03_xterm_basic_ascii,p1_04_xterm_80x24,p1_04_xterm_120x40,p1_04_xterm_160x50\n'
       printf 'owns=deterministic_pty_journeys\n'
     } >"${tui_happy_path_artifacts_dir}/pty-lane-verdict.txt"
     return 1
