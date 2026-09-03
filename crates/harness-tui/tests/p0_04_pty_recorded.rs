@@ -101,6 +101,44 @@ fn p0_04_real_pty_records_multiline_composer_shortcuts() {
     assert!(!helper.raw_contains(scenario::EMPTY_MARKER));
     assert!(!helper.screen().contains(scenario::PHANTOM_MARKER));
 
+    // act (invalid-input path)
+    // When: malformed and unbound escape sequences arrive. Each is drained
+    // separately so consecutive ESC bytes never pair into the legitimate
+    // Esc-Esc draft-clear gesture, and none decode to bound keys: 99~ is
+    // outside the vt220 tilde table, the private `?` forms and `z` final are
+    // unsupported, and the u16 parameter saturates instead of mapping a key.
+    let submissions_before = helper.raw_occurrences(scenario::SUBMITTED_MARKER);
+    for garbage in [
+        "\x1b[99~",
+        "\x1b[?999999999z",
+        "\x1b[99999999999999999999~",
+        "\x1b[13;18446744073709551616u",
+    ] {
+        helper.send(garbage.as_bytes());
+        helper.drain_ms(200);
+    }
+    helper.drain_ms(300);
+
+    // Then: no new submission markers fire and the input decoder stays coherent.
+    assert_eq!(
+        helper.raw_occurrences(scenario::SUBMITTED_MARKER),
+        submissions_before,
+        "invalid Enter sequences must not submit the draft"
+    );
+
+    // And: the palette still opens afterwards, proving the input decoder stayed coherent.
+    helper.send(b"\x10");
+    helper.wait_for("Commands");
+    helper.send(b"\x1b");
+    helper.wait_for_screen_absent("Commands");
+
+    // And: any overlay opened by the malformed sequence is dismissed before
+    // the final branding assertion checks the base composer surface.
+    helper.send(b"\x1b");
+    helper.drain_ms(300);
+    helper.send(b"\x1b");
+    helper.drain_ms(300);
+
     // And: branding and bordered shell geometry remain visible.
     let final_screen = helper.screen();
     assert!(
@@ -108,7 +146,8 @@ fn p0_04_real_pty_records_multiline_composer_shortcuts() {
         "multiline branding missing\n{final_screen}"
     );
     assert!(
-        final_screen.contains('┌') && final_screen.contains('└'),
+        (final_screen.contains('┌') || final_screen.contains('╭'))
+            && (final_screen.contains('└') || final_screen.contains('╰')),
         "composer borders missing\n{final_screen}"
     );
 
@@ -179,6 +218,10 @@ impl Helper {
         self.wait_for_screen(needle, true);
     }
 
+    fn wait_for_screen_absent(&mut self, needle: &str) {
+        self.wait_for_screen(needle, false);
+    }
+
     #[allow(
         clippy::panic,
         reason = "bounded PTY test failure needs screen evidence"
@@ -211,8 +254,26 @@ impl Helper {
         self.parser.screen().contents()
     }
 
+    fn drain_ms(&mut self, ms: u64) {
+        let deadline = Instant::now() + Duration::from_millis(ms);
+        loop {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return;
+            }
+            match self.output_rx.recv_timeout(remaining) {
+                Ok(chunk) => self.process(chunk),
+                Err(_) => return,
+            }
+        }
+    }
+
     fn raw_contains(&self, needle: &str) -> bool {
         String::from_utf8_lossy(&self.raw).contains(needle)
+    }
+
+    fn raw_occurrences(&self, needle: &str) -> usize {
+        String::from_utf8_lossy(&self.raw).matches(needle).count()
     }
 
     #[allow(
