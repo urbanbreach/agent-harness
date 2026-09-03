@@ -492,7 +492,7 @@ run_perf() {
   local perf_artifacts_dir
   perf_artifacts_dir="$(stage_dir_for perf nextest_perf)/artifacts"
   mkdir -p "$perf_artifacts_dir"
-  run_stage perf nextest_perf "$repo_root" env HARNESS_PERF_ARTIFACT_DIR="$perf_artifacts_dir" cargo nextest run --profile perf --workspace --all-features || true
+  run_stage perf nextest_perf "$repo_root" env HARNESS_PERF_ARTIFACT_DIR="$perf_artifacts_dir" cargo nextest run --profile perf --release --workspace --all-features || true
   run_stage perf perf_artifact_freshness "$repo_root" python3 scripts/check-perf-artifacts.py --artifact-dir "$perf_artifacts_dir" || true
 }
 
@@ -617,9 +617,13 @@ run_p1_03_xterm_capture() {
   local mode_name="$1"
   local stage_name="$2"
   local capability_variant="$3"
-  local geometry="${stage_name##*_}"
-  local cols="${geometry%x*}"
-  local rows="${geometry#*x}"
+  local cols="${4:-}"
+  local rows="${5:-}"
+  if [[ -z "$cols" || -z "$rows" ]]; then
+    local geometry="${stage_name##*_}"
+    cols="${geometry%x*}"
+    rows="${geometry#*x}"
+  fi
   local destination="$(stage_dir_for "$mode_name" "$stage_name")/artifacts"
   local temporary_template="${TMPDIR:-/tmp}/harness-xterm-p1-03-${timestamp}-${cols}x${rows}-XXXXXX"
   rm -rf "$destination"
@@ -746,7 +750,7 @@ run_signoff_pty() {
   run_p1_03_xterm_capture "$mode_name" p1_03_xterm_80x24 unicode
   run_p1_03_xterm_capture "$mode_name" p1_03_xterm_120x40 unicode
   run_p1_03_xterm_capture "$mode_name" p1_03_xterm_160x50 unicode
-  run_p1_03_xterm_capture "$mode_name" p1_03_xterm_basic_ascii basic-ascii
+  run_p1_03_xterm_capture "$mode_name" p1_03_xterm_basic_ascii basic-ascii 120 40
   run_p1_04_xterm_capture "$mode_name" p1_04_xterm_80x24
   run_p1_04_xterm_capture "$mode_name" p1_04_xterm_120x40
   run_p1_04_xterm_capture "$mode_name" p1_04_xterm_160x50

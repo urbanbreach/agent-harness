@@ -58,7 +58,7 @@ fn settled_assistant_block(index: usize) -> ActivityEntry {
     }
 }
 
-pub(super) fn resize_to_render_p95_stays_within_one_frame_and_preserves_detached_anchor(
+pub(super) fn perf_resize_to_render_p95_stays_within_one_frame_and_preserves_detached_anchor(
 ) -> TestResult {
     require_release_profile()?;
     assert_eq!(std::env::consts::OS, "linux", "P1-04 requires Linux");
