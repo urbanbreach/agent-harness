@@ -383,9 +383,10 @@ This lane runs the PTY E2E tests single-threaded and writes manifest-backed visu
 the configured artifact root. Legacy committed harness-testkit PTY snapshots were removed during
 T5 slimming; current PTY evidence is generated under `target/pty-visual-artifacts/`, while retained
 committed snapshots are owned by harness-tui deterministic snapshot tests. The harness-tui PTY test
-target is fail-closed behind `HARNESS_TUI_PTY_SIGNOFF=1`, so ordinary
-`cargo nextest run -p harness-tui --test pty_e2e` remains a fast non-terminal helper check while the
-signoff lane opts into the real PTY captures. Do not parallelize PTY signoff.
+target is fail-closed behind `HARNESS_TUI_PTY_SIGNOFF=1`, and its test binaries are excluded by the
+workspace nextest default filter, so any direct invocation must pass `--ignore-default-filter` to
+run real tests; without it nextest selects zero tests and exits non-zero. The signoff lane opts into
+the real PTY captures. Do not parallelize PTY signoff.
 
 Fail-closed stages (no `|| true`):
 
@@ -432,8 +433,8 @@ The P0-06 owner feeds native PTY output into a reply-capable vt100 emulator and 
 
 For a combined deterministic closeout, use:
 
-- `env RUST_TEST_THREADS=1 cargo nextest run -p harness-testkit --test pty_e2e --test-threads 1`
-- `env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 cargo nextest run -p harness-tui --test pty_e2e --test-threads 1`
+- `env RUST_TEST_THREADS=1 cargo nextest run -p harness-testkit --test pty_e2e --test-threads 1 --ignore-default-filter`
+- `env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 cargo nextest run -p harness-tui --test pty_e2e --test-threads 1 --ignore-default-filter`
 - `env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 cargo nextest run -p harness-tui --test p0_03_pty_recorded --test-threads 1 --ignore-default-filter`
 - `env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 cargo nextest run -p harness-tui --test p0_04_pty_recorded --test-threads 1 --ignore-default-filter`
 - `env RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 cargo nextest run -p harness-tui --test p1_02_pty_recorded --test-threads 1 --ignore-default-filter`
@@ -633,8 +634,8 @@ Current invariant owners:
 | Provider serialization, replay-only cassettes, redaction, and checkpoint accounting | `cargo nextest run -p harness-providers --test openai_compatible_serializes_native_tool_schema_without_alias_dupes_test`; `cargo nextest run -p harness-providers --test recorded_test`; `cargo nextest run -p harness-testkit --test secretscan_test` |
 | Offline deterministic simulation matrix, semantic predicates, same-seed normalization, artifact index, and simulation redaction | `scripts/test-lanes.sh simulation`; `cargo nextest run -p harness-testkit --test simulation_validator_test`; `cargo run -p harness-testkit --bin simulation_evidence -- --artifact-root <dir> --matrix docs/testing/simulation-matrix.json --baseline-events <events.jsonl> --baseline-replay <replay.json> --repeat-events <events.jsonl> --repeat-replay <replay.json> --seed 0` |
 | Config/event docs drift and public schema generation | `cargo nextest run -p harness --test config_docs_reference_test`; `cargo nextest run -p harness --test event_docs_reference_test`; `cargo nextest run -p harness --test config_schema_cli_test` |
-| Deterministic UI content rendering, transcript layout, and navigation | `cargo nextest run -p harness-tui --test deterministic_render_test`; `cargo nextest run -p harness-tui --test lineage_view_model_test`; `cargo nextest run -p harness-tui --test model_switcher_metadata_test`; `cargo nextest run -p harness-tui --test session_navigation_keybindings_test`; `cargo nextest run -p harness-tui --test pty_e2e` as the fail-closed helper lane |
-| TUI visual/provenance flow coverage | `cargo nextest run -p harness-tui --test deterministic_render_test`; `env RUST_TEST_THREADS=1 cargo nextest run -p harness-testkit --test pty_e2e --test-threads 1`; `scripts/test-lanes.sh signoff-pty` |
+| Deterministic UI content rendering, transcript layout, and navigation | `cargo nextest run -p harness-tui --test deterministic_render_test`; `cargo nextest run -p harness-tui --test lineage_view_model_test`; `cargo nextest run -p harness-tui --test model_switcher_metadata_test`; `cargo nextest run -p harness-tui --test session_navigation_keybindings_test`; `cargo nextest run -p harness-tui --test pty_e2e --ignore-default-filter` as the fail-closed helper lane |
+| TUI visual/provenance flow coverage | `cargo nextest run -p harness-tui --test deterministic_render_test`; `env RUST_TEST_THREADS=1 cargo nextest run -p harness-testkit --test pty_e2e --test-threads 1 --ignore-default-filter`; `scripts/test-lanes.sh signoff-pty` |
 | Live, PTY, native visual provenance contracts | `scripts/test-lanes.sh signoff-pty`; `scripts/test-lanes.sh signoff-live`; `scripts/test-lanes.sh signoff-native` as opt-in T5 lanes only |
 
 The acceptance owner map above is the source of truth for the test-suite overhaul. Concrete lane
