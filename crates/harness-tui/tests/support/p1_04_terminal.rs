@@ -68,6 +68,14 @@ impl RecordedTerminal {
         }
     }
 
+    /// Bulk replay for offline stream analysis: feeds the parser whole
+    /// chunks without reply collection or query tracking, since a replayed
+    /// recording never needs to synthesize terminal responses.
+    pub(crate) fn process_replay_chunk(&mut self, bytes: &[u8]) {
+        self.raw.extend_from_slice(bytes);
+        self.parser.process(bytes);
+    }
+
     pub(crate) fn resize(&mut self, cols: u16, rows: u16) {
         self.parser.screen_mut().set_size(rows, cols);
     }
