@@ -458,10 +458,10 @@ pub(super) fn debounced_resize_preserves_detached_wide_glyph_display_column_anch
         )
         .is_none());
     assert!(ingress
-        .flush_due(std::time::Duration::from_millis(22))
+        .flush_due(std::time::Duration::from_millis(15))
         .is_none());
     let crate::event::TuiEvent::Resize(width, height) = ingress
-        .flush_due(std::time::Duration::from_millis(23))
+        .flush_due(std::time::Duration::from_millis(16))
         .expect("final resize must become ready at the quiet boundary")
         .event
     else {
