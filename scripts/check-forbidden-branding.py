@@ -17,7 +17,14 @@ if TYPE_CHECKING:
 
 sys.dont_write_bytecode = True
 
-ALLOWED_DIRS: Final[set[str]] = {".git", ".sisyphus", "inspirations", "target"}
+ALLOWED_DIRS: Final[set[str]] = {
+    ".git",
+    ".sisyphus",
+    "inspirations",
+    # External research corpus quoting the reference product, like inspirations.
+    "research report",
+    "target",
+}
 ALLOWED_REFERENCE_PATHS: Final[set[Path]] = {
     # External provider catalog keys still named after third-party products.
     Path("crates/harness-tui/src/app/auth_dialog/provider_menu.rs"),
