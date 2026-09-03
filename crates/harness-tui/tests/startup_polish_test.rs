@@ -364,6 +364,10 @@ fn startup_reveal_frame_sequence_snapshots_wide_and_compact() {
 
     for (geometry_name, width, height) in geometries {
         let mut app = AppState::new_startup(Vec::new(), None);
+        // Pin the motion epoch to construction time so real scheduling delay
+        // between app creation and the staged advances cannot leak into the
+        // sampled reveal stage under a loaded parallel test run.
+        app.restart_motion_epoch_for_evidence();
         for (stage_index, stage_name) in ["mark", "identity", "affordances", "complete"]
             .into_iter()
             .enumerate()
