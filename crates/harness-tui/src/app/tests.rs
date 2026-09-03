@@ -1102,10 +1102,9 @@ mod interaction_tests;
 mod resize_performance_tests;
 
 #[test]
-#[ignore = "P1-04 Linux x64 release performance signoff"]
-fn resize_to_render_p95_stays_within_one_frame_and_preserves_detached_anchor(
+fn perf_resize_to_render_p95_stays_within_one_frame_and_preserves_detached_anchor(
 ) -> Result<(), Box<dyn std::error::Error>> {
-    resize_performance_tests::resize_to_render_p95_stays_within_one_frame_and_preserves_detached_anchor()
+    resize_performance_tests::perf_resize_to_render_p95_stays_within_one_frame_and_preserves_detached_anchor()
 }
 
 #[cfg(test)]
