@@ -6,8 +6,9 @@
 
 use harness_tui::transcript_selection::{
     build_osc52, copy_local_with_runner, copy_with_metadata, hyperlink_sequence, BlockKind,
-    CellPoint, CopyMetadata, CopyMetadataPolicy, Hyperlink, HyperlinkMap, LinkRange, LocalPlatform,
-    NavigationKey, SelectionMode, TmuxSequence, Viewport, WrappedText, OSC52_MAX_BYTES,
+    CellPoint, CopyMetadata, CopyMetadataPolicy, Hyperlink, HyperlinkError, HyperlinkMap,
+    LinkRange, LocalPlatform, NavigationKey, SelectionMode, TmuxSequence, Viewport, WrappedText,
+    OSC52_MAX_BYTES,
 };
 
 #[test]
@@ -179,7 +180,7 @@ fn hyperlink_hover_click_and_tmux_osc8_are_sanitized() {
     // assert
     assert_eq!(hovered.url(), "https://example.com/docs");
     assert_eq!(clicked.url(), hovered.url());
-    let sequence = hyperlink_sequence(&clicked, TmuxSequence::Tmux).expect("safe OSC8");
+    let sequence = hyperlink_sequence(&clicked, TmuxSequence::Tmux);
     assert!(sequence.contains("docs"));
     assert!(sequence.starts_with("\x1bPtmux;"));
     assert!(Hyperlink::new("bad", "https://example.com\n", LinkRange::new(0, 0, 1)).is_err());
@@ -208,4 +209,54 @@ fn external_hyperlinks_allow_only_http_schemes_without_rewriting_valid_urls() {
             "accepted {unsafe_url:?}"
         );
     }
+}
+
+#[test]
+fn hyperlink_rejects_control_characters_in_labels() {
+    // Given: otherwise-valid links whose labels carry terminal control characters.
+    let range = LinkRange::new(0, 0, 3);
+    let url = "https://example.com/docs";
+
+    // When: labels containing C0/C1 controls cross the construction boundary.
+    for unsafe_label in [
+        "\u{1b}]8;;https://evil.example\u{5c}\u{1b}\u{5c}injected",
+        "\u{7}bel-terminator",
+        "line\nbreak",
+        "carriage\rreturn",
+        "\u{9}tab",
+        "\u{9c}c1-terminator",
+        "\u{9d}c1-control",
+    ] {
+        // Then: construction fails with the typed label error and never emits a label.
+        let error =
+            Hyperlink::new(unsafe_label, url, range).expect_err("accepted control-character label");
+        assert_eq!(error, HyperlinkError::LabelControlCharacter);
+    }
+
+    // And: plain labels, including non-Latin scripts, remain accepted.
+    assert!(Hyperlink::new("docs", url, range).is_ok());
+    assert!(Hyperlink::new("資料", url, range).is_ok());
+    assert!(Hyperlink::new("arrow → link", url, range).is_ok());
+}
+
+#[test]
+fn hyperlink_sequence_never_emits_control_characters_from_label_or_url() {
+    // Given: a fully validated link.
+    let link = Hyperlink::new("docs", "https://example.com/docs", LinkRange::new(0, 0, 3))
+        .expect("safe link");
+
+    // When: the OSC-8 sequence is rendered through the direct route.
+    let sequence = hyperlink_sequence(&link, TmuxSequence::Direct);
+
+    // Then: the label segment carries exactly the validated label, nothing else.
+    let payload = sequence
+        .strip_suffix("\u{1b}]8;;\u{1b}\\")
+        .unwrap_or(&sequence);
+    let label_segment = payload.split("\u{1b}\\").nth(1).unwrap_or_default();
+    assert_eq!(label_segment, "docs");
+
+    // And: the tmux route still wraps the same validated payload.
+    let tmux = hyperlink_sequence(&link, TmuxSequence::Tmux);
+    assert!(tmux.starts_with("\x1bPtmux;"));
+    assert!(tmux.contains("docs"));
 }

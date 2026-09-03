@@ -193,12 +193,19 @@ pub(crate) fn copy(text: &str) -> io::Result<()> {
 /// Build an OSC 8 hyperlink sequence (open + label + close).
 ///
 /// Terminals that ignore OSC 8 still render `label` as plain text. Empty `uri`
-/// or `label` yields plain label text without escape sequences.
+/// or `label` yields plain label text without escape sequences. Control
+/// characters in either field are stripped so untrusted provider or model text
+/// cannot terminate the sequence and inject terminal controls.
 pub(crate) fn format_osc8_hyperlink(uri: &str, label: &str) -> String {
-    if uri.is_empty() || label.is_empty() {
-        return label.to_string();
+    let sanitized_label: String = label.chars().filter(|c| !c.is_control()).collect();
+    if uri.is_empty() || sanitized_label.is_empty() {
+        return sanitized_label;
     }
-    format!("\x1b]8;;{uri}\x1b\\{label}\x1b]8;;\x1b\\")
+    let sanitized_uri: String = uri.chars().filter(|c| !c.is_control()).collect();
+    if sanitized_uri.is_empty() {
+        return sanitized_label;
+    }
+    format!("\x1b]8;;{sanitized_uri}\x1b\\{sanitized_label}\x1b]8;;\x1b\\")
 }
 
 #[cfg(test)]
@@ -327,5 +334,12 @@ mod tests {
 
         assert_eq!(format_osc8_hyperlink("", "plain"), "plain");
         assert_eq!(format_osc8_hyperlink("https://x", ""), "");
+
+        let injected = format_osc8_hyperlink(
+            "https://example.com/\u{1b}]52;c;exfil",
+            "auth\u{1b}]8;;https://evil.example\u{5c}\u{1b}\u{5c}injected\u{7}",
+        );
+        assert!(!injected.contains('\u{7}'));
+        assert_eq!(injected.matches('\u{1b}').count(), 4);
     }
 }

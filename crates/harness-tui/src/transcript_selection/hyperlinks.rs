@@ -31,6 +31,7 @@ pub struct Hyperlink {
 pub enum HyperlinkError {
     EmptyUrl,
     ControlCharacter,
+    LabelControlCharacter,
     UnsafeScheme,
     ReversedRange,
 }
@@ -40,6 +41,7 @@ impl Display for HyperlinkError {
         let message = match self {
             Self::EmptyUrl => "hyperlink URL is empty",
             Self::ControlCharacter => "hyperlink URL contains a control character",
+            Self::LabelControlCharacter => "hyperlink label contains a control character",
             Self::UnsafeScheme => "hyperlink URL scheme is not allowed",
             Self::ReversedRange => "hyperlink range is reversed",
         };
@@ -54,6 +56,10 @@ impl Hyperlink {
         url: &str,
         range: LinkRange,
     ) -> Result<Self, HyperlinkError> {
+        let label = label.into();
+        if label.chars().any(char::is_control) {
+            return Err(HyperlinkError::LabelControlCharacter);
+        }
         if url.is_empty() {
             return Err(HyperlinkError::EmptyUrl);
         }
@@ -67,7 +73,7 @@ impl Hyperlink {
             return Err(HyperlinkError::ReversedRange);
         }
         Ok(Self {
-            label: label.into(),
+            label,
             url: url.to_string(),
             range,
         })
@@ -111,10 +117,10 @@ pub(crate) fn safe_external_url(url: &str) -> bool {
         })
 }
 
-pub fn hyperlink_sequence(link: &Hyperlink, route: TmuxSequence) -> Result<String, HyperlinkError> {
+pub fn hyperlink_sequence(link: &Hyperlink, route: TmuxSequence) -> String {
     let sequence = format!("\x1b]8;;{}\x1b\\{}\x1b]8;;\x1b\\", link.url, link.label);
-    Ok(match route {
+    match route {
         TmuxSequence::Direct => sequence,
         TmuxSequence::Tmux => wrap_tmux(&sequence),
-    })
+    }
 }
