@@ -36,3 +36,10 @@ max-threads = 1
 [[profile.default.overrides]]
 filter = 'test(scripted_tui_happy_path_records_start_prompt_permission_tool_edit_resume_and_quit)'
 slow-timeout = { period = "30s", terminate-after = 4 }
+
+# The P1-03 recorded PTY owner spawns 18 real TUI sessions and hashes its
+# own debug test binary (hundreds of MB) for provenance; on cold caches the
+# hash alone can exceed the default 20s terminate window.
+[[profile.default.overrides]]
+filter = 'test(p1_03_native_pty_owner_records_startup_reveal_terminal_states)'
+slow-timeout = { period = "30s", terminate-after = 6 }

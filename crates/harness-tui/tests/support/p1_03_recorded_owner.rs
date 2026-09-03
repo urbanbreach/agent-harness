@@ -98,17 +98,14 @@ fn capture_full_motion(
     session.wait_for("Beta");
     session.wait_for_alternate_screen();
     let first_paint = session.persist(root, &directory, "first-paint");
-    let first_paint_text = session.text();
-    assert!(
-        !first_paint_text.contains("New worktree")
-            && !first_paint_text.contains("Subagent spawning"),
-        "first paint must predate affordances and changelog\n{first_paint_text}"
-    );
 
-    // Transient identity/affordance screen states can be batched across PTY
-    // reads, so ordering is proven from first-seen offsets: the raw-stream
-    // length recorded when each marker first appears in the assembled screen.
-    let (required, optional) = session.first_seen_offsets(
+    // Prove staged ordering from byte-exact first-seen offsets in the fully
+    // recorded raw stream: the reveal only paints (never erases) before any
+    // input, so visibility is monotone in the prefix length. Live screen
+    // sampling can skip transient stages when PTY reads coalesce whole
+    // stages into one batch; bisection over the replayed stream cannot.
+    session.wait_for_all_markers(&["0.1.0", "New worktree", "Subagent spawning"]);
+    let (required, optional) = session.marker_byte_offsets(
         &["0.1.0", "New worktree", "Subagent spawning"],
         &["Thanks for trying Harness"],
     );

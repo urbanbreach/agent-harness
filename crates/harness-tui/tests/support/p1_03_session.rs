@@ -12,6 +12,10 @@ use std::time::{Duration, Instant};
 
 const SCREEN_TIMEOUT: Duration = Duration::from_secs(12);
 const EXIT_TIMEOUT: Duration = Duration::from_secs(5);
+/// Screen-sample stride for reveal ordering replay. Reveal stages separate
+/// by thousands of bytes; a 256-byte stride resolves their order while
+/// keeping one replay pass cheap enough for the signoff lane budget.
+const SCAN_STRIDE: usize = 256;
 
 #[derive(Clone, Copy)]
 pub(crate) enum TerminalVariant {
@@ -49,6 +53,8 @@ pub(crate) struct Session {
     writer: Box<dyn Write + Send>,
     output: Receiver<Vec<u8>>,
     terminal: RecordedTerminal,
+    cols: u16,
+    rows: u16,
 }
 
 impl Session {
@@ -104,6 +110,8 @@ impl Session {
             writer,
             output: reader_channel(reader),
             terminal: RecordedTerminal::new(cols, rows),
+            cols,
+            rows,
         }
     }
 
@@ -127,53 +135,59 @@ impl Session {
         self.writer.flush().unwrap_or_abort();
     }
 
-    /// Records the raw-stream length at which each marker first becomes visible
-    /// in the assembled screen. Ratatui paints per-cell diffs, so markers are
-    /// never contiguous bytes; screen-state sampling across output batches is
-    /// the only truthful ordering evidence.
-    #[expect(clippy::panic, reason = "bounded PTY failure includes screen evidence")]
-    pub(crate) fn first_seen_offsets<'a>(
-        &mut self,
+    /// Waits until every required marker has been painted. Polls one
+    /// composite predicate so each poll materializes the screen text once.
+    pub(crate) fn wait_for_all_markers(&mut self, required: &[&str]) {
+        self.wait_until(
+            |terminal| {
+                let text = terminal.text();
+                required.iter().all(|marker| text.contains(*marker))
+            },
+            &format!("all of {required:?}"),
+        );
+    }
+
+    /// Finds the raw-stream offset at which each marker first becomes
+    /// visible, by replaying the fully recorded stream once and sampling the
+    /// assembled screen every `SCAN_STRIDE` bytes. The pre-input reveal only
+    /// paints, never erases, so first-seen sample offsets preserve true
+    /// marker order as long as the stride is far below the reveal's stage
+    /// separation. The result is a pure function of the recorded stream:
+    /// unlike live screen sampling, PTY read coalescing cannot skip a
+    /// transient stage, so ordering evidence derived from these offsets is
+    /// race-free.
+    pub(crate) fn marker_byte_offsets<'a>(
+        &self,
         required: &[&'a str],
         optional: &[&'a str],
     ) -> (Vec<(&'a str, usize)>, Vec<(&'a str, usize)>) {
-        let mut required_seen: Vec<(&str, usize)> = Vec::new();
-        let mut optional_seen: Vec<(&str, usize)> = Vec::new();
-        let deadline = Instant::now() + SCREEN_TIMEOUT;
-        loop {
-            let text = self.terminal.text();
-            let raw_len = self.terminal.raw().len();
+        let raw = self.terminal.raw();
+        let mut replay = RecordedTerminal::new(self.cols, self.rows);
+        let mut required_seen: Vec<(&'a str, usize)> = Vec::new();
+        let mut optional_seen: Vec<(&'a str, usize)> = Vec::new();
+        let mut pending = required.len() + optional.len();
+        let mut scanned = 0usize;
+        while scanned < raw.len() && pending > 0 {
+            let chunk_end = (scanned + SCAN_STRIDE).min(raw.len());
+            replay.process_replay_chunk(&raw[scanned..chunk_end]);
+            scanned = chunk_end;
+            let text = replay.text();
             for marker in required {
-                if !required_seen.iter().any(|(seen, _)| *seen == *marker) && text.contains(marker)
+                if text.contains(marker) && !required_seen.iter().any(|(seen, _)| *seen == *marker)
                 {
-                    required_seen.push((marker, raw_len));
+                    required_seen.push((marker, scanned));
+                    pending -= 1;
                 }
             }
             for marker in optional {
-                if !optional_seen.iter().any(|(seen, _)| *seen == *marker) && text.contains(marker)
+                if text.contains(marker) && !optional_seen.iter().any(|(seen, _)| *seen == *marker)
                 {
-                    optional_seen.push((marker, raw_len));
+                    optional_seen.push((marker, scanned));
+                    pending -= 1;
                 }
             }
-            if required_seen.len() == required.len() {
-                return (required_seen, optional_seen);
-            }
-            let missing: Vec<&str> = required
-                .iter()
-                .filter(|marker| !required_seen.iter().any(|(seen, _)| *seen == **marker))
-                .copied()
-                .collect();
-            match self
-                .output
-                .recv_timeout(deadline.saturating_duration_since(Instant::now()))
-            {
-                Ok(bytes) => self.process(&bytes),
-                Err(RecvTimeoutError::Timeout | RecvTimeoutError::Disconnected) => panic!(
-                    "timed out waiting for {missing:?}\n{}",
-                    self.terminal.text()
-                ),
-            }
         }
+        (required_seen, optional_seen)
     }
 
     pub(crate) fn persist(&mut self, root: &Path, directory: &Path, name: &str) -> Value {
