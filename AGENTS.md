@@ -69,7 +69,7 @@ Targeted signoff:
 scripts/test-lanes.sh simulation
 scripts/test-lanes.sh signoff-binary
 scripts/test-lanes.sh signoff-pty
-RUST_TEST_THREADS=1 cargo nextest run -p harness-testkit --test pty_e2e --test-threads 1
+RUST_TEST_THREADS=1 cargo nextest run -p harness-testkit --test pty_e2e --test-threads 1 --ignore-default-filter
 ```
 
 ## CONVENTIONS

@@ -27,7 +27,7 @@ Read `../AGENTS.md` first. PTY/live/native lane details live in `crates/harness-
 ```bash
 cargo nextest run -p harness-tui
 cargo nextest run -p harness-tui --test deterministic_render_test
-RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 cargo nextest run -p harness-tui --test pty_e2e --test-threads 1
+RUST_TEST_THREADS=1 HARNESS_TUI_PTY_SIGNOFF=1 cargo nextest run -p harness-tui --test pty_e2e --test-threads 1 --ignore-default-filter
 cargo insta review -p harness-tui --accept
 ```
 
