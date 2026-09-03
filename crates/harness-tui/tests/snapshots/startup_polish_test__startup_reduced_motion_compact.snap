@@ -1,5 +1,6 @@
 ---
 source: crates/harness-tui/tests/startup_polish_test.rs
+assertion_line: 413
 expression: frozen
 ---
 
@@ -22,6 +23,6 @@ expression: frozen
                • /session-info now lets you click any row to copy…
   ╭──────────────────────────────────────────────────────────────────────────╮
   │ ❯                                                                        │
-  ╰───────────────────────────────────────────────────────────────────────  ─╯
+  ╰──────────────────────────────────────────────────────────────────────────╯
 
                                                Provider not connected  │  Beta

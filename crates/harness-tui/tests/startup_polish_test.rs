@@ -196,7 +196,7 @@ fn compact_startup_composer_is_flush_while_live_composer_keeps_its_inset() {
 }
 
 #[test]
-fn startup_identity_field_geometry_does_not_change_live_composer_or_footer_copy() {
+fn startup_identity_sits_on_composer_border_without_padding_field() {
     // arrange
     let metadata = LaunchMetadata::from_model_ref("worker", "mock:model-1").with_mode_label("Demo");
     let mut startup = AppState::new_startup(Vec::new(), None);
@@ -209,7 +209,17 @@ fn startup_identity_field_geometry_does_not_change_live_composer_or_footer_copy(
     let live = startup_text(&live, 100, 30);
 
     // assert
-    assert!(startup.contains("                             model-1 · Demo mode"));
+    let badge_row = startup
+        .lines()
+        .find(|line| line.contains("model-1 · Demo mode"))
+        .expect("startup composer shows model identity on the bottom border")
+        .trim();
+    assert!(
+        badge_row.starts_with('╰')
+            && badge_row.contains(" model-1 · Demo mode ")
+            && badge_row.ends_with('╯'),
+        "model label sits on the bottom border with one blank cell of padding on each side\n{badge_row}"
+    );
     assert!(startup.contains("Logged in with API key"));
     assert!(!live.contains("model-1 · Demo mode"));
     assert!(!live.contains("Logged in with API key"));
