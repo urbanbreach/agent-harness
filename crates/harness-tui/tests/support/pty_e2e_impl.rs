@@ -33,6 +33,9 @@ const PERMISSION_DRAFT: &str = "keep draft under permission";
 const CLEAR_DRAFT_TEXT: &str = "draft to clear via esc";
 const CLEAR_PROMPT_HINT: &str = "press again to clear";
 const PERMISSION_INJECT_DELAY: Duration = Duration::from_millis(5_000);
+const WAITING_FOR_RESPONSE_SCENARIO: &str = "waiting_for_response";
+const WAITING_FOR_RESPONSE_TEST: &str = "pty_helper_waiting_for_response";
+const WAITING_FOR_RESPONSE_CAPTURE_ENV: &str = "HARNESS_TUI_WAITING_CAPTURE";
 
 const PRIMARY_COLS: u16 = 100;
 const PRIMARY_ROWS: u16 = 30;
@@ -255,6 +258,45 @@ pub(crate) fn pty_status_dialog_opens_without_sidebar_copy() {
     exit_via_palette(&mut helper);
 }
 
+pub(crate) fn pty_waiting_for_response_matches_grok_layout_and_timer_motion() {
+    if !cfg!(target_os = "linux") || std::env::var(PTY_SIGNOFF_ENV).as_deref() != Ok("1") {
+        return;
+    }
+
+    let mut helper =
+        spawn_animated_helper(WAITING_FOR_RESPONSE_TEST, WAITING_FOR_RESPONSE_SCENARIO);
+    helper.wait_for("Waiting for response…");
+    let initial = waiting_status_timers(&helper.screen_text()).unwrap_or_abort();
+    let advanced = wait_for_waiting_timer_change(&mut helper, &initial);
+    let screen = helper.screen_text();
+    let row = screen
+        .lines()
+        .find(|line| line.contains("Waiting for response…"))
+        .unwrap_or_abort();
+
+    assert_eq!(initial.0, initial.1, "initial timers diverged\n{screen}");
+    assert_eq!(advanced.0, advanced.1, "advanced timers diverged\n{screen}");
+    assert_ne!(advanced, initial, "waiting timers did not advance\n{screen}");
+    assert!(
+        row.contains(&format!("Waiting for response… {}", advanced.0)),
+        "phase timer must immediately follow the waiting label\n{screen}"
+    );
+    assert!(
+        row.trim_end()
+            .ends_with(&format!("{} [stop]", advanced.1)),
+        "turn timer and stop control must remain right-aligned\n{screen}"
+    );
+    assert!(
+        !row.contains("ctx "),
+        "Grok's active status row must not contain context metadata\n{screen}"
+    );
+    if std::env::var(WAITING_FOR_RESPONSE_CAPTURE_ENV).as_deref() == Ok("1") {
+        println!("--- waiting-for-response PTY capture ---\n{screen}");
+    }
+
+    exit_via_palette(&mut helper);
+}
+
 #[allow(clippy::panic, reason = "test code must panic gracefully")]
 pub(crate) fn pty_draft_esc_esc_clears_composer() {
     if !cfg!(target_os = "linux") || std::env::var(PTY_SIGNOFF_ENV).as_deref() != Ok("1") {
@@ -454,6 +496,23 @@ pub(crate) fn pty_helper_connect_auth() {
         skip_alternate_screen: false,
     })
     .unwrap_or_abort();
+}
+
+pub(crate) fn pty_helper_waiting_for_response() {
+    if std::env::var(HELPER_SCENARIO_ENV).as_deref() != Ok(WAITING_FOR_RESPONSE_SCENARIO) {
+        return;
+    }
+    assert!(
+        std::env::var_os("HARNESS_DISABLE_ANIMATIONS").is_none(),
+        "animated waiting helper inherited HARNESS_DISABLE_ANIMATIONS"
+    );
+    assert!(
+        std::env::var_os("HARNESS_TUI_REDUCED_MOTION").is_none(),
+        "animated waiting helper inherited HARNESS_TUI_REDUCED_MOTION"
+    );
+
+    let scenario = super::capture_events::scenario("waiting_model").unwrap_or_abort();
+    super::capture_runtime::run_capture(scenario).unwrap_or_abort();
 }
 
 struct SpawnedHelper {
@@ -701,6 +760,18 @@ fn permission_resolved_event(
 }
 
 fn spawn_helper(test_name: &str, scenario: &str) -> SpawnedHelper {
+    spawn_helper_with_motion(test_name, scenario, false)
+}
+
+fn spawn_animated_helper(test_name: &str, scenario: &str) -> SpawnedHelper {
+    spawn_helper_with_motion(test_name, scenario, true)
+}
+
+fn spawn_helper_with_motion(
+    test_name: &str,
+    scenario: &str,
+    animations_enabled: bool,
+) -> SpawnedHelper {
     let pty_system = native_pty_system();
     let pair = pty_system
         .openpty(pty_size(PRIMARY_COLS, PRIMARY_ROWS))
@@ -712,7 +783,7 @@ fn spawn_helper(test_name: &str, scenario: &str) -> SpawnedHelper {
     command.arg(test_name);
     command.arg("--nocapture");
     command.env(HELPER_SCENARIO_ENV, scenario);
-    configure_deterministic_env(&mut command);
+    configure_deterministic_env(&mut command, animations_enabled);
 
     let child = pair.slave.spawn_command(command).unwrap_or_abort();
     drop(pair.slave);
@@ -728,6 +799,52 @@ fn spawn_helper(test_name: &str, scenario: &str) -> SpawnedHelper {
         output_rx,
         parser: Parser::new(PRIMARY_ROWS, PRIMARY_COLS, 0),
     }
+}
+
+#[allow(clippy::panic, reason = "test code must panic gracefully")]
+fn wait_for_waiting_timer_change(
+    helper: &mut SpawnedHelper,
+    initial: &(String, String),
+) -> (String, String) {
+    let deadline = Instant::now() + MARKER_TIMEOUT;
+
+    loop {
+        drain_output(&mut helper.parser, &helper.output_rx);
+        if let Some(current) = waiting_status_timers(&helper.parser.screen().contents()) {
+            if &current != initial {
+                return current;
+            }
+        }
+
+        let now = Instant::now();
+        if now >= deadline {
+            panic!(
+                "PTY waiting timers did not advance after {MARKER_TIMEOUT:?}\n{}",
+                helper.parser.screen().contents()
+            );
+        }
+        let wait_timeout = cmp::min(READ_POLL_TIMEOUT, deadline.saturating_duration_since(now));
+        if let Ok(chunk) = helper.output_rx.recv_timeout(wait_timeout) {
+            helper.parser.process(&chunk);
+        }
+    }
+}
+
+fn waiting_status_timers(screen: &str) -> Option<(String, String)> {
+    let row = screen
+        .lines()
+        .find(|line| line.contains("Waiting for response…"))?;
+    let timers = row
+        .split_whitespace()
+        .filter(|token| {
+            token
+                .strip_suffix('s')
+                .is_some_and(|value| value.parse::<f64>().is_ok())
+        })
+        .take(2)
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    (timers.len() == 2).then(|| (timers[0].clone(), timers[1].clone()))
 }
 
 fn pty_size(cols: u16, rows: u16) -> PtySize {
@@ -818,9 +935,11 @@ fn spawn_reader_thread(mut reader: Box<dyn Read + Send>) -> Receiver<Vec<u8>> {
     rx
 }
 
-fn configure_deterministic_env(command: &mut CommandBuilder) {
+fn configure_deterministic_env(command: &mut CommandBuilder, animations_enabled: bool) {
     command.env("HARNESS_DETERMINISTIC", "1");
-    command.env("HARNESS_DISABLE_ANIMATIONS", "1");
+    if !animations_enabled {
+        command.env("HARNESS_DISABLE_ANIMATIONS", "1");
+    }
     command.env("HARNESS_SEED", "42");
     command.env("TERM", "xterm-256color");
     command.env("LANG", "C.UTF-8");

@@ -1,5 +1,7 @@
 #[path = "support/manual_live_turn_visual_capture_events.rs"]
 mod capture_events;
+#[path = "support/manual_live_turn_visual_capture_runtime.rs"]
+mod capture_runtime;
 #[path = "support/p0_06_artifact_support.rs"]
 mod p0_06_artifact_support;
 #[path = "support/p0_06_artifacts.rs"]
@@ -47,6 +49,14 @@ fn pty_status_dialog_opens_without_sidebar_copy() {
     // act
     // assert
     pty_e2e_impl::pty_status_dialog_opens_without_sidebar_copy();
+}
+
+#[test]
+fn pty_waiting_for_response_matches_grok_layout_and_timer_motion() {
+    // arrange
+    // act
+    // assert
+    pty_e2e_impl::pty_waiting_for_response_matches_grok_layout_and_timer_motion();
 }
 
 #[test]
@@ -119,4 +129,12 @@ fn pty_helper_permission_overlay() {
     // act
     // assert
     pty_e2e_impl::pty_helper_permission_overlay();
+}
+
+#[test]
+fn pty_helper_waiting_for_response() {
+    // arrange
+    // act
+    // assert
+    pty_e2e_impl::pty_helper_waiting_for_response();
 }
