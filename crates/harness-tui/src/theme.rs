@@ -1331,6 +1331,18 @@ impl Theme {
         self.text.accent
     }
 
+    pub(crate) const fn live_turn_activity_color(self) -> Color {
+        self.terminal_colors.prompt_accent
+    }
+
+    pub(crate) const fn live_turn_timer_color(self) -> Color {
+        self.terminal_colors.secondary
+    }
+
+    pub(crate) const fn live_turn_background_color(self) -> Color {
+        self.terminal_colors.canvas
+    }
+
     pub fn harness_dark() -> Self {
         Self {
             surface: SurfaceColors {

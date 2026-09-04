@@ -1,4 +1,7 @@
-use ratatui::{style::Style, text::Span};
+use ratatui::{
+    style::{Modifier, Style},
+    text::Span,
+};
 
 use crate::theme::Theme;
 
@@ -26,11 +29,17 @@ impl RightStatusInput<'_> {
             }
             let color = if self.context_label == Some(part.as_str()) {
                 self.context_tone
-                    .map_or(theme.text.secondary, |tone| tone.color(theme))
+                    .map_or(theme.live_turn_timer_color(), |tone| tone.color(theme))
             } else {
-                theme.text.secondary
+                theme.live_turn_timer_color()
             };
-            spans.push(Span::styled(part.clone(), Style::default().fg(color)));
+            spans.push(Span::styled(
+                part.clone(),
+                Style::default()
+                    .fg(color)
+                    .bg(theme.live_turn_background_color())
+                    .remove_modifier(Modifier::all()),
+            ));
         }
         if self.background_visible {
             if !spans.is_empty() {
@@ -38,24 +47,30 @@ impl RightStatusInput<'_> {
             }
             spans.push(Span::styled(
                 self.background_label,
-                Style::default().fg(if self.background_hovered {
-                    theme.status.success
-                } else {
-                    theme.text.secondary
-                }),
+                Style::default()
+                    .fg(if self.background_hovered {
+                        theme.status.success
+                    } else {
+                        theme.live_turn_timer_color()
+                    })
+                    .bg(theme.live_turn_background_color())
+                    .remove_modifier(Modifier::all()),
             ));
         }
         if self.stop_visible {
-            if !spans.is_empty() {
+            if !spans.is_empty() && !self.background_visible {
                 spans.push(Span::raw(" "));
             }
             spans.push(Span::styled(
                 super::geometry::STOP_LABEL,
-                Style::default().fg(if self.stop_hovered {
-                    theme.status.error
-                } else {
-                    theme.text.secondary
-                }),
+                Style::default()
+                    .fg(if self.stop_hovered {
+                        theme.status.error
+                    } else {
+                        theme.live_turn_timer_color()
+                    })
+                    .bg(theme.live_turn_background_color())
+                    .remove_modifier(Modifier::all()),
             ));
         }
         spans

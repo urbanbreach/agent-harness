@@ -9,6 +9,7 @@ pub(super) struct LiveTurnStatus {
     pub(super) label: String,
     pub(super) style: Style,
     pub(super) phase_elapsed_ms: Option<u64>,
+    pub(super) shows_phase_timer: bool,
     pub(super) allows_stop: bool,
     pub(super) allows_send_now: bool,
 }
@@ -19,6 +20,7 @@ impl LiveTurnStatus {
             label: "Cancelling…".to_string(),
             style: Style::default().fg(theme.status.error),
             phase_elapsed_ms: None,
+            shows_phase_timer: true,
             allows_stop: true,
             allows_send_now: false,
         }
@@ -27,8 +29,9 @@ impl LiveTurnStatus {
     pub(super) fn waiting(theme: &Theme) -> Self {
         Self {
             label: "Waiting for response…".to_string(),
-            style: Style::default().fg(theme.text.secondary),
+            style: Style::default().fg(theme.live_turn_activity_color()),
             phase_elapsed_ms: None,
+            shows_phase_timer: true,
             allows_stop: true,
             allows_send_now: false,
         }
@@ -39,6 +42,7 @@ impl LiveTurnStatus {
             label: "Recovering live state…".to_string(),
             style: Style::default().fg(theme.status.warning),
             phase_elapsed_ms: None,
+            shows_phase_timer: true,
             allows_stop: true,
             allows_send_now: false,
         }
@@ -49,6 +53,7 @@ impl LiveTurnStatus {
             label: "Connection lost · reopen required".to_string(),
             style: Style::default().fg(theme.status.error),
             phase_elapsed_ms: None,
+            shows_phase_timer: true,
             allows_stop: false,
             allows_send_now: false,
         }
@@ -58,8 +63,9 @@ impl LiveTurnStatus {
         let label = format_still_running(watchers);
         Self {
             label,
-            style: Style::default().fg(theme.text.secondary),
+            style: Style::default().fg(theme.live_turn_timer_color()),
             phase_elapsed_ms: None,
+            shows_phase_timer: false,
             allows_stop: false,
             allows_send_now: false,
         }
@@ -72,8 +78,9 @@ impl LiveTurnStatus {
             } else {
                 "waiting".to_string()
             },
-            style: Style::default().fg(theme.text.secondary),
+            style: Style::default().fg(theme.live_turn_timer_color()),
             phase_elapsed_ms: None,
+            shows_phase_timer: false,
             allows_stop: false,
             allows_send_now: true,
         }
@@ -93,6 +100,7 @@ impl LiveTurnStatus {
                 phase_elapsed_ms: activity
                     .request_started_mono_ms
                     .map(|started| activity.last_mono_ms.saturating_sub(started)),
+                shows_phase_timer: true,
                 allows_stop: true,
                 allows_send_now: false,
             };
@@ -107,17 +115,17 @@ impl LiveTurnStatus {
             let (label, style, phase_elapsed_ms) = match tool.effective_tool_id() {
                 "question" | "user.question" => (
                     "Waiting on answers".to_string(),
-                    Style::default().fg(theme.text.secondary),
+                    Style::default().fg(theme.live_turn_activity_color()),
                     None,
                 ),
                 "task" | "agent.spawn" => (
                     "Waiting on subagent…".to_string(),
-                    Style::default().fg(theme.text.secondary),
+                    Style::default().fg(theme.live_turn_activity_color()),
                     Some(tool.last_mono_ms.saturating_sub(tool.first_mono_ms)),
                 ),
                 "background_output" => (
                     "Waiting on task output…".to_string(),
-                    Style::default().fg(theme.text.secondary),
+                    Style::default().fg(theme.live_turn_activity_color()),
                     Some(tool.last_mono_ms.saturating_sub(tool.first_mono_ms)),
                 ),
                 _ => (
@@ -130,6 +138,10 @@ impl LiveTurnStatus {
                 label,
                 style,
                 phase_elapsed_ms,
+                shows_phase_timer: !matches!(
+                    tool.effective_tool_id(),
+                    "question" | "user.question"
+                ),
                 allows_stop: true,
                 allows_send_now: activity.is_sendable_wait(),
             };
@@ -138,8 +150,9 @@ impl LiveTurnStatus {
         if !activity.transcript_text.is_empty() {
             return Self {
                 label: "Responding…".to_string(),
-                style: Style::default().fg(theme.text.secondary),
+                style: Style::default().fg(theme.live_turn_activity_color()),
                 phase_elapsed_ms: activity.responding_duration_ms(),
+                shows_phase_timer: true,
                 allows_stop: true,
                 allows_send_now: false,
             };
@@ -149,8 +162,9 @@ impl LiveTurnStatus {
             let phase_elapsed_ms = activity.thinking_duration_ms();
             return Self {
                 label: "Thinking…".to_string(),
-                style: Style::default().fg(theme.text.secondary),
+                style: Style::default().fg(theme.live_turn_activity_color()),
                 phase_elapsed_ms,
+                shows_phase_timer: true,
                 allows_stop: true,
                 allows_send_now: false,
             };

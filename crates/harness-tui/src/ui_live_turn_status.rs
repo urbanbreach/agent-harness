@@ -1,8 +1,8 @@
 use ratatui::{
     layout::{Alignment, Rect},
-    style::Style,
+    style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Clear, Paragraph},
+    widgets::{Block, Paragraph},
     Frame,
 };
 
@@ -46,7 +46,7 @@ pub(super) fn render_live_turn_status(
     theme: &Theme,
 ) {
     let area = crate::layout::live_turn_status_content_area(area, theme);
-    if area.width == 0 || area.height == 0 || !app.live_turn_status_visible() {
+    if area.width < 10 || area.height == 0 || !app.live_turn_status_visible() {
         return;
     }
 
@@ -97,22 +97,33 @@ pub(super) fn render_live_turn_status(
     let projected_total = (!parked)
         .then(|| activity.map(|entry| entry.last_mono_ms.saturating_sub(entry.first_mono_ms)))
         .flatten();
-    let live_phase_elapsed_ms = (!parked)
-        .then(|| activity.and_then(|entry| app.live_turn_phase_elapsed_ms_for(&entry.request_id)))
+    let live_phase_elapsed_ms = (!parked && status.shows_phase_timer)
+        .then(|| {
+            activity.map_or_else(
+                || app.live_turn_phase_elapsed_ms(),
+                |entry| app.live_turn_phase_elapsed_ms_for(&entry.request_id),
+            )
+        })
         .flatten();
-    let phase = live_phase_elapsed_ms
-        .or(status.phase_elapsed_ms)
-        .or(projected_total)
+    let phase = status
+        .shows_phase_timer
+        .then(|| {
+            live_phase_elapsed_ms
+                .or(status.phase_elapsed_ms)
+                .or(projected_total)
+        })
+        .flatten()
         .map(format_elapsed_ms)
         .unwrap_or_default();
     let total = (!parked
-        && matches!(
-            runtime_kind,
-            RuntimeStateKind::Sending
-                | RuntimeStateKind::Streaming
-                | RuntimeStateKind::Degraded
-                | RuntimeStateKind::Disconnected
-        ))
+        && (foreground_work
+            || matches!(
+                runtime_kind,
+                RuntimeStateKind::Sending
+                    | RuntimeStateKind::Streaming
+                    | RuntimeStateKind::Degraded
+                    | RuntimeStateKind::Disconnected
+            )))
     .then(|| match (app.live_turn_elapsed_ms(), projected_total) {
         (Some(live_elapsed), Some(projected_elapsed)) => Some(live_elapsed.max(projected_elapsed)),
         (Some(live_elapsed), None) => Some(live_elapsed),
@@ -151,6 +162,8 @@ pub(super) fn render_live_turn_status(
     let background_label = live_turn_background_label(app);
     let background_visible = status.allows_stop && control_visibility.background;
     let mut right_parts = Vec::new();
+    right_parts.extend(total);
+    right_parts.extend(tokens);
     if background_visible {
         right_parts.push(background_label.to_string());
     }
@@ -162,20 +175,20 @@ pub(super) fn render_live_turn_status(
             .iter()
             .map(|part| display_width(part))
             .sum::<usize>()
-            .saturating_add(parts.len().saturating_sub(1))
+            .saturating_add(
+                parts
+                    .windows(2)
+                    .filter(|pair| {
+                        !(pair[0].as_str() == background_label
+                            && pair[1].as_str() == geometry::STOP_LABEL)
+                    })
+                    .count(),
+            )
     };
-    let gap_width = usize::from(!right_parts.is_empty());
     let phase_width = display_width(&phase).saturating_add(usize::from(!phase.is_empty()));
-    let phase_visible = !phase.is_empty()
-        && spinner_width
-            .saturating_add(full_label_width)
-            .saturating_add(phase_width)
-            .saturating_add(right_width(&right_parts))
-            .saturating_add(gap_width)
-            <= usize::from(area.width);
     let reserved_left = spinner_width
         .saturating_add(full_label_width)
-        .saturating_add(if phase_visible { phase_width } else { 0 });
+        .saturating_add(phase_width);
     let context_budget = ContextBudget::from_app(app);
     let mut context_label = None;
     if send_now.is_none() {
@@ -184,9 +197,7 @@ pub(super) fn render_live_turn_status(
                 if context_label.as_deref() == Some(candidate) {
                     continue;
                 }
-                let control_count = usize::from(stop_visible) + usize::from(background_visible);
-                let insert_at = right_parts.len().saturating_sub(control_count);
-                right_parts.insert(insert_at, candidate.to_string());
+                right_parts.insert(0, candidate.to_string());
                 if reserved_left
                     .saturating_add(right_width(&right_parts))
                     .saturating_add(1)
@@ -195,20 +206,8 @@ pub(super) fn render_live_turn_status(
                     context_label = Some(candidate.to_string());
                     break;
                 }
-                right_parts.remove(insert_at);
+                right_parts.remove(0);
             }
-        }
-    }
-    for candidate in [total, tokens].into_iter().flatten() {
-        let control_count = usize::from(stop_visible) + usize::from(background_visible);
-        let insert_at = right_parts.len().saturating_sub(control_count);
-        right_parts.insert(insert_at, candidate);
-        if reserved_left
-            .saturating_add(right_width(&right_parts))
-            .saturating_add(1)
-            > usize::from(area.width)
-        {
-            right_parts.remove(insert_at);
         }
     }
     let right_width = right_width(&right_parts);
@@ -225,7 +224,7 @@ pub(super) fn render_live_turn_status(
         .filter(|_| send_now_visible)
         .map_or(0, |hint| display_width(hint).saturating_add(1));
     let fixed_left_width = spinner_width
-        .saturating_add(if phase_visible { phase_width } else { 0 })
+        .saturating_add(phase_width)
         .saturating_add(send_now_width);
     let label_width = usize::from(area.width)
         .saturating_sub(right_width)
@@ -233,7 +232,10 @@ pub(super) fn render_live_turn_status(
         .saturating_sub(fixed_left_width);
     let label = truncate_plain_text(&status.label, label_width.max(1));
 
-    frame.render_widget(Clear, area);
+    frame.render_widget(
+        Block::default().style(Style::default().bg(theme.live_turn_background_color())),
+        area,
+    );
     let spinner_style = if uses_monitor_pulse {
         Style::default().fg(theme.status.info)
     } else {
@@ -241,21 +243,28 @@ pub(super) fn render_live_turn_status(
     };
     let mut left_spans = vec![Span::styled(format!("{spinner} "), spinner_style)];
     left_spans.push(Span::styled(label, status.style));
-    if phase_visible {
+    if !phase.is_empty() {
         left_spans.push(Span::raw(" "));
         left_spans.push(Span::styled(
             phase,
-            Style::default().fg(theme.text.secondary),
+            Style::default()
+                .fg(theme.live_turn_timer_color())
+                .bg(theme.live_turn_background_color())
+                .remove_modifier(Modifier::all()),
         ));
     }
     if send_now_visible {
         left_spans.push(Span::raw(" "));
         left_spans.push(Span::styled(
             send_now.unwrap_or_default(),
-            Style::default().fg(theme.text.secondary),
+            Style::default().fg(theme.live_turn_timer_color()),
         ));
     }
-    frame.render_widget(Paragraph::new(Line::from(left_spans)), area);
+    frame.render_widget(
+        Paragraph::new(Line::from(left_spans))
+            .style(Style::default().bg(theme.live_turn_background_color())),
+        area,
+    );
     let right_spans = RightStatusInput {
         parts: &right_parts,
         background_label,
@@ -268,7 +277,9 @@ pub(super) fn render_live_turn_status(
     }
     .into_spans(theme);
     frame.render_widget(
-        Paragraph::new(Line::from(right_spans)).alignment(Alignment::Right),
+        Paragraph::new(Line::from(right_spans))
+            .style(Style::default().bg(theme.live_turn_background_color()))
+            .alignment(Alignment::Right),
         area,
     );
 }
