@@ -16,6 +16,7 @@ const CJK_QUEUED: &str = "排队消息：请继续验证中文输入、双宽字
 
 pub(crate) struct CaptureScenario {
     pub(crate) events: Vec<EventEnvelopeV1>,
+    pub(crate) events_are_live: bool,
     pub(crate) status: Option<&'static str>,
     pub(crate) send_now_transition: bool,
 }
@@ -24,6 +25,16 @@ impl CaptureScenario {
     fn plain(events: Vec<EventEnvelopeV1>) -> Self {
         Self {
             events,
+            events_are_live: false,
+            status: None,
+            send_now_transition: false,
+        }
+    }
+
+    fn live(events: Vec<EventEnvelopeV1>) -> Self {
+        Self {
+            events,
+            events_are_live: true,
             status: None,
             send_now_transition: false,
         }
@@ -32,6 +43,7 @@ impl CaptureScenario {
     fn with_status(events: Vec<EventEnvelopeV1>, status: &'static str) -> Self {
         Self {
             events,
+            events_are_live: false,
             status: Some(status),
             send_now_transition: false,
         }
@@ -40,6 +52,7 @@ impl CaptureScenario {
     fn send_now(events: Vec<EventEnvelopeV1>) -> Self {
         Self {
             events,
+            events_are_live: false,
             status: None,
             send_now_transition: true,
         }
@@ -95,6 +108,14 @@ fn active_events() -> Vec<EventEnvelopeV1> {
             }),
         ),
     ]
+}
+
+fn waiting_model_events() -> Vec<EventEnvelopeV1> {
+    let mut events = active_events();
+    for event in &mut events {
+        event.mono_ms = 1_000;
+    }
+    events
 }
 
 fn responding_events() -> Vec<EventEnvelopeV1> {
@@ -225,6 +246,7 @@ fn watcher_events() -> Vec<EventEnvelopeV1> {
 
 pub(crate) fn scenario(name: &str) -> Result<CaptureScenario, std::io::Error> {
     Ok(match name {
+        "waiting_model" => CaptureScenario::live(waiting_model_events()),
         "responding" => CaptureScenario::plain(responding_events()),
         "waiting_answers" => {
             CaptureScenario::plain(running_tool_events("question", r#"{"questions":[]}"#))
