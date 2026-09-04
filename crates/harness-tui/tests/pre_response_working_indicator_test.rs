@@ -9,6 +9,7 @@ use harness_tui::render_test::{render_to_buffer, render_to_string};
 use harness_tui::ui;
 use ratatui::layout::Rect;
 use ratatui::style::Color;
+use std::time::Duration;
 
 const WIDTH: u16 = 120;
 const HEIGHT: u16 = 40;
@@ -45,7 +46,7 @@ fn dock_status_text(app: &AppState) -> Option<String> {
     let buffer = render_to_buffer(app, area, |app, frame, _area| {
         ui::render_app(frame, app);
     });
-    let row_start = usize::from(status.y) * usize::from(WIDTH);
+    let row_start = usize::from(status.y) * usize::from(WIDTH) + usize::from(status.x);
     Some(
         buffer.content[row_start..row_start + usize::from(status.width)]
             .iter()
@@ -54,7 +55,7 @@ fn dock_status_text(app: &AppState) -> Option<String> {
     )
 }
 
-fn status_label_color(app: &AppState, label: &str) -> Option<Color> {
+fn status_text_color(app: &AppState, text: &str, occurrence: usize) -> Option<Color> {
     let area = Rect::new(0, 0, WIDTH, HEIGHT);
     let status = FrameLayoutPlan::for_app(app, area).status?;
     let buffer = render_to_buffer(app, area, |app, frame, _area| {
@@ -62,18 +63,20 @@ fn status_label_color(app: &AppState, label: &str) -> Option<Color> {
     });
     let row_start = usize::from(status.y) * usize::from(WIDTH);
     let row = &buffer.content[row_start..row_start + usize::from(WIDTH)];
-    let label = label
+    let text = text
         .chars()
         .map(|character| character.to_string())
         .collect::<Vec<_>>();
-    row.windows(label.len())
-        .position(|cells| {
+    row.windows(text.len())
+        .enumerate()
+        .filter(|(_, cells)| {
             cells
                 .iter()
-                .zip(&label)
+                .zip(&text)
                 .all(|(cell, character)| cell.symbol() == character)
         })
-        .map(|label_column| row[label_column].fg)
+        .nth(occurrence)
+        .map(|(column, _)| row[column].fg)
 }
 
 fn status_glyph_color_before_label(app: &AppState, label: &str) -> Option<Color> {
@@ -119,6 +122,39 @@ fn submitted_app() -> AppState {
     app
 }
 
+fn adopt_submitted_turn(app: &mut AppState, request_id: &str) {
+    app.ingest_event(envelope(
+        1,
+        request_id,
+        EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+            request_id: request_id.into(),
+            text: "show working state".to_string(),
+        }),
+    ));
+    app.ingest_event(envelope(
+        2,
+        request_id,
+        EventV1::TaskScheduled(TaskScheduledEvent {
+            task_id: "task_pre_response".into(),
+            state: TaskScheduleState::Started,
+            queue_key: Some("provider_model:mock:model-pre-response".to_string()),
+            metadata: None,
+        }),
+    ));
+    app.ingest_event(envelope(
+        3,
+        request_id,
+        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+            request_id: request_id.into(),
+            provider_id: "mock".to_string(),
+            model_id: "model-pre-response".to_string(),
+            prompt_summary: "show working state".to_string(),
+            request_digest: "digest-pre-response".to_string(),
+            metadata: None,
+        }),
+    ));
+}
+
 #[test]
 fn submit_immediately_shows_waiting_state_before_any_runtime_event() {
     // arrange
@@ -135,8 +171,68 @@ fn submit_immediately_shows_waiting_state_before_any_runtime_event() {
         .as_deref()
         .is_some_and(|row| row.contains("Waiting for response…")));
     assert_eq!(
-        status_label_color(&app, "Waiting for response…"),
-        Some(app.theme().text.secondary)
+        status_text_color(&app, "Waiting for response…", 0),
+        Some(app.theme().terminal_colors.prompt_accent)
+    );
+}
+
+#[test]
+fn submitted_wait_matches_grok_phase_and_turn_timers() {
+    // Given: a locally submitted turn is adopted before the provider's first token.
+    let mut app = submitted_app();
+    app.advance_wall_clock_for_motion_evidence(Duration::from_millis(400));
+    adopt_submitted_turn(&mut app, "req_waiting_timers");
+    app.advance_wall_clock_for_motion_evidence(Duration::from_millis(100));
+
+    // When: the waiting row is rendered after half a second.
+    let row = dock_status_text(&app).expect("waiting status row");
+
+    // Then: Grok's phase timer follows the label and its turn timer stays right-aligned.
+    assert!(
+        row.contains("Waiting for response… 0.5s"),
+        "status row: {row:?}"
+    );
+    assert!(
+        row.trim_end().ends_with("0.5s [stop]"),
+        "status row: {row:?}"
+    );
+    assert_eq!(
+        status_text_color(&app, "0.5s", 0),
+        Some(app.theme().terminal_colors.secondary)
+    );
+    assert_eq!(
+        status_text_color(&app, "0.5s", 1),
+        Some(app.theme().terminal_colors.secondary)
+    );
+}
+
+#[test]
+fn narrow_waiting_row_truncates_label_before_dropping_timers() {
+    // Given: an active model wait rendered in a narrow status row.
+    let mut app = submitted_app();
+    app.advance_wall_clock_for_motion_evidence(Duration::from_millis(400));
+    adopt_submitted_turn(&mut app, "req_narrow_waiting");
+    app.advance_wall_clock_for_motion_evidence(Duration::from_millis(100));
+    let area = Rect::new(0, 0, 30, HEIGHT);
+    let status = FrameLayoutPlan::for_app(&app, area)
+        .status
+        .expect("narrow waiting status row");
+
+    // When: the shell renders the constrained row.
+    let buffer = render_to_buffer(&app, area, |app, frame, _area| {
+        ui::render_app(frame, app);
+    });
+    let row_start = usize::from(status.y) * usize::from(area.width) + usize::from(status.x);
+    let row: String = buffer.content[row_start..row_start + usize::from(status.width)]
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect();
+
+    // Then: both non-truncating Grok timers survive and only the activity label yields.
+    assert_eq!(row.matches("0.5s").count(), 2, "status row: {row:?}");
+    assert!(
+        row.trim_end().ends_with("0.5s [stop]"),
+        "status row: {row:?}"
     );
 }
 
@@ -219,7 +315,7 @@ fn cancelling_turn_keeps_spinner_and_uses_error_accent() {
     assert!(row.contains("[stop]"), "status row: {row:?}");
     assert!(app.has_active_animations());
     assert_eq!(
-        status_label_color(&app, "Cancelling…"),
+        status_text_color(&app, "Cancelling…", 0),
         Some(app.theme().status.error)
     );
     assert_eq!(

@@ -217,6 +217,21 @@ fn agent_spawn_wait_advertises_queued_prompt_promotion() {
 }
 
 #[test]
+fn question_wait_hides_phase_timer_but_keeps_turn_timer() {
+    // Given: an active turn is blocked on a question tool.
+    let mut app = active_app();
+    start_running_tool(&mut app, 5, "question", r#"{"questions":[]}"#);
+
+    // When: the live status row is rendered.
+    let row = status_text(&app, WIDE_WIDTH).expect("question status row");
+
+    // Then: Grok suppresses the answer-pressure phase timer while retaining total turn time.
+    assert!(row.contains("Waiting on answers"), "status row: {row:?}");
+    assert_eq!(row.matches("4.2s").count(), 1, "status row: {row:?}");
+    assert!(row.contains("[stop]"), "status row: {row:?}");
+}
+
+#[test]
 fn disconnected_status_requires_reopen_and_hides_live_controls() {
     // Given: an active transcript and local draft when the live event stream closes.
     let mut app = active_app();
@@ -240,7 +255,7 @@ fn disconnected_status_requires_reopen_and_hides_live_controls() {
 }
 
 #[test]
-fn narrow_width_keeps_the_activity_and_stop_before_optional_metadata() {
+fn narrow_width_preserves_grok_timers_and_stop_before_optional_metadata() {
     // arrange
     // Given: the same active turn with optional queued-input metadata.
     let mut app = active_app();
@@ -250,9 +265,9 @@ fn narrow_width_keeps_the_activity_and_stop_before_optional_metadata() {
     let row = status_text(&app, 24).expect("narrow active status row");
 
     // act
-    // Then: required activity and stop affordance survive while lower-priority facts disappear.
+    // Then: both non-truncating timers and stop survive while only the label yields.
     // assert
-    assert!(row.contains("Responding…"), "status row: {row:?}");
+    assert_eq!(row.matches("4.2s").count(), 2, "status row: {row:?}");
     assert!(row.contains("[stop]"), "status row: {row:?}");
     assert!(!row.contains("queued 2"), "status row: {row:?}");
 }
