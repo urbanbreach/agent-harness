@@ -47,5 +47,8 @@ fn watcher_pulse_uses_system_accent_while_label_stays_muted() {
     assert_eq!(buffer[(status.x, status.y)].symbol(), " ");
     assert_eq!(buffer[(status.x.saturating_add(1), status.y)].symbol(), " ");
     assert_eq!(buffer[(icon_x, status.y)].fg, theme.status.info);
-    assert_eq!(buffer[(label_x, status.y)].fg, theme.text.secondary);
+    assert_eq!(
+        buffer[(label_x, status.y)].fg,
+        theme.terminal_colors.secondary
+    );
 }
