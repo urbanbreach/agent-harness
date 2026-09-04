@@ -21,6 +21,18 @@ pub(crate) fn run_capture(config: CaptureScenario) -> Result<(), Box<dyn std::er
             .send(LiveUpdate::Status(status.to_string()))
             .map_err(|_| std::io::Error::other("seed live status"))?;
     }
+    let historical_events = if config.events_are_live {
+        for event in config.events {
+            update_tx
+                .send(LiveUpdate::Event(Box::new(RuntimeEvent::Durable(
+                    Box::new(event),
+                ))))
+                .map_err(|_| std::io::Error::other("seed live event"))?;
+        }
+        Vec::new()
+    } else {
+        config.events
+    };
 
     let on_ui_intent: Option<Arc<dyn Fn(UiIntent) + Send + Sync>> =
         config.send_now_transition.then(|| {
@@ -74,7 +86,7 @@ pub(crate) fn run_capture(config: CaptureScenario) -> Result<(), Box<dyn std::er
     run_tui_with_options(TuiOptions {
         mode: TuiMode::Live {
             run_dir: run_dir.path().to_path_buf(),
-            historical_events: config.events,
+            historical_events,
             session_history_entries: Vec::new(),
             prompt_history_path: None,
             update_rx,
