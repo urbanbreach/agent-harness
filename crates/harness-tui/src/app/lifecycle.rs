@@ -1019,9 +1019,12 @@ impl AppState {
     }
 
     pub(crate) fn live_turn_phase_elapsed_ms_for(&self, request_id: &str) -> Option<u64> {
-        (self.live_turn_request_id.as_deref() == Some(request_id))
-            .then(|| self.live_turn_phase_elapsed_ms())
-            .flatten()
+        (self
+            .live_turn_request_id
+            .as_deref()
+            .is_none_or(|active| active == request_id))
+        .then(|| self.live_turn_phase_elapsed_ms())
+        .flatten()
     }
 
     pub(in crate::app) fn live_turn_timing_owned_by_other_request(&self, request_id: &str) -> bool {
@@ -1091,9 +1094,9 @@ impl AppState {
                 .is_some_and(|(active, incoming)| active != incoming);
         if is_new_turn {
             self.live_turn_started_at = Some(now);
+            self.live_turn_phase_started_at = Some(now);
         }
         self.live_turn_request_id = request_id.map(str::to_string);
-        self.live_turn_phase_started_at = Some(now);
         self.motion_epoch_started_at = now;
         self.sampled_motion_elapsed = Duration::ZERO;
         self.motion_revision = self.motion_revision.wrapping_add(1);

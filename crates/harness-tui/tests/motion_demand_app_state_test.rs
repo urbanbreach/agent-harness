@@ -59,6 +59,19 @@ fn app_visual_sample_changes_only_at_its_natural_cadence_boundary() {
 }
 
 #[test]
+fn streaming_wait_plan_keeps_a_wake_at_the_next_visual_sample() {
+    // Given: a silent provider wait exactly at the start of its motion epoch.
+    let mut app = streaming_app();
+    app.restart_motion_epoch_for_evidence();
+
+    // When: AppState publishes its motion plan.
+    let plan = app.motion_plan_for_evidence();
+
+    // Then: unchanged-frame suppression can remove cadence without losing the next wake.
+    assert_eq!(plan.until(), Some(Duration::from_millis(133)));
+}
+
+#[test]
 fn reduced_motion_active_stream_has_no_periodic_deadline() {
     // arrange
     // Given: a live stream under the production reduced-motion authority.
