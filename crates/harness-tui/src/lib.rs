@@ -118,7 +118,6 @@ pub mod theme;
     reason = "task 37 requires theme_family/mod.rs as the public facade"
 )]
 pub mod theme_family;
-pub mod theme_system;
 pub mod theme_tokens;
 mod time_format;
 #[expect(
