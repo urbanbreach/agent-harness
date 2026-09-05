@@ -33,10 +33,7 @@ pub use plugin::{
     PLUGIN_LOAD_RECEIPT_FILE_NAME, PLUGIN_MANIFEST_FILE_NAME, PLUGIN_REGISTRY_REL,
     PLUGIN_SKILLS_DIR_NAME,
 };
-pub use plugin_runtime::{
-    FailingPlugin, HelloWorldPlugin, PluginExecutionResult, PluginExecutionSurface,
-    PluginLifecycleEvent, PluginRuntimeContract, PluginRuntimeError,
-};
+pub use plugin_runtime::{PluginLifecycleEvent, PluginRuntimeContract, PluginRuntimeError};
 pub use product::{
     run_mock_acp_agent_mode_product, run_multi_descriptor_discover_product,
     run_multi_plugin_lifecycle_product, MockAcpAgentModeProduct, MultiDescriptorDiscoverProduct,
