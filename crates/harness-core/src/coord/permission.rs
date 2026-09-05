@@ -103,6 +103,42 @@ pub(super) fn permission_grant_request(
     }
 }
 
+pub(super) fn always_approve_can_bypass(
+    request: &PermissionGrantRequest,
+    args_json: &Value,
+) -> bool {
+    match request.kind {
+        PermissionKind::Question | PermissionKind::ExternalDirectory | PermissionKind::DoomLoop => {
+            false
+        }
+        PermissionKind::Read => !request_contains_sensitive_dotenv_path(args_json),
+        PermissionKind::EditFs
+        | PermissionKind::Shell
+        | PermissionKind::Network
+        | PermissionKind::Task
+        | PermissionKind::WebFetch
+        | PermissionKind::WebSearch
+        | PermissionKind::CodeSearch
+        | PermissionKind::Lsp => true,
+    }
+}
+
+fn request_contains_sensitive_dotenv_path(args_json: &Value) -> bool {
+    let mut paths = BTreeSet::new();
+    for key in WORKSPACE_PATH_SELECTOR_KEYS {
+        collect_raw_path_strings(args_json.get(key), &mut paths);
+    }
+    paths.iter().any(|path| {
+        Path::new(path)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|file_name| {
+                file_name.ends_with(".env")
+                    || file_name.contains(".env.") && !file_name.ends_with(".env.example")
+            })
+    })
+}
+
 fn permission_tool_selector(tool_id: &str, args_json: &Value) -> PermissionToolSelector {
     let effective_tool_id = effective_mcp_tool_id(tool_id, args_json).unwrap_or_else(|| {
         canonical_tool_id_for(tool_id)
@@ -751,6 +787,60 @@ const APPLY_PATCH_PATH_PREFIXES: &[&str] = &[
 ];
 
 impl super::Coordinator {
+    pub(in crate::coord) async fn set_always_approve_mode_internal(
+        &mut self,
+        enabled: bool,
+    ) -> Result<(), CoordinatorError> {
+        let pending_ids = {
+            let run_state = self
+                .run_state
+                .as_mut()
+                .ok_or(CoordinatorError::RunNotStarted)?;
+            run_state.always_approve_mode = enabled;
+            if enabled {
+                run_state
+                    .pending_permissions
+                    .iter()
+                    .filter(|(_, pending)| {
+                        let PendingPermissionResolution::ToolCall { args_json, .. } =
+                            &pending.resolution
+                        else {
+                            return false;
+                        };
+                        pending
+                            .grant_request
+                            .as_ref()
+                            .is_some_and(|request| always_approve_can_bypass(request, args_json))
+                    })
+                    .map(|(permission_id, _)| permission_id.clone())
+                    .collect::<Vec<_>>()
+            } else {
+                Vec::new()
+            }
+        };
+
+        for permission_id in pending_ids {
+            match self
+                .resolve_permission_internal(
+                    permission_id,
+                    PermissionDecision::Allow,
+                    Some("always-approve mode".to_string()),
+                    None,
+                )
+                .await
+            {
+                Ok(()) | Err(CoordinatorError::LifecycleHookFailed(_)) => {}
+                Err(error) => {
+                    if let Some(run_state) = self.run_state.as_mut() {
+                        run_state.always_approve_mode = false;
+                    }
+                    return Err(error);
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub(in crate::coord) async fn resolve_permission_internal(
         &mut self,
         permission_id: String,

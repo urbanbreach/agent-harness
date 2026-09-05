@@ -471,6 +471,10 @@ pub enum Command {
         grant_scope: Option<PermissionGrantScope>,
         respond_to: oneshot::Sender<Result<(), CoordinatorError>>,
     },
+    SetAlwaysApproveMode {
+        enabled: bool,
+        respond_to: oneshot::Sender<Result<(), CoordinatorError>>,
+    },
     PermissionTimedOut {
         permission_id: String,
     },

@@ -217,6 +217,7 @@ pub(in crate::coord) struct RunState {
     pub(in crate::coord) background_notification_child_requests: BTreeSet<String>,
     pub(in crate::coord) pending_agent_wakeups: BTreeMap<String, Vec<PendingAgentWakeup>>,
     pub(in crate::coord) pending_permissions: BTreeMap<String, PendingPermissionState>,
+    pub(in crate::coord) always_approve_mode: bool,
     pub(in crate::coord) tool_call_request_event_ids: BTreeMap<String, String>,
     pub(in crate::coord) active_permission_grants: PermissionGrantSet,
     pub(in crate::coord) cancelled_running_tasks: BTreeSet<String>,
