@@ -33,7 +33,7 @@ src/
 | Runtime wake/redraw behavior | `runtime.rs`, `runtime_wait_set.rs` | `scheduling/`, frame output, presentation telemetry |
 | Composer text changes | `composer_atoms/`, `composer_editing/` | completion, ghost suggestions, queue integration |
 | Modal geometry | `layout/permission.rs`, `ui_overlays/modal_interaction.rs` | paint and hit-map parity |
-| Theme changes | `theme.rs`, `theme_system/`, `theme_tokens.rs` | fallback levels and ASCII glyph mode |
+| Theme changes | `theme.rs`, `theme_family/`, `theme_tokens.rs` | fallback levels and ASCII glyph mode |
 
 ## CONVENTIONS
 
