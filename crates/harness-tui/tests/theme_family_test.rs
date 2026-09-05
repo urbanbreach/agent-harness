@@ -1,5 +1,6 @@
-use harness_tui::theme::ColorLevel;
+use harness_tui::theme::{ColorLevel, GlyphMode, Theme};
 use harness_tui::theme_family::*;
+use ratatui::style::Color;
 
 // --- Semantic role coverage ------------------------------------------------
 
@@ -115,6 +116,51 @@ fn fallback_ladder_resolves_all_levels_and_preserves_determinism() {
     assert_eq!(
         FallbackLadder::resolve(rgb, ColorLevel::Ansi256),
         FallbackLadder::resolve(rgb, ColorLevel::Ansi256)
+    );
+}
+
+#[test]
+fn legacy_glyph_mode_uses_semantic_ascii_without_changing_colors() {
+    // arrange
+    let preferred = Theme::harness_dark();
+
+    // act
+    let legacy = preferred.with_glyph_mode(GlyphMode::Ascii);
+
+    // assert
+    assert_eq!(legacy.live_shell.glyphs.streaming, "o");
+    assert_eq!(legacy.live_shell.glyphs.done, "*");
+    assert_eq!(legacy.live_shell.glyphs.error, "x");
+    assert_eq!(legacy.live_shell.transcript_glyphs.user_marker, ">");
+    assert_eq!(legacy.live_shell.transcript_glyphs.tool_marker, "*");
+    assert_eq!(legacy.surface, preferred.surface);
+    assert_eq!(legacy.status, preferred.status);
+}
+
+#[test]
+fn limited_color_modes_preserve_status_meaning() {
+    // arrange
+    let basic = Theme::harness_dark().for_color_level(ColorLevel::Basic);
+    assert_ne!(basic.status.success, basic.status.warning);
+    assert_ne!(basic.status.success, basic.status.error);
+    assert_ne!(basic.status.warning, basic.status.error);
+
+    // act
+    let no_color = Theme::harness_dark()
+        .for_color_level(ColorLevel::None)
+        .with_glyph_mode(GlyphMode::Ascii);
+
+    // assert
+    assert_eq!(no_color.status.success, Color::Reset);
+    assert_eq!(no_color.status.warning, Color::Reset);
+    assert_eq!(no_color.status.error, Color::Reset);
+    assert_ne!(
+        no_color.live_shell.glyphs.succeeded,
+        no_color.live_shell.glyphs.failed
+    );
+    assert_ne!(
+        no_color.live_shell.glyphs.pending_permission,
+        no_color.live_shell.glyphs.running
     );
 }
 
