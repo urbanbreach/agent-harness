@@ -14,6 +14,7 @@ use tokio::sync::{mpsc, oneshot};
 use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
 
+use super::permission::always_approve_can_bypass;
 use crate::agent::{
     AgentModelSettings, AgentProfile, ProviderContext, ProviderConversationTurn,
     ProviderConversationTurnStatus,
@@ -39,8 +40,9 @@ use crate::event::{
     ToolIdentityMetadata, UserMessageSubmittedEvent, SCHEMA_VERSION,
 };
 use crate::perm::{
-    PermissionDecision, PermissionGrant, PermissionGrantMatcher, PermissionGrantScope,
-    PermissionKind, PermissionPolicy, PermissionRuleRequest, PermissionToolSelector,
+    PermissionDecision, PermissionGrant, PermissionGrantMatcher, PermissionGrantRequest,
+    PermissionGrantScope, PermissionKind, PermissionPolicy, PermissionRuleRequest,
+    PermissionToolSelector,
 };
 use crate::proj::RecordedRuntimeContext;
 use crate::redact::DefaultRedactor;
@@ -645,6 +647,11 @@ delegate_tokio_test!(permission_rule_task_selector_is_enforced_at_tool_call_site
 delegate_tokio_test!(perm_ask_path_blocks_until_resolved => permission_flow_tests::rule_perm_ask_path_blocks_until_resolved);
 delegate_tokio_test!(allow_always_records_grant_and_authorizes_matching_future_shell_call => permission_flow_tests::allow_always_records_grant_and_authorizes_matching_future_shell_call);
 delegate_tokio_test!(allow_always_shell_run_grant_does_not_authorize_changed_args => permission_flow_tests::allow_always_shell_run_grant_does_not_authorize_changed_args);
+delegate_tokio_test!(always_approve_mode_bypasses_future_ordinary_permission_prompts => permission_flow_tests::always_approve_mode_bypasses_future_ordinary_permission_prompts);
+delegate_tokio_test!(enabling_always_approve_drains_pending_ordinary_permission => permission_flow_tests::enabling_always_approve_drains_pending_ordinary_permission);
+delegate_tokio_test!(disabling_always_approve_restores_ordinary_permission_prompts => permission_flow_tests::disabling_always_approve_restores_ordinary_permission_prompts);
+delegate_tokio_test!(always_approve_mode_keeps_questions_promptable => permission_flow_tests::always_approve_mode_keeps_questions_promptable);
+delegate_test!(always_approve_mode_preserves_sensitive_permission_kinds => permission_flow_tests::always_approve_mode_preserves_sensitive_permission_kinds);
 delegate_tokio_test!(static_deny_overrides_permission_grant => permission_flow_tests::static_deny_overrides_permission_grant);
 delegate_tokio_test!(permission_grant_event_does_not_persist_raw_shell_command_secret => permission_flow_tests::permission_grant_event_does_not_persist_raw_shell_command_secret);
 delegate_tokio_test!(perm_timeout_path_denies_deterministically => permission_flow_tests::perm_timeout_path_denies_deterministically);
@@ -1411,6 +1418,7 @@ fn test_run_state(session_dir: &Path, run_id: &str) -> RunState {
         background_notification_child_requests: std::collections::BTreeSet::new(),
         pending_agent_wakeups: std::collections::BTreeMap::new(),
         pending_permissions: std::collections::BTreeMap::new(),
+        always_approve_mode: false,
         tool_call_request_event_ids: std::collections::BTreeMap::new(),
         active_permission_grants: crate::perm::PermissionGrantSet::default(),
         cancelled_running_tasks: std::collections::BTreeSet::new(),

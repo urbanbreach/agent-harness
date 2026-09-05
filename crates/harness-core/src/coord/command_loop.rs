@@ -284,6 +284,13 @@ impl Coordinator {
                     .await;
                 warn_oneshot_send_failure(respond_to.send(result), "resolve_permission");
             }
+            Command::SetAlwaysApproveMode {
+                enabled,
+                respond_to,
+            } => {
+                let result = self.set_always_approve_mode_internal(enabled).await;
+                warn_oneshot_send_failure(respond_to.send(result), "set_always_approve_mode");
+            }
             Command::PermissionTimedOut { permission_id } => {
                 self.resolve_permission_timeout_internal(permission_id)
                     .await;

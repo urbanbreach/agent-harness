@@ -234,6 +234,297 @@ pub(super) async fn allow_always_shell_run_grant_does_not_authorize_changed_args
     }));
 }
 
+pub(super) async fn always_approve_mode_bypasses_future_ordinary_permission_prompts() {
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
+    let mut config = test_config(temp_dir.path());
+    config.permission_policy = ask_shell_permission_policy(1_000);
+
+    let handle = spawn_coordinator(
+        config,
+        Arc::new(FakeClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    let run = handle
+        .start_run("always_approve_future", temp_dir.path())
+        .await
+        .unwrap_or_abort();
+
+    handle.set_always_approve_mode(true).await.unwrap_or_abort();
+    let tool_call_id = handle
+        .request_tool_call(
+            EventActor::new(ActorKind::Supervisor, Some("agent-supervisor".to_string())),
+            Some("deep".to_string()),
+            "shell.run",
+            json!({"cmd": "echo auto-approved"}),
+        )
+        .await
+        .unwrap_or_abort();
+
+    wait_for_events(
+        &handle,
+        &run.events_path,
+        "auto-approved tool call to start",
+        |event| {
+            matches!(
+                &event.payload,
+                EventV1::ToolCallStarted(data) if data.tool_call_id.as_str() == tool_call_id
+            )
+        },
+    )
+    .await;
+    handle.stop_run().await.unwrap_or_abort();
+
+    let events = read_events(&run.events_path);
+    assert!(!events
+        .iter()
+        .any(|event| matches!(event.payload, EventV1::PermissionRequested(_))));
+    assert!(!events
+        .iter()
+        .any(|event| matches!(event.payload, EventV1::PermissionResolved(_))));
+}
+
+pub(super) async fn enabling_always_approve_drains_pending_ordinary_permission() {
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
+    let mut config = test_config(temp_dir.path());
+    config.permission_policy = ask_shell_permission_policy(1_000);
+
+    let handle = spawn_coordinator(
+        config,
+        Arc::new(FakeClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    let run = handle
+        .start_run("always_approve_pending", temp_dir.path())
+        .await
+        .unwrap_or_abort();
+    let tool_call_id = handle
+        .request_tool_call(
+            EventActor::new(ActorKind::Supervisor, Some("agent-supervisor".to_string())),
+            Some("deep".to_string()),
+            "shell.run",
+            json!({"cmd": "echo pending"}),
+        )
+        .await
+        .unwrap_or_abort();
+
+    wait_for_events(
+        &handle,
+        &run.events_path,
+        "permission request before enabling always-approve",
+        |event| matches!(event.payload, EventV1::PermissionRequested(_)),
+    )
+    .await;
+    handle.set_always_approve_mode(true).await.unwrap_or_abort();
+    wait_for_events(
+        &handle,
+        &run.events_path,
+        "pending tool call to start after enabling always-approve",
+        |event| {
+            matches!(
+                &event.payload,
+                EventV1::ToolCallStarted(data) if data.tool_call_id.as_str() == tool_call_id
+            )
+        },
+    )
+    .await;
+    handle.stop_run().await.unwrap_or_abort();
+
+    let events = read_events(&run.events_path);
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| matches!(event.payload, EventV1::PermissionRequested(_)))
+            .count(),
+        1
+    );
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| matches!(event.payload, EventV1::PermissionResolved(_)))
+            .count(),
+        1
+    );
+}
+
+pub(super) async fn disabling_always_approve_restores_ordinary_permission_prompts() {
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
+    let mut config = test_config(temp_dir.path());
+    config.permission_policy = ask_shell_permission_policy(1_000);
+
+    let handle = spawn_coordinator(
+        config,
+        Arc::new(FakeClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    let run = handle
+        .start_run("always_approve_disabled", temp_dir.path())
+        .await
+        .unwrap_or_abort();
+    handle.set_always_approve_mode(true).await.unwrap_or_abort();
+    handle
+        .set_always_approve_mode(false)
+        .await
+        .unwrap_or_abort();
+
+    let tool_call_id = handle
+        .request_tool_call(
+            EventActor::new(ActorKind::Supervisor, Some("agent-supervisor".to_string())),
+            Some("deep".to_string()),
+            "shell.run",
+            json!({"cmd": "echo ask-again"}),
+        )
+        .await
+        .unwrap_or_abort();
+    wait_for_events(
+        &handle,
+        &run.events_path,
+        "ordinary permission request after disabling always-approve",
+        |event| {
+            matches!(
+                &event.payload,
+                EventV1::PermissionRequested(data)
+                    if data.tool_call_id.as_ref().map(|id| id.as_str()) == Some(tool_call_id.as_str())
+            )
+        },
+    )
+    .await;
+    handle.stop_run().await.unwrap_or_abort();
+
+    assert!(read_events(&run.events_path).iter().all(|event| {
+        !matches!(
+            &event.payload,
+            EventV1::ToolCallStarted(data) if data.tool_call_id.as_str() == tool_call_id
+        )
+    }));
+}
+
+pub(super) async fn always_approve_mode_keeps_questions_promptable() {
+    let temp_dir = tempfile::tempdir().unwrap_or_abort();
+    let handle = spawn_coordinator(
+        test_config(temp_dir.path()),
+        Arc::new(RealClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    let run = handle
+        .start_run("always_approve_question", temp_dir.path())
+        .await
+        .unwrap_or_abort();
+    handle.set_always_approve_mode(true).await.unwrap_or_abort();
+
+    let question_handle = handle.clone();
+    let request = tokio::spawn(async move {
+        question_handle
+            .request_question(
+                EventActor::new(ActorKind::Worker, Some("agent-worker".to_string())),
+                "toolcall_always_approve_question",
+                json!({
+                    "questions": [{
+                        "question": "Pick one",
+                        "header": "Choice",
+                        "options": [{"label": "A", "description": "Option A"}],
+                    }]
+                }),
+            )
+            .await
+    });
+
+    let events = wait_for_events(
+        &handle,
+        &run.events_path,
+        "question remains visible in always-approve mode",
+        |event| {
+            matches!(
+                &event.payload,
+                EventV1::PermissionRequested(data) if data.kind == "question"
+            )
+        },
+    )
+    .await;
+    let permission_id = events
+        .iter()
+        .find_map(|event| match &event.payload {
+            EventV1::PermissionRequested(data) if data.kind == "question" => {
+                Some(data.permission_id.clone())
+            }
+            _ => None,
+        })
+        .unwrap_or_abort();
+    assert!(events.iter().all(|event| {
+        !matches!(
+            &event.payload,
+            EventV1::PermissionResolved(data) if data.permission_id == permission_id
+        )
+    }));
+
+    handle
+        .resolve_permission(
+            permission_id,
+            PermissionDecision::Allow,
+            Some("[[\"A\"]]".to_string()),
+        )
+        .await
+        .unwrap_or_abort();
+    assert_eq!(
+        request.await.unwrap_or_abort().unwrap_or_abort(),
+        vec![vec!["A"]]
+    );
+    handle.stop_run().await.unwrap_or_abort();
+}
+
+pub(super) fn always_approve_mode_preserves_sensitive_permission_kinds() {
+    let read_request = |path: &str| PermissionGrantRequest {
+        kind: PermissionKind::Read,
+        tool: PermissionToolSelector {
+            effective_tool_id: "read".to_string(),
+            canonical_tool_id: Some("read".to_string()),
+        },
+        matcher: PermissionGrantMatcher::WorkspacePath {
+            path: path.to_string(),
+            request_digest: "digest".to_string(),
+        },
+    };
+
+    for path in [
+        ".env",
+        "local.env",
+        ".env.local",
+        "local.env.secret",
+        "/tmp/.env",
+    ] {
+        assert!(
+            !always_approve_can_bypass(&read_request(path), &json!({"path": path})),
+            "sensitive dotenv read must remain promptable: {path}"
+        );
+    }
+    for path in ["README.md", ".env.example", "local.env.example"] {
+        assert!(
+            always_approve_can_bypass(&read_request(path), &json!({"path": path})),
+            "non-sensitive read should be bypassed: {path}"
+        );
+    }
+
+    for kind in [
+        PermissionKind::Question,
+        PermissionKind::ExternalDirectory,
+        PermissionKind::DoomLoop,
+    ] {
+        let request = PermissionGrantRequest {
+            kind,
+            tool: PermissionToolSelector {
+                effective_tool_id: kind.as_str().to_string(),
+                canonical_tool_id: None,
+            },
+            matcher: PermissionGrantMatcher::RequestDigest {
+                request_digest: "digest".to_string(),
+            },
+        };
+        assert!(
+            !always_approve_can_bypass(&request, &json!(null)),
+            "{kind:?} must remain promptable"
+        );
+    }
+}
+
 pub(super) async fn static_deny_overrides_permission_grant() {
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let mut config = test_config(temp_dir.path());
@@ -311,6 +602,8 @@ pub(super) async fn static_deny_overrides_permission_grant() {
         |event| matches!(event.payload, EventV1::PermissionGrantRecorded(_)),
     )
     .await;
+
+    handle.set_always_approve_mode(true).await.unwrap_or_abort();
 
     let denied = handle
         .request_tool_call(

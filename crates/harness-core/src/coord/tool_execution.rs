@@ -298,7 +298,10 @@ impl Coordinator {
                     &digest,
                 );
 
-                if run_state.permission_grant_authorizes(&grant_request) {
+                if run_state.permission_grant_authorizes(&grant_request)
+                    || run_state.always_approve_mode
+                        && super::permission::always_approve_can_bypass(&grant_request, &args_json)
+                {
                     gate_doom_loop_and_start(
                         clock.as_ref(),
                         redactor.as_ref(),

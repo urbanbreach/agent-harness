@@ -420,6 +420,14 @@ impl CoordinatorHandle {
         .await
     }
 
+    pub async fn set_always_approve_mode(&self, enabled: bool) -> Result<(), CoordinatorError> {
+        self.request(|respond_to| Command::SetAlwaysApproveMode {
+            enabled,
+            respond_to,
+        })
+        .await
+    }
+
     pub async fn request_question(
         &self,
         actor: EventActor,
