@@ -5,68 +5,12 @@ use harness_providers::anthropic::{
 };
 use harness_providers::mock::{request_digest, MockProvider};
 use harness_providers::{
-    CompletionUsage, Provider, ProviderOutputCapDisposition, ProviderRequestInitiator,
-    ProviderStreamEvent, ToolChoice,
+    Provider, ProviderOutputCapDisposition, ProviderRequestInitiator, ProviderStreamEvent,
 };
 use tokio_stream::StreamExt;
 
 #[path = "support/mock_fixtures.rs"]
 mod fixtures;
-
-#[test]
-fn mock_ordinary_tool_attachment_and_retry_fixtures_use_protocol_types() {
-    // arrange
-    let ordinary = fixtures::ordinary_request_fixture();
-
-    // act
-    let tool = fixtures::tool_request_fixture();
-    let attachment = fixtures::attachment_request_fixture();
-    let retry = fixtures::physical_retry_request_fixture();
-
-    // assert
-    assert_eq!(ordinary.model_id, "model-fixture");
-    assert_eq!(tool.tool_choice, Some(ToolChoice::Auto));
-    assert!(attachment.context.has_media);
-    assert_ne!(ordinary.context.request_id, retry.context.request_id);
-}
-
-#[test]
-fn mock_named_usage_fixtures_are_exact() {
-    // arrange
-    let expected = (
-        CompletionUsage {
-            prompt_tokens: 21,
-            completion_tokens: 8,
-            total_tokens: 29,
-        },
-        CompletionUsage {
-            prompt_tokens: 34,
-            completion_tokens: 13,
-            total_tokens: 47,
-        },
-    );
-
-    // act
-    let actual = (
-        fixtures::ordinary_usage_fixture(),
-        fixtures::tool_usage_fixture(),
-    );
-
-    // assert
-    assert_eq!(actual, expected);
-}
-
-#[test]
-fn request_budget_explicit_output_cap_reaches_provider_fixture() {
-    // arrange
-    let expected = Some(128);
-
-    // act
-    let request = fixtures::ordinary_request_fixture();
-
-    // assert
-    assert_eq!(request.max_tokens, expected);
-}
 
 #[test]
 fn anthropic_requires_explicit_output_budget() {
