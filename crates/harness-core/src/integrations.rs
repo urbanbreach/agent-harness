@@ -12,7 +12,6 @@
 //! invalid descriptors, invalid package entries, and path escapes.
 
 pub mod acp;
-pub mod acp_file;
 pub mod acp_stdio;
 mod path;
 pub mod plugin;
@@ -24,10 +23,6 @@ pub use acp::{
     bind_acp_session_outcome, connect_acp_outcome, AcpBindOutcome, AcpConnectOutcome,
     AcpConnection, AcpConnectionState, AcpConnectionSummary, AcpError, AcpSessionInfo,
     AcpTransport, MockAcpTransport,
-};
-pub use acp_file::{
-    run_file_acp_agent_mode_product, FileAcpAgentModeProduct, FileAcpTransport,
-    ACP_CONNECTED_MARKER, ACP_FILE_TRANSPORT_REL, ACP_FRAME_LOG,
 };
 pub use plugin::{
     activate_plugin_outcome, deactivate_plugin_outcome, install_plugin_outcome,
