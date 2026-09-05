@@ -167,9 +167,6 @@ mod tests {
 
     #[tokio::test]
     async fn multi_turn_runner_returns_single_provider_response_without_tools() {
-        // arrange
-        // act
-        // assert
         let profile = test_profile();
         let request = test_request();
         let tool_registry = test_tool_registry();
@@ -317,9 +314,6 @@ mod tests {
 
     #[tokio::test]
     async fn multi_turn_runner_rejects_tool_intents_without_executing_callback() {
-        // arrange
-        // act
-        // assert
         let profile = test_profile();
         let request = test_request();
         let tool_registry = test_tool_registry();
@@ -396,9 +390,6 @@ mod tests {
 
     #[test]
     fn agent_model_ref_parse_accepts_colon_and_slash_refs() {
-        // arrange
-        // act
-        // assert
         let colon = AgentModelRef::parse("default:gpt-5.4-mini");
         assert_eq!(colon.provider_id, "default");
         assert_eq!(colon.model_id, "gpt-5.4-mini");
@@ -414,9 +405,6 @@ mod tests {
 
     #[test]
     fn tool_result_message_content_prefers_display_text() {
-        // arrange
-        // act
-        // assert
         let result = ToolResult::structured(
             "crate summary",
             json!({ "raw": "should stay out of provider replay" }),
@@ -427,9 +415,6 @@ mod tests {
 
     #[test]
     fn tool_result_message_content_falls_back_to_structured_output_when_display_text_missing() {
-        // arrange
-        // act
-        // assert
         let structured = ToolResult::structured("", json!({ "status": "ok" }));
         assert_eq!(
             tool_result_to_message_content(&structured),
@@ -491,9 +476,6 @@ mod tests {
 
     #[test]
     fn build_provider_context_messages_places_checkpoint_recap_in_assistant_role() {
-        // arrange
-        // act
-        // assert
         let profile = test_profile();
         let prior_context = ProviderContext {
             compacted_summary: Some("Earlier work summary".to_string()),
@@ -526,9 +508,6 @@ mod tests {
 
     #[test]
     fn failed_turn_projection_marks_partial_output_incomplete() {
-        // arrange
-        // act
-        // assert
         let profile = test_profile();
         let prior_context = ProviderContext::from_turns(vec![ProviderConversationTurn {
             user_prompt: "why did it fail?".to_string(),
@@ -550,9 +529,6 @@ mod tests {
 
     #[test]
     fn aborted_turn_projection_marks_missing_output_incomplete() {
-        // arrange
-        // act
-        // assert
         let profile = test_profile();
         let prior_context = ProviderContext::from_turns(vec![ProviderConversationTurn {
             user_prompt: "stop now".to_string(),
@@ -572,9 +548,6 @@ mod tests {
 
     #[test]
     fn max_iters_turn_round_trips_failure_stage_and_messages() {
-        // arrange
-        // act
-        // assert
         let turn = ProviderConversationTurn {
             user_prompt: "loop until capped".to_string(),
             assistant_response: "partial work".to_string(),
@@ -599,9 +572,6 @@ mod tests {
 
     #[test]
     fn provider_boundary_preserves_existing_message_shape() {
-        // arrange
-        // act
-        // assert
         let profile = test_profile();
         let request = AgentRequest {
             model_settings: AgentModelSettings {
@@ -712,9 +682,6 @@ mod tests {
 
     #[tokio::test]
     async fn multi_turn_runner_fails_closed_on_unmapped_function_name() {
-        // arrange
-        // act
-        // assert
         let profile = test_profile();
         let request = test_request();
         let tool_registry = test_tool_registry();
@@ -909,9 +876,6 @@ mod tests {
 
     #[test]
     fn max_tool_calls_total_supports_tool_heavy_agents() {
-        // arrange
-        // act
-        // assert
         assert_eq!(MAX_TOOL_CALLS_TOTAL, 1000);
     }
 
@@ -1056,9 +1020,6 @@ mod tests {
 
     #[test]
     fn build_provider_tool_defs_rejects_top_level_combinator_schemas() {
-        // arrange
-        // act
-        // assert
         let err = build_provider_tool_defs(
             &broken_schema_profile(),
             broken_schema_tool_registry().as_ref(),

@@ -24,9 +24,6 @@ fn model_alias_resolver_maps_umans_flash_to_umans_qwen36_35b_a3b() {
 
 #[test]
 fn model_alias_resolver_passes_through_canonical_ids_unchanged() {
-    // arrange
-    // act
-    // assert
     assert_eq!(resolve_model_alias("umans-kimi-k2.7"), "umans-kimi-k2.7");
     assert_eq!(
         resolve_model_alias("umans-qwen3.6-35b-a3b"),
@@ -36,18 +33,12 @@ fn model_alias_resolver_passes_through_canonical_ids_unchanged() {
 
 #[test]
 fn model_alias_resolver_passes_through_unknown_ids_unchanged() {
-    // arrange
-    // act
-    // assert
     assert_eq!(resolve_model_alias("gpt-5.5"), "gpt-5.5");
     assert_eq!(resolve_model_alias("unknown-model"), "unknown-model");
 }
 
 #[test]
 fn model_alias_is_alias_detects_known_aliases() {
-    // arrange
-    // act
-    // assert
     assert!(is_model_alias("umans-coder"));
     assert!(is_model_alias("umans-flash"));
     assert!(!is_model_alias("umans-kimi-k2.7"));

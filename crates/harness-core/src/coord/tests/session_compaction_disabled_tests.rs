@@ -237,9 +237,6 @@ fn last_session_compaction_event(
 
 #[tokio::test]
 async fn disabled_compaction_is_noop() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let clock = FakeClock::new();
     let redactor = DefaultRedactor::default();

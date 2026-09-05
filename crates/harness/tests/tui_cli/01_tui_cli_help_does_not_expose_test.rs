@@ -1,9 +1,6 @@
 use harness::UnwrapOrAbort;
 #[test]
 fn tui_cli_help_does_not_expose_headless_output_flags() {
-    // arrange
-    // act
-    // assert
     let output = run_harness(["tui", "--help"]);
 
     assert!(
@@ -19,9 +16,6 @@ fn tui_cli_help_does_not_expose_headless_output_flags() {
 }
 #[test]
 fn tui_startup_new_session_bootstraps_live_after_intent() {
-    // arrange
-    // act
-    // assert
     let _guard = startup_draft_test_lock()
         .lock()
         .unwrap_or_abort();
@@ -45,17 +39,11 @@ fn tui_startup_new_session_bootstraps_live_after_intent() {
 }
 #[test]
 fn tui_startup_replay_session_uses_replay_mode() {
-    // arrange
-    // act
-    // assert
     let app = AppState::new_replay(std::path::PathBuf::from("/tmp/run"), Vec::new());
     assert!(app.replay_mode, "replay launch should enter replay mode");
 }
 #[test]
 fn tui_startup_carries_unsent_draft_into_new_live_session() {
-    // arrange
-    // act
-    // assert
     let _guard = startup_draft_test_lock()
         .lock()
         .unwrap_or_abort();
@@ -77,9 +65,6 @@ fn tui_startup_carries_unsent_draft_into_new_live_session() {
 }
 #[tokio::test]
 async fn tui_new_live_bootstrap_stays_idle_until_first_user_prompt() {
-    // arrange
-    // act
-    // assert
     let temp = tempdir().unwrap_or_abort();
     let session_dir = temp.path().join("sessions");
     let workspace = temp.path().join("workspace");
@@ -173,9 +158,6 @@ async fn tui_new_live_bootstrap_stays_idle_until_first_user_prompt() {
 }
 #[tokio::test]
 async fn new_live_session_persists_selected_runtime_context_into_run_metadata() {
-    // arrange
-    // act
-    // assert
     let temp = tempdir().unwrap_or_abort();
     let session_dir = temp.path().join("sessions");
     let workspace = temp.path().join("workspace");
@@ -252,9 +234,6 @@ async fn new_live_session_persists_selected_runtime_context_into_run_metadata() 
 }
 #[test]
 fn tui_continue_session_bootstraps_live_with_preloaded_history() {
-    // arrange
-    // act
-    // assert
     let _guard = startup_draft_test_lock()
         .lock()
         .unwrap_or_abort();
@@ -328,9 +307,6 @@ fn tui_continue_session_bootstraps_live_with_preloaded_history() {
 }
 #[test]
 fn tui_continue_session_restores_launch_metadata_from_history() {
-    // arrange
-    // act
-    // assert
     let _guard = startup_draft_test_lock()
         .lock()
         .unwrap_or_abort();

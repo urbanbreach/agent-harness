@@ -177,9 +177,6 @@ mod tests {
 
     #[test]
     fn catalog_includes_registered_tool_ids_with_permission_metadata() {
-        // arrange
-        // act
-        // assert
         let registry = coordinator_registry(ShellAllowlist::default());
         let catalog = native_tool_catalog_entries(&registry);
         let ids = catalog

@@ -10,9 +10,6 @@ use serde_json::json;
 
 #[test]
 fn session_compaction_defaults_v2_fields_when_legacy_json_is_deserialized() {
-    // arrange
-    // act
-    // assert
     // Given: a SessionCompaction payload written before Compaction V2.
     let json = json!({
         "event_type": "session_compaction",
@@ -49,9 +46,6 @@ fn session_compaction_defaults_v2_fields_when_legacy_json_is_deserialized() {
 
 #[test]
 fn session_compaction_round_trips_every_v2_field() {
-    // arrange
-    // act
-    // assert
     // Given: one fully populated durable Compaction V2 payload.
     let payload = serde_json::from_value::<EventV1>(json!({
         "event_type": "session_compaction",
@@ -92,9 +86,6 @@ fn session_compaction_round_trips_every_v2_field() {
 
 #[test]
 fn canonical_compaction_summary_defaults_v2_fields_when_legacy_json_is_deserialized() {
-    // arrange
-    // act
-    // assert
     // Given: the canonical CompactionSummary shape persisted before Compaction V2.
     let json = json!({
         "kind": "compaction_summary",
@@ -130,9 +121,6 @@ fn canonical_compaction_summary_defaults_v2_fields_when_legacy_json_is_deseriali
 
 #[test]
 fn session_compaction_adapter_maps_v2_fields_to_canonical_summary() {
-    // arrange
-    // act
-    // assert
     // Given: a typed compaction boundary and all summary-generation metadata.
     let run_id = RunId::new("run-compaction-shape");
     let first_kept_entry_id =

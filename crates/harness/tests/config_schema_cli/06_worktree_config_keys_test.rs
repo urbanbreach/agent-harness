@@ -28,9 +28,6 @@ fn worktree_runtime_config_with_branch_prefix(branch_prefix: &str) -> serde_json
 
 #[test]
 fn public_runtime_config_parses_worktree_settings() {
-    // arrange
-    // act
-    // assert
     let parsed: PublicRuntimeConfig = json5::from_str(
         r#"
         {
@@ -55,9 +52,6 @@ fn public_runtime_config_parses_worktree_settings() {
 
 #[test]
 fn public_runtime_config_accepts_camel_case_worktree_aliases() {
-    // arrange
-    // act
-    // assert
     let parsed: PublicRuntimeConfig = json5::from_str(
         r#"
         {
@@ -82,9 +76,6 @@ fn public_runtime_config_accepts_camel_case_worktree_aliases() {
 
 #[test]
 fn public_runtime_config_defaults_worktree_to_empty() {
-    // arrange
-    // act
-    // assert
     let parsed: PublicRuntimeConfig = json5::from_str(r#"{}"#).unwrap_or_abort();
     assert!(parsed.worktree.relative_base.is_none());
     assert!(parsed.worktree.branch_prefix.is_none());

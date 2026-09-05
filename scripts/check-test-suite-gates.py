@@ -8,7 +8,6 @@ current baseline without claiming acceptance.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import re
 import sys
@@ -33,16 +32,12 @@ GATES: Final[tuple[str, ...]] = (
     "test-names",
     "path-isolation",
     "t5-line-budget",
-    "conventions",
 )
 
 DEFAULT_T5_LINE_BUDGET: Final[int] = 4_000
 DEFAULT_MAX_LINES: Final[int] = 800
 MIN_TEST_NAME_WORDS: Final[int] = 4
 MAX_DISPLAYED_VIOLATIONS: Final[int] = 300
-CONVENTIONS_BASELINE_PATH: Final[Path] = Path(
-    "docs/testing/test-suite-conventions-baseline.json"
-)
 
 PROCESS_GLOBAL_STATE_EXEMPTIONS: Final[set[str]] = {
     "crates/harness-core/src/provider_catalog.rs",
@@ -110,9 +105,6 @@ TEST_FUNCTION: Final[re.Pattern[str]] = re.compile(
 )
 INSTA_ASSERTION: Final[re.Pattern[str]] = re.compile(
     r"\binsta::assert_[A-Za-z0-9_]*snapshot!\s*\("
-)
-REQUIRED_SECTION_MARKERS: Final[tuple[str, ...]] = (
-    "// arrange", "// act", "// assert"
 )
 LIVE_PROVIDER_ENV: Final[re.Pattern[str]] = re.compile(
     r"HARNESS_LIVE_PROXY(?:_CONFIG|_PROVIDER|_MODEL)?"
@@ -361,45 +353,6 @@ def scan_file_focus(root: Path, max_lines: int) -> list[Violation]:
     return violations
 
 
-def iter_test_function_bodies(  # noqa: C901 - body extraction requires branches
-    root: Path,
-) -> Iterable[tuple[str, int, str, str]]:
-    """Yield (relative, line, name, body) for each test function."""
-    for path in rust_files(root):
-        relative = rel(path, root)
-        if is_t5_path(relative) or "_perf" in path.stem:
-            continue
-        if not is_test_code(path, root):
-            continue
-
-        lines = path.read_text(errors="ignore").splitlines()
-        for index, line in enumerate(lines):
-            if not TEST_ATTRIBUTE.match(line):
-                continue
-            cursor = index + 1
-            while cursor < len(lines):
-                candidate = lines[cursor].strip()
-                if candidate and not candidate.startswith("#"):
-                    break
-                cursor += 1
-            if cursor >= len(lines):
-                continue
-            match = TEST_FUNCTION.search(lines[cursor])
-            if not match:
-                continue
-            brace_depth = 0
-            body: list[str] = []
-            for body_index in range(cursor, len(lines)):
-                body.append(lines[body_index])
-                brace_depth += (
-                    lines[body_index].count("{")
-                    - lines[body_index].count("}")
-                )
-                if brace_depth <= 0 and "{" in "\n".join(body):
-                    break
-            yield relative, cursor + 1, match.group(1), "\n".join(body)
-
-
 def iter_test_function_blocks(  # noqa: C901 - block extraction requires branches
     root: Path,
 ) -> Iterable[tuple[str, int, str, str]]:
@@ -437,94 +390,6 @@ def iter_test_function_blocks(  # noqa: C901 - block extraction requires branche
                 if brace_depth <= 0 and "{" in "\n".join(block):
                     break
             yield relative, index + 1, match.group(1), "\n".join(block)
-
-
-def conventions_key(relative: str, name: str) -> str:
-    """Return the conventions baseline key for a test function."""
-    return f"{relative}::{name}"
-
-
-def conventions_baseline_entry(relative: str, name: str) -> str:
-    """Return the SHA-256 hash of the conventions key."""
-    return hashlib.sha256(
-        conventions_key(relative, name).encode("utf-8")
-    ).hexdigest()
-
-
-def load_conventions_baseline(root: Path) -> set[str]:
-    """Load the conventions baseline from the baseline JSON file."""
-    path = root / CONVENTIONS_BASELINE_PATH
-    if not path.exists():
-        return set()
-    try:
-        data: object = json.loads(path.read_text(errors="ignore"))
-    except json.JSONDecodeError as exc:
-        return {
-            f"<invalid-baseline-json>:{exc.lineno}:{exc.colno}"
-        }
-    if not isinstance(data, list):
-        return {"<invalid-baseline-shape>"}
-    entries: set[str] = set()
-    for entry in data:
-        if isinstance(entry, str):
-            entries.add(entry)
-        else:
-            entries.add("<invalid-baseline-entry>")
-    return entries
-
-
-def scan_conventions(root: Path) -> list[Violation]:
-    """Scan for convention debt (missing arrange/act/assert sections)."""
-    violations: list[Violation] = []
-    baseline = load_conventions_baseline(root)
-    current_debt: set[str] = set()
-    invalid_baseline = sorted(
-        entry for entry in baseline
-        if entry.startswith("<invalid-baseline")
-    )
-    violations.extend(
-        Violation(
-            "conventions",
-            rel(root / CONVENTIONS_BASELINE_PATH, root),
-            0,
-            f"invalid conventions baseline entry: {entry}",
-        )
-        for entry in invalid_baseline
-    )
-    for relative, line_number, _name, body in iter_test_function_bodies(root):
-        missing = [
-            marker for marker in REQUIRED_SECTION_MARKERS
-            if marker not in body
-        ]
-        if missing:
-            key = conventions_baseline_entry(relative, _name)
-            current_debt.add(key)
-            if key in baseline:
-                continue
-            violations.append(
-                Violation(
-                    "conventions",
-                    relative,
-                    line_number,
-                    "new convention debt: test body must include "
-                    "// arrange, // act, and // assert sections "
-                    "or be recorded in "
-                    "docs/testing/test-suite-conventions-baseline.json",
-                )
-            )
-    for stale in sorted(baseline - current_debt):
-        if stale.startswith("<invalid-baseline"):
-            continue
-        violations.append(
-            Violation(
-                "conventions",
-                rel(root / CONVENTIONS_BASELINE_PATH, root),
-                0,
-                f"stale conventions baseline entry no longer "
-                f"matches current debt: {stale}",
-            )
-        )
-    return violations
 
 
 def scan_live_provider_env(root: Path) -> list[Violation]:
@@ -850,8 +715,6 @@ def run_gates(  # noqa: C901 - gate dispatch requires one branch per gate
                 violations.extend(
                     scan_t5_line_budget(root, t5_max_lines)
                 )
-            case "conventions":
-                violations.extend(scan_conventions(root))
             case _:
                 msg = f"unknown gate: {gate}"
                 raise ValueError(msg)
@@ -1012,7 +875,7 @@ def self_test() -> int:
             "no-sleeps", "no-global-state", "no-real-world-deps",
             "live-provider-env", "file-focus", "cassette-secrets",
             "orphan-snapshots", "taxonomy", "test-names",
-            "path-isolation", "t5-line-budget", "conventions",
+            "path-isolation", "t5-line-budget",
         }
         missing = expected - gates
         if missing:

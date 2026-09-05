@@ -5,9 +5,6 @@ use harness_tools::UnwrapOrAbort;
     reason = "the global registry lock intentionally serializes skills registry mutation across awaits"
 )]
 async fn skill_load_discovers_project_and_global_roots_with_precedence() {
-    // arrange
-    // act
-    // assert
     let _guard = skills_registry_test_lock();
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let home = temp_dir.path().join("home");
@@ -98,9 +95,6 @@ async fn skill_load_discovers_project_and_global_roots_with_precedence() {
 }
 #[test]
 fn skill_discovery_walks_project_and_global_roots() {
-    // arrange
-    // act
-    // assert
     skill_load_discovers_project_and_global_roots_with_precedence();
 }
 

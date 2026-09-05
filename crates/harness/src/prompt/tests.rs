@@ -174,9 +174,6 @@ fn default_prompt_command() -> PromptCommand {
 
 #[test]
 fn no_config_prompt_without_provider_returns_connect_guidance() {
-    // arrange
-    // act
-    // assert
     let temp = tempfile::tempdir().unwrap_or_abort();
     let deps = crate::CliDeps::real()
         .with_current_dir(temp.path().to_path_buf())
@@ -203,9 +200,6 @@ fn no_config_prompt_without_provider_returns_connect_guidance() {
 
 #[test]
 fn no_config_prompt_with_stored_codex_uses_runtime_catalog() {
-    // arrange
-    // act
-    // assert
     let temp = tempfile::tempdir().unwrap_or_abort();
     let data_home = temp.path().join("data");
     let store = CredentialStore::new(data_home.join("harness"));
@@ -239,9 +233,6 @@ fn no_config_prompt_with_stored_codex_uses_runtime_catalog() {
 
 #[tokio::test]
 async fn run_prompt_with_mock_provider_completes_successfully() {
-    // arrange
-    // act
-    // assert
     let temp = tempfile::tempdir().unwrap_or_abort();
     let deps = crate::CliDeps::real()
         .with_current_dir(temp.path().to_path_buf())
@@ -288,17 +279,11 @@ async fn run_prompt_with_mock_provider_completes_successfully() {
 
 #[test]
 fn parse_wait_timeout_ms_uses_default_when_unset() {
-    // arrange
-    // act
-    // assert
     assert_eq!(parse_wait_timeout_ms(None), DEFAULT_WAIT_TIMEOUT);
 }
 
 #[test]
 fn parse_wait_timeout_ms_uses_default_when_invalid() {
-    // arrange
-    // act
-    // assert
     assert_eq!(
         parse_wait_timeout_ms(Some("not-a-number")),
         DEFAULT_WAIT_TIMEOUT
@@ -309,9 +294,6 @@ fn parse_wait_timeout_ms_uses_default_when_invalid() {
 
 #[test]
 fn parse_wait_timeout_ms_parses_positive_milliseconds() {
-    // arrange
-    // act
-    // assert
     assert_eq!(
         parse_wait_timeout_ms(Some("1500")),
         Duration::from_millis(1500)
@@ -324,9 +306,6 @@ fn parse_wait_timeout_ms_parses_positive_milliseconds() {
 
 #[test]
 fn evaluate_prompt_completion_reports_cancelled_task_as_error() {
-    // arrange
-    // act
-    // assert
     let events = vec![event_with_correlation(
         EventV1::TaskCancelled(TaskCancelledEvent {
             task_id: "task_000001".to_string().into(),
@@ -347,9 +326,6 @@ fn evaluate_prompt_completion_reports_cancelled_task_as_error() {
 
 #[test]
 fn evaluate_prompt_completion_waits_for_cancellation_after_provider_finish_error() {
-    // arrange
-    // act
-    // assert
     let events = vec![event(EventV1::ProviderRequestFinished(
         ProviderRequestFinishedEvent {
             request_id: "req_000001".into(),
@@ -366,9 +342,6 @@ fn evaluate_prompt_completion_waits_for_cancellation_after_provider_finish_error
 
 #[test]
 fn evaluate_prompt_completion_waits_for_prompt_task_completion_after_provider_finish() {
-    // arrange
-    // act
-    // assert
     let events = vec![
         provider_task_scheduled_event("task_000001", "req_000001"),
         event(EventV1::ProviderRequestFinished(
@@ -388,9 +361,6 @@ fn evaluate_prompt_completion_waits_for_prompt_task_completion_after_provider_fi
 
 #[tokio::test]
 async fn prompt_tracker_waits_for_agent_turn_end_not_provider_finish() {
-    // arrange
-    // act
-    // assert
     let store = Arc::new(CountingEventStore::new());
     let store_clone = Arc::clone(&store);
     let wait_store: Arc<dyn EventStore> = store_clone;
@@ -440,9 +410,6 @@ async fn prompt_tracker_waits_for_agent_turn_end_not_provider_finish() {
 
 #[tokio::test]
 async fn prompt_stream_preserves_typed_live_variants_until_durable_completion() {
-    // arrange
-    // act
-    // assert
     // Given: a prompt waiter has subscribed to the typed runtime stream.
     let store = Arc::new(CountingEventStore::new());
     let wait_store: Arc<dyn EventStore> = Arc::<CountingEventStore>::clone(&store);
@@ -561,9 +528,6 @@ async fn prompt_stream_preserves_typed_live_variants_until_durable_completion() 
 
 #[test]
 fn evaluate_prompt_completion_waits_for_tool_task_completion() {
-    // arrange
-    // act
-    // assert
     let events = vec![
         provider_task_scheduled_event("task_000001", "req_000001"),
         event_with_correlation(
@@ -591,9 +555,6 @@ fn evaluate_prompt_completion_waits_for_tool_task_completion() {
 
 #[test]
 fn evaluate_prompt_completion_ignores_tool_task_without_agent_turn_schedule() {
-    // arrange
-    // act
-    // assert
     let events = vec![event_with_correlation(
         EventV1::TaskCompleted(TaskCompletedEvent {
             task_id: "task_000002".to_string().into(),
@@ -618,9 +579,6 @@ fn evaluate_prompt_completion_ignores_tool_task_without_agent_turn_schedule() {
 
 #[test]
 fn evaluate_prompt_completion_ignores_cancelled_child_tool_task() {
-    // arrange
-    // act
-    // assert
     let events = vec![
         provider_task_scheduled_event("task_000001", "req_000001"),
         event_with_correlation(
@@ -653,9 +611,6 @@ fn evaluate_prompt_completion_ignores_cancelled_child_tool_task() {
 
 #[test]
 fn evaluate_prompt_completion_reports_success_for_prompt_task_completed() {
-    // arrange
-    // act
-    // assert
     let events = vec![
         provider_task_scheduled_event("task_000001", "req_000001"),
         event_with_correlation(
@@ -675,9 +630,6 @@ fn evaluate_prompt_completion_reports_success_for_prompt_task_completed() {
 
 #[test]
 fn evaluate_prompt_completion_reports_success_for_terminal_only_agent_turn_completion() {
-    // arrange
-    // act
-    // assert
     let events = vec![event_with_correlation(
         EventV1::TaskCompleted(TaskCompletedEvent {
             task_id: "task_000001".to_string().into(),
@@ -699,9 +651,6 @@ fn evaluate_prompt_completion_reports_success_for_terminal_only_agent_turn_compl
 
 #[test]
 fn evaluate_prompt_completion_prioritizes_run_failed() {
-    // arrange
-    // act
-    // assert
     let events = vec![event(EventV1::RunFailed(RunFailedEvent {
         error: "fatal".to_string(),
     }))];
@@ -717,9 +666,6 @@ fn evaluate_prompt_completion_prioritizes_run_failed() {
 
 #[test]
 fn has_provider_error_finish_detects_error_finish_reason() {
-    // arrange
-    // act
-    // assert
     let events = vec![event_with_correlation(
         EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
             request_id: "provider_call_000007".into(),
@@ -737,9 +683,6 @@ fn has_provider_error_finish_detects_error_finish_reason() {
 
 #[test]
 fn evaluate_prompt_completion_supports_correlated_task_id_equals_request_id_fallback() {
-    // arrange
-    // act
-    // assert
     let events = vec![event_with_correlation(
         EventV1::TaskCompleted(TaskCompletedEvent {
             task_id: "req_000123".to_string().into(),
@@ -756,9 +699,6 @@ fn evaluate_prompt_completion_supports_correlated_task_id_equals_request_id_fall
 
 #[test]
 fn evaluate_prompt_completion_ignores_uncorrelated_agent_turn_completion() {
-    // arrange
-    // act
-    // assert
     let events = vec![event_with_correlation(
         EventV1::TaskCompleted(TaskCompletedEvent {
             task_id: "task_000999".to_string().into(),
@@ -780,9 +720,6 @@ fn evaluate_prompt_completion_ignores_uncorrelated_agent_turn_completion() {
 
 #[tokio::test]
 async fn wait_for_prompt_completion_subscribes_once_and_streams_new_events() {
-    // arrange
-    // act
-    // assert
     let store = Arc::new(CountingEventStore::new());
     for index in 0..256 {
         store
@@ -836,9 +773,6 @@ async fn wait_for_prompt_completion_subscribes_once_and_streams_new_events() {
 
 #[test]
 fn resolve_permission_mode_bypass_activates_allow_all() {
-    // arrange
-    // act
-    // assert
     assert_eq!(
         resolve_permission_mode(Some("bypassPermissions"), false).unwrap_or_abort(),
         PermissionModeResolution::AllowAll
@@ -855,9 +789,6 @@ fn resolve_permission_mode_bypass_activates_allow_all() {
 
 #[test]
 fn resolve_permission_mode_default_resets_to_default() {
-    // arrange
-    // act
-    // assert
     assert_eq!(
         resolve_permission_mode(Some("default"), false).unwrap_or_abort(),
         PermissionModeResolution::ResetToDefault
@@ -866,9 +797,6 @@ fn resolve_permission_mode_default_resets_to_default() {
 
 #[test]
 fn resolve_permission_mode_without_selection_does_not_activate() {
-    // arrange
-    // act
-    // assert
     assert_eq!(
         resolve_permission_mode(None, false).unwrap_or_abort(),
         PermissionModeResolution::NoChange
@@ -887,9 +815,6 @@ fn resolve_permission_mode_rejects_removed_plan_mode() {
 
 #[test]
 fn resolve_permission_mode_accept_edits_allows_edits_only() {
-    // arrange
-    // act
-    // assert
     assert_eq!(
         resolve_permission_mode(Some("acceptEdits"), false).unwrap_or_abort(),
         PermissionModeResolution::AcceptEdits
@@ -898,9 +823,6 @@ fn resolve_permission_mode_accept_edits_allows_edits_only() {
 
 #[test]
 fn resolve_permission_mode_dont_ask_denies_mutations() {
-    // arrange
-    // act
-    // assert
     assert_eq!(
         resolve_permission_mode(Some("dontAsk"), false).unwrap_or_abort(),
         PermissionModeResolution::DenyByDefault
@@ -909,9 +831,6 @@ fn resolve_permission_mode_dont_ask_denies_mutations() {
 
 #[test]
 fn accept_edits_policy_evaluates_all_kinds_correctly() {
-    // arrange
-    // act
-    // assert
     let policy = permission_policy_for_resolution(PermissionModeResolution::AcceptEdits).unwrap();
     assert_eq!(
         policy.evaluate(None, PermissionKind::EditFs),
@@ -965,9 +884,6 @@ fn accept_edits_policy_evaluates_all_kinds_correctly() {
 
 #[test]
 fn dont_ask_policy_evaluates_all_kinds_correctly() {
-    // arrange
-    // act
-    // assert
     let policy = permission_policy_for_resolution(PermissionModeResolution::DenyByDefault).unwrap();
     assert_eq!(
         policy.evaluate(None, PermissionKind::EditFs),
@@ -1021,9 +937,6 @@ fn dont_ask_policy_evaluates_all_kinds_correctly() {
 
 #[test]
 fn allow_all_policy_evaluates_all_kinds_correctly() {
-    // arrange
-    // act
-    // assert
     let policy = permission_policy_for_resolution(PermissionModeResolution::AllowAll).unwrap();
     assert_eq!(
         policy.evaluate(None, PermissionKind::EditFs),
@@ -1077,9 +990,6 @@ fn allow_all_policy_evaluates_all_kinds_correctly() {
 
 #[test]
 fn reset_to_default_policy_evaluates_all_kinds_correctly() {
-    // arrange
-    // act
-    // assert
     let policy =
         permission_policy_for_resolution(PermissionModeResolution::ResetToDefault).unwrap();
     assert!(matches!(
@@ -1134,17 +1044,11 @@ fn reset_to_default_policy_evaluates_all_kinds_correctly() {
 
 #[test]
 fn no_change_resolution_yields_no_policy() {
-    // arrange
-    // act
-    // assert
     assert!(permission_policy_for_resolution(PermissionModeResolution::NoChange).is_none());
 }
 
 #[test]
 fn resolve_permission_mode_rejects_unknown_mode() {
-    // arrange
-    // act
-    // assert
     assert!(resolve_permission_mode(Some("invalid"), false).is_err());
     assert!(resolve_permission_mode(Some(""), false).is_err());
     assert!(resolve_permission_mode(Some("auto"), false).is_err());
@@ -1152,9 +1056,6 @@ fn resolve_permission_mode_rejects_unknown_mode() {
 
 #[test]
 fn sandbox_profile_rejects_invalid_values() {
-    // arrange
-    // act
-    // assert
     assert!(PermissionPolicy::from_sandbox_profile("readonly").is_some());
     assert!(PermissionPolicy::from_sandbox_profile("workspace").is_some());
     assert!(PermissionPolicy::from_sandbox_profile("danger").is_some());
@@ -1164,9 +1065,6 @@ fn sandbox_profile_rejects_invalid_values() {
 
 #[test]
 fn command_path_sandbox_alone_evaluates_all_kinds() {
-    // arrange
-    // act
-    // assert
     let mut cmd = default_prompt_command();
     cmd.sandbox = Some("readonly".to_string());
     let policy = resolve_effective_permission_policy(&cmd, PermissionPolicy::default()).unwrap();
@@ -1222,9 +1120,6 @@ fn command_path_sandbox_alone_evaluates_all_kinds() {
 
 #[test]
 fn command_path_permission_mode_overrides_sandbox_evaluates_all_kinds() {
-    // arrange
-    // act
-    // assert
     let mut cmd = default_prompt_command();
     cmd.sandbox = Some("readonly".to_string());
     cmd.permission_mode = Some("bypassPermissions".to_string());
@@ -1281,9 +1176,6 @@ fn command_path_permission_mode_overrides_sandbox_evaluates_all_kinds() {
 
 #[test]
 fn command_path_allow_override_preserves_other_kinds() {
-    // arrange
-    // act
-    // assert
     let mut cmd = default_prompt_command();
     cmd.permission_mode = Some("acceptEdits".to_string());
     cmd.allow = vec!["bash".to_string()];
@@ -1340,9 +1232,6 @@ fn command_path_allow_override_preserves_other_kinds() {
 
 #[test]
 fn command_path_deny_override_preserves_other_kinds() {
-    // arrange
-    // act
-    // assert
     let mut cmd = default_prompt_command();
     cmd.dangerously_skip_permissions = true;
     cmd.deny = vec!["edit".to_string()];
@@ -1399,9 +1288,6 @@ fn command_path_deny_override_preserves_other_kinds() {
 
 #[test]
 fn command_path_conflicting_allow_and_deny_deny_wins() {
-    // arrange
-    // act
-    // assert
     let mut cmd = default_prompt_command();
     cmd.dangerously_skip_permissions = true;
     cmd.allow = vec!["bash".to_string()];
@@ -1459,9 +1345,6 @@ fn command_path_conflicting_allow_and_deny_deny_wins() {
 
 #[test]
 fn command_path_full_precedence_chain_evaluates_all_kinds() {
-    // arrange
-    // act
-    // assert
     let mut cmd = default_prompt_command();
     cmd.sandbox = Some("readonly".to_string());
     cmd.permission_mode = Some("acceptEdits".to_string());
@@ -1519,9 +1402,6 @@ fn command_path_full_precedence_chain_evaluates_all_kinds() {
 
 #[test]
 fn command_path_no_flags_preserves_base_policy_all_kinds() {
-    // arrange
-    // act
-    // assert
     let cmd = default_prompt_command();
     let base = PermissionPolicy::default();
     let policy = resolve_effective_permission_policy(&cmd, base).unwrap();
@@ -1577,9 +1457,6 @@ fn command_path_no_flags_preserves_base_policy_all_kinds() {
 
 #[test]
 fn command_level_apply_prompt_command_config_sets_permission_policy() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap();
     let mut config = CoordinatorConfig::new(temp_dir.path().to_path_buf());
     config.permission_policy = PermissionPolicy::default();
@@ -1640,9 +1517,6 @@ fn command_level_apply_prompt_command_config_sets_permission_policy() {
 
 #[test]
 fn command_level_apply_prompt_command_config_sandbox_overrides_base_then_mode_overrides_sandbox() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap();
     let mut config = CoordinatorConfig::new(temp_dir.path().to_path_buf());
     config.permission_policy = PermissionPolicy::default();
@@ -1703,9 +1577,6 @@ fn command_level_apply_prompt_command_config_sandbox_overrides_base_then_mode_ov
 
 #[test]
 fn resolve_effective_permission_policy_preserves_ask_timeout_ms() {
-    // arrange
-    // act
-    // assert
     let base = PermissionPolicy::default().with_ask_timeout_ms(99_999);
     let mut cmd = default_prompt_command();
     cmd.permission_mode = Some("bypassPermissions".to_string());
@@ -1765,9 +1636,6 @@ fn resolve_effective_permission_policy_preserves_ask_timeout_ms() {
 
 #[test]
 fn apply_tool_overrides_sets_all_twelve_kinds_allow_and_deny() {
-    // arrange
-    // act
-    // assert
     let all_kinds = [
         "edit",
         "bash",
@@ -1823,9 +1691,6 @@ fn apply_tool_overrides_sets_all_twelve_kinds_allow_and_deny() {
 
 #[test]
 fn apply_tool_overrides_rejects_unknown_kind() {
-    // arrange
-    // act
-    // assert
     let mut policy = PermissionPolicy::allow_all();
 
     let err = policy
@@ -1844,9 +1709,6 @@ fn apply_tool_overrides_rejects_unknown_kind() {
 
 #[test]
 fn apply_tool_overrides_deny_wins_over_allow_for_same_kind() {
-    // arrange
-    // act
-    // assert
     let mut policy = PermissionPolicy::allow_all();
     policy
         .apply_tool_overrides(&["edit".to_string()], &["edit".to_string()])
@@ -1860,9 +1722,6 @@ fn apply_tool_overrides_deny_wins_over_allow_for_same_kind() {
 
 #[test]
 fn session_id_uuid_validation_rejects_non_uuid() {
-    // arrange
-    // act
-    // assert
     assert!(Uuid::parse_str("not-a-uuid").is_err());
     assert!(Uuid::parse_str("").is_err());
     assert!(Uuid::parse_str("../etc/passwd").is_err());
@@ -2002,9 +1861,6 @@ fn text_events(text: &str) -> Vec<ProviderStreamEvent> {
 
 #[tokio::test]
 async fn run_prompt_with_tool_call_bypass_permissions_allows_edit() {
-    // arrange
-    // act
-    // assert
     let temp = tempfile::tempdir().unwrap_or_abort();
     std::fs::write(temp.path().join("test.txt"), "hello").unwrap_or_abort();
 
@@ -2121,9 +1977,6 @@ async fn run_prompt_readonly_sandbox_rejects_unadvertised_edit() -> Result<(), S
 
 #[tokio::test]
 async fn run_prompt_resume_appends_turn_to_existing_session() {
-    // arrange
-    // act
-    // assert
     let temp = tempfile::tempdir().unwrap_or_abort();
     let session_dir = temp.path().join("sessions");
     let run_id = "run_resume_test";

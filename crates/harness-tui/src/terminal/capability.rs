@@ -192,9 +192,6 @@ mod tests {
 
     #[test]
     fn color_mode_probes_truecolor_from_colorterm() {
-        // arrange
-        // act
-        // assert
         assert_eq!(
             ColorMode::from_env(Some("truecolor"), Some("xterm-256color")),
             ColorMode::Truecolor
@@ -211,9 +208,6 @@ mod tests {
 
     #[test]
     fn color_mode_falls_back_to_256_from_term() {
-        // arrange
-        // act
-        // assert
         assert_eq!(
             ColorMode::from_env(None, Some("xterm-256color")),
             ColorMode::Ansi256
@@ -222,17 +216,11 @@ mod tests {
 
     #[test]
     fn color_mode_returns_none_for_dumb() {
-        // arrange
-        // act
-        // assert
         assert_eq!(ColorMode::from_env(None, Some("dumb")), ColorMode::None);
     }
 
     #[test]
     fn color_mode_defaults_to_ansi16() {
-        // arrange
-        // act
-        // assert
         assert_eq!(ColorMode::from_env(None, None), ColorMode::Ansi16);
         assert_eq!(ColorMode::from_env(None, Some("xterm")), ColorMode::Ansi16);
     }
@@ -296,9 +284,6 @@ mod tests {
 
     #[test]
     fn behavior_ids_match_manifest() {
-        // arrange
-        // act
-        // assert
         assert_eq!(
             TerminalCapabilityLeaf::behavior_id(TerminalCapabilityRow::Color),
             "TERM-CAP-COLOR"

@@ -154,9 +154,6 @@ async fn permission_flow_covers_allow_headless_ask_deny_and_worker_policy_violat
 
 #[tokio::test]
 async fn repeated_shell_command_after_run_grant_uses_prefix_pattern() {
-    // arrange
-    // act
-    // assert
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     let calls = Arc::new(AtomicUsize::new(0));

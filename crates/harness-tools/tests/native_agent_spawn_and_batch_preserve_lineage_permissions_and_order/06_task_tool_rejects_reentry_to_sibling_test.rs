@@ -1,9 +1,6 @@
 use harness_tools::UnwrapOrAbort;
 #[tokio::test]
 async fn task_tool_rejects_reentry_to_sibling_child_session() {
-    // arrange
-    // act
-    // assert
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
 
@@ -50,9 +47,6 @@ async fn task_tool_rejects_reentry_to_sibling_child_session() {
 }
 #[tokio::test]
 async fn task_reentry_rejects_mismatched_subagent_type() {
-    // arrange
-    // act
-    // assert
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let session_dir = workspace.join("sessions");

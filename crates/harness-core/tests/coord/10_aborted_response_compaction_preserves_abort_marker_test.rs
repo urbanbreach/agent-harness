@@ -1,9 +1,6 @@
 use harness_core::UnwrapOrAbort;
 #[tokio::test]
 async fn aborted_response_compaction_preserves_abort_marker() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let tool_started = Arc::new(Notify::new());
     let tool_release = Arc::new(Notify::new());
@@ -163,9 +160,6 @@ async fn aborted_response_compaction_preserves_abort_marker() {
 }
 #[tokio::test]
 async fn failed_response_compaction_failure_does_not_mask_original_error() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![
         provider_text_events(&"A".repeat(12_000)),
@@ -248,9 +242,6 @@ async fn failed_response_compaction_failure_does_not_mask_original_error() {
 }
 #[tokio::test]
 async fn critical_compaction_requested_hook_failure_does_not_commit() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![
         provider_text_events(&"A".repeat(12_000)),
@@ -353,9 +344,6 @@ async fn critical_compaction_requested_hook_failure_does_not_commit() {
 }
 #[tokio::test]
 async fn profile_max_iters_does_not_cap_tool_loops() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![
         vec![

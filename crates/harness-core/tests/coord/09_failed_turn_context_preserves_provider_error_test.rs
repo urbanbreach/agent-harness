@@ -1,9 +1,6 @@
 use harness_core::UnwrapOrAbort;
 #[tokio::test]
 async fn failed_turn_context_preserves_provider_error_partial_output() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![
         vec![
@@ -97,9 +94,6 @@ async fn failed_turn_context_preserves_provider_error_partial_output() {
 }
 #[tokio::test]
 async fn failed_turn_context_preserves_cancelled_turn_marker() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let tool_started = Arc::new(Notify::new());
     let tool_release = Arc::new(Notify::new());
@@ -242,9 +236,6 @@ async fn failed_turn_context_preserves_cancelled_turn_marker() {
 }
 #[tokio::test]
 async fn failed_turn_context_preserves_tool_failure_without_orphan_tool_call() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![
         vec![
@@ -358,9 +349,6 @@ async fn failed_turn_context_preserves_tool_failure_without_orphan_tool_call() {
 }
 #[tokio::test]
 async fn failed_response_compaction_writes_checkpoint_after_provider_error() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![
         provider_text_events(&"A".repeat(12_000)),

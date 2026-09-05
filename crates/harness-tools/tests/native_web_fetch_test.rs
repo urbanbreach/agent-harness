@@ -154,9 +154,6 @@ fn artifact_bytes(context: &ToolContext, artifact_path: &str) -> Vec<u8> {
 
 #[tokio::test]
 async fn native_web_fetch_supports_text_markdown_html_and_binary_artifacts() {
-    // arrange
-    // act
-    // assert
     let workspace = setup_workspace_fixture();
     let workspace_root = workspace.workspace();
     let transport = Arc::new(ScriptedWebFetchTransport::new());
@@ -310,9 +307,6 @@ async fn native_web_fetch_supports_text_markdown_html_and_binary_artifacts() {
 
 #[tokio::test]
 async fn native_web_fetch_rejects_invalid_scheme_large_response_and_timeout() {
-    // arrange
-    // act
-    // assert
     let workspace = setup_workspace_fixture();
     let workspace_root = workspace.workspace();
     let registry = coordinator_registry_with_web_fetch_transport(

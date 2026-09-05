@@ -1,9 +1,6 @@
 use harness_core::UnwrapOrAbort;
 #[tokio::test]
 async fn provider_retry_retries_retryable_empty_failures_and_records_attempt_metadata() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![
         vec![ProviderStreamEvent::categorized_error(
@@ -113,9 +110,6 @@ async fn provider_retry_retries_retryable_empty_failures_and_records_attempt_met
 
 #[tokio::test]
 async fn provider_retry_does_not_retry_partial_output_failures() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![
         vec![

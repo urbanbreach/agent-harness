@@ -3,9 +3,6 @@ use harness::UnwrapOrAbort;
 
 #[test]
 fn interactive_launch_metadata_exposes_catalog_for_default_profile() {
-    // arrange
-    // act
-    // assert
     let config = load_config_from_str(
         r#"
         {
@@ -95,9 +92,6 @@ fn interactive_launch_metadata_exposes_catalog_for_default_profile() {
 
 #[test]
 fn shipped_example_config_preserves_configured_model_variant() {
-    // arrange
-    // act
-    // assert
     let config_path = crate::cli_config::shipped_example_config_path();
     let config = harness_core::config::load_config_from_file(&config_path).unwrap_or_abort();
 
@@ -111,9 +105,6 @@ fn shipped_example_config_preserves_configured_model_variant() {
 
 #[test]
 fn persisted_model_selection_restores_valid_variant_for_active_profile() {
-    // arrange
-    // act
-    // assert
     let base = LaunchMetadata::from_model_option(&ModelOption {
         profile: "default".to_string(),
         provider: "default".to_string(),
@@ -201,9 +192,6 @@ fn persisted_model_selection_restores_valid_variant_for_active_profile() {
 
 #[test]
 fn persisted_model_selection_preserves_switchable_profiles() {
-    // arrange
-    // act
-    // assert
     let base = LaunchMetadata::from_model_ref("default", "default:gpt-5.4")
         .with_available_models(vec![ModelOption::from_model_ref(
             "default",
@@ -236,9 +224,6 @@ fn persisted_model_selection_preserves_switchable_profiles() {
 
 #[test]
 fn persisted_model_selection_ignores_unconfigured_variant() {
-    // arrange
-    // act
-    // assert
     let base = LaunchMetadata::from_model_ref("default", "default:gpt-5.4-mini")
         .with_available_models(vec![ModelOption::from_model_ref(
             "default",
@@ -261,9 +246,6 @@ fn persisted_model_selection_ignores_unconfigured_variant() {
 
 #[test]
 fn persisted_model_selection_round_trips_model_json() {
-    // arrange
-    // act
-    // assert
     let temp = tempfile::tempdir().unwrap_or_abort();
     let path = temp.path().join("model.json");
     let metadata = LaunchMetadata::from_model_option(&ModelOption {
@@ -301,9 +283,6 @@ fn persisted_model_selection_round_trips_model_json() {
 
 #[test]
 fn persisted_model_selection_ignores_stale_config_digest() {
-    // arrange
-    // act
-    // assert
     let base = LaunchMetadata::from_model_ref("default", "umans-ai-coding-plan:umans-kimi-k2.7")
         .with_available_models(vec![
             ModelOption::from_model_ref("default", "umans-ai-coding-plan:umans-kimi-k2.7"),
@@ -321,9 +300,6 @@ fn persisted_model_selection_ignores_stale_config_digest() {
 
 #[test]
 fn persisted_model_selection_restores_matching_config_digest() {
-    // arrange
-    // act
-    // assert
     let base = LaunchMetadata::from_model_ref("default", "umans-ai-coding-plan:umans-kimi-k2.7")
         .with_available_models(vec![
             ModelOption::from_model_ref("default", "umans-ai-coding-plan:umans-kimi-k2.7"),

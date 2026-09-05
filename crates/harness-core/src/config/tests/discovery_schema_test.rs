@@ -3,9 +3,6 @@ use crate::UnwrapOrAbort;
 
 #[test]
 fn relative_paths_remain_cwd_relative_when_loading_from_file() {
-    // arrange
-    // act
-    // assert
     let _lock = CONFIG_DISCOVERY_TEST_LOCK.lock().unwrap_or_abort();
     let temp = tempfile::tempdir().unwrap_or_abort();
     let config_path = temp.path().join("nested/config.jsonc");
@@ -80,9 +77,6 @@ fn relative_paths_remain_cwd_relative_when_loading_from_file() {
 
 #[test]
 fn schema_uses_runtime_first_public_contract() {
-    // arrange
-    // act
-    // assert
     let schema = harness_schema_pretty_json().unwrap_or_abort();
     let parsed: serde_json::Value = serde_json::from_str(&schema).unwrap_or_abort();
     let properties = parsed
@@ -151,9 +145,6 @@ fn inert_compatibility_keys_absent_from_generated_schema() {
 
 #[test]
 fn public_top_level_skills_translate_into_runtime_config() {
-    // arrange
-    // act
-    // assert
     let parsed = load_config_from_str(
         r#"
             {
@@ -206,9 +197,6 @@ fn public_top_level_skills_translate_into_runtime_config() {
 
 #[test]
 fn json5_comments_trailing_commas_and_schema_field_parse() {
-    // arrange
-    // act
-    // assert
     let cfg = r#"
         {
           // optional editor schema hint
@@ -277,9 +265,6 @@ fn json5_comments_trailing_commas_and_schema_field_parse() {
 
 #[test]
 fn resolve_config_path_prefers_explicit_path_over_discovery() {
-    // arrange
-    // act
-    // assert
     let _lock = CONFIG_DISCOVERY_TEST_LOCK.lock().unwrap_or_abort();
     let temp = tempfile::tempdir().unwrap_or_abort();
     let xdg_root = temp.path().join("xdg");
@@ -302,9 +287,6 @@ fn resolve_config_path_prefers_explicit_path_over_discovery() {
 
 #[test]
 fn resolve_config_path_prefers_cwd_harness_jsonc_over_xdg_config() {
-    // arrange
-    // act
-    // assert
     let _lock = CONFIG_DISCOVERY_TEST_LOCK.lock().unwrap_or_abort();
     let temp = tempfile::tempdir().unwrap_or_abort();
     let xdg_root = temp.path().join("xdg");
@@ -325,9 +307,6 @@ fn resolve_config_path_prefers_cwd_harness_jsonc_over_xdg_config() {
 
 #[test]
 fn resolve_config_layer_paths_orders_global_then_local() {
-    // arrange
-    // act
-    // assert
     let _lock = CONFIG_DISCOVERY_TEST_LOCK.lock().unwrap_or_abort();
     let temp = tempfile::tempdir().unwrap_or_abort();
     let xdg_root = temp.path().join("xdg");
@@ -348,9 +327,6 @@ fn resolve_config_layer_paths_orders_global_then_local() {
 
 #[test]
 fn resolve_config_layer_paths_include_env_and_project_ancestor_layers() {
-    // arrange
-    // act
-    // assert
     let _lock = CONFIG_DISCOVERY_TEST_LOCK.lock().unwrap_or_abort();
     let temp = tempfile::tempdir().unwrap_or_abort();
     let xdg_root = temp.path().join("xdg");
@@ -397,9 +373,6 @@ fn resolve_config_layer_paths_include_env_and_project_ancestor_layers() {
 
 #[test]
 fn load_resolved_config_merges_global_then_local_and_prefers_local_values() {
-    // arrange
-    // act
-    // assert
     let _lock = CONFIG_DISCOVERY_TEST_LOCK.lock().unwrap_or_abort();
     let temp = tempfile::tempdir().unwrap_or_abort();
     let xdg_root = temp.path().join("xdg");
@@ -507,9 +480,6 @@ fn load_resolved_config_merges_global_then_local_and_prefers_local_values() {
 
 #[test]
 fn load_resolved_config_applies_harness_config_content_last() {
-    // arrange
-    // act
-    // assert
     let _lock = CONFIG_DISCOVERY_TEST_LOCK.lock().unwrap_or_abort();
     let temp = tempfile::tempdir().unwrap_or_abort();
     let config_path = temp.path().join("harness.jsonc");
@@ -564,9 +534,6 @@ fn load_resolved_config_applies_harness_config_content_last() {
 
 #[test]
 fn load_resolved_config_explicit_path_bypasses_discovery_layers() {
-    // arrange
-    // act
-    // assert
     let _lock = CONFIG_DISCOVERY_TEST_LOCK.lock().unwrap_or_abort();
     let temp = tempfile::tempdir().unwrap_or_abort();
     let xdg_root = temp.path().join("xdg");

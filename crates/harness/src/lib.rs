@@ -1646,9 +1646,6 @@ mod tests {
 
     #[test]
     fn schema_command_runs_in_process_with_captured_stdout() {
-        // arrange
-        // act
-        // assert
         let mut stdin = Cursor::new(Vec::<u8>::new());
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
@@ -1666,9 +1663,6 @@ mod tests {
 
     #[test]
     fn prompt_setup_error_preserves_usage_exit_code() {
-        // arrange
-        // act
-        // assert
         let mut stdin = Cursor::new(Vec::<u8>::new());
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
@@ -1683,9 +1677,6 @@ mod tests {
 
     #[test]
     fn config_validate_uses_injected_filesystem_root() {
-        // arrange
-        // act
-        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         std::fs::write(
             temp.path().join("harness.jsonc"),
@@ -1729,9 +1720,6 @@ mod tests {
 
     #[test]
     fn config_show_effective_emits_redacted_merged_json_with_layers() {
-        // arrange
-        // act
-        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         std::fs::write(
             temp.path().join("harness.jsonc"),
@@ -1796,9 +1784,6 @@ mod tests {
 
     #[test]
     fn config_show_without_effective_flag_exits_usage() {
-        // arrange
-        // act
-        // assert
         let mut stdin = Cursor::new(Vec::<u8>::new());
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
@@ -1813,9 +1798,6 @@ mod tests {
 
     #[test]
     fn config_settings_lists_registry_metadata_without_secret_values() {
-        // arrange
-        // act
-        // assert
         let mut stdin = Cursor::new(Vec::<u8>::new());
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
@@ -1857,9 +1839,6 @@ mod tests {
 
     #[test]
     fn config_sources_lists_discovered_layers() {
-        // arrange
-        // act
-        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         std::fs::write(
             temp.path().join("harness.jsonc"),
@@ -1915,9 +1894,6 @@ mod tests {
 
     #[test]
     fn config_explain_attributes_overridden_path_to_project_layer() {
-        // arrange
-        // act
-        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let xdg = temp.path().join("xdg");
         let project = temp.path().join("project");
@@ -1996,9 +1972,6 @@ mod tests {
 
     #[test]
     fn cli_deps_runs_injected_command_runner() {
-        // arrange
-        // act
-        // assert
         let runner = Arc::new(RecordingRunner::new(CliCommandOutput {
             exit_code: 0,
             stdout: b"ok".to_vec(),
@@ -2026,9 +1999,6 @@ mod tests {
 
     #[test]
     fn cli_deps_uses_injected_clock_factory() {
-        // arrange
-        // act
-        // assert
         let calls = Arc::new(AtomicU64::new(0));
         let observed = Arc::clone(&calls);
         let deps = CliDeps::real().with_clock_factory(move |deterministic| {
@@ -2044,9 +2014,6 @@ mod tests {
 
     #[test]
     fn cli_deps_exposes_injected_provider() {
-        // arrange
-        // act
-        // assert
         let provider: Arc<dyn harness_providers::Provider> =
             Arc::new(crate::scenarios::golden_path_provider());
         let provider_clone = Arc::clone(&provider);

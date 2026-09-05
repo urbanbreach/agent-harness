@@ -65,9 +65,6 @@ fn run_cli_config(session_dir: &Path) -> String {
 
 #[test]
 fn run_cli_writes_out_file_and_prints_run_dir() {
-    // arrange
-    // act
-    // assert
     let workspace = TestWorkspace::new().unwrap_or_abort();
     let out_path = workspace.path("events/out.jsonl");
     let session_dir = workspace.sessions_dir();
@@ -181,9 +178,6 @@ fn run_cli_golden_path_completes_provider_turn_with_configured_model_settings() 
 
 #[test]
 fn run_cli_interactive_permissions_accepts_allow_on_in_memory_stdin() {
-    // arrange
-    // act
-    // assert
     let temp = tempdir().unwrap_or_abort();
     let session_dir = temp.path().join("sessions");
 
@@ -215,9 +209,6 @@ fn run_cli_interactive_permissions_accepts_allow_on_in_memory_stdin() {
 
 #[test]
 fn run_cli_creates_durable_run_logs_under_run_dir() {
-    // arrange
-    // act
-    // assert
     let temp = tempdir().unwrap_or_abort();
     let config_path = temp.path().join("harness.logging.jsonc");
     let session_dir = temp.path().join("sessions");

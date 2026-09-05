@@ -698,9 +698,6 @@ mod tests {
 
     #[test]
     fn detect_reports_available_when_resolver_finds_jj() {
-        // arrange
-        // act
-        // assert
         // Given
         let resolved = PathBuf::from("/usr/bin/jj");
 
@@ -724,9 +721,6 @@ mod tests {
 
     #[test]
     fn detect_reports_unavailable_when_jj_missing() {
-        // arrange
-        // act
-        // assert
         // When
         let availability = detect_jujutsu_with(|_| None);
 
@@ -743,9 +737,6 @@ mod tests {
 
     #[test]
     fn host_probe_is_structured_available_or_unavailable() {
-        // arrange
-        // act
-        // assert
         // When: real PATH probe (host-dependent)
         let availability = detect_jujutsu();
 
@@ -755,9 +746,6 @@ mod tests {
 
     #[test]
     fn workspace_detects_jj_repo_marker() {
-        // arrange
-        // act
-        // assert
         // Given: temp dir with `.jj`
         let root = tempfile::tempdir().unwrap();
         let workspace = root.path().join("project");
@@ -782,9 +770,6 @@ mod tests {
 
     #[test]
     fn workspace_jj_file_marker_is_not_a_repo() {
-        // arrange
-        // act
-        // assert
         // Given: a plain FILE named `.jj` (copied/faked marker, not a repo directory)
         let root = tempfile::tempdir().unwrap();
         let workspace = root.path().join("project");
@@ -806,9 +791,6 @@ mod tests {
 
     #[test]
     fn workspace_walks_parents_for_jj_marker() {
-        // arrange
-        // act
-        // assert
         // Given: nested path under a jj workspace
         let root = tempfile::tempdir().unwrap();
         let workspace = root.path().join("repo");
@@ -831,9 +813,6 @@ mod tests {
 
     #[test]
     fn workspace_without_jj_is_not_a_repo() {
-        // arrange
-        // act
-        // assert
         // Given
         let root = tempfile::tempdir().unwrap();
         let workspace = root.path().join("plain");
@@ -854,9 +833,6 @@ mod tests {
 
     #[test]
     fn probe_ready_requires_cli_and_workspace_repo() {
-        // arrange
-        // act
-        // assert
         // Given: workspace with `.jj`, injectable CLI present/missing
         let root = tempfile::tempdir().unwrap();
         let workspace = root.path().join("project");
@@ -877,9 +853,6 @@ mod tests {
 
     #[test]
     fn probe_describe_summarizes_cli_and_workspace() {
-        // arrange
-        // act
-        // assert
         // Given
         let root = tempfile::tempdir().unwrap();
         let workspace = root.path().join("project");
@@ -913,9 +886,6 @@ mod tests {
 
     #[test]
     fn jujutsu_operator_diagnostics_cover_cli_and_workspace_not_a_repo() {
-        // arrange
-        // act
-        // assert
         // Given
         let root = tempfile::tempdir().unwrap();
         let workspace = root.path().join("plain");
@@ -937,9 +907,6 @@ mod tests {
 
     #[test]
     fn capture_jj_version_parses_first_line() {
-        // arrange
-        // act
-        // assert
         // Given: a tiny fake "jj" script that prints a version line
         let dir = tempfile::tempdir().unwrap();
         let fake = dir.path().join("jj");
@@ -961,9 +928,6 @@ mod tests {
 
     #[test]
     fn run_jujutsu_command_fails_closed_when_cli_unavailable() {
-        // arrange
-        // act
-        // assert
         // Given
         let root = tempfile::tempdir().unwrap();
         let workspace = root.path().join("plain");
@@ -985,9 +949,6 @@ mod tests {
 
     #[test]
     fn run_jujutsu_version_ok_with_fake_binary() {
-        // arrange
-        // act
-        // assert
         // Given: fake jj that prints a version line
         let dir = tempfile::tempdir().unwrap();
         let fake = dir.path().join("jj");
@@ -1023,9 +984,6 @@ mod tests {
 
     #[test]
     fn diagnostic_walk_multi_command_ends_on_status_structured() {
-        // arrange
-        // act
-        // assert
         // Given: workspace with .jj marker; CLI missing (fail-closed walk)
         let root = tempfile::tempdir().unwrap();
         let workspace = root.path().join("project");
@@ -1062,9 +1020,6 @@ mod tests {
 
     #[test]
     fn diagnostic_walk_product_path_with_real_workspace_marker() {
-        // arrange
-        // act
-        // assert
         // Given
         let root = tempfile::tempdir().unwrap();
         let workspace = root.path().join("ws");
@@ -1088,9 +1043,6 @@ mod tests {
 
     #[test]
     fn product_with_receipt_writes_file_when_cli_missing() {
-        // arrange
-        // act
-        // assert
         // Given
         let root = tempfile::tempdir().unwrap();
         let workspace = root.path().join("ws");
@@ -1114,9 +1066,6 @@ mod tests {
 
     #[test]
     fn product_with_fake_jj_can_run_status_and_log() {
-        // arrange
-        // act
-        // assert
         // Given: fake jj that accepts --version/log/root/status
         let dir = tempfile::tempdir().unwrap();
         let fake = dir.path().join("jj");

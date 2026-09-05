@@ -6,9 +6,6 @@ use harness_core::session::{AssistantPart, ProviderProvenance};
 )]
 #[tokio::test]
 async fn resume_rebuilds_canonical_provider_view_without_checkpoint_artifact() {
-    // arrange
-    // act
-    // assert
     // Given: a complete provider turn plus an applied legacy checkpoint whose file is absent.
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_canonical_resume_without_checkpoint_artifact";

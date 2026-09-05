@@ -1,9 +1,6 @@
 use harness::UnwrapOrAbort;
 #[test]
 fn sessions_list_cli_filters_machine_readable_selectors() {
-    // arrange
-    // act
-    // assert
     let session_dir = tempdir().unwrap_or_abort();
     let resumable_dir = session_dir.path().join("run_resumable");
     let prompt_dir = session_dir.path().join("run_prompt");
@@ -166,9 +163,6 @@ fn sessions_list_cli_filters_machine_readable_selectors() {
 }
 #[test]
 fn sessions_inspect_cli_accepts_positional_session_selector() {
-    // arrange
-    // act
-    // assert
     let session_dir = tempdir().unwrap_or_abort();
     let run_dir = session_dir.path().join("directory_name_differs");
     std::fs::create_dir_all(&run_dir).unwrap_or_abort();
@@ -229,9 +223,6 @@ fn sessions_inspect_cli_accepts_positional_session_selector() {
 }
 #[test]
 fn sessions_replay_cli_resolves_run_id_from_session_catalog() {
-    // arrange
-    // act
-    // assert
     let session_dir = tempdir().unwrap_or_abort();
     let run_dir = session_dir.path().join("directory_name_differs");
     std::fs::create_dir_all(&run_dir).unwrap_or_abort();
@@ -279,9 +270,6 @@ fn sessions_replay_cli_resolves_run_id_from_session_catalog() {
 }
 #[test]
 fn sessions_list_cli_supports_run_id_sorting() {
-    // arrange
-    // act
-    // assert
     let session_dir = tempdir().unwrap_or_abort();
     for run_id in ["run_b", "run_c", "run_a"] {
         let run_dir = session_dir.path().join(run_id);
@@ -336,9 +324,6 @@ fn sessions_list_cli_supports_run_id_sorting() {
 }
 #[test]
 fn sessions_tree_prints_lineage_depths() {
-    // arrange
-    // act
-    // assert
     let session_dir = tempdir().unwrap_or_abort();
     let root_dir = session_dir.path().join("root_session_dir");
     let child_dir = session_dir.path().join("child_session_dir");

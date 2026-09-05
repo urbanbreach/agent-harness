@@ -102,25 +102,16 @@ fn tool_finished(seq: u64, agent_id: &str, output_summary: &str) -> EventEnvelop
 
 #[test]
 fn calculate_context_tokens_sums_all_components() {
-    // arrange
-    // act
-    // assert
     assert_eq!(calculate_context_tokens(1000, 500, 200, 100), 1800);
 }
 
 #[test]
 fn calculate_context_tokens_handles_zeros() {
-    // arrange
-    // act
-    // assert
     assert_eq!(calculate_context_tokens(0, 0, 0, 0), 0);
 }
 
 #[test]
 fn calculate_context_tokens_saturates_on_overflow() {
-    // arrange
-    // act
-    // assert
     assert_eq!(
         calculate_context_tokens(u32::MAX, u32::MAX, u32::MAX, u32::MAX),
         u32::MAX
@@ -133,33 +124,21 @@ fn calculate_context_tokens_saturates_on_overflow() {
 
 #[test]
 fn estimate_text_tokens_empty_returns_zero() {
-    // arrange
-    // act
-    // assert
     assert_eq!(estimate_text_tokens(""), 0);
 }
 
 #[test]
 fn estimate_text_tokens_four_bytes_one_token() {
-    // arrange
-    // act
-    // assert
     assert_eq!(estimate_text_tokens("abcd"), 1);
 }
 
 #[test]
 fn estimate_text_tokens_five_bytes_two_tokens() {
-    // arrange
-    // act
-    // assert
     assert_eq!(estimate_text_tokens("abcde"), 2);
 }
 
 #[test]
 fn estimate_text_tokens_uses_byte_length_not_char_count() {
-    // arrange
-    // act
-    // assert
     // Multi-byte UTF-8: each of these chars is 3 bytes.
     // 4 chars * 3 bytes = 12 bytes -> ceil(12/4) = 3 tokens.
     assert_eq!(estimate_text_tokens("\u{3042}\u{3044}\u{3046}\u{3048}"), 3);
@@ -171,9 +150,6 @@ fn estimate_text_tokens_uses_byte_length_not_char_count() {
 
 #[test]
 fn estimate_message_tokens_user_message() {
-    // arrange
-    // act
-    // assert
     let msg = ConversationMessage::User(ConversationUserMessage {
         request_id: RequestId::new("req-1"),
         text: "abcdefgh".to_string(),
@@ -185,9 +161,6 @@ fn estimate_message_tokens_user_message() {
 
 #[test]
 fn estimate_message_tokens_assistant_with_text_only() {
-    // arrange
-    // act
-    // assert
     let msg = ConversationMessage::Assistant(ConversationAssistantMessage {
         request_id: RequestId::new("req-1"),
         agent_id: None,
@@ -205,9 +178,6 @@ fn estimate_message_tokens_assistant_with_text_only() {
 
 #[test]
 fn estimate_message_tokens_assistant_with_tool_calls() {
-    // arrange
-    // act
-    // assert
     let msg = ConversationMessage::Assistant(ConversationAssistantMessage {
         request_id: RequestId::new("req-1"),
         agent_id: None,
@@ -233,9 +203,6 @@ fn estimate_message_tokens_assistant_with_tool_calls() {
 
 #[test]
 fn estimate_message_tokens_tool_result_with_summary() {
-    // arrange
-    // act
-    // assert
     let msg = ConversationMessage::ToolResult(Box::new(ConversationToolResultMessage {
         request_id: RequestId::new("req-1"),
         tool_call_id: ToolCallId::new("tc-1"),
@@ -252,9 +219,6 @@ fn estimate_message_tokens_tool_result_with_summary() {
 
 #[test]
 fn estimate_message_tokens_checkpoint() {
-    // arrange
-    // act
-    // assert
     let msg = ConversationMessage::Checkpoint(ConversationCheckpointMessage {
         checkpoint_id: "cp-1".to_string(),
         agent_id: "agent-1".to_string(),
@@ -270,9 +234,6 @@ fn estimate_message_tokens_checkpoint() {
 
 #[test]
 fn estimate_messages_tokens_sums_all_messages() {
-    // arrange
-    // act
-    // assert
     let messages = vec![
         ConversationMessage::User(ConversationUserMessage {
             request_id: RequestId::new("req-1"),
@@ -303,9 +264,6 @@ fn estimate_messages_tokens_sums_all_messages() {
 
 #[test]
 fn estimate_context_tokens_returns_estimated_when_no_usage_anchor() {
-    // arrange
-    // act
-    // assert
     let messages = vec![
         ConversationMessage::User(ConversationUserMessage {
             request_id: RequestId::new("req-1"),
@@ -336,9 +294,6 @@ fn estimate_context_tokens_returns_estimated_when_no_usage_anchor() {
 
 #[test]
 fn estimate_context_tokens_empty_messages() {
-    // arrange
-    // act
-    // assert
     let estimate = estimate_context_tokens(&[]);
     assert!(estimate.estimated);
     assert_eq!(estimate.total_tokens, 0);
@@ -351,18 +306,12 @@ fn estimate_context_tokens_empty_messages() {
 
 #[test]
 fn find_cut_point_returns_none_for_no_agent_events() {
-    // arrange
-    // act
-    // assert
     let events = vec![user_msg(1, "other_agent", "req-1", "hello")];
     assert!(find_cut_point(&events, "agent-1", 1000).is_none());
 }
 
 #[test]
 fn find_cut_point_keeps_recent_turn_if_budget_fits() {
-    // arrange
-    // act
-    // assert
     let events = vec![
         user_msg(1, "agent-1", "req-1", "hello"),
         stream_delta(2, "agent-1", "req-1", "world"),
@@ -382,9 +331,6 @@ fn find_cut_point_keeps_recent_turn_if_budget_fits() {
 
 #[test]
 fn find_cut_point_never_cuts_at_tool_result() {
-    // arrange
-    // act
-    // assert
     // Build a turn: user -> assistant (with tool call) -> tool result -> assistant finished
     let events = vec![
         user_msg(1, "agent-1", "req-1", "short"),
@@ -418,9 +364,6 @@ fn find_cut_point_never_cuts_at_tool_result() {
 
 #[test]
 fn find_cut_point_detects_split_turn() {
-    // arrange
-    // act
-    // assert
     // Turn 1: user -> assistant
     // Turn 2: user -> assistant A2-1 -> assistant A2-2 -> assistant A2-3
     let events = vec![
@@ -452,9 +395,6 @@ fn find_cut_point_detects_split_turn() {
 
 #[test]
 fn find_cut_point_cuts_at_user_message_when_budget_exceeds() {
-    // arrange
-    // act
-    // assert
     let events = vec![
         user_msg(1, "agent-1", "req-1", &"x".repeat(100)),
         stream_delta(2, "agent-1", "req-1", &"y".repeat(100)),
@@ -479,9 +419,6 @@ fn find_cut_point_cuts_at_user_message_when_budget_exceeds() {
 
 #[test]
 fn find_cut_point_single_message_keeps_latest_turn() {
-    // arrange
-    // act
-    // assert
     let events = vec![
         user_msg(1, "agent-1", "req-1", "hello"),
         assistant_finished(2, "agent-1", "req-1"),
@@ -494,9 +431,6 @@ fn find_cut_point_single_message_keeps_latest_turn() {
 
 #[test]
 fn find_cut_point_tokens_before_is_total() {
-    // arrange
-    // act
-    // assert
     let events = vec![
         user_msg(1, "agent-1", "req-1", "abcd"),
         stream_delta(2, "agent-1", "req-1", "efgh"),
@@ -538,9 +472,6 @@ fn find_cut_point_semantic_finish_replaces_legacy_delta_accounting() {
 
 #[test]
 fn find_cut_point_filters_by_agent_id() {
-    // arrange
-    // act
-    // assert
     let events = vec![
         user_msg(1, "agent-1", "req-1", "hello"),
         assistant_finished(2, "agent-1", "req-1"),
@@ -554,9 +485,6 @@ fn find_cut_point_filters_by_agent_id() {
 
 #[test]
 fn find_cut_point_no_valid_cut_points_keeps_from_first() {
-    // arrange
-    // act
-    // assert
     // Only stream deltas — no UserMessageSubmitted or AssistantMessageFinished
     let events = vec![
         stream_delta(1, "agent-1", "req-1", "hello"),
@@ -574,27 +502,18 @@ fn find_cut_point_no_valid_cut_points_keeps_from_first() {
 
 #[test]
 fn pi_calculate_context_tokens_matches() {
-    // arrange
-    // act
-    // assert
     // Pi test: createMockUsage(1000, 500, 200, 100) -> 1800
     assert_eq!(calculate_context_tokens(1000, 500, 200, 100), 1800);
 }
 
 #[test]
 fn pi_calculate_context_tokens_zero() {
-    // arrange
-    // act
-    // assert
     // Pi test: createMockUsage(0, 0, 0, 0) -> 0
     assert_eq!(calculate_context_tokens(0, 0, 0, 0), 0);
 }
 
 #[test]
 fn pi_find_cut_point_finds_valid_cut_point() {
-    // arrange
-    // act
-    // assert
     // Port of Pi's "should find cut point based on actual token differences"
     let mut events = Vec::new();
     for i in 0u64..10 {
@@ -634,9 +553,6 @@ fn pi_find_cut_point_finds_valid_cut_point() {
 
 #[test]
 fn pi_find_cut_point_keeps_recent_turn_if_fits() {
-    // arrange
-    // act
-    // assert
     // Port of Pi's "should keep everything if all messages fit within budget",
     // adapted for harness: when the whole context fits, still keep the most
     // recent turn so there is prior context to summarize.
@@ -733,9 +649,6 @@ fn full_turn(
 
 #[test]
 fn build_session_context_no_compaction_returns_all_messages() {
-    // arrange
-    // act
-    // assert
     let events: Vec<EventEnvelopeV1> = [
         full_turn(1, "agent-1", "req_000001", "hello", "hi there"),
         full_turn(5, "agent-1", "req_000002", "how are you", "great"),
@@ -765,9 +678,6 @@ fn build_session_context_no_compaction_returns_all_messages() {
 
 #[test]
 fn build_session_context_with_compaction_includes_summary_and_kept_messages() {
-    // arrange
-    // act
-    // assert
     let events: Vec<EventEnvelopeV1> = [
         full_turn(1, "agent-1", "req_000001", "first", "response1"),
         full_turn(5, "agent-1", "req_000002", "second", "response2"),
@@ -810,9 +720,6 @@ fn build_session_context_with_compaction_includes_summary_and_kept_messages() {
 
 #[test]
 fn build_session_context_multiple_compactions_uses_latest() {
-    // arrange
-    // act
-    // assert
     let events: Vec<EventEnvelopeV1> = [
         full_turn(1, "agent-1", "req_000001", "a", "b"),
         vec![session_compaction(5, "agent-1", "First summary", 1)],
@@ -850,9 +757,6 @@ fn build_session_context_multiple_compactions_uses_latest() {
 
 #[test]
 fn build_session_context_compaction_keeping_from_first_message() {
-    // arrange
-    // act
-    // assert
     let events: Vec<EventEnvelopeV1> = [
         full_turn(1, "agent-1", "req_000001", "first", "response"),
         vec![session_compaction(5, "agent-1", "Empty summary", 1)],
@@ -875,9 +779,6 @@ fn build_session_context_compaction_keeping_from_first_message() {
 
 #[test]
 fn build_session_context_filters_by_agent_id() {
-    // arrange
-    // act
-    // assert
     let events: Vec<EventEnvelopeV1> = [
         full_turn(1, "agent-1", "req_000001", "hello", "hi"),
         full_turn(5, "agent-2", "req_000002", "other", "agent"),
@@ -899,9 +800,6 @@ fn build_session_context_filters_by_agent_id() {
 
 #[test]
 fn build_session_context_empty_events_returns_empty() {
-    // arrange
-    // act
-    // assert
     let messages = build_session_context(&[], "agent-1");
     assert!(messages.is_empty());
 }
@@ -912,9 +810,6 @@ fn build_session_context_empty_events_returns_empty() {
 
 #[test]
 fn build_session_context_with_branch_summaries_injects_summary() {
-    // arrange
-    // act
-    // assert
     let events: Vec<EventEnvelopeV1> = [
         full_turn(1, "agent-1", "req_000001", "start", "response"),
         vec![branch_summary_event(
@@ -955,9 +850,6 @@ fn build_session_context_with_branch_summaries_injects_summary() {
 
 #[test]
 fn build_session_context_with_branch_summaries_and_compaction() {
-    // arrange
-    // act
-    // assert
     let events: Vec<EventEnvelopeV1> = [
         full_turn(1, "agent-1", "req_000001", "first", "r1"),
         full_turn(5, "agent-1", "req_000002", "second", "r2"),
@@ -984,9 +876,6 @@ fn build_session_context_with_branch_summaries_and_compaction() {
 
 #[test]
 fn estimate_session_context_tokens_returns_nonzero_for_nonempty_context() {
-    // arrange
-    // act
-    // assert
     let events: Vec<EventEnvelopeV1> = [full_turn(
         1,
         "agent-1",
@@ -1004,9 +893,6 @@ fn estimate_session_context_tokens_returns_nonzero_for_nonempty_context() {
 
 #[test]
 fn estimate_session_context_tokens_zero_for_empty_events() {
-    // arrange
-    // act
-    // assert
     let estimate = estimate_session_context_tokens(&[], "agent-1");
 
     assert_eq!(estimate.total_tokens, 0);

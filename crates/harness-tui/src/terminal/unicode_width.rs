@@ -107,9 +107,6 @@ mod tests {
 
     #[test]
     fn ascii_characters_are_narrow() {
-        // arrange
-        // act
-        // assert
         assert_eq!(char_display_width('a'), 1);
         assert_eq!(char_display_width('Z'), 1);
         assert_eq!(char_display_width('0'), 1);
@@ -119,9 +116,6 @@ mod tests {
 
     #[test]
     fn box_drawing_characters_are_narrow() {
-        // arrange
-        // act
-        // assert
         assert_eq!(char_display_width('\u{2500}'), 1); // ─
         assert_eq!(char_display_width('\u{2502}'), 1); // │
         assert_eq!(char_display_width('\u{250C}'), 1); // ╭
@@ -130,9 +124,6 @@ mod tests {
 
     #[test]
     fn cjk_ideographs_are_wide() {
-        // arrange
-        // act
-        // assert
         assert_eq!(char_display_width('\u{5DDD}'), 2); // 川
         assert_eq!(char_display_width('\u{5C71}'), 2); // 山
         assert_eq!(char_display_width('\u{3400}'), 2);
@@ -141,43 +132,28 @@ mod tests {
 
     #[test]
     fn hiragana_and_katakana_are_wide() {
-        // arrange
-        // act
-        // assert
         assert_eq!(char_display_width('\u{3042}'), 2); // あ
         assert_eq!(char_display_width('\u{30A2}'), 2); // ア
     }
 
     #[test]
     fn hangul_syllables_are_wide() {
-        // arrange
-        // act
-        // assert
         assert_eq!(char_display_width('\u{AC00}'), 2); // 가
     }
 
     #[test]
     fn fullwidth_forms_are_wide() {
-        // arrange
-        // act
-        // assert
         assert_eq!(char_display_width('\u{FF21}'), 2); // Ａ
         assert_eq!(char_display_width('\u{FF11}'), 2); // １
     }
 
     #[test]
     fn prompt_glyph_is_narrow() {
-        // arrange
-        // act
-        // assert
         assert_eq!(char_display_width('\u{276F}'), 1); // ❯
     }
 
     #[test]
     fn emoji_and_text_presentation_widths_match_terminal_cells() {
-        // arrange
-        // act
-        // assert
         assert_eq!(char_display_width('\u{2705}'), 2); // ✅
         assert_eq!(char_display_width('\u{274C}'), 2); // ❌
         assert_eq!(char_display_width('\u{26A0}'), 1); // ⚠
@@ -185,9 +161,6 @@ mod tests {
 
     #[test]
     fn combining_marks_are_zero_width() {
-        // arrange
-        // act
-        // assert
         assert_eq!(char_display_width('\u{0301}'), 0); // combining acute accent
         assert_eq!(char_display_width('\u{0308}'), 0); // combining diaeresis
     }

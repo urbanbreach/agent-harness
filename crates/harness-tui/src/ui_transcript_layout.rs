@@ -838,9 +838,6 @@ mod pin_tests {
 
     #[test]
     fn pending_permission_footer_pins_when_content_shorter_than_viewport() {
-        // arrange
-        // act
-        // assert
         // Given: short PERM turn content in a taller transcript viewport
         let layout = run_write_layout(6);
         // When: computing pin delta for viewport height 20 at follow-top
@@ -856,9 +853,6 @@ mod pin_tests {
 
     #[test]
     fn pending_permission_footer_does_not_pin_when_content_fills_viewport() {
-        // arrange
-        // act
-        // assert
         // Given: content as tall as the viewport
         let layout = run_write_layout(20);
         // When/Then: no pin
@@ -1112,9 +1106,6 @@ mod pin_tests {
 
     #[test]
     fn sticky_user_activates_when_user_scrolled_off_and_body_visible() {
-        // arrange
-        // act
-        // assert
         let layout = scroll_turn_layout(4, 40);
         let sticky = sticky_user_surface(&layout, 10, 20);
         let (section_idx, surface_idx, surface) =
@@ -1185,36 +1176,24 @@ mod pin_tests {
 
     #[test]
     fn sticky_user_inactive_at_follow_top() {
-        // arrange
-        // act
-        // assert
         let layout = scroll_turn_layout(4, 40);
         assert!(sticky_user_surface(&layout, 0, 20).is_none());
     }
 
     #[test]
     fn sticky_user_inactive_while_user_still_partially_visible() {
-        // arrange
-        // act
-        // assert
         let layout = scroll_turn_layout(4, 40);
         assert!(sticky_user_surface(&layout, 2, 20).is_none());
     }
 
     #[test]
     fn sticky_user_inactive_after_turn_fully_scrolled_off() {
-        // arrange
-        // act
-        // assert
         let layout = scroll_turn_layout(4, 40);
         assert!(sticky_user_surface(&layout, 50, 20).is_none());
     }
 
     #[test]
     fn sticky_user_inactive_at_follow_bottom() {
-        // arrange
-        // act
-        // assert
         let layout = scroll_turn_layout(4, 40);
         assert!(sticky_user_surface(&layout, 24, 20).is_none());
     }

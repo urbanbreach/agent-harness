@@ -34,11 +34,6 @@ pub mod composer_editing;
 pub mod composer_integration;
 #[expect(
     clippy::mod_module_files,
-    reason = "task 44 requires contextual_tips/mod.rs as the public facade"
-)]
-pub mod contextual_tips;
-#[expect(
-    clippy::mod_module_files,
     reason = "task 30 requires dashboard/mod.rs as the public facade"
 )]
 pub mod dashboard;
@@ -75,11 +70,6 @@ pub mod dashboard_roster;
 pub mod event;
 pub mod gestures;
 pub mod ghost_suggestions;
-#[expect(
-    clippy::mod_module_files,
-    reason = "task 39 requires inline_image/mod.rs as the public facade"
-)]
-pub mod inline_image;
 pub mod input;
 pub mod keybindings;
 pub mod layout;
@@ -91,18 +81,8 @@ mod lib_tests;
     reason = "task 46 requires lifecycle_choreography/mod.rs as the public facade"
 )]
 pub mod lifecycle_choreography;
-#[expect(
-    clippy::mod_module_files,
-    reason = "task 41 requires mermaid_worker/mod.rs as the public facade"
-)]
-pub mod mermaid_worker;
 pub mod mouse;
 pub mod overlay;
-#[expect(
-    clippy::mod_module_files,
-    reason = "task 47 requires perf_budgets/mod.rs as the public facade"
-)]
-pub mod perf_budgets;
 pub mod presentation;
 pub mod prompt_queue_actions;
 pub mod render_test;
@@ -117,7 +97,6 @@ pub mod runtime_wait_set;
 pub mod scheduling;
 mod session_events;
 pub mod shell_geometry;
-pub mod slash;
 mod startup_logo;
 pub mod terminal;
 #[expect(
@@ -175,11 +154,6 @@ pub mod transcript_scroll;
 pub mod transcript_selection;
 pub mod transcript_timeline;
 pub mod ui;
-#[expect(
-    clippy::mod_module_files,
-    reason = "task 40 requires video_viewer/mod.rs as the public facade"
-)]
-pub mod video_viewer;
 pub mod viewport;
 #[expect(
     clippy::mod_module_files,

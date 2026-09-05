@@ -1,9 +1,6 @@
 use harness_core::UnwrapOrAbort;
 #[tokio::test]
 async fn overflow_compaction_appends_session_compaction_event_and_retries() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let oversized_answer = format!(
         "MODEL_PREFIX_ANCHOR {} MODEL_SUFFIX_ANCHOR",
@@ -89,9 +86,6 @@ async fn overflow_compaction_appends_session_compaction_event_and_retries() {
 }
 #[tokio::test]
 async fn overflow_auto_retry_can_be_disabled_by_compaction_config() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![
         provider_text_events("first answer"),
@@ -149,9 +143,6 @@ async fn overflow_auto_retry_can_be_disabled_by_compaction_config() {
 }
 #[tokio::test]
 async fn manual_compaction_returns_noop_when_context_has_single_turn() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![vec![
         ProviderStreamEvent::Start,
@@ -200,9 +191,6 @@ async fn manual_compaction_returns_noop_when_context_has_single_turn() {
 }
 #[tokio::test]
 async fn resume_rejects_missing_user_message_when_prompt_summary_is_truncated() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_resume_truncated_prompt_summary";
     let events_path = write_resume_fixture(

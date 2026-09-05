@@ -1265,9 +1265,6 @@ fn status_dialog_edit_applied_envelope(
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_edit_attribution_counts_external_on_disk_drift() {
-    // arrange
-    // act
-    // assert
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("notes.txt");
     std::fs::write(&path, b"agent-bytes").expect("write agent");
@@ -1300,9 +1297,6 @@ pub(crate) fn exact_test_status_dialog_edit_attribution_counts_external_on_disk_
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_edit_attribution_keeps_matching_agent_tool() {
-    // arrange
-    // act
-    // assert
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("kept.rs");
     std::fs::write(&path, b"stable").expect("write");
@@ -1321,9 +1315,6 @@ pub(crate) fn exact_test_status_dialog_edit_attribution_keeps_matching_agent_too
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_edit_attribution_event_only_without_workspace() {
-    // arrange
-    // act
-    // assert
     let digest = harness_core::edit_attribution::content_digest12(b"x");
     let mut app = AppState::new_live(None, false, None);
     app.ingest_event(status_dialog_edit_applied_envelope(1, "orphan.rs", &digest));
@@ -1337,9 +1328,6 @@ pub(crate) fn exact_test_status_dialog_edit_attribution_event_only_without_works
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_fallback_and_none_demote() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::new_live(None, false, None);
     app.set_status_banner(Some("provider fallback: model-a → model-b".to_string()));
 
@@ -1376,9 +1364,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_fallback_and_no
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_crash_recovery_banner() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::new_live(None, false, None);
     app.set_status_banner(Some(
         "Previous crash detected. Action: reopen session run-abc".to_string(),
@@ -1395,9 +1380,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_crash_recovery_
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_bound_settings_counts() {
-    // arrange
-    // act
-    // assert
     // Given: live app with project config bound for settings write paths
     let dir = std::env::temp_dir().join(format!(
         "harness-tui-status-settings-{}-{}",
@@ -1431,9 +1413,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_bound_settings_
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_settings_registry_counts() {
-    // arrange
-    // act
-    // assert
     // Given: live app with settings-registry composition summary bound
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_operator_summary(&app)
@@ -1468,9 +1447,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_settings_regist
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_dashboard() {
-    // arrange
-    // act
-    // assert
     // Given: unseeded app — plan_view is always computable (may bind 1 probe)
     let app = AppState::new_live(None, false, None);
     let summary = status_dialog_operator_summary(&app);
@@ -1532,9 +1508,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_dashboard() {
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_dashboard_after_seed() {
-    // arrange
-    // act
-    // assert
     // Given: live app with full operator host probe seed
     let root = std::env::temp_dir().join(format!(
         "harness-tui-status-dashboard-seed-{}-{}",
@@ -1581,9 +1554,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_dashboard_after
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_crash_scan_counts() {
-    // arrange
-    // act
-    // assert
     // Given: live app with multi-run crash scan summary bound for the status dialog
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_operator_summary(&app).crash_scan.is_none());
@@ -1625,9 +1595,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_crash_scan_coun
 #[test]
 
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_edit_attribution() {
-    // arrange
-    // act
-    // assert
     // Given: bound edit attribution summary
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_operator_summary(&app)
@@ -1735,9 +1702,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_team_registry_c
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_edit_attribution_first_last() {
-    // arrange
-    // act
-    // assert
     // Given: first/last edit attribution lines bound
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_operator_summary(&app)
@@ -1796,9 +1760,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_edit_attributio
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_plan_view() {
-    // arrange
-    // act
-    // assert
     // Given: live app (plan view summary always computable; first may be none)
     let app = AppState::new_live(None, false, None);
 
@@ -1820,9 +1781,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_plan_view() {
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_crash_recovery_action() {
-    // arrange
-    // act
-    // assert
     // Given: crash recovery resolved action + first report one-line bound
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_operator_summary(&app)
@@ -1880,9 +1838,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_crash_recovery_
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_team_create() {
-    // arrange
-    // act
-    // assert
     // Given: team last-create + first team bound
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_operator_summary(&app)
@@ -1920,9 +1875,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_team_create() {
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_team_send() {
-    // arrange
-    // act
-    // assert
     // Given: team last-send + last mailbox message bound
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_operator_summary(&app)
@@ -1977,9 +1929,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_team_send() {
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_team_add_cancel() {
-    // arrange
-    // act
-    // assert
     // Given: team last-add-member + last-cancel bound
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_operator_summary(&app)
@@ -2019,9 +1968,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_team_add_cancel
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_acp_connection() {
-    // arrange
-    // act
-    // assert
     // Given: live app with ACP connection summary bound for the status dialog
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_operator_summary(&app).acp.is_none());
@@ -2059,9 +2005,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_acp_connection(
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_acp_session() {
-    // arrange
-    // act
-    // assert
     // Given: ACP state + session bound
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_operator_summary(&app).acp_state.is_none());
@@ -2127,9 +2070,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_sandbox_fs_plan
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_acp_connect_bind() {
-    // arrange
-    // act
-    // assert
     // Given: ACP last-connect + last-bind fail-closed outcomes bound
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_operator_summary(&app)
@@ -2170,9 +2110,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_acp_connect_bin
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_jujutsu_probe() {
-    // arrange
-    // act
-    // assert
     // Given: live app with jujutsu probe bound for the status dialog
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_operator_summary(&app).jujutsu.is_none());
@@ -2213,9 +2150,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_jujutsu_probe()
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_jujutsu_components() {
-    // arrange
-    // act
-    // assert
     // Given: jujutsu CLI + workspace components bound separately
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_operator_summary(&app).jujutsu_cli.is_none());
@@ -2260,9 +2194,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_jujutsu_compone
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_jujutsu_last_command() {
-    // arrange
-    // act
-    // assert
     // Given: last jujutsu command outcome bound (unavailable)
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_operator_summary(&app)
@@ -2338,9 +2269,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_foreign_discove
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_foreign_import_next() {
-    // arrange
-    // act
-    // assert
     // Given: first importable foreign candidate bound
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_operator_summary(&app)
@@ -2410,9 +2338,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_binary_update_c
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_foreign_import_last() {
-    // arrange
-    // act
-    // assert
     // Given: foreign import last-outcome bound (fail-closed missing source)
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_operator_summary(&app)
@@ -2455,9 +2380,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_foreign_import_
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_binary_update_policy() {
-    // arrange
-    // act
-    // assert
     // Given: bound offline policy + unavailable check
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_operator_summary(&app)
@@ -2510,9 +2432,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_binary_update_p
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_sleep_wake_observations() {
-    // arrange
-    // act
-    // assert
     // Given: live app with sleep/wake observation summary bound for the status dialog
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_operator_summary(&app).sleep_wake.is_none());
@@ -2551,9 +2470,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_sleep_wake_obse
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_binary_version() {
-    // arrange
-    // act
-    // assert
     // Given: binary version info bound
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_operator_summary(&app)
@@ -2584,9 +2500,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_binary_version(
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_sleep_wake_policy() {
-    // arrange
-    // act
-    // assert
     // Given: sleep/wake policy + last observation bound
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_operator_summary(&app)
@@ -2666,9 +2579,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_mcp_oauth_outco
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_sleep_wake_availability() {
-    // arrange
-    // act
-    // assert
     // Given: sleep/wake availability + last wake observation bound
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_operator_summary(&app)
@@ -2714,9 +2624,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_sleep_wake_avai
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_mcp_oauth_remote_availability() {
-    // arrange
-    // act
-    // assert
     // Given: MCP OAuth remote availability + last begin bound
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_operator_summary(&app)
@@ -2799,9 +2706,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_browser_oidc_ou
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_mcp_oauth_exchange_open() {
-    // arrange
-    // act
-    // assert
     // Given: MCP OAuth last-exchange + last-open bound
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_operator_summary(&app)
@@ -2854,9 +2758,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_mcp_oauth_excha
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_browser_oidc_availability() {
-    // arrange
-    // act
-    // assert
     // Given: browser OIDC availability + last start bound
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_operator_summary(&app)
@@ -2943,9 +2844,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_cow_clone_outco
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_browser_oidc_complete() {
-    // arrange
-    // act
-    // assert
     // Given: browser OIDC last-complete bound
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_operator_summary(&app)
@@ -2985,9 +2883,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_browser_oidc_co
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_cow_clone_last() {
-    // arrange
-    // act
-    // assert
     // Given: last COW clone result bound as unavailable diagnostic
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_operator_summary(&app)
@@ -3054,9 +2949,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_graph_query_bat
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_graph_query_last() {
-    // arrange
-    // act
-    // assert
     // Given: last graph query result bound as structured unavailable
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_operator_summary(&app)
@@ -3093,9 +2985,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_graph_query_las
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_graph_batch_first() {
-    // arrange
-    // act
-    // assert
     // Given: first result one_line from multi-kind batch bound
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_operator_summary(&app)
@@ -3165,9 +3054,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_workspace_hub_o
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_workspace_hub_availability() {
-    // arrange
-    // act
-    // assert
     // Given: workspace hub availability + last connect bound
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_operator_summary(&app)
@@ -3250,9 +3136,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_auto_fallback_c
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_workspace_hub_bind_upload_recover()
 {
-    // arrange
-    // act
-    // assert
     // Given: workspace hub bind/upload/recover diagnostic results bound
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_operator_summary(&app)
@@ -3312,9 +3195,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_workspace_hub_b
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_fallback_outcome() {
-    // arrange
-    // act
-    // assert
     // Given: last auto-fallback outcome bound (exhausted)
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_operator_summary(&app)
@@ -3347,9 +3227,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_fallback_outcom
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_fallback_banner() {
-    // arrange
-    // act
-    // assert
     // Given: last auto-fallback banner bound
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_operator_summary(&app)
@@ -3375,9 +3252,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_fallback_banner
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_fallback_models() {
-    // arrange
-    // act
-    // assert
     // Given: resolved fallback chain label bound
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_operator_summary(&app)
@@ -3442,9 +3316,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_demote_outcome_
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_demote_last() {
-    // arrange
-    // act
-    // assert
     // Given: last demote result bound (shell demote honest unavailable)
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_operator_summary(&app).demote_last.is_none());
@@ -3473,9 +3344,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_demote_last() {
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_demote_last_task() {
-    // arrange
-    // act
-    // assert
     // Given: last task-registry demote result bound (rejected)
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_operator_summary(&app)
@@ -3510,9 +3378,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_demote_last_tas
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_cron_schedule_counts() {
-    // arrange
-    // act
-    // assert
     // Given: live app with cron schedule summary bound for the status dialog
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_operator_summary(&app).cron.is_none());
@@ -3549,9 +3414,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_cron_schedule_c
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_cron_register() {
-    // arrange
-    // act
-    // assert
     // Given: cron last-register + first schedule bound
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_operator_summary(&app)
@@ -3598,9 +3460,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_cron_register()
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_cron_remove() {
-    // arrange
-    // act
-    // assert
     // Given: cron last-remove fail-closed outcome bound
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_operator_summary(&app)
@@ -3628,9 +3487,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_cron_remove() {
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_plugins_section_surfaces_extension_descriptor() {
-    // arrange
-    // act
-    // assert
     // Given: live app with extension manifest summary bound for the status dialog
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_plugin_summary(&app)
@@ -3734,9 +3590,6 @@ pub(crate) fn exact_test_status_dialog_plugins_section_surfaces_lifecycle_summar
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_plugins_section_surfaces_plugin_install() {
-    // arrange
-    // act
-    // assert
     // Given: plugin last-install bound (fail-closed missing package)
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_plugin_summary(&app).last_install.is_none());
@@ -3775,9 +3628,6 @@ pub(crate) fn exact_test_status_dialog_plugins_section_surfaces_plugin_install()
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_plugins_section_surfaces_plugin_activate() {
-    // arrange
-    // act
-    // assert
     // Given: plugin last-activate bound (fail-closed missing package)
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_plugin_summary(&app).last_activate.is_none());
@@ -3815,9 +3665,6 @@ pub(crate) fn exact_test_status_dialog_plugins_section_surfaces_plugin_activate(
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_plugins_section_surfaces_plugin_deactivate() {
-    // arrange
-    // act
-    // assert
     // Given: plugin last-deactivate bound (fail-closed missing package)
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_plugin_summary(&app).last_deactivate.is_none());
@@ -3857,9 +3704,6 @@ pub(crate) fn exact_test_status_dialog_plugins_section_surfaces_plugin_deactivat
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_plugins_section_surfaces_plugin_remove() {
-    // arrange
-    // act
-    // assert
     // Given: plugin last-remove bound (fail-closed missing package)
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_plugin_summary(&app).last_remove.is_none());
@@ -3893,9 +3737,6 @@ pub(crate) fn exact_test_status_dialog_plugins_section_surfaces_plugin_remove() 
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_plugins_section_surfaces_extension_discover() {
-    // arrange
-    // act
-    // assert
     // Given: extension discover + last-load bound
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_plugin_summary(&app).discover.is_none());
@@ -4184,9 +4025,6 @@ fn sanitize_status_dialog_text(value: &str) -> String {
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_cow_fastpath() {
-    // arrange
-    // act
-    // assert
     // Given: live app with COW worktree availability bound for the status dialog
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_operator_summary(&app).cow_fastpath.is_none());
@@ -4224,9 +4062,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_cow_fastpath() 
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_persistent_graph() {
-    // arrange
-    // act
-    // assert
     // Given: live app with persistent graph availability bound for the status dialog
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_operator_summary(&app)
@@ -4265,9 +4100,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_persistent_grap
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_landlock_support() {
-    // arrange
-    // act
-    // assert
     // Given: live app with Landlock support bound for the status dialog
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_operator_summary(&app).landlock.is_none());
@@ -4302,9 +4134,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_landlock_suppor
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_os_sandbox_profiles() {
-    // arrange
-    // act
-    // assert
     // Given: OS sandbox profiles summary bound
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_operator_summary(&app)
@@ -4339,9 +4168,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_os_sandbox_prof
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_os_sandbox_first_prepare() {
-    // arrange
-    // act
-    // assert
     // Given: first OS sandbox profile + last prepare bound
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_operator_summary(&app)

@@ -76,9 +76,6 @@ fn load_stored(data_home: &Path, provider: AuthProviderId) -> StoredCredential {
 
 #[test]
 fn onboarding_required_only_when_configured_auth_provider_has_no_usable_fallback() {
-    // arrange
-    // act
-    // assert
     let missing = codex_config("");
     assert!(onboarding_required_for_config(
         Some(&missing),
@@ -120,9 +117,6 @@ fn onboarding_required_only_when_configured_auth_provider_has_no_usable_fallback
 
 #[test]
 fn interactive_auth_login_provider_picker_cancels_without_stacktrace() {
-    // arrange
-    // act
-    // assert
     let temp = tempdir().unwrap_or_abort();
     let args = auth_args(&["login"]);
 
@@ -142,9 +136,6 @@ fn interactive_auth_login_provider_picker_cancels_without_stacktrace() {
 
 #[test]
 fn interactive_codex_api_key_stores_without_echoing_secret() {
-    // arrange
-    // act
-    // assert
     let temp = tempdir().unwrap_or_abort();
     let secret = "sk-interactive-auth-secret-value";
     let args = auth_args(&["login"]);
@@ -168,9 +159,6 @@ fn interactive_codex_api_key_stores_without_echoing_secret() {
 
 #[test]
 fn interactive_codex_browser_and_device_resolve_to_mockable_oauth_paths() {
-    // arrange
-    // act
-    // assert
     for (stdin, expected_label) in [
         ("\n\n", "ChatGPT Pro/Plus (browser)"),
         ("\n\x1b[B\n", "ChatGPT Pro/Plus (headless)"),
@@ -204,9 +192,6 @@ fn interactive_codex_browser_and_device_resolve_to_mockable_oauth_paths() {
 
 #[test]
 fn interactive_github_copilot_resolves_to_mockable_device_flow() {
-    // arrange
-    // act
-    // assert
     let temp = tempdir().unwrap_or_abort();
     let token = "copilot-interactive-secret";
     let args = auth_args(&["login", "--mock-token", token]);
@@ -231,9 +216,6 @@ fn interactive_github_copilot_resolves_to_mockable_device_flow() {
 
 #[test]
 fn explicit_auth_login_args_bypass_interactive_picker() {
-    // arrange
-    // act
-    // assert
     let temp = tempdir().unwrap_or_abort();
     let secret = "sk-explicit-auth-secret-value";
     let args = auth_args(&[
@@ -267,9 +249,6 @@ fn explicit_auth_login_args_bypass_interactive_picker() {
 
 #[test]
 fn supported_method_labels_parse_for_supported_providers() {
-    // arrange
-    // act
-    // assert
     assert_eq!(
         super::parse_login_method_arg("ChatGPT Pro/Plus (browser)"),
         Ok(super::AuthLoginMethod::Browser)
@@ -290,9 +269,6 @@ fn supported_method_labels_parse_for_supported_providers() {
 
 #[test]
 fn explicit_auth_logout_rejects_control_provider_without_echoing_it() {
-    // arrange
-    // act
-    // assert
     let temp = tempdir().unwrap_or_abort();
     let provider = "codex\u{1b}]52;c;SGFja2Vk\u{7}";
     let args = auth_args(&["logout", provider]);
@@ -307,9 +283,6 @@ fn explicit_auth_logout_rejects_control_provider_without_echoing_it() {
 
 #[test]
 fn explicit_auth_login_rejects_control_provider_without_echoing_it() {
-    // arrange
-    // act
-    // assert
     let provider = "codex\u{1b}]52;c;SGFja2Vk\u{7}";
 
     assert_explicit_auth_login_rejects_provider(provider);
@@ -317,9 +290,6 @@ fn explicit_auth_login_rejects_control_provider_without_echoing_it() {
 
 #[test]
 fn explicit_auth_login_rejects_leading_newline_codex_alias_without_echoing_it() {
-    // arrange
-    // act
-    // assert
     let provider = "\ncodex";
 
     assert_explicit_auth_login_rejects_provider(provider);
@@ -327,9 +297,6 @@ fn explicit_auth_login_rejects_leading_newline_codex_alias_without_echoing_it() 
 
 #[test]
 fn explicit_auth_login_rejects_trailing_newline_codex_alias_without_echoing_it() {
-    // arrange
-    // act
-    // assert
     let provider = "codex\n";
 
     assert_explicit_auth_login_rejects_provider(provider);
@@ -337,9 +304,6 @@ fn explicit_auth_login_rejects_trailing_newline_codex_alias_without_echoing_it()
 
 #[test]
 fn explicit_auth_login_rejects_leading_newline_openai_alias_without_echoing_it() {
-    // arrange
-    // act
-    // assert
     let provider = "\nopenai";
 
     assert_explicit_auth_login_rejects_provider(provider);
@@ -347,9 +311,6 @@ fn explicit_auth_login_rejects_leading_newline_openai_alias_without_echoing_it()
 
 #[test]
 fn explicit_auth_login_rejects_leading_newline_copilot_alias_without_echoing_it() {
-    // arrange
-    // act
-    // assert
     let provider = "\ngithub-copilot";
 
     assert_explicit_auth_login_rejects_provider(provider);
@@ -357,9 +318,6 @@ fn explicit_auth_login_rejects_leading_newline_copilot_alias_without_echoing_it(
 
 #[test]
 fn auth_list_sanitizes_control_provider_key_config_error_without_echoing_it() {
-    // arrange
-    // act
-    // assert
     let temp = tempdir().unwrap_or_abort();
     let config_path = temp.path().join("harness.jsonc");
     std::fs::write(
@@ -401,9 +359,6 @@ fn auth_list_sanitizes_control_provider_key_config_error_without_echoing_it() {
 
 #[test]
 fn auth_list_reports_arbitrary_configured_auth_provider() {
-    // arrange
-    // act
-    // assert
     let temp = tempdir().unwrap_or_abort();
     let config_path = temp.path().join("harness.jsonc");
     std::fs::write(
@@ -493,9 +448,6 @@ impl MockCodexAuthHttpClient {
 
 #[tokio::test]
 async fn codex_browser_login_accepts_pasted_localhost_callback_url() {
-    // arrange
-    // act
-    // assert
     let http = MockCodexAuthHttpClient::new(AuthHttpResponse {
         status: 200,
         body: serde_json::json!({
@@ -554,9 +506,6 @@ async fn codex_browser_login_accepts_pasted_localhost_callback_url() {
 
 #[tokio::test]
 async fn codex_browser_login_loopback_uses_cli_listener_and_stores_credential() {
-    // arrange
-    // act
-    // assert
     let http = MockCodexAuthHttpClient::new(AuthHttpResponse {
         status: 200,
         body: serde_json::json!({

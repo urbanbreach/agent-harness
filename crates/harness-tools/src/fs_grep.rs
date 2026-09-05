@@ -778,9 +778,6 @@ mod tests {
 
     #[test]
     fn collect_grep_matches_finds_matches_with_context_and_skips_ignored_directories() {
-        // arrange
-        // act
-        // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let root = tempdir.path();
 
@@ -835,9 +832,6 @@ mod tests {
 
     #[test]
     fn collect_grep_matches_applies_include_filter_and_limit() {
-        // arrange
-        // act
-        // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let root = tempdir.path();
 
@@ -871,9 +865,6 @@ mod tests {
 
     #[tokio::test]
     async fn fs_grep_accepts_exact_file_path_without_searching_siblings() {
-        // arrange
-        // act
-        // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let root = tempdir.path();
         create_dir(root, "src");
@@ -929,9 +920,6 @@ mod tests {
 
     #[test]
     fn collect_grep_matches_literal_search_escapes_regex_metacharacters() {
-        // arrange
-        // act
-        // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let root = tempdir.path();
         write_file(root, "notes.txt", "task(run_in_background\ntaskXrun\n");
@@ -954,9 +942,6 @@ mod tests {
 
     #[tokio::test]
     async fn fs_grep_accepts_absolute_workspace_path() {
-        // arrange
-        // act
-        // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let root = tempdir.path();
         write_file(root, "main.rs", "#[tokio::main]\nfn main() {}\n");
@@ -981,9 +966,6 @@ mod tests {
 
     #[tokio::test]
     async fn fs_grep_files_with_matches_returns_file_paths() {
-        // arrange
-        // act
-        // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let root = tempdir.path();
         write_file(root, "a.txt", "TODO a\n");
@@ -1028,9 +1010,6 @@ mod tests {
 
     #[tokio::test]
     async fn fs_grep_count_returns_per_file_match_counts() {
-        // arrange
-        // act
-        // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let root = tempdir.path();
         write_file(root, "a.txt", "TODO a\nTODO b\n");
@@ -1082,9 +1061,6 @@ mod tests {
 
     #[tokio::test]
     async fn fs_grep_head_limit_restricts_files_in_files_with_matches_mode() {
-        // arrange
-        // act
-        // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let root = tempdir.path();
         write_file(root, "a.txt", "TODO a\n");
@@ -1118,9 +1094,6 @@ mod tests {
 
     #[tokio::test]
     async fn fs_grep_head_limit_restricts_files_in_count_mode() {
-        // arrange
-        // act
-        // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let root = tempdir.path();
         write_file(root, "a.txt", "TODO a\n");
@@ -1151,9 +1124,6 @@ mod tests {
 
     #[tokio::test]
     async fn fs_grep_content_default_behavior_unchanged_without_output_mode() {
-        // arrange
-        // act
-        // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let root = tempdir.path();
         write_file(root, "a.txt", "TODO a\n");
@@ -1178,9 +1148,6 @@ mod tests {
 
     #[tokio::test]
     async fn fs_grep_head_limit_in_content_mode_limits_files_returned() {
-        // arrange
-        // act
-        // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let root = tempdir.path();
         write_file(root, "a.txt", "TODO a\n");
@@ -1213,9 +1180,6 @@ mod tests {
 
     #[tokio::test]
     async fn fs_grep_head_limit_zero_treated_as_no_limit() {
-        // arrange
-        // act
-        // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let root = tempdir.path();
         write_file(root, "a.txt", "TODO a\n");

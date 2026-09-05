@@ -134,9 +134,6 @@ mod tests {
 
     #[test]
     fn active_turn_motion_demand_requires_a_visible_running_tool() {
-        // arrange
-        // act
-        // assert
         assert!(active_turn_motion_demand(true, true, true));
         assert!(!active_turn_motion_demand(true, true, false));
         assert!(!active_turn_motion_demand(true, false, true));

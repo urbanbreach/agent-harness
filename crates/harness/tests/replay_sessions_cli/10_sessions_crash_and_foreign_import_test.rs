@@ -1,9 +1,6 @@
 #[cfg(target_os = "linux")]
 #[test]
 fn sessions_inspect_surfaces_recovery_message_for_previous_crash() {
-    // arrange
-    // act
-    // assert
     // Given: interactive session with a stale writer lock (previous crash)
     let session_dir = tempdir().unwrap_or_abort();
     let run_dir = session_dir.path().join("run_crash_inspect");
@@ -96,9 +93,6 @@ fn sessions_inspect_surfaces_recovery_message_for_previous_crash() {
 
 #[test]
 fn sessions_inspect_omits_recovery_message_without_crash() {
-    // arrange
-    // act
-    // assert
     // Given: clean finished session
     let session_dir = tempdir().unwrap_or_abort();
     let run_dir = session_dir.path().join("run_clean_inspect");
@@ -157,9 +151,6 @@ fn sessions_inspect_omits_recovery_message_without_crash() {
 
 #[test]
 fn sessions_import_events_jsonl_creates_replay_session() {
-    // arrange
-    // act
-    // assert
     // Given: foreign events.jsonl with harness-compatible envelopes
     let root = tempdir().unwrap_or_abort();
     let foreign = root.path().join("foreign-session");
@@ -220,9 +211,6 @@ fn sessions_import_events_jsonl_creates_replay_session() {
 
 #[test]
 fn sessions_import_unknown_format_fails_closed() {
-    // arrange
-    // act
-    // assert
     // Given: foreign session with session.json only
     let root = tempdir().unwrap_or_abort();
     let foreign = root.path().join("codex-session");

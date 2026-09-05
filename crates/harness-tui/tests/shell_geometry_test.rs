@@ -117,9 +117,6 @@ fn minimum_viewport_never_clips_focus_or_cursor() {
 
 #[test]
 fn shell_state_registry_is_exactly_the_requested_nine_states() {
-    // arrange
-    // act
-    // assert
     assert_eq!(
         ALL_SHELL_STATES,
         [

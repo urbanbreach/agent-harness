@@ -436,9 +436,6 @@ mod tests {
 
     #[test]
     fn primary_failure_selects_first_fallback() {
-        // arrange
-        // act
-        // assert
         // Given
         let sel = selection("p:main", &["p:fb1", "p:fb2"]);
 
@@ -461,9 +458,6 @@ mod tests {
 
     #[test]
     fn mid_chain_failure_selects_next_fallback() {
-        // arrange
-        // act
-        // assert
         let sel = selection("p:main", &["p:fb1", "p:fb2"]);
         let outcome = resolve_next_fallback(&sel, "p:fb1");
         match outcome {
@@ -481,9 +475,6 @@ mod tests {
 
     #[test]
     fn last_fallback_failure_is_exhausted() {
-        // arrange
-        // act
-        // assert
         let sel = selection("p:main", &["p:fb1"]);
         let outcome = resolve_next_fallback(&sel, "p:fb1");
         match outcome {
@@ -496,9 +487,6 @@ mod tests {
 
     #[test]
     fn empty_fallback_chain_exhausts_on_primary_error() {
-        // arrange
-        // act
-        // assert
         let sel = selection("p:only", &[]);
         let outcome = resolve_next_fallback(&sel, "p:only");
         assert!(outcome.is_exhausted());
@@ -506,9 +494,6 @@ mod tests {
 
     #[test]
     fn remaining_fallback_model_refs_lists_tail_after_primary() {
-        // arrange
-        // act
-        // assert
         // Given
         let sel = selection("p:main", &["p:fb1", "p:fb2"]);
 
@@ -526,9 +511,6 @@ mod tests {
 
     #[test]
     fn take_next_fallback_model_ref_drains_queue() {
-        // arrange
-        // act
-        // assert
         let mut chain = vec!["p:fb1".to_string(), "p:fb2".to_string()];
         assert_eq!(
             take_next_fallback_model_ref(&mut chain).as_deref(),
@@ -543,9 +525,6 @@ mod tests {
 
     #[test]
     fn provider_error_stage_is_fallback_eligible() {
-        // arrange
-        // act
-        // assert
         assert!(is_provider_failure_fallback_eligible("provider_error"));
         assert!(!is_provider_failure_fallback_eligible("cancelled"));
         assert!(!is_provider_failure_fallback_eligible(
@@ -555,9 +534,6 @@ mod tests {
 
     #[test]
     fn format_auto_fallback_banner_matches_operator_shape() {
-        // arrange
-        // act
-        // assert
         // Given / When
         let banner = format_auto_fallback_banner("model-a", "model-b");
 
@@ -567,9 +543,6 @@ mod tests {
 
     #[test]
     fn describe_auto_fallback_outcome_covers_next_and_exhausted() {
-        // arrange
-        // act
-        // assert
         // Given
         let sel = selection("p:main", &["p:fb1", "p:fb2"]);
         let next = resolve_next_fallback(&sel, "p:main");
@@ -588,9 +561,6 @@ mod tests {
 
     #[test]
     fn format_fallback_chain_label_lists_primary_then_fallbacks() {
-        // arrange
-        // act
-        // assert
         // Given
         let sel = selection("p:main", &["p:fb1", "p:fb2"]);
 
@@ -603,9 +573,6 @@ mod tests {
 
     #[test]
     fn auto_fallback_summary_one_line_and_remaining_counts() {
-        // arrange
-        // act
-        // assert
         // Given
         let sel = selection("p:main", &["p:fb1", "p:fb2"]);
 
@@ -639,9 +606,6 @@ mod tests {
 
     #[test]
     fn orchestrate_fallback_chain_walks_primary_through_exhaustion_with_remaining() {
-        // arrange
-        // act
-        // assert
         // Given: primary → fb1 → fb2 → fb3 → fb4
         let sel = selection("p:main", &["p:fb1", "p:fb2", "p:fb3", "p:fb4"]);
 
@@ -678,9 +642,6 @@ mod tests {
 
     #[test]
     fn orchestrate_provider_failure_fallback_drains_queue_until_exhausted() {
-        // arrange
-        // act
-        // assert
         // Given
         let sel = selection("p:main", &["p:fb1", "p:fb2", "p:fb3"]);
 

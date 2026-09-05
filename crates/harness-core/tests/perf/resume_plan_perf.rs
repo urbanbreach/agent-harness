@@ -15,9 +15,6 @@ const PROVIDER_TURNS: u64 = 250;
 
 #[test]
 fn perf_project_resume_plan_large_completed_log_under_budget() {
-    // arrange
-    // act
-    // assert
     let events = completed_run_events(PROVIDER_TURNS);
     let budget = Duration::from_millis(
         std::env::var("HARNESS_PERF_RESUME_PLAN_BUDGET_MS")

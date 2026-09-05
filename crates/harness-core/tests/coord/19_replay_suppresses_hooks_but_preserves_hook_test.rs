@@ -1,9 +1,6 @@
 use harness_core::UnwrapOrAbort;
 #[test]
 fn replay_suppresses_hooks_but_preserves_hook_history() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_replay_hook_suppression";
     let side_effect_path = temp_dir.path().join("hook-side-effect.txt");
@@ -195,16 +192,10 @@ fn replay_suppresses_hooks_but_preserves_hook_history() {
 }
 #[test]
 fn replay_suppresses_hook_execution_but_preserves_hook_events() {
-    // arrange
-    // act
-    // assert
     replay_suppresses_hooks_but_preserves_hook_history();
 }
 #[tokio::test]
 async fn hook_runner_is_suppressed_in_replay_and_deterministic_modes() {
-    // arrange
-    // act
-    // assert
     replay_suppresses_hooks_but_preserves_hook_history();
     deterministic_runs_suppress_live_hook_execution().await;
 }

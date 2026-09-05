@@ -142,9 +142,6 @@ mod tests {
 
     #[test]
     fn compute_diff_shows_no_drift_when_identical() {
-        // arrange
-        // act
-        // assert
         // Given
         let snapshot = b"line one\nline two\n";
         // When
@@ -158,9 +155,6 @@ mod tests {
 
     #[test]
     fn compute_diff_shows_drift_when_modified() {
-        // arrange
-        // act
-        // assert
         // Given
         let snapshot = b"line one\nline two\n";
         let current = b"line one\nline modified\n";
@@ -175,9 +169,6 @@ mod tests {
 
     #[test]
     fn compute_blame_attributes_unchanged_lines_to_agent() {
-        // arrange
-        // act
-        // assert
         // Given
         let snapshot = b"keep\nkeep\n";
         // When
@@ -192,9 +183,6 @@ mod tests {
 
     #[test]
     fn compute_blame_attributes_inserted_lines_to_external() {
-        // arrange
-        // act
-        // assert
         // Given
         let snapshot = b"line one\n";
         let current = b"line one\nline two\n";
@@ -209,9 +197,6 @@ mod tests {
 
     #[test]
     fn compute_blame_attributes_replaced_lines_to_external() {
-        // arrange
-        // act
-        // assert
         // Given
         let snapshot = b"old line\n";
         let current = b"new line\n";
@@ -226,9 +211,6 @@ mod tests {
 
     #[test]
     fn compute_blame_handles_empty_current_file() {
-        // arrange
-        // act
-        // assert
         // Given
         let snapshot = b"line one\nline two\n";
         let current = b"";
@@ -243,9 +225,6 @@ mod tests {
 
     #[test]
     fn compute_blame_handles_empty_snapshot() {
-        // arrange
-        // act
-        // assert
         // Given
         let snapshot = b"";
         let current = b"new content\n";
@@ -259,9 +238,6 @@ mod tests {
 
     #[test]
     fn compute_diff_line_numbers_are_one_based() {
-        // arrange
-        // act
-        // assert
         // Given
         let snapshot = b"a\nb\nc\n";
         let current = b"a\nB\nc\n";

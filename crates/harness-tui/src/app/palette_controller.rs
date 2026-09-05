@@ -520,9 +520,6 @@ mod tests {
 
     #[test]
     fn compute_palette_rows_matches_title() {
-        // arrange
-        // act
-        // assert
         let app = AppState::new_live(None, false, None);
         let rows = compute_palette_rows(&app, "swi");
         assert!(
@@ -533,9 +530,6 @@ mod tests {
 
     #[test]
     fn compute_palette_rows_returns_empty_for_no_match() {
-        // arrange
-        // act
-        // assert
         let app = AppState::new_live(None, false, None);
         let rows = compute_palette_rows(&app, "xyz");
         assert!(rows.is_empty(), "query 'xyz' must produce no results");
@@ -543,9 +537,6 @@ mod tests {
 
     #[test]
     fn compute_palette_rows_empty_filter_returns_all() {
-        // arrange
-        // act
-        // assert
         let app = AppState::new_live(None, false, None);
         let rows = compute_palette_rows(&app, "");
         assert!(
@@ -568,9 +559,6 @@ mod tests {
 
     #[test]
     fn compute_palette_rows_title_weighted_higher_than_category() {
-        // arrange
-        // act
-        // assert
         let app = AppState::new_live(None, false, None);
         let rows = compute_palette_rows(&app, "session");
         assert!(!rows.is_empty());

@@ -161,9 +161,6 @@ mod tests {
 
     #[test]
     fn recognizes_harness_default_titles() {
-        // arrange
-        // act
-        // assert
         assert!(is_default_title("New session - 2026-05-07T12:34:56.789Z"));
         assert!(is_default_title("Child session - 2026-05-07T12:34:56.789Z"));
         assert!(!is_default_title("New session - 2026-05-07T12:34:56Z"));
@@ -172,9 +169,6 @@ mod tests {
 
     #[test]
     fn cleans_harness_generated_title() {
-        // arrange
-        // act
-        // assert
         assert_eq!(
             clean_generated_title(
                 "<think>hidden</think>\n\n  Debugging production 500 errors\nextra"
@@ -186,9 +180,6 @@ mod tests {
 
     #[test]
     fn truncates_harness_generated_title() {
-        // arrange
-        // act
-        // assert
         let input = "x".repeat(101);
         assert_eq!(
             clean_generated_title(&input),

@@ -979,9 +979,6 @@ mod tests {
 
     #[test]
     fn sidebar_directory_footer_keeps_unbroken_path_segments_on_one_row() {
-        // arrange
-        // act
-        // assert
         let theme = Theme::default();
         let lines = operator_sidebar_directory_footer_text(
             "/tmp/harness-sidebar-overflow/workspaces/golden_path_interactive-run_1234567890abcdef:dev",

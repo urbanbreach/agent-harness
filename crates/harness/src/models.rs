@@ -181,9 +181,6 @@ mod tests {
 
     #[test]
     fn no_config_models_without_provider_prints_connect_guidance() {
-        // arrange
-        // act
-        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let deps = crate::CliDeps::real()
             .with_current_dir(temp.path().to_path_buf())
@@ -211,9 +208,6 @@ mod tests {
 
     #[test]
     fn no_config_models_with_stored_copilot_lists_builtin_provider() {
-        // arrange
-        // act
-        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let data_home = temp.path().join("data");
         CredentialStore::new(data_home.join("harness"))

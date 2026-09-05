@@ -615,9 +615,6 @@ mod tests {
 
     #[test]
     fn no_config_stored_codex_activates_filtered_codex_catalog() {
-        // arrange
-        // act
-        // assert
         let (_temp, store) = store_with(AuthProviderId::codex());
         let resolved =
             resolve_runtime_catalog(None, None, None, Some(&store), &|_| None).unwrap_or_abort();
@@ -635,9 +632,6 @@ mod tests {
 
     #[test]
     fn no_config_stored_copilot_activates_copilot_catalog() {
-        // arrange
-        // act
-        // assert
         let (_temp, store) = store_with(AuthProviderId::github_copilot());
         let resolved =
             resolve_runtime_catalog(None, None, None, Some(&store), &|_| None).unwrap_or_abort();
@@ -654,9 +648,6 @@ mod tests {
 
     #[test]
     fn explicit_config_provider_wins_over_matching_builtin_id() {
-        // arrange
-        // act
-        // assert
         let raw = r#"{
           provider: {
             "github-copilot": {
@@ -693,9 +684,6 @@ mod tests {
 
     #[test]
     fn no_config_without_credentials_reports_connect_state() {
-        // arrange
-        // act
-        // assert
         let resolved = resolve_runtime_catalog(None, None, None, None, &|_| None).unwrap_or_abort();
 
         assert!(resolved.no_provider_connected);
@@ -712,9 +700,6 @@ mod tests {
 
     #[test]
     fn openai_env_key_activates_codex_without_copying_secret() {
-        // arrange
-        // act
-        // assert
         let resolved = resolve_runtime_catalog(None, None, None, None, &|name| {
             (name == "OPENAI_API_KEY").then_some("sk-test-secret".to_string())
         })
@@ -738,9 +723,6 @@ mod tests {
 
     #[test]
     fn explicit_config_without_credentials_does_not_add_builtins() {
-        // arrange
-        // act
-        // assert
         let raw = r#"{
           provider: {
             default: {
@@ -776,9 +758,6 @@ mod tests {
 
     #[test]
     fn copilot_offline_fallback_models_are_available_for_deterministic_catalogs() {
-        // arrange
-        // act
-        // assert
         let fallback = copilot_offline_fallback_models();
         assert!(!fallback.is_empty());
         assert!(fallback
@@ -791,9 +770,6 @@ mod tests {
 
     #[test]
     fn builtin_provider_configs_carry_auth_profiles_for_router() {
-        // arrange
-        // act
-        // assert
         let (temp, codex_store) = store_with(AuthProviderId::codex());
         let copilot_store = CredentialStore::new(temp.path());
         copilot_store
@@ -941,9 +917,6 @@ mod tests {
 
     #[test]
     fn provider_filters_hide_builtins() {
-        // arrange
-        // act
-        // assert
         let raw = r#"{
           disabled_providers: ["openai-codex"],
           enabled_providers: ["github-copilot"],
@@ -989,9 +962,6 @@ mod tests {
 
     #[test]
     fn codex_oauth_models_get_complete_reasoning_variants() {
-        // arrange
-        // act
-        // assert
         let (_temp, store) = store_with(AuthProviderId::codex());
         let resolved =
             resolve_runtime_catalog(None, None, None, Some(&store), &|_| None).unwrap_or_abort();

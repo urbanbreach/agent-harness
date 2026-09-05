@@ -1,9 +1,6 @@
 use harness_core::UnwrapOrAbort;
 #[test]
 fn provider_boundary_preserves_existing_message_shape() {
-    // arrange
-    // act
-    // assert
     let profile = boundary_profile();
     let request = AgentRequest {
         agent_id: "agent_1".to_string(),
@@ -124,9 +121,6 @@ fn provider_boundary_preserves_existing_message_shape() {
 }
 #[test]
 fn conversation_projection_failed_checkpoint_turn_status() {
-    // arrange
-    // act
-    // assert
     let checkpoint = ProviderContextCheckpoint {
         metadata: checkpoint_metadata(),
         summary: "Older work was compacted.".to_string(),
@@ -167,9 +161,6 @@ fn conversation_projection_failed_checkpoint_turn_status() {
 }
 #[test]
 fn conversation_projection_reconstructs_user_assistant_tool_messages_from_events() {
-    // arrange
-    // act
-    // assert
     let checkpoint = ProviderContextCheckpoint {
         metadata: ProviderContextCheckpointMetadata {
             checkpoint_id: "checkpoint_000002".to_string(),
@@ -424,9 +415,6 @@ fn conversation_projection_reconstructs_user_assistant_tool_messages_from_events
 }
 #[test]
 fn provider_boundary_falls_back_for_non_json_historical_tool_args() {
-    // arrange
-    // act
-    // assert
     let events = vec![
         envelope(
             1,

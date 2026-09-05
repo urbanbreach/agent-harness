@@ -1,9 +1,6 @@
 use harness::UnwrapOrAbort;
 #[test]
 fn sessions_fork_rejects_invalid_cutoff() {
-    // arrange
-    // act
-    // assert
     let session_dir = tempdir().unwrap_or_abort();
     let source_dir = session_dir.path().join("unstable_source");
     std::fs::create_dir_all(&source_dir).unwrap_or_abort();
@@ -53,9 +50,6 @@ fn sessions_fork_rejects_invalid_cutoff() {
 }
 #[test]
 fn sessions_fork_clone_reject_invalid_source_selector() {
-    // arrange
-    // act
-    // assert
     let session_dir = tempdir().unwrap_or_abort();
 
     let fork_output = run_harness([
@@ -90,9 +84,6 @@ fn sessions_fork_clone_reject_invalid_source_selector() {
 }
 #[test]
 fn sessions_fork_clone_reject_ambiguous_source_selector() {
-    // arrange
-    // act
-    // assert
     let session_dir = tempdir().unwrap_or_abort();
     for run_dir_name in ["ambiguous_source_a", "ambiguous_source_b"] {
         let run_dir = session_dir.path().join(run_dir_name);
@@ -132,9 +123,6 @@ fn sessions_fork_clone_reject_ambiguous_source_selector() {
 }
 #[test]
 fn sessions_fork_rejects_cutoff_beyond_log() {
-    // arrange
-    // act
-    // assert
     let session_dir = tempdir().unwrap_or_abort();
     let source_dir = session_dir.path().join("short_source");
     std::fs::create_dir_all(&source_dir).unwrap_or_abort();
@@ -162,9 +150,6 @@ fn sessions_fork_rejects_cutoff_beyond_log() {
 }
 #[test]
 fn replay_cli_fails_when_events_are_missing() {
-    // arrange
-    // act
-    // assert
     let run_dir = tempdir().unwrap_or_abort();
     let output = run_harness([
             "replay",

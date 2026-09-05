@@ -147,9 +147,6 @@ mod tests {
 
     #[test]
     fn catalog_marks_openai_and_anthropic_supported() {
-        // arrange
-        // act
-        // assert
         // When
         let catalog = provider_protocol_catalog();
 
@@ -183,9 +180,6 @@ mod tests {
 
     #[test]
     fn unsupported_rows_carry_honest_notes() {
-        // arrange
-        // act
-        // assert
         for row in provider_protocol_catalog() {
             if row.support.is_supported() {
                 continue;

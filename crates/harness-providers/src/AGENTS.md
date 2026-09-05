@@ -15,7 +15,6 @@ src/
 |- attachment_protocol/   # capability-aware image/text serialization
 |- request_budget/        # provider framing and token-cost semantics
 |- schema_compat/         # provider-specific tool-schema lowering
-|- leaf.rs                # configured protocol selection
 `- mock.rs                # deterministic scripted and fixture-backed provider
 ```
 

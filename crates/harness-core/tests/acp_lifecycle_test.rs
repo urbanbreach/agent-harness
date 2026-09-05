@@ -9,9 +9,6 @@ use harness_core::UnwrapOrAbort;
 
 #[test]
 fn acp_connect_happy_path_reaches_connected() {
-    // arrange
-    // act
-    // assert
     // Given
     let mut session = AcpConnection::new(MockAcpTransport::new());
     assert_eq!(session.state(), &AcpConnectionState::Disconnected);
@@ -26,9 +23,6 @@ fn acp_connect_happy_path_reaches_connected() {
 
 #[test]
 fn acp_connect_failure_ends_in_failed_not_connected() {
-    // arrange
-    // act
-    // assert
     // Given
     let mut transport = MockAcpTransport::new();
     transport.fail_connect = true;
@@ -51,9 +45,6 @@ fn acp_connect_failure_ends_in_failed_not_connected() {
 
 #[test]
 fn acp_disconnect_from_connected_returns_to_disconnected() {
-    // arrange
-    // act
-    // assert
     // Given
     let mut session = AcpConnection::new(MockAcpTransport::new());
     session.connect().expect("connect");
@@ -68,9 +59,6 @@ fn acp_disconnect_from_connected_returns_to_disconnected() {
 
 #[test]
 fn acp_reconnect_from_failed_can_recover() {
-    // arrange
-    // act
-    // assert
     // Given: prior failed connect
     let mut transport = MockAcpTransport::new();
     transport.fail_connect = true;
@@ -88,9 +76,6 @@ fn acp_reconnect_from_failed_can_recover() {
 
 #[test]
 fn acp_disconnect_during_operation_is_not_success() {
-    // arrange
-    // act
-    // assert
     // Given: connected session that will drop mid-operate
     let mut transport = MockAcpTransport::new();
     transport.disconnect_on_next_operate = true;
@@ -117,9 +102,6 @@ fn acp_disconnect_during_operation_is_not_success() {
 
 #[test]
 fn acp_transport_error_during_operation_marks_failed() {
-    // arrange
-    // act
-    // assert
     // Given
     let mut transport = MockAcpTransport::new();
     transport.fail_on_next_operate = true;
@@ -142,9 +124,6 @@ fn acp_transport_error_during_operation_marks_failed() {
 
 #[test]
 fn acp_operate_while_disconnected_is_rejected() {
-    // arrange
-    // act
-    // assert
     // Given
     let mut session = AcpConnection::new(MockAcpTransport::new());
 
@@ -158,9 +137,6 @@ fn acp_operate_while_disconnected_is_rejected() {
 
 #[test]
 fn acp_connect_while_connected_is_rejected() {
-    // arrange
-    // act
-    // assert
     // Given
     let mut session = AcpConnection::new(MockAcpTransport::new());
     session.connect().expect("connect");
@@ -175,9 +151,6 @@ fn acp_connect_while_connected_is_rejected() {
 
 #[test]
 fn acp_bind_session_while_connected_assigns_session_id() {
-    // arrange
-    // act
-    // assert
     // Given
     let mut session = AcpConnection::new(MockAcpTransport::new());
     session.connect().expect("connect");
@@ -197,9 +170,6 @@ fn acp_bind_session_while_connected_assigns_session_id() {
 
 #[test]
 fn acp_bind_session_while_disconnected_is_rejected() {
-    // arrange
-    // act
-    // assert
     // Given
     let mut session = AcpConnection::new(MockAcpTransport::new());
 
@@ -213,9 +183,6 @@ fn acp_bind_session_while_disconnected_is_rejected() {
 
 #[test]
 fn acp_bind_session_rejects_empty_agent_name_and_double_bind() {
-    // arrange
-    // act
-    // assert
     // Given
     let mut session = AcpConnection::new(MockAcpTransport::new());
     session.connect().expect("connect");
@@ -237,9 +204,6 @@ fn acp_bind_session_rejects_empty_agent_name_and_double_bind() {
 
 #[test]
 fn acp_disconnect_clears_bound_session() {
-    // arrange
-    // act
-    // assert
     // Given
     let mut session = AcpConnection::new(MockAcpTransport::new());
     session.connect().expect("connect");
@@ -256,9 +220,6 @@ fn acp_disconnect_clears_bound_session() {
 
 #[test]
 fn acp_operator_diagnostics_cover_state_session_and_summary() {
-    // arrange
-    // act
-    // assert
     // Given: disconnected → connected+bound → failed with session retained
     let mut session = AcpConnection::new(MockAcpTransport::new());
     assert_eq!(

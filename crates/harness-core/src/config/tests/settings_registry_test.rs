@@ -5,18 +5,12 @@ use crate::UnwrapOrAbort;
 
 #[test]
 fn settings_registry_is_non_empty() {
-    // arrange
-    // act
-    // assert
     assert!(!settings_registry().is_empty());
     assert!(settings_registry().len() >= 15);
 }
 
 #[test]
 fn every_registry_entry_has_required_metadata() {
-    // arrange
-    // act
-    // assert
     for entry in settings_registry() {
         assert!(
             !entry.setting_id.as_str().is_empty(),
@@ -59,9 +53,6 @@ fn every_registry_entry_has_required_metadata() {
 
 #[test]
 fn known_public_keys_are_registered() {
-    // arrange
-    // act
-    // assert
     let ids: BTreeSet<&str> = settings_registry()
         .iter()
         .map(|entry| entry.setting_id.as_str())
@@ -89,9 +80,6 @@ fn known_public_keys_are_registered() {
 
 #[test]
 fn permission_core_names_are_registered_with_capability_deps() {
-    // arrange
-    // act
-    // assert
     for name in [
         "bash",
         "edit",
@@ -112,9 +100,6 @@ fn permission_core_names_are_registered_with_capability_deps() {
 
 #[test]
 fn provider_api_key_is_marked_secret() {
-    // arrange
-    // act
-    // assert
     let entry = setting_definition("provider.apiKey").expect("provider.apiKey registered");
     assert_eq!(entry.sensitivity, SettingSensitivity::Secret);
     assert_eq!(entry.surface, SettingSurface::Runtime);
@@ -123,9 +108,6 @@ fn provider_api_key_is_marked_secret() {
 
 #[test]
 fn tui_settings_use_tui_surface() {
-    // arrange
-    // act
-    // assert
     let keybinds = setting_definition("keybinds").expect("keybinds registered");
     assert_eq!(keybinds.surface, SettingSurface::Tui);
     assert!(keybinds.has_default());
@@ -136,9 +118,6 @@ fn tui_settings_use_tui_surface() {
 
 #[test]
 fn setting_ids_are_unique() {
-    // arrange
-    // act
-    // assert
     let mut seen = BTreeSet::new();
     for entry in settings_registry() {
         assert!(
@@ -151,9 +130,6 @@ fn setting_ids_are_unique() {
 
 #[test]
 fn schema_ids_are_unique() {
-    // arrange
-    // act
-    // assert
     let mut seen = BTreeSet::new();
     for entry in settings_registry() {
         assert!(
@@ -166,9 +142,6 @@ fn schema_ids_are_unique() {
 
 #[test]
 fn session_dir_and_compaction_defaults_are_present() {
-    // arrange
-    // act
-    // assert
     let session_dir = setting_definition("runtime.session_dir").expect("session_dir");
     assert!(session_dir.has_default());
     assert_eq!(session_dir.default_value, Some(".agent-harness/sessions"));
@@ -181,9 +154,6 @@ fn session_dir_and_compaction_defaults_are_present() {
 
 #[test]
 fn every_registry_setting_maps_to_public_path_or_is_metadata_only() {
-    // arrange
-    // act
-    // assert
     let contract = public_config_contract();
     let runtime_roots: BTreeSet<&str> = contract
         .runtime_top_level_keys
@@ -228,9 +198,6 @@ fn every_registry_setting_maps_to_public_path_or_is_metadata_only() {
 
 #[test]
 fn worktree_product_defaults_are_metadata_only_stubs() {
-    // arrange
-    // act
-    // assert
     let relative = setting_definition("worktree.relative_base").expect("worktree.relative_base");
     assert!(is_metadata_only_setting("worktree.relative_base"));
     assert_eq!(relative.default_scope, SettingScope::Worktree);
@@ -250,9 +217,6 @@ fn worktree_product_defaults_are_metadata_only_stubs() {
 
 #[test]
 fn settings_registry_json_lists_metadata_without_secret_values() {
-    // arrange
-    // act
-    // assert
     let json = settings_registry_json().expect("settings registry json");
     let value: serde_json::Value =
         serde_json::from_str(&json).expect("settings registry json parses");
@@ -299,9 +263,6 @@ fn settings_registry_json_lists_metadata_without_secret_values() {
 
 #[test]
 fn every_registry_entry_has_merge_strategy_and_mutability() {
-    // arrange
-    // act
-    // assert
     for entry in settings_registry() {
         match entry.merge_strategy {
             SettingMergeStrategy::Replace | SettingMergeStrategy::DeepMergeMap => {}
@@ -322,9 +283,6 @@ fn every_registry_entry_has_merge_strategy_and_mutability() {
 
 #[test]
 fn expanded_high_value_keys_are_registered() {
-    // arrange
-    // act
-    // assert
     let ids: BTreeSet<&str> = settings_registry()
         .iter()
         .map(|entry| entry.setting_id.as_str())
@@ -354,9 +312,6 @@ fn expanded_high_value_keys_are_registered() {
 
 #[test]
 fn map_settings_use_deep_merge_strategy() {
-    // arrange
-    // act
-    // assert
     for id in [
         "agent",
         "provider",
@@ -377,9 +332,6 @@ fn map_settings_use_deep_merge_strategy() {
 
 #[test]
 fn settings_registry_json_includes_merge_and_mutability() {
-    // arrange
-    // act
-    // assert
     let json = settings_registry_json().expect("settings registry json");
     let value: serde_json::Value =
         serde_json::from_str(&json).expect("settings registry json parses");
@@ -403,9 +355,6 @@ fn settings_registry_json_includes_merge_and_mutability() {
 
 #[test]
 fn provider_api_key_is_read_only_secret() {
-    // arrange
-    // act
-    // assert
     let entry = setting_definition("provider.apiKey").expect("provider.apiKey");
     assert_eq!(entry.mutability, SettingMutability::ReadOnly);
     assert!(!entry.is_editable());
@@ -413,9 +362,6 @@ fn provider_api_key_is_read_only_secret() {
 
 #[test]
 fn hashline_edit_is_editable_public_scalar() {
-    // arrange
-    // act
-    // assert
     let entry = setting_definition("hashline_edit").expect("hashline_edit");
     assert_eq!(entry.surface, SettingSurface::Runtime);
     assert_eq!(entry.sensitivity, SettingSensitivity::Public);
@@ -427,9 +373,6 @@ fn hashline_edit_is_editable_public_scalar() {
 
 #[test]
 fn settings_registry_summary_counts_composition() {
-    // arrange
-    // act
-    // assert
     // Given the static settings registry
     // When summarizing composition for operator surfaces
     // Then total equals surface/mutability partitions and one_line is stable
@@ -447,9 +390,6 @@ fn settings_registry_summary_counts_composition() {
 
 #[test]
 fn resolve_setting_id_applies_compat_migrations() {
-    // arrange
-    // act
-    // assert
     // Given: legacy camelCase and kebab hashline ids
     // When: resolving through compat migrations
     // Then: both map to hashline_edit; unknown stays None
@@ -482,9 +422,6 @@ fn explain_setting_flags_secret_settings_without_value_leakage() {
 
 #[test]
 fn explain_setting_covers_writable_and_worktree_scopes() {
-    // arrange
-    // act
-    // assert
     // Given: writable runtime scalar + worktree metadata-only defaults
     // When: explaining each setting
     // Then: surface/scope/merge/write flags and defaults are bound without secrets

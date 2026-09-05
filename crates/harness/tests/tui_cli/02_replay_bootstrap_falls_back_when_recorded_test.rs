@@ -1,9 +1,6 @@
 use harness::UnwrapOrAbort;
 #[test]
 fn replay_bootstrap_falls_back_when_recorded_runtime_context_missing() {
-    // arrange
-    // act
-    // assert
     let run_dir = tempdir().unwrap_or_abort();
     write_events_jsonl(
         run_dir.path(),
@@ -66,9 +63,6 @@ fn replay_bootstrap_falls_back_when_recorded_runtime_context_missing() {
 }
 #[test]
 fn replay_bootstrap_prefers_recorded_runtime_context_from_meta() {
-    // arrange
-    // act
-    // assert
     let run_dir = tempdir().unwrap_or_abort();
     write_events_jsonl(
         run_dir.path(),
@@ -137,9 +131,6 @@ fn replay_bootstrap_prefers_recorded_runtime_context_from_meta() {
 }
 #[test]
 fn tui_replay_and_continue_headers_are_distinct() {
-    // arrange
-    // act
-    // assert
     let _guard = startup_draft_test_lock()
         .lock()
         .unwrap_or_abort();
@@ -186,9 +177,6 @@ fn tui_replay_and_continue_headers_are_distinct() {
 }
 #[test]
 fn tui_cli_without_config_reaches_connect_startup() {
-    // arrange
-    // act
-    // assert
     let _guard = startup_draft_test_lock()
         .lock()
         .unwrap_or_abort();
@@ -199,9 +187,6 @@ fn tui_cli_without_config_reaches_connect_startup() {
 }
 #[test]
 fn tui_cli_explicit_launch_reuses_no_config_startup() {
-    // arrange
-    // act
-    // assert
     let _guard = startup_draft_test_lock()
         .lock()
         .unwrap_or_abort();
@@ -212,9 +197,6 @@ fn tui_cli_explicit_launch_reuses_no_config_startup() {
 }
 #[test]
 fn tui_cli_legacy_tui_alias_reuses_no_config_startup() {
-    // arrange
-    // act
-    // assert
     let _guard = startup_draft_test_lock()
         .lock()
         .unwrap_or_abort();
@@ -242,9 +224,6 @@ fn assert_no_config_startup_exits_cleanly(context: &str, output: &CliHarnessOutp
 }
 #[test]
 fn tui_cli_mock_flag_starts_demo_mode() {
-    // arrange
-    // act
-    // assert
     let _guard = startup_draft_test_lock()
         .lock()
         .unwrap_or_abort();
@@ -267,9 +246,6 @@ fn tui_cli_mock_flag_starts_demo_mode() {
 }
 #[test]
 fn tui_mock_mode_still_boots_through_launcher() {
-    // arrange
-    // act
-    // assert
     let _guard = startup_draft_test_lock()
         .lock()
         .unwrap_or_abort();
@@ -290,9 +266,6 @@ fn tui_mock_mode_still_boots_through_launcher() {
 }
 #[test]
 fn tui_cli_accepts_mock_continue_before_session_lookup() {
-    // arrange
-    // act
-    // assert
     let temp = tempdir().unwrap_or_abort();
     let output = run_harness_in(
         temp.path(),
@@ -322,9 +295,6 @@ fn tui_cli_accepts_mock_continue_before_session_lookup() {
 }
 #[test]
 fn tui_cli_root_help_only_shows_minimal_interactive_overrides() {
-    // arrange
-    // act
-    // assert
     let output = run_harness(["--help"]);
 
     assert!(
@@ -360,9 +330,6 @@ fn tui_cli_root_help_only_shows_minimal_interactive_overrides() {
 }
 #[test]
 fn tui_subcommand_help_surfaces_direct_continue_recovery_flag() {
-    // arrange
-    // act
-    // assert
     let output = run_harness(["tui", "--help"]);
 
     assert!(
@@ -378,9 +345,6 @@ fn tui_subcommand_help_surfaces_direct_continue_recovery_flag() {
 }
 #[test]
 fn command_palette_includes_task5_session_actions() {
-    // arrange
-    // act
-    // assert
     let palette_commands = Action::palette_commands();
     let palette_surface = palette_commands
         .iter()

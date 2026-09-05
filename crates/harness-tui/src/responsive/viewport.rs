@@ -192,9 +192,6 @@ mod tests {
 
     #[test]
     fn viewport_dims_match_manifest() {
-        // arrange
-        // act
-        // assert
         assert_eq!(VIEWPORT_120x50.dims(), (120, 50));
         assert_eq!(VIEWPORT_120x40.dims(), (120, 40));
         assert_eq!(VIEWPORT_100x30.dims(), (100, 30));
@@ -206,9 +203,6 @@ mod tests {
 
     #[test]
     fn viewport_plan_preserves_composer_border_at_every_viewport() {
-        // arrange
-        // act
-        // assert
         for plan in ViewportPlan::all_plans() {
             assert!(
                 plan.composer_bordered,

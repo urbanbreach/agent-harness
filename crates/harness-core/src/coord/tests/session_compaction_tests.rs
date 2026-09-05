@@ -289,9 +289,6 @@ fn last_session_compaction_event(
 /// Happy path: threshold compaction appends a single `SessionCompaction` event.
 #[tokio::test]
 async fn threshold_compaction_appends_single_session_compaction_event() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let clock = FakeClock::new();
     let redactor = DefaultRedactor::default();
@@ -463,9 +460,6 @@ async fn unified_context_budget_boundary_requires_compaction_with_history_allowa
 /// requiring a turn-prefix summary.
 #[tokio::test]
 async fn split_turn_compaction_produces_combined_summary() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let clock = FakeClock::new();
     let redactor = DefaultRedactor::default();
@@ -584,9 +578,6 @@ async fn split_turn_compaction_produces_combined_summary() {
 /// and updates it.
 #[tokio::test]
 async fn iterative_compaction_updates_previous_summary() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let clock = FakeClock::new();
     let redactor = DefaultRedactor::default();
@@ -695,9 +686,6 @@ async fn iterative_compaction_updates_previous_summary() {
 /// Manual trigger always attempts compaction, even below the threshold.
 #[tokio::test]
 async fn manual_trigger_always_attempts_compaction() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let clock = FakeClock::new();
     let redactor = DefaultRedactor::default();

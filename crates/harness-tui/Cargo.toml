@@ -26,8 +26,6 @@ unicode-width = "0.2"
 unicode-segmentation = "1.12"
 
 [dev-dependencies]
-font8x8 = "0.3"
-fontdue = "0.9"
 harness-providers = { path = "../harness-providers" }
 harness-testkit = { path = "../harness-testkit" }
 image = { version = "0.25", default-features = false, features = ["png"] }

@@ -7,9 +7,6 @@ fn provider_id(value: &str) -> ProviderId {
 
 #[test]
 fn poc_parse_rejects_all_traversal_payloads() {
-    // arrange
-    // act
-    // assert
     let payloads = [
         "../etc/passwd",
         "..\\..\\windows",
@@ -38,9 +35,6 @@ fn poc_parse_rejects_all_traversal_payloads() {
 
 #[test]
 fn poc_credential_path_for_valid_provider_stays_in_dir() {
-    // arrange
-    // act
-    // assert
     let temp = tempfile::tempdir().unwrap_or_abort();
     let store = CredentialStore::new(temp.path());
     let credentials_dir = temp.path().join("credentials");
@@ -60,9 +54,6 @@ fn poc_credential_path_for_valid_provider_stays_in_dir() {
 
 #[test]
 fn poc_save_and_load_valid_custom_provider_stays_in_dir() {
-    // arrange
-    // act
-    // assert
     let temp = tempfile::tempdir().unwrap_or_abort();
     let store = CredentialStore::new(temp.path());
     let credentials_dir = temp.path().join("credentials");

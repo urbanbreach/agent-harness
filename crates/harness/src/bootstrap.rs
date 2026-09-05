@@ -599,9 +599,6 @@ mod tests {
 
     #[test]
     fn interactive_agent_profiles_preserve_optional_max_iters_and_temperature() {
-        // arrange
-        // act
-        // assert
         let cfg = config_fixture(
             r#"
             default: {
@@ -628,9 +625,6 @@ mod tests {
 
     #[test]
     fn interactive_agents_preserve_configured_system_prompt_in_runtime_config() {
-        // arrange
-        // act
-        // assert
         let configured_prompt =
             "Audit the configured tool flow exactly.\nCollect hooks evidence before signoff.";
         let configured_prompt_json = configured_prompt.replace('\n', "\\n");
@@ -663,9 +657,6 @@ mod tests {
 
     #[test]
     fn interactive_agent_profiles_apply_model_profile_selection_to_runtime_model_ref() {
-        // arrange
-        // act
-        // assert
         let cfg = config_fixture(
             r#"
             default: {
@@ -682,9 +673,6 @@ mod tests {
 
     #[test]
     fn interactive_agents_use_shipped_prompt_when_not_overridden() {
-        // arrange
-        // act
-        // assert
         let cfg = config_fixture(
             r#"
             default: {
@@ -702,9 +690,6 @@ mod tests {
 
     #[test]
     fn interactive_agent_profiles_append_auto_mcp_tools() {
-        // arrange
-        // act
-        // assert
         let cfg = config_fixture(
             r#"
             default: {
@@ -738,9 +723,6 @@ mod tests {
 
     #[test]
     fn interactive_profile_name_is_always_default() {
-        // arrange
-        // act
-        // assert
         let cfg = config_fixture(
             r#"
             default: {
@@ -755,9 +737,6 @@ mod tests {
 
     #[test]
     fn shipped_example_config_seeds_default_and_named_subagents() {
-        // arrange
-        // act
-        // assert
         let config_path = crate::cli_config::shipped_example_config_path();
         let cfg = load_config_from_file(&config_path).unwrap_or_abort();
 
@@ -816,9 +795,6 @@ mod tests {
 
     #[test]
     fn task_tool_description_lists_available_subagents_for_default() {
-        // arrange
-        // act
-        // assert
         let config_path = crate::cli_config::shipped_example_config_path();
         let cfg = load_config_from_file(&config_path).unwrap_or_abort();
         let coordinator_config = build_interactive_coordinator_config(&cfg).unwrap_or_abort();
@@ -837,9 +813,6 @@ mod tests {
 
     #[test]
     fn skill_tool_description_lists_available_skills_for_default() {
-        // arrange
-        // act
-        // assert
         let config_path = crate::cli_config::shipped_example_config_path();
         let cfg = load_config_from_file(&config_path).unwrap_or_abort();
         let coordinator_config = build_interactive_coordinator_config(&cfg).unwrap_or_abort();
@@ -856,9 +829,6 @@ mod tests {
 
     #[test]
     fn task_tool_description_filters_denied_subagents() {
-        // arrange
-        // act
-        // assert
         let cfg = config_fixture(
             r#"
             default: {

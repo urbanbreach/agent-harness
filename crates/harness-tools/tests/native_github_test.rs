@@ -72,9 +72,6 @@ fn request_path(request: &GitHubHttpRequest) -> String {
 
 #[tokio::test]
 async fn github_issue_get_uses_env_repository_and_auth_headers() {
-    // arrange
-    // act
-    // assert
     let workspace = setup_workspace_fixture();
     let transport = ScriptedGitHubTransport::new(vec![GitHubHttpResponse::json(
         200,
@@ -130,9 +127,6 @@ async fn github_issue_get_uses_env_repository_and_auth_headers() {
 
 #[tokio::test]
 async fn github_issue_list_filters_pull_requests_and_preserves_query_parameters() {
-    // arrange
-    // act
-    // assert
     let workspace = setup_workspace_fixture();
     let transport = ScriptedGitHubTransport::new(vec![GitHubHttpResponse::json(
         200,
@@ -193,9 +187,6 @@ async fn github_issue_list_filters_pull_requests_and_preserves_query_parameters(
 
 #[tokio::test]
 async fn github_pull_request_list_preserves_query_parameters_and_renders_refs() {
-    // arrange
-    // act
-    // assert
     let workspace = setup_workspace_fixture();
     let transport = ScriptedGitHubTransport::new(vec![GitHubHttpResponse::json(
         200,
@@ -253,9 +244,6 @@ async fn github_pull_request_list_preserves_query_parameters_and_renders_refs() 
 
 #[tokio::test]
 async fn github_issue_close_requires_authentication() {
-    // arrange
-    // act
-    // assert
     let workspace = setup_workspace_fixture();
 
     let registry = github_registry(None, ScriptedGitHubTransport::new(Vec::new()));
@@ -277,9 +265,6 @@ async fn github_issue_close_requires_authentication() {
 
 #[tokio::test]
 async fn github_issue_comment_posts_body_and_renders_comment_url() {
-    // arrange
-    // act
-    // assert
     let workspace = setup_workspace_fixture();
     let transport = ScriptedGitHubTransport::new(vec![GitHubHttpResponse::json(
         201,
@@ -332,9 +317,6 @@ async fn github_issue_comment_posts_body_and_renders_comment_url() {
 
 #[tokio::test]
 async fn github_pull_request_create_posts_expected_payload() {
-    // arrange
-    // act
-    // assert
     let workspace = setup_workspace_fixture();
     let transport = ScriptedGitHubTransport::new(vec![GitHubHttpResponse::json(
         201,

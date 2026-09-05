@@ -28,9 +28,6 @@ impl Tool for StaticTool {
 
 #[test]
 fn agent_profile_toolsets_are_exported_as_single_surface_provider_defs() {
-    // arrange
-    // act
-    // assert
     let registry = test_tool_registry();
 
     let defs = build_provider_tool_defs(&test_profile(), &registry).unwrap_or_abort();

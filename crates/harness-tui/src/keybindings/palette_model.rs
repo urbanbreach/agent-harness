@@ -602,9 +602,6 @@ mod tests {
 
     #[test]
     fn entries_have_no_duplicate_ids() {
-        // arrange
-        // act
-        // assert
         let entries: Vec<&PaletteCommandEntry> = PALETTE_COMMAND_ENTRIES
             .iter()
             .chain(INTERNAL_COMMAND_ENTRIES.iter())
@@ -619,9 +616,6 @@ mod tests {
 
     #[test]
     fn production_palette_entries_have_no_placeholder_dispatch() {
-        // arrange
-        // act
-        // assert
         let placeholders: Vec<&str> = PALETTE_COMMAND_ENTRIES
             .iter()
             .chain(INTERNAL_COMMAND_ENTRIES.iter())

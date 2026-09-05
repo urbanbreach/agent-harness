@@ -1,9 +1,6 @@
 use harness_tools::UnwrapOrAbort;
 #[tokio::test]
 async fn native_batch_and_agent_spawn_preserve_child_lineage_permissions_and_order() {
-    // arrange
-    // act
-    // assert
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     write_numbered_fixture(&workspace);
@@ -304,9 +301,6 @@ async fn native_batch_and_agent_spawn_preserve_child_lineage_permissions_and_ord
 }
 #[tokio::test]
 async fn compat_task_and_batch_delegate_to_native_orchestration() {
-    // arrange
-    // act
-    // assert
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     write_numbered_fixture(&workspace);

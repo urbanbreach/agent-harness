@@ -16,9 +16,6 @@ use tokio_stream::{self as stream, StreamExt};
 
 #[tokio::test]
 async fn replay_matches_requests_by_sequential_cursor() {
-    // arrange
-    // act
-    // assert
     let provider = RecordedProvider::with_ci(
         CountingProvider::default(),
         fixture_path("sequential.json"),
@@ -50,9 +47,6 @@ async fn replay_matches_requests_by_sequential_cursor() {
 
 #[tokio::test]
 async fn replay_reports_clear_mismatch_without_calling_inner_provider() {
-    // arrange
-    // act
-    // assert
     let calls = Arc::new(AtomicUsize::new(0));
     let provider = RecordedProvider::with_ci(
         CountingProvider::new(Arc::clone(&calls)),
@@ -76,9 +70,6 @@ async fn replay_reports_clear_mismatch_without_calling_inner_provider() {
 
 #[tokio::test]
 async fn ci_forces_replay_and_missing_cassette_fails_closed() {
-    // arrange
-    // act
-    // assert
     let temp = tempdir().unwrap_or_abort();
     let missing = temp.path().join("missing.json");
 
@@ -98,9 +89,6 @@ async fn ci_forces_replay_and_missing_cassette_fails_closed() {
 
 #[tokio::test]
 async fn record_mode_writes_safe_cassette_and_replays_recorded_events() {
-    // arrange
-    // act
-    // assert
     let temp = tempdir().unwrap_or_abort();
     let path = temp.path().join("recorded.json");
     let provider = RecordedProvider::with_ci(
@@ -130,9 +118,6 @@ async fn record_mode_writes_safe_cassette_and_replays_recorded_events() {
 
 #[tokio::test]
 async fn unsafe_secret_refuses_to_write_recording() {
-    // arrange
-    // act
-    // assert
     let temp = tempdir().unwrap_or_abort();
     let path = temp.path().join("unsafe.json");
     let provider = RecordedProvider::with_ci(

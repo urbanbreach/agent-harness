@@ -680,9 +680,6 @@ mod tests {
 
     #[test]
     fn parent_session_with_child_lineage_is_not_its_own_subagent() {
-        // arrange
-        // act
-        // assert
         let mut app = AppState::new_replay(
             PathBuf::from("/tmp/harness-subagent-parent/parent_run"),
             vec![event(
@@ -718,9 +715,6 @@ mod tests {
 
     #[test]
     fn subagent_session_info_uses_spawned_profile_when_task_args_omit_label() {
-        // arrange
-        // act
-        // assert
         let mut app = AppState::new_live(None, false, None);
         app.session_path = Some(PathBuf::from("/tmp/harness-subagent-parent/parent_run"));
         app.ingest_event(event(
@@ -765,9 +759,6 @@ mod tests {
 
     #[test]
     fn session_path_for_id_rejects_unsafe_event_derived_ids() {
-        // arrange
-        // act
-        // assert
         let mut app = AppState::new_live(None, false, None);
         app.session_path = Some(PathBuf::from("/tmp/harness-sessions/parent_run"));
 

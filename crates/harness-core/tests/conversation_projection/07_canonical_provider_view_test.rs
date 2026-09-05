@@ -77,9 +77,6 @@ fn session(entries: Vec<SessionEntry>, active_leaf: &str) -> CanonicalSession {
 
 #[test]
 fn canonical_provider_view_preserves_selected_protocol_state_and_runtime_selection() {
-    // arrange
-    // act
-    // assert
     let attachment = AttachmentMetadata::from_bytes(
         "資料",
         "image/png",
@@ -272,9 +269,6 @@ fn canonical_provider_view_preserves_selected_protocol_state_and_runtime_selecti
 }
 #[test]
 fn canonical_provider_view_rejects_owner_mismatch_or_malformed_active_path() {
-    // arrange
-    // act
-    // assert
     let valid = session(
         vec![entry(
             "leaf",
@@ -333,9 +327,6 @@ fn canonical_provider_view_rejects_owner_mismatch_or_malformed_active_path() {
 
 #[test]
 fn canonical_provider_view_preserves_typed_child_owner_identity() {
-    // arrange
-    // act
-    // assert
     let child = session(
         vec![entry(
             "child-leaf",
@@ -367,9 +358,6 @@ fn canonical_provider_view_preserves_typed_child_owner_identity() {
 
 #[test]
 fn canonical_provider_view_runtime_selection_old_and_new_shapes_round_trip() {
-    // arrange
-    // act
-    // assert
     let old_metadata: ProviderRequestStartedMetadata =
         serde_json::from_value(serde_json::json!({"turn_id":"turn-old"})).unwrap_or_abort();
     assert_eq!(old_metadata.runtime_selection, None);
@@ -413,9 +401,6 @@ fn canonical_provider_view_runtime_selection_old_and_new_shapes_round_trip() {
 
 #[test]
 fn canonical_provider_view_legacy_adapter_maps_runtime_selection_into_provenance() {
-    // arrange
-    // act
-    // assert
     let selection = runtime_selection();
     let events = vec![
         envelope(

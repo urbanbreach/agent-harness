@@ -1267,9 +1267,6 @@ mod toast_tests {
 
     #[test]
     fn ambient_toast_uses_wall_clock_and_pauses_behind_overlays() {
-        // arrange
-        // act
-        // assert
         let mut app = AppState::new_live(None, false, None);
         app.freeze_animation_clock();
         app.show_toast("Saved", ToastVariant::Info);

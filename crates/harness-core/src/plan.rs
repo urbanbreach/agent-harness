@@ -129,9 +129,6 @@ mod tests {
 
     #[test]
     fn plan_file_path_is_workspace_relative_and_sanitized() {
-        // arrange
-        // act
-        // assert
         assert_eq!(
             plan_file_display_path("run/with spaces"),
             ".agent-harness/plans/run-with-spaces.md"
@@ -148,9 +145,6 @@ mod tests {
 
     #[test]
     fn project_plan_list_includes_existing_and_active_missing() {
-        // arrange
-        // act
-        // assert
         let temp = tempfile::tempdir().expect("temp");
         let root = temp.path();
         let plans = root.join(PLAN_DIR);

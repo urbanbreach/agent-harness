@@ -991,9 +991,6 @@ mod tests {
 
     #[tokio::test]
     async fn session_read_include_todos_returns_todo_state_from_session_dir() {
-        // arrange
-        // act
-        // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let workspace = tempdir.path();
         write_session_events(
@@ -1020,9 +1017,6 @@ mod tests {
 
     #[tokio::test]
     async fn session_read_without_include_todos_omits_todos_key() {
-        // arrange
-        // act
-        // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let workspace = tempdir.path();
         write_session_events(
@@ -1048,9 +1042,6 @@ mod tests {
 
     #[tokio::test]
     async fn session_read_include_todos_returns_empty_array_when_missing() {
-        // arrange
-        // act
-        // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let workspace = tempdir.path();
         write_session_events(
@@ -1071,9 +1062,6 @@ mod tests {
 
     #[tokio::test]
     async fn session_read_from_end_reverses_event_order() {
-        // arrange
-        // act
-        // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let workspace = tempdir.path();
         write_session_events(
@@ -1103,9 +1091,6 @@ mod tests {
 
     #[tokio::test]
     async fn session_read_from_end_false_preserves_chronological_order() {
-        // arrange
-        // act
-        // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let workspace = tempdir.path();
         write_session_events(

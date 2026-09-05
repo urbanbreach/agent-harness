@@ -1,9 +1,6 @@
 use harness_core::UnwrapOrAbort;
 #[test]
 fn resume_plan_reconstructs_sequence_and_id_watermarks() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_dir = temp_dir.path().join("run_resume_ok");
     write_events(
@@ -199,9 +196,6 @@ fn resume_plan_accepts_supported_named_subagent_bindings() {
 }
 #[test]
 fn resume_plan_preserves_run_scoped_permission_grants_across_resume_markers() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_dir = temp_dir.path().join("run_permission_grant_resume");
     let grant = PermissionGrant {
@@ -269,9 +263,6 @@ fn resume_plan_preserves_run_scoped_permission_grants_across_resume_markers() {
 }
 #[test]
 fn replay_old_loop_events_without_provider_metadata() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_dir = temp_dir.path().join("run_old_loop_events");
     write_events(
@@ -329,9 +320,6 @@ fn replay_old_loop_events_without_provider_metadata() {
 }
 #[test]
 fn replay_new_loop_metadata_is_non_semantic_for_run_summary() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let base_dir = temp_dir.path().join("run_metadata_equivalence");
     let legacy_dir = base_dir.join("legacy");

@@ -55,12 +55,9 @@ python3 scripts/check-test-suite-gates.py --self-test
 ```
 
 The gates cover deterministic-test sleeps, process-global env/cwd mutation, subprocess and
-real-world dependency usage, widened test-file focus, T5 signoff-file line budget, arrange/act/assert
-conventions, cassette secret hygiene, committed snapshot orphans, and test taxonomy. Any residual
-arrange/act/assert debt is stored as SHA-256 keys in `docs/testing/test-suite-conventions-baseline.json`;
-the gate fails on new or stale debt without storing source-brand terms in docs. The baseline is
-currently empty; re-adding entries requires explicit approval and a
-documented removal path, because the goal is to keep this file at zero debt. Committed `.snap`
+real-world dependency usage, widened test-file focus, T5 signoff-file line budget,
+cassette secret hygiene, committed snapshot orphans, and test taxonomy. Phase comments are optional;
+use them only when they explain the test rather than repeat its structure. Committed `.snap`
 files with `source:` metadata must point at an existing source file with an insta assertion, or be
 referenced by snapshot name in crate Rust code. Acceptance requires the strict command without
 `--report-only` to return zero violations.

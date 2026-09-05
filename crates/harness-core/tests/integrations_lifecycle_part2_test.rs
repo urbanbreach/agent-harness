@@ -12,9 +12,6 @@ use harness_core::UnwrapOrAbort;
 
 #[test]
 fn multi_plugin_lifecycle_product_meets_contract() {
-    // arrange
-    // act
-    // assert
     // Given
     let temp = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp.path().join("ws");
@@ -47,9 +44,6 @@ fn multi_plugin_lifecycle_product_meets_contract() {
 
 #[test]
 fn multi_descriptor_discover_product_meets_contract() {
-    // arrange
-    // act
-    // assert
     // Given
     let temp = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp.path().join("ws");
@@ -83,9 +77,6 @@ fn multi_descriptor_discover_product_meets_contract() {
 
 #[test]
 fn mock_acp_agent_mode_product_fail_then_success() {
-    // arrange
-    // act
-    // assert
     // When
     let product = run_mock_acp_agent_mode_product();
 

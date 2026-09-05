@@ -2,9 +2,6 @@ use super::*;
 
 #[test]
 fn harness_dark_theme_matches_palette_contract() {
-    // arrange
-    // act
-    // assert
     let theme = Theme::harness_dark();
     assert_eq!(theme.surface.canvas, rgb(0x0B, 0x0E, 0x14));
     assert_eq!(theme.surface.shell, rgb(0x0B, 0x0E, 0x14));
@@ -53,9 +50,6 @@ fn harness_dark_theme_matches_palette_contract() {
 
 #[test]
 fn semantic_theme_families_preserve_default_contracts() {
-    // arrange
-    // act
-    // assert
     let theme = Theme::default();
     let tokens = theme.token_families();
 
@@ -131,9 +125,6 @@ fn semantic_theme_families_preserve_default_contracts() {
 
 #[test]
 fn default_theme_matches_harness_dark_contract() {
-    // arrange
-    // act
-    // assert
     let default = Theme::default();
     let harness_dark = Theme::harness_dark();
 
@@ -145,9 +136,6 @@ fn default_theme_matches_harness_dark_contract() {
 
 #[test]
 fn semantic_chrome_tokens_map_to_harness_dark_defaults() {
-    // arrange
-    // act
-    // assert
     let theme = Theme::default();
     let tokens = theme.token_families();
 
@@ -196,9 +184,6 @@ fn semantic_chrome_tokens_map_to_harness_dark_defaults() {
 
 #[test]
 fn semantic_composer_tokens_have_primary_split_minimum_variants() {
-    // arrange
-    // act
-    // assert
     let theme = Theme::default();
     let tokens = theme.token_families();
 
@@ -299,9 +284,6 @@ fn semantic_composer_tokens_have_primary_split_minimum_variants() {
 
 #[test]
 fn live_shell_tokens_choose_primary_geometry_at_signoff_size() {
-    // arrange
-    // act
-    // assert
     let theme = Theme::default();
     let tokens = theme.token_families();
     let minimum = theme.live_shell_layout(80, 24);
@@ -364,9 +346,6 @@ fn live_shell_tokens_choose_primary_geometry_at_signoff_size() {
 
 #[test]
 fn layout_plan_shell_width_tracks_theme_contracts() {
-    // arrange
-    // act
-    // assert
     let mut app = crate::app::AppState::new_live(None, false, None);
     app.active_tab = crate::app::Tab::Run;
 
@@ -399,8 +378,5 @@ fn layout_plan_shell_width_tracks_theme_contracts() {
 
 #[test]
 fn diff_side_by_side_threshold_matches_geometry_contract() {
-    // arrange
-    // act
-    // assert
     assert_eq!(DIFF_SIDE_BY_SIDE_MIN_WIDTH, 96);
 }

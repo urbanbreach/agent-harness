@@ -3,9 +3,6 @@ use harness_core::UnwrapOrAbort;
 
 #[tokio::test]
 async fn compaction_v2_long_session_preempts_overflow() {
-    // arrange
-    // act
-    // assert
     // Given: two large completed turns and one pressured pending turn.
     let (harness, provider) = CompactionV2Harness::scripted(
         vec![

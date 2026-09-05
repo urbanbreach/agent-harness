@@ -280,9 +280,6 @@ pub(super) fn settings_editor_toggles_compaction_enabled_persists_and_reloads() 
 
 #[test]
 pub(super) fn settings_editor_toggles_compaction_auto_retry_overflow_persists_and_reloads() {
-    // arrange
-    // act
-    // assert
     // Given: bound project config (same shape as compaction.enabled fixture)
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("harness.json");

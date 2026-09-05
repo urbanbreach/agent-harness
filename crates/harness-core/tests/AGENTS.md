@@ -32,7 +32,7 @@ tests/
 
 ## CONVENTIONS
 
-- Use arrange/act/assert and identify events by durable IDs, correlation, sequence, owner, and terminal state.
+- Identify events by durable IDs, correlation, sequence, owner, and terminal state; add phase comments only when they clarify a test.
 - Subscribe to the exact event/state signal before triggering async work, then await a bounded timeout.
 - Prefer `FakeClock`, scripted providers, injected executors, temporary directories, and `UnwrapOrAbort`.
 - Exercise close/reopen/replay when durability is under test; use real local boundaries where relevant.

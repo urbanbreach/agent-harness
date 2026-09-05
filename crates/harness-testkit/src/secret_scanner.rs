@@ -207,9 +207,6 @@ mod tests {
 
     #[test]
     fn default_patterns_detect_common_cassette_secret_shapes() {
-        // arrange
-        // act
-        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let cassette = temp.path().join("cassette.json");
         std::fs::write(
@@ -234,9 +231,6 @@ mod tests {
 
     #[test]
     fn env_credential_patterns_only_use_credential_named_values() {
-        // arrange
-        // act
-        // assert
         let patterns = env_credential_patterns([
             ("OPENAI_API_KEY", "sk-live-secret"),
             ("OPENAI_KEY", "plain-env-secret-value"),

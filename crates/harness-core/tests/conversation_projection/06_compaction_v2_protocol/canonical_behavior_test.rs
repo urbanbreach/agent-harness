@@ -1,8 +1,5 @@
 #[test]
 fn compaction_v2_tool_pair_stays_atomic() {
-    // arrange
-    // act
-    // assert
     let tool_call_id = ToolCallId::new("tool-1");
     let events = vec![
         envelope(

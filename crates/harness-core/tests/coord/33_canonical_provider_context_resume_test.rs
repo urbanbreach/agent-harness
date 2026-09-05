@@ -112,9 +112,6 @@ fn clone_persisted_run(source: &std::path::Path, destination: &std::path::Path, 
 
 #[tokio::test]
 async fn restart_provider_request_matches_live_when_current_config_drifts() {
-    // arrange
-    // act
-    // assert
     // Given: a completed tool pair and typed attachment persisted with target A.
     let source_dir = tempfile::tempdir().unwrap_or_abort();
     let restart_dir = tempfile::tempdir().unwrap_or_abort();

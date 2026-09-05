@@ -11,9 +11,6 @@ use support::{complete_tool_pairs, fixture_records, provider_context_digest, too
 
 #[test]
 fn session_lineage_selected_branch_resume_context_excludes_source_tail() {
-    // arrange
-    // act
-    // assert
     // Given: a child prefix has a selected leaf, completed tool pair, typed attachment, and usage,
     // while later source/sibling tails contain interrupted and legacy-only state.
     let child_session_id = SessionId::new("child-session");

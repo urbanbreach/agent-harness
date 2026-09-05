@@ -534,9 +534,6 @@ mod tests {
 
     #[test]
     fn test_inspect_session_recovery_happy_path() {
-        // arrange
-        // act
-        // assert
         let root = tempdir().unwrap();
         // create a sessions directory so that run_dir.parent() works and inspect_session_catalog can find it
         let sessions_dir = root.path().join("sessions");
@@ -596,9 +593,6 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn test_inspect_session_recovery_recovery_action_hint_when_resumable() {
-        // arrange
-        // act
-        // assert
         // Given: resumable session (spawn + provider request + finish) with stale lock
         let root = tempdir().unwrap();
         let sessions_dir = root.path().join("sessions");
@@ -670,9 +664,6 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn test_inspect_session_recovery_reports_previous_crash_from_stale_lock() {
-        // arrange
-        // act
-        // assert
         let root = tempdir().unwrap();
         let sessions_dir = root.path().join("sessions");
         fs::create_dir_all(&sessions_dir).unwrap();
@@ -720,9 +711,6 @@ mod tests {
 
     #[test]
     fn test_inspect_session_recovery_no_events() {
-        // arrange
-        // act
-        // assert
         let root = tempdir().unwrap();
         let run_dir = setup_session_dir(root.path(), "test-run");
         write_events(&run_dir, &[]);
@@ -733,9 +721,6 @@ mod tests {
 
     #[test]
     fn test_inspect_session_recovery_missing_events_file() {
-        // arrange
-        // act
-        // assert
         let root = tempdir().unwrap();
         let run_dir = setup_session_dir(root.path(), "test-run");
         // Don't write events file
@@ -746,9 +731,6 @@ mod tests {
 
     #[test]
     fn test_inspect_session_recovery_not_resumable() {
-        // arrange
-        // act
-        // assert
         let root = tempdir().unwrap();
         let sessions_dir = root.path().join("sessions");
         fs::create_dir_all(&sessions_dir).unwrap();
@@ -781,18 +763,12 @@ mod tests {
 
     #[test]
     fn test_latest_run_name_empty() {
-        // arrange
-        // act
-        // assert
         let events = vec![];
         assert_eq!(latest_run_name(&events), None);
     }
 
     #[test]
     fn test_latest_run_name_unrelated_events() {
-        // arrange
-        // act
-        // assert
         let events = vec![envelope(
             1,
             None,
@@ -805,9 +781,6 @@ mod tests {
 
     #[test]
     fn test_latest_run_name_run_started() {
-        // arrange
-        // act
-        // assert
         let events = vec![envelope(
             1,
             None,
@@ -821,9 +794,6 @@ mod tests {
 
     #[test]
     fn test_latest_run_name_session_title_updated() {
-        // arrange
-        // act
-        // assert
         let events = vec![envelope(
             1,
             None,
@@ -836,9 +806,6 @@ mod tests {
 
     #[test]
     fn test_latest_run_name_multiple_events() {
-        // arrange
-        // act
-        // assert
         let events = vec![
             envelope(
                 1,
@@ -871,9 +838,6 @@ mod tests {
 
     #[test]
     fn test_latest_run_name_uses_last_matching_event_kind() {
-        // arrange
-        // act
-        // assert
         let events = vec![
             envelope(
                 1,
@@ -896,9 +860,6 @@ mod tests {
 
     #[test]
     fn test_inspect_session_recovery_multiple_agents() {
-        // arrange
-        // act
-        // assert
         let root = tempdir().unwrap();
         let sessions_dir = root.path().join("sessions");
         fs::create_dir_all(&sessions_dir).unwrap();

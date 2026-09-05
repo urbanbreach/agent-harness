@@ -3,9 +3,6 @@ use harness::UnwrapOrAbort;
 
 #[test]
 fn tui_startup_carries_unsent_draft_into_new_live_session() {
-    // arrange
-    // act
-    // assert
     let _guard = startup_draft_test_lock().lock().unwrap_or_abort();
     set_pending_live_prompt_draft(None);
 
@@ -19,9 +16,6 @@ fn tui_startup_carries_unsent_draft_into_new_live_session() {
 
 #[test]
 fn workflow_managed_live_tuis_preserve_terminal_between_handoffs() {
-    // arrange
-    // act
-    // assert
     let (_tx, rx) = live_update_channel();
     let sink: UiIntentSink = Arc::new(|_| {});
 
@@ -112,9 +106,6 @@ fn workflow_managed_live_tuis_preserve_configured_keybindings() {
 
 #[test]
 fn new_live_tui_options_allow_pre_bootstrap_run_directory() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_dir = temp_dir.path().join("run_projected_new_session");
     let (_tx, rx) = live_update_channel();
@@ -148,9 +139,6 @@ fn new_live_tui_options_allow_pre_bootstrap_run_directory() {
 
 #[tokio::test]
 async fn session_history_refresh_sends_bootstrapped_catalog() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_dir = temp_dir.path().join("run_projected_new_session");
     write_catalog_run(&run_dir, &catalog_events("run_projected_new_session"));
@@ -174,9 +162,6 @@ async fn session_history_refresh_sends_bootstrapped_catalog() {
 
 #[test]
 fn resumed_live_tui_options_carry_normalized_lineage_history() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let root_dir = temp_dir.path().join("root_session");
     let child_dir = temp_dir.path().join("child_session");

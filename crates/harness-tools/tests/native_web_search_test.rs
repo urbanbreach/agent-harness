@@ -141,9 +141,6 @@ async fn native_web_search_rejects_non_baseline_control_values_before_network() 
 
 #[tokio::test]
 async fn native_web_search_uses_shared_client_and_fixture_backend() {
-    // arrange
-    // act
-    // assert
     let workspace = setup_workspace_fixture();
     let transport = ScriptedRemoteSearchTransport::new(vec![
         RemoteSearchHttpResponse::new(
@@ -247,9 +244,6 @@ async fn native_web_search_uses_shared_client_and_fixture_backend() {
 
 #[tokio::test]
 async fn native_web_search_handles_missing_auth_rate_limit_and_empty_results() {
-    // arrange
-    // act
-    // assert
     let workspace = setup_workspace_fixture();
 
     let missing_auth_registry = search_registry(

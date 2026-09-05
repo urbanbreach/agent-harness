@@ -5,9 +5,6 @@ use harness_tools::UnwrapOrAbort;
     reason = "the global registry lock intentionally serializes skills registry mutation across awaits"
 )]
 async fn skill_discovery_uses_workspace_root_not_process_cwd() {
-    // arrange
-    // act
-    // assert
     let _guard = skills_registry_test_lock();
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let home = temp_dir.path().join("home");
@@ -65,9 +62,6 @@ async fn skill_discovery_uses_workspace_root_not_process_cwd() {
     reason = "the global registry lock intentionally serializes skills registry mutation across awaits"
 )]
 async fn skill_discovery_rejects_symlinked_skill_directories() {
-    // arrange
-    // act
-    // assert
     let _guard = skills_registry_test_lock();
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let home = temp_dir.path().join("home");
@@ -108,9 +102,6 @@ async fn skill_discovery_rejects_symlinked_skill_directories() {
     reason = "the global registry lock intentionally serializes skills registry mutation across awaits"
 )]
 async fn skill_discovery_rejects_symlinked_project_skill_root() {
-    // arrange
-    // act
-    // assert
     let _guard = skills_registry_test_lock();
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let home = temp_dir.path().join("home");
@@ -153,9 +144,6 @@ async fn skill_discovery_rejects_symlinked_project_skill_root() {
     reason = "the global registry lock intentionally serializes skills registry mutation across awaits"
 )]
 async fn skill_load_hides_denied_or_invalid_skills() {
-    // arrange
-    // act
-    // assert
     let _guard = skills_registry_test_lock();
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let home = temp_dir.path().join("home");
@@ -255,9 +243,6 @@ fn skill_permissions_hide_denied_and_reject_invalid_frontmatter() {
     reason = "the global registry lock intentionally serializes skills registry mutation across awaits"
 )]
 async fn shipped_starter_skill_pack_is_discoverable_from_repo_checkout() {
-    // arrange
-    // act
-    // assert
     let _guard = skills_registry_test_lock();
     let repo = repo_root();
     let _skills_guard = SkillsConfigGuard::install(skills_config_without_global_roots());
@@ -289,9 +274,6 @@ async fn shipped_starter_skill_pack_is_discoverable_from_repo_checkout() {
     reason = "the global registry lock intentionally serializes skills registry mutation across awaits"
 )]
 async fn harness_skill_pack_is_discoverable_from_repo_checkout() {
-    // arrange
-    // act
-    // assert
     let _guard = skills_registry_test_lock();
     let repo = repo_root();
     let _skills_guard = SkillsConfigGuard::install(skills_config_without_global_roots());
@@ -323,9 +305,6 @@ async fn harness_skill_pack_is_discoverable_from_repo_checkout() {
     reason = "the global registry lock intentionally serializes skills registry mutation across awaits"
 )]
 async fn skill_load_reports_named_subagent_hint_for_general() {
-    // arrange
-    // act
-    // assert
     let _guard = skills_registry_test_lock();
     let repo = repo_root();
     let _skills_guard = SkillsConfigGuard::install(skills_config_without_global_roots());

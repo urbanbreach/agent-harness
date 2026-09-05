@@ -430,9 +430,6 @@ mod tests {
 
     #[test]
     fn evaluate_last_match_wins_and_defaults_to_ask() {
-        // arrange
-        // act
-        // assert
         let rules = vec![
             PermissionRule {
                 permission: "bash".into(),
@@ -462,9 +459,6 @@ mod tests {
 
     #[test]
     fn disabled_hides_only_catch_all_deny() {
-        // arrange
-        // act
-        // assert
         // Plan-style: edit * deny then path allow → edit stays visible
         let plan_rules = vec![
             PermissionRule {
@@ -508,9 +502,6 @@ mod tests {
 
     #[test]
     fn denied_task_agents_filters_by_evaluate() {
-        // arrange
-        // act
-        // assert
         let rules = vec![
             PermissionRule {
                 permission: "task".into(),
@@ -530,9 +521,6 @@ mod tests {
 
     #[test]
     fn derive_subagent_injects_task_and_todowrite_deny() {
-        // arrange
-        // act
-        // assert
         let parent = vec![PermissionRule {
             permission: "edit".into(),
             pattern: "*".into(),
@@ -557,9 +545,6 @@ mod tests {
 
     #[test]
     fn profile_permissions_plan_keeps_edit_visible() {
-        // arrange
-        // act
-        // assert
         let plan = ProfilePermissions {
             edit: None,
             shell: Some(PermissionMode::Ask),

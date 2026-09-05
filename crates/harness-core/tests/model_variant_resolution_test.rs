@@ -127,9 +127,6 @@ fn profile_test_config() -> HarnessConfig {
 
 #[test]
 fn model_variant_resolution_returns_variant_display_and_metadata() {
-    // arrange
-    // act
-    // assert
     let metadata =
         resolve_profile_model_metadata(&variant_test_config(), "default").unwrap_or_abort();
 
@@ -160,9 +157,6 @@ fn model_variant_resolution_returns_variant_display_and_metadata() {
 
 #[test]
 fn model_variant_resolution_allows_variant_context_window_override() {
-    // arrange
-    // act
-    // assert
     let config = load_config_from_str(
         r#"
         {
@@ -211,9 +205,6 @@ fn model_variant_resolution_allows_variant_context_window_override() {
 
 #[test]
 fn model_variant_resolution_rejects_unknown_variant() {
-    // arrange
-    // act
-    // assert
     let mut config = variant_test_config();
     config.agents.get_mut("default").unwrap_or_abort().variant = Some("ghost".to_string());
 
@@ -227,9 +218,6 @@ fn model_variant_resolution_rejects_unknown_variant() {
 
 #[test]
 fn named_model_profile_resolves_primary_and_fallback_order() {
-    // arrange
-    // act
-    // assert
     let config = profile_test_config();
 
     let selection = resolve_model_selection(&config, "fast", None).unwrap_or_abort();
@@ -246,9 +234,6 @@ fn named_model_profile_resolves_primary_and_fallback_order() {
 
 #[test]
 fn model_resolution_prefers_metadata_family_and_exposes_capabilities() {
-    // arrange
-    // act
-    // assert
     let config = load_config_from_str(
         r#"
         {
@@ -302,9 +287,6 @@ fn model_resolution_prefers_metadata_family_and_exposes_capabilities() {
 
 #[test]
 fn direct_model_refs_do_not_resolve_as_profile_names() {
-    // arrange
-    // act
-    // assert
     let config = profile_test_config();
 
     let selection = resolve_model_selection(&config, "default/gpt-5.4", None).unwrap_or_abort();
@@ -316,9 +298,6 @@ fn direct_model_refs_do_not_resolve_as_profile_names() {
 
 #[test]
 fn unqualified_unknown_selector_is_profile_only() {
-    // arrange
-    // act
-    // assert
     let config = profile_test_config();
 
     let err = resolve_model_selection(&config, "gpt-5.4", None)
@@ -330,9 +309,6 @@ fn unqualified_unknown_selector_is_profile_only() {
 
 #[test]
 fn named_model_profile_rejects_disabled_variant() {
-    // arrange
-    // act
-    // assert
     let err = load_config_from_str(
         r#"
         {

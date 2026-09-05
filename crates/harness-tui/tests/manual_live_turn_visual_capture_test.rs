@@ -19,8 +19,5 @@ fn capture_live_turn_state_from_environment() -> TestResult {
 
 #[test]
 fn unknown_manual_capture_scenario_is_rejected() {
-    // arrange
-    // act
-    // assert
     assert!(capture_events::scenario("unknown").is_err());
 }

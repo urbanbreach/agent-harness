@@ -5,9 +5,6 @@ use harness_tools::UnwrapOrAbort;
     reason = "the global test lock intentionally serializes LSP registry mutations across awaits"
 )]
 async fn native_code_lsp_supports_configured_custom_servers() {
-    // arrange
-    // act
-    // assert
     let _lock = test_lock().lock().unwrap_or_abort();
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
@@ -191,9 +188,6 @@ async fn native_code_lsp_supports_configured_custom_servers() {
     reason = "the global test lock intentionally serializes LSP registry mutations across awaits"
 )]
 async fn native_code_lsp_returns_empty_definition_without_retry_loop() {
-    // arrange
-    // act
-    // assert
     let _lock = test_lock().lock().unwrap_or_abort();
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
@@ -238,9 +232,6 @@ async fn native_code_lsp_returns_empty_definition_without_retry_loop() {
 }
 #[test]
 fn native_code_lsp_supports_configured_builtin_and_custom_servers() {
-    // arrange
-    // act
-    // assert
     native_code_lsp_supports_configured_custom_servers();
 }
 #[tokio::test]
@@ -249,9 +240,6 @@ fn native_code_lsp_supports_configured_builtin_and_custom_servers() {
     reason = "the global test lock intentionally serializes LSP registry mutations across awaits"
 )]
 async fn native_code_lsp_supports_additional_builtin_server_presets() {
-    // arrange
-    // act
-    // assert
     let _lock = test_lock().lock().unwrap_or_abort();
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");

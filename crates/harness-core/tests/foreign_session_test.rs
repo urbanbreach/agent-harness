@@ -62,9 +62,6 @@ fn legacy_adapter_source_contract() {
 
 #[test]
 fn discover_valid_foreign_session_without_touching_active() {
-    // arrange
-    // act
-    // assert
     // Given: scan root with a valid foreign-looking session + a separate active session
     let root = tempdir().unwrap();
     let scan = root.path().join("foreign-root");
@@ -141,9 +138,6 @@ fn reject_corrupt_foreign_session_markers() {
 
 #[test]
 fn reject_non_session_directories() {
-    // arrange
-    // act
-    // assert
     // Given: ordinary directory without markers
     let root = tempdir().unwrap();
     let scan = root.path().join("foreign-root");
@@ -161,9 +155,6 @@ fn reject_non_session_directories() {
 
 #[test]
 fn missing_scan_root_fails_closed() {
-    // arrange
-    // act
-    // assert
     let root = tempdir().unwrap();
     let missing = root.path().join("nope");
     let err = discover_foreign_sessions(&missing).unwrap_err();
@@ -175,9 +166,6 @@ fn missing_scan_root_fails_closed() {
 
 #[test]
 fn import_events_jsonl_creates_replay_only_session_without_mutating_source() {
-    // arrange
-    // act
-    // assert
     // Given: foreign dir with harness-compatible events.jsonl + empty dest store
     let root = tempdir().unwrap();
     let foreign = root.path().join("foreign-events");
@@ -281,9 +269,6 @@ fn import_meta_preserves_source_path_and_event_count_provenance() {
 
 #[test]
 fn import_unknown_marker_fails_closed() {
-    // arrange
-    // act
-    // assert
     // Given: discoverable foreign session with session.json only
     let root = tempdir().unwrap();
     let foreign = root.path().join("codex-session");
@@ -301,9 +286,6 @@ fn import_unknown_marker_fails_closed() {
 
 #[test]
 fn import_non_envelope_jsonl_fails_closed() {
-    // arrange
-    // act
-    // assert
     // Given: events.jsonl with generic JSON objects (not harness envelopes)
     let root = tempdir().unwrap();
     let foreign = root.path().join("generic-jsonl");
@@ -325,9 +307,6 @@ fn import_non_envelope_jsonl_fails_closed() {
 
 #[test]
 fn summarize_discover_candidates_counts_by_status() {
-    // arrange
-    // act
-    // assert
     // Given: mix of discoverable, corrupt, rejected under one scan root
     let root = tempdir().unwrap();
     let scan = root.path().join("foreign-root");
@@ -370,9 +349,6 @@ fn summarize_discover_candidates_counts_by_status() {
 
 #[test]
 fn summarize_discover_candidates_counts_importable_events_jsonl() {
-    // arrange
-    // act
-    // assert
     // Given: discoverable events.jsonl + discoverable session.json under one scan root
     let root = tempdir().unwrap();
     let scan = root.path().join("foreign-root");
@@ -412,9 +388,6 @@ fn summarize_discover_candidates_counts_importable_events_jsonl() {
 
 #[test]
 fn multi_source_foreign_scan_discovers_importable_and_corrupt_then_imports_first() {
-    // arrange
-    // act
-    // assert
     // Given: foreign_scan_root with 3 importable events.jsonl sessions + 1 corrupt marker
     let root = tempdir().unwrap();
     let scan = root.path().join("foreign_scan_root");

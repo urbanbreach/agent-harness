@@ -2,9 +2,6 @@ use harness::UnwrapOrAbort;
 #[allow(clippy::clone_on_ref_ptr, reason = "trait object coercion requires .clone() not Arc::clone")]
 #[tokio::test]
 async fn prompt_cli_executes_tool_call_and_completes_turn() {
-    // arrange
-    // act
-    // assert
     let provider = ScriptedPromptProvider::sequence(vec![
         tool_call_events(
             "call_1",
@@ -118,9 +115,6 @@ async fn prompt_cli_executes_tool_call_and_completes_turn() {
 }
 #[tokio::test]
 async fn prompt_cli_exits_nonzero_on_provider_error_finish() {
-    // arrange
-    // act
-    // assert
     let provider = ScriptedPromptProvider::fixed(provider_error_events());
 
     let temp = tempdir().unwrap_or_abort();
@@ -231,9 +225,6 @@ async fn prompt_cli_surfaces_provider_error_categories_in_stderr_and_events() {
 #[allow(clippy::clone_on_ref_ptr, reason = "trait object coercion requires .clone() not Arc::clone")]
 #[tokio::test]
 async fn prompt_cli_continues_after_tool_failure_as_tool_message() {
-    // arrange
-    // act
-    // assert
     let provider = ScriptedPromptProvider::sequence(vec![
         tool_call_events(
             "call_missing",
@@ -297,9 +288,6 @@ async fn prompt_cli_continues_after_tool_failure_as_tool_message() {
 }
 #[tokio::test]
 async fn prompt_cli_executes_fs_glob_and_completes_turn() {
-    // arrange
-    // act
-    // assert
     let provider = ScriptedPromptProvider::sequence(vec![
         tool_call_events(
             "call_glob",
@@ -330,9 +318,6 @@ async fn prompt_cli_executes_fs_glob_and_completes_turn() {
 }
 #[tokio::test]
 async fn prompt_cli_executes_fs_ls_and_completes_turn() {
-    // arrange
-    // act
-    // assert
     let provider = ScriptedPromptProvider::sequence(vec![
         tool_call_events(
             "call_ls",

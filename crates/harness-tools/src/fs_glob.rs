@@ -244,9 +244,6 @@ mod tests {
 
     #[test]
     fn collect_glob_matches_supports_recursive_double_star_patterns() {
-        // arrange
-        // act
-        // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let root = tempdir.path();
 
@@ -295,9 +292,6 @@ mod tests {
 
     #[test]
     fn collect_glob_matches_applies_limit_after_mtime_sort() {
-        // arrange
-        // act
-        // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let root = tempdir.path();
 
@@ -333,9 +327,6 @@ mod tests {
 
     #[test]
     fn collect_glob_matches_sorts_by_modification_time_newest_first() {
-        // arrange
-        // act
-        // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let root = tempdir.path();
 
@@ -392,9 +383,6 @@ mod tests {
 
     #[tokio::test]
     async fn fs_glob_accepts_absolute_workspace_paths() {
-        // arrange
-        // act
-        // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let workspace = tempdir.path().join("workspace");
         create_dir(&workspace, "src");

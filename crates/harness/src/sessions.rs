@@ -1212,9 +1212,6 @@ mod tests {
 
     #[test]
     fn collect_list_entries_applies_filters_and_hides_non_operator_modes() {
-        // arrange
-        // act
-        // assert
         let entries = vec![
             sample_entry(
                 "run-running",
@@ -1265,9 +1262,6 @@ mod tests {
 
     #[test]
     fn collect_list_entries_supports_machine_sorting() {
-        // arrange
-        // act
-        // assert
         let entries = vec![
             sample_entry(
                 "run-b",
@@ -1320,9 +1314,6 @@ mod tests {
 
     #[test]
     fn render_json_session_list_emits_machine_readable_fields() {
-        // arrange
-        // act
-        // assert
         let entries = vec![sample_entry(
             "run-json",
             42,
@@ -1364,9 +1355,6 @@ mod tests {
 
     #[test]
     fn render_human_session_table_keeps_operator_facing_default() {
-        // arrange
-        // act
-        // assert
         let entries = vec![sample_entry(
             "run-human",
             42,
@@ -1521,9 +1509,6 @@ mod tests {
 
     #[test]
     fn crash_scan_sessions_json_summarizes_mixed_session_root() {
-        // arrange
-        // act
-        // assert
         // Given: sessions root with one clean run and one recovery-marker crash
         let root = tempfile::tempdir().unwrap();
         let clean = root.path().join("run_clean");
@@ -1565,9 +1550,6 @@ mod tests {
 
     #[test]
     fn reopen_session_applies_crash_recovery_for_marker_then_summarizes() {
-        // arrange
-        // act
-        // assert
         // Given: finished prompt session with recovery marker under sessions root
         use harness_core::event::{
             ActorKind, EventActor, EventEnvelopeV1, EventV1, RunFinishedEvent, RunStartedEvent,
@@ -1650,9 +1632,6 @@ mod tests {
 
     #[test]
     fn crash_scan_sessions_human_lists_previous_crash_and_summary() {
-        // arrange
-        // act
-        // assert
         // Given: sessions root with recovery marker
         let root = tempfile::tempdir().unwrap();
         let crashed = root.path().join("run_crashed");
@@ -1696,9 +1675,6 @@ mod tests {
 
     #[test]
     fn execute_with_io_dispatches_crash_scan_command() {
-        // arrange
-        // act
-        // assert
         // Given: empty sessions root
         let root = tempfile::tempdir().unwrap();
         let mut stdout = Vec::new();

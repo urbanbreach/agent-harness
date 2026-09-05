@@ -3,9 +3,6 @@ use harness_tui::theme::{ColorLevel, Theme};
 
 #[test]
 fn axes_have_stable_labels_and_mappings() {
-    // arrange
-    // act
-    // assert
     assert_eq!(ColorCapability::TrueColor.label(), "true_color");
     assert_eq!(
         ColorCapability::Ansi256.to_color_level(),

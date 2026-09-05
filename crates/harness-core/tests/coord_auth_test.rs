@@ -70,9 +70,6 @@ impl Tool for TestEditTool {
 
 #[tokio::test]
 async fn worker_tool_auth_uses_profile_name_not_caller_category() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let policy = allow_all_permission_policy()
         .with_profile_override(
@@ -186,9 +183,6 @@ async fn supervisor_tool_auth_ignores_caller_category_for_permission_routing() {
 
 #[tokio::test]
 async fn unknown_worker_agent_id_is_denied_closed() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
 
     let coordinator = test_coordinator(
@@ -227,9 +221,6 @@ async fn unknown_worker_agent_id_is_denied_closed() {
 
 #[tokio::test]
 async fn worker_toolset_enforcement_blocks_non_allowlisted_tool() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
 
     let coordinator = test_coordinator(
@@ -348,9 +339,6 @@ async fn shell_permission_summary_redacts_command_secrets() {
 
 #[tokio::test]
 async fn edit_rename_requires_permission_for_destination_path() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let policy = allow_all_permission_policy().with_profile_override(
         "worker",
@@ -425,9 +413,6 @@ async fn edit_rename_requires_permission_for_destination_path() {
 
 #[tokio::test]
 async fn profile_edit_rules_allow_path_prefix_and_deny_outside() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let policy = allow_all_permission_policy().with_profile_override(
         "worker",

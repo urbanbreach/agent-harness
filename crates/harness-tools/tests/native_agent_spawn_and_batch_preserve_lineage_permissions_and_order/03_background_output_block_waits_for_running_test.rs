@@ -1,9 +1,6 @@
 use harness_tools::UnwrapOrAbort;
 #[tokio::test]
 async fn background_output_block_waits_for_running_child_completion() {
-    // arrange
-    // act
-    // assert
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     write_skill_fixture_with_frontmatter(
@@ -93,9 +90,6 @@ async fn background_output_block_waits_for_running_child_completion() {
 }
 #[tokio::test]
 async fn background_output_retrieves_child_result_after_coordinator_resume() {
-    // arrange
-    // act
-    // assert
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
 
@@ -247,9 +241,6 @@ async fn background_output_retrieves_child_result_after_coordinator_resume() {
 }
 #[tokio::test]
 async fn background_cancel_uses_same_coordinator_cancellation_path() {
-    // arrange
-    // act
-    // assert
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
 
@@ -321,9 +312,6 @@ async fn background_cancel_uses_same_coordinator_cancellation_path() {
 }
 #[tokio::test]
 async fn background_output_can_cancel_authorized_child_request() {
-    // arrange
-    // act
-    // assert
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
 
@@ -395,9 +383,6 @@ async fn background_output_can_cancel_authorized_child_request() {
 }
 #[tokio::test]
 async fn background_output_cancel_after_terminal_does_not_report_performed() {
-    // arrange
-    // act
-    // assert
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
 
@@ -494,9 +479,6 @@ async fn background_output_cancel_after_terminal_does_not_report_performed() {
 }
 #[tokio::test]
 async fn background_output_rejects_sibling_request_ids() {
-    // arrange
-    // act
-    // assert
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
 
@@ -616,9 +598,6 @@ async fn background_cancel_rejects_sibling_request_ids() {
 }
 #[tokio::test]
 async fn background_output_rejects_excessive_block_timeout() {
-    // arrange
-    // act
-    // assert
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
 

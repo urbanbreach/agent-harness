@@ -284,9 +284,6 @@ mod tests {
 
     #[test]
     fn terminal_wrap_counts_display_rows_before_scroll() {
-        // arrange
-        // act
-        // assert
         let style = Style::default();
         let rows = wrap_terminal_lines(
             vec![Line::from(vec![
@@ -310,9 +307,6 @@ mod tests {
 
     #[test]
     fn terminal_truncation_artifact_paths_are_sanitized() {
-        // arrange
-        // act
-        // assert
         assert_eq!(
             sanitize_terminal_text("artifacts/\u{1b}]52;c;secret\u{7}.txt"),
             "artifacts/ ]52;c;secret .txt"

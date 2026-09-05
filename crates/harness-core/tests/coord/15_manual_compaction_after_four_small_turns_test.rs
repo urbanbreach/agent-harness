@@ -1,9 +1,6 @@
 use harness_core::UnwrapOrAbort;
 #[tokio::test]
 async fn manual_compaction_after_four_small_turns_writes_checkpoint_with_latest_turn() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(
         [
@@ -85,9 +82,6 @@ async fn manual_compaction_after_four_small_turns_writes_checkpoint_with_latest_
 }
 #[tokio::test]
 async fn manual_compaction_after_two_turns_summarizes_first_and_preserves_latest() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(
         ["first answer", "second answer"]
@@ -168,9 +162,6 @@ async fn manual_compaction_after_two_turns_summarizes_first_and_preserves_latest
 }
 #[tokio::test]
 async fn manual_compaction_summary_call_uses_provider_without_emitting_provider_events() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![
         provider_text_events(&"A".repeat(12_000)),
@@ -251,9 +242,6 @@ async fn manual_compaction_summary_call_uses_provider_without_emitting_provider_
 }
 #[tokio::test]
 async fn overflow_retry_split_oversized_latest_turn_preserves_suffix_context() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let oversized_answer = "B".repeat(12_000);
     let provider = SequentialScriptedProvider::new(vec![

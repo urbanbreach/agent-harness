@@ -66,9 +66,6 @@ mod tests {
 
     #[test]
     fn hidden_logo_collapses_its_layout_width() {
-        // arrange
-        // act
-        // assert
         assert!(full_logo(false).is_none());
     }
 }

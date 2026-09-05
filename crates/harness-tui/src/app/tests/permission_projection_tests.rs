@@ -2,9 +2,6 @@ use super::*;
 
 #[test]
 fn tool_call_entries_prefer_resolved_identity_and_lifecycle_contract() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::new_live(None, false, None);
 
     app.ingest_event(envelope(
@@ -115,9 +112,6 @@ fn tool_call_entries_prefer_resolved_identity_and_lifecycle_contract() {
 
 #[test]
 fn activity_permission_resolution_updates_activity_level_entry() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::new_live(None, false, None);
 
     app.ingest_event(envelope(
@@ -176,9 +170,6 @@ fn activity_permission_resolution_updates_activity_level_entry() {
 
 #[test]
 fn orphan_question_permission_becomes_pending_ask_tool_row() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::new_live(None, false, None);
 
     app.ingest_event(envelope(

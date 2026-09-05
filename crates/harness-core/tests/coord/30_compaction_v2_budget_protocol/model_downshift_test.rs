@@ -1,8 +1,5 @@
 #[tokio::test]
 async fn compaction_v2_model_downshift_regenerates_summary() {
-    // arrange
-    // act
-    // assert
     let (provider, entered, release) = BlockingSummaryProvider::new(
         vec![
             provider_text_events("model source one"),

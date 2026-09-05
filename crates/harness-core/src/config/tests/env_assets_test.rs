@@ -3,9 +3,6 @@ use crate::UnwrapOrAbort;
 
 #[test]
 fn env_var_substitution_works() {
-    // arrange
-    // act
-    // assert
     let expected = env::var("PATH").unwrap_or_abort();
     let cfg = config_fixture(
         &deep_profile(
@@ -30,9 +27,6 @@ fn env_var_substitution_works() {
 
 #[test]
 fn ui_default_profile_parses() {
-    // arrange
-    // act
-    // assert
     let cfg = config_fixture(
         &deep_profile(r#"tools: ["fs.read"],"#),
         "test-key",
@@ -52,9 +46,6 @@ fn ui_default_profile_parses() {
 
 #[test]
 fn ui_default_profile_defaults_to_none() {
-    // arrange
-    // act
-    // assert
     let cfg = config_fixture(
         &deep_profile(r#"tools: ["fs.read"],"#),
         "test-key",
@@ -68,9 +59,6 @@ fn ui_default_profile_defaults_to_none() {
 
 #[test]
 fn runtime_profile_max_iters_defaults_to_unbounded() {
-    // arrange
-    // act
-    // assert
     let cfg = config_fixture(&deep_profile(r#"tools: ["read"],"#), "test-key", None, None);
 
     let parsed = load_config_from_str(&cfg).unwrap_or_abort();
@@ -83,9 +71,6 @@ fn runtime_profile_max_iters_defaults_to_unbounded() {
 
 #[test]
 fn profile_tool_failure_mode_and_system_prompt_parse_explicitly() {
-    // arrange
-    // act
-    // assert
     let cfg = config_fixture(
         &deep_profile(
             r#"
@@ -114,9 +99,6 @@ fn profile_tool_failure_mode_and_system_prompt_parse_explicitly() {
 
 #[test]
 fn env_var_default_fallback_works() {
-    // arrange
-    // act
-    // assert
     let cfg = config_fixture(
         &deep_profile(r#"tools: ["fs.read"],"#),
         "${HARNESS_CONFIG_TEST_API_KEY_FALLBACK:-fallback-key}",
@@ -134,9 +116,6 @@ fn env_var_default_fallback_works() {
 
 #[test]
 fn env_var_default_fallback_uses_fallback_for_empty_var() {
-    // arrange
-    // act
-    // assert
     let cfg = config_fixture(
         &deep_profile(r#"tools: ["fs.read"],"#),
         "${HARNESS_CONFIG_TEST_API_KEY_FALLBACK:-fallback-key}",
@@ -155,9 +134,6 @@ fn env_var_default_fallback_uses_fallback_for_empty_var() {
 
 #[test]
 fn empty_env_var_uses_default_fallback() {
-    // arrange
-    // act
-    // assert
     let cfg = config_fixture(
         &deep_profile(r#"tools: ["fs.read"],"#),
         "${HARNESS_CONFIG_TEST_API_KEY_EMPTY:-fallback-key}",
@@ -176,9 +152,6 @@ fn empty_env_var_uses_default_fallback() {
 
 #[test]
 fn missing_required_env_var_is_an_error() {
-    // arrange
-    // act
-    // assert
     let cfg = config_fixture(
         &deep_profile(r#"tools: ["fs.read"],"#),
         "${HARNESS_CONFIG_TEST_API_KEY_REQUIRED}",
@@ -196,9 +169,6 @@ fn missing_required_env_var_is_an_error() {
 
 #[test]
 fn missing_openai_api_key_errors_even_for_cliproxy_loopback_base_url() {
-    // arrange
-    // act
-    // assert
     let err = loader::resolve_string_reference_with_lookup("${OPENAI_API_KEY}", None, &|_| None)
         .expect_err("loopback providers should still require OPENAI_API_KEY");
 
@@ -210,9 +180,6 @@ fn missing_openai_api_key_errors_even_for_cliproxy_loopback_base_url() {
 
 #[test]
 fn configured_openai_api_key_env_reference_resolves_without_fallback() {
-    // arrange
-    // act
-    // assert
     let resolved = loader::resolve_string_reference_with_lookup("${OPENAI_API_KEY}", None, &|_| {
         Some("test-openai-api-key".to_string())
     })
@@ -223,9 +190,6 @@ fn configured_openai_api_key_env_reference_resolves_without_fallback() {
 
 #[test]
 fn upstream_env_reference_uses_empty_string_when_missing() {
-    // arrange
-    // act
-    // assert
     let cfg = config_fixture(
         &deep_profile(r#"tools: ["fs.read"],"#),
         "{env:HARNESS_CONFIG_TEST_OPTIONAL_EMPTY}",
@@ -243,9 +207,6 @@ fn upstream_env_reference_uses_empty_string_when_missing() {
 
 #[test]
 fn upstream_file_reference_resolves_relative_to_config_file() {
-    // arrange
-    // act
-    // assert
     let temp = tempfile::tempdir().unwrap_or_abort();
     let config_dir = temp.path().join("nested");
     let secret_path = config_dir.join("secrets/api-key.txt");
@@ -273,9 +234,6 @@ fn upstream_file_reference_resolves_relative_to_config_file() {
 
 #[test]
 fn load_config_from_file_overlays_default_from_markdown_frontmatter() {
-    // arrange
-    // act
-    // assert
     let _lock = CONFIG_DISCOVERY_TEST_LOCK.lock().unwrap_or_abort();
     let temp = tempfile::tempdir().unwrap_or_abort();
     let repo = temp.path().join("repo");
@@ -314,9 +272,6 @@ Execute from markdown only."#,
 
 #[test]
 fn load_config_from_file_still_accepts_legacy_agent_harness_prompt_dir() {
-    // arrange
-    // act
-    // assert
     let _lock = CONFIG_DISCOVERY_TEST_LOCK.lock().unwrap_or_abort();
     let temp = tempfile::tempdir().unwrap_or_abort();
     let repo = temp.path().join("repo");
@@ -347,9 +302,6 @@ Legacy prompt body."#,
 
 #[test]
 fn load_config_from_file_keeps_inline_system_prompt_over_markdown_prompt() {
-    // arrange
-    // act
-    // assert
     let _lock = CONFIG_DISCOVERY_TEST_LOCK.lock().unwrap_or_abort();
     let temp = tempfile::tempdir().unwrap_or_abort();
     let repo = temp.path().join("repo");
@@ -383,9 +335,6 @@ fn load_config_from_file_keeps_inline_system_prompt_over_markdown_prompt() {
 
 #[test]
 fn load_config_from_file_discovers_project_agents_md_separately() {
-    // arrange
-    // act
-    // assert
     let _lock = CONFIG_DISCOVERY_TEST_LOCK.lock().unwrap_or_abort();
     let temp = tempfile::tempdir().unwrap_or_abort();
     let repo = temp.path().join("repo");
@@ -411,9 +360,6 @@ fn load_config_from_file_discovers_project_agents_md_separately() {
 
 #[test]
 fn load_config_from_file_discovers_repo_assets_when_cwd_differs() {
-    // arrange
-    // act
-    // assert
     let _lock = CONFIG_DISCOVERY_TEST_LOCK.lock().unwrap_or_abort();
     let temp = tempfile::tempdir().unwrap_or_abort();
     let outside = temp.path().join("outside");
@@ -456,9 +402,6 @@ Prompt discovered from the config repo root."#,
 
 #[test]
 fn load_config_from_file_ignores_unmatched_prompt_only_markdown_assets() {
-    // arrange
-    // act
-    // assert
     let _lock = CONFIG_DISCOVERY_TEST_LOCK.lock().unwrap_or_abort();
     let temp = tempfile::tempdir().unwrap_or_abort();
     let repo = temp.path().join("repo");
@@ -480,9 +423,6 @@ fn load_config_from_file_ignores_unmatched_prompt_only_markdown_assets() {
 
 #[test]
 fn load_config_from_file_rejects_invalid_markdown_frontmatter() {
-    // arrange
-    // act
-    // assert
     let _lock = CONFIG_DISCOVERY_TEST_LOCK.lock().unwrap_or_abort();
     let temp = tempfile::tempdir().unwrap_or_abort();
     let repo = temp.path().join("repo");
@@ -512,9 +452,6 @@ Broken prompt."#,
 
 #[test]
 fn load_config_from_file_rejects_legacy_plan_markdown_frontmatter() {
-    // arrange
-    // act
-    // assert
     let _lock = CONFIG_DISCOVERY_TEST_LOCK.lock().unwrap_or_abort();
     let temp = tempfile::tempdir().unwrap_or_abort();
     let repo = temp.path().join("repo");

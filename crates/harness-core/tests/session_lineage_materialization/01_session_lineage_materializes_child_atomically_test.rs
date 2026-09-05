@@ -1,9 +1,6 @@
 use harness_core::UnwrapOrAbort;
 #[test]
 fn session_lineage_materializes_child_atomically() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let session_dir = temp_dir.path();
     let source_run_id = "run_parent_materialize";
@@ -149,9 +146,6 @@ fn session_lineage_materializes_child_atomically() {
 }
 #[test]
 fn session_lineage_tui_live_snapshot_terminalizes_open_state_for_resume() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let session_dir = temp_dir.path();
     let source_run_id = "run_parent_live_snapshot";
@@ -211,9 +205,6 @@ fn session_lineage_tui_live_snapshot_terminalizes_open_state_for_resume() {
 }
 #[test]
 fn session_lineage_missing_artifact_rolls_back() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let session_dir = temp_dir.path();
     let source_run_id = "run_parent_missing_artifact";
@@ -250,9 +241,6 @@ fn session_lineage_missing_artifact_rolls_back() {
 }
 #[test]
 fn session_lineage_concurrent_fork_clone_from_same_source_create_unique_children() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let session_dir = temp_dir.path();
     let source_run_id = "run_parent_concurrent";
@@ -315,9 +303,6 @@ fn session_lineage_concurrent_fork_clone_from_same_source_create_unique_children
 }
 #[test]
 fn session_lineage_missing_meta_uses_harness_fallback_metadata() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let session_dir = temp_dir.path();
     let source_run_id = "run_parent_missing_meta";
@@ -363,9 +348,6 @@ fn session_lineage_missing_meta_uses_harness_fallback_metadata() {
 }
 #[test]
 fn session_lineage_invalid_artifact_path_rolls_back() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let session_dir = temp_dir.path();
     let source_run_id = "run_parent_bad_artifact_path";
@@ -399,9 +381,6 @@ fn session_lineage_invalid_artifact_path_rolls_back() {
 #[cfg(unix)]
 #[test]
 fn session_lineage_rejects_artifact_symlink_without_copying_target() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let session_dir = temp_dir.path();
     let source_run_id = "run_parent_symlink_artifact";
@@ -445,9 +424,6 @@ fn session_lineage_rejects_artifact_symlink_without_copying_target() {
 }
 #[test]
 fn session_lineage_source_event_log_mismatch_rolls_back_before_publish() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let session_dir = temp_dir.path();
     let source_run_id = "run_parent_modified_source";

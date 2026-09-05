@@ -333,9 +333,6 @@ mod tests {
 
     #[test]
     fn collect_vcs_status_reports_clean_repo() {
-        // arrange
-        // act
-        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let repo = temp.path().join("repo");
         fs::create_dir_all(&repo).unwrap_or_abort();
@@ -352,9 +349,6 @@ mod tests {
 
     #[test]
     fn collect_vcs_status_reports_modified_and_untracked() {
-        // arrange
-        // act
-        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let repo = temp.path().join("repo");
         fs::create_dir_all(&repo).unwrap_or_abort();
@@ -378,9 +372,6 @@ mod tests {
 
     #[test]
     fn collect_vcs_status_fails_closed_on_non_git_repository() {
-        // arrange
-        // act
-        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let not_a_repo = temp.path().join("plain");
         fs::create_dir_all(&not_a_repo).unwrap_or_abort();
@@ -391,9 +382,6 @@ mod tests {
 
     #[test]
     fn collect_vcs_diff_returns_empty_for_clean_repo() {
-        // arrange
-        // act
-        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let repo = temp.path().join("repo");
         fs::create_dir_all(&repo).unwrap_or_abort();
@@ -407,9 +395,6 @@ mod tests {
 
     #[test]
     fn collect_vcs_diff_reports_changes_for_modified_file() {
-        // arrange
-        // act
-        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let repo = temp.path().join("repo");
         fs::create_dir_all(&repo).unwrap_or_abort();
@@ -427,9 +412,6 @@ mod tests {
 
     #[test]
     fn collect_vcs_diff_rejects_path_traversal() {
-        // arrange
-        // act
-        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let repo = temp.path().join("repo");
         fs::create_dir_all(&repo).unwrap_or_abort();
@@ -441,9 +423,6 @@ mod tests {
 
     #[test]
     fn collect_vcs_diff_rejects_absolute_path() {
-        // arrange
-        // act
-        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let repo = temp.path().join("repo");
         fs::create_dir_all(&repo).unwrap_or_abort();
@@ -456,9 +435,6 @@ mod tests {
 
     #[test]
     fn collect_vcs_snapshot_combines_status_and_diff() {
-        // arrange
-        // act
-        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let repo = temp.path().join("repo");
         fs::create_dir_all(&repo).unwrap_or_abort();
@@ -475,9 +451,6 @@ mod tests {
 
     #[test]
     fn parse_numstat_counts_insertions_and_deletions() {
-        // arrange
-        // act
-        // assert
         let raw = "3\t1\tsrc/a.rs\n0\t5\tsrc/b.rs\n";
         let (files, ins, del) = parse_numstat(raw);
         assert_eq!(files, 2);
@@ -487,9 +460,6 @@ mod tests {
 
     #[test]
     fn parse_numstat_handles_binary_marker() {
-        // arrange
-        // act
-        // assert
         let raw = "-\t-\tbin/file\n";
         let (files, ins, del) = parse_numstat(raw);
         assert_eq!(files, 1);
@@ -499,9 +469,6 @@ mod tests {
 
     #[test]
     fn vcs_status_one_line_is_human_readable() {
-        // arrange
-        // act
-        // assert
         let status = VcsStatus {
             entries: vec![VcsStatusEntry {
                 path: "a.rs".to_string(),
@@ -521,9 +488,6 @@ mod tests {
 
     #[test]
     fn vcs_diff_one_line_scoped_and_unscoped() {
-        // arrange
-        // act
-        // assert
         let scoped = VcsDiff {
             path: "src/a.rs".to_string(),
             unified_diff: String::new(),
