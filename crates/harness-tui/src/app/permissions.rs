@@ -120,7 +120,10 @@ impl AppState {
         self.projection
             .pending_permissions
             .iter()
-            .filter(|(permission_id, _)| !self.dismissed_permissions.contains(*permission_id))
+            .filter(|(permission_id, _)| {
+                !self.dismissed_permissions.contains(*permission_id)
+                    && !self.suppressed_permissions.contains(*permission_id)
+            })
             .min_by_key(|(_, pending)| pending.seq)
             .map(|(permission_id, pending)| (permission_id.clone(), pending.summary.clone()))
     }
@@ -129,7 +132,10 @@ impl AppState {
         self.projection
             .pending_permissions
             .iter()
-            .filter(|(permission_id, _)| !self.dismissed_permissions.contains(*permission_id))
+            .filter(|(permission_id, _)| {
+                !self.dismissed_permissions.contains(*permission_id)
+                    && !self.suppressed_permissions.contains(*permission_id)
+            })
             .min_by_key(|(_, pending)| pending.seq)
             .map(|(permission_id, pending)| ActivePermissionView {
                 permission_id: permission_id.clone(),
@@ -160,7 +166,10 @@ impl AppState {
             .projection
             .pending_permissions
             .iter()
-            .filter(|(permission_id, _)| !self.dismissed_permissions.contains(*permission_id))
+            .filter(|(permission_id, _)| {
+                !self.dismissed_permissions.contains(*permission_id)
+                    && !self.suppressed_permissions.contains(*permission_id)
+            })
             .map(|(permission_id, permission)| {
                 let summary = if permission.kind.eq_ignore_ascii_case("question") {
                     "Question requested".to_string()
@@ -490,14 +499,8 @@ impl AppState {
                         if self.permission_modal_confirm_selection(&permission.permission_id)
                             == PermissionConfirmSelection::Confirm
                         {
-                            self.enable_always_approve_mode();
                             self.clear_permission_modal_selection(&permission.permission_id);
-                            self.send_permission_intent(
-                                permission.permission_id.clone(),
-                                PermissionDecision::Allow,
-                                None,
-                                Some(PermissionGrantScope::Run),
-                            );
+                            self.request_always_approve_mode_change(true);
                         } else {
                             self.close_permission_allow_always_confirm(&permission.permission_id);
                         }
@@ -1356,27 +1359,5 @@ impl AppState {
             grant_scope,
         });
         self.submitted_permission_id = Some(permission_id);
-    }
-
-    pub(super) fn maybe_auto_allow_active_permission(&mut self) {
-        if !self.always_approve_mode() {
-            return;
-        }
-        let Some(permission) = self.active_permission_view() else {
-            return;
-        };
-        if permission.question_prompts.is_some() {
-            return;
-        }
-        if self.submitted_permission_is_active(&permission.permission_id) {
-            return;
-        }
-        self.clear_permission_modal_selection(&permission.permission_id);
-        self.send_permission_intent(
-            permission.permission_id,
-            PermissionDecision::Allow,
-            None,
-            Some(PermissionGrantScope::Run),
-        );
     }
 }

@@ -587,6 +587,7 @@ pub struct AppState {
     pub toggles_selected: usize,
     toggles_yolo_confirm_visible: bool,
     always_approve_mode: bool,
+    always_approve_mode_change_pending: Option<bool>,
     session_mode: SessionMode,
     runtime_toggles: toggles::RuntimeTogglesState,
     pub lineage_browser: LineageBrowserState,
@@ -620,6 +621,7 @@ pub struct AppState {
     runtime_context_metadata: Option<LaunchMetadata>,
     session_navigation_stack: Vec<SessionNavigationSnapshot>,
     dismissed_permissions: BTreeSet<String>,
+    suppressed_permissions: BTreeSet<String>,
     submitted_permission_id: Option<String>,
     pub(crate) permission_prompt: PermissionPromptState,
     pub(crate) question_prompt: QuestionPromptState,
@@ -825,6 +827,7 @@ impl Default for AppState {
             toggles_selected: 0,
             toggles_yolo_confirm_visible: false,
             always_approve_mode: false,
+            always_approve_mode_change_pending: None,
             session_mode: SessionMode::Normal,
             runtime_toggles: toggles::RuntimeTogglesState::default(),
             lineage_browser: LineageBrowserState::default(),
@@ -864,6 +867,7 @@ impl Default for AppState {
             runtime_context_metadata: None,
             session_navigation_stack: Vec::new(),
             dismissed_permissions: BTreeSet::new(),
+            suppressed_permissions: BTreeSet::new(),
             submitted_permission_id: None,
             permission_prompt: PermissionPromptState::default(),
             question_prompt: QuestionPromptState::default(),
@@ -1541,6 +1545,7 @@ impl AppState {
         self.projection
             .set_fallback_profile_label(self.active_profile().to_string());
         self.dismissed_permissions.clear();
+        self.suppressed_permissions.clear();
         self.submitted_permission_id = None;
         self.permission_prompt.permission_id = None;
         self.permission_prompt.stage = PermissionModalStage::Decision;
@@ -1633,7 +1638,14 @@ impl AppState {
         self.starting_session_seed = false;
         self.bump_transcript_render_epoch();
 
-        if matches!(&event.payload, EventV1::PermissionRequested(_)) {
+        let suppress_permission = !historical && self.should_suppress_permission_event(&event);
+        if let EventV1::PermissionRequested(data) = &event.payload {
+            if suppress_permission {
+                self.suppressed_permissions
+                    .insert(data.permission_id.clone());
+            }
+        }
+        if matches!(&event.payload, EventV1::PermissionRequested(_)) && !suppress_permission {
             self.close_palette();
             self.clear_slash_menu();
             self.clear_file_mention_menu();
@@ -1734,9 +1746,6 @@ impl AppState {
         }
 
         self.update_queued_prompt_count();
-        if !historical {
-            self.maybe_auto_allow_active_permission();
-        }
         self.sync_transcript_integration(!historical);
         if self.status_dashboard_is_active() {
             self.refresh_status_dashboard();
@@ -3583,18 +3592,48 @@ impl AppState {
         self.always_approve_mode
     }
 
-    pub(crate) fn enable_always_approve_mode(&mut self) {
-        self.always_approve_mode = true;
-        self.session_mode = SessionMode::AlwaysApprove;
-    }
-
-    pub(in crate::app) fn toggle_always_approve_mode(&mut self) {
-        self.always_approve_mode = !self.always_approve_mode;
-        self.session_mode = if self.always_approve_mode {
+    pub(crate) fn set_always_approve_mode(&mut self, enabled: bool) {
+        self.always_approve_mode_change_pending = None;
+        self.always_approve_mode = enabled;
+        self.session_mode = if enabled {
             SessionMode::AlwaysApprove
         } else {
             SessionMode::Normal
         };
+    }
+
+    pub(in crate::app) fn request_always_approve_mode_toggle(&mut self) {
+        self.request_always_approve_mode_change(!self.always_approve_mode);
+    }
+
+    pub(in crate::app) fn request_always_approve_mode_change(&mut self, enabled: bool) {
+        self.always_approve_mode_change_pending = Some(enabled);
+        self.emit_ui_intent(UiIntent::SetAlwaysApproveMode { enabled });
+    }
+
+    pub(crate) fn reject_always_approve_mode_change(&mut self) {
+        let permission_was_pending = self.active_permission().is_some();
+        self.always_approve_mode_change_pending = None;
+        self.suppressed_permissions.clear();
+        self.reconcile_permission_focus(permission_was_pending);
+    }
+
+    pub(crate) fn should_suppress_permission_event(&self, event: &EventEnvelopeV1) -> bool {
+        let EventV1::PermissionRequested(data) = &event.payload else {
+            return false;
+        };
+        self.always_approve_mode_change_pending == Some(true)
+            && matches!(
+                data.kind.as_str(),
+                "edit_fs"
+                    | "shell"
+                    | "network"
+                    | "task"
+                    | "webfetch"
+                    | "websearch"
+                    | "codesearch"
+                    | "lsp"
+            )
     }
 
     pub(crate) fn set_compact_session_supported(&mut self, supported: bool) {
@@ -3633,6 +3672,7 @@ impl AppState {
     fn update_transient_state_for_event(&mut self, event: &EventEnvelopeV1) {
         if let EventV1::PermissionResolved(data) = &event.payload {
             self.dismissed_permissions.remove(&data.permission_id);
+            self.suppressed_permissions.remove(&data.permission_id);
             self.clear_permission_modal_selection(&data.permission_id);
             if self.submitted_permission_is_active(&data.permission_id) {
                 self.submitted_permission_id = None;
@@ -3646,7 +3686,9 @@ impl AppState {
             Some(QueueLifecycle::Streaming)
         } else if matches!(&event.payload, EventV1::ToolCallRequested(_)) {
             Some(QueueLifecycle::Tool)
-        } else if matches!(&event.payload, EventV1::PermissionRequested(_)) {
+        } else if matches!(&event.payload, EventV1::PermissionRequested(_))
+            && !self.should_suppress_permission_event(event)
+        {
             Some(QueueLifecycle::Waiting)
         } else if matches!(&event.payload, EventV1::TaskCancelled(_)) {
             Some(QueueLifecycle::Cancelling)

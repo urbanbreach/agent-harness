@@ -174,9 +174,17 @@ fn apply_update(
                 app.set_status_banner(None);
             }
             if let harness_core::event::RuntimeEvent::Durable(durable) = event.as_ref() {
-                experience.on_event(durable);
+                if !app.should_suppress_permission_event(durable) {
+                    experience.on_event(durable);
+                }
             }
             app.ingest_runtime_event(*event);
+        }
+        LiveUpdate::AlwaysApproveModeChanged { enabled } => {
+            app.set_always_approve_mode(enabled);
+        }
+        LiveUpdate::AlwaysApproveModeChangeFailed => {
+            app.reject_always_approve_mode_change();
         }
         LiveUpdate::Status(status) => {
             if app.status_banner.as_deref() == Some(status.as_str()) {
