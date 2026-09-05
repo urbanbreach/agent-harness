@@ -1,9 +1,6 @@
 use harness_core::UnwrapOrAbort;
 #[tokio::test]
 async fn resume_existing_run_restores_sequence_and_ids() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_resume_ids";
     write_resume_fixture(
@@ -183,9 +180,6 @@ async fn resume_existing_run_restores_sequence_and_ids() {
 }
 #[tokio::test]
 async fn resume_existing_run_reuses_same_run_id_and_directory() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_resume_same_dir";
     write_resume_fixture(
@@ -256,9 +250,6 @@ async fn resume_existing_run_reuses_same_run_id_and_directory() {
 }
 #[tokio::test]
 async fn resume_existing_run_restores_subagent_parent_lineage_for_hooks_and_replay() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_resume_subagent_parent_lineage";
     let workspace_root = temp_dir.path().display().to_string();
@@ -383,9 +374,6 @@ async fn resume_existing_run_restores_subagent_parent_lineage_for_hooks_and_repl
 }
 #[tokio::test]
 async fn resume_existing_run_restores_agent_profile_bindings() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_resume_agents";
     write_resume_fixture(
@@ -447,9 +435,6 @@ async fn resume_existing_run_restores_agent_profile_bindings() {
 }
 #[tokio::test]
 async fn resumed_run_agent_ids_skip_existing_child_session_directories() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_resume_skips_stale_child_dir";
     write_resume_fixture(

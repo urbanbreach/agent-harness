@@ -4,9 +4,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[test]
 fn off_policy_is_available_and_not_required() {
-    // arrange
-    // act
-    // assert
     // Given: Off policy on any platform
     let platform = SandboxPlatform::Linux;
 
@@ -23,9 +20,6 @@ fn off_policy_is_available_and_not_required() {
 
 #[test]
 fn sandbox_policy_parse_rejects_unknown_input() {
-    // arrange
-    // act
-    // assert
     // Public policy names parse; anything else stays None so callers fail closed
     // to Off (see resolve_os_sandbox_policy in harness-tools shell_run).
     assert_eq!(SandboxPolicy::parse("off"), Some(SandboxPolicy::Off));
@@ -40,9 +34,6 @@ fn sandbox_policy_parse_rejects_unknown_input() {
 
 #[test]
 fn non_off_policy_returns_structured_unavailable_not_silent_allow() {
-    // arrange
-    // act
-    // assert
     // Given: confinement-required policies (default prepare path does not apply Landlock)
     for policy in [
         SandboxPolicy::WorkspaceWrite,
@@ -96,9 +87,6 @@ fn non_off_policy_returns_structured_unavailable_not_silent_allow() {
 
 #[test]
 fn parse_public_policy_names() {
-    // arrange
-    // act
-    // assert
     assert_eq!(SandboxPolicy::parse("off"), Some(SandboxPolicy::Off));
     assert_eq!(
         SandboxPolicy::parse("workspace"),
@@ -118,9 +106,6 @@ fn parse_public_policy_names() {
 
 #[test]
 fn permissions_layer_is_documented_as_distinct_from_sandbox() {
-    // arrange
-    // act
-    // assert
     let off = prepare_sandbox_for_platform(SandboxPolicy::Off, SandboxPlatform::Linux);
     assert!(matches!(off, SandboxPrepareResult::NotRequired { .. }));
     let strict = prepare_sandbox_for_platform(SandboxPolicy::Strict, SandboxPlatform::Linux);
@@ -129,9 +114,6 @@ fn permissions_layer_is_documented_as_distinct_from_sandbox() {
 
 #[test]
 fn list_os_profiles_covers_all_policies_with_honest_availability() {
-    // arrange
-    // act
-    // assert
     // Given: Linux host bucket (injectable)
     let platform = SandboxPlatform::Linux;
 
@@ -164,9 +146,6 @@ fn list_os_profiles_covers_all_policies_with_honest_availability() {
 
 #[test]
 fn detect_landlock_reports_available_when_probe_succeeds() {
-    // arrange
-    // act
-    // assert
     // Given / When
     let support = detect_landlock_with(|| LandlockSupport::Available {
         detection: "test_probe".to_string(),
@@ -184,9 +163,6 @@ fn detect_landlock_reports_available_when_probe_succeeds() {
 
 #[test]
 fn detect_landlock_reports_unavailable_when_probe_fails() {
-    // arrange
-    // act
-    // assert
     // Given / When
     let support = detect_landlock_with(|| LandlockSupport::Unavailable {
         reason: "Landlock LSM not present".to_string(),
@@ -204,9 +180,6 @@ fn detect_landlock_reports_unavailable_when_probe_fails() {
 
 #[test]
 fn probe_lsm_list_detects_landlock_token() {
-    // arrange
-    // act
-    // assert
     assert!(lsm_list_contains_landlock("capability,landlock,yama"));
     assert!(lsm_list_contains_landlock("landlock"));
     assert!(!lsm_list_contains_landlock("capability,yama,bpf"));
@@ -216,9 +189,6 @@ fn probe_lsm_list_detects_landlock_token() {
 
 #[test]
 fn build_fs_plan_workspace_write_allows_workspace_and_temp_writes() {
-    // arrange
-    // act
-    // assert
     // Given
     let roots = sample_roots();
 
@@ -237,9 +207,6 @@ fn build_fs_plan_workspace_write_allows_workspace_and_temp_writes() {
 
 #[test]
 fn build_fs_plan_read_only_writes_only_state_and_temp() {
-    // arrange
-    // act
-    // assert
     // Given
     let roots = sample_roots();
 
@@ -255,9 +222,6 @@ fn build_fs_plan_read_only_writes_only_state_and_temp() {
 
 #[test]
 fn build_fs_plan_strict_limits_reads_to_workspace_and_essentials() {
-    // arrange
-    // act
-    // assert
     // Given
     let roots = sample_roots();
 
@@ -273,17 +237,11 @@ fn build_fs_plan_strict_limits_reads_to_workspace_and_essentials() {
 
 #[test]
 fn build_fs_plan_off_returns_none() {
-    // arrange
-    // act
-    // assert
     assert!(build_fs_plan(SandboxPolicy::Off, &sample_roots()).is_none());
 }
 
 #[test]
 fn prepare_for_spawn_fails_closed_when_landlock_missing() {
-    // arrange
-    // act
-    // assert
     // Given
     let landlock = LandlockSupport::Unavailable {
         reason: "Landlock LSM not enabled".to_string(),
@@ -320,9 +278,6 @@ fn prepare_for_spawn_fails_closed_when_landlock_missing() {
 
 #[test]
 fn prepare_for_spawn_never_claims_prepared_without_apply() {
-    // arrange
-    // act
-    // assert
     // Given: Landlock present but no apply callback (bash pre_exec not wired)
     let landlock = LandlockSupport::Available {
         detection: "lsm_list".to_string(),
@@ -356,9 +311,6 @@ fn prepare_for_spawn_never_claims_prepared_without_apply() {
 
 #[test]
 fn prepare_for_spawn_prepared_only_when_apply_succeeds() {
-    // arrange
-    // act
-    // assert
     // Given
     let landlock = LandlockSupport::Available {
         detection: "lsm_list".to_string(),
@@ -394,9 +346,6 @@ fn prepare_for_spawn_prepared_only_when_apply_succeeds() {
 
 #[test]
 fn prepare_for_spawn_unavailable_when_apply_fails() {
-    // arrange
-    // act
-    // assert
     // Given
     let landlock = LandlockSupport::Available {
         detection: "lsm_list".to_string(),
@@ -425,9 +374,6 @@ fn prepare_for_spawn_unavailable_when_apply_fails() {
 
 #[test]
 fn prepare_for_spawn_unavailable_on_non_linux_even_with_apply() {
-    // arrange
-    // act
-    // assert
     // Given
     let landlock = LandlockSupport::Available {
         detection: "ignored".to_string(),
@@ -460,18 +406,12 @@ fn prepare_for_spawn_unavailable_on_non_linux_even_with_apply() {
 
 #[test]
 fn bash_spawn_integration_point_is_documented() {
-    // arrange
-    // act
-    // assert
     assert!(BASH_SPAWN_SANDBOX_INTEGRATION.contains("shell_run"));
     assert!(BASH_SPAWN_SANDBOX_INTEGRATION.contains("TokioShellCommandRunner"));
 }
 
 #[test]
 fn apply_placeholder_fails_closed() {
-    // arrange
-    // act
-    // assert
     let plan = build_fs_plan(SandboxPolicy::WorkspaceWrite, &sample_roots()).expect("plan");
     let err = apply_landlock_fs_plan_not_implemented(&plan).expect_err("must fail closed");
     assert!(
@@ -541,9 +481,6 @@ fn apply_landlock_fs_plan_enforces_in_child_process() {
 
 #[test]
 fn prepare_with_real_apply_hook_is_prepared_when_landlock_available() {
-    // arrange
-    // act
-    // assert
     let roots = sample_roots();
     let landlock = detect_landlock();
     if !landlock.is_available() {
@@ -569,9 +506,6 @@ fn prepare_with_real_apply_hook_is_prepared_when_landlock_available() {
 
 #[test]
 fn summarize_fs_plan_reports_counts_and_paths() {
-    // arrange
-    // act
-    // assert
     // Given
     let roots = sample_roots();
     let plan = build_fs_plan(SandboxPolicy::WorkspaceWrite, &roots).expect("plan");
@@ -593,9 +527,6 @@ fn summarize_fs_plan_reports_counts_and_paths() {
 
 #[test]
 fn describe_fs_plan_for_policy_none_for_off_and_some_for_enforced() {
-    // arrange
-    // act
-    // assert
     // Given
     let roots = sample_roots();
 
@@ -612,9 +543,6 @@ fn describe_fs_plan_for_policy_none_for_off_and_some_for_enforced() {
 
 #[test]
 fn landlock_support_one_line_covers_available_and_unavailable() {
-    // arrange
-    // act
-    // assert
     // Given
     let available = LandlockSupport::Available {
         detection: "lsm=landlock".to_string(),
@@ -652,9 +580,6 @@ fn sample_roots() -> SandboxPathRoots {
 
 #[test]
 fn probe_os_sandbox_product_multi_policy_walk_is_honest() {
-    // arrange
-    // act
-    // assert
     // Given
     let roots = sample_roots();
     let platform = SandboxPlatform::Linux;
@@ -720,9 +645,6 @@ fn probe_os_sandbox_product_multi_policy_walk_is_honest() {
 
 #[test]
 fn probe_os_sandbox_product_without_roots_skips_fs_plan_walk() {
-    // arrange
-    // act
-    // assert
     // When
     let probe = probe_os_sandbox_product_for_platform(SandboxPlatform::Linux, None);
 

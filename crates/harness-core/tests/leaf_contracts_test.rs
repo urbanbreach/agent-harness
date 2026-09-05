@@ -1,40 +1,14 @@
-//! Leaf contract integration tests for Todo 10.
-//!
-//! These tests prove the coordinator-owned invariants that the leaf contracts
-//! (workspace, session, scheduler, integration) depend on:
-//!
-//! 1. **Event append owner is coordinator**: all events are appended by the
-//!    coordinator through `event_helpers`. Leaf owners never write events.
-//! 2. **Permission check before tool execution**: `PermissionRequested` and
-//!    `PermissionResolved` events appear before `ToolCallFinished` in the
-//!    event sequence. The coordinator resolves permissions before a tool
-//!    task starts.
-//! 3. **Late result ignored after cancellation**: when a task is cancelled,
-//!    late results are recorded as `TaskResultLate` without side effects.
-//!    The coordinator owns cancellation authority.
-//! 4. **State clean after cancellation**: no extra `TaskCompleted` with
-//!    succeeded status appears after `TaskCancelled`.
+//! Coordinator boundary tests for event ownership, permissions, cancellation,
+//! workspace snapshots, and session lifecycle.
 
 include!("common/coord_fixtures.rs");
 
 mod leaf_contracts {
     use super::*;
     use harness_core::perm::PermissionGrantScope;
-    use harness_core::scheduler_leaf::{
-        CancellationBoundary, CoordinatorSchedulerLeaf, PermissionCheckpoint,
-        PermissionResolveRequest, SchedulerLeaf,
-    };
-    use harness_core::session_leaf::{CoordinatorSessionLeaf, SessionLeaf, SessionStartRequest};
-    use harness_core::workspace_leaf::{
-        CoordinatorWorkspaceLeaf, WorkspaceLeaf, WorkspaceSnapshotRequest,
-    };
 
     /// Happy path: prove that the coordinator is the event append owner and
     /// that permission checks precede tool execution.
-    ///
-    /// This test uses the scheduler leaf contract's `PermissionCheckpoint` type
-    /// to make the permission-before-tool invariant explicit at the API
-    /// boundary, then verifies the invariant in the event log.
     #[tokio::test]
     async fn coordinator_owns_event_append_and_permission_precedes_tool_execution() {
         // arrange — coordinator with ask-shell permission policy
@@ -48,13 +22,11 @@ mod leaf_contracts {
             12,
         );
 
-        // Use the session leaf contract to start the run
-        let session_leaf = CoordinatorSessionLeaf::new(coordinator.clone());
-        let run = session_leaf
-            .start_session(SessionStartRequest {
-                run_name: "leaf_permission_before_tool".to_string(),
-                workspace_root: PathBuf::from("/workspace/project"),
-            })
+        let run = coordinator
+            .start_run(
+                "leaf_permission_before_tool",
+                PathBuf::from("/workspace/project"),
+            )
             .await
             .unwrap_or_abort();
 
@@ -93,13 +65,6 @@ mod leaf_contracts {
             })
             .unwrap_or_abort();
 
-        // The PermissionCheckpoint makes the permission-before-tool invariant
-        // explicit: the leaf owner creates a checkpoint proving permission was
-        // resolved before the tool executes.
-        let checkpoint = PermissionCheckpoint::allowed(&permission_id);
-        assert!(checkpoint.is_allowed());
-
-        // Resolve the permission through the coordinator (scheduler leaf contract)
         coordinator
             .resolve_permission_with_grant_scope(
                 permission_id,
@@ -186,10 +151,6 @@ mod leaf_contracts {
 
     /// Failure path: prove that late results are ignored after cancellation
     /// and state remains clean.
-    ///
-    /// This test uses the scheduler leaf contract's `CancellationBoundary` type
-    /// to make the late-result-ignored invariant explicit at the API boundary,
-    /// then verifies the invariant in the event log.
     #[tokio::test]
     async fn denial_cancellation_late_result_ignored_and_state_clean() {
         // arrange — coordinator with a slow provider so the turn is still running
@@ -239,18 +200,10 @@ mod leaf_contracts {
             })
             .unwrap_or_abort();
 
-        // Cancel the task through the coordinator (scheduler leaf contract)
         coordinator
             .cancel_task(task_id.clone(), "leaf-contract-cancellation-test")
             .await
             .unwrap_or_abort();
-
-        // The CancellationBoundary makes the late-result-ignored invariant
-        // explicit: after cancellation, any result is late and must be ignored.
-        let boundary = CancellationBoundary::Cancelled {
-            reason: "leaf-contract-cancellation-test".to_string(),
-        };
-        assert!(boundary.late_result_ignored());
 
         // Give the coordinator time to process the cancellation and any
         // late provider response that arrives after cancellation.
@@ -328,27 +281,20 @@ mod leaf_contracts {
         assert_eq!(seqs, sorted_seqs, "events must be in contiguous seq order");
     }
 
-    /// Prove that the workspace leaf contract routes snapshot operations
-    /// through the coordinator handle.
+    /// Prove that the coordinator writes the workspace snapshot artifact.
     #[tokio::test]
-    async fn workspace_leaf_routes_snapshot_through_coordinator() {
+    async fn coordinator_writes_workspace_snapshot_artifact() {
         // arrange
         let temp_dir = tempfile::tempdir().unwrap_or_abort();
         let coordinator = test_coordinator(temp_dir.path());
-
-        let workspace_leaf =
-            CoordinatorWorkspaceLeaf::new(coordinator.clone(), temp_dir.path().to_path_buf());
 
         let run = coordinator
             .start_run("leaf_workspace_snapshot", temp_dir.path().to_path_buf())
             .await
             .unwrap_or_abort();
 
-        // act — request a snapshot through the workspace leaf contract
-        let snapshot = workspace_leaf
-            .snapshot(WorkspaceSnapshotRequest {
-                request_id: "leaf_snap_001".to_string(),
-            })
+        let snapshot = coordinator
+            .snapshot_workspace("leaf_snap_001")
             .await
             .unwrap_or_abort();
 
@@ -365,42 +311,26 @@ mod leaf_contracts {
             "snapshot artifact must exist at {}",
             snapshot_path.display()
         );
-
-        // The workspace_root is accessible through the leaf contract
-        assert_eq!(
-            workspace_leaf.workspace_root(),
-            temp_dir.path().to_path_buf()
-        );
     }
 
-    /// Prove that the session leaf contract routes start/stop through the
-    /// coordinator handle and that the coordinator appends the lifecycle events.
+    /// Prove that the coordinator appends the session lifecycle events.
     #[tokio::test]
-    async fn session_leaf_routes_lifecycle_through_coordinator() {
+    async fn coordinator_records_session_lifecycle_events() {
         // arrange
         let temp_dir = tempfile::tempdir().unwrap_or_abort();
         let coordinator = test_coordinator(temp_dir.path());
-        let session_leaf = CoordinatorSessionLeaf::new(coordinator.clone());
 
-        // act — start a session through the session leaf contract
-        let run = session_leaf
-            .start_session(SessionStartRequest {
-                run_name: "leaf_session_lifecycle".to_string(),
-                workspace_root: temp_dir.path().to_path_buf(),
-            })
+        let run = coordinator
+            .start_run("leaf_session_lifecycle", temp_dir.path().to_path_buf())
             .await
             .unwrap_or_abort();
 
-        // Update the title through the leaf contract
-        let updated_run = session_leaf
-            .update_title(harness_core::session_leaf::SessionTitleRequest {
-                title: "Leaf Contract Test".to_string(),
-            })
+        let updated_run = coordinator
+            .update_session_title("Leaf Contract Test")
             .await
             .unwrap_or_abort();
 
-        // Stop the session through the leaf contract
-        session_leaf.stop_session().await.unwrap_or_abort();
+        coordinator.stop_run().await.unwrap_or_abort();
 
         // assert — the coordinator appended lifecycle events
         let events = load_events(&run.events_path);
@@ -422,14 +352,12 @@ mod leaf_contracts {
             .iter()
             .any(|event| matches!(&event.payload, EventV1::RunFinished(_))));
 
-        // The run_id from start_session matches the one from update_title
         assert_eq!(run.run_id, updated_run.run_id);
     }
 
-    /// Prove that the scheduler leaf contract's `PermissionResolveRequest`
-    /// routes permission resolution through the coordinator handle.
+    /// Prove that the coordinator records the scoped permission decision.
     #[tokio::test]
-    async fn scheduler_leaf_routes_permission_resolution_through_coordinator() {
+    async fn coordinator_records_scoped_permission_resolution() {
         // arrange — coordinator with ask-shell permission policy
         let temp_dir = tempfile::tempdir().unwrap_or_abort();
         let coordinator = test_agent_tool_coordinator(
@@ -440,9 +368,6 @@ mod leaf_contracts {
             vec!["shell.run".to_string()],
             12,
         );
-
-        let scheduler_leaf =
-            harness_core::scheduler_leaf::CoordinatorSchedulerLeaf::new(coordinator.clone());
 
         let run = coordinator
             .start_run(
@@ -486,14 +411,13 @@ mod leaf_contracts {
             })
             .unwrap_or_abort();
 
-        // Resolve the permission through the scheduler leaf contract
-        scheduler_leaf
-            .resolve_permission(PermissionResolveRequest {
-                permission_id: permission_id.clone(),
-                decision: RuntimePermissionDecision::Allow,
-                reason: Some("leaf-contract-allow".to_string()),
-                grant_scope: Some(PermissionGrantScope::Run),
-            })
+        coordinator
+            .resolve_permission_with_grant_scope(
+                permission_id,
+                RuntimePermissionDecision::Allow,
+                Some("leaf-contract-allow".to_string()),
+                Some(PermissionGrantScope::Run),
+            )
             .await
             .unwrap_or_abort();
 

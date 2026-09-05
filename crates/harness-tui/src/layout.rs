@@ -1036,9 +1036,6 @@ mod tests {
 
     #[test]
     fn split_secondary_surface_stacks_vertically_in_narrow_tall_windows() {
-        // arrange
-        // act
-        // assert
         let [top, bottom] = split_secondary_surface(Rect::new(0, 0, 60, 24), 40, 1);
 
         assert_eq!(top, Rect::new(0, 0, 60, 9));
@@ -1047,9 +1044,6 @@ mod tests {
 
     #[test]
     fn split_secondary_surface_keeps_horizontal_layout_when_width_allows() {
-        // arrange
-        // act
-        // assert
         let [left, right] = split_secondary_surface(Rect::new(0, 0, 100, 24), 40, 1);
 
         assert_eq!(left, Rect::new(0, 0, 39, 24));
@@ -1058,9 +1052,6 @@ mod tests {
 
     #[test]
     fn lifecycle_overlay_stays_centered_in_minimum_geometry() {
-        // arrange
-        // act
-        // assert
         let theme = Theme::default();
         let overlay = lifecycle_overlay_area(
             Rect::new(0, 1, 80, 22),
@@ -1074,9 +1065,6 @@ mod tests {
 
     #[test]
     fn replay_session_layout_never_reserves_live_anchor() {
-        // arrange
-        // act
-        // assert
         let app = AppState::new_replay(std::path::PathBuf::from("/tmp/replay-session"), Vec::new());
         let plan = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, 100, 30));
 
@@ -1085,9 +1073,6 @@ mod tests {
 
     #[test]
     fn startup_composer_input_height_uses_harness_terminal_scaled_cap() {
-        // arrange
-        // act
-        // assert
         let text = "line\n".repeat(20);
 
         assert_eq!(startup_composer_input_height(&text, 75, 18), 6);
@@ -1096,9 +1081,6 @@ mod tests {
 
     #[test]
     fn startup_dock_is_bottom_aligned_with_horizontal_inset() {
-        // arrange
-        // act
-        // assert
         let app = AppState::new_startup(Vec::new(), None);
         let plan = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, 120, 32));
         let dock = plan.dock.unwrap_or_abort();
@@ -1133,9 +1115,6 @@ mod tests {
 
     #[test]
     fn live_post_turn_dock_keeps_horizontal_inset_matching_freeze() {
-        // arrange
-        // act
-        // assert
         // Given: live shell (not startup) at freeze-primary 120×40
         let app = AppState::new_live(None, false, None);
         assert!(
@@ -1172,9 +1151,6 @@ mod tests {
 
     #[test]
     fn quiet_overlays_remain_centered_after_dock_merge() {
-        // arrange
-        // act
-        // assert
         let theme = Theme::default();
 
         let mut palette = AppState::new_live(None, false, None);
@@ -1204,9 +1180,6 @@ mod tests {
 
     #[test]
     fn startup_palette_overlay_prefers_compact_modal_dimensions() {
-        // arrange
-        // act
-        // assert
         let mut palette = AppState::new_startup(Vec::new(), None);
         palette.handle_key(crossterm::event::KeyEvent::new(
             crossterm::event::KeyCode::Char('p'),

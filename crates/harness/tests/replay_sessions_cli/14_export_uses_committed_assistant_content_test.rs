@@ -2,9 +2,6 @@ use harness::UnwrapOrAbort;
 
 #[test]
 fn export_uses_committed_assistant_content_instead_of_delta_replay() {
-    // arrange
-    // act
-    // assert
     // Given: a session whose transient compatibility delta differs from its final commit.
     let session_dir = tempdir().unwrap_or_abort();
     let run_dir = session_dir.path().join("run_committed_export");
@@ -75,9 +72,6 @@ fn export_uses_committed_assistant_content_instead_of_delta_replay() {
 
 #[test]
 fn interactive_mock_reopen_hint_preserves_offline_resume_mode() {
-    // arrange
-    // act
-    // assert
     // Given: a resumable interactive session whose persisted provider is mock.
     let session_dir = tempdir().unwrap_or_abort();
     let run_dir = session_dir.path().join("run_mock_resume");
@@ -171,9 +165,6 @@ fn interactive_mock_reopen_hint_preserves_offline_resume_mode() {
 
 #[test]
 fn prompt_cli_accepts_mock_resume_for_offline_continuation() {
-    // arrange
-    // act
-    // assert
     // Given: the documented offline continuation argument combination.
     // When: clap parses the command before session lookup.
     let output = run_harness([
@@ -195,9 +186,6 @@ fn prompt_cli_accepts_mock_resume_for_offline_continuation() {
 
 #[test]
 fn interactive_mock_session_continues_offline_from_semantic_commit() {
-    // arrange
-    // act
-    // assert
     // Given: one persisted mock turn with only a final semantic assistant commit.
     let session_dir = tempdir().unwrap_or_abort();
     let run_dir = session_dir.path().join("run_mock_continue");

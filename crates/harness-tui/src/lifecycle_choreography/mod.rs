@@ -1,11 +1,5 @@
-//! Unified lifecycle choreography across shell, composer, transcript, dashboard, and ambient UI.
+//! Shared lifecycle vocabulary for semantic theme tokens.
 
-pub mod coordinator;
 mod state;
-pub mod surface;
-pub mod transitions;
 
-pub use coordinator::{LifecycleAuthority, LifecycleSnapshot};
 pub use state::LifecycleState;
-pub use surface::{ActionAvailability, FocusDirective, SurfaceState};
-pub use transitions::{TransitionError, TransitionTable};

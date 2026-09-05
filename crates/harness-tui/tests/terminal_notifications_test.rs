@@ -19,9 +19,6 @@ fn event(kind: NotificationKind, tick: u64, title: &str, body: &str) -> Notifica
 
 #[test]
 fn protocols_emit_expected_sequences_and_strip_controls() {
-    // arrange
-    // act
-    // assert
     assert_eq!(
         NotificationProtocol::Osc9.sequence("title", "body"),
         "\x1b]9;body\x07"
@@ -43,9 +40,6 @@ fn protocols_emit_expected_sequences_and_strip_controls() {
 
 #[test]
 fn multiplexer_detection_and_forwarding_are_defined() {
-    // arrange
-    // act
-    // assert
     assert_eq!(
         Multiplexer::Tmux.forwarding_prefix(),
         Some("\x1bPtmux;\x1b")
@@ -69,9 +63,6 @@ fn multiplexer_detection_and_forwarding_are_defined() {
 
 #[test]
 fn protocol_sets_negotiate_and_support_empty_fallback() {
-    // arrange
-    // act
-    // assert
     assert_eq!(ProtocolSet::unsupported().primary(), None);
     assert!(ProtocolSet::unsupported().protocols.is_empty());
     let set = ProtocolSet {

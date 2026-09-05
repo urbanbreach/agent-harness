@@ -32,9 +32,6 @@ fn pty_phase(label: &str) {
     reason = "test code must panic gracefully"
 )]
 fn scripted_tui_happy_path_records_start_prompt_permission_tool_edit_resume_and_quit() {
-    // arrange
-    // act
-    // assert
     #[cfg(not(target_os = "linux"))]
     panic!("abort");
     let artifact_dir = std::env::var_os(ARTIFACT_DIR_ENV)

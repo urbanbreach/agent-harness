@@ -611,9 +611,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
     let backend = FrameOutputBackend::new(frame_writer);
     let mut terminal = Terminal::new(backend)?;
     let writer_worker = frame_receiver.spawn(stdout)?;
-    let (terminal_reader, mut terminal_ingress) = TerminalIngressReader::spawn(usize::from(
-        crate::perf_budgets::QueueBounds::strict().max_input_events,
-    ));
+    let (terminal_reader, mut terminal_ingress) = TerminalIngressReader::spawn(128);
 
     let mut run_result = (|| -> Result<()> {
         let pacing_epoch = Instant::now();
@@ -812,7 +810,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                 let size = terminal.size()?;
                 let frame_area = ratatui::layout::Rect::new(0, 0, size.width, size.height);
                 app.set_frame_area(frame_area);
-                experience.tick(&app);
+                experience.tick();
                 let submission = render_terminal_frame(
                     &mut terminal,
                     &mut frame_output,
@@ -1407,9 +1405,6 @@ mod tests {
 
     #[test]
     fn native_telemetry_never_synthesizes_an_unrecorded_frame_cause() {
-        // arrange
-        // act
-        // assert
         assert!(!has_canonical_render_demand(true, None));
         assert!(has_canonical_render_demand(false, None));
     }
@@ -1574,9 +1569,6 @@ mod tests {
 
     #[test]
     fn plain_mouse_movement_reaches_hover_handling() {
-        // arrange
-        // act
-        // assert
         assert!(mouse_event_requires_handling(MouseEventKind::Moved, false));
         assert!(mouse_event_requires_handling(MouseEventKind::Moved, true));
         assert!(mouse_event_requires_handling(
@@ -1587,9 +1579,6 @@ mod tests {
 
     #[test]
     fn drain_live_updates_marks_disconnect_once() {
-        // arrange
-        // act
-        // assert
         let (tx, rx) = live_update_channel();
         drop(tx);
         let mut app = AppState::default();
@@ -1621,9 +1610,6 @@ mod tests {
 
     #[test]
     fn app_toast_counts_as_active_animation() {
-        // arrange
-        // act
-        // assert
         let mut app = AppState::default();
         assert!(!app.has_active_animations());
 
@@ -1654,9 +1640,6 @@ mod tests {
 
     #[test]
     fn drain_live_updates_routes_operator_notice_to_toast() {
-        // arrange
-        // act
-        // assert
         let (tx, rx) = live_update_channel();
         tx.send(LiveUpdate::OperatorNotice {
             message: "manual compaction skipped: need at least two completed turns".to_string(),
@@ -1688,9 +1671,6 @@ mod tests {
 
     #[test]
     fn drain_live_updates_keeps_error_operator_notice_persistent() {
-        // arrange
-        // act
-        // assert
         let (tx, rx) = live_update_channel();
         tx.send(LiveUpdate::OperatorNotice {
             message: "manual compaction failed: boom".to_string(),
@@ -1722,9 +1702,6 @@ mod tests {
 
     #[test]
     fn drain_live_updates_applies_session_history_refresh() {
-        // arrange
-        // act
-        // assert
         let entry = SessionHistoryEntry {
             run_dir: PathBuf::from("/tmp/session-history-refresh"),
             catalog: SessionCatalogEntry {
@@ -1805,9 +1782,6 @@ mod tests {
 
     #[test]
     fn drain_live_updates_applies_auth_backend_result_to_status_banner() {
-        // arrange
-        // act
-        // assert
         let (tx, rx) = live_update_channel();
         let mut app = AppState::new_startup(Vec::new(), None);
         app.set_status_banner(Some("No provider connected. Use /connect.".to_string()));
@@ -1865,9 +1839,6 @@ mod tests {
 
     #[test]
     fn drain_live_updates_yields_after_frame_budget() {
-        // arrange
-        // act
-        // assert
         let (tx, rx) = live_update_channel();
         for index in 0..=LIVE_UPDATE_DRAIN_MAX_PER_FRAME {
             tx.send(LiveUpdate::Status(format!("status {index}")))
@@ -2085,9 +2056,6 @@ mod tests {
 
     #[test]
     fn reduced_motion_override_accepts_only_explicit_enabled_values() {
-        // arrange
-        // act
-        // assert
         assert!(reduced_motion_from_env(Some("1")));
         assert!(reduced_motion_from_env(Some("true")));
         assert!(reduced_motion_from_env(Some("YES")));

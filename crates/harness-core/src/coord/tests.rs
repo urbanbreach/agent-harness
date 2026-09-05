@@ -155,9 +155,6 @@ fn success_exit_status() -> ExitStatus {
 
 #[tokio::test]
 async fn lifecycle_hooks_use_injected_executor_without_spawning() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let executor = FakeLifecycleHookCommandExecutor::new();
     let runtime = HookRuntimeConfig {
@@ -299,9 +296,6 @@ async fn lifecycle_hooks_scoped_to_declared_event_invoke_nothing_else() {
 
 #[test]
 fn summarize_hook_output_preserves_existing_summary_contract() {
-    // arrange
-    // act
-    // assert
     assert_eq!(summarize_hook_output("  stdout only  ", ""), "stdout only");
     assert_eq!(summarize_hook_output("", "\nstderr only\n"), "stderr only");
     assert_eq!(
@@ -313,9 +307,6 @@ fn summarize_hook_output_preserves_existing_summary_contract() {
 
 #[test]
 fn summarize_hook_output_truncates_long_single_stream_output() {
-    // arrange
-    // act
-    // assert
     let summary = summarize_hook_output(&"x".repeat(161), "");
 
     assert_eq!(summary.chars().count(), 161);
@@ -512,9 +503,6 @@ fn test_agent_profile(name: &str) -> AgentProfile {
 
 #[tokio::test]
 async fn fresh_run_agent_ids_skip_existing_child_session_directories() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     fs::create_dir_all(temp_dir.path().join("agent_000001")).unwrap_or_abort();
     let stale_child_dir = temp_dir.path().join("agent_000002");
@@ -666,9 +654,6 @@ delegate_test!(mcp_effective_identity_uses_registered_first_class_ids_for_reserv
 
 #[test]
 fn stale_tool_task_late_result_preserves_owner_actor() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let mut config = test_config(temp_dir.path());
     config.stale_timeout_ms = 20;
@@ -759,9 +744,6 @@ fn stale_tool_task_late_result_preserves_owner_actor() {
 
 #[tokio::test]
 async fn background_foreground_child_tasks_releases_parent_task_and_keeps_child_running() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let config = test_config(temp_dir.path());
     let clock = Arc::new(FakeClock::new());
@@ -906,9 +888,6 @@ async fn background_foreground_child_tasks_releases_parent_task_and_keeps_child_
 
 #[tokio::test]
 async fn demote_foreground_child_task_releases_parent_for_single_handle() {
-    // arrange
-    // act
-    // assert
     // Given: one foreground-blocking child and a waiting parent task
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let config = test_config(temp_dir.path());
@@ -1060,9 +1039,6 @@ async fn demote_foreground_child_task_releases_parent_for_single_handle() {
 
 #[tokio::test]
 async fn demote_all_foreground_child_tasks_releases_multiple_parents() {
-    // arrange
-    // act
-    // assert
     // Given: two foreground-blocking children with distinct parents
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let config = test_config(temp_dir.path());

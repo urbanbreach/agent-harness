@@ -137,9 +137,6 @@ mod tests {
 
     #[test]
     fn fake_clock_starts_at_zero_and_advances_deterministically() {
-        // arrange
-        // act
-        // assert
         let clock = FakeClock::new();
         assert_eq!(clock.mono_ms(), 0);
 
@@ -152,9 +149,6 @@ mod tests {
 
     #[test]
     fn deterministic_mode_uses_fake_clock_and_no_system_time() {
-        // arrange
-        // act
-        // assert
         assert!(Determinism::enabled_with_env(false, Some("1")));
 
         let configured_clock = if Determinism::enabled_with_env(false, Some("1")) {
@@ -168,9 +162,6 @@ mod tests {
 
     #[test]
     fn deterministic_mode_enabled_by_config() {
-        // arrange
-        // act
-        // assert
         assert!(Determinism::enabled_with_env(true, None));
         let clock = if Determinism::enabled_with_env(true, None) {
             ClockSource::Fake(FakeClock::new())

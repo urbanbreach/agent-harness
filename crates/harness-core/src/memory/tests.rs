@@ -3,9 +3,6 @@ use crate::UnwrapOrAbort;
 
 #[test]
 fn put_get_survives_store_drop_and_reload() {
-    // arrange
-    // act
-    // assert
     let temp = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp.path();
 
@@ -29,9 +26,6 @@ fn put_get_survives_store_drop_and_reload() {
 
 #[test]
 fn put_updates_existing_key() {
-    // arrange
-    // act
-    // assert
     let temp = tempfile::tempdir().unwrap_or_abort();
     let store = DurableMemoryStore::for_workspace(temp.path());
     store.put("note", "v1").unwrap_or_abort();
@@ -42,9 +36,6 @@ fn put_updates_existing_key() {
 
 #[test]
 fn search_matches_key_prefix_and_substring() {
-    // arrange
-    // act
-    // assert
     let temp = tempfile::tempdir().unwrap_or_abort();
     let store = DurableMemoryStore::for_workspace(temp.path());
     store.put("prefs.editor", "helix").unwrap_or_abort();
@@ -62,9 +53,6 @@ fn search_matches_key_prefix_and_substring() {
 
 #[test]
 fn put_redacts_secret_like_values() {
-    // arrange
-    // act
-    // assert
     let temp = tempfile::tempdir().unwrap_or_abort();
     let store = DurableMemoryStore::for_workspace(temp.path());
     let written = store
@@ -80,9 +68,6 @@ fn put_redacts_secret_like_values() {
 
 #[test]
 fn empty_key_is_rejected() {
-    // arrange
-    // act
-    // assert
     let temp = tempfile::tempdir().unwrap_or_abort();
     let store = DurableMemoryStore::for_workspace(temp.path());
     let err = store.put("   ", "x").expect_err("empty key");
@@ -95,9 +80,6 @@ fn empty_key_is_rejected() {
 
 #[test]
 fn put_scoped_persists_and_reloads_with_scope() {
-    // arrange
-    // act
-    // assert
     let temp = tempfile::tempdir().unwrap_or_abort();
     let store = DurableMemoryStore::for_workspace(temp.path());
 

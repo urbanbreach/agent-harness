@@ -21,9 +21,6 @@ fn write_file(root: &std::path::Path, rel: &str, content: &[u8]) {
 
 #[test]
 fn diff_shows_no_drift_when_file_matches_agent_snapshot() {
-    // arrange
-    // act
-    // assert
     // Given: agent wrote a file
     let dir = tempfile::tempdir().unwrap_or_abort();
     let root = dir.path();
@@ -46,9 +43,6 @@ fn diff_shows_no_drift_when_file_matches_agent_snapshot() {
 
 #[test]
 fn diff_shows_drift_when_file_modified_externally() {
-    // arrange
-    // act
-    // assert
     // Given: agent wrote content, then external modified it
     let dir = tempfile::tempdir().unwrap_or_abort();
     let root = dir.path();
@@ -72,9 +66,6 @@ fn diff_shows_drift_when_file_modified_externally() {
 
 #[test]
 fn blame_attributes_unchanged_lines_to_agent() {
-    // arrange
-    // act
-    // assert
     // Given
     let dir = tempfile::tempdir().unwrap_or_abort();
     let root = dir.path();
@@ -99,9 +90,6 @@ fn blame_attributes_unchanged_lines_to_agent() {
 
 #[test]
 fn blame_attributes_external_drift_lines_separately() {
-    // arrange
-    // act
-    // assert
     // Given: agent wrote 3 lines, external modified line 2
     let dir = tempfile::tempdir().unwrap_or_abort();
     let root = dir.path();
@@ -126,9 +114,6 @@ fn blame_attributes_external_drift_lines_separately() {
 
 #[test]
 fn blame_attributes_inserted_lines_to_external() {
-    // arrange
-    // act
-    // assert
     // Given: agent wrote 1 line, external added a second
     let dir = tempfile::tempdir().unwrap_or_abort();
     let root = dir.path();
@@ -152,9 +137,6 @@ fn blame_attributes_inserted_lines_to_external() {
 
 #[test]
 fn diff_fails_closed_for_unknown_path() {
-    // arrange
-    // act
-    // assert
     // Given
     let dir = tempfile::tempdir().unwrap_or_abort();
     let journal = EditAttributionJournal::open(dir.path()).unwrap_or_abort();
@@ -168,9 +150,6 @@ fn diff_fails_closed_for_unknown_path() {
 
 #[test]
 fn blame_fails_closed_for_unknown_path() {
-    // arrange
-    // act
-    // assert
     // Given
     let dir = tempfile::tempdir().unwrap_or_abort();
     let journal = EditAttributionJournal::open(dir.path()).unwrap_or_abort();
@@ -184,9 +163,6 @@ fn blame_fails_closed_for_unknown_path() {
 
 #[test]
 fn diff_fails_closed_for_external_only_path_without_agent_snapshot() {
-    // arrange
-    // act
-    // assert
     // Given: path observed as external only (no agent edit)
     let dir = tempfile::tempdir().unwrap_or_abort();
     let root = dir.path();
@@ -205,9 +181,6 @@ fn diff_fails_closed_for_external_only_path_without_agent_snapshot() {
 
 #[test]
 fn blame_fails_closed_for_external_only_path_without_agent_snapshot() {
-    // arrange
-    // act
-    // assert
     // Given
     let dir = tempfile::tempdir().unwrap_or_abort();
     let root = dir.path();
@@ -226,9 +199,6 @@ fn blame_fails_closed_for_external_only_path_without_agent_snapshot() {
 
 #[test]
 fn diff_shows_drift_when_file_deleted_after_agent_edit() {
-    // arrange
-    // act
-    // assert
     // Given: agent wrote a file, then it was deleted
     let dir = tempfile::tempdir().unwrap_or_abort();
     let root = dir.path();
@@ -251,9 +221,6 @@ fn diff_shows_drift_when_file_deleted_after_agent_edit() {
 
 #[test]
 fn blame_shows_no_lines_when_file_deleted_after_agent_edit() {
-    // arrange
-    // act
-    // assert
     // Given
     let dir = tempfile::tempdir().unwrap_or_abort();
     let root = dir.path();
@@ -274,9 +241,6 @@ fn blame_shows_no_lines_when_file_deleted_after_agent_edit() {
 
 #[test]
 fn diff_and_blame_do_not_modify_journal_state() {
-    // arrange
-    // act
-    // assert
     // Given
     let dir = tempfile::tempdir().unwrap_or_abort();
     let root = dir.path();
@@ -298,9 +262,6 @@ fn diff_and_blame_do_not_modify_journal_state() {
 
 #[test]
 fn revert_still_works_after_diff_and_blame() {
-    // arrange
-    // act
-    // assert
     // Given: agent wrote, external drifted
     let dir = tempfile::tempdir().unwrap_or_abort();
     let root = dir.path();
@@ -335,9 +296,6 @@ fn revert_still_works_after_diff_and_blame() {
 
 #[test]
 fn diff_persists_across_journal_reload() {
-    // arrange
-    // act
-    // assert
     // Given: agent wrote, external modified
     let dir = tempfile::tempdir().unwrap_or_abort();
     let root = dir.path();
@@ -360,9 +318,6 @@ fn diff_persists_across_journal_reload() {
 
 #[test]
 fn blame_line_numbers_are_sequential_from_one() {
-    // arrange
-    // act
-    // assert
     // Given
     let dir = tempfile::tempdir().unwrap_or_abort();
     let root = dir.path();
@@ -384,9 +339,6 @@ fn blame_line_numbers_are_sequential_from_one() {
 
 #[test]
 fn diff_invalid_path_escape_fails_closed() {
-    // arrange
-    // act
-    // assert
     // Given
     let dir = tempfile::tempdir().unwrap_or_abort();
     let journal = EditAttributionJournal::open(dir.path()).unwrap_or_abort();
@@ -400,9 +352,6 @@ fn diff_invalid_path_escape_fails_closed() {
 
 #[test]
 fn blame_invalid_path_escape_fails_closed() {
-    // arrange
-    // act
-    // assert
     // Given
     let dir = tempfile::tempdir().unwrap_or_abort();
     let journal = EditAttributionJournal::open(dir.path()).unwrap_or_abort();

@@ -147,9 +147,6 @@ mod tests {
 
     #[test]
     fn unknown_language_falls_back_to_plain_color() {
-        // arrange
-        // act
-        // assert
         let lines = render_highlighted_code_block(
             Some("not-a-language"),
             "plain text",

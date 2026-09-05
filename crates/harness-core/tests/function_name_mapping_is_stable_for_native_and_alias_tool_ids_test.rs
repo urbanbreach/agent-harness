@@ -4,9 +4,6 @@ use harness_core::tool::{build_tool_function_name_mapping, canonical_tool_id_for
 
 #[test]
 fn function_name_mapping_is_stable_for_single_surface_tool_ids() {
-    // arrange
-    // act
-    // assert
     let tool_ids = vec![
         "bash",
         "batch",

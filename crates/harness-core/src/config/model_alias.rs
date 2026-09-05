@@ -89,9 +89,6 @@ mod tests {
 
     #[test]
     fn passes_through_non_alias_model_ids_unchanged() {
-        // arrange
-        // act
-        // assert
         assert_eq!(resolve_model_alias("umans-kimi-k2.7"), "umans-kimi-k2.7");
         assert_eq!(
             resolve_model_alias("umans-qwen3.6-35b-a3b"),
@@ -114,18 +111,12 @@ mod tests {
 
     #[test]
     fn is_model_alias_returns_true_for_known_aliases() {
-        // arrange
-        // act
-        // assert
         assert!(is_model_alias("umans-coder"));
         assert!(is_model_alias("umans-flash"));
     }
 
     #[test]
     fn is_model_alias_returns_false_for_canonical_and_unknown() {
-        // arrange
-        // act
-        // assert
         assert!(!is_model_alias("umans-kimi-k2.7"));
         assert!(!is_model_alias("umans-qwen3.6-35b-a3b"));
         assert!(!is_model_alias("umans-glm-5.2"));

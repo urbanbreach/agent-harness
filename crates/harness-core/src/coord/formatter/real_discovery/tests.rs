@@ -4,9 +4,6 @@ use crate::UnwrapOrAbort;
 
 #[test]
 fn first_line_returns_first_line_or_empty() {
-    // arrange
-    // act
-    // assert
     assert_eq!(super::first_line("alpha\nbeta"), "alpha");
     assert_eq!(super::first_line(""), "");
     assert_eq!(super::first_line("only"), "only");

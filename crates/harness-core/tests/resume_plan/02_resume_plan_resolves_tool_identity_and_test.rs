@@ -1,9 +1,6 @@
 use harness_core::UnwrapOrAbort;
 #[test]
 fn resume_plan_resolves_tool_identity_and_lifecycle_without_tui_inference() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_dir = temp_dir.path().join("run_tool_lifecycle_identity");
     write_events(
@@ -263,9 +260,6 @@ fn resume_plan_resolves_tool_identity_and_lifecycle_without_tui_inference() {
 }
 #[test]
 fn resume_plan_rejects_sessions_with_pending_permissions() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_dir = temp_dir.path().join("run_pending_permission");
     write_events(
@@ -327,9 +321,6 @@ fn resume_plan_rejects_sessions_with_pending_permissions() {
 }
 #[test]
 fn resume_plan_rejects_sessions_with_tasks_in_flight() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_dir = temp_dir.path().join("run_tasks_in_flight");
     write_events(
@@ -388,9 +379,6 @@ fn resume_plan_rejects_sessions_with_tasks_in_flight() {
 }
 #[test]
 fn resume_plan_rejects_non_monotonic_or_corrupt_logs() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
 
     let non_monotonic_dir = temp_dir.path().join("run_non_monotonic");

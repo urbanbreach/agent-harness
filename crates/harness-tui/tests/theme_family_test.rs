@@ -63,9 +63,6 @@ fn semantic_role_labels_and_display_use_contract_labels() {
 
 #[test]
 fn theme_family_all_and_display_match_contract() {
-    // arrange
-    // act
-    // assert
     assert_eq!(ThemeFamily::all(), [ThemeFamily::Dark, ThemeFamily::Light]);
     assert_eq!(ThemeFamily::Dark.to_string(), "dark");
     assert_eq!(ThemeFamily::Light.to_string(), "light");
@@ -125,9 +122,6 @@ fn fallback_ladder_resolves_all_levels_and_preserves_determinism() {
 
 #[test]
 fn system_preferences_map_to_theme_families() {
-    // arrange
-    // act
-    // assert
     assert_eq!(SystemPreference::Dark.to_family(), ThemeFamily::Dark);
     assert_eq!(SystemPreference::Light.to_family(), ThemeFamily::Light);
 }
@@ -241,9 +235,6 @@ fn theme_choices_parse_map_and_round_trip() {
 
 #[test]
 fn theme_persistence_rejects_unknown_schema_and_malformed_json() {
-    // arrange
-    // act
-    // assert
     assert!(matches!(
         deserialize_choice(r#"{"schema":"theme-family-v2","theme":"dark"}"#),
         Err(PersistError::UnknownSchema(_))

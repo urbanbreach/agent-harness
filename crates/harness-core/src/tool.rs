@@ -802,9 +802,6 @@ mod tests {
 
     #[test]
     fn worker_can_use_spawn_agent_capability() {
-        // arrange
-        // act
-        // assert
         let registry = ToolRegistry::new();
         assert!(registry.capability_allowed(ActorKind::Worker, ToolCapability::SpawnAgent));
         assert!(registry.capability_allowed(ActorKind::Worker, ToolCapability::Shell));
@@ -812,9 +809,6 @@ mod tests {
 
     #[test]
     fn artifact_store_write_text_returns_artifact_ref_with_digest() {
-        // arrange
-        // act
-        // assert
         let temp_dir = tempfile::tempdir().unwrap_or_abort();
         let store = ArtifactStore::new(temp_dir.path().join("artifacts")).unwrap_or_abort();
 
@@ -834,9 +828,6 @@ mod tests {
 
     #[test]
     fn artifact_store_rejects_parent_traversal() {
-        // arrange
-        // act
-        // assert
         let temp_dir = tempfile::tempdir().unwrap_or_abort();
         let store = ArtifactStore::new(temp_dir.path().join("artifacts")).unwrap_or_abort();
 
@@ -848,9 +839,6 @@ mod tests {
 
     #[tokio::test]
     async fn resolve_workspace_path_lexically_normalizes_self_references() {
-        // arrange
-        // act
-        // assert
         let temp_dir = tempfile::tempdir().unwrap_or_abort();
         let workspace = temp_dir.path().join("workspace");
         fs::create_dir_all(&workspace).unwrap_or_abort();
@@ -865,9 +853,6 @@ mod tests {
 
     #[tokio::test]
     async fn resolve_workspace_path_blocks_parent_traversal_above_workspace() {
-        // arrange
-        // act
-        // assert
         let temp_dir = tempfile::tempdir().unwrap_or_abort();
         let workspace = temp_dir.path().join("workspace");
         fs::create_dir_all(&workspace).unwrap_or_abort();
@@ -883,9 +868,6 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn resolve_workspace_path_accepts_absolute_symlink_alias_inside_workspace() {
-        // arrange
-        // act
-        // assert
         let temp_dir = tempfile::tempdir().unwrap_or_abort();
         let workspace = temp_dir.path().join("workspace");
         let nested = workspace.join("nested");
@@ -904,9 +886,6 @@ mod tests {
 
     #[test]
     fn sanitize_tool_function_name_applies_milestone_policy() {
-        // arrange
-        // act
-        // assert
         assert_eq!(sanitize_tool_function_name("fs.read"), "fs_read");
         assert_eq!(
             sanitize_tool_function_name("edit/hashline_apply"),
@@ -918,9 +897,6 @@ mod tests {
 
     #[test]
     fn sanitize_mcp_tool_segment_matches_first_class_tool_id_policy() {
-        // arrange
-        // act
-        // assert
         assert_eq!(sanitize_mcp_tool_segment("tool.call"), "tool_call");
         assert_eq!(sanitize_mcp_tool_segment("tools-list"), "tools_list");
         assert_eq!(sanitize_mcp_tool_segment("1server/tool"), "t_1server_tool");
@@ -928,9 +904,6 @@ mod tests {
 
     #[test]
     fn function_name_mapping_is_deterministic_unique_and_reversible() {
-        // arrange
-        // act
-        // assert
         let tool_ids = vec!["fs.read", "fs/read", "fs_read", "1tool"];
         let mapping_a = build_tool_function_name_mapping(tool_ids.iter().copied());
 
@@ -963,9 +936,6 @@ mod tests {
 
     #[test]
     fn canonical_tool_identity_helper_returns_input_for_public_ids() {
-        // arrange
-        // act
-        // assert
         let tool_ids = [
             "read",
             "list",

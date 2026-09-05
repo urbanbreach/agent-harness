@@ -130,9 +130,6 @@ mod tests {
 
     #[test]
     fn structured_diff_rows_respect_display_width_for_wide_glyphs() {
-        // arrange
-        // act
-        // assert
         let diff = "--- demo.txt\n+++ demo.txt\n@@ -1,2 +1,2 @@\n-漢字🙂漢字🙂漢字🙂\n+🙂漢字🙂漢字🙂漢字\n";
         let lines = render_structured_diff_lines(diff, None, "", 24, false, &Theme::default())
             .unwrap_or_abort();
@@ -149,9 +146,6 @@ mod tests {
 
     #[test]
     fn unified_diff_text_spans_keep_row_backgrounds() {
-        // arrange
-        // act
-        // assert
         let diff = "--- demo.txt\n+++ demo.txt\n@@ -1,3 +1,3 @@\n alpha\n-beta\n+BETA\n gamma\n";
         let theme = Theme::default();
         let lines = render_structured_diff_lines_with_options(
@@ -356,9 +350,6 @@ mod tests {
 
     #[test]
     fn structured_diff_headers_surface_rename_paths() {
-        // arrange
-        // act
-        // assert
         let diff = "--- src/old_name.rs\n+++ src/new_name.rs\n@@ -1,1 +1,1 @@\n-old\n+new\n";
         let lines = render_structured_diff_lines_with_options(
             diff,
@@ -390,9 +381,6 @@ mod tests {
 
     #[test]
     fn unified_diff_long_rows_wrap_instead_of_truncating() {
-        // arrange
-        // act
-        // assert
         let removed_expected = "session turn diff view keeps the tool row spacing perfectly aligned in every transcript lane for operators reviewing compact windows";
         let added_expected = "session turn diff view keeps the tool row spacing perfectly aligned across the transcript surface for operators reviewing compact windows and narrow shells";
         let diff = format!(

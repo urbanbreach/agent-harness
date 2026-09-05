@@ -2883,9 +2883,6 @@ mod tests {
 
     #[test]
     fn reasoning_summary_extracts_title_and_body() {
-        // arrange
-        // act
-        // assert
         let (title, body) = reasoning_summary(
             "**Continuing Quality Review**\n\nDetails.\n\n**Next section**\n\nMore.",
         );
@@ -2895,9 +2892,6 @@ mod tests {
 
     #[test]
     fn reasoning_summary_extracts_title_without_body() {
-        // arrange
-        // act
-        // assert
         let (title, body) = reasoning_summary("**Continuing Quality Review**");
         assert_eq!(title.as_deref(), Some("Continuing Quality Review"));
         assert!(body.is_empty());
@@ -2905,9 +2899,6 @@ mod tests {
 
     #[test]
     fn reasoning_summary_preserves_indented_body() {
-        // arrange
-        // act
-        // assert
         let (title, body) =
             reasoning_summary("**Continuing Quality Review**\n\n    const value = true\n");
         assert_eq!(title.as_deref(), Some("Continuing Quality Review"));
@@ -2916,9 +2907,6 @@ mod tests {
 
     #[test]
     fn reasoning_summary_rejects_inline_bold_title() {
-        // arrange
-        // act
-        // assert
         let (title, body) = reasoning_summary("**Important:** keep this in the body.");
         assert!(title.is_none());
         assert_eq!(body, "**Important:** keep this in the body.");
@@ -2926,9 +2914,6 @@ mod tests {
 
     #[test]
     fn reasoning_summary_passes_through_plain_text() {
-        // arrange
-        // act
-        // assert
         let (title, body) = reasoning_summary("Details only.");
         assert!(title.is_none());
         assert_eq!(body, "Details only.");
@@ -2936,9 +2921,6 @@ mod tests {
 
     #[test]
     fn reasoning_summary_strips_redacted_placeholder() {
-        // arrange
-        // act
-        // assert
         let (title, body) = reasoning_summary("[REDACTED]");
         assert!(title.is_none());
         assert!(body.is_empty());
@@ -2946,9 +2928,6 @@ mod tests {
 
     #[test]
     fn reasoning_summary_strips_redacted_and_extracts_title() {
-        // arrange
-        // act
-        // assert
         let (title, body) = reasoning_summary("[REDACTED]**Title**\n\nbody");
         assert_eq!(title.as_deref(), Some("Title"));
         assert_eq!(body, "body");

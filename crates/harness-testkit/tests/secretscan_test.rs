@@ -16,9 +16,6 @@ mod secretscan {
 
     #[test]
     fn secret_scan_does_not_find_api_keys_in_artifacts() {
-        // arrange
-        // act
-        // assert
         let repo_root = repo_root();
 
         let mut scan_roots = snapshot_dirs(repo_root.join("crates").as_path()).unwrap_or_abort();

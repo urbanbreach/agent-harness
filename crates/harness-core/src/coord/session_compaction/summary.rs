@@ -144,9 +144,6 @@ mod tests {
 
     #[tokio::test]
     async fn compaction_v2_summary_generation_result_captures_terminal_digest_and_provenance() {
-        // arrange
-        // act
-        // assert
         // Given: deterministic provider events with exact usage and request capture.
         let usage = CompletionUsage {
             prompt_tokens: 17,

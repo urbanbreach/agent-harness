@@ -3,9 +3,6 @@ use harness::UnwrapOrAbort;
 
 #[test]
 fn no_config_tui_without_credentials_enters_connect_state() {
-    // arrange
-    // act
-    // assert
     let temp = tempfile::tempdir().unwrap_or_abort();
 
     let settings = resolve_live_settings_for_test(
@@ -31,9 +28,6 @@ fn no_config_tui_without_credentials_enters_connect_state() {
 
 #[test]
 fn no_config_tui_with_stored_codex_launches_connected_catalog() {
-    // arrange
-    // act
-    // assert
     let temp = tempfile::tempdir().unwrap_or_abort();
     let data_home = temp.path().join("data");
     let store = CredentialStore::new(data_home.join("harness"));
@@ -71,9 +65,6 @@ fn no_config_tui_with_stored_codex_launches_connected_catalog() {
 
 #[test]
 fn auth_refresh_reloads_no_config_builtin_catalog_after_login() {
-    // arrange
-    // act
-    // assert
     let temp = tempfile::tempdir().unwrap_or_abort();
     let data_home = temp.path().join("data");
     let store = CredentialStore::new(data_home.join("harness"));
@@ -111,9 +102,6 @@ fn auth_refresh_reloads_no_config_builtin_catalog_after_login() {
 
 #[test]
 fn no_config_tui_ignores_legacy_builtin_model_selection() {
-    // arrange
-    // act
-    // assert
     let temp = tempfile::tempdir().unwrap_or_abort();
     let data_home = temp.path().join("data");
     let state_path = temp.path().join("model.json");
@@ -152,9 +140,6 @@ fn no_config_tui_ignores_legacy_builtin_model_selection() {
 
 #[test]
 fn project_config_tui_ignores_legacy_model_selection() {
-    // arrange
-    // act
-    // assert
     let temp = tempfile::tempdir().unwrap_or_abort();
     let config_path = temp.path().join("harness.jsonc");
     let state_path = temp.path().join("model.json");
@@ -210,9 +195,6 @@ fn project_config_tui_ignores_legacy_model_selection() {
 
 #[test]
 fn mock_mode_ignores_discovered_cwd_config() {
-    // arrange
-    // act
-    // assert
     let _guard = mock_mode_cwd_test_lock().lock().unwrap_or_abort();
     let temp = tempfile::tempdir().unwrap_or_abort();
     std::fs::write(
@@ -297,9 +279,6 @@ fn mock_mode_ignores_discovered_cwd_config() {
 
 #[test]
 fn live_new_session_uses_current_workspace_instead_of_seeded_demo_workspace() {
-    // arrange
-    // act
-    // assert
     let _guard = mock_mode_cwd_test_lock().lock().unwrap_or_abort();
     let temp = tempfile::tempdir().unwrap_or_abort();
     let config_path = temp.path().join("harness.jsonc");
@@ -390,9 +369,6 @@ fn live_new_session_uses_current_workspace_instead_of_seeded_demo_workspace() {
 
 #[test]
 fn continue_selects_most_recent_conversational_agent_not_first_key() {
-    // arrange
-    // act
-    // assert
     let mut known_agents = BTreeMap::new();
     known_agents.insert("agent_000001".to_string(), "alpha".to_string());
     known_agents.insert("agent_000002".to_string(), "beta".to_string());
@@ -480,9 +456,6 @@ fn continue_selects_most_recent_conversational_agent_not_first_key() {
 
 #[test]
 fn continue_metadata_uses_selected_agent_history_in_multi_agent_session() {
-    // arrange
-    // act
-    // assert
     let historical_events = vec![
         EventEnvelopeV1 {
             schema_version: 1,
@@ -576,9 +549,6 @@ fn continue_metadata_uses_selected_agent_history_in_multi_agent_session() {
 
 #[test]
 fn continue_mode_uses_session_workspace_root_not_process_cwd() {
-    // arrange
-    // act
-    // assert
     let process_cwd = tempfile::tempdir().unwrap_or_abort();
     let session_workspace = tempfile::tempdir().unwrap_or_abort();
     let session_dir = tempfile::tempdir().unwrap_or_abort();

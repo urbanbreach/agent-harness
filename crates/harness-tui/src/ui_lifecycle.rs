@@ -1070,9 +1070,6 @@ mod breadcrumb_token_meta_tests {
 
     #[test]
     fn format_breadcrumb_token_count_matches_freeze_style() {
-        // arrange
-        // act
-        // assert
         assert_eq!(format_breadcrumb_token_count(42), "42");
         assert_eq!(format_breadcrumb_token_count(1_500), "1.5K");
         assert_eq!(format_breadcrumb_token_count(10_000), "10K");
@@ -1082,9 +1079,6 @@ mod breadcrumb_token_meta_tests {
 
     #[test]
     fn pack_breadcrumb_line_right_aligns_token_meta() {
-        // arrange
-        // act
-        // assert
         let packed = pack_breadcrumb_line("  git:main ~/proj", Some("12K / 262K"), 40);
         assert!(packed.ends_with("12K / 262K"), "packed={packed:?}");
         assert_eq!(super::super::display_width(&packed), 40);
@@ -1096,9 +1090,6 @@ mod breadcrumb_token_meta_tests {
 
     #[test]
     fn pack_breadcrumb_line_without_meta_truncates_left_only() {
-        // arrange
-        // act
-        // assert
         let packed = pack_breadcrumb_line("  git:main ~/very/long/path/here", None, 20);
         assert_eq!(super::super::display_width(&packed), 20);
         assert!(

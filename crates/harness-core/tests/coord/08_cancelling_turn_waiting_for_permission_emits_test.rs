@@ -1,9 +1,6 @@
 use harness_core::UnwrapOrAbort;
 #[tokio::test]
 async fn cancelling_turn_waiting_for_permission_emits_turn_end_without_tool_start() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![vec![
         ProviderStreamEvent::Start,
@@ -110,9 +107,6 @@ async fn cancelling_turn_waiting_for_permission_emits_turn_end_without_tool_star
 }
 #[tokio::test]
 async fn late_tool_result_after_turn_cancellation_is_task_result_late() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let release = Arc::new(Notify::new());
     let provider = SequentialScriptedProvider::new(vec![
@@ -269,9 +263,6 @@ async fn late_tool_result_after_turn_cancellation_is_task_result_late() {
 }
 #[tokio::test]
 async fn cancelled_tool_task_records_late_result_without_completion() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let release = Arc::new(Notify::new());
     let clock = Arc::new(FakeClock::new());
@@ -369,9 +360,6 @@ async fn cancelled_tool_task_records_late_result_without_completion() {
 }
 #[tokio::test]
 async fn provider_partial_output_then_error_is_not_successful_assistant_message() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![vec![
         ProviderStreamEvent::Start,
@@ -435,9 +423,6 @@ async fn provider_partial_output_then_error_is_not_successful_assistant_message(
 }
 #[tokio::test]
 async fn records_provider_error_events_and_fails_agent_turn() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![vec![
         ProviderStreamEvent::Start,

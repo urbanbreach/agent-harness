@@ -230,18 +230,12 @@ mod tests {
 
     #[test]
     fn copy_on_select_env_defaults_to_windows_only() {
-        // arrange
-        // act
-        // assert
         assert!(!copy_on_select_disabled_from_env(None, false));
         assert!(copy_on_select_disabled_from_env(None, true));
     }
 
     #[test]
     fn copy_on_select_env_treats_truthy_values_as_disabled() {
-        // arrange
-        // act
-        // assert
         assert!(copy_on_select_disabled_from_env(
             Some(OsStr::new("1")),
             false
@@ -258,9 +252,6 @@ mod tests {
 
     #[test]
     fn copy_on_select_env_treats_other_values_as_enabled() {
-        // arrange
-        // act
-        // assert
         assert!(!copy_on_select_disabled_from_env(
             Some(OsStr::new("0")),
             true
@@ -277,9 +268,6 @@ mod tests {
 
     #[test]
     fn copy_falls_back_to_native_after_osc52_error() {
-        // arrange
-        // act
-        // assert
         let calls = Arc::new(Mutex::new(Vec::new()));
         let osc52_calls = Arc::clone(&calls);
         let native_calls = Arc::clone(&calls);
@@ -311,9 +299,6 @@ mod tests {
 
     #[test]
     fn copy_errors_when_no_clipboard_path_is_available() {
-        // arrange
-        // act
-        // assert
         let err = copy_impl("unhandled", |_| Ok(false), |_| Ok(false)).expect_err("copy fails");
         assert_eq!(err.kind(), io::ErrorKind::NotFound);
         assert_eq!(err.to_string(), "no clipboard integration available");
@@ -321,9 +306,6 @@ mod tests {
 
     #[test]
     fn osc8_hyperlink_wraps_label_and_falls_back_on_empty() {
-        // arrange
-        // act
-        // assert
         use super::format_osc8_hyperlink;
 
         let linked = format_osc8_hyperlink("https://example.com/path", "path");

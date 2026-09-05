@@ -3,9 +3,6 @@ use crate::UnwrapOrAbort;
 
 #[tokio::test]
 async fn openai_responses_offline_transport_malformed_args_fail_closed() {
-    // arrange
-    // act
-    // assert
     let transport = ScriptedOpenAiTransport::new([ScriptedOpenAiResponse::sse(
         responses_malformed_tool_args_sse_transcript(),
     )]);
@@ -33,9 +30,6 @@ async fn openai_responses_offline_transport_malformed_args_fail_closed() {
 
 #[tokio::test]
 async fn openai_compatible_offline_transport_streams_chat_tool_calls() {
-    // arrange
-    // act
-    // assert
     let transport =
         ScriptedOpenAiTransport::new([ScriptedOpenAiResponse::sse(tool_call_sse_transcript())]);
     let provider = provider_for_transport(Arc::clone(&transport), "test-secret-key");
@@ -101,9 +95,6 @@ async fn openai_compatible_offline_transport_streams_chat_tool_calls() {
 
 #[tokio::test]
 async fn openai_compatible_offline_transport_chat_tool_calls_fail_closed_on_invalid_arguments() {
-    // arrange
-    // act
-    // assert
     let transport = ScriptedOpenAiTransport::new([ScriptedOpenAiResponse::sse(
         malformed_tool_call_sse_transcript(),
     )]);
@@ -130,9 +121,6 @@ async fn openai_compatible_offline_transport_chat_tool_calls_fail_closed_on_inva
 
 #[tokio::test]
 async fn openai_compatible_errors_do_not_leak_auth_secrets() {
-    // arrange
-    // act
-    // assert
     let api_key = "test-secret-key";
 
     let transport = ScriptedOpenAiTransport::new([ScriptedOpenAiResponse::text(
@@ -154,9 +142,6 @@ async fn openai_compatible_errors_do_not_leak_auth_secrets() {
 
 #[tokio::test]
 async fn openai_compatible_errors_include_response_body_detail() {
-    // arrange
-    // act
-    // assert
     let transport = ScriptedOpenAiTransport::new([ScriptedOpenAiResponse::text(
             400,
             json!({
@@ -235,9 +220,6 @@ async fn openai_non_success_responses_map_to_stable_error_categories() {
 
 #[tokio::test]
 async fn openai_rate_limit_error_includes_retry_after_ms_metadata() {
-    // arrange
-    // act
-    // assert
     let mut response = ScriptedOpenAiResponse::text(
         429,
         json!({"error": {"message": "rate limit exceeded"}}).to_string(),

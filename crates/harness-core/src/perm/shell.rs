@@ -475,9 +475,6 @@ mod tests {
 
     #[test]
     fn scan_shell_command_extracts_pipeline_patterns() {
-        // arrange
-        // act
-        // assert
         let request =
             scan_shell_command("git status --short | rg '^ M' && cargo test -p harness-core")
                 .unwrap_or_abort();
@@ -502,9 +499,6 @@ mod tests {
 
     #[test]
     fn scan_shell_command_extracts_redirection_path() {
-        // arrange
-        // act
-        // assert
         let request = scan_shell_command("printf hi > artifacts/out.txt").unwrap_or_abort();
 
         assert_eq!(
@@ -551,9 +545,6 @@ mod tests {
 
     #[test]
     fn scan_shell_command_extracts_touch_rm_patterns() {
-        // arrange
-        // act
-        // assert
         let request =
             scan_shell_command("touch src/new.rs; rm -f target/tmp.txt").unwrap_or_abort();
 
@@ -565,9 +556,6 @@ mod tests {
 
     #[test]
     fn scan_shell_command_extracts_python3_c_always_pattern() {
-        // arrange
-        // act
-        // assert
         let request = scan_shell_command("python3 -c 'print(1)'").unwrap_or_abort();
 
         assert_eq!(request.commands[0].arity_tokens, vec!["python3", "-c"]);
@@ -677,9 +665,6 @@ mod tests {
 
     #[test]
     fn shell_always_pattern_uses_cargo_test_prefix() {
-        // arrange
-        // act
-        // assert
         let request = scan_shell_command("cargo test -p harness-core --lib").unwrap_or_abort();
 
         assert_eq!(request.commands[0].arity_tokens, vec!["cargo", "test"]);
@@ -688,9 +673,6 @@ mod tests {
 
     #[test]
     fn shell_permission_pattern_matches_return_correct_bool() {
-        // arrange
-        // act
-        // assert
         assert!(shell_permission_pattern_matches(
             "cargo test *",
             "cargo test *"

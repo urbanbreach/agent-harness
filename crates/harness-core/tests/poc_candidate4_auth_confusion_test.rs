@@ -17,9 +17,6 @@ fn provider_id(value: &str) -> ProviderId {
 
 #[test]
 fn poc_registry_only_has_builtin_plugins() {
-    // arrange
-    // act
-    // assert
     let registry = AuthPluginRegistry::with_builtins();
 
     assert!(
@@ -47,9 +44,6 @@ fn poc_registry_only_has_builtin_plugins() {
 
 #[test]
 fn poc_catalog_providers_filters_non_registered() {
-    // arrange
-    // act
-    // assert
     let catalog = ProviderCatalog::from_embedded().unwrap_or_abort();
     let registry = AuthPluginRegistry::with_builtins();
 
@@ -82,9 +76,6 @@ fn poc_catalog_providers_filters_non_registered() {
 
 #[test]
 fn poc_non_builtin_provider_auth_methods_only_apikey() {
-    // arrange
-    // act
-    // assert
     let catalog = ProviderCatalog::from_embedded().unwrap_or_abort();
 
     for provider in catalog.providers() {
@@ -103,9 +94,6 @@ fn poc_non_builtin_provider_auth_methods_only_apikey() {
 
 #[test]
 fn poc_codex_has_browser_pkce_and_device_code() {
-    // arrange
-    // act
-    // assert
     // "codex" is not in the embedded catalog, but auth_methods_for_provider
     // computes methods from the id. Verify via a crafted catalog.
     let crafted = r#"{
@@ -138,9 +126,6 @@ fn poc_codex_has_browser_pkce_and_device_code() {
 
 #[test]
 fn poc_copilot_has_device_code_only() {
-    // arrange
-    // act
-    // assert
     let catalog = ProviderCatalog::from_embedded().unwrap_or_abort();
     let copilot = catalog.provider("github-copilot").unwrap_or_abort();
 

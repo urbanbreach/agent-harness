@@ -1,8 +1,5 @@
 #[tokio::test]
 async fn compaction_v2_unicode_attachment_payload_is_safe() {
-    // arrange
-    // act
-    // assert
     let attachment = AttachmentMetadata::from_bytes(
         "名-e\u{301}.png",
         "image/png",
@@ -74,9 +71,6 @@ async fn compaction_v2_unicode_attachment_payload_is_safe() {
 
 #[tokio::test]
 async fn live_provider_context_charges_typed_attachment_once() {
-    // arrange
-    // act
-    // assert
     let attachment =
         AttachmentMetadata::from_bytes("live.png", "image/png", None, b"live attachment", None);
     let provider = CapturingScriptedProvider::new(vec![
@@ -114,9 +108,6 @@ async fn live_provider_context_charges_typed_attachment_once() {
 
 #[tokio::test]
 async fn compaction_v2_restart_context_equals_live_context() {
-    // arrange
-    // act
-    // assert
     let live = capture_live_post_compaction_request().await;
     let restarted = capture_restarted_post_compaction_request().await;
 

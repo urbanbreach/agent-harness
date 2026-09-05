@@ -274,9 +274,6 @@ mod tests {
 
     #[test]
     fn agent_tool_edit_is_attributed_as_agent() {
-        // arrange
-        // act
-        // assert
         // Given
         let mut tracker = EditAttributionTracker::new();
 
@@ -295,9 +292,6 @@ mod tests {
 
     #[test]
     fn external_mtime_hash_drift_marks_external() {
-        // arrange
-        // act
-        // assert
         // Given: agent wrote content A
         let mut tracker = EditAttributionTracker::new();
         tracker.record_agent_tool_edit("notes.txt", b"agent", None);
@@ -316,9 +310,6 @@ mod tests {
 
     #[test]
     fn unchanged_agent_content_keeps_agent_attribution() {
-        // arrange
-        // act
-        // assert
         let mut tracker = EditAttributionTracker::new();
         tracker.record_agent_tool_edit("keep.rs", b"stable", None);
         let observed = tracker.observe_external("keep.rs", b"stable", None);
@@ -328,9 +319,6 @@ mod tests {
 
     #[test]
     fn path_never_seen_by_agent_is_external() {
-        // arrange
-        // act
-        // assert
         let mut tracker = EditAttributionTracker::new();
         let observed = tracker.observe_external("only-external.md", b"x", None);
         assert_eq!(observed.source, EditSource::External);
@@ -340,9 +328,6 @@ mod tests {
 
     #[test]
     fn summary_counts_agent_external_and_drift_paths() {
-        // arrange
-        // act
-        // assert
         // Given
         let mut tracker = EditAttributionTracker::new();
         tracker.record_agent_tool_edit("a.rs", b"a", None);
@@ -376,9 +361,6 @@ mod tests {
 
     #[test]
     fn content_digest12_is_stable_twelve_hex_chars() {
-        // arrange
-        // act
-        // assert
         // Given / When
         let digest = content_digest12(b"agent-applied-bytes");
 
@@ -391,9 +373,6 @@ mod tests {
 
     #[test]
     fn path_content_digest12_reads_file_bytes() {
-        // arrange
-        // act
-        // assert
         // Given
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("note.txt");

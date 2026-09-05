@@ -578,9 +578,6 @@ mod tests {
 
     #[test]
     fn detect_returns_structured_available_or_unavailable() {
-        // arrange
-        // act
-        // assert
         // Given
         let dir = tempdir().unwrap();
 
@@ -606,9 +603,6 @@ mod tests {
 
     #[test]
     fn missing_parent_that_cannot_be_created_is_unavailable() {
-        // arrange
-        // act
-        // assert
         // Given: path under a non-directory file as parent
         let dir = tempdir().unwrap();
         let file = dir.path().join("not-a-dir");
@@ -624,9 +618,6 @@ mod tests {
 
     #[test]
     fn mechanism_labels_are_stable() {
-        // arrange
-        // act
-        // assert
         assert_eq!(CowMechanism::LinuxReflink.as_str(), "linux_reflink");
         assert_eq!(CowMechanism::MacosClonefile.as_str(), "macos_clonefile");
         assert_eq!(CowMechanism::FullCopy.as_str(), "full_copy");
@@ -634,9 +625,6 @@ mod tests {
 
     #[test]
     fn try_cow_clone_file_rejects_missing_source() {
-        // arrange
-        // act
-        // assert
         // Given
         let dir = tempdir().unwrap();
         let src = dir.path().join("missing.bin");
@@ -652,9 +640,6 @@ mod tests {
 
     #[test]
     fn try_cow_clone_file_rejects_existing_destination() {
-        // arrange
-        // act
-        // assert
         // Given
         let dir = tempdir().unwrap();
         let src = dir.path().join("src.bin");
@@ -672,9 +657,6 @@ mod tests {
 
     #[test]
     fn try_cow_clone_file_matches_detect_availability() {
-        // arrange
-        // act
-        // assert
         // Given
         let dir = tempdir().unwrap();
         let src = dir.path().join("src.bin");
@@ -708,9 +690,6 @@ mod tests {
 
     #[test]
     fn cow_operator_diagnostics_cover_detect_clone_and_summary() {
-        // arrange
-        // act
-        // assert
         // Given
         let dir = tempdir().unwrap();
         let detect = detect_cow_worktree_fastpath(dir.path());
@@ -747,9 +726,6 @@ mod tests {
 
     #[test]
     fn try_cow_clone_tree_materializes_nested_files_when_available() {
-        // arrange
-        // act
-        // assert
         // Given: nested source tree with real files
         let dir = tempdir().unwrap();
         let src = dir.path().join("src-tree");
@@ -800,9 +776,6 @@ mod tests {
 
     #[test]
     fn try_cow_clone_tree_rejects_existing_destination() {
-        // arrange
-        // act
-        // assert
         // Given
         let dir = tempdir().unwrap();
         let src = dir.path().join("src");
@@ -821,9 +794,6 @@ mod tests {
 
     #[test]
     fn apply_cow_worktree_fastpath_overlays_real_files_into_worktree_path() {
-        // arrange
-        // act
-        // assert
         // Given: repo + worktree-like dest with one missing overlay file
         let dir = tempdir().unwrap();
         let repo = dir.path().join("repo");
@@ -862,9 +832,6 @@ mod tests {
 
     #[test]
     fn materialize_cow_workspace_tree_reports_tree_clone() {
-        // arrange
-        // act
-        // assert
         // Given
         let dir = tempdir().unwrap();
         let src = dir.path().join("workspace");

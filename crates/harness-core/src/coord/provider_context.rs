@@ -59,18 +59,12 @@ mod tests {
 
     #[test]
     fn truncated_failure_reason_omits_blank_input_after_trimming() {
-        // arrange
-        // act
-        // assert
         assert_eq!(truncated_failure_reason(""), None);
         assert_eq!(truncated_failure_reason(" \n\t "), None);
     }
 
     #[test]
     fn truncated_failure_reason_trims_non_empty_input() {
-        // arrange
-        // act
-        // assert
         assert_eq!(
             truncated_failure_reason("  provider failed closed  ").as_deref(),
             Some("provider failed closed")
@@ -79,9 +73,6 @@ mod tests {
 
     #[test]
     fn truncated_failure_reason_caps_long_input_with_ellipsis() {
-        // arrange
-        // act
-        // assert
         let long_reason = "x".repeat(PROVIDER_CONTEXT_COMPACTION_TURN_EXCERPT_MAX_CHARS + 1);
         let reason = truncated_failure_reason(&long_reason).unwrap_or_abort();
 

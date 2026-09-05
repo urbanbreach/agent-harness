@@ -3,9 +3,6 @@ use harness::UnwrapOrAbort;
 
 #[test]
 fn tui_auth_backend_runs_same_auth_command_and_redacts_output() {
-    // arrange
-    // act
-    // assert
     let temp = tempfile::tempdir().unwrap_or_abort();
     let data_home = temp.path().join("data");
     let config_path = temp.path().join("harness.jsonc");
@@ -70,9 +67,6 @@ fn tui_auth_backend_runs_same_auth_command_and_redacts_output() {
 
 #[test]
 fn tui_auth_backend_streams_output_and_accepts_hidden_stdin() {
-    // arrange
-    // act
-    // assert
     let temp = tempfile::tempdir().unwrap_or_abort();
     let data_home = temp.path().join("data");
     let config_path = temp.path().join("harness.jsonc");

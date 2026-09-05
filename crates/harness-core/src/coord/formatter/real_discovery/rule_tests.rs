@@ -4,9 +4,6 @@ use crate::UnwrapOrAbort;
 
 #[tokio::test]
 async fn ruff_discovery_requires_config_file() {
-    // arrange
-    // act
-    // assert
     let _guard = PATH_LOCK.lock().await;
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp_dir.path().join("workspace");
@@ -42,9 +39,6 @@ async fn ruff_discovery_requires_config_file() {
 
 #[tokio::test]
 async fn ruff_falls_back_when_nearest_pyproject_lacks_ruff_section() {
-    // arrange
-    // act
-    // assert
     let _guard = PATH_LOCK.lock().await;
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp_dir.path().join("workspace");
@@ -73,9 +67,6 @@ async fn ruff_falls_back_when_nearest_pyproject_lacks_ruff_section() {
 
 #[tokio::test]
 async fn uv_skips_when_ruff_enabled() {
-    // arrange
-    // act
-    // assert
     let _guard = PATH_LOCK.lock().await;
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp_dir.path().join("workspace");
@@ -112,9 +103,6 @@ async fn uv_skips_when_ruff_enabled() {
 
 #[tokio::test]
 async fn clang_format_discovery_requires_dot_clang_format() {
-    // arrange
-    // act
-    // assert
     let _guard = PATH_LOCK.lock().await;
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp_dir.path().join("workspace");
@@ -146,9 +134,6 @@ async fn clang_format_discovery_requires_dot_clang_format() {
 
 #[tokio::test]
 async fn ocamlformat_discovery_requires_dot_ocamlformat() {
-    // arrange
-    // act
-    // assert
     let _guard = PATH_LOCK.lock().await;
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp_dir.path().join("workspace");
@@ -179,9 +164,6 @@ async fn ocamlformat_discovery_requires_dot_ocamlformat() {
 
 #[tokio::test]
 async fn air_discovery_requires_help_output() {
-    // arrange
-    // act
-    // assert
     let _guard = PATH_LOCK.lock().await;
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp_dir.path().join("workspace");
@@ -223,9 +205,6 @@ async fn air_discovery_requires_help_output() {
 
 #[tokio::test]
 async fn which_only_formatter_resolves_to_path_binary() {
-    // arrange
-    // act
-    // assert
     let _guard = PATH_LOCK.lock().await;
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp_dir.path().join("workspace");

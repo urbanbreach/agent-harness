@@ -1,9 +1,6 @@
 use harness_tools::UnwrapOrAbort;
 #[tokio::test]
 async fn task_tool_rejects_missing_loaded_skill_before_child_spawn() {
-    // arrange
-    // act
-    // assert
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
 
@@ -108,9 +105,6 @@ async fn task_tool_rejects_unloadable_loaded_skills_before_child_spawn() {
 #[cfg(unix)]
 #[tokio::test]
 async fn task_tool_rejects_symlinked_loaded_skill_before_child_spawn() {
-    // arrange
-    // act
-    // assert
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let outside_skill = temp_dir.path().join("outside-skill");
@@ -162,9 +156,6 @@ async fn task_tool_rejects_symlinked_loaded_skill_before_child_spawn() {
 }
 #[tokio::test]
 async fn task_tool_injects_loaded_skill_content_into_child_prompt() {
-    // arrange
-    // act
-    // assert
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
     let skill_dir = workspace.join(".agent-harness/skills/task-skill");
@@ -324,9 +315,6 @@ async fn task_tool_injects_shipped_builtin_skill_bodies_into_child_prompt() {
 
 #[tokio::test]
 async fn task_tool_rejects_disabled_shipped_builtin_skill_before_child_spawn() {
-    // arrange
-    // act
-    // assert
     let _registry_lock = skills_registry_test_lock().lock().await;
     let _skills_guard = SkillsConfigGuard::install(SkillsConfig {
         global_roots: Vec::new(),

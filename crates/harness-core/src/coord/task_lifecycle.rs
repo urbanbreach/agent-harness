@@ -1008,9 +1008,6 @@ mod diff_helper_tests {
 
     #[test]
     fn strip_bom_removes_bom_prefix() {
-        // arrange
-        // act
-        // assert
         assert_eq!(strip_bom("\u{feff}hello"), "hello");
         assert_eq!(strip_bom("hello"), "hello");
         assert_eq!(strip_bom(""), "");
@@ -1018,9 +1015,6 @@ mod diff_helper_tests {
 
     #[test]
     fn normalize_for_diff_strips_bom_and_crlf() {
-        // arrange
-        // act
-        // assert
         assert_eq!(normalize_for_diff("\u{feff}\r\nhello\r\n"), "\nhello\n");
         assert_eq!(normalize_for_diff("hello\n"), "hello\n");
         assert_eq!(normalize_for_diff("\r\n\r\n"), "\n\n");
@@ -1028,9 +1022,6 @@ mod diff_helper_tests {
 
     #[test]
     fn trim_diff_strips_common_indent() {
-        // arrange
-        // act
-        // assert
         let diff = "--- a\n+++ b\n@@ -1,2 +1,2 @@\n     line1\n-    old\n+    new\n";
         let trimmed = trim_diff(diff);
         assert!(
@@ -1046,18 +1037,12 @@ mod diff_helper_tests {
 
     #[test]
     fn trim_diff_preserves_no_indent_diffs() {
-        // arrange
-        // act
-        // assert
         let diff = "--- a\n+++ b\n@@ -1,2 +1,2 @@\n line1\n-old\n+new\n";
         assert_eq!(trim_diff(diff), diff);
     }
 
     #[test]
     fn trim_diff_skips_empty_content_lines_for_indent_calc() {
-        // arrange
-        // act
-        // assert
         let diff = "--- a\n+++ b\n@@ -1,3 +1,3 @@\n     line1\n     \n-    old\n+    new\n";
         let trimmed = trim_diff(diff);
         assert!(trimmed.contains("-old"));

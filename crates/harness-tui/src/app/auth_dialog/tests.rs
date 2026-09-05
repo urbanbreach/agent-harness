@@ -48,9 +48,6 @@ fn render_plain(app: &AppState, width: u16, height: u16) -> String {
 
 #[test]
 fn catalog_providers_include_models_dev_api_key_entries() {
-    // arrange
-    // act
-    // assert
     let catalog = ProviderCatalog::from_embedded().unwrap_or_abort();
     let registry = AuthPluginRegistry::with_builtins();
 
@@ -71,9 +68,6 @@ fn catalog_providers_include_models_dev_api_key_entries() {
 
 #[test]
 fn catalog_providers_overlay_openai_auth_methods() {
-    // arrange
-    // act
-    // assert
     let catalog = ProviderCatalog::from_embedded().unwrap_or_abort();
     let registry = AuthPluginRegistry::with_builtins();
 
@@ -96,9 +90,6 @@ fn catalog_providers_overlay_openai_auth_methods() {
 
 #[test]
 fn connect_dialog_renders_provider_panel() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::new_live(None, false, None);
     app.set_connect_dialog_providers(vec![
         api_key_provider("codex", "Codex"),
@@ -126,9 +117,6 @@ fn connect_dialog_renders_provider_panel() {
 
 #[test]
 fn connect_dialog_renders_when_terminal_is_narrow() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::new_live(None, false, None);
     app.set_connect_dialog_providers(vec![api_key_provider("codex", "Codex")]);
     app.open_connect_dialog();
@@ -140,9 +128,6 @@ fn connect_dialog_renders_when_terminal_is_narrow() {
 
 #[test]
 fn filtered_provider_enter_selects_filtered_provider() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, None);
     app.set_connect_dialog_providers(vec![
         api_key_provider("codex", "Codex"),
@@ -159,9 +144,6 @@ fn filtered_provider_enter_selects_filtered_provider() {
 
 #[test]
 fn end_key_moves_to_other_provider_row() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, None);
     app.set_connect_dialog_providers(vec![api_key_provider("codex", "Codex")]);
     app.open_connect_dialog();
@@ -174,9 +156,6 @@ fn end_key_moves_to_other_provider_row() {
 
 #[test]
 fn prompt_input_supports_cursor_navigation_and_delete() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::new_live(Some(PathBuf::from("/tmp/session")), false, None);
     app.open_connect_dialog();
 
@@ -211,9 +190,6 @@ fn prompt_input_supports_cursor_navigation_and_delete() {
 
 #[test]
 fn other_provider_api_key_emits_generic_auth_login() {
-    // arrange
-    // act
-    // assert
     let intents = Arc::new(Mutex::new(Vec::new()));
     let sink = {
         let intents = Arc::clone(&intents);

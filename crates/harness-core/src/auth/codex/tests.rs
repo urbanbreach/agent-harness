@@ -81,9 +81,6 @@ fn token_body(access: &str, refresh: &str, account_id: &str) -> String {
 
 #[test]
 fn codex_pkce_verifier_and_challenge_match_s256_base64url() {
-    // arrange
-    // act
-    // assert
     let pkce = generate_pkce_from_entropy(&(0_u8..43).collect::<Vec<_>>());
     assert_eq!(pkce.verifier.len(), 43);
     assert!(pkce
@@ -99,9 +96,6 @@ fn codex_pkce_verifier_and_challenge_match_s256_base64url() {
 
 #[tokio::test]
 async fn codex_loopback_callback_validates_state_and_stores_tokens() {
-    // arrange
-    // act
-    // assert
     let http = MockAuthHttpClient::new([response(
         200,
         token_body("access-new", "refresh-new", "acct-new"),
@@ -139,9 +133,6 @@ async fn codex_loopback_callback_validates_state_and_stores_tokens() {
 
 #[tokio::test]
 async fn codex_loopback_rejects_bad_state_missing_code_and_timeout_without_storing() {
-    // arrange
-    // act
-    // assert
     let http = MockAuthHttpClient::new([]);
     let client = client(Arc::clone(&http));
     let temp = tempfile::tempdir().unwrap_or_abort();
@@ -182,9 +173,6 @@ async fn codex_loopback_rejects_bad_state_missing_code_and_timeout_without_stori
 
 #[tokio::test]
 async fn codex_device_flow_polls_pending_then_exchanges_and_stores_credential() {
-    // arrange
-    // act
-    // assert
     let http = MockAuthHttpClient::new([
         response(
             200,
@@ -239,9 +227,6 @@ async fn codex_device_flow_polls_pending_then_exchanges_and_stores_credential() 
 
 #[test]
 fn codex_account_id_extracts_claim_precedence() {
-    // arrange
-    // act
-    // assert
     assert_eq!(
         extract_account_id_from_claims(&serde_json::json!({
             "chatgpt_account_id": "acct-direct",
@@ -266,9 +251,6 @@ fn codex_account_id_extracts_claim_precedence() {
 
 #[test]
 fn codex_oauth_model_filter_allows_current_gpt5_family() {
-    // arrange
-    // act
-    // assert
     assert!(codex_oauth_model_allowed("gpt-5.4"));
     assert!(codex_oauth_model_allowed("gpt-5.5"));
     assert!(codex_oauth_model_allowed("gpt-5.6-luna"));
@@ -278,9 +260,6 @@ fn codex_oauth_model_filter_allows_current_gpt5_family() {
 
 #[test]
 fn codex_oauth_model_filter_rejects_pro_models() {
-    // arrange
-    // act
-    // assert
     assert!(!codex_oauth_model_allowed("gpt-5.4-pro"));
     assert!(!codex_oauth_model_allowed("gpt-5.5-pro"));
     assert!(!codex_oauth_model_allowed("gpt-5.6-sol-pro"));
@@ -288,9 +267,6 @@ fn codex_oauth_model_filter_rejects_pro_models() {
 
 #[test]
 fn codex_oauth_model_filter_rejects_pre_5_4_models() {
-    // arrange
-    // act
-    // assert
     assert!(!codex_oauth_model_allowed("gpt-5.1"));
     assert!(!codex_oauth_model_allowed("gpt-5.2"));
     assert!(!codex_oauth_model_allowed("gpt-5.3-codex"));
@@ -298,8 +274,5 @@ fn codex_oauth_model_filter_rejects_pre_5_4_models() {
 
 #[test]
 fn codex_oauth_model_filter_keeps_5_3_spark_exception() {
-    // arrange
-    // act
-    // assert
     assert!(codex_oauth_model_allowed("gpt-5.3-codex-spark"));
 }

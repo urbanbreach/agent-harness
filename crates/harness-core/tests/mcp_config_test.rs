@@ -68,9 +68,6 @@ fn config_with_mcp_servers(servers: &str) -> HarnessConfig {
 
 #[test]
 fn integrations_mcp_accepts_stdio_and_http_server_shapes() {
-    // arrange
-    // act
-    // assert
     let parsed = config_with_mcp_servers(
         r#"                fixture_stdio: {
                   transport: "stdio",
@@ -146,9 +143,6 @@ fn integrations_mcp_accepts_stdio_and_http_server_shapes() {
 
 #[test]
 fn integrations_mcp_rejects_legacy_local_and_remote_server_shapes() {
-    // arrange
-    // act
-    // assert
     let error = json5::from_str::<HarnessConfig>(&config_with_mcp_servers_json(
         r#"                docs_rs: {
                   type: "local",
@@ -179,9 +173,6 @@ fn integrations_mcp_rejects_legacy_local_and_remote_server_shapes() {
 
 #[test]
 fn config_schema_exports_top_level_mcp_servers() {
-    // arrange
-    // act
-    // assert
     let schema = harness_schema_pretty_json().unwrap_or_abort();
     let parsed: serde_json::Value = serde_json::from_str(&schema).unwrap_or_abort();
 
@@ -223,9 +214,6 @@ fn integrations_mcp_rejects_stdio_server_missing_command() {
 
 #[test]
 fn integrations_mcp_rejects_invalid_server_ids() {
-    // arrange
-    // act
-    // assert
     let err = load_config_from_str(
         r#"
         {

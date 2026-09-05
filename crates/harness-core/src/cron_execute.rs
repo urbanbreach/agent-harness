@@ -375,9 +375,6 @@ mod tests {
 
     #[test]
     fn field_matches_star_list_range_and_step() {
-        // arrange
-        // act
-        // assert
         assert!(field_matches("*", 7));
         assert!(field_matches("1,5,9", 5));
         assert!(!field_matches("1,5,9", 3));

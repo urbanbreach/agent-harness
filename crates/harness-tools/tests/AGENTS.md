@@ -30,7 +30,7 @@ tests/
 
 ## CONVENTIONS
 
-- Use descriptive snake-case test names and explicit `// arrange`, `// act`, `// assert` markers.
+- Use descriptive snake-case test names; add phase comments only when they clarify a test.
 - Drive tools through coordinator registries with scripted transports, fake servers, temporary roots, and exact JSON/event assertions.
 - Aggregator test targets use nested modules or `include!`; place a new scenario beside its owning target instead of creating an unrelated harness.
 - Preserve deterministic ordering, seeded IDs, redacted metadata, and bounded output/artifact assertions.

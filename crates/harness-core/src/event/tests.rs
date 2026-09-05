@@ -12,9 +12,6 @@ use crate::UnwrapOrAbort;
 
 #[test]
 fn run_started_snapshot_is_stable_in_deterministic_mode() {
-    // arrange
-    // act
-    // assert
     let clock = FakeClock::new();
     clock.advance(42);
     let redactor = DefaultRedactor::default();
@@ -37,9 +34,6 @@ fn run_started_snapshot_is_stable_in_deterministic_mode() {
 
 #[test]
 fn permission_requested_snapshot_is_stable_in_deterministic_mode() {
-    // arrange
-    // act
-    // assert
     let clock = FakeClock::new();
     clock.advance(128);
     let redactor = DefaultRedactor::default();
@@ -74,9 +68,6 @@ fn permission_requested_snapshot_is_stable_in_deterministic_mode() {
 
 #[test]
 fn tool_call_requested_uses_redacted_summary_and_digest() {
-    // arrange
-    // act
-    // assert
     let clock = FakeClock::new();
     let redactor = DefaultRedactor::default();
     let builder = EventBuilder::new(&clock, &redactor, "run_123");
@@ -118,9 +109,6 @@ fn tool_call_requested_uses_redacted_summary_and_digest() {
 
 #[test]
 fn session_compaction_event_round_trips_through_serde_json() {
-    // arrange
-    // act
-    // assert
     let event = SessionCompactionEvent {
         agent_id: "agent-build".to_string(),
         summary: "Compacted 12 turns of work on the auth module.".to_string(),
@@ -152,9 +140,6 @@ fn session_compaction_event_round_trips_through_serde_json() {
 
 #[test]
 fn session_compaction_event_serializes_with_snake_case_tag_and_skips_empty_fields() {
-    // arrange
-    // act
-    // assert
     let event = SessionCompactionEvent {
         agent_id: "agent-build".to_string(),
         summary: "Empty files and no request id.".to_string(),
@@ -189,9 +174,6 @@ fn session_compaction_event_serializes_with_snake_case_tag_and_skips_empty_field
 
 #[test]
 fn session_compaction_event_defaults_optional_v2_fields_when_deserializing_legacy_json() {
-    // arrange
-    // act
-    // assert
     // Given: the durable shape emitted before Compaction V2.
     let json = json!({
         "event_type": "session_compaction",
@@ -227,9 +209,6 @@ fn session_compaction_event_defaults_optional_v2_fields_when_deserializing_legac
 
 #[test]
 fn session_compaction_event_accepts_explicit_summary_generation_usage_alias() {
-    // arrange
-    // act
-    // assert
     // Given: the field spelling used by the typed projection fixture.
     let json = json!({
         "event_type": "session_compaction",
@@ -268,9 +247,6 @@ fn session_compaction_event_accepts_explicit_summary_generation_usage_alias() {
 
 #[test]
 fn branch_summary_event_round_trips_through_serde_json() {
-    // arrange
-    // act
-    // assert
     let event = BranchSummaryEvent {
         agent_id: "agent-explore".to_string(),
         summary: "Branch explored the crate structure and found 3 entry points.".to_string(),
@@ -289,9 +265,6 @@ fn branch_summary_event_round_trips_through_serde_json() {
 
 #[test]
 fn branch_summary_event_serializes_with_snake_case_tag_and_skips_empty_fields() {
-    // arrange
-    // act
-    // assert
     let event = BranchSummaryEvent {
         agent_id: "agent-explore".to_string(),
         summary: "No files touched.".to_string(),

@@ -263,18 +263,12 @@ mod tests {
 
     #[test]
     fn empty_handle_is_rejected_at_boundary() {
-        // arrange
-        // act
-        // assert
         let req = DemoteToBackgroundRequest::new("  ", ForegroundKind::Task);
         assert!(matches!(req.validate(), Err(DemoteError::EmptyHandle)));
     }
 
     #[test]
     fn task_demote_accepts_when_runtime_connected() {
-        // arrange
-        // act
-        // assert
         // Given
         let req = DemoteToBackgroundRequest::new("task-1", ForegroundKind::Task)
             .with_reason("operator demote");
@@ -302,9 +296,6 @@ mod tests {
 
     #[test]
     fn shell_default_policy_is_structured_unavailable() {
-        // arrange
-        // act
-        // assert
         let req = DemoteToBackgroundRequest::new("shell-9", ForegroundKind::Shell);
         let result = default_demote_policy(&req).unwrap();
         assert!(result.is_unavailable());
@@ -318,9 +309,6 @@ mod tests {
 
     #[test]
     fn unknown_handle_is_rejected() {
-        // arrange
-        // act
-        // assert
         let req = DemoteToBackgroundRequest::new("missing", ForegroundKind::Task);
         let result = apply_demote_to_background(&req, true, |_, _| false).unwrap();
         match result {
@@ -334,9 +322,6 @@ mod tests {
 
     #[test]
     fn demote_task_handle_against_registry_accepts_known_foreground_id() {
-        // arrange
-        // act
-        // assert
         // Given
         let demotable = ["req-child-1", "req-child-2"];
 
@@ -360,18 +345,12 @@ mod tests {
 
     #[test]
     fn demote_task_handle_against_registry_rejects_unknown() {
-        // arrange
-        // act
-        // assert
         let result = demote_task_handle_against_registry("missing", &["req-a"]).unwrap();
         assert!(matches!(result, DemoteToBackgroundResult::Rejected { .. }));
     }
 
     #[test]
     fn demote_outcome_one_line_and_summary_cover_all_statuses() {
-        // arrange
-        // act
-        // assert
         // Given: demoted, rejected, and unavailable outcomes
         let demoted = demote_task_handle_against_registry("req-a", &["req-a"]).unwrap();
         let rejected = demote_task_handle_against_registry("missing", &["req-a"]).unwrap();
@@ -422,9 +401,6 @@ mod tests {
 
     #[test]
     fn demote_task_handles_against_registry_batches_mixed_outcomes() {
-        // arrange
-        // act
-        // assert
         // Given
         let demotable = ["req-a", "req-b"];
 

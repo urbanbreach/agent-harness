@@ -119,9 +119,6 @@ mod tests {
 
     #[test]
     fn multi_path_product_writes_journal_and_workspace_files() {
-        // arrange
-        // act
-        // assert
         // Given
         let dir = tempfile::tempdir().expect("tempdir");
         let root = dir.path();

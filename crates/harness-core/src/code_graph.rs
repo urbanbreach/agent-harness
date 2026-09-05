@@ -780,9 +780,6 @@ mod tests {
 
     #[test]
     fn detect_reports_unavailable_for_empty_workspace() {
-        // arrange
-        // act
-        // assert
         // Given
         let dir = tempfile::tempdir().expect("tempdir");
 
@@ -802,9 +799,6 @@ mod tests {
 
     #[test]
     fn detect_available_when_codegraph_dir_present() {
-        // arrange
-        // act
-        // assert
         // Given
         let dir = tempfile::tempdir().expect("tempdir");
         fs::create_dir_all(dir.path().join(".codegraph")).expect("codegraph");
@@ -824,9 +818,6 @@ mod tests {
 
     #[test]
     fn query_fails_closed_with_structured_unavailable_without_index() {
-        // arrange
-        // act
-        // assert
         // Given
         let dir = tempfile::tempdir().expect("tempdir");
 
@@ -850,9 +841,6 @@ mod tests {
 
     #[test]
     fn batch_query_fails_closed_for_every_entry_without_index() {
-        // arrange
-        // act
-        // assert
         // Given
         let dir = tempfile::tempdir().expect("tempdir");
         let queries = [
@@ -885,9 +873,6 @@ mod tests {
 
     #[test]
     fn graph_operator_diagnostics_cover_detect_query_and_batch() {
-        // arrange
-        // act
-        // assert
         // Given
         let dir = tempfile::tempdir().expect("tempdir");
         let root = dir.path();
@@ -930,9 +915,6 @@ mod tests {
 
     #[test]
     fn multi_symbol_batch_without_index_is_all_unavailable() {
-        // arrange
-        // act
-        // assert
         // Given
         let dir = tempfile::tempdir().expect("tempdir");
         let root = dir.path();
@@ -954,9 +936,6 @@ mod tests {
 
     #[test]
     fn build_index_and_query_symbol_def_returns_hits() {
-        // arrange
-        // act
-        // assert
         // Given
         let dir = tempfile::tempdir().expect("tempdir");
         let root = dir.path();
@@ -1044,9 +1023,6 @@ mod tests {
 
     #[test]
     fn product_probe_builds_index_and_returns_symbol_def_hits() {
-        // arrange
-        // act
-        // assert
         // Given
         let dir = tempfile::tempdir().expect("tempdir");
         let root = dir.path();

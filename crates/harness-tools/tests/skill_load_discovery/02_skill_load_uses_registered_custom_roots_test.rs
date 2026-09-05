@@ -5,9 +5,6 @@ use harness_tools::UnwrapOrAbort;
     reason = "the global registry lock intentionally serializes skills registry mutation across awaits"
 )]
 async fn skill_load_uses_registered_custom_roots_and_permission_precedence() {
-    // arrange
-    // act
-    // assert
     let _guard = skills_registry_test_lock();
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let home = temp_dir.path().join("home");
@@ -137,9 +134,6 @@ async fn skill_load_uses_registered_custom_roots_and_permission_precedence() {
     reason = "the global registry lock intentionally serializes skills registry mutation across awaits"
 )]
 async fn skill_load_ask_permissions_use_question_approval_flow() {
-    // arrange
-    // act
-    // assert
     let _guard = skills_registry_test_lock();
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let home = temp_dir.path().join("home");

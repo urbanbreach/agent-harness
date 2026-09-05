@@ -1,9 +1,6 @@
 use harness_core::UnwrapOrAbort;
 #[tokio::test]
 async fn completed_tool_turn_preserves_tool_messages_for_followup_context() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![
         vec![
@@ -214,9 +211,6 @@ async fn completed_tool_turn_preserves_tool_messages_for_followup_context() {
 }
 #[tokio::test]
 async fn resumed_tool_turn_preserves_tool_messages_for_followup_context() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let initial_provider = SequentialScriptedProvider::new(vec![
         vec![
@@ -357,9 +351,6 @@ async fn resumed_tool_turn_preserves_tool_messages_for_followup_context() {
 }
 #[tokio::test]
 async fn provider_stream_metadata_persists_to_jsonl_events() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![vec![
         ProviderStreamEvent::Started {
@@ -517,9 +508,6 @@ async fn provider_stream_metadata_persists_to_jsonl_events() {
 }
 #[tokio::test]
 async fn provider_reasoning_metadata_persists_digest_without_raw_summary_fallback() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![vec![
         ProviderStreamEvent::Start,

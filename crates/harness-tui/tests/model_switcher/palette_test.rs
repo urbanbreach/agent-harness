@@ -11,9 +11,6 @@ use crate::model_switcher_fixtures::*;
 
 #[test]
 fn model_switcher_ui_opens_from_slash_command() {
-    // arrange
-    // act
-    // assert
     let _config = load_config_from_str(rich_model_config()).unwrap_or_abort();
 
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
@@ -57,9 +54,6 @@ fn model_switcher_ui_opens_from_slash_command() {
 
 #[test]
 fn model_switcher_populates_options_from_launch_metadata() {
-    // arrange
-    // act
-    // assert
     let _config = load_config_from_str(rich_model_config()).unwrap_or_abort();
 
     let available_models = available_models();
@@ -86,9 +80,6 @@ fn model_switcher_populates_options_from_launch_metadata() {
 
 #[test]
 fn model_switcher_shows_base_models_without_variant_rows() {
-    // arrange
-    // act
-    // assert
     let _config = load_config_from_str(rich_model_config()).unwrap_or_abort();
 
     let mut app = AppState::new_live(None, false, None);
@@ -116,9 +107,6 @@ fn model_switcher_shows_base_models_without_variant_rows() {
 
 #[test]
 fn model_switcher_renders_harness_select_dialog_contract() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::new_live(None, false, None);
     app.set_launch_metadata(
         LaunchMetadata::from_model_option(&multi_provider_models()[1])
@@ -148,9 +136,6 @@ fn model_switcher_renders_harness_select_dialog_contract() {
 
 #[test]
 fn model_switcher_filter_flattens_to_title_and_provider_matches() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::new_live(None, false, None);
     app.set_launch_metadata(
         LaunchMetadata::from_model_option(&multi_provider_models()[1])
@@ -224,9 +209,6 @@ fn model_switcher_renders_fallback_error_status() {
 
 #[test]
 fn model_switcher_enter_emits_switch_intent_for_selected_model() {
-    // arrange
-    // act
-    // assert
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let sink = {
         let intents = Arc::clone(&intents);
@@ -316,9 +298,6 @@ fn authenticated_builtin_models() -> Vec<harness_tui::app::ModelOption> {
 
 #[test]
 fn model_switcher_opens_no_provider_connect_state() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::new_live(None, false, None);
     app.set_launch_metadata(LaunchMetadata::new("default", "local", None));
 
@@ -341,9 +320,6 @@ fn model_switcher_opens_no_provider_connect_state() {
 
 #[test]
 fn model_switcher_groups_authenticated_builtin_provider_rows() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::new_live(None, false, None);
     let models = authenticated_builtin_models();
     app.set_launch_metadata(
@@ -369,9 +345,6 @@ fn model_switcher_groups_authenticated_builtin_provider_rows() {
 
 #[test]
 fn model_switcher_search_matches_authenticated_provider_label_and_switches() {
-    // arrange
-    // act
-    // assert
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let sink = {
         let intents = Arc::clone(&intents);
@@ -416,9 +389,6 @@ fn model_switcher_search_matches_authenticated_provider_label_and_switches() {
 
 #[test]
 fn no_provider_prompt_submission_blocks_with_connect_guidance() {
-    // arrange
-    // act
-    // assert
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let sink = {
         let intents = Arc::clone(&intents);
@@ -443,9 +413,6 @@ fn no_provider_prompt_submission_blocks_with_connect_guidance() {
 
 #[test]
 fn auth_catalog_refresh_opens_model_picker_with_connected_models() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::new_live(None, false, None);
     let models = authenticated_builtin_models();
     app.set_launch_metadata(LaunchMetadata::new("default", "local", None));

@@ -352,9 +352,6 @@ mod tests {
 
     #[test]
     fn enqueue_dequeue_preserves_fifo_order_on_disk() {
-        // arrange
-        // act
-        // assert
         // Given
         let dir = tempdir().unwrap();
         let queue = DurablePromptQueue::for_session(dir.path());
@@ -380,9 +377,6 @@ mod tests {
 
     #[test]
     fn empty_text_rejected_and_missing_file_is_empty() {
-        // arrange
-        // act
-        // assert
         let dir = tempdir().unwrap();
         let queue = DurablePromptQueue::for_session(dir.path());
         assert!(queue.is_empty().unwrap());
@@ -395,9 +389,6 @@ mod tests {
 
     #[test]
     fn reopened_queue_loads_prior_entries() {
-        // arrange
-        // act
-        // assert
         let dir = tempdir().unwrap();
         let path = DurablePromptQueue::default_path_for_session(dir.path());
         {
@@ -432,9 +423,6 @@ mod tests {
 
     #[test]
     fn mid_turn_interjection_inserts_front_without_event_mutation() {
-        // arrange
-        // act
-        // assert
         // Given: ordinary FIFO entry already queued while a turn is running
         let dir = tempdir().unwrap();
         let queue = DurablePromptQueue::for_session(dir.path());

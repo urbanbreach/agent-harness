@@ -423,9 +423,6 @@ mod tests {
 
     #[test]
     fn unknown_existing_session_returns_guidance() {
-        // arrange
-        // act
-        // assert
         let err = map_request_agent_turn_error(
             CoordinatorError::UnknownAgent("missing-session".to_string()),
             &AgentSpawnRequest {
@@ -446,9 +443,6 @@ mod tests {
 
     #[test]
     fn unknown_child_profile_returns_guidance() {
-        // arrange
-        // act
-        // assert
         let err = map_spawn_agent_error(CoordinatorError::UnknownAgent("general".to_string()));
         assert!(
             matches!(err, ToolError::InvalidArguments(message) if message.contains("Unknown child profile `general`") && message.contains("`explore`, `general`, or `librarian`"))

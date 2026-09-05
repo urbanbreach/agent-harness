@@ -64,9 +64,6 @@ fn provider_id(value: &str) -> ProviderId {
 
 #[test]
 fn credential_store_round_trips_replaces_atomically_and_uses_restrictive_permissions() {
-    // arrange
-    // act
-    // assert
     let temp = tempfile::tempdir().unwrap_or_abort();
     let store = CredentialStore::new(temp.path());
     let first = StoredCredential::api_key(
@@ -98,9 +95,6 @@ fn credential_store_round_trips_replaces_atomically_and_uses_restrictive_permiss
 
 #[tokio::test]
 async fn credential_resolution_precedence_prefers_stored_then_env_then_inline() {
-    // arrange
-    // act
-    // assert
     let temp = tempfile::tempdir().unwrap_or_abort();
     let store = CredentialStore::new(temp.path());
     let manager = ProviderCredentialManager::new(
@@ -147,9 +141,6 @@ async fn credential_resolution_precedence_prefers_stored_then_env_then_inline() 
 
 #[tokio::test]
 async fn credential_resolution_preserves_copilot_enterprise_url() {
-    // arrange
-    // act
-    // assert
     let temp = tempfile::tempdir().unwrap_or_abort();
     let store = CredentialStore::new(temp.path());
     let mut credential = StoredCredential::oauth(
@@ -174,9 +165,6 @@ async fn credential_resolution_preserves_copilot_enterprise_url() {
 
 #[tokio::test]
 async fn expired_oauth_refresh_is_single_flight_and_persisted() {
-    // arrange
-    // act
-    // assert
     let temp = tempfile::tempdir().unwrap_or_abort();
     let store = CredentialStore::new(temp.path());
     store
@@ -237,9 +225,6 @@ async fn expired_oauth_refresh_is_single_flight_and_persisted() {
 
 #[test]
 fn credential_store_manifest_excludes_secret_material() {
-    // arrange
-    // act
-    // assert
     let temp = tempfile::tempdir().unwrap_or_abort();
     let store = CredentialStore::new(temp.path());
     store
@@ -261,9 +246,6 @@ fn credential_store_manifest_excludes_secret_material() {
 
 #[test]
 fn windows_whoami_csv_sid_parser_accepts_quoted_user_rows() {
-    // arrange
-    // act
-    // assert
     assert_eq!(
         parse_whoami_user_sid("\"EXAMPLE\\\\user\",\"S-1-5-21-111-222-333-1001\"\r\n"),
         Some("S-1-5-21-111-222-333-1001".to_string())

@@ -2,9 +2,6 @@ use super::*;
 
 #[test]
 fn canonical_lowerer_inserts_transient_wire_tool_pair_before_pending_prompt() {
-    // arrange
-    // act
-    // assert
     // Given: canonical durable history and one transient failed tool turn using a provider wire id.
     let mut profile = agent_profiles().remove("default").unwrap_or_abort();
     profile.toolset = vec!["shell.run".to_string()];

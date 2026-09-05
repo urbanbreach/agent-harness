@@ -402,9 +402,6 @@ mod wait_mode_tests {
 
     #[test]
     fn wait_any_is_true_when_first_of_n_is_terminal() {
-        // arrange
-        // act
-        // assert
         let flags = [("req_a", false), ("req_b", true), ("req_c", false)];
         assert!(background_wait_condition_satisfied(
             BackgroundWaitMode::Any,
@@ -415,9 +412,6 @@ mod wait_mode_tests {
 
     #[test]
     fn wait_any_is_false_when_none_terminal() {
-        // arrange
-        // act
-        // assert
         let flags = [("req_a", false), ("req_b", false)];
         assert!(!background_wait_condition_satisfied(
             BackgroundWaitMode::Any,
@@ -428,9 +422,6 @@ mod wait_mode_tests {
 
     #[test]
     fn wait_all_is_true_only_when_every_request_is_terminal() {
-        // arrange
-        // act
-        // assert
         let partial = [("req_a", true), ("req_b", false)];
         let complete = [("req_a", true), ("req_b", true)];
         assert!(!background_wait_condition_satisfied(
@@ -445,9 +436,6 @@ mod wait_mode_tests {
 
     #[test]
     fn wait_condition_rejects_empty_request_set() {
-        // arrange
-        // act
-        // assert
         let empty: [(&str, bool); 0] = [];
         assert!(!background_wait_condition_satisfied(
             BackgroundWaitMode::Any,
@@ -461,9 +449,6 @@ mod wait_mode_tests {
 
     #[test]
     fn wait_mode_parse_accepts_any_and_all_case_insensitively() {
-        // arrange
-        // act
-        // assert
         assert_eq!(
             BackgroundWaitMode::parse("any"),
             Some(BackgroundWaitMode::Any)

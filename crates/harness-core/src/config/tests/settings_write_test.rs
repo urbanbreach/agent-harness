@@ -67,9 +67,6 @@ fn minimal_runtime_config(hashline_edit: bool) -> String {
 
 #[test]
 fn write_project_hashline_edit_persists_and_reloads_effective_value() {
-    // arrange
-    // act
-    // assert
     // Given: project runtime config with hashline_edit=true
     let path = temp_config_path("toggle");
     fs::write(&path, minimal_runtime_config(true)).expect("write fixture");
@@ -88,9 +85,6 @@ fn write_project_hashline_edit_persists_and_reloads_effective_value() {
 
 #[test]
 fn reset_project_hashline_edit_restores_registry_default() {
-    // arrange
-    // act
-    // assert
     // Given: overridden to false
     let path = temp_config_path("reset");
     fs::write(&path, minimal_runtime_config(false)).expect("write fixture");
@@ -107,9 +101,6 @@ fn reset_project_hashline_edit_restores_registry_default() {
 
 #[test]
 fn write_project_setting_bool_fails_closed_for_secret() {
-    // arrange
-    // act
-    // assert
     let path = temp_config_path("secret");
     fs::write(&path, minimal_runtime_config(true)).expect("write fixture");
 
@@ -124,9 +115,6 @@ fn write_project_setting_bool_fails_closed_for_secret() {
 
 #[test]
 fn write_project_setting_bool_rejects_unknown_and_unsupported() {
-    // arrange
-    // act
-    // assert
     let path = temp_config_path("unsupported");
     fs::write(&path, minimal_runtime_config(true)).expect("write fixture");
 
@@ -143,9 +131,6 @@ fn write_project_setting_bool_rejects_unknown_and_unsupported() {
 
 #[test]
 fn write_project_setting_bool_accepts_legacy_hashline_edit_id() {
-    // arrange
-    // act
-    // assert
     // Given: project config with hashline_edit true
     let path = temp_config_path("legacy-hashline");
     fs::write(&path, minimal_runtime_config(true)).expect("write fixture");
@@ -161,9 +146,6 @@ fn write_project_setting_bool_accepts_legacy_hashline_edit_id() {
 
 #[test]
 fn reset_project_setting_to_default_for_hashline_edit() {
-    // arrange
-    // act
-    // assert
     let path = temp_config_path("reset-api");
     fs::write(&path, minimal_runtime_config(false)).expect("write fixture");
     let value = reset_project_setting_to_default(&path, "hashline_edit").expect("reset");
@@ -173,9 +155,6 @@ fn reset_project_setting_to_default_for_hashline_edit() {
 
 #[test]
 fn write_project_compaction_enabled_persists_under_runtime_and_reloads() {
-    // arrange
-    // act
-    // assert
     // Given: project runtime config without compaction override
     let path = temp_config_path("compaction");
     fs::write(&path, minimal_runtime_config(true)).expect("write fixture");
@@ -203,9 +182,6 @@ fn write_project_compaction_enabled_persists_under_runtime_and_reloads() {
 
 #[test]
 fn write_project_setting_bool_routes_compaction_enabled() {
-    // arrange
-    // act
-    // assert
     let path = temp_config_path("compaction-api");
     fs::write(&path, minimal_runtime_config(true)).expect("write fixture");
     let effective =
@@ -219,9 +195,6 @@ fn write_project_setting_bool_routes_compaction_enabled() {
 
 #[test]
 fn write_project_compaction_auto_retry_overflow_persists_and_reloads() {
-    // arrange
-    // act
-    // assert
     // Given: project runtime config without auto_retry_overflow override
     let path = temp_config_path("auto-retry");
     fs::write(&path, minimal_runtime_config(true)).expect("write fixture");
@@ -252,9 +225,6 @@ fn write_project_compaction_auto_retry_overflow_persists_and_reloads() {
 
 #[test]
 fn write_project_deterministic_enabled_persists_and_reloads() {
-    // arrange
-    // act
-    // assert
     // Given: project runtime config with deterministic.enabled=false
     let path = temp_config_path("deterministic");
     fs::write(&path, minimal_runtime_config(true)).expect("write fixture");
@@ -290,9 +260,6 @@ fn write_project_deterministic_enabled_persists_and_reloads() {
 
 #[test]
 fn write_project_compaction_structured_summary_contract_persists_and_reloads() {
-    // arrange
-    // act
-    // assert
     // Given: project runtime config without structured_summary_contract override
     let path = temp_config_path("structured-summary");
     fs::write(&path, minimal_runtime_config(true)).expect("write fixture");

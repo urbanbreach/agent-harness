@@ -5,9 +5,6 @@ use harness_core::event::UserMessageSubmittedEvent;
 
 #[test]
 fn transcript_test_activity_helper_has_required_defaults() {
-    // arrange
-    // act
-    // assert
     let entry = transcript_section_model_test_activity(
         "request-helper",
         ActivityStatus::Done,
@@ -24,9 +21,6 @@ fn transcript_test_activity_helper_has_required_defaults() {
 
 #[test]
 fn transcript_test_tool_call_helper_has_queued_defaults() {
-    // arrange
-    // act
-    // assert
     let tool_call = transcript_section_model_test_tool_call("tool-helper", "fs.read");
 
     assert_eq!(tool_call.tool_call_id, "tool-helper");
@@ -38,9 +32,6 @@ fn transcript_test_tool_call_helper_has_queued_defaults() {
 
 #[test]
 fn transcript_test_line_texts_joins_spans() {
-    // arrange
-    // act
-    // assert
     let texts = transcript_test_line_texts(vec![
         Line::from(vec![Span::raw("hello"), Span::raw(" world")]),
         Line::from(vec![Span::raw("again")]),
@@ -303,9 +294,6 @@ fn streaming_delta_reuses_unrelated_running_tool_section() {
 
 #[test]
 fn transcript_layout_cache_invalidates_when_theme_changes() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
         request_id: "request-theme-cache".to_string(),
@@ -366,9 +354,6 @@ fn transcript_layout_cache_invalidates_when_theme_changes() {
 
 #[test]
 fn pending_permission_sections_render_warning_turn_container() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::default();
     app.ingest_event(harness_core::event::EventEnvelopeV1 {
         schema_version: harness_core::event::SCHEMA_VERSION,
@@ -412,9 +397,6 @@ fn pending_permission_sections_render_warning_turn_container() {
 
 #[test]
 fn streaming_assistant_footer_reserves_blank_geometry_for_live_status() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
         request_id: "request-streaming-header".to_string(),
@@ -459,9 +441,6 @@ fn streaming_assistant_footer_reserves_blank_geometry_for_live_status() {
 
 #[test]
 fn completed_turns_omit_standalone_footer_metadata() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![
         ActivityEntry {
@@ -554,9 +533,6 @@ fn completed_turns_omit_standalone_footer_metadata() {
 
 #[test]
 fn tool_only_turns_omit_standalone_assistant_footer() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
         "request-tool-only-footer",
@@ -605,9 +581,6 @@ fn tool_only_turns_omit_standalone_assistant_footer() {
 
 #[test]
 fn pending_question_turn_renders_waiting_on_answers_footer() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
         "request-question-waiting",
@@ -709,9 +682,6 @@ fn pending_question_turn_renders_waiting_on_answers_footer() {
 
 #[test]
 fn waiting_on_answers_shows_thought_for_not_thinking() {
-    // arrange
-    // act
-    // assert
     // Waiting state: Thought for (completed chrome) while Waiting on answers.
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
@@ -783,9 +753,6 @@ fn waiting_on_answers_shows_thought_for_not_thinking() {
 
 #[test]
 fn completed_latest_turn_keeps_footer_after_streaming_finishes() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
         "request-footer-finish",
@@ -838,9 +805,6 @@ fn completed_latest_turn_keeps_footer_after_streaming_finishes() {
 
 #[test]
 fn latest_completed_turn_keeps_rendered_assistant_parts_without_a_footer() {
-    // arrange
-    // act
-    // assert
     fn event(
         seq: u64,
         correlation_id: &str,
@@ -919,9 +883,6 @@ fn latest_completed_turn_keeps_rendered_assistant_parts_without_a_footer() {
 
 #[test]
 fn user_message_surface_omits_standalone_settled_footer() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
         request_id: "request-user-padding".to_string(),
@@ -986,9 +947,6 @@ fn user_message_surface_omits_standalone_settled_footer() {
 
 #[test]
 fn user_row_wall_clock_right_aligned_matches_freeze_geometry() {
-    // arrange
-    // act
-    // assert
     // Given: a completed turn with user message + ISO user_timestamp (freeze run1-stream-probe)
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
@@ -1220,9 +1178,6 @@ fn user_timestamp_safe_fit_boundaries_hide_whole_clock_instead_of_clipping() {
 
 #[test]
 fn reasoning_summary_renders_as_nested_inset_block() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
         "request-reasoning-inset",
@@ -1249,9 +1204,6 @@ fn reasoning_summary_renders_as_nested_inset_block() {
 
 #[test]
 fn fenced_code_blocks_render_frameless_with_highlighting() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::default();
     app.activities =
         std::collections::VecDeque::from(vec![transcript_section_model_test_activity(
@@ -1286,9 +1238,6 @@ fn fenced_code_blocks_render_frameless_with_highlighting() {
 
 #[test]
 fn transcript_turn_sections_keep_two_blank_rows_between_sections() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![
         transcript_section_model_test_activity("request-a", ActivityStatus::Done, "first"),
@@ -1308,9 +1257,6 @@ fn transcript_turn_sections_keep_two_blank_rows_between_sections() {
 
 #[test]
 fn markdown_headings_get_blank_row_before_when_preceded_by_text() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::default();
     app.activities =
         std::collections::VecDeque::from(vec![transcript_section_model_test_activity(
@@ -1348,9 +1294,6 @@ fn markdown_headings_get_blank_row_before_when_preceded_by_text() {
 
 #[test]
 fn markdown_paragraphs_get_trailing_blank_row_for_margin_bottom() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![
         transcript_section_model_test_activity(
@@ -1386,9 +1329,6 @@ fn markdown_paragraphs_get_trailing_blank_row_for_margin_bottom() {
 
 #[test]
 fn code_block_bottom_margin_is_two_blank_rows() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![
         transcript_section_model_test_activity(
@@ -1437,9 +1377,6 @@ fn code_block_bottom_margin_is_two_blank_rows() {
 
 #[test]
 fn assistant_tool_surfaces_keep_same_trailing_gap_as_text_boxes() {
-    // arrange
-    // act
-    // assert
     let mut activity = transcript_section_model_test_activity(
         "request-shell-alignment",
         ActivityStatus::Done,
@@ -1655,9 +1592,6 @@ fn command_group_stays_coalesced_while_latest_member_is_running() {
 
 #[test]
 fn reasoning_to_answer_transition_uses_one_blank_row() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
         "request-reasoning-gap",
@@ -1693,9 +1627,6 @@ fn reasoning_to_answer_transition_uses_one_blank_row() {
 
 #[test]
 fn streaming_reasoning_header_renders_plain_thinking_label() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
         "request-streaming-reasoning",
@@ -1726,9 +1657,6 @@ fn streaming_reasoning_header_renders_plain_thinking_label() {
 
 #[test]
 fn streaming_reasoning_stops_spinner_when_body_text_arrives() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
         "request-streaming-reasoning-then-body",
@@ -1765,9 +1693,6 @@ fn streaming_reasoning_stops_spinner_when_body_text_arrives() {
 
 #[test]
 fn streaming_reasoning_stops_spinner_when_tool_call_arrives() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
         "request-streaming-reasoning-then-tool",
@@ -1826,9 +1751,6 @@ fn streaming_reasoning_stops_spinner_when_tool_call_arrives() {
 
 #[test]
 fn streaming_reasoning_header_with_title_keeps_the_quiet_header() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
         "request-streaming-reasoning-title",
@@ -2175,9 +2097,6 @@ fn completed_turn_without_thinking_text_still_renders_thought_for() {
 
 #[test]
 fn failed_turn_without_thinking_text_omits_thought_for() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
         "request-failed-no-thinking",
@@ -2214,9 +2133,6 @@ fn failed_turn_without_thinking_text_omits_thought_for() {
 
 #[test]
 fn reasoning_header_suppresses_empty_redacted_reasoning() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
         "request-redacted-only",
@@ -2246,9 +2162,6 @@ fn reasoning_header_suppresses_empty_redacted_reasoning() {
 
 #[test]
 fn streaming_assistant_footer_stays_blank_across_animation_ticks() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
         request_id: "request-streaming-spinner".to_string(),
@@ -2599,9 +2512,6 @@ fn perf_packet2_streaming_tail_layout_stays_within_frame_budget() {
 
 #[test]
 fn reasoning_body_plain_text_has_no_dim_modifier() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::default();
     let mut entry =
         transcript_section_model_test_activity("req-no-dim", ActivityStatus::Done, "answer");
@@ -2634,9 +2544,6 @@ fn reasoning_body_plain_text_has_no_dim_modifier() {
 
 #[test]
 fn reasoning_body_screenshot_text_no_false_positives() {
-    // arrange
-    // act
-    // assert
     let screenshot_text =
         "18. sessionlist, sessionread, sessionsearch, sessioninfo - session tools\n\
                            19. backgroundoutput, backgroundcancel - background task tools\n\
@@ -2690,9 +2597,6 @@ fn reasoning_body_screenshot_text_no_false_positives() {
 
 #[test]
 fn reasoning_body_markdown_constructs_use_blended_colors() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::default();
     let mut entry =
         transcript_section_model_test_activity("req-md-blend", ActivityStatus::Done, "answer");

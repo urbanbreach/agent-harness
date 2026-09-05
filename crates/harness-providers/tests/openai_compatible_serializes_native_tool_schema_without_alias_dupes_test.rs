@@ -65,9 +65,6 @@ impl OpenAiHttpTransport for FakeOpenAiTransport {
 
 #[tokio::test]
 async fn openai_compatible_serializes_native_tool_schema_without_alias_dupes() {
-    // arrange
-    // act
-    // assert
     let http = Arc::new(FakeHttpClient::new([ScriptedHttpCall::new(
         "POST",
         "http://127.0.0.1/v1/responses",

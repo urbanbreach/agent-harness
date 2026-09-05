@@ -2,9 +2,6 @@ use super::*;
 
 #[tokio::test]
 async fn compaction_v2_automatic_suppression_uses_provider_and_event_counts() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let current_prompt = "C".repeat(12_000);
     let provider = SequentialScriptedProvider::new(vec![

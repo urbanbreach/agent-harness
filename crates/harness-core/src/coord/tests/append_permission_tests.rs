@@ -3,9 +3,6 @@ use crate::UnwrapOrAbort;
 
 #[test]
 fn event_append_helpers_preserve_correlation_fallbacks_and_stream_keys() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let clock = Arc::new(FakeClock::new());
     let redactor = Arc::new(DefaultRedactor::default());
@@ -234,9 +231,6 @@ fn event_append_helpers_preserve_correlation_fallbacks_and_stream_keys() {
 
 #[tokio::test]
 async fn perm_allow_path_proceeds() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let mut config = test_config(temp_dir.path());
     config.permission_policy = allow_shell_permission_policy();

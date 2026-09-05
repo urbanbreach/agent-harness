@@ -304,9 +304,6 @@ fn write_interrupted_tool_history_fixture(session_dir: &std::path::Path, run_id:
 
 #[tokio::test]
 async fn resume_does_not_schedule_interrupted_historical_tool() {
-    // arrange
-    // act
-    // assert
     // Given an event history ending after a tool request but before tool execution.
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_resume_interrupted_tool_inert";
@@ -336,9 +333,6 @@ async fn resume_does_not_schedule_interrupted_historical_tool() {
 
 #[tokio::test]
 async fn resume_replay_provider_tool_hook_side_effect_counters_remain_zero() {
-    // arrange
-    // act
-    // assert
     // Given: a resumable history with only completed historical work.
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_resume_side_effect_counters";
@@ -399,9 +393,6 @@ async fn resume_replay_provider_tool_hook_side_effect_counters_remain_zero() {
 
 #[tokio::test]
 async fn resumed_continuation_cache_hit_avoids_second_journal_reduction() {
-    // arrange
-    // act
-    // assert
     // Given: one resumed turn has completed and advanced the in-memory canonical overlay.
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_resume_cache_hit";
@@ -446,9 +437,6 @@ async fn resumed_continuation_cache_hit_avoids_second_journal_reduction() {
 
 #[tokio::test]
 async fn resume_opens_one_writer_for_the_single_loaded_canonical_history() {
-    // arrange
-    // act
-    // assert
     // Given: the event-store opener counts exclusive writer acquisition.
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let run_id = "run_resume_single_reduction";

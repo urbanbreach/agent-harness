@@ -343,9 +343,6 @@ mod tests {
 
     #[test]
     fn register_list_remove_round_trip() {
-        // arrange
-        // act
-        // assert
         // Given
         let mut registry = CronScheduleRegistry::new();
 
@@ -368,9 +365,6 @@ mod tests {
 
     #[test]
     fn duplicate_and_empty_expression_fail_closed() {
-        // arrange
-        // act
-        // assert
         let mut registry = CronScheduleRegistry::new();
         registry.register(sample("once")).unwrap();
         assert!(matches!(
@@ -396,9 +390,6 @@ mod tests {
 
     #[test]
     fn remove_missing_is_error() {
-        // arrange
-        // act
-        // assert
         let mut registry = CronScheduleRegistry::new();
         let id = ScheduleId::parse("missing").unwrap();
         assert!(matches!(
@@ -409,9 +400,6 @@ mod tests {
 
     #[test]
     fn remove_cron_schedule_missing_is_failed_outcome() {
-        // arrange
-        // act
-        // assert
         let mut registry = CronScheduleRegistry::new();
         let id = ScheduleId::parse("missing-id").unwrap();
         let outcome = remove_cron_schedule(&mut registry, &id);
@@ -427,9 +415,6 @@ mod tests {
 
     #[test]
     fn remove_cron_schedule_ok_after_register() {
-        // arrange
-        // act
-        // assert
         let mut registry = CronScheduleRegistry::new();
         let schedule = sample("to-remove");
         let reg = register_cron_schedule(&mut registry, schedule);
@@ -449,9 +434,6 @@ mod tests {
 
     #[test]
     fn validate_cron_expression_accepts_five_field_shape() {
-        // arrange
-        // act
-        // assert
         // Given / When
         let validated = validate_cron_expression("  0 9 * * 1-5  ").unwrap();
 
@@ -471,9 +453,6 @@ mod tests {
 
     #[test]
     fn validate_cron_expression_rejects_wrong_field_count_and_bad_chars() {
-        // arrange
-        // act
-        // assert
         assert!(matches!(
             validate_cron_expression("0 9 * *"),
             Err(CronScheduleError::InvalidFieldCount { field_count: 4, .. })
@@ -494,9 +473,6 @@ mod tests {
 
     #[test]
     fn register_rejects_invalid_expression_structure() {
-        // arrange
-        // act
-        // assert
         // Given
         let mut registry = CronScheduleRegistry::new();
         let bad = CronSchedule {
@@ -520,9 +496,6 @@ mod tests {
 
     #[test]
     fn cron_schedule_summary_counts_registered_and_labeled() {
-        // arrange
-        // act
-        // assert
         // Given: one labeled schedule and one unlabeled schedule
         let mut registry = CronScheduleRegistry::new();
         registry.register(sample("weekday-doctor")).unwrap();
@@ -573,9 +546,6 @@ mod tests {
 
     #[test]
     fn multi_schedule_register_remove_list_and_label_summary() {
-        // arrange
-        // act
-        // assert
         // Given: empty registry
         let mut registry = CronScheduleRegistry::new();
         let labeled = |id: &str, expr: &str, label: &str| CronSchedule {

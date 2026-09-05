@@ -1,8 +1,5 @@
 #[tokio::test]
 async fn compaction_v2_unsplittable_protocol_entry_preserves_boundary() {
-    // arrange
-    // act
-    // assert
     let huge_output = "U".repeat(50_000);
     let typed_cut = plan_safe_cut(
         &[

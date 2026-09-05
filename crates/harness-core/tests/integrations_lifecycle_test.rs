@@ -67,9 +67,6 @@ fn write_plugin_entry(package: &Path, entrypoints: &[&str]) {
 
 #[test]
 fn install_and_activate_valid_plugin_descriptor() {
-    // arrange
-    // act
-    // assert
     // Given: workspace with a valid descriptor package
     let temp = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp.path().join("ws");
@@ -97,9 +94,6 @@ fn install_and_activate_valid_plugin_descriptor() {
 
 #[test]
 fn plugin_lifecycle_summary_counts_enabled_and_disabled() {
-    // arrange
-    // act
-    // assert
     // Given: two installed packages, one activated
     let temp = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp.path().join("ws");
@@ -141,9 +135,6 @@ fn plugin_lifecycle_summary_counts_enabled_and_disabled() {
 
 #[test]
 fn corrupt_descriptor_fails_with_no_leftover_registration() {
-    // arrange
-    // act
-    // assert
     // Given: package with corrupt JSON / invalid schema
     let temp = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp.path().join("ws");
@@ -196,9 +187,6 @@ fn invalid_json_leaves_no_stale_registration_even_after_prior_install() {
 
 #[test]
 fn activation_denied_without_permission_leaves_disabled() {
-    // arrange
-    // act
-    // assert
     // Given: installed disabled plugin
     let temp = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp.path().join("ws");
@@ -251,9 +239,6 @@ fn hooks_and_skills_only_package_activates_without_code_load() {
 
 #[test]
 fn deactivate_and_remove_lifecycle() {
-    // arrange
-    // act
-    // assert
     // Given: installed + activated plugin
     let temp = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp.path().join("ws");
@@ -288,9 +273,6 @@ fn deactivate_and_remove_lifecycle() {
 
 #[test]
 fn activate_loads_hooks_json_and_writes_receipt() {
-    // arrange
-    // act
-    // assert
     // Given: package with descriptor + hooks.json
     let temp = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp.path().join("ws");
@@ -323,9 +305,6 @@ fn activate_loads_hooks_json_and_writes_receipt() {
 
 #[test]
 fn full_lifecycle_install_activate_load_deactivate_remove() {
-    // arrange
-    // act
-    // assert
     // Given: package with plugin_entry + skills
     let temp = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp.path().join("ws");
@@ -359,9 +338,6 @@ fn full_lifecycle_install_activate_load_deactivate_remove() {
 
 #[test]
 fn activate_fails_closed_on_invalid_plugin_entry() {
-    // arrange
-    // act
-    // assert
     // Given: package with corrupt plugin_entry.json
     let temp = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp.path().join("ws");
@@ -393,9 +369,6 @@ fn activate_fails_closed_on_invalid_plugin_entry() {
 
 #[test]
 fn activate_fails_closed_when_declared_entrypoint_missing() {
-    // arrange
-    // act
-    // assert
     // Given: plugin_entry declares skills but skills dir is absent
     let temp = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp.path().join("ws");
@@ -423,9 +396,6 @@ fn activate_fails_closed_when_declared_entrypoint_missing() {
 
 #[test]
 fn activate_fails_closed_on_invalid_hooks_json() {
-    // arrange
-    // act
-    // assert
     // Given
     let temp = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp.path().join("ws");
@@ -452,9 +422,6 @@ fn activate_fails_closed_on_invalid_hooks_json() {
 
 #[test]
 fn package_path_outside_workspace_is_rejected() {
-    // arrange
-    // act
-    // assert
     // Given: two sibling directories; registry rooted at one
     let temp = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp.path().join("ws");
@@ -483,9 +450,6 @@ fn package_path_outside_workspace_is_rejected() {
 
 #[test]
 fn relative_parent_traversal_is_rejected() {
-    // arrange
-    // act
-    // assert
     // Given
     let temp = tempfile::tempdir().unwrap_or_abort();
     let workspace = temp.path().join("ws");

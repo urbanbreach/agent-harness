@@ -633,9 +633,6 @@ mod tests {
     // widening visibility.
     #[test]
     fn settings_editor_writable_settings_identified() {
-        // arrange
-        // act
-        // assert
         assert!(
             is_writable_setting("hashline_edit"),
             "hashline_edit must be writable"

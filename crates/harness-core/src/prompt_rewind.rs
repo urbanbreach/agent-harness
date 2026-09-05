@@ -304,9 +304,6 @@ mod tests {
 
     #[test]
     fn plan_prompt_rewind_restores_conversation_through_cutoff() {
-        // arrange
-        // act
-        // assert
         let events = vec![
             user_message(1, "first"),
             user_message(2, "second"),
@@ -333,9 +330,6 @@ mod tests {
 
     #[test]
     fn plan_prompt_rewind_fails_recoverably_for_bad_cutoff() {
-        // arrange
-        // act
-        // assert
         let events = vec![user_message(1, "only")];
         let err = plan_prompt_rewind(&events, 9).expect_err("out of range");
         assert!(matches!(
@@ -351,9 +345,6 @@ mod tests {
 
     #[test]
     fn plan_prompt_rewind_does_not_rewrite_events_jsonl() {
-        // arrange
-        // act
-        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let events_path = temp.path().join("events.jsonl");
         let events = vec![user_message(1, "a"), user_message(2, "b")];
@@ -407,9 +398,6 @@ mod tests {
 
     #[test]
     fn atomic_prompt_rewind_restores_conversation_and_files() {
-        // arrange
-        // act
-        // assert
         // Given: event log + workspace file
         let temp = tempfile::tempdir().unwrap_or_abort();
         let workspace = temp.path().join("ws");
@@ -472,9 +460,6 @@ mod tests {
 
     #[test]
     fn atomic_prompt_rewind_fails_closed_on_conversation_error() {
-        // arrange
-        // act
-        // assert
         // Given: bad cutoff + file that must stay untouched
         let temp = tempfile::tempdir().unwrap_or_abort();
         let workspace = temp.path().join("ws");
@@ -500,9 +485,6 @@ mod tests {
 
     #[test]
     fn atomic_prompt_rewind_rolls_back_files_on_invalid_path() {
-        // arrange
-        // act
-        // assert
         // Given: valid first file restore then invalid path
         let temp = tempfile::tempdir().unwrap_or_abort();
         let workspace = temp.path().join("ws");

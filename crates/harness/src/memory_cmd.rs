@@ -211,9 +211,6 @@ mod tests {
 
     #[test]
     fn put_get_list_roundtrip_via_cli_handlers() {
-        // arrange
-        // act
-        // assert
         // Given
         let dir = tempdir().unwrap();
         let workspace = dir.path().to_path_buf();
@@ -269,9 +266,6 @@ mod tests {
 
     #[test]
     fn get_missing_key_returns_nonzero() {
-        // arrange
-        // act
-        // assert
         let dir = tempdir().unwrap();
         let deps = deps_with_cwd(dir.path().to_path_buf());
         let mut stdout = Vec::new();

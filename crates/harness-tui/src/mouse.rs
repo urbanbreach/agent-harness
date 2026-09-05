@@ -251,18 +251,12 @@ mod tests {
 
     #[test]
     fn button_event_mode_supports_scroll_and_drag() {
-        // arrange
-        // act
-        // assert
         assert!(MouseCaptureMode::ButtonEvent.supports_scroll());
         assert!(MouseCaptureMode::ButtonEvent.supports_drag());
     }
 
     #[test]
     fn normal_mode_does_not_support_scroll_or_drag() {
-        // arrange
-        // act
-        // assert
         assert!(!MouseCaptureMode::Normal.supports_scroll());
         assert!(!MouseCaptureMode::Normal.supports_drag());
     }

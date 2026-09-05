@@ -134,9 +134,6 @@ fn live_turn_status_renders_context_budget_meter() {
 
 #[test]
 fn copied_to_clipboard_toast_renders_in_live_shell() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::new_live(None, false, None);
     app.set_toast_for_test("Copied to clipboard", crate::app::ToastVariant::Info);
 
@@ -149,9 +146,6 @@ fn copied_to_clipboard_toast_renders_in_live_shell() {
 
 #[test]
 fn manual_compaction_toast_remains_visible_in_dense_live_shell() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::new_live(None, false, None);
     app.composer.prompt_buffer = "draft".to_string();
     app.composer.prompt_cursor = app.composer.prompt_buffer.chars().count();
@@ -202,9 +196,6 @@ fn transcript_debug(app: &AppState) -> String {
 
 #[test]
 fn live_anchor_stays_hidden_during_active_turn_and_permission_checkpoint_states() {
-    // arrange
-    // act
-    // assert
     let planned_anchor = Some(Rect::new(0, 0, 80, 1));
 
     let mut sending = AppState::new_live(None, false, None);
@@ -291,9 +282,6 @@ fn live_anchor_stays_hidden_during_active_turn_and_permission_checkpoint_states(
 
 #[test]
 fn transcript_debug_places_assistant_answer_before_nested_context() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::new_live(None, false, None);
 
     app.ingest_event(envelope(
@@ -372,9 +360,6 @@ fn transcript_debug_places_assistant_answer_before_nested_context() {
 
 #[test]
 fn theme_provides_default_colors() {
-    // arrange
-    // act
-    // assert
     let theme = Theme::default();
     assert!(matches!(
         theme.surface.canvas,
@@ -384,9 +369,6 @@ fn theme_provides_default_colors() {
 
 #[test]
 fn wheel_hit_testing_uses_app_theme() {
-    // arrange
-    // act
-    // assert
     let area = Rect::new(0, 0, 140, 40);
 
     let mut default_app = AppState::new_live(None, false, None);
@@ -489,9 +471,6 @@ fn wheel_hit_testing_uses_app_theme() {
 
 #[test]
 fn live_header_uses_actual_launch_metadata() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::new_live(None, false, None);
     app.set_launch_metadata(
         LaunchMetadata::from_model_ref("deep", "proxy:gpt-5.4").with_mode_label("Demo"),
@@ -509,9 +488,6 @@ fn live_header_uses_actual_launch_metadata() {
 
 #[test]
 fn live_control_dock_keeps_current_runtime_primary_and_next_turn_secondary() {
-    // arrange
-    // act
-    // assert
     let variant_cycle_overrides = [("variant_cycle".to_string(), "tab".to_string())]
         .into_iter()
         .collect();
@@ -579,9 +555,6 @@ fn live_control_dock_keeps_current_runtime_primary_and_next_turn_secondary() {
 
 #[test]
 fn continued_live_control_dock_preserves_continued_runtime_after_switch() {
-    // arrange
-    // act
-    // assert
     let variant_cycle_overrides = [("variant_cycle".to_string(), "tab".to_string())]
         .into_iter()
         .collect();
@@ -650,9 +623,6 @@ fn continued_live_control_dock_preserves_continued_runtime_after_switch() {
 
 #[test]
 fn footer_hints_follow_keymap_overrides() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::new_live(None, false, None);
     app.apply_keybindings(
         [
@@ -677,9 +647,6 @@ fn footer_hints_follow_keymap_overrides() {
 
 #[test]
 fn live_empty_state_uses_shared_startup_copy_without_mode_badges() {
-    // arrange
-    // act
-    // assert
     let mut demo = AppState::new_live(None, false, None);
     demo.set_launch_metadata(
         LaunchMetadata::from_model_ref("worker", "mock:model-1").with_mode_label("Demo"),
@@ -711,9 +678,6 @@ fn live_empty_state_uses_shared_startup_copy_without_mode_badges() {
 
 #[test]
 fn startup_shell_shows_profile_provider_and_model_chrome() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::new_startup(Vec::new(), None);
     app.set_launch_metadata(
         LaunchMetadata::from_model_ref("deep", "proxy:gpt-5.4").with_mode_label("Demo"),
@@ -739,9 +703,6 @@ fn startup_shell_shows_profile_provider_and_model_chrome() {
 
 #[test]
 fn help_surface_lists_active_bindings() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::new_live(None, false, None);
     app.active_review_surface = Some(ReviewSurface::Help);
     app.apply_keybindings(
@@ -772,9 +733,6 @@ fn help_surface_lists_active_bindings() {
 
 #[test]
 fn inspector_shows_tool_call_detail_for_selected_activity() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::new_live(None, false, None);
 
     app.ingest_event(envelope(
@@ -842,9 +800,6 @@ fn inspector_shows_tool_call_detail_for_selected_activity() {
 
 #[test]
 fn permission_detail_remains_available_outside_modal() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::new_live(None, false, None);
 
     app.ingest_event(envelope(
@@ -1032,9 +987,6 @@ fn failed_tool_rows_still_surface_error_summary() {
 
 #[test]
 fn status_strip_surfaces_selected_tool_summary() {
-    // arrange
-    // act
-    // assert
     let mut app = AppState::new_live(None, false, None);
 
     app.ingest_event(envelope(

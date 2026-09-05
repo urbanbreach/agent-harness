@@ -9,9 +9,6 @@ use common::CliHarness;
 
 #[test]
 fn deterministic_multi_turn_tools_twice_produces_identical_sha256_digest() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let session_dir = temp_dir.path().join("sessions");
     let output_a = temp_dir.path().join("run-a.jsonl");

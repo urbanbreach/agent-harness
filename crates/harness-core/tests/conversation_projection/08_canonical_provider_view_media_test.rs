@@ -1,8 +1,5 @@
 #[test]
 fn canonical_provider_view_preserves_unicode_attachments_usage_and_provenance() {
-    // arrange
-    // act
-    // assert
     // Given: one selected Unicode attachment, provider usage, hidden reasoning, and a complete tool pair.
     let attachment =
         AttachmentMetadata::from_bytes("資料-猫", "image/png", None, b"private image bytes", None);

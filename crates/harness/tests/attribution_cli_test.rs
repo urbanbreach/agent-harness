@@ -45,9 +45,6 @@ fn parse_json(stdout: &str) -> serde_json::Value {
 
 #[test]
 fn attribution_diff_produces_json_for_agent_edited_path() {
-    // arrange
-    // act
-    // assert
     // Given: agent wrote a file
     let dir = tempdir().unwrap_or_abort();
     let root = dir.path();
@@ -74,9 +71,6 @@ fn attribution_diff_produces_json_for_agent_edited_path() {
 
 #[test]
 fn attribution_diff_shows_external_drift_separately() {
-    // arrange
-    // act
-    // assert
     // Given: agent wrote content, external modified it
     let dir = tempdir().unwrap_or_abort();
     let root = dir.path();
@@ -103,9 +97,6 @@ fn attribution_diff_shows_external_drift_separately() {
 
 #[test]
 fn attribution_blame_produces_json_for_agent_edited_path() {
-    // arrange
-    // act
-    // assert
     // Given
     let dir = tempdir().unwrap_or_abort();
     let root = dir.path();
@@ -132,9 +123,6 @@ fn attribution_blame_produces_json_for_agent_edited_path() {
 
 #[test]
 fn attribution_blame_shows_external_drift_lines_separately() {
-    // arrange
-    // act
-    // assert
     // Given: agent wrote 3 lines, external modified line 2
     let dir = tempdir().unwrap_or_abort();
     let root = dir.path();
@@ -163,9 +151,6 @@ fn attribution_blame_shows_external_drift_lines_separately() {
 
 #[test]
 fn attribution_diff_fails_closed_for_unknown_path() {
-    // arrange
-    // act
-    // assert
     // Given
     let dir = tempdir().unwrap_or_abort();
     let root = dir.path();
@@ -182,9 +167,6 @@ fn attribution_diff_fails_closed_for_unknown_path() {
 
 #[test]
 fn attribution_blame_fails_closed_for_unknown_path() {
-    // arrange
-    // act
-    // assert
     // Given
     let dir = tempdir().unwrap_or_abort();
     let root = dir.path();
@@ -200,9 +182,6 @@ fn attribution_blame_fails_closed_for_unknown_path() {
 
 #[test]
 fn attribution_diff_fails_closed_for_external_only_path() {
-    // arrange
-    // act
-    // assert
     // Given: path observed as external only (no agent snapshot)
     let dir = tempdir().unwrap_or_abort();
     let root = dir.path();
@@ -222,9 +201,6 @@ fn attribution_diff_fails_closed_for_external_only_path() {
 
 #[test]
 fn attribution_blame_fails_closed_for_external_only_path() {
-    // arrange
-    // act
-    // assert
     // Given
     let dir = tempdir().unwrap_or_abort();
     let root = dir.path();
@@ -244,9 +220,6 @@ fn attribution_blame_fails_closed_for_external_only_path() {
 
 #[test]
 fn attribution_diff_with_explicit_workspace_flag() {
-    // arrange
-    // act
-    // assert
     // Given
     let dir = tempdir().unwrap_or_abort();
     let root = dir.path();

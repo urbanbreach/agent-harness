@@ -878,9 +878,6 @@ mod tests {
 
     #[test]
     fn ensure_executable_allowed_returns_recovery_hints_for_blocked_commands() {
-        // arrange
-        // act
-        // assert
         let safety = ShellSafety::new(ShellAllowlist {
             mode: ShellAllowlistMode::LegacyExecutables,
             executables: vec!["git".to_string()],
@@ -911,9 +908,6 @@ mod tests {
 
     #[test]
     fn validate_bash_denies_repo_local_executable_when_folder_trust_missing() {
-        // arrange
-        // act
-        // assert
         // Given: workspace without folder trust; local script present (not executed)
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let workspace = tempdir.path();
@@ -942,9 +936,6 @@ mod tests {
 
     #[test]
     fn validate_bash_allows_repo_local_executable_when_folder_trust_allows() {
-        // arrange
-        // act
-        // assert
         // Given: trusted workspace + local script
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let workspace = tempdir.path();
@@ -970,9 +961,6 @@ mod tests {
 
     #[tokio::test]
     async fn resolve_cwd_rejects_workspace_cwd_outside_allowlist_roots() {
-        // arrange
-        // act
-        // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         std::fs::create_dir(tempdir.path().join("allowed")).unwrap_or_abort();
         std::fs::create_dir(tempdir.path().join("blocked")).unwrap_or_abort();
@@ -1005,9 +993,6 @@ mod tests {
 
     #[test]
     fn validate_bash_command_rejects_command_substitution() {
-        // arrange
-        // act
-        // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let safety = ShellSafety::new(ShellAllowlist {
             executables: vec!["ls".to_string()],
@@ -1022,9 +1007,6 @@ mod tests {
 
     #[test]
     fn validate_bash_command_rejects_external_path_arguments() {
-        // arrange
-        // act
-        // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let safety = ShellSafety::new(ShellAllowlist {
             executables: vec!["ls".to_string()],
@@ -1058,9 +1040,6 @@ mod tests {
 
     #[test]
     fn validate_bash_command_allows_find_in_permission_patterns() {
-        // arrange
-        // act
-        // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let safety = ShellSafety::new(ShellAllowlist {
             executables: vec!["git".to_string(), "ls".to_string()],
@@ -1078,9 +1057,6 @@ mod tests {
 
     #[test]
     fn validate_bash_command_rejects_source_builtins() {
-        // arrange
-        // act
-        // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let safety = ShellSafety::new(ShellAllowlist {
             executables: vec!["ls".to_string()],
@@ -1100,9 +1076,6 @@ mod tests {
 
     #[test]
     fn validate_bash_command_allows_redirection_and_cat() {
-        // arrange
-        // act
-        // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let safety = ShellSafety::new(ShellAllowlist {
             executables: vec!["ls".to_string()],
@@ -1121,9 +1094,6 @@ mod tests {
 
     #[test]
     fn validate_bash_command_rejects_background_execution() {
-        // arrange
-        // act
-        // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let safety = ShellSafety::new(ShellAllowlist {
             executables: vec!["ls".to_string()],
@@ -1217,9 +1187,6 @@ mod tests {
 
     #[test]
     fn validate_bash_command_allows_pipeline_with_grep() {
-        // arrange
-        // act
-        // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let safety = ShellSafety::new(ShellAllowlist {
             executables: Vec::new(),
@@ -1234,9 +1201,6 @@ mod tests {
 
     #[test]
     fn validate_bash_command_allows_touch_and_rm() {
-        // arrange
-        // act
-        // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let safety = ShellSafety::new(ShellAllowlist {
             executables: Vec::new(),
@@ -1629,9 +1593,6 @@ mod tests {
 
     #[test]
     fn validate_bash_command_allows_shell_globs_and_dev_null_redirect() {
-        // arrange
-        // act
-        // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let safety = ShellSafety::new(ShellAllowlist {
             executables: vec!["git".to_string(), "find".to_string(), "wc".to_string()],
@@ -1660,9 +1621,6 @@ mod tests {
 
     #[test]
     fn validate_bash_command_legacy_mode_allows_workspace_globs() {
-        // arrange
-        // act
-        // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let safety = ShellSafety::new(ShellAllowlist {
             mode: ShellAllowlistMode::LegacyExecutables,
@@ -1694,9 +1652,6 @@ mod tests {
 
     #[test]
     fn validate_bash_command_rejects_redirection_workspace_escape() {
-        // arrange
-        // act
-        // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let safety = ShellSafety::new(ShellAllowlist {
             executables: Vec::new(),
@@ -1712,9 +1667,6 @@ mod tests {
 
     #[test]
     fn validate_bash_command_rejects_env_assignment_in_permission_patterns() {
-        // arrange
-        // act
-        // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let safety = ShellSafety::new(ShellAllowlist {
             executables: Vec::new(),
@@ -1730,9 +1682,6 @@ mod tests {
 
     #[test]
     fn validate_bash_command_rejects_expansion_and_env_assignment_bypasses() {
-        // arrange
-        // act
-        // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let safety = ShellSafety::new(ShellAllowlist {
             executables: vec!["git".to_string(), "ls".to_string()],
@@ -1757,9 +1706,6 @@ mod tests {
 
     #[test]
     fn validate_bash_command_checks_path_sensitive_builtins() {
-        // arrange
-        // act
-        // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let safety = ShellSafety::new(ShellAllowlist {
             executables: Vec::new(),
@@ -1777,9 +1723,6 @@ mod tests {
 
     #[test]
     fn validate_direct_args_rejects_external_paths_and_shell_command_mode() {
-        // arrange
-        // act
-        // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let safety = ShellSafety::new(ShellAllowlist {
             mode: ShellAllowlistMode::LegacyExecutables,
@@ -1808,9 +1751,6 @@ mod tests {
 
     #[test]
     fn validate_bash_command_checks_relative_paths_after_cd() {
-        // arrange
-        // act
-        // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         std::fs::create_dir(tempdir.path().join("subdir")).unwrap_or_abort();
         let safety = ShellSafety::new(ShellAllowlist {
@@ -1826,9 +1766,6 @@ mod tests {
 
     #[test]
     fn validate_bash_command_rejects_cd_options_and_missing_targets() {
-        // arrange
-        // act
-        // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let safety = ShellSafety::new(ShellAllowlist {
             executables: vec!["ls".to_string()],
@@ -1847,9 +1784,6 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn validate_bash_command_rejects_symlink_path_escapes() {
-        // arrange
-        // act
-        // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let external = tempfile::tempdir().unwrap_or_abort();
         std::os::unix::fs::symlink(external.path(), tempdir.path().join("outside"))
@@ -1902,9 +1836,6 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn validate_bash_command_allows_workspace_globs_even_when_symlink_exists() {
-        // arrange
-        // act
-        // assert
         let tempdir = tempfile::tempdir().unwrap_or_abort();
         let external = tempfile::tempdir().unwrap_or_abort();
         std::os::unix::fs::symlink(external.path(), tempdir.path().join("leak")).unwrap_or_abort();

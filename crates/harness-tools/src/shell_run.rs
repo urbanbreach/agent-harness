@@ -950,9 +950,6 @@ mod tests {
 
     #[test]
     fn shell_output_preview_enforces_line_limit_without_trailing_newline() {
-        // arrange
-        // act
-        // assert
         let output = (1..=2_001)
             .map(|idx| format!("line {idx}"))
             .collect::<Vec<_>>()
@@ -976,9 +973,6 @@ mod tests {
 
     #[test]
     fn shell_output_preview_allows_exact_line_limit_without_trailing_newline() {
-        // arrange
-        // act
-        // assert
         let output = (1..=SHELL_OUTPUT_INLINE_LINE_LIMIT)
             .map(|idx| format!("line {idx}"))
             .collect::<Vec<_>>()
@@ -998,9 +992,6 @@ mod tests {
 
     #[test]
     fn shell_output_preview_byte_limit_keeps_utf8_boundaries() {
-        // arrange
-        // act
-        // assert
         let preview = ShellOutputPreviewLimits {
             max_lines: usize::MAX,
             max_bytes: 3,
@@ -1015,9 +1006,6 @@ mod tests {
 
     #[test]
     fn shell_env_bash_candidate_rejects_relative_and_missing_paths() {
-        // arrange
-        // act
-        // assert
         assert_eq!(super::shell_env_bash_candidate(Some("bash")), None);
         assert_eq!(
             super::shell_env_bash_candidate(Some("/tmp/definitely-not-a-real-bash")),
@@ -1027,9 +1015,6 @@ mod tests {
 
     #[test]
     fn shell_env_bash_candidate_accepts_existing_absolute_bash_path() {
-        // arrange
-        // act
-        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let bash_path = temp.path().join("bash");
         std::fs::write(&bash_path, "#!/usr/bin/env bash\n").unwrap_or_abort();
@@ -1039,9 +1024,6 @@ mod tests {
     }
     #[tokio::test]
     async fn bash_spills_large_output_to_artifact_for_event_stability() {
-        // arrange
-        // act
-        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let registry = coordinator_registry(ShellAllowlist::default());
         let bash = registry.get("bash").unwrap_or_abort();
@@ -1073,9 +1055,6 @@ mod tests {
     }
     #[tokio::test]
     async fn bash_direct_exec_allows_find_in_permission_patterns() {
-        // arrange
-        // act
-        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         std::fs::create_dir(temp.path().join("docs")).unwrap_or_abort();
         std::fs::write(temp.path().join("docs/example.txt"), "hello\n").unwrap_or_abort();
@@ -1100,9 +1079,6 @@ mod tests {
 
     #[tokio::test]
     async fn shell_run_accepts_duplicate_wrapper_command_when_it_matches_cmd() {
-        // arrange
-        // act
-        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let shell = ShellRunTool::with_runner(
             ShellAllowlist {
@@ -1136,9 +1112,6 @@ mod tests {
 
     #[tokio::test]
     async fn shell_run_direct_invocation_uses_injected_runner_without_spawning() {
-        // arrange
-        // act
-        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let runner = FakeShellCommandRunner::success("direct-ok");
         let shell = ShellRunTool::with_runner(
@@ -1174,9 +1147,6 @@ mod tests {
 
     #[tokio::test]
     async fn shell_run_wrapper_invocation_uses_injected_runner_without_spawning_bash() {
-        // arrange
-        // act
-        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let runner = FakeShellCommandRunner::success("wrapper-ok");
         let shell = ShellRunTool::with_runner(
@@ -1210,9 +1180,6 @@ mod tests {
 
     #[tokio::test]
     async fn shell_run_wrapper_records_permission_patterns_in_metadata() {
-        // arrange
-        // act
-        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let runner = FakeShellCommandRunner::success("hello");
         let shell = ShellRunTool::with_runner(ShellAllowlist::default(), runner);
@@ -1237,9 +1204,6 @@ mod tests {
 
     #[tokio::test]
     async fn shell_run_legacy_mode_rejects_direct_bash_command_mode_bypass() {
-        // arrange
-        // act
-        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let shell = ShellRunTool::with_runner(
             ShellAllowlist {
@@ -1570,9 +1534,6 @@ mod tests {
 
     #[tokio::test]
     async fn shell_run_rejects_conflicting_cmd_and_command() {
-        // arrange
-        // act
-        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let shell =
             ShellRunTool::with_runner(ShellAllowlist::default(), ShellRunTool::default_runner());

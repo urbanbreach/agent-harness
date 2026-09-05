@@ -995,9 +995,6 @@ mod tests {
 
     #[test]
     fn current_version_is_non_empty_package_metadata() {
-        // arrange
-        // act
-        // assert
         // act
         let info = current_binary_version();
 
@@ -1009,9 +1006,6 @@ mod tests {
 
     #[test]
     fn offline_update_check_is_structured_unavailable_not_fake_success() {
-        // arrange
-        // act
-        // assert
         // act
         let check = check_for_update_with_version("0.1.0");
 
@@ -1039,9 +1033,6 @@ mod tests {
 
     #[test]
     fn public_offline_entry_matches_injectable_shape() {
-        // arrange
-        // act
-        // assert
         let check = check_for_update_offline();
         assert!(check.is_unavailable());
         match check {
@@ -1056,9 +1047,6 @@ mod tests {
 
     #[test]
     fn policy_channel_and_min_version_are_echoed_but_still_unavailable() {
-        // arrange
-        // act
-        // assert
         // arrange
         let policy = BinaryUpdatePolicy::new()
             .with_channel("stable")
@@ -1089,9 +1077,6 @@ mod tests {
     #[test]
     fn empty_policy_fields_are_dropped() {
         // arrange
-        // act
-        // assert
-        // arrange
         let policy = BinaryUpdatePolicy::new()
             .with_channel("   ")
             .with_min_version("");
@@ -1116,9 +1101,6 @@ mod tests {
     #[test]
     fn binary_update_operator_diagnostics_cover_version_policy_and_check() {
         // arrange
-        // act
-        // assert
-        // arrange
         let info = current_binary_version();
         let policy = BinaryUpdatePolicy::new()
             .with_channel("stable")
@@ -1140,9 +1122,6 @@ mod tests {
 
     #[test]
     fn binary_update_summary_one_line_and_unavailable_counts() {
-        // arrange
-        // act
-        // assert
         // arrange
         let checks = [
             check_for_update_with_version("0.1.0"),
@@ -1170,9 +1149,6 @@ mod tests {
 
     #[test]
     fn multi_channel_offline_product_path_all_unavailable_with_channel_echo() {
-        // arrange
-        // act
-        // assert
         // arrange / When
         let result = run_offline_multi_channel_update_checks(Some("0.1.0"));
 
@@ -1208,9 +1184,6 @@ mod tests {
     #[test]
     fn local_manifest_up_to_date_when_current_meets_channel() {
         // arrange
-        // act
-        // assert
-        // arrange
         let manifest = LocalUpdateManifest {
             version: "0.1.0".to_string(),
             channel: Some("stable".to_string()),
@@ -1232,9 +1205,6 @@ mod tests {
 
     #[test]
     fn local_manifest_update_available_when_channel_is_newer() {
-        // arrange
-        // act
-        // assert
         // arrange
         let manifest = LocalUpdateManifest {
             version: "0.2.0".to_string(),
@@ -1267,9 +1237,6 @@ mod tests {
 
     #[test]
     fn local_manifest_product_writes_receipt_and_can_succeed() {
-        // arrange
-        // act
-        // assert
         // arrange
         let dir = tempfile::tempdir().expect("tempdir");
         let root = dir.path();
@@ -1307,9 +1274,6 @@ mod tests {
 
     #[test]
     fn local_manifest_product_up_to_date_writes_receipt() {
-        // arrange
-        // act
-        // assert
         // arrange
         let dir = tempfile::tempdir().expect("tempdir");
         let root = dir.path();
@@ -1355,9 +1319,6 @@ mod tests {
 
     #[test]
     fn missing_local_manifest_fails_closed_but_still_writes_receipt() {
-        // arrange
-        // act
-        // assert
         // arrange
         let dir = tempfile::tempdir().expect("tempdir");
         let root = dir.path();

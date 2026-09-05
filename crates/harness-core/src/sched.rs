@@ -239,9 +239,6 @@ mod tests {
 
     #[test]
     fn scheduler_limit_one_queues_then_dequeues_after_completion() {
-        // arrange
-        // act
-        // assert
         let mut scheduler = Scheduler::new(SchedulerLimits {
             provider_model: 1,
             tool: 1,
@@ -270,9 +267,6 @@ mod tests {
 
     #[test]
     fn scheduler_can_cancel_queued_task() {
-        // arrange
-        // act
-        // assert
         let mut scheduler = Scheduler::new(SchedulerLimits {
             provider_model: 1,
             tool: 1,
@@ -291,9 +285,6 @@ mod tests {
 
     #[test]
     fn scheduler_detects_stale_running_tasks() {
-        // arrange
-        // act
-        // assert
         let mut scheduler = Scheduler::new(SchedulerLimits {
             provider_model: 1,
             tool: 1,
@@ -322,9 +313,6 @@ mod tests {
 
     #[test]
     fn scheduler_limit_two_starts_two_and_dequeues_fifo_when_saturated() {
-        // arrange
-        // act
-        // assert
         let mut scheduler = Scheduler::new(SchedulerLimits {
             provider_model: 2,
             tool: 1,

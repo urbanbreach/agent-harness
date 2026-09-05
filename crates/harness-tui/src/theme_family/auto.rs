@@ -100,9 +100,6 @@ mod tests {
 
     #[test]
     fn colorfgbg_uses_the_final_background_field() {
-        // arrange
-        // act
-        // assert
         assert_eq!(
             system_preference_from_colorfgbg(Some("15;0")),
             SystemPreference::Dark

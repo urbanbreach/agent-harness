@@ -439,9 +439,6 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn inspect_detects_stale_writer_lock_as_previous_crash() {
-        // arrange
-        // act
-        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let run_dir = temp.path().join("run_crash");
         fs::create_dir_all(&run_dir).unwrap_or_abort();
@@ -476,9 +473,6 @@ mod tests {
 
     #[test]
     fn inspect_detects_recovery_marker() {
-        // arrange
-        // act
-        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let run_dir = temp.path().join("run_recovering");
         fs::create_dir_all(&run_dir).unwrap_or_abort();
@@ -493,9 +487,6 @@ mod tests {
 
     #[test]
     fn inspect_without_crash_has_no_recovery_message() {
-        // arrange
-        // act
-        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let run_dir = temp.path().join("run_clean");
         fs::create_dir_all(&run_dir).unwrap_or_abort();
@@ -509,9 +500,6 @@ mod tests {
 
     #[test]
     fn scan_previous_crashes_summarizes_mixed_session_root() {
-        // arrange
-        // act
-        // assert
         // Given: sessions root with one clean run and one recovery-marker crash
         let temp = tempfile::tempdir().unwrap_or_abort();
         let sessions = temp.path().join("sessions");
@@ -575,9 +563,6 @@ mod tests {
 
     #[test]
     fn apply_crash_recovery_clears_recovery_marker_and_reports_outcome() {
-        // arrange
-        // act
-        // assert
         // Given: run with events + recovery marker (previous crash)
         let temp = tempfile::tempdir().unwrap_or_abort();
         let sessions = temp.path().join("sessions");
@@ -609,9 +594,6 @@ mod tests {
 
     #[tokio::test]
     async fn apply_crash_recovery_repairs_truncated_tail_and_clears_marker() {
-        // arrange
-        // act
-        // assert
         // Given: truncated events tail + recovery marker
         let temp = tempfile::tempdir().unwrap_or_abort();
         let sessions = temp.path().join("sessions");

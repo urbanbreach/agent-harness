@@ -116,9 +116,6 @@ fn tool_results(context: &ProviderContext) -> Vec<&str> {
 
 #[test]
 fn compaction_v2_cross_agent_duplicate_tool_result_fails_closed() {
-    // arrange
-    // act
-    // assert
     let events = vec![
         user(1, "alpha", "req_000001"),
         assistant(2, "alpha", "req_000001", "req_000002"),
@@ -140,9 +137,6 @@ fn compaction_v2_cross_agent_duplicate_tool_result_fails_closed() {
 
 #[test]
 fn compaction_v2_cross_turn_duplicate_tool_result_fails_closed() {
-    // arrange
-    // act
-    // assert
     let events = vec![
         user(1, "alpha", "req_000001"),
         assistant(2, "alpha", "req_000001", "req_000002"),

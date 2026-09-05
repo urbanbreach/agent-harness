@@ -19,9 +19,6 @@ fn deny_default_ask_decision() -> PolicyDecision {
 
 #[test]
 fn permission_policy_supports_native_tool_permission_kinds() {
-    // arrange
-    // act
-    // assert
     let config = load_config_from_str(
         r#"
         {

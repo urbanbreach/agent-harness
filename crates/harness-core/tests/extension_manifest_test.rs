@@ -186,9 +186,6 @@ fn extension_manifest_schema_file_matches_generated_descriptor_schema() {
 
 #[test]
 fn extension_manifest_summary_counts_descriptor_only_surface() {
-    // arrange
-    // act
-    // assert
     // Given: a valid descriptor-only extension manifest
     let manifest = ExtensionManifestV1::parse_json(&valid_manifest_json()).unwrap_or_abort();
 
@@ -223,9 +220,6 @@ fn extension_manifest_summary_counts_descriptor_only_surface() {
 
 #[test]
 fn load_and_discover_extension_manifests_from_workspace_layout() {
-    // arrange
-    // act
-    // assert
     let root = std::env::temp_dir().join(format!(
         "harness-ext-manifest-{}-{}",
         std::process::id(),

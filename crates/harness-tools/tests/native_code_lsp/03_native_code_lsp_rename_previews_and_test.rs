@@ -5,9 +5,6 @@ use harness_tools::UnwrapOrAbort;
     reason = "the global test lock intentionally serializes LSP registry mutations across awaits"
 )]
 async fn native_code_lsp_rename_previews_and_applies_workspace_edits() {
-    // arrange
-    // act
-    // assert
     let _lock = test_lock().lock().unwrap_or_abort();
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");
@@ -115,9 +112,6 @@ async fn native_code_lsp_rename_previews_and_applies_workspace_edits() {
     reason = "the global test lock intentionally serializes LSP registry mutations across awaits"
 )]
 async fn native_code_lsp_rename_reports_unsupported_server_behavior() {
-    // arrange
-    // act
-    // assert
     let _lock = test_lock().lock().unwrap_or_abort();
     let temp_dir = setup_workspace();
     let workspace = temp_dir.path().join("workspace");

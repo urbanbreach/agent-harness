@@ -10,9 +10,6 @@ use crate::model_switcher_fixtures::*;
 
 #[test]
 fn runtime_context_labels_distinguish_live_continue_and_replay() {
-    // arrange
-    // act
-    // assert
     let available_models = same_profile_variant_options();
     let launch_metadata = LaunchMetadata::from_model_option(&available_models[0])
         .with_available_models(available_models);
@@ -96,9 +93,6 @@ fn model_switcher_preserves_resolved_limits_and_provenance() {
 
 #[test]
 fn live_switch_model_labels_next_turn_only() {
-    // arrange
-    // act
-    // assert
     let variant_cycle_overrides =
         BTreeMap::from([("variant_cycle".to_string(), "tab".to_string())]);
     let available_models = same_profile_variant_options();

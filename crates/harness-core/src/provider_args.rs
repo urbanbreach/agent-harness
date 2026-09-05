@@ -14,9 +14,6 @@ mod tests {
 
     #[test]
     fn provider_tool_arguments_preserves_valid_json_and_falls_back_for_text() {
-        // arrange
-        // act
-        // assert
         assert_eq!(
             provider_tool_arguments_json(r#"{"path":"Cargo.toml"}"#),
             r#"{"path":"Cargo.toml"}"#

@@ -1,9 +1,6 @@
 use harness_core::UnwrapOrAbort;
 #[test]
 fn projects_user_assistant_text_and_reasoning_parts() {
-    // arrange
-    // act
-    // assert
     let events = vec![
         envelope(
             1,
@@ -149,9 +146,6 @@ fn projects_user_assistant_text_and_reasoning_parts() {
 }
 #[test]
 fn keeps_tool_results_on_source_ordered_tool_parts_when_finishes_arrive_out_of_order() {
-    // arrange
-    // act
-    // assert
     let events = vec![
         envelope(
             1,
@@ -238,9 +232,6 @@ fn keeps_tool_results_on_source_ordered_tool_parts_when_finishes_arrive_out_of_o
 }
 #[test]
 fn projects_session_compaction_event_as_compaction_activity() {
-    // arrange
-    // act
-    // assert
     let events = vec![
         envelope(
             1,
@@ -293,9 +284,6 @@ fn projects_session_compaction_event_as_compaction_activity() {
 }
 #[test]
 fn projects_branch_summary_event_as_compaction_activity() {
-    // arrange
-    // act
-    // assert
     let events = vec![
         envelope(
             1,
@@ -336,9 +324,6 @@ fn projects_branch_summary_event_as_compaction_activity() {
 }
 #[test]
 fn projects_artifact_metadata_without_reading_artifact_contents() {
-    // arrange
-    // act
-    // assert
     let metadata = Some(ToolCallMetadata {
         canonical_tool_id: Some("read".to_string()),
         alias_source_tool_id: None,

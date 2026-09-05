@@ -672,9 +672,6 @@ mod tests {
 
     #[test]
     fn create_add_list_cancel_team_lifecycle() {
-        // arrange
-        // act
-        // assert
         // Given
         let mut registry = TeamRegistry::new();
 
@@ -710,9 +707,6 @@ mod tests {
 
     #[test]
     fn create_team_rejects_empty_name() {
-        // arrange
-        // act
-        // assert
         let mut registry = TeamRegistry::new();
         let err = registry.create_team("  ").expect_err("empty");
         assert_eq!(err, TeamRegistryError::EmptyName);
@@ -720,9 +714,6 @@ mod tests {
 
     #[test]
     fn add_member_rejects_duplicates() {
-        // arrange
-        // act
-        // assert
         let mut registry = TeamRegistry::new();
         let team = registry.create_team("dup").expect("create");
         registry
@@ -736,9 +727,6 @@ mod tests {
 
     #[test]
     fn mailbox_send_peek_receive_direct_and_broadcast() {
-        // arrange
-        // act
-        // assert
         // Given: active team with two members
         let mut registry = TeamRegistry::new();
         let team = registry.create_team("mail").expect("create");
@@ -793,9 +781,6 @@ mod tests {
 
     #[test]
     fn mailbox_rejects_non_member_and_cancelled_team() {
-        // arrange
-        // act
-        // assert
         let mut registry = TeamRegistry::new();
         let team = registry.create_team("strict").expect("create");
         registry
@@ -821,9 +806,6 @@ mod tests {
 
     #[test]
     fn list_and_remove_member_round_trip() {
-        // arrange
-        // act
-        // assert
         // Given
         let mut registry = TeamRegistry::new();
         let team = registry.create_team("crew").expect("create");
@@ -854,9 +836,6 @@ mod tests {
 
     #[test]
     fn remove_member_fail_closed_for_missing_cancelled_and_empty() {
-        // arrange
-        // act
-        // assert
         // Given
         let mut registry = TeamRegistry::new();
         let team = registry.create_team("strict-rm").expect("create");
@@ -892,9 +871,6 @@ mod tests {
 
     #[test]
     fn team_registry_summary_counts_active_cancelled_members_and_mailbox() {
-        // arrange
-        // act
-        // assert
         // Given: one active team with members + mailbox, one cancelled team
         let mut registry = TeamRegistry::new();
         let active = registry.create_team("alpha").expect("create active");
@@ -936,9 +912,6 @@ mod tests {
 
     #[test]
     fn multi_team_create_members_mailbox_and_cancel_outcomes() {
-        // arrange
-        // act
-        // assert
         // Given: empty multi-team registry
         let mut registry = TeamRegistry::new();
 

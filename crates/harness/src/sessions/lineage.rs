@@ -408,9 +408,6 @@ mod tests {
 
     #[test]
     fn tree_row_filter_matches_all_searchable_fields_case_insensitively() {
-        // arrange
-        // act
-        // assert
         let mut row = SessionTreeRow {
             depth: 0,
             run_dir: PathBuf::from("/tmp/Session-Path"),

@@ -198,9 +198,6 @@ mod tests {
 
     #[test]
     fn file_acp_product_writes_marker_and_frames() {
-        // arrange
-        // act
-        // assert
         let dir = tempdir().expect("tempdir");
         let product = run_file_acp_agent_mode_product(dir.path());
         assert!(product.meets_agent_mode_contract(), "{product:?}");
@@ -251,9 +248,6 @@ mod tests {
 
     #[test]
     fn operate_without_connect_fails() {
-        // arrange
-        // act
-        // assert
         let dir = tempdir().expect("tempdir");
         let mut transport = FileAcpTransport::new(dir.path());
         let err = transport.operate(b"x").expect_err("must fail");

@@ -1,9 +1,6 @@
 use harness_core::UnwrapOrAbort;
 #[tokio::test]
 async fn coordinator_runs_parallel_child_sessions_under_slot_limits() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = Arc::new(PromptScriptedProvider::new(
         BTreeMap::from([
@@ -176,9 +173,6 @@ async fn coordinator_runs_parallel_child_sessions_under_slot_limits() {
 }
 #[tokio::test]
 async fn coordinator_isolates_parallel_child_failures() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = Arc::new(PromptScriptedProvider::new(
         BTreeMap::from([
@@ -533,9 +527,6 @@ async fn coordinator_stresses_many_parallel_children_under_tight_slot_limits() {
 
 #[tokio::test]
 async fn immediate_agent_turn_emits_single_started_event() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let coordinator = test_agent_coordinator(temp_dir.path(), Duration::from_millis(5));
 
@@ -638,9 +629,6 @@ async fn immediate_agent_turn_emits_single_started_event() {
 }
 #[tokio::test]
 async fn queued_agent_turn_emits_started_when_dequeued() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let coordinator = test_agent_coordinator(temp_dir.path(), Duration::from_millis(25));
 

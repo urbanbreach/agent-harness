@@ -33,9 +33,6 @@ mod tests {
 
     #[test]
     fn paste_events_are_preserved_for_prompt_insertion() {
-        // arrange
-        // act
-        // assert
         let event = normalize_event(Event::Paste("alpha\nbeta".to_string())).unwrap_or_abort();
 
         match event {

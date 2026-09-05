@@ -136,9 +136,6 @@ mod tests {
 
     #[test]
     fn trusted_workspace_allows_repo_local_executable() {
-        // arrange
-        // act
-        // assert
         // Given: Allow decision for workspace
         let temp = tempfile::tempdir().unwrap_or_abort();
         let workspace = temp.path().join("ws");
@@ -159,9 +156,6 @@ mod tests {
 
     #[test]
     fn untrusted_workspace_denies_repo_local_executable_before_spawn() {
-        // arrange
-        // act
-        // assert
         // Given: no trust entry
         let temp = tempfile::tempdir().unwrap_or_abort();
         let workspace = temp.path().join("ws");
@@ -190,9 +184,6 @@ mod tests {
 
     #[test]
     fn bare_path_commands_are_not_gated_by_folder_trust() {
-        // arrange
-        // act
-        // assert
         let workspace = Path::new("/tmp/ws");
         assert_eq!(
             gate_repository_local_executable("git", workspace, None),
@@ -209,9 +200,6 @@ mod tests {
 
     #[test]
     fn folder_trust_persists_allow_and_deny() {
-        // arrange
-        // act
-        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let workspace = temp.path().join("project");
         fs::create_dir_all(&workspace).unwrap_or_abort();
@@ -248,9 +236,6 @@ mod tests {
 
     #[test]
     fn summarize_is_redacted_and_workspace_scoped() {
-        // arrange
-        // act
-        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let workspace = temp.path().join("proj");
         fs::create_dir_all(&workspace).unwrap_or_abort();
@@ -270,9 +255,6 @@ mod tests {
 
     #[test]
     fn gate_from_store_denies_when_missing_and_allows_when_trusted() {
-        // arrange
-        // act
-        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let workspace = temp.path().join("ws");
         fs::create_dir_all(&workspace).unwrap_or_abort();

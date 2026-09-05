@@ -203,9 +203,6 @@ fn narrow_geometry_clips_marker_labels_to_available_cells() {
 
 #[test]
 fn cjk_marker_width_is_measured_without_splitting_a_wide_cell() {
-    // arrange
-    // act
-    // assert
     assert_eq!(marker_display_width("成功"), 4);
     assert_eq!(clip_marker_label("成功", 3), "成");
     assert_eq!(marker_display_width(&clip_marker_label("成功", 3)), 2);

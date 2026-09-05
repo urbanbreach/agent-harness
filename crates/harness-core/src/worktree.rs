@@ -493,9 +493,6 @@ mod tests {
 
     #[test]
     fn create_session_worktree_creates_path_and_branch() {
-        // arrange
-        // act
-        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let repo = temp.path().join("repo");
         fs::create_dir_all(&repo).unwrap_or_abort();
@@ -522,9 +519,6 @@ mod tests {
 
     #[test]
     fn create_session_worktree_cow_fastpath_overlays_untracked_file() {
-        // arrange
-        // act
-        // assert
         // Given: git worktree + untracked overlay source in repo
         let temp = tempfile::tempdir().unwrap_or_abort();
         let repo = temp.path().join("repo");
@@ -559,9 +553,6 @@ mod tests {
 
     #[test]
     fn create_session_worktree_rejects_non_git_repository() {
-        // arrange
-        // act
-        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let err = create_session_worktree(CreateWorktreeOptions {
             repository_root: temp.path(),
@@ -575,9 +566,6 @@ mod tests {
 
     #[test]
     fn list_session_worktrees_fails_closed_on_non_git_repository() {
-        // arrange
-        // act
-        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let not_a_repo = temp.path().join("not-a-repo");
         fs::create_dir_all(&not_a_repo).unwrap_or_abort();
@@ -589,9 +577,6 @@ mod tests {
 
     #[test]
     fn create_session_worktree_rejects_path_collision() {
-        // arrange
-        // act
-        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let repo = temp.path().join("repo");
         fs::create_dir_all(&repo).unwrap_or_abort();
@@ -616,9 +601,6 @@ mod tests {
 
     #[test]
     fn create_session_worktree_rejects_branch_collision_without_partial_path() {
-        // arrange
-        // act
-        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let repo = temp.path().join("repo");
         fs::create_dir_all(&repo).unwrap_or_abort();
@@ -641,9 +623,6 @@ mod tests {
 
     #[test]
     fn create_session_worktree_rolls_back_invalid_start_point() {
-        // arrange
-        // act
-        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let repo = temp.path().join("repo");
         fs::create_dir_all(&repo).unwrap_or_abort();
@@ -666,9 +645,6 @@ mod tests {
 
     #[test]
     fn list_session_worktrees_returns_created_entries_under_parent() {
-        // arrange
-        // act
-        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let repo = temp.path().join("repo");
         fs::create_dir_all(&repo).unwrap_or_abort();
@@ -698,9 +674,6 @@ mod tests {
 
     #[test]
     fn remove_session_worktree_deletes_path_and_optional_branch() {
-        // arrange
-        // act
-        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let repo = temp.path().join("repo");
         fs::create_dir_all(&repo).unwrap_or_abort();
@@ -731,9 +704,6 @@ mod tests {
 
     #[test]
     fn remove_session_worktree_refuses_primary_and_unsafe_paths() {
-        // arrange
-        // act
-        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let repo = temp.path().join("repo");
         fs::create_dir_all(&repo).unwrap_or_abort();
@@ -795,9 +765,6 @@ mod tests {
 
     #[test]
     fn two_worktrees_have_distinct_paths_and_branches() {
-        // arrange
-        // act
-        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let repo = temp.path().join("repo");
         fs::create_dir_all(&repo).unwrap_or_abort();
@@ -816,9 +783,6 @@ mod tests {
 
     #[test]
     fn concurrent_worktree_sessions_use_isolated_event_paths() {
-        // arrange
-        // act
-        // assert
         let temp = tempfile::tempdir().unwrap_or_abort();
         let repo = temp.path().join("repo");
         fs::create_dir_all(&repo).unwrap_or_abort();
@@ -898,9 +862,6 @@ mod tests {
 
     #[test]
     fn sanitize_slug_is_path_safe() {
-        // arrange
-        // act
-        // assert
         assert_eq!(sanitize_slug("Hello/World.Test"), "hello-world-test");
         assert_eq!(sanitize_slug("  a__b  "), "a__b");
     }

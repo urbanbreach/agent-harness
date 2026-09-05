@@ -408,9 +408,6 @@ fn session_background_emits_intent_from_default_prompt_focus() {
 
 #[test]
 fn session_background_demotes_selected_activity_child_handle() {
-    // arrange
-    // act
-    // assert
     // Given: live parent with a selected activity that spawned a child task
     let intents = Arc::new(Mutex::new(Vec::new()));
     let captured_intents = Arc::clone(&intents);
@@ -464,9 +461,6 @@ fn session_background_demotes_selected_activity_child_handle() {
 
 #[test]
 fn provider_model_change_sets_fallback_status_banner() {
-    // arrange
-    // act
-    // assert
     // Given: streaming activity for a request with model A
     let mut app = AppState::new_live(None, false, None);
     app.ingest_event(agent_spawned(1, "parent", "build"));

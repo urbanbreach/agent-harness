@@ -340,9 +340,6 @@ mod tests {
 
     #[test]
     fn journal_records_agent_external_and_drift_with_durable_side_effects() {
-        // arrange
-        // act
-        // assert
         let dir = tempfile::tempdir().expect("tempdir");
         let root = dir.path();
         let mut journal = EditAttributionJournal::open(root).expect("open");
@@ -388,9 +385,6 @@ mod tests {
 
     #[test]
     fn query_fails_closed_for_unknown_path() {
-        // arrange
-        // act
-        // assert
         let dir = tempfile::tempdir().expect("tempdir");
         let journal = EditAttributionJournal::open(dir.path()).expect("open");
         let err = journal.query("missing.rs").expect_err("unknown");
@@ -414,9 +408,6 @@ mod tests {
 
     #[test]
     fn revert_path_restores_agent_snapshot_after_drift() {
-        // arrange
-        // act
-        // assert
         let dir = tempfile::tempdir().expect("tempdir");
         let root = dir.path();
         let mut journal = EditAttributionJournal::open(root).expect("open");
@@ -446,9 +437,6 @@ mod tests {
 
     #[test]
     fn invalid_path_escape_fails_closed() {
-        // arrange
-        // act
-        // assert
         let dir = tempfile::tempdir().expect("tempdir");
         let mut journal = EditAttributionJournal::open(dir.path()).expect("open");
         let err = journal

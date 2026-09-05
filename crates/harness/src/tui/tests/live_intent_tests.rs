@@ -270,9 +270,6 @@ async fn selected_tui_variant_target_reaches_provider_start_runtime_context() {
 
 #[tokio::test]
 async fn compact_intent_reports_noop_status_for_idle_live_agent() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let mut config = CoordinatorConfig::new(temp_dir.path().to_path_buf());
     config.deterministic_store = true;
@@ -332,9 +329,6 @@ async fn compact_intent_reports_noop_status_for_idle_live_agent() {
 
 #[test]
 fn manual_compaction_success_message_reports_active_context_delta() {
-    // arrange
-    // act
-    // assert
     assert_eq!(
         manual_compaction_success_message("summary preview", 18_200, 4_100),
         "manual compaction applied · ctx 18.2K → 4.1K est · summary preview"
@@ -347,9 +341,6 @@ fn manual_compaction_success_message_reports_active_context_delta() {
 
 #[test]
 fn foreground_background_success_message_reports_single_and_multiple_counts() {
-    // arrange
-    // act
-    // assert
     assert_eq!(
         foreground_background_success_message(1),
         "foreground subagent moved to background"
@@ -411,9 +402,6 @@ async fn event_forwarder_stops_after_terminal_event_when_requested() {
 
 #[tokio::test]
 async fn event_forwarder_delivers_live_fragments_without_advancing_durable_sequence() {
-    // arrange
-    // act
-    // assert
     // Given: the forwarder has consumed a durable start barrier.
     let store = Arc::new(InMemoryEventStore::new());
     store
@@ -499,9 +487,6 @@ async fn event_forwarder_delivers_live_fragments_without_advancing_durable_seque
 
 #[tokio::test]
 async fn compact_intent_reports_unavailable_when_no_live_agent_target_exists() {
-    // arrange
-    // act
-    // assert
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let mut config = CoordinatorConfig::new(temp_dir.path().to_path_buf());
     config.deterministic_store = true;
@@ -585,9 +570,6 @@ fn live_ui_router_forwards_runtime_intents_without_switching_workflow() {
 
 #[test]
 fn live_ui_router_records_model_switch_without_switching_workflow() {
-    // arrange
-    // act
-    // assert
     let (intent_tx, mut intent_rx) = mpsc::unbounded_channel::<UiIntent>();
     let launch_selection = Arc::new(Mutex::new(LaunchMetadata::default()));
     let (selected_workflow, sink) = build_live_ui_intent_router(
