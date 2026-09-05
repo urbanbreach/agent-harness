@@ -306,6 +306,10 @@ fn take_pending_replay_launch_metadata() -> Option<LaunchMetadata> {
 
 pub enum LiveUpdate {
     Event(Box<RuntimeEvent>),
+    AlwaysApproveModeChanged {
+        enabled: bool,
+    },
+    AlwaysApproveModeChangeFailed,
     Status(String),
     SessionHistory(Vec<SessionHistoryEntry>),
     ContinueSession {

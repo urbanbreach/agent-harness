@@ -1,4 +1,4 @@
-pub(super) fn permission_modal_allow_always_requests_durable_run_grant() {
+pub(super) fn permission_modal_allow_always_requests_coordinator_mode_change() {
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let intent_sink = {
         let intents = Arc::clone(&intents);
@@ -36,21 +36,19 @@ pub(super) fn permission_modal_allow_always_requests_durable_run_grant() {
     app.handle_key(key(KeyCode::Enter));
 
     assert!(
-        app.always_approve_mode(),
-        "confirming always-approve must engage session always-approve mode"
+        !app.always_approve_mode(),
+        "the UI must wait for the coordinator acknowledgement"
     );
     assert_eq!(
         intents.lock().unwrap_or_abort().as_slice(),
-        &[UiIntent::ResolvePermission {
-            permission_id: "perm_modal_allow_always_1".to_string(),
-            decision: PermissionDecision::Allow,
-            reason: None,
-            grant_scope: Some(harness_core::perm::PermissionGrantScope::Run),
-        }]
+        &[UiIntent::SetAlwaysApproveMode { enabled: true }]
     );
+
+    app.set_always_approve_mode(true);
+    assert!(app.always_approve_mode());
 }
 
-pub(super) fn always_approve_mode_auto_allows_subsequent_non_question_permission() {
+pub(super) fn always_approve_mode_does_not_late_resolve_projected_permissions() {
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
     let intent_sink = {
         let intents = Arc::clone(&intents);
@@ -60,37 +58,10 @@ pub(super) fn always_approve_mode_auto_allows_subsequent_non_question_permission
     };
 
     let mut app = AppState::new_live(None, false, Some(intent_sink));
+    app.set_always_approve_mode(true);
+
     app.ingest_event(envelope(
         1,
-        "req_always_mode_1",
-        EventV1::PermissionRequested(PermissionRequestedEvent {
-            permission_id: "perm_always_mode_1".to_string(),
-            kind: "edit_fs".to_string(),
-            tool_call_id: Some("tc_always_mode_1".into()),
-            summary: "first permission".to_string(),
-            request_digest: "digest-always-mode-1".to_string(),
-            timeout_ms: 30_000,
-            default_decision: harness_core::event::PermissionDecision::Deny,
-        }),
-    ));
-
-    app.handle_key(key(KeyCode::Enter));
-    app.handle_key(key(KeyCode::Enter));
-    assert!(app.always_approve_mode());
-
-    app.ingest_event(envelope(
-        2,
-        "req_always_mode_1",
-        EventV1::PermissionResolved(PermissionResolvedEvent {
-            permission_id: "perm_always_mode_1".to_string(),
-            decision: harness_core::event::PermissionDecision::Allow,
-            reason: None,
-        }),
-    ));
-    intents.lock().unwrap_or_abort().clear();
-
-    app.ingest_event(envelope(
-        3,
         "req_always_mode_2",
         EventV1::PermissionRequested(PermissionRequestedEvent {
             permission_id: "perm_always_mode_2".to_string(),
@@ -103,15 +74,85 @@ pub(super) fn always_approve_mode_auto_allows_subsequent_non_question_permission
         }),
     ));
 
+    assert!(
+        intents.lock().unwrap_or_abort().is_empty(),
+        "projecting an event must never emit a late permission resolution"
+    );
+}
+
+pub(super) fn pending_always_approve_enable_suppresses_only_ordinary_permission_ui() {
+    let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
+    let intent_sink = {
+        let intents = Arc::clone(&intents);
+        Arc::new(move |intent: UiIntent| {
+            intents.lock().unwrap_or_abort().push(intent);
+        })
+    };
+    let mut app = AppState::new_live(None, false, Some(intent_sink));
+    app.request_always_approve_mode_change(true);
+
+    app.ingest_event(envelope(
+        1,
+        "req_pending_enable_shell",
+        EventV1::PermissionRequested(PermissionRequestedEvent {
+            permission_id: "perm_pending_enable_shell".to_string(),
+            kind: "shell".to_string(),
+            tool_call_id: Some("tc_pending_enable_shell".into()),
+            summary: "ordinary shell permission".to_string(),
+            request_digest: "digest-pending-enable-shell".to_string(),
+            timeout_ms: 30_000,
+            default_decision: harness_core::event::PermissionDecision::Deny,
+        }),
+    ));
+
+    assert!(app.active_permission_view().is_none());
+    assert!(app.transcript_pending_permissions().is_empty());
+    assert!(!app.always_approve_mode());
+
+    app.ingest_event(envelope(
+        2,
+        "req_pending_enable_read",
+        EventV1::PermissionRequested(PermissionRequestedEvent {
+            permission_id: "perm_pending_enable_read".to_string(),
+            kind: "read".to_string(),
+            tool_call_id: Some("tc_pending_enable_read".into()),
+            summary: "potentially sensitive read permission".to_string(),
+            request_digest: "digest-pending-enable-read".to_string(),
+            timeout_ms: 30_000,
+            default_decision: harness_core::event::PermissionDecision::Deny,
+        }),
+    ));
     assert_eq!(
-        intents.lock().unwrap_or_abort().as_slice(),
-        &[UiIntent::ResolvePermission {
-            permission_id: "perm_always_mode_2".to_string(),
-            decision: PermissionDecision::Allow,
-            reason: None,
-            grant_scope: Some(harness_core::perm::PermissionGrantScope::Run),
-        }],
-        "always-approve mode must auto-allow subsequent non-question permissions"
+        app.active_permission_view()
+            .map(|permission| permission.permission_id),
+        Some("perm_pending_enable_read".to_string())
+    );
+}
+
+pub(super) fn failed_always_approve_enable_restores_suppressed_permission_ui() {
+    let mut app = AppState::new_live(None, false, None);
+    app.request_always_approve_mode_change(true);
+    app.ingest_event(envelope(
+        1,
+        "req_failed_enable_shell",
+        EventV1::PermissionRequested(PermissionRequestedEvent {
+            permission_id: "perm_failed_enable_shell".to_string(),
+            kind: "shell".to_string(),
+            tool_call_id: Some("tc_failed_enable_shell".into()),
+            summary: "ordinary shell permission".to_string(),
+            request_digest: "digest-failed-enable-shell".to_string(),
+            timeout_ms: 30_000,
+            default_decision: harness_core::event::PermissionDecision::Deny,
+        }),
+    ));
+    assert!(app.active_permission_view().is_none());
+
+    app.reject_always_approve_mode_change();
+
+    assert_eq!(
+        app.active_permission_view()
+            .map(|permission| permission.permission_id),
+        Some("perm_failed_enable_shell".to_string())
     );
 }
 
@@ -122,32 +163,8 @@ pub(super) fn always_approve_mode_appends_composer_badge_suffix() {
         "test-provider",
         Some("model-tx".to_string()),
     ));
-    app.ingest_event(envelope(
-        1,
-        "req_always_badge_1",
-        EventV1::PermissionRequested(PermissionRequestedEvent {
-            permission_id: "perm_always_badge_1".to_string(),
-            kind: "edit_fs".to_string(),
-            tool_call_id: Some("tc_always_badge_1".into()),
-            summary: "permission summary".to_string(),
-            request_digest: "digest-always-badge".to_string(),
-            timeout_ms: 30_000,
-            default_decision: harness_core::event::PermissionDecision::Deny,
-        }),
-    ));
-    app.handle_key(key(KeyCode::Enter));
-    app.handle_key(key(KeyCode::Enter));
+    app.set_always_approve_mode(true);
     assert!(app.always_approve_mode());
-
-    app.ingest_event(envelope(
-        2,
-        "req_always_badge_1",
-        EventV1::PermissionResolved(PermissionResolvedEvent {
-            permission_id: "perm_always_badge_1".to_string(),
-            decision: harness_core::event::PermissionDecision::Allow,
-            reason: None,
-        }),
-    ));
     assert!(app.active_permission_view().is_none());
 
     let mut terminal = Terminal::new(TestBackend::new(120, 30)).unwrap_or_abort();
@@ -734,14 +751,9 @@ fn permission_always_mouse_requires_confirmation_before_emitting_intent() {
     );
 
     // assert
-    assert!(app.always_approve_mode());
+    assert!(!app.always_approve_mode());
     assert_eq!(
         intents.lock().unwrap_or_abort().as_slice(),
-        &[UiIntent::ResolvePermission {
-            permission_id: "permission_mouse_always".to_string(),
-            decision: PermissionDecision::Allow,
-            reason: None,
-            grant_scope: Some(harness_core::perm::PermissionGrantScope::Run),
-        }]
+        &[UiIntent::SetAlwaysApproveMode { enabled: true }]
     );
 }

@@ -117,6 +117,9 @@ impl InterruptReason {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UiIntent {
+    SetAlwaysApproveMode {
+        enabled: bool,
+    },
     ResolvePermission {
         permission_id: String,
         decision: PermissionDecision,

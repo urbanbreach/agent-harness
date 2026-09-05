@@ -1105,7 +1105,7 @@ impl AppState {
                 self.live_details_drawer_open = false;
             }
             Action::AlwaysApprovePermission => {
-                self.toggle_always_approve_mode();
+                self.request_always_approve_mode_toggle();
             }
             Action::Palette => {
                 self.open_palette();
