@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
@@ -12,53 +12,16 @@ use super::plugin::{
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]
 pub enum PluginLifecycleEvent {
-    Installed {
-        id: String,
-    },
-    Activated {
-        id: String,
-    },
-    Deactivated {
-        id: String,
-    },
-    Removed {
-        id: String,
-    },
-    ExecutionStarted {
-        id: String,
-        operation_id: String,
-    },
-    ExecutionFinished {
-        id: String,
-        operation_id: String,
-        success: bool,
-    },
-    Cancelled {
-        id: String,
-        operation_id: String,
-    },
-    Upgraded {
-        id: String,
-    },
+    Installed { id: String },
+    Activated { id: String },
+    Deactivated { id: String },
+    Removed { id: String },
+    Upgraded { id: String },
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum PluginRuntimeError {
     Lifecycle(PluginLifecycleError),
-    ExecutionSurfaceNotRegistered {
-        id: String,
-    },
-    OperationCancelled {
-        id: String,
-        operation_id: String,
-    },
-    ExecutionFailed {
-        id: String,
-        message: String,
-    },
-    NotEnabledForExecution {
-        id: String,
-    },
     UpgradeRollbackFailed {
         id: String,
         original_error: String,
@@ -74,18 +37,6 @@ impl fmt::Display for PluginRuntimeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Lifecycle(e) => write!(f, "{e}"),
-            Self::ExecutionSurfaceNotRegistered { id } => {
-                write!(f, "plugin `{id}` execution surface not registered")
-            }
-            Self::OperationCancelled { id, operation_id } => {
-                write!(f, "plugin `{id}` operation `{operation_id}` was cancelled")
-            }
-            Self::ExecutionFailed { id, message } => {
-                write!(f, "plugin `{id}` execution failed: {message}")
-            }
-            Self::NotEnabledForExecution { id } => {
-                write!(f, "plugin `{id}` is not enabled; cannot execute")
-            }
             Self::UpgradeRollbackFailed {
                 id,
                 original_error,
@@ -117,72 +68,9 @@ impl From<PluginLifecycleError> for PluginRuntimeError {
     }
 }
 
-pub trait PluginExecutionSurface: fmt::Debug + Send + Sync {
-    fn plugin_id(&self) -> &str;
-    fn execute(&self, input: &str) -> Result<String, String>;
-}
-
-#[derive(Debug, Clone)]
-pub struct HelloWorldPlugin {
-    plugin_id: String,
-}
-
-impl HelloWorldPlugin {
-    pub fn new(plugin_id: impl Into<String>) -> Self {
-        Self {
-            plugin_id: plugin_id.into(),
-        }
-    }
-}
-
-impl PluginExecutionSurface for HelloWorldPlugin {
-    fn plugin_id(&self) -> &str {
-        &self.plugin_id
-    }
-
-    fn execute(&self, input: &str) -> Result<String, String> {
-        if input.is_empty() {
-            return Err("hello-world plugin requires non-empty input".to_string());
-        }
-        Ok(format!("hello from {}: {input}", self.plugin_id))
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct FailingPlugin {
-    plugin_id: String,
-}
-
-impl FailingPlugin {
-    pub fn new(plugin_id: impl Into<String>) -> Self {
-        Self {
-            plugin_id: plugin_id.into(),
-        }
-    }
-}
-
-impl PluginExecutionSurface for FailingPlugin {
-    fn plugin_id(&self) -> &str {
-        &self.plugin_id
-    }
-
-    fn execute(&self, _input: &str) -> Result<String, String> {
-        Err("intentional failure for isolation test".to_string())
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PluginExecutionResult {
-    pub plugin_id: String,
-    pub operation_id: String,
-    pub output: String,
-}
-
 pub struct PluginRuntimeContract {
     registry: PluginLifecycleRegistry,
     events: Vec<PluginLifecycleEvent>,
-    execution_surfaces: BTreeMap<String, Box<dyn PluginExecutionSurface>>,
-    cancelled_operations: BTreeSet<String>,
 }
 
 impl PluginRuntimeContract {
@@ -190,8 +78,6 @@ impl PluginRuntimeContract {
         Self {
             registry: PluginLifecycleRegistry::new(workspace_root),
             events: Vec::new(),
-            execution_surfaces: BTreeMap::new(),
-            cancelled_operations: BTreeSet::new(),
         }
     }
 
@@ -199,8 +85,6 @@ impl PluginRuntimeContract {
         Ok(Self {
             registry: PluginLifecycleRegistry::open(workspace_root)?,
             events: Vec::new(),
-            execution_surfaces: BTreeMap::new(),
-            cancelled_operations: BTreeSet::new(),
         })
     }
 
@@ -287,73 +171,6 @@ impl PluginRuntimeContract {
         self.events
             .push(PluginLifecycleEvent::Removed { id: id.to_string() });
         Ok(removed)
-    }
-
-    pub fn register_execution_surface(
-        &mut self,
-        surface: Box<dyn PluginExecutionSurface>,
-    ) -> Result<(), PluginRuntimeError> {
-        let id = surface.plugin_id().to_string();
-        if self.execution_surfaces.contains_key(&id) {
-            return Err(PluginRuntimeError::ExecutionSurfaceNotRegistered { id });
-        }
-        self.execution_surfaces.insert(id, surface);
-        Ok(())
-    }
-
-    pub fn cancel_operation(&mut self, operation_id: &str) {
-        self.cancelled_operations.insert(operation_id.to_string());
-    }
-
-    pub fn execute_plugin(
-        &mut self,
-        plugin_id: &str,
-        operation_id: &str,
-        input: &str,
-    ) -> Result<PluginExecutionResult, PluginRuntimeError> {
-        if !self.registry.is_enabled(plugin_id) {
-            return Err(PluginRuntimeError::NotEnabledForExecution {
-                id: plugin_id.to_string(),
-            });
-        }
-        if self.cancelled_operations.contains(operation_id) {
-            self.events.push(PluginLifecycleEvent::Cancelled {
-                id: plugin_id.to_string(),
-                operation_id: operation_id.to_string(),
-            });
-            return Err(PluginRuntimeError::OperationCancelled {
-                id: plugin_id.to_string(),
-                operation_id: operation_id.to_string(),
-            });
-        }
-        let output = {
-            let surface = self.execution_surfaces.get(plugin_id).ok_or(
-                PluginRuntimeError::ExecutionSurfaceNotRegistered {
-                    id: plugin_id.to_string(),
-                },
-            )?;
-            self.events.push(PluginLifecycleEvent::ExecutionStarted {
-                id: plugin_id.to_string(),
-                operation_id: operation_id.to_string(),
-            });
-            surface.execute(input)
-        };
-        let success = output.is_ok();
-        self.events.push(PluginLifecycleEvent::ExecutionFinished {
-            id: plugin_id.to_string(),
-            operation_id: operation_id.to_string(),
-            success,
-        });
-        output
-            .map(|output| PluginExecutionResult {
-                plugin_id: plugin_id.to_string(),
-                operation_id: operation_id.to_string(),
-                output,
-            })
-            .map_err(|message| PluginRuntimeError::ExecutionFailed {
-                id: plugin_id.to_string(),
-                message,
-            })
     }
 
     pub fn upgrade_plugin(

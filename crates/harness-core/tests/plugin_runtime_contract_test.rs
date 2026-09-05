@@ -1,14 +1,12 @@
-//! PluginRuntimeContract tests — lifecycle event recording, execution surface,
-//! failure isolation, cancellation, transactional upgrade/rollback.
+//! Plugin descriptor lifecycle event recording and transactional upgrade/rollback.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use harness_core::extension_manifest::EXTENSION_MANIFEST_V1_SCHEMA_VERSION;
 use harness_core::integrations::{
-    FailingPlugin, HelloWorldPlugin, PluginActivationPermission, PluginExecutionSurface,
-    PluginLifecycleEvent, PluginRuntimeContract, PluginRuntimeError, PLUGIN_ENTRY_FILE_NAME,
-    PLUGIN_MANIFEST_FILE_NAME,
+    PluginActivationPermission, PluginLifecycleEvent, PluginRuntimeContract, PluginRuntimeError,
+    PLUGIN_ENTRY_FILE_NAME, PLUGIN_MANIFEST_FILE_NAME,
 };
 use harness_core::UnwrapOrAbort;
 use serde_json::json;
@@ -66,110 +64,6 @@ fn runtime_contract_records_lifecycle_events() {
 }
 
 #[test]
-fn runtime_contract_executes_plugin_via_compiled_surface() {
-    // arrange
-    let temp = tempfile::tempdir().unwrap_or_abort();
-    let workspace = temp.path().join("ws");
-    fs::create_dir_all(&workspace).unwrap_or_abort();
-    let package = write_plugin_package(&workspace, "plugins/hello", "hello.plugin");
-    let mut contract = PluginRuntimeContract::new(&workspace);
-    contract
-        .install_from_package_root(&package)
-        .unwrap_or_abort();
-    contract
-        .activate("hello.plugin", PluginActivationPermission::Granted)
-        .unwrap_or_abort();
-    contract
-        .register_execution_surface(Box::new(HelloWorldPlugin::new("hello.plugin")))
-        .unwrap_or_abort();
-
-    // act
-    let result = contract
-        .execute_plugin("hello.plugin", "op-1", "world")
-        .unwrap_or_abort();
-
-    // assert
-    assert_eq!(result.plugin_id, "hello.plugin");
-    assert_eq!(result.operation_id, "op-1");
-    assert!(result.output.contains("hello from hello.plugin: world"));
-    let events = contract.events();
-    assert!(events.iter().any(|e| matches!(
-        e,
-        PluginLifecycleEvent::ExecutionStarted { id, operation_id } if id == "hello.plugin" && operation_id == "op-1"
-    )));
-    assert!(events.iter().any(|e| matches!(
-        e,
-        PluginLifecycleEvent::ExecutionFinished { id, operation_id, success } if id == "hello.plugin" && operation_id == "op-1" && *success
-    )));
-}
-
-#[test]
-fn runtime_contract_isolates_plugin_failures() {
-    // arrange
-    let temp = tempfile::tempdir().unwrap_or_abort();
-    let workspace = temp.path().join("ws");
-    fs::create_dir_all(&workspace).unwrap_or_abort();
-    let package = write_plugin_package(&workspace, "plugins/fail", "fail.plugin");
-    let mut contract = PluginRuntimeContract::new(&workspace);
-    contract
-        .install_from_package_root(&package)
-        .unwrap_or_abort();
-    contract
-        .activate("fail.plugin", PluginActivationPermission::Granted)
-        .unwrap_or_abort();
-    contract
-        .register_execution_surface(Box::new(FailingPlugin::new("fail.plugin")))
-        .unwrap_or_abort();
-
-    // act
-    let result = contract.execute_plugin("fail.plugin", "op-fail", "input");
-
-    // assert
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(matches!(err, PluginRuntimeError::ExecutionFailed { id, .. } if id == "fail.plugin"));
-    let events = contract.events();
-    assert!(events.iter().any(|e| matches!(
-        e,
-        PluginLifecycleEvent::ExecutionFinished { id, success, .. } if id == "fail.plugin" && !*success
-    )));
-}
-
-#[test]
-fn runtime_contract_cancels_operations() {
-    // arrange
-    let temp = tempfile::tempdir().unwrap_or_abort();
-    let workspace = temp.path().join("ws");
-    fs::create_dir_all(&workspace).unwrap_or_abort();
-    let package = write_plugin_package(&workspace, "plugins/cancel", "cancel.plugin");
-    let mut contract = PluginRuntimeContract::new(&workspace);
-    contract
-        .install_from_package_root(&package)
-        .unwrap_or_abort();
-    contract
-        .activate("cancel.plugin", PluginActivationPermission::Granted)
-        .unwrap_or_abort();
-    contract
-        .register_execution_surface(Box::new(HelloWorldPlugin::new("cancel.plugin")))
-        .unwrap_or_abort();
-    contract.cancel_operation("op-cancelled");
-
-    // act
-    let result = contract.execute_plugin("cancel.plugin", "op-cancelled", "input");
-
-    // assert
-    assert!(matches!(
-        result.unwrap_err(),
-        PluginRuntimeError::OperationCancelled { id, operation_id } if id == "cancel.plugin" && operation_id == "op-cancelled"
-    ));
-    let events = contract.events();
-    assert!(events.iter().any(|e| matches!(
-        e,
-        PluginLifecycleEvent::Cancelled { id, operation_id } if id == "cancel.plugin" && operation_id == "op-cancelled"
-    )));
-}
-
-#[test]
 fn runtime_contract_upgrades_plugin() {
     // arrange
     let temp = tempfile::tempdir().unwrap_or_abort();
@@ -212,31 +106,6 @@ fn runtime_contract_upgrades_plugin() {
     assert!(events
         .iter()
         .any(|e| matches!(e, PluginLifecycleEvent::Activated { id } if id == "upg.plugin")));
-}
-
-#[test]
-fn runtime_contract_denies_execution_for_disabled_plugin() {
-    // arrange
-    let temp = tempfile::tempdir().unwrap_or_abort();
-    let workspace = temp.path().join("ws");
-    fs::create_dir_all(&workspace).unwrap_or_abort();
-    let package = write_plugin_package(&workspace, "plugins/disabled", "disabled.plugin");
-    let mut contract = PluginRuntimeContract::new(&workspace);
-    contract
-        .install_from_package_root(&package)
-        .unwrap_or_abort();
-    contract
-        .register_execution_surface(Box::new(HelloWorldPlugin::new("disabled.plugin")))
-        .unwrap_or_abort();
-
-    // act
-    let result = contract.execute_plugin("disabled.plugin", "op-1", "input");
-
-    // assert
-    assert!(matches!(
-        result.unwrap_err(),
-        PluginRuntimeError::NotEnabledForExecution { id } if id == "disabled.plugin"
-    ));
 }
 
 #[test]
