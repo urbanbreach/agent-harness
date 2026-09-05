@@ -35,6 +35,9 @@ unobserved Rust prototype APIs have been removed instead of maintaining parallel
 - The provider `leaf` factory is removed; runtime construction remains in CLI bootstrap using the concrete provider configurations.
 - The unused TUI `slash` catalog is removed; `keybindings::slash_commands()` remains authoritative.
 - Unobserved TUI media queues, contextual-tip state, performance samples, and shadow lifecycle transitions are removed. Actual transcript rendering, terminal titles/notifications, input bounds, and `lifecycle_choreography::LifecycleState` remain.
+- The unused file-backed ACP echo transport (`integrations::acp_file`) is removed; stdio ACP and its connection lifecycle remain.
+- Unconnected `jujutsu::jj_*` workflow wrappers and `JujutsuWorkflowResult` are removed; Jujutsu detection and diagnostic commands remain.
+- The test-only plugin execution framework (`PluginExecutionSurface`, its sample plugins, and execution/cancellation methods and events) is removed. Descriptor install, activation permissions, persistence, and transactional upgrade/rollback remain unchanged.
 
 Tests no longer require arrange/act/assert comment markers; the `conventions` gate and its empty
 baseline have been removed. All other static test gates remain enabled.
