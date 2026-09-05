@@ -5,11 +5,7 @@
     reason = "owner tests use fail-fast assertions for contract fixtures"
 )]
 
-use harness_tui::theme_system::{
-    auto::{ThemeChoice, ThemeEnvironment},
-    fallback::ColorLevel,
-    roles::PaletteRole,
-};
+use harness_tui::theme::Theme;
 use ratatui::style::Color;
 
 fn rgb_luminance(color: Color) -> u32 {
@@ -24,34 +20,29 @@ fn rgb_luminance(color: Color) -> u32 {
 #[test]
 fn default_resolved_theme_role_table_preserves_contrast_and_elevation() {
     // arrange
-    let resolved =
-        ThemeChoice::default().resolve(&ThemeEnvironment::with_color_level(ColorLevel::TrueColor));
+    let theme = Theme::default();
     let roles = [
-        PaletteRole::SurfaceCanvas,
-        PaletteRole::SurfacePanelElevated,
-        PaletteRole::SurfaceCard,
-        PaletteRole::BorderSubtle,
-        PaletteRole::BorderStrong,
-        PaletteRole::BorderFocus,
-        PaletteRole::TextSecondary,
-        PaletteRole::TextAccent,
+        ("surface.canvas", theme.surface.canvas),
+        ("surface.panel_elevated", theme.surface.panel_elevated),
+        ("surface.card", theme.surface.card),
+        ("border.subtle", theme.border.subtle),
+        ("border.strong", theme.border.strong),
+        ("border.focus", theme.border.focus),
+        ("text.secondary", theme.text.secondary),
+        ("text.accent", theme.text.accent),
     ];
 
     // act
     let role_table = roles
-        .map(|role| format!("{} = {:?}", role.label(), resolved.palette.color(role)))
+        .map(|(label, color)| format!("{label} = {color:?}"))
         .join("\n");
-    let background = resolved.palette.color(PaletteRole::SurfaceCanvas);
-    let surface = resolved.palette.color(PaletteRole::SurfacePanelElevated);
-    let raised = resolved.palette.color(PaletteRole::SurfaceCard);
+    let background = theme.surface.canvas;
+    let surface = theme.surface.panel_elevated;
+    let raised = theme.surface.card;
     let surfaces = [background, surface, raised];
-    let borders = [
-        resolved.palette.color(PaletteRole::BorderSubtle),
-        resolved.palette.color(PaletteRole::BorderStrong),
-        resolved.palette.color(PaletteRole::BorderFocus),
-    ];
-    let muted_text = resolved.palette.color(PaletteRole::TextSecondary);
-    let accent = resolved.palette.color(PaletteRole::TextAccent);
+    let borders = [theme.border.subtle, theme.border.strong, theme.border.focus];
+    let muted_text = theme.text.secondary;
+    let accent = theme.text.accent;
 
     // assert
     insta::assert_snapshot!(role_table, @r###"
