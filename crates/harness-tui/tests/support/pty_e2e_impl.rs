@@ -276,14 +276,16 @@ pub(crate) fn pty_waiting_for_response_matches_grok_layout_and_timer_motion() {
 
     assert_eq!(initial.0, initial.1, "initial timers diverged\n{screen}");
     assert_eq!(advanced.0, advanced.1, "advanced timers diverged\n{screen}");
-    assert_ne!(advanced, initial, "waiting timers did not advance\n{screen}");
+    assert_ne!(
+        advanced, initial,
+        "waiting timers did not advance\n{screen}"
+    );
     assert!(
         row.contains(&format!("Waiting for response… {}", advanced.0)),
         "phase timer must immediately follow the waiting label\n{screen}"
     );
     assert!(
-        row.trim_end()
-            .ends_with(&format!("{} [stop]", advanced.1)),
+        row.trim_end().ends_with(&format!("{} [stop]", advanced.1)),
         "turn timer and stop control must remain right-aligned\n{screen}"
     );
     assert!(
