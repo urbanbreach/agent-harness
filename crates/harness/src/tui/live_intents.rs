@@ -33,6 +33,22 @@ pub(super) async fn handle_ui_intents(
 ) -> Result<(), String> {
     while let Some(intent) = intent_rx.recv().await {
         match intent {
+            UiIntent::SetAlwaysApproveMode { enabled } => {
+                match coordinator.set_always_approve_mode(enabled).await {
+                    Ok(()) => live_update_tx
+                        .send(LiveUpdate::AlwaysApproveModeChanged { enabled })
+                        .map_err(|err| err.to_string())?,
+                    Err(error) => {
+                        live_update_tx
+                            .send(LiveUpdate::AlwaysApproveModeChangeFailed)
+                            .map_err(|err| err.to_string())?;
+                        let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
+                            message: format!("Failed to change always-approve mode: {error}"),
+                            level: OperatorNoticeLevel::Error,
+                        });
+                    }
+                }
+            }
             UiIntent::ResolvePermission {
                 permission_id,
                 decision,

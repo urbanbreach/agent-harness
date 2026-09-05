@@ -125,6 +125,7 @@ pub(super) fn map_startup_intent_to_workflow(intent: Option<UiIntent>) -> Intera
         }
         Some(UiIntent::QuitRequested)
         | None
+        | Some(UiIntent::SetAlwaysApproveMode { .. })
         | Some(UiIntent::ResolvePermission { .. })
         | Some(UiIntent::OpenAuthManager { .. })
         | Some(UiIntent::CompactSession)
@@ -184,7 +185,8 @@ pub(super) fn live_workflow_from_intent(intent: &UiIntent) -> Option<Interactive
             run_dir: run_dir.clone(),
         }),
         UiIntent::QuitRequested => Some(InteractiveWorkflow::Quit),
-        UiIntent::ResolvePermission { .. }
+        UiIntent::SetAlwaysApproveMode { .. }
+        | UiIntent::ResolvePermission { .. }
         | UiIntent::SubmitPrompt { .. }
         | UiIntent::OpenAuthManager { .. }
         | UiIntent::CompactSession
@@ -207,7 +209,8 @@ pub(super) fn live_workflow_from_intent(intent: &UiIntent) -> Option<Interactive
 fn forward_intent_to_live_run(intent: &UiIntent) -> bool {
     matches!(
         intent,
-        UiIntent::ResolvePermission { .. }
+        UiIntent::SetAlwaysApproveMode { .. }
+            | UiIntent::ResolvePermission { .. }
             | UiIntent::SubmitPrompt { .. }
             | UiIntent::OpenAuthManager { .. }
             | UiIntent::CompactSession
