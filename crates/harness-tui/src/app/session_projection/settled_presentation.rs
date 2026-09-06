@@ -119,83 +119,61 @@ impl SessionProjection {
                 activity.last_mono_ms = message.provenance.last_seq;
                 activity.status = activity_status(message.state);
                 if let Some(provider) = message.provider.as_ref() {
-                    activity.provider_id = provider.provider_id.clone().unwrap_or_default();
-                    activity.model_id = provider.model_id.clone().unwrap_or_default();
-                    activity.request_data = provider.provider_request_id.as_ref().map(|id| {
-                        ProviderRequestStartedEvent {
-                            request_id: id.as_str().into(),
-                            provider_id: activity.provider_id.clone(),
-                            model_id: activity.model_id.clone(),
-                            prompt_summary: provider.prompt_summary.clone().unwrap_or_default(),
-                            request_digest: provider.request_digest.clone().unwrap_or_default(),
-                            metadata: None,
-                        }
-                    });
+                    apply_message_provider_metadata(activity, provider);
                 }
-                if message.role == ProjectedMessageRole::Assistant {
-                    for part in &message.parts {
-                        apply_message_part(
-                            activity,
-                            part,
-                            &mut pending_permissions,
-                            &mut orchestration_tasks,
-                            &mut turn_terminals,
-                            message.agent_id.as_deref(),
-                            &request_id,
-                        );
-                    }
+                if message.role != ProjectedMessageRole::Assistant {
+                    continue;
                 }
-            } else {
                 for part in &message.parts {
-                    if let ProjectedPart::Permission(permission) = part {
-                        if let Some(index) = message
-                            .request_id
-                            .as_ref()
-                            .and_then(|id| activity_by_request.get(id.as_str()))
-                            .copied()
-                        {
-                            add_permission(
-                                &mut settled_activities[index],
-                                permission,
-                                &mut pending_permissions,
-                            );
-                            continue;
-                        }
-                    }
-                    if let ProjectedPart::ToolCall(tool) = part {
-                        if let Some(activity) = settled_activities.back_mut() {
-                            activity.tool_calls.push(tool_entry(tool));
-                            activity.last_seq = activity.last_seq.max(tool.provenance.last_seq);
-                            continue;
-                        }
-                    }
-                    apply_system_part(
+                    apply_message_part(
+                        activity,
                         part,
                         &mut pending_permissions,
                         &mut orchestration_tasks,
                         &mut turn_terminals,
                         message.agent_id.as_deref(),
-                        message.request_id.as_ref().map(|id| id.as_str()),
+                        &request_id,
                     );
                 }
+                continue;
+            }
+            for part in &message.parts {
+                if let (ProjectedPart::Permission(permission), Some(index)) = (
+                    part,
+                    message
+                        .request_id
+                        .as_ref()
+                        .and_then(|id| activity_by_request.get(id.as_str()))
+                        .copied(),
+                ) {
+                    add_permission(
+                        &mut settled_activities[index],
+                        permission,
+                        &mut pending_permissions,
+                    );
+                    continue;
+                }
+                if let (ProjectedPart::ToolCall(tool), Some(activity)) =
+                    (part, settled_activities.back_mut())
+                {
+                    activity.tool_calls.push(tool_entry(tool));
+                    activity.last_seq = activity.last_seq.max(tool.provenance.last_seq);
+                    continue;
+                }
+                apply_system_part(
+                    part,
+                    &mut pending_permissions,
+                    &mut orchestration_tasks,
+                    &mut turn_terminals,
+                    message.agent_id.as_deref(),
+                    message.request_id.as_ref().map(|id| id.as_str()),
+                );
             }
         }
 
         let (latest_request_budget, provider_context_usage) =
             apply_canonical_provider_presentation(canonical, &mut settled_activities);
-        for (index, activity) in settled_activities.iter_mut().enumerate() {
-            let is_user_only = activity.user_message.is_some()
-                && activity.request_data.is_none()
-                && activity.transcript_text.is_empty()
-                && activity.tool_calls.is_empty();
-            if is_user_only {
-                activity.status = if index == 0 {
-                    ActivityStatus::Streaming
-                } else {
-                    ActivityStatus::Queued
-                };
-            }
-        }
+        mark_user_only_activities(&mut settled_activities);
         apply_canonical_background_notifications(
             canonical,
             &mut settled_activities,
@@ -257,5 +235,41 @@ impl SessionProjection {
         }
         self.enforce_transcript_memory_cap();
         self.transcript_delta = ProjectionDelta::FullRebuild;
+    }
+}
+
+fn apply_message_provider_metadata(
+    activity: &mut ActivityEntry,
+    provider: &harness_core::transcript_projection::ProjectedProviderMessageMetadata,
+) {
+    activity.provider_id = provider.provider_id.clone().unwrap_or_default();
+    activity.model_id = provider.model_id.clone().unwrap_or_default();
+    activity.request_data =
+        provider
+            .provider_request_id
+            .as_ref()
+            .map(|id| ProviderRequestStartedEvent {
+                request_id: id.as_str().into(),
+                provider_id: activity.provider_id.clone(),
+                model_id: activity.model_id.clone(),
+                prompt_summary: provider.prompt_summary.clone().unwrap_or_default(),
+                request_digest: provider.request_digest.clone().unwrap_or_default(),
+                metadata: None,
+            });
+}
+
+fn mark_user_only_activities(activities: &mut VecDeque<ActivityEntry>) {
+    for (index, activity) in activities.iter_mut().enumerate() {
+        let is_user_only = activity.user_message.is_some()
+            && activity.request_data.is_none()
+            && activity.transcript_text.is_empty()
+            && activity.tool_calls.is_empty();
+        if is_user_only {
+            activity.status = if index == 0 {
+                ActivityStatus::Streaming
+            } else {
+                ActivityStatus::Queued
+            };
+        }
     }
 }
