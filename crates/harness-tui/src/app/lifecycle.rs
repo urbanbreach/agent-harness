@@ -1040,37 +1040,35 @@ impl AppState {
         if self.replay_mode {
             return;
         }
-        let Some((request_id, total_ms, phase_ms)) =
-            self.runtime_state_activity().and_then(|entry| {
-                (entry.status == ActivityStatus::Streaming).then(|| {
-                    let total_ms = entry.last_mono_ms.saturating_sub(entry.first_mono_ms);
-                    let phase_ms = entry
-                        .tool_calls
-                        .iter()
-                        .rev()
-                        .find(|tool| tool.status == ToolCallDisplayStatus::Running)
-                        .map(|tool| tool.last_mono_ms.saturating_sub(tool.first_mono_ms))
-                        .or_else(|| {
-                            (!entry.transcript_text.is_empty())
-                                .then(|| entry.responding_duration_ms())
-                                .flatten()
-                        })
-                        .or_else(|| {
-                            (!entry.thinking_text.is_empty())
-                                .then(|| entry.thinking_duration_ms())
-                                .flatten()
-                        })
-                        .unwrap_or_else(|| {
-                            entry.request_started_mono_ms.map_or(total_ms, |started| {
-                                entry.last_mono_ms.saturating_sub(started)
-                            })
-                        });
-                    (entry.request_id.clone(), total_ms, phase_ms)
-                })
-            })
+        let Some(entry) = self
+            .runtime_state_activity()
+            .filter(|entry| entry.status == ActivityStatus::Streaming)
         else {
             return;
         };
+        let total_ms = entry.last_mono_ms.saturating_sub(entry.first_mono_ms);
+        let phase_ms = entry
+            .tool_calls
+            .iter()
+            .rev()
+            .find(|tool| tool.status == ToolCallDisplayStatus::Running)
+            .map(|tool| tool.last_mono_ms.saturating_sub(tool.first_mono_ms))
+            .or_else(|| {
+                (!entry.transcript_text.is_empty())
+                    .then(|| entry.responding_duration_ms())
+                    .flatten()
+            })
+            .or_else(|| {
+                (!entry.thinking_text.is_empty())
+                    .then(|| entry.thinking_duration_ms())
+                    .flatten()
+            })
+            .unwrap_or_else(|| {
+                entry.request_started_mono_ms.map_or(total_ms, |started| {
+                    entry.last_mono_ms.saturating_sub(started)
+                })
+            });
+        let request_id = entry.request_id.clone();
         let now = self.now();
         self.live_turn_request_id = Some(request_id);
         self.live_turn_started_at = Some(

@@ -616,6 +616,10 @@ pub(super) fn lifecycle_shell_snapshots_preserve_startup_and_handoff_contracts()
     assert!(!continue_render.contains("beta-prompt"));
     assert!(continue_render.contains("Harness") || continue_render.contains("Resume session"));
 
+    assert_completed_shell_snapshots();
+}
+
+fn assert_completed_shell_snapshots() {
     let mut completed_shell = app::AppState::new_live(
         Some(PathBuf::from("/tmp/sessions/run_fixture")),
         false,

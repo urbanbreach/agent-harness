@@ -381,6 +381,10 @@ pub(super) fn lifecycle_shell_state_transitions() {
     assert!(finished.completed_session_shell_active());
     assert!(!finished.composer_disabled());
 
+    assert_failed_and_missing_path_lifecycle();
+}
+
+fn assert_failed_and_missing_path_lifecycle() {
     let mut failed = AppState::new_live(Some(PathBuf::from("/tmp/live-failed")), false, None);
     failed.ingest_event(envelope(
         1,
