@@ -108,7 +108,10 @@ fn models_probe_generates_harness_catalog_fragment_from_models_dev_json() {
     assert!(!models.contains_key("gpt-old"));
     assert!(!models.contains_key("gpt-text-only"));
 
-    let model = &models["gpt-5-mini"];
+    assert_probed_model(&models["gpt-5-mini"]);
+}
+
+fn assert_probed_model(model: &Value) {
     assert_eq!(model["metadata"]["contextWindowTokens"], 128000);
     assert_eq!(model["metadata"]["supportsToolCalls"], true);
     assert_eq!(model["limit"]["input"], 120000);
@@ -333,19 +336,7 @@ fn schema_cli_prints_runtime_json_schema() {
         .get("properties")
         .and_then(Value::as_object)
         .unwrap_or_abort();
-    assert!(root_properties.contains_key("provider"));
-    assert!(root_properties.contains_key("model"));
-    assert!(root_properties.contains_key("small_model"));
-    assert!(root_properties.contains_key("model_profile"));
-    assert!(root_properties.contains_key("permission"));
-    assert!(root_properties.contains_key("mcp"));
-    assert!(root_properties.contains_key("runtime"));
-    assert!(!root_properties.contains_key("default_agent"));
-    assert!(root_properties.contains_key("server"));
-    assert!(root_properties.contains_key("command"));
-    assert!(root_properties.contains_key("formatter"));
-    assert!(!root_properties.contains_key("tool_output"));
-    assert!(!root_properties.contains_key("integrations"));
+    assert_schema_keys(root_properties, &["provider", "model", "small_model", "model_profile", "permission", "mcp", "runtime", "server", "command", "formatter"], &["default_agent", "tool_output", "integrations"]);
 
     let definitions = schema
         .get("definitions")
@@ -372,51 +363,25 @@ fn schema_cli_prints_runtime_json_schema() {
         .get("properties")
         .and_then(Value::as_object)
         .unwrap_or_abort();
-    assert!(model_properties.contains_key("name"));
-    assert!(model_properties.contains_key("limit"));
-    assert!(model_properties.contains_key("modalities"));
-    assert!(model_properties.contains_key("options"));
-    assert!(model_properties.contains_key("variants"));
-    assert!(!model_properties.contains_key("reasoningEfforts"));
-    assert!(!model_properties.contains_key("display_name"));
+    assert_schema_keys(model_properties, &["name", "limit", "modalities", "options", "variants"], &["reasoningEfforts", "display_name"]);
 
     let variant_properties = definitions["ModelVariantConfig"]
         .get("properties")
         .and_then(Value::as_object)
         .unwrap_or_abort();
-    assert!(variant_properties.contains_key("name"));
-    assert!(variant_properties.contains_key("limit"));
-    assert!(variant_properties.contains_key("modalities"));
-    assert!(variant_properties.contains_key("options"));
-    assert!(!variant_properties.contains_key("display_name"));
+    assert_schema_keys(variant_properties, &["name", "limit", "modalities", "options"], &["display_name"]);
 
     let provider_properties = definitions["ProviderConfig"]["oneOf"][0]
         .get("properties")
         .and_then(Value::as_object)
         .unwrap_or_abort();
-    assert!(provider_properties.contains_key("baseURL"));
-    assert!(provider_properties.contains_key("apiKey"));
-    assert!(provider_properties.contains_key("apiKeyEnv"));
-    assert!(provider_properties.contains_key("authProvider"));
-    assert!(provider_properties.contains_key("apiMode"));
-    assert!(provider_properties.contains_key("cacheRetention"));
-    assert!(provider_properties.contains_key("timeoutMs"));
-    assert!(!provider_properties.contains_key("base_url"));
-    assert!(!provider_properties.contains_key("api_key"));
+    assert_schema_keys(provider_properties, &["baseURL", "apiKey", "apiKeyEnv", "authProvider", "apiMode", "cacheRetention", "timeoutMs"], &["base_url", "api_key"]);
 
     let options_properties = definitions["OpenAiCompatibleProviderOptions"]
         .get("properties")
         .and_then(Value::as_object)
         .unwrap_or_abort();
-    assert!(options_properties.contains_key("baseURL"));
-    assert!(options_properties.contains_key("apiKey"));
-    assert!(options_properties.contains_key("apiKeyEnv"));
-    assert!(options_properties.contains_key("authProvider"));
-    assert!(options_properties.contains_key("apiMode"));
-    assert!(options_properties.contains_key("cacheRetention"));
-    assert!(options_properties.contains_key("timeoutMs"));
-    assert!(!options_properties.contains_key("base_url"));
-    assert!(!options_properties.contains_key("api_key"));
+    assert_schema_keys(options_properties, &["baseURL", "apiKey", "apiKeyEnv", "authProvider", "apiMode", "cacheRetention", "timeoutMs"], &["base_url", "api_key"]);
 
     let permission_properties = definitions["PublicPermissionConfig"]
         .get("properties")
@@ -449,6 +414,11 @@ fn schema_cli_prints_runtime_json_schema() {
         );
     }
 }
+fn assert_schema_keys(properties: &serde_json::Map<String, Value>, present: &[&str], absent: &[&str]) {
+    for key in present { assert!(properties.contains_key(*key), "missing schema key {key}"); }
+    for key in absent { assert!(!properties.contains_key(*key), "unexpected schema key {key}"); }
+}
+
 #[test]
 fn schema_cli_prints_tui_json_schema() {
     let output = harness_command()
