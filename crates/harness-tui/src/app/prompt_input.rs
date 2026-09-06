@@ -325,6 +325,10 @@ impl AppState {
     }
 
     pub fn handle_paste(&mut self, text: &str) {
+        if self.active_permission().is_some() {
+            self.handle_permission_feedback_paste(text);
+            return;
+        }
         if self.handle_new_worktree_dialog_paste(text) {
             return;
         }

@@ -713,3 +713,4 @@ include!("permission_modal_tests_part2_test.rs");
 include!("permission_modal_tests_part3_test.rs");
 include!("permission_modal_tests_part4_test.rs");
 include!("permission_modal_tests_part5_test.rs");
+include!("permission_modal_tests_part6_test.rs");
