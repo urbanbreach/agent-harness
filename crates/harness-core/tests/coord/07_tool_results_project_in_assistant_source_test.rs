@@ -80,16 +80,10 @@ async fn tool_results_project_in_assistant_source_order_after_out_of_order_compl
         .unwrap_or_abort();
     let fast_completed_before_slow_release =
         tokio::time::timeout(Duration::from_millis(150), async {
-            loop {
-                let events = load_events(&run.events_path);
-                if events.iter().any(|event| {
-                    matches!(
-                        &event.payload,
-                        EventV1::TaskCompleted(data) if data.result_summary == "fast output"
-                    )
-                }) {
-                    break;
-                }
+            while !load_events(&run.events_path).iter().any(|event| matches!(
+                &event.payload,
+                EventV1::TaskCompleted(data) if data.result_summary == "fast output"
+            )) {
                 tokio::task::yield_now().await;
             }
         })

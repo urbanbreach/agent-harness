@@ -309,7 +309,6 @@ pub fn project_transcript(
                     locations.pending_provider = None;
                     locations.pending_provenance = None;
                     locations.semantic_parts_authoritative = false;
-                    locations.semantic_tool_requests_seen = 0;
                 }
                 locations.assistant_agent_id = event.actor.agent_id.clone();
                 locations.pending_state = Some(ProjectedMessageState::Streaming);
@@ -368,89 +367,12 @@ pub fn project_transcript(
                 message.provider = pending_provider;
                 message.provenance.extend(event);
             }
-            EventV1::AssistantMessageFinished(payload) => {
-                let request_id = provider_turn_request_id(event, payload.request_id.as_str());
-                let message_index = ensure_assistant_message(
-                    &mut projection,
-                    &mut request_locations,
-                    event,
-                    &request_id,
-                );
-                let message = &mut projection.messages[message_index];
-                message.state = ProjectedMessageState::Complete;
-                if let Some(provenance) = payload.provenance.as_ref() {
-                    let provider = message.provider.get_or_insert_with(Default::default);
-                    provider.provider_request_id = Some(provenance.request_id.to_string());
-                    provider.provider_id = Some(provenance.provider_id.clone());
-                    provider.model_id = Some(provenance.model_id.clone());
-                    provider.finish_reason.clone_from(&provenance.stop_reason);
-                }
-                if let Some(assistant_message) = payload.assistant_message.as_ref() {
-                    let provider = message.provider.get_or_insert_with(Default::default);
-                    apply_assistant_message_metadata(provider, assistant_message);
-                }
-                if !payload.parts.is_empty() {
-                    tool_locations.retain(|_, location| location.message_index != message_index);
-                    message.parts.clear();
-                    let locations = request_locations.entry(request_id.clone()).or_default();
-                    locations.assistant_text_part_index = None;
-                    locations.assistant_reasoning_part_index = None;
-                    locations.semantic_parts_authoritative = true;
-                    locations.semantic_tool_requests_seen = 0;
-                    for part in &payload.parts {
-                        let part_index = message.parts.len();
-                        match part {
-                            AssistantPart::Text { text } => {
-                                message.parts.push(ProjectedPart::Text(ProjectedTextPart {
-                                    text: text.clone(),
-                                    provenance: ProvenanceRange::from_event(event),
-                                }));
-                                locations.assistant_text_part_index = Some(part_index);
-                            }
-                            AssistantPart::Reasoning { text } => {
-                                message
-                                    .parts
-                                    .push(ProjectedPart::Reasoning(ProjectedTextPart {
-                                        text: text.clone(),
-                                        provenance: ProvenanceRange::from_event(event),
-                                    }));
-                                locations.assistant_reasoning_part_index = Some(part_index);
-                            }
-                            AssistantPart::ToolCall(tool_call) => {
-                                message.parts.push(ProjectedPart::ToolCall(Box::new(
-                                    ProjectedToolCallPart {
-                                        tool_call_id: tool_call.tool_call_id.clone(),
-                                        tool_id: tool_call.tool_id.clone(),
-                                        args_summary: tool_call.args_summary.clone(),
-                                        args_digest: tool_call.args_digest.clone(),
-                                        state: ProjectedToolCallState::Pending,
-                                        status: None,
-                                        output_summary: None,
-                                        output_digest: None,
-                                        output_json: None,
-                                        requested_seq: None,
-                                        started_seq: None,
-                                        finished_seq: None,
-                                        metadata: None,
-                                        permissions: Vec::new(),
-                                        artifacts: Vec::new(),
-                                        lineage: None,
-                                        provenance: ProvenanceRange::from_event(event),
-                                    },
-                                )));
-                                tool_locations.insert(
-                                    tool_call.tool_call_id.to_string(),
-                                    PartLocation {
-                                        message_index,
-                                        part_index,
-                                    },
-                                );
-                            }
-                        }
-                    }
-                }
-                message.provenance.extend(event);
-            }
+            EventV1::AssistantMessageFinished(_) => project_assistant_completion(
+                &mut projection,
+                &mut request_locations,
+                &mut tool_locations,
+                event,
+            ),
             EventV1::SessionCompaction(payload) => {
                 append_system_part(
                     &mut projection,
@@ -495,325 +417,22 @@ pub fn project_transcript(
                     }),
                 );
             }
-            EventV1::ToolCallRequested(payload) => {
-                let lineage = payload
-                    .metadata
-                    .as_ref()
-                    .and_then(|metadata| lineage_projection(metadata.lineage.as_ref(), event));
-                if let Some(lineage) = lineage.as_ref() {
-                    push_unique_lineage(&mut projection.session_lineage, lineage.clone());
-                }
-                let metadata_artifacts = artifacts_from_tool_metadata(
-                    payload.tool_call_id.as_str(),
-                    payload.metadata.as_ref(),
-                    event,
-                );
-                for artifact in metadata_artifacts.iter().cloned() {
-                    push_unique_artifact(&mut projection.artifacts, artifact);
-                }
-                let semantic_location = event
-                    .correlation_id
-                    .as_deref()
-                    .and_then(|_| tool_locations.get(payload.tool_call_id.as_str()).copied());
-                if let Some(location) = semantic_location {
-                    let mut previous_tool_call_id = None;
-                    if let Some(tool_call) = tool_call_part_mut(&mut projection, location) {
-                        previous_tool_call_id = Some(tool_call.tool_call_id.to_string());
-                        tool_call.tool_call_id = payload.tool_call_id.clone();
-                        tool_call.requested_seq = Some(event.seq);
-                        tool_call.metadata.clone_from(&payload.metadata);
-                        tool_call.lineage = lineage.clone();
-                        for artifact in metadata_artifacts {
-                            push_unique_artifact(&mut tool_call.artifacts, artifact);
-                        }
-                        tool_call.provenance.extend(event);
-                    }
-                    if let Some(previous_tool_call_id) = previous_tool_call_id {
-                        tool_locations.remove(&previous_tool_call_id);
-                    }
-                    tool_locations.insert(payload.tool_call_id.to_string(), location);
-                    if let Some(request_id) = event.correlation_id.as_deref() {
-                        let locations =
-                            request_locations.entry(request_id.to_string()).or_default();
-                        locations.semantic_tool_requests_seen =
-                            locations.semantic_tool_requests_seen.saturating_add(1);
-                    }
-                    projection.messages[location.message_index]
-                        .provenance
-                        .extend(event);
-                    continue;
-                }
-                if let Some(location) = tool_locations.get(payload.tool_call_id.as_str()).copied() {
-                    if let Some(tool_call) = tool_call_part_mut(&mut projection, location) {
-                        tool_call.requested_seq = Some(event.seq);
-                        tool_call.metadata.clone_from(&payload.metadata);
-                        tool_call.lineage = lineage.clone();
-                        for artifact in metadata_artifacts {
-                            push_unique_artifact(&mut tool_call.artifacts, artifact);
-                        }
-                        tool_call.provenance.extend(event);
-                    }
-                    projection.messages[location.message_index]
-                        .provenance
-                        .extend(event);
-                    continue;
-                }
-
-                let tool_part = ProjectedToolCallPart {
-                    tool_call_id: payload.tool_call_id.clone(),
-                    tool_id: payload.tool_id.clone(),
-                    args_summary: payload.args_summary.clone(),
-                    args_digest: payload.args_digest.clone(),
-                    state: ProjectedToolCallState::Pending,
-                    status: None,
-                    output_summary: None,
-                    output_digest: None,
-                    output_json: None,
-                    requested_seq: Some(event.seq),
-                    started_seq: None,
-                    finished_seq: None,
-                    metadata: payload.metadata.clone(),
-                    permissions: Vec::new(),
-                    artifacts: metadata_artifacts,
-                    lineage,
-                    provenance: ProvenanceRange::from_event(event),
-                };
-
-                if let Some(request_id) = event.correlation_id.as_deref() {
-                    let message_index = ensure_assistant_message(
-                        &mut projection,
-                        &mut request_locations,
-                        event,
-                        request_id,
-                    );
-                    let part_index = append_part_to_message(
-                        &mut projection,
-                        message_index,
-                        ProjectedPart::ToolCall(Box::new(tool_part)),
-                        event,
-                    );
-                    tool_locations.insert(
-                        payload.tool_call_id.to_string(),
-                        PartLocation {
-                            message_index,
-                            part_index,
-                        },
-                    );
-                } else {
-                    let message_index = append_system_part(
-                        &mut projection,
-                        event,
-                        ProjectedPart::ToolCall(Box::new(tool_part)),
-                    );
-                    tool_locations.insert(
-                        payload.tool_call_id.to_string(),
-                        PartLocation {
-                            message_index,
-                            part_index: 0,
-                        },
-                    );
-                }
-            }
-            EventV1::ToolCallStarted(payload) => {
-                if let Some(location) = tool_locations.get(payload.tool_call_id.as_str()).copied() {
-                    if let Some(tool_call) = tool_call_part_mut(&mut projection, location) {
-                        tool_call.state = ProjectedToolCallState::Running;
-                        tool_call.started_seq = Some(event.seq);
-                        tool_call.provenance.extend(event);
-                    }
-                    projection.messages[location.message_index]
-                        .provenance
-                        .extend(event);
-                } else {
-                    let message_index = append_system_part(
-                        &mut projection,
-                        event,
-                        ProjectedPart::ToolCall(Box::new(placeholder_tool_call_part(
-                            payload.tool_call_id.as_str(),
-                            ProjectedToolCallState::Running,
-                            event,
-                        ))),
-                    );
-                    tool_locations.insert(
-                        payload.tool_call_id.to_string(),
-                        PartLocation {
-                            message_index,
-                            part_index: 0,
-                        },
-                    );
-                }
-            }
-            EventV1::ToolCallFinished(payload) => {
-                let metadata_artifacts = artifacts_from_tool_metadata(
-                    payload.tool_call_id.as_str(),
-                    payload.metadata.as_ref(),
-                    event,
-                );
-                for artifact in metadata_artifacts.iter().cloned() {
-                    push_unique_artifact(&mut projection.artifacts, artifact);
-                }
-                if let Some(lineage) = payload
-                    .metadata
-                    .as_ref()
-                    .and_then(|metadata| lineage_projection(metadata.lineage.as_ref(), event))
-                {
-                    push_unique_lineage(&mut projection.session_lineage, lineage.clone());
-                }
-
-                if let Some(location) = tool_locations.get(payload.tool_call_id.as_str()).copied() {
-                    if let Some(tool_call) = tool_call_part_mut(&mut projection, location) {
-                        tool_call.state = match payload.status {
-                            ToolCallStatus::Succeeded => ProjectedToolCallState::Succeeded,
-                            ToolCallStatus::Failed => ProjectedToolCallState::Failed,
-                        };
-                        tool_call.status = Some(payload.status);
-                        tool_call.output_summary = payload.output_summary.clone();
-                        tool_call.output_digest = payload.output_digest.clone();
-                        tool_call.output_json = payload.output_json.clone();
-                        tool_call.finished_seq = Some(event.seq);
-                        merge_tool_call_metadata(
-                            &mut tool_call.metadata,
-                            payload.metadata.as_ref(),
-                        );
-                        if tool_call.lineage.is_none() {
-                            tool_call.lineage = payload.metadata.as_ref().and_then(|metadata| {
-                                lineage_projection(metadata.lineage.as_ref(), event)
-                            });
-                        }
-                        for artifact in metadata_artifacts {
-                            push_unique_artifact(&mut tool_call.artifacts, artifact);
-                        }
-                        tool_call.provenance.extend(event);
-                    }
-                    projection.messages[location.message_index]
-                        .provenance
-                        .extend(event);
-                } else {
-                    let mut tool_part = placeholder_tool_call_part(
-                        payload.tool_call_id.as_str(),
-                        match payload.status {
-                            ToolCallStatus::Succeeded => ProjectedToolCallState::Succeeded,
-                            ToolCallStatus::Failed => ProjectedToolCallState::Failed,
-                        },
-                        event,
-                    );
-                    tool_part.status = Some(payload.status);
-                    tool_part.output_summary = payload.output_summary.clone();
-                    tool_part.output_digest = payload.output_digest.clone();
-                    tool_part.output_json = payload.output_json.clone();
-                    tool_part.finished_seq = Some(event.seq);
-                    tool_part.metadata = payload.metadata.clone();
-                    tool_part.lineage = payload
-                        .metadata
-                        .as_ref()
-                        .and_then(|metadata| lineage_projection(metadata.lineage.as_ref(), event));
-                    tool_part.artifacts = metadata_artifacts;
-                    let message_index = append_system_part(
-                        &mut projection,
-                        event,
-                        ProjectedPart::ToolCall(Box::new(tool_part)),
-                    );
-                    tool_locations.insert(
-                        payload.tool_call_id.to_string(),
-                        PartLocation {
-                            message_index,
-                            part_index: 0,
-                        },
-                    );
-                }
-            }
-            EventV1::PermissionRequested(payload) => {
-                let part = ProjectedPermissionPart {
-                    permission_id: payload.permission_id.clone(),
-                    kind: payload.kind.clone(),
-                    tool_call_id: payload.tool_call_id.clone(),
-                    summary: payload.summary.clone(),
-                    request_digest: payload.request_digest.clone(),
-                    timeout_ms: payload.timeout_ms,
-                    default_decision: payload.default_decision,
-                    state: ProjectedPermissionState::Pending,
-                    decision: None,
-                    reason: None,
-                    provenance: ProvenanceRange::from_event(event),
-                };
-                let message_index = append_system_part(
-                    &mut projection,
-                    event,
-                    ProjectedPart::Permission(part.clone()),
-                );
-                permission_locations.insert(
-                    payload.permission_id.clone(),
-                    PartLocation {
-                        message_index,
-                        part_index: 0,
-                    },
-                );
-                if let Some(tool_call_id) = payload.tool_call_id.as_ref() {
-                    if let Some(tool_location) = tool_locations.get(tool_call_id.as_str()).copied()
-                    {
-                        if let Some(tool_call) = tool_call_part_mut(&mut projection, tool_location)
-                        {
-                            tool_call.permissions.push(part);
-                            tool_call.provenance.extend(event);
-                        }
-                    }
-                }
-            }
-            EventV1::PermissionResolved(payload) => {
-                if let Some(location) = permission_locations.get(&payload.permission_id).copied() {
-                    if let Some(permission) = permission_part_mut(&mut projection, location) {
-                        permission.state = ProjectedPermissionState::Resolved;
-                        permission.decision = Some(payload.decision);
-                        permission.reason = payload.reason.clone();
-                        permission.provenance.extend(event);
-                    }
-                    projection.messages[location.message_index]
-                        .provenance
-                        .extend(event);
-                } else {
-                    append_system_part(
-                        &mut projection,
-                        event,
-                        ProjectedPart::Permission(ProjectedPermissionPart {
-                            permission_id: payload.permission_id.clone(),
-                            kind: String::new(),
-                            tool_call_id: None,
-                            summary: String::new(),
-                            request_digest: String::new(),
-                            timeout_ms: 0,
-                            default_decision: payload.decision,
-                            state: ProjectedPermissionState::Resolved,
-                            decision: Some(payload.decision),
-                            reason: payload.reason.clone(),
-                            provenance: ProvenanceRange::from_event(event),
-                        }),
-                    );
-                }
-                update_tool_permission_resolution(
-                    &mut projection,
-                    &payload.permission_id,
-                    payload.decision,
-                    payload.reason.clone(),
-                    event,
-                );
-            }
-            EventV1::ArtifactWritten(payload) => {
-                let artifact = artifact_from_written(payload, event);
-                push_unique_artifact(&mut projection.artifacts, artifact.clone());
-                if let Some(tool_call_id) = payload.tool_call_id.as_ref() {
-                    if let Some(location) = tool_locations.get(tool_call_id.as_str()).copied() {
-                        if let Some(tool_call) = tool_call_part_mut(&mut projection, location) {
-                            push_unique_artifact(&mut tool_call.artifacts, artifact.clone());
-                            tool_call.provenance.extend(event);
-                        }
-                    }
-                }
-                append_system_part(
-                    &mut projection,
-                    event,
-                    ProjectedPart::Artifact(ProjectedArtifactPart { artifact }),
-                );
-            }
+            EventV1::ToolCallRequested(_)
+            | EventV1::ToolCallStarted(_)
+            | EventV1::ToolCallFinished(_) => project_tool_event(
+                &mut projection,
+                &mut request_locations,
+                &mut tool_locations,
+                event,
+            ),
+            EventV1::PermissionRequested(_)
+            | EventV1::PermissionResolved(_)
+            | EventV1::ArtifactWritten(_) => project_permission_or_artifact(
+                &mut projection,
+                &mut tool_locations,
+                &mut permission_locations,
+                event,
+            ),
             EventV1::PolicyViolationDetected(payload) => {
                 append_system_part(
                     &mut projection,
@@ -885,5 +504,381 @@ fn merge_tool_call_metadata(
         if !metadata.hook_executions.contains(hook) {
             metadata.hook_executions.push(hook.clone());
         }
+    }
+}
+
+fn project_assistant_completion(
+    projection: &mut TranscriptProjection,
+    request_locations: &mut BTreeMap<String, RequestLocations>,
+    tool_locations: &mut BTreeMap<String, PartLocation>,
+    event: &EventEnvelopeV1,
+) {
+    if let EventV1::AssistantMessageFinished(payload) = &event.payload {
+        let request_id = provider_turn_request_id(event, payload.request_id.as_str());
+        let message_index =
+            ensure_assistant_message(projection, request_locations, event, &request_id);
+        let message = &mut projection.messages[message_index];
+        message.state = ProjectedMessageState::Complete;
+        if let Some(provenance) = payload.provenance.as_ref() {
+            let provider = message.provider.get_or_insert_with(Default::default);
+            provider.provider_request_id = Some(provenance.request_id.to_string());
+            provider.provider_id = Some(provenance.provider_id.clone());
+            provider.model_id = Some(provenance.model_id.clone());
+            provider.finish_reason.clone_from(&provenance.stop_reason);
+        }
+        if let Some(assistant_message) = payload.assistant_message.as_ref() {
+            let provider = message.provider.get_or_insert_with(Default::default);
+            apply_assistant_message_metadata(provider, assistant_message);
+        }
+        if !payload.parts.is_empty() {
+            tool_locations.retain(|_, location| location.message_index != message_index);
+            message.parts.clear();
+            let locations = request_locations.entry(request_id.clone()).or_default();
+            locations.assistant_text_part_index = None;
+            locations.assistant_reasoning_part_index = None;
+            locations.semantic_parts_authoritative = true;
+            for part in &payload.parts {
+                let part_index = message.parts.len();
+                match part {
+                    AssistantPart::Text { text } => {
+                        message.parts.push(ProjectedPart::Text(ProjectedTextPart {
+                            text: text.clone(),
+                            provenance: ProvenanceRange::from_event(event),
+                        }));
+                        locations.assistant_text_part_index = Some(part_index);
+                    }
+                    AssistantPart::Reasoning { text } => {
+                        message
+                            .parts
+                            .push(ProjectedPart::Reasoning(ProjectedTextPart {
+                                text: text.clone(),
+                                provenance: ProvenanceRange::from_event(event),
+                            }));
+                        locations.assistant_reasoning_part_index = Some(part_index);
+                    }
+                    AssistantPart::ToolCall(tool_call) => {
+                        message.parts.push(ProjectedPart::ToolCall(Box::new(
+                            ProjectedToolCallPart {
+                                tool_call_id: tool_call.tool_call_id.clone(),
+                                tool_id: tool_call.tool_id.clone(),
+                                args_summary: tool_call.args_summary.clone(),
+                                args_digest: tool_call.args_digest.clone(),
+                                state: ProjectedToolCallState::Pending,
+                                status: None,
+                                output_summary: None,
+                                output_digest: None,
+                                output_json: None,
+                                requested_seq: None,
+                                started_seq: None,
+                                finished_seq: None,
+                                metadata: None,
+                                permissions: Vec::new(),
+                                artifacts: Vec::new(),
+                                lineage: None,
+                                provenance: ProvenanceRange::from_event(event),
+                            },
+                        )));
+                        tool_locations.insert(
+                            tool_call.tool_call_id.to_string(),
+                            PartLocation {
+                                message_index,
+                                part_index,
+                            },
+                        );
+                    }
+                }
+            }
+        }
+        message.provenance.extend(event);
+    }
+}
+
+fn project_tool_event(
+    projection: &mut TranscriptProjection,
+    request_locations: &mut BTreeMap<String, RequestLocations>,
+    tool_locations: &mut BTreeMap<String, PartLocation>,
+    event: &EventEnvelopeV1,
+) {
+    match &event.payload {
+        EventV1::ToolCallRequested(payload) => {
+            let lineage = payload
+                .metadata
+                .as_ref()
+                .and_then(|metadata| lineage_projection(metadata.lineage.as_ref(), event));
+            if let Some(lineage) = lineage.as_ref() {
+                push_unique_lineage(&mut projection.session_lineage, lineage.clone());
+            }
+            let metadata_artifacts = artifacts_from_tool_metadata(
+                payload.tool_call_id.as_str(),
+                payload.metadata.as_ref(),
+                event,
+            );
+            for artifact in metadata_artifacts.iter().cloned() {
+                push_unique_artifact(&mut projection.artifacts, artifact);
+            }
+            if let Some(location) = tool_locations.get(payload.tool_call_id.as_str()).copied() {
+                if let Some(tool_call) = tool_call_part_mut(projection, location) {
+                    tool_call.requested_seq = Some(event.seq);
+                    tool_call.metadata.clone_from(&payload.metadata);
+                    tool_call.lineage = lineage.clone();
+                    for artifact in metadata_artifacts {
+                        push_unique_artifact(&mut tool_call.artifacts, artifact);
+                    }
+                    tool_call.provenance.extend(event);
+                }
+                projection.messages[location.message_index]
+                    .provenance
+                    .extend(event);
+                return;
+            }
+
+            let tool_part = ProjectedToolCallPart {
+                tool_call_id: payload.tool_call_id.clone(),
+                tool_id: payload.tool_id.clone(),
+                args_summary: payload.args_summary.clone(),
+                args_digest: payload.args_digest.clone(),
+                state: ProjectedToolCallState::Pending,
+                status: None,
+                output_summary: None,
+                output_digest: None,
+                output_json: None,
+                requested_seq: Some(event.seq),
+                started_seq: None,
+                finished_seq: None,
+                metadata: payload.metadata.clone(),
+                permissions: Vec::new(),
+                artifacts: metadata_artifacts,
+                lineage,
+                provenance: ProvenanceRange::from_event(event),
+            };
+
+            if let Some(request_id) = event.correlation_id.as_deref() {
+                let message_index =
+                    ensure_assistant_message(projection, request_locations, event, request_id);
+                let part_index = append_part_to_message(
+                    projection,
+                    message_index,
+                    ProjectedPart::ToolCall(Box::new(tool_part)),
+                    event,
+                );
+                tool_locations.insert(
+                    payload.tool_call_id.to_string(),
+                    PartLocation {
+                        message_index,
+                        part_index,
+                    },
+                );
+            } else {
+                let message_index = append_system_part(
+                    projection,
+                    event,
+                    ProjectedPart::ToolCall(Box::new(tool_part)),
+                );
+                tool_locations.insert(
+                    payload.tool_call_id.to_string(),
+                    PartLocation {
+                        message_index,
+                        part_index: 0,
+                    },
+                );
+            }
+        }
+        EventV1::ToolCallStarted(payload) => {
+            if let Some(location) = tool_locations.get(payload.tool_call_id.as_str()).copied() {
+                if let Some(tool_call) = tool_call_part_mut(projection, location) {
+                    tool_call.state = ProjectedToolCallState::Running;
+                    tool_call.started_seq = Some(event.seq);
+                    tool_call.provenance.extend(event);
+                }
+                projection.messages[location.message_index]
+                    .provenance
+                    .extend(event);
+            } else {
+                let message_index = append_system_part(
+                    projection,
+                    event,
+                    ProjectedPart::ToolCall(Box::new(placeholder_tool_call_part(
+                        payload.tool_call_id.as_str(),
+                        ProjectedToolCallState::Running,
+                        event,
+                    ))),
+                );
+                tool_locations.insert(
+                    payload.tool_call_id.to_string(),
+                    PartLocation {
+                        message_index,
+                        part_index: 0,
+                    },
+                );
+            }
+        }
+        EventV1::ToolCallFinished(payload) => {
+            let metadata_artifacts = artifacts_from_tool_metadata(
+                payload.tool_call_id.as_str(),
+                payload.metadata.as_ref(),
+                event,
+            );
+            for artifact in metadata_artifacts.iter().cloned() {
+                push_unique_artifact(&mut projection.artifacts, artifact);
+            }
+            let lineage = payload
+                .metadata
+                .as_ref()
+                .and_then(|metadata| lineage_projection(metadata.lineage.as_ref(), event));
+            if let Some(lineage) = &lineage {
+                push_unique_lineage(&mut projection.session_lineage, lineage.clone());
+            }
+
+            if let Some(location) = tool_locations.get(payload.tool_call_id.as_str()).copied() {
+                if let Some(tool_call) = tool_call_part_mut(projection, location) {
+                    tool_call.state = match payload.status {
+                        ToolCallStatus::Succeeded => ProjectedToolCallState::Succeeded,
+                        ToolCallStatus::Failed => ProjectedToolCallState::Failed,
+                    };
+                    tool_call.status = Some(payload.status);
+                    tool_call.output_summary = payload.output_summary.clone();
+                    tool_call.output_digest = payload.output_digest.clone();
+                    tool_call.output_json = payload.output_json.clone();
+                    tool_call.finished_seq = Some(event.seq);
+                    merge_tool_call_metadata(&mut tool_call.metadata, payload.metadata.as_ref());
+                    tool_call.lineage = tool_call.lineage.take().or(lineage);
+                    for artifact in metadata_artifacts {
+                        push_unique_artifact(&mut tool_call.artifacts, artifact);
+                    }
+                    tool_call.provenance.extend(event);
+                }
+                projection.messages[location.message_index]
+                    .provenance
+                    .extend(event);
+            } else {
+                let mut tool_part = placeholder_tool_call_part(
+                    payload.tool_call_id.as_str(),
+                    match payload.status {
+                        ToolCallStatus::Succeeded => ProjectedToolCallState::Succeeded,
+                        ToolCallStatus::Failed => ProjectedToolCallState::Failed,
+                    },
+                    event,
+                );
+                tool_part.status = Some(payload.status);
+                tool_part.output_summary = payload.output_summary.clone();
+                tool_part.output_digest = payload.output_digest.clone();
+                tool_part.output_json = payload.output_json.clone();
+                tool_part.finished_seq = Some(event.seq);
+                tool_part.metadata = payload.metadata.clone();
+                tool_part.lineage = lineage;
+                tool_part.artifacts = metadata_artifacts;
+                let message_index = append_system_part(
+                    projection,
+                    event,
+                    ProjectedPart::ToolCall(Box::new(tool_part)),
+                );
+                tool_locations.insert(
+                    payload.tool_call_id.to_string(),
+                    PartLocation {
+                        message_index,
+                        part_index: 0,
+                    },
+                );
+            }
+        }
+        _ => {}
+    }
+}
+
+fn project_permission_or_artifact(
+    projection: &mut TranscriptProjection,
+    tool_locations: &mut BTreeMap<String, PartLocation>,
+    permission_locations: &mut BTreeMap<String, PartLocation>,
+    event: &EventEnvelopeV1,
+) {
+    match &event.payload {
+        EventV1::PermissionRequested(payload) => {
+            let part = ProjectedPermissionPart {
+                permission_id: payload.permission_id.clone(),
+                kind: payload.kind.clone(),
+                tool_call_id: payload.tool_call_id.clone(),
+                summary: payload.summary.clone(),
+                request_digest: payload.request_digest.clone(),
+                timeout_ms: payload.timeout_ms,
+                default_decision: payload.default_decision,
+                state: ProjectedPermissionState::Pending,
+                decision: None,
+                reason: None,
+                provenance: ProvenanceRange::from_event(event),
+            };
+            let message_index =
+                append_system_part(projection, event, ProjectedPart::Permission(part.clone()));
+            permission_locations.insert(
+                payload.permission_id.clone(),
+                PartLocation {
+                    message_index,
+                    part_index: 0,
+                },
+            );
+            if let Some(tool_call_id) = payload.tool_call_id.as_ref() {
+                if let Some(tool_location) = tool_locations.get(tool_call_id.as_str()).copied() {
+                    if let Some(tool_call) = tool_call_part_mut(projection, tool_location) {
+                        tool_call.permissions.push(part);
+                        tool_call.provenance.extend(event);
+                    }
+                }
+            }
+        }
+        EventV1::PermissionResolved(payload) => {
+            if let Some(location) = permission_locations.get(&payload.permission_id).copied() {
+                if let Some(permission) = permission_part_mut(projection, location) {
+                    permission.state = ProjectedPermissionState::Resolved;
+                    permission.decision = Some(payload.decision);
+                    permission.reason = payload.reason.clone();
+                    permission.provenance.extend(event);
+                }
+                projection.messages[location.message_index]
+                    .provenance
+                    .extend(event);
+            } else {
+                append_system_part(
+                    projection,
+                    event,
+                    ProjectedPart::Permission(ProjectedPermissionPart {
+                        permission_id: payload.permission_id.clone(),
+                        kind: String::new(),
+                        tool_call_id: None,
+                        summary: String::new(),
+                        request_digest: String::new(),
+                        timeout_ms: 0,
+                        default_decision: payload.decision,
+                        state: ProjectedPermissionState::Resolved,
+                        decision: Some(payload.decision),
+                        reason: payload.reason.clone(),
+                        provenance: ProvenanceRange::from_event(event),
+                    }),
+                );
+            }
+            update_tool_permission_resolution(
+                projection,
+                &payload.permission_id,
+                payload.decision,
+                payload.reason.clone(),
+                event,
+            );
+        }
+        EventV1::ArtifactWritten(payload) => {
+            let artifact = artifact_from_written(payload, event);
+            push_unique_artifact(&mut projection.artifacts, artifact.clone());
+            if let Some(tool_call_id) = payload.tool_call_id.as_ref() {
+                if let Some(location) = tool_locations.get(tool_call_id.as_str()).copied() {
+                    if let Some(tool_call) = tool_call_part_mut(projection, location) {
+                        push_unique_artifact(&mut tool_call.artifacts, artifact.clone());
+                        tool_call.provenance.extend(event);
+                    }
+                }
+            }
+            append_system_part(
+                projection,
+                event,
+                ProjectedPart::Artifact(ProjectedArtifactPart { artifact }),
+            );
+        }
+        _ => {}
     }
 }
