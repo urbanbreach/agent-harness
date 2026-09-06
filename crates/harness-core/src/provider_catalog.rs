@@ -540,14 +540,13 @@ struct CacheLock {
 impl CacheLock {
     fn try_acquire(cache_path: &Path) -> Self {
         let lock_path = cache_path.with_extension("json.lock");
-        if let Ok(metadata) = std::fs::metadata(&lock_path) {
-            if let Ok(modified) = metadata.modified() {
-                if let Ok(elapsed) = modified.elapsed() {
-                    if elapsed > LOCK_STALE_TIMEOUT {
-                        let _ = std::fs::remove_file(&lock_path);
-                    }
-                }
-            }
+        let modified = std::fs::metadata(&lock_path).and_then(|metadata| metadata.modified());
+        if modified
+            .ok()
+            .and_then(|modified| modified.elapsed().ok())
+            .is_some_and(|elapsed| elapsed > LOCK_STALE_TIMEOUT)
+        {
+            let _ = std::fs::remove_file(&lock_path);
         }
         let acquired = std::fs::OpenOptions::new()
             .write(true)
