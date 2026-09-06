@@ -934,20 +934,11 @@ mod tests {
         let add_lead = add_team_member_outcome(&mut registry, &probe_id, "probe-agent", "operator");
         let add_worker =
             add_team_member_outcome(&mut registry, &probe_id, "probe-worker", "worker");
-        assert!(matches!(
-            add_lead,
-            TeamAddMemberOutcome::Added {
-                member_count: 1,
-                ..
-            }
-        ));
-        assert!(matches!(
-            add_worker,
-            TeamAddMemberOutcome::Added {
-                member_count: 2,
-                ..
-            }
-        ));
+        for (outcome, expected_count) in [(add_lead, 1), (add_worker, 2)] {
+            assert!(
+                matches!(outcome, TeamAddMemberOutcome::Added { member_count, .. } if member_count == expected_count)
+            );
+        }
 
         let send_broadcast = send_team_message_outcome(
             &mut registry,
@@ -963,8 +954,9 @@ mod tests {
             Some("probe-agent".to_string()),
             "(probe reply)",
         );
-        assert!(matches!(send_broadcast, TeamSendOutcome::Sent { .. }));
-        assert!(matches!(send_direct, TeamSendOutcome::Sent { .. }));
+        for outcome in [send_broadcast, send_direct] {
+            assert!(matches!(outcome, TeamSendOutcome::Sent { .. }));
+        }
         assert_eq!(registry.mailbox_len(&probe_id).expect("mailbox"), 2);
 
         let cancel = cancel_team_outcome(&mut registry, &probe_id);
@@ -985,23 +977,26 @@ mod tests {
         );
         assert!(matches!(send_active, TeamSendOutcome::Sent { .. }));
 
-        // Then: summary teams>=2 active>=1 cancelled>=1 members>=3 mailbox>=2
+        // Then: both teams retain their members and messages after cancellation.
         let summary = registry.summary();
-        assert!(
-            summary.teams >= 2 && summary.active >= 1 && summary.cancelled >= 1,
-            "expected multi-team active+cancelled: {summary:?}"
-        );
-        assert!(
-            summary.members >= 3,
-            "expected multi-member teams: {summary:?}"
-        );
-        assert!(
-            summary.mailbox_messages >= 2,
-            "expected multi-message mailbox: {summary:?}"
+        assert_eq!(
+            (
+                summary.teams,
+                summary.active,
+                summary.cancelled,
+                summary.members,
+                summary.mailbox_messages
+            ),
+            (2, 1, 1, 3, 3),
         );
         let members = registry.list_members(&active_id).expect("active members");
-        assert_eq!(members.len(), 1);
-        assert_eq!(members[0].agent_id, "probe-lead");
+        assert_eq!(
+            members
+                .iter()
+                .map(|member| member.agent_id.as_str())
+                .collect::<Vec<_>>(),
+            ["probe-lead"]
+        );
         let cancelled_err = registry
             .add_member(&probe_id, "late", "late")
             .expect_err("cancelled probe");
