@@ -38,7 +38,8 @@ impl WrappedText {
             let mut first_row = true;
             for cluster in clusters {
                 let cluster_width = cluster.range.cell_range.len();
-                if current_width + cluster_width > width && !current.is_empty() {
+                let wrapped = current_width + cluster_width > width && !current.is_empty();
+                if wrapped {
                     rows.push(WrappedRow {
                         graphemes: std::mem::take(&mut current),
                         hard_break_before: line_index > 0 && first_row,
@@ -46,9 +47,9 @@ impl WrappedText {
                     });
                     first_row = false;
                     current_width = 0;
-                    if cluster.text.chars().all(char::is_whitespace) {
-                        continue;
-                    }
+                }
+                if wrapped && cluster.text.chars().all(char::is_whitespace) {
+                    continue;
                 }
                 let mut cluster = cluster;
                 cluster.range.cell_range = current_width..current_width + cluster_width;
