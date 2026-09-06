@@ -97,7 +97,10 @@ fn permission_policy_supports_native_tool_permission_kinds() {
         policy.evaluate(Some("general"), PermissionKind::Lsp),
         deny_default_ask_decision()
     );
+}
 
+#[test]
+fn native_tool_ids_resolve_to_permission_kinds() {
     assert_eq!(
         permission_kind_for_tool("question"),
         Some(PermissionKind::Question)
