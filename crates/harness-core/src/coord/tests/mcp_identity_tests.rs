@@ -147,96 +147,35 @@ pub(super) async fn mcp_effective_identity_persists_for_direct_and_wrapper_calls
     );
 
     let resume_plan = inspect_resume_plan(&run.run_dir);
-    let direct_snapshot = resume_plan
-        .tool_calls
-        .get(&direct_call_id)
-        .unwrap_or_abort();
-    assert_eq!(
-        direct_snapshot
-            .resolved_tool_identity
-            .as_ref()
-            .and_then(|identity| identity.invoked_tool_id.as_deref()),
-        Some("mcp.fixture.echo")
-    );
-    assert_eq!(
-        direct_snapshot
-            .resolved_tool_identity
-            .as_ref()
-            .and_then(|identity| identity.effective_tool_id.as_deref()),
-        Some("mcp.fixture.echo")
-    );
-    assert_eq!(
-        direct_snapshot
-            .resolved_tool_identity
-            .as_ref()
-            .and_then(|identity| identity.canonical_tool_id.as_deref()),
-        None
-    );
-    assert_eq!(
-        direct_snapshot.lifecycle_state,
-        Some(crate::event::ToolCallLifecycleState::Completed)
-    );
-    assert_eq!(
-        direct_snapshot
-            .metadata
-            .as_ref()
-            .and_then(|metadata| metadata.canonical_tool_id.as_deref()),
-        Some("mcp.fixture.echo")
-    );
-    let wrapper_snapshot = resume_plan
-        .tool_calls
-        .get(&wrapper_call_id)
-        .unwrap_or_abort();
-    assert_eq!(
-        wrapper_snapshot.tool_id.as_deref(),
-        Some("mcp.fixture.tool.call")
-    );
-    assert_eq!(
-        wrapper_snapshot
-            .resolved_tool_identity
-            .as_ref()
-            .and_then(|identity| identity.invoked_tool_id.as_deref()),
-        Some("mcp.fixture.tool.call")
-    );
-    assert_eq!(
-        wrapper_snapshot
-            .resolved_tool_identity
-            .as_ref()
-            .and_then(|identity| identity.effective_tool_id.as_deref()),
-        Some("mcp.fixture.echo")
-    );
-    assert_eq!(
-        wrapper_snapshot
-            .resolved_tool_identity
-            .as_ref()
-            .and_then(|identity| identity.canonical_tool_id.as_deref()),
-        None
-    );
-    assert_eq!(
-        wrapper_snapshot
-            .resolved_tool_identity
-            .as_ref()
-            .and_then(|identity| identity.alias_source_tool_id.as_deref()),
-        None
-    );
-    assert_eq!(
-        wrapper_snapshot.lifecycle_state,
-        Some(crate::event::ToolCallLifecycleState::Completed)
-    );
-    assert_eq!(
-        wrapper_snapshot
-            .metadata
-            .as_ref()
-            .and_then(|metadata| metadata.canonical_tool_id.as_deref()),
-        Some("mcp.fixture.echo")
-    );
-    assert_eq!(
-        wrapper_snapshot
-            .metadata
-            .as_ref()
-            .and_then(|metadata| metadata.alias_source_tool_id.as_deref()),
-        None
-    );
+    for (call_id, invoked) in [
+        (&direct_call_id, "mcp.fixture.echo"),
+        (&wrapper_call_id, "mcp.fixture.tool.call"),
+    ] {
+        let snapshot = resume_plan.tool_calls.get(call_id).unwrap_or_abort();
+        let identity = snapshot.resolved_tool_identity.as_ref().unwrap_or_abort();
+        let metadata = snapshot.metadata.as_ref().unwrap_or_abort();
+        assert_eq!(snapshot.tool_id.as_deref(), Some(invoked));
+        assert_eq!(
+            (
+                identity.invoked_tool_id.as_deref(),
+                identity.effective_tool_id.as_deref(),
+                identity.canonical_tool_id.as_deref(),
+                identity.alias_source_tool_id.as_deref()
+            ),
+            (Some(invoked), Some("mcp.fixture.echo"), None, None),
+        );
+        assert_eq!(
+            snapshot.lifecycle_state,
+            Some(crate::event::ToolCallLifecycleState::Completed)
+        );
+        assert_eq!(
+            (
+                metadata.canonical_tool_id.as_deref(),
+                metadata.alias_source_tool_id.as_deref()
+            ),
+            (Some("mcp.fixture.echo"), None),
+        );
+    }
 }
 
 pub(super) fn mcp_effective_identity_uses_registered_first_class_ids_for_reserved_wrapper_names() {
