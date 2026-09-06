@@ -508,6 +508,10 @@ pub(super) struct TranscriptToolCallHeader {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(in crate::ui) enum TranscriptToolCallDetailBlock {
+    ReadOutput {
+        text: String,
+        start_line: Option<u64>,
+    },
     Message {
         text: String,
         tone: TranscriptToolCallDetailTone,
