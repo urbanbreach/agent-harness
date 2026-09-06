@@ -427,10 +427,15 @@ fn explain_setting_covers_writable_and_worktree_scopes() {
     // Then: surface/scope/merge/write flags and defaults are bound without secrets
     let hashline = explain_setting("hashline_edit").expect("hashline_edit");
     assert_eq!(hashline.setting_id, "hashline_edit");
-    assert_eq!(hashline.surface, "runtime");
-    assert_eq!(hashline.default_scope, "project");
-    assert_eq!(hashline.merge_strategy, "replace");
-    assert_eq!(hashline.mutability, "editable");
+    assert_eq!(
+        (
+            hashline.surface.as_str(),
+            hashline.default_scope.as_str(),
+            hashline.merge_strategy.as_str(),
+            hashline.mutability.as_str()
+        ),
+        ("runtime", "project", "replace", "editable"),
+    );
     assert!(!hashline.metadata_only);
     assert!(hashline.project_write_supported);
     assert_eq!(hashline.default_value.as_deref(), Some("true"));

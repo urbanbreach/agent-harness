@@ -449,10 +449,6 @@ pub(super) fn translate_public_runtime_root(
 
     let mut translated = serde_json::Map::new();
 
-    if let Some(schema) = object.get("$schema").cloned() {
-        translated.insert("$schema".to_string(), schema);
-    }
-
     let mut providers = serde_json::json!({});
     if let Some(value) = object.get("providers") {
         merge_config_value(&mut providers, value.clone());
@@ -461,12 +457,6 @@ pub(super) fn translate_public_runtime_root(
         merge_config_value(&mut providers, value.clone());
     }
     translated.insert("providers".to_string(), providers);
-    if let Some(value) = object.get("disabled_providers").cloned() {
-        translated.insert("disabled_providers".to_string(), value);
-    }
-    if let Some(value) = object.get("enabled_providers").cloned() {
-        translated.insert("enabled_providers".to_string(), value);
-    }
 
     let model = object
         .get("model")
@@ -570,23 +560,20 @@ pub(super) fn translate_public_runtime_root(
     if let Some(value) = object.get("runtime") {
         merge_config_value(&mut runtime, value.clone());
     }
-    if let Some(value) = object.get("backgroundTask") {
-        if let Some(runtime_object) = runtime.as_object_mut() {
-            runtime_object.insert("background_tasks".to_string(), value.clone());
-        }
-    }
-    if let Some(value) = object.get("deterministic") {
-        if let Some(runtime_object) = runtime.as_object_mut() {
-            runtime_object.insert("deterministic".to_string(), value.clone());
-        }
-    }
-    if let Some(value) = object.get("paths") {
-        if let Some(session_dir) = value
-            .as_object()
-            .and_then(|paths| paths.get("session_dir").or_else(|| paths.get("sessionDir")))
-        {
-            if let Some(runtime_object) = runtime.as_object_mut() {
-                runtime_object.insert("session_dir".to_string(), session_dir.clone());
+    if let Some(runtime_object) = runtime.as_object_mut() {
+        for (key, value) in [
+            ("background_tasks", object.get("backgroundTask")),
+            ("deterministic", object.get("deterministic")),
+            (
+                "session_dir",
+                object
+                    .get("paths")
+                    .and_then(Value::as_object)
+                    .and_then(|paths| paths.get("session_dir").or_else(|| paths.get("sessionDir"))),
+            ),
+        ] {
+            if let Some(value) = value {
+                runtime_object.insert(key.to_string(), value.clone());
             }
         }
     }
@@ -601,17 +588,18 @@ pub(super) fn translate_public_runtime_root(
     if let Some(value) = object.get("mcp") {
         let mcp_value = serde_json::json!({ "servers": normalization::normalize_public_mcp_servers(value.clone()) });
         if let Some(integrations_object) = integrations.as_object_mut() {
-            match integrations_object.get_mut("mcp") {
-                Some(existing) => merge_config_value(existing, mcp_value),
-                None => {
-                    integrations_object.insert("mcp".to_string(), mcp_value);
-                }
-            }
+            merge_config_value(
+                integrations_object.entry("mcp").or_insert(Value::Null),
+                mcp_value,
+            );
         }
     }
     translated.insert("integrations".to_string(), integrations);
 
     for (key, value) in [
+        ("$schema", object.get("$schema")),
+        ("disabled_providers", object.get("disabled_providers")),
+        ("enabled_providers", object.get("enabled_providers")),
         ("hooks", object.get("hooks")),
         ("logging", object.get("logging")),
         ("ui", object.get("ui")),
