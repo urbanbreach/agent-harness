@@ -11,6 +11,20 @@
         "timeoutMs": 1800000
       },
       "models": {
+        "gpt-6-astra": {
+          "name": "GPT 6 Astra",
+          "metadata": { "family": "gpt-astra", "context_window_tokens": 1050000, "supports_tool_calls": true, "supports_reasoning_summaries": true },
+          "max_input_tokens": 288384,
+          "max_output_tokens": 128000,
+          "modalities": { "input": ["text", "image"], "output": ["text"] },
+          "variants": {
+            "low": { "name": "Low", "metadata": { "reasoning_effort": "low", "text_verbosity": "low" } },
+            "medium": { "name": "Medium", "metadata": { "reasoning_effort": "medium", "text_verbosity": "low" } },
+            "high": { "name": "High", "metadata": { "reasoning_effort": "high", "text_verbosity": "low" } },
+            "xhigh": { "name": "XHigh", "metadata": { "reasoning_effort": "xhigh", "text_verbosity": "low" } },
+            "max": { "name": "Max", "metadata": { "reasoning_effort": "max", "text_verbosity": "low" } }
+          }
+        },
         "gpt-5.3-codex": {
           "name": "GPT 5.3 Codex",
           "metadata": { "family": "gpt-5", "release_stage": "stable", "context_window_tokens": 272000, "supports_tool_calls": true, "supports_reasoning_summaries": true },

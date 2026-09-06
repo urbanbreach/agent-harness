@@ -25,6 +25,10 @@ const CODEX_BASE_URL: &str = "https://api.openai.com/v1";
 const COPILOT_BASE_URL: &str = "https://api.githubcopilot.com";
 const GPT5_6_CODEX_DEFAULT_MAX_INPUT_TOKENS: u32 = 369_384;
 
+#[cfg(test)]
+#[path = "runtime_catalog/astra_tests.rs"]
+mod astra_tests;
+
 #[derive(Debug, Clone)]
 pub struct RuntimeCatalogResolution {
     pub config: HarnessConfig,
@@ -276,6 +280,9 @@ fn normalize_codex_model_variants(model_id: &str, mut cfg: ModelConfig) -> Model
 }
 
 fn codex_reasoning_efforts(model_id: &str) -> Option<&'static [ModelVariantReasoningEffort]> {
+    if model_id == "gpt-6-astra" {
+        return Some(&ASTRA_EFFORTS);
+    }
     let minor = gpt5_minor_version(model_id);
     if model_id.contains("-chat") {
         return minor.is_some().then_some(&GPT5_CHAT_EFFORTS[..]);
@@ -301,6 +308,14 @@ fn codex_reasoning_efforts(model_id: &str) -> Option<&'static [ModelVariantReaso
     }
     None
 }
+
+const ASTRA_EFFORTS: [ModelVariantReasoningEffort; 5] = [
+    ModelVariantReasoningEffort::Low,
+    ModelVariantReasoningEffort::Medium,
+    ModelVariantReasoningEffort::High,
+    ModelVariantReasoningEffort::Xhigh,
+    ModelVariantReasoningEffort::Max,
+];
 
 const GPT5_1_EFFORTS: [ModelVariantReasoningEffort; 4] = [
     ModelVariantReasoningEffort::None,
