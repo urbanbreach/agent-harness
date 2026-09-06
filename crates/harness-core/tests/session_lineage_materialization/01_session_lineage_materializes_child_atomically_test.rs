@@ -84,6 +84,17 @@ fn session_lineage_materializes_child_atomically() {
         &fs::read_to_string(result.child_run_dir.join("meta.json")).unwrap_or_abort(),
     )
     .unwrap_or_abort();
+    assert_eq!(meta["run_id"], result.child_run_id);
+    assert_materialized_lineage_metadata(&meta, &events, source_run_id);
+
+    assert_no_unpublished_temp_dirs(session_dir);
+}
+
+fn assert_materialized_lineage_metadata(
+    meta: &serde_json::Value,
+    events: &[EventEnvelopeV1],
+    source_run_id: &str,
+) {
     let created_at = meta["created_at"]
         .as_str()
         .unwrap_or_abort();
@@ -91,7 +102,6 @@ fn session_lineage_materializes_child_atomically() {
         created_at.starts_with("unix_ms:"),
         "created_at should use deterministic harness materialization timestamp shape"
     );
-    assert_eq!(meta["run_id"], result.child_run_id);
     assert_eq!(
         meta["run_name"],
         format!("Harness child of {source_run_id}")
@@ -121,7 +131,7 @@ fn session_lineage_materializes_child_atomically() {
     );
     assert_eq!(
         meta["harness_lineage"]["harness_source_digest"],
-        source_prefix_digest(&events)
+        source_prefix_digest(events)
     );
     assert_eq!(meta["harness_lineage"]["harness_created_at"], created_at);
     assert_eq!(meta["harness_lineage"]["parent_run_id"], source_run_id);
@@ -135,14 +145,13 @@ fn session_lineage_materializes_child_atomically() {
     );
     assert_eq!(
         meta["harness_lineage"]["source_digest"],
-        source_prefix_digest(&events)
+        source_prefix_digest(events)
     );
     assert!(meta["harness_lineage"]["event_rewrite_policy"]
         .as_str()
         .unwrap_or_abort()
         .contains("clears correlation_id and causation_id"));
 
-    assert_no_unpublished_temp_dirs(session_dir);
 }
 #[test]
 fn session_lineage_tui_live_snapshot_terminalizes_open_state_for_resume() {
