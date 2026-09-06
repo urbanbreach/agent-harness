@@ -89,12 +89,14 @@ impl AppState {
             })
             .map(|tool_call| tool_call.tool_call_id.clone())
             .collect::<Vec<_>>();
+        self.transcript_view.tool_motion.sync_terminal_ids(
+            terminal_tool_ids,
+            now,
+            animate_tool_transitions && !self.replay_mode && !self.reduced_motion,
+        );
         self.transcript_view
             .tool_motion
             .sync_running_ids(running_tool_ids, now);
-        self.transcript_view
-            .tool_motion
-            .sync_terminal_ids(terminal_tool_ids);
         let lifecycle = if self.active_turn_in_progress() {
             QueueLifecycle::Streaming
         } else {
@@ -619,6 +621,15 @@ impl AppState {
         self.transcript_view
             .tool_motion
             .running_elapsed(tool_call_id, self.now())
+    }
+
+    pub(crate) fn tool_finish_elapsed(&self, tool_call_id: &str) -> Option<Duration> {
+        if self.replay_mode || self.reduced_motion {
+            return None;
+        }
+        self.transcript_view
+            .tool_motion
+            .finish_elapsed(tool_call_id, self.now())
     }
 
     pub(crate) fn record_visible_running_tool_motion(&self, visible: bool) {
