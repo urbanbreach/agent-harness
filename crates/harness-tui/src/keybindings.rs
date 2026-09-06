@@ -833,18 +833,22 @@ impl KeyMap {
     /// Apply custom keybindings from config, overriding defaults.
     pub fn apply_overrides(&mut self, overrides: &BTreeMap<String, String>) {
         for (action_str, key_str) in overrides {
-            if let Ok(action) = Action::from_str(action_str) {
-                if let Some(binding) = parse_leader_sequence(key_str) {
-                    self.unbind_action(action);
-                    self.bind_sequence(binding, action);
-                } else if let Ok(binding) = KeyBinding::from_str(key_str) {
-                    self.unbind_action(action);
-                    if session_surface_action(action) {
-                        self.bind_session(binding, action);
-                    } else {
-                        self.bind(binding, action);
-                    }
-                }
+            let Ok(action) = Action::from_str(action_str) else {
+                continue;
+            };
+            if let Some(binding) = parse_leader_sequence(key_str) {
+                self.unbind_action(action);
+                self.bind_sequence(binding, action);
+                continue;
+            }
+            let Ok(binding) = KeyBinding::from_str(key_str) else {
+                continue;
+            };
+            self.unbind_action(action);
+            if session_surface_action(action) {
+                self.bind_session(binding, action);
+            } else {
+                self.bind(binding, action);
             }
         }
     }
