@@ -19,6 +19,7 @@ pub(crate) struct CaptureScenario {
     pub(crate) events_are_live: bool,
     pub(crate) status: Option<&'static str>,
     pub(crate) send_now_transition: bool,
+    pub(crate) tool_parity: bool,
 }
 
 impl CaptureScenario {
@@ -28,6 +29,7 @@ impl CaptureScenario {
             events_are_live: false,
             status: None,
             send_now_transition: false,
+            tool_parity: false,
         }
     }
 
@@ -37,6 +39,7 @@ impl CaptureScenario {
             events_are_live: true,
             status: None,
             send_now_transition: false,
+            tool_parity: false,
         }
     }
 
@@ -46,6 +49,7 @@ impl CaptureScenario {
             events_are_live: false,
             status: Some(status),
             send_now_transition: false,
+            tool_parity: false,
         }
     }
 
@@ -55,6 +59,7 @@ impl CaptureScenario {
             events_are_live: false,
             status: None,
             send_now_transition: true,
+            tool_parity: false,
         }
     }
 }
@@ -246,6 +251,14 @@ fn watcher_events() -> Vec<EventEnvelopeV1> {
 
 pub(crate) fn scenario(name: &str) -> Result<CaptureScenario, std::io::Error> {
     Ok(match name {
+        "tool_parity" | "tool_permission" => {
+            let mut events = active_events();
+            crate::tool_capture_events::append_tools(&mut events, name == "tool_permission");
+            CaptureScenario {
+                tool_parity: true,
+                ..CaptureScenario::live(events)
+            }
+        }
         "waiting_model" => CaptureScenario::live(waiting_model_events()),
         "responding" => CaptureScenario::plain(responding_events()),
         "waiting_answers" => {

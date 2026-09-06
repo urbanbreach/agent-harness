@@ -2,6 +2,8 @@
 mod capture_events;
 #[path = "support/manual_live_turn_visual_capture_runtime.rs"]
 mod capture_runtime;
+#[path = "support/manual_tool_capture_events.rs"]
+mod tool_capture_events;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
