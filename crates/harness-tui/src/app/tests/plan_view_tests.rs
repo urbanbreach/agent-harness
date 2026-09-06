@@ -454,6 +454,11 @@ pub(super) fn plan_view_multi_plan_open_select_activate_product_path() {
     assert!(preview.contains("primary step"));
     assert!(app.plan_view_summary().preview_open);
 
+    exercise_plan_preview_navigation(&mut app);
+    let _ = fs::remove_dir_all(&dir);
+}
+
+fn exercise_plan_preview_navigation(app: &mut AppState) {
     // When: Esc closes preview, navigate to active plan, activate again
     app.handle_key(key(KeyCode::Esc));
     assert!(app.plan_view_is_visible());
@@ -479,8 +484,6 @@ pub(super) fn plan_view_multi_plan_open_select_activate_product_path() {
     }
     app.handle_key(key(KeyCode::Up));
     assert_eq!(app.plan_view_selected_index(), before.min(after_down));
-
-    let _ = fs::remove_dir_all(&dir);
 }
 
 pub(super) fn plan_view_rows_and_summary_surface_byte_len() {
