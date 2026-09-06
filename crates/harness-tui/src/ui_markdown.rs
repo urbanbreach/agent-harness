@@ -47,6 +47,18 @@ fn markdown_link_destination_end(destination: &str) -> Option<usize> {
     None
 }
 
+fn markdown_link_prefix(text: &str) -> Option<(&str, &str, usize)> {
+    let rest = text.strip_prefix('[')?;
+    let label_end = rest.find("](")?;
+    let destination_start = label_end + 2;
+    let destination_end = markdown_link_destination_end(&rest[destination_start..])?;
+    Some((
+        &rest[..label_end],
+        &rest[destination_start..destination_start + destination_end],
+        1 + destination_start + destination_end + 1,
+    ))
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct InlineMarkdownLink {
     pub(super) label: String,
@@ -72,54 +84,37 @@ pub(super) fn parse_inline_markdown(
     let mut position = 0;
     while position < text.len() {
         let remaining = &text[position..];
-        if let Some(rest) = remaining.strip_prefix('[') {
-            if let Some(label_end) = rest.find("](") {
-                let destination_start = label_end + 2;
-                if let Some(destination_end) =
-                    markdown_link_destination_end(&rest[destination_start..])
-                {
-                    let destination = &rest[destination_start..destination_start + destination_end];
-                    let label = parse_inline_markdown_spans(
-                        &rest[..label_end],
-                        base_style,
-                        base_color,
-                        theme,
-                    )
-                    .into_iter()
-                    .map(|span| span.content.into_owned())
-                    .collect::<String>();
-                    let start_cell = parse_inline_markdown_spans(
-                        &text[..position],
-                        base_style,
-                        base_color,
-                        theme,
-                    )
+        if let Some((label, destination, consumed)) = markdown_link_prefix(remaining) {
+            let label = parse_inline_markdown_spans(label, base_style, base_color, theme)
+                .into_iter()
+                .map(|span| span.content.into_owned())
+                .collect::<String>();
+            let start_cell =
+                parse_inline_markdown_spans(&text[..position], base_style, base_color, theme)
                     .iter()
                     .map(Span::width)
                     .sum();
-                    let label_width = display_width(&label);
-                    if crate::transcript_selection::Hyperlink::new(
-                        &label,
-                        destination,
-                        crate::transcript_selection::LinkRange::new(
-                            0,
-                            start_cell,
-                            start_cell.saturating_add(label_width.saturating_sub(1)),
-                        ),
-                    )
-                    .is_ok()
-                    {
-                        links.push(InlineMarkdownLink {
-                            label,
-                            start_cell,
-                            end_cell: start_cell.saturating_add(label_width),
-                            destination: destination.to_string(),
-                        });
-                    }
-                    position += 1 + destination_start + destination_end + 1;
-                    continue;
-                }
+            let label_width = display_width(&label);
+            if crate::transcript_selection::Hyperlink::new(
+                &label,
+                destination,
+                crate::transcript_selection::LinkRange::new(
+                    0,
+                    start_cell,
+                    start_cell.saturating_add(label_width.saturating_sub(1)),
+                ),
+            )
+            .is_ok()
+            {
+                links.push(InlineMarkdownLink {
+                    label,
+                    start_cell,
+                    end_cell: start_cell.saturating_add(label_width),
+                    destination: destination.to_string(),
+                });
             }
+            position += consumed;
+            continue;
         }
         if let Some(url_len) = raw_url_length(remaining) {
             let destination = &remaining[..url_len];
@@ -172,23 +167,18 @@ pub(super) fn parse_inline_markdown_spans(
             None
         };
 
-        if let Some(rest) = remaining.strip_prefix('[') {
-            if let Some(label_end) = rest.find("](") {
-                let after_label = &rest[label_end + 2..];
-                if let Some(url_end) = markdown_link_destination_end(after_label) {
-                    let link_style = base_style
-                        .fg(theme.markdown.link_text)
-                        .add_modifier(Modifier::UNDERLINED);
-                    spans.extend(parse_inline_markdown_spans(
-                        &rest[..label_end],
-                        link_style,
-                        theme.markdown.link_text,
-                        theme,
-                    ));
-                    pos += 1 + label_end + 2 + url_end + 1;
-                    continue;
-                }
-            }
+        if let Some((label, _, consumed)) = markdown_link_prefix(remaining) {
+            let link_style = base_style
+                .fg(theme.markdown.link_text)
+                .add_modifier(Modifier::UNDERLINED);
+            spans.extend(parse_inline_markdown_spans(
+                label,
+                link_style,
+                theme.markdown.link_text,
+                theme,
+            ));
+            pos += consumed;
+            continue;
         }
 
         if let Some(url_len) = raw_url_length(remaining) {
@@ -403,14 +393,12 @@ pub(super) fn append_rich_text_block(
                 body,
                 raw,
             } => {
-                if let Some(language) = language.as_deref() {
-                    if matches!(language, "diff" | "patch") {
-                        if let Some(diff_lines) =
-                            render_structured_diff_lines(&body, None, prefix, width, false, theme)
-                        {
-                            lines.extend(diff_lines);
-                            continue;
-                        }
+                if matches!(language.as_deref(), Some("diff" | "patch")) {
+                    if let Some(diff_lines) =
+                        render_structured_diff_lines(&body, None, prefix, width, false, theme)
+                    {
+                        lines.extend(diff_lines);
+                        continue;
                     }
                 }
 

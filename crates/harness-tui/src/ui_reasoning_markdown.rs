@@ -53,6 +53,13 @@ fn is_flanking_pair(prev: Option<char>, content: &str, after_close: &str) -> boo
             .is_some_and(char::is_alphanumeric)
 }
 
+fn reasoning_link_prefix(text: &str) -> Option<(&str, usize)> {
+    let rest = text.strip_prefix('[')?;
+    let label_end = rest.find("](")?;
+    let url_end = rest[label_end + 2..].find(')')?;
+    Some((&rest[..label_end], 1 + label_end + 2 + url_end + 1))
+}
+
 pub(super) fn parse_reasoning_inline_spans(
     text: &str,
     colors: &ReasoningMarkdownColors,
@@ -69,20 +76,15 @@ pub(super) fn parse_reasoning_inline_spans(
             None
         };
 
-        if let Some(rest) = remaining.strip_prefix('[') {
-            if let Some(label_end) = rest.find("](") {
-                let after_label = &rest[label_end + 2..];
-                if let Some(url_end) = after_label.find(')') {
-                    spans.push(Span::styled(
-                        rest[..label_end].to_string(),
-                        Style::default()
-                            .fg(colors.link_text)
-                            .add_modifier(Modifier::UNDERLINED),
-                    ));
-                    pos += 1 + label_end + 2 + url_end + 1;
-                    continue;
-                }
-            }
+        if let Some((label, consumed)) = reasoning_link_prefix(remaining) {
+            spans.push(Span::styled(
+                label.to_string(),
+                Style::default()
+                    .fg(colors.link_text)
+                    .add_modifier(Modifier::UNDERLINED),
+            ));
+            pos += consumed;
+            continue;
         }
 
         if let Some(url_len) = raw_url_length(remaining) {
