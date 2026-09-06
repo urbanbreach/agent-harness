@@ -32,8 +32,8 @@ use super::ui_tool_metadata::tool_summary_string;
 use super::ui_tool_output::{collapsible_bash_panel_preview, collapsible_output_preview};
 use super::ui_tool_paths::{
     context_group_tool_id, join_tool_subtitles, read_tool_input_suffix, search_result_count_suffix,
-    tool_call_path_metadata, tool_in_path_description, tool_match_count_description,
-    tool_path_display, TranscriptPathMetadata,
+    tool_call_path_metadata, tool_match_count_description, tool_path_display,
+    TranscriptPathMetadata,
 };
 use super::ui_tool_question_todo::{
     ordered_todo_items, question_tool_title, resolved_question_answer_items,

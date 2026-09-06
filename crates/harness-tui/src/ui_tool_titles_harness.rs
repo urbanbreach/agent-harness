@@ -105,3 +105,23 @@ pub(super) fn skill_tool_title(tool_call: &ToolCallEntry) -> String {
     let name = tool_summary_string(&tool_call.args_summary, &["name"]).unwrap_or_default();
     format!("Skill \"{name}\"")
 }
+
+pub(super) fn local_search_tool_title(tool_call: &ToolCallEntry) -> String {
+    let pattern = tool_summary_string(&tool_call.args_summary, &["pattern"]).unwrap_or_default();
+    let glob = tool_summary_string(&tool_call.args_summary, &["glob", "include"]);
+    let term = if matches!(tool_call.effective_tool_id(), "glob" | "fs.glob") {
+        pattern
+    } else if let Some(glob) = glob
+        .as_deref()
+        .filter(|_| pattern.is_empty() || pattern == ".")
+    {
+        glob.to_string()
+    } else {
+        let mut term = format!("{pattern:?}");
+        if let Some(glob) = glob {
+            term.push_str(&format!(" in {glob}"));
+        }
+        term
+    };
+    format!("Search {term}")
+}
