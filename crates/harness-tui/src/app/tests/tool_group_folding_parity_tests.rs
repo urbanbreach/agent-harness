@@ -73,7 +73,15 @@ pub(super) fn many_tool_group_members_render_one_exact_hidden_count_affordance()
 
     // assert
     assert_eq!(screen.matches("4 more").count(), 1, "{screen}");
-    assert!(screen.contains("Ran 14 commands"), "{screen}");
+    assert_eq!(
+        screen.matches("Run printf command-").count(),
+        10,
+        "{screen}"
+    );
+    assert!(
+        !screen.contains("command-00") && screen.contains("command-13"),
+        "{screen}"
+    );
 }
 
 pub(super) fn tool_group_fold_round_trip_survives_compaction_and_narrow_reflow() {

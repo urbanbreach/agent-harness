@@ -397,7 +397,7 @@ pub(super) fn transcript_tool_rows_keep_status_but_not_raw_json_dump() {
     ));
 
     let transcript = render_live_lines(&app, 120, 36);
-    assert!(transcript.contains("Read 1 file"));
+    assert!(transcript.contains("Read lib.rs (42-61)"));
     assert!(!transcript.contains(r#"{"path":"src/lib.rs","start_line":42,"limit":20}"#));
     assert!(!transcript.contains("args {"));
 }
@@ -415,7 +415,7 @@ pub(super) fn transcript_shell_remains_scannable_without_bubble_cards() {
     let thinking_row =
         find_line_containing_all_from(&lines, prompt_row + 1, &["Thought"]).unwrap_or_abort();
     let tool_row =
-        find_line_containing_all_from(&lines, thinking_row + 1, &["Read 1 file"]).unwrap_or_abort();
+        find_line_containing_all_from(&lines, thinking_row + 1, &["Read ui.rs"]).unwrap_or_abort();
     let body_row = find_line_containing_from(
         &lines,
         tool_row + 1,
@@ -434,8 +434,8 @@ pub(super) fn transcript_shell_remains_scannable_without_bubble_cards() {
         .collect::<Vec<_>>();
     assert_eq!(
         rail_rows,
-        vec![tool_row],
-        "settled tool entry must retain only its static routed rail\n{rendered}"
+        Vec::<usize>::new(),
+        "settled individual tool entry must not retain a group or completion rail\n{rendered}"
     );
     assert!(!lines[body_row].contains('┃'));
     assert!(!rendered.contains("Composer ·"));
@@ -454,7 +454,7 @@ pub(super) fn transcript_status_metadata_is_inline_not_chrome() {
 
     assert!(!rendered.contains("req_rich_shell"));
     assert!(rendered.contains("model-1"));
-    assert!(rendered.contains("Read 1 file"));
+    assert!(rendered.contains("Read ui.rs (1-24)"));
     assert!(!rendered.contains("user ("));
     assert!(!rendered.contains("assistant ("));
     assert!(!rendered.contains("(tool fs.read · succeeded)"));
@@ -551,15 +551,15 @@ pub(super) fn tool_details_toggle_collapses_successful_tool_payloads() {
     let mut app = rich_transcript_fixture_app();
 
     let shown = render_live_lines(&app, 120, 30);
-    assert!(shown.contains("Read 1 file"));
+    assert!(shown.contains("Read ui.rs (1-24)"));
 
     run_palette_command(&mut app, "hide tool details");
     let hidden = render_live_lines(&app, 120, 30);
-    assert!(!hidden.contains("Read 1 file"));
+    assert!(!hidden.contains("Read ui.rs"));
 
     run_palette_command(&mut app, "show tool details");
     let restored = render_live_lines(&app, 120, 30);
-    assert!(restored.contains("Read 1 file"));
+    assert!(restored.contains("Read ui.rs (1-24)"));
 }
 
 pub(super) fn failed_tool_rows_still_surface_error_summary() {

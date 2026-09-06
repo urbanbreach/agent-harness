@@ -89,13 +89,21 @@ fn shell_tool_command_from_value(value: Option<&serde_json::Value>) -> Option<St
 
 pub(super) fn shell_tool_title_description(
     tool_call: &ToolCallEntry,
-    session_path: Option<&Path>,
+    _session_path: Option<&Path>,
 ) -> Option<String> {
-    shell_tool_workdir_display(tool_call, session_path)
-        .map(|workdir| format!("# Running in {workdir}"))
+    trimmed_json_string_field(tool_call.output_json.as_ref(), &["description"])
+        .or_else(|| {
+            serde_json::from_str::<serde_json::Value>(&tool_call.args_summary)
+                .ok()
+                .and_then(|value| trimmed_json_string_field(Some(&value), &["description"]))
+        })
+        .map(|description| {
+            collapse_inline_whitespace(&super::ui_tool_output::safe_tool_text(&description))
+        })
+        .filter(|description| !description.is_empty())
 }
 
-fn shell_tool_workdir_display(
+pub(super) fn shell_tool_workdir_display(
     tool_call: &ToolCallEntry,
     session_path: Option<&Path>,
 ) -> Option<String> {
@@ -119,7 +127,10 @@ fn shell_tool_workdir_display(
         return None;
     }
 
-    Some(home_collapsed_path_display(&absolute))
+    Some(super::ui_tool_paths::tool_header_path(
+        &home_collapsed_path_display(&absolute),
+        true,
+    ))
 }
 
 fn home_collapsed_path_display(path: &Path) -> String {

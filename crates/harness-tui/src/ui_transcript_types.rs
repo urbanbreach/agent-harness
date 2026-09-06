@@ -310,8 +310,11 @@ impl TranscriptToolGroupSummary {
 
     pub(super) const fn folds_as_group(&self) -> bool {
         match self.kind {
-            TranscriptToolGroupKind::Commands => self.member_count > 0,
-            TranscriptToolGroupKind::Context => self.member_count > 0,
+            TranscriptToolGroupKind::Commands => self.member_count > 11,
+            TranscriptToolGroupKind::Context => {
+                self.member_count > 1
+                    || matches!(self.verbs.as_slice(), [TranscriptToolVerb::Subagent])
+            }
         }
     }
 
@@ -686,7 +689,7 @@ mod tool_group_tests {
     }
 
     #[test]
-    fn single_command_folds_as_command_group() {
+    fn single_command_stays_individual() {
         // arrange
         let parts = vec![tool_part(
             "command",
@@ -701,7 +704,7 @@ mod tool_group_tests {
 
         // assert
         assert_eq!(summary.kind, TranscriptToolGroupKind::Commands);
-        assert!(summary.folds_as_group());
+        assert!(!summary.folds_as_group());
     }
 
     #[test]

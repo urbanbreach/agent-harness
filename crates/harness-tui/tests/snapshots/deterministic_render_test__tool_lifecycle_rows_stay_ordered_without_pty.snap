@@ -10,16 +10,16 @@ expression: trim_trailing_snapshot_whitespace(&rendered)
      ❯ Inspect tool activity
 
 
-  ┃  ◈ Read 1 file  ▸
-     ✓ Edit ui.rs crates/harness-tui/src  ▸
+     ✓ Read ui.rs (1-24)  ▸
+     ✓ Edit ui.rs  ▸
   ┃  ◈ Ran 1 subagent  ▸
 
-  ┃  ✗ Run cargo test -p harness-tui · Failed
-  ┃      exit code: 1
-  ┃      stderr: snapshot mismatch
+     ✗ Run cargo test -p harness-tui · in workspace · Failed  ▾
+
+         exit code: 1
+         stderr: snapshot mismatch
 
      Tool summaries are now easier to scan, and edits stay inline.
-
 
 
 

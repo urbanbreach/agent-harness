@@ -141,7 +141,8 @@ fn typed_live_fragments_render_then_final_commit_settles_them() {
     assert!(settled.contains("final answer"), "{settled}");
     assert!(settled.contains("final"), "{settled}");
     assert!(!settled.contains("draft answer"), "{settled}");
-    assert_eq!(settled.matches("Reading 1 file").count(), 1, "{settled}");
+    assert_eq!(settled.matches("Read final").count(), 1, "{settled}");
+    assert!(!settled.contains("Read draft"), "{settled}");
     assert_eq!(app.selected_event().map(|event| event.seq), Some(3));
 
     let canonical = app

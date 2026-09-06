@@ -321,7 +321,7 @@ pub(super) fn tool_call_requested_renders_pending_status() {
 
     let debug = format!("{:?}", terminal.backend().buffer());
     assert!(
-        debug.contains("Reading 1 file"),
+        debug.contains("Read test.txt"),
         "transcript must show the queued semantic tool header"
     );
 }
@@ -372,7 +372,7 @@ pub(super) fn tool_call_started_renders_running_status() {
 
     let debug = format!("{:?}", terminal.backend().buffer());
     assert!(
-        debug.contains("Reading 1 file"),
+        debug.contains("Read test.txt"),
         "transcript must show the running semantic tool header"
     );
 }
@@ -436,9 +436,9 @@ pub(super) fn tool_call_finished_renders_truncated_output() {
         .unwrap_or_abort();
 
     let debug = format!("{:?}", terminal.backend().buffer());
-    // Waiting-state packing: completed reads use count form ("Read 1 file"), not path form.
+    // Individual reads retain their path while stored output stays folded.
     assert!(
-        debug.contains("Read 1 file"),
+        debug.contains("Read test.txt"),
         "transcript must show tool title"
     );
     assert!(

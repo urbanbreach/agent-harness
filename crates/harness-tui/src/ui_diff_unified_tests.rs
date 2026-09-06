@@ -80,7 +80,8 @@ fn renderer_keeps_model_stats_and_hunk_offsets_width_independent() {
 #[test]
 fn banded_rows_use_one_compact_number_gutter_without_redundant_markers() {
     // Given: a truecolor theme whose add/remove background bands are distinct.
-    let diff = "--- src/demo.rs\n+++ src/demo.rs\n@@ -7,1 +11,1 @@\n-old_value\n+new_value\n";
+    let diff =
+        "--- src/demo.rs\n+++ src/demo.rs\n@@ -7,2 +11,2 @@\n-old_value\n+new_value\n keep_value\n";
 
     // When: the default diff variant renders the replacement.
     let rows = render_plain_rows(diff, 72, &Theme::default());
@@ -107,6 +108,24 @@ fn banded_rows_use_one_compact_number_gutter_without_redundant_markers() {
     assert!(!added_prefix.contains('+'), "{added_prefix:?}");
     assert!(removed_prefix.chars().count() <= 4, "{removed_prefix:?}");
     assert_eq!(removed_prefix.chars().count(), added_prefix.chars().count());
+
+    let theme = Theme::default();
+    let lines =
+        render_structured_diff_lines_with_options(diff, None, "", 72, unified_options(), &theme)
+            .unwrap_or_abort();
+    for (line, marker) in lines.iter().zip(['-', '+', ' ']) {
+        // The change band starts at content, never on its number or separating gap.
+        assert!(line.spans.iter().take(3).all(|span| {
+            span.style.bg != Some(diff_row_palette('+', &theme).content_bg)
+                && span.style.bg != Some(diff_row_palette('-', &theme).content_bg)
+        }));
+        let content_bg = (marker != ' ').then(|| diff_row_palette(marker, &theme).content_bg);
+        assert!(line
+            .spans
+            .iter()
+            .skip(3)
+            .all(|span| span.style.bg == content_bg));
+    }
 }
 
 #[test]

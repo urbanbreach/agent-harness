@@ -146,37 +146,36 @@ pub(super) fn build_transcript_tool_call_section(
                     true,
                 )
             }
-            "fs.ls" | "list" => (
-                completed_list_tool_title(tool_call),
-                Some("→"),
-                generic_tool_visual_style(tool_call, generic_output_visible),
-                true,
-            ),
+            "fs.ls" | "list" => {
+                header_path_metadata = tool_path_display(tool_call);
+                (
+                    "List".to_string(),
+                    Some("→"),
+                    generic_tool_visual_style(tool_call, generic_output_visible),
+                    true,
+                )
+            }
             "shell.run" | "bash" => {
                 let cmd = shell_tool_command(tool_call).unwrap_or_else(|| "Shell".to_string());
+                let description = shell_tool_title_description(tool_call, session_path);
+                let title = format!("Run {}", description.as_deref().unwrap_or(&cmd));
                 let shell_output = shell_tool_output(tool_call);
+                let has_output = shell_output.is_some();
                 if let Some(output) = shell_output {
                     push_bash_panel_block(
                         &mut detail_blocks,
                         &cmd,
                         &output,
-                        shell_tool_title_description(tool_call, session_path),
+                        description,
                         output_tone,
                     );
-                    (
-                        format!("Run {cmd}"),
-                        None,
-                        TranscriptToolCallVisualStyle::Block,
-                        true,
-                    )
-                } else {
-                    (
-                        format!("Run {cmd}"),
-                        None,
-                        TranscriptToolCallVisualStyle::Block,
-                        false,
-                    )
                 }
+                (
+                    title,
+                    None,
+                    TranscriptToolCallVisualStyle::Block,
+                    has_output,
+                )
             }
             "edit.hashline_apply" => {
                 let (title, icon) = hashline_tool_row_header(
@@ -424,7 +423,11 @@ pub(super) fn build_transcript_tool_call_section(
                         title,
                         tool_summary_string(&tool_call.args_summary, &["query"])
                             .unwrap_or_else(|| "query".to_string()),
-                        search_result_count_suffix(tool_call, display_tool_id)
+                        if expanded {
+                            String::new()
+                        } else {
+                            search_result_count_suffix(tool_call, display_tool_id)
+                        }
                     ),
                     Some(if display_tool_id == "search.web" {
                         theme.live_shell.transcript_glyphs.group_marker
@@ -550,13 +553,16 @@ pub(super) fn build_transcript_tool_call_section(
         tool_call.status == ToolCallDisplayStatus::Succeeded,
     );
 
+    let mut edit_stats = None;
     if tool_call.status == ToolCallDisplayStatus::Succeeded
         && matches!(
             display_tool_id,
             "edit.hashline_apply" | "edit" | "write" | "fs.write"
         )
     {
-        title = successful_edit_summary_title(tool_call, &detail_blocks);
+        let (action, stats) = successful_edit_summary(tool_call, &detail_blocks);
+        title = action.to_string();
+        edit_stats = stats.filter(|_| !expanded);
     }
 
     if detail_blocks.is_empty()
@@ -609,16 +615,24 @@ pub(super) fn build_transcript_tool_call_section(
         None
     };
     let default_subtitle = match display_tool_id {
-        "shell.run" | "bash" => None,
+        "shell.run" | "bash" => {
+            super::super::ui_transcript_bash::shell_tool_workdir_display(tool_call, session_path)
+                .map(|path| format!("in {path}"))
+        }
+        "fs.read" | "read" => {
+            let range = read_tool_input_suffix(tool_call);
+            (!range.is_empty()).then_some(range)
+        }
+        "fs.ls" | "list" => (tool_call.status == ToolCallDisplayStatus::Succeeded)
+            .then(|| tool_entry_count(tool_call))
+            .flatten()
+            .map(|count| format!("({count} {})", if count == 1 { "entry" } else { "entries" })),
         "fs.glob" | "glob" | "fs.grep" | "grep" => tool_match_count_description(tool_call),
         "edit.hashline_apply" | "fs.write" | "write" | "edit" => {
-            let path = tool_call
+            header_path_metadata = tool_call
                 .edit_path_display()
                 .or_else(|| tool_path_display(tool_call));
-            tool_call_path_metadata(path.as_deref()).and_then(|metadata| {
-                header_path_metadata = metadata.parent.clone();
-                (tool_call.status != ToolCallDisplayStatus::Succeeded).then_some(metadata.leaf)
-            })
+            edit_stats
         }
         "background_output" => background_output_tool_subtitle(tool_call),
         "agent.spawn" | "task" => agent_spawn_subtitle(tool_call),
@@ -685,16 +699,7 @@ fn read_tool_row_header(
     app: &AppState,
     path: Option<&str>,
 ) -> (String, Option<&'static str>) {
-    let title = match tool_call.status {
-        ToolCallDisplayStatus::Succeeded => completed_read_tool_title(tool_call, path),
-        ToolCallDisplayStatus::Running
-        | ToolCallDisplayStatus::PendingPermission
-        | ToolCallDisplayStatus::Queued
-        | ToolCallDisplayStatus::Failed => path.map_or_else(
-            || format!("{} · Reading file...", tool_call.effective_tool_id()),
-            |path| format!("Read {path}{}", read_tool_input_suffix(tool_call)),
-        ),
-    };
+    let title = "Read".to_string();
     let icon = match tool_call.status {
         ToolCallDisplayStatus::Running => glyph_routed_streaming_spinner_frame(
             app.theme(),
@@ -789,18 +794,10 @@ pub(super) fn set_diff_highlight_phase(
     }
 }
 
-pub(super) fn successful_edit_summary_title(
+pub(super) fn successful_edit_summary(
     tool_call: &crate::app::ToolCallEntry,
     detail_blocks: &[TranscriptToolCallDetailBlock],
-) -> String {
-    let path = tool_call
-        .edit_path_display()
-        .or_else(|| tool_path_display(tool_call))
-        .unwrap_or_else(|| "file".to_string());
-    let basename = Path::new(&path)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or(&path);
+) -> (&'static str, Option<String>) {
     let creating = matches!(tool_call.effective_tool_id(), "write" | "fs.write")
         && detail_blocks.iter().any(|block| match block {
             TranscriptToolCallDetailBlock::StructuredDiff { diff_content, .. } => diff_content
@@ -828,13 +825,14 @@ pub(super) fn successful_edit_summary_title(
         },
     );
     let action = if creating { "Create" } else { "Edit" };
-    if additions == 0 && removals == 0 {
-        format!("{action} {basename}")
+    let stats = if additions == 0 && removals == 0 {
+        None
     } else if creating {
-        format!("{action} {basename} +{additions}")
+        Some(format!("+{additions}"))
     } else {
-        format!("{action} {basename} +{additions}/-{removals}")
-    }
+        Some(format!("+{additions}/-{removals}"))
+    };
+    (action, stats)
 }
 
 fn push_tool_call_diff_blocks(
@@ -1250,38 +1248,6 @@ fn push_bash_panel_block(
     });
 }
 
-fn completed_list_tool_title(tool_call: &crate::app::ToolCallEntry) -> String {
-    if tool_call.status != ToolCallDisplayStatus::Succeeded {
-        return tool_summary_string(&tool_call.args_summary, &["path"])
-            .filter(|path| !path.is_empty())
-            .map(|path| format!("List {path}"))
-            .unwrap_or_else(|| "List".to_string());
-    }
-    let count = tool_entry_count(tool_call).unwrap_or(1);
-    let noun = if count == 1 { "dir" } else { "dirs" };
-    format!("Listed {count} {noun}")
-}
-
-fn completed_read_tool_title(tool_call: &crate::app::ToolCallEntry, path: Option<&str>) -> String {
-    if tool_call.status != ToolCallDisplayStatus::Succeeded {
-        if let Some(path) = path {
-            return format!("Read {path}{}", read_tool_input_suffix(tool_call));
-        }
-    } else {
-        let count = tool_file_count(tool_call).unwrap_or(1);
-        let noun = if count == 1 { "file" } else { "files" };
-        return format!("Read {count} {noun}");
-    }
-
-    if let Some(path) = path {
-        return format!("Read {path}{}", read_tool_input_suffix(tool_call));
-    }
-
-    let count = tool_file_count(tool_call).unwrap_or(1);
-    let noun = if count == 1 { "file" } else { "files" };
-    format!("Read {count} {noun}")
-}
-
 fn tool_entry_count(tool_call: &crate::app::ToolCallEntry) -> Option<u64> {
     if let Some(value) = tool_call.output_json.as_ref() {
         if let Some(count) = value
@@ -1303,29 +1269,6 @@ fn tool_entry_count(tool_call: &crate::app::ToolCallEntry) -> Option<u64> {
             .count();
         (lines > 0).then_some(lines as u64)
     })
-}
-
-fn tool_file_count(tool_call: &crate::app::ToolCallEntry) -> Option<u64> {
-    tool_call
-        .output_json
-        .as_ref()
-        .and_then(|value| {
-            value
-                .get("file_count")
-                .or_else(|| value.get("files_read"))
-                .or_else(|| value.get("count"))
-        })
-        .and_then(serde_json::Value::as_u64)
-        .or_else(|| {
-            tool_call.output_summary.as_deref().and_then(|summary| {
-                let lower = summary.to_ascii_lowercase();
-                if lower.contains("file") {
-                    Some(1)
-                } else {
-                    None
-                }
-            })
-        })
 }
 
 #[cfg(test)]
@@ -1351,6 +1294,27 @@ mod presentation_section_tests {
     fn static_tool_headers_preserve_recorded_identity_and_ranges() {
         // Given: native and MCP calls with recorded, displayable metadata.
         let cases = [
+            (
+                "read",
+                r#"{"path":"src/main.rs","offset":42,"limit":20}"#,
+                "Read",
+                Some("src/main.rs"),
+                Some("(42-61)"),
+            ),
+            (
+                "list",
+                r#"{"path":"src"}"#,
+                "List",
+                Some("src"),
+                Some("(3 entries)"),
+            ),
+            (
+                "bash",
+                r#"{"command":"cargo test","description":"unit tests"}"#,
+                "Run unit tests",
+                None,
+                None,
+            ),
             (
                 "mcp.database.query",
                 r#"{"sql":"select 1"}"#,

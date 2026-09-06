@@ -194,7 +194,7 @@ mod tests {
             .find(|span| span.content.contains("BETA"))
             .unwrap_or_abort();
 
-        assert_eq!(context_span.style.bg, Some(theme.surface.panel));
+        assert_eq!(context_span.style.bg, None);
         assert_eq!(
             removed_span.style.bg,
             Some(diff_row_palette('-', &theme).content_bg)

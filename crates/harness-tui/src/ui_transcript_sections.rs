@@ -1,5 +1,5 @@
 // allow: SIZE_OK — TUI transcript rendering (indivisible view model)
-use super::ui_transcript_tool_sections::{build_tool_call_section, successful_edit_summary_title};
+use super::ui_transcript_tool_sections::{build_tool_call_section, successful_edit_summary};
 use super::*;
 
 pub(super) fn build_transcript_sections(app: &AppState) -> Vec<TranscriptTurnSection> {
@@ -209,8 +209,14 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
                 } else {
                     TranscriptToolCallDisclosureState::Collapsed
                 });
-                previous.section.header.title =
-                    successful_edit_summary_title(tool_call, &previous.section.detail_blocks);
+                let (action, stats) =
+                    successful_edit_summary(tool_call, &previous.section.detail_blocks);
+                previous.section.header.title = action.to_string();
+                previous.section.header.subtitle = if previous.section.expanded {
+                    None
+                } else {
+                    stats
+                };
                 continue;
             }
         }
@@ -1012,7 +1018,12 @@ mod ui10_tests {
             collapsed_tools[0].coalesced_tool_call_ids,
             ["write-0", "write-1", "write-2"]
         );
-        assert_eq!(collapsed_tools[0].header.title, "Edit demo.txt +1/-1");
+        assert_eq!(collapsed_tools[0].header.title, "Edit");
+        assert_eq!(
+            collapsed_tools[0].header.path_metadata.as_deref(),
+            Some("demo.txt")
+        );
+        assert_eq!(collapsed_tools[0].header.subtitle.as_deref(), Some("+1/-1"));
         assert!(!collapsed_tools[0].details_visible());
 
         // act
@@ -1024,6 +1035,8 @@ mod ui10_tests {
         // assert
         assert!(expanded_tools[0].details_visible());
         assert_eq!(expanded_tools[0].detail_blocks.len(), 1);
+        assert_eq!(expanded_tools[0].header.title, "Edit");
+        assert_eq!(expanded_tools[0].header.subtitle, None);
     }
 
     #[test]

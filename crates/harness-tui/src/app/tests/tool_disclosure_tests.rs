@@ -128,6 +128,33 @@ fn group_keyboard_and_mouse_toggle_the_same_disclosure_state() {
                 metadata: None,
             }),
         ));
+        for index in 0..10 {
+            let tool_call_id = format!("tc_shared_extra_{index}");
+            let seq = 6 + index * 2;
+            app.ingest_event(envelope(
+                seq,
+                "req_shared_group",
+                EventV1::ToolCallRequested(ToolCallRequestedEvent {
+                    tool_call_id: tool_call_id.clone().into(),
+                    tool_id: "shell.run".to_string(),
+                    args_summary: r#"{"cmd":"true"}"#.to_string(),
+                    args_digest: format!("digest-{tool_call_id}"),
+                    metadata: None,
+                }),
+            ));
+            app.ingest_event(envelope(
+                seq + 1,
+                "req_shared_group",
+                EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                    tool_call_id: tool_call_id.into(),
+                    status: ToolCallStatus::Succeeded,
+                    output_summary: Some("done".to_string()),
+                    output_digest: None,
+                    output_json: None,
+                    metadata: None,
+                }),
+            ));
+        }
         app
     };
     let mut mouse_app = app();
@@ -135,7 +162,7 @@ fn group_keyboard_and_mouse_toggle_the_same_disclosure_state() {
     keyboard_app.focus = Focus::Details;
 
     // act
-    let (column, row) = transcript_click_position(&mouse_app, "Ran 2 commands");
+    let (column, row) = transcript_click_position(&mouse_app, "Ran 12 commands");
     mouse_app.handle_mouse(
         MouseEvent {
             kind: MouseEventKind::Down(MouseButton::Left),
@@ -161,12 +188,13 @@ fn group_keyboard_and_mouse_toggle_the_same_disclosure_state() {
     );
     assert!(mouse_app
         .transcript_view
-        .collapsed_tool_outputs
+        .expanded_tool_outputs
         .contains("tc_shared_first"));
     assert!(mouse_app
         .transcript_view
-        .collapsed_tool_outputs
+        .expanded_tool_outputs
         .contains("tc_shared_second"));
+    assert_eq!(mouse_app.transcript_view.expanded_tool_outputs.len(), 12);
 }
 
 fn tool_output_is_expanded(app: &AppState, tool_call_id: &str) -> bool {

@@ -574,7 +574,7 @@ fn tool_only_turns_omit_standalone_assistant_footer() {
         80,
     ));
 
-    assert!(lines.iter().any(|line| line.contains("Read 1 file")));
+    assert!(lines.iter().any(|line| line.contains("Read ui.rs")));
     assert!(lines.iter().all(|line| !line.contains("Worked for")));
     assert!(lines.iter().all(|line| !line.contains("gpt-5.4-mini")));
 }
@@ -1388,7 +1388,9 @@ fn assistant_tool_surfaces_keep_same_trailing_gap_as_text_boxes() {
     });
 
     let mut shell_call = transcript_section_model_test_tool_call("tc-shell-alignment", "bash");
-    shell_call.args_summary = r#"{"command":"printf 'bash smoke test ok\n'","description":"Run harmless shell smoke test"}"#.to_string();
+    shell_call.args_summary =
+        r#"{"command":"printf 'bash smoke test ok\n'","description":"harmless shell smoke test"}"#
+            .to_string();
     shell_call.status = ToolCallDisplayStatus::Succeeded;
     shell_call.output_summary = Some("bash smoke test ok".to_string());
     activity.tool_calls.push(shell_call);
@@ -1412,25 +1414,30 @@ fn assistant_tool_surfaces_keep_same_trailing_gap_as_text_boxes() {
     let tool_interactions = tool_surface.interaction_rows.as_ref().unwrap_or_abort();
 
     assert_eq!(tool_surface.width, 78);
+    let header_row = tool_lines
+        .iter()
+        .position(|line| line.contains("Run harmless shell smoke test"))
+        .unwrap_or_abort();
     let command_row = tool_lines
         .iter()
-        .position(|line| line.contains("Run printf 'bash smoke test ok"))
+        .position(|line| line.contains("$ printf 'bash smoke test ok"))
         .unwrap_or_abort();
     let output_row = tool_lines
         .iter()
         .enumerate()
         .find_map(|(index, line)| {
-            (!line.contains("Run printf") && line.contains("bash smoke test ok")).then_some(index)
+            (!line.contains("$ printf") && line.contains("bash smoke test ok")).then_some(index)
         })
         .unwrap_or_abort();
     let command_column = tool_lines[command_row]
-        .find("Run printf 'bash smoke test ok")
+        .find("$ printf 'bash smoke test ok")
         .unwrap_or_abort();
     let output_column = tool_lines[output_row]
         .find("bash smoke test ok")
         .unwrap_or_abort();
     assert_eq!(output_column, command_column);
-    assert!(tool_interactions[command_row].is_some());
+    assert!(tool_interactions[header_row].is_some());
+    assert_eq!(tool_interactions[command_row], None);
     assert_eq!(tool_interactions[output_row], None);
     assert!(
         tool_lines.iter().any(|line| line.contains('✓')),
@@ -1449,12 +1456,12 @@ fn assistant_tool_surfaces_keep_same_trailing_gap_as_text_boxes() {
     let command_row = snapshot
         .rows
         .iter()
-        .position(|line| line.contains("Run printf 'bash smoke test ok"))
+        .position(|line| line.contains("Run harmless shell smoke test"))
         .unwrap_or_abort();
     let output_row = snapshot
         .rows
         .iter()
-        .position(|line| !line.contains("Run printf") && line.contains("bash smoke test ok"))
+        .position(|line| !line.contains("$ printf") && line.contains("bash smoke test ok"))
         .unwrap_or_abort();
     let selection = TranscriptSelection {
         anchor: TranscriptSelectionCell {
@@ -1469,10 +1476,10 @@ fn assistant_tool_surfaces_keep_same_trailing_gap_as_text_boxes() {
     app.transcript_view.transcript_selection = Some(selection);
     let copied = transcript_selection_text(&app, area, selection).unwrap_or_abort();
     assert!(
-        copied.contains("Run printf 'bash smoke test ok"),
+        copied.contains("$ printf 'bash smoke test ok"),
         "copied shell card text should contain the command without rail: {copied:?}"
     );
-    assert!(copied.contains("Run printf 'bash smoke test ok"));
+    assert_eq!(copied.matches("$ printf").count(), 1);
     assert!(copied.contains("bash smoke test ok"));
     assert!(!copied.contains('┃'));
 }
@@ -1486,6 +1493,13 @@ fn command_group_auto_expands_failure_and_preserves_explicit_member_folds() {
         request_id: "request-command-group".into(),
         text: "run grouped commands".to_string(),
     });
+    for index in 0..10 {
+        let mut tool_call =
+            transcript_section_model_test_tool_call(&format!("tc-prelude-{index}"), "bash");
+        tool_call.args_summary = format!(r#"{{"command":"printf prelude-{index}"}}"#);
+        tool_call.status = ToolCallDisplayStatus::Succeeded;
+        activity.tool_calls.push(tool_call);
+    }
     for (tool_call_id, command, status, output) in [
         (
             "tc-command-success",
@@ -1527,14 +1541,14 @@ fn command_group_auto_expands_failure_and_preserves_explicit_member_folds() {
     // assert
     assert!(collapsed
         .iter()
-        .any(|line| line.contains("Ran 2 commands · 1 failed") && line.contains('▾')));
+        .any(|line| line.contains("Ran 12 commands · 1 failed") && line.contains('▾')));
     assert!(!collapsed
         .iter()
         .any(|line| line.contains("successful output")));
     assert!(collapsed.iter().any(|line| line.contains("command failed")));
     assert!(expanded
         .iter()
-        .any(|line| line.contains("Ran 2 commands · 1 failed") && line.contains('▾')));
+        .any(|line| line.contains("Ran 12 commands · 1 failed") && line.contains('▾')));
     assert!(expanded
         .iter()
         .any(|line| line.contains("successful output")));
@@ -1556,6 +1570,13 @@ fn command_group_stays_coalesced_while_latest_member_is_running() {
         request_id: "request-command-group-running".into(),
         text: "run grouped commands".to_string(),
     });
+    for index in 0..10 {
+        let mut tool_call =
+            transcript_section_model_test_tool_call(&format!("tc-prelude-{index}"), "bash");
+        tool_call.args_summary = format!(r#"{{"command":"printf prelude-{index}"}}"#);
+        tool_call.status = ToolCallDisplayStatus::Succeeded;
+        activity.tool_calls.push(tool_call);
+    }
     for (tool_call_id, command, status) in [
         (
             "tc-command-finished",
@@ -1585,7 +1606,10 @@ fn command_group_stays_coalesced_while_latest_member_is_running() {
     ));
 
     // assert
-    assert!(lines.iter().any(|line| line.contains("Ran 2 commands")));
+    assert_eq!(
+        lines.iter().filter(|line| line.contains("2 more")).count(),
+        1
+    );
     assert!(lines.iter().any(|line| line.contains("printf finished")));
     assert!(lines.iter().any(|line| line.contains("printf running")));
 }
