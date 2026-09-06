@@ -195,37 +195,67 @@ impl Coordinator {
         request_id: String,
         outcome: AgentTurnTaskOutcome,
     ) -> Result<(), CoordinatorError> {
-        let (dequeued, terminal_compaction, finished_agent_id) = {
-            let Some(run_state) = self.run_state.as_mut() else {
-                return Ok(());
-            };
+        let Some(run_state) = self.run_state.as_mut() else {
+            return Ok(());
+        };
 
-            let Some(running) = run_state.running_agent_turns.remove(&task_id) else {
-                return Ok(());
-            };
+        let Some(running) = run_state.running_agent_turns.remove(&task_id) else {
+            return Ok(());
+        };
 
-            let finished_agent_id = running.agent_id.clone();
-            let was_cancelled = run_state.cancelled_running_tasks.remove(&task_id);
-            let dequeued = run_state.scheduler.complete(&running.queue_key);
-            let finished_mono_ms = self.clock.mono_ms();
-            let subagent_parent_id = run_state
-                .subagent_parent_by_id
-                .get(&running.agent_id)
-                .cloned();
-            let (hook_outcome, hook_output_summary, hook_failure_reason) = match &outcome {
-                AgentTurnTaskOutcome::Succeeded { output, .. } => {
-                    ("succeeded".to_string(), Some(output.clone()), None)
-                }
-                AgentTurnTaskOutcome::Failed { reason, .. } => {
-                    ("failed".to_string(), None, Some(reason.clone()))
-                }
-            };
-            let finished_hook_batch = hooks::run_lifecycle_hooks(
+        let finished_agent_id = running.agent_id.clone();
+        let was_cancelled = run_state.cancelled_running_tasks.remove(&task_id);
+        let dequeued = run_state.scheduler.complete(&running.queue_key);
+        let finished_mono_ms = self.clock.mono_ms();
+        let subagent_parent_id = run_state
+            .subagent_parent_by_id
+            .get(&running.agent_id)
+            .cloned();
+        let (hook_outcome, hook_output_summary, hook_failure_reason) = match &outcome {
+            AgentTurnTaskOutcome::Succeeded { output, .. } => {
+                ("succeeded".to_string(), Some(output.clone()), None)
+            }
+            AgentTurnTaskOutcome::Failed { reason, .. } => {
+                ("failed".to_string(), None, Some(reason.clone()))
+            }
+        };
+        let finished_hook_batch = hooks::run_lifecycle_hooks(
+            self.clock.as_ref(),
+            self.config.hook_command_executor.as_ref(),
+            &self.config.hook_runtime_config,
+            HookInvocationContext {
+                event: HookLifecycleEvent::AgentTurnFinished,
+                run_id: run_state.info.run_id.to_string(),
+                workspace_root: run_state.info.workspace_root.clone(),
+                artifacts_dir: run_state.info.artifacts_dir.clone(),
+                actor: Some(agent_actor(&running.agent_id)),
+                agent_id: Some(running.agent_id.clone()),
+                request_id: Some(request_id.clone()),
+                permission_id: None,
+                task_id: Some(task_id.clone()),
+                tool_call_id: None,
+                tool_id: None,
+                provider_id: None,
+                model_id: None,
+                parent_agent_id: None,
+                profile: running.profile.clone(),
+                outcome: Some(hook_outcome.clone()),
+                output_summary: hook_output_summary.clone(),
+                failure_reason: hook_failure_reason.clone(),
+            },
+        )
+        .await;
+        let mut hook_executions = running.hook_executions.clone();
+        hook_executions.extend(finished_hook_batch.hook_executions.clone());
+        let mut critical_hook_failure = finished_hook_batch.critical_failure.clone();
+
+        if let Some(parent_agent_id) = subagent_parent_id {
+            let subagent_finished_hook_batch = hooks::run_lifecycle_hooks(
                 self.clock.as_ref(),
                 self.config.hook_command_executor.as_ref(),
                 &self.config.hook_runtime_config,
                 HookInvocationContext {
-                    event: HookLifecycleEvent::AgentTurnFinished,
+                    event: HookLifecycleEvent::SubagentFinished,
                     run_id: run_state.info.run_id.to_string(),
                     workspace_root: run_state.info.workspace_root.clone(),
                     artifacts_dir: run_state.info.artifacts_dir.clone(),
@@ -238,213 +268,58 @@ impl Coordinator {
                     tool_id: None,
                     provider_id: None,
                     model_id: None,
-                    parent_agent_id: None,
+                    parent_agent_id: Some(parent_agent_id),
                     profile: running.profile.clone(),
-                    outcome: Some(hook_outcome.clone()),
-                    output_summary: hook_output_summary.clone(),
-                    failure_reason: hook_failure_reason.clone(),
+                    outcome: Some(hook_outcome),
+                    output_summary: hook_output_summary,
+                    failure_reason: hook_failure_reason,
                 },
             )
             .await;
-            let mut hook_executions = running.hook_executions.clone();
-            hook_executions.extend(finished_hook_batch.hook_executions.clone());
-            let mut critical_hook_failure = finished_hook_batch.critical_failure.clone();
+            hook_executions.extend(subagent_finished_hook_batch.hook_executions.clone());
+            critical_hook_failure = match (
+                critical_hook_failure,
+                subagent_finished_hook_batch.critical_failure,
+            ) {
+                (Some(existing), Some(reason)) => Some(format!("{existing}; {reason}")),
+                (existing, additional) => existing.or(additional),
+            };
+        }
 
-            if let Some(parent_agent_id) = subagent_parent_id {
-                let subagent_finished_hook_batch = hooks::run_lifecycle_hooks(
-                    self.clock.as_ref(),
-                    self.config.hook_command_executor.as_ref(),
-                    &self.config.hook_runtime_config,
-                    HookInvocationContext {
-                        event: HookLifecycleEvent::SubagentFinished,
-                        run_id: run_state.info.run_id.to_string(),
-                        workspace_root: run_state.info.workspace_root.clone(),
-                        artifacts_dir: run_state.info.artifacts_dir.clone(),
-                        actor: Some(agent_actor(&running.agent_id)),
-                        agent_id: Some(running.agent_id.clone()),
-                        request_id: Some(request_id.clone()),
-                        permission_id: None,
-                        task_id: Some(task_id.clone()),
-                        tool_call_id: None,
-                        tool_id: None,
-                        provider_id: None,
-                        model_id: None,
-                        parent_agent_id: Some(parent_agent_id),
-                        profile: running.profile.clone(),
-                        outcome: Some(hook_outcome),
-                        output_summary: hook_output_summary,
-                        failure_reason: hook_failure_reason,
-                    },
-                )
-                .await;
-                hook_executions.extend(subagent_finished_hook_batch.hook_executions.clone());
-                if let Some(reason) = subagent_finished_hook_batch.critical_failure {
-                    critical_hook_failure = Some(match critical_hook_failure {
-                        Some(existing) => format!("{existing}; {reason}"),
-                        None => reason,
-                    });
+        let mut terminal_compaction = None;
+        if was_cancelled {
+            let memory = match &outcome {
+                AgentTurnTaskOutcome::Failed { reason, memory } => memory
+                    .clone()
+                    .or_else(|| cancelled_failure_memory_from_running(&running, reason)),
+                AgentTurnTaskOutcome::Succeeded { .. } => {
+                    cancelled_failure_memory_from_running(&running, "job cancelled")
                 }
+            };
+            if let Some(memory) = memory {
+                push_incomplete_provider_turn(run_state, &running, &request_id, memory);
+                terminal_compaction = Some(FailedTerminalCompactionRequest::new(
+                    task_id.clone(),
+                    running.agent_id.clone(),
+                    request_id.clone(),
+                    "aborted_response",
+                ));
             }
-
-            let mut terminal_compaction = None;
-            if was_cancelled {
-                let memory = match &outcome {
-                    AgentTurnTaskOutcome::Failed { reason, memory } => memory
-                        .clone()
-                        .or_else(|| cancelled_failure_memory_from_running(&running, reason)),
-                    AgentTurnTaskOutcome::Succeeded { .. } => {
-                        cancelled_failure_memory_from_running(&running, "job cancelled")
-                    }
-                };
-                let has_incomplete_memory = memory.is_some();
-                if let Some(memory) = memory {
-                    push_incomplete_provider_turn(run_state, &running, &request_id, memory);
-                }
-                if has_incomplete_memory {
-                    terminal_compaction = Some(FailedTerminalCompactionRequest::new(
-                        task_id.clone(),
-                        running.agent_id.clone(),
-                        request_id.clone(),
-                        "aborted_response",
-                    ));
-                }
-            } else {
-                match outcome {
-                    AgentTurnTaskOutcome::Succeeded { output, messages } => {
-                        if let Some(reason) = critical_hook_failure.clone() {
-                            push_incomplete_provider_turn(
-                                run_state,
-                                &running,
-                                &request_id,
-                                AgentTurnFailureMemory::failed(
-                                    "hook_failure",
-                                    reason.clone(),
-                                    output.clone(),
-                                    running.latest_provider_request_id.clone(),
-                                ),
-                            );
-                            let terminal_event = append_payload_event_with_correlation(
-                                self.clock.as_ref(),
-                                self.redactor.as_ref(),
-                                run_state,
-                                agent_actor(&running.agent_id),
-                                Some(format!("task:{task_id}")),
-                                Some(request_id.clone()),
-                                EventV1::TaskCancelled(TaskCancelledEvent {
-                                    task_id: task_id.clone().into(),
-                                    reason,
-                                    task_scope: Some(TaskTerminalScope::AgentTurn),
-                                }),
-                            )?;
-                            append_background_task_notification_and_schedule(
-                                self.clock.as_ref(),
-                                self.redactor.as_ref(),
-                                Arc::clone(&self.config.hook_command_executor),
-                                self.job_tx.clone(),
-                                run_state,
-                                self.config.hook_runtime_config.clone(),
-                                self.config.compaction.clone(),
-                                self.config.provider_retry,
-                                Arc::clone(&self.config.provider),
-                                Arc::clone(&self.config.tool_registry),
-                                running.child_task.clone(),
-                                &terminal_event,
-                                BackgroundTaskNotificationStatus::Failed,
-                                &terminal_event_summary(&terminal_event),
-                            )
-                            .await?;
-                            terminal_compaction = Some(FailedTerminalCompactionRequest::new(
-                                task_id.clone(),
-                                running.agent_id.clone(),
-                                request_id.clone(),
-                                "failed_response",
-                            ));
-                        } else {
-                            let lineage =
-                                agent_turn_child_lineage(run_state, &running, &request_id);
-                            let completed_turn = ProviderConversationTurn {
-                                user_prompt: running.request_prompt.clone(),
-                                assistant_response: output.clone(),
-                                request_id: Some(request_id.clone().into()),
-                                messages,
-                                attachments: running.attachments.clone(),
-                                ..ProviderConversationTurn::default()
-                            };
-                            let terminal_event = append_payload_event_with_correlation(
-                                self.clock.as_ref(),
-                                self.redactor.as_ref(),
-                                run_state,
-                                agent_actor(&running.agent_id),
-                                Some(format!("task:{task_id}")),
-                                Some(request_id.clone()),
-                                EventV1::TaskCompleted(TaskCompletedEvent {
-                                    task_id: task_id.clone().into(),
-                                    result_digest: digest12(output.as_bytes()),
-                                    result_summary: output,
-                                    metadata: Some(TaskCompletionMetadata {
-                                        lineage,
-                                        task_scope: Some(TaskTerminalScope::AgentTurn),
-                                        timing: Some(execution_timing_metadata(
-                                            running.started_mono_ms,
-                                            finished_mono_ms,
-                                        )),
-                                        hook_executions,
-                                    }),
-                                }),
-                            )?;
-                            run_state
-                                .record_completed_provider_turn(&running.agent_id, completed_turn);
-                            run_state.refresh_canonical_provider_cache()?;
-                            append_background_task_notification_and_schedule(
-                                self.clock.as_ref(),
-                                self.redactor.as_ref(),
-                                Arc::clone(&self.config.hook_command_executor),
-                                self.job_tx.clone(),
-                                run_state,
-                                self.config.hook_runtime_config.clone(),
-                                self.config.compaction.clone(),
-                                self.config.provider_retry,
-                                Arc::clone(&self.config.provider),
-                                Arc::clone(&self.config.tool_registry),
-                                running.child_task.clone(),
-                                &terminal_event,
-                                BackgroundTaskNotificationStatus::Completed,
-                                &terminal_event_summary(&terminal_event),
-                            )
-                            .await?;
-                        }
-                    }
-                    AgentTurnTaskOutcome::Failed { reason, memory } => {
-                        let reason = match critical_hook_failure.clone() {
-                            Some(hook_reason) => {
-                                format!("{reason}; critical lifecycle hook failed: {hook_reason}")
-                            }
-                            None => reason,
-                        };
-                        let mut memory = memory.or_else(|| {
-                            critical_hook_failure.clone().map(|_| {
-                                AgentTurnFailureMemory::failed(
-                                    "hook_failure",
-                                    reason.clone(),
-                                    "",
-                                    running.latest_provider_request_id.clone(),
-                                )
-                            })
-                        });
-                        if let Some(memory) = &mut memory {
-                            memory.failure_reason = reason.clone();
-                        }
-                        let terminal_trigger_reason = memory
-                            .as_ref()
-                            .filter(|memory| {
-                                memory.status == ProviderConversationTurnStatus::Aborted
-                            })
-                            .map(|_| "aborted_response")
-                            .unwrap_or("failed_response");
-                        let has_incomplete_memory = memory.is_some();
-                        if let Some(memory) = memory {
-                            push_incomplete_provider_turn(run_state, &running, &request_id, memory);
-                        }
+        } else {
+            match outcome {
+                AgentTurnTaskOutcome::Succeeded { output, messages } => {
+                    if let Some(reason) = critical_hook_failure.clone() {
+                        push_incomplete_provider_turn(
+                            run_state,
+                            &running,
+                            &request_id,
+                            AgentTurnFailureMemory::failed(
+                                "hook_failure",
+                                reason.clone(),
+                                output.clone(),
+                                running.latest_provider_request_id.clone(),
+                            ),
+                        );
                         let terminal_event = append_payload_event_with_correlation(
                             self.clock.as_ref(),
                             self.redactor.as_ref(),
@@ -454,7 +329,7 @@ impl Coordinator {
                             Some(request_id.clone()),
                             EventV1::TaskCancelled(TaskCancelledEvent {
                                 task_id: task_id.clone().into(),
-                                reason: reason.clone(),
+                                reason,
                                 task_scope: Some(TaskTerminalScope::AgentTurn),
                             }),
                         )?;
@@ -471,75 +346,146 @@ impl Coordinator {
                             Arc::clone(&self.config.tool_registry),
                             running.child_task.clone(),
                             &terminal_event,
-                            background_notification_status_for_cancel_reason(&reason),
-                            &reason,
+                            BackgroundTaskNotificationStatus::Failed,
+                            &terminal_event_summary(&terminal_event),
                         )
                         .await?;
-                        if has_incomplete_memory {
-                            terminal_compaction = Some(FailedTerminalCompactionRequest::new(
-                                task_id.clone(),
-                                running.agent_id.clone(),
-                                request_id.clone(),
-                                terminal_trigger_reason,
-                            ));
-                        }
+                        terminal_compaction = Some(FailedTerminalCompactionRequest::new(
+                            task_id.clone(),
+                            running.agent_id.clone(),
+                            request_id.clone(),
+                            "failed_response",
+                        ));
+                    } else {
+                        let lineage = agent_turn_child_lineage(run_state, &running, &request_id);
+                        let completed_turn = ProviderConversationTurn {
+                            user_prompt: running.request_prompt.clone(),
+                            assistant_response: output.clone(),
+                            request_id: Some(request_id.clone().into()),
+                            messages,
+                            attachments: running.attachments.clone(),
+                            ..ProviderConversationTurn::default()
+                        };
+                        let terminal_event = append_payload_event_with_correlation(
+                            self.clock.as_ref(),
+                            self.redactor.as_ref(),
+                            run_state,
+                            agent_actor(&running.agent_id),
+                            Some(format!("task:{task_id}")),
+                            Some(request_id.clone()),
+                            EventV1::TaskCompleted(TaskCompletedEvent {
+                                task_id: task_id.clone().into(),
+                                result_digest: digest12(output.as_bytes()),
+                                result_summary: output,
+                                metadata: Some(TaskCompletionMetadata {
+                                    lineage,
+                                    task_scope: Some(TaskTerminalScope::AgentTurn),
+                                    timing: Some(execution_timing_metadata(
+                                        running.started_mono_ms,
+                                        finished_mono_ms,
+                                    )),
+                                    hook_executions,
+                                }),
+                            }),
+                        )?;
+                        run_state.record_completed_provider_turn(&running.agent_id, completed_turn);
+                        run_state.refresh_canonical_provider_cache()?;
+                        append_background_task_notification_and_schedule(
+                            self.clock.as_ref(),
+                            self.redactor.as_ref(),
+                            Arc::clone(&self.config.hook_command_executor),
+                            self.job_tx.clone(),
+                            run_state,
+                            self.config.hook_runtime_config.clone(),
+                            self.config.compaction.clone(),
+                            self.config.provider_retry,
+                            Arc::clone(&self.config.provider),
+                            Arc::clone(&self.config.tool_registry),
+                            running.child_task.clone(),
+                            &terminal_event,
+                            BackgroundTaskNotificationStatus::Completed,
+                            &terminal_event_summary(&terminal_event),
+                        )
+                        .await?;
                     }
                 }
+                AgentTurnTaskOutcome::Failed { reason, memory } => {
+                    let reason = match critical_hook_failure.clone() {
+                        Some(hook_reason) => {
+                            format!("{reason}; critical lifecycle hook failed: {hook_reason}")
+                        }
+                        None => reason,
+                    };
+                    let mut memory = memory;
+                    if memory.is_none() && critical_hook_failure.is_some() {
+                        memory = Some(AgentTurnFailureMemory::failed(
+                            "hook_failure",
+                            reason.clone(),
+                            "",
+                            running.latest_provider_request_id.clone(),
+                        ));
+                    }
+                    if let Some(memory) = &mut memory {
+                        memory.failure_reason = reason.clone();
+                    }
+                    let terminal_trigger_reason = memory
+                        .as_ref()
+                        .filter(|memory| memory.status == ProviderConversationTurnStatus::Aborted)
+                        .map(|_| "aborted_response")
+                        .unwrap_or("failed_response");
+                    if let Some(memory) = memory {
+                        push_incomplete_provider_turn(run_state, &running, &request_id, memory);
+                        terminal_compaction = Some(FailedTerminalCompactionRequest::new(
+                            task_id.clone(),
+                            running.agent_id.clone(),
+                            request_id.clone(),
+                            terminal_trigger_reason,
+                        ));
+                    }
+                    let terminal_event = append_payload_event_with_correlation(
+                        self.clock.as_ref(),
+                        self.redactor.as_ref(),
+                        run_state,
+                        agent_actor(&running.agent_id),
+                        Some(format!("task:{task_id}")),
+                        Some(request_id.clone()),
+                        EventV1::TaskCancelled(TaskCancelledEvent {
+                            task_id: task_id.clone().into(),
+                            reason: reason.clone(),
+                            task_scope: Some(TaskTerminalScope::AgentTurn),
+                        }),
+                    )?;
+                    append_background_task_notification_and_schedule(
+                        self.clock.as_ref(),
+                        self.redactor.as_ref(),
+                        Arc::clone(&self.config.hook_command_executor),
+                        self.job_tx.clone(),
+                        run_state,
+                        self.config.hook_runtime_config.clone(),
+                        self.config.compaction.clone(),
+                        self.config.provider_retry,
+                        Arc::clone(&self.config.provider),
+                        Arc::clone(&self.config.tool_registry),
+                        running.child_task.clone(),
+                        &terminal_event,
+                        background_notification_status_for_cancel_reason(&reason),
+                        &reason,
+                    )
+                    .await?;
+                }
             }
+        }
 
-            run_state
-                .explicit_runtime_selection_request_ids
-                .remove(&request_id);
-            (dequeued, terminal_compaction, finished_agent_id)
-        };
-
+        run_state
+            .explicit_runtime_selection_request_ids
+            .remove(&request_id);
         if let Some(request) = terminal_compaction {
             self.compact_failed_terminal_agent_context(request).await;
         }
+        self.start_dequeued_agent_turns(dequeued).await?;
         let Some(run_state) = self.run_state.as_mut() else {
             return Ok(());
         };
-
-        for task in dequeued {
-            if let Some(queued) = run_state
-                .queued_agent_turns
-                .get(task.task_id.as_str())
-                .cloned()
-            {
-                append_agent_turn_task_scheduled_event(
-                    self.clock.as_ref(),
-                    self.redactor.as_ref(),
-                    run_state,
-                    AgentTurnTaskScheduledEventArgs {
-                        task_id: &queued.task_id,
-                        agent_id: &queued.agent_id,
-                        request_id: &queued.request_id,
-                        queue_key: &queued.queue_key,
-                        state: TaskScheduleState::Started,
-                        child_task: queued.child_task.as_ref(),
-                    },
-                )?;
-
-                let Some(queued) = run_state.queued_agent_turns.remove(task.task_id.as_str())
-                else {
-                    continue;
-                };
-                start_agent_turn_execution(
-                    self.clock.as_ref(),
-                    self.redactor.as_ref(),
-                    Arc::clone(&self.config.hook_command_executor),
-                    self.job_tx.clone(),
-                    run_state,
-                    self.config.hook_runtime_config.clone(),
-                    self.config.compaction.clone(),
-                    self.config.provider_retry,
-                    Arc::clone(&self.config.provider),
-                    Arc::clone(&self.config.tool_registry),
-                    queued,
-                )
-                .await?;
-            }
-        }
 
         schedule_pending_agent_wakeups_for_idle_agent(
             self.clock.as_ref(),
@@ -631,5 +577,58 @@ impl FailedTerminalCompactionRequest {
 
     pub(in crate::coord) fn attempt_key(&self) -> (String, String) {
         (self.task_id.clone(), self.request_id.clone())
+    }
+}
+
+impl Coordinator {
+    async fn start_dequeued_agent_turns(
+        &mut self,
+        dequeued: Vec<crate::sched::TaskSpec>,
+    ) -> Result<(), CoordinatorError> {
+        let Some(run_state) = self.run_state.as_mut() else {
+            return Ok(());
+        };
+        for task in dequeued {
+            if let Some(queued) = run_state
+                .queued_agent_turns
+                .get(task.task_id.as_str())
+                .cloned()
+            {
+                append_agent_turn_task_scheduled_event(
+                    self.clock.as_ref(),
+                    self.redactor.as_ref(),
+                    run_state,
+                    AgentTurnTaskScheduledEventArgs {
+                        task_id: &queued.task_id,
+                        agent_id: &queued.agent_id,
+                        request_id: &queued.request_id,
+                        queue_key: &queued.queue_key,
+                        state: TaskScheduleState::Started,
+                        child_task: queued.child_task.as_ref(),
+                    },
+                )?;
+
+                let Some(queued) = run_state.queued_agent_turns.remove(task.task_id.as_str())
+                else {
+                    continue;
+                };
+                start_agent_turn_execution(
+                    self.clock.as_ref(),
+                    self.redactor.as_ref(),
+                    Arc::clone(&self.config.hook_command_executor),
+                    self.job_tx.clone(),
+                    run_state,
+                    self.config.hook_runtime_config.clone(),
+                    self.config.compaction.clone(),
+                    self.config.provider_retry,
+                    Arc::clone(&self.config.provider),
+                    Arc::clone(&self.config.tool_registry),
+                    queued,
+                )
+                .await?;
+            }
+        }
+
+        Ok(())
     }
 }
