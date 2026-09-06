@@ -31,6 +31,8 @@ The CLI, configuration, durable event schema, and active runtime behavior are un
 unobserved Rust prototype APIs have been removed instead of maintaining parallel implementations:
 
 - Core `browser_oidc_local`, `mcp_oauth_local`, and `workspace_hub_local` simulators are removed; real authentication and workspace/session operations remain. No existing data files are deleted.
+- Unconfigured `browser_oidc` and `mcp_oauth` workflow/probe APIs and removed hosted-hub operation APIs are retired, along with their outcome-only TUI fields. Availability APIs and `browser_oidc::launch_browser` remain; provider-specific authentication and configured MCP transports are unchanged.
+- The disconnected `dashboard_dispatch` subsystem and `DashboardIntegration::dispatch_reply` are removed. Dashboard controls, selection, focus, and live composer routing remain.
 - Core session, scheduler, workspace, and integration leaf adapters are removed; use `CoordinatorHandle` directly for the same coordinator-owned operations.
 - The provider `leaf` factory is removed; runtime construction remains in CLI bootstrap using the concrete provider configurations.
 - The unused TUI `slash` catalog is removed; `keybindings::slash_commands()` remains authoritative.
