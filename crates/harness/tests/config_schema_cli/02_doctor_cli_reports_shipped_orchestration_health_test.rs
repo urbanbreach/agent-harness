@@ -209,6 +209,10 @@ fn doctor_cli_json_reports_resolved_route_metadata() {
         route_check["details"]["routes"]["default"]["prompt"]["status"],
         "available"
     );
+    assert_doctor_skill_routes(route_check);
+}
+
+fn assert_doctor_skill_routes(route_check: &Value) {
     assert_eq!(route_check["details"]["skills"]["status"], "configured");
     assert_eq!(
         route_check["details"]["skills"]["no_network_probes"],
