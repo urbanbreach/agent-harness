@@ -459,6 +459,48 @@ impl AppState {
         );
     }
 
+    pub(super) fn handle_permission_feedback_paste(&mut self, text: &str) {
+        if self.replay_mode
+            || self.focus != super::Focus::Prompt
+            || self.overlay_stack().top() != Some(super::OverlayKind::PermissionModal)
+        {
+            return;
+        }
+        let Some(permission) = self.active_permission_view() else {
+            return;
+        };
+        if permission.question_prompts.is_some()
+            || self.submitted_permission_is_active(&permission.permission_id)
+            || self.permission_modal_stage(&permission.permission_id)
+                != PermissionModalStage::Decision
+            || self.permission_modal_selection(&permission.permission_id)
+                != PermissionModalSelection::Reject
+        {
+            return;
+        }
+        let text = crate::text::strip_ansi_escapes(text).replace("\r\n", "\n");
+        let text: String = text
+            .chars()
+            .filter_map(|character| {
+                if character.is_whitespace() {
+                    Some(' ')
+                } else if character.is_control() {
+                    None
+                } else {
+                    Some(character)
+                }
+            })
+            .collect();
+        if text.is_empty() {
+            return;
+        }
+        self.ensure_permission_modal_state(&permission.permission_id);
+        self.permission_prompt
+            .feedback
+            .get_or_insert_with(PermissionFeedback::default)
+            .paste(&text);
+    }
+
     pub(super) fn handle_permission_modal_key(&mut self, key: KeyEvent) {
         let Some(permission) = self.active_permission_view() else {
             return;

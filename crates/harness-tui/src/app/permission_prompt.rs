@@ -43,6 +43,18 @@ pub(crate) struct PermissionFeedback {
 }
 
 impl PermissionFeedback {
+    pub(super) fn paste(&mut self, text: &str) {
+        self.text.insert_str(self.cursor, text);
+        let inserted_end = self.cursor.saturating_add(text.len());
+        self.cursor = self
+            .text
+            .grapheme_indices(true)
+            .map(|(index, _)| index)
+            .find(|index| *index >= inserted_end)
+            .unwrap_or(self.text.len());
+        self.editing = true;
+    }
+
     pub(super) fn edit(&mut self, code: KeyCode) {
         match code {
             KeyCode::Char(character) if !character.is_control() => {
