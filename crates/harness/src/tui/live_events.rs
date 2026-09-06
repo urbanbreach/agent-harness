@@ -49,22 +49,15 @@ pub(super) async fn forward_events_to_tui(
                     }
                 }
                 Ok(RuntimeEvent::Durable(event)) => {
-                    if event.seq <= last_seq_seen {
-                        continue;
+                    if forward_durable_event(
+                        event,
+                        &live_update_tx,
+                        &mut last_seq_seen,
+                        stop_after_terminal_event,
+                    ) {
+                        return Ok(());
                     }
-
-                    let terminal_event = is_terminal_event(&event.payload);
-                    last_seq_seen = event.seq;
                     from_seq = last_seq_seen.saturating_add(1);
-                    if live_update_tx
-                        .send(LiveUpdate::Event(Box::new(RuntimeEvent::Durable(event))))
-                        .is_err()
-                    {
-                        return Ok(());
-                    }
-                    if stop_after_terminal_event && terminal_event {
-                        return Ok(());
-                    }
                 }
                 Err(EventStoreError::SubscriberLagged(skipped)) => {
                     let _ = live_update_tx.send(LiveUpdate::Status(format!(
@@ -72,32 +65,17 @@ pub(super) async fn forward_events_to_tui(
                         last_seq_seen.saturating_add(1)
                     )));
 
-                    let mut replay = store
-                        .replay(last_seq_seen.saturating_add(1))
-                        .map_err(|err| err.to_string())?;
-                    while let Some(replayed) =
-                        std::future::poll_fn(|cx| replay.as_mut().poll_next(cx)).await
+                    if replay_events_to_tui(
+                        store.as_ref(),
+                        &live_update_tx,
+                        &mut last_seq_seen,
+                        stop_after_terminal_event,
+                    )
+                    .await?
                     {
-                        let replayed_event = replayed.map_err(|err| err.to_string())?;
-                        if replayed_event.seq <= last_seq_seen {
-                            continue;
-                        }
-
-                        let terminal_event = is_terminal_event(&replayed_event.payload);
-                        last_seq_seen = replayed_event.seq;
-                        from_seq = last_seq_seen.saturating_add(1);
-                        if live_update_tx
-                            .send(LiveUpdate::Event(Box::new(RuntimeEvent::Durable(
-                                Box::new(replayed_event),
-                            ))))
-                            .is_err()
-                        {
-                            return Ok(());
-                        }
-                        if stop_after_terminal_event && terminal_event {
-                            return Ok(());
-                        }
+                        return Ok(());
                     }
+                    from_seq = last_seq_seen.saturating_add(1);
 
                     should_resubscribe = true;
                     break;
@@ -116,4 +94,44 @@ pub(super) async fn forward_events_to_tui(
     }
 
     Ok(())
+}
+
+async fn replay_events_to_tui(
+    store: &dyn EventStore,
+    live_update_tx: &LiveUpdateSender,
+    last_seq_seen: &mut u64,
+    stop_after_terminal_event: bool,
+) -> Result<bool, String> {
+    let mut replay = store
+        .replay(last_seq_seen.saturating_add(1))
+        .map_err(|err| err.to_string())?;
+    while let Some(replayed) = std::future::poll_fn(|cx| replay.as_mut().poll_next(cx)).await {
+        let event = replayed.map_err(|err| err.to_string())?;
+        if forward_durable_event(
+            Box::new(event),
+            live_update_tx,
+            last_seq_seen,
+            stop_after_terminal_event,
+        ) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn forward_durable_event(
+    event: Box<EventEnvelopeV1>,
+    live_update_tx: &LiveUpdateSender,
+    last_seq_seen: &mut u64,
+    stop_after_terminal_event: bool,
+) -> bool {
+    if event.seq <= *last_seq_seen {
+        return false;
+    }
+    let terminal_event = is_terminal_event(&event.payload);
+    *last_seq_seen = event.seq;
+    live_update_tx
+        .send(LiveUpdate::Event(Box::new(RuntimeEvent::Durable(event))))
+        .is_err()
+        || (stop_after_terminal_event && terminal_event)
 }
