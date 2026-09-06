@@ -139,10 +139,9 @@ fn resume_plan_resolves_tool_identity_and_lifecycle_without_tui_inference() {
         .get("toolcall_000101")
         .unwrap_or_abort();
     assert_eq!(
-        pending_alias.lifecycle_state,
-        Some(ToolCallLifecycleState::Pending)
+        (pending_alias.lifecycle_state, pending_alias.status),
+        (Some(ToolCallLifecycleState::Pending), None)
     );
-    assert_eq!(pending_alias.status, None);
     assert_eq!(
         pending_alias
             .resolved_tool_identity
@@ -177,10 +176,9 @@ fn resume_plan_resolves_tool_identity_and_lifecycle_without_tui_inference() {
         .get("toolcall_000102")
         .unwrap_or_abort();
     assert_eq!(
-        running_mcp_direct.lifecycle_state,
-        Some(ToolCallLifecycleState::Running)
+        (running_mcp_direct.lifecycle_state, running_mcp_direct.status),
+        (Some(ToolCallLifecycleState::Running), None)
     );
-    assert_eq!(running_mcp_direct.status, None);
     assert_eq!(
         running_mcp_direct
             .resolved_tool_identity
@@ -208,10 +206,9 @@ fn resume_plan_resolves_tool_identity_and_lifecycle_without_tui_inference() {
         .get("toolcall_000103")
         .unwrap_or_abort();
     assert_eq!(
-        error_mcp_wrapper.lifecycle_state,
-        Some(ToolCallLifecycleState::Error)
+        (error_mcp_wrapper.lifecycle_state, error_mcp_wrapper.status),
+        (Some(ToolCallLifecycleState::Error), Some(ToolCallStatus::Failed))
     );
-    assert_eq!(error_mcp_wrapper.status, Some(ToolCallStatus::Failed));
     assert_eq!(
         error_mcp_wrapper
             .resolved_tool_identity
@@ -239,10 +236,9 @@ fn resume_plan_resolves_tool_identity_and_lifecycle_without_tui_inference() {
         .get("toolcall_000104")
         .unwrap_or_abort();
     assert_eq!(
-        completed_native.lifecycle_state,
-        Some(ToolCallLifecycleState::Completed)
+        (completed_native.lifecycle_state, completed_native.status),
+        (Some(ToolCallLifecycleState::Completed), Some(ToolCallStatus::Succeeded))
     );
-    assert_eq!(completed_native.status, Some(ToolCallStatus::Succeeded));
     assert_eq!(
         completed_native
             .resolved_tool_identity

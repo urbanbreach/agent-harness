@@ -385,12 +385,11 @@ pub fn project_resume_plan<'a>(
                 let child = child_sessions
                     .entry(payload.agent_id.clone())
                     .or_insert_with(ResumeChildSessionSnapshot::default);
-                if child.profile.is_none() {
-                    child.profile = Some(payload.profile.clone());
-                }
-                if child.parent_session_id.is_none() {
-                    child.parent_session_id = payload.parent_agent_id.clone();
-                }
+                child.profile.get_or_insert_with(|| payload.profile.clone());
+                child.parent_session_id = child
+                    .parent_session_id
+                    .take()
+                    .or_else(|| payload.parent_agent_id.clone());
             }
             EventV1::TaskScheduled(payload) => {
                 update_id_watermark(
@@ -555,9 +554,9 @@ pub fn project_resume_plan<'a>(
                 let child = child_sessions
                     .entry(payload.child_session_id.to_string())
                     .or_insert_with(ResumeChildSessionSnapshot::default);
-                if child.parent_session_id.is_none() {
-                    child.parent_session_id = Some(payload.parent_session_id.to_string());
-                }
+                child
+                    .parent_session_id
+                    .get_or_insert_with(|| payload.parent_session_id.to_string());
                 child.latest_child_request_id = Some(payload.child_request_id.clone());
                 child.terminal_state =
                     Some(child_terminal_state_from_background_status(payload.status));
@@ -575,68 +574,15 @@ pub fn project_resume_plan<'a>(
                     delivered_turn_request_id: payload.delivered_turn_request_id.clone(),
                 });
             }
-            EventV1::ProviderRequestStarted(payload) => {
-                update_id_watermark(
-                    &mut id_watermarks.max_request_id,
-                    payload.request_id.as_str(),
-                    REQUEST_ID_PREFIX,
-                    "request",
+            EventV1::ProviderRequestStarted(_)
+            | EventV1::ProviderRequestFinished(_)
+            | EventV1::AssistantMessageFinished(_) => {
+                project_provider_lifecycle(
+                    event,
+                    &mut id_watermarks,
+                    &mut provider_model,
+                    &mut child_sessions,
                 )?;
-                provider_model = Some(format!("{}/{}", payload.provider_id, payload.model_id));
-
-                if let Some(agent_id) = event.actor.agent_id.as_ref() {
-                    let child = child_sessions
-                        .entry(agent_id.clone())
-                        .or_insert_with(ResumeChildSessionSnapshot::default);
-                    child.latest_child_request_id = Some(payload.request_id.to_string());
-                    child.provider_id = Some(payload.provider_id.clone());
-                    child.model_id = Some(payload.model_id.clone());
-                    if let Some(metadata) = payload.metadata.clone() {
-                        child
-                            .provider_lifecycle
-                            .get_or_insert_with(ResumeProviderLifecycleMetadata::default)
-                            .latest_started = Some(metadata);
-                    }
-                }
-            }
-            EventV1::ProviderRequestFinished(payload) => {
-                update_id_watermark(
-                    &mut id_watermarks.max_request_id,
-                    payload.request_id.as_str(),
-                    REQUEST_ID_PREFIX,
-                    "request",
-                )?;
-                if let (Some(agent_id), Some(metadata)) =
-                    (event.actor.agent_id.as_ref(), payload.metadata.clone())
-                {
-                    let child = child_sessions
-                        .entry(agent_id.clone())
-                        .or_insert_with(ResumeChildSessionSnapshot::default);
-                    child
-                        .provider_lifecycle
-                        .get_or_insert_with(ResumeProviderLifecycleMetadata::default)
-                        .latest_finished = Some(metadata);
-                }
-            }
-            EventV1::AssistantMessageFinished(payload) => {
-                update_id_watermark(
-                    &mut id_watermarks.max_request_id,
-                    payload.request_id.as_str(),
-                    REQUEST_ID_PREFIX,
-                    "request",
-                )?;
-                if let (Some(agent_id), Some(metadata)) = (
-                    event.actor.agent_id.as_ref(),
-                    payload.assistant_message.clone(),
-                ) {
-                    let child = child_sessions
-                        .entry(agent_id.clone())
-                        .or_insert_with(ResumeChildSessionSnapshot::default);
-                    child
-                        .provider_lifecycle
-                        .get_or_insert_with(ResumeProviderLifecycleMetadata::default)
-                        .latest_assistant_message_finished = Some(metadata);
-                }
             }
             EventV1::ToolCallRequested(payload) => {
                 update_id_watermark(
@@ -744,13 +690,14 @@ pub fn project_resume_plan<'a>(
                         .metadata
                         .get_or_insert_with(ToolCallMetadata::default);
                     if let Some(tool_metadata) = payload.tool_metadata.as_ref() {
-                        if metadata.canonical_tool_id.is_none() {
-                            metadata.canonical_tool_id = tool_metadata.canonical_tool_id.clone();
-                        }
-                        if metadata.alias_source_tool_id.is_none() {
-                            metadata.alias_source_tool_id =
-                                tool_metadata.alias_source_tool_id.clone();
-                        }
+                        metadata.canonical_tool_id = metadata
+                            .canonical_tool_id
+                            .take()
+                            .or_else(|| tool_metadata.canonical_tool_id.clone());
+                        metadata.alias_source_tool_id = metadata
+                            .alias_source_tool_id
+                            .take()
+                            .or_else(|| tool_metadata.alias_source_tool_id.clone());
                     }
                     merge_artifact_ref(
                         &mut metadata.artifact_refs,
@@ -925,6 +872,75 @@ fn resume_plan_disabled_reason(
     }
 
     None
+}
+
+fn project_provider_lifecycle(
+    event: &EventEnvelopeV1,
+    id_watermarks: &mut ResumeIdWatermarks,
+    provider_model: &mut Option<String>,
+    child_sessions: &mut BTreeMap<String, ResumeChildSessionSnapshot>,
+) -> Result<(), ProjectionError> {
+    match &event.payload {
+        EventV1::ProviderRequestStarted(payload) => {
+            update_id_watermark(
+                &mut id_watermarks.max_request_id,
+                payload.request_id.as_str(),
+                REQUEST_ID_PREFIX,
+                "request",
+            )?;
+            *provider_model = Some(format!("{}/{}", payload.provider_id, payload.model_id));
+
+            if let Some(agent_id) = event.actor.agent_id.as_ref() {
+                let child = child_sessions.entry(agent_id.clone()).or_default();
+                child.latest_child_request_id = Some(payload.request_id.to_string());
+                child.provider_id = Some(payload.provider_id.clone());
+                child.model_id = Some(payload.model_id.clone());
+                if let Some(metadata) = payload.metadata.clone() {
+                    child
+                        .provider_lifecycle
+                        .get_or_insert_with(ResumeProviderLifecycleMetadata::default)
+                        .latest_started = Some(metadata);
+                }
+            }
+        }
+        EventV1::ProviderRequestFinished(payload) => {
+            update_id_watermark(
+                &mut id_watermarks.max_request_id,
+                payload.request_id.as_str(),
+                REQUEST_ID_PREFIX,
+                "request",
+            )?;
+            if let (Some(agent_id), Some(metadata)) =
+                (event.actor.agent_id.as_ref(), payload.metadata.clone())
+            {
+                let child = child_sessions.entry(agent_id.clone()).or_default();
+                child
+                    .provider_lifecycle
+                    .get_or_insert_with(ResumeProviderLifecycleMetadata::default)
+                    .latest_finished = Some(metadata);
+            }
+        }
+        EventV1::AssistantMessageFinished(payload) => {
+            update_id_watermark(
+                &mut id_watermarks.max_request_id,
+                payload.request_id.as_str(),
+                REQUEST_ID_PREFIX,
+                "request",
+            )?;
+            if let (Some(agent_id), Some(metadata)) = (
+                event.actor.agent_id.as_ref(),
+                payload.assistant_message.clone(),
+            ) {
+                let child = child_sessions.entry(agent_id.clone()).or_default();
+                child
+                    .provider_lifecycle
+                    .get_or_insert_with(ResumeProviderLifecycleMetadata::default)
+                    .latest_assistant_message_finished = Some(metadata);
+            }
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 #[cfg(test)]
