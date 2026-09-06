@@ -211,15 +211,9 @@ mod tests {
                 prior_context: &ProviderContext::default(),
             },
             test_provider_request_ids(),
-            {
-                let seen_calls = Arc::clone(&seen_calls);
-                move |_tool_id, _args_json| {
-                    let seen_calls = Arc::clone(&seen_calls);
-                    async move {
-                        *seen_calls.lock().unwrap_or_abort() += 1;
-                        Ok(ToolResult::text("unused"))
-                    }
-                }
+            |_tool_id, _args_json| async {
+                *seen_calls.lock().unwrap_or_abort() += 1;
+                Ok(ToolResult::text("unused"))
             },
             |_event| async {},
         )
@@ -277,12 +271,9 @@ mod tests {
             },
             test_provider_request_ids(),
             |_tool_id, _args_json| async { Ok(ToolResult::text("unused")) },
-            {
-                let events = Arc::clone(&events);
-                move |event| {
-                    let events = Arc::clone(&events);
-                    async move { events.lock().unwrap_or_abort().push(event) }
-                }
+            |event| {
+                let events = &events;
+                async move { events.lock().unwrap_or_abort().push(event) }
             },
         )
         .await;
@@ -364,15 +355,9 @@ mod tests {
                 prior_context: &ProviderContext::default(),
             },
             test_provider_request_ids(),
-            {
-                let seen_calls = Arc::clone(&seen_calls);
-                move |_tool_id, _args_json| {
-                    let seen_calls = Arc::clone(&seen_calls);
-                    async move {
-                        *seen_calls.lock().unwrap_or_abort() += 1;
-                        Ok(ToolResult::text("must not execute"))
-                    }
-                }
+            |_tool_id, _args_json| async {
+                *seen_calls.lock().unwrap_or_abort() += 1;
+                Ok(ToolResult::text("must not execute"))
             },
             |_event| async {},
         )
@@ -730,16 +715,9 @@ mod tests {
                 prior_context: &ProviderContext::default(),
             },
             test_provider_request_ids(),
-            {
-                let call_count = Arc::clone(&call_count);
-                move |_tool_id, _args_json| {
-                    let call_count = Arc::clone(&call_count);
-                    async move {
-                        let mut guard = call_count.lock().unwrap_or_abort();
-                        *guard += 1;
-                        Ok(ToolResult::text("unused"))
-                    }
-                }
+            |_tool_id, _args_json| async {
+                *call_count.lock().unwrap_or_abort() += 1;
+                Ok(ToolResult::text("unused"))
             },
             |_event| async {},
         )
@@ -806,16 +784,9 @@ mod tests {
                 prior_context: &ProviderContext::default(),
             },
             test_provider_request_ids(),
-            {
-                let call_count = Arc::clone(&call_count);
-                move |_tool_id, _args_json| {
-                    let call_count = Arc::clone(&call_count);
-                    async move {
-                        let mut guard = call_count.lock().unwrap_or_abort();
-                        *guard += 1;
-                        Ok(ToolResult::text("unused"))
-                    }
-                }
+            |_tool_id, _args_json| async {
+                *call_count.lock().unwrap_or_abort() += 1;
+                Ok(ToolResult::text("unused"))
             },
             |_event| async {},
         )
