@@ -276,3 +276,15 @@ fn codex_oauth_model_filter_rejects_pre_5_4_models() {
 fn codex_oauth_model_filter_keeps_5_3_spark_exception() {
     assert!(codex_oauth_model_allowed("gpt-5.3-codex-spark"));
 }
+
+#[test]
+fn codex_oauth_model_filter_allows_astra_without_a_minor_version() {
+    assert!(codex_oauth_model_allowed("gpt-6-astra"));
+}
+
+#[test]
+fn codex_oauth_model_filter_rejects_unlisted_astra_aliases() {
+    for model in ["gpt-6", "gpt-6-astra-pro", "gpt-6-astra-unknown"] {
+        assert!(!codex_oauth_model_allowed(model), "{model}");
+    }
+}
