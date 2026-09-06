@@ -125,7 +125,7 @@ export async function mountTerminal(page, settings) {
         const deadline = window.setTimeout(() => reject(new Error("xterm write callback timed out")), 10000);
         terminal.write(bytes, () => {
           window.clearTimeout(deadline);
-          window.qaTerminal.waitForVisualSync().then(() => resolve({ bytes: bytes.length, renderCount, parsedCount, lastRender }), reject);
+          resolve({ bytes: bytes.length, renderCount, parsedCount, lastRender });
         });
       }),
       title: () => latestTitle,
