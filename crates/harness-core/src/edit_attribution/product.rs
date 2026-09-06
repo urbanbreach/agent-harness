@@ -144,10 +144,15 @@ mod tests {
         assert!(product.journal_path.contains("edit-attribution.jsonl"));
 
         // Then: multi-path summary with agent + external + drift
-        assert_eq!(product.summary.total, 3);
-        assert_eq!(product.summary.agent_tool, 1);
-        assert_eq!(product.summary.external, 1);
-        assert_eq!(product.summary.drift, 1);
+        assert_eq!(
+            (
+                product.summary.total,
+                product.summary.agent_tool,
+                product.summary.external,
+                product.summary.drift
+            ),
+            (3, 1, 1, 1),
+        );
         assert!(product.summary.has_agent_tool());
         assert!(product.summary.has_external());
         assert!(product.summary.has_drift());
