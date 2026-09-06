@@ -10,9 +10,6 @@ mod responsive;
 mod state;
 mod surface;
 
-pub use crate::dashboard_dispatch::{
-    DashboardDispatch, DispatchAction, DispatchError, DispatchIntent,
-};
 pub use focus::{DashboardFocus, DashboardPane, FocusDirection};
 pub use input::{
     DashboardInput, DashboardInputRouter, DashboardMouseContext, SearchContext, SearchState,
@@ -170,14 +167,6 @@ impl DashboardIntegration {
         command: DashboardCommand,
     ) -> Result<ControlResult, DashboardControlError> {
         dispatch(&self.controls, command)
-    }
-
-    pub fn dispatch_reply(
-        &self,
-        dispatch: &mut DashboardDispatch,
-        action: DispatchAction,
-    ) -> Result<DispatchIntent, DispatchError> {
-        dispatch.dispatch(action)
     }
 
     pub fn dashboard(&self) -> &DashboardReadModel {
