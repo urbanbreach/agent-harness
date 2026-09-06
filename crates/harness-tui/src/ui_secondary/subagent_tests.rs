@@ -235,7 +235,11 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
     assert!(sidebar.contains("• ⠋ Orphan Task"));
     assert!(sidebar.contains("• ⠋ Queued Task"));
     assert!(!sidebar.contains("intentionally long repository"));
+    assert_subagent_styles_and_hit_regions(&app);
+    exercise_subagent_expand_and_collapse(&mut app);
+}
 
+fn assert_subagent_styles_and_hit_regions(app: &AppState) {
     let theme = *app.theme();
     let lines = operator_sidebar_lines_for_test(&app);
     let explore_group = lines
@@ -361,7 +365,11 @@ pub(crate) fn exact_test_operator_rail_renders_subagent_rows_from_orchestration_
         None,
         "footer clicks must not activate hidden subagent rows"
     );
+}
 
+fn exercise_subagent_expand_and_collapse(app: &mut AppState) {
+    let theme = *app.theme();
+    let theme = &theme;
     let frame_area = Rect::new(0, 0, 140, 40);
     let plan = crate::layout::FrameLayoutPlan::for_app(&app, frame_area);
     let sidebar_area = plan.details_overlay.unwrap_or_abort();
