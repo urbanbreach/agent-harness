@@ -29,7 +29,7 @@ async fn compaction_v2_model_downshift_regenerates_summary() {
         .unwrap_or_abort()
         .unwrap_or_abort();
     let store = harness.coordinator.event_store().await.unwrap_or_abort();
-    let mut events = store.subscribe(1).unwrap_or_abort();
+    let events = store.subscribe(1).unwrap_or_abort();
 
     let request_id = harness
         .coordinator
@@ -41,20 +41,16 @@ async fn compaction_v2_model_downshift_regenerates_summary() {
         )
         .await
         .unwrap_or_abort();
-    tokio::time::timeout(Duration::from_secs(1), async {
-        loop {
-            let event = events.next().await.unwrap_or_abort().unwrap_or_abort();
-            if event.correlation_id.as_deref() == Some(request_id.as_str())
-                && matches!(
-                    &event.payload,
-                    EventV1::ProviderRequestStarted(started) if started.model_id == "model-small"
-                )
-            {
-                break;
-            }
-        }
-    })
+    let mut model_starts = events.map(|event| event.unwrap_or_abort()).filter(|event| {
+        event.correlation_id.as_deref() == Some(request_id.as_str())
+            && matches!(
+                &event.payload,
+                EventV1::ProviderRequestStarted(started) if started.model_id == "model-small"
+            )
+    });
+    tokio::time::timeout(Duration::from_secs(1), model_starts.next())
     .await
+    .unwrap_or_abort()
     .unwrap_or_abort();
     release.notify_waiters();
     let stale_result = stale_generation.await.unwrap_or_abort();
