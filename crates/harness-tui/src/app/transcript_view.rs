@@ -23,7 +23,10 @@ pub(super) const fn active_turn_motion_demand(
 #[derive(Debug, Default)]
 pub(crate) struct ToolMotionTracker {
     running_since: BTreeMap<String, Instant>,
+    finished_at: BTreeMap<String, Instant>,
 }
+
+pub(crate) const TOOL_FINISH_FLASH_DURATION: Duration = Duration::from_millis(400);
 
 impl ToolMotionTracker {
     pub(crate) fn sync_running_ids(
@@ -35,14 +38,47 @@ impl ToolMotionTracker {
         self.running_since
             .retain(|tool_call_id, _| running.contains(tool_call_id));
         for tool_call_id in running {
+            self.finished_at.remove(&tool_call_id);
             self.running_since.entry(tool_call_id).or_insert(now);
         }
     }
 
-    pub(crate) fn sync_terminal_ids(&mut self, terminal_ids: impl IntoIterator<Item = String>) {
+    pub(crate) fn sync_terminal_ids(
+        &mut self,
+        terminal_ids: impl IntoIterator<Item = String>,
+        now: Instant,
+        animate: bool,
+    ) {
         for tool_call_id in terminal_ids {
-            self.running_since.remove(&tool_call_id);
+            if self.running_since.remove(&tool_call_id).is_some() && animate {
+                self.finished_at.insert(tool_call_id, now);
+            }
         }
+    }
+
+    pub(crate) fn finish_elapsed(&self, tool_call_id: &str, now: Instant) -> Option<Duration> {
+        self.finished_at
+            .get(tool_call_id)
+            .map(|finished_at| now.saturating_duration_since(*finished_at))
+            .filter(|elapsed| *elapsed < TOOL_FINISH_FLASH_DURATION)
+    }
+
+    pub(crate) fn finish_remaining(&self, now: Instant) -> Option<Duration> {
+        self.finished_at
+            .values()
+            .map(|finished_at| {
+                TOOL_FINISH_FLASH_DURATION
+                    .saturating_sub(now.saturating_duration_since(*finished_at))
+            })
+            .min()
+    }
+
+    pub(crate) fn expire_finished(&mut self, now: Instant, settle: bool) -> bool {
+        let count = self.finished_at.len();
+        self.finished_at.retain(|_, finished_at| {
+            !settle && now.saturating_duration_since(*finished_at) < TOOL_FINISH_FLASH_DURATION
+        });
+        count != self.finished_at.len()
     }
 
     pub(crate) fn running_elapsed(&self, tool_call_id: &str, now: Instant) -> Duration {
@@ -141,7 +177,7 @@ mod tests {
     }
 
     #[test]
-    fn terminal_tool_clears_running_elapsed_without_completion_motion() {
+    fn terminal_tool_completion_motion_expires_without_restarting_on_projection() {
         // arrange
         // Given: a tool that has accumulated running time.
         let mut tracker = ToolMotionTracker::default();
@@ -154,7 +190,12 @@ mod tests {
         );
 
         // When: the tool becomes terminal.
-        tracker.sync_terminal_ids(["tool-finished".to_string()]);
+        tracker.sync_terminal_ids(["tool-finished".to_string()], finished_at, true);
+        tracker.sync_terminal_ids(
+            ["tool-finished".to_string()],
+            finished_at + std::time::Duration::from_millis(100),
+            true,
+        );
 
         // act
         // Then: terminal state carries no remaining running-motion clock.
@@ -163,5 +204,20 @@ mod tests {
             tracker.running_elapsed("tool-finished", finished_at),
             std::time::Duration::ZERO
         );
+        assert_eq!(
+            tracker.finish_elapsed("tool-finished", finished_at),
+            Some(std::time::Duration::ZERO)
+        );
+        assert_eq!(
+            tracker.finish_remaining(finished_at + std::time::Duration::from_millis(399)),
+            Some(std::time::Duration::from_millis(1))
+        );
+        assert!(tracker.expire_finished(finished_at + super::TOOL_FINISH_FLASH_DURATION, false));
+        assert_eq!(
+            tracker.finish_remaining(finished_at + super::TOOL_FINISH_FLASH_DURATION),
+            None
+        );
+        tracker.sync_terminal_ids(["historical-tool".to_string()], finished_at, true);
+        assert_eq!(tracker.finish_elapsed("historical-tool", finished_at), None);
     }
 }

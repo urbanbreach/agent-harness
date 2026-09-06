@@ -25,6 +25,13 @@ pub(crate) enum StartupReveal {
 impl AppState {
     pub(crate) fn set_reduced_motion(&mut self, reduced_motion: bool) {
         self.reduced_motion = reduced_motion;
+        if self
+            .transcript_view
+            .tool_motion
+            .expire_finished(self.now(), reduced_motion)
+        {
+            self.bump_transcript_render_epoch();
+        }
     }
 
     pub(crate) const fn transcript_motion_enabled(&self) -> bool {
@@ -41,12 +48,26 @@ impl AppState {
             self.reset_clear_prompt_confirmation();
         }
         let toast_changed = self.refresh_toast_motion(now);
-        clear_prompt_confirmation_expired || toast_changed
+        let tool_finished = self
+            .transcript_view
+            .tool_motion
+            .expire_finished(now, self.reduced_motion || self.replay_mode);
+        if tool_finished {
+            self.bump_transcript_render_epoch();
+            self.motion_revision = self.motion_revision.wrapping_add(1);
+        }
+        clear_prompt_confirmation_expired || toast_changed || tool_finished
     }
 
     pub(crate) fn motion_plan(&self) -> MotionPlan {
         let now = self.now();
         let mut plan = MotionPlan::none();
+
+        if !self.reduced_motion && !self.replay_mode {
+            if let Some(remaining) = self.transcript_view.tool_motion.finish_remaining(now) {
+                plan = plan.merge(MotionDemand::until(remaining));
+            }
+        }
 
         if let Some(remaining) = self.composer_suggestion_delay_remaining() {
             plan = plan.merge(MotionDemand::until(remaining));
@@ -256,6 +277,26 @@ mod tests {
             app.motion_plan().cadence(),
             MotionCadence::Slow(Duration::from_millis(83))
         );
+    }
+
+    #[test]
+    fn tool_completion_expiry_requests_a_final_repaint_without_idle_ticks() {
+        let base = Instant::now();
+        let mut app = AppState::new_live(None, false, None);
+        app.set_now_fn_for_test(Arc::new(move || base));
+        app.transcript_view
+            .tool_motion
+            .sync_running_ids(["tool".to_string()], base);
+        app.transcript_view
+            .tool_motion
+            .sync_terminal_ids(["tool".to_string()], base, true);
+        let revision = app.motion_revision;
+        assert_eq!(app.motion_plan().until(), Some(Duration::from_millis(400)));
+        app.set_now_fn_for_test(Arc::new(move || base + Duration::from_millis(400)));
+        assert!(app.refresh_motion_state());
+        assert_ne!(app.motion_revision, revision);
+        assert!(app.motion_plan().is_none());
+        assert!(!app.refresh_motion_state());
     }
 
     #[test]
