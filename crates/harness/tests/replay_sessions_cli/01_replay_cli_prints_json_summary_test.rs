@@ -158,6 +158,8 @@ fn replay_cli_surfaces_recovery_story_details_from_resume_metadata() {
         String::from_utf8_lossy(&human.stderr)
     );
     let stdout = String::from_utf8_lossy(&human.stdout);
+    assert_recovery_human_output(&stdout);
+    fn assert_recovery_human_output(stdout: &str) {
     assert!(stdout.contains("artifacts: 1"));
     assert!(stdout.contains("artifacts/delegated/task-output.json"));
     assert!(stdout.contains("tool_call=toolcall_1"));
@@ -174,6 +176,7 @@ fn replay_cli_surfaces_recovery_story_details_from_resume_metadata() {
     assert!(stdout.contains("next_actions:"));
     assert!(stdout.contains("background_output(request_id=\"child-req-001\", block=false)"));
     assert!(stdout.contains("task(session_id=\"child-run-001\""));
+    }
 
     let json = run_harness([
             "replay",
@@ -203,6 +206,10 @@ fn replay_cli_surfaces_recovery_story_details_from_resume_metadata() {
     assert_eq!(summary["artifacts"][0]["canonical_tool_id"], "agent.spawn");
     assert_eq!(summary["artifacts"][0]["alias_source_tool_id"], "task");
     assert_eq!(summary["artifacts"][0]["child_session_id"], "child-run-001");
+    assert_recovery_child_summary(&summary);
+}
+
+fn assert_recovery_child_summary(summary: &serde_json::Value) {
     assert_eq!(
         summary["child_sessions"][0]["child_session_id"],
         "child-run-001"
@@ -322,16 +329,12 @@ fn replay_cli_sanitizes_control_char_metadata_in_human_output() {
         String::from_utf8_lossy(&human_output.stderr)
     );
     let stdout = String::from_utf8_lossy(&human_output.stdout);
-    assert!(!stdout.contains("artifacts/delegated/task-output\n.json"));
-    assert!(!stdout.contains("child-run-001\n\tcontrol"));
-    assert!(!stdout.contains("toolcall_parent\rcontrol"));
-    assert!(stdout.contains("artifacts/delegated/task-output\\n.json"));
-    assert!(stdout.contains("child-run-001\\n\\tcontrol"));
-    assert!(stdout.contains("parent_tool=toolcall_parent\\rcontrol"));
-    assert!(stdout.contains("tool=task"));
-    assert!(stdout.contains("effective=agent.spawn"));
-    assert!(stdout.contains("canonical=agent.spawn"));
-    assert!(stdout.contains("alias=task"));
+    for raw in ["artifacts/delegated/task-output\n.json", "child-run-001\n\tcontrol", "toolcall_parent\rcontrol"] {
+        assert!(!stdout.contains(raw), "raw controls must not appear in human output");
+    }
+    for escaped in ["artifacts/delegated/task-output\\n.json", "child-run-001\\n\\tcontrol", "parent_tool=toolcall_parent\\rcontrol", "tool=task", "effective=agent.spawn", "canonical=agent.spawn", "alias=task"] {
+        assert!(stdout.contains(escaped), "missing escaped metadata {escaped}");
+    }
 }
 #[test]
 fn replay_cli_surfaces_recovery_context_in_json_summary() {
