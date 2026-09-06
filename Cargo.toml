@@ -86,6 +86,8 @@ cast_precision_loss = "warn"
 cast_sign_loss = "warn"
 
 # Other warns
+cognitive_complexity = "warn"
+excessive_nesting = "warn"
 ptr_as_ptr = "warn"
 borrow_as_ptr = "warn"
 clone_on_ref_ptr = "warn"
