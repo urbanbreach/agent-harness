@@ -1292,34 +1292,33 @@ impl SessionProjection {
             .iter()
             .map(|activity| activity.thinking_text.len() + activity.transcript_text.len())
             .sum();
-        if total_chars > max_chars {
-            let excess = total_chars - max_chars;
-            let mut trimmed = 0;
-            while trimmed < excess && !self.activities.is_empty() {
-                if let Some(first) = self.activities.front_mut() {
-                    for chunk in [&mut first.thinking_text, &mut first.transcript_text] {
-                        if trimmed >= excess {
-                            break;
-                        }
-                        if chunk.len() <= excess - trimmed {
-                            trimmed += chunk.len();
-                            chunk.clear();
-                        } else {
-                            let to_trim = excess - trimmed;
-                            *chunk = chunk.split_off(to_trim);
-                            trimmed = excess;
-                        }
-                    }
-                    if trimmed >= excess {
-                        break;
-                    }
+        if total_chars <= max_chars {
+            return;
+        }
+        let excess = total_chars - max_chars;
+        let mut trimmed = 0;
+        while trimmed < excess {
+            let Some(first) = self.activities.front_mut() else {
+                break;
+            };
+            for chunk in [&mut first.thinking_text, &mut first.transcript_text] {
+                if trimmed >= excess {
+                    break;
                 }
-                if trimmed < excess {
-                    self.activities.pop_front();
+                if chunk.len() <= excess - trimmed {
+                    trimmed += chunk.len();
+                    chunk.clear();
+                } else {
+                    let to_trim = excess - trimmed;
+                    *chunk = chunk.split_off(to_trim);
+                    trimmed = excess;
                 }
             }
-            self.transcript_trimmed_count += trimmed;
+            if trimmed < excess {
+                self.activities.pop_front();
+            }
         }
+        self.transcript_trimmed_count += trimmed;
     }
 }
 

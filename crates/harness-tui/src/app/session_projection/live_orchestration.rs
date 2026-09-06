@@ -8,21 +8,7 @@ impl SessionProjection {
                     self.note_child_agent_request(event, request_id);
                 }
                 if data.state == harness_core::event::TaskScheduleState::Queued {
-                    if let Some(request_id) = event.correlation_id.as_deref() {
-                        if let Some(index) =
-                            self.activity_index_or_local_echo(request_id, event.seq)
-                        {
-                            if let Some(entry) = self.activities.get_mut(index) {
-                                if !matches!(
-                                    entry.status,
-                                    ActivityStatus::Done | ActivityStatus::Error
-                                ) {
-                                    entry.status = ActivityStatus::Queued;
-                                    mark_activity_event(entry, event.seq, event.mono_ms);
-                                }
-                            }
-                        }
-                    }
+                    self.mark_scheduled_activity_queued(event);
                 }
                 self.update_orchestration_task(event, data.task_id.as_str(), |row| {
                     merge_orchestration_task_lineage(
@@ -83,5 +69,21 @@ impl SessionProjection {
             _ => return false,
         }
         true
+    }
+
+    fn mark_scheduled_activity_queued(&mut self, event: &EventEnvelopeV1) {
+        let Some(request_id) = event.correlation_id.as_deref() else {
+            return;
+        };
+        let Some(index) = self.activity_index_or_local_echo(request_id, event.seq) else {
+            return;
+        };
+        let Some(entry) = self.activities.get_mut(index) else {
+            return;
+        };
+        if !matches!(entry.status, ActivityStatus::Done | ActivityStatus::Error) {
+            entry.status = ActivityStatus::Queued;
+            mark_activity_event(entry, event.seq, event.mono_ms);
+        }
     }
 }
