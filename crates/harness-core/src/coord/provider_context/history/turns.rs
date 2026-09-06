@@ -88,14 +88,15 @@ pub(in crate::coord::provider_context) fn collect_historical_agent_turns_until(
                 } else {
                     None
                 };
-                if let Some(scope) = scope {
-                    historical_task_scopes.insert(payload.task_id.to_string(), scope);
-                    if matches!(scope, TaskTerminalScope::AgentTurn) {
-                        if let Some(request_id) = event.correlation_id.as_deref() {
-                            request_turn_task_ids
-                                .insert(request_id.to_string(), payload.task_id.to_string());
-                        }
-                    }
+                let Some(scope) = scope else {
+                    continue;
+                };
+                historical_task_scopes.insert(payload.task_id.to_string(), scope);
+                if let (TaskTerminalScope::AgentTurn, Some(request_id)) =
+                    (scope, event.correlation_id.as_deref())
+                {
+                    request_turn_task_ids
+                        .insert(request_id.to_string(), payload.task_id.to_string());
                 }
             }
             EventV1::ArtifactWritten(payload) => {
