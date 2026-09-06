@@ -2245,88 +2245,115 @@ mod tests {
         // Given: one expanded diff measured while its tool is still using provisional styles.
         let theme = Theme::default();
         let width = 36;
-        let before_turn = ui10_diff_turn(false);
-        let measure = |turn: &super::super::TranscriptTurnSection| {
-            super::super::measure_transcript_layout(
-                std::slice::from_ref(turn),
-                &theme,
-                width,
-                theme.surface.shell,
-                |section| section.activity_first_seq,
-                |_index, _section| None,
-                |section, theme, width, surface| {
-                    build_transcript_render_surfaces(section, theme, width, surface)
-                },
-            )
-        };
-        let before = measure(&before_turn);
-        let anchor_row = before.sections[0].surfaces[0].height / 2;
-        let content_anchor = before
-            .capture_content_anchor(anchor_row)
-            .expect("diff content anchor");
-        let selection_cell = super::super::TranscriptSelectionCell {
-            row: anchor_row,
-            column: 8,
-        };
-        let selection_anchor = before
-            .capture_selection_anchor(selection_cell)
-            .expect("diff selection anchor");
-        let before_text = before.sections[0]
-            .surfaces
-            .iter()
-            .flat_map(|surface| surface.lines.iter())
-            .map(|line| {
-                line.spans
-                    .iter()
-                    .map(|span| span.content.as_ref())
-                    .collect::<String>()
-            })
-            .collect::<Vec<_>>();
-        let before_selection = super::super::transcript_selection_rows(&before, usize::from(width));
-
-        // When: the lifecycle promotes the same diff to full syntax styles.
-        let mut after_turn = before_turn.clone();
-        for part in &mut after_turn.assistant_parts {
-            if let super::super::TranscriptAssistantPart::ToolCall(tool) = part {
-                super::super::ui_transcript_tool_sections::set_diff_highlight_phase(
-                    &mut tool.detail_blocks,
-                    true,
-                );
+        for plain_numbered in [false, true] {
+            let mut before_turn = ui10_diff_turn(false);
+            let blocks = before_turn
+                .assistant_parts
+                .iter_mut()
+                .filter_map(|part| match part {
+                    super::super::TranscriptAssistantPart::ToolCall(tool) => {
+                        Some(&mut tool.detail_blocks)
+                    }
+                    _ => None,
+                })
+                .flatten();
+            for block in blocks {
+                if let super::super::TranscriptToolCallDetailBlock::StructuredDiff {
+                    plain_numbered: numbered,
+                    ..
+                } = block
+                {
+                    *numbered = plain_numbered;
+                }
             }
-        }
-        let after = measure(&after_turn);
-        let after_text = after.sections[0]
-            .surfaces
-            .iter()
-            .flat_map(|surface| surface.lines.iter())
-            .map(|line| {
-                line.spans
-                    .iter()
-                    .map(|span| span.content.as_ref())
-                    .collect::<String>()
-            })
-            .collect::<Vec<_>>();
-        let after_selection = super::super::transcript_selection_rows(&after, usize::from(width));
+            let measure = |turn: &super::super::TranscriptTurnSection| {
+                super::super::measure_transcript_layout(
+                    std::slice::from_ref(turn),
+                    &theme,
+                    width,
+                    theme.surface.shell,
+                    |section| section.activity_first_seq,
+                    |_index, _section| None,
+                    |section, theme, width, surface| {
+                        build_transcript_render_surfaces(section, theme, width, surface)
+                    },
+                )
+            };
+            let before = measure(&before_turn);
+            let anchor_row = before.sections[0].surfaces[0].height / 2;
+            let content_anchor = before
+                .capture_content_anchor(anchor_row)
+                .expect("diff content anchor");
+            let selection_cell = super::super::TranscriptSelectionCell {
+                row: anchor_row,
+                column: 8,
+            };
+            let selection_anchor = before
+                .capture_selection_anchor(selection_cell)
+                .expect("diff selection anchor");
+            let before_text = before.sections[0]
+                .surfaces
+                .iter()
+                .flat_map(|surface| surface.lines.iter())
+                .map(|line| {
+                    line.spans
+                        .iter()
+                        .map(|span| span.content.as_ref())
+                        .collect::<String>()
+                })
+                .collect::<Vec<_>>();
+            let before_selection =
+                super::super::transcript_selection_rows(&before, usize::from(width));
 
-        // act
-        // Then: style-only promotion leaves every geometry-bearing projection unchanged.
-        // assert
-        assert_eq!(
-            (
-                after_text,
-                after.total_height,
-                after_selection,
-                after.resolve_content_anchor(content_anchor),
-                after.resolve_selection_anchor(selection_anchor),
-            ),
-            (
-                before_text,
-                before.total_height,
-                before_selection,
-                Some(anchor_row),
-                Some(selection_cell),
-            )
-        );
+            // When: the lifecycle promotes the same diff to full syntax styles.
+            let mut after_turn = before_turn.clone();
+            for part in &mut after_turn.assistant_parts {
+                if let super::super::TranscriptAssistantPart::ToolCall(tool) = part {
+                    super::super::ui_transcript_tool_sections::set_diff_highlight_phase(
+                        &mut tool.detail_blocks,
+                        true,
+                    );
+                }
+            }
+            let after = measure(&after_turn);
+            let after_text = after.sections[0]
+                .surfaces
+                .iter()
+                .flat_map(|surface| surface.lines.iter())
+                .map(|line| {
+                    line.spans
+                        .iter()
+                        .map(|span| span.content.as_ref())
+                        .collect::<String>()
+                })
+                .collect::<Vec<_>>();
+            let after_selection =
+                super::super::transcript_selection_rows(&after, usize::from(width));
+            assert_ne!(
+                after.sections[0].surfaces[0].lines,
+                before.sections[0].surfaces[0].lines
+            );
+
+            // act
+            // Then: style-only promotion leaves every geometry-bearing projection unchanged.
+            // assert
+            assert_eq!(
+                (
+                    after_text,
+                    after.total_height,
+                    after_selection,
+                    after.resolve_content_anchor(content_anchor),
+                    after.resolve_selection_anchor(selection_anchor),
+                ),
+                (
+                    before_text,
+                    before.total_height,
+                    before_selection,
+                    Some(anchor_row),
+                    Some(selection_cell),
+                )
+            );
+        }
     }
 
     #[test]
