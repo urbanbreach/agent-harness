@@ -224,80 +224,13 @@ impl Coordinator {
                     .await;
                 warn_oneshot_send_failure(respond_to.send(result), "request_agent_turn");
             }
-            Command::RequestToolCall {
-                actor,
-                legacy_profile_hint,
-                tool_id,
-                args_json,
-                respond_to,
-            } => {
-                let result = self
-                    .request_tool_call_internal(
-                        actor,
-                        legacy_profile_hint,
-                        tool_id,
-                        args_json,
-                        None,
-                        None,
-                    )
-                    .await;
-                warn_oneshot_send_failure(respond_to.send(result), "request_tool_call");
-            }
-            Command::ExecuteAgentToolCall {
-                actor,
-                legacy_profile_hint,
-                tool_id,
-                args_json,
-                reserved_tool_call_id,
-                respond_to,
-            } => {
-                let _ = self
-                    .request_tool_call_internal(
-                        actor,
-                        legacy_profile_hint,
-                        tool_id,
-                        args_json,
-                        reserved_tool_call_id,
-                        Some(respond_to),
-                    )
-                    .await;
-            }
-            Command::RequestQuestion {
-                actor,
-                tool_call_id,
-                request_json,
-                respond_to,
-            } => {
-                let _ = self
-                    .request_question_internal(actor, tool_call_id, request_json, respond_to)
-                    .await;
-            }
-            Command::ResolvePermission {
-                permission_id,
-                decision,
-                reason,
-                grant_scope,
-                respond_to,
-            } => {
-                let result = self
-                    .resolve_permission_internal(permission_id, decision, reason, grant_scope)
-                    .await;
-                warn_oneshot_send_failure(respond_to.send(result), "resolve_permission");
-            }
-            Command::SetAlwaysApproveMode {
-                enabled,
-                respond_to,
-            } => {
-                let result = self.set_always_approve_mode_internal(enabled).await;
-                warn_oneshot_send_failure(respond_to.send(result), "set_always_approve_mode");
-            }
-            Command::PermissionTimedOut { permission_id } => {
-                self.resolve_permission_timeout_internal(permission_id)
-                    .await;
-            }
-            Command::JobProgress { task_id, kind } => {
-                self.job_progress_internal(task_id, kind);
-            }
+            command @ (Command::RequestToolCall { .. }
+            | Command::ExecuteAgentToolCall { .. }
+            | Command::RequestQuestion { .. }
+            | Command::ResolvePermission { .. }
+            | Command::SetAlwaysApproveMode { .. }
+            | Command::PermissionTimedOut { .. }
+            | Command::JobProgress { .. }) => self.handle_tool_command(command).await,
             Command::CancelTask {
                 task_id,
                 reason,
@@ -356,6 +289,46 @@ impl Coordinator {
             Command::JobFinished { task_id, outcome } => {
                 let _ = self.job_finished_internal_async(task_id, outcome).await;
             }
+            command @ (Command::AgentProviderRequestStarted { .. }
+            | Command::AgentProviderStreamDelta { .. }
+            | Command::AgentProviderReasoningDelta { .. }
+            | Command::AgentProviderToolInputDelta { .. }
+            | Command::AgentProviderRequestFinished { .. }
+            | Command::AgentAssistantMessageFinished { .. }
+            | Command::AllocateProviderRequestId { .. }
+            | Command::CompactAgentContext { .. }
+            | Command::ManualCompactAgentContext { .. }
+            | Command::CompactionGenerated(..)
+            | Command::AgentTurnFinished { .. }) => self.handle_provider_command(command).await,
+            Command::SnapshotWorkspace {
+                request_id,
+                respond_to,
+            } => {
+                let result = self.snapshot_workspace_internal(request_id).await;
+                warn_oneshot_send_failure(respond_to.send(result), "snapshot_workspace");
+            }
+            Command::RevertWorkspace {
+                snapshot_request_id,
+                respond_to,
+            } => {
+                let result = self.revert_workspace_internal(snapshot_request_id).await;
+                warn_oneshot_send_failure(respond_to.send(result), "revert_workspace");
+            }
+            Command::GetPluginLifecycleSummary { respond_to } => {
+                let result = self
+                    .run_state
+                    .as_ref()
+                    .map(|rs| rs.plugin_lifecycle.summary())
+                    .ok_or(CoordinatorError::RunNotStarted);
+                warn_oneshot_send_failure(respond_to.send(result), "get_plugin_lifecycle_summary");
+            }
+        }
+    }
+}
+
+impl Coordinator {
+    async fn handle_provider_command(&mut self, command: Command) {
+        match command {
             Command::AgentProviderRequestStarted {
                 task_id,
                 agent_id,
@@ -530,28 +503,89 @@ impl Coordinator {
                     .agent_turn_finished_internal(task_id, agent_id, request_id, outcome)
                     .await;
             }
-            Command::SnapshotWorkspace {
-                request_id,
+            _ => {}
+        }
+    }
+}
+
+impl Coordinator {
+    async fn handle_tool_command(&mut self, command: Command) {
+        match command {
+            Command::RequestToolCall {
+                actor,
+                legacy_profile_hint,
+                tool_id,
+                args_json,
                 respond_to,
             } => {
-                let result = self.snapshot_workspace_internal(request_id).await;
-                warn_oneshot_send_failure(respond_to.send(result), "snapshot_workspace");
-            }
-            Command::RevertWorkspace {
-                snapshot_request_id,
-                respond_to,
-            } => {
-                let result = self.revert_workspace_internal(snapshot_request_id).await;
-                warn_oneshot_send_failure(respond_to.send(result), "revert_workspace");
-            }
-            Command::GetPluginLifecycleSummary { respond_to } => {
                 let result = self
-                    .run_state
-                    .as_ref()
-                    .map(|rs| rs.plugin_lifecycle.summary())
-                    .ok_or(CoordinatorError::RunNotStarted);
-                warn_oneshot_send_failure(respond_to.send(result), "get_plugin_lifecycle_summary");
+                    .request_tool_call_internal(
+                        actor,
+                        legacy_profile_hint,
+                        tool_id,
+                        args_json,
+                        None,
+                        None,
+                    )
+                    .await;
+                warn_oneshot_send_failure(respond_to.send(result), "request_tool_call");
             }
+            Command::ExecuteAgentToolCall {
+                actor,
+                legacy_profile_hint,
+                tool_id,
+                args_json,
+                reserved_tool_call_id,
+                respond_to,
+            } => {
+                let _ = self
+                    .request_tool_call_internal(
+                        actor,
+                        legacy_profile_hint,
+                        tool_id,
+                        args_json,
+                        reserved_tool_call_id,
+                        Some(respond_to),
+                    )
+                    .await;
+            }
+            Command::RequestQuestion {
+                actor,
+                tool_call_id,
+                request_json,
+                respond_to,
+            } => {
+                let _ = self
+                    .request_question_internal(actor, tool_call_id, request_json, respond_to)
+                    .await;
+            }
+            Command::ResolvePermission {
+                permission_id,
+                decision,
+                reason,
+                grant_scope,
+                respond_to,
+            } => {
+                let result = self
+                    .resolve_permission_internal(permission_id, decision, reason, grant_scope)
+                    .await;
+                warn_oneshot_send_failure(respond_to.send(result), "resolve_permission");
+            }
+            Command::SetAlwaysApproveMode {
+                enabled,
+                respond_to,
+            } => {
+                let result = self.set_always_approve_mode_internal(enabled).await;
+                warn_oneshot_send_failure(respond_to.send(result), "set_always_approve_mode");
+            }
+            Command::PermissionTimedOut { permission_id } => {
+                self.resolve_permission_timeout_internal(permission_id)
+                    .await;
+            }
+            Command::JobProgress { task_id, kind } => {
+                self.job_progress_internal(task_id, kind);
+            }
+            _ => {}
         }
     }
 }
