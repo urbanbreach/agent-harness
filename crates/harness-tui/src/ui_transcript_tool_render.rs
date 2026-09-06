@@ -1219,7 +1219,7 @@ fn append_tool_call_diff_block(
             force_stacked,
             plain_numbered,
             highlight_intraline: false,
-            highlight_syntax: highlight_syntax && !plain_numbered,
+            highlight_syntax,
             show_file_header,
             show_hunk_header: false,
         },

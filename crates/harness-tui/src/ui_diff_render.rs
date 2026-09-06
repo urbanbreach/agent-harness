@@ -217,7 +217,7 @@ fn render_unified_diff_cell_lines(
     plain_numbered: bool,
     theme: &Theme,
 ) -> Vec<Line<'static>> {
-    if plain_numbered {
+    if plain_numbered && !highlight_syntax {
         return render_plain_numbered_diff_cell_lines(
             prefix,
             cell,
