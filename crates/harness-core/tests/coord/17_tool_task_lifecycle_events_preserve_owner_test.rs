@@ -325,7 +325,7 @@ async fn critical_hook_failure_fails_closed_and_records_metadata() {
                     event: HookLifecycleEvent::ToolCallStarted,
                     command: vec![
                         "bash".to_string(),
-                        "-lc".to_string(),
+                        "-c".to_string(),
                         "sleep 0.05".to_string(),
                     ],
                     cwd: Some(".".to_string()),
@@ -338,7 +338,7 @@ async fn critical_hook_failure_fails_closed_and_records_metadata() {
                     event: HookLifecycleEvent::ToolCallFinished,
                     command: vec![
                         "bash".to_string(),
-                        "-lc".to_string(),
+                        "-c".to_string(),
                         "printf '%s|%s|%s|%s' \"$PWD\" \"$HOOK_CUSTOM\" \"$HARNESS_HOOK_EVENT\" \"$HARNESS_HOOK_TOOL_ID\" > \"$HOOK_OUTPUT_PATH\"; exit 23".to_string(),
                     ],
                     cwd: Some(".".to_string()),
@@ -478,7 +478,7 @@ async fn noncritical_hook_failure_records_metadata_without_cancelling_task() {
                 event: HookLifecycleEvent::ToolCallFinished,
                 command: vec![
                     "bash".to_string(),
-                    "-lc".to_string(),
+                    "-c".to_string(),
                     "printf '%s|%s|%s' \"$PWD\" \"$HARNESS_HOOK_EVENT\" \"$HARNESS_HOOK_TOOL_ID\" > \"$HOOK_OUTPUT_PATH\"; exit 17"
                         .to_string(),
                 ],
