@@ -290,6 +290,52 @@ mod animation_phase_tests {
     }
 
     #[test]
+    fn cached_running_tool_repaints_only_its_lifecycle_marker() {
+        for glyph_mode in [
+            crate::theme::GlyphMode::Preferred,
+            crate::theme::GlyphMode::Ascii,
+        ] {
+            let theme = Theme::default().with_glyph_mode(glyph_mode);
+            let mut surface = reasoning_surface(
+                &theme,
+                theme.live_shell.glyphs.running,
+                Some(ToolRailMotion::Running {
+                    elapsed: std::time::Duration::ZERO,
+                    sampled_phase: 0,
+                }),
+            );
+            surface.kind = TranscriptRenderSurfaceKind::AssistantTool;
+            surface.show_outer_rail = false;
+            surface.rail_glyph = " ";
+            surface.lines[0].spans[2].content = "Run cargo test".into();
+            let mut terminal = Terminal::new(TestBackend::new(40, 1)).expect("test terminal");
+            let mut frames = Vec::new();
+            for phase in [0, 10] {
+                terminal
+                    .draw(|frame| {
+                        render_transcript_surface(
+                            frame,
+                            &surface,
+                            Rect::new(0, 0, 40, 1),
+                            0,
+                            phase,
+                            &theme,
+                        );
+                    })
+                    .expect("render cached tool");
+                frames.push(terminal.backend().buffer().clone());
+            }
+            assert_ne!(frames[0][(2, 0)].fg, frames[1][(2, 0)].fg, "{glyph_mode:?}");
+            assert_eq!(
+                frames[0][(4, 0)],
+                frames[1][(4, 0)],
+                "tool label must not pulse"
+            );
+            assert_eq!(frames[1][(4, 0)].fg, theme.text.secondary);
+        }
+    }
+
+    #[test]
     fn static_reasoning_rail_is_painted_after_content() {
         // arrange
         let theme = Theme::default();
@@ -357,6 +403,7 @@ fn apply_tool_header_motion_color(
         return;
     }
     let marker_glyphs = [
+        theme.live_shell.glyphs.running,
         theme.live_shell.transcript_glyphs.tool_marker,
         theme.live_shell.transcript_glyphs.thought_marker,
         theme.live_shell.transcript_glyphs.group_marker,
@@ -364,7 +411,7 @@ fn apply_tool_header_motion_color(
     let marker_index = line.spans.iter().position(|span| {
         marker_glyphs
             .iter()
-            .any(|marker| span.content.trim_start().starts_with(marker))
+            .any(|marker| span.content.trim() == *marker)
     });
     let Some(marker_index) = marker_index else {
         return;
@@ -376,13 +423,7 @@ fn apply_tool_header_motion_color(
         absolute_row,
         animation_phase,
     );
-    if semantic_group_surface {
-        line.spans[marker_index].style = line.spans[marker_index].style.fg(color);
-    } else {
-        for span in &mut line.spans {
-            span.style = span.style.fg(color);
-        }
-    }
+    line.spans[marker_index].style = line.spans[marker_index].style.fg(color);
 }
 
 fn transcript_surface_rail_lines_for_motion(
