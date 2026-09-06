@@ -68,20 +68,19 @@ impl Coordinator {
                 generated.refresh_committed_events(current_events);
                 match generated.commit(self.clock.as_ref(), self.redactor.as_ref(), run_state) {
                     Ok(applied) => {
-                        if pending.trigger.trigger_reason == "overflow" {
-                            if let (Some(task_id), Some(request_id)) = (
-                                pending.task_id.as_deref(),
-                                pending.trigger.through_request_id.as_deref(),
-                            ) {
-                                let context = run_state
-                                    .provider_context_by_agent
-                                    .get(&agent_id)
-                                    .cloned()
-                                    .unwrap_or_default();
-                                run_state.record_overflow_retry_compacted_context(
-                                    task_id, request_id, context,
-                                );
-                            }
+                        if let ("overflow", Some(task_id), Some(request_id)) = (
+                            pending.trigger.trigger_reason.as_str(),
+                            pending.task_id.as_deref(),
+                            pending.trigger.through_request_id.as_deref(),
+                        ) {
+                            let context = run_state
+                                .provider_context_by_agent
+                                .get(&agent_id)
+                                .cloned()
+                                .unwrap_or_default();
+                            run_state.record_overflow_retry_compacted_context(
+                                task_id, request_id, context,
+                            );
                         }
                         let context = run_state
                             .provider_context_by_agent

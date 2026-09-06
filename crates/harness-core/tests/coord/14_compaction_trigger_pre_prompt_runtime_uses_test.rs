@@ -465,14 +465,12 @@ async fn manual_unknown_budget_does_not_invent_compaction_capacity() {
             .await
             .unwrap_or_abort();
         wait_for_events(&run.events_path, Duration::from_secs(1), |events| {
-            events.iter().any(|event| {
-                matches!(
-                    &event.payload,
-                    EventV1::TaskCompleted(payload)
-                        if event.correlation_id.as_deref() == Some(request_id.as_str())
-                            && payload.result_summary == answer
-                )
-            })
+            events.iter().any(|event| matches!(
+                &event.payload,
+                EventV1::TaskCompleted(payload)
+                    if event.correlation_id.as_deref() == Some(request_id.as_str())
+                        && payload.result_summary == answer
+            ))
         })
         .await;
     }
@@ -555,13 +553,11 @@ async fn manual_unknown_budget_non_shrinking_summary_preserves_boundary() {
             .await
             .unwrap_or_abort();
         wait_for_events(&run.events_path, Duration::from_secs(1), |events| {
-            events.iter().any(|event| {
-                matches!(
-                    &event.payload,
-                    EventV1::TaskCompleted(_)
-                        if event.correlation_id.as_deref() == Some(request_id.as_str())
-                )
-            })
+            events.iter().any(|event| matches!(
+                &event.payload,
+                EventV1::TaskCompleted(_)
+                    if event.correlation_id.as_deref() == Some(request_id.as_str())
+            ))
         })
         .await;
     }
