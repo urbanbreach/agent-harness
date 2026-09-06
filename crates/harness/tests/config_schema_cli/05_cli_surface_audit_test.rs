@@ -55,6 +55,20 @@ fn assert_help_has_complete_command_descriptions(args: &[&str]) {
 }
 
 fn extract_harness_command_paths(readme: &str) -> std::collections::BTreeSet<Vec<String>> {
+    let mut paths = std::collections::BTreeSet::new();
+    for line in readme.lines() {
+        let mut rest = line;
+        while let Some(index) = rest.find("harness") {
+            rest = &rest[index + "harness".len()..];
+            let Some(next) = rest.chars().next() else { break; };
+            if !next.is_whitespace() { continue; }
+            paths.insert(extract_command_path(rest));
+        }
+    }
+    paths
+}
+
+fn extract_command_path(rest: &str) -> Vec<String> {
     let root_commands = [
         "tui", "run", "doctor", "models", "prompt", "replay", "sessions", "schema", "config",
     ];
@@ -78,19 +92,6 @@ fn extract_harness_command_paths(readme: &str) -> std::collections::BTreeSet<Vec
         "settings",
     ];
     let global_options_with_values = ["--config", "--session-dir", "-p"];
-    let mut paths = std::collections::BTreeSet::new();
-
-    for line in readme.lines() {
-        let mut rest = line;
-        while let Some(index) = rest.find("harness") {
-            rest = &rest[index + "harness".len()..];
-            let Some(next) = rest.chars().next() else {
-                break;
-            };
-            if !next.is_whitespace() {
-                continue;
-            }
-
             let mut path = Vec::new();
             let mut skip_next = false;
             for raw in rest.split_whitespace() {
@@ -140,11 +141,7 @@ fn extract_harness_command_paths(readme: &str) -> std::collections::BTreeSet<Vec
                 }
             }
 
-            paths.insert(path);
-        }
-    }
-
-    paths
+    path
 }
 
 #[test]
