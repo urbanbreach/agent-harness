@@ -148,25 +148,7 @@ impl AppState {
             return;
         }
 
-        let mapped_action = if self.focus == Focus::Prompt
-            && self.composer.multiline_mode
-            && key.code == KeyCode::Enter
-        {
-            match key.modifiers {
-                KeyModifiers::NONE => Some(Action::InsertNewline),
-                KeyModifiers::SHIFT => Some(Action::SubmitPrompt),
-                KeyModifiers::ALT => Some(Action::InsertNewline),
-                modifiers if modifiers == (KeyModifiers::CONTROL | KeyModifiers::ALT) => {
-                    Some(Action::InterjectPrompt)
-                }
-                modifiers if modifiers == (KeyModifiers::CONTROL | KeyModifiers::SHIFT) => {
-                    Some(Action::CancelAndReplacePrompt)
-                }
-                _ => self.keymap.get_action(&key),
-            }
-        } else {
-            self.keymap.get_action(&key)
-        };
+        let mapped_action = self.mapped_key_action(&key);
 
         if self.handle_text_input_key(key, mapped_action) {
             self.maybe_auto_exit();
@@ -179,6 +161,28 @@ impl AppState {
 
         self.execute_action_from_key(action, key);
         self.maybe_auto_exit();
+    }
+
+    fn mapped_key_action(&self, key: &KeyEvent) -> Option<Action> {
+        if self.focus != Focus::Prompt
+            || !self.composer.multiline_mode
+            || key.code != KeyCode::Enter
+        {
+            return self.keymap.get_action(key);
+        }
+
+        match key.modifiers {
+            KeyModifiers::NONE => Some(Action::InsertNewline),
+            KeyModifiers::SHIFT => Some(Action::SubmitPrompt),
+            KeyModifiers::ALT => Some(Action::InsertNewline),
+            modifiers if modifiers == (KeyModifiers::CONTROL | KeyModifiers::ALT) => {
+                Some(Action::InterjectPrompt)
+            }
+            modifiers if modifiers == (KeyModifiers::CONTROL | KeyModifiers::SHIFT) => {
+                Some(Action::CancelAndReplacePrompt)
+            }
+            _ => self.keymap.get_action(key),
+        }
     }
 
     fn handle_top_overlay_key(&mut self, key: KeyEvent) -> bool {
@@ -807,267 +811,274 @@ impl AppState {
             return;
         }
 
-        // Handle prompt-focused actions
         if self.focus == Focus::Prompt {
-            if self.composer_disabled() {
-                match action {
-                    Action::SubmitPrompt
-                    | Action::InterjectPrompt
-                    | Action::CancelAndReplacePrompt
-                    | Action::InsertNewline
-                    | Action::ToggleMultiline
-                    | Action::ClearPrompt
-                    | Action::HistoryUp
-                    | Action::HistoryDown
-                    | Action::CursorLeft
-                    | Action::CursorRight
-                    | Action::Backspace
-                    | Action::Delete
-                    | Action::Char(_)
-                    | Action::SelectCharLeft
-                    | Action::SelectCharRight
-                    | Action::SelectWordLeft
-                    | Action::SelectWordRight
-                    | Action::SelectLine
-                    | Action::SelectAll
-                    | Action::MoveWordLeft
-                    | Action::MoveWordRight
-                    | Action::MoveLineStart
-                    | Action::MoveLineEnd
-                    | Action::MoveBufferStart
-                    | Action::MoveBufferEnd
-                    | Action::DeleteWordForward
-                    | Action::DeleteWordBackward
-                    | Action::DeleteLine
-                    | Action::KillToLineStart
-                    | Action::KillToLineEnd
-                    | Action::Undo
-                    | Action::Redo => return,
-                    _ => {}
-                }
-            }
+            self.execute_prompt_action(action);
+        } else {
+            self.execute_global_action(action);
+        }
+    }
 
+    fn execute_prompt_action(&mut self, action: Action) {
+        if self.composer_disabled() {
             match action {
-                Action::SubmitPrompt => {
-                    if self.composer.shell_mode {
-                        let command = self.composer.prompt_buffer.trim().to_string();
-                        if !command.is_empty() {
-                            self.emit_ui_intent(UiIntent::RunShellCommand { command });
-                            self.composer.prompt_buffer.clear();
-                            self.composer.prompt_cursor = 0;
-                            self.composer.shell_mode = false;
-                        }
-                        return;
-                    }
-                    if self.send_queued_prompt_now() {
-                        return;
-                    }
-                    self.submit_prompt();
-                    return;
-                }
-                Action::InterjectPrompt => {
-                    self.submit_prompt();
-                    return;
-                }
-                Action::CancelAndReplacePrompt => {
-                    if self.composer_submission().is_err()
-                        || (self.launch_metadata.model().is_none()
-                            && self.launch_metadata.provider() == "local"
-                            && self.launch_metadata.configured_profile().is_some())
-                    {
-                        self.submit_prompt();
-                        return;
-                    }
-
-                    let task_ids: Vec<String> =
-                        self.active_interrupt_task_ids().into_iter().collect();
-                    if !task_ids.is_empty() {
-                        self.emit_ui_intent(UiIntent::InterruptSession {
-                            task_ids,
-                            reason: InterruptReason::User,
-                        });
-                    }
-                    self.submit_prompt();
-                    return;
-                }
-                Action::InsertNewline => {
-                    self.insert_prompt_char('\n');
-                    return;
-                }
-                Action::ToggleMultiline => {
-                    self.composer.multiline_mode = !self.composer.multiline_mode;
-                    return;
-                }
-                Action::ClearPrompt => {
-                    if !self.composer.prompt_buffer.is_empty() {
-                        self.composer.push_undo();
-                    }
-                    self.clear_prompt_input();
-                    if self.composer.shell_mode {
-                        self.composer.shell_mode = false;
-                    }
-                    return;
-                }
-                Action::DismissModal => {
-                    if self.composer.shell_mode {
-                        self.composer.shell_mode = false;
-                        return;
-                    }
-                }
-                Action::HistoryUp => {
-                    if self.move_prompt_cursor_up() {
-                        self.sync_file_mention_overlay();
-                        return;
-                    }
-
-                    if self.prompt_cursor_at_start() {
-                        self.select_previous_prompt_history();
-                    }
-                    return;
-                }
-                Action::HistoryDown => {
-                    if self.move_prompt_cursor_down() {
-                        self.sync_file_mention_overlay();
-                        return;
-                    }
-
-                    if self.prompt_cursor_at_end() {
-                        self.select_next_prompt_history();
-                    }
-                    return;
-                }
-                Action::CursorLeft => {
-                    if self.composer.editor_matches_prompt_fields()
-                        && self.composer.editor_move_left().is_ok()
-                    {
-                        self.sync_file_mention_overlay();
-                        return;
-                    }
-                    if self.composer.prompt_cursor > 0 {
-                        self.composer.prompt_cursor -= 1;
-                    }
-                    self.composer.selection_anchor = None;
-                    self.sync_file_mention_overlay();
-                    return;
-                }
-                Action::CursorRight => {
-                    if self.composer.editor_matches_prompt_fields()
-                        && self.composer.editor_move_right().is_ok()
-                    {
-                        self.sync_file_mention_overlay();
-                        return;
-                    }
-                    if self.composer.prompt_cursor < self.prompt_char_count() {
-                        self.composer.prompt_cursor += 1;
-                    }
-                    self.composer.selection_anchor = None;
-                    self.sync_file_mention_overlay();
-                    return;
-                }
-                Action::Backspace => {
-                    if self.composer.shell_mode
-                        && self.composer.prompt_cursor == 0
-                        && self.composer.prompt_buffer.is_empty()
-                    {
-                        self.composer.shell_mode = false;
-                        return;
-                    }
-                    self.backspace_prompt_char();
-                    return;
-                }
-                Action::Delete => {
-                    self.delete_prompt_char();
-                    return;
-                }
-                Action::Char(c) => {
-                    self.insert_prompt_char(c);
-                    return;
-                }
-                Action::SelectCharLeft => {
-                    self.composer_select_char_left();
-                    return;
-                }
-                Action::SelectCharRight => {
-                    self.composer_select_char_right();
-                    return;
-                }
-                Action::SelectWordLeft => {
-                    self.composer_select_word_left();
-                    return;
-                }
-                Action::SelectWordRight => {
-                    self.composer_select_word_right();
-                    return;
-                }
-                Action::SelectLine => {
-                    self.composer_select_line();
-                    return;
-                }
-                Action::SelectAll => {
-                    self.composer_select_all();
-                    return;
-                }
-                Action::MoveWordLeft => {
-                    self.composer_move_word_left();
-                    return;
-                }
-                Action::MoveWordRight => {
-                    self.composer_move_word_right();
-                    return;
-                }
-                Action::MoveLineStart => {
-                    self.composer_move_line_start();
-                    return;
-                }
-                Action::MoveLineEnd => {
-                    self.composer_move_line_end();
-                    return;
-                }
-                Action::MoveBufferStart => {
-                    self.composer_move_buffer_start();
-                    return;
-                }
-                Action::MoveBufferEnd => {
-                    self.composer_move_buffer_end();
-                    return;
-                }
-                Action::DeleteWordForward => {
-                    self.composer_delete_word_forward();
-                    return;
-                }
-                Action::DeleteWordBackward => {
-                    if self.startup_mode && self.composer.prompt_buffer.is_empty() {
-                        self.request_new_worktree_session();
-                        return;
-                    }
-                    self.composer_delete_word_backward();
-                    return;
-                }
-                Action::DeleteLine => {
-                    self.composer_delete_line();
-                    return;
-                }
-                Action::KillToLineStart => {
-                    self.composer_kill_to_line_start();
-                    return;
-                }
-                Action::KillToLineEnd => {
-                    self.composer_kill_to_line_end();
-                    return;
-                }
-                Action::Undo => {
-                    self.composer_undo();
-                    return;
-                }
-                Action::Redo => {
-                    self.composer_redo();
-                    return;
-                }
+                Action::SubmitPrompt
+                | Action::InterjectPrompt
+                | Action::CancelAndReplacePrompt
+                | Action::InsertNewline
+                | Action::ToggleMultiline
+                | Action::ClearPrompt
+                | Action::HistoryUp
+                | Action::HistoryDown
+                | Action::CursorLeft
+                | Action::CursorRight
+                | Action::Backspace
+                | Action::Delete
+                | Action::Char(_)
+                | Action::SelectCharLeft
+                | Action::SelectCharRight
+                | Action::SelectWordLeft
+                | Action::SelectWordRight
+                | Action::SelectLine
+                | Action::SelectAll
+                | Action::MoveWordLeft
+                | Action::MoveWordRight
+                | Action::MoveLineStart
+                | Action::MoveLineEnd
+                | Action::MoveBufferStart
+                | Action::MoveBufferEnd
+                | Action::DeleteWordForward
+                | Action::DeleteWordBackward
+                | Action::DeleteLine
+                | Action::KillToLineStart
+                | Action::KillToLineEnd
+                | Action::Undo
+                | Action::Redo => return,
                 _ => {}
             }
         }
 
-        // Handle global actions
+        match action {
+            Action::SubmitPrompt if self.composer.shell_mode => {
+                let command = self.composer.prompt_buffer.trim().to_string();
+                if !command.is_empty() {
+                    self.emit_ui_intent(UiIntent::RunShellCommand { command });
+                    self.composer.prompt_buffer.clear();
+                    self.composer.prompt_cursor = 0;
+                    self.composer.shell_mode = false;
+                }
+                return;
+            }
+            Action::SubmitPrompt => {
+                if self.send_queued_prompt_now() {
+                    return;
+                }
+                self.submit_prompt();
+                return;
+            }
+            Action::InterjectPrompt => {
+                self.submit_prompt();
+                return;
+            }
+            Action::CancelAndReplacePrompt => {
+                if self.composer_submission().is_err()
+                    || (self.launch_metadata.model().is_none()
+                        && self.launch_metadata.provider() == "local"
+                        && self.launch_metadata.configured_profile().is_some())
+                {
+                    self.submit_prompt();
+                    return;
+                }
+
+                let task_ids: Vec<String> = self.active_interrupt_task_ids().into_iter().collect();
+                if !task_ids.is_empty() {
+                    self.emit_ui_intent(UiIntent::InterruptSession {
+                        task_ids,
+                        reason: InterruptReason::User,
+                    });
+                }
+                self.submit_prompt();
+                return;
+            }
+            Action::InsertNewline => {
+                self.insert_prompt_char('\n');
+                return;
+            }
+            Action::ToggleMultiline => {
+                self.composer.multiline_mode = !self.composer.multiline_mode;
+                return;
+            }
+            Action::ClearPrompt => {
+                if !self.composer.prompt_buffer.is_empty() {
+                    self.composer.push_undo();
+                }
+                self.clear_prompt_input();
+                if self.composer.shell_mode {
+                    self.composer.shell_mode = false;
+                }
+                return;
+            }
+            Action::DismissModal => {
+                if self.composer.shell_mode {
+                    self.composer.shell_mode = false;
+                    return;
+                }
+            }
+            Action::HistoryUp => {
+                if self.move_prompt_cursor_up() {
+                    self.sync_file_mention_overlay();
+                    return;
+                }
+
+                if self.prompt_cursor_at_start() {
+                    self.select_previous_prompt_history();
+                }
+                return;
+            }
+            Action::HistoryDown => {
+                if self.move_prompt_cursor_down() {
+                    self.sync_file_mention_overlay();
+                    return;
+                }
+
+                if self.prompt_cursor_at_end() {
+                    self.select_next_prompt_history();
+                }
+                return;
+            }
+            Action::CursorLeft => {
+                if self.composer.editor_matches_prompt_fields()
+                    && self.composer.editor_move_left().is_ok()
+                {
+                    self.sync_file_mention_overlay();
+                    return;
+                }
+                if self.composer.prompt_cursor > 0 {
+                    self.composer.prompt_cursor -= 1;
+                }
+                self.composer.selection_anchor = None;
+                self.sync_file_mention_overlay();
+                return;
+            }
+            Action::CursorRight => {
+                if self.composer.editor_matches_prompt_fields()
+                    && self.composer.editor_move_right().is_ok()
+                {
+                    self.sync_file_mention_overlay();
+                    return;
+                }
+                if self.composer.prompt_cursor < self.prompt_char_count() {
+                    self.composer.prompt_cursor += 1;
+                }
+                self.composer.selection_anchor = None;
+                self.sync_file_mention_overlay();
+                return;
+            }
+            Action::Backspace => {
+                if self.composer.shell_mode
+                    && self.composer.prompt_cursor == 0
+                    && self.composer.prompt_buffer.is_empty()
+                {
+                    self.composer.shell_mode = false;
+                    return;
+                }
+                self.backspace_prompt_char();
+                return;
+            }
+            Action::Delete => {
+                self.delete_prompt_char();
+                return;
+            }
+            Action::Char(c) => {
+                self.insert_prompt_char(c);
+                return;
+            }
+            Action::SelectCharLeft => {
+                self.composer_select_char_left();
+                return;
+            }
+            Action::SelectCharRight => {
+                self.composer_select_char_right();
+                return;
+            }
+            Action::SelectWordLeft => {
+                self.composer_select_word_left();
+                return;
+            }
+            Action::SelectWordRight => {
+                self.composer_select_word_right();
+                return;
+            }
+            Action::SelectLine => {
+                self.composer_select_line();
+                return;
+            }
+            Action::SelectAll => {
+                self.composer_select_all();
+                return;
+            }
+            Action::MoveWordLeft => {
+                self.composer_move_word_left();
+                return;
+            }
+            Action::MoveWordRight => {
+                self.composer_move_word_right();
+                return;
+            }
+            Action::MoveLineStart => {
+                self.composer_move_line_start();
+                return;
+            }
+            Action::MoveLineEnd => {
+                self.composer_move_line_end();
+                return;
+            }
+            Action::MoveBufferStart => {
+                self.composer_move_buffer_start();
+                return;
+            }
+            Action::MoveBufferEnd => {
+                self.composer_move_buffer_end();
+                return;
+            }
+            Action::DeleteWordForward => {
+                self.composer_delete_word_forward();
+                return;
+            }
+            Action::DeleteWordBackward => {
+                if self.startup_mode && self.composer.prompt_buffer.is_empty() {
+                    self.request_new_worktree_session();
+                    return;
+                }
+                self.composer_delete_word_backward();
+                return;
+            }
+            Action::DeleteLine => {
+                self.composer_delete_line();
+                return;
+            }
+            Action::KillToLineStart => {
+                self.composer_kill_to_line_start();
+                return;
+            }
+            Action::KillToLineEnd => {
+                self.composer_kill_to_line_end();
+                return;
+            }
+            Action::Undo => {
+                self.composer_undo();
+                return;
+            }
+            Action::Redo => {
+                self.composer_redo();
+                return;
+            }
+            _ => {}
+        }
+
+        self.execute_global_action(action);
+    }
+
+    fn execute_global_action(&mut self, action: Action) {
         match action {
             Action::Quit => {
                 let default_key = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL);
@@ -1148,21 +1159,7 @@ impl AppState {
                 self.navigate_to_parent_session();
             }
             Action::SessionBackground => {
-                if self.replay_mode {
-                    self.status_banner = Some(
-                        "foreground subagent backgrounding unavailable: replay mode is read-only"
-                            .to_string(),
-                    );
-                } else if let Some(handle_id) = self.focused_demote_handle_id() {
-                    self.status_banner = Some(format!(
-                        "foreground subagent demote requested ({handle_id})"
-                    ));
-                    self.emit_ui_intent(UiIntent::DemoteForegroundChildTask { handle_id });
-                } else {
-                    self.status_banner =
-                        Some("foreground subagent backgrounding requested".to_string());
-                    self.emit_ui_intent(UiIntent::BackgroundForegroundSubagents);
-                }
+                self.request_foreground_backgrounding();
             }
             Action::DiffHunkNext => {
                 self.navigate_diff_hunk(false);
@@ -1173,40 +1170,24 @@ impl AppState {
             Action::VariantCycle => {
                 self.cycle_variant();
             }
-            Action::MoveDown if self.focus != Focus::Prompt => {
-                if self.active_review_surface.is_none() && self.focus == Focus::List {
-                    self.next_activity();
-                } else if self.focus == Focus::List {
-                    self.next_event();
-                } else if self.focus == Focus::Terminal {
-                    self.scroll_terminal_panel_down(1);
-                } else {
-                    if self.focus == Focus::Details {
-                        if self.transcript_surface_active() {
-                            self.scroll_transcript_up(1);
-                        } else {
-                            self.details_scroll = self.details_scroll.saturating_add(1);
-                        }
-                    }
+            Action::MoveDown => match self.focus {
+                Focus::List if self.active_review_surface.is_none() => self.next_activity(),
+                Focus::List => self.next_event(),
+                Focus::Terminal => self.scroll_terminal_panel_down(1),
+                Focus::Details if self.transcript_surface_active() => self.scroll_transcript_up(1),
+                Focus::Details => self.details_scroll = self.details_scroll.saturating_add(1),
+                Focus::Prompt => {}
+            },
+            Action::MoveUp => match self.focus {
+                Focus::List if self.active_review_surface.is_none() => self.previous_activity(),
+                Focus::List => self.previous_event(),
+                Focus::Terminal => self.scroll_terminal_panel_up(1),
+                Focus::Details if self.transcript_surface_active() => {
+                    self.scroll_transcript_down(1);
                 }
-            }
-            Action::MoveUp if self.focus != Focus::Prompt => {
-                if self.active_review_surface.is_none() && self.focus == Focus::List {
-                    self.previous_activity();
-                } else if self.focus == Focus::List {
-                    self.previous_event();
-                } else if self.focus == Focus::Terminal {
-                    self.scroll_terminal_panel_up(1);
-                } else {
-                    if self.focus == Focus::Details {
-                        if self.transcript_surface_active() {
-                            self.scroll_transcript_down(1);
-                        } else {
-                            self.details_scroll = self.details_scroll.saturating_sub(1);
-                        }
-                    }
-                }
-            }
+                Focus::Details => self.details_scroll = self.details_scroll.saturating_sub(1),
+                Focus::Prompt => {}
+            },
             Action::FocusNext => {
                 if self.replay_mode && !self.session_shell_operator_rail_interactive() {
                     self.focus = Focus::Details;
@@ -1232,6 +1213,85 @@ impl AppState {
                     self.open_model_switcher();
                 }
             }
+            Action::FirstMessage
+            | Action::MoveBufferStart
+            | Action::LastMessage
+            | Action::MoveBufferEnd
+            | Action::NextMessage
+            | Action::PreviousMessage => self.execute_message_navigation_action(action),
+            Action::ToggleScrollbar => {
+                self.transcript_view.transcript_scrollbar_visible =
+                    !self.transcript_view.transcript_scrollbar_visible;
+            }
+            Action::CopyMessage => {
+                self.copy_selected_message();
+            }
+            Action::ExportSession => {
+                self.emit_ui_intent(UiIntent::ExportSession);
+            }
+            Action::OpenErrorDetails => {
+                self.error_details_visible = true;
+            }
+            Action::PromptStash => {
+                self.prompt_stash_push();
+            }
+            Action::PromptStashPop => {
+                self.prompt_stash_pop();
+            }
+            Action::PromptStashList => {
+                self.open_prompt_stash_list();
+            }
+            Action::OpenSettings => {
+                self.open_settings_editor();
+            }
+            Action::OpenViewPlan => {
+                self.open_plan_view();
+            }
+            Action::OpenLineageBrowser => {
+                self.open_lineage_browser();
+            }
+            Action::OpenMemoryBrowser => {
+                self.open_memory_browser();
+            }
+            Action::OpenWorktreePicker => {
+                self.open_worktree_picker();
+            }
+            _ => {}
+        }
+    }
+
+    fn request_foreground_backgrounding(&mut self) {
+        if self.replay_mode {
+            self.status_banner = Some(
+                "foreground subagent backgrounding unavailable: replay mode is read-only"
+                    .to_string(),
+            );
+        } else if let Some(handle_id) = self.focused_demote_handle_id() {
+            self.status_banner = Some(format!(
+                "foreground subagent demote requested ({handle_id})"
+            ));
+            self.emit_ui_intent(UiIntent::DemoteForegroundChildTask { handle_id });
+        } else {
+            self.status_banner = Some("foreground subagent backgrounding requested".to_string());
+            self.emit_ui_intent(UiIntent::BackgroundForegroundSubagents);
+        }
+    }
+
+    fn copy_selected_message(&mut self) {
+        let Some(activity) = self
+            .activities
+            .get(self.transcript_view.selected_activity_index)
+        else {
+            return;
+        };
+        if !activity.transcript_text.is_empty() {
+            let _ = clipboard::copy(&activity.transcript_text);
+            self.show_toast("Copied message", ToastVariant::Info);
+        }
+    }
+
+    fn execute_message_navigation_action(&mut self, action: Action) {
+        match action {
             Action::FirstMessage | Action::MoveBufferStart => {
                 if self.transcript_view_model().is_some() {
                     let _ = self.select_transcript_turn_at(0);
@@ -1286,52 +1346,6 @@ impl AppState {
                     self.details_scroll = 0;
                     self.transcript_view.transcript_scroll = 0;
                 }
-            }
-            Action::ToggleScrollbar => {
-                self.transcript_view.transcript_scrollbar_visible =
-                    !self.transcript_view.transcript_scrollbar_visible;
-            }
-            Action::CopyMessage => {
-                if let Some(activity) = self
-                    .activities
-                    .get(self.transcript_view.selected_activity_index)
-                {
-                    let text = activity.transcript_text.clone();
-                    if !text.is_empty() {
-                        let _ = clipboard::copy(&text);
-                        self.show_toast("Copied message", ToastVariant::Info);
-                    }
-                }
-            }
-            Action::ExportSession => {
-                self.emit_ui_intent(UiIntent::ExportSession);
-            }
-            Action::OpenErrorDetails => {
-                self.error_details_visible = true;
-            }
-            Action::PromptStash => {
-                self.prompt_stash_push();
-            }
-            Action::PromptStashPop => {
-                self.prompt_stash_pop();
-            }
-            Action::PromptStashList => {
-                self.open_prompt_stash_list();
-            }
-            Action::OpenSettings => {
-                self.open_settings_editor();
-            }
-            Action::OpenViewPlan => {
-                self.open_plan_view();
-            }
-            Action::OpenLineageBrowser => {
-                self.open_lineage_browser();
-            }
-            Action::OpenMemoryBrowser => {
-                self.open_memory_browser();
-            }
-            Action::OpenWorktreePicker => {
-                self.open_worktree_picker();
             }
             _ => {}
         }
