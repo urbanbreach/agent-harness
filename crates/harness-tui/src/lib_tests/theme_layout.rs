@@ -32,7 +32,11 @@ pub(super) fn theme_tokens_cover_live_shell_states() {
     assert_eq!(tokens.live_shell.glyphs.ascii.transcript.user_marker, ">");
     assert_eq!(tokens.live_shell.glyphs.ascii.transcript.tool_marker, "*");
     assert_eq!(tokens.live_shell.glyphs.ascii.transcript.card_top, "  ");
+    assert_theme_geometry(&default);
+    assert_theme_token_bindings(&default);
+}
 
+fn assert_theme_geometry(default: &Theme) {
     assert_eq!(default.live_shell.heights.header, 1);
     assert_eq!(default.live_shell.heights.tabs, 3);
     assert_eq!(default.live_shell.heights.status, 1);
@@ -44,6 +48,10 @@ pub(super) fn theme_tokens_cover_live_shell_states() {
     assert_eq!(default.live_shell.minimum.content_margin_x, 0);
     assert_eq!(default.live_shell.primary.centered_content_width, 90);
     assert_eq!(default.live_shell.primary.content_margin_x, 0);
+}
+
+fn assert_theme_token_bindings(default: &Theme) {
+    let tokens = default.token_families();
     assert_eq!(tokens.palette.surfaces, default.surface);
     assert_eq!(tokens.palette.borders, default.border);
     assert_eq!(
@@ -149,6 +157,10 @@ pub(super) fn harness_dark_theme_has_exact_palette() {
         theme.status.disabled,
         ratatui::style::Color::Rgb(0x80, 0x80, 0x80)
     );
+    assert_agent_palette(&theme);
+}
+
+fn assert_agent_palette(theme: &Theme) {
     assert_eq!(
         theme.agents.build,
         ratatui::style::Color::Rgb(0x5C, 0x9C, 0xF5)
@@ -350,19 +362,29 @@ pub(super) fn live_layout_breakpoints_choose_shell_variant() {
 
     let minimum = theme.live_shell_layout(80, 24);
     assert_eq!(minimum.target, ShellGeometryTarget::Minimum);
-    assert_eq!(minimum.activity_drawer_width, 20);
-    assert_eq!(minimum.inspector_drawer_width, 20);
-    assert_eq!(minimum.details_sidebar_width, 42);
-    assert_eq!(minimum.transcript_min_width, 28);
-    assert_eq!(minimum.centered_content_width, 80);
+    assert_eq!(
+        (
+            minimum.activity_drawer_width,
+            minimum.inspector_drawer_width,
+            minimum.details_sidebar_width,
+            minimum.transcript_min_width,
+            minimum.centered_content_width
+        ),
+        (20, 20, 42, 28, 80)
+    );
 
     let split = theme.live_shell_layout(96, 40);
     assert_eq!(split.target, ShellGeometryTarget::Split);
-    assert_eq!(split.activity_drawer_width, 18);
-    assert_eq!(split.inspector_drawer_width, 24);
-    assert_eq!(split.details_sidebar_width, 42);
-    assert_eq!(split.transcript_min_width, 32);
-    assert_eq!(split.centered_content_width, 86);
+    assert_eq!(
+        (
+            split.activity_drawer_width,
+            split.inspector_drawer_width,
+            split.details_sidebar_width,
+            split.transcript_min_width,
+            split.centered_content_width
+        ),
+        (18, 24, 42, 32, 86)
+    );
 
     let primary = theme.live_shell_layout(100, 30);
     assert_eq!(primary.target, ShellGeometryTarget::Primary);
