@@ -378,10 +378,15 @@ pub(super) fn settings_editor_summary_counts_bound_writable_paths() {
     // Then: three write paths become editable with effective values
     let bound = app.settings_editor_summary();
     assert!(bound.bound);
-    assert_eq!(bound.writable_paths, 6);
-    assert_eq!(bound.editable, 6);
+    assert_eq!(
+        (
+            bound.writable_paths,
+            bound.editable,
+            bound.with_effective_value
+        ),
+        (6, 6, 6)
+    );
     assert!(bound.has_editable());
-    assert_eq!(bound.with_effective_value, 6);
     assert!(bound.one_line().contains("bound=true"));
     assert!(bound.one_line().contains("editable=6"));
     assert!(bound.overlay_line().contains("bound"));
