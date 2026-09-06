@@ -1,5 +1,19 @@
 use super::ui_secondary::format_detail_payload;
 
+pub(super) fn safe_tool_text(text: &str) -> String {
+    use crate::transcript_blocks::{RawDisclosure, RawPayload};
+    let text = crate::text::strip_ansi_escapes(text);
+    let text = text
+        .split('\n')
+        .map(crate::text::replace_control_chars_except_tabs)
+        .collect::<Vec<_>>()
+        .join("\n");
+    match RawDisclosure::from_text(&text).payload {
+        RawPayload::Text(text) => text,
+        RawPayload::Json(value) => value.to_string(),
+    }
+}
+
 pub(super) struct CollapsibleOutputPreview {
     pub(super) output: String,
     pub(super) expand_hint: Option<&'static str>,
@@ -10,7 +24,7 @@ pub(super) fn collapsible_output_preview(
     max_lines: usize,
     expanded: bool,
 ) -> CollapsibleOutputPreview {
-    let formatted = format_detail_payload(output);
+    let formatted = safe_tool_text(&format_detail_payload(output));
     collapsible_preview_for_text(&formatted, max_lines, expanded)
 }
 
