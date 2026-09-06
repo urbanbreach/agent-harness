@@ -230,12 +230,12 @@ async fn background_task_completion_after_tool_result_wakes_parent_in_followup_t
                             .metadata
                             .as_ref()
                             .and_then(|metadata| metadata.lineage.as_ref())
-                            .is_some_and(|lineage| {
+                            .is_some_and(|lineage|
                                 lineage.parent_tool_call_id.as_deref()
                                     == Some("toolcall_parent_task")
                                     && lineage.child_request_id.as_deref()
                                         == Some(child_request_id.as_str())
-                            })
+                            )
             )
         })
     })

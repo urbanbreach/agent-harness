@@ -254,6 +254,7 @@ async fn provider_single_call_returns_tool_intents_without_executing_tools() {
     );
     let provider = Arc::new(MockProvider::new(scripted));
     let events = Arc::new(Mutex::new(Vec::<AgentRuntimeEvent>::new()));
+    let captured_events = Arc::clone(&events);
 
     let response = stream_assistant_response_once(
         StreamAssistantResponseOnceRequest {
@@ -273,13 +274,10 @@ async fn provider_single_call_returns_tool_intents_without_executing_tools() {
             },
             tool_defs: &tool_defs,
         },
-        {
-            let events = Arc::clone(&events);
-            move |event| {
-                let events = Arc::clone(&events);
-                async move {
-                    events.lock().unwrap_or_abort().push(event);
-                }
+        move |event| {
+            let events = Arc::clone(&captured_events);
+            async move {
+                events.lock().unwrap_or_abort().push(event);
             }
         },
     )

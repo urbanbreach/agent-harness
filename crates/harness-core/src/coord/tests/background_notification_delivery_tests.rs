@@ -99,13 +99,20 @@ pub(crate) async fn background_task_completion_notifies_parent_once_and_queues_a
             _ => None,
         })
         .unwrap_or_abort();
-    assert!(reminder.contains("[BACKGROUND TASK COMPLETED]"));
-    assert!(reminder.contains("ID: agent_child"));
-    assert!(reminder.contains("Request ID: req_child"));
-    assert!(reminder.contains("Description: Summarize the repository"));
-    assert!(reminder.contains("Status: completed"));
-    assert!(reminder.contains("background_output(request_id=\"req_child\")"));
-    assert!(reminder.contains("task(session_id=\"agent_child\")"));
+    for expected in [
+        "[BACKGROUND TASK COMPLETED]",
+        "ID: agent_child",
+        "Request ID: req_child",
+        "Description: Summarize the repository",
+        "Status: completed",
+        "background_output(request_id=\"req_child\")",
+        "task(session_id=\"agent_child\")",
+    ] {
+        assert!(
+            reminder.contains(expected),
+            "missing {expected}: {reminder}"
+        );
+    }
     assert!(!reminder.contains("full-output-tail"));
 
     assert!(run_state.queued_agent_turns.is_empty());
