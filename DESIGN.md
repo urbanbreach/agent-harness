@@ -135,6 +135,17 @@ Shell contract:
 - **Structure**: one fixed-width semantic glyph plus the existing title, path metadata, subtitle, and disclosure state.
 - **States**: queued, running, waiting, succeeded, failed, and cancelled each use an explicit lifecycle glyph; color and motion remain supplementary.
 - **Accessibility**: state must remain distinguishable in reduced-color terminals and ASCII glyph mode.
+- **Motion**: only the running marker pulses, not its label, path, or output. Cached layouts repaint the marker at the 33 ms active cadence. Waiting and queued markers remain static; reduced motion and replay settle immediately.
+
+### Tool transcript presentation
+
+- **Reference**: local Grok Build `SOURCE_REV d5a0335a47221e8c9519936cb693e9b6450227ec`; reuse Harness's typed sections, semantic colors, and recorded metadata.
+- **Headers**: distinct label, argument/path, and summary styling; grouped rows retain file identity. Lists count entries, not directories. Shell descriptions own the header when supplied, with the command available in disclosed output.
+- **Grouping**: read/search context may fold eagerly. Shell commands remain individual until a dense run exceeds eleven entries; then an older-prefix disclosure leaves ten recent commands visible.
+- **Previews**: select head/tail rows after cell-aware wrapping (read: five/three; shell: two/three). Explicit full-stored-output expansion remains available and never claims to retrieve truncated artifacts.
+- **Edits**: compact trusted diffstats belong to collapsed headers. Open diffs have a header/body spacer, syntax-highlighted numbered content, and semantic change bands on content rather than the number gutter.
+- **Permission controls**: numbered choices and arrow/vim navigation use the same authoritative decision path. Reject feedback is permission-scoped and never edits the composer draft; always-approve still requires confirmation.
+- **Completion**: open tool content may show a 400 ms completion rail without changing geometry. This transient UI state is never recorded or replayed and must schedule its own expiry repaint.
 
 ### Detached transcript return
 
