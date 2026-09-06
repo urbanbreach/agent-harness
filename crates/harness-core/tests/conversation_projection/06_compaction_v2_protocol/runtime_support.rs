@@ -117,7 +117,7 @@ pub(super) async fn run_turn(
     attachments: Vec<AttachmentMetadata>,
 ) -> String {
     let store = coordinator.event_store().await.unwrap_or_abort();
-    let mut events = store.subscribe(1).unwrap_or_abort();
+    let events = store.subscribe(1).unwrap_or_abort();
     let request_id = coordinator
         .request_agent_turn_with_model_and_selected_tags_and_attachments(
             supervisor_actor(),
@@ -131,20 +131,16 @@ pub(super) async fn run_turn(
         .await
         .unwrap_or_abort();
 
-    tokio::time::timeout(Duration::from_secs(2), async {
-        loop {
-            let event = events.next().await.unwrap_or_abort().unwrap_or_abort();
-            if event.correlation_id.as_deref() == Some(request_id.as_str())
-                && matches!(
-                    event.payload,
-                    EventV1::TaskCompleted(_) | EventV1::TaskCancelled(_)
-                )
-            {
-                break;
-            }
-        }
-    })
+    let mut terminal_events = events.map(|event| event.unwrap_or_abort()).filter(|event| {
+        event.correlation_id.as_deref() == Some(request_id.as_str())
+            && matches!(
+                event.payload,
+                EventV1::TaskCompleted(_) | EventV1::TaskCancelled(_)
+            )
+    });
+    tokio::time::timeout(Duration::from_secs(2), terminal_events.next())
     .await
+    .unwrap_or_abort()
     .unwrap_or_abort();
     request_id
 }
