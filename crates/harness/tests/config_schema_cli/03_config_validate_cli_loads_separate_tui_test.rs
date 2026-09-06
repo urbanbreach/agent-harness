@@ -399,17 +399,9 @@ fn shipped_runtime_example_parses_as_public_runtime_config() {
     variants.sort_unstable();
     assert_eq!(variants, vec!["high", "low", "medium"]);
     assert!(!parsed.provider.contains_key("providers"));
-    assert!(!shipped.contains("\"base_url\""));
-    assert!(!shipped.contains("\"api_key\""));
-    assert!(!shipped.contains("sk-zerolimit"));
-    assert!(!shipped.contains("\"api_mode\""));
-    assert!(!shipped.contains("\"timeout_ms\""));
-    assert!(!shipped.contains("\"model_backed\""));
-    assert!(!shipped.contains("\"split_oversized_turns\""));
-    assert!(!shipped.contains("\"auto_retry_overflow\""));
-    assert!(!shipped.contains("\"modelBacked\""));
-    assert!(!shipped.contains("\"splitOversizedTurns\""));
-    assert!(!shipped.contains("\"autoRetryOverflow\""));
+    for removed in ["\"base_url\"", "\"api_key\"", "sk-zerolimit", "\"api_mode\"", "\"timeout_ms\"", "\"model_backed\"", "\"split_oversized_turns\"", "\"auto_retry_overflow\"", "\"modelBacked\"", "\"splitOversizedTurns\"", "\"autoRetryOverflow\""] {
+        assert!(!shipped.contains(removed), "unexpected legacy setting {removed}");
+    }
 }
 #[test]
 fn public_runtime_config_accepts_top_level_skills() {
