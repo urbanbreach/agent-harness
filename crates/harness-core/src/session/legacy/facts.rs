@@ -98,7 +98,6 @@ pub(super) struct AssistantAggregate {
     pub usage: Option<CompletionUsage>,
     pub finished: bool,
     pub semantic_parts_authoritative: bool,
-    pub semantic_tool_requests_seen: usize,
     pub provenance: Option<crate::session::ProviderProvenance>,
 }
 
@@ -161,32 +160,15 @@ impl ProjectionIndex {
                             usage: None,
                             finished: false,
                             semantic_parts_authoritative: false,
-                            semantic_tool_requests_seen: 0,
                             provenance: None,
                         });
                 }
                 LegacyFactKind::AssistantPart { request_id, part } => {
-                    if let Some(assistant) = self.assistants.get_mut(request_id) {
-                        if !assistant.semantic_parts_authoritative {
-                            assistant.parts.push((fact.sequence, part.clone()));
-                        } else if let AssistantPart::ToolCall(materialized) = part {
-                            let committed = assistant
-                                .parts
-                                .iter_mut()
-                                .filter_map(|(_, part)| match part {
-                                    AssistantPart::ToolCall(tool_call) => Some(tool_call),
-                                    AssistantPart::Text { .. }
-                                    | AssistantPart::Reasoning { .. } => None,
-                                })
-                                .find(|committed| {
-                                    committed.tool_call_id == materialized.tool_call_id
-                                });
-                            if let Some(committed) = committed {
-                                committed.tool_call_id = materialized.tool_call_id.clone();
-                                assistant.semantic_tool_requests_seen =
-                                    assistant.semantic_tool_requests_seen.saturating_add(1);
-                            }
-                        }
+                    let Some(assistant) = self.assistants.get_mut(request_id) else {
+                        continue;
+                    };
+                    if !assistant.semantic_parts_authoritative {
+                        assistant.parts.push((fact.sequence, part.clone()));
                     }
                 }
                 LegacyFactKind::ProviderFinished(finish) => {
@@ -202,18 +184,18 @@ impl ProjectionIndex {
                     parts,
                     provenance,
                 } => {
-                    if let Some(assistant) = self.assistants.get_mut(request_id) {
-                        assistant.finished = true;
-                        if !parts.is_empty() {
-                            assistant.parts = parts
-                                .iter()
-                                .cloned()
-                                .map(|part| (fact.sequence, part))
-                                .collect();
-                            assistant.semantic_parts_authoritative = true;
-                            assistant.semantic_tool_requests_seen = 0;
-                            assistant.provenance.clone_from(provenance);
-                        }
+                    let Some(assistant) = self.assistants.get_mut(request_id) else {
+                        continue;
+                    };
+                    assistant.finished = true;
+                    if !parts.is_empty() {
+                        assistant.parts = parts
+                            .iter()
+                            .cloned()
+                            .map(|part| (fact.sequence, part))
+                            .collect();
+                        assistant.semantic_parts_authoritative = true;
+                        assistant.provenance.clone_from(provenance);
                     }
                 }
                 LegacyFactKind::RunStarted
