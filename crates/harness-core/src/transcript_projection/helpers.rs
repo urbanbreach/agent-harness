@@ -26,7 +26,6 @@ pub(super) struct RequestLocations {
     pub(super) pending_provenance: Option<ProvenanceRange>,
     pub(super) pending_state: Option<ProjectedMessageState>,
     pub(super) semantic_parts_authoritative: bool,
-    pub(super) semantic_tool_requests_seen: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
