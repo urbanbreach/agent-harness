@@ -14,6 +14,36 @@ Catalog-derived GPT-5.6 models on the built-in `openai-codex` provider use a 369
 
 The built-in `openai-codex` catalog exposes GPT-5.4 and newer non-Pro models. Pro models are excluded because Codex subscriptions cannot use them. Models older than GPT-5.4 are also excluded, with `gpt-5.3-codex-spark` retained as the sole legacy exception.
 
+## GPT-6 Astra
+
+`gpt-6-astra` is available in the bundled Codex catalog and the shipped example
+configuration. Select `openai-codex/gpt-6-astra` in `/model`, or set it as the
+top-level `model` in `harness.jsonc`. The existing default model is unchanged.
+The supported reasoning variants are `low`, `medium`, `high`, `xhigh`, and `max`;
+`none`, `minimal`, and Codex's multi-agent `ultra` mode are not offered.
+Codex requests without an explicit reasoning effort default to `low` and retain
+the encrypted reasoning-content request option used by the existing Responses
+transport. Explicit reasoning and verbosity settings take precedence.
+
+The [OpenAI API model profile](https://developers.openai.com/api/docs/models/gpt-6-astra)
+specifies 1,050,000 context tokens, 922,000 maximum input tokens, and 128,000 maximum
+output tokens. Catalog discovery preserves these limits; Astra has no hardcoded
+272k capacity override. The shipped example and workspace configuration instead
+limit the working context through model configuration:
+
+```jsonc
+"limit": { "context": 1050000, "input": 288384, "output": 128000 }
+```
+
+With the default `runtime.compaction.reserveTokens` of 16,384, this gives a
+272,000-token compaction threshold: `min(288384, 1050000 - 128000) - 16384`.
+The extra 16,384 input tokens preserve the safety margin; the 128,000-token output
+reserve remains intact. Setting total `context` to 272,000 would instead leave
+only 127,616 tokens after both reserves. Explicit local model entries remain
+authoritative and are not overwritten by catalog refreshes.
+Availability still depends on the account and endpoint;
+`doctor` is offline, so a real prompt is required to verify access.
+
 ## Known limits
 
 The runtime does not implement new provider protocols in this slice. Doctor validates local configuration and credential presence but does not prove authentication because it makes no provider call.
