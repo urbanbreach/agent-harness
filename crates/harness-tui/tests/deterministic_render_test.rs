@@ -94,6 +94,7 @@ fn live_transcript_and_composer_shell_render_without_pty() {
 #[test]
 fn tool_lifecycle_rows_stay_ordered_without_pty() {
     let mut app = AppState::new_live(Some(PathBuf::from("/tmp/run_tool_lifecycle")), false, None);
+    app.set_reduced_motion_for_evidence(true);
     for event in deterministic_render_fixtures::tool_lifecycle_events() {
         app.ingest_event(event);
     }
@@ -104,7 +105,7 @@ fn tool_lifecycle_rows_stay_ordered_without_pty() {
 
     let tool_markers: &[&str] = &[
         "Inspect tool activity",
-        "Read 1 file",
+        "Read ui.rs (1-24)",
         "Edit ui.rs",
         "Ran 1 subagent",
         "Run cargo test -p harness-tui",
@@ -121,6 +122,7 @@ fn tool_lifecycle_rows_stay_ordered_without_pty() {
 fn p21_tool_display_descriptors_cover_state_families_without_pty() {
     // arrange
     let mut app = AppState::new_live(Some(PathBuf::from("/tmp/run_p21_display")), false, None);
+    app.set_reduced_motion_for_evidence(true);
 
     // act
     for event in p21_tool_display_fixtures::p21_tool_display_events() {

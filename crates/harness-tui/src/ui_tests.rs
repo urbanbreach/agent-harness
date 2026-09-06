@@ -352,7 +352,7 @@ fn transcript_debug_places_assistant_answer_before_nested_context() {
     let answer_index = transcript
         .find("Found the transcript renderer and the composer chrome.")
         .unwrap_or_abort();
-    let tool_index = transcript.find("Read 1 file").unwrap_or_abort();
+    let tool_index = transcript.find("Read ui.rs").unwrap_or_abort();
 
     assert!(thinking_index < tool_index);
     assert!(tool_index < answer_index);
@@ -921,7 +921,7 @@ fn transcript_tool_rows_keep_status_but_not_raw_json_dump() {
     ));
 
     let transcript = transcript_debug(&app);
-    assert!(transcript.contains("Read 1 file"));
+    assert!(transcript.contains("Read lib.rs (42-61)"));
     assert!(!transcript.contains(r#"{"path":"src/lib.rs","start_line":42,"limit":20}"#));
     assert!(!transcript.contains("args {"));
     assert_eq!(

@@ -10,61 +10,105 @@ use crate::app::{ToolCallPresentation, ToolCallPresentationStatus};
 const TRANSCRIPT_TODO_BLOCK_INDENT: &str = "   ";
 const TRANSCRIPT_TODO_BLOCK_CONTENT_LEADING: &str = " ";
 
-fn build_tool_header_spans(
+pub(super) fn build_tool_header_spans(
     header: &TranscriptToolCallHeader,
     theme: &Theme,
     title_style: Style,
     marker_style: Style,
+    width: usize,
 ) -> Vec<Span<'static>> {
+    use super::super::ui_tool_output::safe_tool_text;
+    let title = collapse_inline_whitespace(&safe_tool_text(&header.title));
+    let (label, argument) = [
+        "Parallel Web Search",
+        "Exa Web Search",
+        "Web Search",
+        "Exa Code Search",
+        "AST Search",
+        "AST Replace",
+    ]
+    .into_iter()
+    .find_map(|label| {
+        title
+            .strip_prefix(label)
+            .and_then(|rest| rest.strip_prefix(' '))
+            .map(|argument| (label, argument))
+    })
+    .or_else(|| title.split_once(' '))
+    .unwrap_or((&title, ""));
     let mut spans = Vec::new();
     let marker = completed_tool_marker(header.presentation.status, theme);
     spans.push(Span::styled(format!("{marker} "), marker_style));
     let _ = header.icon;
-    let compact_edit = matches!(header.tool_id.as_str(), "fs.write" | "write")
-        && (header.title == "edit" || header.title.starts_with("edit "));
-    let edit_style = title_style.fg(theme.text.primary);
-    if compact_edit {
-        spans.push(Span::styled(
-            "edit",
-            edit_style.add_modifier(Modifier::BOLD),
-        ));
-    } else if let Some(path) = header.title.strip_prefix("edit ") {
-        spans.push(Span::styled(
-            "edit ",
-            edit_style.add_modifier(Modifier::BOLD),
-        ));
-        spans.push(Span::styled(path.to_string(), edit_style));
-    } else if header.title == "edit" {
-        spans.push(Span::styled(
-            header.title.clone(),
-            edit_style.add_modifier(Modifier::BOLD),
-        ));
-    } else {
-        let title_style = if header.presentation.status == ToolCallPresentationStatus::Failed {
-            title_style.add_modifier(Modifier::BOLD)
-        } else {
-            title_style
-        };
-        spans.push(Span::styled(header.title.clone(), title_style));
+    spans.push(Span::styled(
+        label.to_string(),
+        title_style.add_modifier(Modifier::BOLD),
+    ));
+    let mut variable = None;
+    if !argument.is_empty() {
+        spans.push(Span::raw(" "));
+        variable = Some(spans.len());
+        spans.push(Span::styled(argument.to_string(), title_style));
     }
     if let Some(path_metadata) = header.path_metadata.as_deref() {
         spans.push(Span::styled(" ", muted_meta_style(theme)));
+        variable = Some(spans.len());
         spans.push(Span::styled(
-            path_metadata.to_string(),
-            Style::default().fg(theme.text.accent),
+            super::super::ui_tool_paths::tool_header_path(
+                path_metadata,
+                header.disclosure_state != Some(TranscriptToolCallDisclosureState::Collapsed),
+            ),
+            title_style.fg(theme.text.accent),
         ));
     }
     if let Some(subtitle) = header.subtitle.as_deref() {
-        spans.push(Span::styled(" · ", muted_meta_style(theme)));
-        spans.push(Span::styled(subtitle.to_string(), muted_meta_style(theme)));
-    }
-    if !compact_edit {
-        if let Some(disclosure) = tool_header_disclosure_glyph(header.disclosure_state, theme) {
-            spans.push(Span::styled("  ", muted_meta_style(theme)));
-            spans.push(Span::styled(disclosure, muted_meta_style(theme)));
+        let subtitle = collapse_inline_whitespace(&safe_tool_text(subtitle));
+        let separator = if subtitle.starts_with(['(', '+']) {
+            " "
+        } else {
+            " · "
+        };
+        if display_width(label)
+            .saturating_add(display_width(&subtitle))
+            .saturating_add(6)
+            < width
+        {
+            spans.push(Span::styled(separator, muted_meta_style(theme)));
+            if let Some((added, removed)) = subtitle.split_once("/-") {
+                spans.push(Span::styled(
+                    added.to_string(),
+                    Style::default().fg(theme.terminal_colors.diff_added_highlight),
+                ));
+                spans.push(Span::styled("/", muted_meta_style(theme)));
+                spans.push(Span::styled(
+                    format!("-{removed}"),
+                    Style::default().fg(theme.terminal_colors.diff_removed_highlight),
+                ));
+            } else {
+                spans.push(Span::styled(subtitle, muted_meta_style(theme)));
+            }
         }
     }
+    if let Some(disclosure) = tool_header_disclosure_glyph(header.disclosure_state, theme) {
+        spans.push(Span::styled("  ", muted_meta_style(theme)));
+        spans.push(Span::styled(disclosure, muted_meta_style(theme)));
+    }
+    if let Some(index) = variable {
+        let fixed = spans
+            .iter()
+            .enumerate()
+            .filter(|(candidate, _)| *candidate != index)
+            .map(|(_, span)| display_width(&span.content))
+            .sum::<usize>();
+        spans[index].content =
+            truncate_plain_text(&spans[index].content, width.saturating_sub(fixed)).into();
+    }
     spans
+}
+
+fn tool_header_width(width: u16) -> usize {
+    usize::from(transcript_surface_content_width(width, false))
+        .saturating_sub(surface_prefix_width(TRANSCRIPT_ASSISTANT_BODY_PREFIX))
 }
 
 pub(super) fn completed_tool_marker(
@@ -245,7 +289,13 @@ fn append_inline_tool_section_lines(
     let style = tool_call_header_style(tool_call.header.struck_out, fg);
 
     let marker_style = tool_call_marker_style(tool_call, theme, fg);
-    let spans = build_tool_header_spans(&tool_call.header, theme, style, marker_style);
+    let spans = build_tool_header_spans(
+        &tool_call.header,
+        theme,
+        style,
+        marker_style,
+        tool_header_width(width),
+    );
 
     append_surface_row_with_target(
         &mut render.lines,
@@ -449,7 +499,13 @@ fn append_block_tool_section_lines(
     }
 
     let marker_style = tool_call_marker_style(tool_call, theme, title_style.fg.unwrap_or_default());
-    let title_spans = build_tool_header_spans(&tool_call.header, theme, title_style, marker_style);
+    let title_spans = build_tool_header_spans(
+        &tool_call.header,
+        theme,
+        title_style,
+        marker_style,
+        tool_header_width(width),
+    );
 
     append_card_surface_row_with_target(
         &mut render.lines,
@@ -509,12 +565,13 @@ fn append_shell_tool_harness_card(
         });
     let mut header = tool_call.header.clone();
     if let Some((command, description)) = bash_header {
-        header.title = format!("Run {}", command.trim());
-        if header.subtitle.is_none() {
-            header.subtitle = description
+        header.title = format!(
+            "Run {}",
+            description
                 .filter(|value| !value.trim().is_empty())
-                .map(str::to_owned);
-        }
+                .unwrap_or(command)
+                .trim()
+        );
     } else if !header.title.starts_with("Run ") {
         header.title = format!("Run {}", header.title.trim());
     }
@@ -524,7 +581,13 @@ fn append_shell_tool_harness_card(
         block_tool_color(header.presentation.status, theme),
     );
     let marker_style = tool_call_marker_style(tool_call, theme, title_style.fg.unwrap_or_default());
-    let title_spans = build_tool_header_spans(&header, theme, title_style, marker_style);
+    let title_spans = build_tool_header_spans(
+        &header,
+        theme,
+        title_style,
+        marker_style,
+        tool_header_width(width),
+    );
     let header_target =
         tool_header_target(&tool_call.tool_call_id, header.disclosure_state.is_some());
     append_card_surface_row_with_target(
@@ -1162,7 +1225,11 @@ fn append_tool_call_diff_block(
         },
         theme,
     ) {
-        let blank_before = plain_numbered && !diff_lines.is_empty();
+        let blank_before = !diff_lines.is_empty()
+            && render
+                .lines
+                .last()
+                .is_some_and(|line| !line.spans.is_empty());
         if blank_before {
             render.lines.push(Line::default());
         }
@@ -1252,6 +1319,7 @@ mod tests {
             &Theme::default(),
             Style::default(),
             Style::default(),
+            80,
         );
         let rendered = spans
             .iter()
@@ -1260,6 +1328,8 @@ mod tests {
 
         // assert
         assert!(rendered.contains("Edit src/main.rs"));
+        assert!(spans[1].style.add_modifier.contains(Modifier::BOLD));
+        assert_eq!(spans[3].style.fg, Some(Theme::default().text.accent));
         assert!(!rendered.contains("7 results"), "{rendered:?}");
         assert!(!rendered.contains("1.2s"), "{rendered:?}");
     }

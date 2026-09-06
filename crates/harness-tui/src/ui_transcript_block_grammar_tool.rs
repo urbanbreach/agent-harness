@@ -8,6 +8,7 @@ pub(super) fn group_policy(summary: &TranscriptToolGroupSummary) -> TranscriptTo
         }),
         member_count: summary.member_count,
         visible_start: if summary.kind == TranscriptToolGroupKind::Commands
+            && summary.member_count > 11
             && summary.disclosure != TranscriptToolDisclosureMode::Expanded
         {
             summary.member_count.saturating_sub(10)
@@ -226,7 +227,7 @@ mod dense_fold_tests {
     fn dense_fold_hidden_count_is_zero_one_or_many_completed_members() {
         // arrange
         let one = vec![tool("one", ToolCallDisplayStatus::Succeeded)];
-        let many = (0..11)
+        let many = (0..12)
             .map(|index| {
                 tool(
                     &format!("completed-{index}"),
@@ -237,12 +238,14 @@ mod dense_fold_tests {
 
         // act
         let one_policy = group_policy(&summary(&one));
+        let budget_policy = group_policy(&summary(&many[..11]));
         let many_policy = group_policy(&summary(&many));
 
         // assert
         assert!(TranscriptToolGroupSummary::from_tool_calls(&[]).is_none());
         assert_eq!(one_policy.visible_start, 0);
-        assert_eq!(many_policy.visible_start, 1);
-        assert_eq!(many_policy.hidden_count(), 1);
+        assert_eq!(budget_policy.visible_start, 0);
+        assert_eq!(many_policy.visible_start, 2);
+        assert_eq!(many_policy.hidden_count(), 2);
     }
 }

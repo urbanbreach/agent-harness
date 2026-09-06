@@ -3,6 +3,22 @@ use crate::text::{collapse_inline_whitespace, has_trimmed_content};
 
 use super::ui_tool_metadata::tool_summary_number;
 
+pub(super) fn tool_header_path(path: &str, expanded: bool) -> String {
+    let path = std::path::Path::new(path);
+    let relative = !path.is_absolute()
+        && !path
+            .components()
+            .any(|part| matches!(part, std::path::Component::ParentDir));
+    let display = if expanded && relative {
+        path.to_string_lossy()
+    } else {
+        path.file_name()
+            .unwrap_or(path.as_os_str())
+            .to_string_lossy()
+    };
+    super::ui_tool_output::safe_tool_text(&display)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct TranscriptPathMetadata {
     pub(super) leaf: String,
@@ -30,29 +46,51 @@ pub(super) fn tool_path_display(tool_call: &ToolCallEntry) -> Option<String> {
 }
 
 pub(super) fn read_tool_input_suffix(tool_call: &ToolCallEntry) -> String {
+    let display = tool_call
+        .output_json
+        .as_ref()
+        .and_then(|value| value.pointer("/metadata/display"));
     let offset = tool_call
         .output_json
         .as_ref()
         .and_then(|value| value.get("offset"))
         .and_then(serde_json::Value::as_u64)
-        .or_else(|| tool_summary_number(&tool_call.args_summary, &["offset", "start_line"]));
+        .or_else(|| tool_summary_number(&tool_call.args_summary, &["offset", "start_line"]))
+        .or_else(|| {
+            display
+                .and_then(|value| value.get("lineStart"))
+                .and_then(serde_json::Value::as_u64)
+        });
     let limit = tool_call
         .output_json
         .as_ref()
         .and_then(|value| value.get("limit"))
         .and_then(serde_json::Value::as_u64)
         .or_else(|| tool_summary_number(&tool_call.args_summary, &["limit"]));
-    let mut parts = Vec::new();
-    if let Some(offset) = offset {
-        parts.push(format!("offset={offset}"));
-    }
-    if let Some(limit) = limit {
-        parts.push(format!("limit={limit}"));
-    }
-    if parts.is_empty() {
-        String::new()
-    } else {
-        format!(" [{}]", parts.join(", "))
+    let start = offset.unwrap_or(1);
+    let total = tool_call
+        .output_json
+        .as_ref()
+        .and_then(|value| value.get("total_lines"))
+        .or_else(|| display.and_then(|value| value.get("totalLines")))
+        .and_then(serde_json::Value::as_u64);
+    let end = display
+        .and_then(|value| value.get("lineEnd"))
+        .and_then(serde_json::Value::as_u64)
+        .or_else(|| {
+            limit
+                .filter(|limit| *limit > 0)
+                .and_then(|limit| start.checked_add(limit - 1))
+        })
+        .map(|end| total.map_or(end, |total| end.min(total)));
+    match end {
+        Some(end) if end >= start => match total {
+            Some(total) if total > end.saturating_sub(start).saturating_add(1) => {
+                format!("({start}-{end} of {total})")
+            }
+            _ => format!("({start}-{end})"),
+        },
+        _ => String::new(),
     }
 }
 

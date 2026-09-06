@@ -171,17 +171,9 @@ fn render_unified_context_lines(
     highlight_syntax: bool,
     theme: &Theme,
 ) -> Vec<Line<'static>> {
-    let palette = diff_row_palette(' ', theme);
     let text_width = width.saturating_sub(line_number_width + 2).max(1);
     let chunks = highlight_syntax
-        .then(|| {
-            highlight_diff_line_chunks(
-                syntax_path,
-                text,
-                Some(palette.content_bg),
-                theme.color_level(),
-            )
-        })
+        .then(|| highlight_diff_line_chunks(syntax_path, text, None, theme.color_level()))
         .flatten()
         .unwrap_or_else(|| {
             vec![StyledTextChunk {
@@ -189,7 +181,7 @@ fn render_unified_context_lines(
                 style: diff_segment_style(
                     DiffSegmentKind::Unchanged,
                     DiffSegmentKind::Unchanged,
-                    Some(palette.content_bg),
+                    None,
                     theme,
                 ),
             }]
@@ -205,18 +197,12 @@ fn render_unified_context_lines(
                     line_number: (index == 0).then_some(line_number).flatten(),
                     show_marker: false,
                     line_number_width,
-                    gutter_bg: Some(palette.gutter_bg),
-                    content_bg: Some(palette.content_bg),
+                    gutter_bg: None,
                 },
                 theme,
             );
             spans.extend(styled_chunks_to_spans(chunks));
-            pad_diff_row_to_width_with_background(
-                spans,
-                display_width(prefix),
-                width,
-                Some(palette.content_bg),
-            )
+            pad_diff_row_to_width_with_background(spans, display_width(prefix), width, None)
         })
         .collect()
 }
@@ -284,7 +270,6 @@ fn render_unified_diff_cell_lines(
                     show_marker: index == 0 && show_marker,
                     line_number_width,
                     gutter_bg: Some(palette.gutter_bg),
-                    content_bg: Some(palette.content_bg),
                 },
                 theme,
             );
@@ -321,7 +306,6 @@ fn render_plain_numbered_diff_cell_lines(
                     show_marker: index == 0 && show_marker,
                     line_number_width,
                     gutter_bg: Some(palette.gutter_bg),
-                    content_bg: Some(palette.content_bg),
                 },
                 theme,
             );
@@ -353,7 +337,6 @@ struct UnifiedDiffGutter {
     show_marker: bool,
     line_number_width: usize,
     gutter_bg: Option<Color>,
-    content_bg: Option<Color>,
 }
 
 fn unified_diff_gutter_spans(
@@ -370,12 +353,12 @@ fn unified_diff_gutter_spans(
         if gutter.show_marker {
             Span::styled(
                 format!(" {}", gutter.marker),
-                diff_marker_style(gutter.marker, gutter.content_bg, theme),
+                diff_marker_style(gutter.marker, gutter.gutter_bg, theme),
             )
         } else {
             Span::styled(
                 "  ".to_string(),
-                apply_optional_bg(Style::default(), gutter.content_bg),
+                apply_optional_bg(Style::default(), gutter.gutter_bg),
             )
         },
     ]
@@ -442,7 +425,6 @@ fn render_diff_unchanged_gap(
             show_marker: false,
             line_number_width,
             gutter_bg: Some(palette.gutter_bg),
-            content_bg: Some(palette.content_bg),
         },
         theme,
     );
@@ -475,7 +457,6 @@ pub(super) fn render_diff_hunk_header(
             show_marker: false,
             line_number_width,
             gutter_bg: Some(palette.gutter_bg),
-            content_bg: Some(palette.content_bg),
         },
         theme,
     );
@@ -633,11 +614,11 @@ fn padded_diff_span(width: usize, row_bg: Option<Color>) -> Span<'static> {
 pub(super) fn diff_row_palette(marker: char, theme: &Theme) -> DiffRowPalette {
     match marker {
         '+' => DiffRowPalette {
-            gutter_bg: diff_added_line_number_bg(theme),
+            gutter_bg: diff_context_background(theme),
             content_bg: diff_added_bg(theme),
         },
         '-' => DiffRowPalette {
-            gutter_bg: diff_removed_line_number_bg(theme),
+            gutter_bg: diff_context_background(theme),
             content_bg: diff_removed_bg(theme),
         },
         _ => DiffRowPalette {
