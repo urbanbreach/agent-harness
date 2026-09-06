@@ -102,20 +102,20 @@ impl<'a> TranscriptViewportHitMap<'a> {
                 let local_row = placement
                     .local_scroll
                     .saturating_add(usize::from(row.saturating_sub(placement.rect.y)));
-                if let Some(interaction) = surface
+                let Some(interaction) = surface
                     .interaction_rows
                     .as_ref()
                     .and_then(|targets| targets.get(local_row))
                     .cloned()
                     .flatten()
+                else {
+                    continue;
+                };
+                let local_column = column.saturating_sub(placement.rect.x);
+                if local_column >= interaction.hit_start
+                    && local_column < interaction.hit_start.saturating_add(interaction.hit_width)
                 {
-                    let local_column = column.saturating_sub(placement.rect.x);
-                    if local_column >= interaction.hit_start
-                        && local_column
-                            < interaction.hit_start.saturating_add(interaction.hit_width)
-                    {
-                        return Some(interaction.target);
-                    }
+                    return Some(interaction.target);
                 }
             }
         }
