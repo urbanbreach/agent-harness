@@ -74,21 +74,8 @@ pub(crate) fn render_bordered_composer(
     let max_visible = usize::from(inner.height.min(content_lines).max(1));
     let show_cursor = !context.dock.composer_disabled && focused;
     let ghost_visible = app.composer_ghost_eligible();
-    let live_empty_guidance = crate::ui::live_empty_composer_guidance_visible(app);
-    let fallback_placeholder = if focused { "" } else { "Build anything" };
-    let placeholder = if ghost_visible {
-        ""
-    } else if context.dock.variant == crate::view_model::ControlDockVariant::Startup {
-        fallback_placeholder
-    } else if context.dock.composer_disabled || !composer_empty {
-        fallback_placeholder
-    } else if live_empty_guidance {
-        "Ask Harness to inspect, edit, or explain…"
-    } else if app.shell_mode() && focused {
-        "run a shell command…"
-    } else {
-        fallback_placeholder
-    };
+    let placeholder =
+        bordered_composer_placeholder(app, &context, focused, composer_empty, ghost_visible);
     let Some(resolved) = super::presentation::resolve_composer(
         app,
         &composer_text,
@@ -231,6 +218,31 @@ pub(crate) fn render_bordered_composer(
                 .min(inner.y.saturating_add(inner.height.saturating_sub(1)));
             frame.set_cursor_position((cursor_x, cursor_y));
         }
+    }
+}
+
+fn bordered_composer_placeholder(
+    app: &AppState,
+    context: &DocumentComposerRenderContext<'_>,
+    focused: bool,
+    composer_empty: bool,
+    ghost_visible: bool,
+) -> &'static str {
+    let live_empty_guidance = crate::ui::live_empty_composer_guidance_visible(app);
+    let fallback = if focused { "" } else { "Build anything" };
+    if ghost_visible {
+        ""
+    } else if context.dock.variant == crate::view_model::ControlDockVariant::Startup
+        || context.dock.composer_disabled
+        || !composer_empty
+    {
+        fallback
+    } else if live_empty_guidance {
+        "Ask Harness to inspect, edit, or explain…"
+    } else if app.shell_mode() && focused {
+        "run a shell command…"
+    } else {
+        fallback
     }
 }
 

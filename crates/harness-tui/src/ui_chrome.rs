@@ -288,32 +288,50 @@ pub(super) fn render_footer(
             }
         }
     }
-    let key_style = Style::default()
-        .fg(theme.terminal_colors.primary)
-        .bg(theme.surface.canvas)
-        .add_modifier(Modifier::BOLD);
+    let mut hint_spans = footer_hint_spans(
+        app,
+        &footer_hints.hints,
+        theme,
+        clear_prompt_confirmation_pending,
+    );
     let label_style = Style::default()
         .fg(theme.terminal_colors.secondary)
         .bg(theme.surface.canvas);
-    let dim_style = Style::default()
-        .fg(theme.terminal_colors.secondary)
-        .bg(theme.surface.canvas)
-        .add_modifier(Modifier::DIM);
 
-    let mut hint_spans: Vec<Span<'static>> = Vec::new();
-    for (i, hint) in footer_hints.hints.iter().enumerate() {
-        if i > 0 {
-            hint_spans.push(Span::styled("  │  ", dim_style));
+    fn footer_hint_spans(
+        app: &AppState,
+        hints: &[crate::view_model::FooterHint],
+        theme: &Theme,
+        clear_prompt_confirmation_pending: bool,
+    ) -> Vec<Span<'static>> {
+        let key_style = Style::default()
+            .fg(theme.terminal_colors.primary)
+            .bg(theme.surface.canvas)
+            .add_modifier(Modifier::BOLD);
+        let label_style = Style::default()
+            .fg(theme.terminal_colors.secondary)
+            .bg(theme.surface.canvas);
+        let dim_style = Style::default()
+            .fg(theme.terminal_colors.secondary)
+            .bg(theme.surface.canvas)
+            .add_modifier(Modifier::DIM);
+
+        let mut hint_spans: Vec<Span<'static>> = Vec::new();
+        for (i, hint) in hints.iter().enumerate() {
+            if i > 0 {
+                hint_spans.push(Span::styled("  │  ", dim_style));
+            }
+            let key_str = if clear_prompt_confirmation_pending {
+                "Esc".to_string()
+            } else {
+                composer_footer_binding(app, hint.action)
+            };
+            if key_str != "-" {
+                hint_spans.push(Span::styled(key_str, key_style));
+                hint_spans.push(Span::styled(hint.label.to_string(), label_style));
+            }
         }
-        let key_str = if clear_prompt_confirmation_pending {
-            "Esc".to_string()
-        } else {
-            composer_footer_binding(app, hint.action)
-        };
-        if key_str != "-" {
-            hint_spans.push(Span::styled(key_str, key_style));
-            hint_spans.push(Span::styled(hint.label.to_string(), label_style));
-        }
+        hint_spans
     }
     let hint_width: usize = hint_spans
         .iter()
