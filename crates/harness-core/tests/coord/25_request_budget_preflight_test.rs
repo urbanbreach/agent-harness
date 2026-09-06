@@ -67,13 +67,11 @@ async fn pre_prompt_budget_rebuilds_request_before_dispatch() {
             .await
             .unwrap_or_abort();
         wait_for_events(&run.events_path, Duration::from_secs(1), |events| {
-            events.iter().any(|event| {
-                matches!(
-                    &event.payload,
-                    EventV1::TaskCompleted(_)
-                        if event.correlation_id.as_deref() == Some(request_id.as_str())
-                )
-            })
+            events.iter().any(|event| matches!(
+                &event.payload,
+                EventV1::TaskCompleted(_)
+                    if event.correlation_id.as_deref() == Some(request_id.as_str())
+            ))
         })
         .await;
     }
