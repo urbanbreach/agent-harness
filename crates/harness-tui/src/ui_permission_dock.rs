@@ -8,7 +8,7 @@ use ratatui::{
 };
 
 use crate::app::permissions::{
-    PermissionConfirmSelection, PermissionModalSelection, PermissionModalStage,
+    PermissionConfirmSelection, PermissionFeedback, PermissionModalSelection, PermissionModalStage,
 };
 use crate::app::{ActivePermissionView, AppState, Focus};
 use crate::layout::{
@@ -278,19 +278,14 @@ pub(super) fn render_inline_permission_dock(
             ),
         ]
     };
-    let selected_index = match selection {
-        PermissionModalSelection::AllowAlways => 1usize,
-        PermissionModalSelection::AllowSession => 2usize,
-        PermissionModalSelection::AllowOnce => 3usize,
-        PermissionModalSelection::Reject => 4usize,
-    };
+    let selected_index = selection.number();
     let expansion_label = (measure.detail_rows > 5).then_some(if measure.expanded {
         "Ctrl-F to collapse"
     } else {
         "Ctrl-F to expand"
     });
-    let action_text = permission_prompt_numbered_options(theme, tray_surface, &options);
-    let hint_line = permission_prompt_hint_line(
+    let mut action_text = permission_prompt_numbered_options(theme, tray_surface, &options);
+    let mut hint_line = permission_prompt_hint_line(
         app,
         theme,
         tray_surface,
@@ -299,6 +294,16 @@ pub(super) fn render_inline_permission_dock(
         tray_inner.width,
         expansion_label,
     );
+    if let Some(feedback) = app.permission_feedback(&permission.permission_id) {
+        let (option_line, feedback_hint) = permission_feedback_lines(
+            theme,
+            feedback,
+            tray_inner.width,
+            app.focus == Focus::Prompt,
+        );
+        action_text.lines[3] = option_line;
+        hint_line = feedback_hint.unwrap_or(hint_line);
+    }
     let option_rows = u16::try_from(options.len()).unwrap_or(u16::MAX);
     // Freeze tray: options, post blank, empty, hints, trailing blank (height 8).
     if tray_inner.height >= option_rows.saturating_add(4) {
@@ -722,6 +727,46 @@ fn permission_prompt_action_line(
         ));
     }
     Line::from(spans)
+}
+
+fn permission_feedback_lines(
+    theme: &Theme,
+    feedback: &PermissionFeedback,
+    available_width: u16,
+    focused: bool,
+) -> (Line<'static>, Option<Line<'static>>) {
+    let marker = theme.live_shell.transcript_glyphs.choice_selected;
+    let label = format!("4 ({marker}) No, feedback: ");
+    let label = if display_width(&label) < usize::from(available_width) {
+        label
+    } else {
+        "4: ".to_string()
+    };
+    let width = usize::from(available_width).saturating_sub(display_width(&label));
+    let (before, after) = feedback.visible_parts(width);
+    let style = permission_prompt_option_style(theme, theme.surface.panel_elevated, true);
+    let mut spans = vec![
+        Span::styled(label, style),
+        Span::styled(before.to_owned(), style),
+    ];
+    if feedback.editing && focused && width > 0 {
+        spans.push(Span::styled(" ", style.add_modifier(Modifier::REVERSED)));
+    }
+    spans.push(Span::styled(after.to_owned(), style));
+    let hint = feedback.editing.then(|| {
+        let hint_width = usize::from(available_width.saturating_sub(2));
+        let label = ["Enter:reject  Esc:back", "Enter:reject", "Enter"]
+            .into_iter()
+            .find(|label| label.len() <= hint_width)
+            .unwrap_or("");
+        Line::from(Span::styled(
+            label,
+            Style::default()
+                .fg(theme.text.secondary)
+                .bg(theme.surface.panel_elevated),
+        ))
+    });
+    (Line::from(spans), hint)
 }
 
 fn permission_prompt_numbered_options(
