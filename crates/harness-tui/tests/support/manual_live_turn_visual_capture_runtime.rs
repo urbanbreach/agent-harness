@@ -1,9 +1,10 @@
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 use std::sync::Arc;
 
 use harness_core::event::{
-    EventV1, ProviderRequestStartedEvent, RuntimeEvent, TaskCancelledEvent, TaskScheduleState,
-    TaskScheduledEvent, TaskTerminalScope,
+    EventV1, PermissionResolvedEvent, ProviderRequestStartedEvent, RuntimeEvent,
+    TaskCancelledEvent, TaskScheduleState, TaskScheduledEvent, TaskTerminalScope,
+    ToolCallFinishedEvent, ToolCallStatus,
 };
 use harness_tui::{
     live_update_channel, run_tui_with_options, LiveUpdate, TuiMode, TuiOptions, UiIntent,
@@ -14,6 +15,7 @@ use crate::capture_events::{
 };
 
 pub(crate) fn run_capture(config: CaptureScenario) -> Result<(), Box<dyn std::error::Error>> {
+    let next_tool_seq = config.events.last().map_or(1, |event| event.seq + 1);
     let run_dir = tempfile::tempdir()?;
     let (update_tx, update_rx) = live_update_channel();
     if let Some(status) = config.status {
@@ -34,7 +36,7 @@ pub(crate) fn run_capture(config: CaptureScenario) -> Result<(), Box<dyn std::er
         config.events
     };
 
-    let on_ui_intent: Option<Arc<dyn Fn(UiIntent) + Send + Sync>> =
+    let mut on_ui_intent: Option<Arc<dyn Fn(UiIntent) + Send + Sync>> =
         config.send_now_transition.then(|| {
             let transition_tx = update_tx.clone();
             let transition_step = Arc::new(AtomicU8::new(0));
@@ -82,6 +84,57 @@ pub(crate) fn run_capture(config: CaptureScenario) -> Result<(), Box<dyn std::er
                 }
             }) as Arc<dyn Fn(UiIntent) + Send + Sync>
         });
+
+    if config.tool_parity {
+        let transition_tx = update_tx.clone();
+        let step = AtomicU64::new(next_tool_seq);
+        on_ui_intent = Some(Arc::new(move |intent| {
+            let payload = match intent {
+                UiIntent::ResolvePermission {
+                    permission_id,
+                    decision,
+                    reason,
+                    ..
+                } => {
+                    let decision = match decision {
+                        harness_core::perm::PermissionDecision::Allow => {
+                            harness_core::event::PermissionDecision::Allow
+                        }
+                        harness_core::perm::PermissionDecision::Deny => {
+                            harness_core::event::PermissionDecision::Deny
+                        }
+                    };
+                    EventV1::PermissionResolved(PermissionResolvedEvent {
+                        permission_id,
+                        decision,
+                        reason,
+                    })
+                }
+                UiIntent::SubmitPrompt { text, .. }
+                | UiIntent::RunShellCommand { command: text }
+                    if text == "finish" =>
+                {
+                    EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                        tool_call_id: "capture-active".into(),
+                        status: ToolCallStatus::Succeeded,
+                        output_summary: Some("Terminal parity complete".to_string()),
+                        output_digest: Some("capture-complete".to_string()),
+                        output_json: None,
+                        metadata: None,
+                    })
+                }
+                _ => return,
+            };
+            let event = envelope(
+                step.fetch_add(1, Ordering::AcqRel),
+                ACTIVE_REQUEST_ID,
+                payload,
+            );
+            let _ = transition_tx.send(LiveUpdate::Event(Box::new(RuntimeEvent::Durable(
+                Box::new(event),
+            ))));
+        }));
+    }
 
     run_tui_with_options(TuiOptions {
         mode: TuiMode::Live {
