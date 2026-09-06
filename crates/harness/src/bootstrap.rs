@@ -740,37 +740,30 @@ mod tests {
         let config_path = crate::cli_config::shipped_example_config_path();
         let cfg = load_config_from_file(&config_path).unwrap_or_abort();
 
-        assert!(cfg.agents.contains_key("default"));
-        assert!(cfg.agents.contains_key("explore"));
-        assert!(cfg.agents.contains_key("general"));
-        assert!(cfg.agents.contains_key("librarian"));
+        for name in ["default", "explore", "general", "librarian"] {
+            assert!(cfg.agents.contains_key(name), "missing agent {name}");
+        }
 
         let profiles = interactive_agent_profiles(&cfg).unwrap_or_abort();
-        assert!(profiles["default"].toolset.contains(&"edit".to_string()));
-        assert!(profiles["default"].toolset.contains(&"bash".to_string()));
-        assert!(profiles["default"].toolset.contains(&"task".to_string()));
-        assert!(profiles["default"]
-            .toolset
-            .contains(&"background_output".to_string()));
-        assert!(profiles["default"]
-            .toolset
-            .contains(&"todowrite".to_string()));
+        for tool in ["edit", "bash", "task", "background_output", "todowrite"] {
+            assert!(
+                profiles["default"].toolset.contains(&tool.to_string()),
+                "missing tool {tool}"
+            );
+        }
         assert!(!profiles["default"]
             .toolset
             .contains(&"plan_enter".to_string()));
         assert!(!profiles["default"]
             .toolset
             .contains(&"plan_exit".to_string()));
-        assert!(profiles["explore"].toolset.contains(&"read".to_string()));
-        assert!(profiles["explore"].toolset.contains(&"grep".to_string()));
+        for tool in ["read", "grep", "bash", "webfetch", "websearch"] {
+            assert!(
+                profiles["explore"].toolset.contains(&tool.to_string()),
+                "missing explore tool {tool}"
+            );
+        }
         assert!(!profiles["explore"].toolset.contains(&"edit".to_string()));
-        assert!(profiles["explore"].toolset.contains(&"bash".to_string()));
-        assert!(profiles["explore"]
-            .toolset
-            .contains(&"webfetch".to_string()));
-        assert!(profiles["explore"]
-            .toolset
-            .contains(&"websearch".to_string()));
         assert!(profiles["general"].toolset.contains(&"edit".to_string()));
         assert!(profiles["general"].toolset.contains(&"bash".to_string()));
         assert!(!profiles["general"].toolset.contains(&"task".to_string()));
