@@ -30,16 +30,16 @@ fn running_tool_wave_is_spatially_continuous_and_time_based() {
 }
 
 #[test]
-fn finish_flash_motion_is_inert_for_terminal_rows() {
+fn completion_rail_color_is_static_until_state_expiry() {
     let motion = Some(ToolRailMotion::FinishFlash {
         elapsed: Duration::ZERO,
         sampled_phase: 0,
     });
     let at_start = tool_rail_motion_color(Color::Black, Color::Green, motion, 0, 0);
-    let after_legacy_window = tool_rail_motion_color(Color::Black, Color::Green, motion, 0, 12);
+    let after_animation_ticks = tool_rail_motion_color(Color::Black, Color::Green, motion, 0, 12);
 
     assert_eq!(at_start, Color::Green);
-    assert_eq!(after_legacy_window, at_start);
+    assert_eq!(after_animation_ticks, at_start);
 }
 
 #[test]

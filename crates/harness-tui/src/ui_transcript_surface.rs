@@ -432,7 +432,10 @@ fn transcript_surface_rail_lines_for_motion(
     visible_height: usize,
     animation_phase: usize,
 ) -> Vec<Line<'static>> {
-    let row_scoped_rail = surface
+    let row_scoped_rail = matches!(
+        surface.tool_rail_motion,
+        Some(ToolRailMotion::FinishFlash { .. })
+    ) || surface
         .lines
         .iter()
         .any(|line| line_has_tool_rail(line, surface.rail_glyph));
@@ -444,13 +447,29 @@ fn transcript_surface_rail_lines_for_motion(
                 .get(absolute_row)
                 .filter(|line| !row_scoped_rail || line_has_tool_rail(line, surface.rail_glyph))
                 .map_or(" ", |_| surface.rail_glyph);
+            let tool_surface = matches!(
+                surface.kind,
+                TranscriptRenderSurfaceKind::AssistantTool
+                    | TranscriptRenderSurfaceKind::AssistantCommandTool
+            );
             let color = tool_rail_motion_color(
                 surface.surface,
                 surface.rail_color,
-                surface.tool_rail_motion,
+                if tool_surface {
+                    None
+                } else {
+                    surface.tool_rail_motion
+                },
                 absolute_row,
                 animation_phase,
             );
+            let color = surface
+                .lines
+                .get(absolute_row)
+                .filter(|line| tool_surface && line_has_tool_rail(line, surface.rail_glyph))
+                .and_then(|line| line.spans.first())
+                .and_then(|span| span.style.fg)
+                .unwrap_or(color);
             Line::from(Span::styled(
                 glyph,
                 Style::default().fg(color).bg(surface.surface),

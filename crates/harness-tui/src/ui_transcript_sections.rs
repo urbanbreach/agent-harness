@@ -962,6 +962,47 @@ mod ui10_tests {
     }
 
     #[test]
+    fn live_completion_rail_requires_open_content_and_settles_for_replay_or_reduced_motion() {
+        let base = std::time::Instant::now();
+        let run_dir = tempfile::tempdir().unwrap_or_abort();
+        let mut app = AppState::new_live(Some(run_dir.path().to_path_buf()), false, None);
+        app.set_now_fn_for_test(std::sync::Arc::new(move || base));
+        let mut activity =
+            transcript_section_model_test_activity("completion", ActivityStatus::Streaming, "");
+        let mut tool = transcript_section_model_test_tool_call("completion-edit", "bash");
+        tool.args_summary = r#"{"command":"cargo check"}"#.to_string();
+        tool.output_summary = Some("check completed".to_string());
+        tool.status = ToolCallDisplayStatus::Running;
+        activity.tool_calls.push(tool);
+        app.activities = std::collections::VecDeque::from([activity]);
+        app.sync_transcript_integration(true);
+        app.activities[0].tool_calls[0].status = ToolCallDisplayStatus::Succeeded;
+        app.sync_transcript_integration(true);
+        assert_eq!(
+            app.tool_finish_elapsed("completion-edit"),
+            Some(std::time::Duration::ZERO)
+        );
+
+        let motion = |app: &AppState| {
+            build_transcript_sections(app)[0]
+                .assistant_tools()
+                .next()
+                .unwrap_or_abort()
+                .rail_motion
+        };
+        assert_eq!(motion(&app), ToolRailMotion::Settled);
+        app.toggle_tool_output_for_test("completion-edit");
+        assert!(matches!(motion(&app), ToolRailMotion::FinishFlash { .. }));
+        app.replay_mode = true;
+        assert_eq!(motion(&app), ToolRailMotion::Settled);
+        app.replay_mode = false;
+        app.set_reduced_motion(true);
+        assert_eq!(motion(&app), ToolRailMotion::Settled);
+        app.set_reduced_motion(false);
+        assert_eq!(motion(&app), ToolRailMotion::Settled);
+    }
+
+    #[test]
     fn same_file_coalescing_accepts_only_trusted_successful_adjacent_edits() {
         // arrange
         let first = successful_edit("edit-1", "src/lib.rs");
