@@ -81,16 +81,11 @@ async fn overflow_retry_compacts_context_and_retries_with_summary() {
         .unwrap_or_abort();
     tokio::task::yield_now().await;
     tokio::time::timeout(Duration::from_secs(2), async {
-        loop {
-            if provider.requests().len() >= 6 {
-                break;
-            }
-            if load_events(&run.events_path)
+        while provider.requests().len() < 6
+            && !load_events(&run.events_path)
                 .iter()
                 .any(|e| matches!(e.payload, EventV1::SessionCompaction(_)))
-            {
-                break;
-            }
+        {
             tokio::task::yield_now().await;
         }
     })

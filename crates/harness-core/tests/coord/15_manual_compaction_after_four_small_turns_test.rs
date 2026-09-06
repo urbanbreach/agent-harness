@@ -122,13 +122,11 @@ async fn manual_compaction_after_two_turns_summarizes_first_and_preserves_latest
             .await
             .unwrap_or_abort();
         wait_for_events(&run.events_path, Duration::from_secs(2), |events| {
-            events.iter().any(|event| {
-                matches!(
-                    &event.payload,
-                    EventV1::TaskCompleted(_)
-                        if event.correlation_id.as_deref() == Some(request_id.as_str())
-                )
-            })
+            events.iter().any(|event| matches!(
+                &event.payload,
+                EventV1::TaskCompleted(_)
+                    if event.correlation_id.as_deref() == Some(request_id.as_str())
+            ))
         })
         .await;
     }
@@ -194,13 +192,11 @@ async fn manual_compaction_summary_call_uses_provider_without_emitting_provider_
             .await
             .unwrap_or_abort();
         wait_for_events(&run.events_path, Duration::from_secs(2), |events| {
-            events.iter().any(|event| {
-                matches!(
-                    &event.payload,
-                    EventV1::TaskCompleted(_)
-                        if event.correlation_id.as_deref() == Some(request_id.as_str())
-                )
-            })
+            events.iter().any(|event| matches!(
+                &event.payload,
+                EventV1::TaskCompleted(_)
+                    if event.correlation_id.as_deref() == Some(request_id.as_str())
+            ))
         })
         .await;
     }
