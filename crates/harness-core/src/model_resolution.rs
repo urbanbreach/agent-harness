@@ -3,6 +3,7 @@
 pub enum ModelFamily {
     OpenAiReasoning,
     Gpt5,
+    GptAstra,
     GptLegacy,
     Codex,
     ClaudeOpus,
@@ -164,6 +165,9 @@ fn detect_heuristic_family(provider: &str, model: &str) -> Option<ModelFamily> {
 }
 
 fn detect_family_from_normalized(value: &str) -> Option<ModelFamily> {
+    if matches!(value, "gpt-astra" | "gpt-6-astra") {
+        return Some(ModelFamily::GptAstra);
+    }
     if value.contains("codex") && value.contains("gpt") {
         return Some(ModelFamily::Codex);
     }
@@ -248,7 +252,7 @@ fn prompt_family_for(family: ModelFamily) -> PromptFamily {
     match family {
         ModelFamily::OpenAiReasoning => PromptFamily::Reasoning,
         ModelFamily::Codex => PromptFamily::Codex,
-        ModelFamily::Gpt5 | ModelFamily::GptLegacy => PromptFamily::Gpt,
+        ModelFamily::Gpt5 | ModelFamily::GptAstra | ModelFamily::GptLegacy => PromptFamily::Gpt,
         ModelFamily::ClaudeOpus | ModelFamily::Claude => PromptFamily::Anthropic,
         ModelFamily::Gemini => PromptFamily::Gemini,
         ModelFamily::KimiThinking | ModelFamily::Kimi => PromptFamily::Kimi,
@@ -293,6 +297,14 @@ fn family_capabilities(family: ModelFamily) -> ModelCapabilities {
             caps.variants = variants(&["low", "medium", "high", "xhigh"]);
             caps.reasoning_efforts =
                 variants(&["none", "minimal", "low", "medium", "high", "xhigh", "max"]);
+            caps.supports_reasoning_summaries = true;
+        }
+        ModelFamily::GptAstra => {
+            caps.variants = variants(&["low", "medium", "high", "xhigh", "max"]);
+            caps.reasoning_efforts = caps.variants.clone();
+            caps.supports_vision = true;
+            caps.supports_temperature = false;
+            caps.supports_top_p = false;
             caps.supports_reasoning_summaries = true;
         }
         ModelFamily::GptLegacy
@@ -341,6 +353,28 @@ fn input_modalities_support_vision(input_modalities: &[String]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn astra_resolves_supported_reasoning_from_id_and_catalog_family() {
+        for metadata_family in [None, Some("gpt-astra")] {
+            let resolution = resolve_model(ModelResolutionInput {
+                provider: "openai",
+                model: "gpt-6-astra",
+                metadata_family,
+                input_modalities: &[],
+                supports_tool_calls: None,
+                supports_reasoning_summaries: None,
+            });
+
+            assert_eq!(resolution.prompt_family, PromptFamily::Gpt);
+            assert_eq!(
+                resolution.capabilities.reasoning_efforts,
+                variants(&["low", "medium", "high", "xhigh", "max"])
+            );
+            assert!(resolution.capabilities.supports_reasoning_summaries);
+            assert!(resolution.capabilities.supports_vision);
+        }
+    }
 
     #[test]
     fn metadata_family_beats_model_id_heuristic() {
