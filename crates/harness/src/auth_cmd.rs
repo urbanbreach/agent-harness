@@ -539,23 +539,22 @@ fn execute_interactive_login(
         if prompts.is_empty() {
             None
         } else {
-            match run_prompts(prompts, io) {
-                Ok(values) => {
-                    if let Some(url) = values.get("enterprise_url") {
-                        match CopilotDeployment::enterprise(url) {
-                            Ok(CopilotDeployment::Enterprise { domain }) => Some(domain),
-                            Ok(CopilotDeployment::Public) => None,
-                            Err(err) => {
-                                let _ = writeln!(io.stderr, "auth login failed: {err}");
-                                return 2;
-                            }
-                        }
-                    } else {
-                        None
-                    }
-                }
+            let values = match run_prompts(prompts, io) {
+                Ok(values) => values,
                 Err(AuthInteractiveError::Cancelled) => return 1,
                 Err(AuthInteractiveError::Io(err)) => return auth_prompt_io_error(err, io.stderr),
+            };
+            match values
+                .get("enterprise_url")
+                .map(|url| CopilotDeployment::enterprise(url))
+                .transpose()
+            {
+                Ok(Some(CopilotDeployment::Enterprise { domain })) => Some(domain),
+                Ok(Some(CopilotDeployment::Public) | None) => None,
+                Err(err) => {
+                    let _ = writeln!(io.stderr, "auth login failed: {err}");
+                    return 2;
+                }
             }
         }
     };

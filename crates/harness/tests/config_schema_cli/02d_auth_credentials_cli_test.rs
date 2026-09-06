@@ -61,6 +61,8 @@ fn auth_login_list_and_logout_run_outside_onboarding_without_printing_secrets() 
         "auth login must not edit harness config"
     );
 
+    verify_mock_oauth_login(&temp, &data_home, &config_path, api_secret);
+    fn verify_mock_oauth_login(temp: &tempfile::TempDir, data_home: &std::path::Path, config_path: &std::path::Path, api_secret: &str) {
     // act: mocked OAuth login replaces the active stored credential and list redacts metadata.
     let oauth_secret = "oauth-access-secret-value";
     let refresh_secret = "oauth-refresh-secret-value";
@@ -123,6 +125,9 @@ fn auth_login_list_and_logout_run_outside_onboarding_without_printing_secrets() 
     assert_eq!(codex["account_id"], "<redacted>");
     assert_eq!(codex["usable_without_network_probe"], true);
 
+    }
+    verify_empty_enterprise_login(&temp, &data_home);
+    fn verify_empty_enterprise_login(temp: &tempfile::TempDir, data_home: &std::path::Path) {
     // act/assert: an explicitly empty Copilot Enterprise URL is invalid and must
     // not fall back to a public Copilot credential.
     let copilot_secret = "copilot-empty-enterprise-secret-value";
@@ -153,6 +158,7 @@ fn auth_login_list_and_logout_run_outside_onboarding_without_printing_secrets() 
         "empty Enterprise URL must not store a public Copilot credential"
     );
 
+    }
     // act: logout deletes only the stored credential, preserving env/config fallbacks.
     let logout = harness_command()
         .current_dir(temp.path())
