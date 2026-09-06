@@ -29,12 +29,6 @@ pub(super) fn tool_path_display(tool_call: &ToolCallEntry) -> Option<String> {
         .map(|path| collapse_inline_whitespace(&path))
 }
 
-pub(super) fn tool_in_path_description(tool_call: &ToolCallEntry) -> Option<String> {
-    tool_path_display(tool_call)
-        .filter(|path| path != ".")
-        .map(|path| format!("in {path}"))
-}
-
 pub(super) fn read_tool_input_suffix(tool_call: &ToolCallEntry) -> String {
     let offset = tool_call
         .output_json

@@ -109,26 +109,15 @@ pub(super) fn build_transcript_tool_call_section(
                     true,
                 )
             }
-            "fs.glob" | "glob" => (
-                format!(
-                    "Glob \"{}\"",
-                    tool_summary_string(&tool_call.args_summary, &["pattern"])
-                        .unwrap_or_else(|| "*".to_string()),
-                ),
-                Some("✱"),
-                generic_tool_visual_style(tool_call, generic_output_visible),
-                true,
-            ),
-            "fs.grep" | "grep" => (
-                format!(
-                    "Grep \"{}\"",
-                    tool_summary_string(&tool_call.args_summary, &["pattern"])
-                        .unwrap_or_else(|| "pattern".to_string()),
-                ),
-                Some("✱"),
-                generic_tool_visual_style(tool_call, generic_output_visible),
-                true,
-            ),
+            "fs.glob" | "glob" | "fs.grep" | "grep" => {
+                header_path_metadata = tool_path_display(tool_call).filter(|path| path != ".");
+                (
+                    super::super::ui_tool_titles_harness::local_search_tool_title(tool_call),
+                    Some("✱"),
+                    generic_tool_visual_style(tool_call, generic_output_visible),
+                    true,
+                )
+            }
             "fs.ls" | "list" => (
                 completed_list_tool_title(tool_call),
                 Some("→"),
@@ -606,10 +595,7 @@ pub(super) fn build_transcript_tool_call_section(
     };
     let default_subtitle = match display_tool_id {
         "shell.run" | "bash" => None,
-        "fs.glob" | "glob" | "fs.grep" | "grep" => join_tool_subtitles(
-            tool_in_path_description(tool_call),
-            tool_match_count_description(tool_call),
-        ),
+        "fs.glob" | "glob" | "fs.grep" | "grep" => tool_match_count_description(tool_call),
         "edit.hashline_apply" | "fs.write" | "write" | "edit" => {
             let path = tool_call
                 .edit_path_display()
