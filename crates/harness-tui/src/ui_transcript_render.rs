@@ -1369,6 +1369,41 @@ fn reasoning_summary(text: &str) -> (Option<String>, String) {
     (Some(title.trim().to_string()), body)
 }
 
+fn append_single_command_output(
+    lines: &mut Vec<Line<'static>>,
+    output: &str,
+    expand_hint: Option<&str>,
+    prefix: &str,
+    theme: &Theme,
+    width: u16,
+    surface: Color,
+) {
+    for row in output.trim().lines() {
+        append_surface_row(
+            lines,
+            prefix,
+            surface,
+            vec![Span::styled(
+                row.to_string(),
+                Style::default().fg(theme.text.primary),
+            )],
+            transcript_surface_content_width(width, false),
+        );
+    }
+    if let Some(hint) = expand_hint.filter(|hint| has_trimmed_content(hint)) {
+        append_surface_row(
+            lines,
+            prefix,
+            surface,
+            vec![Span::styled(
+                hint.trim().to_string(),
+                muted_meta_style(theme),
+            )],
+            transcript_surface_content_width(width, false),
+        );
+    }
+}
+
 fn build_context_tool_group_render_surface(
     turn: &TranscriptTurnSection,
     tool_calls: &[&TranscriptToolCallSection],
@@ -1431,19 +1466,26 @@ fn build_context_tool_group_render_surface(
         .then_some(tool_call.rail_motion)
         .filter(|motion| matches!(motion, ToolRailMotion::Running { .. }))
     });
-    let aggregate_status = if command_group {
-        dominant_tool_group_status(tool_calls)
-    } else if group_summary.failed_count > 0 {
-        ToolCallPresentationStatus::Failed
-    } else if group_summary.running_count > 0 {
-        ToolCallPresentationStatus::Running
-    } else if group_summary.queued_count > 0 {
-        ToolCallPresentationStatus::Queued
-    } else if group_summary.cancelled_count > 0 {
-        ToolCallPresentationStatus::Cancelled
-    } else {
-        ToolCallPresentationStatus::Succeeded
-    };
+    let aggregate_status = context_group_status(tool_calls, &group_summary, command_group);
+    fn context_group_status(
+        tool_calls: &[&TranscriptToolCallSection],
+        group_summary: &TranscriptToolGroupSummary,
+        command_group: bool,
+    ) -> ToolCallPresentationStatus {
+        if command_group {
+            dominant_tool_group_status(tool_calls)
+        } else if group_summary.failed_count > 0 {
+            ToolCallPresentationStatus::Failed
+        } else if group_summary.running_count > 0 {
+            ToolCallPresentationStatus::Running
+        } else if group_summary.queued_count > 0 {
+            ToolCallPresentationStatus::Queued
+        } else if group_summary.cancelled_count > 0 {
+            ToolCallPresentationStatus::Cancelled
+        } else {
+            ToolCallPresentationStatus::Succeeded
+        }
+    }
     if !command_group && aggregate_status == ToolCallPresentationStatus::Failed {
         tool_rail_motion = None;
     }
@@ -1463,59 +1505,75 @@ fn build_context_tool_group_render_surface(
     } else {
         Some(TranscriptToolCallDisclosureState::Collapsed)
     };
-    let mut summary = if command_group {
-        vec![
-            Span::styled(
-                format!("{} ", theme.live_shell.transcript_glyphs.group_marker),
-                Style::default().fg(theme.terminal_colors.secondary),
-            ),
-            Span::styled(
-                "Ran ",
-                Style::default()
-                    .fg(theme.terminal_colors.secondary)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(
-                format!(
-                    "{} command{}",
-                    tool_calls.len(),
-                    if tool_calls.len() == 1 { "" } else { "s" }
+    fn group_header_spans(
+        command_group: bool,
+        tool_count: usize,
+        group_summary: &TranscriptToolGroupSummary,
+        aggregate_status: ToolCallPresentationStatus,
+        rail_color: Color,
+        theme: &Theme,
+    ) -> Vec<Span<'static>> {
+        if command_group {
+            vec![
+                Span::styled(
+                    format!("{} ", theme.live_shell.transcript_glyphs.group_marker),
+                    Style::default().fg(theme.terminal_colors.secondary),
                 ),
-                Style::default().fg(theme.terminal_colors.secondary),
-            ),
-        ]
-    } else {
-        let marker_color = if matches!(
-            aggregate_status,
-            ToolCallPresentationStatus::Running
-                | ToolCallPresentationStatus::Queued
-                | ToolCallPresentationStatus::Failed
-        ) {
-            rail_color
+                Span::styled(
+                    "Ran ",
+                    Style::default()
+                        .fg(theme.terminal_colors.secondary)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    format!(
+                        "{} command{}",
+                        tool_count,
+                        if tool_count == 1 { "" } else { "s" }
+                    ),
+                    Style::default().fg(theme.terminal_colors.secondary),
+                ),
+            ]
         } else {
-            theme.terminal_colors.secondary
-        };
-        vec![
-            Span::styled(
-                format!("{} ", theme.live_shell.transcript_glyphs.group_marker),
-                Style::default().fg(marker_color),
-            ),
-            Span::styled(
-                group_summary.semantic_core_label(),
-                Style::default()
-                    .fg(theme.terminal_colors.secondary)
-                    .add_modifier(Modifier::BOLD),
-            ),
-        ]
-    };
-    let mut counts = Vec::new();
-    if group_summary.failed_count > 0 {
-        counts.push(format!("{} failed", group_summary.failed_count));
+            let marker_color = if matches!(
+                aggregate_status,
+                ToolCallPresentationStatus::Running
+                    | ToolCallPresentationStatus::Queued
+                    | ToolCallPresentationStatus::Failed
+            ) {
+                rail_color
+            } else {
+                theme.terminal_colors.secondary
+            };
+            vec![
+                Span::styled(
+                    format!("{} ", theme.live_shell.transcript_glyphs.group_marker),
+                    Style::default().fg(marker_color),
+                ),
+                Span::styled(
+                    group_summary.semantic_core_label(),
+                    Style::default()
+                        .fg(theme.terminal_colors.secondary)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            ]
+        }
     }
-    if !counts.is_empty() {
+    let mut summary = group_header_spans(
+        command_group,
+        tool_calls.len(),
+        &group_summary,
+        aggregate_status,
+        rail_color,
+        theme,
+    );
+    if group_summary.failed_count > 0 {
         let count_style = Style::default().fg(theme.terminal_colors.error);
         summary.push(Span::styled(" · ", count_style));
-        summary.push(Span::styled(counts.join(" · "), count_style));
+        summary.push(Span::styled(
+            format!("{} failed", group_summary.failed_count),
+            count_style,
+        ));
     }
     if let Some(disclosure) = tool_header_disclosure_glyph(group_disclosure, theme) {
         summary.push(Span::styled("  ", muted_meta_style(theme)));
@@ -1561,7 +1619,17 @@ fn build_context_tool_group_render_surface(
         } else {
             &tool_calls[preview_index..tool_calls.len().min(preview_index + 1)]
         };
-        for tool_call in visible_tool_calls {
+        fn context_group_member_lines(
+            tool_call: &TranscriptToolCallSection,
+            theme: &Theme,
+            width: u16,
+            surface: Color,
+            detail_prefix: &str,
+            command_group: bool,
+            single_command: bool,
+            group_expanded: bool,
+        ) -> Vec<Line<'static>> {
+            let mut lines = Vec::new();
             let mut spans = Vec::new();
             let member_accent = inline_tool_color(tool_call.header.presentation.status, theme);
             let member_marker = super::ui_transcript_tool_render::completed_tool_marker(
@@ -1621,10 +1689,11 @@ fn build_context_tool_group_render_surface(
                 transcript_surface_content_width(width, false),
             );
             if command_group {
-                for line in &mut lines[member_start..] {
-                    if let Some(prefix) = line.spans.first_mut() {
-                        prefix.style = prefix.style.fg(member_accent);
-                    }
+                for prefix in lines[member_start..]
+                    .iter_mut()
+                    .filter_map(|line| line.spans.first_mut())
+                {
+                    prefix.style = prefix.style.fg(member_accent);
                 }
             }
             if group_expanded && tool_call.details_visible() {
@@ -1643,30 +1712,15 @@ fn build_context_tool_group_render_surface(
                 });
                 if let Some(Some((output, expand_hint))) = single_command_body {
                     let body_prefix = format!("{detail_prefix}    ");
-                    for row in output.trim().lines() {
-                        append_surface_row(
-                            &mut lines,
-                            &body_prefix,
-                            surface,
-                            vec![Span::styled(
-                                row.to_string(),
-                                Style::default().fg(theme.text.primary),
-                            )],
-                            transcript_surface_content_width(width, false),
-                        );
-                    }
-                    if let Some(hint) = expand_hint.filter(|hint| has_trimmed_content(hint)) {
-                        append_surface_row(
-                            &mut lines,
-                            &body_prefix,
-                            surface,
-                            vec![Span::styled(
-                                hint.trim().to_string(),
-                                muted_meta_style(theme),
-                            )],
-                            transcript_surface_content_width(width, false),
-                        );
-                    }
+                    append_single_command_output(
+                        &mut lines,
+                        output,
+                        expand_hint,
+                        &body_prefix,
+                        theme,
+                        width,
+                        surface,
+                    );
                 } else {
                     let mut detail_render = ToolSectionRender {
                         lines: Vec::new(),
@@ -1684,6 +1738,19 @@ fn build_context_tool_group_render_surface(
                     lines.extend(detail_render.lines);
                 }
             }
+            lines
+        }
+        for tool_call in visible_tool_calls {
+            lines.extend(context_group_member_lines(
+                tool_call,
+                theme,
+                width,
+                surface,
+                &detail_prefix,
+                command_group,
+                single_command,
+                group_expanded,
+            ));
         }
     }
 

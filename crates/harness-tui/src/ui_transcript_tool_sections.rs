@@ -70,11 +70,469 @@ pub(super) fn build_transcript_tool_call_section(
     stacked_diffs: bool,
     session_path: Option<&Path>,
 ) -> TranscriptToolCallSection {
+    fn initial_tool_row(
+        tool_call: &crate::app::ToolCallEntry,
+        app: &AppState,
+        task_row: Option<&crate::app::OrchestrationTaskRow>,
+        show_generic_tool_output: bool,
+        tool_output_expanded: bool,
+        stacked_diffs: bool,
+        session_path: Option<&Path>,
+    ) -> (
+        String,
+        Option<&'static str>,
+        TranscriptToolCallVisualStyle,
+        bool,
+        Vec<TranscriptToolCallDetailBlock>,
+        Option<String>,
+    ) {
+        let mut detail_blocks = Vec::new();
+        let display_tool_id = tool_call.effective_tool_id();
+        let expanded = tool_output_expanded;
+        let generic_output_visible = show_generic_tool_output || tool_output_expanded;
+        let error_body = tool_error_text(tool_call);
+        let question_answers = resolved_question_answer_items(tool_call);
+        let todo_items = todo_items_from_tool_call(tool_call, session_path);
+        let mut header_path_metadata = None;
+
+        let theme = app.theme();
+
+        let (title, icon, visual_style, uses_generic_output_visibility) = match display_tool_id {
+            "fs.read" | "read" => {
+                let path = tool_path_display(tool_call);
+                header_path_metadata = path.clone();
+                let (title, icon) = read_tool_row_header(tool_call, app, path.as_deref());
+                (
+                    title,
+                    icon,
+                    generic_tool_visual_style(tool_call, generic_output_visible),
+                    true,
+                )
+            }
+            "fs.glob" | "glob" => (
+                format!(
+                    "Glob \"{}\"",
+                    tool_summary_string(&tool_call.args_summary, &["pattern"])
+                        .unwrap_or_else(|| "*".to_string()),
+                ),
+                Some("✱"),
+                generic_tool_visual_style(tool_call, generic_output_visible),
+                true,
+            ),
+            "fs.grep" | "grep" => (
+                format!(
+                    "Grep \"{}\"",
+                    tool_summary_string(&tool_call.args_summary, &["pattern"])
+                        .unwrap_or_else(|| "pattern".to_string()),
+                ),
+                Some("✱"),
+                generic_tool_visual_style(tool_call, generic_output_visible),
+                true,
+            ),
+            "fs.ls" | "list" => (
+                completed_list_tool_title(tool_call),
+                Some("→"),
+                generic_tool_visual_style(tool_call, generic_output_visible),
+                true,
+            ),
+            "shell.run" | "bash" => {
+                let cmd = shell_tool_command(tool_call).unwrap_or_else(|| "Shell".to_string());
+                let shell_output = shell_tool_output(tool_call);
+                if let Some(output) = shell_output {
+                    push_collapsible_bash_panel_block(
+                        &mut detail_blocks,
+                        &cmd,
+                        &output,
+                        shell_tool_title_description(tool_call, session_path),
+                        HARNESS_BASH_OUTPUT_LINE_CLAMP,
+                        expanded,
+                        if tool_call.status == ToolCallDisplayStatus::Failed {
+                            TranscriptToolCallDetailTone::Error
+                        } else {
+                            TranscriptToolCallDetailTone::Primary
+                        },
+                    );
+                    (
+                        format!("Run {cmd}"),
+                        None,
+                        TranscriptToolCallVisualStyle::Block,
+                        true,
+                    )
+                } else {
+                    (
+                        format!("Run {cmd}"),
+                        None,
+                        TranscriptToolCallVisualStyle::Block,
+                        false,
+                    )
+                }
+            }
+            "edit.hashline_apply" => {
+                let (title, icon) = hashline_tool_row_header(
+                    tool_call,
+                    app,
+                    &mut detail_blocks,
+                    session_path,
+                    stacked_diffs,
+                );
+                (title, icon, TranscriptToolCallVisualStyle::Block, false)
+            }
+            "edit.hashline_scan" => (
+                format!(
+                    "Scan {}",
+                    tool_path_display(tool_call).unwrap_or_else(|| "file".to_string())
+                ),
+                Some("→"),
+                TranscriptToolCallVisualStyle::Inline,
+                false,
+            ),
+            "agent.spawn" | "task" => {
+                build_agent_spawn_tool_row(tool_call, task_row, &mut detail_blocks, app)
+            }
+            "background_output" => (
+                background_output_tool_title(tool_call),
+                Some("↻"),
+                TranscriptToolCallVisualStyle::Inline,
+                false,
+            ),
+            "background_cancel" => (
+                background_cancel_tool_title(tool_call),
+                Some("✕"),
+                TranscriptToolCallVisualStyle::Inline,
+                false,
+            ),
+            "plan_enter" => (
+                plan_enter_tool_title(tool_call),
+                Some("⊕"),
+                TranscriptToolCallVisualStyle::Inline,
+                false,
+            ),
+            "plan_exit" => (
+                plan_exit_tool_title(tool_call),
+                Some("⊖"),
+                TranscriptToolCallVisualStyle::Inline,
+                false,
+            ),
+            "invalid" => (
+                invalid_tool_title(tool_call),
+                Some("!"),
+                generic_tool_visual_style(tool_call, generic_output_visible),
+                true,
+            ),
+            "session_list" => (
+                session_tool_title(tool_call, "List"),
+                Some("≡"),
+                generic_tool_visual_style(tool_call, generic_output_visible),
+                true,
+            ),
+            "session_read" => (
+                session_tool_title(tool_call, "Read"),
+                Some("→"),
+                generic_tool_visual_style(tool_call, generic_output_visible),
+                true,
+            ),
+            "session_search" => (
+                session_tool_title(tool_call, "Search"),
+                Some("✱"),
+                generic_tool_visual_style(tool_call, generic_output_visible),
+                true,
+            ),
+            "session_info" => (
+                session_tool_title(tool_call, "Inspect"),
+                Some("ⓘ"),
+                generic_tool_visual_style(tool_call, generic_output_visible),
+                true,
+            ),
+            "ast_grep_search" => (
+                ast_grep_tool_title(tool_call, "AST Search"),
+                Some("✱"),
+                generic_tool_visual_style(tool_call, generic_output_visible),
+                true,
+            ),
+            "ast_grep_replace" => {
+                let rendered_diff = push_tool_call_diff_blocks(
+                    &mut detail_blocks,
+                    tool_call,
+                    app,
+                    session_path,
+                    stacked_diffs,
+                );
+                (
+                    ast_grep_tool_title(tool_call, "AST Replace"),
+                    Some("←"),
+                    if rendered_diff {
+                        TranscriptToolCallVisualStyle::Block
+                    } else {
+                        generic_tool_visual_style(tool_call, generic_output_visible)
+                    },
+                    true,
+                )
+            }
+            "lsp" => (
+                lsp_tool_title(tool_call),
+                Some("→"),
+                generic_tool_visual_style(tool_call, generic_output_visible),
+                true,
+            ),
+            "lsp.rename" => {
+                let rendered_diff = push_tool_call_diff_blocks(
+                    &mut detail_blocks,
+                    tool_call,
+                    app,
+                    session_path,
+                    stacked_diffs,
+                );
+                (
+                    lsp_tool_title(tool_call),
+                    Some("→"),
+                    if rendered_diff {
+                        TranscriptToolCallVisualStyle::Block
+                    } else {
+                        generic_tool_visual_style(tool_call, generic_output_visible)
+                    },
+                    true,
+                )
+            }
+            "skill" | "skill.load" => (
+                skill_tool_title(tool_call),
+                Some("→"),
+                TranscriptToolCallVisualStyle::Inline,
+                false,
+            ),
+            "todo.read" | "todoread" => (
+                "Read todos".to_string(),
+                Some("☑"),
+                TranscriptToolCallVisualStyle::Inline,
+                false,
+            ),
+            "todo.write" | "todowrite" => {
+                let still_running = matches!(
+                    tool_call.status,
+                    ToolCallDisplayStatus::Running
+                        | ToolCallDisplayStatus::Queued
+                        | ToolCallDisplayStatus::PendingPermission
+                );
+                if still_running && todo_items.is_empty() {
+                    (
+                        "Updating todos...".to_string(),
+                        Some("⚙"),
+                        TranscriptToolCallVisualStyle::Inline,
+                        false,
+                    )
+                } else {
+                    if !todo_items.is_empty() {
+                        detail_blocks.push(TranscriptToolCallDetailBlock::TodoList {
+                            items: todo_items.clone(),
+                        });
+                    }
+                    (
+                        "# Todos".to_string(),
+                        None,
+                        TranscriptToolCallVisualStyle::Block,
+                        false,
+                    )
+                }
+            }
+            "fs.write" | "write" => {
+                let rendered_diff = push_tool_call_diff_blocks(
+                    &mut detail_blocks,
+                    tool_call,
+                    app,
+                    session_path,
+                    stacked_diffs,
+                );
+                let title = if rendered_diff {
+                    edit_tool_title(tool_call)
+                } else {
+                    write_tool_title(tool_call)
+                };
+                (
+                    title,
+                    Some("←"),
+                    if rendered_diff {
+                        TranscriptToolCallVisualStyle::Block
+                    } else {
+                        TranscriptToolCallVisualStyle::Inline
+                    },
+                    false,
+                )
+            }
+            "edit" => {
+                let rendered_diff = push_tool_call_diff_blocks(
+                    &mut detail_blocks,
+                    tool_call,
+                    app,
+                    session_path,
+                    stacked_diffs,
+                );
+                let visual_style = if rendered_diff {
+                    TranscriptToolCallVisualStyle::Block
+                } else {
+                    TranscriptToolCallVisualStyle::Inline
+                };
+                (edit_tool_title(tool_call), Some("←"), visual_style, false)
+            }
+            "apply_patch" => {
+                let rendered_diff = push_tool_call_diff_blocks(
+                    &mut detail_blocks,
+                    tool_call,
+                    app,
+                    session_path,
+                    stacked_diffs,
+                );
+                (
+                    apply_patch_tool_title(tool_call),
+                    Some("%"),
+                    if rendered_diff {
+                        TranscriptToolCallVisualStyle::Block
+                    } else {
+                        TranscriptToolCallVisualStyle::Inline
+                    },
+                    false,
+                )
+            }
+            "web.fetch" => (
+                format!(
+                    "Fetch {}",
+                    tool_summary_string(&tool_call.args_summary, &["url"])
+                        .unwrap_or_else(|| "url".to_string())
+                ),
+                Some("%"),
+                TranscriptToolCallVisualStyle::Inline,
+                true,
+            ),
+            "search.web" | "search.code" => {
+                let title = if display_tool_id == "search.web" {
+                    web_search_provider_label(tool_call)
+                } else {
+                    "Exa Code Search"
+                };
+                (
+                    format!(
+                        "{} \"{}\"{}",
+                        title,
+                        tool_summary_string(&tool_call.args_summary, &["query"])
+                            .unwrap_or_else(|| "query".to_string()),
+                        search_result_count_suffix(tool_call, display_tool_id)
+                    ),
+                    Some(if display_tool_id == "search.web" {
+                        theme.live_shell.transcript_glyphs.group_marker
+                    } else {
+                        theme.live_shell.transcript_glyphs.thought_marker
+                    }),
+                    TranscriptToolCallVisualStyle::Inline,
+                    true,
+                )
+            }
+            "user.question" | "question" => {
+                if !question_answers.is_empty() {
+                    detail_blocks.push(TranscriptToolCallDetailBlock::Message {
+                        text: question_answers
+                            .iter()
+                            .enumerate()
+                            .map(|(index, item)| {
+                                format!(
+                                    "{}. {}\n    → {}",
+                                    index.saturating_add(1),
+                                    item.question,
+                                    item.answer
+                                )
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n"),
+                        tone: TranscriptToolCallDetailTone::Primary,
+                    });
+                }
+                (
+                    question_tool_title(tool_call, &question_answers),
+                    Some("→"),
+                    TranscriptToolCallVisualStyle::Inline,
+                    false,
+                )
+            }
+            "tool.batch" | "batch" => (
+                batch_tool_title(tool_call),
+                Some("#"),
+                TranscriptToolCallVisualStyle::Block,
+                true,
+            ),
+            "code.lsp" => (
+                lsp_tool_title(tool_call),
+                Some("→"),
+                generic_tool_visual_style(tool_call, generic_output_visible),
+                true,
+            ),
+            _ if is_mcp_tool_id(display_tool_id) => (
+                mcp_tool_title(tool_call, display_tool_id),
+                Some("⚙"),
+                generic_tool_visual_style(tool_call, generic_output_visible),
+                true,
+            ),
+            _ => {
+                let title = generic_tool_title(tool_call, display_tool_id);
+                let generic_output = if tool_call.status == ToolCallDisplayStatus::Failed {
+                    error_body
+                        .as_deref()
+                        .or(tool_call.output_summary.as_deref())
+                } else {
+                    tool_call.output_summary.as_deref()
+                };
+                if generic_output_visible && generic_output.is_some() {
+                    push_collapsible_output_block(
+                        &mut detail_blocks,
+                        generic_output.unwrap_or_default(),
+                        if tool_call.status == ToolCallDisplayStatus::Failed {
+                            TranscriptToolCallDetailTone::Error
+                        } else {
+                            TranscriptToolCallDetailTone::Primary
+                        },
+                        HARNESS_GENERIC_OUTPUT_LINE_CLAMP,
+                        expanded,
+                    );
+                    (title, None, TranscriptToolCallVisualStyle::Block, true)
+                } else {
+                    (
+                        title,
+                        Some("⚙"),
+                        generic_tool_visual_style(tool_call, generic_output_visible),
+                        true,
+                    )
+                }
+            }
+        };
+
+        (
+            title,
+            icon,
+            visual_style,
+            uses_generic_output_visibility,
+            detail_blocks,
+            header_path_metadata,
+        )
+    }
+    let (
+        mut title,
+        icon,
+        visual_style,
+        uses_generic_output_visibility,
+        mut detail_blocks,
+        mut header_path_metadata,
+    ) = initial_tool_row(
+        tool_call,
+        app,
+        task_row,
+        show_generic_tool_output,
+        tool_output_expanded,
+        stacked_diffs,
+        session_path,
+    );
     let struck_out = tool_call_denied(tool_call);
-    let mut detail_blocks = Vec::new();
     let display_tool_id = tool_call.effective_tool_id();
     let expanded = tool_output_expanded;
-    let generic_output_visible = show_generic_tool_output || tool_output_expanded;
+    let generic_output_visible = show_generic_tool_output || expanded;
+    let animation_phase = app.transcript_animation_phase();
+    let error_body = tool_error_text(tool_call);
+    let error_subtitle = tool_error_subtitle(tool_call);
     let child_session_id = task_tool_child_session_id(tool_call)
         .map(str::to_string)
         .or_else(|| {
@@ -82,479 +540,6 @@ pub(super) fn build_transcript_tool_call_section(
                 .and_then(crate::app::OrchestrationTaskRow::effective_child_session_id)
                 .map(str::to_string)
         });
-    let error_subtitle = tool_error_subtitle(tool_call);
-    let error_body = tool_error_text(tool_call);
-    let question_answers = resolved_question_answer_items(tool_call);
-    let todo_items = todo_items_from_tool_call(tool_call, session_path);
-    let mut header_path_metadata = None;
-
-    let animation_phase = app.transcript_animation_phase();
-    let theme = app.theme();
-
-    let (mut title, icon, visual_style, uses_generic_output_visibility) = match display_tool_id {
-        "fs.read" | "read" => {
-            let path = tool_path_display(tool_call);
-            header_path_metadata = path.clone();
-            let title = match tool_call.status {
-                ToolCallDisplayStatus::Succeeded => {
-                    completed_read_tool_title(tool_call, path.as_deref())
-                }
-                ToolCallDisplayStatus::Running
-                | ToolCallDisplayStatus::PendingPermission
-                | ToolCallDisplayStatus::Queued
-                | ToolCallDisplayStatus::Failed => path.as_ref().map_or_else(
-                    || format!("{display_tool_id} · Reading file..."),
-                    |path| format!("Read {path}{}", read_tool_input_suffix(tool_call)),
-                ),
-            };
-            let icon = match tool_call.status {
-                ToolCallDisplayStatus::Running => Some(glyph_routed_streaming_spinner_frame(
-                    theme,
-                    animation_phase,
-                    app.transcript_motion_enabled(),
-                )),
-                ToolCallDisplayStatus::PendingPermission | ToolCallDisplayStatus::Queued
-                    if path.is_none() =>
-                {
-                    Some("~")
-                }
-                ToolCallDisplayStatus::PendingPermission
-                | ToolCallDisplayStatus::Queued
-                | ToolCallDisplayStatus::Succeeded
-                | ToolCallDisplayStatus::Failed => Some("→"),
-            };
-            (
-                title,
-                icon,
-                generic_tool_visual_style(tool_call, generic_output_visible),
-                true,
-            )
-        }
-        "fs.glob" | "glob" => (
-            format!(
-                "Glob \"{}\"",
-                tool_summary_string(&tool_call.args_summary, &["pattern"])
-                    .unwrap_or_else(|| "*".to_string()),
-            ),
-            Some("✱"),
-            generic_tool_visual_style(tool_call, generic_output_visible),
-            true,
-        ),
-        "fs.grep" | "grep" => (
-            format!(
-                "Grep \"{}\"",
-                tool_summary_string(&tool_call.args_summary, &["pattern"])
-                    .unwrap_or_else(|| "pattern".to_string()),
-            ),
-            Some("✱"),
-            generic_tool_visual_style(tool_call, generic_output_visible),
-            true,
-        ),
-        "fs.ls" | "list" => (
-            completed_list_tool_title(tool_call),
-            Some("→"),
-            generic_tool_visual_style(tool_call, generic_output_visible),
-            true,
-        ),
-        "shell.run" | "bash" => {
-            let cmd = shell_tool_command(tool_call).unwrap_or_else(|| "Shell".to_string());
-            let shell_output = shell_tool_output(tool_call);
-            if let Some(output) = shell_output {
-                push_collapsible_bash_panel_block(
-                    &mut detail_blocks,
-                    &cmd,
-                    &output,
-                    shell_tool_title_description(tool_call, session_path),
-                    HARNESS_BASH_OUTPUT_LINE_CLAMP,
-                    expanded,
-                    if tool_call.status == ToolCallDisplayStatus::Failed {
-                        TranscriptToolCallDetailTone::Error
-                    } else {
-                        TranscriptToolCallDetailTone::Primary
-                    },
-                );
-                (
-                    format!("Run {cmd}"),
-                    None,
-                    TranscriptToolCallVisualStyle::Block,
-                    true,
-                )
-            } else {
-                (
-                    format!("Run {cmd}"),
-                    None,
-                    TranscriptToolCallVisualStyle::Block,
-                    false,
-                )
-            }
-        }
-        "edit.hashline_apply" => {
-            let path = tool_call.edit_path_display();
-            let title = match tool_call.edit.as_ref().map(|edit| edit.status) {
-                Some(crate::app::EditDisplayStatus::Applied) => "Patch".to_string(),
-                Some(crate::app::EditDisplayStatus::Rejected)
-                | Some(crate::app::EditDisplayStatus::Proposed) => path
-                    .as_ref()
-                    .map(|_| "Edit".to_string())
-                    .unwrap_or_else(|| "Preparing edit...".to_string()),
-                None => path
-                    .as_ref()
-                    .map(|_| "Edit".to_string())
-                    .unwrap_or_else(|| "Preparing edit...".to_string()),
-            };
-
-            if let Some(edit) = &tool_call.edit {
-                if edit.status == crate::app::EditDisplayStatus::Applied {
-                    push_tool_call_diff_blocks(
-                        &mut detail_blocks,
-                        tool_call,
-                        app,
-                        session_path,
-                        stacked_diffs,
-                    );
-                }
-
-                if edit.status == crate::app::EditDisplayStatus::Rejected {
-                    if let Some(reason) = edit.rejection_reason.as_deref() {
-                        detail_blocks.push(TranscriptToolCallDetailBlock::Message {
-                            text: reason.to_string(),
-                            tone: TranscriptToolCallDetailTone::Error,
-                        });
-                    }
-                }
-            }
-
-            let icon = if title == "Preparing edit..." {
-                Some("~")
-            } else {
-                Some("←")
-            };
-
-            (title, icon, TranscriptToolCallVisualStyle::Block, false)
-        }
-        "edit.hashline_scan" => (
-            format!(
-                "Scan {}",
-                tool_path_display(tool_call).unwrap_or_else(|| "file".to_string())
-            ),
-            Some("→"),
-            TranscriptToolCallVisualStyle::Inline,
-            false,
-        ),
-        "agent.spawn" | "task" => {
-            build_agent_spawn_tool_row(tool_call, task_row, &mut detail_blocks, app)
-        }
-        "background_output" => (
-            background_output_tool_title(tool_call),
-            Some("↻"),
-            TranscriptToolCallVisualStyle::Inline,
-            false,
-        ),
-        "background_cancel" => (
-            background_cancel_tool_title(tool_call),
-            Some("✕"),
-            TranscriptToolCallVisualStyle::Inline,
-            false,
-        ),
-        "plan_enter" => (
-            plan_enter_tool_title(tool_call),
-            Some("⊕"),
-            TranscriptToolCallVisualStyle::Inline,
-            false,
-        ),
-        "plan_exit" => (
-            plan_exit_tool_title(tool_call),
-            Some("⊖"),
-            TranscriptToolCallVisualStyle::Inline,
-            false,
-        ),
-        "invalid" => (
-            invalid_tool_title(tool_call),
-            Some("!"),
-            generic_tool_visual_style(tool_call, generic_output_visible),
-            true,
-        ),
-        "session_list" => (
-            session_tool_title(tool_call, "List"),
-            Some("≡"),
-            generic_tool_visual_style(tool_call, generic_output_visible),
-            true,
-        ),
-        "session_read" => (
-            session_tool_title(tool_call, "Read"),
-            Some("→"),
-            generic_tool_visual_style(tool_call, generic_output_visible),
-            true,
-        ),
-        "session_search" => (
-            session_tool_title(tool_call, "Search"),
-            Some("✱"),
-            generic_tool_visual_style(tool_call, generic_output_visible),
-            true,
-        ),
-        "session_info" => (
-            session_tool_title(tool_call, "Inspect"),
-            Some("ⓘ"),
-            generic_tool_visual_style(tool_call, generic_output_visible),
-            true,
-        ),
-        "ast_grep_search" => (
-            ast_grep_tool_title(tool_call, "AST Search"),
-            Some("✱"),
-            generic_tool_visual_style(tool_call, generic_output_visible),
-            true,
-        ),
-        "ast_grep_replace" => {
-            let rendered_diff = push_tool_call_diff_blocks(
-                &mut detail_blocks,
-                tool_call,
-                app,
-                session_path,
-                stacked_diffs,
-            );
-            (
-                ast_grep_tool_title(tool_call, "AST Replace"),
-                Some("←"),
-                if rendered_diff {
-                    TranscriptToolCallVisualStyle::Block
-                } else {
-                    generic_tool_visual_style(tool_call, generic_output_visible)
-                },
-                true,
-            )
-        }
-        "lsp" => (
-            lsp_tool_title(tool_call),
-            Some("→"),
-            generic_tool_visual_style(tool_call, generic_output_visible),
-            true,
-        ),
-        "lsp.rename" => {
-            let rendered_diff = push_tool_call_diff_blocks(
-                &mut detail_blocks,
-                tool_call,
-                app,
-                session_path,
-                stacked_diffs,
-            );
-            (
-                lsp_tool_title(tool_call),
-                Some("→"),
-                if rendered_diff {
-                    TranscriptToolCallVisualStyle::Block
-                } else {
-                    generic_tool_visual_style(tool_call, generic_output_visible)
-                },
-                true,
-            )
-        }
-        "skill" | "skill.load" => (
-            skill_tool_title(tool_call),
-            Some("→"),
-            TranscriptToolCallVisualStyle::Inline,
-            false,
-        ),
-        "todo.read" | "todoread" => (
-            "Read todos".to_string(),
-            Some("☑"),
-            TranscriptToolCallVisualStyle::Inline,
-            false,
-        ),
-        "todo.write" | "todowrite" => {
-            let still_running = matches!(
-                tool_call.status,
-                ToolCallDisplayStatus::Running
-                    | ToolCallDisplayStatus::Queued
-                    | ToolCallDisplayStatus::PendingPermission
-            );
-            if still_running && todo_items.is_empty() {
-                (
-                    "Updating todos...".to_string(),
-                    Some("⚙"),
-                    TranscriptToolCallVisualStyle::Inline,
-                    false,
-                )
-            } else {
-                if !todo_items.is_empty() {
-                    detail_blocks.push(TranscriptToolCallDetailBlock::TodoList {
-                        items: todo_items.clone(),
-                    });
-                }
-                (
-                    "# Todos".to_string(),
-                    None,
-                    TranscriptToolCallVisualStyle::Block,
-                    false,
-                )
-            }
-        }
-        "fs.write" | "write" => {
-            let rendered_diff = push_tool_call_diff_blocks(
-                &mut detail_blocks,
-                tool_call,
-                app,
-                session_path,
-                stacked_diffs,
-            );
-            let title = if rendered_diff {
-                edit_tool_title(tool_call)
-            } else {
-                write_tool_title(tool_call)
-            };
-            (
-                title,
-                Some("←"),
-                if rendered_diff {
-                    TranscriptToolCallVisualStyle::Block
-                } else {
-                    TranscriptToolCallVisualStyle::Inline
-                },
-                false,
-            )
-        }
-        "edit" => {
-            let rendered_diff = push_tool_call_diff_blocks(
-                &mut detail_blocks,
-                tool_call,
-                app,
-                session_path,
-                stacked_diffs,
-            );
-            let visual_style = if rendered_diff {
-                TranscriptToolCallVisualStyle::Block
-            } else {
-                TranscriptToolCallVisualStyle::Inline
-            };
-            (edit_tool_title(tool_call), Some("←"), visual_style, false)
-        }
-        "apply_patch" => {
-            let rendered_diff = push_tool_call_diff_blocks(
-                &mut detail_blocks,
-                tool_call,
-                app,
-                session_path,
-                stacked_diffs,
-            );
-            (
-                apply_patch_tool_title(tool_call),
-                Some("%"),
-                if rendered_diff {
-                    TranscriptToolCallVisualStyle::Block
-                } else {
-                    TranscriptToolCallVisualStyle::Inline
-                },
-                false,
-            )
-        }
-        "web.fetch" => (
-            format!(
-                "Fetch {}",
-                tool_summary_string(&tool_call.args_summary, &["url"])
-                    .unwrap_or_else(|| "url".to_string())
-            ),
-            Some("%"),
-            TranscriptToolCallVisualStyle::Inline,
-            true,
-        ),
-        "search.web" | "search.code" => {
-            let title = if display_tool_id == "search.web" {
-                web_search_provider_label(tool_call)
-            } else {
-                "Exa Code Search"
-            };
-            (
-                format!(
-                    "{} \"{}\"{}",
-                    title,
-                    tool_summary_string(&tool_call.args_summary, &["query"])
-                        .unwrap_or_else(|| "query".to_string()),
-                    search_result_count_suffix(tool_call, display_tool_id)
-                ),
-                Some(if display_tool_id == "search.web" {
-                    theme.live_shell.transcript_glyphs.group_marker
-                } else {
-                    theme.live_shell.transcript_glyphs.thought_marker
-                }),
-                TranscriptToolCallVisualStyle::Inline,
-                true,
-            )
-        }
-        "user.question" | "question" => {
-            if !question_answers.is_empty() {
-                detail_blocks.push(TranscriptToolCallDetailBlock::Message {
-                    text: question_answers
-                        .iter()
-                        .enumerate()
-                        .map(|(index, item)| {
-                            format!(
-                                "{}. {}\n    → {}",
-                                index.saturating_add(1),
-                                item.question,
-                                item.answer
-                            )
-                        })
-                        .collect::<Vec<_>>()
-                        .join("\n"),
-                    tone: TranscriptToolCallDetailTone::Primary,
-                });
-            }
-            (
-                question_tool_title(tool_call, &question_answers),
-                Some("→"),
-                TranscriptToolCallVisualStyle::Inline,
-                false,
-            )
-        }
-        "tool.batch" | "batch" => (
-            batch_tool_title(tool_call),
-            Some("#"),
-            TranscriptToolCallVisualStyle::Block,
-            true,
-        ),
-        "code.lsp" => (
-            lsp_tool_title(tool_call),
-            Some("→"),
-            generic_tool_visual_style(tool_call, generic_output_visible),
-            true,
-        ),
-        _ if is_mcp_tool_id(display_tool_id) => (
-            mcp_tool_title(tool_call, display_tool_id),
-            Some("⚙"),
-            generic_tool_visual_style(tool_call, generic_output_visible),
-            true,
-        ),
-        _ => {
-            let title = generic_tool_title(tool_call, display_tool_id);
-            let generic_output = if tool_call.status == ToolCallDisplayStatus::Failed {
-                error_body
-                    .as_deref()
-                    .or(tool_call.output_summary.as_deref())
-            } else {
-                tool_call.output_summary.as_deref()
-            };
-            if generic_output_visible && generic_output.is_some() {
-                push_collapsible_output_block(
-                    &mut detail_blocks,
-                    generic_output.unwrap_or_default(),
-                    if tool_call.status == ToolCallDisplayStatus::Failed {
-                        TranscriptToolCallDetailTone::Error
-                    } else {
-                        TranscriptToolCallDetailTone::Primary
-                    },
-                    HARNESS_GENERIC_OUTPUT_LINE_CLAMP,
-                    expanded,
-                );
-                (title, None, TranscriptToolCallVisualStyle::Block, true)
-            } else {
-                (
-                    title,
-                    Some("⚙"),
-                    generic_tool_visual_style(tool_call, generic_output_visible),
-                    true,
-                )
-            }
-        }
-    };
 
     set_diff_highlight_phase(
         &mut detail_blocks,
@@ -675,10 +660,6 @@ pub(super) fn build_transcript_tool_call_section(
                 && !matches!(display_tool_id, "user.question" | "question")
             {
                 join_tool_subtitles(default_subtitle, error_subtitle)
-            } else if matches!(display_tool_id, "shell.run" | "bash")
-                && !tool_call_denied(tool_call)
-            {
-                default_subtitle
             } else {
                 default_subtitle
             },
@@ -696,6 +677,85 @@ pub(super) fn build_transcript_tool_call_section(
         expanded,
         rail_motion,
     }
+}
+
+fn read_tool_row_header(
+    tool_call: &crate::app::ToolCallEntry,
+    app: &AppState,
+    path: Option<&str>,
+) -> (String, Option<&'static str>) {
+    let title = match tool_call.status {
+        ToolCallDisplayStatus::Succeeded => completed_read_tool_title(tool_call, path),
+        ToolCallDisplayStatus::Running
+        | ToolCallDisplayStatus::PendingPermission
+        | ToolCallDisplayStatus::Queued
+        | ToolCallDisplayStatus::Failed => path.map_or_else(
+            || format!("{} · Reading file...", tool_call.effective_tool_id()),
+            |path| format!("Read {path}{}", read_tool_input_suffix(tool_call)),
+        ),
+    };
+    let icon = match tool_call.status {
+        ToolCallDisplayStatus::Running => glyph_routed_streaming_spinner_frame(
+            app.theme(),
+            app.transcript_animation_phase(),
+            app.transcript_motion_enabled(),
+        ),
+        ToolCallDisplayStatus::PendingPermission | ToolCallDisplayStatus::Queued
+            if path.is_none() =>
+        {
+            "~"
+        }
+        ToolCallDisplayStatus::PendingPermission
+        | ToolCallDisplayStatus::Queued
+        | ToolCallDisplayStatus::Succeeded
+        | ToolCallDisplayStatus::Failed => "→",
+    };
+    (title, Some(icon))
+}
+
+fn hashline_tool_row_header(
+    tool_call: &crate::app::ToolCallEntry,
+    app: &AppState,
+    detail_blocks: &mut Vec<TranscriptToolCallDetailBlock>,
+    session_path: Option<&Path>,
+    stacked_diffs: bool,
+) -> (String, Option<&'static str>) {
+    let path = tool_call.edit_path_display();
+    let title = match tool_call.edit.as_ref().map(|edit| edit.status) {
+        Some(crate::app::EditDisplayStatus::Applied) => "Patch".to_string(),
+        Some(crate::app::EditDisplayStatus::Rejected | crate::app::EditDisplayStatus::Proposed)
+        | None => path
+            .as_ref()
+            .map_or_else(|| "Preparing edit...".to_string(), |_| "Edit".to_string()),
+    };
+    if let Some(edit) = &tool_call.edit {
+        match edit.status {
+            crate::app::EditDisplayStatus::Applied => {
+                push_tool_call_diff_blocks(
+                    detail_blocks,
+                    tool_call,
+                    app,
+                    session_path,
+                    stacked_diffs,
+                );
+            }
+            crate::app::EditDisplayStatus::Rejected => {
+                if let Some(reason) = edit.rejection_reason.as_deref() {
+                    detail_blocks.push(TranscriptToolCallDetailBlock::Message {
+                        text: reason.to_string(),
+                        tone: TranscriptToolCallDetailTone::Error,
+                    });
+                }
+            }
+            crate::app::EditDisplayStatus::Proposed => {}
+        }
+    }
+    let icon = if title == "Preparing edit..." {
+        "~"
+    } else {
+        "←"
+    };
+    (title, Some(icon))
 }
 
 fn web_search_provider_label(tool_call: &crate::app::ToolCallEntry) -> &'static str {

@@ -2276,27 +2276,16 @@ fn transcript_measurement_wrap_correctness_across_widths_and_styles() {
                 independently_computed_rows += section.leading_gap_height;
                 let mut section_rows = 0usize;
                 for surface in &section.surfaces {
-                    let content_width = if surface.width == 0 {
-                        1
-                    } else {
-                        usize::from(
-                            surface
-                                .width
-                                .saturating_sub(u16::from(surface.show_outer_rail)),
-                        )
-                        .max(1)
-                    };
+                    let content_width = usize::from(
+                        surface
+                            .width
+                            .saturating_sub(u16::from(surface.show_outer_rail)),
+                    )
+                    .max(1);
                     let visual_rows = surface
                         .lines
                         .iter()
-                        .map(|line| {
-                            let line_width = line.width();
-                            if line_width == 0 {
-                                1
-                            } else {
-                                line_width.div_ceil(content_width)
-                            }
-                        })
+                        .map(|line| line.width().div_ceil(content_width).max(1))
                         .sum::<usize>();
                     section_rows = surface.top_offset + visual_rows;
                 }
