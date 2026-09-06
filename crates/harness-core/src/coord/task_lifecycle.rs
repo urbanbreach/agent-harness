@@ -42,17 +42,19 @@ impl Coordinator {
 
             let mut detachments = Vec::new();
             for decision in &decisions {
-                if let DemoteToBackgroundResult::Demoted { handle_id, .. } = decision {
-                    if let Some(child) = foreground_children
-                        .iter()
-                        .find(|child| child.child_request_id == *handle_id)
-                        .cloned()
-                    {
-                        if let Some(parent_task_id) = parent_task_id_for_child(run_state, &child) {
-                            mark_child_task_backgrounded(run_state, &child.child_request_id);
-                            detachments.push((parent_task_id, child));
-                        }
-                    }
+                let DemoteToBackgroundResult::Demoted { handle_id, .. } = decision else {
+                    continue;
+                };
+                let Some(child) = foreground_children
+                    .iter()
+                    .find(|child| child.child_request_id == *handle_id)
+                    .cloned()
+                else {
+                    continue;
+                };
+                if let Some(parent_task_id) = parent_task_id_for_child(run_state, &child) {
+                    mark_child_task_backgrounded(run_state, &child.child_request_id);
+                    detachments.push((parent_task_id, child));
                 }
             }
             (decisions, detachments)
@@ -101,16 +103,11 @@ impl Coordinator {
                     let child = foreground_children
                         .into_iter()
                         .find(|child| child.child_request_id == *handle_id);
-                    match child {
-                        Some(child) => {
-                            let parent_task_id = parent_task_id_for_child(run_state, &child);
-                            parent_task_id.map(|parent_task_id| {
-                                mark_child_task_backgrounded(run_state, &child.child_request_id);
-                                (parent_task_id, child)
-                            })
-                        }
-                        None => None,
-                    }
+                    child.and_then(|child| {
+                        let parent_task_id = parent_task_id_for_child(run_state, &child)?;
+                        mark_child_task_backgrounded(run_state, &child.child_request_id);
+                        Some((parent_task_id, child))
+                    })
                 }
                 _ => None,
             };
@@ -489,10 +486,7 @@ impl Coordinator {
                 let mut formatted_paths = std::collections::BTreeSet::new();
                 let caching_discovery =
                     formatter::CachingFormatterDiscovery::new(formatter::RealFormatterDiscovery);
-                for applied_edit in &applied_edits {
-                    if applied_edit.deleted {
-                        continue;
-                    }
+                for applied_edit in applied_edits.iter().filter(|edit| !edit.deleted) {
                     let path = &applied_edit.metadata.path;
                     if !formatted_paths.insert(path.clone()) {
                         continue;
@@ -509,65 +503,12 @@ impl Coordinator {
                     }
                 }
 
-                // Regenerate diff artifacts to reflect post-format content,
-                // re-reading the file after
-                // formatting and regenerating the diff from the original
-                // pre-edit content vs the formatted file.
-                for applied_edit in &mut applied_edits {
-                    if applied_edit.deleted {
-                        continue;
-                    }
-                    let Some(before_rel_path) = &applied_edit.before_rel_path else {
-                        continue;
-                    };
-                    let Some(diff_rel_path) = &applied_edit.diff_rel_path else {
-                        continue;
-                    };
-
-                    let before_name = Path::new(before_rel_path)
-                        .strip_prefix(crate::session_paths::ARTIFACTS_DIR_NAME)
-                        .unwrap_or(Path::new(before_rel_path));
-                    let before_full_path = run_state.info.artifacts_dir.join(before_name);
-                    let before_content = match tokio::fs::read_to_string(&before_full_path).await {
-                        Ok(content) => content,
-                        Err(_) => continue,
-                    };
-
-                    let file_path = if Path::new(&applied_edit.metadata.path).is_absolute() {
-                        PathBuf::from(&applied_edit.metadata.path)
-                    } else {
-                        run_state
-                            .info
-                            .workspace_root
-                            .join(&applied_edit.metadata.path)
-                    };
-                    let formatted_content = match tokio::fs::read_to_string(&file_path).await {
-                        Ok(content) => content,
-                        Err(_) => continue,
-                    };
-
-                    let before_normalized = normalize_for_diff(&before_content);
-                    let formatted_normalized = normalize_for_diff(&formatted_content);
-
-                    if before_normalized == formatted_normalized {
-                        continue;
-                    }
-
-                    let raw_diff =
-                        similar::TextDiff::from_lines(&before_normalized, &formatted_normalized)
-                            .unified_diff()
-                            .to_string();
-                    let new_diff = trim_diff(&raw_diff);
-
-                    let diff_name = Path::new(diff_rel_path)
-                        .strip_prefix(crate::session_paths::ARTIFACTS_DIR_NAME)
-                        .unwrap_or(Path::new(diff_rel_path));
-                    let diff_full_path = run_state.info.artifacts_dir.join(diff_name);
-                    if std::fs::write(&diff_full_path, new_diff.as_bytes()).is_ok() {
-                        applied_edit.diff_digest =
-                            Some(blake3::hash(new_diff.as_bytes()).to_hex().to_string());
-                    }
-                }
+                refresh_formatted_diffs(
+                    &mut applied_edits,
+                    &run_state.info.workspace_root,
+                    &run_state.info.artifacts_dir,
+                )
+                .await;
 
                 // Compute digests and store EditApplied events AFTER formatting
                 // so new_file_digest matches the actual on-disk file content.
@@ -579,24 +520,24 @@ impl Coordinator {
                         before_rel_path: _,
                         deleted,
                     } = applied_edit;
-                    let new_file_digest = if *deleted {
-                        digest12(b"")
+                    let digest = if *deleted {
+                        Ok(digest12(b""))
                     } else {
-                        match workspace_file_digest(&run_state.info.workspace_root, &metadata.path)
-                        {
-                            Ok(new_file_digest) => new_file_digest,
-                            Err(reason) => {
-                                append_edit_rejected_event(
-                                    self.clock.as_ref(),
-                                    self.redactor.as_ref(),
-                                    run_state,
-                                    &task.tool_call_id,
-                                    metadata,
-                                    format!("failed to compute file digest: {reason}"),
-                                    request_correlation_id.as_deref(),
-                                )?;
-                                continue;
-                            }
+                        workspace_file_digest(&run_state.info.workspace_root, &metadata.path)
+                    };
+                    let new_file_digest = match digest {
+                        Ok(new_file_digest) => new_file_digest,
+                        Err(reason) => {
+                            append_edit_rejected_event(
+                                self.clock.as_ref(),
+                                self.redactor.as_ref(),
+                                run_state,
+                                &task.tool_call_id,
+                                metadata,
+                                format!("failed to compute file digest: {reason}"),
+                                request_correlation_id.as_deref(),
+                            )?;
+                            continue;
                         }
                     };
                     append_edit_applied_event(
@@ -1000,6 +941,67 @@ fn trim_diff(diff: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+async fn refresh_formatted_diffs(
+    applied_edits: &mut [AppliedToolEditMetadata],
+    workspace_root: &Path,
+    artifacts_dir: &Path,
+) {
+    // Regenerate diff artifacts to reflect post-format content,
+    // re-reading the file after
+    // formatting and regenerating the diff from the original
+    // pre-edit content vs the formatted file.
+    for applied_edit in applied_edits {
+        if applied_edit.deleted {
+            continue;
+        }
+        let Some(before_rel_path) = &applied_edit.before_rel_path else {
+            continue;
+        };
+        let Some(diff_rel_path) = &applied_edit.diff_rel_path else {
+            continue;
+        };
+
+        let before_name = Path::new(before_rel_path)
+            .strip_prefix(crate::session_paths::ARTIFACTS_DIR_NAME)
+            .unwrap_or(Path::new(before_rel_path));
+        let before_full_path = artifacts_dir.join(before_name);
+        let before_content = match tokio::fs::read_to_string(&before_full_path).await {
+            Ok(content) => content,
+            Err(_) => continue,
+        };
+
+        let file_path = if Path::new(&applied_edit.metadata.path).is_absolute() {
+            PathBuf::from(&applied_edit.metadata.path)
+        } else {
+            workspace_root.join(&applied_edit.metadata.path)
+        };
+        let formatted_content = match tokio::fs::read_to_string(&file_path).await {
+            Ok(content) => content,
+            Err(_) => continue,
+        };
+
+        let before_normalized = normalize_for_diff(&before_content);
+        let formatted_normalized = normalize_for_diff(&formatted_content);
+
+        if before_normalized == formatted_normalized {
+            continue;
+        }
+
+        let raw_diff = similar::TextDiff::from_lines(&before_normalized, &formatted_normalized)
+            .unified_diff()
+            .to_string();
+        let new_diff = trim_diff(&raw_diff);
+
+        let diff_name = Path::new(diff_rel_path)
+            .strip_prefix(crate::session_paths::ARTIFACTS_DIR_NAME)
+            .unwrap_or(Path::new(diff_rel_path));
+        let diff_full_path = artifacts_dir.join(diff_name);
+        if std::fs::write(&diff_full_path, new_diff.as_bytes()).is_ok() {
+            applied_edit.diff_digest = Some(blake3::hash(new_diff.as_bytes()).to_hex().to_string());
+        }
+    }
 }
 
 #[cfg(test)]
