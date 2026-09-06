@@ -91,6 +91,11 @@ pub(super) fn build_transcript_tool_call_section(
         let expanded = tool_output_expanded;
         let generic_output_visible = show_generic_tool_output || tool_output_expanded;
         let error_body = tool_error_text(tool_call);
+        let output_tone = if tool_call.status == ToolCallDisplayStatus::Failed {
+            TranscriptToolCallDetailTone::Error
+        } else {
+            TranscriptToolCallDetailTone::Primary
+        };
         let question_answers = resolved_question_answer_items(tool_call);
         let todo_items = todo_items_from_tool_call(tool_call, session_path);
         let mut header_path_metadata = None;
@@ -128,18 +133,12 @@ pub(super) fn build_transcript_tool_call_section(
                 let cmd = shell_tool_command(tool_call).unwrap_or_else(|| "Shell".to_string());
                 let shell_output = shell_tool_output(tool_call);
                 if let Some(output) = shell_output {
-                    push_collapsible_bash_panel_block(
+                    push_bash_panel_block(
                         &mut detail_blocks,
                         &cmd,
                         &output,
                         shell_tool_title_description(tool_call, session_path),
-                        HARNESS_BASH_OUTPUT_LINE_CLAMP,
-                        expanded,
-                        if tool_call.status == ToolCallDisplayStatus::Failed {
-                            TranscriptToolCallDetailTone::Error
-                        } else {
-                            TranscriptToolCallDetailTone::Primary
-                        },
+                        output_tone,
                     );
                     (
                         format!("Run {cmd}"),
@@ -459,22 +458,15 @@ pub(super) fn build_transcript_tool_call_section(
             ),
             _ => {
                 let title = generic_tool_title(tool_call, display_tool_id);
-                let generic_output = if tool_call.status == ToolCallDisplayStatus::Failed {
-                    error_body
-                        .as_deref()
-                        .or(tool_call.output_summary.as_deref())
-                } else {
-                    tool_call.output_summary.as_deref()
-                };
+                let generic_output = error_body
+                    .as_deref()
+                    .filter(|_| tool_call.status == ToolCallDisplayStatus::Failed)
+                    .or(tool_call.output_summary.as_deref());
                 if generic_output_visible && generic_output.is_some() {
                     push_collapsible_output_block(
                         &mut detail_blocks,
                         generic_output.unwrap_or_default(),
-                        if tool_call.status == ToolCallDisplayStatus::Failed {
-                            TranscriptToolCallDetailTone::Error
-                        } else {
-                            TranscriptToolCallDetailTone::Primary
-                        },
+                        output_tone,
                         HARNESS_GENERIC_OUTPUT_LINE_CLAMP,
                         expanded,
                     );
@@ -1219,22 +1211,18 @@ fn push_collapsible_output_block(
     }
 }
 
-fn push_collapsible_bash_panel_block(
+fn push_bash_panel_block(
     detail_blocks: &mut Vec<TranscriptToolCallDetailBlock>,
     command: &str,
     output: &str,
     description: Option<String>,
-    max_lines: usize,
-    expanded: bool,
     tone: TranscriptToolCallDetailTone,
 ) {
-    let preview = collapsible_bash_panel_preview(output, max_lines, expanded);
-
     detail_blocks.push(TranscriptToolCallDetailBlock::BashPanel {
         command: command.to_string(),
-        output: preview.output,
+        output: super::super::ui_tool_output::safe_tool_text(output),
         description,
-        expand_hint: preview.expand_hint.map(str::to_string),
+        expand_hint: None,
         tone,
     });
 }

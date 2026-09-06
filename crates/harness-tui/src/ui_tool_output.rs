@@ -28,12 +28,24 @@ pub(super) fn collapsible_output_preview(
     collapsible_preview_for_text(&formatted, max_lines, expanded)
 }
 
-pub(super) fn collapsible_bash_panel_preview(
-    output: &str,
-    max_lines: usize,
+pub(super) fn measured_output_preview(
+    mut rows: Vec<ratatui::text::Line<'static>>,
+    (first, last): (usize, usize),
     expanded: bool,
-) -> CollapsibleOutputPreview {
-    collapsible_preview_for_text(output, max_lines, expanded)
+) -> (Vec<ratatui::text::Line<'static>>, Option<&'static str>) {
+    let overflow = rows.len() > first.saturating_add(last);
+    if overflow && !expanded {
+        let end = rows.len().saturating_sub(last);
+        rows.splice(first..end, [ratatui::text::Line::from("…")]);
+    }
+    (
+        rows,
+        overflow.then_some(if expanded {
+            "Click to collapse"
+        } else {
+            "Click to expand"
+        }),
+    )
 }
 
 fn collapsible_preview_for_text(

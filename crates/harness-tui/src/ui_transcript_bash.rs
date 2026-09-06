@@ -21,7 +21,6 @@ use super::ui_transcript_surface::{
 };
 
 pub(super) const TRANSCRIPT_COMMAND_TOOL_INDENT: &str = "   ";
-pub(super) const HARNESS_BASH_OUTPUT_LINE_CLAMP: usize = 15;
 const HARNESS_BLOCK_TOOL_PADDING_LEFT: usize = 2;
 const HARNESS_BLOCK_TOOL_GAP: usize = 1;
 
@@ -29,7 +28,7 @@ pub(super) struct HarnessBashPanel<'a> {
     pub(super) command: &'a str,
     pub(super) output: &'a str,
     pub(super) description: Option<&'a str>,
-    pub(super) expand_hint: Option<&'a str>,
+    pub(super) expanded: bool,
     pub(super) tone: TranscriptToolCallDetailTone,
 }
 
@@ -45,16 +44,7 @@ pub(super) fn append_harness_bash_panel(
     let panel_width = usize::from(available_width)
         .saturating_sub(prefix_width)
         .max(HARNESS_BLOCK_TOOL_PADDING_LEFT + 1);
-    let card_lines = harness_bash_card_lines(
-        panel.command,
-        panel.output,
-        panel.description,
-        panel.expand_hint,
-        panel.tone,
-        theme,
-        panel_width,
-        surface,
-    );
+    let card_lines = harness_bash_card_lines(panel, theme, panel_width, surface);
     append_prebuilt_surface_lines(
         lines,
         TRANSCRIPT_COMMAND_TOOL_INDENT,
@@ -185,15 +175,18 @@ fn shell_tool_structured_output(output_json: Option<&serde_json::Value>) -> Opti
 }
 
 fn harness_bash_card_lines(
-    command: &str,
-    output: &str,
-    description: Option<&str>,
-    expand_hint: Option<&str>,
-    tone: TranscriptToolCallDetailTone,
+    panel: HarnessBashPanel<'_>,
     theme: &Theme,
     panel_width: usize,
     surface: Color,
 ) -> Vec<Line<'static>> {
+    let HarnessBashPanel {
+        command,
+        output,
+        description,
+        expanded,
+        tone,
+    } = panel;
     let mut lines = Vec::new();
     let body_padding_left = if command.trim().is_empty() {
         HARNESS_BLOCK_TOOL_PADDING_LEFT + 2
@@ -228,19 +221,37 @@ fn harness_bash_card_lines(
         );
     }
 
+    let output = super::ui_tool_output::safe_tool_text(output);
     let output = output.trim();
+    let mut output_rows = Vec::new();
+    append_harness_bash_rows(
+        &mut output_rows,
+        output,
+        harness_bash_output_style(tone, theme),
+        panel_width,
+        body_padding_left,
+        surface,
+    );
+    let (output_rows, expand_hint) =
+        super::ui_tool_output::measured_output_preview(output_rows, (2, 3), expanded);
     if !output.is_empty() {
         for _ in 0..HARNESS_BLOCK_TOOL_GAP {
             lines.push(harness_bash_padding_line(surface));
         }
-        append_harness_bash_rows(
-            &mut lines,
-            output,
-            harness_bash_output_style(tone, theme),
-            panel_width,
-            body_padding_left,
-            surface,
-        );
+        for row in output_rows {
+            if row.spans.len() == 1 && row.spans[0].content == "…" {
+                append_harness_bash_rows(
+                    &mut lines,
+                    "…",
+                    theme_muted_style(theme),
+                    panel_width,
+                    body_padding_left,
+                    surface,
+                );
+            } else {
+                lines.push(row);
+            }
+        }
     }
 
     if let Some(expand_hint) = expand_hint.filter(|hint| has_trimmed_content(hint)) {
@@ -275,6 +286,10 @@ fn harness_bash_output_style(_tone: TranscriptToolCallDetailTone, theme: &Theme)
     Style::default().fg(theme.text.primary)
 }
 
+fn theme_muted_style(theme: &Theme) -> Style {
+    Style::default().fg(theme.text.secondary)
+}
+
 fn append_harness_bash_rows(
     lines: &mut Vec<Line<'static>>,
     text: &str,
@@ -284,6 +299,7 @@ fn append_harness_bash_rows(
     surface: Color,
 ) {
     let content_width = panel_width.saturating_sub(padding_left).max(1);
+    let text = super::ui_tool_output::safe_tool_text(text);
     let rows = if text.is_empty() {
         vec![String::new()]
     } else {
@@ -369,11 +385,13 @@ mod tests {
         // arrange
         // act
         let lines = harness_bash_card_lines(
-            "",
-            "stdout",
-            None,
-            None,
-            TranscriptToolCallDetailTone::Primary,
+            HarnessBashPanel {
+                command: "",
+                output: "stdout",
+                description: None,
+                expanded: false,
+                tone: TranscriptToolCallDetailTone::Primary,
+            },
             &Theme::default(),
             80,
             Color::Reset,
@@ -387,5 +405,32 @@ mod tests {
         // assert
         assert!(!rendered.contains("$ "));
         assert!(rendered.contains("stdout"));
+
+        let output = (1..=12)
+            .map(|line| format!("row-{line:02}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        for expanded in [false, true] {
+            let rows = harness_bash_card_lines(
+                HarnessBashPanel {
+                    command: "cargo test",
+                    output: &output,
+                    description: None,
+                    expanded,
+                    tone: TranscriptToolCallDetailTone::Primary,
+                },
+                &Theme::default(),
+                80,
+                Color::Reset,
+            );
+            let text = rows
+                .iter()
+                .flat_map(|line| &line.spans)
+                .map(|span| span.content.as_ref())
+                .collect::<String>();
+            assert!(text.contains("row-02") && text.contains("row-10") && text.contains("row-12"));
+            assert_eq!(text.contains("row-03"), expanded, "{text}");
+            assert_eq!(text.matches("$ cargo test").count(), 1);
+        }
     }
 }
