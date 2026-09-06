@@ -122,6 +122,10 @@ pub(super) fn transcript_turn_sections_render_open_rail_surfaces() {
         "transcript turn bodies stay rail-free; bordered composer chrome is separate\n{rendered}"
     );
 
+    assert_transcript_follow_and_scroll_back();
+}
+
+fn assert_transcript_follow_and_scroll_back() {
     let mut follow_app = app::AppState::new_live(None, false, None);
     follow_app.activities = std::collections::VecDeque::from(
         (0..8)

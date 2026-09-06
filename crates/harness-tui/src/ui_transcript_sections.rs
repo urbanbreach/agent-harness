@@ -536,6 +536,58 @@ impl BuiltTranscriptAssistantParts {
     }
 }
 
+fn append_committed_parts(
+    committed_parts: &[harness_core::session::AssistantPart],
+    parts: &mut Vec<SequencedTranscriptAssistantPart>,
+    next_index: &mut usize,
+    pending_tool_calls: &mut std::collections::BTreeMap<String, TranscriptOrderedToolCallSection>,
+    seq: u64,
+    thinking_visible: bool,
+) -> (bool, bool, bool) {
+    let mut saw_reasoning = false;
+    let mut saw_body = false;
+    let mut saw_tool = false;
+    for part in committed_parts {
+        match part {
+            harness_core::session::AssistantPart::Reasoning { text } if thinking_visible => {
+                saw_reasoning = true;
+                push_sequenced_text_part(
+                    parts,
+                    next_index,
+                    seq,
+                    TranscriptAssistantTextKind::Reasoning,
+                    text,
+                );
+            }
+            harness_core::session::AssistantPart::Reasoning { .. } => {}
+            harness_core::session::AssistantPart::Text { text } => {
+                saw_body = true;
+                push_sequenced_text_part(
+                    parts,
+                    next_index,
+                    seq,
+                    TranscriptAssistantTextKind::Body,
+                    text,
+                );
+            }
+            harness_core::session::AssistantPart::ToolCall(tool_call) => {
+                saw_tool = true;
+                settle_trailing_body(parts);
+                if let Some(tool_call) = pending_tool_calls.remove(tool_call.tool_call_id.as_str())
+                {
+                    parts.push(SequencedTranscriptAssistantPart {
+                        seq,
+                        index: *next_index,
+                        part: TranscriptAssistantPart::ToolCall(Box::new(tool_call.section)),
+                    });
+                    *next_index += 1;
+                }
+            }
+        }
+    }
+    (saw_reasoning, saw_body, saw_tool)
+}
+
 fn build_ordered_assistant_parts_from_events(
     activity: &ActivityEntry,
     app: &AppState,
@@ -615,49 +667,17 @@ fn build_ordered_assistant_parts_from_events(
                     &mut saw_body_event,
                 );
                 settle_trailing_body(&mut parts);
-                for committed_part in &data.parts {
-                    match committed_part {
-                        harness_core::session::AssistantPart::Reasoning { text }
-                            if thinking_visible =>
-                        {
-                            saw_reasoning_event = true;
-                            push_sequenced_text_part(
-                                &mut parts,
-                                &mut next_index,
-                                event.seq,
-                                TranscriptAssistantTextKind::Reasoning,
-                                text,
-                            );
-                        }
-                        harness_core::session::AssistantPart::Reasoning { .. } => {}
-                        harness_core::session::AssistantPart::Text { text } => {
-                            saw_body_event = true;
-                            push_sequenced_text_part(
-                                &mut parts,
-                                &mut next_index,
-                                event.seq,
-                                TranscriptAssistantTextKind::Body,
-                                text,
-                            );
-                        }
-                        harness_core::session::AssistantPart::ToolCall(tool_call) => {
-                            saw_tool_call = true;
-                            settle_trailing_body(&mut parts);
-                            if let Some(tool_call) =
-                                pending_tool_calls.remove(tool_call.tool_call_id.as_str())
-                            {
-                                parts.push(SequencedTranscriptAssistantPart {
-                                    seq: event.seq,
-                                    index: next_index,
-                                    part: TranscriptAssistantPart::ToolCall(Box::new(
-                                        tool_call.section,
-                                    )),
-                                });
-                                next_index += 1;
-                            }
-                        }
-                    }
-                }
+                let (reasoning, body, tools) = append_committed_parts(
+                    &data.parts,
+                    &mut parts,
+                    &mut next_index,
+                    &mut pending_tool_calls,
+                    event.seq,
+                    thinking_visible,
+                );
+                saw_reasoning_event |= reasoning;
+                saw_body_event |= body;
+                saw_tool_call |= tools;
                 settle_all_streaming_bodies(&mut parts);
             }
             harness_core::event::EventV1::TaskCompleted(data)
