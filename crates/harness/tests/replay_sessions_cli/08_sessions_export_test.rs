@@ -165,6 +165,10 @@ fn sessions_export_cli_writes_json_bundle() {
         .unwrap_or_abort()
         .iter()
         .any(|permission| permission["decision"] == "allow"));
+    assert_exported_task_route(route_metadata);
+}
+
+fn assert_exported_task_route(route_metadata: &[serde_json::Value]) {
     let task_route = route_metadata
         .iter()
         .find(|entry| entry["source"] == "task_output")
@@ -346,6 +350,10 @@ fn sessions_export_cli_support_includes_readiness_and_config_summaries() {
                 && entry["status"] == "disabled"
                 && entry["body_loaded"] == false
         }));
+    assert_exported_support_summaries(&bundle);
+}
+
+fn assert_exported_support_summaries(bundle: &serde_json::Value) {
     assert_eq!(
         bundle["support"]["skill_catalog_summary"]["source"],
         "harness_tools::skill_catalog"
