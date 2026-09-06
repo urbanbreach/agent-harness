@@ -330,42 +330,40 @@ impl StdioMcpSession {
 
             if line.to_ascii_lowercase().starts_with("content-length:") {
                 let length = parse_content_length(&line)?;
-                loop {
-                    let mut header_line = String::new();
-                    let header_read =
-                        timeout(self.timeout, self.stdout.read_line(&mut header_line))
-                            .await
-                            .map_err(|_| {
-                                ToolError::Execution("MCP stdio read timed out".to_string())
-                            })?
-                            .map_err(|err| {
-                                ToolError::Execution(format!("failed to read MCP header: {err}"))
-                            })?;
-                    if header_read == 0 {
-                        return Err(ToolError::Execution(
-                            "MCP stdio server closed before message body".to_string(),
-                        ));
-                    }
-                    if header_line == "\n" || header_line == "\r\n" {
-                        break;
-                    }
-                }
-                let mut body = vec![0_u8; length];
-                timeout(self.timeout, self.stdout.read_exact(&mut body))
-                    .await
-                    .map_err(|_| ToolError::Execution("MCP stdio read timed out".to_string()))?
-                    .map_err(|err| {
-                        ToolError::Execution(format!("failed to read MCP message body: {err}"))
-                    })?;
-                return serde_json::from_slice(&body).map_err(|err| {
-                    ToolError::Execution(format!("failed to parse MCP message body: {err}"))
-                });
+                return self.read_framed_message(length).await;
             }
 
             return serde_json::from_str(line.trim()).map_err(|err| {
                 ToolError::Execution(format!("failed to parse MCP stdio message: {err}"))
             });
         }
+    }
+
+    async fn read_framed_message(&mut self, length: usize) -> Result<Value, ToolError> {
+        loop {
+            let mut header_line = String::new();
+            let header_read = timeout(self.timeout, self.stdout.read_line(&mut header_line))
+                .await
+                .map_err(|_| ToolError::Execution("MCP stdio read timed out".to_string()))?
+                .map_err(|err| ToolError::Execution(format!("failed to read MCP header: {err}")))?;
+            if header_read == 0 {
+                return Err(ToolError::Execution(
+                    "MCP stdio server closed before message body".to_string(),
+                ));
+            }
+            if header_line == "\n" || header_line == "\r\n" {
+                break;
+            }
+        }
+        let mut body = vec![0_u8; length];
+        timeout(self.timeout, self.stdout.read_exact(&mut body))
+            .await
+            .map_err(|_| ToolError::Execution("MCP stdio read timed out".to_string()))?
+            .map_err(|err| {
+                ToolError::Execution(format!("failed to read MCP message body: {err}"))
+            })?;
+        serde_json::from_slice(&body)
+            .map_err(|err| ToolError::Execution(format!("failed to parse MCP message body: {err}")))
     }
 
     fn next_request_id(&mut self) -> String {
@@ -746,6 +744,60 @@ mod tests {
         let mut bytes = serde_json::to_vec(&body).unwrap_or_abort();
         bytes.push(b'\n');
         bytes
+    }
+
+    fn session_with_output(output: &str) -> StdioMcpSession {
+        StdioMcpSession {
+            child: Box::new(FakeStdioMcpChild),
+            stdin: Box::new(Vec::<u8>::new()),
+            stdout: tokio::io::BufReader::new(Box::new(io::Cursor::new(
+                output.as_bytes().to_vec(),
+            ))),
+            next_id: 1,
+            timeout: std::time::Duration::from_secs(1),
+            metadata: super::McpSessionMetadata::default(),
+        }
+    }
+
+    #[tokio::test]
+    async fn stdio_framed_message_skips_extra_headers_and_preserves_next_message() {
+        let mut session = session_with_output(
+            "\nContent-Length: 2\r\nContent-Type: application/json\r\n\r\n{}\n[]\n",
+        );
+
+        let first = session.read_message().await.unwrap_or_abort();
+        let second = session.read_message().await.unwrap_or_abort();
+
+        assert_eq!(
+            (first, second),
+            (serde_json::json!({}), serde_json::json!([]))
+        );
+    }
+
+    #[tokio::test]
+    async fn stdio_framed_message_rejects_eof_before_header_separator() {
+        let mut session = session_with_output("Content-Length: 2\n");
+
+        let error = session.read_message().await.expect_err("header EOF");
+
+        assert!(matches!(
+            error,
+            harness_core::tool::ToolError::Execution(message)
+                if message == "MCP stdio server closed before message body"
+        ));
+    }
+
+    #[tokio::test]
+    async fn stdio_framed_message_rejects_truncated_body() {
+        let mut session = session_with_output("Content-Length: 2\n\n{");
+
+        let error = session.read_message().await.expect_err("body EOF");
+
+        assert!(matches!(
+            error,
+            harness_core::tool::ToolError::Execution(message)
+                if message.starts_with("failed to read MCP message body:")
+        ));
     }
 
     #[tokio::test]
