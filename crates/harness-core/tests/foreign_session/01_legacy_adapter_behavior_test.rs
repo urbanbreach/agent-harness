@@ -280,40 +280,7 @@ fn legacy_adapter_preserves_full_provenance_without_writing_source() {
         &path[1].payload,
         SessionEntryPayload::UserMessage { text, .. } if text == "redacted prompt"
     ));
-    assert!(
-        matches!(
-            &path[2].payload,
-            SessionEntryPayload::AssistantMessage { .. }
-        ),
-        "assistant should follow the inferred uncorrelated provider prompt"
-    );
-    let SessionEntryPayload::AssistantMessage { parts, provenance } = &path[2].payload else {
-        return;
-    };
-    assert_eq!(
-        parts,
-        &[AssistantPart::Text {
-            text: "完了".to_string(),
-        }]
-    );
-    assert!(
-        provenance.is_some(),
-        "legacy assistant should retain sanitized provenance"
-    );
-    let Some(provenance) = provenance else {
-        return;
-    };
-    assert_eq!(provenance.provider_id, "mock");
-    assert_eq!(provenance.model_id, "model-unicode");
-    assert_eq!(provenance.stop_reason.as_deref(), Some("stop"));
-    assert_eq!(
-        provenance.usage,
-        Some(harness_providers::CompletionUsage {
-            prompt_tokens: 21,
-            completion_tokens: 8,
-            total_tokens: 29,
-        })
-    );
+    assert_legacy_assistant_provenance(&path[2].payload);
     assert_eq!(fs::read(&source_path).unwrap_or_abort(), before_bytes);
     let after_inventory = fs::read_dir(root.path())
         .unwrap_or_abort()
@@ -328,6 +295,38 @@ fn legacy_adapter_preserves_full_provenance_without_writing_source() {
     };
     after_inventory.sort();
     assert_eq!(after_inventory, before_inventory);
+}
+
+fn assert_legacy_assistant_provenance(payload: &SessionEntryPayload) {
+    assert!(
+        matches!(payload, SessionEntryPayload::AssistantMessage { .. }),
+        "assistant should follow the inferred uncorrelated provider prompt"
+    );
+    let SessionEntryPayload::AssistantMessage { parts, provenance } = payload else {
+        return;
+    };
+    assert_eq!(
+        parts,
+        &[AssistantPart::Text {
+            text: "完了".to_string(),
+        }]
+    );
+    assert!(
+        provenance.is_some(),
+        "legacy assistant should retain sanitized provenance"
+    );
+    let provenance = provenance.as_ref().unwrap_or_abort();
+    assert_eq!(provenance.provider_id, "mock");
+    assert_eq!(provenance.model_id, "model-unicode");
+    assert_eq!(provenance.stop_reason.as_deref(), Some("stop"));
+    assert_eq!(
+        provenance.usage,
+        Some(harness_providers::CompletionUsage {
+            prompt_tokens: 21,
+            completion_tokens: 8,
+            total_tokens: 29,
+        })
+    );
 }
 
 #[test]

@@ -85,18 +85,16 @@ impl LegacyEventLogAdapter {
             .iter()
             .enumerate()
             .map(|(index, event)| {
-                if ownership.event_belongs_to(event, agent_id) {
-                    boundary.classify(event).map(|mut fact| {
-                        if is_intermediate_terminal(events, index) {
-                            fact.kind = LegacyFactKind::Noop;
-                        }
-                        fact
-                    })
-                } else {
-                    Ok(LegacyBoundary::fact(event, LegacyFactKind::Noop))
+                if !ownership.event_belongs_to(event, agent_id) {
+                    return Ok(LegacyBoundary::fact(event, LegacyFactKind::Noop));
                 }
+                let mut fact = boundary.classify(event)?;
+                if is_intermediate_terminal(events, index) {
+                    fact.kind = LegacyFactKind::Noop;
+                }
+                Ok(fact)
             })
-            .collect::<Result<Vec<_>, _>>()?;
+            .collect::<Result<Vec<_>, LegacyAdapterError>>()?;
         super::projection::project_facts(run_id, &facts, boundary.warnings, false)
     }
 }
