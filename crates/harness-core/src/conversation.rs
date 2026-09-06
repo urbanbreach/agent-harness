@@ -216,22 +216,23 @@ pub fn project_conversation(
 
     for event in events.iter().filter(|event| event.seq > skip_through_seq) {
         if let Some(fragment) = canonical_provider_fragment_for_event(event) {
-            if fragment.kind == CanonicalProviderFragmentKind::Text {
-                if !started_provider_requests.contains(fragment.request_id) {
-                    return Err(ConversationProjectionError::ProviderDeltaBeforeStart {
-                        request_id: fragment.request_id.to_string(),
-                        seq: event.seq,
-                    });
-                }
-                let request_id = provider_turn_request_id(event, fragment.request_id);
-                let state_key = fragment.request_id.to_string();
-                let state = request_states.entry(state_key.clone()).or_default();
-                state.assistant.request_id = request_id.into();
-                state.assistant.text.push_str(fragment.delta);
-                state.assistant.last_seq = Some(event.seq);
-                if emitted_assistants.insert(state_key.clone()) {
-                    request_order.push(OrderedConversationItem::Assistant(state_key));
-                }
+            if fragment.kind != CanonicalProviderFragmentKind::Text {
+                continue;
+            }
+            if !started_provider_requests.contains(fragment.request_id) {
+                return Err(ConversationProjectionError::ProviderDeltaBeforeStart {
+                    request_id: fragment.request_id.to_string(),
+                    seq: event.seq,
+                });
+            }
+            let request_id = provider_turn_request_id(event, fragment.request_id);
+            let state_key = fragment.request_id.to_string();
+            let state = request_states.entry(state_key.clone()).or_default();
+            state.assistant.request_id = request_id.into();
+            state.assistant.text.push_str(fragment.delta);
+            state.assistant.last_seq = Some(event.seq);
+            if emitted_assistants.insert(state_key.clone()) {
+                request_order.push(OrderedConversationItem::Assistant(state_key));
             }
             continue;
         }
@@ -279,36 +280,7 @@ pub fn project_conversation(
                 let state_key = payload.request_id.to_string();
                 let state = request_states.entry(state_key.clone()).or_default();
                 state.assistant.request_id = request_id.into();
-                if !payload.parts.is_empty() {
-                    state.semantic_parts_authoritative = true;
-                    state.semantic_tool_requests_seen = 0;
-                    state.assistant.text.clear();
-                    state.tool_calls.clear();
-                    for part in &payload.parts {
-                        match part {
-                            AssistantPart::Text { text } => state.assistant.text.push_str(text),
-                            AssistantPart::Reasoning { .. } => {}
-                            AssistantPart::ToolCall(tool_call) => {
-                                state.tool_calls.push(ConversationToolCall {
-                                    tool_call_id: tool_call.tool_call_id.clone(),
-                                    tool_id: tool_call.tool_id.clone(),
-                                    args_summary: tool_call.args_summary.clone(),
-                                    args_digest: tool_call.args_digest.clone(),
-                                    seq: Some(event.seq),
-                                    metadata: None,
-                                });
-                            }
-                        }
-                    }
-                    if let Some(provenance) = payload.provenance.as_ref() {
-                        state.assistant.provider_id = Some(provenance.provider_id.clone());
-                        state.assistant.model_id = Some(provenance.model_id.clone());
-                        state
-                            .assistant
-                            .stop_reason
-                            .clone_from(&provenance.stop_reason);
-                    }
-                }
+                state.apply_semantic_parts(payload, event.seq);
                 state.assistant.last_seq = Some(event.seq);
                 if emitted_assistants.insert(state_key.clone()) {
                     request_order.push(OrderedConversationItem::Assistant(state_key));
@@ -342,8 +314,6 @@ pub fn project_conversation(
                         tool_call.tool_call_id = payload.tool_call_id.clone();
                         tool_call.seq = Some(event.seq);
                         tool_call.metadata.clone_from(&payload.metadata);
-                        state.semantic_tool_requests_seen =
-                            state.semantic_tool_requests_seen.saturating_add(1);
                     }
                 } else {
                     state.tool_calls.push(ConversationToolCall {
@@ -381,12 +351,12 @@ pub fn project_conversation(
     for item in request_order {
         match item {
             OrderedConversationItem::User(request_id) => {
-                if let Some(user) = request_states
-                    .get(&request_id)
-                    .and_then(|state| state.user.clone())
-                {
-                    projection.messages.push(ConversationMessage::User(user));
-                }
+                projection.messages.extend(
+                    request_states
+                        .get(&request_id)
+                        .and_then(|state| state.user.clone())
+                        .map(ConversationMessage::User),
+                );
             }
             OrderedConversationItem::Assistant(request_id) => {
                 let Some(state) = request_states.get(&request_id) else {
@@ -506,7 +476,44 @@ struct RequestProjectionState {
     assistant: ConversationAssistantMessage,
     tool_calls: Vec<ConversationToolCall>,
     semantic_parts_authoritative: bool,
-    semantic_tool_requests_seen: usize,
+}
+
+impl RequestProjectionState {
+    fn apply_semantic_parts(
+        &mut self,
+        payload: &crate::event::AssistantMessageFinishedEvent,
+        seq: u64,
+    ) {
+        if payload.parts.is_empty() {
+            return;
+        }
+        self.semantic_parts_authoritative = true;
+        self.assistant.text.clear();
+        self.tool_calls.clear();
+        for part in &payload.parts {
+            match part {
+                AssistantPart::Text { text } => self.assistant.text.push_str(text),
+                AssistantPart::Reasoning { .. } => {}
+                AssistantPart::ToolCall(tool_call) => {
+                    self.tool_calls.push(ConversationToolCall {
+                        tool_call_id: tool_call.tool_call_id.clone(),
+                        tool_id: tool_call.tool_id.clone(),
+                        args_summary: tool_call.args_summary.clone(),
+                        args_digest: tool_call.args_digest.clone(),
+                        seq: Some(seq),
+                        metadata: None,
+                    });
+                }
+            }
+        }
+        if let Some(provenance) = &payload.provenance {
+            self.assistant.provider_id = Some(provenance.provider_id.clone());
+            self.assistant.model_id = Some(provenance.model_id.clone());
+            self.assistant
+                .stop_reason
+                .clone_from(&provenance.stop_reason);
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

@@ -243,7 +243,7 @@ async fn runtime_subscription_delivers_live_deltas_without_replay() {
         .await
         .unwrap_or_abort();
     let store = coordinator.event_store().await.unwrap_or_abort();
-    let mut runtime = store.subscribe_runtime(1).unwrap_or_abort();
+    let runtime = store.subscribe_runtime(1).unwrap_or_abort();
 
     // act
     let request_id = coordinator
@@ -251,27 +251,23 @@ async fn runtime_subscription_delivers_live_deltas_without_replay() {
         .await
         .unwrap_or_abort();
     let mut live_text = String::new();
-    tokio::time::timeout(Duration::from_secs(2), async {
-        loop {
-            match runtime.next().await.unwrap_or_abort().unwrap_or_abort() {
-                harness_core::event::RuntimeEvent::Live(event) => {
-                    if let harness_core::event::LiveEventV1::ProviderTextDelta { delta, .. } =
-                        &event.payload
-                    {
-                        live_text.push_str(delta);
-                    }
+    let mut completed_events = runtime
+        .map(|event| event.unwrap_or_abort())
+        .filter(|event| match event {
+            harness_core::event::RuntimeEvent::Live(event) => match &event.payload {
+                harness_core::event::LiveEventV1::ProviderTextDelta { delta, .. } => {
+                    live_text.push_str(delta);
+                    false
                 }
-                harness_core::event::RuntimeEvent::Durable(event)
-                    if event.correlation_id.as_deref() == Some(request_id.as_str())
-                        && matches!(event.payload, EventV1::TaskCompleted(_)) =>
-                {
-                    break;
-                }
-                harness_core::event::RuntimeEvent::Durable(_) => {}
-            }
-        }
-    })
+                _ => false,
+            },
+            harness_core::event::RuntimeEvent::Durable(event) =>
+                event.correlation_id.as_deref() == Some(request_id.as_str())
+                    && matches!(event.payload, EventV1::TaskCompleted(_)),
+        });
+    tokio::time::timeout(Duration::from_secs(2), completed_events.next())
     .await
+    .unwrap_or_abort()
     .unwrap_or_abort();
     coordinator.stop_run().await.unwrap_or_abort();
     let events = load_events(&run.events_path);
