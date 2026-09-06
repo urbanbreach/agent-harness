@@ -143,7 +143,13 @@ pub(super) fn footer_content(
             let tool_id = tool.map_or_else(|| "tool".into(), |tool| tool.header.tool_id.clone());
             let label = tool.map_or_else(
                 || "Run tool".into(),
-                |tool| format!("Run {}", tool.header.title),
+                |tool| {
+                    if matches!(tool.header.tool_id.as_str(), "bash" | "shell.run") {
+                        tool.header.title.clone()
+                    } else {
+                        format!("Run {}", tool.header.title)
+                    }
+                },
             );
             TranscriptFooterContent::Permission {
                 tool_id,

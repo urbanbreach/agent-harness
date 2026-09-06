@@ -2046,7 +2046,13 @@ fn pending_permission_tool_waiting(turn: &TranscriptTurnSection) -> Option<Strin
         } else {
             title.to_string()
         };
-        return Some(format!("Run {label}"));
+        return Some(
+            if matches!(tool.header.tool_id.as_str(), "bash" | "shell.run") {
+                label
+            } else {
+                format!("Run {label}")
+            },
+        );
     }
     None
 }
