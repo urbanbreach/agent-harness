@@ -992,18 +992,21 @@ fn allow_all_policy_evaluates_all_kinds_correctly() {
 fn reset_to_default_policy_evaluates_all_kinds_correctly() {
     let policy =
         permission_policy_for_resolution(PermissionModeResolution::ResetToDefault).unwrap();
-    assert!(matches!(
-        policy.evaluate(None, PermissionKind::EditFs),
-        PolicyDecision::Ask { .. }
-    ));
-    assert!(matches!(
-        policy.evaluate(None, PermissionKind::Shell),
-        PolicyDecision::Ask { .. }
-    ));
-    assert!(matches!(
-        policy.evaluate(None, PermissionKind::Network),
-        PolicyDecision::Ask { .. }
-    ));
+    for kind in [
+        PermissionKind::EditFs,
+        PermissionKind::Shell,
+        PermissionKind::Network,
+        PermissionKind::WebFetch,
+        PermissionKind::WebSearch,
+        PermissionKind::CodeSearch,
+        PermissionKind::ExternalDirectory,
+        PermissionKind::DoomLoop,
+    ] {
+        assert!(
+            matches!(policy.evaluate(None, kind), PolicyDecision::Ask { .. }),
+            "expected Ask for {kind:?}"
+        );
+    }
     assert_eq!(
         policy.evaluate(None, PermissionKind::Question),
         PolicyDecision::Deny
@@ -1012,18 +1015,6 @@ fn reset_to_default_policy_evaluates_all_kinds_correctly() {
         policy.evaluate(None, PermissionKind::Task),
         PolicyDecision::Allow
     );
-    assert!(matches!(
-        policy.evaluate(None, PermissionKind::WebFetch),
-        PolicyDecision::Ask { .. }
-    ));
-    assert!(matches!(
-        policy.evaluate(None, PermissionKind::WebSearch),
-        PolicyDecision::Ask { .. }
-    ));
-    assert!(matches!(
-        policy.evaluate(None, PermissionKind::CodeSearch),
-        PolicyDecision::Ask { .. }
-    ));
     assert_eq!(
         policy.evaluate(None, PermissionKind::Lsp),
         PolicyDecision::Allow
@@ -1032,14 +1023,6 @@ fn reset_to_default_policy_evaluates_all_kinds_correctly() {
         policy.evaluate(None, PermissionKind::Read),
         PolicyDecision::Allow
     );
-    assert!(matches!(
-        policy.evaluate(None, PermissionKind::ExternalDirectory),
-        PolicyDecision::Ask { .. }
-    ));
-    assert!(matches!(
-        policy.evaluate(None, PermissionKind::DoomLoop),
-        PolicyDecision::Ask { .. }
-    ));
 }
 
 #[test]
