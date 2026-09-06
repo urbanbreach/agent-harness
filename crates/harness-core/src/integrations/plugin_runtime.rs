@@ -217,25 +217,20 @@ impl PluginRuntimeContract {
         if actual_id.as_deref() != Some(plugin_id) {
             if let Some(wrong_id) = &actual_id {
                 if let Err(remove_err) = self.registry.remove(wrong_id) {
-                    let rollback_error = match self.rollback_upgrade(
+                    let restoration = self.rollback_upgrade(
                         plugin_id,
                         &old_package_root,
                         was_enabled,
                         permission,
                         event_checkpoint,
                         format!("replacement has wrong id: expected {plugin_id}, got {wrong_id}"),
-                    ) {
-                        Ok(()) => remove_err.to_string(),
-                        Err(rollback_err) => {
-                            format!("{remove_err}; restoration also failed: {rollback_err}")
-                        }
-                    };
+                    );
                     return Err(PluginRuntimeError::UpgradeRollbackFailed {
                         id: plugin_id.to_string(),
                         original_error: format!(
                             "replacement has wrong id: expected {plugin_id}, got {wrong_id}"
                         ),
-                        rollback_error,
+                        rollback_error: upgrade_rollback_error(&remove_err, restoration),
                     });
                 }
             }
@@ -259,23 +254,18 @@ impl PluginRuntimeContract {
         if was_enabled {
             if let Err(activate_err) = self.registry.activate(plugin_id, permission) {
                 if let Err(remove_err) = self.registry.remove(plugin_id) {
-                    let rollback_error = match self.rollback_upgrade(
+                    let restoration = self.rollback_upgrade(
                         plugin_id,
                         &old_package_root,
                         was_enabled,
                         permission,
                         event_checkpoint,
                         activate_err.to_string(),
-                    ) {
-                        Ok(()) => remove_err.to_string(),
-                        Err(rollback_err) => {
-                            format!("{remove_err}; restoration also failed: {rollback_err}")
-                        }
-                    };
+                    );
                     return Err(PluginRuntimeError::UpgradeRollbackFailed {
                         id: plugin_id.to_string(),
                         original_error: activate_err.to_string(),
-                        rollback_error,
+                        rollback_error: upgrade_rollback_error(&remove_err, restoration),
                     });
                 }
                 self.rollback_upgrade(
@@ -343,5 +333,15 @@ impl PluginRuntimeContract {
 
     pub fn persist_if_durable(&self) -> Result<(), PluginRuntimeError> {
         Ok(self.registry.persist_if_durable()?)
+    }
+}
+
+fn upgrade_rollback_error(
+    remove_error: &PluginLifecycleError,
+    restoration: Result<(), PluginRuntimeError>,
+) -> String {
+    match restoration {
+        Ok(()) => remove_error.to_string(),
+        Err(error) => format!("{remove_error}; restoration also failed: {error}"),
     }
 }
