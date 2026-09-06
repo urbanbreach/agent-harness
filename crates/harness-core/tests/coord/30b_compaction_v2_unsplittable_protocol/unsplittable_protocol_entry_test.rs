@@ -58,12 +58,11 @@ async fn compaction_v2_unsplittable_protocol_entry_preserves_boundary() {
             .flatten()
             .map(|call| call.tool_call_id.as_str())
             .collect::<Vec<_>>();
-        request.messages.iter().all(|message| {
-            message
-                .tool_call_id
-                .as_deref()
-                .is_none_or(|result_id| call_ids.contains(&result_id))
-        })
+        request
+            .messages
+            .iter()
+            .filter_map(|message| message.tool_call_id.as_deref())
+            .all(|result_id| call_ids.contains(&result_id))
     });
     assert!(
         protocol_is_complete,
