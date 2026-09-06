@@ -56,6 +56,26 @@ pub(super) fn build_tool_call_section(
     Some(section)
 }
 
+fn read_output_block(
+    tool_call: &crate::app::ToolCallEntry,
+) -> Option<TranscriptToolCallDetailBlock> {
+    let display = tool_call
+        .output_json
+        .as_ref()
+        .and_then(|value| value.pointer("/metadata/display"));
+    let content = display
+        .and_then(|value| value.get("text"))
+        .and_then(serde_json::Value::as_str);
+    let text = content.or(tool_call.output_summary.as_deref())?;
+    let start_line = content
+        .and_then(|_| display.and_then(|value| value.get("lineStart")))
+        .and_then(serde_json::Value::as_u64);
+    Some(TranscriptToolCallDetailBlock::ReadOutput {
+        text: text.to_string(),
+        start_line,
+    })
+}
+
 #[expect(
     clippy::too_many_arguments,
     reason = "tool-row assembly keeps transcript toggles and state inputs explicit at the call site"
@@ -107,6 +127,9 @@ pub(super) fn build_transcript_tool_call_section(
                 let path = tool_path_display(tool_call);
                 header_path_metadata = path.clone();
                 let (title, icon) = read_tool_row_header(tool_call, app, path.as_deref());
+                if generic_output_visible && tool_call.status != ToolCallDisplayStatus::Failed {
+                    detail_blocks.extend(read_output_block(tool_call));
+                }
                 (
                     title,
                     icon,

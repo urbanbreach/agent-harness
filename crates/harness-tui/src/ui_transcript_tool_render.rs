@@ -654,6 +654,18 @@ pub(super) fn append_tool_call_detail_blocks(
     for detail_block in &tool_call.detail_blocks {
         let start = render.lines.len();
         match detail_block {
+            TranscriptToolCallDetailBlock::ReadOutput { text, start_line } => {
+                append_read_output(
+                    render,
+                    tool_call,
+                    text,
+                    *start_line,
+                    theme,
+                    width,
+                    base_surface,
+                );
+                append_noninteractive_rows(&render.lines, &mut render.interaction_rows, start);
+            }
             TranscriptToolCallDetailBlock::Message { text, tone } => {
                 append_tool_call_message_block(
                     &mut render.lines,
@@ -745,6 +757,83 @@ pub(super) fn append_tool_call_detail_blocks(
             }
         }
     }
+}
+
+fn append_read_output(
+    render: &mut ToolSectionRender,
+    tool_call: &TranscriptToolCallSection,
+    text: &str,
+    start_line: Option<u64>,
+    theme: &Theme,
+    width: u16,
+    surface: Color,
+) {
+    let text = super::super::ui_tool_output::safe_tool_text(text);
+    let body_width = usize::from(transcript_surface_content_width(width, false))
+        .saturating_sub(surface_prefix_width(TRANSCRIPT_OPCODE_EDIT_INDENT));
+    let gutter_width = start_line
+        .map(|start| {
+            start
+                .saturating_add(
+                    u64::try_from(text.lines().count().saturating_sub(1)).unwrap_or(u64::MAX),
+                )
+                .to_string()
+                .len()
+        })
+        .unwrap_or(0)
+        .min(body_width.saturating_sub(3));
+    let content_width = body_width
+        .saturating_sub(if gutter_width > 0 {
+            gutter_width + 2
+        } else {
+            0
+        })
+        .max(1);
+    let mut rows = Vec::new();
+    for (index, text) in text.lines().enumerate() {
+        let wrapped = wrap_surface_spans(
+            vec![Span::styled(
+                text.to_string(),
+                Style::default().fg(theme.text.primary),
+            )],
+            content_width,
+        );
+        for (continuation, spans) in wrapped.into_iter().enumerate() {
+            let mut row = Vec::new();
+            if gutter_width > 0 {
+                let number = start_line
+                    .and_then(|start| {
+                        u64::try_from(index)
+                            .ok()
+                            .and_then(|index| start.checked_add(index))
+                    })
+                    .filter(|_| continuation == 0)
+                    .map(|number| number.to_string())
+                    .unwrap_or_default();
+                row.push(Span::styled(
+                    format!("{number:>gutter_width$}  "),
+                    muted_meta_style(theme),
+                ));
+            }
+            row.extend(spans);
+            rows.push(Line::from(row));
+        }
+    }
+    let (mut rows, hint) =
+        super::super::ui_tool_output::measured_output_preview(rows, (5, 3), tool_call.expanded);
+    if let Some(hint) = hint {
+        rows.push(Line::from(Span::styled(hint, muted_meta_style(theme))));
+    }
+    if !rows.is_empty() {
+        render.lines.push(Line::default());
+    }
+    append_prebuilt_surface_lines(
+        &mut render.lines,
+        TRANSCRIPT_OPCODE_EDIT_INDENT,
+        surface,
+        rows,
+        transcript_surface_content_width(width, false),
+    );
 }
 
 fn append_tool_call_file_section(
