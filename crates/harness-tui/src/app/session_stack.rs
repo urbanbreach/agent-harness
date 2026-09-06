@@ -181,12 +181,12 @@ impl AppState {
                 continue;
             }
             for tool_call in &activity.tool_calls {
-                if let Some(child_session_id) =
-                    Self::task_tool_child_session_id_from_entry(tool_call)
-                {
-                    if !child_session_ids.contains(&child_session_id) {
-                        child_session_ids.push(child_session_id);
-                    }
+                let Some(child_session_id) = Self::task_tool_child_session_id_from_entry(tool_call)
+                else {
+                    continue;
+                };
+                if !child_session_ids.contains(&child_session_id) {
+                    child_session_ids.push(child_session_id);
                 }
             }
         }

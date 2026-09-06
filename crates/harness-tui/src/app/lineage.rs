@@ -105,13 +105,14 @@ impl LineageBrowserState {
         } else {
             let mut included = BTreeSet::new();
             for (index, node) in self.nodes.iter().enumerate() {
-                if lineage_node_matches(node, &input) {
-                    included.insert(index);
-                    let mut parent = node.parent_index;
-                    while let Some(parent_index) = parent {
-                        included.insert(parent_index);
-                        parent = self.nodes[parent_index].parent_index;
-                    }
+                if !lineage_node_matches(node, &input) {
+                    continue;
+                }
+                included.insert(index);
+                let mut parent = node.parent_index;
+                while let Some(parent_index) = parent {
+                    included.insert(parent_index);
+                    parent = self.nodes[parent_index].parent_index;
                 }
             }
             self.nodes
