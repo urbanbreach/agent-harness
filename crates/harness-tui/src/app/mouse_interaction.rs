@@ -550,11 +550,7 @@ impl AppState {
                         self.welcome
                             .handle(crate::welcome_surface::WelcomeInput::FocusPrompt);
                         self.focus = Focus::Prompt;
-                        if was_expanded {
-                            self.open_release_notes();
-                        } else {
-                            self.expand_startup_changelog();
-                        }
+                        self.activate_welcome_changelog(was_expanded);
                     } else {
                         self.execute_startup_launcher_action();
                     }
@@ -575,6 +571,14 @@ impl AppState {
             | crate::welcome_surface::WelcomeRegion::None => return false,
         }
         true
+    }
+
+    fn activate_welcome_changelog(&mut self, was_expanded: bool) {
+        if was_expanded {
+            self.open_release_notes();
+        } else {
+            self.expand_startup_changelog();
+        }
     }
 
     fn handle_welcome_pointer_completion(&mut self, mouse: MouseEvent) -> bool {
@@ -759,167 +763,164 @@ impl AppState {
         }
 
         match mouse.kind {
-            MouseEventKind::Moved => {
-                let hovered = permission_prompt_hit_regions(self, frame_area)
-                    .into_iter()
-                    .find(|region| rect_contains(region.area, mouse.column, mouse.row))
-                    .and_then(|region| match region.target {
-                        PermissionPointerTarget::QuestionChoice(index) => Some(index),
-                        PermissionPointerTarget::Decision(_)
-                        | PermissionPointerTarget::Confirm(_)
-                        | PermissionPointerTarget::QuestionSubmit
-                        | PermissionPointerTarget::QuestionScrollbar => None,
-                    });
-                let active_question_id = self.active_permission_view().and_then(|permission| {
-                    permission
+            MouseEventKind::Moved => self.handle_permission_mouse_move(mouse, frame_area),
+            MouseEventKind::Down(MouseButton::Left) => {
+                self.handle_permission_mouse_down(mouse, frame_area)
+            }
+            _ => self.handle_permission_mouse_release_or_scroll(mouse, frame_area),
+        }
+    }
+
+    fn handle_permission_mouse_move(&mut self, mouse: MouseEvent, frame_area: Rect) -> bool {
+        let hovered = permission_prompt_hit_regions(self, frame_area)
+            .into_iter()
+            .find(|region| rect_contains(region.area, mouse.column, mouse.row))
+            .and_then(|region| match region.target {
+                PermissionPointerTarget::QuestionChoice(index) => Some(index),
+                PermissionPointerTarget::Decision(_)
+                | PermissionPointerTarget::Confirm(_)
+                | PermissionPointerTarget::QuestionSubmit
+                | PermissionPointerTarget::QuestionScrollbar => None,
+            });
+        let active_question_id = self.active_permission_view().and_then(|permission| {
+            permission
+                .question_prompts
+                .is_some()
+                .then_some(permission.permission_id)
+        });
+        if hovered.is_some()
+            && self.question_prompt.permission_id.as_deref() != active_question_id.as_deref()
+        {
+            self.handle_permission_modal_key(KeyEvent::new(KeyCode::Null, KeyModifiers::NONE));
+        }
+        let changed = self.question_prompt.hovered != hovered;
+        self.question_prompt.hovered = hovered;
+        changed
+    }
+
+    fn handle_permission_mouse_down(&mut self, mouse: MouseEvent, frame_area: Rect) -> bool {
+        let region = permission_prompt_hit_regions(self, frame_area)
+            .into_iter()
+            .find(|region| rect_contains(region.area, mouse.column, mouse.row));
+        let Some(region) = region else {
+            self.permission_prompt.pointer_down = None;
+            return false;
+        };
+        let Some(permission) = self.active_permission_view() else {
+            self.permission_prompt.pointer_down = None;
+            return false;
+        };
+        if self.question_prompt.editing {
+            if let PermissionPointerTarget::QuestionChoice(index) = region.target {
+                let option_count = permission
+                    .question_prompts
+                    .as_ref()
+                    .and_then(|prompts| prompts.get(self.question_prompt.tab))
+                    .map_or(0, |prompt| prompt.options.len());
+                if index == option_count {
+                    let prompt = permission
                         .question_prompts
-                        .is_some()
-                        .then_some(permission.permission_id)
-                });
-                if hovered.is_some()
-                    && self.question_prompt.permission_id.as_deref()
-                        != active_question_id.as_deref()
-                {
+                        .as_ref()
+                        .and_then(|prompts| prompts.get(self.question_prompt.tab));
+                    let picked = self
+                        .question_prompt
+                        .custom_selected
+                        .get(self.question_prompt.tab)
+                        .copied()
+                        .unwrap_or(false);
+                    let glyphs = self.theme().live_shell.transcript_glyphs;
+                    let marker = match (prompt.is_some_and(|prompt| prompt.multiple), picked) {
+                        (true, true) => "[x]".to_string(),
+                        (true, false) => "[ ]".to_string(),
+                        (false, true) => format!("({})", glyphs.choice_selected),
+                        (false, false) => format!("({})", glyphs.choice_unselected),
+                    };
+                    let prefix_width =
+                        u16::try_from(format!("z {marker} {} ", glyphs.user_marker).width())
+                            .unwrap_or(u16::MAX);
+                    let column = usize::from(
+                        mouse
+                            .column
+                            .saturating_sub(region.area.x.saturating_add(prefix_width)),
+                    );
+                    self.question_prompt.answer_cursor = question_answer_cursor_for_column(
+                        &self.question_prompt.answer_buffer,
+                        column,
+                    );
+                    return true;
+                }
+                self.handle_permission_modal_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+            }
+        }
+        if region.target == PermissionPointerTarget::QuestionScrollbar {
+            self.scroll_question_prompt(frame_area, Some(mouse.row), 0);
+            self.permission_prompt.pointer_down = Some(PermissionPointerDown {
+                permission_id: permission.permission_id,
+                target: region.target,
+                area: region.area,
+            });
+            return true;
+        }
+        if !self.select_permission_pointer_target(&permission, region.target) {
+            self.permission_prompt.pointer_down = None;
+            return false;
+        }
+        if let PermissionPointerTarget::QuestionChoice(index) = region.target {
+            let option_count = permission
+                .question_prompts
+                .as_ref()
+                .and_then(|prompts| prompts.get(self.question_prompt.tab))
+                .map_or(0, |prompt| prompt.options.len());
+            if index < option_count {
+                const DOUBLE_CLICK_TIMEOUT: std::time::Duration =
+                    std::time::Duration::from_millis(300);
+                let now = self.now();
+                let tab = self.question_prompt.tab;
+                let is_double_click = self.question_prompt.last_click.is_some_and(
+                    |(previous, previous_tab, previous_index)| {
+                        previous_tab == tab
+                            && previous_index == index
+                            && now.saturating_duration_since(previous) < DOUBLE_CLICK_TIMEOUT
+                    },
+                );
+                if is_double_click {
+                    self.question_prompt.last_click = None;
                     self.handle_permission_modal_key(KeyEvent::new(
-                        KeyCode::Null,
+                        KeyCode::Enter,
+                        KeyModifiers::NONE,
+                    ));
+                } else {
+                    self.question_prompt.last_click = Some((now, tab, index));
+                    self.handle_permission_modal_key(KeyEvent::new(
+                        KeyCode::Char(' '),
                         KeyModifiers::NONE,
                     ));
                 }
-                let changed = self.question_prompt.hovered != hovered;
-                self.question_prompt.hovered = hovered;
-                changed
+                return true;
             }
-            MouseEventKind::Down(MouseButton::Left) => {
-                let region = permission_prompt_hit_regions(self, frame_area)
-                    .into_iter()
-                    .find(|region| rect_contains(region.area, mouse.column, mouse.row));
-                let Some(region) = region else {
-                    self.permission_prompt.pointer_down = None;
-                    return false;
-                };
-                let Some(permission) = self.active_permission_view() else {
-                    self.permission_prompt.pointer_down = None;
-                    return false;
-                };
-                if self.question_prompt.editing {
-                    if let PermissionPointerTarget::QuestionChoice(index) = region.target {
-                        let option_count = permission
-                            .question_prompts
-                            .as_ref()
-                            .and_then(|prompts| prompts.get(self.question_prompt.tab))
-                            .map_or(0, |prompt| prompt.options.len());
-                        if index == option_count {
-                            let prompt = permission
-                                .question_prompts
-                                .as_ref()
-                                .and_then(|prompts| prompts.get(self.question_prompt.tab));
-                            let picked = self
-                                .question_prompt
-                                .custom_selected
-                                .get(self.question_prompt.tab)
-                                .copied()
-                                .unwrap_or(false);
-                            let glyphs = self.theme().live_shell.transcript_glyphs;
-                            let marker = if prompt.is_some_and(|prompt| prompt.multiple) {
-                                if picked {
-                                    "[x]"
-                                } else {
-                                    "[ ]"
-                                }
-                            } else if picked {
-                                glyphs.choice_selected
-                            } else {
-                                glyphs.choice_unselected
-                            };
-                            let marker = if prompt.is_some_and(|prompt| prompt.multiple) {
-                                marker.to_string()
-                            } else {
-                                format!("({marker})")
-                            };
-                            let prefix_width = u16::try_from(
-                                format!("z {marker} {} ", glyphs.user_marker).width(),
-                            )
-                            .unwrap_or(u16::MAX);
-                            let column = usize::from(
-                                mouse
-                                    .column
-                                    .saturating_sub(region.area.x.saturating_add(prefix_width)),
-                            );
-                            self.question_prompt.answer_cursor = question_answer_cursor_for_column(
-                                &self.question_prompt.answer_buffer,
-                                column,
-                            );
-                            return true;
-                        }
-                        self.handle_permission_modal_key(KeyEvent::new(
-                            KeyCode::Esc,
-                            KeyModifiers::NONE,
-                        ));
-                    }
-                }
-                if region.target == PermissionPointerTarget::QuestionScrollbar {
-                    self.scroll_question_prompt(frame_area, Some(mouse.row), 0);
-                    self.permission_prompt.pointer_down = Some(PermissionPointerDown {
-                        permission_id: permission.permission_id,
-                        target: region.target,
-                        area: region.area,
-                    });
-                    return true;
-                }
-                if !self.select_permission_pointer_target(&permission, region.target) {
-                    self.permission_prompt.pointer_down = None;
-                    return false;
-                }
-                if let PermissionPointerTarget::QuestionChoice(index) = region.target {
-                    let option_count = permission
-                        .question_prompts
-                        .as_ref()
-                        .and_then(|prompts| prompts.get(self.question_prompt.tab))
-                        .map_or(0, |prompt| prompt.options.len());
-                    if index < option_count {
-                        const DOUBLE_CLICK_TIMEOUT: std::time::Duration =
-                            std::time::Duration::from_millis(300);
-                        let now = self.now();
-                        let tab = self.question_prompt.tab;
-                        let is_double_click = self.question_prompt.last_click.is_some_and(
-                            |(previous, previous_tab, previous_index)| {
-                                previous_tab == tab
-                                    && previous_index == index
-                                    && now.saturating_duration_since(previous)
-                                        < DOUBLE_CLICK_TIMEOUT
-                            },
-                        );
-                        if is_double_click {
-                            self.question_prompt.last_click = None;
-                            self.handle_permission_modal_key(KeyEvent::new(
-                                KeyCode::Enter,
-                                KeyModifiers::NONE,
-                            ));
-                        } else {
-                            self.question_prompt.last_click = Some((now, tab, index));
-                            self.handle_permission_modal_key(KeyEvent::new(
-                                KeyCode::Char(' '),
-                                KeyModifiers::NONE,
-                            ));
-                        }
-                        return true;
-                    }
-                    self.question_prompt.last_click = None;
-                    if index == option_count {
-                        self.handle_permission_modal_key(KeyEvent::new(
-                            KeyCode::Char(' '),
-                            KeyModifiers::NONE,
-                        ));
-                    }
-                    return true;
-                }
-                self.permission_prompt.pointer_down = Some(PermissionPointerDown {
-                    permission_id: permission.permission_id,
-                    target: region.target,
-                    area: region.area,
-                });
-                true
+            self.question_prompt.last_click = None;
+            if index == option_count {
+                self.handle_permission_modal_key(KeyEvent::new(
+                    KeyCode::Char(' '),
+                    KeyModifiers::NONE,
+                ));
             }
+            return true;
+        }
+        self.permission_prompt.pointer_down = Some(PermissionPointerDown {
+            permission_id: permission.permission_id,
+            target: region.target,
+            area: region.area,
+        });
+        true
+    }
+
+    fn handle_permission_mouse_release_or_scroll(
+        &mut self,
+        mouse: MouseEvent,
+        frame_area: Rect,
+    ) -> bool {
+        match mouse.kind {
             MouseEventKind::Drag(MouseButton::Left) => {
                 let Some(pointer_down) = self.permission_prompt.pointer_down.as_ref() else {
                     return false;
@@ -1087,319 +1088,327 @@ impl AppState {
         }
 
         match mouse.kind {
-            MouseEventKind::Moved => {
-                let hovered_welcome_action = self
-                    .startup_shell_visible()
-                    .then(|| {
-                        let startup_area =
-                            crate::layout::FrameLayoutPlan::for_app(self, frame_area)
-                                .transcript
-                                .unwrap_or(frame_area);
-                        self.welcome_hit_map(startup_area)
-                            .hit(mouse.column, mouse.row)
-                            .and_then(|hit| hit.item_index)
-                    })
-                    .flatten();
-                let welcome_hover_changed = self.welcome.set_hovered_action(hovered_welcome_action);
-                let hovered_live_turn_stop = ui::live_turn_stop_rect(self, frame_area)
-                    .is_some_and(|area| rect_contains(area, mouse.column, mouse.row));
-                let hovered_live_turn_background = ui::live_turn_background_rect(self, frame_area)
-                    .is_some_and(|area| rect_contains(area, mouse.column, mouse.row));
-                let return_to_live_hovered =
-                    ui::transcript_return_to_live_hit(self, frame_area, mouse.column, mouse.row);
-                let hovered_subagent_footer_target =
-                    ui::subagent_footer_target_at(self, frame_area, mouse.column, mouse.row);
-                let hovered_transcript_target = if hovered_subagent_footer_target.is_none() {
-                    ui::transcript_mouse_target(self, frame_area, mouse.column, mouse.row)
-                } else {
-                    None
-                };
-                let changed = welcome_hover_changed
-                    || self.transcript_view.hovered_transcript_target != hovered_transcript_target
-                    || self.hovered_subagent_footer_target != hovered_subagent_footer_target
-                    || self.hovered_live_turn_stop != hovered_live_turn_stop
-                    || self.hovered_live_turn_background != hovered_live_turn_background
-                    || self.transcript_view.return_to_live_hovered != return_to_live_hovered;
-                self.transcript_view.hovered_transcript_target = hovered_transcript_target;
-                self.hovered_subagent_footer_target = hovered_subagent_footer_target;
-                self.hovered_live_turn_stop = hovered_live_turn_stop;
-                self.hovered_live_turn_background = hovered_live_turn_background;
-                self.transcript_view.return_to_live_hovered = return_to_live_hovered;
-                changed
-            }
+            MouseEventKind::Moved => self.handle_surface_mouse_move(mouse, frame_area),
             MouseEventKind::Down(MouseButton::Right) => {
                 let copied = self.copy_active_selection(frame_area);
                 self.clear_transcript_selection();
                 self.clear_operator_sidebar_selection();
                 copied
             }
-            MouseEventKind::Down(MouseButton::Left) => {
-                self.transcript_view.transcript_click_activated_on_down = false;
-                if ui::transcript_return_to_live_hit(self, frame_area, mouse.column, mouse.row) {
-                    self.transcript_view.transcript_click_activated_on_down = true;
-                    self.scroll_goto_bottom();
-                    self.clear_transcript_selection();
-                    self.clear_operator_sidebar_selection();
-                    return true;
-                }
-                self.hovered_subagent_footer_target =
-                    ui::subagent_footer_target_at(self, frame_area, mouse.column, mouse.row);
-                self.pending_subagent_footer_target = self.hovered_subagent_footer_target;
-                self.transcript_view.hovered_transcript_target =
-                    if self.hovered_subagent_footer_target.is_none() {
-                        ui::transcript_mouse_target(self, frame_area, mouse.column, mouse.row)
-                    } else {
-                        None
-                    };
-                if self.hovered_subagent_footer_target.is_some() {
-                    self.transcript_view.transcript_scrollbar_drag = None;
-                    self.clear_transcript_selection();
-                    self.clear_operator_sidebar_selection();
-                    return true;
-                }
-                if let Some(scrollbar) = transcript_scrollbar_hit
-                    .filter(|scrollbar| rect_contains(scrollbar.thumb, mouse.column, mouse.row))
-                {
-                    self.begin_transcript_scrollbar_drag(scrollbar, mouse.row);
-                    self.clear_transcript_selection();
-                    self.clear_operator_sidebar_selection();
-                    return true;
-                }
-
-                self.transcript_view.transcript_scrollbar_drag = None;
-
-                let plan = crate::layout::FrameLayoutPlan::for_app(self, frame_area);
-                let operator_surface = plan.operator_sidebar.or(plan.details_overlay);
-                let in_operator_surface = operator_surface
-                    .is_some_and(|area| rect_contains(area, mouse.column, mouse.row));
-                if in_operator_surface {
-                    self.clear_transcript_selection();
-                    let operator_sidebar_session = ui::operator_sidebar_subagent_session_hit_target(
-                        self,
-                        frame_area,
-                        mouse.column,
-                        mouse.row,
-                    );
-                    let operator_sidebar_group = ui::operator_sidebar_subagent_group_hit_target(
-                        self,
-                        frame_area,
-                        mouse.column,
-                        mouse.row,
-                    );
-                    let operator_sidebar_cell = ui::operator_sidebar_selection_cell(
-                        self,
-                        frame_area,
-                        mouse.column,
-                        mouse.row,
-                    );
-                    if let Some(cell) = operator_sidebar_cell {
-                        self.set_operator_sidebar_selection(cell, cell);
-                        self.secondary_surfaces.selection_dragging = true;
-                        self.secondary_surfaces.pending_click = operator_sidebar_session
-                            .map(OperatorSidebarPendingClick::SubagentSession)
-                            .or(operator_sidebar_group
-                                .map(OperatorSidebarPendingClick::SubagentGroup))
-                            .or(clicked_operator_sidebar_section
-                                .map(OperatorSidebarPendingClick::Section));
-                        return true;
-                    }
-                    if let Some(agent_name) = operator_sidebar_group {
-                        self.clear_operator_sidebar_selection();
-                        self.toggle_operator_sidebar_subagent_group(agent_name);
-                        return true;
-                    }
-                    if let Some(section) = clicked_operator_sidebar_section {
-                        self.clear_operator_sidebar_selection();
-                        self.toggle_operator_sidebar_section(section);
-                    }
-                    return true;
-                }
-
-                if let Some(section) = clicked_operator_sidebar_section {
-                    self.clear_transcript_selection();
-                    self.clear_operator_sidebar_selection();
-                    self.toggle_operator_sidebar_section(section);
-                    return true;
-                }
-
-                if let Some(turn_id) =
-                    ui::transcript_timeline_turn_at(self, frame_area, mouse.column, mouse.row)
-                {
-                    self.select_transcript_turn(turn_id);
-                    self.clear_transcript_selection();
-                    self.clear_operator_sidebar_selection();
-                    return true;
-                }
-
-                if let Some(target) =
-                    ui::transcript_mouse_target(self, frame_area, mouse.column, mouse.row)
-                {
-                    self.activate_transcript_mouse_target(target);
-                    self.transcript_view.transcript_click_activated_on_down = true;
-                    self.clear_transcript_selection();
-                    self.clear_operator_sidebar_selection();
-                    return true;
-                }
-                let transcript_hit =
-                    ui::transcript_selection_cell(self, frame_area, mouse.column, mouse.row);
-                if let Some(cell) = transcript_hit {
-                    self.set_transcript_selection(cell, cell);
-                    self.transcript_view.transcript_selection_dragging = true;
-                    self.clear_operator_sidebar_selection();
-                    return true;
-                }
-
-                self.clear_transcript_selection();
-                self.clear_operator_sidebar_selection();
-                true
-            }
+            MouseEventKind::Down(MouseButton::Left) => self.handle_surface_mouse_down(
+                mouse,
+                frame_area,
+                clicked_operator_sidebar_section,
+                transcript_scrollbar_hit,
+            ),
             MouseEventKind::Drag(MouseButton::Left) => {
-                let hover_changed = self.transcript_view.hovered_transcript_target.is_some()
-                    || self.hovered_subagent_footer_target.is_some()
-                    || self.hovered_live_turn_stop
-                    || self.hovered_live_turn_background
-                    || self.transcript_view.return_to_live_hovered;
-                self.transcript_view.hovered_transcript_target = None;
-                self.transcript_view.return_to_live_hovered = false;
-                self.hovered_subagent_footer_target = None;
-                self.hovered_live_turn_stop = false;
-                self.hovered_live_turn_background = false;
-                if self.transcript_view.transcript_scrollbar_drag.is_some() {
-                    self.update_transcript_scrollbar_drag(mouse.row);
-                    return true;
-                }
-
-                if self.transcript_view.transcript_selection_dragging {
-                    let transcript_hit =
-                        ui::transcript_selection_cell(self, frame_area, mouse.column, mouse.row);
-                    if let Some(cell) = transcript_hit {
-                        if let Some(selection) = self.transcript_view.transcript_selection {
-                            self.set_transcript_selection(selection.anchor, cell);
-                        }
-                    }
-                    true
-                } else if self.secondary_surfaces.selection_dragging {
-                    let sidebar_hit = ui::operator_sidebar_selection_cell(
-                        self,
-                        frame_area,
-                        mouse.column,
-                        mouse.row,
-                    );
-                    if let Some(cell) = sidebar_hit {
-                        if let Some(selection) = self.secondary_surfaces.selection {
-                            self.set_operator_sidebar_selection(selection.anchor, cell);
-                        }
-                    }
-                    true
-                } else {
-                    if let Some(pending) = self.pending_subagent_footer_target {
-                        let current = ui::subagent_footer_target_at(
-                            self,
-                            frame_area,
-                            mouse.column,
-                            mouse.row,
-                        );
-                        if current != Some(pending) {
-                            self.pending_subagent_footer_target = None;
-                        }
-                    }
-                    hover_changed
-                }
+                self.handle_surface_mouse_drag(mouse, frame_area)
             }
             MouseEventKind::Up(MouseButton::Left) => {
-                let footer_target =
-                    ui::subagent_footer_target_at(self, frame_area, mouse.column, mouse.row);
-                let pending_footer_target = self.pending_subagent_footer_target.take();
-                if let Some(target) =
-                    footer_target.filter(|target| pending_footer_target == Some(*target))
-                {
-                    self.hovered_subagent_footer_target = Some(target);
-                    self.activate_subagent_footer_target(target);
-                    self.clear_transcript_selection();
-                    self.clear_operator_sidebar_selection();
-                    self.transcript_view.transcript_scrollbar_drag = None;
-                    self.transcript_view.transcript_click_activated_on_down = false;
-                    return true;
-                }
-                let operator_sidebar_was_dragging = self.secondary_surfaces.selection_dragging;
-                let transcript_selection_was_dragging =
-                    self.transcript_view.transcript_selection_dragging;
-                if self.secondary_surfaces.selection_dragging {
-                    let sidebar_hit = ui::operator_sidebar_selection_cell(
-                        self,
-                        frame_area,
-                        mouse.column,
-                        mouse.row,
-                    );
-                    if let Some(cell) = sidebar_hit {
-                        if let Some(selection) = self.secondary_surfaces.selection {
-                            self.set_operator_sidebar_selection(selection.anchor, cell);
-                        }
-                    }
-                    self.secondary_surfaces.selection_dragging = false;
-                    let copy_on_select_disabled = clipboard::copy_on_select_disabled();
-                    if copy_on_select_disabled {
-                        if self.operator_sidebar_selection_has_text(frame_area) {
-                            self.secondary_surfaces.pending_click = None;
-                        } else {
-                            self.activate_operator_sidebar_pending_click();
-                            self.clear_operator_sidebar_selection();
-                        }
-                    } else {
-                        let copied = self.copy_operator_sidebar_selection(frame_area);
-                        if copied {
-                            self.clear_operator_sidebar_selection();
-                        } else {
-                            self.activate_operator_sidebar_pending_click();
-                            self.clear_operator_sidebar_selection();
-                        }
-                    }
-                }
-                if self.transcript_view.transcript_selection_dragging {
-                    let transcript_hit =
-                        ui::transcript_selection_cell(self, frame_area, mouse.column, mouse.row);
-                    if let Some(cell) = transcript_hit {
-                        if let Some(selection) = self.transcript_view.transcript_selection {
-                            self.set_transcript_selection(selection.anchor, cell);
-                        }
-                    }
-                    self.transcript_view.transcript_selection_dragging = false;
-                    let copy_on_select_disabled = clipboard::copy_on_select_disabled();
-                    if copy_on_select_disabled {
-                        self.maybe_clear_empty_transcript_selection(frame_area);
-                    } else {
-                        let copied = self.copy_transcript_selection(frame_area);
-                        self.clear_transcript_selection();
-                        if !copied {
-                            self.clear_transcript_selection();
-                        }
-                    }
-                }
-                if self.transcript_view.transcript_click_activated_on_down {
-                    self.transcript_view.transcript_click_activated_on_down = false;
-                    self.transcript_view.transcript_scrollbar_drag = None;
-                    return true;
-                }
-                if operator_sidebar_was_dragging {
-                    self.transcript_view.transcript_scrollbar_drag = None;
-                    return true;
-                }
-                if transcript_selection_was_dragging {
-                    self.transcript_view.transcript_scrollbar_drag = None;
-                    return true;
-                }
-                if self.transcript_view.transcript_scrollbar_drag.is_none() {
-                    if let Some(target) =
-                        ui::transcript_mouse_target(self, frame_area, mouse.column, mouse.row)
-                    {
-                        self.activate_transcript_mouse_target(target);
-                        self.clear_transcript_selection();
-                        return true;
-                    }
-                }
-                self.transcript_view.transcript_scrollbar_drag = None;
-                true
+                self.handle_surface_mouse_up(mouse, frame_area)
             }
+            _ => self.handle_surface_mouse_scroll(mouse, hovered_wheel_target),
+        }
+    }
+
+    fn handle_surface_mouse_move(&mut self, mouse: MouseEvent, frame_area: Rect) -> bool {
+        let hovered_welcome_action = self
+            .startup_shell_visible()
+            .then(|| {
+                let startup_area = crate::layout::FrameLayoutPlan::for_app(self, frame_area)
+                    .transcript
+                    .unwrap_or(frame_area);
+                self.welcome_hit_map(startup_area)
+                    .hit(mouse.column, mouse.row)
+                    .and_then(|hit| hit.item_index)
+            })
+            .flatten();
+        let welcome_hover_changed = self.welcome.set_hovered_action(hovered_welcome_action);
+        let hovered_live_turn_stop = ui::live_turn_stop_rect(self, frame_area)
+            .is_some_and(|area| rect_contains(area, mouse.column, mouse.row));
+        let hovered_live_turn_background = ui::live_turn_background_rect(self, frame_area)
+            .is_some_and(|area| rect_contains(area, mouse.column, mouse.row));
+        let return_to_live_hovered =
+            ui::transcript_return_to_live_hit(self, frame_area, mouse.column, mouse.row);
+        let hovered_subagent_footer_target =
+            ui::subagent_footer_target_at(self, frame_area, mouse.column, mouse.row);
+        let hovered_transcript_target = if hovered_subagent_footer_target.is_none() {
+            ui::transcript_mouse_target(self, frame_area, mouse.column, mouse.row)
+        } else {
+            None
+        };
+        let changed = welcome_hover_changed
+            || self.transcript_view.hovered_transcript_target != hovered_transcript_target
+            || self.hovered_subagent_footer_target != hovered_subagent_footer_target
+            || self.hovered_live_turn_stop != hovered_live_turn_stop
+            || self.hovered_live_turn_background != hovered_live_turn_background
+            || self.transcript_view.return_to_live_hovered != return_to_live_hovered;
+        self.transcript_view.hovered_transcript_target = hovered_transcript_target;
+        self.hovered_subagent_footer_target = hovered_subagent_footer_target;
+        self.hovered_live_turn_stop = hovered_live_turn_stop;
+        self.hovered_live_turn_background = hovered_live_turn_background;
+        self.transcript_view.return_to_live_hovered = return_to_live_hovered;
+        changed
+    }
+
+    fn handle_surface_mouse_down(
+        &mut self,
+        mouse: MouseEvent,
+        frame_area: Rect,
+        clicked_operator_sidebar_section: Option<OperatorSidebarSection>,
+        transcript_scrollbar_hit: Option<TranscriptScrollbarHit>,
+    ) -> bool {
+        self.transcript_view.transcript_click_activated_on_down = false;
+        if ui::transcript_return_to_live_hit(self, frame_area, mouse.column, mouse.row) {
+            self.transcript_view.transcript_click_activated_on_down = true;
+            self.scroll_goto_bottom();
+            self.clear_transcript_selection();
+            self.clear_operator_sidebar_selection();
+            return true;
+        }
+        self.hovered_subagent_footer_target =
+            ui::subagent_footer_target_at(self, frame_area, mouse.column, mouse.row);
+        self.pending_subagent_footer_target = self.hovered_subagent_footer_target;
+        self.transcript_view.hovered_transcript_target =
+            if self.hovered_subagent_footer_target.is_none() {
+                ui::transcript_mouse_target(self, frame_area, mouse.column, mouse.row)
+            } else {
+                None
+            };
+        if self.hovered_subagent_footer_target.is_some() {
+            self.transcript_view.transcript_scrollbar_drag = None;
+            self.clear_transcript_selection();
+            self.clear_operator_sidebar_selection();
+            return true;
+        }
+        if let Some(scrollbar) = transcript_scrollbar_hit
+            .filter(|scrollbar| rect_contains(scrollbar.thumb, mouse.column, mouse.row))
+        {
+            self.begin_transcript_scrollbar_drag(scrollbar, mouse.row);
+            self.clear_transcript_selection();
+            self.clear_operator_sidebar_selection();
+            return true;
+        }
+
+        self.transcript_view.transcript_scrollbar_drag = None;
+
+        let plan = crate::layout::FrameLayoutPlan::for_app(self, frame_area);
+        let operator_surface = plan.operator_sidebar.or(plan.details_overlay);
+        let in_operator_surface =
+            operator_surface.is_some_and(|area| rect_contains(area, mouse.column, mouse.row));
+        if in_operator_surface {
+            self.clear_transcript_selection();
+            let operator_sidebar_session = ui::operator_sidebar_subagent_session_hit_target(
+                self,
+                frame_area,
+                mouse.column,
+                mouse.row,
+            );
+            let operator_sidebar_group = ui::operator_sidebar_subagent_group_hit_target(
+                self,
+                frame_area,
+                mouse.column,
+                mouse.row,
+            );
+            let operator_sidebar_cell =
+                ui::operator_sidebar_selection_cell(self, frame_area, mouse.column, mouse.row);
+            if let Some(cell) = operator_sidebar_cell {
+                self.set_operator_sidebar_selection(cell, cell);
+                self.secondary_surfaces.selection_dragging = true;
+                self.secondary_surfaces.pending_click = operator_sidebar_session
+                    .map(OperatorSidebarPendingClick::SubagentSession)
+                    .or(operator_sidebar_group.map(OperatorSidebarPendingClick::SubagentGroup))
+                    .or(clicked_operator_sidebar_section.map(OperatorSidebarPendingClick::Section));
+                return true;
+            }
+            if let Some(agent_name) = operator_sidebar_group {
+                self.clear_operator_sidebar_selection();
+                self.toggle_operator_sidebar_subagent_group(agent_name);
+                return true;
+            }
+            if let Some(section) = clicked_operator_sidebar_section {
+                self.clear_operator_sidebar_selection();
+                self.toggle_operator_sidebar_section(section);
+            }
+            return true;
+        }
+
+        if let Some(section) = clicked_operator_sidebar_section {
+            self.clear_transcript_selection();
+            self.clear_operator_sidebar_selection();
+            self.toggle_operator_sidebar_section(section);
+            return true;
+        }
+
+        if let Some(turn_id) =
+            ui::transcript_timeline_turn_at(self, frame_area, mouse.column, mouse.row)
+        {
+            self.select_transcript_turn(turn_id);
+            self.clear_transcript_selection();
+            self.clear_operator_sidebar_selection();
+            return true;
+        }
+
+        if let Some(target) = ui::transcript_mouse_target(self, frame_area, mouse.column, mouse.row)
+        {
+            self.activate_transcript_mouse_target(target);
+            self.transcript_view.transcript_click_activated_on_down = true;
+            self.clear_transcript_selection();
+            self.clear_operator_sidebar_selection();
+            return true;
+        }
+        let transcript_hit =
+            ui::transcript_selection_cell(self, frame_area, mouse.column, mouse.row);
+        if let Some(cell) = transcript_hit {
+            self.set_transcript_selection(cell, cell);
+            self.transcript_view.transcript_selection_dragging = true;
+            self.clear_operator_sidebar_selection();
+            return true;
+        }
+
+        self.clear_transcript_selection();
+        self.clear_operator_sidebar_selection();
+        true
+    }
+
+    fn handle_surface_mouse_drag(&mut self, mouse: MouseEvent, frame_area: Rect) -> bool {
+        let hover_changed = self.transcript_view.hovered_transcript_target.is_some()
+            || self.hovered_subagent_footer_target.is_some()
+            || self.hovered_live_turn_stop
+            || self.hovered_live_turn_background
+            || self.transcript_view.return_to_live_hovered;
+        self.transcript_view.hovered_transcript_target = None;
+        self.transcript_view.return_to_live_hovered = false;
+        self.hovered_subagent_footer_target = None;
+        self.hovered_live_turn_stop = false;
+        self.hovered_live_turn_background = false;
+        if self.transcript_view.transcript_scrollbar_drag.is_some() {
+            self.update_transcript_scrollbar_drag(mouse.row);
+            return true;
+        }
+
+        if self.transcript_view.transcript_selection_dragging {
+            let transcript_hit =
+                ui::transcript_selection_cell(self, frame_area, mouse.column, mouse.row);
+            if let Some(cell) = transcript_hit {
+                if let Some(selection) = self.transcript_view.transcript_selection {
+                    self.set_transcript_selection(selection.anchor, cell);
+                }
+            }
+            true
+        } else if self.secondary_surfaces.selection_dragging {
+            let sidebar_hit =
+                ui::operator_sidebar_selection_cell(self, frame_area, mouse.column, mouse.row);
+            if let Some(cell) = sidebar_hit {
+                if let Some(selection) = self.secondary_surfaces.selection {
+                    self.set_operator_sidebar_selection(selection.anchor, cell);
+                }
+            }
+            true
+        } else {
+            if let Some(pending) = self.pending_subagent_footer_target {
+                let current =
+                    ui::subagent_footer_target_at(self, frame_area, mouse.column, mouse.row);
+                if current != Some(pending) {
+                    self.pending_subagent_footer_target = None;
+                }
+            }
+            hover_changed
+        }
+    }
+
+    fn handle_surface_mouse_up(&mut self, mouse: MouseEvent, frame_area: Rect) -> bool {
+        let footer_target =
+            ui::subagent_footer_target_at(self, frame_area, mouse.column, mouse.row);
+        let pending_footer_target = self.pending_subagent_footer_target.take();
+        if let Some(target) = footer_target.filter(|target| pending_footer_target == Some(*target))
+        {
+            self.hovered_subagent_footer_target = Some(target);
+            self.activate_subagent_footer_target(target);
+            self.clear_transcript_selection();
+            self.clear_operator_sidebar_selection();
+            self.transcript_view.transcript_scrollbar_drag = None;
+            self.transcript_view.transcript_click_activated_on_down = false;
+            return true;
+        }
+        let operator_sidebar_was_dragging = self.secondary_surfaces.selection_dragging;
+        let transcript_selection_was_dragging = self.transcript_view.transcript_selection_dragging;
+        if self.secondary_surfaces.selection_dragging {
+            let sidebar_hit =
+                ui::operator_sidebar_selection_cell(self, frame_area, mouse.column, mouse.row);
+            if let Some(cell) = sidebar_hit {
+                if let Some(selection) = self.secondary_surfaces.selection {
+                    self.set_operator_sidebar_selection(selection.anchor, cell);
+                }
+            }
+            self.secondary_surfaces.selection_dragging = false;
+            let copy_on_select_disabled = clipboard::copy_on_select_disabled();
+            if copy_on_select_disabled {
+                if self.operator_sidebar_selection_has_text(frame_area) {
+                    self.secondary_surfaces.pending_click = None;
+                } else {
+                    self.activate_operator_sidebar_pending_click();
+                    self.clear_operator_sidebar_selection();
+                }
+            } else {
+                let copied = self.copy_operator_sidebar_selection(frame_area);
+                if copied {
+                    self.clear_operator_sidebar_selection();
+                } else {
+                    self.activate_operator_sidebar_pending_click();
+                    self.clear_operator_sidebar_selection();
+                }
+            }
+        }
+        if self.transcript_view.transcript_selection_dragging {
+            let transcript_hit =
+                ui::transcript_selection_cell(self, frame_area, mouse.column, mouse.row);
+            if let Some(cell) = transcript_hit {
+                if let Some(selection) = self.transcript_view.transcript_selection {
+                    self.set_transcript_selection(selection.anchor, cell);
+                }
+            }
+            self.transcript_view.transcript_selection_dragging = false;
+            let copy_on_select_disabled = clipboard::copy_on_select_disabled();
+            if copy_on_select_disabled {
+                self.maybe_clear_empty_transcript_selection(frame_area);
+            } else {
+                self.copy_transcript_selection(frame_area);
+                self.clear_transcript_selection();
+            }
+        }
+        if self.transcript_view.transcript_click_activated_on_down {
+            self.transcript_view.transcript_click_activated_on_down = false;
+            self.transcript_view.transcript_scrollbar_drag = None;
+            return true;
+        }
+        if operator_sidebar_was_dragging {
+            self.transcript_view.transcript_scrollbar_drag = None;
+            return true;
+        }
+        if transcript_selection_was_dragging {
+            self.transcript_view.transcript_scrollbar_drag = None;
+            return true;
+        }
+        if self.transcript_view.transcript_scrollbar_drag.is_none() {
+            if let Some(target) =
+                ui::transcript_mouse_target(self, frame_area, mouse.column, mouse.row)
+            {
+                self.activate_transcript_mouse_target(target);
+                self.clear_transcript_selection();
+                return true;
+            }
+        }
+        self.transcript_view.transcript_scrollbar_drag = None;
+        true
+    }
+
+    fn handle_surface_mouse_scroll(
+        &mut self,
+        mouse: MouseEvent,
+        hovered_wheel_target: Option<WheelTarget>,
+    ) -> bool {
+        match mouse.kind {
             MouseEventKind::ScrollUp => match hovered_wheel_target {
                 Some(WheelTarget::Transcript) => {
                     self.scroll_transcript_up(self.mouse_wheel_lines_per_tick);
