@@ -193,49 +193,11 @@ pub(super) async fn background_output(
     let child_runtime = background_child_runtime_metadata(ctx, &summary).await?;
     let route = background_route_metadata(ctx, &summary.request_id).await?;
 
-    let mut artifacts = Vec::new();
-    let mut full_session_value = Value::Null;
-    let mut thinking_value = Value::Null;
-
-    if request.full_session || request.include_thinking {
-        if let Some(session_id) = summary.session_id.as_deref() {
-            if let Some(child_events) = load_child_session_events(ctx, session_id)? {
-                if request.full_session {
-                    let payload = build_full_session_payload(&child_events, &request);
-                    let payload_str = serde_json::to_string_pretty(&payload)
-                        .tool_err("failed to serialize full_session payload")?;
-                    if payload_str.len() > MAX_TOOL_INLINE_JSON_CHARS {
-                        let artifact = ctx
-                            .artifact_store()
-                            .map_err(|err| ToolError::Execution(err.to_string()))?
-                            .write_text("background-full-session.json", &payload_str)
-                            .map_err(|err| ToolError::Execution(err.to_string()))?;
-                        let artifact_ref = ArtifactRef {
-                            path: artifact.path,
-                            digest: artifact.digest,
-                        };
-                        artifacts.push(artifact_ref.clone());
-                        full_session_value = json!({
-                            "spilled": true,
-                            "artifact": artifact_ref,
-                            "event_count": payload.get("event_count").and_then(Value::as_u64).unwrap_or(0),
-                        });
-                    } else {
-                        full_session_value = payload;
-                    }
-                }
-
-                if request.include_thinking {
-                    if let Some((inline, artifact_ref)) =
-                        build_thinking_artifact(ctx, &child_events, &request)?
-                    {
-                        artifacts.push(artifact_ref);
-                        thinking_value = inline;
-                    }
-                }
-            }
-        }
-    }
+    let BackgroundSessionOutput {
+        artifacts,
+        full_session: full_session_value,
+        thinking: thinking_value,
+    } = build_background_session_output(ctx, summary.session_id.as_deref(), &request)?;
 
     let mut payload = json!({
         "request_id": summary.request_id,
@@ -832,6 +794,64 @@ fn sanitize_cancel_reason(reason: &str) -> String {
     }
 }
 
+#[derive(Default)]
+struct BackgroundSessionOutput {
+    artifacts: Vec<ArtifactRef>,
+    full_session: Value,
+    thinking: Value,
+}
+
+fn build_background_session_output(
+    ctx: &ToolContext,
+    session_id: Option<&str>,
+    request: &BackgroundOutputRequest,
+) -> Result<BackgroundSessionOutput, ToolError> {
+    let mut output = BackgroundSessionOutput::default();
+    if !request.full_session && !request.include_thinking {
+        return Ok(output);
+    }
+    let Some(session_id) = session_id else {
+        return Ok(output);
+    };
+    let Some(child_events) = load_child_session_events(ctx, session_id)? else {
+        return Ok(output);
+    };
+
+    if request.full_session {
+        let payload = build_full_session_payload(&child_events, request);
+        let payload_str = serde_json::to_string_pretty(&payload)
+            .tool_err("failed to serialize full_session payload")?;
+        if payload_str.len() > MAX_TOOL_INLINE_JSON_CHARS {
+            let artifact = ctx
+                .artifact_store()
+                .map_err(|err| ToolError::Execution(err.to_string()))?
+                .write_text("background-full-session.json", &payload_str)
+                .map_err(|err| ToolError::Execution(err.to_string()))?;
+            let artifact_ref = ArtifactRef {
+                path: artifact.path,
+                digest: artifact.digest,
+            };
+            output.artifacts.push(artifact_ref.clone());
+            output.full_session = json!({
+                "spilled": true,
+                "artifact": artifact_ref,
+                "event_count": payload.get("event_count").and_then(Value::as_u64).unwrap_or(0),
+            });
+        } else {
+            output.full_session = payload;
+        }
+    }
+
+    if request.include_thinking {
+        if let Some((inline, artifact_ref)) = build_thinking_artifact(ctx, &child_events, request)?
+        {
+            output.artifacts.push(artifact_ref);
+            output.thinking = inline;
+        }
+    }
+    Ok(output)
+}
+
 fn build_full_session_payload(
     events: &[EventEnvelopeV1],
     request: &BackgroundOutputRequest,
@@ -916,19 +936,20 @@ fn build_thinking_artifact(
         let mut current_request_id: Option<String> = None;
         let mut current_text = String::new();
         for event in events {
-            if let Some(fragment) = canonical_provider_fragment_for_event(event) {
-                if fragment.kind != CanonicalProviderFragmentKind::Reasoning {
-                    continue;
-                }
-                let req_id = fragment.request_id.to_string();
-                if current_request_id.as_deref() != Some(req_id.as_str()) {
-                    if let Some(prev_id) = current_request_id.take() {
-                        thinking_blocks.push((prev_id, std::mem::take(&mut current_text)));
-                    }
-                    current_request_id = Some(req_id);
-                }
-                current_text.push_str(fragment.delta);
+            let Some(fragment) = canonical_provider_fragment_for_event(event) else {
+                continue;
+            };
+            if fragment.kind != CanonicalProviderFragmentKind::Reasoning {
+                continue;
             }
+            let req_id = fragment.request_id.to_string();
+            if current_request_id.as_deref() != Some(req_id.as_str()) {
+                if let Some(prev_id) = current_request_id.take() {
+                    thinking_blocks.push((prev_id, std::mem::take(&mut current_text)));
+                }
+                current_request_id = Some(req_id);
+            }
+            current_text.push_str(fragment.delta);
         }
         if let Some(req_id) = current_request_id {
             thinking_blocks.push((req_id, current_text));
