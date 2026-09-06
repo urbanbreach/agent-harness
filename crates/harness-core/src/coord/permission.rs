@@ -791,32 +791,30 @@ impl super::Coordinator {
         &mut self,
         enabled: bool,
     ) -> Result<(), CoordinatorError> {
-        let pending_ids = {
-            let run_state = self
-                .run_state
-                .as_mut()
-                .ok_or(CoordinatorError::RunNotStarted)?;
-            run_state.always_approve_mode = enabled;
-            if enabled {
-                run_state
-                    .pending_permissions
-                    .iter()
-                    .filter(|(_, pending)| {
-                        let PendingPermissionResolution::ToolCall { args_json, .. } =
-                            &pending.resolution
-                        else {
-                            return false;
-                        };
-                        pending
-                            .grant_request
-                            .as_ref()
-                            .is_some_and(|request| always_approve_can_bypass(request, args_json))
-                    })
-                    .map(|(permission_id, _)| permission_id.clone())
-                    .collect::<Vec<_>>()
-            } else {
-                Vec::new()
-            }
+        let run_state = self
+            .run_state
+            .as_mut()
+            .ok_or(CoordinatorError::RunNotStarted)?;
+        run_state.always_approve_mode = enabled;
+        let pending_ids = if enabled {
+            run_state
+                .pending_permissions
+                .iter()
+                .filter(|(_, pending)| {
+                    let PendingPermissionResolution::ToolCall { args_json, .. } =
+                        &pending.resolution
+                    else {
+                        return false;
+                    };
+                    pending
+                        .grant_request
+                        .as_ref()
+                        .is_some_and(|request| always_approve_can_bypass(request, args_json))
+                })
+                .map(|(permission_id, _)| permission_id.clone())
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
         };
 
         for permission_id in pending_ids {
@@ -964,62 +962,17 @@ impl super::Coordinator {
                     && permission_hook_failure.is_none()
                     && !caller_cancelled
                 {
-                    if let (Some(scope), Some(grant_request)) =
-                        (grant_scope, grant_request.as_ref())
-                    {
-                        if grant_request.kind == PermissionKind::ExternalDirectory {
-                            let collection = collect_external_directory_paths(
-                                &run_state.info.workspace_root,
-                                &tool_id,
-                                &args_json,
-                            );
-                            let recorded = record_external_directory_always_grants(
-                                run_state,
-                                &permission_id,
-                                scope,
-                                grant_request,
-                                &collection.paths,
-                                grant_request.matcher.request_digest(),
-                            );
-                            for grant in recorded {
-                                append_permission_grant_recorded_event(
-                                    clock.as_ref(),
-                                    redactor.as_ref(),
-                                    run_state,
-                                    &permission_id,
-                                    request_correlation_id.as_deref(),
-                                    grant,
-                                )?;
-                            }
-                        } else {
-                            if grant_request.kind == PermissionKind::DoomLoop {
-                                run_state.doom_loop_always_granted = true;
-                            }
-                            let grant = PermissionGrant {
-                                grant_id: format!("grant_{permission_id}"),
-                                permission_id: permission_id.clone(),
-                                scope,
-                                expires_at: None,
-                                kind: grant_request.kind,
-                                tool: grant_request.tool.clone(),
-                                matcher: grant_request.matcher.clone(),
-                            };
-                            append_permission_grant_recorded_event(
-                                clock.as_ref(),
-                                redactor.as_ref(),
-                                run_state,
-                                &permission_id,
-                                request_correlation_id.as_deref(),
-                                grant.clone(),
-                            )?;
-                            run_state.record_permission_grant(grant);
-                        }
-                    } else if grant_request
-                        .as_ref()
-                        .is_some_and(|g| g.kind == PermissionKind::DoomLoop)
-                    {
-                        run_state.reset_identical_tool_call_streak();
-                    }
+                    record_resolved_permission_grant(
+                        clock.as_ref(),
+                        redactor.as_ref(),
+                        run_state,
+                        &permission_id,
+                        &request_correlation_id,
+                        grant_scope,
+                        grant_request.as_ref(),
+                        &tool_id,
+                        &args_json,
+                    )?;
 
                     let resolved_kind = grant_request.as_ref().map(|g| g.kind);
                     let effective_permission_ruleset = actor
@@ -1440,4 +1393,73 @@ mod external_directory_path_collect_tests {
         assert!(collection.hard_deny.is_none());
         assert_eq!(collection.paths, vec![Path::new("/tmp/outside")]);
     }
+}
+
+fn record_resolved_permission_grant(
+    clock: &dyn crate::clock::Clock,
+    redactor: &dyn Redactor,
+    run_state: &mut super::RunState,
+    permission_id: &str,
+    request_correlation_id: &Option<String>,
+    grant_scope: Option<PermissionGrantScope>,
+    grant_request: Option<&PermissionGrantRequest>,
+    tool_id: &str,
+    args_json: &Value,
+) -> Result<(), CoordinatorError> {
+    if let (Some(scope), Some(grant_request)) = (grant_scope, grant_request) {
+        if grant_request.kind == PermissionKind::ExternalDirectory {
+            let collection = collect_external_directory_paths(
+                &run_state.info.workspace_root,
+                tool_id,
+                args_json,
+            );
+            let recorded = record_external_directory_always_grants(
+                run_state,
+                permission_id,
+                scope,
+                grant_request,
+                &collection.paths,
+                grant_request.matcher.request_digest(),
+            );
+            for grant in recorded {
+                append_permission_grant_recorded_event(
+                    clock,
+                    redactor,
+                    run_state,
+                    permission_id,
+                    request_correlation_id.as_deref(),
+                    grant,
+                )?;
+            }
+        } else {
+            if grant_request.kind == PermissionKind::DoomLoop {
+                run_state.doom_loop_always_granted = true;
+            }
+            let grant = PermissionGrant {
+                grant_id: format!("grant_{permission_id}"),
+                permission_id: permission_id.to_string(),
+                scope,
+                expires_at: None,
+                kind: grant_request.kind,
+                tool: grant_request.tool.clone(),
+                matcher: grant_request.matcher.clone(),
+            };
+            append_permission_grant_recorded_event(
+                clock,
+                redactor,
+                run_state,
+                permission_id,
+                request_correlation_id.as_deref(),
+                grant.clone(),
+            )?;
+            run_state.record_permission_grant(grant);
+        }
+    } else if grant_request
+        .as_ref()
+        .is_some_and(|g| g.kind == PermissionKind::DoomLoop)
+    {
+        run_state.reset_identical_tool_call_streak();
+    }
+
+    Ok(())
 }
