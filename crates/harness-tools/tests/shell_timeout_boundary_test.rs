@@ -23,12 +23,12 @@ mod common;
 async fn started_process(pid_path: &Path) -> Pid {
     tokio::time::timeout(Duration::from_secs(2), async {
         loop {
-            if let Ok(raw_pid) = std::fs::read_to_string(pid_path) {
-                if let Ok(raw_pid) = raw_pid.trim().parse::<i32>() {
-                    if let Some(pid) = Pid::from_raw(raw_pid) {
-                        return pid;
-                    }
-                }
+            let pid = std::fs::read_to_string(pid_path)
+                .ok()
+                .and_then(|raw_pid| raw_pid.trim().parse::<i32>().ok())
+                .and_then(Pid::from_raw);
+            if let Some(pid) = pid {
+                return pid;
             }
             tokio::task::yield_now().await;
         }
