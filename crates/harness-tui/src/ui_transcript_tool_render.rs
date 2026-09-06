@@ -550,7 +550,7 @@ fn append_shell_tool_harness_card(
                 command,
                 output,
                 description,
-                expand_hint,
+                expand_hint: _,
                 tone,
             } => {
                 append_harness_bash_panel(
@@ -566,7 +566,7 @@ fn append_shell_tool_harness_card(
                         },
                         output,
                         description: None,
-                        expand_hint: expand_hint.as_deref(),
+                        expanded: tool_call.expanded,
                         tone: *tone,
                     },
                     theme,
@@ -578,8 +578,12 @@ fn append_shell_tool_harness_card(
                     tool_call.header.disclosure_state.is_some(),
                 );
                 for line in &render.lines[start..] {
-                    let interaction = expand_hint
-                        .as_deref()
+                    let hint = if tool_call.expanded {
+                        "Click to collapse"
+                    } else {
+                        "Click to expand"
+                    };
+                    let interaction = Some(hint)
                         .filter(|hint| line.spans.iter().any(|span| span.content.contains(*hint)))
                         .and(target.clone())
                         .and_then(|target| bounded_interaction_row(Some(target), line));
@@ -688,7 +692,7 @@ pub(super) fn append_tool_call_detail_blocks(
                 command,
                 output,
                 description,
-                expand_hint,
+                expand_hint: _,
                 tone,
             } => {
                 append_harness_bash_panel(
@@ -697,7 +701,7 @@ pub(super) fn append_tool_call_detail_blocks(
                         command,
                         output,
                         description: description.as_deref(),
-                        expand_hint: expand_hint.as_deref(),
+                        expanded: tool_call.expanded,
                         tone: *tone,
                     },
                     theme,

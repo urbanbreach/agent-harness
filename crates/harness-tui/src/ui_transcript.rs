@@ -29,7 +29,7 @@ use super::ui_tool_error::{
     push_failed_tool_error_block, tool_call_denied, tool_error_subtitle, tool_error_text,
 };
 use super::ui_tool_metadata::tool_summary_string;
-use super::ui_tool_output::{collapsible_bash_panel_preview, collapsible_output_preview};
+use super::ui_tool_output::collapsible_output_preview;
 use super::ui_tool_paths::{
     context_group_tool_id, join_tool_subtitles, read_tool_input_suffix, search_result_count_suffix,
     tool_call_path_metadata, tool_match_count_description, tool_path_display,
@@ -58,7 +58,7 @@ use super::ui_tool_visibility::{
 };
 use super::ui_transcript_bash::{
     append_harness_bash_panel, shell_tool_command, shell_tool_output, shell_tool_title_description,
-    HarnessBashPanel, HARNESS_BASH_OUTPUT_LINE_CLAMP,
+    HarnessBashPanel,
 };
 use super::ui_transcript_events::{
     activity_has_thinking_text, provider_event_matches_activity, turn_event_matches_activity,
