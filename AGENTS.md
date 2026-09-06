@@ -69,6 +69,36 @@ Reference centrality was not measured; `Refs` records only that limitation.
 - Workspace lint policy denies unsafe code, unused must-use values, non-ASCII
   identifiers, unwrap/expect/panic/todo, and selected sharp Clippy patterns.
 
+## Tests
+
+Tests are maintained code, not free safety.
+
+Add the minimum test coverage necessary to protect meaningful behavior.
+
+Do not add a test merely because production code changed.
+
+Do not test:
+- trivial getters/setters
+- constructors with no meaningful behavior
+- compiler-enforced type properties
+- derived implementations
+- straightforward delegation
+- private implementation details already exercised through public behavior
+- the same behavior repeatedly with different literal inputs
+- impossible internal states solely to increase coverage
+
+Before adding a test:
+1. search for existing coverage;
+2. prefer extending an existing test;
+3. identify the specific plausible regression the new test prevents.
+
+Prefer:
+- one behavioral test over several implementation-detail tests;
+- table-driven cases over repeated test functions;
+- testing through the public boundary over private helpers.
+
+A test that cannot plausibly catch a regression should not exist.
+
 ## ANTI-PATTERNS (THIS PROJECT)
 
 - Do not replay historical tools or hooks, mutate source histories, or perform network
