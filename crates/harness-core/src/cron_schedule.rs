@@ -574,16 +574,16 @@ mod tests {
         );
 
         // Then: register outcomes succeed; multi-list preserves labels; executes=false honesty
-        assert!(matches!(first, CronRegisterOutcome::Registered { .. }));
-        assert!(matches!(second, CronRegisterOutcome::Registered { .. }));
-        assert!(matches!(
-            third,
-            CronRegisterOutcome::Registered { id, .. } if id == "(probe-3)"
-        ));
-        assert!(matches!(
-            unlabeled,
-            CronRegisterOutcome::Registered { id, .. } if id == "(probe-4)"
-        ));
+        for (outcome, expected_id) in [
+            (first, "(probe)"),
+            (second, "(probe-2)"),
+            (third, "(probe-3)"),
+            (unlabeled, "(probe-4)"),
+        ] {
+            assert!(
+                matches!(outcome, CronRegisterOutcome::Registered { id, .. } if id == expected_id)
+            );
+        }
         assert_eq!(registry.list().len(), 4);
         assert!(registry.list().iter().any(|s| {
             s.id.as_str() == "(probe-2)"
