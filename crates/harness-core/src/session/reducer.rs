@@ -83,16 +83,16 @@ pub fn replay(
                 };
                 match &entry.payload {
                     SessionEntryPayload::AssistantMessage { parts, .. } => {
-                        for part in parts {
-                            match part {
+                        tool_pairing
+                            .calls
+                            .extend(parts.iter().filter_map(|part| match part {
                                 AssistantPart::ToolCall(tool_call) => {
-                                    tool_pairing
-                                        .calls
-                                        .insert(tool_call.tool_call_id.clone(), entry.id.clone());
+                                    Some((tool_call.tool_call_id.clone(), entry.id.clone()))
                                 }
-                                AssistantPart::Text { .. } | AssistantPart::Reasoning { .. } => {}
-                            }
-                        }
+                                AssistantPart::Text { .. } | AssistantPart::Reasoning { .. } => {
+                                    None
+                                }
+                            }));
                     }
                     SessionEntryPayload::ToolResult { tool_call_id, .. } => {
                         tool_pairing
