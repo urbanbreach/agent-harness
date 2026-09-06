@@ -65,7 +65,6 @@ pub mod transcript_projection;
 pub mod vcs;
 pub mod workspace;
 pub mod workspace_hub;
-mod workspace_hub_compat;
 pub mod worktree;
 
 pub use context_budget::{

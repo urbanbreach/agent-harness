@@ -556,12 +556,7 @@ define_operator_dialog_summary! {
         cron_last_register => "Cron register",
         cron_first_schedule => "Cron first",
         cron_last_remove => "Cron remove",
-        workspace_hub => "Workspace hub",
         workspace_hub_availability => "Workspace hub availability",
-        workspace_hub_connect => "Workspace hub connect",
-        workspace_hub_bind => "Workspace hub bind",
-        workspace_hub_upload => "Workspace hub upload",
-        workspace_hub_recover => "Workspace hub recover",
         graph_batch => "Graph batch",
         graph_query_last => "Graph query last",
         graph_batch_first => "Graph batch first",
@@ -569,15 +564,8 @@ define_operator_dialog_summary! {
         cow_clone => "COW clone",
         cow_clone_last => "COW clone last",
         cow_fastpath => "COW fastpath",
-        browser_oidc => "Browser OIDC",
         browser_oidc_availability => "Browser OIDC availability",
-        browser_oidc_start => "Browser OIDC start",
-        browser_oidc_complete => "Browser OIDC complete",
-        mcp_oauth => "MCP OAuth",
         mcp_oauth_remote_availability => "MCP OAuth remote availability",
-        mcp_oauth_begin => "MCP OAuth begin",
-        mcp_oauth_exchange => "MCP OAuth exchange",
-        mcp_oauth_open => "MCP OAuth open",
         sleep_wake => "Sleep/wake",
         sleep_wake_policy => "Sleep/wake policy",
         sleep_wake_last => "Sleep/wake last",
@@ -745,27 +733,15 @@ fn status_dialog_operator_summary(app: &AppState) -> OperatorDialogSummary {
         )
     });
     sanitized_one_lines!(app;
-        workspace_hub => workspace_hub_outcome_summary,
         workspace_hub_availability => workspace_hub_availability,
-        workspace_hub_connect => workspace_hub_last_connect,
-        workspace_hub_bind => workspace_hub_last_bind,
-        workspace_hub_upload => workspace_hub_last_upload,
-        workspace_hub_recover => workspace_hub_last_recover,
         graph_batch => graph_query_batch_summary,
         graph_query_last => graph_query_last_result,
         persistent_graph => persistent_graph_availability,
         cow_clone => cow_clone_outcome_summary,
         cow_clone_last => cow_clone_last_result,
         cow_fastpath => cow_worktree_availability,
-        browser_oidc => browser_oidc_outcome_summary,
         browser_oidc_availability => browser_oidc_availability,
-        browser_oidc_start => browser_oidc_last_start,
-        browser_oidc_complete => browser_oidc_last_complete,
-        mcp_oauth => mcp_oauth_outcome_summary,
         mcp_oauth_remote_availability => mcp_oauth_remote_availability,
-        mcp_oauth_begin => mcp_oauth_last_begin,
-        mcp_oauth_exchange => mcp_oauth_last_exchange,
-        mcp_oauth_open => mcp_oauth_last_open,
         sleep_wake => sleep_wake_observation_summary,
         sleep_wake_policy => sleep_wake_credential_policy,
         sleep_wake_last => sleep_wake_last_observation,
@@ -852,12 +828,7 @@ fn status_dialog_operator_summary(app: &AppState) -> OperatorDialogSummary {
         cron_last_register,
         cron_first_schedule,
         cron_last_remove,
-        workspace_hub,
         workspace_hub_availability,
-        workspace_hub_connect,
-        workspace_hub_bind,
-        workspace_hub_upload,
-        workspace_hub_recover,
         graph_batch,
         graph_query_last,
         graph_batch_first,
@@ -865,15 +836,8 @@ fn status_dialog_operator_summary(app: &AppState) -> OperatorDialogSummary {
         cow_clone,
         cow_clone_last,
         cow_fastpath,
-        browser_oidc,
         browser_oidc_availability,
-        browser_oidc_start,
-        browser_oidc_complete,
-        mcp_oauth,
         mcp_oauth_remote_availability,
-        mcp_oauth_begin,
-        mcp_oauth_exchange,
-        mcp_oauth_open,
         sleep_wake,
         sleep_wake_policy,
         sleep_wake_last,
@@ -2541,41 +2505,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_sleep_wake_poli
     assert!(rendered.contains("Sleep/wake last:"), "rendered={rendered}");
 }
 
-pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_mcp_oauth_outcomes() {
-    // Given: live app with MCP OAuth outcome summary bound for the status dialog
-    let mut app = AppState::new_live(None, false, None);
-    assert!(status_dialog_operator_summary(&app).mcp_oauth.is_none());
-
-    app.set_mcp_oauth_outcome_summary(Some(harness_core::mcp_oauth::McpOauthOutcomeSummary {
-        begin_unavailable: 1,
-        exchange_unavailable: 1,
-        open_unavailable: 1,
-        total: 3,
-    }));
-
-    // When
-    let summary = status_dialog_operator_summary(&app);
-    let rendered = render_operator_summary_for_test(&summary);
-
-    // Then
-    assert!(
-        summary
-            .mcp_oauth
-            .as_deref()
-            .is_some_and(|text| text.contains("MCP OAuth outcomes:")),
-        "expected MCP OAuth one_line: {:?}",
-        summary.mcp_oauth
-    );
-    assert!(
-        rendered.contains("MCP OAuth: MCP OAuth outcomes:"),
-        "expected MCP OAuth line: {rendered}"
-    );
-    assert!(
-        rendered.contains("unavailable"),
-        "expected unavailable honesty in MCP OAuth line: {rendered}"
-    );
-}
-
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_sleep_wake_availability() {
@@ -2624,22 +2553,14 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_sleep_wake_avai
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_mcp_oauth_remote_availability() {
-    // Given: MCP OAuth remote availability + last begin bound
+    // Given: unsupported MCP OAuth remote availability bound
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_operator_summary(&app)
         .mcp_oauth_remote_availability
         .is_none());
-    assert!(status_dialog_operator_summary(&app)
-        .mcp_oauth_begin
-        .is_none());
-
     app.set_mcp_oauth_remote_availability(Some(
         harness_core::mcp_oauth::evaluate_mcp_oauth_remote_transports(),
     ));
-    app.set_mcp_oauth_last_begin(Some(harness_core::mcp_oauth::begin_mcp_oauth_flow(
-        "docs-server",
-        "https://auth.example/oauth",
-    )));
 
     // When
     let summary = status_dialog_operator_summary(&app);
@@ -2654,126 +2575,23 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_mcp_oauth_remot
         availability.contains("unavailable"),
         "availability={availability}"
     );
-    let begin = summary.mcp_oauth_begin.as_deref().expect("MCP OAuth begin");
-    assert!(begin.contains("begun"), "begin={begin}");
-    assert!(
-        begin.contains("docs-server") || begin.contains("auth.example"),
-        "begin={begin}"
-    );
     assert!(
         rendered.contains("MCP OAuth remote availability:"),
         "rendered={rendered}"
     );
-    assert!(rendered.contains("MCP OAuth begin:"), "rendered={rendered}");
-}
-
-pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_browser_oidc_outcomes() {
-    // Given: live app with browser-OIDC outcome summary bound for the status dialog
-    let mut app = AppState::new_live(None, false, None);
-    assert!(status_dialog_operator_summary(&app).browser_oidc.is_none());
-
-    app.set_browser_oidc_outcome_summary(Some(
-        harness_core::browser_oidc::BrowserOidcOutcomeSummary {
-            start_unavailable: 1,
-            complete_unavailable: 1,
-            total: 2,
-        },
-    ));
-
-    // When
-    let summary = status_dialog_operator_summary(&app);
-    let rendered = render_operator_summary_for_test(&summary);
-
-    // Then
-    assert!(
-        summary
-            .browser_oidc
-            .as_deref()
-            .is_some_and(|text| text.contains("browser OIDC outcomes:")),
-        "expected browser OIDC one_line: {:?}",
-        summary.browser_oidc
-    );
-    assert!(
-        rendered.contains("Browser OIDC: browser OIDC outcomes:"),
-        "expected browser OIDC line: {rendered}"
-    );
-    assert!(
-        rendered.contains("unavailable"),
-        "expected unavailable honesty in browser OIDC line: {rendered}"
-    );
-}
-
-#[cfg(test)]
-#[test]
-pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_mcp_oauth_exchange_open() {
-    // Given: MCP OAuth last-exchange + last-open bound
-    let mut app = AppState::new_live(None, false, None);
-    assert!(status_dialog_operator_summary(&app)
-        .mcp_oauth_exchange
-        .is_none());
-    assert!(status_dialog_operator_summary(&app)
-        .mcp_oauth_open
-        .is_none());
-
-    app.set_mcp_oauth_last_exchange(Some(harness_core::mcp_oauth::exchange_mcp_oauth_token(
-        "docs-server",
-        "abcd1234secret",
-    )));
-    app.set_mcp_oauth_last_open(Some(harness_core::mcp_oauth::open_mcp_remote_transport(
-        "docs-server",
-        "https://mcp.example/sse",
-    )));
-
-    // When
-    let summary = status_dialog_operator_summary(&app);
-    let rendered = render_operator_summary_for_test(&summary);
-
-    // Then
-    let exchange = summary
-        .mcp_oauth_exchange
-        .as_deref()
-        .expect("MCP OAuth exchange");
-    assert!(exchange.contains("exchanged"), "exchange={exchange}");
-    assert!(
-        exchange.contains("docs-server") || exchange.contains("abcd…"),
-        "exchange={exchange}"
-    );
-    assert!(
-        !exchange.contains("secret"),
-        "must not leak secret: {exchange}"
-    );
-    let open = summary.mcp_oauth_open.as_deref().expect("MCP OAuth open");
-    assert!(open.contains("unavailable"), "open={open}");
-    assert!(
-        open.contains("docs-server") || open.contains("mcp.example"),
-        "open={open}"
-    );
-    assert!(
-        rendered.contains("MCP OAuth exchange:"),
-        "rendered={rendered}"
-    );
-    assert!(rendered.contains("MCP OAuth open:"), "rendered={rendered}");
 }
 
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_browser_oidc_availability() {
-    // Given: browser OIDC availability + last start bound
+    // Given: unsupported browser OIDC availability bound
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_operator_summary(&app)
         .browser_oidc_availability
         .is_none());
-    assert!(status_dialog_operator_summary(&app)
-        .browser_oidc_start
-        .is_none());
-
     app.set_browser_oidc_availability(Some(
         harness_core::browser_oidc::evaluate_browser_oidc_availability(),
     ));
-    app.set_browser_oidc_last_start(Some(harness_core::browser_oidc::start_browser_oidc_flow(
-        "https://issuer.example",
-        "client-abc",
-    )));
 
     // When
     let summary = status_dialog_operator_summary(&app);
@@ -2785,24 +2603,11 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_browser_oidc_av
         .as_deref()
         .expect("browser OIDC availability");
     assert!(
-        availability.contains("available"),
+        availability.contains("unavailable"),
         "availability={availability}"
-    );
-    let start = summary
-        .browser_oidc_start
-        .as_deref()
-        .expect("browser OIDC start");
-    assert!(start.contains("started"), "start={start}");
-    assert!(
-        start.contains("issuer.example") || start.contains("client-abc"),
-        "start={start}"
     );
     assert!(
         rendered.contains("Browser OIDC availability:"),
-        "rendered={rendered}"
-    );
-    assert!(
-        rendered.contains("Browser OIDC start:"),
         "rendered={rendered}"
     );
 }
@@ -2838,45 +2643,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_cow_clone_outco
     assert!(
         rendered.contains("1 cloned") && rendered.contains("2 unavailable"),
         "expected cloned/unavailable honesty in COW clone line: {rendered}"
-    );
-}
-
-#[cfg(test)]
-#[test]
-pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_browser_oidc_complete() {
-    // Given: browser OIDC last-complete bound
-    let mut app = AppState::new_live(None, false, None);
-    assert!(status_dialog_operator_summary(&app)
-        .browser_oidc_complete
-        .is_none());
-
-    app.set_browser_oidc_last_complete(Some(
-        harness_core::browser_oidc::BrowserOidcCompleteResult::Completed {
-            token_type: "Bearer".to_string(),
-            access_token_redacted: "abcd…".to_string(),
-            has_id_token: true,
-            has_refresh_token: false,
-        },
-    ));
-
-    // When
-    let summary = status_dialog_operator_summary(&app);
-    let rendered = render_operator_summary_for_test(&summary);
-
-    // Then
-    let text = summary
-        .browser_oidc_complete
-        .as_deref()
-        .expect("browser OIDC complete");
-    assert!(text.contains("completed"), "text={text}");
-    assert!(
-        text.contains("abcd…") || text.contains("token="),
-        "text={text}"
-    );
-    assert!(!text.contains("secret"), "must not leak secret: {text}");
-    assert!(
-        rendered.contains("Browser OIDC complete:"),
-        "rendered={rendered}"
     );
 }
 
@@ -3013,60 +2779,16 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_graph_batch_fir
     );
 }
 
-pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_workspace_hub_outcomes() {
-    // Given: live app with workspace-hub outcome summary bound for the status dialog
-    let mut app = AppState::new_live(None, false, None);
-    assert!(status_dialog_operator_summary(&app).workspace_hub.is_none());
-
-    app.set_workspace_hub_outcome_summary(Some(
-        harness_core::workspace_hub::WorkspaceHubOutcomeSummary {
-            connect_unavailable: 1,
-            bind_unavailable: 1,
-            upload_unavailable: 0,
-            recover_unavailable: 1,
-            total: 3,
-        },
-    ));
-
-    // When
-    let summary = status_dialog_operator_summary(&app);
-    let rendered = render_operator_summary_for_test(&summary);
-
-    // Then
-    assert!(
-        summary
-            .workspace_hub
-            .as_deref()
-            .is_some_and(|text| text.contains("workspace hub outcomes:")),
-        "expected workspace hub one_line: {:?}",
-        summary.workspace_hub
-    );
-    assert!(
-        rendered.contains("Workspace hub: workspace hub outcomes:"),
-        "expected workspace hub line: {rendered}"
-    );
-    assert!(
-        rendered.contains("connect=1") && rendered.contains("unavailable"),
-        "expected unavailable honesty in workspace hub line: {rendered}"
-    );
-}
-
 #[cfg(test)]
 #[test]
 pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_workspace_hub_availability() {
-    // Given: workspace hub availability + last connect bound
+    // Given: removed workspace hub availability bound
     let mut app = AppState::new_live(None, false, None);
     assert!(status_dialog_operator_summary(&app)
         .workspace_hub_availability
         .is_none());
-    assert!(status_dialog_operator_summary(&app)
-        .workspace_hub_connect
-        .is_none());
 
     app.set_workspace_hub_availability(Some(harness_core::workspace_hub::evaluate_workspace_hub()));
-    app.set_workspace_hub_last_connect(Some(harness_core::workspace_hub::connect_workspace_hub(
-        "https://hub.example/probe",
-    )));
 
     // When
     let summary = status_dialog_operator_summary(&app);
@@ -3081,17 +2803,8 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_workspace_hub_a
         availability.contains("unavailable"),
         "availability={availability}"
     );
-    let connect = summary
-        .workspace_hub_connect
-        .as_deref()
-        .expect("workspace hub connect");
-    assert!(connect.contains("unavailable"), "connect={connect}");
     assert!(
         rendered.contains("Workspace hub availability:"),
-        "rendered={rendered}"
-    );
-    assert!(
-        rendered.contains("Workspace hub connect:"),
         "rendered={rendered}"
     );
 }
@@ -3129,66 +2842,6 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_auto_fallback_c
     assert!(
         rendered.contains("2 remaining of 3") && rendered.contains("exhausted=false"),
         "expected remaining/exhausted honesty in fallback chain line: {rendered}"
-    );
-}
-
-#[cfg(test)]
-#[test]
-pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_workspace_hub_bind_upload_recover()
-{
-    // Given: workspace hub bind/upload/recover diagnostic results bound
-    let mut app = AppState::new_live(None, false, None);
-    assert!(status_dialog_operator_summary(&app)
-        .workspace_hub_bind
-        .is_none());
-    assert!(status_dialog_operator_summary(&app)
-        .workspace_hub_upload
-        .is_none());
-    assert!(status_dialog_operator_summary(&app)
-        .workspace_hub_recover
-        .is_none());
-
-    app.set_workspace_hub_last_bind(Some(harness_core::workspace_hub::bind_workspace_hub(
-        "(probe)",
-    )));
-    app.set_workspace_hub_last_upload(Some(harness_core::workspace_hub::upload_to_workspace_hub(
-        "(probe-artifact)",
-    )));
-    app.set_workspace_hub_last_recover(Some(harness_core::workspace_hub::recover_workspace_hub(
-        "(probe-session)",
-    )));
-
-    // When
-    let summary = status_dialog_operator_summary(&app);
-    let rendered = render_operator_summary_for_test(&summary);
-
-    // Then
-    let bind = summary.workspace_hub_bind.as_deref().expect("bind");
-    let upload = summary.workspace_hub_upload.as_deref().expect("upload");
-    let recover = summary.workspace_hub_recover.as_deref().expect("recover");
-    assert!(
-        bind.contains("unavailable") || bind.contains("bind"),
-        "bind={bind}"
-    );
-    assert!(
-        upload.contains("unavailable") || upload.contains("upload"),
-        "upload={upload}"
-    );
-    assert!(
-        recover.contains("unavailable") || recover.contains("recover"),
-        "recover={recover}"
-    );
-    assert!(
-        rendered.contains("Workspace hub bind:"),
-        "rendered={rendered}"
-    );
-    assert!(
-        rendered.contains("Workspace hub upload:"),
-        "rendered={rendered}"
-    );
-    assert!(
-        rendered.contains("Workspace hub recover:"),
-        "rendered={rendered}"
     );
 }
 

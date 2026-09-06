@@ -86,8 +86,6 @@ pub(crate) use status_dialog::{
     exact_test_status_dialog_operator_summary_surfaces_binary_version,
     exact_test_status_dialog_operator_summary_surfaces_bound_settings_counts,
     exact_test_status_dialog_operator_summary_surfaces_browser_oidc_availability,
-    exact_test_status_dialog_operator_summary_surfaces_browser_oidc_complete,
-    exact_test_status_dialog_operator_summary_surfaces_browser_oidc_outcomes,
     exact_test_status_dialog_operator_summary_surfaces_cow_clone_last,
     exact_test_status_dialog_operator_summary_surfaces_cow_clone_outcomes,
     exact_test_status_dialog_operator_summary_surfaces_cow_fastpath,
@@ -118,8 +116,6 @@ pub(crate) use status_dialog::{
     exact_test_status_dialog_operator_summary_surfaces_jujutsu_last_command,
     exact_test_status_dialog_operator_summary_surfaces_jujutsu_probe,
     exact_test_status_dialog_operator_summary_surfaces_landlock_support,
-    exact_test_status_dialog_operator_summary_surfaces_mcp_oauth_exchange_open,
-    exact_test_status_dialog_operator_summary_surfaces_mcp_oauth_outcomes,
     exact_test_status_dialog_operator_summary_surfaces_mcp_oauth_remote_availability,
     exact_test_status_dialog_operator_summary_surfaces_os_sandbox_first_prepare,
     exact_test_status_dialog_operator_summary_surfaces_os_sandbox_profiles,
@@ -134,8 +130,6 @@ pub(crate) use status_dialog::{
     exact_test_status_dialog_operator_summary_surfaces_team_registry_counts,
     exact_test_status_dialog_operator_summary_surfaces_team_send,
     exact_test_status_dialog_operator_summary_surfaces_workspace_hub_availability,
-    exact_test_status_dialog_operator_summary_surfaces_workspace_hub_bind_upload_recover,
-    exact_test_status_dialog_operator_summary_surfaces_workspace_hub_outcomes,
     exact_test_status_dialog_plugins_section_surfaces_extension_descriptor,
     exact_test_status_dialog_plugins_section_surfaces_extension_discover,
     exact_test_status_dialog_plugins_section_surfaces_lifecycle_summary,
@@ -319,19 +313,22 @@ fn render_command_palette_overlay(
         );
     }
 
-    let title = if app.session_history_visible {
-        session_history_overlay_title(app)
-    } else if app.model_switcher_visible {
-        model_switcher_overlay_title(app)
-    } else if app.toggles_menu_visible {
-        "Toggles".to_string()
-    } else if app.lineage_browser_visible {
-        "Harness session tree".to_string()
-    } else if app.fork_selector_visible {
-        "Fork session".to_string()
-    } else {
-        modal_chrome::COMMANDS_CHROME.title.to_string()
-    };
+    let title = command_palette_title(app);
+    fn command_palette_title(app: &AppState) -> String {
+        if app.session_history_visible {
+            session_history_overlay_title(app)
+        } else if app.model_switcher_visible {
+            model_switcher_overlay_title(app)
+        } else if app.toggles_menu_visible {
+            "Toggles".to_string()
+        } else if app.lineage_browser_visible {
+            "Harness session tree".to_string()
+        } else if app.fork_selector_visible {
+            "Fork session".to_string()
+        } else {
+            modal_chrome::COMMANDS_CHROME.title.to_string()
+        }
+    }
     let surface_key = ModalSurfaceKey::Overlay {
         kind: app
             .overlay_stack()
@@ -356,23 +353,17 @@ fn render_command_palette_overlay(
         },
     };
 
+    if !paint_modal_panel(frame, app, theme, overlay, surface_key, &title) {
+        return;
+    }
     if app.session_history_visible {
-        if !paint_modal_panel(frame, app, theme, overlay, surface_key, &title) {
-            return;
-        }
         render_session_history_overlay(frame, app, theme, overlay, &title);
         if app.session_rename_visible {
             render_session_rename_dialog(frame, app, theme, overlay);
         }
     } else if app.model_switcher_visible {
-        if !paint_modal_panel(frame, app, theme, overlay, surface_key, &title) {
-            return;
-        }
         render_model_switcher_overlay(frame, app, theme, overlay, &title);
     } else if app.toggles_menu_visible {
-        if !paint_modal_panel(frame, app, theme, overlay, surface_key, &title) {
-            return;
-        }
         let Some((_header, input, list)) = command_palette_dialog_layout(overlay) else {
             return;
         };
@@ -382,24 +373,16 @@ fn render_command_palette_overlay(
             render_yolo_warning_popup(frame, theme, overlay);
         }
     } else if app.lineage_browser_visible {
-        if !paint_modal_panel(frame, app, theme, overlay, surface_key, &title) {
-            return;
-        }
         let Some(inner) = command_palette_bordered_inner(overlay) else {
             return;
         };
         render_lineage_browser_overlay(frame, app, theme, inner, &title);
     } else if app.fork_selector_visible {
-        if !paint_modal_panel(frame, app, theme, overlay, surface_key, &title) {
-            return;
-        }
         let Some((_header, input, list)) = command_palette_dialog_layout(overlay) else {
             return;
         };
         render_fork_selector_input(frame, app, theme, input);
         render_fork_selector_list(frame, app, theme, list);
-    } else if !paint_modal_panel(frame, app, theme, overlay, surface_key, &title) {
-        return;
     } else {
         let Some((_header, input, list)) = command_palette_dialog_layout(overlay) else {
             return;
@@ -1140,26 +1123,23 @@ pub(crate) fn palette_overlay_rows(app: &AppState) -> Vec<PaletteOverlayRow> {
             last_category = Some(row.category);
         }
 
-        let footer = {
-            let entry = find(row.command_id);
-            entry
-                .map(|e| {
-                    let freeze = e.freeze_shortcut();
-                    if !freeze.is_empty() {
-                        freeze.to_string()
-                    } else {
-                        match e.dispatch {
-                            PaletteDispatch::Action(action) => app.keymap.get_binding_str(action),
-                            PaletteDispatch::OpenModelSwitcher => {
-                                app.keymap.get_binding_str(Action::OpenModelSwitcher)
-                            }
-                            _ => String::new(),
+        let footer = find(row.command_id)
+            .map(|e| {
+                let freeze = e.freeze_shortcut();
+                if !freeze.is_empty() {
+                    freeze.to_string()
+                } else {
+                    match e.dispatch {
+                        PaletteDispatch::Action(action) => app.keymap.get_binding_str(action),
+                        PaletteDispatch::OpenModelSwitcher => {
+                            app.keymap.get_binding_str(Action::OpenModelSwitcher)
                         }
+                        _ => String::new(),
                     }
-                })
-                .filter(|s| s != "-" && !s.is_empty())
-                .unwrap_or_default()
-        };
+                }
+            })
+            .filter(|s| s != "-" && !s.is_empty())
+            .unwrap_or_default();
 
         overlay_rows.push(PaletteOverlayRow::Command {
             title: row.title.clone(),
