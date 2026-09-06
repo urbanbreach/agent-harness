@@ -9,6 +9,25 @@ pub(crate) enum PermissionModalSelection {
 }
 
 impl PermissionModalSelection {
+    pub(crate) const fn number(self) -> usize {
+        match self {
+            Self::AllowAlways => 1,
+            Self::AllowSession => 2,
+            Self::AllowOnce => 3,
+            Self::Reject => 4,
+        }
+    }
+
+    pub(super) const fn from_number(number: char) -> Option<Self> {
+        match number {
+            '1' => Some(Self::AllowAlways),
+            '2' => Some(Self::AllowSession),
+            '3' => Some(Self::AllowOnce),
+            '4' => Some(Self::Reject),
+            _ => None,
+        }
+    }
+
     pub(super) fn cycle(self, forward: bool, allow_always: bool) -> Self {
         let options = if allow_always {
             // Permission order: always-approve, session edits, yes, reject.
