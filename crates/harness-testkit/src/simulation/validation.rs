@@ -148,30 +148,7 @@ pub fn validate_simulation_events(
                     &row_path,
                     &mut failures,
                 );
-                match redaction.get("redacted_fields").and_then(Value::as_array) {
-                    Some(fields) => {
-                        for (field_index, field) in fields.iter().enumerate() {
-                            if field.as_str().is_none_or(str::is_empty) {
-                                failures.push(failure(
-                                    "redaction",
-                                    format!("{row_path}#/redaction/redacted_fields/{field_index}"),
-                                    "non-empty redacted field name",
-                                    value_type(field),
-                                    "redacted_fields entries must be named fields",
-                                ));
-                            }
-                        }
-                    }
-                    None => failures.push(failure(
-                        "redaction",
-                        &row_path,
-                        "redacted_fields array",
-                        redaction
-                            .get("redacted_fields")
-                            .map_or("<missing>".to_owned(), value_type),
-                        "event row redaction metadata must list redacted fields",
-                    )),
-                }
+                validate_redacted_fields(redaction, &row_path, &mut failures);
             }
             None => failures.push(failure(
                 "redaction",
@@ -208,6 +185,36 @@ pub fn validate_simulation_events(
         Ok(())
     } else {
         Err(failures)
+    }
+}
+
+fn validate_redacted_fields(
+    redaction: &Map<String, Value>,
+    row_path: &str,
+    failures: &mut Vec<SimulationFailure>,
+) {
+    let Some(fields) = redaction.get("redacted_fields").and_then(Value::as_array) else {
+        failures.push(failure(
+            "redaction",
+            row_path,
+            "redacted_fields array",
+            redaction
+                .get("redacted_fields")
+                .map_or("<missing>".to_owned(), value_type),
+            "event row redaction metadata must list redacted fields",
+        ));
+        return;
+    };
+    for (field_index, field) in fields.iter().enumerate() {
+        if field.as_str().is_none_or(str::is_empty) {
+            failures.push(failure(
+                "redaction",
+                format!("{row_path}#/redaction/redacted_fields/{field_index}"),
+                "non-empty redacted field name",
+                value_type(field),
+                "redacted_fields entries must be named fields",
+            ));
+        }
     }
 }
 
@@ -277,45 +284,48 @@ pub fn validate_artifact_index(
                 .scenario(scenario_id),
             );
         }
-        if let Some(relative) = non_empty_str(object, "path") {
-            if Path::new(relative).is_absolute() || relative.split('/').any(|part| part == "..") {
-                failures.push(failure(
-                    "artifact-missing",
+        let Some(relative) = non_empty_str(object, "path") else {
+            continue;
+        };
+        if Path::new(relative).is_absolute() || relative.split('/').any(|part| part == "..") {
+            failures.push(failure(
+                "artifact-missing",
+                &row_path,
+                "relative path below artifact root",
+                relative,
+                "artifact index path must be relative and contained",
+            ));
+            continue;
+        }
+        indexed_paths.insert(relative.to_owned());
+        let artifact_path = artifact_root.join(relative);
+        if !artifact_path.exists() {
+            failures.push(
+                failure(
+                    "missing-expected-artifact",
                     &row_path,
-                    "relative path below artifact root",
+                    "artifact exists",
                     relative,
-                    "artifact index path must be relative and contained",
-                ));
-            } else {
-                indexed_paths.insert(relative.to_owned());
-                let artifact_path = artifact_root.join(relative);
-                if !artifact_path.exists() {
-                    failures.push(
-                        failure(
-                            "missing-expected-artifact",
-                            &row_path,
-                            "artifact exists",
-                            relative,
-                            "indexed artifact is missing from artifact root",
-                        )
-                        .scenario(scenario_id),
-                    );
-                } else if let Some(expected_fingerprint) = non_empty_str(object, "fingerprint") {
-                    let observed_fingerprint = stable_fingerprint_file(&artifact_path)
-                        .unwrap_or_else(|| "<unreadable>".to_owned());
-                    if observed_fingerprint != expected_fingerprint {
-                        failures.push(
-                            failure(
-                                "artifact-missing",
-                                &row_path,
-                                expected_fingerprint,
-                                observed_fingerprint,
-                                "artifact fingerprint must match normalized content",
-                            )
-                            .scenario(scenario_id),
-                        );
-                    }
-                }
+                    "indexed artifact is missing from artifact root",
+                )
+                .scenario(scenario_id),
+            );
+            continue;
+        }
+        if let Some(expected_fingerprint) = non_empty_str(object, "fingerprint") {
+            let observed_fingerprint = stable_fingerprint_file(&artifact_path)
+                .unwrap_or_else(|| "<unreadable>".to_owned());
+            if observed_fingerprint != expected_fingerprint {
+                failures.push(
+                    failure(
+                        "artifact-missing",
+                        &row_path,
+                        expected_fingerprint,
+                        observed_fingerprint,
+                        "artifact fingerprint must match normalized content",
+                    )
+                    .scenario(scenario_id),
+                );
             }
         }
     }
