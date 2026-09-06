@@ -89,54 +89,69 @@ fn harness_binary_supports_operator_first_run_smoke() {
     write_output_artifact(&smoke_artifacts_dir, "tool-prompt", &tool_prompt_output);
 
     // assert
-    assert_success(&help_output);
-
-    let stdout = String::from_utf8_lossy(&help_output.stdout);
-    assert!(stdout.contains("Usage:"), "stdout:\n{stdout}");
-    assert!(stdout.contains("config"), "stdout:\n{stdout}");
-
-    assert_success(&version_output);
-
-    let stdout = String::from_utf8_lossy(&version_output.stdout);
-    assert!(
-        stdout.trim() == format!("harness {}", env!("CARGO_PKG_VERSION")),
-        "stdout:\n{stdout}"
+    assert_discovery_outputs(
+        &help_output,
+        &version_output,
+        &validate_output,
+        &doctor_output,
+        &doctor_json_output,
     );
+    fn assert_discovery_outputs(
+        help_output: &Output,
+        version_output: &Output,
+        validate_output: &Output,
+        doctor_output: &Output,
+        doctor_json_output: &Output,
+    ) {
+        assert_success(&help_output);
 
-    assert_success(&validate_output);
+        let stdout = String::from_utf8_lossy(&help_output.stdout);
+        assert!(stdout.contains("Usage:"), "stdout:\n{stdout}");
+        assert!(stdout.contains("config"), "stdout:\n{stdout}");
 
-    let stdout = String::from_utf8_lossy(&validate_output.stdout);
-    assert!(stdout.contains("harness.jsonc"), "stdout:\n{stdout}");
+        assert_success(&version_output);
 
-    assert_success(&doctor_output);
+        let stdout = String::from_utf8_lossy(&version_output.stdout);
+        assert!(
+            stdout.trim() == format!("harness {}", env!("CARGO_PKG_VERSION")),
+            "stdout:\n{stdout}"
+        );
 
-    let stdout = String::from_utf8_lossy(&doctor_output.stdout);
-    assert!(stdout.contains("doctor ok:"), "stdout:\n{stdout}");
-    assert!(stdout.contains("resolved_routes"), "stdout:\n{stdout}");
-    assert!(
-        stdout.contains("will launch only at runtime"),
-        "stdout:\n{stdout}"
-    );
+        assert_success(&validate_output);
 
-    assert_success(&doctor_json_output);
+        let stdout = String::from_utf8_lossy(&validate_output.stdout);
+        assert!(stdout.contains("harness.jsonc"), "stdout:\n{stdout}");
 
-    let report: Value = serde_json::from_slice(&doctor_json_output.stdout).unwrap_or_abort();
-    assert!(report["config"]
-        .as_str()
-        .unwrap_or_abort()
-        .contains("harness.jsonc"));
-    let route_check = report["checks"]
-        .as_array()
-        .unwrap_or_abort()
-        .iter()
-        .find(|check| check["name"] == "resolved_routes")
-        .unwrap_or_abort();
-    assert_eq!(route_check["status"], "pass");
-    assert_eq!(route_check["details"]["no_network_probes"], true);
-    assert_eq!(
-        route_check["details"]["routes"]["build"]["model"]["model"],
-        "gpt-5.4-mini"
-    );
+        assert_success(&doctor_output);
+
+        let stdout = String::from_utf8_lossy(&doctor_output.stdout);
+        assert!(stdout.contains("doctor ok:"), "stdout:\n{stdout}");
+        assert!(stdout.contains("resolved_routes"), "stdout:\n{stdout}");
+        assert!(
+            stdout.contains("will launch only at runtime"),
+            "stdout:\n{stdout}"
+        );
+
+        assert_success(&doctor_json_output);
+
+        let report: Value = serde_json::from_slice(&doctor_json_output.stdout).unwrap_or_abort();
+        assert!(report["config"]
+            .as_str()
+            .unwrap_or_abort()
+            .contains("harness.jsonc"));
+        let route_check = report["checks"]
+            .as_array()
+            .unwrap_or_abort()
+            .iter()
+            .find(|check| check["name"] == "resolved_routes")
+            .unwrap_or_abort();
+        assert_eq!(route_check["status"], "pass");
+        assert_eq!(route_check["details"]["no_network_probes"], true);
+        assert_eq!(
+            route_check["details"]["routes"]["build"]["model"]["model"],
+            "gpt-5.4-mini"
+        );
+    }
 
     assert_success(&prompt_output);
 
