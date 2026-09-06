@@ -16,7 +16,7 @@ use super::config::{
     OpenAiApiMode, OpenAiAuthProfile, OpenAiCompatibleProviderConfig, OpenAiCompatibleProviderError,
 };
 use super::endpoint::{
-    apply_codex_gpt5_response_defaults, chat_completions_endpoint, copilot_base_url,
+    apply_codex_gpt_response_defaults, chat_completions_endpoint, copilot_base_url,
     is_loopback_base_url, responses_endpoint, rewrite_codex_endpoint, rewrite_endpoint_base,
     supports_long_prompt_cache_retention,
 };
@@ -168,7 +168,7 @@ impl OpenAiCompatibleProvider {
                 body.insert("store".to_string(), serde_json::Value::Bool(false));
                 body.remove("max_output_tokens");
                 body.remove("max_tokens");
-                apply_codex_gpt5_response_defaults(body);
+                apply_codex_gpt_response_defaults(body);
             }
         }
         let (endpoint, headers) = self.decorate_request(endpoint, credential, context)?;

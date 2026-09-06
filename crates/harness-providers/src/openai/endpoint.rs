@@ -44,7 +44,7 @@ pub(super) fn rewrite_codex_endpoint(endpoint: &str) -> Option<String> {
     .then(|| CODEX_API_ENDPOINT.to_string())
 }
 
-pub(super) fn apply_codex_gpt5_response_defaults(
+pub(super) fn apply_codex_gpt_response_defaults(
     body: &mut serde_json::Map<String, serde_json::Value>,
 ) {
     if !body.contains_key("input") {
@@ -54,7 +54,8 @@ pub(super) fn apply_codex_gpt5_response_defaults(
         return;
     };
     let model_id = model_id.to_ascii_lowercase();
-    if !model_id.contains("gpt-5")
+    let is_astra = model_id == "gpt-6-astra";
+    if (!model_id.contains("gpt-5") && !is_astra)
         || model_id.contains("gpt-5-chat")
         || model_id.contains("gpt-5-pro")
     {
@@ -68,11 +69,11 @@ pub(super) fn apply_codex_gpt5_response_defaults(
     });
     body.entry("reasoning".to_string()).or_insert_with(|| {
         serde_json::json!({
-            "effort": "medium",
+            "effort": if is_astra { "low" } else { "medium" },
             "summary": "auto"
         })
     });
-    if model_id.contains("gpt-5.") && !model_id.contains("codex") {
+    if is_astra || (model_id.contains("gpt-5.") && !model_id.contains("codex")) {
         body.entry("text".to_string()).or_insert_with(|| {
             serde_json::json!({
                 "verbosity": "low"

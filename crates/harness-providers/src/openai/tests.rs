@@ -429,6 +429,7 @@ struct LiveProviderConfig {
     models: BTreeMap<String, serde_json::Value>,
 }
 
+mod astra_test;
 mod auth_profiles_test;
 mod live_smoke_test;
 mod request_media_serialization_test;
