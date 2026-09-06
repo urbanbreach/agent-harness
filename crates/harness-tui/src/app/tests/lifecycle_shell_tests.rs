@@ -16,6 +16,22 @@ pub(super) fn seed_operator_host_probes_sets_binary_update_and_jujutsu() {
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).expect("create seed workspace");
     app.seed_operator_host_probes(Some(root.as_path()));
+    assert_binary_probes(&app);
+    assert_attribution_probes(&app);
+    assert_settings_values(&app);
+    assert_settings_definitions();
+    assert_settings_registry(&app);
+    assert_plan_probes(&app);
+    assert_crash_probes(&app);
+    assert_acp_probes(&app);
+    assert_fallback_probes(&app);
+    assert_plugin_probes(&app);
+    assert_extension_probes(&app);
+    super::lifecycle_shell_part3_test::seed_operator_host_probes_sets_binary_update_and_jujutsu_continuation(&mut app);
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+fn assert_binary_probes(app: &AppState) {
     let bin_ver = app
         .binary_version_info()
         .expect("binary version info bound");
@@ -55,7 +71,9 @@ pub(super) fn seed_operator_host_probes_sets_binary_update_and_jujutsu() {
         "expected unavailable last check: {}",
         binary_check.one_line()
     );
+}
 
+fn assert_attribution_probes(app: &AppState) {
     let attr = app
         .edit_attribution_summary()
         .expect("edit attribution summary bound");
@@ -82,14 +100,15 @@ pub(super) fn seed_operator_host_probes_sets_binary_update_and_jujutsu() {
             && (attr_last.contains("external.rs") || attr_last.contains("drift.rs")),
         "expected external last line: {attr_last}"
     );
+}
 
+fn assert_settings_values(app: &AppState) {
     let settings = app.settings_editor_summary();
     assert!(
         settings.bound,
         "expected project config bound: {settings:?}"
     );
-    assert_eq!(settings.writable_paths, 6);
-    assert_eq!(settings.editable, 6);
+    assert_eq!((settings.writable_paths, settings.editable), (6, 6));
     assert!(settings.with_effective_value >= 6);
     assert!(settings.total >= 38);
     assert!(settings.one_line().contains("bound=true"));
@@ -138,7 +157,9 @@ pub(super) fn seed_operator_host_probes_sets_binary_update_and_jujutsu() {
             .expect("deterministic"),
         app.settings_deterministic_enabled()
     );
+}
 
+fn assert_settings_definitions() {
     // Then: write→reset→write product path leaves final effective values bound,
     // and registry definitions/merge strategies are resolvable for all 6 writable paths.
     let registry_json =
@@ -209,7 +230,9 @@ pub(super) fn seed_operator_host_probes_sets_binary_update_and_jujutsu() {
             && registry_json.contains("worktree.branch_prefix"),
         "expected worktree metadata ids in registry json"
     );
+}
 
+fn assert_settings_registry(app: &AppState) {
     let settings_registry = app
         .settings_registry_summary()
         .expect("settings registry summary bound");
@@ -233,7 +256,9 @@ pub(super) fn seed_operator_host_probes_sets_binary_update_and_jujutsu() {
         .starts_with("settings registry: "));
     assert!(settings_registry.one_line().contains("runtime="));
     assert!(settings_registry.one_line().contains("tui="));
+}
 
+fn assert_plan_probes(app: &AppState) {
     let plan_summary = app.plan_view_summary();
     assert!(
         plan_summary.total >= 5,
@@ -285,7 +310,9 @@ pub(super) fn seed_operator_host_probes_sets_binary_update_and_jujutsu() {
             .map(|row| row.one_line())
             .collect::<Vec<_>>()
     );
+}
 
+fn assert_crash_probes(app: &AppState) {
     // Then: multi-report crash scan is seeded under workspace/.harness-sessions-probe
     let crash = app
         .crash_recovery_scan_summary()
@@ -308,7 +335,9 @@ pub(super) fn seed_operator_host_probes_sets_binary_update_and_jujutsu() {
         .crash_recovery_resolved_action()
         .expect("crash recovery resolved action bound");
     assert_eq!(crash_action.as_str(), "reopen_session");
+}
 
+fn assert_acp_probes(app: &AppState) {
     // Then: offline mock ACP connect+bind success path is seeded honestly
     let acp = app
         .acp_connection_summary()
@@ -335,6 +364,9 @@ pub(super) fn seed_operator_host_probes_sets_binary_update_and_jujutsu() {
     let acp_session = app.acp_session_info().expect("acp session info bound");
     assert_eq!(acp_session.agent_name, "harness.probe.agent");
     assert!(!acp_session.session_id.is_empty());
+}
+
+fn assert_fallback_probes(app: &AppState) {
     let fallback = app
         .auto_fallback_summary()
         .expect("auto fallback summary bound");
@@ -369,6 +401,9 @@ pub(super) fn seed_operator_host_probes_sets_binary_update_and_jujutsu() {
             && models.contains("(probe):fb2"),
         "expected full probe chain label: {models}"
     );
+}
+
+fn assert_plugin_probes(app: &AppState) {
     let plugins = app
         .plugin_lifecycle_summary()
         .expect("plugin lifecycle summary bound");
@@ -430,7 +465,9 @@ pub(super) fn seed_operator_host_probes_sets_binary_update_and_jujutsu() {
         "expected secondary deactivate last: {}",
         plugin_deactivate.one_line()
     );
+}
 
+fn assert_extension_probes(app: &AppState) {
     // Then: multi-descriptor discover + primary probe loaded (descriptor-only; no code load)
     let discover = app
         .extension_discover_summary()
@@ -471,10 +508,6 @@ pub(super) fn seed_operator_host_probes_sets_binary_update_and_jujutsu() {
         "expected Loaded primary probe load: {}",
         load.one_line()
     );
-
-    super::lifecycle_shell_part3_test::seed_operator_host_probes_sets_binary_update_and_jujutsu_continuation(&mut app);
-
-    let _ = std::fs::remove_dir_all(&root);
 }
 
 pub(super) fn seed_operator_host_probes_binds_crash_scan_and_foreign_discover() {
@@ -572,6 +605,11 @@ pub(super) fn seed_operator_host_probes_binds_crash_scan_and_foreign_discover() 
         crash_first.run_dir
     );
 
+    assert_foreign_discovery_probes(&app);
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+fn assert_foreign_discovery_probes(app: &AppState) {
     // Then: foreign discover summary sees multi-source importable markers
     let foreign = app
         .foreign_discover_summary()
@@ -616,6 +654,4 @@ pub(super) fn seed_operator_host_probes_binds_crash_scan_and_foreign_discover() 
     );
     assert!(sandbox.one_line().contains("read_roots="));
     assert!(sandbox.one_line().contains("write_roots="));
-
-    let _ = std::fs::remove_dir_all(&root);
 }

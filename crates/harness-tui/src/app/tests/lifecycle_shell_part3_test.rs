@@ -3,8 +3,20 @@ use super::*;
 pub(super) fn seed_operator_host_probes_sets_binary_update_and_jujutsu_continuation(
     app: &mut AppState,
 ) {
-    // Then: empty team/demote/remote-auth outcome tallies are seeded; cron seeds probe
-    // schedules with executes=true product honesty.
+    assert_team_probes(app);
+    assert_cron_probes(app);
+    assert_demote_probes(app);
+    assert_remote_availability_probes(app);
+    assert_sleep_probes(app);
+    exercise_sleep_refresh(app);
+    assert_jujutsu_probes(app);
+    assert_cow_probes(app);
+    assert_graph_probes(app);
+    assert_sandbox_probes(app);
+}
+
+fn assert_team_probes(app: &AppState) {
+    // Team, demote, and cron fixtures remain separate from unsupported remote integrations.
     let teams = app
         .team_registry_summary()
         .expect("team registry summary bound");
@@ -55,6 +67,9 @@ pub(super) fn seed_operator_host_probes_sets_binary_update_and_jujutsu_continuat
         "expected successful cancel of probe team: {}",
         team_cancel.one_line()
     );
+}
+
+fn assert_cron_probes(app: &AppState) {
     let cron = app
         .cron_schedule_summary()
         .expect("cron schedule summary bound");
@@ -83,6 +98,9 @@ pub(super) fn seed_operator_host_probes_sets_binary_update_and_jujutsu_continuat
         cron_first.contains("(probe-2)") && cron_first.contains("executes=false"),
         "expected remaining probe-2 first schedule: {cron_first}"
     );
+}
+
+fn assert_demote_probes(app: &AppState) {
     let demote = app
         .demote_outcome_summary()
         .expect("demote outcome summary bound");
@@ -119,128 +137,27 @@ pub(super) fn seed_operator_host_probes_sets_binary_update_and_jujutsu_continuat
         "expected demoted task one_line: {}",
         demote_task.one_line()
     );
-    let hub = app
-        .workspace_hub_outcome_summary()
-        .expect("workspace hub outcome summary bound");
-    assert_eq!(hub.total, 4);
-    assert_eq!(hub.connect_unavailable, 1);
-    assert_eq!(hub.bind_unavailable, 0);
-    assert_eq!(hub.upload_unavailable, 0);
-    assert_eq!(hub.recover_unavailable, 0);
-    assert!(!hub.all_unavailable());
-    let hub_connect = app
-        .workspace_hub_last_connect()
-        .expect("workspace hub last connect bound");
-    assert!(
-        hub_connect.one_line().contains("unavailable"),
-        "expected unavailable connect: {}",
-        hub_connect.one_line()
-    );
-    assert!(
-        hub_connect.one_line().contains("hub.example"),
-        "expected hub.example in connect: {}",
-        hub_connect.one_line()
-    );
-    let hub_bind = app
-        .workspace_hub_last_bind()
-        .expect("workspace hub last bind bound");
-    assert!(
-        hub_bind.one_line().contains("bound") && hub_bind.one_line().contains("ws-local-1"),
-        "expected multi-endpoint last bound bind: {}",
-        hub_bind.one_line()
-    );
-    let hub_upload = app
-        .workspace_hub_last_upload()
-        .expect("workspace hub last upload bound");
-    assert!(
-        hub_upload.one_line().contains("uploaded")
-            && hub_upload.one_line().contains("artifacts/bundle.tar"),
-        "expected multi-endpoint last uploaded upload: {}",
-        hub_upload.one_line()
-    );
-    let hub_recover = app
-        .workspace_hub_last_recover()
-        .expect("workspace hub last recover bound");
-    assert!(
-        hub_recover.one_line().contains("recovered")
-            && hub_recover.one_line().contains("hub-session-9"),
-        "expected multi-endpoint last recovered recover: {}",
-        hub_recover.one_line()
-    );
+}
+
+fn assert_remote_availability_probes(app: &AppState) {
     let hub_avail = app
         .workspace_hub_availability()
         .expect("workspace hub availability bound");
     assert!(hub_avail.is_unavailable());
     assert!(hub_avail.one_line().contains("unavailable"));
-    let oidc = app
-        .browser_oidc_outcome_summary()
-        .expect("browser oidc outcome summary bound");
-    assert_eq!(oidc.total, 2);
-    assert_eq!(oidc.start_unavailable, 0);
-    assert_eq!(oidc.complete_unavailable, 1);
-    assert!(!oidc.all_unavailable());
-    let oidc_start = app
-        .browser_oidc_last_start()
-        .expect("browser oidc last start bound");
-    assert!(
-        oidc_start.one_line().contains("started")
-            && oidc_start.one_line().contains("issuer.example"),
-        "expected multi-endpoint last OIDC start: {}",
-        oidc_start.one_line()
-    );
-    let oidc_complete = app
-        .browser_oidc_last_complete()
-        .expect("browser oidc last complete bound");
-    assert!(
-        oidc_complete.one_line().contains("unavailable"),
-        "expected unavailable multi-endpoint OIDC complete (real callback timeout): {}",
-        oidc_complete.one_line()
-    );
-    assert!(!oidc_complete.one_line().contains("probe-device"));
     let oidc_avail = app
         .browser_oidc_availability()
         .expect("browser oidc availability bound");
     assert!(oidc_avail.is_unavailable());
     assert!(oidc_avail.one_line().contains("unavailable"));
-    let mcp = app
-        .mcp_oauth_outcome_summary()
-        .expect("mcp oauth outcome summary bound");
-    assert_eq!(mcp.total, 3);
-    assert_eq!(mcp.begin_unavailable, 0);
-    assert_eq!(mcp.exchange_unavailable, 0);
-    assert_eq!(mcp.open_unavailable, 1);
-    assert!(!mcp.all_unavailable());
-    let mcp_begin = app
-        .mcp_oauth_last_begin()
-        .expect("mcp oauth last begin bound");
-    assert!(
-        mcp_begin.one_line().contains("begun") && mcp_begin.one_line().contains("docs-server"),
-        "expected multi-endpoint last MCP OAuth begin: {}",
-        mcp_begin.one_line()
-    );
-    let mcp_exchange = app
-        .mcp_oauth_last_exchange()
-        .expect("mcp oauth last exchange bound");
-    assert!(
-        mcp_exchange.one_line().contains("exchanged")
-            && mcp_exchange.one_line().contains("docs-server"),
-        "expected multi-endpoint last MCP OAuth exchange: {}",
-        mcp_exchange.one_line()
-    );
-    assert!(!mcp_exchange.one_line().contains("probe-device"));
-    let mcp_open = app
-        .mcp_oauth_last_open()
-        .expect("mcp oauth last open bound");
-    assert!(
-        mcp_open.one_line().contains("unavailable") && mcp_open.one_line().contains("docs-server"),
-        "expected multi-endpoint last MCP open unavailable: {}",
-        mcp_open.one_line()
-    );
     let mcp_avail = app
         .mcp_oauth_remote_availability()
         .expect("mcp oauth remote availability bound");
     assert!(mcp_avail.is_unavailable());
     assert!(mcp_avail.one_line().contains("unavailable"));
+}
+
+fn assert_sleep_probes(app: &AppState) {
     let sleep = app
         .sleep_wake_observation_summary()
         .expect("sleep/wake observation summary bound");
@@ -292,7 +209,9 @@ pub(super) fn seed_operator_host_probes_sets_binary_update_and_jujutsu_continuat
         "expected active availability: {}",
         sleep_avail.one_line()
     );
+}
 
+fn exercise_sleep_refresh(app: &mut AppState) {
     // When: apply one more host event through product API (not seed-only; no expiry)
     let decision =
         app.apply_sleep_wake_host_event(harness_core::sleep_wake_auth::SleepWakeHostEvent::Wake);
@@ -336,7 +255,9 @@ pub(super) fn seed_operator_host_probes_sets_binary_update_and_jujutsu_continuat
         .expect("sleep/wake policy after near-expiry wake");
     assert!(policy_after.is_active());
     assert!(policy_after.one_line().contains("strategy=hook"));
+}
 
+fn assert_jujutsu_probes(app: &AppState) {
     // Then: jujutsu probe is bound with .jj marker (repo workspace; CLI may be available or not)
     let probe = app.jujutsu_probe().expect("jujutsu probe bound");
     assert!(
@@ -380,7 +301,9 @@ pub(super) fn seed_operator_host_probes_sets_binary_update_and_jujutsu_continuat
         "expected structured ok|unavailable: {}",
         jj_cmd.one_line()
     );
+}
 
+fn assert_cow_probes(app: &AppState) {
     // Then: COW worktree availability is probed for the workspace root
     let cow = app
         .cow_worktree_availability()
@@ -422,7 +345,9 @@ pub(super) fn seed_operator_host_probes_sets_binary_update_and_jujutsu_continuat
         cow_summary.total
     );
     assert!(cow_summary.one_line().contains("total"));
+}
 
+fn assert_graph_probes(app: &AppState) {
     // Then: persistent graph product builds simple index + multi-kind batch
     let graph = app
         .persistent_graph_availability()
@@ -470,7 +395,9 @@ pub(super) fn seed_operator_host_probes_sets_binary_update_and_jujutsu_continuat
         "expected multi-symbol graph batch one_line: {}",
         batch.one_line()
     );
+}
 
+fn assert_sandbox_probes(app: &AppState) {
     // Then: Landlock host support is probed (presence ≠ confinement)
     let landlock = app.landlock_support().expect("landlock support bound");
     assert!(

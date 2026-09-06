@@ -10,10 +10,7 @@ use harness_core::auto_fallback::{AutoFallbackOutcome, AutoFallbackSummary};
 use harness_core::binary_update::{
     BinaryUpdateCheck, BinaryUpdatePolicy, BinaryUpdateSummary, BinaryVersionInfo,
 };
-use harness_core::browser_oidc::{
-    BrowserOidcAvailability, BrowserOidcCompleteResult, BrowserOidcOutcomeSummary,
-    BrowserOidcStartResult,
-};
+use harness_core::browser_oidc::BrowserOidcAvailability;
 use harness_core::code_graph::{
     GraphQuery, GraphQueryBatchSummary, GraphQueryResult, PersistentGraphAvailability,
 };
@@ -48,10 +45,7 @@ use harness_core::integrations::{
 use harness_core::jujutsu::{
     JujutsuAvailability, JujutsuCommandOutcome, JujutsuProbe, JujutsuWorkspaceStatus,
 };
-use harness_core::mcp_oauth::{
-    McpOauthBeginResult, McpOauthOutcomeSummary, McpOauthRemoteAvailability,
-    McpOauthTokenExchangeResult, McpRemoteTransportOpenResult,
-};
+use harness_core::mcp_oauth::McpOauthRemoteAvailability;
 use harness_core::perm::{PermissionDecision, PermissionGrantScope};
 use harness_core::proj::{SessionCatalogEntry, SessionModeSource};
 use harness_core::sandbox::{
@@ -67,10 +61,7 @@ use harness_core::team_registry::{
     TeamSendOutcome,
 };
 use harness_core::workspace::WorkspaceEnvironment;
-use harness_core::workspace_hub::{
-    WorkspaceHubAvailability, WorkspaceHubBindResult, WorkspaceHubConnectResult,
-    WorkspaceHubOutcomeSummary, WorkspaceHubRecoveryResult, WorkspaceHubUploadResult,
-};
+use harness_core::workspace_hub::WorkspaceHubAvailability;
 use ratatui::layout::Rect;
 
 use crate::attachment_lifecycle::{
@@ -468,18 +459,8 @@ pub struct AppState {
     pub(crate) extension_discover_summary: Option<ExtensionDiscoverSummary>,
     /// Last extension.manifest.json load attempt (fail-closed diagnostics).
     pub(crate) extension_last_load: Option<ExtensionLoadOutcome>,
-    /// Optional operator-facing workspace-hub outcome counts for the status dialog.
-    pub(crate) workspace_hub_outcome_summary: Option<WorkspaceHubOutcomeSummary>,
     /// Remote workspace hub availability (always unavailable in MVP).
     pub(crate) workspace_hub_availability: Option<WorkspaceHubAvailability>,
-    /// Last hub connect attempt (fail-closed unavailable in MVP).
-    pub(crate) workspace_hub_last_connect: Option<WorkspaceHubConnectResult>,
-    /// Last workspace hub bind result (diagnostics; honest unavailable MVP).
-    pub(crate) workspace_hub_last_bind: Option<WorkspaceHubBindResult>,
-    /// Last workspace hub upload result (diagnostics; honest unavailable MVP).
-    pub(crate) workspace_hub_last_upload: Option<WorkspaceHubUploadResult>,
-    /// Last workspace hub recovery result (diagnostics; honest unavailable MVP).
-    pub(crate) workspace_hub_last_recover: Option<WorkspaceHubRecoveryResult>,
     /// Optional operator-facing graph-query batch counts for the status dialog.
     pub(crate) graph_query_batch_summary: Option<GraphQueryBatchSummary>,
     /// Last thin graph query result (always unavailable in MVP; no hits claimed).
@@ -492,24 +473,10 @@ pub struct AppState {
     /// Last single-file COW clone attempt (diagnostics; not git worktree product).
     pub(crate) cow_clone_last_result: Option<CowCloneResult>,
     pub(crate) cow_worktree_availability: Option<CowWorktreeAvailability>,
-    /// Optional operator-facing browser-OIDC outcome counts for the status dialog.
-    pub(crate) browser_oidc_outcome_summary: Option<BrowserOidcOutcomeSummary>,
     /// Browser/device OIDC availability (always unavailable in MVP).
     pub(crate) browser_oidc_availability: Option<BrowserOidcAvailability>,
-    /// Last browser OIDC start attempt (fail-closed unavailable in MVP).
-    pub(crate) browser_oidc_last_start: Option<BrowserOidcStartResult>,
-    /// Last browser OIDC complete attempt (fail-closed unavailable in MVP).
-    pub(crate) browser_oidc_last_complete: Option<BrowserOidcCompleteResult>,
-    /// Optional operator-facing MCP OAuth outcome counts for the status dialog.
-    pub(crate) mcp_oauth_outcome_summary: Option<McpOauthOutcomeSummary>,
     /// MCP OAuth remote transport availability (always unavailable in MVP).
     pub(crate) mcp_oauth_remote_availability: Option<McpOauthRemoteAvailability>,
-    /// Last MCP OAuth begin attempt (fail-closed unavailable in MVP).
-    pub(crate) mcp_oauth_last_begin: Option<McpOauthBeginResult>,
-    /// Last MCP OAuth token exchange attempt (fail-closed unavailable in MVP).
-    pub(crate) mcp_oauth_last_exchange: Option<McpOauthTokenExchangeResult>,
-    /// Last MCP remote transport open attempt (fail-closed unavailable in MVP).
-    pub(crate) mcp_oauth_last_open: Option<McpRemoteTransportOpenResult>,
     /// Optional operator-facing sleep/wake observation counts for the status dialog.
     pub(crate) sleep_wake_observation_summary: Option<SleepWakeObservationSummary>,
     /// Last host sleep/wake observation (recorded-noop only in MVP).
@@ -761,12 +728,7 @@ impl Default for AppState {
             extension_manifest_summary: None,
             extension_discover_summary: None,
             extension_last_load: None,
-            workspace_hub_outcome_summary: None,
             workspace_hub_availability: None,
-            workspace_hub_last_connect: None,
-            workspace_hub_last_bind: None,
-            workspace_hub_last_upload: None,
-            workspace_hub_last_recover: None,
             graph_query_batch_summary: None,
             graph_query_last_result: None,
             graph_query_batch_first_line: None,
@@ -774,15 +736,8 @@ impl Default for AppState {
             cow_clone_outcome_summary: None,
             cow_clone_last_result: None,
             cow_worktree_availability: None,
-            browser_oidc_outcome_summary: None,
             browser_oidc_availability: None,
-            browser_oidc_last_start: None,
-            browser_oidc_last_complete: None,
-            mcp_oauth_outcome_summary: None,
             mcp_oauth_remote_availability: None,
-            mcp_oauth_last_begin: None,
-            mcp_oauth_last_exchange: None,
-            mcp_oauth_last_open: None,
             sleep_wake_observation_summary: None,
             sleep_wake_last_observation: None,
             sleep_wake_observation_log: Vec::new(),
@@ -1638,32 +1593,7 @@ impl AppState {
         self.starting_session_seed = false;
         self.bump_transcript_render_epoch();
 
-        let suppress_permission = !historical && self.should_suppress_permission_event(&event);
-        if let EventV1::PermissionRequested(data) = &event.payload {
-            if suppress_permission {
-                self.suppressed_permissions
-                    .insert(data.permission_id.clone());
-            }
-        }
-        if matches!(&event.payload, EventV1::PermissionRequested(_)) && !suppress_permission {
-            self.close_palette();
-            self.clear_slash_menu();
-            self.clear_file_mention_menu();
-        }
-
-        if let EventV1::RunStarted(data) = &event.payload {
-            self.file_mention_workspace_root = Some(PathBuf::from(&data.workspace_root));
-            let environment = WorkspaceEnvironment::discover(&data.workspace_root);
-            self.workspace_context_labels = workspace_context_labels(&environment);
-            self.file_mention_index = None;
-        }
-
-        if matches!(&event.payload, EventV1::EditApplied(_)) {
-            self.secondary_surfaces
-                .collapsed_sections
-                .remove(&OperatorSidebarSection::ModifiedFiles);
-            self.file_mention_index = None;
-        }
+        self.prepare_event_surfaces(&event, historical);
 
         let terminal_panel_follow_event = terminal_panel_event_is_shell(&event.payload);
 
@@ -1695,8 +1625,6 @@ impl AppState {
         if !historical {
             self.reconcile_permission_focus(permission_was_pending);
             self.reconcile_interrupt_request();
-        }
-        if !historical {
             self.retarget_local_transcript_page_flip(&event);
         }
         if page_flip_target.is_some() {
@@ -1717,13 +1645,7 @@ impl AppState {
             .transcript_view
             .selected_activity_index
             .min(self.projection.activities.len().saturating_sub(1));
-        if trimmed_events > 0 {
-            if self.selected_event_index >= trimmed_events {
-                self.selected_event_index -= trimmed_events;
-            } else {
-                self.selected_event_index = 0;
-            }
-        }
+        self.selected_event_index = self.selected_event_index.saturating_sub(trimmed_events);
 
         if self.transcript_view.follow_mode && !self.projection.events.is_empty() {
             self.selected_event_index = self.projection.events.len() - 1;
@@ -1751,6 +1673,35 @@ impl AppState {
             self.refresh_status_dashboard();
         }
         self.maybe_auto_exit();
+    }
+
+    fn prepare_event_surfaces(&mut self, event: &EventEnvelopeV1, historical: bool) {
+        let suppress_permission = !historical && self.should_suppress_permission_event(event);
+        match &event.payload {
+            EventV1::PermissionRequested(data) => {
+                if suppress_permission {
+                    self.suppressed_permissions
+                        .insert(data.permission_id.clone());
+                } else {
+                    self.close_palette();
+                    self.clear_slash_menu();
+                    self.clear_file_mention_menu();
+                }
+            }
+            EventV1::RunStarted(data) => {
+                self.file_mention_workspace_root = Some(PathBuf::from(&data.workspace_root));
+                let environment = WorkspaceEnvironment::discover(&data.workspace_root);
+                self.workspace_context_labels = workspace_context_labels(&environment);
+                self.file_mention_index = None;
+            }
+            EventV1::EditApplied(_) => {
+                self.secondary_surfaces
+                    .collapsed_sections
+                    .remove(&OperatorSidebarSection::ModifiedFiles);
+                self.file_mention_index = None;
+            }
+            _ => {}
+        }
     }
 
     fn note_live_turn_status_timing(&mut self, event: &EventEnvelopeV1) {
@@ -2075,14 +2026,7 @@ impl AppState {
         let mut last_line: Option<String> = None;
         for (rel_path, expected_digest) in &applied {
             let source = if let Some(root) = workspace_root.as_ref() {
-                let candidate = {
-                    let input = Path::new(rel_path);
-                    if input.is_absolute() {
-                        input.to_path_buf()
-                    } else {
-                        root.join(input)
-                    }
-                };
+                let candidate = root.join(Path::new(rel_path));
                 match harness_core::edit_attribution::path_content_digest12(&candidate) {
                     Ok(actual) if actual == *expected_digest => {
                         agent_tool += 1;
@@ -2291,17 +2235,6 @@ impl AppState {
         self.extension_last_load.as_ref()
     }
 
-    pub fn set_workspace_hub_outcome_summary(
-        &mut self,
-        summary: Option<WorkspaceHubOutcomeSummary>,
-    ) {
-        self.workspace_hub_outcome_summary = summary;
-    }
-
-    pub fn workspace_hub_outcome_summary(&self) -> Option<WorkspaceHubOutcomeSummary> {
-        self.workspace_hub_outcome_summary
-    }
-
     pub fn set_workspace_hub_availability(
         &mut self,
         availability: Option<WorkspaceHubAvailability>,
@@ -2311,38 +2244,6 @@ impl AppState {
 
     pub fn workspace_hub_availability(&self) -> Option<&WorkspaceHubAvailability> {
         self.workspace_hub_availability.as_ref()
-    }
-
-    pub fn set_workspace_hub_last_connect(&mut self, result: Option<WorkspaceHubConnectResult>) {
-        self.workspace_hub_last_connect = result;
-    }
-
-    pub fn workspace_hub_last_connect(&self) -> Option<&WorkspaceHubConnectResult> {
-        self.workspace_hub_last_connect.as_ref()
-    }
-
-    pub fn set_workspace_hub_last_bind(&mut self, result: Option<WorkspaceHubBindResult>) {
-        self.workspace_hub_last_bind = result;
-    }
-
-    pub fn workspace_hub_last_bind(&self) -> Option<&WorkspaceHubBindResult> {
-        self.workspace_hub_last_bind.as_ref()
-    }
-
-    pub fn set_workspace_hub_last_upload(&mut self, result: Option<WorkspaceHubUploadResult>) {
-        self.workspace_hub_last_upload = result;
-    }
-
-    pub fn workspace_hub_last_upload(&self) -> Option<&WorkspaceHubUploadResult> {
-        self.workspace_hub_last_upload.as_ref()
-    }
-
-    pub fn set_workspace_hub_last_recover(&mut self, result: Option<WorkspaceHubRecoveryResult>) {
-        self.workspace_hub_last_recover = result;
-    }
-
-    pub fn workspace_hub_last_recover(&self) -> Option<&WorkspaceHubRecoveryResult> {
-        self.workspace_hub_last_recover.as_ref()
     }
 
     pub fn set_graph_query_batch_summary(&mut self, summary: Option<GraphQueryBatchSummary>) {
@@ -2404,44 +2305,12 @@ impl AppState {
         self.cow_worktree_availability.as_ref()
     }
 
-    pub fn set_browser_oidc_outcome_summary(&mut self, summary: Option<BrowserOidcOutcomeSummary>) {
-        self.browser_oidc_outcome_summary = summary;
-    }
-
-    pub fn browser_oidc_outcome_summary(&self) -> Option<BrowserOidcOutcomeSummary> {
-        self.browser_oidc_outcome_summary
-    }
-
     pub fn set_browser_oidc_availability(&mut self, availability: Option<BrowserOidcAvailability>) {
         self.browser_oidc_availability = availability;
     }
 
     pub fn browser_oidc_availability(&self) -> Option<&BrowserOidcAvailability> {
         self.browser_oidc_availability.as_ref()
-    }
-
-    pub fn set_browser_oidc_last_start(&mut self, result: Option<BrowserOidcStartResult>) {
-        self.browser_oidc_last_start = result;
-    }
-
-    pub fn browser_oidc_last_start(&self) -> Option<&BrowserOidcStartResult> {
-        self.browser_oidc_last_start.as_ref()
-    }
-
-    pub fn set_browser_oidc_last_complete(&mut self, result: Option<BrowserOidcCompleteResult>) {
-        self.browser_oidc_last_complete = result;
-    }
-
-    pub fn browser_oidc_last_complete(&self) -> Option<&BrowserOidcCompleteResult> {
-        self.browser_oidc_last_complete.as_ref()
-    }
-
-    pub fn set_mcp_oauth_outcome_summary(&mut self, summary: Option<McpOauthOutcomeSummary>) {
-        self.mcp_oauth_outcome_summary = summary;
-    }
-
-    pub fn mcp_oauth_outcome_summary(&self) -> Option<McpOauthOutcomeSummary> {
-        self.mcp_oauth_outcome_summary
     }
 
     pub fn set_mcp_oauth_remote_availability(
@@ -2453,30 +2322,6 @@ impl AppState {
 
     pub fn mcp_oauth_remote_availability(&self) -> Option<&McpOauthRemoteAvailability> {
         self.mcp_oauth_remote_availability.as_ref()
-    }
-
-    pub fn set_mcp_oauth_last_begin(&mut self, result: Option<McpOauthBeginResult>) {
-        self.mcp_oauth_last_begin = result;
-    }
-
-    pub fn mcp_oauth_last_begin(&self) -> Option<&McpOauthBeginResult> {
-        self.mcp_oauth_last_begin.as_ref()
-    }
-
-    pub fn set_mcp_oauth_last_exchange(&mut self, result: Option<McpOauthTokenExchangeResult>) {
-        self.mcp_oauth_last_exchange = result;
-    }
-
-    pub fn mcp_oauth_last_exchange(&self) -> Option<&McpOauthTokenExchangeResult> {
-        self.mcp_oauth_last_exchange.as_ref()
-    }
-
-    pub fn set_mcp_oauth_last_open(&mut self, result: Option<McpRemoteTransportOpenResult>) {
-        self.mcp_oauth_last_open = result;
-    }
-
-    pub fn mcp_oauth_last_open(&self) -> Option<&McpRemoteTransportOpenResult> {
-        self.mcp_oauth_last_open.as_ref()
     }
 
     pub fn set_sleep_wake_observation_summary(
@@ -2769,6 +2614,22 @@ impl AppState {
         sessions_root: Option<&std::path::Path>,
         foreign_scan_root: Option<&std::path::Path>,
     ) {
+        self.seed_platform_probes(workspace_root);
+        self.seed_team_probes(workspace_root);
+        self.seed_cron_probes(workspace_root);
+        self.seed_demote_probes();
+        let probe_root = workspace_root
+            .map(std::path::Path::to_path_buf)
+            .or_else(|| self.file_mention_workspace_root.clone());
+        if let Some(root) = probe_root.clone() {
+            self.seed_workspace_probes(root);
+        }
+        self.seed_recovery_probes(probe_root, sessions_root, foreign_scan_root);
+        self.seed_edit_attribution_probes();
+    }
+
+    #[cfg(test)]
+    fn seed_platform_probes(&mut self, workspace_root: Option<&std::path::Path>) {
         let binary_update =
             harness_core::binary_update::run_offline_multi_channel_update_checks(None);
         self.set_binary_version_info(Some(binary_update.version.clone()));
@@ -2870,140 +2731,148 @@ impl AppState {
             self.set_auto_fallback_last_banner(Some(banner));
             self.set_auto_fallback_chain_label(Some(walk.chain_label));
         }
+    }
 
-        {
-            let durable_ok = workspace_root
-                .map(|root| root.to_path_buf())
-                .or_else(|| self.file_mention_workspace_root.clone())
-                .and_then(|root| {
-                    harness_core::team_mailbox_journal::run_durable_multi_agent_team_product(&root)
-                        .ok()
-                })
-                .map(|product| {
-                    self.set_team_last_create(Some(product.last_create));
-                    self.set_team_last_add_member(Some(product.last_add_member));
-                    self.set_team_last_send(Some(product.last_send));
-                    self.set_team_last_cancel(Some(product.last_cancel));
-                    self.set_team_registry_summary(Some(product.summary));
-                    if let Some(line) = product.first_line {
-                        self.set_team_first_line(Some(line));
-                    }
-                    if let Some(line) = product.last_message_line {
-                        self.set_team_last_message_line(Some(line));
-                    }
-                    true
-                })
-                .unwrap_or(false);
-            if !durable_ok {
-                let mut team_registry = harness_core::team_registry::TeamRegistry::new();
-                let outcome =
-                    harness_core::team_registry::create_team_outcome(&mut team_registry, "(probe)");
-                self.set_team_last_create(Some(outcome));
-                let _ = harness_core::team_registry::create_team_outcome(
+    #[cfg(test)]
+    fn seed_team_probes(&mut self, workspace_root: Option<&std::path::Path>) {
+        let durable_ok = workspace_root
+            .map(|root| root.to_path_buf())
+            .or_else(|| self.file_mention_workspace_root.clone())
+            .and_then(|root| {
+                harness_core::team_mailbox_journal::run_durable_multi_agent_team_product(&root).ok()
+            })
+            .map(|product| {
+                self.set_team_last_create(Some(product.last_create));
+                self.set_team_last_add_member(Some(product.last_add_member));
+                self.set_team_last_send(Some(product.last_send));
+                self.set_team_last_cancel(Some(product.last_cancel));
+                self.set_team_registry_summary(Some(product.summary));
+                if let Some(line) = product.first_line {
+                    self.set_team_first_line(Some(line));
+                }
+                if let Some(line) = product.last_message_line {
+                    self.set_team_last_message_line(Some(line));
+                }
+                true
+            })
+            .unwrap_or(false);
+        if !durable_ok {
+            let mut team_registry = harness_core::team_registry::TeamRegistry::new();
+            let outcome =
+                harness_core::team_registry::create_team_outcome(&mut team_registry, "(probe)");
+            self.set_team_last_create(Some(outcome));
+            let _ = harness_core::team_registry::create_team_outcome(
+                &mut team_registry,
+                "(probe-active)",
+            );
+            let teams_snapshot = team_registry.list_teams();
+            if let Some(first) = teams_snapshot.first() {
+                let add = harness_core::team_registry::add_team_member_outcome(
                     &mut team_registry,
-                    "(probe-active)",
+                    &first.team_id,
+                    "probe-agent",
+                    "operator",
                 );
-                let teams_snapshot = team_registry.list_teams();
-                if let Some(first) = teams_snapshot.first() {
-                    let add = harness_core::team_registry::add_team_member_outcome(
-                        &mut team_registry,
-                        &first.team_id,
-                        "probe-agent",
-                        "operator",
-                    );
-                    self.set_team_last_add_member(Some(add));
-                    let _ = harness_core::team_registry::add_team_member_outcome(
-                        &mut team_registry,
-                        &first.team_id,
-                        "probe-worker",
-                        "worker",
-                    );
-                    let send = harness_core::team_registry::send_team_message_outcome(
-                        &mut team_registry,
-                        &first.team_id,
-                        "probe-agent",
-                        None,
-                        "(probe mailbox)",
-                    );
-                    self.set_team_last_send(Some(send));
-                    if let Ok(msgs) = team_registry.peek_inbox(&first.team_id, "probe-agent") {
-                        if let Some(last) = msgs.last() {
-                            self.set_team_last_message_line(Some(last.one_line()));
-                        }
-                    }
-                    let cancel = harness_core::team_registry::cancel_team_outcome(
-                        &mut team_registry,
-                        &first.team_id,
-                    );
-                    self.set_team_last_cancel(Some(cancel));
+                self.set_team_last_add_member(Some(add));
+                let _ = harness_core::team_registry::add_team_member_outcome(
+                    &mut team_registry,
+                    &first.team_id,
+                    "probe-worker",
+                    "worker",
+                );
+                let send = harness_core::team_registry::send_team_message_outcome(
+                    &mut team_registry,
+                    &first.team_id,
+                    "probe-agent",
+                    None,
+                    "(probe mailbox)",
+                );
+                self.set_team_last_send(Some(send));
+                if let Some(line) = team_registry
+                    .peek_inbox(&first.team_id, "probe-agent")
+                    .ok()
+                    .and_then(|msgs| msgs.last().map(|last| last.one_line()))
+                {
+                    self.set_team_last_message_line(Some(line));
                 }
-                if let Some(first) = team_registry.list_teams().first() {
-                    self.set_team_first_line(Some(first.one_line()));
-                }
-                self.set_team_registry_summary(Some(team_registry.summary()));
+                let cancel = harness_core::team_registry::cancel_team_outcome(
+                    &mut team_registry,
+                    &first.team_id,
+                );
+                self.set_team_last_cancel(Some(cancel));
+            }
+            if let Some(first) = team_registry.list_teams().first() {
+                self.set_team_first_line(Some(first.one_line()));
+            }
+            self.set_team_registry_summary(Some(team_registry.summary()));
+        }
+    }
+
+    #[cfg(test)]
+    fn seed_cron_probes(&mut self, workspace_root: Option<&std::path::Path>) {
+        let mut cron_registry = harness_core::cron_schedule::CronScheduleRegistry::new();
+        let probe = harness_core::cron_schedule::CronSchedule {
+            id: harness_core::cron_schedule::ScheduleId::from_static_literal("(probe)"),
+            expression: "0 * * * *".to_string(),
+            label: Some("probe".to_string()),
+            payload_hint: "(probe)".to_string(),
+        };
+        let probe_id = probe.id.clone();
+        let _ = harness_core::cron_schedule::register_cron_schedule(&mut cron_registry, probe);
+        let probe2 = harness_core::cron_schedule::CronSchedule {
+            id: harness_core::cron_schedule::ScheduleId::from_static_literal("(probe-2)"),
+            expression: "30 * * * *".to_string(),
+            label: Some("probe-2".to_string()),
+            payload_hint: "(probe-2)".to_string(),
+        };
+        let _ = harness_core::cron_schedule::register_cron_schedule(&mut cron_registry, probe2);
+        let probe3 = harness_core::cron_schedule::CronSchedule {
+            id: harness_core::cron_schedule::ScheduleId::from_static_literal("(probe-3)"),
+            expression: "15 */2 * * *".to_string(),
+            label: Some("probe-3".to_string()),
+            payload_hint: "(probe-3)".to_string(),
+        };
+        let _ = harness_core::cron_schedule::register_cron_schedule(&mut cron_registry, probe3);
+        let probe4 = harness_core::cron_schedule::CronSchedule {
+            id: harness_core::cron_schedule::ScheduleId::from_static_literal("(probe-4)"),
+            expression: "45 1 * * *".to_string(),
+            label: Some("probe-4".to_string()),
+            payload_hint: "(probe-4)".to_string(),
+        };
+        let _ = harness_core::cron_schedule::register_cron_schedule(&mut cron_registry, probe4);
+        let probe5 = harness_core::cron_schedule::CronSchedule {
+            id: harness_core::cron_schedule::ScheduleId::from_static_literal("(probe-5)"),
+            expression: "5 3 * * 1".to_string(),
+            label: None,
+            payload_hint: "(probe-5-unlabeled)".to_string(),
+        };
+        let last_register =
+            harness_core::cron_schedule::register_cron_schedule(&mut cron_registry, probe5);
+        self.set_cron_last_register(Some(last_register));
+        let remove_outcome =
+            harness_core::cron_schedule::remove_cron_schedule(&mut cron_registry, &probe_id);
+        self.set_cron_last_remove(Some(remove_outcome));
+        let journal_dir = self
+            .session_path
+            .clone()
+            .map(|p| p.join("cron-journal"))
+            .or_else(|| {
+                workspace_root.map(|root| root.join(".agent-harness").join("cron-journal"))
+            });
+        if let Some(dir) = journal_dir {
+            let mut executor = harness_core::cron_execute::CronExecutor::with_journal_dir(dir);
+            if let Ok(now) = harness_core::cron_execute::CronCivilTime::new(30, 12, 1, 1, 3) {
+                let _ = executor.fire_due(&cron_registry, now);
             }
         }
-        {
-            let mut cron_registry = harness_core::cron_schedule::CronScheduleRegistry::new();
-            let probe = harness_core::cron_schedule::CronSchedule {
-                id: harness_core::cron_schedule::ScheduleId::from_static_literal("(probe)"),
-                expression: "0 * * * *".to_string(),
-                label: Some("probe".to_string()),
-                payload_hint: "(probe)".to_string(),
-            };
-            let probe_id = probe.id.clone();
-            let _ = harness_core::cron_schedule::register_cron_schedule(&mut cron_registry, probe);
-            let probe2 = harness_core::cron_schedule::CronSchedule {
-                id: harness_core::cron_schedule::ScheduleId::from_static_literal("(probe-2)"),
-                expression: "30 * * * *".to_string(),
-                label: Some("probe-2".to_string()),
-                payload_hint: "(probe-2)".to_string(),
-            };
-            let _ = harness_core::cron_schedule::register_cron_schedule(&mut cron_registry, probe2);
-            let probe3 = harness_core::cron_schedule::CronSchedule {
-                id: harness_core::cron_schedule::ScheduleId::from_static_literal("(probe-3)"),
-                expression: "15 */2 * * *".to_string(),
-                label: Some("probe-3".to_string()),
-                payload_hint: "(probe-3)".to_string(),
-            };
-            let _ = harness_core::cron_schedule::register_cron_schedule(&mut cron_registry, probe3);
-            let probe4 = harness_core::cron_schedule::CronSchedule {
-                id: harness_core::cron_schedule::ScheduleId::from_static_literal("(probe-4)"),
-                expression: "45 1 * * *".to_string(),
-                label: Some("probe-4".to_string()),
-                payload_hint: "(probe-4)".to_string(),
-            };
-            let _ = harness_core::cron_schedule::register_cron_schedule(&mut cron_registry, probe4);
-            let probe5 = harness_core::cron_schedule::CronSchedule {
-                id: harness_core::cron_schedule::ScheduleId::from_static_literal("(probe-5)"),
-                expression: "5 3 * * 1".to_string(),
-                label: None,
-                payload_hint: "(probe-5-unlabeled)".to_string(),
-            };
-            let last_register =
-                harness_core::cron_schedule::register_cron_schedule(&mut cron_registry, probe5);
-            self.set_cron_last_register(Some(last_register));
-            let remove_outcome =
-                harness_core::cron_schedule::remove_cron_schedule(&mut cron_registry, &probe_id);
-            self.set_cron_last_remove(Some(remove_outcome));
-            let journal_dir = self
-                .session_path
-                .clone()
-                .map(|p| p.join("cron-journal"))
-                .or_else(|| {
-                    workspace_root.map(|root| root.join(".agent-harness").join("cron-journal"))
-                });
-            if let Some(dir) = journal_dir {
-                let mut executor = harness_core::cron_execute::CronExecutor::with_journal_dir(dir);
-                if let Ok(now) = harness_core::cron_execute::CronCivilTime::new(30, 12, 1, 1, 3) {
-                    let _ = executor.fire_due(&cron_registry, now);
-                }
-            }
-            if let Some(first) = cron_registry.list().first() {
-                self.set_cron_first_schedule_line(Some(first.one_line()));
-            }
-            self.set_cron_schedule_summary(Some(cron_registry.summary()));
+        if let Some(first) = cron_registry.list().first() {
+            self.set_cron_first_schedule_line(Some(first.one_line()));
         }
+        self.set_cron_schedule_summary(Some(cron_registry.summary()));
+    }
+
+    #[cfg(test)]
+    fn seed_demote_probes(&mut self) {
         // Diagnostic multi demote probes: shell unavailable + task rejected + task demoted.
         {
             let shell_req = harness_core::foreground_demote::DemoteToBackgroundRequest::new(
@@ -3074,30 +2943,15 @@ impl AppState {
             self.set_demote_last_result(Some(shell_result));
             self.set_demote_last_task_result(Some(task_demoted));
         }
-        {
-            let hub = harness_core::workspace_hub::probe_workspace_hub_product();
-            self.set_workspace_hub_availability(Some(hub.availability));
-            self.set_workspace_hub_last_connect(Some(hub.last_connect));
-            self.set_workspace_hub_last_bind(Some(hub.last_bind));
-            self.set_workspace_hub_last_upload(Some(hub.last_upload));
-            self.set_workspace_hub_last_recover(Some(hub.last_recover));
-            self.set_workspace_hub_outcome_summary(Some(hub.summary));
-        }
-        {
-            let oidc = harness_core::browser_oidc::probe_browser_oidc_product();
-            self.set_browser_oidc_availability(Some(oidc.availability));
-            self.set_browser_oidc_last_start(Some(oidc.last_start));
-            self.set_browser_oidc_last_complete(Some(oidc.last_complete));
-            self.set_browser_oidc_outcome_summary(Some(oidc.summary));
-        }
-        {
-            let mcp = harness_core::mcp_oauth::probe_mcp_oauth_remote_product();
-            self.set_mcp_oauth_remote_availability(Some(mcp.availability));
-            self.set_mcp_oauth_last_begin(Some(mcp.last_begin));
-            self.set_mcp_oauth_last_exchange(Some(mcp.last_exchange));
-            self.set_mcp_oauth_last_open(Some(mcp.last_open));
-            self.set_mcp_oauth_outcome_summary(Some(mcp.summary));
-        }
+        self.set_workspace_hub_availability(Some(
+            harness_core::workspace_hub::evaluate_workspace_hub(),
+        ));
+        self.set_browser_oidc_availability(Some(
+            harness_core::browser_oidc::evaluate_browser_oidc_availability(),
+        ));
+        self.set_mcp_oauth_remote_availability(Some(
+            harness_core::mcp_oauth::evaluate_mcp_oauth_remote_transports(),
+        ));
         {
             // Dual-cycle host-event product path (observe + decide; Active hook policy).
             for _cycle in 0..2 {
@@ -3111,62 +2965,61 @@ impl AppState {
                 }
             }
         }
+    }
 
-        let probe_root = workspace_root
-            .map(std::path::Path::to_path_buf)
-            .or_else(|| self.file_mention_workspace_root.clone());
-        if let Some(root) = probe_root.clone() {
-            self.file_mention_workspace_root = Some(root.clone());
-            let plans_dir = root.join(harness_core::plan::PLAN_DIR);
-            let _ = std::fs::create_dir_all(&plans_dir);
-            let plan_primary = plans_dir.join("harness-probe-plan.md");
-            let plan_alt = plans_dir.join("harness-probe-plan-alt.md");
-            let plan_extra = plans_dir.join("harness-probe-plan-extra.md");
-            let plan_ops = plans_dir.join("harness-probe-plan-ops.md");
-            let plan_active = root.join(harness_core::plan::plan_file_relative_path(
-                "harness-probe-run",
-            ));
-            if !plan_primary.is_file() {
-                let _ = std::fs::write(
-                    &plan_primary,
-                    "# Harness probe plan\n\n- step one\n- step two\n",
-                );
-            }
-            if !plan_alt.is_file() {
-                let _ = std::fs::write(&plan_alt, "# Harness probe plan alt\n\n- alt step\n");
-            }
-            if !plan_extra.is_file() {
-                let _ = std::fs::write(&plan_extra, "# Harness probe plan extra\n\n- extra step\n");
-            }
-            if !plan_ops.is_file() {
-                let _ = std::fs::write(&plan_ops, "# Harness probe plan ops\n\n- ops step\n");
-            }
-            if !plan_active.is_file() {
-                let _ = std::fs::write(
-                    &plan_active,
-                    "# Harness probe active-run plan\n\n- active step\n",
-                );
-            }
-            if self.run_id().is_none() {
-                self.ingest_historical_event(EventEnvelopeV1 {
-                    schema_version: SCHEMA_VERSION,
-                    event_id: "evt_harness_probe_plan_active".to_string(),
-                    seq: 1,
-                    run_id: "harness-probe-run".into(),
-                    mono_ms: 1,
-                    ts: None,
-                    actor: EventActor::new(ActorKind::System, None),
-                    correlation_id: None,
-                    causation_id: None,
-                    stream_key: Some("run:harness-probe-run".to_string()),
-                    payload: EventV1::RunFinished(RunFinishedEvent {
-                        summary: "probe-active-plan".to_string(),
-                    }),
-                });
-            }
-            let settings_path = root.join("harness.json");
-            if !settings_path.is_file() {
-                let body = r#"{
+    #[cfg(test)]
+    fn seed_workspace_probes(&mut self, root: PathBuf) {
+        self.file_mention_workspace_root = Some(root.clone());
+        let plans_dir = root.join(harness_core::plan::PLAN_DIR);
+        let _ = std::fs::create_dir_all(&plans_dir);
+        let plan_primary = plans_dir.join("harness-probe-plan.md");
+        let plan_alt = plans_dir.join("harness-probe-plan-alt.md");
+        let plan_extra = plans_dir.join("harness-probe-plan-extra.md");
+        let plan_ops = plans_dir.join("harness-probe-plan-ops.md");
+        let plan_active = root.join(harness_core::plan::plan_file_relative_path(
+            "harness-probe-run",
+        ));
+        if !plan_primary.is_file() {
+            let _ = std::fs::write(
+                &plan_primary,
+                "# Harness probe plan\n\n- step one\n- step two\n",
+            );
+        }
+        if !plan_alt.is_file() {
+            let _ = std::fs::write(&plan_alt, "# Harness probe plan alt\n\n- alt step\n");
+        }
+        if !plan_extra.is_file() {
+            let _ = std::fs::write(&plan_extra, "# Harness probe plan extra\n\n- extra step\n");
+        }
+        if !plan_ops.is_file() {
+            let _ = std::fs::write(&plan_ops, "# Harness probe plan ops\n\n- ops step\n");
+        }
+        if !plan_active.is_file() {
+            let _ = std::fs::write(
+                &plan_active,
+                "# Harness probe active-run plan\n\n- active step\n",
+            );
+        }
+        if self.run_id().is_none() {
+            self.ingest_historical_event(EventEnvelopeV1 {
+                schema_version: SCHEMA_VERSION,
+                event_id: "evt_harness_probe_plan_active".to_string(),
+                seq: 1,
+                run_id: "harness-probe-run".into(),
+                mono_ms: 1,
+                ts: None,
+                actor: EventActor::new(ActorKind::System, None),
+                correlation_id: None,
+                causation_id: None,
+                stream_key: Some("run:harness-probe-run".to_string()),
+                payload: EventV1::RunFinished(RunFinishedEvent {
+                    summary: "probe-active-plan".to_string(),
+                }),
+            });
+        }
+        let settings_path = root.join("harness.json");
+        if !settings_path.is_file() {
+            let body = r#"{
   "providers": {
     "default": {
       "type": "openai_compatible",
@@ -3220,181 +3073,178 @@ impl AppState {
   },
   "hashline_edit": true
 }"#;
-                let _ = std::fs::write(&settings_path, body);
-            }
-            let _ = harness_core::config::write_project_hashline_edit(&settings_path, false);
-            let _ = harness_core::config::write_project_compaction_enabled(&settings_path, false);
-            let _ = harness_core::config::write_project_compaction_auto_retry_overflow(
-                &settings_path,
-                false,
-            );
-            let _ = harness_core::config::write_project_compaction_structured_summary_contract(
-                &settings_path,
-                false,
-            );
-            let _ = harness_core::config::write_project_compaction_estimated_token_triggers(
-                &settings_path,
-                false,
-            );
-            let _ = harness_core::config::write_project_deterministic_enabled(&settings_path, true);
-            let _ = harness_core::config::reset_project_hashline_edit(&settings_path);
-            let _ = harness_core::config::reset_project_compaction_enabled(&settings_path);
-            let _ =
-                harness_core::config::reset_project_compaction_auto_retry_overflow(&settings_path);
-            let _ = harness_core::config::reset_project_compaction_structured_summary_contract(
-                &settings_path,
-            );
-            let _ = harness_core::config::reset_project_compaction_estimated_token_triggers(
-                &settings_path,
-            );
-            let _ = harness_core::config::reset_project_deterministic_enabled(&settings_path);
-            let _ = harness_core::config::write_project_hashline_edit(&settings_path, true);
-            let _ = harness_core::config::write_project_compaction_enabled(&settings_path, true);
-            let _ = harness_core::config::write_project_compaction_auto_retry_overflow(
-                &settings_path,
-                true,
-            );
-            let _ = harness_core::config::write_project_compaction_structured_summary_contract(
-                &settings_path,
-                true,
-            );
-            let _ = harness_core::config::write_project_compaction_estimated_token_triggers(
-                &settings_path,
-                true,
-            );
-            let _ =
-                harness_core::config::write_project_deterministic_enabled(&settings_path, false);
-            let _ = harness_core::config::settings_registry_json();
-            let hashline_edit =
-                harness_core::config::read_effective_hashline_edit(&settings_path).unwrap_or(true);
-            let compaction_enabled =
-                harness_core::config::read_effective_compaction_enabled(&settings_path)
-                    .unwrap_or(true);
-            let compaction_auto_retry_overflow =
-                harness_core::config::read_effective_compaction_auto_retry_overflow(&settings_path)
-                    .unwrap_or(true);
-            let compaction_structured_summary_contract =
-                harness_core::config::read_effective_compaction_structured_summary_contract(
-                    &settings_path,
-                )
-                .unwrap_or(true);
-            let compaction_estimated_token_triggers =
-                harness_core::config::read_effective_compaction_estimated_token_triggers(
-                    &settings_path,
-                )
-                .unwrap_or(true);
-            let deterministic_enabled =
-                harness_core::config::read_effective_deterministic_enabled(&settings_path)
-                    .unwrap_or(false);
-            self.bind_settings_project_config(
-                &settings_path,
-                hashline_edit,
-                compaction_enabled,
-                compaction_auto_retry_overflow,
-                compaction_structured_summary_contract,
-                compaction_estimated_token_triggers,
-                deterministic_enabled,
-            );
-            let _ = harness_core::jujutsu::ensure_jujutsu_repo_marker(&root);
-            let (jj_walk, _jj_receipt) =
-                harness_core::jujutsu::run_jujutsu_product_with_receipt(&root);
-            self.set_jujutsu_cli(Some(jj_walk.probe.cli.clone()));
-            self.set_jujutsu_workspace(Some(jj_walk.probe.workspace.clone()));
-            self.set_jujutsu_last_command(Some(jj_walk.last_command));
-            self.set_jujutsu_probe(Some(jj_walk.probe));
-            self.set_cow_worktree_availability(Some(
-                harness_core::cow_worktree::detect_cow_worktree_fastpath(&root),
-            ));
-            let cow_probe_dir = root.join(".harness-cow-probe");
-            let cow_src = cow_probe_dir.join("src.bin");
-            let cow_dst = cow_probe_dir.join("dst.bin");
-            let cow_missing_src = cow_probe_dir.join("missing-src.bin");
-            let cow_missing_dst = cow_probe_dir.join("dst-missing.bin");
-            let cow_exists_dst = cow_probe_dir.join("dst-exists.bin");
-            let _ = std::fs::remove_file(&cow_dst);
-            let _ = std::fs::remove_file(&cow_missing_dst);
-            if let Some(parent) = cow_src.parent() {
-                let _ = std::fs::create_dir_all(parent);
-            }
-            if !cow_src.is_file() {
-                let _ = std::fs::write(&cow_src, b"harness-cow-probe\n");
-            }
-            let _ = std::fs::write(&cow_exists_dst, b"preexisting-dest\n");
-            let cow_src_2 = cow_probe_dir.join("src2.bin");
-            let cow_dst_2 = cow_probe_dir.join("dst2.bin");
-            let cow_missing_src_2 = cow_probe_dir.join("missing-src-2.bin");
-            let cow_missing_dst_2 = cow_probe_dir.join("dst-missing-2.bin");
-            let _ = std::fs::remove_file(&cow_dst_2);
-            let _ = std::fs::remove_file(&cow_missing_dst_2);
-            if !cow_src_2.is_file() {
-                let _ = std::fs::write(&cow_src_2, b"harness-cow-probe-2\n");
-            }
-            let cow_tree_src = cow_probe_dir.join("tree-src");
-            let cow_tree_dst = cow_probe_dir.join("tree-dst");
-            let _ = std::fs::remove_dir_all(&cow_tree_dst);
-            if !cow_tree_src.is_dir() {
-                let _ = std::fs::create_dir_all(cow_tree_src.join("nested"));
-                let _ = std::fs::write(cow_tree_src.join("nested/leaf.bin"), b"cow-tree-leaf\n");
-            }
-            let cow_tree =
-                harness_core::cow_worktree::try_cow_clone_tree(&cow_tree_src, &cow_tree_dst);
-            let cow_overlay = harness_core::cow_worktree::apply_cow_worktree_fastpath(
-                &root,
-                &cow_probe_dir,
-                &[".harness-cow-overlay-missing"],
-            );
-            let cow_results = [
-                harness_core::cow_worktree::try_cow_clone_file(&cow_src, &cow_dst),
-                harness_core::cow_worktree::try_cow_clone_file(&cow_missing_src, &cow_missing_dst),
-                harness_core::cow_worktree::try_cow_clone_file(&cow_src, &cow_exists_dst),
-                harness_core::cow_worktree::try_cow_clone_file(&cow_src_2, &cow_dst_2),
-                harness_core::cow_worktree::try_cow_clone_file(
-                    &cow_missing_src_2,
-                    &cow_missing_dst_2,
-                ),
-            ];
-            let _ = (cow_tree, cow_overlay);
-            self.set_cow_clone_outcome_summary(Some(
-                harness_core::cow_worktree::summarize_cow_clone_outcomes(&cow_results),
-            ));
-            self.set_cow_clone_last_result(Some(cow_results[2].clone()));
-            {
-                let probe = harness_core::code_graph::probe_persistent_graph_product(
-                    &root,
-                    &["(probe)", "(probe-alt)", "(probe-module)"],
-                );
-                self.set_graph_query_batch_summary(Some(probe.summary()));
-                if let Some(first) = probe.batch.results.first() {
-                    self.set_graph_query_batch_first_line(Some(first.one_line()));
-                }
-                let last = probe.batch.results.last().cloned().unwrap_or_else(|| {
-                    harness_core::code_graph::query_persistent_graph(
-                        &root,
-                        &harness_core::code_graph::GraphQuery::symbol_def("(probe)"),
-                    )
-                });
-                self.set_graph_query_last_result(Some(last));
-                self.set_persistent_graph_availability(Some(probe.availability));
-            }
-            let plugins = harness_core::integrations::run_multi_plugin_lifecycle_product(&root);
-            self.set_plugin_last_install(Some(plugins.last_install));
-            self.set_plugin_last_activate(Some(plugins.last_activate));
-            self.set_plugin_last_deactivate(Some(plugins.last_deactivate));
-            self.set_plugin_last_remove(Some(plugins.last_remove));
-            if let Some(first) = plugins.first_line {
-                self.set_plugin_first_line(Some(first));
-            }
-            self.set_plugin_lifecycle_summary(Some(plugins.summary));
-
-            let extensions =
-                harness_core::integrations::run_multi_descriptor_discover_product(&root);
-            self.set_extension_discover_summary(Some(extensions.discover));
-            if let Some(summary) = extensions.primary {
-                self.set_extension_manifest_summary(Some(summary));
-            }
-            self.set_extension_last_load(Some(extensions.last_load));
+            let _ = std::fs::write(&settings_path, body);
         }
+        let _ = harness_core::config::write_project_hashline_edit(&settings_path, false);
+        let _ = harness_core::config::write_project_compaction_enabled(&settings_path, false);
+        let _ = harness_core::config::write_project_compaction_auto_retry_overflow(
+            &settings_path,
+            false,
+        );
+        let _ = harness_core::config::write_project_compaction_structured_summary_contract(
+            &settings_path,
+            false,
+        );
+        let _ = harness_core::config::write_project_compaction_estimated_token_triggers(
+            &settings_path,
+            false,
+        );
+        let _ = harness_core::config::write_project_deterministic_enabled(&settings_path, true);
+        let _ = harness_core::config::reset_project_hashline_edit(&settings_path);
+        let _ = harness_core::config::reset_project_compaction_enabled(&settings_path);
+        let _ = harness_core::config::reset_project_compaction_auto_retry_overflow(&settings_path);
+        let _ = harness_core::config::reset_project_compaction_structured_summary_contract(
+            &settings_path,
+        );
+        let _ =
+            harness_core::config::reset_project_compaction_estimated_token_triggers(&settings_path);
+        let _ = harness_core::config::reset_project_deterministic_enabled(&settings_path);
+        let _ = harness_core::config::write_project_hashline_edit(&settings_path, true);
+        let _ = harness_core::config::write_project_compaction_enabled(&settings_path, true);
+        let _ = harness_core::config::write_project_compaction_auto_retry_overflow(
+            &settings_path,
+            true,
+        );
+        let _ = harness_core::config::write_project_compaction_structured_summary_contract(
+            &settings_path,
+            true,
+        );
+        let _ = harness_core::config::write_project_compaction_estimated_token_triggers(
+            &settings_path,
+            true,
+        );
+        let _ = harness_core::config::write_project_deterministic_enabled(&settings_path, false);
+        let _ = harness_core::config::settings_registry_json();
+        let hashline_edit =
+            harness_core::config::read_effective_hashline_edit(&settings_path).unwrap_or(true);
+        let compaction_enabled =
+            harness_core::config::read_effective_compaction_enabled(&settings_path).unwrap_or(true);
+        let compaction_auto_retry_overflow =
+            harness_core::config::read_effective_compaction_auto_retry_overflow(&settings_path)
+                .unwrap_or(true);
+        let compaction_structured_summary_contract =
+            harness_core::config::read_effective_compaction_structured_summary_contract(
+                &settings_path,
+            )
+            .unwrap_or(true);
+        let compaction_estimated_token_triggers =
+            harness_core::config::read_effective_compaction_estimated_token_triggers(
+                &settings_path,
+            )
+            .unwrap_or(true);
+        let deterministic_enabled =
+            harness_core::config::read_effective_deterministic_enabled(&settings_path)
+                .unwrap_or(false);
+        self.bind_settings_project_config(
+            &settings_path,
+            hashline_edit,
+            compaction_enabled,
+            compaction_auto_retry_overflow,
+            compaction_structured_summary_contract,
+            compaction_estimated_token_triggers,
+            deterministic_enabled,
+        );
+        let _ = harness_core::jujutsu::ensure_jujutsu_repo_marker(&root);
+        let (jj_walk, _jj_receipt) = harness_core::jujutsu::run_jujutsu_product_with_receipt(&root);
+        self.set_jujutsu_cli(Some(jj_walk.probe.cli.clone()));
+        self.set_jujutsu_workspace(Some(jj_walk.probe.workspace.clone()));
+        self.set_jujutsu_last_command(Some(jj_walk.last_command));
+        self.set_jujutsu_probe(Some(jj_walk.probe));
+        self.set_cow_worktree_availability(Some(
+            harness_core::cow_worktree::detect_cow_worktree_fastpath(&root),
+        ));
+        let cow_probe_dir = root.join(".harness-cow-probe");
+        let cow_src = cow_probe_dir.join("src.bin");
+        let cow_dst = cow_probe_dir.join("dst.bin");
+        let cow_missing_src = cow_probe_dir.join("missing-src.bin");
+        let cow_missing_dst = cow_probe_dir.join("dst-missing.bin");
+        let cow_exists_dst = cow_probe_dir.join("dst-exists.bin");
+        let _ = std::fs::remove_file(&cow_dst);
+        let _ = std::fs::remove_file(&cow_missing_dst);
+        if let Some(parent) = cow_src.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if !cow_src.is_file() {
+            let _ = std::fs::write(&cow_src, b"harness-cow-probe\n");
+        }
+        let _ = std::fs::write(&cow_exists_dst, b"preexisting-dest\n");
+        let cow_src_2 = cow_probe_dir.join("src2.bin");
+        let cow_dst_2 = cow_probe_dir.join("dst2.bin");
+        let cow_missing_src_2 = cow_probe_dir.join("missing-src-2.bin");
+        let cow_missing_dst_2 = cow_probe_dir.join("dst-missing-2.bin");
+        let _ = std::fs::remove_file(&cow_dst_2);
+        let _ = std::fs::remove_file(&cow_missing_dst_2);
+        if !cow_src_2.is_file() {
+            let _ = std::fs::write(&cow_src_2, b"harness-cow-probe-2\n");
+        }
+        let cow_tree_src = cow_probe_dir.join("tree-src");
+        let cow_tree_dst = cow_probe_dir.join("tree-dst");
+        let _ = std::fs::remove_dir_all(&cow_tree_dst);
+        if !cow_tree_src.is_dir() {
+            let _ = std::fs::create_dir_all(cow_tree_src.join("nested"));
+            let _ = std::fs::write(cow_tree_src.join("nested/leaf.bin"), b"cow-tree-leaf\n");
+        }
+        let cow_tree = harness_core::cow_worktree::try_cow_clone_tree(&cow_tree_src, &cow_tree_dst);
+        let cow_overlay = harness_core::cow_worktree::apply_cow_worktree_fastpath(
+            &root,
+            &cow_probe_dir,
+            &[".harness-cow-overlay-missing"],
+        );
+        let cow_results = [
+            harness_core::cow_worktree::try_cow_clone_file(&cow_src, &cow_dst),
+            harness_core::cow_worktree::try_cow_clone_file(&cow_missing_src, &cow_missing_dst),
+            harness_core::cow_worktree::try_cow_clone_file(&cow_src, &cow_exists_dst),
+            harness_core::cow_worktree::try_cow_clone_file(&cow_src_2, &cow_dst_2),
+            harness_core::cow_worktree::try_cow_clone_file(&cow_missing_src_2, &cow_missing_dst_2),
+        ];
+        let _ = (cow_tree, cow_overlay);
+        self.set_cow_clone_outcome_summary(Some(
+            harness_core::cow_worktree::summarize_cow_clone_outcomes(&cow_results),
+        ));
+        self.set_cow_clone_last_result(Some(cow_results[2].clone()));
+        {
+            let probe = harness_core::code_graph::probe_persistent_graph_product(
+                &root,
+                &["(probe)", "(probe-alt)", "(probe-module)"],
+            );
+            self.set_graph_query_batch_summary(Some(probe.summary()));
+            if let Some(first) = probe.batch.results.first() {
+                self.set_graph_query_batch_first_line(Some(first.one_line()));
+            }
+            let last = probe.batch.results.last().cloned().unwrap_or_else(|| {
+                harness_core::code_graph::query_persistent_graph(
+                    &root,
+                    &harness_core::code_graph::GraphQuery::symbol_def("(probe)"),
+                )
+            });
+            self.set_graph_query_last_result(Some(last));
+            self.set_persistent_graph_availability(Some(probe.availability));
+        }
+        let plugins = harness_core::integrations::run_multi_plugin_lifecycle_product(&root);
+        self.set_plugin_last_install(Some(plugins.last_install));
+        self.set_plugin_last_activate(Some(plugins.last_activate));
+        self.set_plugin_last_deactivate(Some(plugins.last_deactivate));
+        self.set_plugin_last_remove(Some(plugins.last_remove));
+        if let Some(first) = plugins.first_line {
+            self.set_plugin_first_line(Some(first));
+        }
+        self.set_plugin_lifecycle_summary(Some(plugins.summary));
 
+        let extensions = harness_core::integrations::run_multi_descriptor_discover_product(&root);
+        self.set_extension_discover_summary(Some(extensions.discover));
+        if let Some(summary) = extensions.primary {
+            self.set_extension_manifest_summary(Some(summary));
+        }
+        self.set_extension_last_load(Some(extensions.last_load));
+    }
+
+    #[cfg(test)]
+    fn seed_recovery_probes(
+        &mut self,
+        probe_root: Option<PathBuf>,
+        sessions_root: Option<&std::path::Path>,
+        foreign_scan_root: Option<&std::path::Path>,
+    ) {
         // FS plan summary already bound via probe_os_sandbox_product when workspace_root was set.
         // Re-probe with roots if seed was called with workspace only after early sandbox bind.
         if self.sandbox_fs_plan_summary().is_none() {
@@ -3559,30 +3409,34 @@ impl AppState {
                 ));
             }
         }
+    }
 
+    #[cfg(test)]
+    fn seed_edit_attribution_probes(&mut self) {
         self.refresh_edit_attribution_summary();
-        if self
+        if !self
             .edit_attribution_summary()
             .map(|summary| summary.total == 0)
             .unwrap_or(true)
         {
-            if let Some(root) = self.file_mention_workspace_root_opt() {
-                if let Ok(product) =
-                    harness_core::edit_attribution::run_multi_path_edit_attribution_product(&root)
-                {
-                    self.set_edit_attribution_summary(Some(product.summary));
-                    self.set_edit_attribution_first_line(product.first_line);
-                    self.set_edit_attribution_last_line(product.last_line);
-                } else if let Ok(journal) =
-                    harness_core::edit_attribution::EditAttributionJournal::open(&root)
-                {
-                    let summary = journal.summary();
-                    if summary.total > 0 {
-                        let entries = journal.list();
-                        self.set_edit_attribution_summary(Some(summary));
-                        self.set_edit_attribution_first_line(entries.first().map(|e| e.one_line()));
-                        self.set_edit_attribution_last_line(entries.last().map(|e| e.one_line()));
-                    }
+            return;
+        }
+        if let Some(root) = self.file_mention_workspace_root_opt() {
+            if let Ok(product) =
+                harness_core::edit_attribution::run_multi_path_edit_attribution_product(&root)
+            {
+                self.set_edit_attribution_summary(Some(product.summary));
+                self.set_edit_attribution_first_line(product.first_line);
+                self.set_edit_attribution_last_line(product.last_line);
+            } else if let Ok(journal) =
+                harness_core::edit_attribution::EditAttributionJournal::open(&root)
+            {
+                let summary = journal.summary();
+                if summary.total > 0 {
+                    let entries = journal.list();
+                    self.set_edit_attribution_summary(Some(summary));
+                    self.set_edit_attribution_first_line(entries.first().map(|e| e.one_line()));
+                    self.set_edit_attribution_last_line(entries.last().map(|e| e.one_line()));
                 }
             }
         }

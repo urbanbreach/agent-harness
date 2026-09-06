@@ -1,12 +1,14 @@
-use harness_core::workspace_hub::{
-    connect_workspace_hub, evaluate_workspace_hub, WorkspaceHubConnectResult,
-};
+use harness_core::workspace_hub::{evaluate_workspace_hub, WorkspaceHubAvailability};
 
 #[test]
 fn hosted_workspace_hub_remains_unavailable() {
-    assert!(evaluate_workspace_hub().is_unavailable());
-    assert!(matches!(
-        connect_workspace_hub("https://example.invalid"),
-        WorkspaceHubConnectResult::Unavailable { .. }
-    ));
+    let availability = evaluate_workspace_hub();
+    assert!(availability.is_unavailable());
+    assert!(!availability.is_available());
+    assert_eq!(
+        availability,
+        WorkspaceHubAvailability::Unavailable {
+            reason: "hosted workspace integration removed".to_string(),
+        }
+    );
 }
