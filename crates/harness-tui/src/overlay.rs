@@ -60,6 +60,18 @@ impl OverlayState {
             || self.lineage_browser_visible
             || self.fork_selector_visible
     }
+
+    const fn command_palette_kind(self) -> OverlayKind {
+        if self.toggles_menu_visible {
+            OverlayKind::TogglesMenu
+        } else if self.lineage_browser_visible {
+            OverlayKind::LineageBrowser
+        } else if self.fork_selector_visible {
+            OverlayKind::ForkSelector
+        } else {
+            OverlayKind::CommandPalette
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -80,15 +92,7 @@ impl OverlayStack {
             overlays.push(OverlayKind::FileMentions);
         }
         if state.command_palette_channel_visible() && !state.permission_pending {
-            if state.toggles_menu_visible {
-                overlays.push(OverlayKind::TogglesMenu);
-            } else if state.lineage_browser_visible {
-                overlays.push(OverlayKind::LineageBrowser);
-            } else if state.fork_selector_visible {
-                overlays.push(OverlayKind::ForkSelector);
-            } else {
-                overlays.push(OverlayKind::CommandPalette);
-            }
+            overlays.push(state.command_palette_kind());
         }
         if state.status_dialog_visible && !state.permission_pending {
             overlays.push(OverlayKind::StatusDialog);
