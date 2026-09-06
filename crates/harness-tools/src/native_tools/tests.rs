@@ -234,10 +234,9 @@ fn generate_task_description_produces_first_five_words_truncated() {
 }
 
 #[test]
-fn task_and_background_output_descriptions_prefer_completion_notification() {
+fn task_description_prefers_completion_notification() {
     let executor = Arc::new(AgentOpsExecutor::new());
-    let task = TaskTool::new(Arc::clone(&executor));
-    let background_output = BackgroundOutputTool::new(executor);
+    let task = TaskTool::new(executor);
 
     let task_description = task.description();
     assert!(task_description.contains("`run_in_background` is required"));
@@ -270,7 +269,11 @@ fn task_and_background_output_descriptions_prefer_completion_notification() {
             "task description should document structured delegation field {field:?}"
         );
     }
+}
 
+#[test]
+fn task_schema_descriptions_prefer_completion_notification() {
+    let task = TaskTool::new(Arc::new(AgentOpsExecutor::new()));
     let task_schema = task.parameters_json_schema();
     let prompt_description = task_schema
         .pointer("/properties/prompt/description")
@@ -298,7 +301,11 @@ fn task_and_background_output_descriptions_prefer_completion_notification() {
     assert!(run_in_background_description.contains("cancel=true anytime"));
     assert!(run_in_background_description.contains("completion notification"));
     assert!(run_in_background_description.contains("final result retrieval"));
+}
 
+#[test]
+fn background_output_descriptions_prefer_completion_notification() {
+    let background_output = BackgroundOutputTool::new(Arc::new(AgentOpsExecutor::new()));
     let background_output_description = background_output.description();
     assert!(background_output_description.contains("completion notification"));
     assert!(background_output_description.contains("interim status checks"));
