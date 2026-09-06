@@ -117,3 +117,141 @@ fn permission_modal_vertical_navigation_preserves_modifier_gates() {
         assert!(intents.lock().unwrap_or_abort().is_empty());
     }
 }
+
+#[test]
+fn permission_feedback_edits_graphemes_and_submits_one_deny_reason() {
+    // Given the reject row and an isolated composer draft.
+    let (mut app, intents) = permission_feedback_fixture();
+    app.handle_key(key(KeyCode::Left));
+
+    // When feedback is typed and edited, navigation letters and digits are text.
+    for character in "先e\u{301}👩\u{200d}💻jk4".chars() {
+        app.handle_key(key(KeyCode::Char(character)));
+    }
+    app.handle_key(key(KeyCode::Home));
+    app.handle_key(key(KeyCode::Delete));
+    app.handle_key(key(KeyCode::Right));
+    app.handle_key(key(KeyCode::Delete));
+    app.handle_key(key(KeyCode::End));
+    app.handle_key(key(KeyCode::Left));
+    app.handle_key(key(KeyCode::Backspace));
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char('o'),
+        KeyModifiers::CONTROL,
+    ));
+    app.handle_key(key(KeyCode::Enter));
+    app.handle_key(key(KeyCode::Enter));
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char('n'),
+        KeyModifiers::CONTROL,
+    ));
+
+    // Then whole graphemes were edited and one reason crosses the guarded boundary.
+    assert_eq!(
+        intents.lock().unwrap_or_abort().as_slice(),
+        &[UiIntent::ResolvePermission {
+            permission_id: "perm_feedback".to_string(),
+            decision: PermissionDecision::Deny,
+            reason: Some("e\u{301}j4".to_string()),
+            grant_scope: None,
+        }]
+    );
+    assert!(app.permission_submission_pending("perm_feedback"));
+    assert!(app.active_permission().is_some());
+    assert_eq!(app.composer.prompt_buffer, "preserved draft");
+    assert_eq!(app.composer.prompt_cursor, 3);
+}
+
+#[test]
+fn permission_feedback_escape_leaves_editor_before_parking_and_keeps_reason() {
+    // Given feedback on the reject row.
+    let (mut app, intents) = permission_feedback_fixture();
+    app.handle_key(key(KeyCode::Left));
+    for character in "change scope".chars() {
+        app.handle_key(key(KeyCode::Char(character)));
+    }
+
+    // When Escape is used at each ownership layer, then focus is restored to submit.
+    app.handle_key(key(KeyCode::Esc));
+    assert_eq!(app.focus, Focus::Prompt);
+    assert!(intents.lock().unwrap_or_abort().is_empty());
+    app.handle_key(key(KeyCode::Esc));
+    assert_eq!(app.focus, Focus::List);
+    app.handle_key(key(KeyCode::Tab));
+    app.handle_key(key(KeyCode::Enter));
+
+    // Then leaving the editor neither denies early nor loses the eventual reason.
+    assert_eq!(
+        intents.lock().unwrap_or_abort().as_slice(),
+        &[UiIntent::ResolvePermission {
+            permission_id: "perm_feedback".to_string(),
+            decision: PermissionDecision::Deny,
+            reason: Some("change scope".to_string()),
+            grant_scope: None,
+        }]
+    );
+    assert_eq!(app.composer.prompt_buffer, "preserved draft");
+}
+
+#[test]
+fn permission_feedback_does_not_leak_through_resolution_or_history_replacement() {
+    for replace_history in [false, true] {
+        // Given an unfinished rejection draft.
+        let (mut app, intents) = permission_feedback_fixture();
+        app.handle_key(key(KeyCode::Left));
+        app.handle_key(key(KeyCode::Char('x')));
+        let next_id = if replace_history {
+            "perm_feedback"
+        } else {
+            "perm_next"
+        };
+
+        // When authoritative state replaces the prompt, even reusing its identity.
+        if replace_history {
+            app.replace_events(vec![edit_permission_event(1, next_id, "tc_next")]);
+        } else {
+            app.ingest_event(edit_permission_event(2, next_id, "tc_next"));
+            app.ingest_event(envelope(
+                3,
+                "req_feedback_done",
+                EventV1::PermissionResolved(PermissionResolvedEvent {
+                    permission_id: "perm_feedback".to_string(),
+                    decision: harness_core::event::PermissionDecision::Deny,
+                    reason: None,
+                }),
+            ));
+        }
+        app.handle_key(key(KeyCode::Left));
+        app.handle_key(key(KeyCode::Enter));
+
+        // Then the new rejection cannot inherit the previous prompt's feedback.
+        assert_eq!(
+            intents.lock().unwrap_or_abort().as_slice(),
+            &[UiIntent::ResolvePermission {
+                permission_id: next_id.to_string(),
+                decision: PermissionDecision::Deny,
+                reason: None,
+                grant_scope: None,
+            }]
+        );
+    }
+}
+
+#[test]
+fn permission_feedback_render_keeps_cursor_near_long_unicode_input() {
+    // Given feedback longer than the reject row in every tested terminal width.
+    let (mut app, _) = permission_feedback_fixture();
+    app.handle_key(key(KeyCode::Left));
+    for character in format!("{}終e\u{301}", "界".repeat(160)).chars() {
+        app.handle_key(key(KeyCode::Char(character)));
+    }
+
+    // When the real renderer draws the focused row at narrow and wide sizes.
+    for width in [40, 80, 140] {
+        let rendered = render_text(&app, width, 30);
+
+        // Then the tail at the caret remains visible, not clipped off to the right.
+        assert!(rendered.contains("終"), "width {width}: {rendered}");
+        assert!(rendered.contains("e\u{301}"), "width {width}: {rendered}");
+    }
+}

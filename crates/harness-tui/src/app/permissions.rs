@@ -6,6 +6,8 @@ use harness_core::perm::{PermissionDecision, PermissionGrantScope};
 #[cfg(test)]
 use harness_core::event::{ActorKind, EventEnvelopeV1, EventV1};
 
+pub(crate) use super::permission_prompt::PermissionFeedback;
+use super::permission_prompt::PermissionPromptState;
 #[cfg(test)]
 use super::OverlayKind;
 use super::{Action, AppState, ToastVariant, UiIntent};
@@ -90,6 +92,7 @@ impl AppState {
         let is_pending = self.active_permission().is_some();
         match (was_pending, is_pending) {
             (false, true) => {
+                self.permission_prompt.feedback = None;
                 self.permission_prompt
                     .focus_return
                     .get_or_insert(self.focus);
@@ -213,6 +216,24 @@ impl AppState {
         self.permission_modal_is_active(permission_id) && self.permission_prompt.detail_expanded
     }
 
+    pub(crate) fn permission_feedback(&self, permission_id: &str) -> Option<&PermissionFeedback> {
+        (self.permission_modal_is_active(permission_id)
+            && self.permission_prompt.stage == PermissionModalStage::Decision
+            && self.permission_prompt.selection == PermissionModalSelection::Reject)
+            .then_some(self.permission_prompt.feedback.as_ref())
+            .flatten()
+    }
+
+    fn ensure_permission_modal_state(&mut self, permission_id: &str) {
+        if !self.permission_modal_is_active(permission_id) {
+            self.permission_prompt = PermissionPromptState {
+                permission_id: Some(permission_id.to_owned()),
+                focus_return: self.permission_prompt.focus_return,
+                ..PermissionPromptState::default()
+            };
+        }
+    }
+
     pub(crate) fn permission_modal_confirm_selection(
         &self,
         permission_id: &str,
@@ -320,6 +341,7 @@ impl AppState {
         forward: bool,
         allow_always: bool,
     ) {
+        self.ensure_permission_modal_state(permission_id);
         let current = self.permission_modal_selection(permission_id);
         self.permission_prompt.permission_id = Some(permission_id.to_string());
         self.permission_prompt.stage = PermissionModalStage::Decision;
@@ -327,6 +349,7 @@ impl AppState {
     }
 
     fn cycle_permission_modal_confirm_selection(&mut self, permission_id: &str, forward: bool) {
+        self.ensure_permission_modal_state(permission_id);
         let current = self.permission_modal_confirm_selection(permission_id);
         self.permission_prompt.permission_id = Some(permission_id.to_string());
         self.permission_prompt.stage = PermissionModalStage::AlwaysConfirm;
@@ -334,6 +357,7 @@ impl AppState {
     }
 
     fn open_permission_allow_always_confirm(&mut self, permission_id: &str) {
+        self.ensure_permission_modal_state(permission_id);
         self.permission_prompt.permission_id = Some(permission_id.to_string());
         self.permission_prompt.stage = PermissionModalStage::AlwaysConfirm;
         self.permission_prompt.confirm_selection = PermissionConfirmSelection::Confirm;
@@ -352,6 +376,7 @@ impl AppState {
             self.permission_prompt.selection = PermissionModalSelection::AllowAlways;
             self.permission_prompt.confirm_selection = PermissionConfirmSelection::Confirm;
             self.permission_prompt.detail_expanded = false;
+            self.permission_prompt.feedback = None;
         }
     }
 
@@ -459,10 +484,29 @@ impl AppState {
             }
             return;
         }
+        self.ensure_permission_modal_state(&permission.permission_id);
 
         if key.code == KeyCode::Char('c') && key.modifiers == KeyModifiers::CONTROL {
             self.execute_action(Action::DismissModal);
             self.maybe_auto_exit();
+            return;
+        }
+
+        let command_modifiers = KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER;
+        if self
+            .permission_feedback(&permission.permission_id)
+            .is_some_and(|feedback| feedback.editing)
+        {
+            if key.code == KeyCode::Enter {
+                self.execute_action(Action::DenyPermission);
+                self.maybe_auto_exit();
+            } else if let Some(feedback) = self.permission_prompt.feedback.as_mut() {
+                if key.code == KeyCode::Esc {
+                    feedback.editing = false;
+                } else if !key.modifiers.intersects(command_modifiers) {
+                    feedback.edit(key.code);
+                }
+            }
             return;
         }
 
@@ -488,7 +532,6 @@ impl AppState {
             return;
         }
 
-        let command_modifiers = KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER;
         if key.code == KeyCode::Enter || !key.modifiers.intersects(command_modifiers) {
             if self.permission_modal_stage(&permission.permission_id)
                 == PermissionModalStage::AlwaysConfirm
@@ -546,6 +589,19 @@ impl AppState {
                 }
                 KeyCode::Esc => {
                     self.focus = super::Focus::List;
+                    return;
+                }
+                KeyCode::Char(character)
+                    if !character.is_control()
+                        && self.permission_modal_selection(&permission.permission_id)
+                            == PermissionModalSelection::Reject =>
+                {
+                    let feedback = self
+                        .permission_prompt
+                        .feedback
+                        .get_or_insert_with(PermissionFeedback::default);
+                    feedback.editing = true;
+                    feedback.edit(key.code);
                     return;
                 }
                 _ => {}
@@ -927,14 +983,12 @@ impl AppState {
                 self.open_permission_allow_always_confirm(&permission_id);
                 true
             }
-            Action::DenyPermission => {
+            Action::DenyPermission | Action::DismissModal => {
+                let reason = self
+                    .permission_feedback(&permission_id)
+                    .and_then(PermissionFeedback::reason);
                 self.clear_permission_modal_selection(&permission_id);
-                self.send_permission_intent(permission_id, PermissionDecision::Deny, None, None);
-                true
-            }
-            Action::DismissModal => {
-                self.clear_permission_modal_selection(&permission_id);
-                self.send_permission_intent(permission_id, PermissionDecision::Deny, None, None);
+                self.send_permission_intent(permission_id, PermissionDecision::Deny, reason, None);
                 true
             }
             Action::Quit => {
