@@ -12,6 +12,11 @@ fn harness_dark_theme_matches_palette_contract() {
     assert_eq!(theme.border.subtle, rgb(0x3A, 0x3D, 0x43));
     assert_eq!(theme.border.strong, rgb(0x48, 0x4B, 0x52));
     assert_eq!(theme.border.focus, rgb(0x60, 0x63, 0x6A));
+}
+
+#[test]
+fn harness_dark_text_and_status_palette() {
+    let theme = Theme::harness_dark();
     assert_eq!(theme.text.primary, rgb(0xEE, 0xEE, 0xEC));
     assert_eq!(theme.text.secondary, rgb(0x88, 0x8B, 0x91));
     assert_eq!(theme.text.tertiary, rgb(0x88, 0x8B, 0x91));
@@ -24,6 +29,11 @@ fn harness_dark_theme_matches_palette_contract() {
     assert_eq!(theme.status.error, rgb(0xE0, 0x6C, 0x75));
     assert_eq!(theme.status.info, rgb(0x56, 0xB6, 0xC2));
     assert_eq!(theme.status.disabled, rgb(0x80, 0x80, 0x80));
+}
+
+#[test]
+fn harness_dark_agent_and_scrollbar_palette() {
+    let theme = Theme::harness_dark();
     assert_eq!(theme.agents.build, rgb(0x5C, 0x9C, 0xF5));
     assert_eq!(theme.agents.plan, rgb(0xD9, 0x84, 0xD9));
     assert_eq!(theme.agents.docs, rgb(0xE5, 0xC0, 0x7B));
@@ -90,6 +100,12 @@ fn semantic_theme_families_preserve_default_contracts() {
         tokens.semantic.composer.primary.padding_x,
         theme.live_shell.rhythm.composer_padding_x
     );
+}
+
+#[test]
+fn palette_and_live_shell_families_preserve_default_contracts() {
+    let theme = Theme::default();
+    let tokens = theme.token_families();
     assert_eq!(tokens.palette.surfaces, theme.surface);
     assert_eq!(tokens.palette.borders, theme.border);
     assert_eq!(tokens.palette.text, theme.text);
@@ -208,6 +224,12 @@ fn semantic_composer_tokens_have_primary_split_minimum_variants() {
         tokens.semantic.composer.minimum.border,
         Some(theme.border.subtle)
     );
+}
+
+#[test]
+fn semantic_composer_split_and_primary_variants() {
+    let theme = Theme::default();
+    let tokens = theme.token_families();
     assert_eq!(
         tokens.semantic.composer.split.target,
         ShellGeometryTarget::Split
@@ -285,7 +307,6 @@ fn semantic_composer_tokens_have_primary_split_minimum_variants() {
 #[test]
 fn live_shell_tokens_choose_primary_geometry_at_signoff_size() {
     let theme = Theme::default();
-    let tokens = theme.token_families();
     let minimum = theme.live_shell_layout(80, 24);
     let split = theme.live_shell_layout(96, 40);
     let primary = theme.live_shell_layout(100, 30);
@@ -311,6 +332,13 @@ fn live_shell_tokens_choose_primary_geometry_at_signoff_size() {
     assert_eq!(theme.live_shell.rhythm.sidebar_padding_x, 2);
     assert_eq!(theme.live_shell.rhythm.sidebar_padding_y, 1);
     assert_eq!(theme.live_shell.rhythm.footer_prefix_gap, 2);
+}
+
+#[test]
+fn live_shell_split_geometry_at_signoff_size() {
+    let theme = Theme::default();
+    let split = theme.live_shell_layout(96, 40);
+    let split_lifecycle = theme.lifecycle_surface_layout(96, 40);
     assert_eq!(split.centered_content_width, 86);
     assert_eq!(split.content_margin_x, 0);
     assert_eq!(split.details_sidebar_width, 42);
@@ -319,6 +347,16 @@ fn live_shell_tokens_choose_primary_geometry_at_signoff_size() {
     assert_eq!(split_lifecycle.post_run_card.width, 76);
     assert_eq!(split_lifecycle.post_run_card.height, 12);
     assert_eq!(split_lifecycle.overlay.width, 86);
+}
+
+#[test]
+fn live_shell_primary_geometry_and_bounds() {
+    let theme = Theme::default();
+    let tokens = theme.token_families();
+    let minimum = theme.live_shell_layout(80, 24);
+    let split = theme.live_shell_layout(96, 40);
+    let primary = theme.live_shell_layout(100, 30);
+    let primary_lifecycle = theme.lifecycle_surface_layout(100, 30);
     assert_eq!(primary.centered_content_width, 90);
     assert_eq!(primary.content_margin_x, 0);
     assert_eq!(primary.details_sidebar_width, 42);
