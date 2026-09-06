@@ -1351,6 +1351,42 @@ mod presentation_section_tests {
     }
 
     #[test]
+    fn static_tool_headers_preserve_recorded_identity_and_ranges() {
+        // Given: native and MCP calls with recorded, displayable metadata.
+        let cases = [
+            (
+                "mcp.database.query",
+                r#"{"sql":"select 1"}"#,
+                "database query",
+                None,
+                None,
+            ),
+        ];
+        for (id, args, title, path, subtitle) in cases {
+            let mut tool = transcript_section_model_test_tool_call(id, id);
+            tool.status = ToolCallDisplayStatus::Succeeded;
+            tool.args_summary = args.to_string();
+            if id == "list" {
+                tool.output_json = Some(serde_json::json!({"entry_count": 3}));
+            }
+
+            // When: the stored call is projected without performing tool work.
+            let header = section(&tool).header;
+
+            // Then: identity and metadata occupy separate header fields.
+            assert_eq!(
+                (
+                    header.title.as_str(),
+                    header.path_metadata.as_deref(),
+                    header.subtitle.as_deref()
+                ),
+                (title, path, subtitle),
+                "{id}"
+            );
+        }
+    }
+
+    #[test]
     fn search_markers_use_ascii_catalog_when_requested() {
         // Given: an ASCII-mode app and search rows that normally use Unicode diamonds.
         let mut app = AppState::default();
