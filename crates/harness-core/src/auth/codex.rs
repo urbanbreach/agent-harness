@@ -22,8 +22,13 @@ pub const CODEX_DEVICE_VERIFICATION_URL: &str = "https://auth.openai.com/codex/d
 
 const PKCE_VERIFIER_LEN: usize = 43;
 const PKCE_CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
-const CODEX_ALLOWED_MODELS: &[&str] =
-    &["gpt-5.5", "gpt-5.3-codex-spark", "gpt-5.4", "gpt-5.4-mini"];
+const CODEX_ALLOWED_MODELS: &[&str] = &[
+    "gpt-6-astra",
+    "gpt-5.5",
+    "gpt-5.3-codex-spark",
+    "gpt-5.4",
+    "gpt-5.4-mini",
+];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PkceCodes {
