@@ -397,6 +397,23 @@ pub(in crate::ui) fn question_permission_actions_text(
     Text::from(Line::from(spans))
 }
 
+fn question_preview_lines(
+    text: &str,
+    style: Style,
+    width: u16,
+    max_rows: Option<usize>,
+) -> Vec<Line<'static>> {
+    let mut lines = wrap_question_line_preserving_spans(
+        Line::from(Span::styled(text.to_string(), style)),
+        usize::from(width.max(1)),
+    );
+    if let Some(limit) = max_rows.filter(|limit| lines.len() > *limit) {
+        lines.truncate(limit.saturating_sub(1));
+        lines.push(Line::from(Span::styled("... Ctrl-F to expand", style)));
+    }
+    lines
+}
+
 pub(in crate::ui) fn question_permission_body_text(
     app: &AppState,
     permission: &crate::app::ActivePermissionView,
@@ -451,18 +468,12 @@ pub(in crate::ui) fn question_permission_body_text(
     ));
     if !question_description.is_empty() {
         lines.push(Line::default());
-        let mut wrapped = wrap_question_line_preserving_spans(
-            Line::from(Span::styled(question_description.to_string(), muted_style)),
-            usize::from(content_width.max(1)),
-        );
-        if !fullscreen && wrapped.len() > 4 {
-            wrapped.truncate(3);
-            wrapped.push(Line::from(Span::styled(
-                "... Ctrl-F to expand",
-                muted_style,
-            )));
-        }
-        lines.extend(wrapped);
+        lines.extend(question_preview_lines(
+            question_description,
+            muted_style,
+            content_width,
+            (!fullscreen).then_some(4),
+        ));
     }
     if let Some(preview) = prompt
         .options
@@ -471,18 +482,12 @@ pub(in crate::ui) fn question_permission_body_text(
         .filter(|preview| !preview.is_empty())
     {
         lines.push(Line::default());
-        let mut wrapped = wrap_question_line_preserving_spans(
-            Line::from(Span::styled(preview.to_string(), muted_style)),
-            usize::from(content_width.max(1)),
-        );
-        if !fullscreen && wrapped.len() > 3 {
-            wrapped.truncate(2);
-            wrapped.push(Line::from(Span::styled(
-                "... Ctrl-F to expand",
-                muted_style,
-            )));
-        }
-        lines.extend(wrapped);
+        lines.extend(question_preview_lines(
+            preview,
+            muted_style,
+            content_width,
+            (!fullscreen).then_some(3),
+        ));
     }
     // Waiting-state layout: two blank rows between title and options.
     lines.push(Line::default());

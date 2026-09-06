@@ -496,14 +496,7 @@ impl AppState {
                         return;
                     }
                     KeyCode::Enter => {
-                        if self.permission_modal_confirm_selection(&permission.permission_id)
-                            == PermissionConfirmSelection::Confirm
-                        {
-                            self.clear_permission_modal_selection(&permission.permission_id);
-                            self.request_always_approve_mode_change(true);
-                        } else {
-                            self.close_permission_allow_always_confirm(&permission.permission_id);
-                        }
+                        self.confirm_permission_allow_always(&permission.permission_id);
                         self.maybe_auto_exit();
                         return;
                     }
@@ -573,6 +566,17 @@ impl AppState {
         }
     }
 
+    fn confirm_permission_allow_always(&mut self, permission_id: &str) {
+        if self.permission_modal_confirm_selection(permission_id)
+            == PermissionConfirmSelection::Confirm
+        {
+            self.clear_permission_modal_selection(permission_id);
+            self.request_always_approve_mode_change(true);
+        } else {
+            self.close_permission_allow_always_confirm(permission_id);
+        }
+    }
+
     fn handle_question_permission_modal_key(&mut self, key: KeyEvent) {
         let Some(permission) = self.active_permission_view() else {
             return;
@@ -594,258 +598,273 @@ impl AppState {
 
         if !self.composer_disabled() {
             if self.question_prompt.editing {
-                if key.code == KeyCode::Char('c') && key.modifiers == KeyModifiers::CONTROL {
-                    self.question_prompt.editing = false;
-                    self.question_prompt.answer_error = None;
-                    return;
-                }
-                if key.code == KeyCode::Enter
-                    && matches!(key.modifiers, KeyModifiers::SHIFT | KeyModifiers::ALT)
-                {
-                    self.insert_question_answer_char('\n');
-                    return;
-                }
-                match key.code {
-                    KeyCode::Esc => {
-                        self.commit_question_custom_answer(
-                            &permission.permission_id,
-                            prompts,
-                            false,
-                        );
-                        return;
-                    }
-                    KeyCode::Enter if key.modifiers.is_empty() => {
-                        self.commit_question_custom_answer(
-                            &permission.permission_id,
-                            prompts,
-                            true,
-                        );
-                        self.maybe_auto_exit();
-                        return;
-                    }
-                    KeyCode::Backspace => {
-                        self.backspace_question_answer_char();
-                        self.maybe_auto_exit();
-                        return;
-                    }
-                    KeyCode::Delete => {
-                        self.delete_question_answer_char();
-                        self.maybe_auto_exit();
-                        return;
-                    }
-                    KeyCode::Left => {
-                        self.question_prompt.answer_cursor =
-                            self.question_prompt.answer_cursor.saturating_sub(1);
-                        return;
-                    }
-                    KeyCode::Right => {
-                        self.question_prompt.answer_cursor = self
-                            .question_prompt
-                            .answer_cursor
-                            .saturating_add(1)
-                            .min(self.question_answer_char_count());
-                        return;
-                    }
-                    KeyCode::Home => {
-                        self.question_prompt.answer_cursor = 0;
-                        return;
-                    }
-                    KeyCode::End => {
-                        self.question_prompt.answer_cursor = self.question_answer_char_count();
-                        return;
-                    }
-                    KeyCode::Char(c)
-                        if !key.modifiers.intersects(
-                            KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER,
-                        ) =>
-                    {
-                        self.insert_question_answer_char(c);
-                        self.maybe_auto_exit();
-                        return;
-                    }
-                    _ => return,
-                }
+                self.handle_question_answer_edit_key(key, &permission.permission_id, prompts);
+                return;
             }
 
-            if key.code == KeyCode::Char('X') && key.modifiers == KeyModifiers::SHIFT {
-                self.execute_action(Action::DismissModal);
+            self.handle_question_selection_key(key, &permission.permission_id, prompts);
+            return;
+        }
+        self.handle_permission_keybinding(key);
+    }
+
+    fn handle_question_answer_edit_key(
+        &mut self,
+        key: KeyEvent,
+        permission_id: &str,
+        prompts: &[QuestionPromptView],
+    ) {
+        if key.code == KeyCode::Char('c') && key.modifiers == KeyModifiers::CONTROL {
+            self.question_prompt.editing = false;
+            self.question_prompt.answer_error = None;
+            return;
+        }
+        if key.code == KeyCode::Enter
+            && matches!(key.modifiers, KeyModifiers::SHIFT | KeyModifiers::ALT)
+        {
+            self.insert_question_answer_char('\n');
+            return;
+        }
+        match key.code {
+            KeyCode::Esc => {
+                self.commit_question_custom_answer(permission_id, prompts, false);
+                return;
+            }
+            KeyCode::Enter if key.modifiers.is_empty() => {
+                self.commit_question_custom_answer(permission_id, prompts, true);
                 self.maybe_auto_exit();
                 return;
             }
-
-            if key.code == KeyCode::Char('c') && key.modifiers == KeyModifiers::CONTROL {
-                self.execute_action(Action::DismissModal);
+            KeyCode::Backspace => {
+                self.backspace_question_answer_char();
                 self.maybe_auto_exit();
                 return;
             }
-
-            if let Some(prompt) = prompts.get(self.question_prompt.tab) {
-                if prompt.custom
-                    && self.question_prompt.selection == prompt.options.len()
-                    && (key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT)
-                    && matches!(key.code, KeyCode::Char(character) if character != ' ')
-                    && !matches!(
-                        key.code,
-                        KeyCode::Char(character)
-                            if key.modifiers.is_empty()
-                                && question_option_index_for_key(character)
-                                    .is_some_and(|index| index < prompt.options.len())
-                    )
-                {
-                    self.start_question_custom_edit(&permission.permission_id, prompt.multiple);
-                    if let KeyCode::Char(character) = key.code {
-                        self.insert_question_answer_char(character);
-                    }
-                    return;
-                }
-            }
-
-            if let Some(forward) = question_row_walk(&key) {
-                self.walk_question_selection(prompts, forward);
+            KeyCode::Delete => {
+                self.delete_question_answer_char();
+                self.maybe_auto_exit();
                 return;
             }
+            KeyCode::Left => {
+                self.question_prompt.answer_cursor =
+                    self.question_prompt.answer_cursor.saturating_sub(1);
+                return;
+            }
+            KeyCode::Right => {
+                self.question_prompt.answer_cursor = self
+                    .question_prompt
+                    .answer_cursor
+                    .saturating_add(1)
+                    .min(self.question_answer_char_count());
+                return;
+            }
+            KeyCode::Home => {
+                self.question_prompt.answer_cursor = 0;
+                return;
+            }
+            KeyCode::End => {
+                self.question_prompt.answer_cursor = self.question_answer_char_count();
+                return;
+            }
+            KeyCode::Char(c)
+                if !key.modifiers.intersects(
+                    KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER,
+                ) =>
+            {
+                self.insert_question_answer_char(c);
+                self.maybe_auto_exit();
+                return;
+            }
+            _ => return,
+        }
+    }
 
-            let switch_modifiers =
-                key.modifiers.is_empty() || key.modifiers == KeyModifiers::CONTROL;
-            match key.code {
-                KeyCode::Left | KeyCode::Char('h') | KeyCode::Char('[') if switch_modifiers => {
-                    self.select_question_tab(self.question_prompt.tab.saturating_sub(1));
-                    return;
+    fn handle_question_selection_key(
+        &mut self,
+        key: KeyEvent,
+        permission_id: &str,
+        prompts: &[QuestionPromptView],
+    ) {
+        if key.code == KeyCode::Char('X') && key.modifiers == KeyModifiers::SHIFT {
+            self.execute_action(Action::DismissModal);
+            self.maybe_auto_exit();
+            return;
+        }
+
+        if key.code == KeyCode::Char('c') && key.modifiers == KeyModifiers::CONTROL {
+            self.execute_action(Action::DismissModal);
+            self.maybe_auto_exit();
+            return;
+        }
+
+        if let Some(prompt) = prompts.get(self.question_prompt.tab) {
+            if prompt.custom
+                && self.question_prompt.selection == prompt.options.len()
+                && (key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT)
+                && matches!(key.code, KeyCode::Char(character) if character != ' ')
+                && !matches!(
+                    key.code,
+                    KeyCode::Char(character)
+                        if key.modifiers.is_empty()
+                            && question_option_index_for_key(character)
+                                .is_some_and(|index| index < prompt.options.len())
+                )
+            {
+                self.start_question_custom_edit(permission_id, prompt.multiple);
+                if let KeyCode::Char(character) = key.code {
+                    self.insert_question_answer_char(character);
                 }
-                KeyCode::Right | KeyCode::Char('l') | KeyCode::Char(']') if switch_modifiers => {
-                    self.select_question_tab(
-                        (self.question_prompt.tab + 1)
-                            .min(question_prompt_tab_count(prompts).saturating_sub(1)),
-                    );
-                    return;
-                }
-                KeyCode::Up | KeyCode::Char('k') => {
-                    if switch_modifiers {
-                        self.move_question_selection(prompts, -1);
-                        return;
-                    }
-                }
-                KeyCode::Down | KeyCode::Char('j') => {
-                    if switch_modifiers {
-                        self.move_question_selection(prompts, 1);
-                        return;
-                    }
-                }
-                KeyCode::PageUp => {
-                    if switch_modifiers {
-                        self.move_question_selection_page(prompts, isize::MIN);
-                        return;
-                    }
-                }
-                KeyCode::PageDown => {
-                    if switch_modifiers {
-                        self.move_question_selection_page(prompts, isize::MAX);
-                        return;
-                    }
-                }
-                KeyCode::Char('d') if key.modifiers == KeyModifiers::CONTROL => {
-                    self.move_question_selection_half_page(prompts, true);
-                    return;
-                }
-                KeyCode::Char('u') if key.modifiers == KeyModifiers::CONTROL => {
-                    self.move_question_selection_half_page(prompts, false);
-                    return;
-                }
-                KeyCode::Char('g') if key.modifiers.is_empty() => {
-                    self.move_question_selection_page(prompts, isize::MIN);
-                    return;
-                }
-                KeyCode::Char('G') if key.modifiers == KeyModifiers::SHIFT => {
-                    self.move_question_selection_page(prompts, isize::MAX);
-                    return;
-                }
-                KeyCode::Char(' ') => {
-                    self.toggle_active_question_selection(&permission.permission_id, prompts);
-                    return;
-                }
-                KeyCode::Char('z') if key.modifiers.is_empty() => {
-                    let Some(prompt) = prompts.get(self.question_prompt.tab) else {
-                        return;
-                    };
-                    if prompt.custom {
-                        self.question_prompt.hovered = None;
-                        self.question_prompt.selection = prompt.options.len();
-                        self.start_question_custom_edit(&permission.permission_id, prompt.multiple);
-                    }
-                    return;
-                }
-                KeyCode::Char('y') if key.modifiers.is_empty() => {
-                    let Some(option) = prompts
-                        .get(self.question_prompt.tab)
-                        .and_then(|prompt| prompt.options.get(self.question_prompt.selection))
-                    else {
-                        return;
-                    };
-                    let normalized_label = option
-                        .label
-                        .split_whitespace()
-                        .collect::<Vec<_>>()
-                        .join(" ");
-                    let text = if option.description.is_empty() {
-                        normalized_label
-                    } else {
-                        format!("{}\n{}", normalized_label, option.description)
-                    };
-                    match crate::clipboard::copy(&text) {
-                        Ok(()) => self.show_toast("Copied option", ToastVariant::Info),
-                        Err(error) => self.show_toast(
-                            format!("clipboard copy failed: {error}"),
-                            ToastVariant::Error,
-                        ),
-                    }
-                    return;
-                }
-                KeyCode::Char(c) => {
-                    if key.modifiers.is_empty() {
-                        let Some(index) = question_option_index_for_key(c) else {
-                            return;
-                        };
-                        let Some(prompt) = prompts.get(self.question_prompt.tab) else {
-                            return;
-                        };
-                        if index >= prompt.options.len() {
-                            return;
-                        }
-                        self.question_prompt.hovered = None;
-                        self.question_prompt.selection = index;
-                        self.accept_question_selection(&permission.permission_id, prompts);
-                        self.maybe_auto_exit();
-                        return;
-                    }
-                }
-                KeyCode::Enter => {
-                    self.accept_question_selection(&permission.permission_id, prompts);
-                    self.maybe_auto_exit();
-                    return;
-                }
-                KeyCode::Esc => {
-                    if self
-                        .question_prompt
-                        .answers
-                        .get(self.question_prompt.tab)
-                        .is_some_and(|answers| !answers.is_empty())
-                        || self
-                            .question_prompt
-                            .custom_selected
-                            .get(self.question_prompt.tab)
-                            .copied()
-                            .unwrap_or(false)
-                    {
-                        self.clear_active_question_selection();
-                    } else {
-                        self.focus = super::Focus::List;
-                    }
-                    return;
-                }
-                _ => {}
+                return;
             }
         }
 
+        if let Some(forward) = question_row_walk(&key) {
+            self.walk_question_selection(prompts, forward);
+            return;
+        }
+
+        let switch_modifiers = key.modifiers.is_empty() || key.modifiers == KeyModifiers::CONTROL;
+        match key.code {
+            KeyCode::Left | KeyCode::Char('h') | KeyCode::Char('[') if switch_modifiers => {
+                self.select_question_tab(self.question_prompt.tab.saturating_sub(1));
+                return;
+            }
+            KeyCode::Right | KeyCode::Char('l') | KeyCode::Char(']') if switch_modifiers => {
+                self.select_question_tab(
+                    (self.question_prompt.tab + 1)
+                        .min(question_prompt_tab_count(prompts).saturating_sub(1)),
+                );
+                return;
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                if switch_modifiers {
+                    self.move_question_selection(prompts, -1);
+                    return;
+                }
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if switch_modifiers {
+                    self.move_question_selection(prompts, 1);
+                    return;
+                }
+            }
+            KeyCode::PageUp => {
+                if switch_modifiers {
+                    self.move_question_selection_page(prompts, isize::MIN);
+                    return;
+                }
+            }
+            KeyCode::PageDown => {
+                if switch_modifiers {
+                    self.move_question_selection_page(prompts, isize::MAX);
+                    return;
+                }
+            }
+            KeyCode::Char('d') if key.modifiers == KeyModifiers::CONTROL => {
+                self.move_question_selection_half_page(prompts, true);
+                return;
+            }
+            KeyCode::Char('u') if key.modifiers == KeyModifiers::CONTROL => {
+                self.move_question_selection_half_page(prompts, false);
+                return;
+            }
+            KeyCode::Char('g') if key.modifiers.is_empty() => {
+                self.move_question_selection_page(prompts, isize::MIN);
+                return;
+            }
+            KeyCode::Char('G') if key.modifiers == KeyModifiers::SHIFT => {
+                self.move_question_selection_page(prompts, isize::MAX);
+                return;
+            }
+            KeyCode::Char(' ') => {
+                self.toggle_active_question_selection(permission_id, prompts);
+                return;
+            }
+            KeyCode::Char('z') if key.modifiers.is_empty() => {
+                let Some(prompt) = prompts.get(self.question_prompt.tab) else {
+                    return;
+                };
+                if prompt.custom {
+                    self.question_prompt.hovered = None;
+                    self.question_prompt.selection = prompt.options.len();
+                    self.start_question_custom_edit(permission_id, prompt.multiple);
+                }
+                return;
+            }
+            KeyCode::Char('y') if key.modifiers.is_empty() => {
+                let Some(option) = prompts
+                    .get(self.question_prompt.tab)
+                    .and_then(|prompt| prompt.options.get(self.question_prompt.selection))
+                else {
+                    return;
+                };
+                let normalized_label = option
+                    .label
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                let text = if option.description.is_empty() {
+                    normalized_label
+                } else {
+                    format!("{}\n{}", normalized_label, option.description)
+                };
+                match crate::clipboard::copy(&text) {
+                    Ok(()) => self.show_toast("Copied option", ToastVariant::Info),
+                    Err(error) => self.show_toast(
+                        format!("clipboard copy failed: {error}"),
+                        ToastVariant::Error,
+                    ),
+                }
+                return;
+            }
+            KeyCode::Char(c) => {
+                if key.modifiers.is_empty() {
+                    let Some(index) = question_option_index_for_key(c) else {
+                        return;
+                    };
+                    let Some(prompt) = prompts.get(self.question_prompt.tab) else {
+                        return;
+                    };
+                    if index >= prompt.options.len() {
+                        return;
+                    }
+                    self.question_prompt.hovered = None;
+                    self.question_prompt.selection = index;
+                    self.accept_question_selection(permission_id, prompts);
+                    self.maybe_auto_exit();
+                    return;
+                }
+            }
+            KeyCode::Enter => {
+                self.accept_question_selection(permission_id, prompts);
+                self.maybe_auto_exit();
+                return;
+            }
+            KeyCode::Esc => {
+                if self
+                    .question_prompt
+                    .answers
+                    .get(self.question_prompt.tab)
+                    .is_some_and(|answers| !answers.is_empty())
+                    || self
+                        .question_prompt
+                        .custom_selected
+                        .get(self.question_prompt.tab)
+                        .copied()
+                        .unwrap_or(false)
+                {
+                    self.clear_active_question_selection();
+                } else {
+                    self.focus = super::Focus::List;
+                }
+                return;
+            }
+            _ => {}
+        }
+        self.handle_permission_keybinding(key);
+    }
+
+    fn handle_permission_keybinding(&mut self, key: KeyEvent) {
         if let Some(action) = self.keymap.get_action(&key) {
             if matches!(
                 action,

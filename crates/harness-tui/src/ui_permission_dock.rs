@@ -45,9 +45,8 @@ pub(super) fn render_inline_permission_dock(
         return;
     }
 
-    let always_confirm = !is_question
-        && app.permission_modal_stage(&permission.permission_id)
-            == PermissionModalStage::AlwaysConfirm;
+    let always_confirm = app.permission_modal_stage(&permission.permission_id)
+        == PermissionModalStage::AlwaysConfirm;
     let dock_surface = theme.surface.panel_elevated;
     let shell_surface = dock_surface;
     let tray_surface = dock_surface;
@@ -74,20 +73,23 @@ pub(super) fn render_inline_permission_dock(
         body_area,
     );
 
-    if geometry.rail.width > 0 && geometry.rail.height > 0 {
-        let rail_style = Style::default().fg(theme.text.accent).bg(dock_surface);
-        let rail_lines = (0..usize::from(geometry.rail.height))
-            .map(|_| {
-                Line::from(Span::styled(
-                    theme.live_shell.transcript_glyphs.rail,
-                    rail_style,
-                ))
-            })
-            .collect::<Vec<_>>();
-        frame.render_widget(
-            Paragraph::new(Text::from(rail_lines)).style(Style::default().bg(dock_surface)),
-            geometry.rail,
-        );
+    render_permission_rail(frame, geometry.rail, theme, dock_surface);
+    fn render_permission_rail(frame: &mut Frame, rail: Rect, theme: &Theme, dock_surface: Color) {
+        if rail.width > 0 && rail.height > 0 {
+            let rail_style = Style::default().fg(theme.text.accent).bg(dock_surface);
+            let rail_lines = (0..usize::from(rail.height))
+                .map(|_| {
+                    Line::from(Span::styled(
+                        theme.live_shell.transcript_glyphs.rail,
+                        rail_style,
+                    ))
+                })
+                .collect::<Vec<_>>();
+            frame.render_widget(
+                Paragraph::new(Text::from(rail_lines)).style(Style::default().bg(dock_surface)),
+                rail,
+            );
+        }
     }
 
     if geometry.content.width == 0 || geometry.content.height == 0 {
@@ -164,9 +166,6 @@ pub(super) fn render_inline_permission_dock(
     }
 
     let tray_inner = tray_body_area;
-    if tray_inner.width == 0 || tray_inner.height == 0 {
-        return;
-    }
 
     if submission_pending {
         frame.render_widget(
@@ -179,23 +178,6 @@ pub(super) fn render_inline_permission_dock(
             ))
             .style(Style::default().bg(tray_surface))
             .wrap(Wrap { trim: true }),
-            tray_inner,
-        );
-        return;
-    }
-
-    if is_question {
-        frame.render_widget(
-            Paragraph::new(question_permission_actions_text(
-                app,
-                permission,
-                permission.question_prompts.as_deref().unwrap_or(&[]),
-                theme,
-                tray_surface,
-                tray_inner.width,
-            ))
-            .style(Style::default().bg(tray_surface))
-            .wrap(Wrap { trim: false }),
             tray_inner,
         );
         return;

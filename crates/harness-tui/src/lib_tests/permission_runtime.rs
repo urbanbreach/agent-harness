@@ -234,6 +234,10 @@ pub(super) fn live_status_strip_distinguishes_terminal_states() {
     let error_debug = render_live_buffer(&errored, 80, 24);
     assert!(error_debug.contains("API rate limit exceeded"));
 
+    assert_permission_and_connection_status_strips();
+}
+
+fn assert_permission_and_connection_status_strips() {
     let mut permission_blocked = app::AppState::new_live(None, false, None);
     permission_blocked.ingest_event(permission_requested_event(1, "perm_blocked", "tool_call_1"));
     let permission_blocked_debug = render_live_buffer(&permission_blocked, 80, 24);
