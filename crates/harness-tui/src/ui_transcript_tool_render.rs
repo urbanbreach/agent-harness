@@ -379,6 +379,7 @@ fn append_task_inline_tool_section_lines(
         return;
     }
 
+    let content_start = render.lines.len();
     for detail_block in &tool_call.detail_blocks {
         match detail_block {
             TranscriptToolCallDetailBlock::Message { text, tone } => {
@@ -443,6 +444,7 @@ fn append_task_inline_tool_section_lines(
             }
         }
     }
+    paint_tool_completion_rail(&mut render.lines[content_start..], tool_call, theme);
 }
 
 fn append_block_tool_section_lines(
@@ -606,6 +608,7 @@ fn append_shell_tool_harness_card(
         return;
     }
 
+    let content_start = render.lines.len();
     for detail_block in &tool_call.detail_blocks {
         let start = render.lines.len();
         match detail_block {
@@ -692,6 +695,35 @@ fn append_shell_tool_harness_card(
             }
         }
     }
+    paint_tool_completion_rail(&mut render.lines[content_start..], tool_call, theme);
+}
+
+fn paint_tool_completion_rail(
+    lines: &mut [Line<'static>],
+    tool_call: &TranscriptToolCallSection,
+    theme: &Theme,
+) {
+    if !matches!(tool_call.rail_motion, ToolRailMotion::FinishFlash { .. }) {
+        return;
+    }
+    for line in lines.iter_mut().filter(|line| {
+        line.spans
+            .iter()
+            .any(|span| !span.content.trim().is_empty())
+    }) {
+        if let Some(prefix) = line
+            .spans
+            .first_mut()
+            .filter(|span| span.content.starts_with(' '))
+        {
+            // Replace an existing gutter cell so the transient rail cannot reflow content.
+            prefix
+                .content
+                .to_mut()
+                .replace_range(0..1, theme.live_shell.transcript_glyphs.rail);
+            prefix.style = prefix.style.fg(theme.text.accent);
+        }
+    }
 }
 
 pub(super) fn append_tool_call_detail_blocks(
@@ -714,6 +746,7 @@ pub(super) fn append_tool_call_detail_blocks(
         return;
     }
 
+    let content_start = render.lines.len();
     for detail_block in &tool_call.detail_blocks {
         let start = render.lines.len();
         match detail_block {
@@ -820,6 +853,7 @@ pub(super) fn append_tool_call_detail_blocks(
             }
         }
     }
+    paint_tool_completion_rail(&mut render.lines[content_start..], tool_call, theme);
 }
 
 fn append_read_output(

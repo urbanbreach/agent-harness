@@ -53,6 +53,11 @@ pub(super) fn build_tool_call_section(
                 | TranscriptToolFamily::Task
                 | TranscriptToolFamily::Question
         ) || matches!(tool_call.effective_tool_id(), "todo.write" | "todowrite"));
+    if !section.details_visible()
+        && matches!(section.rail_motion, ToolRailMotion::FinishFlash { .. })
+    {
+        section.rail_motion = ToolRailMotion::Settled;
+    }
     Some(section)
 }
 
@@ -639,7 +644,7 @@ pub(super) fn build_transcript_tool_call_section(
         "apply_patch" => None,
         _ => None,
     };
-    let rail_motion = if app.replay_mode {
+    let rail_motion = if app.replay_mode || !app.transcript_motion_enabled() {
         ToolRailMotion::Settled
     } else {
         match tool_call.status {
@@ -649,9 +654,15 @@ pub(super) fn build_transcript_tool_call_section(
             },
             ToolCallDisplayStatus::PendingPermission => ToolRailMotion::Waiting,
             ToolCallDisplayStatus::Queued => ToolRailMotion::Queued,
-            ToolCallDisplayStatus::Succeeded | ToolCallDisplayStatus::Failed => {
-                ToolRailMotion::Settled
-            }
+            ToolCallDisplayStatus::Succeeded | ToolCallDisplayStatus::Failed => app
+                .tool_finish_elapsed(&tool_call.tool_call_id)
+                .filter(|_| !detail_blocks.is_empty())
+                .map_or(ToolRailMotion::Settled, |elapsed| {
+                    ToolRailMotion::FinishFlash {
+                        elapsed,
+                        sampled_phase: app.transcript_animation_phase(),
+                    }
+                }),
         }
     };
 

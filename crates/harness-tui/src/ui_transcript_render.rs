@@ -3046,4 +3046,30 @@ mod tests {
             "{text}"
         );
     }
+
+    #[test]
+    fn completion_rail_keeps_header_and_geometry_unchanged() {
+        let theme = Theme::default();
+        let mut turn = ui10_diff_turn(true);
+        let settled = build_transcript_render_surfaces(&turn, &theme, 80, theme.surface.canvas);
+        if let super::super::TranscriptAssistantPart::ToolCall(tool) = &mut turn.assistant_parts[0]
+        {
+            tool.rail_motion = super::super::ToolRailMotion::FinishFlash {
+                elapsed: std::time::Duration::ZERO,
+                sampled_phase: 0,
+            };
+        }
+        let flashed = build_transcript_render_surfaces(&turn, &theme, 80, theme.surface.canvas);
+        assert_eq!(settled[0].lines.len(), flashed[0].lines.len());
+        assert_eq!(settled[0].lines[0], flashed[0].lines[0]);
+        assert!(flashed[0].lines.iter().skip(1).any(|line| {
+            super::super::ui_transcript_surface::line_has_tool_rail(
+                line,
+                theme.live_shell.transcript_glyphs.rail,
+            )
+        }));
+        for (before, after) in settled[0].lines.iter().zip(&flashed[0].lines) {
+            assert_eq!(before.width(), after.width());
+        }
+    }
 }
