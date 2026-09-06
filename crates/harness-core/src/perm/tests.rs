@@ -545,16 +545,20 @@ fn native_tool_ids_resolve_to_permission_kinds_without_aliases() {
         permission_kind_for_tool("ast_grep_replace"),
         Some(PermissionKind::EditFs)
     );
-    assert_eq!(permission_kind_for_tool("user.question"), None);
-    assert_eq!(permission_kind_for_tool("agent.spawn"), None);
-    assert_eq!(permission_kind_for_tool("web.fetch"), None);
-    assert_eq!(permission_kind_for_tool("search.web"), None);
-    assert_eq!(permission_kind_for_tool("search.code"), None);
-    assert_eq!(permission_kind_for_tool("code.lsp"), None);
-    assert_eq!(permission_kind_for_tool("tool.batch"), None);
-    assert_eq!(permission_kind_for_tool("batch"), None);
-    assert_eq!(permission_kind_for_tool("todo.write"), None);
-    assert_eq!(permission_kind_for_tool("invalid"), None);
+    for tool_id in [
+        "user.question",
+        "agent.spawn",
+        "web.fetch",
+        "search.web",
+        "search.code",
+        "code.lsp",
+        "tool.batch",
+        "batch",
+        "todo.write",
+        "invalid",
+    ] {
+        assert_eq!(permission_kind_for_tool(tool_id), None, "{tool_id}");
+    }
     assert_eq!(
         permission_kind_for_capability(ToolCapability::SpawnAgent),
         Some(PermissionKind::Task)

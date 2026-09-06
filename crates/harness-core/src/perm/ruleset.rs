@@ -320,45 +320,39 @@ pub fn wildcard_match(input: &str, pattern: &str) -> bool {
 }
 
 fn glob_like_match(input: &str, pattern: &str) -> bool {
-    // Convert simple glob to recursive match without full regex dependency.
-    let input_chars = input.chars().peekable();
-    let pattern_chars = pattern.chars().peekable();
+    match_rest(input.chars().peekable(), pattern.chars().peekable())
+}
 
-    fn match_rest(
-        mut input: std::iter::Peekable<std::str::Chars<'_>>,
-        mut pattern: std::iter::Peekable<std::str::Chars<'_>>,
-    ) -> bool {
-        loop {
-            match pattern.next() {
-                None => return input.next().is_none(),
-                Some('*') => {
-                    // Greedy-then-backtrack
-                    if pattern.peek().is_none() {
-                        return true;
-                    }
-                    loop {
-                        if match_rest(input.clone(), pattern.clone()) {
-                            return true;
-                        }
-                        if input.next().is_none() {
-                            return false;
-                        }
-                    }
+fn match_rest(
+    mut input: std::iter::Peekable<std::str::Chars<'_>>,
+    mut pattern: std::iter::Peekable<std::str::Chars<'_>>,
+) -> bool {
+    loop {
+        match pattern.next() {
+            None => return input.next().is_none(),
+            Some('*') => {
+                // Greedy-then-backtrack
+                if pattern.peek().is_none() {
+                    return true;
                 }
-                Some('?') => {
+                while !match_rest(input.clone(), pattern.clone()) {
                     if input.next().is_none() {
                         return false;
                     }
                 }
-                Some(expected) => match input.next() {
-                    Some(actual) if actual == expected => {}
-                    _ => return false,
-                },
+                return true;
             }
+            Some('?') => {
+                if input.next().is_none() {
+                    return false;
+                }
+            }
+            Some(expected) => match input.next() {
+                Some(actual) if actual == expected => {}
+                _ => return false,
+            },
         }
     }
-
-    match_rest(input_chars, pattern_chars)
 }
 
 /// Derive which task subagent names are denied under a ruleset.
