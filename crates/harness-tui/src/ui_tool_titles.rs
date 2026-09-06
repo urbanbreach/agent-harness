@@ -129,22 +129,14 @@ pub(super) fn edit_tool_title(tool_call: &ToolCallEntry) -> String {
 }
 
 pub(super) fn mcp_tool_title(tool_call: &ToolCallEntry, display_tool_id: &str) -> String {
-    let title = mcp_display_name(tool_call, display_tool_id);
-    let suffix = compact_tool_trigger_subtitle(
-        tool_input_label(&tool_call.args_summary, true),
-        tool_input_args(&tool_call.args_summary, true, &["tool"]),
-    );
-    match suffix {
-        Some(suffix) => format!("{title} {suffix}"),
-        None => title,
-    }
+    mcp_display_name(tool_call, display_tool_id)
 }
 
 fn mcp_display_name(tool_call: &ToolCallEntry, display_tool_id: &str) -> String {
     let server = mcp_server_name(tool_call, display_tool_id);
     if let Some(tool) = mcp_remote_tool_name(tool_call, display_tool_id) {
         return server
-            .map(|server| format!("{server}_{tool}"))
+            .map(|server| format!("{server} {tool}"))
             .unwrap_or(tool);
     }
 
@@ -153,7 +145,7 @@ fn mcp_display_name(tool_call: &ToolCallEntry, display_tool_id: &str) -> String 
         .or_else(|| mcp_tool_id_body(display_tool_id).map(str::to_string))
         .unwrap_or_else(|| display_tool_id.to_string());
     server
-        .map(|server| format!("{server}_{fallback}"))
+        .map(|server| format!("{server} {fallback}"))
         .unwrap_or(fallback)
 }
 
