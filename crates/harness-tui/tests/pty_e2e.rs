@@ -10,6 +10,8 @@ mod p0_06_artifacts;
 mod p0_06_terminal_emulator;
 #[path = "support/pty_e2e_impl.rs"]
 mod pty_e2e_impl;
+#[path = "support/manual_tool_capture_events.rs"]
+mod tool_capture_events;
 
 #[test]
 fn pty_smoke_starts_accepts_input_resizes_and_exits() {
