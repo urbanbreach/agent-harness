@@ -415,85 +415,94 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         skip_alternate_screen,
     } = options;
 
-    let (mut app, mut live_updates) = match mode {
-        TuiMode::Startup {
-            session_history_entries,
-            prompt_history_path,
-            update_rx,
-        } => {
-            let mut app = AppState::new_startup_with_prompt_history_path(
-                session_history_entries,
-                on_ui_intent,
-                prompt_history_path,
-            );
-            app.should_quit = exit_on_finish;
-            if let Some(bindings) = keybindings.as_ref() {
-                app.apply_keybindings(bindings.clone());
-            }
-            (app, Some(update_rx))
-        }
-        TuiMode::Replay { run_dir, events } => {
-            let mut app = AppState::new_replay(run_dir, events);
-            // Replay workspace authority comes exclusively from replayed RunStarted events.
-            // The CWD-based workspace root provider must never substitute missing event authority.
-            app.disable_cwd_workspace_root_provider();
-            if let Some(on_ui_intent) = on_ui_intent {
-                app.enable_replay_navigation_handoff(on_ui_intent);
-            }
-            if let Some(launch_metadata) = take_pending_replay_launch_metadata() {
-                app.set_launch_metadata(launch_metadata);
-            }
-            if let Some(bindings) = keybindings.as_ref() {
-                app.apply_keybindings(bindings.clone());
-            }
-            (app, None)
-        }
-        TuiMode::Live {
-            run_dir,
-            historical_events,
-            session_history_entries,
-            prompt_history_path,
-            update_rx,
-            compact_session_supported,
-        } => {
-            let crash_report = harness_core::crash_recovery::inspect_previous_crash(&run_dir);
-            let starting_session_seed = historical_events.is_empty();
-            let mut app = AppState::new_live_with_session_history_and_prompt_history_path(
-                Some(run_dir.clone()),
-                exit_on_finish,
-                on_ui_intent,
+    fn app_for_mode(
+        mode: TuiMode,
+        exit_on_finish: bool,
+        on_ui_intent: Option<Arc<dyn Fn(UiIntent) + Send + Sync>>,
+        keybindings: Option<&std::collections::BTreeMap<String, String>>,
+    ) -> (AppState, Option<LiveUpdateReceiver>) {
+        match mode {
+            TuiMode::Startup {
                 session_history_entries,
                 prompt_history_path,
-            );
-            app.set_starting_session_seed(
-                starting_session_seed && app.composer.prompt_buffer.is_empty(),
-            );
-            app.set_compact_session_supported(compact_session_supported);
-            if let Some(launch_metadata) = take_pending_replay_launch_metadata() {
-                app.set_launch_metadata(launch_metadata);
+                update_rx,
+            } => {
+                let mut app = AppState::new_startup_with_prompt_history_path(
+                    session_history_entries,
+                    on_ui_intent,
+                    prompt_history_path,
+                );
+                app.should_quit = exit_on_finish;
+                if let Some(bindings) = keybindings {
+                    app.apply_keybindings(bindings.clone());
+                }
+                (app, Some(update_rx))
             }
-            if let Some(bindings) = keybindings.as_ref() {
-                app.apply_keybindings(bindings.clone());
+            TuiMode::Replay { run_dir, events } => {
+                let mut app = AppState::new_replay(run_dir, events);
+                // Replay workspace authority comes exclusively from replayed RunStarted events.
+                // The CWD-based workspace root provider must never substitute missing event authority.
+                app.disable_cwd_workspace_root_provider();
+                if let Some(on_ui_intent) = on_ui_intent {
+                    app.enable_replay_navigation_handoff(on_ui_intent);
+                }
+                if let Some(launch_metadata) = take_pending_replay_launch_metadata() {
+                    app.set_launch_metadata(launch_metadata);
+                }
+                if let Some(bindings) = keybindings {
+                    app.apply_keybindings(bindings.clone());
+                }
+                (app, None)
             }
-            for event in historical_events {
-                app.ingest_historical_event(event);
+            TuiMode::Live {
+                run_dir,
+                historical_events,
+                session_history_entries,
+                prompt_history_path,
+                update_rx,
+                compact_session_supported,
+            } => {
+                let crash_report = harness_core::crash_recovery::inspect_previous_crash(&run_dir);
+                let starting_session_seed = historical_events.is_empty();
+                let mut app = AppState::new_live_with_session_history_and_prompt_history_path(
+                    Some(run_dir.clone()),
+                    exit_on_finish,
+                    on_ui_intent,
+                    session_history_entries,
+                    prompt_history_path,
+                );
+                app.set_starting_session_seed(
+                    starting_session_seed && app.composer.prompt_buffer.is_empty(),
+                );
+                app.set_compact_session_supported(compact_session_supported);
+                if let Some(launch_metadata) = take_pending_replay_launch_metadata() {
+                    app.set_launch_metadata(launch_metadata);
+                }
+                if let Some(bindings) = keybindings {
+                    app.apply_keybindings(bindings.clone());
+                }
+                for event in historical_events {
+                    app.ingest_historical_event(event);
+                }
+                if let Some(message) = crash_report.recovery_message {
+                    let banner = match crash_report.recovery_action {
+                        Some(action) => {
+                            let run_id = run_dir
+                                .file_name()
+                                .and_then(|name| name.to_str())
+                                .unwrap_or("session");
+                            format!("{message} Action: {}", action.operator_hint(run_id))
+                        }
+                        None => message,
+                    };
+                    app.set_status_banner(Some(banner));
+                }
+                (app, Some(update_rx))
             }
-            if let Some(message) = crash_report.recovery_message {
-                let banner = match crash_report.recovery_action {
-                    Some(action) => {
-                        let run_id = run_dir
-                            .file_name()
-                            .and_then(|name| name.to_str())
-                            .unwrap_or("session");
-                        format!("{message} Action: {}", action.operator_hint(run_id))
-                    }
-                    None => message,
-                };
-                app.set_status_banner(Some(banner));
-            }
-            (app, Some(update_rx))
         }
-    };
+    }
+    let (mut app, mut live_updates) =
+        app_for_mode(mode, exit_on_finish, on_ui_intent, keybindings.as_ref());
 
     if let Some(toggles) = toggles {
         app.set_toggles_config(toggles);
@@ -640,13 +649,11 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         let mut pending_terminal = None;
         let mut arbiter = RuntimeArbiter::default();
         let mut input_budget = None;
-        if let Some(session) = presentation_session.as_mut() {
-            session.record_visible_cause(
-                PresentationCauseKind::Startup,
-                RenderReason::Startup,
-                None,
-            );
-        }
+        record_runtime_cause(
+            presentation_session.as_mut(),
+            PresentationCauseKind::Startup,
+            RenderReason::Startup,
+        );
 
         let mut suggestion_poll_at = Instant::now();
         loop {
@@ -663,13 +670,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                 pacer.request_flush();
             }
             let motion_plan = refresh_motion_plan(&mut app);
-            let frame_ready = frame_output.is_ready_for_frame();
-            if let Some(failure) = frame_output.take_fatal_failure() {
-                return Err(failure.into());
-            }
-            if let Some(session) = presentation_session.as_mut() {
-                session.record_acknowledgements(frame_output.take_acknowledgements());
-            }
+            let frame_ready = poll_frame_output(&mut frame_output, presentation_session.as_mut())?;
             if pending_terminal.is_none() {
                 pending_terminal = runtime_input.take_ready(
                     &mut terminal_ingress.queue,
@@ -711,82 +712,39 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                 },
             );
             let mut input_priority = matches!(decision, RuntimeDecision::TerminalInput);
-            if should_apply_live_update(decision, &presenter, frame_ready) {
-                if let Some(update_rx) = live_updates.as_ref() {
-                    let drain_state =
-                        apply_live_update_quantum(&mut app, update_rx, &mut experience);
-                    if drain_state.changed {
-                        if let Some(session) = presentation_session.as_mut() {
-                            session.record_visible_cause(
-                                PresentationCauseKind::LiveUpdate,
-                                RenderReason::LiveUpdate,
-                                None,
-                            );
-                        }
-                        presenter.request_redraw(Instant::now());
-                        pacer.request_flush();
-                    }
-                    if drain_state.disconnected {
-                        live_updates = None;
-                    }
-                    arbiter.live_applied();
-                    input_budget = None;
-                }
-            }
-            if app.clear_expired_quit_confirmation() {
-                if let Some(session) = presentation_session.as_mut() {
-                    session.record_visible_cause(
-                        PresentationCauseKind::Expiry,
-                        RenderReason::Expiry,
-                        None,
+            if let Some(update_rx) = live_updates
+                .as_ref()
+                .filter(|_| should_apply_live_update(decision, &presenter, frame_ready))
+            {
+                let drain_state = apply_live_update_quantum(&mut app, update_rx, &mut experience);
+                if drain_state.changed {
+                    record_runtime_cause(
+                        presentation_session.as_mut(),
+                        PresentationCauseKind::LiveUpdate,
+                        RenderReason::LiveUpdate,
                     );
+                    presenter.request_redraw(Instant::now());
+                    pacer.request_flush();
                 }
-                pacer.request_flush();
+                if drain_state.disconnected {
+                    live_updates = None;
+                }
+                arbiter.live_applied();
+                input_budget = None;
             }
+            expire_quit_confirmation(&mut app, presentation_session.as_mut(), &mut pacer);
 
-            let pacing_action = if matches!(
+            advance_runtime_pacing(
+                &mut pacer,
+                pacing_epoch,
+                motion_plan,
                 decision,
-                RuntimeDecision::PacerDeadline | RuntimeDecision::AnimationDeadline
-            ) {
-                let action =
-                    pacer.poll(runtime_frame_now(pacing_epoch, Instant::now()), motion_plan);
-                arbiter.deadline_served();
-                action
-            } else {
-                RuntimePacerAction::default()
-            };
-            if pacing_action.advance_animation {
-                app.sample_motion_clock();
-                if let Some(session) = presentation_session.as_mut() {
-                    session.record_visible_cause(
-                        PresentationCauseKind::AnimationTimer,
-                        RenderReason::Animation,
-                        None,
-                    );
-                }
-            }
-            let wheel_changed = if let Some(batch) = pacing_action.wheel_batch {
-                let size = terminal.size()?;
-                let frame_area = ratatui::layout::Rect::new(0, 0, size.width, size.height);
-                app.set_frame_area(frame_area);
-                dispatch_wheel_batch(&mut app, frame_area, batch)
-            } else {
-                false
-            };
-
-            let paint_requested = pacing_action.should_paint(wheel_changed);
-            if paint_requested {
-                let demand = presentation_session
-                    .as_mut()
-                    .and_then(PresentationTelemetrySession::take_render_demand);
-                match demand {
-                    Some(demand) => presenter.request_redraw_for(demand, Instant::now()),
-                    None if presentation_session.is_none() => {
-                        presenter.request_redraw(Instant::now());
-                    }
-                    None => {}
-                }
-            }
+                &mut arbiter,
+                &mut app,
+                &mut terminal,
+                presentation_session.as_mut(),
+                &mut presenter,
+            )?;
             if !input_priority && pending_terminal.is_none() {
                 pending_terminal = runtime_input.take_ready(
                     &mut terminal_ingress.queue,
@@ -796,49 +754,18 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                 input_priority = pending_terminal.is_some();
             }
             if !input_priority && presenter.should_present(frame_ready) {
-                let demand = presenter.take_render_demand().or_else(|| {
-                    presentation_session
-                        .as_mut()
-                        .and_then(PresentationTelemetrySession::take_render_demand)
-                });
-                if !has_canonical_render_demand(presentation_session.is_some(), demand.as_ref()) {
-                    let submission = FrameSubmission::Unchanged;
-                    pacer.record_submission(submission, motion_plan);
-                    presenter.record_submission(submission, Instant::now());
-                    continue;
-                }
-                let size = terminal.size()?;
-                let frame_area = ratatui::layout::Rect::new(0, 0, size.width, size.height);
-                app.set_frame_area(frame_area);
-                experience.tick();
-                let submission = render_terminal_frame(
+                if present_runtime_frame(
                     &mut terminal,
                     &mut frame_output,
-                    demand.clone(),
-                    |terminal| {
-                        terminal.draw(|frame| ui::render_app(frame, &app))?;
-                        experience.post_flush(terminal.backend_mut());
-                        Ok(())
-                    },
-                )?;
-                if matches!(submission, FrameSubmission::ResyncRequired) {
-                    pacer.request_flush();
+                    &mut app,
+                    &mut experience,
+                    &mut presenter,
+                    &mut pacer,
+                    &mut presentation_session,
+                    motion_plan,
+                )? {
+                    continue;
                 }
-                pacer.record_submission(submission, motion_plan);
-                if let (Some(session), Some(demand)) =
-                    (presentation_session.as_mut(), demand.as_ref())
-                {
-                    match submission {
-                        FrameSubmission::Accepted(_) => {}
-                        FrameSubmission::Unchanged => session
-                            .record_no_visible_change(demand)
-                            .context("failed to record unchanged presentation")?,
-                        FrameSubmission::ResyncRequired => session
-                            .record_resync(demand)
-                            .context("failed to record presentation resync")?,
-                    }
-                }
-                presenter.record_submission(submission, Instant::now());
             } else if presenter.scheduled_at().is_some() {
                 pacer.request_flush();
             }
@@ -862,12 +789,7 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                 let resize_deadline = runtime_input
                     .deadline()
                     .map(|elapsed| pacing_epoch + elapsed);
-                let deadline = match (pacing_deadline, resize_deadline) {
-                    (Some(pacing), Some(resize)) => Some(pacing.min(resize)),
-                    (Some(pacing), None) => Some(pacing),
-                    (None, Some(resize)) => Some(resize),
-                    (None, None) => None,
-                };
+                let deadline = pacing_deadline.into_iter().chain(resize_deadline).min();
                 let wait_set = RuntimeWaitSet {
                     frame: frame_output.acknowledgement_receiver(),
                     reader: &terminal_ingress.status,
@@ -881,257 +803,243 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                         pending_terminal = runtime_input.ingest_at(received_at, envelope);
                         None
                     }
-                    RuntimeWake::Live(update) => {
-                        if let Some(update_rx) = live_updates.as_ref() {
-                            update_rx.defer_selected(update);
-                        }
+                    wake => {
+                        apply_runtime_wake(wake, &mut app, &mut live_updates, &mut frame_output)?;
                         None
                     }
-                    RuntimeWake::Frame(FrameRuntimeEvent::Acknowledged(ack)) => {
-                        frame_output.accept_acknowledgement(ack);
-                        None
-                    }
-                    RuntimeWake::Frame(FrameRuntimeEvent::Failed { ack, stage }) => {
-                        frame_output.accept_acknowledgement(ack);
-                        return Err(crate::terminal::FrameOutputFailure::Write(stage).into());
-                    }
-                    RuntimeWake::Frame(FrameRuntimeEvent::Disconnected) => {
-                        return Err(crate::terminal::FrameOutputFailure::Disconnected.into());
-                    }
-                    RuntimeWake::Reader(TerminalReaderStatus::Failed(error)) => {
-                        return Err(error.into());
-                    }
-                    RuntimeWake::LiveDisconnected => {
-                        app.apply_runtime_event_stream_closed();
-                        live_updates = None;
-                        None
-                    }
-                    RuntimeWake::Reader(TerminalReaderStatus::Stopped)
-                    | RuntimeWake::ReaderDisconnected
-                    | RuntimeWake::TerminalDisconnected => {
-                        return Err(anyhow::anyhow!("terminal ingress reader disconnected"));
-                    }
-                    RuntimeWake::Deadline => None,
                 }
             } else {
                 None
             };
 
-            if let Some(event) = event {
-                let input_presentation = InputPresentation::for_event(&event);
-                let event_class = match &event {
-                    event::TuiEvent::Key(_) => InteractionEventClass::Key,
-                    event::TuiEvent::Paste(_) => InteractionEventClass::Paste,
-                    event::TuiEvent::Mouse(mouse) => mouse_presentation_kind(mouse.kind).0,
-                    event::TuiEvent::Resize(_, _) => InteractionEventClass::Resize,
-                    event::TuiEvent::FocusGained | event::TuiEvent::FocusLost => {
-                        InteractionEventClass::Focus
-                    }
-                };
-                let interaction_id = match presentation_session.as_mut() {
-                    Some(session) => session
-                        .take_interaction_id(event_class)
-                        .context("failed to read runner interaction identity")?,
-                    None => None,
-                };
-                let stream_active = app.active_turn_in_progress();
-                let live_readiness = live_updates.as_ref().map_or(
-                    SchedulingLiveReadiness {
-                        stream_active,
-                        ..SchedulingLiveReadiness::default()
-                    },
-                    |receiver| receiver.scheduling_readiness(stream_active),
-                );
-                let fairness_yield =
-                    matches!(arbiter.fairness(), FairnessTurn::OneLiveAfterInputQuantum);
-                let (cause_kind, render_reason) = match &event {
-                    event::TuiEvent::Resize(_, _) => {
-                        (PresentationCauseKind::Resize, RenderReason::Resize)
-                    }
-                    event::TuiEvent::FocusGained | event::TuiEvent::FocusLost => {
-                        (PresentationCauseKind::Focus, RenderReason::Focus)
-                    }
-                    event::TuiEvent::Mouse(mouse) => {
-                        let (_, cause, reason) = mouse_presentation_kind(mouse.kind);
-                        (cause, reason)
-                    }
-                    event::TuiEvent::Key(_) | event::TuiEvent::Paste(_) => (
-                        PresentationCauseKind::TerminalInput,
-                        RenderReason::TerminalInput,
-                    ),
-                };
-                let event_changed = match event {
-                    event::TuiEvent::Key(key) => {
-                        let size = terminal.size()?;
-                        let frame_area = ratatui::layout::Rect::new(0, 0, size.width, size.height);
-                        app.set_frame_area(frame_area);
-                        app.handle_key(key);
-                        true
-                    }
-                    event::TuiEvent::Paste(text) => {
-                        let size = terminal.size()?;
-                        let frame_area = ratatui::layout::Rect::new(0, 0, size.width, size.height);
-                        app.set_frame_area(frame_area);
-                        app.handle_paste(&text);
-                        true
-                    }
-                    event::TuiEvent::Mouse(mouse) => {
-                        if !mouse_event_requires_handling(mouse.kind, app.slash_visible) {
-                            let cause_id = match presentation_session.as_mut() {
-                                Some(session) => Some(
-                                    session
-                                        .record_no_visible_cause(cause_kind, interaction_id.clone())
-                                        .context("failed to record ignored terminal input")?,
-                                ),
-                                None => None,
-                            };
-                            record_scheduling_decision(
-                                scheduling_session.as_mut(),
-                                cause_id.as_ref().and(interaction_id.as_ref()),
-                                cause_id.as_ref(),
-                                live_readiness,
-                                fairness_yield,
-                            );
-                            continue;
-                        }
-
-                        let scroll_direction = match mouse.kind {
-                            MouseEventKind::ScrollUp => Some(ScrollSampleDirection::Up),
-                            MouseEventKind::ScrollDown => Some(ScrollSampleDirection::Down),
-                            _ => None,
-                        };
-                        if let Some(direction) = scroll_direction {
-                            let size = terminal.size()?;
-                            let normalized = scroll_normalizer.push(
-                                Instant::now().saturating_duration_since(pacing_epoch),
-                                direction,
-                                mouse.column,
-                                mouse.row,
-                                size.height,
-                            );
-                            if normalized.lines != 0 {
-                                let direction = if normalized.lines.is_negative() {
-                                    WheelDirection::Up
-                                } else {
-                                    WheelDirection::Down
-                                };
-                                let steps = u8::try_from(normalized.lines.unsigned_abs())
-                                    .unwrap_or(u8::MAX);
-                                pacer.queue_wheel(WheelSample::logical(
-                                    direction,
-                                    steps,
-                                    normalized.column,
-                                    normalized.row,
-                                ));
-                            }
-                            let cause_id = if let Some(session) = presentation_session.as_mut() {
-                                if normalized.lines == 0 {
-                                    Some(
-                                        session
-                                            .record_no_visible_cause(
-                                                cause_kind,
-                                                interaction_id.clone(),
-                                            )
-                                            .context("failed to record unchanged wheel input")?,
-                                    )
-                                } else {
-                                    Some(session.record_visible_cause(
-                                        cause_kind,
-                                        render_reason,
-                                        interaction_id.clone(),
-                                    ))
-                                }
-                            } else {
-                                None
-                            };
-                            record_scheduling_decision(
-                                scheduling_session.as_mut(),
-                                cause_id.as_ref().and(interaction_id.as_ref()),
-                                cause_id.as_ref(),
-                                live_readiness,
-                                fairness_yield,
-                            );
-                            continue;
-                        }
-
-                        let size = terminal.size()?;
-                        let frame_area = ratatui::layout::Rect::new(0, 0, size.width, size.height);
-                        app.set_frame_area(frame_area);
-                        let (
-                            hovered_wheel_target,
-                            clicked_operator_sidebar_section,
-                            transcript_scrollbar_hit,
-                        ) = match mouse.kind {
-                            MouseEventKind::Down(MouseButton::Left) => (
-                                None,
-                                ui::operator_sidebar_section_hit_target(
-                                    &app,
-                                    frame_area,
-                                    mouse.column,
-                                    mouse.row,
-                                ),
-                                ui::transcript_scrollbar_hit(
-                                    &app,
-                                    frame_area,
-                                    mouse.column,
-                                    mouse.row,
-                                ),
-                            ),
-                            _ => (None, None, None),
-                        };
-                        app.handle_mouse(
-                            mouse,
-                            frame_area,
-                            hovered_wheel_target,
-                            clicked_operator_sidebar_section,
-                            transcript_scrollbar_hit,
-                        )
-                    }
-                    event::TuiEvent::Resize(_, _) => true,
-                    event::TuiEvent::FocusGained => {
-                        terminal_session.set_focus(true);
-                        terminal_session.restore();
-                        experience.set_focus(true, terminal.backend_mut());
-                        true
-                    }
-                    event::TuiEvent::FocusLost => {
-                        terminal_session.set_focus(false);
-                        terminal_session.suspend();
-                        experience.set_focus(false, terminal.backend_mut());
-                        true
-                    }
-                };
-                let input_presentation =
-                    input_presentation.for_turn_start(stream_active, app.active_turn_in_progress());
-                let cause_id = if event_changed {
-                    input_presentation.request(true, &mut presenter, &mut pacer, Instant::now());
-                    presentation_session.as_mut().map(|session| {
-                        session.record_visible_cause(
-                            cause_kind,
-                            render_reason,
-                            interaction_id.clone(),
-                        )
-                    })
-                } else if let Some(session) = presentation_session.as_mut() {
-                    Some(
-                        session
-                            .record_no_visible_cause(cause_kind, interaction_id.clone())
-                            .context("failed to record unchanged terminal input")?,
-                    )
-                } else {
-                    None
-                };
-                record_scheduling_decision(
-                    scheduling_session.as_mut(),
-                    interaction_id.as_ref(),
-                    cause_id.as_ref(),
-                    live_readiness,
-                    fairness_yield,
-                );
-            }
+            let Some(event) = event else {
+                continue;
+            };
+            dispatch_terminal_input(
+                event,
+                &mut app,
+                &mut terminal,
+                &mut terminal_session,
+                &mut experience,
+                &mut pacer,
+                &mut presenter,
+                &mut scroll_normalizer,
+                pacing_epoch,
+                live_updates.as_ref(),
+                &mut presentation_session,
+                &mut scheduling_session,
+                matches!(arbiter.fairness(), FairnessTurn::OneLiveAfterInputQuantum),
+            )?;
         }
         Ok(())
     })();
+
+    fn dispatch_terminal_input(
+        event: event::TuiEvent,
+        app: &mut AppState,
+        terminal: &mut Terminal<FrameOutputBackend>,
+        terminal_session: &mut ProductionTerminalSession,
+        experience: &mut RuntimeExperience,
+        mut pacer: &mut RuntimePacer,
+        mut presenter: &mut Presenter,
+        scroll_normalizer: &mut ScrollNormalizer,
+        pacing_epoch: Instant,
+        live_updates: Option<&LiveUpdateReceiver>,
+        presentation_session: &mut Option<PresentationTelemetrySession>,
+        scheduling_session: &mut Option<SchedulingTelemetrySession>,
+        fairness_yield: bool,
+    ) -> Result<()> {
+        let input_presentation = InputPresentation::for_event(&event);
+        let event_class = match &event {
+            event::TuiEvent::Key(_) => InteractionEventClass::Key,
+            event::TuiEvent::Paste(_) => InteractionEventClass::Paste,
+            event::TuiEvent::Mouse(mouse) => mouse_presentation_kind(mouse.kind).0,
+            event::TuiEvent::Resize(_, _) => InteractionEventClass::Resize,
+            event::TuiEvent::FocusGained | event::TuiEvent::FocusLost => {
+                InteractionEventClass::Focus
+            }
+        };
+        let interaction_id = match presentation_session.as_mut() {
+            Some(session) => session
+                .take_interaction_id(event_class)
+                .context("failed to read runner interaction identity")?,
+            None => None,
+        };
+        let stream_active = app.active_turn_in_progress();
+        let live_readiness = live_updates.as_ref().map_or(
+            SchedulingLiveReadiness {
+                stream_active,
+                ..SchedulingLiveReadiness::default()
+            },
+            |receiver| receiver.scheduling_readiness(stream_active),
+        );
+        let (cause_kind, render_reason) = match &event {
+            event::TuiEvent::Resize(_, _) => (PresentationCauseKind::Resize, RenderReason::Resize),
+            event::TuiEvent::FocusGained | event::TuiEvent::FocusLost => {
+                (PresentationCauseKind::Focus, RenderReason::Focus)
+            }
+            event::TuiEvent::Mouse(mouse) => {
+                let (_, cause, reason) = mouse_presentation_kind(mouse.kind);
+                (cause, reason)
+            }
+            event::TuiEvent::Key(_) | event::TuiEvent::Paste(_) => (
+                PresentationCauseKind::TerminalInput,
+                RenderReason::TerminalInput,
+            ),
+        };
+        let event_changed = match event {
+            event::TuiEvent::Key(key) => {
+                let size = terminal.size()?;
+                let frame_area = ratatui::layout::Rect::new(0, 0, size.width, size.height);
+                app.set_frame_area(frame_area);
+                app.handle_key(key);
+                true
+            }
+            event::TuiEvent::Paste(text) => {
+                let size = terminal.size()?;
+                let frame_area = ratatui::layout::Rect::new(0, 0, size.width, size.height);
+                app.set_frame_area(frame_area);
+                app.handle_paste(&text);
+                true
+            }
+            event::TuiEvent::Mouse(mouse) => {
+                if !mouse_event_requires_handling(mouse.kind, app.slash_visible) {
+                    let cause_id = match presentation_session.as_mut() {
+                        Some(session) => Some(
+                            session
+                                .record_no_visible_cause(cause_kind, interaction_id.clone())
+                                .context("failed to record ignored terminal input")?,
+                        ),
+                        None => None,
+                    };
+                    record_scheduling_decision(
+                        scheduling_session.as_mut(),
+                        cause_id.as_ref().and(interaction_id.as_ref()),
+                        cause_id.as_ref(),
+                        live_readiness,
+                        fairness_yield,
+                    );
+                    return Ok(());
+                }
+
+                let scroll_direction = match mouse.kind {
+                    MouseEventKind::ScrollUp => Some(ScrollSampleDirection::Up),
+                    MouseEventKind::ScrollDown => Some(ScrollSampleDirection::Down),
+                    _ => None,
+                };
+                if let Some(direction) = scroll_direction {
+                    let size = terminal.size()?;
+                    let normalized = scroll_normalizer.push(
+                        Instant::now().saturating_duration_since(pacing_epoch),
+                        direction,
+                        mouse.column,
+                        mouse.row,
+                        size.height,
+                    );
+                    if normalized.lines != 0 {
+                        let direction = match normalized.lines {
+                            ..0 => WheelDirection::Up,
+                            _ => WheelDirection::Down,
+                        };
+                        let steps =
+                            u8::try_from(normalized.lines.unsigned_abs()).unwrap_or(u8::MAX);
+                        pacer.queue_wheel(WheelSample::logical(
+                            direction,
+                            steps,
+                            normalized.column,
+                            normalized.row,
+                        ));
+                    }
+                    let cause_id = match (presentation_session.as_mut(), normalized.lines) {
+                        (Some(session), 0) => Some(
+                            session
+                                .record_no_visible_cause(cause_kind, interaction_id.clone())
+                                .context("failed to record unchanged wheel input")?,
+                        ),
+                        (Some(session), _) => Some(session.record_visible_cause(
+                            cause_kind,
+                            render_reason,
+                            interaction_id.clone(),
+                        )),
+                        (None, _) => None,
+                    };
+                    record_scheduling_decision(
+                        scheduling_session.as_mut(),
+                        cause_id.as_ref().and(interaction_id.as_ref()),
+                        cause_id.as_ref(),
+                        live_readiness,
+                        fairness_yield,
+                    );
+                    return Ok(());
+                }
+
+                let size = terminal.size()?;
+                let frame_area = ratatui::layout::Rect::new(0, 0, size.width, size.height);
+                app.set_frame_area(frame_area);
+                let (
+                    hovered_wheel_target,
+                    clicked_operator_sidebar_section,
+                    transcript_scrollbar_hit,
+                ) = match mouse.kind {
+                    MouseEventKind::Down(MouseButton::Left) => (
+                        None,
+                        ui::operator_sidebar_section_hit_target(
+                            &app,
+                            frame_area,
+                            mouse.column,
+                            mouse.row,
+                        ),
+                        ui::transcript_scrollbar_hit(&app, frame_area, mouse.column, mouse.row),
+                    ),
+                    _ => (None, None, None),
+                };
+                app.handle_mouse(
+                    mouse,
+                    frame_area,
+                    hovered_wheel_target,
+                    clicked_operator_sidebar_section,
+                    transcript_scrollbar_hit,
+                )
+            }
+            event::TuiEvent::Resize(_, _) => true,
+            event::TuiEvent::FocusGained => {
+                terminal_session.set_focus(true);
+                terminal_session.restore();
+                experience.set_focus(true, terminal.backend_mut());
+                true
+            }
+            event::TuiEvent::FocusLost => {
+                terminal_session.set_focus(false);
+                terminal_session.suspend();
+                experience.set_focus(false, terminal.backend_mut());
+                true
+            }
+        };
+        let input_presentation =
+            input_presentation.for_turn_start(stream_active, app.active_turn_in_progress());
+        let cause_id = if event_changed {
+            input_presentation.request(true, &mut presenter, &mut pacer, Instant::now());
+            presentation_session.as_mut().map(|session| {
+                session.record_visible_cause(cause_kind, render_reason, interaction_id.clone())
+            })
+        } else if let Some(session) = presentation_session.as_mut() {
+            Some(
+                session
+                    .record_no_visible_cause(cause_kind, interaction_id.clone())
+                    .context("failed to record unchanged terminal input")?,
+            )
+        } else {
+            None
+        };
+        record_scheduling_decision(
+            scheduling_session.as_mut(),
+            interaction_id.as_ref(),
+            cause_id.as_ref(),
+            live_readiness,
+            fairness_yield,
+        );
+        Ok(())
+    }
 
     if let Some(session) = presentation_session.as_mut() {
         if let Some(demand) = session.take_render_demand() {
@@ -1193,6 +1101,191 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
     restore_guard.mark_restored();
 
     run_result
+}
+
+fn expire_quit_confirmation(
+    app: &mut AppState,
+    session: Option<&mut PresentationTelemetrySession>,
+    pacer: &mut RuntimePacer,
+) {
+    if app.clear_expired_quit_confirmation() {
+        record_runtime_cause(session, PresentationCauseKind::Expiry, RenderReason::Expiry);
+        pacer.request_flush();
+    }
+}
+
+fn advance_runtime_pacing(
+    pacer: &mut RuntimePacer,
+    epoch: Instant,
+    motion_plan: MotionPlan,
+    decision: RuntimeDecision,
+    arbiter: &mut RuntimeArbiter,
+    app: &mut AppState,
+    terminal: &mut Terminal<FrameOutputBackend>,
+    mut session: Option<&mut PresentationTelemetrySession>,
+    presenter: &mut Presenter,
+) -> Result<()> {
+    let action = if matches!(
+        decision,
+        RuntimeDecision::PacerDeadline | RuntimeDecision::AnimationDeadline
+    ) {
+        let action = pacer.poll(runtime_frame_now(epoch, Instant::now()), motion_plan);
+        arbiter.deadline_served();
+        action
+    } else {
+        RuntimePacerAction::default()
+    };
+    if action.advance_animation {
+        app.sample_motion_clock();
+        record_runtime_cause(
+            session.as_deref_mut(),
+            PresentationCauseKind::AnimationTimer,
+            RenderReason::Animation,
+        );
+    }
+    let wheel_changed = if let Some(batch) = action.wheel_batch {
+        let size = terminal.size()?;
+        let area = ratatui::layout::Rect::new(0, 0, size.width, size.height);
+        app.set_frame_area(area);
+        dispatch_wheel_batch(app, area, batch)
+    } else {
+        false
+    };
+    if action.should_paint(wheel_changed) {
+        request_runtime_redraw(presenter, session);
+    }
+    Ok(())
+}
+
+fn record_runtime_cause(
+    session: Option<&mut PresentationTelemetrySession>,
+    kind: PresentationCauseKind,
+    reason: RenderReason,
+) {
+    if let Some(session) = session {
+        session.record_visible_cause(kind, reason, None);
+    }
+}
+
+fn poll_frame_output(
+    output: &mut FrameOutput,
+    session: Option<&mut PresentationTelemetrySession>,
+) -> Result<bool> {
+    let ready = output.is_ready_for_frame();
+    if let Some(failure) = output.take_fatal_failure() {
+        return Err(failure.into());
+    }
+    if let Some(session) = session {
+        session.record_acknowledgements(output.take_acknowledgements());
+    }
+    Ok(ready)
+}
+
+fn request_runtime_redraw(
+    presenter: &mut Presenter,
+    session: Option<&mut PresentationTelemetrySession>,
+) {
+    match session {
+        Some(session) => {
+            if let Some(demand) = session.take_render_demand() {
+                presenter.request_redraw_for(demand, Instant::now());
+            }
+        }
+        None => presenter.request_redraw(Instant::now()),
+    }
+}
+
+fn present_runtime_frame(
+    terminal: &mut Terminal<FrameOutputBackend>,
+    frame_output: &mut FrameOutput,
+    app: &mut AppState,
+    experience: &mut RuntimeExperience,
+    presenter: &mut Presenter,
+    pacer: &mut RuntimePacer,
+    presentation_session: &mut Option<PresentationTelemetrySession>,
+    motion_plan: MotionPlan,
+) -> Result<bool> {
+    let demand = presenter.take_render_demand().or_else(|| {
+        presentation_session
+            .as_mut()
+            .and_then(PresentationTelemetrySession::take_render_demand)
+    });
+    if !has_canonical_render_demand(presentation_session.is_some(), demand.as_ref()) {
+        let submission = FrameSubmission::Unchanged;
+        pacer.record_submission(submission, motion_plan);
+        presenter.record_submission(submission, Instant::now());
+        return Ok(true);
+    }
+    let size = terminal.size()?;
+    app.set_frame_area(ratatui::layout::Rect::new(0, 0, size.width, size.height));
+    experience.tick();
+    let submission = render_terminal_frame(terminal, frame_output, demand.clone(), |terminal| {
+        terminal.draw(|frame| ui::render_app(frame, app))?;
+        experience.post_flush(terminal.backend_mut());
+        Ok(())
+    })?;
+    if matches!(submission, FrameSubmission::ResyncRequired) {
+        pacer.request_flush();
+    }
+    pacer.record_submission(submission, motion_plan);
+    if let (Some(session), Some(demand)) = (presentation_session.as_mut(), demand.as_ref()) {
+        record_frame_submission(session, demand, submission)?;
+    }
+    presenter.record_submission(submission, Instant::now());
+    Ok(false)
+}
+
+fn record_frame_submission(
+    session: &mut PresentationTelemetrySession,
+    demand: &RenderDemand,
+    submission: FrameSubmission,
+) -> Result<()> {
+    match submission {
+        FrameSubmission::Accepted(_) => Ok(()),
+        FrameSubmission::Unchanged => session
+            .record_no_visible_change(demand)
+            .context("failed to record unchanged presentation"),
+        FrameSubmission::ResyncRequired => session
+            .record_resync(demand)
+            .context("failed to record presentation resync"),
+    }
+}
+
+fn apply_runtime_wake(
+    wake: RuntimeWake,
+    app: &mut AppState,
+    live_updates: &mut Option<LiveUpdateReceiver>,
+    frame_output: &mut FrameOutput,
+) -> Result<()> {
+    match wake {
+        RuntimeWake::Live(update) => {
+            if let Some(update_rx) = live_updates.as_ref() {
+                update_rx.defer_selected(update);
+            }
+        }
+        RuntimeWake::Frame(FrameRuntimeEvent::Acknowledged(ack)) => {
+            frame_output.accept_acknowledgement(ack)
+        }
+        RuntimeWake::Frame(FrameRuntimeEvent::Failed { ack, stage }) => {
+            frame_output.accept_acknowledgement(ack);
+            return Err(crate::terminal::FrameOutputFailure::Write(stage).into());
+        }
+        RuntimeWake::Frame(FrameRuntimeEvent::Disconnected) => {
+            return Err(crate::terminal::FrameOutputFailure::Disconnected.into())
+        }
+        RuntimeWake::Reader(TerminalReaderStatus::Failed(error)) => return Err(error.into()),
+        RuntimeWake::LiveDisconnected => {
+            app.apply_runtime_event_stream_closed();
+            *live_updates = None;
+        }
+        RuntimeWake::Reader(TerminalReaderStatus::Stopped)
+        | RuntimeWake::ReaderDisconnected
+        | RuntimeWake::TerminalDisconnected => {
+            return Err(anyhow::anyhow!("terminal ingress reader disconnected"))
+        }
+        RuntimeWake::Terminal(_) | RuntimeWake::Deadline => {}
+    }
+    Ok(())
 }
 
 pub fn close_preserved_terminal_session() -> Result<()> {
@@ -1937,7 +2030,10 @@ mod tests {
         assert!(present_plan.disable_focus_change);
         assert!(present_plan.pop_keyboard_enhancement);
         assert!(present_plan.leave_alternate_screen);
+    }
 
+    #[test]
+    fn terminal_capability_state_absent_preserves_fallback_teardown() {
         // arrange — absent fallback path (no enhanced capabilities)
         let absent = TerminalCapabilityState::absent();
         // assert absent detection (safe degradation)
@@ -1957,7 +2053,10 @@ mod tests {
         assert!(!absent_plan.disable_bracketed_paste);
         assert!(!absent_plan.pop_keyboard_enhancement);
         assert!(absent_plan.leave_alternate_screen);
+    }
 
+    #[test]
+    fn terminal_capability_state_partial_preserves_successful_setup() {
         // arrange — partial capability path (keyboard+paste+alt ok; mouse failed)
         let partial = apply_interactive_setup_results(
             TerminalCapabilityState {
