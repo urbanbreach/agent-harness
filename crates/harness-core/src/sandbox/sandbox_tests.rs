@@ -589,13 +589,17 @@ fn probe_os_sandbox_product_multi_policy_walk_is_honest() {
 
     // Then: full public policy inventory + prepare walk ends on Strict
     assert_eq!(probe.platform, platform);
-    assert_eq!(probe.profiles.len(), OS_SANDBOX_POLICIES.len());
-    assert_eq!(probe.profiles_summary.total, OS_SANDBOX_POLICIES.len());
+    for count in [
+        probe.profiles.len(),
+        probe.profiles_summary.total,
+        probe.prepare_results.len(),
+    ] {
+        assert_eq!(count, OS_SANDBOX_POLICIES.len());
+    }
     assert_eq!(
         probe.profiles_summary.available + probe.profiles_summary.unavailable,
         probe.profiles_summary.total
     );
-    assert_eq!(probe.prepare_results.len(), OS_SANDBOX_POLICIES.len());
     assert!(
         probe.last_prepare.one_line().contains("strict"),
         "last prepare must be strict: {}",
