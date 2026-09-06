@@ -347,35 +347,7 @@ fn conversation_projection_reconstructs_user_assistant_tool_messages_from_events
     assert_eq!(user.request_id, "req_000001".into());
     assert_eq!(user.text, "Inspect the project status.");
 
-    let ConversationMessage::Assistant(assistant) = &projection.messages[4] else {
-        panic!("expected assistant message");
-    };
-    assert_eq!(assistant.text, "I'll check.");
-    assert_eq!(assistant.stop_reason.as_deref(), Some("tool_calls"));
-    assert_eq!(assistant.provider_id.as_deref(), Some("default"));
-    assert_eq!(assistant.model_id.as_deref(), Some("gpt-5"));
-    assert_eq!(assistant.tool_calls.len(), 2);
-    assert_eq!(assistant.tool_calls[0].tool_call_id.as_str(), "toolcall_000001");
-    assert_eq!(assistant.tool_calls[0].tool_id, "read");
-    assert_eq!(assistant.tool_calls[1].tool_call_id.as_str(), "toolcall_000002");
-    assert_eq!(assistant.tool_calls[1].tool_id, "bash");
-
-    let ConversationMessage::ToolResult(first_result) = &projection.messages[5] else {
-        panic!("expected first tool result message");
-    };
-    assert_eq!(first_result.tool_call_id.as_str(), "toolcall_000001");
-    assert_eq!(first_result.tool_id.as_deref(), Some("read"));
-    assert_eq!(
-        first_result.output_summary.as_deref(),
-        Some("README contents")
-    );
-
-    let ConversationMessage::ToolResult(second_result) = &projection.messages[6] else {
-        panic!("expected second tool result message");
-    };
-    assert_eq!(second_result.tool_call_id.as_str(), "toolcall_000002");
-    assert_eq!(second_result.tool_id.as_deref(), Some("bash"));
-    assert_eq!(second_result.output_summary.as_deref(), Some("clean"));
+    assert_projected_tool_exchange(&projection.messages[4..]);
 
     let provider_boundary = transform_context_for_provider(ProviderBoundaryInput {
         profile: &boundary_profile(),
@@ -413,6 +385,44 @@ fn conversation_projection_reconstructs_user_assistant_tool_messages_from_events
         .unwrap_or_abort();
     assert_eq!(provider_tool_result.name.as_deref(), Some("read"));
 }
+
+fn assert_projected_tool_exchange(messages: &[ConversationMessage]) {
+    assert!(
+        matches!(
+            messages,
+            [ConversationMessage::Assistant(_), ConversationMessage::ToolResult(_), ConversationMessage::ToolResult(_)]
+        ),
+        "expected assistant message followed by two tool result messages"
+    );
+    let [
+        ConversationMessage::Assistant(assistant),
+        ConversationMessage::ToolResult(first_result),
+        ConversationMessage::ToolResult(second_result),
+    ] = messages else {
+        return;
+    };
+    assert_eq!(assistant.text, "I'll check.");
+    assert_eq!(assistant.stop_reason.as_deref(), Some("tool_calls"));
+    assert_eq!(assistant.provider_id.as_deref(), Some("default"));
+    assert_eq!(assistant.model_id.as_deref(), Some("gpt-5"));
+    assert_eq!(assistant.tool_calls.len(), 2);
+    assert_eq!(assistant.tool_calls[0].tool_call_id.as_str(), "toolcall_000001");
+    assert_eq!(assistant.tool_calls[0].tool_id, "read");
+    assert_eq!(assistant.tool_calls[1].tool_call_id.as_str(), "toolcall_000002");
+    assert_eq!(assistant.tool_calls[1].tool_id, "bash");
+
+    assert_eq!(first_result.tool_call_id.as_str(), "toolcall_000001");
+    assert_eq!(first_result.tool_id.as_deref(), Some("read"));
+    assert_eq!(
+        first_result.output_summary.as_deref(),
+        Some("README contents")
+    );
+
+    assert_eq!(second_result.tool_call_id.as_str(), "toolcall_000002");
+    assert_eq!(second_result.tool_id.as_deref(), Some("bash"));
+    assert_eq!(second_result.output_summary.as_deref(), Some("clean"));
+}
+
 #[test]
 fn provider_boundary_falls_back_for_non_json_historical_tool_args() {
     let events = vec![
