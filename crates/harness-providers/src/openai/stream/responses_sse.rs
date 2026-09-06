@@ -44,10 +44,10 @@ pub(super) async fn consume_responses_sse_stream(
     let mut reasoning_summary_key: Option<(Option<String>, usize)> = None;
     let mut reasoning_trailing_newlines = 0usize;
 
-    loop {
+    let done_context = loop {
         let event = match next_sse_event(&mut body, &mut sse_buffer).await {
             Ok(Some(event)) => event,
-            Ok(None) => break,
+            Ok(None) => break "responses.done_after_stream_end",
             Err(message) => {
                 let message = format!("openai_compatible SSE stream transport error: {message}");
                 warn_stream_processing_failure("responses.transport", &message);
@@ -61,23 +61,7 @@ pub(super) async fn consume_responses_sse_stream(
             continue;
         }
         if data == "[DONE]" {
-            if let Err(message) =
-                emit_pending_responses_tool_call_completions(&tx, &mut tool_calls).await
-            {
-                warn_stream_processing_failure("responses.tool_completion", &message);
-                let _ = tx.send(unsupported_tool_call_error(message)).await;
-                return;
-            }
-            send_stream_event(
-                &tx,
-                ProviderStreamEvent::DoneWithMetadata {
-                    usage,
-                    metadata: non_empty_finished_metadata(finished_metadata),
-                },
-                "responses.done",
-            )
-            .await;
-            return;
+            break "responses.done";
         }
 
         let parsed: OpenAiResponsesEvent = match serde_json::from_str(data) {
@@ -93,39 +77,30 @@ pub(super) async fn consume_responses_sse_stream(
             }
         };
 
-        match parsed.event_type.as_str() {
+        let handled = match parsed.event_type.as_str() {
             "response.reasoning_summary_text.delta" => {
                 let delta = format_reasoning_delta(
                     parsed,
                     &mut reasoning_summary_key,
                     &mut reasoning_trailing_newlines,
                 );
-                if !send_optional_delta(&tx, delta, ProviderStreamEvent::ReasoningDelta).await {
-                    return;
-                }
+                send_optional_delta(&tx, delta, ProviderStreamEvent::ReasoningDelta).await
             }
             "response.output_text.delta" => {
-                if !send_optional_delta(&tx, parsed.delta, ProviderStreamEvent::TextDelta).await {
-                    return;
-                }
+                send_optional_delta(&tx, parsed.delta, ProviderStreamEvent::TextDelta).await
             }
             "response.output_item.added" => {
-                if !handle_responses_tool_item_added(&tx, &mut tool_calls, parsed).await {
-                    return;
-                }
+                handle_responses_tool_item_added(&tx, &mut tool_calls, parsed).await
             }
             "response.function_call_arguments.delta" => {
-                if !handle_responses_arguments_delta(&tx, &mut tool_calls, parsed).await {
-                    return;
-                }
+                handle_responses_arguments_delta(&tx, &mut tool_calls, parsed).await
             }
             "response.output_item.done" => {
-                if !handle_responses_tool_item_done(&tx, &mut tool_calls, parsed).await {
-                    return;
-                }
+                handle_responses_tool_item_done(&tx, &mut tool_calls, parsed).await
             }
             "response.completed" | "response.done" | "response.incomplete" => {
                 apply_response_completion(parsed, &mut usage, &mut finished_metadata);
+                true
             }
             "response.error" => {
                 warn_stream_processing_failure(
@@ -139,9 +114,12 @@ pub(super) async fn consume_responses_sse_stream(
                     .await;
                 return;
             }
-            _ => {}
+            _ => true,
+        };
+        if !handled {
+            return;
         }
-    }
+    };
 
     if let Err(message) = emit_pending_responses_tool_call_completions(&tx, &mut tool_calls).await {
         warn_stream_processing_failure("responses.tool_completion", &message);
@@ -154,7 +132,7 @@ pub(super) async fn consume_responses_sse_stream(
             usage,
             metadata: non_empty_finished_metadata(finished_metadata),
         },
-        "responses.done_after_stream_end",
+        done_context,
     )
     .await;
 }
