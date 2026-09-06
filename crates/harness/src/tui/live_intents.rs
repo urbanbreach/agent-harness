@@ -34,20 +34,7 @@ pub(super) async fn handle_ui_intents(
     while let Some(intent) = intent_rx.recv().await {
         match intent {
             UiIntent::SetAlwaysApproveMode { enabled } => {
-                match coordinator.set_always_approve_mode(enabled).await {
-                    Ok(()) => live_update_tx
-                        .send(LiveUpdate::AlwaysApproveModeChanged { enabled })
-                        .map_err(|err| err.to_string())?,
-                    Err(error) => {
-                        live_update_tx
-                            .send(LiveUpdate::AlwaysApproveModeChangeFailed)
-                            .map_err(|err| err.to_string())?;
-                        let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
-                            message: format!("Failed to change always-approve mode: {error}"),
-                            level: OperatorNoticeLevel::Error,
-                        });
-                    }
-                }
+                set_always_approve_mode(&coordinator, &live_update_tx, enabled).await?;
             }
             UiIntent::ResolvePermission {
                 permission_id,
@@ -176,25 +163,14 @@ pub(super) async fn handle_ui_intents(
             | UiIntent::ReplaySession { .. }
             | UiIntent::ContinueSession { .. } => {}
             UiIntent::QuitRequested => {
-                let stop_result = coordinator.stop_run().await;
-                if let Err(err) = stop_result {
-                    if !matches!(err, CoordinatorError::RunNotStarted) {
-                        return Err(err.to_string());
-                    }
+                match coordinator.stop_run().await {
+                    Ok(()) | Err(CoordinatorError::RunNotStarted) => {}
+                    Err(err) => return Err(err.to_string()),
                 }
                 break;
             }
             UiIntent::UpdateSessionTitle { title } => {
-                let (message, level) = match coordinator.update_session_title(title).await {
-                    Ok(_) => (
-                        "session title updated".to_string(),
-                        OperatorNoticeLevel::Info,
-                    ),
-                    Err(err) => (
-                        format!("failed to update session title: {err}"),
-                        OperatorNoticeLevel::Error,
-                    ),
-                };
+                let (message, level) = update_session_title_notice(&coordinator, title).await;
                 let _ = live_update_tx.send(LiveUpdate::OperatorNotice { message, level });
             }
             UiIntent::RevertWorkspace {
@@ -210,66 +186,119 @@ pub(super) async fn handle_ui_intents(
                 dest_session_dir,
             } => {
                 let (message, level) =
-                    match harness_core::foreign_session::import_foreign_session_as_replay(
-                        &source_path,
-                        &dest_session_dir,
-                    ) {
-                        Ok(result) => (
-                            format!(
-                                "imported {} events from {}",
-                                result.event_count,
-                                result.source_path.display()
-                            ),
-                            OperatorNoticeLevel::Info,
-                        ),
-                        Err(err) => (
-                            format!("foreign import failed: {err}"),
-                            OperatorNoticeLevel::Error,
-                        ),
-                    };
+                    import_foreign_session_notice(&source_path, &dest_session_dir);
                 let _ = live_update_tx.send(LiveUpdate::OperatorNotice { message, level });
             }
             UiIntent::DeleteSession { run_id, run_dir } => {
-                let (message, level) = match delete_session_dir(&run_dir) {
-                    Ok(trash_dir) => (
-                        format!("session {} moved to {}", run_id, trash_dir.display()),
-                        OperatorNoticeLevel::Info,
-                    ),
-                    Err(err) => (
-                        format!("failed to delete session {run_id}: {err}"),
-                        OperatorNoticeLevel::Error,
-                    ),
-                };
+                let (message, level) = delete_session_notice(&run_id, &run_dir);
                 let _ = live_update_tx.send(LiveUpdate::OperatorNotice { message, level });
             }
             UiIntent::RunShellCommand { command } => {
-                let actor = harness_core::event::EventActor::new(
-                    harness_core::event::ActorKind::User,
-                    None,
-                );
-                let (message, level) = match coordinator
-                    .request_tool_call(
-                        actor,
-                        None,
-                        "bash",
-                        serde_json::json!({ "command": command }),
-                    )
-                    .await
-                {
-                    Ok(_) => (
-                        format!("shell command queued: {command}"),
-                        OperatorNoticeLevel::Info,
-                    ),
-                    Err(err) => (
-                        format!("shell command failed: {err}"),
-                        OperatorNoticeLevel::Error,
-                    ),
-                };
+                let (message, level) = shell_command_notice(&coordinator, &command).await;
                 let _ = live_update_tx.send(LiveUpdate::OperatorNotice { message, level });
             }
         }
     }
     Ok(())
+}
+
+async fn update_session_title_notice(
+    coordinator: &CoordinatorHandle,
+    title: String,
+) -> (String, OperatorNoticeLevel) {
+    match coordinator.update_session_title(title).await {
+        Ok(_) => (
+            "session title updated".to_string(),
+            OperatorNoticeLevel::Info,
+        ),
+        Err(err) => (
+            format!("failed to update session title: {err}"),
+            OperatorNoticeLevel::Error,
+        ),
+    }
+}
+
+async fn shell_command_notice(
+    coordinator: &CoordinatorHandle,
+    command: &str,
+) -> (String, OperatorNoticeLevel) {
+    let actor = EventActor::new(harness_core::event::ActorKind::User, None);
+    match coordinator
+        .request_tool_call(
+            actor,
+            None,
+            "bash",
+            serde_json::json!({ "command": command }),
+        )
+        .await
+    {
+        Ok(_) => (
+            format!("shell command queued: {command}"),
+            OperatorNoticeLevel::Info,
+        ),
+        Err(err) => (
+            format!("shell command failed: {err}"),
+            OperatorNoticeLevel::Error,
+        ),
+    }
+}
+
+async fn set_always_approve_mode(
+    coordinator: &CoordinatorHandle,
+    live_update_tx: &LiveUpdateSender,
+    enabled: bool,
+) -> Result<(), String> {
+    match coordinator.set_always_approve_mode(enabled).await {
+        Ok(()) => live_update_tx
+            .send(LiveUpdate::AlwaysApproveModeChanged { enabled })
+            .map_err(|err| err.to_string())?,
+        Err(error) => {
+            live_update_tx
+                .send(LiveUpdate::AlwaysApproveModeChangeFailed)
+                .map_err(|err| err.to_string())?;
+            let _ = live_update_tx.send(LiveUpdate::OperatorNotice {
+                message: format!("Failed to change always-approve mode: {error}"),
+                level: OperatorNoticeLevel::Error,
+            });
+        }
+    }
+    Ok(())
+}
+
+fn import_foreign_session_notice(
+    source_path: &std::path::Path,
+    dest_session_dir: &std::path::Path,
+) -> (String, OperatorNoticeLevel) {
+    match harness_core::foreign_session::import_foreign_session_as_replay(
+        source_path,
+        dest_session_dir,
+    ) {
+        Ok(result) => (
+            format!(
+                "imported {} events from {}",
+                result.event_count,
+                result.source_path.display()
+            ),
+            OperatorNoticeLevel::Info,
+        ),
+        Err(err) => (
+            format!("foreign import failed: {err}"),
+            OperatorNoticeLevel::Error,
+        ),
+    }
+}
+
+fn delete_session_notice(run_id: &str, run_dir: &std::path::Path) -> (String, OperatorNoticeLevel) {
+    match delete_session_dir(run_dir) {
+        Ok(trash_dir) => (
+            format!("session {} moved to {}", run_id, trash_dir.display()),
+            OperatorNoticeLevel::Info,
+        ),
+        Err(err) => (
+            format!("failed to delete session {run_id}: {err}"),
+            OperatorNoticeLevel::Error,
+        ),
+    }
 }
 
 async fn interrupt_tasks(
