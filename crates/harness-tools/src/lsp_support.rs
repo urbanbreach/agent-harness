@@ -410,44 +410,16 @@ pub(crate) fn execute_lsp_operation(
             "textDocument/prepareCallHierarchy",
             position_request_params(request, &file_path)?,
         ),
-        LspOperation::IncomingCalls => {
-            let prepared = request_with_retry(
-                &mut session,
-                "textDocument/prepareCallHierarchy",
-                position_request_params(request, &file_path)?,
-            )?;
-            let Some(item) = prepared.as_array().and_then(|items| items.first()).cloned() else {
-                return Ok(LspOperationResponse {
-                    server: server.clone(),
-                    result: Value::Array(Vec::new()),
-                    diagnostics: session.diagnostics(),
-                });
-            };
-            request_with_retry(
-                &mut session,
-                "callHierarchy/incomingCalls",
-                json!({ "item": item }),
-            )
-        }
-        LspOperation::OutgoingCalls => {
-            let prepared = request_with_retry(
-                &mut session,
-                "textDocument/prepareCallHierarchy",
-                position_request_params(request, &file_path)?,
-            )?;
-            let Some(item) = prepared.as_array().and_then(|items| items.first()).cloned() else {
-                return Ok(LspOperationResponse {
-                    server: server.clone(),
-                    result: Value::Array(Vec::new()),
-                    diagnostics: session.diagnostics(),
-                });
-            };
-            request_with_retry(
-                &mut session,
-                "callHierarchy/outgoingCalls",
-                json!({ "item": item }),
-            )
-        }
+        LspOperation::IncomingCalls => request_call_hierarchy(
+            &mut session,
+            "callHierarchy/incomingCalls",
+            position_request_params(request, &file_path)?,
+        ),
+        LspOperation::OutgoingCalls => request_call_hierarchy(
+            &mut session,
+            "callHierarchy/outgoingCalls",
+            position_request_params(request, &file_path)?,
+        ),
         LspOperation::FileDiagnostics
         | LspOperation::WorkspaceDiagnostics
         | LspOperation::InstallDecision => std::process::abort(),
@@ -458,6 +430,18 @@ pub(crate) fn execute_lsp_operation(
         result,
         diagnostics: session.diagnostics(),
     })
+}
+
+fn request_call_hierarchy(
+    session: &mut LspSession,
+    method: &str,
+    position: Value,
+) -> Result<Value, ToolError> {
+    let prepared = request_with_retry(session, "textDocument/prepareCallHierarchy", position)?;
+    let Some(item) = prepared.as_array().and_then(|items| items.first()).cloned() else {
+        return Ok(Value::Array(Vec::new()));
+    };
+    request_with_retry(session, method, json!({ "item": item }))
 }
 
 fn position_request_params(
