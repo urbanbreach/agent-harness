@@ -40,6 +40,11 @@ fn known_profiles_classify_expected_capabilities() {
     assert_eq!(kitty.keyboard(), KeyboardCapability::Modern);
     assert_eq!(kitty.focus(), FocusCapability::Reported);
     assert_eq!(kitty.notification(), NotificationCapability::Bell);
+}
+
+#[test]
+fn legacy_and_multiplexed_profiles_classify_expected_capabilities() {
+    let profiles = harness_tui::capability_matrix::well_known_profiles();
     let xterm = &profiles[3].1;
     assert_eq!(xterm.color(), ColorCapability::Ansi256);
     assert_eq!(xterm.graphics(), GraphicsCapability::None);
