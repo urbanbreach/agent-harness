@@ -880,8 +880,10 @@ pub(crate) fn exact_test_control_dock_view_model_handles_live_runtime_variants()
         "Queue the next turn while this one finishes…"
     );
     assert_eq!(streaming.composer_disclosure, "shift+enter/ctrl+j newline");
-    assert!(streaming.composer_focused);
-    assert!(!streaming.composer_disabled);
+    assert_eq!(
+        (streaming.composer_focused, streaming.composer_disabled),
+        (true, false)
+    );
 
     let failed = control_dock_view_model(ControlDockInput::Live {
         runtime_context: Some("recovery".to_string()),
