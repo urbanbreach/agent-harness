@@ -453,6 +453,13 @@ impl AppState {
             return;
         }
 
+        if self.submitted_permission_is_active(&permission.permission_id) {
+            if key.code == KeyCode::Esc && key.modifiers.is_empty() {
+                self.focus = super::Focus::List;
+            }
+            return;
+        }
+
         if key.code == KeyCode::Char('c') && key.modifiers == KeyModifiers::CONTROL {
             self.execute_action(Action::DismissModal);
             self.maybe_auto_exit();
@@ -460,7 +467,13 @@ impl AppState {
         }
 
         if let Some(forward) = question_row_walk(&key) {
-            self.cycle_permission_modal_selection(&permission.permission_id, forward, true);
+            match self.permission_modal_stage(&permission.permission_id) {
+                PermissionModalStage::Decision => {
+                    self.cycle_permission_modal_selection(&permission.permission_id, forward, true)
+                }
+                PermissionModalStage::AlwaysConfirm => self
+                    .cycle_permission_modal_confirm_selection(&permission.permission_id, forward),
+            }
             return;
         }
 
@@ -481,14 +494,14 @@ impl AppState {
                 == PermissionModalStage::AlwaysConfirm
             {
                 match key.code {
-                    KeyCode::Left | KeyCode::Char('h') => {
+                    KeyCode::Left | KeyCode::Up | KeyCode::Char('h' | 'k') => {
                         self.cycle_permission_modal_confirm_selection(
                             &permission.permission_id,
                             false,
                         );
                         return;
                     }
-                    KeyCode::Right | KeyCode::Char('l') => {
+                    KeyCode::Right | KeyCode::Down | KeyCode::Char('l' | 'j') => {
                         self.cycle_permission_modal_confirm_selection(
                             &permission.permission_id,
                             true,
@@ -508,40 +521,27 @@ impl AppState {
                 }
             }
 
+            if let KeyCode::Char(number) = key.code {
+                if let Some(selection) = PermissionModalSelection::from_number(number) {
+                    self.activate_permission_modal_selection(&permission.permission_id, selection);
+                    return;
+                }
+            }
+
             match key.code {
-                KeyCode::Left | KeyCode::Char('h') => {
+                KeyCode::Left | KeyCode::Up | KeyCode::Char('h' | 'k') => {
                     self.cycle_permission_modal_selection(&permission.permission_id, false, true);
                     return;
                 }
-                KeyCode::Right | KeyCode::Char('l') => {
+                KeyCode::Right | KeyCode::Down | KeyCode::Char('l' | 'j') => {
                     self.cycle_permission_modal_selection(&permission.permission_id, true, true);
                     return;
                 }
                 KeyCode::Enter => {
-                    match self.permission_modal_selection(&permission.permission_id) {
-                        PermissionModalSelection::AllowOnce => {
-                            self.execute_action(Action::AllowPermission);
-                        }
-                        PermissionModalSelection::AllowSession => {
-                            // Product-honest session grant (freeze option 2).
-                            // Scope=Session records a durable grant for this request's
-                            // kind/tool/matcher for the remainder of the session.
-                            self.clear_permission_modal_selection(&permission.permission_id);
-                            self.send_permission_intent(
-                                permission.permission_id.clone(),
-                                PermissionDecision::Allow,
-                                None,
-                                Some(PermissionGrantScope::Session),
-                            );
-                        }
-                        PermissionModalSelection::AllowAlways => {
-                            self.open_permission_allow_always_confirm(&permission.permission_id);
-                        }
-                        PermissionModalSelection::Reject => {
-                            self.execute_action(Action::DismissModal);
-                        }
-                    }
-                    self.maybe_auto_exit();
+                    self.activate_permission_modal_selection(
+                        &permission.permission_id,
+                        self.permission_modal_selection(&permission.permission_id),
+                    );
                     return;
                 }
                 KeyCode::Esc => {
@@ -564,6 +564,31 @@ impl AppState {
                 self.maybe_auto_exit();
             }
         }
+    }
+
+    fn activate_permission_modal_selection(
+        &mut self,
+        permission_id: &str,
+        selection: PermissionModalSelection,
+    ) {
+        self.permission_prompt.selection = selection;
+        match selection {
+            PermissionModalSelection::AllowOnce => self.execute_action(Action::AllowPermission),
+            PermissionModalSelection::AllowSession => {
+                self.clear_permission_modal_selection(permission_id);
+                self.send_permission_intent(
+                    permission_id.to_owned(),
+                    PermissionDecision::Allow,
+                    None,
+                    Some(PermissionGrantScope::Session),
+                );
+            }
+            PermissionModalSelection::AllowAlways => {
+                self.open_permission_allow_always_confirm(permission_id)
+            }
+            PermissionModalSelection::Reject => self.execute_action(Action::DenyPermission),
+        }
+        self.maybe_auto_exit();
     }
 
     fn confirm_permission_allow_always(&mut self, permission_id: &str) {
