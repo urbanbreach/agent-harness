@@ -157,14 +157,13 @@ impl Tool for FsGrepTool {
                     MAX_GREP_RENDER_BYTES,
                 )?;
                 let output_artifact = if matches.is_truncated {
-                    let full_output = collect_grep_matches(
-                        &workspace_root,
-                        &resolved_base,
-                        full_output_search,
-                        usize::MAX,
-                    )?
-                    .lines
-                    .join("\n");
+                    let (entries, _) =
+                        collect_grep_entries(&workspace_root, &resolved_base, &full_output_search)?;
+                    let full_output = entries
+                        .into_iter()
+                        .map(|entry| render_grep_match_line(&entry))
+                        .collect::<Vec<_>>()
+                        .join("\n");
 
                     Some(
                         ctx.artifact_store()
@@ -335,6 +334,35 @@ fn collect_grep_matches(
     search: GrepSearch<'_>,
     inline_max_bytes: usize,
 ) -> Result<GrepMatches, ToolError> {
+    let (entries, total_count) = collect_grep_entries(workspace_root, search_path, &search)?;
+    let limit_summary = summarize_limit(total_count, search.limit);
+    let untruncated_display =
+        render_grep_display(&entries, total_count, limit_summary.is_truncated);
+    let (display_text, byte_truncated) =
+        truncate_display_text_by_bytes(&untruncated_display, inline_max_bytes);
+    let returned_count = limit_summary.returned_count;
+    let is_truncated = limit_summary.is_truncated || byte_truncated;
+    let truncated_count = total_count.saturating_sub(returned_count);
+    let lines = entries
+        .iter()
+        .map(render_grep_match_line)
+        .collect::<Vec<_>>();
+
+    Ok(GrepMatches {
+        lines,
+        display_text,
+        total_count,
+        returned_count,
+        truncated_count,
+        is_truncated,
+    })
+}
+
+fn collect_grep_entries(
+    workspace_root: &Path,
+    search_path: &Path,
+    search: &GrepSearch<'_>,
+) -> Result<(Vec<GrepOutputEntry>, usize), ToolError> {
     let regex = compile_grep_regex(search.pattern, search.literal)?;
     let include_matcher = compile_include_matcher(search.include)?;
     let files = collect_sorted_grep_files(workspace_root, search_path, include_matcher.as_ref())?;
@@ -380,27 +408,7 @@ fn collect_grep_matches(
         );
     }
 
-    let limit_summary = summarize_limit(total_count, search.limit);
-    let untruncated_display =
-        render_grep_display(&entries, total_count, limit_summary.is_truncated);
-    let (display_text, byte_truncated) =
-        truncate_display_text_by_bytes(&untruncated_display, inline_max_bytes);
-    let returned_count = limit_summary.returned_count;
-    let is_truncated = limit_summary.is_truncated || byte_truncated;
-    let truncated_count = total_count.saturating_sub(returned_count);
-    let lines = entries
-        .iter()
-        .map(render_grep_match_line)
-        .collect::<Vec<_>>();
-
-    Ok(GrepMatches {
-        lines,
-        display_text,
-        total_count,
-        returned_count,
-        truncated_count,
-        is_truncated,
-    })
+    Ok((entries, total_count))
 }
 
 fn collect_grep_file_paths(

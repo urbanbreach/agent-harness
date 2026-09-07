@@ -66,7 +66,19 @@ async fn grep_truncation_names_full_artifact_and_narrowing_guidance() {
         .strip_prefix("artifacts/")
         .unwrap_or_abort();
     let artifact_text = fs::read_to_string(artifacts_dir.join(relative_artifact)).unwrap_or_abort();
-    assert!(artifact_text.contains("large.txt:105: MATCH result-105"));
+    let expected_artifact = fixture
+        .lines()
+        .enumerate()
+        .map(|(index, text)| {
+            format!(
+                "{}:{}: {text}",
+                workspace.workspace().join("large.txt").display(),
+                index + 1
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert_eq!(artifact_text, expected_artifact);
 }
 
 #[tokio::test]
@@ -108,8 +120,12 @@ async fn grep_byte_cap_spills_single_huge_match_to_artifact() {
         .strip_prefix("artifacts/")
         .unwrap_or_abort();
     let artifact_text = fs::read_to_string(artifacts_dir.join(relative_artifact)).unwrap_or_abort();
-    assert!(artifact_text.contains("huge.txt:1: MATCH"));
-    assert!(artifact_text.contains(&sentinel));
-    assert!(artifact_text.len() > 60 * 1024);
+    assert_eq!(
+        artifact_text,
+        format!(
+            "{}:1: {huge}",
+            workspace.workspace().join("huge.txt").display()
+        )
+    );
     assert!(!result.display_text.contains(&sentinel));
 }
