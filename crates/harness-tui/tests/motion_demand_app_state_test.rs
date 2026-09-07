@@ -5,6 +5,7 @@ use harness_core::event::{
 };
 use harness_tui::app::{AppState, Focus};
 use harness_tui::scheduling::{DualClock, MotionCadence, RuntimePacer};
+use harness_tui::terminal::FrameSubmission;
 
 #[path = "motion_demand/support_test.rs"]
 mod support;
@@ -69,6 +70,19 @@ fn streaming_wait_plan_keeps_a_wake_at_the_next_visual_sample() {
 
     // Then: unchanged-frame suppression can remove cadence without losing the next wake.
     assert_eq!(plan.until(), Some(Duration::from_millis(133)));
+    let clock = DualClock::new();
+    let mut pacer = RuntimePacer::new();
+    pacer.poll(clock.snapshot(), plan);
+    pacer.record_submission(FrameSubmission::Unchanged, plan);
+    clock.advance_animation(20);
+    app.advance_wall_clock_for_motion_evidence(Duration::from_millis(20));
+    let suppressed = pacer.poll(clock.snapshot(), app.motion_plan_for_evidence());
+    assert!(!suppressed.paint);
+    assert_eq!(suppressed.next_wait_ms, Some(113));
+    clock.advance_animation(113);
+    app.advance_wall_clock_for_motion_evidence(Duration::from_millis(113));
+    let due = pacer.poll(clock.snapshot(), app.motion_plan_for_evidence());
+    assert!(due.advance_animation && due.paint);
 }
 
 #[test]
