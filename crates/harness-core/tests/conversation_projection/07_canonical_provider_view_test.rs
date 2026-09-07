@@ -481,3 +481,50 @@ fn canonical_provider_view_legacy_adapter_maps_runtime_selection_into_provenance
 
     assert_eq!(persisted, Some(&selection));
 }
+
+#[test]
+fn canonical_projection_rejects_invalid_appends_without_changing_retained_history() {
+    use harness_core::session::CanonicalSessionProjection;
+
+    // Given: a valid projection and batches with a valid prefix followed by invalid history.
+    let events = (1..=3)
+        .map(|seq| {
+            envelope(
+                seq,
+                worker(),
+                None,
+                EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                    request_id: format!("turn-{seq}").into(),
+                    text: format!("question-{seq}"),
+                }),
+            )
+        })
+        .collect::<Vec<_>>();
+    let before = CanonicalSessionProjection::from_event_history(&events[..1]).unwrap_or_abort();
+    let mut mixed_run = events[2].clone();
+    mixed_run.run_id = "other-run".into();
+    let mut duplicate = events[2].clone();
+    duplicate.event_id.clone_from(&events[0].event_id);
+    let mut gap = events[2].clone();
+    gap.seq = 4;
+    for invalid in [mixed_run, duplicate, gap] {
+        let mut projection = before.clone();
+        let batch = [events[1].clone(), invalid];
+        let mut attempted = events[..1].to_vec();
+        attempted.extend_from_slice(&batch);
+        let expected_error = CanonicalSessionProjection::from_event_history(&attempted)
+            .err()
+            .unwrap_or_abort();
+
+        // When: projection of the staged batch fails.
+        assert_eq!(projection.apply_events(&batch), Err(expected_error));
+
+        // Then: equality includes private source events; a subsequent valid append still succeeds.
+        assert_eq!(projection, before);
+        projection.apply_event(events[1].clone()).unwrap_or_abort();
+        assert_eq!(
+            projection,
+            CanonicalSessionProjection::from_event_history(&events[..2]).unwrap_or_abort()
+        );
+    }
+}
