@@ -265,31 +265,93 @@ fn streaming_delta_reuses_unrelated_running_tool_section() {
     let mut tool = transcript_section_model_test_tool_call("tool-background", "fs.read");
     tool.status = ToolCallDisplayStatus::Running;
     background.tool_calls.push(tool);
-    let active = transcript_section_model_test_activity(
+    let mut active = transcript_section_model_test_activity(
         "request-active-stream",
         ActivityStatus::Streaming,
-        "active response",
+        &"active response with enough text to wrap at narrow widths\n".repeat(12),
     );
-    let mut app = AppState::default();
+    active.first_seq = 2;
+    let mut app = AppState::new_live(None, false, None);
     app.activities = std::collections::VecDeque::from(vec![background, active]);
     app.transcript_view.selected_activity_index = 1;
-    let theme = Theme::default();
-    let _ = build_transcript_lines_for_width(&app, &theme, 120);
-    reset_transcript_section_render_count_for_test();
 
-    // When: the active response changes while the shared animation clock advances.
-    if let Some(active) = app.activities.back_mut() {
-        active.transcript_text.push_str(" grows");
+    for width in [60, 100] {
+        let area = Rect::new(0, 0, width, 16);
+        let render = |app: &AppState| {
+            let mut terminal =
+                ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, area.height))
+                    .unwrap_or_abort();
+            terminal
+                .draw(|frame| render_app(frame, app))
+                .unwrap_or_abort();
+            let snapshot = build_transcript_selection_snapshot(app, area).unwrap_or_abort();
+            (
+                terminal.backend().buffer().clone(),
+                snapshot.viewport,
+                snapshot.visible_rows,
+                snapshot.rows,
+                snapshot.line_texts,
+                snapshot.continues_previous,
+            )
+        };
+        let _ = render(&app);
+        reset_transcript_section_render_count_for_test();
+        TRANSCRIPT_SEMANTIC_BUILD_COUNT.with(|count| count.set(0));
+
+        // When: a live turn changes while both scrollbar widths are needed for paint.
+        let active = app.activities.back_mut().unwrap_or_abort();
+        active
+            .transcript_text
+            .push_str(" grows [link](https://example.com) \u{754c}e\u{301}");
         active.revision = active.revision.wrapping_add(1);
-    }
-    app.mark_transcript_dirty_for_test();
-    app.advance_transcript_animation_phase();
-    let _ = build_transcript_lines_for_width(&app, &theme, 120);
+        app.mark_transcript_dirty_for_test();
+        app.advance_transcript_animation_phase();
+        let cached = render(&app);
 
-    // act
-    // Then: only the changed active turn is remeasured.
-    // assert
-    assert_eq!(transcript_section_render_count_for_test(), 1);
+        // Then: semantics build once, only the active turn is remeasured at each width,
+        // and painted cells plus selection geometry/text match an uncached render.
+        assert!(app.transcript_view.last_transcript_max_scroll.get() > 0);
+        assert_eq!(TRANSCRIPT_SEMANTIC_BUILD_COUNT.with(Cell::get), 1);
+        assert_eq!(transcript_section_render_count_for_test(), 2);
+        let context = transcript_pane_context(
+            &app,
+            resolved_transcript_area(&app, area).unwrap_or_abort(),
+            app.theme(),
+        );
+        let widths = [context.inner_area.width, cached.1.width];
+        assert_ne!(widths[0], widths[1]);
+        let layouts = widths.map(|width| {
+            let layout = build_measured_transcript_layout_for_width_on_surface(
+                &app,
+                app.theme(),
+                width,
+                context.base_surface,
+            );
+            (
+                transcript_layout_lines(&layout, app.transcript_animation_phase(), app.theme()),
+                transcript_selection_rows(&layout, usize::from(width)),
+            )
+        });
+        for (width, cached_layout) in widths.into_iter().zip(layouts) {
+            TRANSCRIPT_LAYOUT_CACHE.with(|cache| cache.borrow_mut().clear());
+            let cold = build_measured_transcript_layout_for_width_on_surface(
+                &app,
+                app.theme(),
+                width,
+                context.base_surface,
+            );
+            assert_eq!(
+                cached_layout,
+                (
+                    transcript_layout_lines(&cold, app.transcript_animation_phase(), app.theme()),
+                    transcript_selection_rows(&cold, usize::from(width)),
+                )
+            );
+        }
+        TRANSCRIPT_LAYOUT_CACHE.with(|cache| cache.borrow_mut().clear());
+        reset_transcript_selection_cache_metrics_for_test();
+        assert_eq!(cached, render(&app));
+    }
 }
 
 #[test]

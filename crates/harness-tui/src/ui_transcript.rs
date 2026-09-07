@@ -181,6 +181,8 @@ thread_local! {
     static TRANSCRIPT_LAYOUT_CACHE: RefCell<Vec<TranscriptLayoutCacheEntry>> = const { RefCell::new(Vec::new()) };
     #[cfg(test)]
     static TRANSCRIPT_SECTION_RENDER_COUNT: Cell<usize> = const { Cell::new(0) };
+    #[cfg(test)]
+    static TRANSCRIPT_SEMANTIC_BUILD_COUNT: Cell<usize> = const { Cell::new(0) };
 }
 
 #[cfg(test)]
@@ -1071,8 +1073,18 @@ fn with_measured_transcript_layout_for_width_on_surface<R>(
             }
         }
 
-        let sections = build_transcript_sections(app);
         let previous_cache = cache.borrow();
+        let sections = previous_cache
+            .iter()
+            .rev()
+            .find(|entry| {
+                entry.app_instance_id == app_instance_id
+                    && entry.render_key == render_key
+                    && entry.theme == *theme
+                    && entry.base_surface == base_surface
+            })
+            .map(|entry| entry.sections.clone())
+            .unwrap_or_else(|| build_transcript_sections(app));
         let previous = previous_cache.iter().rev().find(|entry| {
             entry.app_instance_id == app_instance_id
                 && entry.theme == *theme
