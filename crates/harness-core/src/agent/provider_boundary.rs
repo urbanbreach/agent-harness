@@ -149,12 +149,34 @@ pub fn transform_context_for_provider(input: ProviderBoundaryInput<'_>) -> Provi
         tool_choice,
     } = input;
 
-    let messages = match context {
+    let mut messages = match context {
         ProviderBoundaryContext::ProjectedHarness { messages, .. } => {
             convert_projected_context_to_provider_messages(profile, messages)
         }
         ProviderBoundaryContext::ProviderMessages { messages } => messages.to_vec(),
     };
+    if AgentModelRef::parse(&profile.model_ref) != model {
+        let system_message_count = messages
+            .iter()
+            .take_while(|message| message.role == MessageRole::System)
+            .count();
+        messages.insert(
+            system_message_count,
+            CompletionMessage {
+                role: MessageRole::System,
+                content: json!({
+                    "runtime_model_identity": {
+                        "provider": &model.provider_id,
+                        "model": &model.model_id,
+                    }
+                })
+                .to_string(),
+                name: Some("runtime_model_identity".to_string()),
+                tool_call_id: None,
+                assistant_tool_calls: None,
+            },
+        );
+    }
 
     let request = build_completion_request(CompletionRequestInput {
         provider_id: Some(model.provider_id),
