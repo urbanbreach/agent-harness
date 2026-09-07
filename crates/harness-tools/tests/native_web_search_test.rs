@@ -224,6 +224,9 @@ async fn native_web_search_uses_shared_client_and_fixture_backend() {
     assert_eq!(result_json["type"], json!("fast"));
     assert_eq!(result_json["contextMaxCharacters"], json!(4096));
     assert_eq!(result_json["empty"], json!(false));
+    assert!(result_json.get("results").is_none());
+    assert!(result_json.get("sources").is_none());
+    println!("WEB_METADATA_PROOF search_unknown {result_json}");
 
     let requests = transport.requests();
     assert_eq!(
@@ -240,6 +243,61 @@ async fn native_web_search_uses_shared_client_and_fixture_backend() {
         assert_eq!(request.arguments["type"], json!("fast"));
         assert_eq!(request.arguments["contextMaxCharacters"], json!(4096));
     }
+}
+
+#[tokio::test]
+async fn native_web_search_exposes_remote_structured_sources_and_count() {
+    let workspace = setup_workspace_fixture();
+    let transport = ScriptedRemoteSearchTransport::new(vec![RemoteSearchHttpResponse::new(
+        200,
+        json!({
+            "result": {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "Two structured search results"
+                    }
+                ],
+                "structuredContent": {
+                    "results": [
+                        {"url": "https://docs.rs/tokio"},
+                        {"url": "https://tokio.rs"}
+                    ]
+                }
+            }
+        })
+        .to_string(),
+    )]);
+    let registry = search_registry(
+        Arc::clone(&transport),
+        RemoteSearchTestConfig {
+            max_retries: 0,
+            retry_backoff_ms: 1,
+            timeout_secs: 1,
+            ..RemoteSearchTestConfig::default()
+        },
+    );
+    let websearch = registry.get("websearch").unwrap_or_abort();
+
+    let result = websearch
+        .call(
+            test_context(workspace.workspace(), "structured-search"),
+            json!({
+                "query": "tokio runtime",
+                "numResults": 1
+            }),
+        )
+        .await
+        .unwrap_or_abort();
+
+    let result_json = result.structured_json.unwrap_or_abort();
+    assert_eq!(result_json["numResults"], json!(1));
+    assert_eq!(result_json["results"], json!(2));
+    assert_eq!(
+        result_json["sources"],
+        json!(["https://docs.rs/tokio", "https://tokio.rs"])
+    );
+    println!("WEB_METADATA_PROOF search_structured {result_json}");
 }
 
 #[tokio::test]

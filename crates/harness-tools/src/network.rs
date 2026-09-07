@@ -108,6 +108,7 @@ impl NetworkExecutor {
                     render_textual_content(request.format, &mime, &text),
                     json!({
                         "url": url.as_str(),
+                        "status": status,
                         "content_type": content_type,
                         "media_type": mime,
                         "requested_format": request.format.as_str(),
@@ -129,6 +130,7 @@ impl NetworkExecutor {
                     ),
                     json!({
                         "url": url.as_str(),
+                        "status": status,
                         "content_type": content_type,
                         "media_type": mime,
                         "requested_format": request.format.as_str(),
@@ -195,22 +197,28 @@ impl NetworkExecutor {
         let request = NormalizedWebSearchRequest::from(request);
         let response = self.remote_search.web_search(&request).await?;
         let empty = response.is_empty();
+        let returned_count = response.returned_count;
+        let sources = response.sources;
         let display_text = if empty {
             "No search results found".to_string()
         } else {
             response.text
         };
-        Ok(crate::text_json_tool_result(
-            display_text,
-            json!({
-                "query": request.query,
-                "numResults": request.num_results,
-                "livecrawl": request.livecrawl,
-                "type": request.search_type,
-                "contextMaxCharacters": request.context_max_characters,
-                "empty": empty,
-            }),
-        ))
+        let mut structured_json = json!({
+            "query": request.query,
+            "numResults": request.num_results,
+            "livecrawl": request.livecrawl,
+            "type": request.search_type,
+            "contextMaxCharacters": request.context_max_characters,
+            "empty": empty,
+        });
+        if let Some(returned_count) = returned_count {
+            structured_json["results"] = json!(returned_count);
+        }
+        if let Some(sources) = sources {
+            structured_json["sources"] = json!(sources);
+        }
+        Ok(crate::text_json_tool_result(display_text, structured_json))
     }
 
     pub(crate) async fn code_search(

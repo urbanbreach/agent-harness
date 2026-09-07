@@ -82,7 +82,7 @@ impl WebFetchHttpTransport for ScriptedWebFetchTransport {
         let hit = self.hit_count(&path);
         match path.as_str() {
             "/plain" => Ok(web_fetch_response(
-                200,
+                206,
                 [("Content-Type", "text/plain; charset=utf-8")],
                 b"hello text\n".to_vec(),
             )),
@@ -110,7 +110,7 @@ impl WebFetchHttpTransport for ScriptedWebFetchTransport {
                 b"<html><body><h1>Retry Title</h1><p>Retry body</p></body></html>".to_vec(),
             )),
             "/image" => Ok(web_fetch_response(
-                200,
+                201,
                 [("Content-Type", "image/png; charset=binary")],
                 PNG_BYTES.to_vec(),
             )),
@@ -175,10 +175,10 @@ async fn native_web_fetch_supports_text_markdown_html_and_binary_artifacts() {
         .unwrap_or_abort();
     assert_eq!(plain.display_text, "hello text\n");
     assert!(plain.artifacts.is_empty());
-    assert_eq!(
-        plain.structured_json.unwrap_or_abort()["response_kind"],
-        json!("text")
-    );
+    let plain_json = plain.structured_json.unwrap_or_abort();
+    assert_eq!(plain_json["response_kind"], json!("text"));
+    assert_eq!(plain_json["status"], json!(206));
+    println!("WEB_METADATA_PROOF fetch_text {plain_json}");
 
     let markdown = web_fetch
         .call(
@@ -253,10 +253,12 @@ async fn native_web_fetch_supports_text_markdown_html_and_binary_artifacts() {
     let image_json = image.structured_json.unwrap_or_abort();
     assert_eq!(image_json["response_kind"], json!("artifact"));
     assert_eq!(image_json["artifact_kind"], json!("image"));
+    assert_eq!(image_json["status"], json!(201));
     assert_eq!(
         image_json["artifact"]["path"],
         json!(image.artifacts[0].path.clone())
     );
+    println!("WEB_METADATA_PROOF fetch_artifact {image_json}");
 
     let pdf_ctx = test_context(workspace_root, "native-pdf");
     let pdf = web_fetch

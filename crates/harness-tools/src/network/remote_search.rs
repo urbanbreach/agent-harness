@@ -80,9 +80,11 @@ impl From<CodeSearchRequest> for NormalizedCodeSearchRequest {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub(super) struct RemoteSearchTextResult {
     pub(super) text: String,
+    pub(super) returned_count: Option<usize>,
+    pub(super) sources: Option<Vec<String>>,
 }
 
 impl RemoteSearchTextResult {
@@ -383,8 +385,7 @@ impl ExaRemoteSearchBackend {
                 )));
             }
 
-            let text = parse_sse_text_result(&response.body)?.unwrap_or_default();
-            return Ok(RemoteSearchTextResult { text });
+            return Ok(parse_sse_text_result(&response.body)?.unwrap_or_default());
         }
     }
 
@@ -545,10 +546,10 @@ fn is_code_search_timeout(message: &str) -> bool {
     message.starts_with("search.code request timed out after ")
 }
 
-fn parse_sse_text_result(body: &str) -> Result<Option<String>, ToolError> {
+fn parse_sse_text_result(body: &str) -> Result<Option<RemoteSearchTextResult>, ToolError> {
     if let Ok(value) = serde_json::from_str::<Value>(body) {
         if let Some(content) = value["result"]["content"].as_array() {
-            return Ok(extract_text_result(content));
+            return Ok(Some(extract_text_result(&value, content)));
         }
     }
 
@@ -560,7 +561,7 @@ fn parse_sse_text_result(body: &str) -> Result<Option<String>, ToolError> {
         saw_data_frame = true;
         let value: Value = serde_json::from_str(data).tool_err("failed to parse sse payload")?;
         if let Some(content) = value["result"]["content"].as_array() {
-            return Ok(extract_text_result(content));
+            return Ok(Some(extract_text_result(&value, content)));
         }
     }
 
@@ -573,11 +574,34 @@ fn parse_sse_text_result(body: &str) -> Result<Option<String>, ToolError> {
     }
 }
 
-fn extract_text_result(content: &[Value]) -> Option<String> {
-    content.iter().find_map(|item| {
-        item["text"]
-            .as_str()
-            .and_then(trimmed_non_empty)
-            .map(ToOwned::to_owned)
-    })
+fn extract_text_result(value: &Value, content: &[Value]) -> RemoteSearchTextResult {
+    let text = content
+        .iter()
+        .find_map(|item| {
+            item["text"]
+                .as_str()
+                .and_then(trimmed_non_empty)
+                .map(ToOwned::to_owned)
+        })
+        .unwrap_or_default();
+    let structured_results = value
+        .pointer("/result/structuredContent/results")
+        .and_then(Value::as_array);
+    let returned_count = structured_results.map(Vec::len);
+    let sources = structured_results.and_then(|results| {
+        results
+            .iter()
+            .map(|result| {
+                result["url"]
+                    .as_str()
+                    .and_then(trimmed_non_empty)
+                    .map(ToOwned::to_owned)
+            })
+            .collect::<Option<Vec<_>>>()
+    });
+    RemoteSearchTextResult {
+        text,
+        returned_count,
+        sources,
+    }
 }
