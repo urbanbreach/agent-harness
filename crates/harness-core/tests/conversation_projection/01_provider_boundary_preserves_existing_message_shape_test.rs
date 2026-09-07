@@ -119,6 +119,42 @@ fn provider_boundary_preserves_existing_message_shape() {
         }
     );
 }
+
+#[test]
+fn provider_request_context_identifies_runtime_model_override() {
+    // Given: a profile created for the startup model and a different runtime selection.
+    let profile = boundary_profile();
+
+    // When: the public provider boundary builds the selected model's request.
+    let boundary = transform_context_for_provider(ProviderBoundaryInput {
+        profile: &profile,
+        model: AgentModelRef::parse("mock:model-2"),
+        model_settings: AgentModelSettings::default(),
+        context: ProviderBoundaryContext::ProviderMessages { messages: &[] },
+        tools: None,
+        tool_choice: None,
+    });
+
+    // Then: provider-visible context carries the runtime identity, not only startup profile state.
+    let runtime_identity = boundary
+        .request
+        .messages
+        .iter()
+        .find(|message| message.name.as_deref() == Some("runtime_model_identity"))
+        .unwrap_or_abort();
+    let identity: serde_json::Value =
+        serde_json::from_str(&runtime_identity.content).unwrap_or_abort();
+    assert_eq!(
+        identity,
+        serde_json::json!({
+            "runtime_model_identity": {
+                "provider": "mock",
+                "model": "model-2",
+            }
+        })
+    );
+}
+
 #[test]
 fn conversation_projection_failed_checkpoint_turn_status() {
     let checkpoint = ProviderContextCheckpoint {
