@@ -125,11 +125,7 @@ fn collect_matching_glob_paths(
 }
 
 fn sort_paths_by_mtime_desc(workspace_root: &Path, paths: &mut [String]) {
-    paths.sort_by(|a, b| {
-        let mtime_a = path_mtime(workspace_root, a);
-        let mtime_b = path_mtime(workspace_root, b);
-        mtime_b.cmp(&mtime_a)
-    });
+    paths.sort_by_cached_key(|path| std::cmp::Reverse(path_mtime(workspace_root, path)));
 }
 
 fn path_mtime(workspace_root: &Path, relative_path: &str) -> SystemTime {
@@ -198,7 +194,7 @@ mod tests {
     use harness_core::tool::{Tool, ToolContext, ToolRunState};
     use serde_json::json;
 
-    use super::{collect_glob_matches, FsGlobTool, GlobSearch};
+    use super::{collect_glob_matches, sort_paths_by_mtime_desc, FsGlobTool, GlobSearch};
 
     fn glob_search(pattern: &str, limit: usize) -> GlobSearch<'_> {
         GlobSearch { pattern, limit }
@@ -361,6 +357,33 @@ mod tests {
         assert_eq!(result.total_count, 3);
         assert_eq!(result.returned_count, 3);
         assert!(!result.is_truncated);
+
+        set_mtime(
+            root,
+            "src/new.rs",
+            SystemTime::UNIX_EPOCH + Duration::from_secs(200),
+        );
+        let mut paths = [
+            "src/missing-z.rs",
+            "src/old.rs",
+            "src/new.rs",
+            "src/middle.rs",
+            "src/missing-a.rs",
+        ]
+        .map(str::to_string);
+
+        sort_paths_by_mtime_desc(root, &mut paths);
+
+        assert_eq!(
+            paths,
+            [
+                "src/new.rs",
+                "src/middle.rs",
+                "src/old.rs",
+                "src/missing-z.rs",
+                "src/missing-a.rs",
+            ]
+        );
     }
 
     #[test]
