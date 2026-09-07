@@ -1,9 +1,10 @@
 // allow: SIZE_OK — TUI rendering (indivisible view model)
-use crate::UnwrapOrAbort;
+use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 use ratatui::{
     style::{Color, Modifier, Style},
     text::{Line, Span},
 };
+use std::borrow::Cow;
 
 use crate::theme::Theme;
 
@@ -17,48 +18,6 @@ use super::ui_transcript_surface::{
     append_prebuilt_plain_lines, append_prefixed_wrapped_spans_line,
 };
 
-fn is_flanking_pair(prev: Option<char>, content: &str, after_close: &str) -> bool {
-    !content.is_empty()
-        && !prev.is_some_and(char::is_alphanumeric)
-        && !content.starts_with(char::is_whitespace)
-        && !content.ends_with(char::is_whitespace)
-        && !after_close
-            .chars()
-            .next()
-            .is_some_and(char::is_alphanumeric)
-}
-
-fn markdown_link_destination_end(destination: &str) -> Option<usize> {
-    let mut nested_parentheses = 0usize;
-    let mut escaped = false;
-    for (index, ch) in destination.char_indices() {
-        if escaped {
-            escaped = false;
-            continue;
-        }
-        match ch {
-            '\\' => escaped = true,
-            '(' => nested_parentheses = nested_parentheses.saturating_add(1),
-            ')' if nested_parentheses == 0 => return Some(index),
-            ')' => nested_parentheses = nested_parentheses.saturating_sub(1),
-            _ => {}
-        }
-    }
-    None
-}
-
-fn markdown_link_prefix(text: &str) -> Option<(&str, &str, usize)> {
-    let rest = text.strip_prefix('[')?;
-    let label_end = rest.find("](")?;
-    let destination_start = label_end + 2;
-    let destination_end = markdown_link_destination_end(&rest[destination_start..])?;
-    Some((
-        &rest[..label_end],
-        &rest[destination_start..destination_start + destination_end],
-        1 + destination_start + destination_end + 1,
-    ))
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct InlineMarkdownLink {
     pub(super) label: String,
@@ -67,10 +26,80 @@ pub(super) struct InlineMarkdownLink {
     pub(super) destination: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub(super) struct ParsedInlineMarkdown {
     pub(super) spans: Vec<Span<'static>>,
     pub(super) links: Vec<InlineMarkdownLink>,
+}
+
+impl ParsedInlineMarkdown {
+    fn push(&mut self, text: &str, style: Style, destination: Option<&str>) {
+        if text.is_empty() {
+            return;
+        }
+        let start_cell = self.spans.iter().map(Span::width).sum::<usize>();
+        let end_cell = start_cell.saturating_add(display_width(text));
+        if let Some(destination) = destination.filter(|destination| {
+            crate::transcript_selection::Hyperlink::new(
+                text,
+                destination,
+                crate::transcript_selection::LinkRange::new(
+                    0,
+                    start_cell,
+                    end_cell.saturating_sub(1),
+                ),
+            )
+            .is_ok()
+        }) {
+            if let Some(previous) = self.links.last_mut().filter(|previous| {
+                previous.end_cell == start_cell && previous.destination == destination
+            }) {
+                previous.label.push_str(text);
+                previous.end_cell = end_cell;
+            } else {
+                self.links.push(InlineMarkdownLink {
+                    label: text.to_string(),
+                    start_cell,
+                    end_cell,
+                    destination: destination.to_string(),
+                });
+            }
+        }
+        if let Some(previous) = self
+            .spans
+            .last_mut()
+            .filter(|previous| previous.style == style)
+        {
+            previous.content.to_mut().push_str(text);
+        } else {
+            self.spans.push(Span::styled(text.to_string(), style));
+        }
+    }
+
+    fn push_text(&mut self, mut text: &str, style: Style, theme: &Theme) {
+        while !text.is_empty() {
+            let next_url = ["https://", "http://"]
+                .into_iter()
+                .filter_map(|prefix| text.find(prefix))
+                .min();
+            let Some(start) = next_url else {
+                self.push(text, style, None);
+                break;
+            };
+            self.push(&text[..start], style, None);
+            text = &text[start..];
+            let length = raw_url_length(text).unwrap_or(text.len());
+            let destination = &text[..length];
+            self.push(
+                destination,
+                style
+                    .fg(theme.markdown.link)
+                    .add_modifier(Modifier::UNDERLINED),
+                Some(destination),
+            );
+            text = &text[length..];
+        }
+    }
 }
 
 pub(super) fn parse_inline_markdown(
@@ -79,75 +108,105 @@ pub(super) fn parse_inline_markdown(
     base_color: Color,
     theme: &Theme,
 ) -> ParsedInlineMarkdown {
-    let spans = parse_inline_markdown_spans(text, base_style, base_color, theme);
-    let mut links = Vec::new();
-    let mut position = 0;
-    while position < text.len() {
-        let remaining = &text[position..];
-        if let Some((label, destination, consumed)) = markdown_link_prefix(remaining) {
-            let label = parse_inline_markdown_spans(label, base_style, base_color, theme)
-                .into_iter()
-                .map(|span| span.content.into_owned())
-                .collect::<String>();
-            let start_cell =
-                parse_inline_markdown_spans(&text[..position], base_style, base_color, theme)
-                    .iter()
-                    .map(Span::width)
-                    .sum();
-            let label_width = display_width(&label);
-            if crate::transcript_selection::Hyperlink::new(
-                &label,
-                destination,
-                crate::transcript_selection::LinkRange::new(
-                    0,
-                    start_cell,
-                    start_cell.saturating_add(label_width.saturating_sub(1)),
-                ),
-            )
-            .is_ok()
-            {
-                links.push(InlineMarkdownLink {
-                    label,
-                    start_cell,
-                    end_cell: start_cell.saturating_add(label_width),
-                    destination: destination.to_string(),
-                });
-            }
-            position += consumed;
+    // Inline callers include table cells. The sentinel prevents a leading "#",
+    // "-", or fence marker in a cell from becoming a block construct.
+    let normalized = normalize_math_delimiters(text);
+    let source = format!(".{normalized}");
+    let options = Options::ENABLE_STRIKETHROUGH | Options::ENABLE_MATH;
+    let mut parsed = ParsedInlineMarkdown::default();
+    let mut style = base_style.fg(base_color);
+    let mut destination = None;
+    let mut ancestors = Vec::new();
+
+    for (event, range) in Parser::new_ext(&source, options).into_offset_iter() {
+        // Match Grok's double-tilde-only strikethrough contract.
+        if matches!(
+            event,
+            Event::Start(Tag::Strikethrough) | Event::End(TagEnd::Strikethrough)
+        ) && !source[range.clone()].starts_with("~~")
+        {
+            parsed.push("~", style, destination.as_deref());
             continue;
         }
-        if let Some(url_len) = raw_url_length(remaining) {
-            let destination = &remaining[..url_len];
-            let start_cell =
-                parse_inline_markdown_spans(&text[..position], base_style, base_color, theme)
-                    .iter()
-                    .map(Span::width)
-                    .sum();
-            let destination_width = display_width(destination);
-            if crate::transcript_selection::Hyperlink::new(
-                destination,
-                destination,
-                crate::transcript_selection::LinkRange::new(
-                    0,
-                    start_cell,
-                    start_cell.saturating_add(destination_width.saturating_sub(1)),
-                ),
-            )
-            .is_ok()
-            {
-                links.push(InlineMarkdownLink {
-                    label: destination.to_string(),
-                    start_cell,
-                    end_cell: start_cell.saturating_add(destination_width),
-                    destination: destination.to_string(),
-                });
+        match event {
+            Event::Start(tag) => {
+                ancestors.push((style, destination.clone()));
+                match tag {
+                    Tag::Strong => {
+                        style = style.add_modifier(Modifier::BOLD);
+                        if destination.is_none() {
+                            style = style.fg(theme.markdown.strong);
+                        }
+                    }
+                    Tag::Emphasis => {
+                        style = style.add_modifier(Modifier::ITALIC);
+                        if destination.is_none() {
+                            style = style.fg(theme.markdown.emph);
+                        }
+                    }
+                    Tag::Strikethrough => {
+                        style = style.add_modifier(Modifier::CROSSED_OUT);
+                        if destination.is_none() {
+                            style = style.fg(theme.text.secondary);
+                        }
+                    }
+                    Tag::Link { dest_url, .. } | Tag::Image { dest_url, .. } => {
+                        destination = Some(dest_url);
+                        style = style
+                            .fg(theme.markdown.link_text)
+                            .add_modifier(Modifier::UNDERLINED);
+                    }
+                    _ => {}
+                }
             }
-            position += url_len;
-            continue;
+            Event::End(_) => {
+                if let Some(parent) = ancestors.pop() {
+                    (style, destination) = parent;
+                }
+            }
+            Event::Text(value) => {
+                let value = if range.start == 0 {
+                    value.strip_prefix('.').unwrap_or(&value)
+                } else {
+                    &value
+                };
+                if destination.is_some() {
+                    parsed.push(value, style, destination.as_deref());
+                } else {
+                    parsed.push_text(value, style, theme);
+                }
+            }
+            Event::Code(value) => parsed.push(
+                &value,
+                style.fg(theme.markdown.code).add_modifier(Modifier::BOLD),
+                destination.as_deref(),
+            ),
+            Event::InlineMath(math) | Event::DisplayMath(math) => {
+                if let Some(rendered) = terminal_math(&math) {
+                    let math_style = if destination.is_some() {
+                        style
+                    } else {
+                        style.fg(theme.markdown.code)
+                    };
+                    parsed.push(
+                        &rendered,
+                        math_style.add_modifier(Modifier::ITALIC),
+                        destination.as_deref(),
+                    );
+                } else {
+                    parsed.push(&source[range], style, destination.as_deref());
+                }
+            }
+            Event::SoftBreak | Event::HardBreak => {
+                parsed.push(" ", style, destination.as_deref());
+            }
+            Event::Html(value) | Event::InlineHtml(value) => {
+                parsed.push(&value, style, destination.as_deref());
+            }
+            _ => {}
         }
-        position += remaining.chars().next().map_or(1, char::len_utf8);
     }
-    ParsedInlineMarkdown { spans, links }
+    parsed
 }
 
 pub(super) fn parse_inline_markdown_spans(
@@ -156,138 +215,374 @@ pub(super) fn parse_inline_markdown_spans(
     base_color: Color,
     theme: &Theme,
 ) -> Vec<Span<'static>> {
-    let mut spans = Vec::new();
-    let mut pos = 0;
-
-    while pos < text.len() {
-        let remaining = &text[pos..];
-        let prev = if pos > 0 {
-            text[..pos].chars().next_back()
-        } else {
-            None
-        };
-
-        if let Some((label, _, consumed)) = markdown_link_prefix(remaining) {
-            let link_style = base_style
-                .fg(theme.markdown.link_text)
-                .add_modifier(Modifier::UNDERLINED);
-            spans.extend(parse_inline_markdown_spans(
-                label,
-                link_style,
-                theme.markdown.link_text,
-                theme,
-            ));
-            pos += consumed;
-            continue;
-        }
-
-        if let Some(url_len) = raw_url_length(remaining) {
-            spans.push(Span::styled(
-                remaining[..url_len].to_string(),
-                base_style
-                    .fg(theme.markdown.link)
-                    .add_modifier(Modifier::UNDERLINED),
-            ));
-            pos += url_len;
-            continue;
-        }
-
-        if let Some(rest) = remaining.strip_prefix("**") {
-            if let Some(end) = rest.find("**") {
-                let content = &rest[..end];
-                if is_flanking_pair(prev, content, &rest[end + 2..]) {
-                    spans.push(Span::styled(
-                        content.to_string(),
-                        base_style
-                            .fg(theme.markdown.strong)
-                            .add_modifier(Modifier::BOLD),
-                    ));
-                    pos += 2 + end + 2;
-                    continue;
-                }
-            }
-        }
-
-        if let Some(rest) = remaining.strip_prefix("~~") {
-            if let Some(end) = rest.find("~~") {
-                let content = &rest[..end];
-                if is_flanking_pair(prev, content, &rest[end + 2..]) {
-                    spans.push(Span::styled(
-                        content.to_string(),
-                        base_style
-                            .fg(theme.text.secondary)
-                            .add_modifier(Modifier::CROSSED_OUT),
-                    ));
-                    pos += 2 + end + 2;
-                    continue;
-                }
-            }
-        }
-
-        if let Some(rest) = remaining.strip_prefix('`') {
-            if let Some(end) = rest.find('`') {
-                spans.push(Span::styled(
-                    rest[..end].to_string(),
-                    base_style.fg(theme.markdown.code),
-                ));
-                pos += 1 + end + 1;
-                continue;
-            }
-        }
-
-        if let Some(rest) = remaining.strip_prefix('*') {
-            if let Some(end) = rest.find('*') {
-                let content = &rest[..end];
-                if is_flanking_pair(prev, content, &rest[end + 1..]) {
-                    spans.push(Span::styled(
-                        content.to_string(),
-                        base_style
-                            .fg(theme.markdown.emph)
-                            .add_modifier(Modifier::ITALIC),
-                    ));
-                    pos += 1 + end + 1;
-                    continue;
-                }
-            }
-        }
-
-        if let Some(rest) = remaining.strip_prefix('_') {
-            if let Some(end) = rest.find('_') {
-                let content = &rest[..end];
-                if is_flanking_pair(prev, content, &rest[end + 1..]) {
-                    spans.push(Span::styled(
-                        content.to_string(),
-                        base_style
-                            .fg(theme.markdown.emph)
-                            .add_modifier(Modifier::ITALIC),
-                    ));
-                    pos += 1 + end + 1;
-                    continue;
-                }
-            }
-        }
-
-        let next_marker = ["[", "http://", "https://", "**", "~~", "`", "*", "_"]
-            .into_iter()
-            .filter_map(|marker| remaining.find(marker))
-            .min()
-            .unwrap_or(remaining.len());
-        if next_marker == 0 {
-            let ch = remaining.chars().next().unwrap_or_abort();
-            spans.push(Span::styled(ch.to_string(), base_style.fg(base_color)));
-            pos += ch.len_utf8();
-            continue;
-        }
-        let plain = &remaining[..next_marker];
-        spans.push(Span::styled(plain.to_string(), base_style.fg(base_color)));
-        pos += next_marker;
-    }
-
-    spans
+    parse_inline_markdown(text, base_style, base_color, theme).spans
 }
 
 pub(super) fn markdown_heading_text(line: &str) -> Option<&str> {
     markdown_heading(line).map(|(_, text)| text)
+}
+
+const MAX_MATH_SOURCE_BYTES: usize = 4096;
+
+fn math_delimiter_end(text: &str, closing: &str) -> Option<usize> {
+    let mut escaped = false;
+    for (index, ch) in text.char_indices() {
+        if index > MAX_MATH_SOURCE_BYTES {
+            return None;
+        }
+        if !escaped && text[index..].starts_with(closing) {
+            return Some(index);
+        }
+        if escaped {
+            escaped = false;
+        } else if ch == '\\' {
+            escaped = true;
+        }
+    }
+    None
+}
+
+fn normalize_math_delimiters(text: &str) -> Cow<'_, str> {
+    if !text.contains("\\(") && !text.contains("\\[") && !text.contains("$$") {
+        return Cow::Borrowed(text);
+    }
+    // Code stays literal. Protect complete links too: destinations must never
+    // be rewritten as presentation math.
+    let protected = Parser::new_ext(text, Options::ENABLE_MATH)
+        .into_offset_iter()
+        .filter_map(|(event, range)| {
+            matches!(
+                event,
+                Event::Code(_)
+                    | Event::Start(Tag::CodeBlock(_) | Tag::Link { .. } | Tag::Image { .. })
+            )
+            .then_some(range)
+        })
+        .collect::<Vec<_>>();
+    let mut protected_index = 0;
+    let mut cursor = 0;
+    let mut result = String::with_capacity(text.len());
+    while cursor < text.len() {
+        while protected
+            .get(protected_index)
+            .is_some_and(|range| range.end <= cursor)
+        {
+            protected_index += 1;
+        }
+        if let Some(range) = protected
+            .get(protected_index)
+            .filter(|range| range.start == cursor)
+        {
+            result.push_str(&text[range.clone()]);
+            cursor = range.end;
+            continue;
+        }
+        let remaining = &text[cursor..];
+        if remaining.starts_with("\\\\") || remaining.starts_with("\\$") {
+            result.push_str(&remaining[..2]);
+            cursor += 2;
+            continue;
+        }
+        let delimiters = if remaining.starts_with("\\(") {
+            Some(("\\)", "$"))
+        } else if remaining.starts_with("\\[") {
+            Some(("\\]", "$$"))
+        } else if remaining.starts_with("$$") {
+            Some(("$$", "$$"))
+        } else {
+            None
+        };
+        if let Some((closing, canonical)) = delimiters {
+            if let Some(end) = math_delimiter_end(&remaining[2..], closing) {
+                let body = remaining[2..2 + end].trim();
+                let crosses_block = body.lines().any(|line| line.trim().is_empty())
+                    || body
+                        .lines()
+                        .skip(1)
+                        .any(|line| line.trim_start().starts_with(['>', '|']));
+                if !body.is_empty() && !crosses_block {
+                    result.push_str(canonical);
+                    result.push_str(&body.lines().map(str::trim).collect::<Vec<_>>().join(" "));
+                    result.push_str(canonical);
+                    cursor += 2 + end + closing.len();
+                    continue;
+                }
+            }
+        }
+        if let Some(ch) = remaining.chars().next() {
+            result.push(ch);
+            cursor += ch.len_utf8();
+        }
+    }
+    Cow::Owned(result)
+}
+
+/// Paint and selection share this projection; original transcript data remains
+/// unchanged for source views and source-oriented copy.
+pub(super) fn markdown_display_source(text: &str) -> String {
+    let source = normalize_math_delimiters(text);
+    let options = Options::ENABLE_TABLES
+        | Options::ENABLE_TASKLISTS
+        | Options::ENABLE_GFM
+        | Options::ENABLE_STRIKETHROUGH
+        | Options::ENABLE_MATH;
+    let mut replacements = Vec::new();
+    let mut quote_ranges = Vec::new();
+    let mut joined_line_starts = Vec::new();
+    for (event, range) in Parser::new_ext(&source, options).into_offset_iter() {
+        match event {
+            Event::SoftBreak => {
+                // Match Grok: explicit container/indented continuations stay
+                // on their own visual lines.
+                if !matches!(
+                    source.as_bytes().get(range.end),
+                    Some(b' ' | b'\t' | b'>' | b'|')
+                ) {
+                    joined_line_starts.push(range.end);
+                    replacements.push((range, " ".to_string()));
+                }
+            }
+            Event::HardBreak => replacements.push((range, "\n".to_string())),
+            Event::Start(Tag::BlockQuote(_)) => quote_ranges.push(range),
+            _ => {}
+        }
+    }
+    let mut offset = 0;
+    for line in source.split_inclusive('\n') {
+        let row = line.trim_end_matches(['\r', '\n']);
+        let trimmed = row.trim_start();
+        let (_, body) = markdown_quote_prefix(trimmed).unwrap_or((0, trimmed));
+        let body_start = offset + row.len() - body.len();
+        // Parser ranges retain inherited depth on lazy continuation lines.
+        let depth = quote_ranges
+            .iter()
+            .filter(|range| range.contains(&body_start))
+            .count();
+        if depth > 0 && !joined_line_starts.contains(&offset) {
+            let indent = &row[..row.len() - trimmed.len()];
+            replacements.push((
+                offset..body_start,
+                format!("{indent}{}", "> ".repeat(depth)),
+            ));
+        }
+        offset += line.len();
+    }
+    replacements.sort_by_key(|(range, _)| range.start);
+    let mut rendered = source.into_owned();
+    for (range, replacement) in replacements.into_iter().rev() {
+        rendered.replace_range(range, &replacement);
+    }
+    rendered
+}
+
+pub(super) fn markdown_quote_prefix(mut text: &str) -> Option<(usize, &str)> {
+    let mut depth = 0;
+    while let Some(body) = text.trim_start().strip_prefix('>') {
+        depth += 1;
+        text = body.strip_prefix(' ').unwrap_or(body);
+    }
+    (depth > 0).then_some((depth, text))
+}
+
+fn terminal_math(source: &str) -> Option<String> {
+    if source.len() > MAX_MATH_SOURCE_BYTES {
+        return None;
+    }
+    let mut remaining = source;
+    let rendered = math_sequence(&mut remaining, 0, false)?;
+    (!rendered.trim().is_empty()).then(|| rendered.trim().to_string())
+}
+
+fn math_sequence(source: &mut &str, depth: usize, grouped: bool) -> Option<String> {
+    if depth >= 32 {
+        return None;
+    }
+    let mut result = String::new();
+    while let Some(ch) = source.chars().next() {
+        match ch {
+            '}' => {
+                if !grouped {
+                    return None;
+                }
+                *source = &source[1..];
+                return Some(result);
+            }
+            '^' | '_' => {
+                *source = source[1..].trim_start();
+                let atom = math_atom(source, depth)?;
+                let (plain, script) = if ch == '^' {
+                    ("0123456789+-=()ni", "⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾ⁿⁱ")
+                } else {
+                    (
+                        "0123456789+-=()aehijklmnoprstuvx",
+                        "₀₁₂₃₄₅₆₇₈₉₊₋₌₍₎ₐₑₕᵢⱼₖₗₘₙₒₚᵣₛₜᵤᵥₓ",
+                    )
+                };
+                let mapped = atom
+                    .chars()
+                    .map(|letter| {
+                        plain
+                            .chars()
+                            .position(|candidate| candidate == letter)
+                            .and_then(|index| script.chars().nth(index))
+                    })
+                    .collect::<Option<String>>();
+                if let Some(mapped) = mapped.filter(|value| !value.is_empty()) {
+                    result.push_str(&mapped);
+                } else if atom.chars().count() > 1 {
+                    result.push_str(&format!("{ch}({atom})"));
+                } else {
+                    result.push(ch);
+                    result.push_str(&atom);
+                }
+            }
+            ch if ch.is_whitespace() => {
+                *source = &source[ch.len_utf8()..];
+                if !result.is_empty() && !result.ends_with(' ') {
+                    result.push(' ');
+                }
+            }
+            _ => result.push_str(&math_atom(source, depth)?),
+        }
+    }
+    (!grouped).then_some(result)
+}
+
+fn math_atom(source: &mut &str, depth: usize) -> Option<String> {
+    if depth >= 32 {
+        return None;
+    }
+    let ch = source.chars().next()?;
+    *source = &source[ch.len_utf8()..];
+    match ch {
+        '{' => math_sequence(source, depth + 1, true).map(|value| value.trim().to_string()),
+        '}' | '^' | '_' => None,
+        '-' => Some("−".to_string()),
+        '\'' => Some("′".to_string()),
+        '\\' => {
+            let remaining = *source;
+            let length = remaining
+                .bytes()
+                .take_while(u8::is_ascii_alphabetic)
+                .count();
+            let command = &remaining[..length];
+            *source = &remaining[length..];
+            match command {
+                "frac" | "dfrac" | "tfrac" => {
+                    *source = source.trim_start();
+                    let numerator = math_atom(source, depth + 1)?;
+                    *source = source.trim_start();
+                    let denominator = math_atom(source, depth + 1)?;
+                    if numerator.is_empty() || denominator.is_empty() {
+                        return None;
+                    }
+                    let fraction = match (numerator.as_str(), denominator.as_str()) {
+                        ("1", "2") => Some("½"),
+                        ("1", "3") => Some("⅓"),
+                        ("2", "3") => Some("⅔"),
+                        ("1", "4") => Some("¼"),
+                        ("3", "4") => Some("¾"),
+                        ("1", "5") => Some("⅕"),
+                        ("2", "5") => Some("⅖"),
+                        ("3", "5") => Some("⅗"),
+                        ("4", "5") => Some("⅘"),
+                        ("1", "6") => Some("⅙"),
+                        ("5", "6") => Some("⅚"),
+                        ("1", "8") => Some("⅛"),
+                        ("3", "8") => Some("⅜"),
+                        ("5", "8") => Some("⅝"),
+                        ("7", "8") => Some("⅞"),
+                        _ => None,
+                    };
+                    let parenthesize = |value: String| {
+                        if value.chars().count() > 1 {
+                            format!("({value})")
+                        } else {
+                            value
+                        }
+                    };
+                    Some(fraction.map_or_else(
+                        || format!("{}/{}", parenthesize(numerator), parenthesize(denominator)),
+                        str::to_string,
+                    ))
+                }
+                "sqrt" => {
+                    *source = source.trim_start();
+                    if source.starts_with('[') {
+                        return None;
+                    }
+                    let atom = math_atom(source, depth + 1)?;
+                    Some(if atom.chars().count() > 1 {
+                        format!("√({atom})")
+                    } else {
+                        format!("√{atom}")
+                    })
+                }
+                "" => {
+                    let escaped = source.chars().next()?;
+                    *source = &source[escaped.len_utf8()..];
+                    match escaped {
+                        '\\' => Some("; ".to_string()),
+                        ',' | ';' | ':' | ' ' => Some(" ".to_string()),
+                        '!' => Some(String::new()),
+                        '{' | '}' | '_' | '%' | '$' | '#' | '&' | '|' => Some(escaped.to_string()),
+                        _ => None,
+                    }
+                }
+                _ => Some(
+                    match command {
+                        "alpha" => "α",
+                        "beta" => "β",
+                        "gamma" => "γ",
+                        "delta" => "δ",
+                        "epsilon" => "ε",
+                        "theta" => "θ",
+                        "lambda" => "λ",
+                        "mu" => "μ",
+                        "pi" => "π",
+                        "rho" => "ρ",
+                        "sigma" => "σ",
+                        "tau" => "τ",
+                        "phi" => "φ",
+                        "chi" => "χ",
+                        "psi" => "ψ",
+                        "omega" => "ω",
+                        "Gamma" => "Γ",
+                        "Delta" => "Δ",
+                        "Theta" => "Θ",
+                        "Lambda" => "Λ",
+                        "Pi" => "Π",
+                        "Sigma" => "Σ",
+                        "Phi" => "Φ",
+                        "Psi" => "Ψ",
+                        "Omega" => "Ω",
+                        "le" | "leq" => "≤",
+                        "ge" | "geq" => "≥",
+                        "ne" | "neq" => "≠",
+                        "times" => "×",
+                        "cdot" => "·",
+                        "pm" => "±",
+                        "infty" => "∞",
+                        "sum" => "∑",
+                        "prod" => "∏",
+                        "int" => "∫",
+                        "partial" => "∂",
+                        "nabla" => "∇",
+                        "approx" => "≈",
+                        "to" | "rightarrow" => "→",
+                        "in" => "∈",
+                        "notin" => "∉",
+                        "forall" => "∀",
+                        "exists" => "∃",
+                        _ => return None,
+                    }
+                    .to_string(),
+                ),
+            }
+        }
+        ch if ch.is_control() => None,
+        ch => Some(ch.to_string()),
+    }
 }
 
 fn markdown_heading(line: &str) -> Option<(usize, &str)> {
@@ -373,7 +668,7 @@ pub(super) fn append_rich_text_block(
     theme: &Theme,
     width: u16,
 ) {
-    if !text.contains("```") {
+    if !text.contains("```") && !text.contains("~~~") {
         append_markdownish_text_block(lines, text, color, prefix, theme, width);
         return;
     }
@@ -441,7 +736,8 @@ pub(super) fn append_markdownish_text_block(
     width: u16,
 ) {
     let base_style = Style::default().fg(color);
-    let rows = text.lines().collect::<Vec<_>>();
+    let display_source = markdown_display_source(text);
+    let rows = display_source.lines().collect::<Vec<_>>();
     let mut index = 0;
     while let Some(line) = rows.get(index).copied() {
         if let Some((table_lines, consumed, _links)) =
@@ -522,16 +818,14 @@ fn append_markdownish_line(
         return;
     }
 
-    if let Some(text) = trimmed.strip_prefix("> ") {
+    if let Some((depth, text)) = markdown_quote_prefix(trimmed) {
         append_prefixed_wrapped_spans_line(
             lines,
-            &format!("{prefix}{indent}▍ "),
+            &format!("{prefix}{indent}{}", "│ ".repeat(depth)),
             Style::default().fg(theme.markdown.block_quote),
             parse_inline_markdown_spans(
                 text,
-                Style::default()
-                    .fg(theme.markdown.block_quote)
-                    .add_modifier(Modifier::ITALIC),
+                Style::default().fg(theme.markdown.block_quote),
                 theme.markdown.block_quote,
                 theme,
             ),
@@ -711,14 +1005,16 @@ mod tests {
     }
 
     #[test]
-    fn intraword_asterisks_not_emphasized() {
+    fn intraword_asterisks_follow_commonmark_emphasis() {
         let theme = Theme::default();
         let base = Style::default().fg(theme.text.primary);
         let spans = parse_inline_markdown_spans("foo*bar*baz", base, theme.text.primary, &theme);
-        for span in &spans {
-            assert_eq!(span.style.fg, Some(theme.text.primary));
-            assert!(!span.style.add_modifier.contains(Modifier::ITALIC));
-        }
+        let emphasized = spans
+            .iter()
+            .find(|span| span.content.as_ref() == "bar")
+            .expect("CommonMark emphasis body");
+        assert!(emphasized.style.add_modifier.contains(Modifier::ITALIC));
+        assert_eq!(emphasized.style.fg, Some(theme.markdown.emph));
     }
 
     #[test]
@@ -1045,9 +1341,9 @@ mod tests {
         assert!(
             spans.iter().any(|span| {
                 span.style.fg == Some(theme.markdown.block_quote)
-                    && span.style.add_modifier.contains(Modifier::ITALIC)
+                    && !span.style.add_modifier.contains(Modifier::ITALIC)
             }),
-            "blockquote should use theme.markdown.block_quote with ITALIC, got: {spans:?}"
+            "blockquote should use its theme role without implicit italic, got: {spans:?}"
         );
     }
 

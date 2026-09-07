@@ -1,3 +1,5 @@
+use pulldown_cmark::{CodeBlockKind, Event, Parser, Tag, TagEnd};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum ParsedTextBlock {
     Plain(String),
@@ -21,73 +23,78 @@ fn parse_fenced_text_blocks_inner(
     include_open_fence: bool,
 ) -> Option<Vec<ParsedTextBlock>> {
     let mut blocks = Vec::new();
-    let mut plain_lines = Vec::new();
-    let mut code_lines = Vec::new();
-    let mut raw_lines = Vec::new();
-    let mut language = None;
-    let mut in_code = false;
-
-    for line in text.lines().map(normalize_fenced_line) {
-        if !in_code {
-            if let Some(block_language) = opening_fence_language(line) {
-                if !plain_lines.is_empty() {
-                    blocks.push(ParsedTextBlock::Plain(plain_lines.join("\n")));
-                    plain_lines.clear();
-                }
-                in_code = true;
-                language = block_language.map(str::to_string);
-                raw_lines.push(line.to_string());
-                continue;
-            }
-            plain_lines.push(line.to_string());
+    let mut cursor = 0;
+    let mut events = Parser::new(text).into_offset_iter();
+    while let Some((event, range)) = events.next() {
+        let Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(info))) = event else {
             continue;
+        };
+        // The parser range starts at the marker, not its permitted indentation.
+        let start = text[..range.start].rfind('\n').map_or(0, |index| index + 1);
+        if cursor < start {
+            blocks.push(ParsedTextBlock::Plain(
+                text[cursor..start]
+                    .lines()
+                    .map(normalize_fenced_line)
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            ));
         }
-
-        raw_lines.push(line.to_string());
-        if is_closing_fence(line) {
-            blocks.push(ParsedTextBlock::Code {
-                language: language.take(),
-                body: code_lines.join("\n"),
-                raw: raw_lines.join("\n"),
-            });
-            code_lines.clear();
-            raw_lines.clear();
-            in_code = false;
-        } else {
-            code_lines.push(line.to_string());
+        let mut body = String::new();
+        let mut body_end = text[range.start..]
+            .find('\n')
+            .map_or(text.len(), |index| range.start + index + 1);
+        for (event, body_range) in events.by_ref() {
+            match event {
+                Event::Text(value) => {
+                    body.push_str(&value);
+                    body_end = body_range.end;
+                }
+                Event::End(TagEnd::CodeBlock) => break,
+                _ => {}
+            }
         }
-    }
-
-    if in_code {
-        if !include_open_fence {
+        // An EOF-synthesized end has no closing-marker bytes after the body.
+        // Retain the existing settled/open API contract while streaming exposes
+        // the structurally parsed open body.
+        if !include_open_fence && body_end >= range.end {
             return None;
         }
+        let mut block_end = range.end;
+        if body_end < range.end {
+            // Pulldown excludes closing-line whitespace from the block range.
+            // Consume that line, but leave subsequent blank lines as prose.
+            block_end += text[block_end..]
+                .bytes()
+                .take_while(|byte| matches!(*byte, b' ' | b'\t'))
+                .count();
+            if text[block_end..].starts_with("\r\n") {
+                block_end += 2;
+            } else if matches!(text.as_bytes().get(block_end), Some(b'\r' | b'\n')) {
+                block_end += 1;
+            }
+        }
         blocks.push(ParsedTextBlock::Code {
-            language,
-            body: code_lines.join("\n"),
-            raw: raw_lines.join("\n"),
+            language: info.split_whitespace().next().map(str::to_string),
+            body: body.strip_suffix('\n').unwrap_or(&body).to_string(),
+            raw: text[start..block_end]
+                .lines()
+                .map(normalize_fenced_line)
+                .collect::<Vec<_>>()
+                .join("\n"),
         });
+        cursor = block_end;
     }
-
-    if !plain_lines.is_empty() {
-        blocks.push(ParsedTextBlock::Plain(plain_lines.join("\n")));
+    if cursor < text.len() {
+        blocks.push(ParsedTextBlock::Plain(
+            text[cursor..]
+                .lines()
+                .map(normalize_fenced_line)
+                .collect::<Vec<_>>()
+                .join("\n"),
+        ));
     }
-
     Some(blocks)
-}
-
-fn opening_fence_language(line: &str) -> Option<Option<&str>> {
-    let trimmed = line.trim_start();
-    let suffix = trimmed.strip_prefix("```")?;
-    let language = suffix
-        .split_whitespace()
-        .next()
-        .filter(|value| !value.is_empty());
-    Some(language)
-}
-
-fn is_closing_fence(line: &str) -> bool {
-    line.trim_start().starts_with("```")
 }
 
 fn normalize_fenced_line(line: &str) -> &str {
@@ -159,5 +166,25 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn code_body_keeps_source_indentation_while_streaming_and_settled() {
+        let source = "```python\ndef f():\n    return 1\n```";
+        let expected = "def f():\n    return 1";
+
+        for blocks in [
+            parse_fenced_text_blocks(source).expect("closed fence should parse"),
+            parse_streaming_fenced_text_blocks(source),
+        ] {
+            assert_eq!(
+                blocks,
+                vec![ParsedTextBlock::Code {
+                    language: Some("python".to_string()),
+                    body: expected.to_string(),
+                    raw: source.to_string(),
+                }]
+            );
+        }
     }
 }
