@@ -18,8 +18,8 @@ use super::ui_fenced_text::{
 };
 use super::ui_lifecycle::LifecycleSelectionSurface;
 use super::ui_markdown::{
-    markdown_heading_text, markdown_list_prefix, markdown_rule, parse_inline_markdown,
-    ParsedInlineMarkdown,
+    markdown_display_source, markdown_heading_text, markdown_list_prefix, markdown_quote_prefix,
+    markdown_rule, parse_inline_markdown, ParsedInlineMarkdown,
 };
 use super::ui_markdown_table::{try_render_markdown_table_block, TableLinkRun};
 use super::ui_transcript_mermaid::is_mermaid_language;
@@ -451,7 +451,8 @@ pub(super) fn selection_rows_for_markdownish_text_block(
     width: u16,
 ) -> Vec<TranscriptSelectionRow> {
     let base_style = Style::default().fg(color);
-    let source_rows = text.lines().collect::<Vec<_>>();
+    let display_source = markdown_display_source(text);
+    let source_rows = display_source.lines().collect::<Vec<_>>();
     let mut rows = Vec::new();
     let mut index = 0;
 
@@ -496,8 +497,7 @@ pub(super) fn selection_rows_for_rich_text_block(
     width: u16,
     is_streaming: bool,
 ) -> Option<Vec<TranscriptSelectionRow>> {
-    let Some(blocks) = text
-        .contains("```")
+    let Some(blocks) = (text.contains("```") || text.contains("~~~"))
         .then(|| {
             if is_streaming {
                 Some(parse_streaming_fenced_text_blocks(text))
@@ -643,20 +643,19 @@ fn selection_rows_for_markdownish_line(
         );
     }
 
-    if let Some(text) = trimmed.strip_prefix("> ") {
+    if let Some((depth, text)) = markdown_quote_prefix(trimmed) {
+        let quote_prefix = format!("{prefix}{indent}{}", "│ ".repeat(depth));
         return selection_rows_for_prefixed_wrapped_inline(
-            &format!("{prefix}{indent}▍ "),
-            Style::default().fg(theme.text.secondary),
+            &quote_prefix,
+            Style::default().fg(theme.markdown.block_quote),
             parse_inline_markdown(
                 text,
-                Style::default()
-                    .fg(theme.text.secondary)
-                    .add_modifier(Modifier::ITALIC),
-                theme.text.secondary,
+                Style::default().fg(theme.markdown.block_quote),
+                theme.markdown.block_quote,
                 theme,
             ),
             width,
-            display_width(prefix),
+            display_width(&quote_prefix),
         );
     }
 
@@ -960,6 +959,10 @@ pub(crate) fn reset_transcript_selection_cache_metrics_for_test() {
 pub(crate) fn transcript_selection_cache_build_count_for_test() -> usize {
     TRANSCRIPT_SELECTION_CACHE_BUILD_COUNT.with(Cell::get)
 }
+
+#[cfg(test)]
+#[path = "ui_transcript_selection_grammar_tests.rs"]
+mod grammar_tests;
 
 #[cfg(test)]
 mod tests {
