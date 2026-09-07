@@ -56,6 +56,9 @@ pub struct ProviderBoundaryInput<'a> {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProviderBoundaryOutput {
+    /// Leading system messages inserted while lowering; source user indices shift by this amount.
+    #[serde(default)]
+    pub inserted_system_messages: usize,
     pub messages: Vec<CompletionMessage>,
     pub request: CompletionRequest,
 }
@@ -155,7 +158,8 @@ pub fn transform_context_for_provider(input: ProviderBoundaryInput<'_>) -> Provi
         }
         ProviderBoundaryContext::ProviderMessages { messages } => messages.to_vec(),
     };
-    if AgentModelRef::parse(&profile.model_ref) != model {
+    let inserted_system_messages = usize::from(AgentModelRef::parse(&profile.model_ref) != model);
+    if inserted_system_messages > 0 {
         let system_message_count = messages
             .iter()
             .take_while(|message| message.role == MessageRole::System)
@@ -189,7 +193,11 @@ pub fn transform_context_for_provider(input: ProviderBoundaryInput<'_>) -> Provi
         tool_choice,
     });
 
-    ProviderBoundaryOutput { messages, request }
+    ProviderBoundaryOutput {
+        inserted_system_messages,
+        messages,
+        request,
+    }
 }
 
 fn convert_projected_context_to_provider_messages(

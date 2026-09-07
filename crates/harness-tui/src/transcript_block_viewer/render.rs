@@ -2,8 +2,10 @@ use std::ops::Range;
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Modifier, Style};
-use ratatui::widgets::{Block, Borders, Paragraph, Widget, Wrap};
+use ratatui::style::{Modifier, Style};
+use ratatui::widgets::{Block, Borders, Paragraph, Widget};
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
 use crate::theme::Theme;
 
@@ -13,9 +15,11 @@ use super::ViewerMode;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RenderedLine {
     pub text: String,
+    pub styled: Option<ratatui::text::Line<'static>>,
     pub selected: bool,
     pub current_match: bool,
     pub match_range: Option<Range<usize>>,
+    pub selection_range: Option<Range<usize>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -24,48 +28,71 @@ pub struct ViewerRenderSurface {
     pub title: String,
     pub status: String,
     pub lines: Vec<RenderedLine>,
-    pub scroll_top: u16,
+    pub scroll_top: usize,
 }
 
 pub fn render_surface(state: &ViewerState, _area: Rect) -> ViewerRenderSurface {
-    let text = match (state.mode(), state.content().raw()) {
-        (ViewerMode::Raw, Some(raw)) => raw,
-        (ViewerMode::Wrapped, _) | (ViewerMode::Raw, None) => state.content().content(),
-    };
-    let current = state
-        .search()
-        .current_match()
-        .map(|item| item.byte_range.clone());
-    let mut offset = 0;
+    let current = state.search().current_match().map(|item| {
+        (
+            state.wrapped.point_for_byte(item.byte_range.start),
+            state
+                .wrapped
+                .point_for_byte(item.byte_range.end.saturating_sub(1)),
+        )
+    });
     let selection = state.selection().map(|selection| {
         (
             selection.anchor.row.min(selection.focus.row),
             selection.anchor.row.max(selection.focus.row),
         )
     });
-    let lines = text
-        .split('\n')
-        .enumerate()
-        .map(|(line_index, line)| {
-            let range = offset..offset + line.len();
-            let match_range = current.as_ref().and_then(|candidate| {
-                let start = candidate.start.max(range.start);
-                let end = candidate.end.min(range.end);
-                (start < end).then_some(start - range.start..end - range.start)
+    let lines = (0..state.wrapped.row_count())
+        .map(|line_index| {
+            let line = state.wrapped.row_text(line_index);
+            let match_range = current.as_ref().and_then(|(start, end)| {
+                (start.row..=end.row).contains(&line_index).then_some(
+                    if start.row == line_index {
+                        start.cell
+                    } else {
+                        0
+                    }..if end.row == line_index {
+                        end.cell + 1
+                    } else {
+                        unicode_width::UnicodeWidthStr::width(line.as_str())
+                    },
+                )
             });
             let current_match = match_range.is_some();
-            offset += line.len() + 1;
             RenderedLine {
-                text: line.to_owned(),
+                text: line,
+                styled: state.styled_lines.get(line_index).cloned(),
                 selected: selection.is_some_and(|(start, end)| (start..=end).contains(&line_index)),
                 current_match,
                 match_range,
+                selection_range: state.selection().and_then(|selection| {
+                    let (start, end) = selection.normalized();
+                    (start.row..=end.row).contains(&line_index).then_some(
+                        if line_index == start.row {
+                            start.cell
+                        } else {
+                            0
+                        }..if line_index == end.row {
+                            end.cell.saturating_add(1)
+                        } else {
+                            usize::MAX
+                        },
+                    )
+                }),
             }
         })
         .collect::<Vec<_>>();
     let query = state.search().query();
     let status = if query.is_empty() {
-        "search: idle".to_string()
+        if state.search_editing() {
+            "/".to_string()
+        } else {
+            "↑↓ scroll · / find · Shift+arrows select · Ctrl+C copy · r raw · Esc close".to_string()
+        }
     } else if state.search().no_result() {
         format!("search: {query} · no results")
     } else {
@@ -111,11 +138,14 @@ pub fn render_to_buffer(
         width: inner.width,
         height: body_height,
     };
-    let lines = surface.lines.iter().map(render_line).collect::<Vec<_>>();
-    Paragraph::new(lines)
-        .wrap(Wrap { trim: false })
-        .scroll((surface.scroll_top, 0))
-        .render(body, buffer);
+    let lines = surface
+        .lines
+        .iter()
+        .skip(surface.scroll_top)
+        .take(usize::from(body_height))
+        .map(|line| render_line(line, theme))
+        .collect::<Vec<_>>();
+    Paragraph::new(lines).render(body, buffer);
     let footer = Rect {
         x: inner.x,
         y: inner.y + body_height,
@@ -123,24 +153,41 @@ pub fn render_to_buffer(
         height: 1,
     };
     Paragraph::new(surface.status.clone())
-        .style(Style::default().fg(Color::DarkGray))
+        .style(Style::default().fg(theme.terminal_colors.muted))
         .render(footer, buffer);
 }
 
-fn render_line(line: &RenderedLine) -> ratatui::text::Line<'static> {
-    let base = if line.selected {
-        Style::default().bg(Color::Blue).fg(Color::White)
-    } else {
-        Style::default().fg(Color::White)
-    };
-    let highlight = if line.current_match {
-        base.bg(Color::Yellow)
-            .fg(Color::Black)
-            .add_modifier(Modifier::BOLD)
-    } else {
-        base
-    };
-    ratatui::text::Line::from(ratatui::text::Span::styled(line.text.clone(), highlight))
+fn render_line(line: &RenderedLine, theme: &Theme) -> ratatui::text::Line<'static> {
+    let mut column = 0;
+    let spans = line
+        .text
+        .graphemes(true)
+        .map(|grapheme| {
+            let start = column;
+            column += grapheme.width();
+            let mut style = source_style(line, start)
+                .unwrap_or_else(|| Style::default().fg(theme.terminal_colors.primary));
+            if line
+                .match_range
+                .as_ref()
+                .is_some_and(|range| range.start < column && range.end > start)
+            {
+                style = style
+                    .bg(theme.terminal_colors.prompt_accent)
+                    .fg(theme.surface.canvas)
+                    .add_modifier(Modifier::BOLD);
+            }
+            if line
+                .selection_range
+                .as_ref()
+                .is_some_and(|range| range.start < column && range.end > start)
+            {
+                style = style.bg(theme.text.accent).fg(theme.surface.canvas);
+            }
+            ratatui::text::Span::styled(grapheme.to_string(), style)
+        })
+        .collect::<Vec<_>>();
+    ratatui::text::Line::from(spans)
 }
 
 const fn mode_label(mode: ViewerMode) -> &'static str {
@@ -150,17 +197,23 @@ const fn mode_label(mode: ViewerMode) -> &'static str {
     }
 }
 
+fn source_style(line: &RenderedLine, column: usize) -> Option<Style> {
+    let mut end = 0;
+    line.styled.as_ref()?.spans.iter().find_map(|span| {
+        end += span.width();
+        (column < end).then_some(span.style)
+    })
+}
+
 #[expect(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
-    reason = "scroll offsets are clamped to the ratatui u16 viewport contract"
+    reason = "finite nonnegative row counts saturate on conversion to the platform index type"
 )]
-fn scroll_offset(value: f64) -> u16 {
-    if !value.is_finite() || value <= 0.0 {
-        0
-    } else if value >= f64::from(u16::MAX) {
-        u16::MAX
+pub(super) fn scroll_offset(value: f64) -> usize {
+    if value.is_finite() && value > 0.0 {
+        value.floor() as usize
     } else {
-        value.floor() as u16
+        0
     }
 }

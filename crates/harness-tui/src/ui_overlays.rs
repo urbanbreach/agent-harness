@@ -22,6 +22,10 @@ mod new_worktree_dialog;
 mod permission_modal;
 #[path = "ui_overlays/plan_view.rs"]
 mod plan_view;
+#[path = "ui_overlays/product_info.rs"]
+mod product_info;
+#[path = "ui_overlays/prompt_history.rs"]
+mod prompt_history;
 #[path = "ui_overlays/prompt_stash_dialog.rs"]
 mod prompt_stash_dialog;
 #[path = "ui_overlays/release_notes.rs"]
@@ -183,6 +187,8 @@ pub(super) fn render_overlays(
             OverlayKind::ThemeDialog => render_theme_dialog_overlay(frame, app, theme, plan.root),
             OverlayKind::PermissionModal => {}
             OverlayKind::ErrorDetails => render_error_details_overlay(frame, app, theme, plan.root),
+            OverlayKind::ProductInfo => product_info::render(frame, app, theme, plan.root),
+            OverlayKind::PromptHistory => prompt_history::render(frame, app, theme, plan.root),
             OverlayKind::PromptStashList => {
                 render_prompt_stash_list_overlay(frame, app, theme, plan.root)
             }
@@ -213,8 +219,6 @@ fn render_subagent_actions_overlay(frame: &mut Frame, app: &AppState, theme: &Th
     if app.subagent_actions_session_id.is_none() {
         return;
     }
-
-    render_overlay_dim_backdrop(frame, root);
 
     let width = 42.min(root.width.saturating_sub(4));
     let height = 7.min(root.height.saturating_sub(4));
@@ -558,48 +562,25 @@ fn render_slash_commands_list(frame: &mut Frame, app: &AppState, theme: &Theme, 
         return;
     }
 
-    let visible_rows = usize::from(area.height);
-    let selected = app
-        .slash_selected
-        .min(app.slash_filtered.len().saturating_sub(1));
-    let scroll = selected.saturating_sub(visible_rows.saturating_sub(1));
-    let command_column_width = app.slash_command_column_width();
-    for (row, command) in app
-        .slash_filtered
-        .iter()
-        .enumerate()
-        .skip(scroll)
-        .take(visible_rows)
-    {
-        let row_y = area
-            .y
-            .saturating_add(u16::try_from(row - scroll).unwrap_or(u16::MAX));
-        let row_area = Rect::new(area.x, row_y, area.width, 1);
-        let is_selected = row == selected;
-        frame.render_widget(
-            Block::default().style(ui_chrome::slash_command_row_style(theme, is_selected)),
-            row_area,
-        );
-
+    let command_column_width = app.slash_completion_column_width(area.width);
+    for (row, row_area) in app.slash_completion_viewport(area) {
+        let is_selected = row.index == app.slash_selected;
+        let mut style = ui_chrome::slash_command_row_style(theme, is_selected);
+        if app.slash_hovered == Some(row.index) && !is_selected {
+            style = style.bg(theme.surface.shell);
+        }
+        frame.render_widget(Block::default().style(style), row_area);
         frame.render_widget(
             Paragraph::new(slash_command_row(
-                command,
-                app.slash_argument_required(command).map_or_else(
-                    || crate::keybindings::slash_command_description(command),
-                    |required| {
-                        if required {
-                            "argument required · Enter to run"
-                        } else {
-                            "argument optional · Enter to run"
-                        }
-                    },
-                ),
+                &row.label,
+                &row.description,
                 app.slash_match_query(),
                 is_selected,
                 theme,
                 row_area.width,
                 command_column_width,
-            )),
+            ))
+            .style(style),
             row_area,
         );
     }
@@ -627,20 +608,19 @@ fn slash_command_row(
         row_style.fg(theme.text.secondary)
     };
 
-    let label = slash_command_display(command);
+    let label = command.to_string();
     let side_padding = usize::from(row_width > 0);
     let available_width = row_width.saturating_sub(side_padding.saturating_mul(2));
-    let label_width = label.chars().count();
-    let label_column_width = command_column_width.max(label_width).min(available_width);
+    let label_column_width = command_column_width.min(available_width);
     let label = truncate_plain_text(&label, label_column_width);
-    let label_used = label.chars().count();
+    let label_used = unicode_width::UnicodeWidthStr::width(label.as_str());
     let label_padding = label_column_width.saturating_sub(label_used);
     let description_width = available_width.saturating_sub(label_column_width);
     let description = truncate_plain_text(description, description_width);
     let consumed = side_padding
         .saturating_add(label_used)
         .saturating_add(label_padding)
-        .saturating_add(description.chars().count());
+        .saturating_add(unicode_width::UnicodeWidthStr::width(description.as_str()));
     let trailing = row_width.saturating_sub(consumed);
 
     let mut spans = Vec::new();
@@ -689,10 +669,6 @@ fn highlight_slash_label(label: &str, query: &str, label_style: Style) -> Vec<Sp
             )
         })
         .collect()
-}
-
-fn slash_command_display(command: &str) -> String {
-    format!("/{command}")
 }
 
 fn render_command_palette_surface(frame: &mut Frame, theme: &Theme, overlay: Rect) -> Option<Rect> {
@@ -1253,69 +1229,10 @@ fn command_palette_section_row(
     Line::from(spans)
 }
 
-fn render_overlay_dim_backdrop(frame: &mut Frame, area: Rect) {
-    if area.width == 0 || area.height == 0 {
-        return;
-    }
-
-    let buffer = frame.buffer_mut();
-    let max_x = area.x.saturating_add(area.width);
-    let max_y = area.y.saturating_add(area.height);
-    for y in area.y..max_y {
-        for x in area.x..max_x {
-            let cell = &mut buffer[(x, y)];
-            cell.set_fg(dim_overlay_color(cell.fg));
-            cell.set_bg(dim_overlay_color(cell.bg));
-        }
-    }
-}
-
-fn dim_overlay_color(color: Color) -> Color {
-    let Some((red, green, blue)) = color_rgb(color) else {
-        return color;
-    };
-    Color::Rgb(
-        scrim_channel(red),
-        scrim_channel(green),
-        scrim_channel(blue),
-    )
-}
-
-fn scrim_channel(channel: u8) -> u8 {
-    let channel = u16::from(channel);
-    u8::try_from(channel.saturating_mul(105) / 255).unwrap_or_default()
-}
-
-fn color_rgb(color: Color) -> Option<(u8, u8, u8)> {
-    match color {
-        Color::Black => Some((0, 0, 0)),
-        Color::Red => Some((128, 0, 0)),
-        Color::Green => Some((0, 128, 0)),
-        Color::Yellow => Some((128, 128, 0)),
-        Color::Blue => Some((0, 0, 128)),
-        Color::Magenta => Some((128, 0, 128)),
-        Color::Cyan => Some((0, 128, 128)),
-        Color::Gray => Some((192, 192, 192)),
-        Color::DarkGray => Some((128, 128, 128)),
-        Color::LightRed => Some((255, 0, 0)),
-        Color::LightGreen => Some((0, 255, 0)),
-        Color::LightYellow => Some((255, 255, 0)),
-        Color::LightBlue => Some((0, 0, 255)),
-        Color::LightMagenta => Some((255, 0, 255)),
-        Color::LightCyan => Some((0, 255, 255)),
-        Color::White => Some((255, 255, 255)),
-        Color::Rgb(red, green, blue) => Some((red, green, blue)),
-        Color::Indexed(index) => Some((index, index, index)),
-        Color::Reset => None,
-    }
-}
-
 fn render_error_details_overlay(frame: &mut Frame, app: &AppState, theme: &Theme, root: Rect) {
     if root.width == 0 || root.height == 0 {
         return;
     }
-
-    render_overlay_dim_backdrop(frame, root);
 
     let layout = modal_interaction::error_details_layout(app, root);
     let overlay = layout.popup;

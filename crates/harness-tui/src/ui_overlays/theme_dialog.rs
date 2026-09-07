@@ -10,7 +10,6 @@ pub(super) fn render_theme_dialog_overlay(
         return;
     };
 
-    render_overlay_dim_backdrop(frame, root);
     if !super::paint_modal_panel(
         frame,
         app,

@@ -152,6 +152,10 @@ fn write_root_object(
 ) -> Result<(), SettingWriteError> {
     let body = serde_json::to_vec_pretty(&serde_json::Value::Object(root.clone()))
         .map_err(|err| SettingWriteError::Parse(err.to_string()))?;
+    let raw =
+        std::str::from_utf8(&body).map_err(|err| SettingWriteError::Parse(err.to_string()))?;
+    super::loader::validate_settings_document(raw, path)
+        .map_err(|err| SettingWriteError::Parse(err.to_string()))?;
     let temp_path = path.with_extension("json.tmp");
     fs::write(&temp_path, &body).map_err(|source| SettingWriteError::WriteFile {
         path: temp_path.display().to_string(),
@@ -376,4 +380,83 @@ pub fn reset_project_setting_to_default(
     setting_id: &str,
 ) -> Result<String, SettingWriteError> {
     Ok(reset_bool(path, bool_setting(setting_id)?)?.to_string())
+}
+
+/// Scalar editor contracts. Other registry entries remain read-only in this editor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingEditorKind {
+    Integer,
+    String,
+    Choice(&'static [&'static str]),
+}
+
+pub fn setting_editor_kind(id: &str) -> Option<SettingEditorKind> {
+    match id {
+        "runtime.compaction.reserve_tokens"
+        | "runtime.compaction.keep_recent_tokens"
+        | "runtime.compaction.fallback_input_tokens" => Some(SettingEditorKind::Integer),
+        "runtime.session_dir" => Some(SettingEditorKind::String),
+        "permission.bash" => Some(SettingEditorKind::Choice(&["ask", "allow", "deny"])),
+        _ => None,
+    }
+}
+
+/// Read a supported public scalar, retaining explicit unknown values.
+pub fn read_project_setting_value(
+    path: &Path,
+    id: &str,
+) -> Result<Option<String>, SettingWriteError> {
+    guard_writable(id)?;
+    let root = serde_json::Value::Object(parse_root_object(path)?);
+    let pointer = format!("/{}", id.replace('.', "/"));
+    Ok(root.pointer(&pointer).and_then(|value| match value {
+        serde_json::Value::String(value) => Some(value.clone()),
+        serde_json::Value::Number(value) => Some(value.to_string()),
+        _ => None,
+    }))
+}
+
+/// Validate and atomically commit a supported scalar. Invalid input never replaces the file.
+pub fn write_project_setting_value(
+    path: &Path,
+    id: &str,
+    input: &str,
+) -> Result<String, SettingWriteError> {
+    guard_writable(id)?;
+    let invalid = || SettingWriteError::Parse(format!("invalid value for `{id}`"));
+    let value = match setting_editor_kind(id)
+        .ok_or_else(|| SettingWriteError::UnsupportedWrite(id.to_string()))?
+    {
+        SettingEditorKind::Integer => {
+            let number = input.parse::<u32>().map_err(|_| invalid())?;
+            if id == "runtime.compaction.fallback_input_tokens" && number == 0 {
+                return Err(invalid());
+            }
+            serde_json::Value::from(number)
+        }
+        SettingEditorKind::String => {
+            if input.trim().is_empty() || input.chars().any(char::is_control) {
+                return Err(invalid());
+            }
+            serde_json::Value::String(input.to_string())
+        }
+        SettingEditorKind::Choice(choices) => {
+            if !choices.contains(&input) {
+                return Err(invalid());
+            }
+            serde_json::Value::String(input.to_string())
+        }
+    };
+    let mut root = parse_root_object(path)?;
+    let mut object = &mut root;
+    let mut parts = id.split('.').peekable();
+    while let Some(part) = parts.next() {
+        if parts.peek().is_none() {
+            object.insert(part.to_string(), value.clone());
+        } else {
+            object = ensure_object_mut(object, part)?;
+        }
+    }
+    write_root_object(path, &root)?;
+    Ok(input.to_string())
 }

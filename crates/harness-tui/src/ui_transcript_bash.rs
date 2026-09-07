@@ -9,7 +9,7 @@ use ratatui::{
 use crate::app::{ToolCallDisplayStatus, ToolCallEntry};
 use crate::text::{
     collapse_inline_whitespace, has_trimmed_content, replace_control_chars_except_tabs,
-    strip_ansi_escapes, trimmed_json_string_field,
+    trimmed_json_string_field,
 };
 use crate::theme::Theme;
 
@@ -148,23 +148,8 @@ fn home_collapsed_path_display(path: &Path) -> String {
 }
 
 pub(super) fn shell_tool_output(tool_call: &ToolCallEntry) -> Option<String> {
-    let structured = shell_tool_structured_output(tool_call.output_json.as_ref());
-    if tool_call.status == ToolCallDisplayStatus::Failed {
-        return structured.or_else(|| {
-            tool_call
-                .output_summary
-                .as_deref()
-                .map(strip_ansi_escapes)
-                .map(|output| output.trim().to_string())
-        });
-    }
-    structured.or_else(|| {
-        tool_call
-            .output_summary
-            .as_deref()
-            .map(strip_ansi_escapes)
-            .map(|output| output.trim().to_string())
-    })
+    shell_tool_structured_output(tool_call.output_json.as_ref())
+        .or_else(|| tool_call.output_summary.clone())
 }
 
 fn shell_tool_structured_output(output_json: Option<&serde_json::Value>) -> Option<String> {
@@ -181,8 +166,7 @@ fn shell_tool_structured_output(output_json: Option<&serde_json::Value>) -> Opti
         (_, Some(stderr)) => stderr.to_string(),
         _ => return None,
     };
-    let stripped = strip_ansi_escapes(&output);
-    Some(stripped.trim().to_string())
+    Some(output)
 }
 
 fn harness_bash_card_lines(
@@ -232,17 +216,20 @@ fn harness_bash_card_lines(
         );
     }
 
-    let output = super::ui_tool_output::safe_tool_text(output);
-    let output = output.trim();
+    let output = output.trim_end_matches('\n');
+    let content_width = panel_width.saturating_sub(body_padding_left).max(1);
     let mut output_rows = Vec::new();
-    append_harness_bash_rows(
-        &mut output_rows,
-        output,
-        harness_bash_output_style(tone, theme),
-        panel_width,
-        body_padding_left,
-        surface,
-    );
+    for line in
+        super::ui_terminal_output::render(output, harness_bash_output_style(tone, theme), theme)
+    {
+        for spans in
+            super::ui_transcript_surface::wrap_preformatted_spans(line.spans, content_width)
+        {
+            let mut row = vec![Span::raw(" ".repeat(body_padding_left))];
+            row.extend(spans);
+            output_rows.push(Line::from(row).style(Style::default().bg(surface)));
+        }
+    }
     let (output_rows, expand_hint) =
         super::ui_tool_output::measured_output_preview(output_rows, (2, 3), expanded);
     if !output.is_empty() {

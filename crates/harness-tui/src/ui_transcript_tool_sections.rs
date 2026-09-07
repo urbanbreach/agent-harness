@@ -71,7 +71,19 @@ fn read_output_block(
     let content = display
         .and_then(|value| value.get("text"))
         .and_then(serde_json::Value::as_str);
-    let text = content.or(tool_call.output_summary.as_deref())?;
+    let text = content
+        .or_else(|| {
+            display
+                .and_then(|value| value.get("preview"))
+                .and_then(serde_json::Value::as_str)
+        })
+        .or(tool_call.output_summary.as_deref())?;
+    if text.is_empty() {
+        return Some(TranscriptToolCallDetailBlock::Message {
+            text: "(empty file)".to_string(),
+            tone: TranscriptToolCallDetailTone::Secondary,
+        });
+    }
     let start_line = content
         .and_then(|_| display.and_then(|value| value.get("lineStart")))
         .and_then(serde_json::Value::as_u64);
@@ -164,7 +176,8 @@ pub(super) fn build_transcript_tool_call_section(
                 let cmd = shell_tool_command(tool_call).unwrap_or_else(|| "Shell".to_string());
                 let description = shell_tool_title_description(tool_call, session_path);
                 let title = format!("Run {}", description.as_deref().unwrap_or(&cmd));
-                let shell_output = shell_tool_output(tool_call);
+                let shell_output =
+                    shell_tool_output(tool_call).or_else(|| expanded.then(String::new));
                 let has_output = shell_output.is_some();
                 if let Some(output) = shell_output {
                     push_bash_panel_block(
@@ -553,6 +566,7 @@ pub(super) fn build_transcript_tool_call_section(
                 .map(str::to_string)
         });
 
+    attach_recorded_diff_sources(&mut detail_blocks, tool_call, app);
     set_diff_highlight_phase(
         &mut detail_blocks,
         tool_call.status == ToolCallDisplayStatus::Succeeded,
@@ -570,6 +584,7 @@ pub(super) fn build_transcript_tool_call_section(
         edit_stats = stats.filter(|_| !expanded);
     }
 
+    replace_recorded_output(&mut detail_blocks, tool_call, generic_output_visible);
     if detail_blocks.is_empty()
         && uses_generic_output_visibility
         && if tool_call.status == ToolCallDisplayStatus::Failed {
@@ -599,7 +614,10 @@ pub(super) fn build_transcript_tool_call_section(
         );
     }
 
-    if !matches!(display_tool_id, "user.question" | "question") {
+    if !matches!(
+        display_tool_id,
+        "user.question" | "question" | "agent.spawn" | "task"
+    ) {
         push_failed_tool_error_block(&mut detail_blocks, tool_call);
     }
     push_truncated_output_artifact_block(&mut detail_blocks, tool_call);
@@ -710,7 +728,20 @@ fn read_tool_row_header(
     app: &AppState,
     path: Option<&str>,
 ) -> (String, Option<&'static str>) {
-    let title = "Read".to_string();
+    let mime = tool_call
+        .output_json
+        .as_ref()
+        .and_then(|value| value.pointer("/attachments/0/mime"))
+        .and_then(serde_json::Value::as_str);
+    let title = match mime {
+        Some("application/pdf") => "Read PDF",
+        Some(mime) if mime.starts_with("image/") => "Read image",
+        _ if path.is_some_and(|path| path.ends_with("/SKILL.md") && path.contains("/skills/")) => {
+            "Skill"
+        }
+        _ => "Read",
+    }
+    .to_string();
     let icon = match tool_call.status {
         ToolCallDisplayStatus::Running => glyph_routed_streaming_spinner_frame(
             app.theme(),
@@ -882,7 +913,7 @@ fn push_tool_call_diff_blocks(
     for (diff_rel_path, fallback_path) in diff_artifacts {
         rendered |= push_structured_diff_artifact_block(
             detail_blocks,
-            session_path,
+            app,
             &diff_rel_path,
             fallback_path.as_deref(),
             force_stacked,
@@ -894,6 +925,7 @@ fn push_tool_call_diff_blocks(
     if !rendered {
         if let Some((diff_content, fallback_path)) = tool_call_inline_diff_block(tool_call) {
             detail_blocks.push(TranscriptToolCallDetailBlock::StructuredDiff {
+                before_source: None,
                 diff_content,
                 fallback_path,
                 force_stacked,
@@ -941,7 +973,7 @@ fn push_apply_patch_file_sections(
     detail_blocks: &mut Vec<TranscriptToolCallDetailBlock>,
     tool_call: &crate::app::ToolCallEntry,
     app: &AppState,
-    session_path: &Path,
+    _session_path: &Path,
     stacked_diffs: bool,
     file_entries: &[ApplyPatchFileRenderEntry],
 ) -> bool {
@@ -954,7 +986,7 @@ fn push_apply_patch_file_sections(
         if let Some(diff_rel_path) = entry.diff_rel_path.as_deref() {
             let _ = push_structured_diff_artifact_block(
                 &mut file_detail_blocks,
-                session_path,
+                app,
                 diff_rel_path,
                 Some(&entry.file_path),
                 stacked_diffs,
@@ -997,17 +1029,18 @@ fn push_apply_patch_file_sections(
 
 fn push_structured_diff_artifact_block(
     detail_blocks: &mut Vec<TranscriptToolCallDetailBlock>,
-    session_path: &Path,
+    app: &AppState,
     diff_rel_path: &str,
     fallback_path: Option<&str>,
     force_stacked: bool,
     plain_numbered: bool,
     show_file_header: bool,
 ) -> bool {
-    let Ok(diff_content) = std::fs::read_to_string(session_path.join(diff_rel_path)) else {
+    let Some(diff_content) = app.recorded_artifacts.get(diff_rel_path).cloned() else {
         return false;
     };
     detail_blocks.push(TranscriptToolCallDetailBlock::StructuredDiff {
+        before_source: None,
         diff_content,
         fallback_path: fallback_path.map(str::to_string),
         force_stacked,
@@ -1060,20 +1093,27 @@ pub(super) fn build_agent_spawn_tool_row(
         && task_row.is_some_and(|row| !row.state.is_terminal());
     let active_task_row =
         tool_call.status == ToolCallDisplayStatus::Running || background_child_running;
-    if matches!(
-        tool_call.status,
-        ToolCallDisplayStatus::Succeeded | ToolCallDisplayStatus::Running
-    ) {
-        if active_task_row {
-            push_running_subagent_detail(task_row, detail_blocks);
-        } else if tool_call.status == ToolCallDisplayStatus::Succeeded {
-            if let Some(row) = task_row {
-                push_completed_subagent_detail(row, detail_blocks);
-            } else if let Some(result) = task_result_markdown(tool_call) {
-                detail_blocks.push(TranscriptToolCallDetailBlock::Markdown { text: result });
-            }
-        }
-    }
+    let lifecycle = task_row
+        .map(|row| match row.state {
+            crate::app::OrchestrationTaskState::Completed => "completed",
+            crate::app::OrchestrationTaskState::Cancelled => "cancelled",
+            crate::app::OrchestrationTaskState::Failed => "failed",
+            crate::app::OrchestrationTaskState::TimedOut => "timed out",
+            crate::app::OrchestrationTaskState::LateResult => "late result",
+            crate::app::OrchestrationTaskState::Stale => "stale",
+            crate::app::OrchestrationTaskState::Queued => "queued",
+            crate::app::OrchestrationTaskState::Running => "running",
+        })
+        .unwrap_or(match tool_call.status {
+            ToolCallDisplayStatus::Succeeded if active_task_row => "running",
+            ToolCallDisplayStatus::Succeeded => "completed",
+            ToolCallDisplayStatus::Failed => "failed",
+            ToolCallDisplayStatus::Running => "running",
+            ToolCallDisplayStatus::PendingPermission => "waiting",
+            ToolCallDisplayStatus::Queued => "queued",
+        });
+    let title = format!("{title} · {lifecycle}");
+    detail_blocks.clear();
     let theme = app.theme();
     let icon = match tool_call.status {
         ToolCallDisplayStatus::Failed => Some(theme.live_shell.glyphs.failed),
@@ -1252,7 +1292,9 @@ fn push_bash_panel_block(
 ) {
     detail_blocks.push(TranscriptToolCallDetailBlock::BashPanel {
         command: command.to_string(),
-        output: super::super::ui_tool_output::safe_tool_text(output),
+        // The terminal-cell interpreter consumes controls and redacts the final
+        // text before paint. Stripping here would destroy SGR and CR overwrite.
+        output: output.to_string(),
         description,
         expand_hint: None,
         tone,
@@ -1280,6 +1322,65 @@ fn tool_entry_count(tool_call: &crate::app::ToolCallEntry) -> Option<u64> {
             .count();
         (lines > 0).then_some(lines as u64)
     })
+}
+
+fn attach_recorded_diff_sources(
+    blocks: &mut [TranscriptToolCallDetailBlock],
+    tool: &crate::app::ToolCallEntry,
+    app: &AppState,
+) {
+    for block in blocks {
+        match block {
+            TranscriptToolCallDetailBlock::StructuredDiff {
+                before_source,
+                fallback_path,
+                ..
+            } => {
+                let Some(value) = tool.output_json.as_ref() else {
+                    continue;
+                };
+                let object = value
+                    .get("edits")
+                    .and_then(serde_json::Value::as_array)
+                    .and_then(|edits| {
+                        edits.iter().find(|edit| {
+                            edit.get("path").and_then(serde_json::Value::as_str)
+                                == fallback_path.as_deref()
+                        })
+                    })
+                    .unwrap_or(value);
+                *before_source = object
+                    .get("before_rel_path")
+                    .and_then(serde_json::Value::as_str)
+                    .and_then(|path| app.recorded_artifacts.get(path))
+                    .cloned()
+                    .or_else(|| {
+                        object
+                            .get("before_text")
+                            .and_then(serde_json::Value::as_str)
+                            .map(str::to_string)
+                    });
+            }
+            TranscriptToolCallDetailBlock::FileSection(file) => {
+                attach_recorded_diff_sources(&mut file.detail_blocks, tool, app)
+            }
+            _ => {}
+        }
+    }
+}
+
+fn replace_recorded_output(
+    blocks: &mut Vec<TranscriptToolCallDetailBlock>,
+    tool: &crate::app::ToolCallEntry,
+    visible: bool,
+) {
+    if !visible {
+        return;
+    }
+    if let Some(output) = super::super::ui_recorded_tool_output::project(tool) {
+        blocks.clear();
+        blocks.push(TranscriptToolCallDetailBlock::Recorded(output));
+    }
 }
 
 #[cfg(test)]

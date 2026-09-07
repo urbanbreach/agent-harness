@@ -15,9 +15,7 @@ use super::super::ui_chrome::{
 use super::ui_diff_model::{
     DiffCell, DiffSegmentKind, StructuredDiffDisplayRow, StructuredDiffFile, StructuredDiffModel,
 };
-use super::ui_diff_syntax::{
-    highlight_diff_line_chunks, styled_chunks_to_spans, wrap_styled_chunks, StyledTextChunk,
-};
+use super::ui_diff_syntax::{styled_chunks_to_spans, wrap_styled_chunks, StyledTextChunk};
 
 #[expect(
     clippy::too_many_arguments,
@@ -33,6 +31,7 @@ pub(super) fn render_structured_diff_model(
     show_file_header: bool,
     show_hunk_header: bool,
     theme: &Theme,
+    before_source: Option<&str>,
 ) -> (Vec<Line<'static>>, Vec<usize>) {
     let prefix_width = display_width(prefix);
     let content_width = usize::from(width).saturating_sub(prefix_width).max(1);
@@ -44,14 +43,11 @@ pub(super) fn render_structured_diff_model(
             lines.push(Line::from(""));
         }
 
+        let highlights = highlight_syntax
+            .then(|| super::ui_diff_syntax::recorded_diff_highlights(file, before_source, theme));
         let mut line_number_width = 1;
 
         for (row_index, row) in file.rows.iter().enumerate() {
-            let syntax_path = file
-                .after_path
-                .as_deref()
-                .or(file.before_path.as_deref())
-                .or(Some(file.display_path.as_str()));
             match row {
                 StructuredDiffDisplayRow::FileHeader => {
                     if show_file_header {
@@ -84,7 +80,12 @@ pub(super) fn render_structured_diff_model(
                         text,
                         content_width,
                         line_number_width,
-                        syntax_path,
+                        highlights.as_ref().and_then(|highlight| {
+                            after_line
+                                .or(*before_line)
+                                .and_then(|line| line.checked_sub(1))
+                                .and_then(|line| highlight.after.get(line))
+                        }),
                         highlight_syntax,
                         theme,
                     ));
@@ -96,7 +97,9 @@ pub(super) fn render_structured_diff_model(
                             before,
                             content_width,
                             line_number_width,
-                            syntax_path,
+                            highlights
+                                .as_ref()
+                                .and_then(|highlight| highlight.before_line(before.line_number)),
                             highlight_syntax,
                             plain_numbered,
                             theme,
@@ -108,7 +111,9 @@ pub(super) fn render_structured_diff_model(
                             after,
                             content_width,
                             line_number_width,
-                            syntax_path,
+                            highlights
+                                .as_ref()
+                                .and_then(|highlight| highlight.after_line(after.line_number)),
                             highlight_syntax,
                             plain_numbered,
                             theme,
@@ -167,13 +172,26 @@ fn render_unified_context_lines(
     text: &str,
     width: usize,
     line_number_width: usize,
-    syntax_path: Option<&str>,
+    syntax_line: Option<&Line<'static>>,
     highlight_syntax: bool,
     theme: &Theme,
 ) -> Vec<Line<'static>> {
     let text_width = width.saturating_sub(line_number_width + 2).max(1);
     let chunks = highlight_syntax
-        .then(|| highlight_diff_line_chunks(syntax_path, text, None, theme.color_level()))
+        .then(|| {
+            syntax_line.map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| StyledTextChunk {
+                        text: span.content.to_string(),
+                        style: Style {
+                            bg: None,
+                            ..span.style
+                        },
+                    })
+                    .collect::<Vec<_>>()
+            })
+        })
         .flatten()
         .unwrap_or_else(|| {
             vec![StyledTextChunk {
@@ -212,7 +230,7 @@ fn render_unified_diff_cell_lines(
     cell: &DiffCell,
     width: usize,
     line_number_width: usize,
-    syntax_path: Option<&str>,
+    syntax_line: Option<&Line<'static>>,
     highlight_syntax: bool,
     plain_numbered: bool,
     theme: &Theme,
@@ -236,12 +254,15 @@ fn render_unified_diff_cell_lines(
     let show_marker = !diff_semantic_bands_visible(theme);
     let chunks = highlight_syntax
         .then(|| {
-            highlight_diff_line_chunks(
-                syntax_path,
-                &cell.text,
-                Some(palette.content_bg),
-                theme.color_level(),
-            )
+            syntax_line.map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| StyledTextChunk {
+                        text: span.content.to_string(),
+                        style: span.style.bg(palette.content_bg),
+                    })
+                    .collect::<Vec<_>>()
+            })
         })
         .flatten()
         .unwrap_or_else(|| {

@@ -327,7 +327,7 @@ pub(super) fn context_group_disclosure_preserves_detached_anchor() {
         ));
     }
     let body = (1..=80)
-        .map(|line| format!("stable transcript line {line}"))
+        .map(|line| format!("stable transcript line {line}  "))
         .collect::<Vec<_>>()
         .join("\n");
     app.ingest_event(envelope(

@@ -750,6 +750,20 @@ pub(super) fn append_tool_call_detail_blocks(
     for detail_block in &tool_call.detail_blocks {
         let start = render.lines.len();
         match detail_block {
+            TranscriptToolCallDetailBlock::Recorded(output) => {
+                let content_width = transcript_surface_content_width(width, false)
+                    .saturating_sub(4)
+                    .max(1);
+                let rows = output.lines(theme, content_width, tool_call.expanded);
+                append_prebuilt_surface_lines(
+                    &mut render.lines,
+                    TRANSCRIPT_OPCODE_EDIT_INDENT,
+                    base_surface,
+                    rows,
+                    transcript_surface_content_width(width, false),
+                );
+                append_noninteractive_rows(&render.lines, &mut render.interaction_rows, start);
+            }
             TranscriptToolCallDetailBlock::ReadOutput { text, start_line } => {
                 append_read_output(
                     render,
@@ -819,6 +833,7 @@ pub(super) fn append_tool_call_detail_blocks(
                 append_noninteractive_rows(&render.lines, &mut render.interaction_rows, start);
             }
             TranscriptToolCallDetailBlock::StructuredDiff {
+                before_source,
                 diff_content,
                 fallback_path,
                 force_stacked,
@@ -828,6 +843,7 @@ pub(super) fn append_tool_call_detail_blocks(
             } => {
                 append_tool_call_diff_block(
                     render,
+                    before_source.as_deref(),
                     diff_content,
                     fallback_path.as_deref(),
                     *force_stacked,
@@ -887,14 +903,18 @@ fn append_read_output(
         })
         .max(1);
     let mut rows = Vec::new();
-    for (index, text) in text.lines().enumerate() {
-        let wrapped = wrap_surface_spans(
-            vec![Span::styled(
-                text.to_string(),
-                Style::default().fg(theme.text.primary),
-            )],
-            content_width,
-        );
+    let language = tool_call.header.path_metadata.as_deref();
+    let highlighted = super::super::ui_syntax_highlight::render_highlighted_code_block(
+        language,
+        &text,
+        &text,
+        "",
+        theme.text.primary,
+        theme,
+    );
+    for (index, line) in highlighted.into_iter().enumerate() {
+        let wrapped =
+            super::super::ui_transcript_surface::wrap_preformatted_spans(line.spans, content_width);
         for (continuation, spans) in wrapped.into_iter().enumerate() {
             let mut row = Vec::new();
             if gutter_width > 0 {
@@ -1215,6 +1235,7 @@ fn append_tool_call_todo_list(
 )]
 fn append_tool_call_diff_block(
     render: &mut ToolSectionRender,
+    before_source: Option<&str>,
     diff_content: &str,
     fallback_path: Option<&str>,
     force_stacked: bool,
@@ -1244,21 +1265,24 @@ fn append_tool_call_diff_block(
             )
         })
         .max(1);
-    if let Some((diff_lines, hunk_offsets)) = render_structured_diff_lines_with_hunk_offsets(
-        diff_content,
-        fallback_path,
-        "",
-        content_width,
-        StructuredDiffRenderOptions {
-            force_stacked,
-            plain_numbered,
-            highlight_intraline: false,
-            highlight_syntax,
-            show_file_header,
-            show_hunk_header: false,
-        },
-        theme,
-    ) {
+    if let Some((diff_lines, hunk_offsets)) =
+        super::super::ui_diff::render_diff_with_recorded_source(
+            diff_content,
+            fallback_path,
+            "",
+            content_width,
+            StructuredDiffRenderOptions {
+                force_stacked,
+                plain_numbered,
+                highlight_intraline: false,
+                highlight_syntax,
+                show_file_header,
+                show_hunk_header: false,
+            },
+            theme,
+            before_source,
+        )
+    {
         let blank_before = !diff_lines.is_empty()
             && render
                 .lines

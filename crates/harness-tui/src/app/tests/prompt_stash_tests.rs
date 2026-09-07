@@ -30,21 +30,20 @@ pub(super) fn prompt_stash_push_clears_composer_and_persists_entry() {
 }
 
 pub(super) fn prompt_stash_pop_restores_text_cursor_and_selection() {
-    let mut app = AppState::new_live(None, false, None);
-    app.focus = Focus::Prompt;
-    app.composer.prompt_buffer = "first draft".to_string();
-    app.composer.prompt_cursor = 4;
-    app.composer.selection_anchor = Some(2);
-
-    app.execute_action(Action::PromptStash);
-    assert!(app.composer.prompt_buffer.is_empty());
-
-    app.execute_action(Action::PromptStashPop);
-
-    assert_eq!(app.composer.prompt_buffer, "first draft");
-    assert_eq!(app.composer.prompt_cursor, 4);
-    assert_eq!(app.composer.selection_anchor, Some(2));
-    assert!(app.prompt_stash.entries.is_empty());
+    for modifiers in [KeyModifiers::CONTROL, KeyModifiers::ALT] {
+        let mut app = AppState::new_live(None, false, None);
+        app.focus = Focus::Prompt;
+        app.composer.prompt_buffer = "first draft".to_string();
+        app.composer.prompt_cursor = 4;
+        app.composer.selection_anchor = Some(2);
+        app.handle_key(KeyEvent::new(KeyCode::Char('s'), modifiers));
+        assert!(app.composer.prompt_buffer.is_empty());
+        app.handle_key(KeyEvent::new(KeyCode::Char('s'), modifiers));
+        assert_eq!(app.composer.prompt_buffer, "first draft");
+        assert_eq!(app.composer.prompt_cursor, 4);
+        assert_eq!(app.composer.selection_anchor, Some(2));
+        assert!(app.prompt_stash.entries.is_empty());
+    }
 }
 
 pub(super) fn prompt_stash_pop_with_empty_stash_is_noop() {

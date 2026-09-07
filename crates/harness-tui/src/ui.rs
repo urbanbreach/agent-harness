@@ -145,6 +145,10 @@ pub(crate) use ui_transcript::transcript_scrollbar_hit;
 #[cfg(test)]
 pub(crate) use ui_transcript::transcript_selection_debug_snapshot;
 pub(crate) use ui_transcript::transcript_timeline_turn_at;
+pub(crate) use ui_transcript::TranscriptRenderSurfaceKind;
+pub(crate) use ui_transcript::{
+    transcript_navigation_entries, TranscriptNavigationEntry, TranscriptVisualEntryId,
+};
 pub(crate) use ui_transcript::{
     transcript_selection_cell, transcript_selection_patch_text, transcript_selection_text,
     transcript_selection_text_with_destinations,
@@ -218,6 +222,14 @@ pub fn render_app(frame: &mut Frame, app: &AppState) {
 
     if app.status_dashboard_is_active() {
         ui_overlays::render_status_dashboard_surface(frame, app, theme, area);
+        render_toast(frame, app, area, theme);
+        return;
+    }
+
+    if let Some(viewer) = app.transcript_viewer() {
+        let surface = viewer.render_surface(area);
+        crate::transcript_block_viewer::render_to_buffer(frame.buffer_mut(), area, &surface, theme);
+        render_overlays(frame, app, theme, &plan);
         render_toast(frame, app, area, theme);
         return;
     }
@@ -633,3 +645,64 @@ pub(crate) fn runtime_overlay_text_for_test(
 #[cfg(test)]
 #[path = "ui_tests.rs"]
 mod tests;
+
+#[path = "ui_dashboard_preview.rs"]
+mod ui_dashboard_preview;
+pub(crate) use ui_dashboard_preview::{
+    frame as dashboard_preview_frame, lines as dashboard_preview_lines,
+};
+
+pub(crate) fn wrap_completion_text(text: &str, width: usize) -> Vec<String> {
+    text.split('\n')
+        .flat_map(|row| {
+            ui_transcript_surface::wrap_surface_spans(
+                vec![Span::raw(row.to_string())],
+                width.max(1),
+            )
+        })
+        .map(|spans| spans.iter().map(|span| span.content.as_ref()).collect())
+        .collect()
+}
+
+#[path = "ui_terminal_output.rs"]
+mod ui_terminal_output;
+
+#[path = "ui_recorded_tool_output.rs"]
+mod ui_recorded_tool_output;
+
+pub(crate) fn recorded_tool_viewer_text(tool: &crate::app::ToolCallEntry) -> String {
+    if let Some(output) = ui_recorded_tool_output::project(tool) {
+        return output.full_text();
+    }
+    if matches!(tool.effective_tool_id(), "shell.run" | "bash") {
+        let command = ui_transcript_bash::shell_tool_command(tool).unwrap_or_default();
+        let output = ui_transcript_bash::shell_tool_output(tool).unwrap_or_default();
+        let lines = ui_terminal_output::render(&output, Style::default(), &Theme::default());
+        return ui_tool_output::safe_tool_text(&format!(
+            "$ {command}\n{}",
+            lines
+                .iter()
+                .map(Line::to_string)
+                .collect::<Vec<_>>()
+                .join("\n")
+        ));
+    }
+    let text = tool
+        .output_json
+        .as_ref()
+        .and_then(|value| value.pointer("/metadata/display/text"))
+        .and_then(serde_json::Value::as_str)
+        .or(tool.output_summary.as_deref())
+        .unwrap_or("No recorded output");
+    ui_tool_output::safe_tool_text(text)
+}
+
+pub(crate) fn safe_product_text(text: &str) -> String {
+    ui_tool_output::safe_tool_text(text)
+}
+
+pub(crate) fn viewer_markdown_lines(text: &str, width: u16, theme: &Theme) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+    ui_markdown::append_rich_text_block(&mut lines, text, theme.text.primary, "", theme, width);
+    lines
+}

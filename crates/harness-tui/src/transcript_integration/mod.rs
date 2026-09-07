@@ -223,14 +223,33 @@ impl TranscriptComposite {
             raw: block.raw().cloned(),
         };
         let content = ViewerBlockContent::from_block(&snapshot)?;
+        self.open_viewer_content(id, content)
+    }
+
+    /// Open recorded entry content using the existing viewer/return-state owner.
+    pub fn open_viewer_content(
+        &mut self,
+        id: BlockId,
+        content: ViewerBlockContent,
+    ) -> Result<(), TranscriptIntegrationError> {
+        let fold_state = self
+            .blocks
+            .get(id)
+            .ok_or(TranscriptIntegrationError::MissingBlock(id))?
+            .fold_state();
         let layout = self
             .layout
             .as_ref()
             .ok_or(crate::transcript_scroll::ScrollError::EmptyLayout)?;
         let anchor = layout.capture_anchor(self.scroll_top)?;
         let return_snapshot =
-            ViewerReturnSnapshot::new(snapshot.fold_state, self.screen.focus_follow(), anchor);
-        self.viewer = Some(ViewerState::open(id, content, return_snapshot)?);
+            ViewerReturnSnapshot::new(fold_state, self.screen.focus_follow(), anchor);
+        let mut viewer = ViewerState::open(id, content, return_snapshot)?;
+        viewer.resize(
+            usize::from(self.viewport.width.saturating_sub(2).max(1)),
+            usize::from(self.viewport.height.saturating_sub(3).max(1)),
+        )?;
+        self.viewer = Some(viewer);
         self.screen = self
             .screen
             .switch_to(TranscriptScreenMode::SelectedBlockViewer)

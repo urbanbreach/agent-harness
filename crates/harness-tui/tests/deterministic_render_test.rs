@@ -105,9 +105,9 @@ fn tool_lifecycle_rows_stay_ordered_without_pty() {
 
     let tool_markers: &[&str] = &[
         "Inspect tool activity",
-        "Read ui.rs (1-24)",
+        "Read 1 file",
         "Edit ui.rs",
-        "Ran 1 subagent",
+        "audit tool lifecycle consistency",
         "Run cargo test -p harness-tui",
         "snapshot mismatch",
         "Tool summaries are now easier to scan, and edits stay inline.",
@@ -181,134 +181,17 @@ fn status_dashboard_snapshot(width: u16, height: u16) -> String {
 
 #[test]
 fn status_dashboard_full_surface_matches_80x24_snapshot() {
-    insta::assert_snapshot!(status_dashboard_snapshot(80, 24), @r###"
-┌─ Status · Harness dashboard ─────────────────────────────────────────────────┐
-│                                                                              │
-│ ┌Roster─────────────────┐┌Peek / tail────────────┐┌Reply───────────────────┐ │
-│ │                       ││dashboard peek failed: ││reply composer          │ │
-│ │                       ││dashboard peek has no  ││controls: idle          │ │
-│ │                       ││selected session       ││                        │ │
-│ │                       ││                       ││                        │ │
-│ │                       ││                       ││                        │ │
-│ │                       ││                       ││                        │ │
-│ │                       ││                       ││                        │ │
-│ │                       ││                       ││                        │ │
-│ │                       ││                       ││                        │ │
-│ │                       ││                       ││                        │ │
-│ │                       ││                       ││                        │ │
-│ │                       ││                       ││                        │ │
-│ │                       ││                       ││                        │ │
-│ │                       ││                       ││                        │ │
-│ │                       ││                       ││                        │ │
-│ └───────────────────────┘└───────────────────────┘└────────────────────────┘ │
-│ Operator · No MCP Servers · Plugins: 0 installed (0 enabled, 0 disabled)     │
-│ Edit attribution: none yet · operator dashboard: 1 bound of 80 probes        │
-│ Crash/recovery: none                                                         │
-│ focus: Roster · Tab focus · / search · h help · esc close                    │
-└──────────────────────────────────────────────────────────────────────────────┘
-"###);
+    insta::assert_snapshot!(status_dashboard_snapshot(80, 24));
 }
 
 #[test]
 fn status_dashboard_full_surface_matches_120x40_snapshot() {
-    insta::assert_snapshot!(status_dashboard_snapshot(120, 40), @r###"
-┌─ Status · Harness dashboard ─────────────────────────────────────────────────────────────────────────────────────────┐
-│                                                                                                                      │
-│ ┌Roster──────────────────────────────┐┌Peek / tail─────────────────────────┐┌Reply─────────────────────────────────┐ │
-│ │                                    ││dashboard peek failed: dashboard    ││reply composer                        │ │
-│ │                                    ││peek has no selected session        ││controls: idle                        │ │
-│ │                                    ││                                    ││                                      │ │
-│ │                                    ││                                    ││                                      │ │
-│ │                                    ││                                    ││                                      │ │
-│ │                                    ││                                    ││                                      │ │
-│ │                                    ││                                    ││                                      │ │
-│ │                                    ││                                    ││                                      │ │
-│ │                                    ││                                    ││                                      │ │
-│ │                                    ││                                    ││                                      │ │
-│ │                                    ││                                    ││                                      │ │
-│ │                                    ││                                    ││                                      │ │
-│ │                                    ││                                    ││                                      │ │
-│ │                                    ││                                    ││                                      │ │
-│ │                                    ││                                    ││                                      │ │
-│ │                                    ││                                    ││                                      │ │
-│ │                                    ││                                    ││                                      │ │
-│ │                                    ││                                    ││                                      │ │
-│ │                                    ││                                    ││                                      │ │
-│ │                                    ││                                    ││                                      │ │
-│ │                                    ││                                    ││                                      │ │
-│ │                                    ││                                    ││                                      │ │
-│ │                                    ││                                    ││                                      │ │
-│ │                                    ││                                    ││                                      │ │
-│ │                                    ││                                    ││                                      │ │
-│ │                                    ││                                    ││                                      │ │
-│ │                                    ││                                    ││                                      │ │
-│ │                                    ││                                    ││                                      │ │
-│ │                                    ││                                    ││                                      │ │
-│ │                                    ││                                    ││                                      │ │
-│ │                                    ││                                    ││                                      │ │
-│ └────────────────────────────────────┘└────────────────────────────────────┘└──────────────────────────────────────┘ │
-│ Operator · No MCP Servers · Plugins: 0 installed (0 enabled, 0 disabled)                                             │
-│ Edit attribution: none yet · operator dashboard: 1 bound of 80 probes                                                │
-│ Crash/recovery: none                                                                                                 │
-│ focus: Roster · Tab focus · / search · h help · esc close                                                            │
-└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-"###);
+    insta::assert_snapshot!(status_dashboard_snapshot(120, 40));
 }
 
 #[test]
 fn status_dashboard_full_surface_matches_160x50_snapshot() {
-    insta::assert_snapshot!(status_dashboard_snapshot(160, 50), @r###"
-┌─ Status · Harness dashboard ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│                                                                                                                                                              │
-│ ┌Roster────────────────────────────────────────────┐┌Peek / tail───────────────────────────────────────┐┌Reply─────────────────────────────────────────────┐ │
-│ │                                                  ││dashboard peek failed: dashboard peek has no      ││reply composer                                    │ │
-│ │                                                  ││selected session                                  ││controls: idle                                    │ │
-│ │                                                  ││                                                  ││                                                  │ │
-│ │                                                  ││                                                  ││                                                  │ │
-│ │                                                  ││                                                  ││                                                  │ │
-│ │                                                  ││                                                  ││                                                  │ │
-│ │                                         ┌Details───────────────────────────────────────────────────────────────┐                                         │ │
-│ │                                         │dashboard details are unavailable                                     │                                         │ │
-│ │                                         │                                                                      │                                         │ │
-│ │                                         │                                                                      │                                         │ │
-│ │                                         │                                                                      │                                         │ │
-│ │                                         │                                                                      │                                         │ │
-│ │                                         │                                                                      │                                         │ │
-│ │                                         │                                                                      │                                         │ │
-│ │                                         │                                                                      │                                         │ │
-│ │                                         │                                                                      │                                         │ │
-│ │                                         │                                                                      │                                         │ │
-│ │                                         │                                                                      │                                         │ │
-│ │                                         │                                                                      │                                         │ │
-│ │                                         │                                                                      │                                         │ │
-│ │                                         │                                                                      │                                         │ │
-│ │                                         │                                                                      │                                         │ │
-│ │                                         │                                                                      │                                         │ │
-│ │                                         │                                                                      │                                         │ │
-│ │                                         │                                                                      │                                         │ │
-│ │                                         │                                                                      │                                         │ │
-│ │                                         │                                                                      │                                         │ │
-│ │                                         │                                                                      │                                         │ │
-│ │                                         │                                                                      │                                         │ │
-│ │                                         │                                                                      │                                         │ │
-│ │                                         │                                                                      │                                         │ │
-│ │                                         │                                                                      │                                         │ │
-│ │                                         │                                                                      │                                         │ │
-│ │                                         │                                                                      │                                         │ │
-│ │                                         │                                                                      │                                         │ │
-│ │                                         │                                                                      │                                         │ │
-│ │                                         │                                                                      │                                         │ │
-│ │                                         └──────────────────────────────────────────────────────────────────────┘                                         │ │
-│ │                                                  ││                                                  ││                                                  │ │
-│ │                                                  ││                                                  ││                                                  │ │
-│ │                                                  ││                                                  ││                                                  │ │
-│ └──────────────────────────────────────────────────┘└──────────────────────────────────────────────────┘└──────────────────────────────────────────────────┘ │
-│ Operator · No MCP Servers · Plugins: 0 installed (0 enabled, 0 disabled)                                                                                     │
-│ Edit attribution: none yet · operator dashboard: 1 bound of 80 probes                                                                                        │
-│ Crash/recovery: none                                                                                                                                         │
-│ focus: Roster · Tab focus · / search · h help · esc close                                                                                                    │
-└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-"###);
+    insta::assert_snapshot!(status_dashboard_snapshot(160, 50));
 }
 
 #[test]

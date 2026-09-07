@@ -136,7 +136,10 @@ impl DashboardControlState {
             ));
         }
         match row.status {
-            DashboardStatus::Running | DashboardStatus::Queued | DashboardStatus::Streaming => {}
+            DashboardStatus::AwaitingInput
+            | DashboardStatus::Running
+            | DashboardStatus::Queued
+            | DashboardStatus::Streaming => {}
             DashboardStatus::Completed | DashboardStatus::Failed | DashboardStatus::Cancelled => {
                 return Err(self.error(
                     operation,

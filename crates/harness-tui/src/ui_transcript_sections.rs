@@ -1087,6 +1087,7 @@ mod ui10_tests {
         // arrange
         // act
         let mut blocks = vec![TranscriptToolCallDetailBlock::StructuredDiff {
+            before_source: None,
             diff_content: "--- src/lib.rs\n+++ src/lib.rs\n@@ -1 +1 @@\n-old\n+new\n".to_string(),
             fallback_path: Some("src/lib.rs".to_string()),
             force_stacked: false,
@@ -1097,6 +1098,7 @@ mod ui10_tests {
         let before = blocks.clone();
         super::super::ui_transcript_tool_sections::set_diff_highlight_phase(&mut blocks, true);
         let TranscriptToolCallDetailBlock::StructuredDiff {
+            before_source: None,
             diff_content: before_text,
             fallback_path: before_path,
             ..
@@ -1105,6 +1107,7 @@ mod ui10_tests {
             panic!("structured before block");
         };
         let TranscriptToolCallDetailBlock::StructuredDiff {
+            before_source: None,
             diff_content: after_text,
             fallback_path: after_path,
             highlight_syntax,

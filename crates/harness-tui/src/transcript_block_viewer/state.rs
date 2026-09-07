@@ -18,6 +18,9 @@ const DEFAULT_HEIGHT: usize = 24;
 pub struct ViewerState {
     block_id: BlockId,
     content: ViewerBlockContent,
+    display_text: String,
+    pub(super) styled_lines: Vec<ratatui::text::Line<'static>>,
+    theme: crate::theme::Theme,
     return_snapshot: ViewerReturnSnapshot,
     mode: ViewerMode,
     width: usize,
@@ -26,6 +29,7 @@ pub struct ViewerState {
     pub(super) selection: Option<SelectionRange>,
     pub(super) cursor: CellPoint,
     search: SearchState,
+    search_editing: bool,
     layout: TranscriptLayout,
     scroll_top: f64,
     transition: Option<ScrollTransition>,
@@ -44,9 +48,12 @@ impl ViewerState {
         let wrapped =
             WrappedText::new(content.text(mode), width).map_err(ViewerError::Selection)?;
         let layout = viewer_layout(block_id, content.text(mode), width, height)?;
-        Ok(Self {
+        let mut state = Self {
             block_id,
+            display_text: content.text(mode).to_string(),
             content,
+            styled_lines: Vec::new(),
+            theme: crate::theme::Theme::default(),
             return_snapshot,
             mode,
             width,
@@ -55,11 +62,14 @@ impl ViewerState {
             selection: None,
             cursor: CellPoint::new(0, 0),
             search: SearchState::new(),
+            search_editing: false,
             layout,
             scroll_top: 0.0,
             transition: None,
             open: true,
-        })
+        };
+        state.rebuild_display()?;
+        Ok(state)
     }
 
     pub fn block_id(&self) -> BlockId {
@@ -91,24 +101,76 @@ impl ViewerState {
     }
 
     pub fn set_search_query(&mut self, query: &str) -> SearchNavigation {
-        self.search.set_query(self.content.text(self.mode), query)
+        let navigation = self.search.set_query(&self.display_text, query);
+        self.reveal_search_match();
+        navigation
     }
 
     pub fn search_forward(&mut self) -> SearchNavigation {
-        self.search.navigate(SearchDirection::Forward)
+        let navigation = self.search.navigate(SearchDirection::Forward);
+        self.reveal_search_match();
+        navigation
     }
 
     pub fn search_backward(&mut self) -> SearchNavigation {
-        self.search.navigate(SearchDirection::Backward)
+        let navigation = self.search.navigate(SearchDirection::Backward);
+        self.reveal_search_match();
+        navigation
+    }
+
+    pub fn search_editing(&self) -> bool {
+        self.search_editing
+    }
+
+    pub fn set_search_editing(&mut self, editing: bool) {
+        self.search_editing = editing;
+    }
+
+    pub fn viewport_height(&self) -> usize {
+        self.height
+    }
+
+    pub fn scroll_top(&self) -> usize {
+        // The layout only accepts finite, bounded row counts.
+        super::render::scroll_offset(self.scroll_top)
+    }
+
+    pub fn reveal_cursor(&mut self) {
+        let row = f64::from(u32::try_from(self.cursor.row).unwrap_or(u32::MAX));
+        let height = f64::from(u32::try_from(self.height).unwrap_or(u32::MAX));
+        if row < self.scroll_top {
+            self.scroll_top = row;
+        } else if row >= self.scroll_top + height {
+            self.scroll_top = (row + 1.0 - height).min(self.layout.max_scroll());
+        }
+        self.transition = None;
+    }
+
+    fn reveal_search_match(&mut self) {
+        if let Some(found) = self.search.current_match() {
+            self.cursor = self.wrapped.point_for_byte(found.byte_range.start);
+            self.reveal_cursor();
+        }
     }
 
     pub fn search(&self) -> &SearchState {
         &self.search
     }
 
+    pub(crate) fn set_theme(&mut self, theme: crate::theme::Theme) -> Result<(), ViewerError> {
+        if theme == self.theme {
+            return Ok(());
+        }
+        self.theme = theme;
+        self.rebuild_display()
+    }
+
     pub fn resize(&mut self, width: usize, height: usize) -> Result<(), ViewerError> {
         if width == 0 || height == 0 {
             return Err(ViewerError::InvalidViewport);
+        }
+        if (width, height) == (self.width, self.height) {
+            return Ok(());
         }
         let anchor = self.scroll_anchor().map_err(ViewerError::Scroll)?;
         self.width = width;
@@ -199,19 +261,32 @@ impl ViewerState {
     }
 
     fn rebuild_display(&mut self) -> Result<(), ViewerError> {
-        self.wrapped = WrappedText::new(self.content.text(self.mode), self.width)
-            .map_err(ViewerError::Selection)?;
-        self.layout = viewer_layout(
-            self.block_id,
-            self.content.text(self.mode),
-            self.width,
-            self.height,
-        )?;
+        self.styled_lines = if self.mode == ViewerMode::Wrapped && self.content.markdown {
+            crate::ui::viewer_markdown_lines(
+                self.content.content(),
+                u16::try_from(self.width).unwrap_or(u16::MAX),
+                &self.theme,
+            )
+        } else {
+            Vec::new()
+        };
+        self.display_text = if self.styled_lines.is_empty() {
+            self.content.text(self.mode).to_string()
+        } else {
+            self.styled_lines
+                .iter()
+                .map(ratatui::text::Line::to_string)
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        self.wrapped =
+            WrappedText::new(&self.display_text, self.width).map_err(ViewerError::Selection)?;
+        self.layout = viewer_layout(self.block_id, &self.display_text, self.width, self.height)?;
         self.selection = None;
         self.cursor = CellPoint::new(0, 0);
         if !self.search.query().is_empty() {
             let query = self.search.query().to_owned();
-            let _ = self.search.set_query(self.content.text(self.mode), &query);
+            let _ = self.search.set_query(&self.display_text, &query);
         }
         Ok(())
     }
@@ -223,10 +298,9 @@ fn viewer_layout(
     width: usize,
     height: usize,
 ) -> Result<TranscriptLayout, ViewerError> {
-    let rows = text
-        .split('\n')
-        .map(|line| line.len().div_ceil(width.max(1)).max(1))
-        .sum::<usize>()
+    let rows = WrappedText::new(text, width)
+        .map_err(ViewerError::Selection)?
+        .row_count()
         .max(1);
     let rows = u32::try_from(rows).map_err(|_| ViewerError::InvalidViewport)?;
     let height = u32::try_from(height.max(1)).map_err(|_| ViewerError::InvalidViewport)?;

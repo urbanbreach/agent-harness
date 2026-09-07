@@ -1077,6 +1077,8 @@ fn resolve_assistant_body_content(
         0
     };
     let selection_rows = if *streaming
+        && !text.contains("```")
+        && !text.contains("~~~")
         && !text.contains("](")
         && !text.contains("http://")
         && !text.contains("https://")
@@ -2087,6 +2089,7 @@ mod tests {
             },
             detail_blocks: vec![
                 super::super::TranscriptToolCallDetailBlock::StructuredDiff {
+                    before_source: None,
                     diff_content: concat!(
                         "--- src/lib.rs\n",
                         "+++ src/lib.rs\n",

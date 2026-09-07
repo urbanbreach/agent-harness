@@ -2,17 +2,59 @@ use std::path::PathBuf;
 
 use harness_core::workspace::WorkspaceEnvironment;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct WorkspaceDisplay {
+    pub(crate) directory: String,
+    pub(crate) branch: Option<String>,
+    pub(crate) detached: bool,
+    pub(crate) linked_worktree: bool,
+}
+
+impl WorkspaceDisplay {
+    pub(super) fn discover(environment: &WorkspaceEnvironment) -> Self {
+        let linked_worktree = environment.is_git_repository
+            && std::fs::read_to_string(environment.workspace_root.join(".git"))
+                .ok()
+                .and_then(|text| {
+                    text.strip_prefix("gitdir:")
+                        .map(str::trim)
+                        .map(PathBuf::from)
+                })
+                .is_some_and(|git_dir| {
+                    let git_dir = if git_dir.is_absolute() {
+                        git_dir
+                    } else {
+                        environment.workspace_root.join(git_dir)
+                    };
+                    // A submodule also has a .git file; only a linked worktree has commondir.
+                    git_dir.join("commondir").is_file()
+                });
+        Self {
+            directory: home_shortened_path(&environment.working_directory),
+            branch: environment
+                .git_branch
+                .clone()
+                .filter(|branch| !branch.trim().is_empty()),
+            detached: environment.is_git_repository && environment.git_branch.is_none(),
+            linked_worktree,
+        }
+    }
+}
+
 impl super::AppState {
     pub(crate) fn startup_directory_branch_label(&self) -> &str {
         &self.current_directory_branch_label
     }
 
     pub(crate) fn refresh_current_directory_label(&mut self) -> bool {
-        let label = directory_branch_label(&self.current_directory_environment(), false);
-        if self.current_directory_branch_label == label {
+        let environment = self.current_directory_environment();
+        let label = directory_branch_label(&environment, false);
+        let display = WorkspaceDisplay::discover(&environment);
+        if self.current_directory_branch_label == label && self.workspace_display == display {
             return false;
         }
         self.current_directory_branch_label = label;
+        self.workspace_display = display;
         true
     }
 

@@ -195,6 +195,28 @@ fn tilde_fences_highlight_and_select_code_without_markers() {
 }
 
 #[test]
+fn code_indentation_tabs_citation_syntax_and_copy_follow_the_same_wrapping() {
+    for settled in [false, true] {
+        let source = format!(
+            "```1:4:src/main.rs\nfn main() {{\n\tlet answer = 42;\n\n}}{}",
+            if settled { "\n```" } else { "" }
+        );
+        for width in [32, 80] {
+            let mut app = app(&source, settled);
+            let buffer = render(&app, width);
+            let (function_x, _) = position(&buffer, "fn main");
+            let (let_x, let_y) = position(&buffer, "let answer");
+            assert_eq!(let_x, function_x + 4);
+            assert_ne!(buffer[(let_x, let_y)].fg, app.theme().text.primary);
+            assert_eq!(
+                copy(&mut app, &buffer, "fn main", "}"),
+                "fn main() {\n    let answer = 42;\n\n}"
+            );
+        }
+    }
+}
+
+#[test]
 fn longer_fence_keeps_shorter_and_suffixed_closers_in_code() {
     // Given: shorter, wrong-marker, and non-whitespace closing-fence candidates.
     for width in [24, 80] {

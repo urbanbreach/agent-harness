@@ -252,9 +252,9 @@ fn generated_catalog_quarantines_only_the_invalid_partition() {
 
     // assert
     assert_eq!(catalog.providers().len(), 116);
-    assert_eq!(models.len(), 3_394);
+    assert_eq!(models.len(), 3_395);
     assert_eq!(catalog.diagnostics().len(), 62);
-    assert_eq!(complete, 306);
+    assert_eq!(complete, 307);
     assert_eq!(missing_input, 3_088);
     assert!(models
         .iter()

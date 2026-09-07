@@ -10,7 +10,7 @@ use crate::theme_tokens::{ColorRole, GlyphRole};
 
 pub use responsive::RosterResponsive;
 
-pub const ROSTER_ROW_HEIGHT: u16 = 1;
+pub const ROSTER_ROW_HEIGHT: u16 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OverflowDirection {
@@ -30,6 +30,7 @@ pub struct StatusMarker {
 impl StatusMarker {
     pub const fn label(self) -> &'static str {
         match self.status {
+            DashboardStatus::AwaitingInput => "awaiting",
             DashboardStatus::Running => "running",
             DashboardStatus::Queued => "queued",
             DashboardStatus::Streaming => "streaming",
