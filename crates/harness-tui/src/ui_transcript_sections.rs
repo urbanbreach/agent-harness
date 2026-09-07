@@ -3,6 +3,8 @@ use super::ui_transcript_tool_sections::{build_tool_call_section, successful_edi
 use super::*;
 
 pub(super) fn build_transcript_sections(app: &AppState) -> Vec<TranscriptTurnSection> {
+    #[cfg(test)]
+    TRANSCRIPT_SEMANTIC_BUILD_COUNT.with(|count| count.set(count.get().saturating_add(1)));
     let motion_enabled = app.transcript_motion_enabled() && !app.replay_mode;
     let hidden_child_request_ids = hidden_delegated_child_request_ids(app);
     let visible_activities = app
