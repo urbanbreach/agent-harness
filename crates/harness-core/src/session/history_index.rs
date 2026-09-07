@@ -100,7 +100,7 @@ pub fn read_valid_index(path: &Path) -> Option<SessionHistoryIndex> {
 }
 
 pub fn write_history_index(path: &Path, index: &SessionHistoryIndex) -> Result<(), String> {
-    let body = serde_json::to_vec_pretty(index)
+    let body = serde_json::to_vec(index)
         .map_err(|error| format!("failed to serialize history index: {error}"))?;
     let temp_path = unique_temp_path(path);
     let mut options = fs::OpenOptions::new();
