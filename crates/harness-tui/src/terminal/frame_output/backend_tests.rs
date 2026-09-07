@@ -108,6 +108,77 @@ fn backend_repaints_same_label_when_url_changes_or_link_is_removed() {
 }
 
 #[test]
+fn backend_full_clear_does_not_repaint_old_link_cells_after_resize() {
+    for region_clear in [false, true] {
+        let (mut output, writer, receiver) = FrameOutput::bounded(2);
+        let mut backend = FrameOutputBackend::new(writer);
+        let _ = draw_frame(
+            &mut output,
+            &mut backend,
+            &receiver,
+            &[(54, 25, Cell::new("n"))],
+            vec![FrameHyperlink {
+                row: 25,
+                start_column: 54,
+                end_column: 55,
+                destination: "https://example.com/old".to_string(),
+            }],
+        );
+
+        output.begin_frame().expect("begin cleared frame");
+        if region_clear {
+            backend
+                .clear_region(ratatui::backend::ClearType::All)
+                .expect("clear full region");
+        } else {
+            backend.clear().expect("clear backend");
+        }
+        set_frame_hyperlinks(vec![FrameHyperlink {
+            row: 25,
+            start_column: 12,
+            end_column: 13,
+            destination: "https://example.com/new".to_string(),
+        }]);
+        let cell = Cell::new("x");
+        backend
+            .draw(std::iter::once((12, 25, &cell)))
+            .expect("draw narrow frame");
+        output.finish_frame().expect("finish cleared frame");
+        let frame = receiver.try_recv().expect("serialized cleared frame");
+        let bytes = frame.bytes.clone();
+        receiver
+            .acknowledge(&frame)
+            .expect("acknowledge cleared frame");
+        let _ = output.take_acknowledgements();
+        let ansi = String::from_utf8_lossy(&bytes);
+        assert!(ansi.contains("\x1b[2J"), "{ansi:?}");
+        assert!(ansi.contains("\x1b[26;13H"), "{ansi:?}");
+        assert!(ansi.contains("https://example.com/new"), "{ansi:?}");
+        assert!(
+            !ansi.contains("\x1b[26;55H"),
+            "cleared linked cell replayed, region_clear={region_clear}: {ansi:?}"
+        );
+
+        let changed = draw_frame(
+            &mut output,
+            &mut backend,
+            &receiver,
+            &[],
+            vec![FrameHyperlink {
+                row: 25,
+                start_column: 12,
+                end_column: 13,
+                destination: "https://example.com/changed".to_string(),
+            }],
+        );
+        let ansi = String::from_utf8_lossy(&changed);
+        assert!(ansi.contains("\x1b[26;13H"), "{ansi:?}");
+        assert!(ansi.contains("https://example.com/changed"), "{ansi:?}");
+        assert!(!ansi.contains("\x1b[26;55H"), "{ansi:?}");
+    }
+}
+
+#[test]
 fn backend_rejects_control_characters_inside_http_destination_at_final_admission() {
     // Given: an HTTP-looking destination containing BEL after its scheme.
     let (mut output, writer, receiver) = FrameOutput::bounded(1);
