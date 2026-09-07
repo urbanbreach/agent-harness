@@ -100,10 +100,18 @@ impl AppState {
                 plan
             };
         }
-        let visual_sample = plan.cadence().interval().map_or(0, |interval| {
+        let mut visual_sample = 0;
+        if let Some(interval) = plan.cadence().interval() {
             let elapsed = now.saturating_duration_since(self.motion_epoch_started_at);
-            u64::try_from(elapsed.as_nanos() / interval.as_nanos()).unwrap_or(u64::MAX)
-        });
+            visual_sample =
+                u64::try_from(elapsed.as_nanos() / interval.as_nanos()).unwrap_or(u64::MAX);
+            let remaining = Duration::from_nanos(
+                u64::try_from(interval.as_nanos() - elapsed.as_nanos() % interval.as_nanos())
+                    .unwrap_or(u64::MAX),
+            );
+            // An unchanged frame suppresses cadence only until the next visual sample.
+            plan = plan.merge(MotionDemand::until(remaining));
+        }
         plan.with_revision(self.motion_revision)
             .with_visual_sample(visual_sample)
     }
