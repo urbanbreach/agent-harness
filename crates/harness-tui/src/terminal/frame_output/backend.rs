@@ -195,10 +195,16 @@ impl Backend for FrameOutputBackend {
     fn clear(&mut self) -> Result<(), Self::Error> {
         self.metrics.clears = self.metrics.clears.saturating_add(1);
         self.inner.clear()?;
-        Backend::flush(&mut self.inner)
+        Backend::flush(&mut self.inner)?;
+        self.cells.clear();
+        self.hyperlinks.clear();
+        Ok(())
     }
 
     fn clear_region(&mut self, clear_type: ClearType) -> Result<(), Self::Error> {
+        if matches!(clear_type, ClearType::All) {
+            return self.clear();
+        }
         self.metrics.clears = self.metrics.clears.saturating_add(1);
         self.inner.clear_region(clear_type)?;
         Backend::flush(&mut self.inner)
