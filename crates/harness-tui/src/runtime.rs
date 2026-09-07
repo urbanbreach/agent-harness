@@ -48,6 +48,38 @@ use crate::terminal::{
 use crate::ui;
 
 const FRAME_OUTPUT_QUEUE_CAPACITY: usize = 1;
+const CURRENT_DIRECTORY_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
+
+fn refresh_current_directory_if_due(
+    app: &mut AppState,
+    deadline: &mut Instant,
+    now: Instant,
+) -> bool {
+    if app.replay_mode || now < *deadline {
+        return false;
+    }
+    *deadline = now + CURRENT_DIRECTORY_REFRESH_INTERVAL;
+    app.refresh_current_directory_label()
+}
+
+fn refresh_current_directory_display(
+    app: &mut AppState,
+    deadline: &mut Instant,
+    now: Instant,
+    presenter: &mut Presenter,
+    pacer: &mut RuntimePacer,
+    mut telemetry: Option<&mut PresentationTelemetrySession>,
+) {
+    if refresh_current_directory_if_due(app, deadline, now) {
+        record_runtime_cause(
+            telemetry.as_deref_mut(),
+            PresentationCauseKind::Expiry,
+            RenderReason::Expiry,
+        );
+        request_runtime_redraw(presenter, telemetry);
+        pacer.request_flush();
+    }
+}
 
 fn select_runtime_decision(arbiter: &RuntimeArbiter, ready: RuntimeReady) -> RuntimeDecision {
     arbiter.decide(ready)
@@ -656,8 +688,18 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
         );
 
         let mut suggestion_poll_at = Instant::now();
+        let mut current_directory_refresh_at =
+            suggestion_poll_at + CURRENT_DIRECTORY_REFRESH_INTERVAL;
         loop {
             let suggestion_poll_now = Instant::now();
+            refresh_current_directory_display(
+                &mut app,
+                &mut current_directory_refresh_at,
+                suggestion_poll_now,
+                &mut presenter,
+                &mut pacer,
+                presentation_session.as_mut(),
+            );
             let suggestion_elapsed_ms = u64::try_from(
                 suggestion_poll_now
                     .saturating_duration_since(suggestion_poll_at)
@@ -789,7 +831,11 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                 let resize_deadline = runtime_input
                     .deadline()
                     .map(|elapsed| pacing_epoch + elapsed);
-                let deadline = pacing_deadline.into_iter().chain(resize_deadline).min();
+                let deadline = pacing_deadline
+                    .into_iter()
+                    .chain(resize_deadline)
+                    .chain((!app.replay_mode).then_some(current_directory_refresh_at))
+                    .min();
                 let wait_set = RuntimeWaitSet {
                     frame: frame_output.acknowledgement_receiver(),
                     reader: &terminal_ingress.status,
@@ -1409,6 +1455,51 @@ mod tests {
     use crate::scheduling::INPUT_BATCH_LIMIT;
     use crate::UnwrapOrAbort;
     use harness_core::proj::{RunStatus, SessionCatalogEntry, SessionModeSource};
+
+    #[test]
+    fn current_directory_refresh_is_bounded_and_skips_replay() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        // Given: an injected discovery source that changes branch on each refresh.
+        let mut app = AppState::new_live(None, false, None);
+        let calls = Arc::new(AtomicUsize::new(0));
+        let probe_calls = Arc::clone(&calls);
+        app.set_current_directory_probe_for_test(Arc::new(move || {
+            let call = probe_calls.fetch_add(1, Ordering::Relaxed);
+            harness_core::workspace::WorkspaceEnvironment {
+                working_directory: "/workspace/current".into(),
+                workspace_root: "/workspace/current".into(),
+                is_git_repository: true,
+                git_branch: Some(format!("branch-{call}")),
+            }
+        }));
+        let epoch = Instant::now();
+        let mut deadline = epoch + Duration::from_secs(5);
+
+        // When: runtime checks before, at, and after a delayed deadline, or in replay.
+        for (seconds, replay, changed, discoveries) in [
+            (4, false, false, 1),
+            (5, false, true, 2),
+            (5, false, false, 2),
+            (25, false, true, 3),
+            (26, false, false, 3),
+            (30, true, false, 3),
+            (30, false, true, 4),
+        ] {
+            app.replay_mode = replay;
+            let refreshed = refresh_current_directory_if_due(
+                &mut app,
+                &mut deadline,
+                epoch + Duration::from_secs(seconds),
+            );
+
+            // Then: one due probe runs without catch-up bursts or replay polling.
+            assert_eq!(
+                (refreshed, calls.load(Ordering::Relaxed)),
+                (changed, discoveries)
+            );
+        }
+    }
 
     #[test]
     fn mouse_and_wheel_have_distinct_native_taxonomy() {

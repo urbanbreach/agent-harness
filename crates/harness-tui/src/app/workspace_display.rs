@@ -2,6 +2,38 @@ use std::path::PathBuf;
 
 use harness_core::workspace::WorkspaceEnvironment;
 
+impl super::AppState {
+    pub(crate) fn startup_directory_branch_label(&self) -> &str {
+        &self.current_directory_branch_label
+    }
+
+    pub(crate) fn refresh_current_directory_label(&mut self) -> bool {
+        let label = directory_branch_label(&self.current_directory_environment(), false);
+        if self.current_directory_branch_label == label {
+            return false;
+        }
+        self.current_directory_branch_label = label;
+        true
+    }
+
+    fn current_directory_environment(&self) -> WorkspaceEnvironment {
+        #[cfg(test)]
+        if let Some(probe) = &self.current_directory_probe {
+            return probe();
+        }
+        super::test_workspace_env_override().unwrap_or_else(WorkspaceEnvironment::current)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_current_directory_probe_for_test(
+        &mut self,
+        probe: std::sync::Arc<dyn Fn() -> WorkspaceEnvironment + Send + Sync>,
+    ) {
+        self.current_directory_probe = Some(probe);
+        self.refresh_current_directory_label();
+    }
+}
+
 pub(super) fn workspace_context_labels(environment: &WorkspaceEnvironment) -> Vec<String> {
     let full = directory_branch_label(environment, false);
     let short = directory_branch_label(environment, true);
