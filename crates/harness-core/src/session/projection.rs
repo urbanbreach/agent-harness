@@ -10,6 +10,7 @@ use crate::proj::{
 use crate::transcript_projection::{
     project_transcript, TranscriptProjection, TranscriptProjectionError,
 };
+use std::borrow::Cow;
 use std::path::Path;
 
 use super::legacy::{
@@ -100,10 +101,16 @@ impl CanonicalSessionProjection {
     pub fn from_event_history(
         events: &[EventEnvelopeV1],
     ) -> Result<Self, CanonicalSessionProjectionError> {
-        let snapshot = LegacyEventLogAdapter::new().project(events)?;
-        let conversation = project_conversation(events, &[])?;
-        let transcript = project_transcript(events)?;
-        let (run_summary, resume_plan, timeline) = Self::project_operational_lossy(events)?;
+        Self::from_event_history_source(Cow::Borrowed(events))
+    }
+
+    fn from_event_history_source(
+        events: Cow<'_, [EventEnvelopeV1]>,
+    ) -> Result<Self, CanonicalSessionProjectionError> {
+        let snapshot = LegacyEventLogAdapter::new().project(&events)?;
+        let conversation = project_conversation(&events, &[])?;
+        let transcript = project_transcript(&events)?;
+        let (run_summary, resume_plan, timeline) = Self::project_operational_lossy(&events)?;
         Ok(Self::from_parts(
             snapshot,
             conversation,
@@ -111,7 +118,7 @@ impl CanonicalSessionProjection {
             resume_plan,
             timeline,
             transcript,
-            events,
+            events.into_owned(),
         ))
     }
 
@@ -129,7 +136,7 @@ impl CanonicalSessionProjection {
             resume_plan,
             timeline,
             transcript,
-            events,
+            events.to_vec(),
         ))
     }
 
@@ -151,7 +158,7 @@ impl CanonicalSessionProjection {
             resume_plan,
             timeline,
             transcript,
-            events,
+            events.to_vec(),
         ))
     }
 
@@ -173,7 +180,7 @@ impl CanonicalSessionProjection {
             resume_plan,
             timeline,
             transcript,
-            events,
+            events.to_vec(),
         ))
     }
 
@@ -193,7 +200,7 @@ impl CanonicalSessionProjection {
             resume_plan,
             timeline,
             transcript,
-            events,
+            events.to_vec(),
         ))
     }
 
@@ -204,10 +211,10 @@ impl CanonicalSessionProjection {
         resume_plan: ResumePlan,
         timeline: TimelineIndex,
         transcript: TranscriptProjection,
-        source_events: &[EventEnvelopeV1],
+        source_events: Vec<EventEnvelopeV1>,
     ) -> Self {
         Self {
-            source_events: source_events.to_vec(),
+            source_events,
             session: snapshot.session,
             conversation,
             run_summary,
@@ -233,7 +240,7 @@ impl CanonicalSessionProjection {
     ) -> Result<(), CanonicalSessionProjectionError> {
         let mut events = self.source_events.clone();
         events.extend_from_slice(new_events);
-        *self = Self::from_event_history(&events)?;
+        *self = Self::from_event_history_source(Cow::Owned(events))?;
         Ok(())
     }
 
