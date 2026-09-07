@@ -6,11 +6,13 @@
 
 use harness_core::event::{
     ActorKind, AssistantMessageFinishedEvent, EventActor, EventEnvelopeV1, EventV1,
-    LiveEventEnvelope, LiveEventV1, ProviderRequestStartedEvent, RuntimeEvent,
-    UserMessageSubmittedEvent, SCHEMA_VERSION,
+    LiveEventEnvelope, LiveEventV1, ProviderRequestFinishedEvent, ProviderRequestStartedEvent,
+    RuntimeEvent, TaskCompletedEvent, UserMessageSubmittedEvent, SCHEMA_VERSION,
 };
 use harness_core::session::legacy::LegacyWarning;
-use harness_core::session::{AssistantPart, AssistantToolCall, SessionEntryPayload};
+use harness_core::session::{
+    AssistantPart, AssistantToolCall, CanonicalSessionProjection, SessionEntryPayload,
+};
 use harness_tui::app::AppState;
 use harness_tui::render_test::render_to_string;
 use harness_tui::ui;
@@ -87,6 +89,8 @@ fn typed_live_fragments_render_then_final_commit_settles_them() {
             delta: "draft reasoning".to_string(),
         },
     ));
+    let thinking = render(&app);
+    assert!(thinking.contains("draft reasoning"), "{thinking}");
     app.ingest_runtime_event(live(
         "live-text",
         LiveEventV1::ProviderTextDelta {
@@ -228,49 +232,91 @@ fn tui_durable_content_uses_core_canonical_projection() {
 
 #[test]
 fn live_settlement_projects_once_without_replaying_each_durable_event() {
-    // arrange
+    // Given: the full provider-finish, assistant-finish, task-completion sequence.
     let mut app = AppState::new_live(None, false, None);
+    let events = vec![
+        durable_envelope(
+            1,
+            EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                request_id: "turn-1".into(),
+                text: "question".to_string(),
+            }),
+        ),
+        durable_envelope(
+            2,
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: "provider-1".into(),
+                provider_id: "mock".to_string(),
+                model_id: "model".to_string(),
+                prompt_summary: "question".to_string(),
+                request_digest: "request-digest".to_string(),
+                metadata: None,
+            }),
+        ),
+        durable_envelope(
+            3,
+            EventV1::ProviderRequestFinished(ProviderRequestFinishedEvent {
+                request_id: "provider-1".into(),
+                finish_reason: "stop".to_string(),
+                output_digest: Some("output-digest".to_string()),
+                usage: None,
+                metadata: None,
+            }),
+        ),
+        durable_envelope(
+            4,
+            EventV1::AssistantMessageFinished(AssistantMessageFinishedEvent {
+                request_id: "provider-1".into(),
+                tool_call_count: 0,
+                parts: vec![AssistantPart::Text {
+                    text: "answer".to_string(),
+                }],
+                provenance: None,
+                assistant_message: None,
+            }),
+        ),
+        durable_envelope(
+            5,
+            EventV1::TaskCompleted(TaskCompletedEvent {
+                task_id: "task-1".into(),
+                result_summary: "answer".to_string(),
+                result_digest: "result-digest".to_string(),
+                metadata: None,
+            }),
+        ),
+    ];
 
-    // act
-    app.ingest_runtime_event(durable(
-        1,
-        EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
-            request_id: "turn-1".into(),
-            text: "question".to_string(),
-        }),
-    ));
-    app.ingest_runtime_event(durable(
-        2,
-        EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
-            request_id: "provider-1".into(),
-            provider_id: "mock".to_string(),
-            model_id: "model".to_string(),
-            prompt_summary: "question".to_string(),
-            request_digest: "request-digest".to_string(),
-            metadata: None,
-        }),
-    ));
-    app.ingest_runtime_event(durable(
-        3,
-        EventV1::AssistantMessageFinished(AssistantMessageFinishedEvent {
-            request_id: "provider-1".into(),
-            tool_call_count: 0,
-            parts: vec![AssistantPart::Text {
-                text: "answer".to_string(),
-            }],
-            provenance: None,
-            assistant_message: None,
-        }),
-    ));
+    // When: each event arrives independently, only the three finish events settle.
+    for (index, event) in events.iter().enumerate() {
+        app.ingest_runtime_event(RuntimeEvent::Durable(Box::new(event.clone())));
+        assert_eq!(
+            app.canonical_projection_generation(),
+            event.seq.saturating_sub(2)
+        );
+        assert_eq!(app.canonical_projection_error(), None);
+        if index >= 2 {
+            let expected = CanonicalSessionProjection::from_event_history(&events[..=index])
+                .expect("each finish boundary must project");
+            assert_eq!(app.canonical_projection(), Some(&expected));
+        } else {
+            assert_eq!(app.canonical_projection(), None);
+        }
+    }
 
-    // assert
-    assert_eq!(app.canonical_projection_generation(), 1);
-    assert_eq!(
-        app.canonical_projection()
-            .and_then(|projection| projection.session.watermark())
-            .map(|seq| seq.get()),
-        Some(3)
-    );
+    // Then: a failing settlement reports the fresh-projection error without advancing state.
+    let before = app.canonical_projection().cloned();
+    let generation = app.canonical_projection_generation();
+    let mut invalid = events[4].clone();
+    invalid.seq = 6;
+    let mut attempted = events.clone();
+    attempted.push(invalid.clone());
+    let error = CanonicalSessionProjection::from_event_history(&attempted)
+        .expect_err("duplicate event identity must fail")
+        .to_string();
+    app.ingest_runtime_event(RuntimeEvent::Durable(Box::new(invalid)));
+    assert_eq!(app.canonical_projection_error(), Some(error.as_str()));
+    assert_eq!(app.canonical_projection_generation(), generation);
+    assert_eq!(app.canonical_projection(), before.as_ref());
 }
 
 #[test]
