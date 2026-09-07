@@ -59,6 +59,19 @@ pub(super) fn startup_composer_keeps_inset_input_then_metadata_row_order() {
     );
 
     for (width, height) in [(100, 30), (80, 24), (160, 48)] {
+        let cells = render_live_cells(&app, width, height);
+        let plan = FrameLayoutPlan::for_app(&app, ratatui::layout::Rect::new(0, 0, width, height));
+        let composer = plan.dock.unwrap_or_abort().composer;
+        let canvas = cells[(0, 0)].bg;
+        for y in composer.y..composer.bottom() {
+            for x in composer.x..composer.right() {
+                assert_eq!(
+                    cells[(x, y)].bg,
+                    canvas,
+                    "composer must not paint a rectangular background at {x},{y} in {width}x{height}"
+                );
+            }
+        }
         let rendered = render_live_lines(&app, width, height);
         let lines = rendered.lines().collect::<Vec<_>>();
         let glyph_row = find_line_containing(&lines, "❯")
