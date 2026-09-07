@@ -578,6 +578,9 @@ pub struct AppState {
     file_mention_scanner: Arc<dyn FileMentionWorkspaceScanner>,
     file_mention_now_unix: Arc<dyn Fn() -> u64 + Send + Sync>,
     workspace_context_labels: Vec<String>,
+    current_directory_branch_label: String,
+    #[cfg(test)]
+    current_directory_probe: Option<Arc<dyn Fn() -> WorkspaceEnvironment + Send + Sync>>,
     file_mention_index: Option<FileMentionIndex>,
     pub(crate) file_mention_tags: Vec<FileMentionTag>,
     file_mention_frecency: BTreeMap<String, FileMentionFrecency>,
@@ -806,6 +809,12 @@ impl Default for AppState {
             file_mention_scanner: Arc::new(SystemFileMentionWorkspaceScanner),
             file_mention_now_unix: Arc::new(system_file_mention_now_unix),
             workspace_context_labels: Vec::new(),
+            current_directory_branch_label: directory_branch_label(
+                &test_workspace_env_override().unwrap_or_else(WorkspaceEnvironment::current),
+                false,
+            ),
+            #[cfg(test)]
+            current_directory_probe: None,
             file_mention_index: None,
             file_mention_tags: Vec::new(),
             file_mention_frecency: BTreeMap::new(),
@@ -3503,13 +3512,6 @@ impl AppState {
             .events
             .first()
             .map(|event| event.run_id.as_str())
-    }
-
-    pub(crate) fn startup_directory_branch_label(&self) -> String {
-        directory_branch_label(
-            &test_workspace_env_override().unwrap_or_else(WorkspaceEnvironment::current),
-            false,
-        )
     }
 
     pub(crate) fn sidebar_directory_branch_label(&self) -> Option<&str> {

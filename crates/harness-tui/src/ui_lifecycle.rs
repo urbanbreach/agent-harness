@@ -1123,23 +1123,47 @@ mod breadcrumb_token_meta_tests {
             widgets::Block,
             Terminal,
         };
+        use std::sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        };
 
         // Given: the real startup renderer at the standard canary viewport.
-        let app = crate::app::AppState::new_startup(Vec::new(), None);
+        let mut app = crate::app::AppState::new_startup(Vec::new(), None);
+        let calls = Arc::new(AtomicUsize::new(0));
+        let probe_calls = Arc::clone(&calls);
+        app.set_current_directory_probe_for_test(Arc::new(move || {
+            let call = probe_calls.fetch_add(1, Ordering::Relaxed);
+            harness_core::workspace::WorkspaceEnvironment {
+                working_directory: "/workspace/checkout/subdir".into(),
+                workspace_root: "/workspace/checkout".into(),
+                is_git_repository: true,
+                git_branch: Some(format!("branch-{call}")),
+            }
+        }));
+        let _ = app.startup_directory_branch_label();
         let backend = TestBackend::new(100, 30);
         let mut terminal = Terminal::new(backend).expect("test backend");
         let theme = app.theme();
 
         // When: the live startup shell is rendered.
-        terminal
-            .draw(|frame| {
-                frame.render_widget(
-                    Block::default().style(Style::default().bg(theme.surface.canvas)),
-                    frame.area(),
-                );
-                super::render_startup_breadcrumb(frame, &app, frame.area(), &theme);
-            })
-            .expect("startup render");
+        for _ in 0..3 {
+            terminal
+                .draw(|frame| {
+                    frame.render_widget(
+                        Block::default().style(Style::default().bg(theme.surface.canvas)),
+                        frame.area(),
+                    );
+                    super::render_startup_breadcrumb(frame, &app, frame.area(), &theme);
+                    super::render_live_breadcrumb(
+                        frame,
+                        &app,
+                        ratatui::layout::Rect::new(0, 3, 100, 2),
+                        &theme,
+                    );
+                })
+                .expect("startup render");
+        }
 
         // act
         // Then: a cell after the visible breadcrumb retains the canvas style.
@@ -1150,6 +1174,34 @@ mod breadcrumb_token_meta_tests {
         // assert
         assert_eq!(cell.bg, theme.surface.canvas);
         assert!(!cell.modifier.contains(Modifier::DIM));
+        assert_eq!(
+            calls.load(Ordering::Relaxed),
+            1,
+            "repaints must not discover Git metadata"
+        );
+        assert_eq!(
+            crate::render_test::buffer_to_string(terminal.backend().buffer(), 100)
+                .matches("branch-0")
+                .count(),
+            2
+        );
+        assert!(app.refresh_current_directory_label());
+        let refreshed = crate::render_test::render_to_string(
+            &app,
+            ratatui::layout::Rect::new(0, 0, 100, 30),
+            |app, frame, area| {
+                super::render_startup_breadcrumb(frame, app, area, app.theme());
+                super::render_live_breadcrumb(
+                    frame,
+                    app,
+                    ratatui::layout::Rect::new(0, 3, 100, 2),
+                    app.theme(),
+                );
+            },
+        );
+        assert_eq!(refreshed.matches("branch-1").count(), 2);
+        assert!(!refreshed.contains("branch-0"));
+        assert_eq!(calls.load(Ordering::Relaxed), 2);
     }
 }
 
