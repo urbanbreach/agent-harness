@@ -60,8 +60,8 @@ pub(super) fn centered_popup(
     min_height: u16,
     max_height: u16,
 ) -> Rect {
-    let width = root.width.clamp(min_width, max_width);
-    let height = root.height.clamp(min_height, max_height);
+    let width = root.width.clamp(min_width, max_width).min(root.width);
+    let height = root.height.clamp(min_height, max_height).min(root.height);
     Rect::new(
         root.x + root.width.saturating_sub(width) / 2,
         root.y + root.height.saturating_sub(height) / 2,

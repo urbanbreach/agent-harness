@@ -12,7 +12,6 @@ use crate::theme::{quantize_color, Theme};
 
 struct SyntaxHighlightAssets {
     syntax_set: SyntaxSet,
-    theme: SyntectTheme,
 }
 
 pub(super) fn render_highlighted_code_block(
@@ -27,8 +26,18 @@ pub(super) fn render_highlighted_code_block(
 
     let highlighted = language.and_then(|language| {
         let syntax_assets = syntax_highlight_assets();
-        let syntax = syntax_assets.syntax_set.find_syntax_by_token(language)?;
-        let mut highlighter = HighlightLines::new(syntax, &syntax_assets.theme);
+        let syntax = syntax_assets
+            .syntax_set
+            .find_syntax_by_token(language)
+            .or_else(|| {
+                let token = language.rsplit(':').next().unwrap_or(language);
+                std::path::Path::new(token)
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .and_then(|ext| syntax_assets.syntax_set.find_syntax_by_extension(ext))
+            })?;
+        let palette = syntax_theme(theme);
+        let mut highlighter = HighlightLines::new(syntax, &palette);
         let mut lines = Vec::new();
         for source_line in body.lines() {
             let Ok(regions) = highlighter.highlight_line(source_line, &syntax_assets.syntax_set)
@@ -89,13 +98,51 @@ fn syntax_highlight_assets() -> &'static SyntaxHighlightAssets {
 
     SYNTAX_ASSETS.get_or_init(|| {
         let syntax_set = SyntaxSet::load_defaults_nonewlines();
-        let theme = super::ui_diff::ui_diff_syntax::diff_syntect_theme();
-        SyntaxHighlightAssets { syntax_set, theme }
+        SyntaxHighlightAssets { syntax_set }
     })
 }
 
+/// Syntax selectors use Harness semantic colors, including terminal-native roles.
+pub(super) fn syntax_theme(theme: &Theme) -> SyntectTheme {
+    use syntect::highlighting::{StyleModifier, ThemeItem};
+    let color = |value| {
+        let (r, g, b) = crate::theme::resolve_to_rgb(value).unwrap_or((128, 128, 128));
+        syntect::highlighting::Color { r, g, b, a: 255 }
+    };
+    let mut result = SyntectTheme::default();
+    result.settings.foreground = Some(color(theme.text.primary));
+    for (selector, foreground) in [
+        ("comment", theme.text.secondary),
+        ("keyword, storage", theme.text.accent),
+        ("string", theme.status.success),
+        ("constant", theme.status.warning),
+        (
+            "entity.name.function, support.function",
+            theme.markdown.code,
+        ),
+        ("entity.name.type, support.type", theme.markdown.link),
+        ("invalid", theme.status.error),
+    ] {
+        if let Ok(scope) = selector.parse() {
+            result.scopes.push(ThemeItem {
+                scope,
+                style: StyleModifier {
+                    foreground: Some(color(foreground)),
+                    ..Default::default()
+                },
+            });
+        }
+    }
+    result
+}
+
 fn syntect_style_to_ratatui(style: syntect::highlighting::Style, theme: &Theme) -> Style {
-    let foreground = syntect_color_to_ratatui(style.foreground);
+    let mut foreground = syntect_color_to_ratatui(style.foreground);
+    if theme.text.primary == Color::Reset
+        && (style.foreground.r, style.foreground.g, style.foreground.b) == (128, 128, 128)
+    {
+        foreground = Color::Reset;
+    }
     let mut rendered = Style::default()
         .fg(quantize_color(foreground, theme.color_level()))
         .bg(theme.markdown.code_background);

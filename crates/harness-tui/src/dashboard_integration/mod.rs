@@ -6,6 +6,7 @@
 mod focus;
 mod input;
 mod overlays;
+mod reply;
 mod responsive;
 mod state;
 mod surface;
@@ -56,6 +57,7 @@ pub struct DashboardIntegration {
     input: DashboardInputRouter,
     search: SearchState,
     help_visible: bool,
+    replies: std::collections::BTreeMap<SelectionKey, crate::composer_editing::ComposerEditor>,
     hooks: DashboardHooks,
     return_state: Option<DashboardReturnState>,
 }
@@ -83,10 +85,11 @@ impl DashboardIntegration {
             input: DashboardInputRouter::new(),
             search: SearchState::new(),
             help_visible: false,
+            replies: std::collections::BTreeMap::new(),
             hooks: DashboardHooks::new(),
             return_state: None,
         };
-        integration.reconcile_focus();
+        integration.reflow()?;
         Ok(integration)
     }
 
@@ -95,13 +98,37 @@ impl DashboardIntegration {
             DashboardInput::Focus(direction) => {
                 self.focus.traverse(direction, &self.layout.visible_panes());
             }
-            DashboardInput::Select(key) => self.select(key)?,
+            DashboardInput::FocusPane(pane) => self.set_focus(pane),
+            DashboardInput::Select(key) => {
+                self.select(key)?;
+                self.focus.set(DashboardPane::Roster);
+            }
             DashboardInput::ToggleGroup(group) => self.roster.toggle_fold(group),
             DashboardInput::Search(context) => self.begin_search(context),
             DashboardInput::SearchText(text) => self.input_search(&text)?,
             DashboardInput::Reply => self.focus.set(DashboardPane::Reply),
-            DashboardInput::Move(pane, _) => self.focus.set(pane),
-            DashboardInput::Scroll(pane, _) => self.focus.set(pane),
+            DashboardInput::Move(pane, direction) => {
+                self.focus.set(pane);
+                if pane == DashboardPane::Roster {
+                    self.move_selection(direction)?;
+                }
+            }
+            DashboardInput::Scroll(pane, delta) => {
+                self.focus.set(pane);
+                if pane == DashboardPane::Roster {
+                    self.roster.scroll_top = self
+                        .roster
+                        .scroll_top
+                        .saturating_add_signed(isize::from(delta))
+                        .min(self.roster_layout().max_scroll);
+                } else if pane == DashboardPane::Peek {
+                    if delta == 0 {
+                        self.peek.jump_to_bottom()?;
+                    } else {
+                        self.peek.scroll_by(-f64::from(delta))?;
+                    }
+                }
+            }
             DashboardInput::DetailsCycle(direction) => {
                 let details = self
                     .details
@@ -127,6 +154,34 @@ impl DashboardIntegration {
     }
 
     pub fn handle_key(&mut self, event: KeyEvent) -> Result<(), DashboardIntegrationError> {
+        if self.layout.details.is_some() {
+            if matches!(event.code, KeyCode::Esc | KeyCode::Char('d')) {
+                self.close_details();
+            }
+            return Ok(());
+        }
+        if event.code == KeyCode::Char('d')
+            && self.focus.current() == DashboardPane::Roster
+            && self.search.context.is_none()
+        {
+            self.open_details();
+            return Ok(());
+        }
+        if self.help_visible {
+            if matches!(
+                event.code,
+                KeyCode::Esc | KeyCode::Char('h') | KeyCode::Char('?')
+            ) {
+                self.help_visible = false;
+            }
+            return Ok(());
+        }
+        if self.focus.current() == DashboardPane::Reply
+            && self.search.context.is_none()
+            && !matches!(event.code, KeyCode::Tab | KeyCode::BackTab | KeyCode::Esc)
+        {
+            return self.edit_reply(event);
+        }
         if self.search.context.is_some() {
             match event.code {
                 KeyCode::Char(character) => self.input_search(&character.to_string())?,
@@ -202,7 +257,12 @@ impl DashboardIntegration {
         if viewport.width == 0 || viewport.height == 0 {
             return Err(DashboardIntegrationError::InvalidViewport);
         }
+        let details_open = self.layout.details.is_some();
         self.layout = layout_for_rect(viewport, ShellState::Streaming);
+        if details_open {
+            self.open_details();
+        }
+        self.reflow()?;
         self.hooks
             .notify(DashboardNotificationKind::Resized, viewport_label(viewport));
         self.reconcile_focus();
@@ -213,8 +273,10 @@ impl DashboardIntegration {
         if self.dashboard.row(key.as_str()).is_none() {
             return Err(DashboardIntegrationError::UnknownSelection(key));
         }
+        self.controls.context.selection = Some(key.clone());
         self.roster.set_selected(Some(key.clone()));
         self.peek.select(&key)?;
+        self.reflow()?;
         self.hooks
             .set_title(format!("Harness dashboard · {}", key.as_str()));
         self.hooks.notify(

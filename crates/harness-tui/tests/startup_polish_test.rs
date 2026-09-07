@@ -96,84 +96,13 @@ fn startup_logo_frame(
 }
 
 #[test]
-fn compact_startup_omits_the_wide_identity_logo_at_every_height() {
-    // arrange
-    // act
+fn stacked_startup_uses_the_h_that_fits_the_available_height() {
     let app = AppState::new_startup(Vec::new(), None);
-    let short = startup_text(&app, 80, 24);
-    let medium = startup_text(&app, 80, 32);
-    let tall = startup_text(&app, 80, 40);
-
-    // assert
-    assert!(!short.contains("██╗  ██╗"), "{short}");
-    assert!(!medium.contains("██╗  ██╗"), "{medium}");
-    assert!(!tall.contains("██╗  ██╗"), "{tall}");
-}
-
-#[test]
-fn compact_startup_reveals_mark_then_identity_before_affordances() {
-    // arrange: compact width so the welcome renders without the wide panel.
-    let mut app = AppState::new_startup(Vec::new(), None);
-
-    // act: sample the compact reveal at each staged delay.
-    let mark = startup_text(&app, 80, 24);
-
-    // assert: Mark stage paints the wordmark, not the identity or affordances.
-    assert!(
-        mark.contains("Harness"),
-        "compact mark stage must paint the wordmark\n{mark}"
-    );
-    assert!(
-        !mark.contains(env!("CARGO_PKG_VERSION")),
-        "compact mark stage must not paint the version\n{mark}"
-    );
-    assert!(
-        !mark.contains("New worktree"),
-        "compact mark stage must not paint affordances\n{mark}"
-    );
-
-    // act: advance to the Identity stage.
-    app.advance_wall_clock_for_motion_evidence(Duration::from_millis(100));
-    let identity = startup_text(&app, 80, 24);
-
-    // assert: identity joins the wordmark, affordances stay hidden.
-    assert!(
-        identity.contains(env!("CARGO_PKG_VERSION"))
-            && identity.contains("Thanks for trying Harness"),
-        "compact identity stage must paint version and welcome copy\n{identity}"
-    );
-    assert!(
-        !identity.contains("New worktree"),
-        "compact identity stage must not paint affordances\n{identity}"
-    );
-
-    // act: advance to the Affordances stage.
-    app.advance_wall_clock_for_motion_evidence(Duration::from_millis(100));
-    let affordances = startup_text(&app, 80, 24);
-
-    // assert: affordances join, changelog stays hidden.
-    assert!(
-        affordances.contains("New worktree") && affordances.contains("Resume session"),
-        "compact affordance stage must paint the actions\n{affordances}"
-    );
-    assert!(
-        !affordances.contains("Subagent spawning"),
-        "compact affordance stage must not paint the changelog\n{affordances}"
-    );
-
-    // act: advance to the Complete stage.
-    app.advance_wall_clock_for_motion_evidence(Duration::from_millis(100));
-    let complete = startup_text(&app, 80, 24);
-
-    // assert: the changelog settles the compact welcome within its row budget.
-    assert!(
-        complete.contains("Changelog") && complete.contains("Subagent spawning"),
-        "compact complete stage must paint the changelog\n{complete}"
-    );
-    assert!(
-        !complete.contains("██╗  ██╗"),
-        "compact complete stage must stay logo-free\n{complete}"
-    );
+    for (height, full) in [(24, false), (32, true), (40, true)] {
+        let rendered = startup_text(&app, 80, height);
+        assert_eq!(rendered.contains("██╗  ██╗"), full, "{rendered}");
+        assert_eq!(rendered.contains("██"), full, "{rendered}");
+    }
 }
 
 #[test]
@@ -244,114 +173,6 @@ fn startup_welcome_requests_slow_motion_only_until_first_input() {
     assert_eq!(dismissed.until(), Some(Duration::from_millis(100)));
 }
 
-#[test]
-fn startup_logo_stays_on_one_color_during_welcome_expansion() {
-    // arrange
-    let mut app = AppState::new_startup(Vec::new(), None);
-    let initial = startup_logo_colors(&app, 120, 32);
-    app.advance_wall_clock_for_motion_evidence(Duration::from_millis(300));
-
-    // act
-    let colors = startup_logo_colors(&app, 120, 32);
-
-    // assert
-    assert!(initial.contains(&colors[0]), "rest colors: {initial:?}");
-    assert_eq!(colors.len(), 1, "startup identity colors: {colors:?}");
-}
-
-#[test]
-fn startup_welcome_reveals_mark_then_name_then_affordances_then_changelog() {
-    // arrange
-    // Given: a visible wide startup welcome at first paint.
-    let mut app = AppState::new_startup(Vec::new(), None);
-
-    // act
-    // Mark stage at first paint — logo only, no identity, no affordances.
-    let mark = startup_text(&app, 120, 32);
-    // assert
-    assert!(
-        mark.contains("██╗"),
-        "mark stage must paint the Harness mark\n{mark}"
-    );
-    assert!(
-        !mark.contains("Thanks for trying Harness"),
-        "mark stage must not paint welcome copy\n{mark}"
-    );
-    assert!(
-        !mark.contains("New worktree"),
-        "mark stage must not paint first-input affordances\n{mark}"
-    );
-
-    // Name stage — product identity and welcome copy join the mark.
-    app.advance_wall_clock_for_motion_evidence(Duration::from_millis(100));
-    let name = startup_text(&app, 120, 32);
-    assert!(
-        name.contains("Thanks for trying Harness"),
-        "name stage must paint welcome copy\n{name}"
-    );
-    assert!(
-        !name.contains("New worktree"),
-        "name stage must not paint first-input affordances\n{name}"
-    );
-
-    // Affordances stage — first-input affordances join the identity.
-    app.advance_wall_clock_for_motion_evidence(Duration::from_millis(100));
-    let affordances = startup_text(&app, 120, 32);
-    assert!(
-        affordances.contains("New worktree") && affordances.contains("Resume session"),
-        "affordance stage must paint first-input affordances\n{affordances}"
-    );
-    assert!(
-        !affordances.contains("Subagent spawning"),
-        "affordance stage must not paint the expanded changelog\n{affordances}"
-    );
-
-    // Complete stage — changelog expansion settles the welcome.
-    app.advance_wall_clock_for_motion_evidence(Duration::from_millis(100));
-    let complete = startup_text(&app, 120, 32);
-    assert!(
-        complete.contains("Changelog") && complete.contains("Subagent spawning"),
-        "complete stage must paint the expanded changelog\n{complete}"
-    );
-    assert!(
-        app.motion_plan_for_evidence().is_none(),
-        "settled reveal must not keep a decorative deadline armed"
-    );
-}
-
-#[test]
-fn reduced_motion_freezes_startup_reveal_on_the_final_frame() {
-    // arrange
-    // Given: reduced motion active before the first startup paint.
-    let mut app = AppState::new_startup(Vec::new(), None);
-    app.set_reduced_motion_for_evidence(true);
-
-    // act
-    let frozen = startup_text(&app, 120, 32);
-
-    // assert
-    assert!(
-        frozen.contains("██╗"),
-        "reduced motion must still paint the Harness mark\n{frozen}"
-    );
-    assert!(
-        frozen.contains("Thanks for trying Harness") || frozen.contains("Changelog"),
-        "reduced motion must freeze on the final reveal frame\n{frozen}"
-    );
-    assert!(
-        frozen.contains("New worktree"),
-        "reduced motion must show first-input affordances immediately\n{frozen}"
-    );
-    assert!(
-        frozen.contains("Changelog") && frozen.contains("Subagent spawning"),
-        "reduced motion must freeze on the expanded final frame\n{frozen}"
-    );
-    assert!(
-        app.motion_plan_for_evidence().is_none(),
-        "reduced motion must not arm a reveal deadline"
-    );
-}
-
 fn normalized_startup_snapshot(app: &AppState, width: u16, height: u16) -> String {
     let rendered = startup_text(app, width, height);
     rendered
@@ -368,69 +189,13 @@ fn normalized_startup_snapshot(app: &AppState, width: u16, height: u16) -> Strin
 }
 
 #[test]
-fn startup_reveal_frame_sequence_snapshots_wide_and_compact() {
-    // arrange: the staged reveal sampled at each stage boundary in both geometries.
-    let geometries: [(&str, u16, u16); 2] = [("wide", 120, 32), ("compact", 80, 24)];
-
-    for (geometry_name, width, height) in geometries {
-        let mut app = AppState::new_startup(Vec::new(), None);
-        // Pin the motion epoch to construction time so real scheduling delay
-        // between app creation and the staged advances cannot leak into the
-        // sampled reveal stage under a loaded parallel test run.
-        app.restart_motion_epoch_for_evidence();
-        for (stage_index, stage_name) in ["mark", "identity", "affordances", "complete"]
-            .into_iter()
-            .enumerate()
-        {
-            // act
-            if stage_index > 0 {
-                app.advance_wall_clock_for_motion_evidence(Duration::from_millis(100));
-            }
-            let snapshot = normalized_startup_snapshot(&app, width, height);
-
-            // assert
-            insta::assert_snapshot!(
-                format!("startup_reveal_{geometry_name}_{stage_name}"),
-                snapshot
-            );
-        }
-    }
-}
-
-#[test]
-fn reduced_motion_startup_snapshots_freeze_the_complete_frame() {
-    // arrange: reduced motion active before the first startup paint in both geometries.
-    let geometries: [(&str, u16, u16); 2] = [("wide", 120, 32), ("compact", 80, 24)];
-
-    for (geometry_name, width, height) in geometries {
+fn startup_content_snapshots_wide_and_stacked() {
+    for (geometry, width, height) in [("wide", 120, 32), ("stacked", 80, 24)] {
         let mut app = AppState::new_startup(Vec::new(), None);
         app.set_reduced_motion_for_evidence(true);
-
-        // act
-        let frozen = normalized_startup_snapshot(&app, width, height);
-
-        // assert
-        insta::assert_snapshot!(format!("startup_reduced_motion_{geometry_name}"), frozen);
-    }
-}
-
-#[test]
-fn reduced_motion_freeze_equals_the_full_motion_complete_frame() {
-    // arrange: reduced motion freezes instantly while full motion settles after the cadence.
-    let mut reduced = AppState::new_startup(Vec::new(), None);
-    reduced.set_reduced_motion_for_evidence(true);
-    let mut full = AppState::new_startup(Vec::new(), None);
-    full.advance_wall_clock_for_motion_evidence(Duration::from_millis(300));
-
-    for (width, height) in [(120u16, 32u16), (80, 24)] {
-        // act
-        let frozen = normalized_startup_snapshot(&reduced, width, height);
-        let settled = normalized_startup_snapshot(&full, width, height);
-
-        // assert
-        assert_eq!(
-            frozen, settled,
-            "reduced motion must freeze on the exact complete frame at {width}x{height}"
+        insta::assert_snapshot!(
+            format!("startup_content_{geometry}"),
+            normalized_startup_snapshot(&app, width, height)
         );
     }
 }
@@ -438,7 +203,7 @@ fn reduced_motion_freeze_equals_the_full_motion_complete_frame() {
 #[test]
 fn startup_input_is_never_blocked_by_the_reveal() {
     // arrange
-    // Given: a welcome still in its Mark reveal stage.
+    // Given: a welcome at its first frame.
     let mut app = AppState::new_startup(Vec::new(), None);
     assert_eq!(app.focus, Focus::Prompt);
 
@@ -452,32 +217,16 @@ fn startup_input_is_never_blocked_by_the_reveal() {
     assert_eq!(app.focus, Focus::Prompt);
     assert!(
         rendered.contains('x'),
-        "typing during the reveal must reach the composer\n{rendered}"
+        "typing on the welcome must reach the composer\n{rendered}"
     );
     assert!(
         !rendered.contains("New worktree"),
-        "typing during the reveal must dismiss the welcome affordances\n{rendered}"
+        "typing on the welcome must dismiss the welcome affordances\n{rendered}"
     );
 }
 
 #[test]
-fn startup_welcome_settles_and_parks_after_expansion() {
-    // arrange
-    // Given: a visible startup welcome before its baseline expansion tick.
-    let mut app = AppState::new_startup(Vec::new(), None);
-
-    // When: the motion clock reaches the first expanded frame.
-    app.advance_wall_clock_for_motion_evidence(Duration::from_millis(300));
-
-    // act
-    // Then: the renderer has no decorative redraw deadline left to serve.
-    // assert
-    assert!(app.motion_plan_for_evidence().is_none());
-}
-
-#[test]
-fn startup_logo_capability_matrix_preserves_static_identity_semantics() {
-    // arrange
+fn startup_logo_capabilities_preserve_geometry_and_bounded_motion() {
     for color_level in [
         ColorLevel::TrueColor,
         ColorLevel::Ansi256,
@@ -486,37 +235,26 @@ fn startup_logo_capability_matrix_preserves_static_identity_semantics() {
     ] {
         let mut app = AppState::new_startup(Vec::new(), None);
         app.set_startup_logo_capabilities_for_evidence(color_level, GlyphMode::Preferred);
-
-        // act
-        let (initial_cells, initial_colors) = startup_logo_frame(&app, 120, 32);
-        let initial_motion = app.motion_plan_for_evidence();
-        app.advance_wall_clock_for_motion_evidence(Duration::from_millis(300));
-        let (middle_cells, middle_colors) = startup_logo_frame(&app, 120, 32);
-
-        // assert
-        assert!(
-            !initial_cells.is_empty(),
-            "{color_level}: preferred logo missing"
-        );
-        assert_eq!(middle_colors, initial_colors, "{color_level}: color drift");
+        app.restart_motion_epoch_for_evidence();
+        let (initial_cells, _) = startup_logo_frame(&app, 120, 32);
+        app.advance_wall_clock_for_motion_evidence(Duration::from_millis(4300));
+        let (later_cells, _) = startup_logo_frame(&app, 120, 32);
+        assert!(!initial_cells.is_empty(), "{color_level}");
         assert_eq!(
-            initial_motion.cadence(),
-            MotionCadence::Slow(Duration::from_millis(83)),
-            "{color_level}: visible welcome expansion must request the slow cadence"
+            later_cells, initial_cells,
+            "motion must never move artwork or controls"
         );
-        assert_ne!(
-            middle_cells, initial_cells,
-            "{color_level}: expanded logo did not move with its panel"
+        assert_eq!(
+            app.motion_plan_for_evidence().cadence(),
+            MotionCadence::Slow(Duration::from_millis(83))
         );
-        assert!(
-            app.motion_plan_for_evidence().is_none(),
-            "{color_level}: settled sweep still armed"
-        );
+        app.set_reduced_motion_for_evidence(true);
+        assert!(app.motion_plan_for_evidence().is_none());
     }
 }
 
 #[test]
-fn startup_logo_ascii_and_compact_widths_do_not_paint_logo_cells() {
+fn startup_logo_is_hidden_for_ascii_and_retained_at_stacked_widths() {
     // arrange
     let mut ascii = AppState::new_startup(Vec::new(), None);
     ascii.set_startup_logo_capabilities_for_evidence(ColorLevel::TrueColor, GlyphMode::Ascii);
@@ -532,9 +270,9 @@ fn startup_logo_ascii_and_compact_widths_do_not_paint_logo_cells() {
     assert!(ascii_cells.is_empty());
     assert_eq!(
         ascii.motion_plan_for_evidence().cadence(),
-        MotionCadence::Slow(Duration::from_millis(83))
+        MotionCadence::None
     );
-    assert!(compact_cells.is_empty());
+    assert!(!compact_cells.is_empty());
     assert!(!wide_cells.is_empty());
 }
 

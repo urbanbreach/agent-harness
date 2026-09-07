@@ -265,6 +265,15 @@ impl AppState {
                 if !model.contains(mouse.column, mouse.row) {
                     return Some(owner_changed || press_invalidated);
                 }
+                if self.memory_browser.visible && self.memory_browser.fullscreen {
+                    let code = if mouse.kind == MouseEventKind::ScrollDown {
+                        KeyCode::PageDown
+                    } else {
+                        KeyCode::PageUp
+                    };
+                    self.handle_memory_browser_key(KeyEvent::new(code, KeyModifiers::NONE));
+                    return Some(true);
+                }
                 if model.key == ModalSurfaceKey::Help {
                     let changed = self.help_browser.scroll_by(
                         mouse.kind == MouseEventKind::ScrollDown,
@@ -377,6 +386,14 @@ impl AppState {
                 kind: OverlayKind::ThemeDialog,
                 ..
             } => std::mem::replace(&mut self.theme_dialog_selected, index),
+            ModalSurfaceKey::Overlay {
+                kind: OverlayKind::ProductInfo,
+                ..
+            } => std::mem::replace(&mut self.product_info.selected, index),
+            ModalSurfaceKey::Overlay {
+                kind: OverlayKind::PromptHistory,
+                ..
+            } => std::mem::replace(&mut self.prompt_history_picker.selected, index),
             ModalSurfaceKey::Overlay {
                 kind: OverlayKind::PromptStashList,
                 ..

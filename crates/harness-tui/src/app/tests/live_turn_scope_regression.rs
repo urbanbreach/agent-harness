@@ -122,7 +122,7 @@ fn send_now_interrupts_only_the_visible_parent_turn() {
     app.queued_prompt_count = 1;
 
     // When: the queued prompt is promoted from the parent view.
-    assert!(app.send_queued_prompt_now());
+    app.handle_key(key_with_modifiers(KeyCode::Enter, KeyModifiers::CONTROL));
 
     // act
     // Then: only the task matching the visible parked parent is interrupted.
@@ -137,4 +137,48 @@ fn send_now_interrupts_only_the_visible_parent_turn() {
             reason: InterruptReason::SendNow,
         }]
     );
+}
+
+#[test]
+fn control_enter_cancels_before_replacement_and_submits_normally_when_idle() {
+    let intents = Arc::new(Mutex::new(Vec::new()));
+    let sink = Arc::clone(&intents);
+    let mut app = AppState::new_live(
+        None,
+        false,
+        Some(Arc::new(move |intent| {
+            sink.lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .push(intent);
+        })),
+    );
+    app.replace_prompt_input("idle prompt".into());
+    app.handle_key(key_with_modifiers(KeyCode::Enter, KeyModifiers::CONTROL));
+    let emitted = std::mem::take(
+        &mut *intents
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()),
+    );
+    assert!(
+        matches!(emitted.as_slice(), [UiIntent::SubmitPrompt { text, .. }] if text == "idle prompt")
+    );
+    schedule_turn(
+        &mut app,
+        1,
+        "req_parent",
+        "task_parent",
+        EventActor::new(ActorKind::System, None),
+    );
+    app.ingest_event(provider_started(2, "req_parent", "default", "model-1"));
+    app.replace_prompt_input("replace this".into());
+    app.handle_key(key_with_modifiers(KeyCode::Enter, KeyModifiers::CONTROL));
+    let emitted = std::mem::take(
+        &mut *intents
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()),
+    );
+    assert!(
+        matches!(emitted.as_slice(), [UiIntent::InterruptSession { task_ids, .. }, UiIntent::SubmitPrompt { text, .. }] if task_ids == &["task_parent"] && text == "replace this")
+    );
+    assert!(app.composer.prompt_buffer.is_empty());
 }

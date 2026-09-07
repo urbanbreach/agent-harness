@@ -139,7 +139,7 @@ pub(super) fn slash_help_opens_help_surface_and_preserves_draft() {
     assert!(!app.should_quit);
 }
 
-pub(super) fn slash_escape_clears_token_or_restores_prior_draft() {
+pub(super) fn slash_escape_preserves_query_and_cursor() {
     let mut fresh = AppState::new_startup(Vec::new(), None);
     for ch in "/re".chars() {
         fresh.handle_key(key(KeyCode::Char(ch)));
@@ -147,8 +147,8 @@ pub(super) fn slash_escape_clears_token_or_restores_prior_draft() {
 
     fresh.handle_key(key(KeyCode::Esc));
 
-    assert_eq!(fresh.composer.prompt_buffer, "");
-    assert_eq!(fresh.composer.prompt_cursor, 0);
+    assert_eq!(fresh.composer.prompt_buffer, "/re");
+    assert_eq!(fresh.composer.prompt_cursor, 3);
     assert!(!fresh.slash_visible);
 
     let mut with_draft = AppState::new_startup(Vec::new(), None);
@@ -158,8 +158,8 @@ pub(super) fn slash_escape_clears_token_or_restores_prior_draft() {
 
     with_draft.handle_key(key(KeyCode::Esc));
 
-    assert_eq!(with_draft.composer.prompt_buffer, "draft");
-    assert_eq!(with_draft.composer.prompt_cursor, "draft".chars().count());
+    assert_eq!(with_draft.composer.prompt_buffer, "/draft");
+    assert_eq!(with_draft.composer.prompt_cursor, 1);
     assert!(!with_draft.slash_visible);
 }
 
@@ -357,40 +357,45 @@ pub(super) fn live_session_picker_replay_quits_tui_and_emits_intent() {
 pub(super) fn slash_menu_supports_mouse_selection() {
     let mut app = AppState::new_startup(Vec::new(), None);
     app.handle_key(key(KeyCode::Char('/')));
-
-    let frame = Rect::new(0, 0, 100, 24);
+    let frame = Rect::new(0, 0, 60, 24);
     let overlay = crate::layout::FrameLayoutPlan::for_app(&app, frame)
         .slash_overlay
         .unwrap_or_abort();
     let list_area = crate::layout::slash_command_overlay_content_area(overlay);
-    let target_index = app
-        .slash_filtered
+    let rows = app.slash_completion_viewport(list_area);
+    let (target, area) = rows
         .iter()
-        .position(|command| command == "new")
-        .unwrap_or_abort();
-    let target_row = list_area
-        .y
-        .saturating_add(u16::try_from(target_index).unwrap_or_abort());
-
-    app.handle_mouse(
-        MouseEvent {
-            kind: MouseEventKind::Down(MouseButton::Left),
-            column: list_area.x.saturating_add(1),
-            row: target_row,
-            modifiers: KeyModifiers::NONE,
-        },
-        frame,
-        None,
-        None,
-        None,
-    );
-    assert_eq!(app.slash_selected, target_index);
-
+        .find(|(row, _)| row.index != app.slash_selected && row.label.is_empty())
+        .expect("fixture must expose a wrapped continuation row");
+    let command = app.slash_filtered[target.index].clone();
+    let initial = app.slash_selected;
+    for kind in [
+        MouseEventKind::Moved,
+        MouseEventKind::Down(MouseButton::Left),
+    ] {
+        app.handle_mouse(
+            MouseEvent {
+                kind,
+                column: area.x + 1,
+                row: area.y,
+                modifiers: KeyModifiers::NONE,
+            },
+            frame,
+            None,
+            None,
+            None,
+        );
+        assert_eq!(
+            app.slash_selected, initial,
+            "pointer hover/press must not replace keyboard selection"
+        );
+        assert_eq!(app.slash_hovered, Some(target.index));
+    }
     app.handle_mouse(
         MouseEvent {
             kind: MouseEventKind::Up(MouseButton::Left),
-            column: list_area.x.saturating_add(1),
-            row: target_row,
+            column: area.x + 1,
+            row: area.y,
             modifiers: KeyModifiers::NONE,
         },
         frame,
@@ -398,28 +403,58 @@ pub(super) fn slash_menu_supports_mouse_selection() {
         None,
         None,
     );
-
-    assert!(app.startup_shell_visible());
-    assert_eq!(
-        app.startup_launcher_action,
-        StartupLauncherAction::NewSession
+    assert!(app
+        .composer
+        .prompt_buffer
+        .starts_with(&format!("/{command}")));
+    assert!(
+        app.startup_shell_visible(),
+        "accepting text must not dispatch a command"
     );
 }
 
 pub(super) fn slash_menu_exposes_model_switcher_when_models_are_configured() {
-    let mut app = AppState::new_startup(Vec::new(), None);
-    app.set_launch_metadata(
-        LaunchMetadata::from_model_ref("default", "default:gpt-5.4-mini").with_available_models(
-            vec![ModelOption::from_model_ref(
-                "default",
-                "default:gpt-5.4-mini",
-            )],
-        ),
+    let (sender, intents) = std::sync::mpsc::channel();
+    let mut app = AppState::new_startup(
+        Vec::new(),
+        Some(Arc::new(move |intent| {
+            let _ = sender.send(intent);
+        })),
     );
-
-    app.handle_key(key(KeyCode::Char('/')));
-
-    assert!(app.slash_filtered.iter().any(|command| command == "models"));
+    let mut high = ModelOption::from_model_ref("default", "fixture:reasoning-x");
+    high.model_display_label = Some("Reasoning X".to_string());
+    high.variant = Some("high".to_string());
+    high.reasoning_effort = Some("high".to_string());
+    let mut low = high.clone();
+    low.variant = Some("low".to_string());
+    low.reasoning_effort = Some("low".to_string());
+    app.set_launch_metadata(
+        LaunchMetadata::from_model_ref("default", "fixture:reasoning-x")
+            .with_available_models(vec![high, low]),
+    );
+    for c in "/model ".chars() {
+        app.handle_key(key(KeyCode::Char(c)));
+    }
+    assert_eq!(app.slash_completion_label(0), "Reasoning X");
+    app.handle_key(key(KeyCode::Enter));
+    assert!(
+        intents.try_recv().is_err(),
+        "model selection must wait for effort"
+    );
+    assert_eq!(app.slash_arguments.len(), 2);
+    assert_eq!(app.slash_completion_label(0), "high");
+    app.handle_key(key(KeyCode::Down));
+    app.handle_key(key(KeyCode::Tab));
+    assert!(
+        intents.try_recv().is_err(),
+        "Tab accepts text without switching"
+    );
+    app.handle_key(key(KeyCode::Enter));
+    assert!(
+        matches!(intents.try_recv().unwrap_or_abort(), UiIntent::SwitchModel { launch_metadata, .. }
+        if launch_metadata.model() == Some("reasoning-x") && launch_metadata.reasoning_effort() == Some("low"))
+    );
+    assert!(intents.try_recv().is_err());
 }
 
 pub(super) fn rename_slash_command_availability_matches_mode() {

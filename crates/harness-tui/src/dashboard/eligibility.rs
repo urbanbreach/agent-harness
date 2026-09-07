@@ -97,7 +97,9 @@ pub(crate) fn evaluate(
     rules: &DashboardEligibilityRules,
 ) -> DashboardEntryEligibility {
     let status_exclusion = match row.status {
-        DashboardStatus::Running | DashboardStatus::Streaming if !rules.include_active => {
+        DashboardStatus::AwaitingInput | DashboardStatus::Running | DashboardStatus::Streaming
+            if !rules.include_active =>
+        {
             Some(EligibilityExclusion::Active)
         }
         DashboardStatus::Queued if !rules.include_queued => Some(EligibilityExclusion::Queued),

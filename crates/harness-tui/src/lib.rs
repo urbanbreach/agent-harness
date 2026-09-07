@@ -174,3 +174,5 @@ pub use runtime_live_updates::{
     live_update_channel, LiveUpdateReceiver, LiveUpdateSendError, LiveUpdateSender,
 };
 pub use theme::{LiveShellLayout, LiveShellTokens, ShellGeometry, ShellGeometryTarget, Theme};
+
+mod release_notes;

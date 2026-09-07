@@ -30,7 +30,18 @@ fn resolve_block_surface_for_activity(
     surface.show_outer_rail |= block_has_visible_accent(spec);
     surface.selected_rail |= block_is_selected(spec);
     let metadata = TranscriptVisualEntryMetadata::from_spec(activity_first_seq, spec, &surface);
+    let source_text = match &spec.content {
+        TranscriptBlockContent::UserMessage { text, .. }
+        | TranscriptBlockContent::AssistantBody { text, .. }
+        | TranscriptBlockContent::Reasoning { text, .. } => Some(std::rc::Rc::from(text.as_str())),
+        TranscriptBlockContent::Error { message } => Some(std::rc::Rc::from(message.as_str())),
+        TranscriptBlockContent::Compaction { summary, .. } => {
+            Some(std::rc::Rc::from(summary.as_str()))
+        }
+        _ => None,
+    };
     Ok(ResolvedTranscriptVisualEntryDraft {
+        source_text,
         metadata,
         draft: surface,
     })

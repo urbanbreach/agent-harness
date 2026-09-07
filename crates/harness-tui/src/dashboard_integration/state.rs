@@ -15,6 +15,7 @@ pub enum DashboardIntegrationError {
     Peek(DashboardPeekError),
     Navigation(NavigationError),
     DetailsUnavailable,
+    Editing(crate::composer_editing::EditingError),
 }
 
 impl Display for DashboardIntegrationError {
@@ -31,6 +32,7 @@ impl Display for DashboardIntegrationError {
             Self::Peek(error) => write!(formatter, "dashboard peek failed: {error}"),
             Self::Navigation(error) => write!(formatter, "dashboard details failed: {error}"),
             Self::DetailsUnavailable => formatter.write_str("dashboard details are unavailable"),
+            Self::Editing(error) => error.fmt(formatter),
         }
     }
 }
@@ -39,6 +41,7 @@ impl std::error::Error for DashboardIntegrationError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Peek(error) => Some(error),
+            Self::Editing(error) => Some(error),
             Self::Navigation(error) => Some(error),
             Self::InvalidViewport | Self::UnknownSelection(_) | Self::DetailsUnavailable => None,
         }

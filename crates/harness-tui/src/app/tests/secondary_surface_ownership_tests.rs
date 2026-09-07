@@ -201,6 +201,7 @@ pub(super) fn status_dashboard_renders_empty_sections_from_app_state() {
     app.refresh_status_dashboard();
 
     // When
+    app.handle_key(key(KeyCode::Char('d')));
     let rendered = render_text(&app, 100, 36);
 
     // Then
@@ -262,6 +263,7 @@ pub(super) fn status_dashboard_renders_populated_sections_from_app_state() {
 
     // When
     app.execute_action(Action::OpenStatusDialog);
+    app.handle_key(key(KeyCode::Char('d')));
     let rendered = render_text(&app, 100, 40);
 
     // Then
@@ -290,6 +292,8 @@ pub(super) fn status_dashboard_renders_populated_sections_from_app_state() {
     );
 
     // When
+    app.handle_key(key(KeyCode::Esc));
+    assert!(app.secondary_surfaces.status_dialog_visible());
     app.handle_key(key(KeyCode::Esc));
 
     // Then
@@ -346,4 +350,60 @@ pub(super) fn status_dashboard_captures_and_restores_detached_transcript_anchor(
         Some(anchor_before),
         "dashboard exit after resize must restore the exact logical line and display column"
     );
+}
+
+pub(super) fn dashboard_reply_survives_refresh_resize_and_submits_once() {
+    let (sender, intents) = std::sync::mpsc::channel();
+    let mut app = AppState::new_live(
+        None,
+        false,
+        Some(Arc::new(move |intent| {
+            let _ = sender.send(intent);
+        })),
+    );
+    app.ingest_event(sample_user_message_event(1));
+    let original_focus = app.focus;
+    app.open_status_dashboard_at(Rect::new(0, 0, 120, 40));
+    assert!(app.status_dashboard_is_active());
+    assert_eq!(
+        app.status_dashboard_focus(),
+        Some(crate::dashboard_integration::DashboardPane::Roster)
+    );
+    let key = |code| KeyEvent::new(code, KeyModifiers::NONE);
+    app.handle_key(key(KeyCode::Tab));
+    assert_eq!(
+        app.status_dashboard_focus(),
+        Some(crate::dashboard_integration::DashboardPane::Peek)
+    );
+    app.handle_key(key(KeyCode::Tab));
+    assert_eq!(
+        app.status_dashboard_focus(),
+        Some(crate::dashboard_integration::DashboardPane::Reply)
+    );
+    for c in "hello".chars() {
+        app.handle_key(key(KeyCode::Char(c)));
+    }
+    app.handle_key(key(KeyCode::Home));
+    app.handle_key(key(KeyCode::Right));
+    app.handle_key(key(KeyCode::Char('/')));
+    // Refresh and shrink while the editor owns a cursor inside the draft.
+    app.ingest_event(sample_user_message_event(2));
+    app.set_frame_area(Rect::new(0, 0, 80, 24));
+    app.handle_key(key(KeyCode::Char('X')));
+    app.handle_paste("one\ntwo\nthree\nfour");
+    app.handle_key(KeyEvent::new(KeyCode::Char('z'), KeyModifiers::CONTROL));
+    let rendered =
+        crate::render_test::render_to_string(&app, Rect::new(0, 0, 80, 24), |app, frame, _| {
+            crate::ui::render_app(frame, app)
+        });
+    assert!(rendered.contains("h/Xello"), "{rendered}");
+    assert!(!rendered.contains("follow:") && !rendered.contains("reply composer"));
+    app.handle_key(key(KeyCode::Enter));
+    assert!(
+        matches!(intents.try_recv().unwrap_or_abort(), UiIntent::SubmitPrompt { text, .. } if text == "h/Xello")
+    );
+    assert!(intents.try_recv().is_err());
+    app.handle_key(key(KeyCode::Esc));
+    assert!(!app.status_dashboard_is_active());
+    assert_eq!(app.focus, original_focus);
 }

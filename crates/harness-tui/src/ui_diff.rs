@@ -88,6 +88,26 @@ pub(super) fn render_structured_diff_lines_with_hunk_offsets(
     options: StructuredDiffRenderOptions,
     theme: &Theme,
 ) -> Option<(Vec<Line<'static>>, Vec<usize>)> {
+    render_diff_with_recorded_source(
+        diff_content,
+        fallback_path,
+        prefix,
+        width,
+        options,
+        theme,
+        None,
+    )
+}
+
+pub(super) fn render_diff_with_recorded_source(
+    diff_content: &str,
+    fallback_path: Option<&str>,
+    prefix: &str,
+    width: u16,
+    options: StructuredDiffRenderOptions,
+    theme: &Theme,
+    before_source: Option<&str>,
+) -> Option<(Vec<Line<'static>>, Vec<usize>)> {
     let model =
         structured_diff_model_from_patch(diff_content, fallback_path, options.highlight_intraline)?;
     Some(render_structured_diff_model(
@@ -100,6 +120,7 @@ pub(super) fn render_structured_diff_lines_with_hunk_offsets(
         options.show_file_header,
         options.show_hunk_header,
         theme,
+        before_source,
     ))
 }
 
@@ -311,41 +332,49 @@ mod tests {
 
     #[test]
     fn highlight_upgrade_preserves_text_and_row_geometry() {
-        // arrange
-        // act
-        let diff = "--- src/demo.rs\n+++ src/demo.rs\n@@ -1,2 +1,2 @@\n-fn old() { let value = 1; }\n+fn new() { let value = 2; }\n context();\n";
-        let render = |highlight_syntax| {
-            render_structured_diff_lines_with_options(
-                diff,
-                None,
-                "",
-                64,
-                StructuredDiffRenderOptions {
-                    force_stacked: true,
-                    plain_numbered: false,
-                    highlight_intraline: true,
-                    highlight_syntax,
-                    show_file_header: true,
-                    show_hunk_header: false,
-                },
-                &Theme::default(),
-            )
-            .unwrap_or_abort()
-        };
-        let local = render(false);
-        let upgraded = render(true);
-        // assert
-        assert_eq!(local.len(), upgraded.len());
-        assert_eq!(
-            local
-                .into_iter()
-                .map(line_to_plain_text)
-                .collect::<Vec<_>>(),
-            upgraded
-                .into_iter()
-                .map(line_to_plain_text)
-                .collect::<Vec<_>>()
-        );
+        // The raw-string opener is recorded outside the displayed hunk.
+        let diff = "--- src/demo.rs\n+++ src/demo.rs\n@@ -3 +3 @@\n-before marker\n+after marker\n";
+        let source = "let text = r#\"\ninside\nbefore marker\n\"#;\n";
+        for theme in [Theme::default(), Theme::harness_light()] {
+            for width in [40, 80] {
+                let render = |highlight_syntax| {
+                    render_diff_with_recorded_source(
+                        diff,
+                        None,
+                        "",
+                        width,
+                        StructuredDiffRenderOptions {
+                            force_stacked: true,
+                            plain_numbered: false,
+                            highlight_intraline: true,
+                            highlight_syntax,
+                            show_file_header: true,
+                            show_hunk_header: false,
+                        },
+                        &theme,
+                        Some(source),
+                    )
+                    .unwrap_or_abort()
+                    .0
+                };
+                let pending = render(false);
+                let completed = render(true);
+                assert_eq!(
+                    pending.iter().map(Line::to_string).collect::<Vec<_>>(),
+                    completed.iter().map(Line::to_string).collect::<Vec<_>>()
+                );
+                let string_color = completed
+                    .iter()
+                    .flat_map(|line| &line.spans)
+                    .find(|span| span.content.contains("after marker"))
+                    .and_then(|span| span.style.fg);
+                assert_eq!(
+                    string_color,
+                    Some(theme.status.success),
+                    "recorded string scope at {width} columns"
+                );
+            }
+        }
     }
 
     #[test]
@@ -446,5 +475,27 @@ mod tests {
             rendered.iter().all(|line| !line.contains('…')),
             "unified renderer should keep the full text without ellipsis: {rendered:#?}"
         );
+        // Split syntax styles must share tab stops, and a one-cell viewport
+        // must terminate when its next grapheme occupies two cells.
+        let chunks = [
+            ui_diff_syntax::StyledTextChunk {
+                text: "a".into(),
+                style: ratatui::style::Style::default(),
+            },
+            ui_diff_syntax::StyledTextChunk {
+                text: "\t界".into(),
+                style: ratatui::style::Style::default().fg(Color::Red),
+            },
+        ];
+        for width in [1, 8] {
+            let rows = ui_diff_syntax::wrap_styled_chunks(&chunks, width);
+            let joined = rows
+                .iter()
+                .flatten()
+                .map(|chunk| chunk.text.as_str())
+                .collect::<String>();
+            assert_eq!(joined, "a   界");
+            assert!(rows.len() <= 5);
+        }
     }
 }

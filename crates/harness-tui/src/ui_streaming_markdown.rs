@@ -15,7 +15,7 @@ pub(super) fn append_streaming_rich_text_block(
     theme: &Theme,
     width: u16,
 ) {
-    if !text.contains("```") {
+    if !text.contains("```") && !text.contains("~~~") {
         append_markdownish_text_block(lines, text, color, prefix, theme, width);
         return;
     }

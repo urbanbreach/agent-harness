@@ -53,9 +53,5 @@ pub(crate) fn has_local_notices(app: &AppState) -> bool {
 
 /// The canonical changelog bullets.
 pub(crate) fn changelog_bullets() -> [&'static str; 3] {
-    [
-        "Subagent spawning is dramatically faster when you have many sessio…",
-        "/session-info now lets you click any row to copy its value, with h…",
-        "TUI rendering now automatically matches high-refresh displays (120…",
-    ]
+    crate::release_notes::CURRENT
 }

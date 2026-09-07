@@ -17,7 +17,7 @@ pub(crate) const REPLACE_INTERRUPT_MARKER: &str = "P0-04 replacement interrupted
 pub(crate) const REPLACE_MARKER: &str = "P0-04 replacement submitted queued";
 pub(crate) const EMPTY_MARKER: &str = "P0-04 empty submitted";
 pub(crate) const PHANTOM_MARKER: &str = "P0-04 phantom";
-pub(crate) const HELPER_CONTRACT: &str = "P0-04 helper command: HARNESS_TUI_P0_04_SCENARIO=1 HARNESS_DETERMINISTIC=1 HARNESS_DISABLE_ANIMATIONS=1 HARNESS_SEED=42 cargo test -p harness-tui --test p0_04_pty_recorded -- --exact p0_04_pty_helper --nocapture; toggle multiline with Alt+M; type first, Enter, second, then send with Alt+S; interject with Alt+I; cancel and replace with Alt+R; enhanced terminals may also use the modified Enter bindings; exit with the command palette.";
+pub(crate) const HELPER_CONTRACT: &str = "P0-04 helper command: HARNESS_TUI_P0_04_SCENARIO=1 HARNESS_DETERMINISTIC=1 HARNESS_DISABLE_ANIMATIONS=1 HARNESS_SEED=42 cargo test -p harness-tui --test p0_04_pty_recorded -- --exact p0_04_pty_helper --nocapture; toggle multiline with Alt+M; type first, Enter, second, then send with Alt+Enter; interject with Alt+I; cancel and replace with Ctrl+Enter; enhanced terminals may also use the modified Enter bindings; exit with the command palette.";
 
 const FIRST_DRAFT: &str = "first\nsecond";
 const INTERJECT_DRAFT: &str = "interject draft";

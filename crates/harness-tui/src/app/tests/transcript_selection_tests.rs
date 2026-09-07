@@ -163,7 +163,8 @@ pub(super) fn mouse_drag_copy_on_select_preserves_multiline_text_without_render_
         "• Tightened the opening description to mention reliable software and compile-time guarantees.",
     ]
     .join("\n");
-    let mut app = transcript_selection_test_app_with_text(&expected);
+    let source = expected.replace("• ", "- ");
+    let mut app = transcript_selection_test_app_with_text(&source);
     let start = transcript_selection_text_position(&app, "Done.");
     let (end_column, end_row, end_width) = transcript_selection_text_bounds(&app, "guarantees.");
     drag_transcript_selection_range(

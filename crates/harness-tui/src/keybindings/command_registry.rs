@@ -121,6 +121,8 @@ macro_rules! define_palette_commands {
 }
 
 define_command_metadata! {
+    ("slash_usage", "Usage", "Browse recorded token usage and context budget"),
+    ("slash_extensions", "Extensions", "Browse configured extensions and MCP connections"),
     ("palette", "Command palette", "Browse and run available commands"),
     ("new_session", "New session", "Start a fresh live session"),
     ("resume_session", "Continue session", "Continue a prior session when resumable"),
@@ -196,6 +198,7 @@ define_command_metadata! {
     ("slash_status", "Status", "View status"),
     ("slash_compact", "Compact", "Write a manual context checkpoint"),
     ("slash_rename", "Rename", "Rename the current session"),
+    ("slash_vim", "Vim mode", "Toggle Vim navigation and simple input"),
     ("select_char_left", "Select char left", "Extend selection one char left"),
     ("select_char_right", "Select char right", "Extend selection one char right"),
     ("select_word_left", "Select word left", "Extend selection one word left"),
@@ -334,7 +337,7 @@ define_slash_commands! {
     ("fork", "slash_fork", &[], false, false),
     ("tree", "slash_tree", &[], false, false),
     ("clone", "slash_clone", &[], false, false),
-    ("models", "switch_model", &["mo"], false, false),
+    ("models", "switch_model", &["model", "mo"], true, false),
     ("agents", "switch_model", &[], false, false),
     ("mcps", "toggles", &[], false, false),
     ("toggles", "toggles", &[], false, false),
@@ -351,9 +354,12 @@ define_slash_commands! {
     ("export", "slash_export", &[], false, false),
     ("timestamps", "slash_timestamps", &["toggle-timestamps"], false, false),
     ("thinking", "slash_thinking", &["toggle-thinking"], false, false),
+    ("vim", "slash_vim", &[], false, false),
     ("settings", "open_settings", &[], false, false),
     ("view-plan", "open_view_plan", &["view_plan"], false, false),
     ("dashboard", "open_status_dialog", &["status"], false, false),
+    ("usage", "slash_usage", &[], false, false),
+    ("extensions", "slash_extensions", &[], false, false),
     ("import", "slash_import", &["import-session"], false, false),
 }
 
@@ -470,9 +476,12 @@ mod tests {
                 "export",
                 "timestamps",
                 "thinking",
+                "vim",
                 "settings",
                 "view-plan",
                 "dashboard",
+                "usage",
+                "extensions",
                 "import",
             ]
         );

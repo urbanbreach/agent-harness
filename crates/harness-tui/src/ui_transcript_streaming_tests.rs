@@ -263,6 +263,7 @@ fn answer_phase_collapses_reasoning_expanded_while_running() {
         }),
     ));
     app.transcript_view.selected_activity_index = 0;
+    assert!(app.move_transcript_entry(true));
     assert!(app.toggle_selected_transcript_fold());
     assert!(app.reasoning_expanded(request_id));
 

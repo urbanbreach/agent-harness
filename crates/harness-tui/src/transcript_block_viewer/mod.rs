@@ -24,6 +24,7 @@ pub enum ViewerMode {
 pub struct ViewerBlockContent {
     content: String,
     raw: Option<String>,
+    markdown: bool,
 }
 
 impl ViewerBlockContent {
@@ -31,6 +32,15 @@ impl ViewerBlockContent {
         Self {
             content: redacted(content),
             raw: raw.map(redacted),
+            markdown: false,
+        }
+    }
+
+    pub(crate) fn markdown(content: &str) -> Self {
+        Self {
+            content: redacted(content),
+            raw: Some(redacted(content)),
+            markdown: true,
         }
     }
 

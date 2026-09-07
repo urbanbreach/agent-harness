@@ -1,25 +1,24 @@
 ---
 source: crates/harness-tui/tests/startup_polish_test.rs
-assertion_line: 392
-expression: snapshot
+expression: "normalized_startup_snapshot(&app, width, height)"
 ---
 
   <cwd-breadcrumb>
 
+          Harness 0.1.0
 
+           New worktree                                        ctrl+w
+           Resume session                                      ctrl+s
+           Changelog
+           Quit                                                ctrl+q
 
-
-
-               Harness 0.1.0
-               Thanks for trying Harness, give feedback with /fee…
-
-
-
-
-
-
-
-
+          Changelog
+          • Structural Markdown preserves nested styles, code
+          indentation, tables and math.
+          • Browse transcript entries and recorded tool output in a
+          searchable full view.
+          • The session dashboard keeps replies editable while new
+          events arrive.
 
   ╭──────────────────────────────────────────────────────────────────────────╮
   │ ❯                                                                        │

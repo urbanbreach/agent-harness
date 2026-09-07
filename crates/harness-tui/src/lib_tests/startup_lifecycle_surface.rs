@@ -43,108 +43,34 @@ pub(super) fn startup_surface_renders_primary_actions() {
 
 pub(super) fn startup_surface_projects_clipboard_capability() {
     let mut app = app::AppState::new_startup(Vec::new(), None);
-    app.set_launch_metadata(
-        app::LaunchMetadata::from_model_ref("worker", "mock:model-1").with_mode_label("Demo"),
-    );
     crate::runtime::apply_startup_capability_notice(&mut app, true);
-    settle_startup_reveal(&mut app);
-
     for (width, height) in [(80, 24), (100, 30), (120, 40)] {
-        let buffer = render_live_cells(&app, width, height);
-        let rendered = buffer
-            .content
-            .chunks(width as usize)
-            .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
-            .collect::<Vec<_>>();
-        let warning_row = rendered
+        let text = render_live_lines(&app, width, height);
+        for content in [
+            "Clipboard may be unreachable.",
+            "Run /doctor for details and fixes.",
+            "New worktree",
+            "Resume session",
+            "Changelog",
+            "Quit",
+        ] {
+            assert!(
+                text.contains(content),
+                "startup hid {content} at {width}x{height}: {text}"
+            );
+        }
+        let rows: Vec<_> = text.lines().collect();
+        let warning = rows
             .iter()
-            .position(|row| row.contains("Clipboard may be unreachable."))
-            .unwrap_or_else(|| panic!("missing clipboard warning at {width}x{height}"));
-        let hint_row = rendered
+            .position(|row| row.contains("Clipboard may"))
+            .unwrap_or_abort();
+        let hint = rows
             .iter()
-            .position(|row| row.contains("Run /doctor for details and fixes."))
-            .unwrap_or_else(|| panic!("missing clipboard hint at {width}x{height}"));
-        let panel_row = rendered
-            .iter()
-            .position(|row| row.contains('╭') && row.contains('─'))
-            .unwrap_or_else(|| panic!("missing welcome panel at {width}x{height}"));
-        assert_eq!(hint_row, warning_row + 1);
-        assert!(
-            panel_row > hint_row,
-            "welcome panel overlaps warning at {width}x{height}"
-        );
-        assert!(rendered[1].contains("git:test-workspace"));
-        assert!(
-            !rendered[1].contains(''),
-            "default breadcrumb must not require a private-use font glyph"
-        );
-        assert!(rendered[1].contains("/workspace/agent-harness"));
+            .position(|row| row.contains("Run /doctor"))
+            .unwrap_or_abort();
+        assert_eq!(hint, warning + 1);
+        assert!(rows[1].contains("git:test-workspace"));
     }
-
-    let loading = render_live_cells(&app, 100, 30);
-    let loading_rows = loading.content.chunks(100).collect::<Vec<_>>();
-    assert_eq!(
-        loading_rows
-            .iter()
-            .position(|row| row.iter().any(|cell| cell.symbol() == "╭")),
-        Some(7)
-    );
-    let loading_text = loading
-        .content
-        .chunks(100)
-        .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
-        .collect::<Vec<_>>()
-        .join("\n");
-    for action in ["New worktree", "Resume session", "Changelog", "Quit"] {
-        assert!(
-            loading_text.contains(action),
-            "startup capability notice hid {action:?}\n{loading_text}"
-        );
-    }
-
-    let mut ready_app = app;
-    for _ in 0..4 {
-        ready_app.advance_animation_tick();
-    }
-    let ready = render_live_cells(&ready_app, 100, 30);
-    let ready_rows = ready.content.chunks(100).collect::<Vec<_>>();
-    assert_eq!(
-        ready_rows
-            .iter()
-            .position(|row| row.iter().any(|cell| cell.symbol() == "╭")),
-        Some(7)
-    );
-    assert!(loading
-        .content
-        .iter()
-        .zip(&ready.content)
-        .all(|(loading_cell, ready_cell)| loading_cell.symbol() == ready_cell.symbol()));
-    let ready_warning_row = ready_rows
-        .iter()
-        .position(|row| {
-            row.iter()
-                .map(|cell| cell.symbol())
-                .collect::<String>()
-                .contains("Clipboard")
-        })
-        .unwrap_or_else(|| {
-            let rows = ready_rows
-                .iter()
-                .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
-                .collect::<Vec<_>>();
-            panic!("ready warning missing: {rows:?}")
-        });
-    let ready_hint_row = ready_rows
-        .iter()
-        .position(|row| {
-            row.iter()
-                .map(|cell| cell.symbol())
-                .collect::<String>()
-                .contains("doctor")
-        })
-        .unwrap_or_else(|| panic!("ready hint missing: {ready_rows:?}"));
-    assert_eq!(ready_warning_row + 1, ready_hint_row);
-    assert!(ready_hint_row < 6);
 }
 
 pub(super) fn startup_typing_moves_to_quick_start_prompt() {

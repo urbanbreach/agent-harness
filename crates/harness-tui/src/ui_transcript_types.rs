@@ -83,9 +83,7 @@ impl TranscriptToolVerb {
             "skill" | "skill.load" => Some(Self::Skill),
             "web.fetch" | "webfetch" => Some(Self::WebFetch),
             "search.web" | "websearch" => Some(Self::WebSearch),
-            "agent.spawn" | "task" | "background_output" | "background_cancel" => {
-                Some(Self::Subagent)
-            }
+            "background_output" | "background_cancel" => Some(Self::Subagent),
             _ => Self::from_mcp_context_id(tool_id),
         }
     }
@@ -311,10 +309,7 @@ impl TranscriptToolGroupSummary {
     pub(super) const fn folds_as_group(&self) -> bool {
         match self.kind {
             TranscriptToolGroupKind::Commands => self.member_count > 11,
-            TranscriptToolGroupKind::Context => {
-                self.member_count > 1
-                    || matches!(self.verbs.as_slice(), [TranscriptToolVerb::Subagent])
-            }
+            TranscriptToolGroupKind::Context => self.member_count > 0,
         }
     }
 
@@ -511,6 +506,7 @@ pub(super) struct TranscriptToolCallHeader {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(in crate::ui) enum TranscriptToolCallDetailBlock {
+    Recorded(super::super::ui_recorded_tool_output::RecordedToolOutput),
     ReadOutput {
         text: String,
         start_line: Option<u64>,
@@ -534,6 +530,7 @@ pub(in crate::ui) enum TranscriptToolCallDetailBlock {
     },
     StructuredDiff {
         diff_content: String,
+        before_source: Option<String>,
         fallback_path: Option<String>,
         force_stacked: bool,
         plain_numbered: bool,

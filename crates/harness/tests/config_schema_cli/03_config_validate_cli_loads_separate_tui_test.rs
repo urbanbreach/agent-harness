@@ -384,7 +384,8 @@ fn shipped_runtime_example_parses_as_public_runtime_config() {
         .unwrap_or_abort() else {
         panic!("expected openai-codex provider to be OpenAiCompatible")
     };
-    assert_eq!(provider.models.len(), 2);
+    assert_eq!(provider.models.len(), 3);
+    assert!(provider.models.contains_key("gpt-6-astra"));
     assert!(provider.models.contains_key("gpt-5.5"));
     assert!(provider.models.contains_key("gpt-5.4-mini"));
     assert_eq!(parsed.agent.default.variant.as_deref(), Some("high"));

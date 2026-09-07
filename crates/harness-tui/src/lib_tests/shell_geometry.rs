@@ -161,7 +161,7 @@ pub(super) fn slash_overlay_matches_composer_text_input_width() {
     assert_eq!(overlay.y.saturating_add(overlay.height), composer.y);
     assert_eq!(
         overlay.height,
-        u16::try_from(app.slash_filtered.len()).unwrap_or(u16::MAX)
+        u16::try_from(app.slash_filtered.len().min(10)).unwrap_or(u16::MAX)
     );
     assert!(overlay.height <= 10);
     assert_eq!(content.x, overlay.x);

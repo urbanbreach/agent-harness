@@ -19,23 +19,41 @@ pub(super) fn typing_at_opens_file_mention_menu_with_directories() {
 }
 
 pub(super) fn file_mention_tab_expands_directory_without_closing_menu() {
-    let tempdir = tempfile::tempdir().unwrap_or_abort();
-    std::fs::create_dir_all(tempdir.path().join("src/bin")).unwrap_or_abort();
-    std::fs::write(tempdir.path().join("src/main.rs"), "fn main() {}").unwrap_or_abort();
-
-    let mut app = AppState::new_live(None, false, None);
-    app.set_file_mention_workspace_root_for_test(tempdir.path().to_path_buf());
-    app.focus = Focus::Prompt;
-    app.handle_key(key(KeyCode::Char('@')));
-
-    app.handle_key(key(KeyCode::Tab));
-
-    assert_eq!(app.composer.prompt_buffer, "@src/");
-    assert!(app.file_mention_overlay_should_render());
-    assert!(app
-        .file_mention_entries
-        .iter()
-        .any(|entry| entry.display == "src/main.rs"));
+    for code in [KeyCode::Tab, KeyCode::Right] {
+        let mut app = AppState::new_live(None, false, None);
+        app.set_file_mention_collaborators_for_test(
+            PathBuf::from("/virtual/workspace"),
+            (0..16)
+                .map(|index| format!("src/file{index:02}.rs"))
+                .collect(),
+            123,
+        );
+        app.focus = Focus::Prompt;
+        app.handle_key(key(KeyCode::Char('@')));
+        app.handle_key(key(code));
+        assert_eq!(app.composer.prompt_buffer, "@src/");
+        assert!(app.file_mention_overlay_should_render());
+        assert!(app.file_mention_entries.len() > 10);
+        app.handle_key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL));
+        assert_eq!(app.file_mention_selected, 5);
+        let path = app.file_mention_entries[5].path.clone();
+        app.handle_key(key(KeyCode::Char(':')));
+        assert_eq!(app.composer.prompt_buffer, format!("@{path}#"));
+        for c in "7-12".chars() {
+            app.handle_key(key(KeyCode::Char(c)));
+        }
+        app.handle_key(key(KeyCode::Enter));
+        let tag = app
+            .selected_file_tags()
+            .into_iter()
+            .next()
+            .unwrap_or_abort();
+        assert_eq!(tag.path, path);
+        assert_eq!(
+            tag.line_range.map(|range| (range.start, range.end)),
+            Some((7, Some(12)))
+        );
+    }
 }
 
 pub(super) fn file_mention_enter_inserts_selected_file_with_space() {

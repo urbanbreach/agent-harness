@@ -39,7 +39,7 @@ const variants = [
   },
 ];
 
-test("P1-03 contract binds the startup reveal to the built owner with staged captures", () => {
+test("P1-03 contract binds the startup reveal to the built owner with immediate controls", () => {
   for (const variant of variants) {
     const options = parseArgs([
       "--scenario", "p1-03-startup-reveal",
@@ -76,7 +76,7 @@ test("P1-03 contract binds the startup reveal to the built owner with staged cap
 
     if (variant.name === "unicode") {
       assert.ok(
-        contract.actions.some(({ kind, value }) => kind === "wait" && value === "Subagent spawning"),
+        contract.actions.some(({ kind, value }) => kind === "wait" && value === "Resume session"),
       );
     } else {
       const typeIndex = contract.actions.findIndex(({ kind }) => kind === "type");

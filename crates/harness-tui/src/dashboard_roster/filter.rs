@@ -95,16 +95,28 @@ pub fn filter_model(model: &DashboardReadModel, filter: &RosterFilter) -> Filter
     let mut grouped = BTreeMap::<DashboardGroupKey, Vec<DashboardRow>>::new();
     for row in &rows {
         grouped
-            .entry(row.relationship.group.clone())
+            .entry(presentation_group(model, row))
             .or_default()
             .push(row.clone());
     }
     let groups = grouped
         .into_iter()
-        .map(|(key, rows)| FilteredRosterGroup {
-            key,
-            rows,
-            folded: false,
+        .map(|(key, mut rows)| {
+            rows.sort_by(|left, right| {
+                left.relationship
+                    .group
+                    .cmp(&right.relationship.group)
+                    .then_with(|| {
+                        left.relationship
+                            .lineage_depth
+                            .cmp(&right.relationship.lineage_depth)
+                    })
+            });
+            FilteredRosterGroup {
+                key,
+                rows,
+                folded: false,
+            }
         })
         .collect();
     FilteredRoster { rows, groups }
@@ -225,6 +237,7 @@ fn query_term_matches(term: &str, row: &DashboardRow) -> bool {
         .as_ref()
         .map_or_else(String::new, |key| key.as_str().to_lowercase());
     let group = match &row.relationship.group {
+        DashboardGroupKey::Status(status) => status_name(*status).to_string(),
         DashboardGroupKey::Root(key) | DashboardGroupKey::Orphaned(key) => {
             key.as_str().to_lowercase()
         }
@@ -251,6 +264,7 @@ fn lineage_name(value: &str, row: &DashboardRow) -> bool {
 
 const fn status_name(status: DashboardStatus) -> &'static str {
     match status {
+        DashboardStatus::AwaitingInput => "awaiting",
         DashboardStatus::Running => "running",
         DashboardStatus::Queued => "queued",
         DashboardStatus::Streaming => "streaming",
@@ -259,4 +273,22 @@ const fn status_name(status: DashboardStatus) -> &'static str {
         DashboardStatus::Cancelled => "cancelled",
         DashboardStatus::Stale => "stale",
     }
+}
+
+pub(super) fn presentation_group(
+    model: &DashboardReadModel,
+    row: &DashboardRow,
+) -> DashboardGroupKey {
+    let parent_status = match &row.relationship.group {
+        DashboardGroupKey::Root(root) => model
+            .row(root.as_str())
+            .map_or(row.status, |root| root.status),
+        _ => row.status,
+    };
+    let status = if parent_status == DashboardStatus::Streaming {
+        DashboardStatus::Running
+    } else {
+        parent_status
+    };
+    DashboardGroupKey::Status(status)
 }

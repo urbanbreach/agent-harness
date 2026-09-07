@@ -8,44 +8,73 @@ use super::selection_types::{
 #[derive(Debug, Clone)]
 pub(super) struct WrappedRow {
     pub(super) graphemes: Vec<Grapheme>,
-    pub(super) hard_break_before: bool,
+    pub(super) source_offset: usize,
     pub(super) width: usize,
 }
 
 #[derive(Debug, Clone)]
 pub struct WrappedText {
     rows: Vec<WrappedRow>,
+    source: String,
 }
 
 impl WrappedText {
+    pub fn row_count(&self) -> usize {
+        self.rows.len()
+    }
+
+    pub fn row_text(&self, row: usize) -> String {
+        self.rows.get(row).map_or_else(String::new, |row| {
+            row.graphemes
+                .iter()
+                .map(|cluster| cluster.text.as_str())
+                .collect()
+        })
+    }
+
+    pub fn point_for_byte(&self, byte: usize) -> CellPoint {
+        for (index, row) in self.rows.iter().enumerate() {
+            for cluster in &row.graphemes {
+                if row.source_offset + cluster.range.byte_range.end > byte {
+                    return CellPoint::new(index, cluster.range.cell_range.start);
+                }
+            }
+        }
+        CellPoint::new(
+            self.rows.len().saturating_sub(1),
+            self.rows.last().map_or(0, |row| row.width),
+        )
+    }
+
     pub fn new(text: &str, width: usize) -> Result<Self, SelectionError> {
         if width == 0 {
             return Err(SelectionError::ZeroWidth);
         }
         let mut rows = Vec::new();
-        for (line_index, line) in text.split('\n').enumerate() {
+        let mut next_offset = 0;
+        for line in text.split('\n') {
+            let source_offset = next_offset;
+            next_offset += line.len() + 1;
             let clusters = segment(line);
             if clusters.is_empty() {
                 rows.push(WrappedRow {
                     graphemes: Vec::new(),
-                    hard_break_before: line_index > 0,
+                    source_offset,
                     width: 0,
                 });
                 continue;
             }
             let mut current = Vec::new();
             let mut current_width = 0;
-            let mut first_row = true;
             for cluster in clusters {
                 let cluster_width = cluster.range.cell_range.len();
                 let wrapped = current_width + cluster_width > width && !current.is_empty();
                 if wrapped {
                     rows.push(WrappedRow {
                         graphemes: std::mem::take(&mut current),
-                        hard_break_before: line_index > 0 && first_row,
+                        source_offset,
                         width: current_width,
                     });
-                    first_row = false;
                     current_width = 0;
                 }
                 if wrapped && cluster.text.chars().all(char::is_whitespace) {
@@ -59,11 +88,14 @@ impl WrappedText {
             }
             rows.push(WrappedRow {
                 graphemes: current,
-                hard_break_before: line_index > 0 && first_row,
+                source_offset,
                 width: current_width,
             });
         }
-        Ok(Self { rows })
+        Ok(Self {
+            rows,
+            source: text.to_owned(),
+        })
     }
 
     pub fn grapheme_at(&self, point: CellPoint) -> Option<&Grapheme> {
@@ -122,36 +154,28 @@ impl WrappedText {
         let (start, end) = selection.normalized();
         let first_row = start.row.min(self.rows.len().saturating_sub(1));
         let last_row = end.row.min(self.rows.len().saturating_sub(1));
-        let mut output = String::new();
-        for row_index in first_row..=last_row {
-            let row = self
-                .rows
-                .get(row_index)
-                .ok_or(SelectionError::InvalidPoint)?;
-            let mut row_output = String::new();
-            for cluster in &row.graphemes {
-                let starts_before_end =
-                    row_index != last_row || cluster.range.cell_range.start <= end.cell;
-                let ends_after_start =
-                    row_index != first_row || cluster.range.cell_range.end > start.cell;
-                if starts_before_end && ends_after_start {
-                    row_output.push_str(&cluster.text);
-                }
-            }
-            if row_index > first_row && row.hard_break_before {
-                output.push('\n');
-            } else if row_index > first_row
-                && !row_output.is_empty()
-                && !output.ends_with(char::is_whitespace)
-            {
-                output.push(' ');
-            }
-            output.push_str(&row_output);
-        }
-        if output.is_empty() {
+        let first = &self.rows[first_row];
+        let last = &self.rows[last_row];
+        let from = first.source_offset
+            + first
+                .graphemes
+                .iter()
+                .find(|cluster| cluster.range.cell_range.end > start.cell)
+                .map_or(0, |cluster| cluster.range.byte_range.start);
+        let to = last.source_offset
+            + last
+                .graphemes
+                .iter()
+                .rev()
+                .find(|cluster| cluster.range.cell_range.start <= end.cell)
+                .map_or(0, |cluster| cluster.range.byte_range.end);
+        if from >= to {
             return Err(SelectionError::EmptySelection);
         }
-        Ok(output)
+        self.source
+            .get(from..to)
+            .map(str::to_owned)
+            .ok_or(SelectionError::InvalidPoint)
     }
 
     pub fn move_focus(&self, point: CellPoint, key: NavigationKey) -> CellPoint {

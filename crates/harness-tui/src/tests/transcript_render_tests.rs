@@ -188,6 +188,12 @@ pub(super) fn module_transcript_edit_tool_wide_diff_uses_syntax_highlighting_and
     .unwrap_or_abort();
 
     let mut app = AppState::new_live(Some(run_dir.path().to_path_buf()), false, None);
+    app.recorded_artifacts.insert(
+        "artifacts/harness-inline.diff".into(),
+        std::fs::read_to_string(artifacts_dir.join("harness-inline.diff")).unwrap_or_abort(),
+    );
+    // Rendering must continue from cached recorded evidence after the file disappears.
+    std::fs::remove_file(artifacts_dir.join("harness-inline.diff")).unwrap_or_abort();
     let mut entry = ActivityEntry {
         request_id: "request-edit-inline-wide".to_string(),
         profile_label: "build".to_string(),
@@ -385,7 +391,7 @@ pub(super) fn assistant_markdown_renders_headings_lists_and_quotes() {
         "unchecked task should render with checkbox"
     );
     assert!(
-        debug.contains("▍ Keep the chrome muted"),
+        debug.contains("│ Keep the chrome muted"),
         "blockquote should render with quote glyph"
     );
 }

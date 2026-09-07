@@ -427,7 +427,11 @@ impl AppState {
         launch_metadata
     }
 
-    fn apply_selected_model_option(&mut self, selected_model: ModelOption, emit_intent: bool) {
+    pub(in crate::app) fn apply_selected_model_option(
+        &mut self,
+        selected_model: ModelOption,
+        emit_intent: bool,
+    ) {
         let launch_metadata = self.build_launch_metadata_for_option(&selected_model);
         self.launch_metadata = launch_metadata.clone();
 

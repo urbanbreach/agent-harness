@@ -393,7 +393,7 @@ fn transcript_layout_cache_invalidates_when_theme_changes() {
         .lines
         .iter()
         .flat_map(|line| &line.spans)
-        .find(|span| span.content.contains("theme-sensitive"))
+        .find(|span| span.content.contains("theme-"))
         .and_then(|span| span.style.fg)
         .expect("prompt text color");
 
@@ -406,7 +406,7 @@ fn transcript_layout_cache_invalidates_when_theme_changes() {
         .lines
         .iter()
         .flat_map(|line| &line.spans)
-        .find(|span| span.content.contains("theme-sensitive"))
+        .find(|span| span.content.contains("theme-"))
         .and_then(|span| span.style.fg)
         .expect("updated prompt text color");
 
@@ -636,7 +636,7 @@ fn tool_only_turns_omit_standalone_assistant_footer() {
         80,
     ));
 
-    assert!(lines.iter().any(|line| line.contains("Read ui.rs")));
+    assert!(lines.iter().any(|line| line.contains("Read 1 file")));
     assert!(lines.iter().all(|line| !line.contains("Worked for")));
     assert!(lines.iter().all(|line| !line.contains("gpt-5.4-mini")));
 }

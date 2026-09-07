@@ -10,10 +10,8 @@ pub(super) fn render_prompt_stash_list_overlay(
         return;
     }
 
-    render_overlay_dim_backdrop(frame, root);
-
-    let overlay_width = root.width.clamp(40, 80);
-    let overlay_height = root.height.clamp(8, 24);
+    let overlay_width = root.width.clamp(40, 80).min(root.width);
+    let overlay_height = root.height.clamp(8, 24).min(root.height);
     let overlay_x = root.x + (root.width.saturating_sub(overlay_width)) / 2;
     let overlay_y = root.y + (root.height.saturating_sub(overlay_height)) / 2;
     let overlay = Rect::new(overlay_x, overlay_y, overlay_width, overlay_height);

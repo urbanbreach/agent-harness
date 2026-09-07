@@ -15,6 +15,7 @@ pub use super::{
 
 pub fn status_marker(status: DashboardStatus) -> StatusMarker {
     let (glyph, color, ascii) = match status {
+        DashboardStatus::AwaitingInput => (GlyphRole::Queued, ColorRole::StatusWarning, "?"),
         DashboardStatus::Running => (GlyphRole::Running, ColorRole::StatusInfo, "o"),
         DashboardStatus::Queued => (GlyphRole::Queued, ColorRole::TextSecondary, "."),
         DashboardStatus::Streaming => (GlyphRole::Streaming, ColorRole::StatusInfo, "o"),
@@ -67,7 +68,15 @@ pub fn layout_for_rect(
             group: group.key.clone(),
             rect: Rect::default(),
             label: truncate_label(
-                &group_label(model, &group.key, group.folded, responsive),
+                &format!(
+                    "{} {}",
+                    group_label(model, &group.key, group.folded, responsive),
+                    group
+                        .rows
+                        .iter()
+                        .filter(|row| !row.relationship.is_child)
+                        .count()
+                ),
                 content.width,
             ),
             folded: group.folded,
@@ -94,64 +103,71 @@ pub fn layout_for_rect(
             logical.extend(group.rows.iter().cloned().map(LogicalItem::Row));
         }
     }
-    let capacity = usize::from(content.height);
-    let overflowing = logical.len() > capacity;
-    let max_scroll = if overflowing {
-        logical.len().saturating_sub(capacity.saturating_sub(1))
-    } else {
-        0
-    };
+    let capacity = content.height;
+    let total_height = logical
+        .iter()
+        .fold(0_u16, |height, item| height.saturating_add(item.height()));
+    let overflowing = total_height > capacity;
+    let mut max_scroll = 0;
+    let mut remaining = total_height;
+    while remaining > capacity.saturating_sub(1) && max_scroll + 1 < logical.len() {
+        remaining = remaining.saturating_sub(logical[max_scroll].height());
+        max_scroll += 1;
+    }
+    if !overflowing {
+        max_scroll = 0;
+    }
     let scroll_top = state.scroll_top.min(max_scroll);
-    let top_overflow = overflowing && scroll_top > 0 && capacity > 0;
-    let top_units = if top_overflow { 1 } else { 0 };
-    let bottom_possible_end = scroll_top.saturating_add(capacity.saturating_sub(top_units));
-    let bottom_overflow =
-        overflowing && bottom_possible_end < logical.len() && capacity > top_units;
-    let bottom_units = if bottom_overflow { 1 } else { 0 };
-    let available = capacity
-        .saturating_sub(top_units)
-        .saturating_sub(bottom_units);
-    let end = logical.len().min(scroll_top.saturating_add(available));
     let mut items = Vec::new();
     let mut overflow = Vec::new();
     let mut cursor_y = content.y;
-    if top_overflow {
+    if scroll_top > 0 && capacity > 0 {
         let indicator = overflow_indicator(
             OverflowDirection::Top,
-            Rect::new(content.x, cursor_y, content.width, ROSTER_ROW_HEIGHT),
+            Rect::new(content.x, cursor_y, content.width, 1),
             scroll_top,
             responsive,
         );
-        cursor_y = cursor_y.saturating_add(ROSTER_ROW_HEIGHT);
+        cursor_y = cursor_y.saturating_add(1);
         items.push(RosterItem::Overflow(indicator.clone()));
         overflow.push(indicator);
     }
     let mut rows = Vec::new();
-    for logical_item in &logical[scroll_top..end] {
+    let mut end = scroll_top;
+    for (index, logical_item) in logical.iter().enumerate().skip(scroll_top) {
+        let reserve = u16::from(index + 1 < logical.len());
+        let available = content
+            .bottom()
+            .saturating_sub(cursor_y)
+            .saturating_sub(reserve);
+        if available < logical_item.height() {
+            break;
+        }
         match logical_item {
             LogicalItem::Group(index) => {
                 let mut header = group_layouts[*index].clone();
-                header.rect = Rect::new(content.x, cursor_y, content.width, ROSTER_ROW_HEIGHT);
+                header.rect = Rect::new(content.x, cursor_y, content.width, 2);
                 group_layouts[*index] = header.clone();
-                cursor_y = cursor_y.saturating_add(ROSTER_ROW_HEIGHT);
                 items.push(RosterItem::Group(header));
             }
             LogicalItem::Row(row) => {
-                let rendered = row_layout(row, content, cursor_y, responsive, state);
-                cursor_y = cursor_y.saturating_add(ROSTER_ROW_HEIGHT);
+                let mut rendered = row_layout(row, content, cursor_y, responsive, state);
+                rendered.group = super::filter::presentation_group(model, row);
                 items.push(RosterItem::Row(rendered.clone()));
                 rows.push(rendered);
             }
         }
+        cursor_y = cursor_y.saturating_add(logical_item.height());
+        end = index + 1;
     }
-    if bottom_overflow {
+    if end < logical.len() && capacity > 0 {
         let indicator = overflow_indicator(
             OverflowDirection::Bottom,
             Rect::new(
                 content.x,
-                content.bottom().saturating_sub(ROSTER_ROW_HEIGHT),
+                content.bottom().saturating_sub(1),
                 content.width,
-                ROSTER_ROW_HEIGHT,
+                1,
             ),
             logical.len().saturating_sub(end),
             responsive,
@@ -176,6 +192,15 @@ pub fn layout_for_rect(
 enum LogicalItem {
     Group(usize),
     Row(DashboardRow),
+}
+
+impl LogicalItem {
+    const fn height(&self) -> u16 {
+        match self {
+            Self::Group(_) => 2,
+            Self::Row(_) => ROSTER_ROW_HEIGHT,
+        }
+    }
 }
 
 fn content_rect(viewport: Rect, responsive: RosterResponsive) -> Rect {

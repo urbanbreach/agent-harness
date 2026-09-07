@@ -13,6 +13,7 @@ pub enum OverlayKind {
     ThemeDialog,
     ErrorDetails,
     PromptStashList,
+    PromptHistory,
     AuthDialog,
     NewWorktreeDialog,
     SettingsEditor,
@@ -21,6 +22,7 @@ pub enum OverlayKind {
     WorktreePicker,
     ForeignImportPicker,
     ReleaseNotes,
+    ProductInfo,
     TrustFolderPrompt,
 }
 
@@ -41,6 +43,7 @@ pub struct OverlayState {
     pub theme_dialog_visible: bool,
     pub error_details_visible: bool,
     pub prompt_stash_list_visible: bool,
+    pub prompt_history_visible: bool,
     pub auth_dialog_visible: bool,
     pub new_worktree_dialog_visible: bool,
     pub settings_editor_visible: bool,
@@ -109,6 +112,9 @@ impl OverlayStack {
         if state.prompt_stash_list_visible && !state.permission_pending {
             overlays.push(OverlayKind::PromptStashList);
         }
+        if state.prompt_history_visible && !state.permission_pending {
+            overlays.push(OverlayKind::PromptHistory);
+        }
         if state.permission_pending {
             overlays.push(OverlayKind::PermissionModal);
         }
@@ -155,6 +161,18 @@ impl OverlayStack {
         self
     }
 
+    pub(crate) fn with_product_info(mut self, visible: bool) -> Self {
+        if visible && !self.overlays.contains(&OverlayKind::PermissionModal) {
+            let index = self
+                .overlays
+                .iter()
+                .position(|kind| *kind == OverlayKind::TrustFolderPrompt)
+                .unwrap_or(self.overlays.len());
+            self.overlays.insert(index, OverlayKind::ProductInfo);
+        }
+        self
+    }
+
     pub fn ordered(&self) -> &[OverlayKind] {
         &self.overlays
     }
@@ -175,6 +193,7 @@ impl OverlayStack {
                     | OverlayKind::ThemeDialog
                     | OverlayKind::ErrorDetails
                     | OverlayKind::PromptStashList
+                    | OverlayKind::PromptHistory
                     | OverlayKind::AuthDialog
                     | OverlayKind::NewWorktreeDialog
                     | OverlayKind::SettingsEditor

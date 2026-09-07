@@ -39,6 +39,15 @@ pub(super) fn paste_multiline_text_inserts_newlines_without_submitting() {
     );
     assert!(app.composer.prompt_history.is_empty());
     assert!(intents.lock().unwrap_or_abort().is_empty());
+    let (chip, _) = app.collapsed_paste_presentation().unwrap_or_abort();
+    assert!(chip.contains("Pasted 4 lines"));
+    assert!(!chip.contains("alpha"));
+    app.handle_key(key_with_modifiers(KeyCode::Char('p'), KeyModifiers::ALT));
+    assert!(app.collapsed_paste_presentation().is_none());
+    assert_eq!(app.composer.prompt_buffer, "alpha\n\nbeta\ngamma");
+    assert!(intents.lock().unwrap_or_abort().is_empty());
+    app.execute_action(Action::Undo);
+    assert!(app.composer.prompt_buffer.is_empty());
 }
 
 pub(super) fn multiline_history_keys_move_cursor_before_recalling_history() {
@@ -108,6 +117,22 @@ pub(super) fn prompt_history_persists_and_restores_draft_after_recall() {
     assert_eq!(restarted.composer.prompt_buffer, "draft text");
     assert_eq!(restarted.composer.prompt_cursor, 0);
     assert_eq!(restarted.composer.prompt_history_index, None);
+    restarted.replace_prompt_input(String::new());
+    restarted.handle_key(key(KeyCode::Up));
+    assert_eq!(
+        restarted.overlay_stack().top(),
+        Some(OverlayKind::PromptHistory)
+    );
+    for c in "missing".chars() {
+        restarted.handle_key(key(KeyCode::Char(c)));
+    }
+    assert!(restarted.prompt_history_matches().is_empty());
+    restarted.handle_key(key(KeyCode::Esc));
+    assert!(restarted.composer.prompt_buffer.is_empty());
+    restarted.handle_key(key(KeyCode::Up));
+    restarted.handle_key(key(KeyCode::Enter));
+    assert_eq!(restarted.composer.prompt_buffer, "persisted prompt");
+    assert!(!restarted.prompt_history_picker.visible);
 }
 
 pub(super) fn startup_auto_submit_persists_prompt_history_once() {

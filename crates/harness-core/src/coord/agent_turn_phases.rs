@@ -426,8 +426,12 @@ pub(in crate::coord) fn prepare_provider_transform_phase(
         tool_choice: (!tool_defs.is_empty()).then_some(ToolChoice::Auto),
     });
     let mut completion_request = provider_boundary.request;
+    let mut lowered_budget = request_budget.clone();
+    lowered_budget.pending_prompt_index = lowered_budget
+        .pending_prompt_index
+        .saturating_add(provider_boundary.inserted_system_messages);
     let budget_snapshot =
-        apply_provider_request_budget(provider, &mut completion_request, &request_budget)?;
+        apply_provider_request_budget(provider, &mut completion_request, &lowered_budget)?;
 
     Ok(AgentProviderTurnState {
         model,

@@ -584,11 +584,11 @@ test("scenarioContract exposes the deterministic multiline composer journey", ()
     { kind: "key", value: "Enter" },
     { kind: "type", value: "second line" },
     { kind: "wait", value: "Enter:newline" },
-    { kind: "wait", value: "Alt+s:send" },
+    { kind: "wait", value: "Alt+Enter:send" },
     { kind: "wait", value: "Alt+i:interject" },
     { kind: "wait", value: "Alt+r:replace" },
     { kind: "capture" },
-    { kind: "key", value: "Alt+s" },
+    { kind: "key", value: "Alt+Enter" },
     { kind: "waitCount", value: "QUEUED", count: 1 },
   ]);
   assert.deepEqual(contract.actions.slice(13), [
