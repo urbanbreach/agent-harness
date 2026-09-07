@@ -46,7 +46,7 @@ struct DocumentComposerRenderContext<'a> {
 const QUIET_SURFACE_PADDING_X: u16 = 1;
 const QUIET_SURFACE_PADDING_TOP: u16 = 1;
 pub(super) const fn composer_input_surface(theme: &Theme) -> Color {
-    theme.terminal_colors.canvas
+    theme.surface.canvas
 }
 
 pub(super) const fn composer_input_text(theme: &Theme) -> Color {
