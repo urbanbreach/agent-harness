@@ -227,6 +227,14 @@ fn named_model_profile_resolves_primary_and_fallback_order() {
     assert_eq!(selection.primary.variant.as_deref(), Some("low"));
     assert_eq!(selection.primary.reasoning_effort.as_deref(), Some("low"));
     assert_eq!(selection.primary.resolution.family, ModelFamily::Gpt5);
+    assert!(
+        selection
+            .primary
+            .catalog_entry
+            .as_ref()
+            .unwrap_or_abort()
+            .supports_reasoning_summaries
+    );
     assert_eq!(selection.fallback.len(), 1);
     assert_eq!(selection.fallback[0].model_ref, "default:gpt-5.4");
     assert_eq!(selection.fallback[0].resolution.family, ModelFamily::Gpt5);

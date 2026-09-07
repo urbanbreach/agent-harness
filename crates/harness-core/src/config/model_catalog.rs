@@ -274,7 +274,7 @@ fn build_resolved_model_catalog_entry(
         recommended_for: variant
             .and_then(|(_, variant_cfg)| variant_cfg.metadata.recommended_for.clone()),
         thinking,
-        supports_reasoning_summaries: model.metadata.supports_reasoning_summaries.unwrap_or(false),
+        supports_reasoning_summaries: resolution.capabilities.supports_reasoning_summaries,
         resolution,
     }
 }
