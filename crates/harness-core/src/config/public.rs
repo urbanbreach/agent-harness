@@ -84,6 +84,9 @@ pub struct PublicRuntimeConfig {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PublicRuntimeSettingsConfig {
+    /// Start new and resumed runs in always-approve mode (off by default).
+    #[serde(default)]
+    pub always_approve: bool,
     #[serde(default)]
     pub compaction: CompactionSettings,
     #[serde(default, alias = "providerRetry")]

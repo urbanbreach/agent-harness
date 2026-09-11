@@ -112,6 +112,7 @@ async fn configured_opaque_tui_target_preserves_reasoning_summary_capability_in_
             session_dir: Some(temp_dir.path().join("sessions")),
             workspace_root: temp_dir.path().to_path_buf(),
             config_digest: "test-digest".to_string(),
+            prompt_overrides: BTreeMap::new(),
         },
     ));
 
@@ -237,6 +238,7 @@ async fn selected_tui_variant_target_reaches_provider_start_runtime_context() {
             session_dir: Some(temp_dir.path().join("sessions")),
             workspace_root: temp_dir.path().to_path_buf(),
             config_digest: "test-digest".to_string(),
+            prompt_overrides: BTreeMap::new(),
         },
     ));
 
@@ -308,6 +310,7 @@ async fn compact_intent_reports_noop_status_for_idle_live_agent() {
             session_dir: Some(temp_dir.path().to_path_buf()),
             workspace_root: temp_dir.path().to_path_buf(),
             config_digest: "test-digest".to_string(),
+            prompt_overrides: BTreeMap::new(),
         },
     ));
 
@@ -337,6 +340,71 @@ fn manual_compaction_success_message_reports_active_context_delta() {
         manual_compaction_success_message("summary preview", 4_100, 4_100),
         "manual compaction applied · ctx estimate unchanged · summary preview"
     );
+}
+
+#[tokio::test]
+async fn model_switch_intents_emit_notices_only_after_successful_application() {
+    let temp = tempfile::tempdir().unwrap_or_abort();
+    let mut config = CoordinatorConfig::new(temp.path().join("sessions"));
+    config.agent_profiles = golden_path_profiles();
+    let coordinator = spawn_coordinator(
+        config,
+        Arc::new(FakeClock::new()),
+        Arc::new(DefaultRedactor::default()),
+    );
+    coordinator
+        .start_run("model-notices", temp.path())
+        .await
+        .unwrap_or_abort();
+    let agent_id = coordinator
+        .spawn_agent_idle(supervisor_actor(), "default", None)
+        .await
+        .unwrap_or_abort();
+    let target = Arc::new(Mutex::new(LiveAgentTarget {
+        agent_id: Some(agent_id),
+        profile: "default".to_string(),
+        last_request_id: None,
+    }));
+    let (tx, rx) = mpsc::unbounded_channel();
+    let (notices_tx, notices_rx) = live_update_channel();
+    for profile in ["default", "missing-profile"] {
+        tx.send(UiIntent::SwitchModel {
+            profile: profile.to_string(),
+            launch_metadata: LaunchMetadata::from_model_ref(profile, "qa:gpt-6-astra"),
+        })
+        .unwrap_or_abort();
+    }
+    drop(tx);
+    let outcome = handle_ui_intents(
+        coordinator.clone(),
+        rx,
+        user_actor(),
+        Some(target),
+        notices_tx,
+        TuiAuthBackendContext {
+            config_path: None,
+            session_dir: None,
+            workspace_root: temp.path().to_path_buf(),
+            config_digest: "test".to_string(),
+            prompt_overrides: BTreeMap::new(),
+        },
+    )
+    .await;
+    let notices: Vec<_> = notices_rx.try_iter().collect();
+    assert!(matches!(
+        notices.first(),
+        Some(LiveUpdate::ModelPromptNotice(_))
+    ));
+    assert!(matches!(
+        notices.get(1),
+        Some(LiveUpdate::OperatorNotice {
+            level: OperatorNoticeLevel::Error,
+            ..
+        })
+    ));
+    assert_eq!(notices.len(), 2);
+    assert!(outcome.is_ok());
+    coordinator.stop_run().await.unwrap_or_abort();
 }
 
 #[test]
@@ -516,6 +584,7 @@ async fn compact_intent_reports_unavailable_when_no_live_agent_target_exists() {
             session_dir: Some(temp_dir.path().to_path_buf()),
             workspace_root: temp_dir.path().to_path_buf(),
             config_digest: "test-digest".to_string(),
+            prompt_overrides: BTreeMap::new(),
         },
     ));
 

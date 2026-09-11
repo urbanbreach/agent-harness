@@ -154,8 +154,13 @@ pub(super) async fn handle_ui_intents(
                     materialize_tui_lineage_child("clone", source_run_dir, events, stable_prefix);
                 let _ = live_update_tx.send(notice);
             }
-            UiIntent::SwitchModel { profile, .. } => {
-                switch_live_model(&coordinator, live_agent_target.as_ref(), profile).await?;
+            UiIntent::SwitchModel {
+                profile,
+                launch_metadata,
+            } => {
+                let result =
+                    switch_live_model(&coordinator, live_agent_target.as_ref(), profile).await;
+                notify_model_switch(result, &auth_backend, &launch_metadata, &live_update_tx);
             }
             UiIntent::NewSession
             | UiIntent::NewWorktreeSession { .. }
@@ -320,13 +325,31 @@ async fn interrupt_tasks(
     }
 }
 
+fn notify_model_switch(
+    result: Result<(), String>,
+    auth_backend: &TuiAuthBackendContext,
+    launch_metadata: &harness_tui::app::LaunchMetadata,
+    live_update_tx: &LiveUpdateSender,
+) {
+    let notice = match result {
+        Ok(()) => auth_backend.model_prompt_notice(launch_metadata),
+        Err(err) => Some(LiveUpdate::OperatorNotice {
+            message: format!("Failed to change model: {err}"),
+            level: OperatorNoticeLevel::Error,
+        }),
+    };
+    if let Some(notice) = notice {
+        let _ = live_update_tx.send(notice);
+    }
+}
+
 async fn switch_live_model(
     coordinator: &CoordinatorHandle,
     live_agent_target: Option<&LiveAgentTargetState>,
     profile: String,
 ) -> Result<(), String> {
     let Some(live_agent_target) = live_agent_target else {
-        return Ok(());
+        return Err("no live agent target".to_string());
     };
     if live_agent_target
         .lock()

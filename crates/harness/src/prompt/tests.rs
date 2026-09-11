@@ -1499,6 +1499,37 @@ fn command_level_apply_prompt_command_config_sets_permission_policy() {
 }
 
 #[test]
+fn command_level_prompt_rules_survive_recomposition_and_full_override_stays_verbatim() {
+    let config = harness_core::config::load_config_from_str(r#"{
+        provider: { local: { type: "openai_compatible", baseURL: "http://127.0.0.1:1/v1", apiKey: "fixture", models: {
+            "gpt-6-astra": { name: "GPT" }, "claude-sonnet-4": { name: "Claude" }
+        } } },
+        model: "local:gpt-6-astra",
+        agent: { default: { system_prompt: "AGENT_OVERRIDE_SENTINEL", tools: [] } },
+        permission: "deny"
+    }"#).unwrap_or_else(|error| panic!("prompt fixture must load: {error}"));
+    let mut runtime = crate::bootstrap::build_interactive_coordinator_config(&config).unwrap();
+    let mut cmd = default_prompt_command();
+    cmd.rules = Some("CLI_RULES_SENTINEL".to_string());
+    apply_prompt_command_config(&cmd, &mut runtime, false, "fixture").unwrap();
+    let target =
+        harness_core::config::resolve_model_selection(&config, "local:claude-sonnet-4", None)
+            .unwrap()
+            .primary;
+    let recomposed = runtime.agent_prompt_templates["default"].compose(&target, false);
+    assert!(recomposed.starts_with("AGENT_OVERRIDE_SENTINEL\n\n"));
+    assert!(recomposed.ends_with("CLI_RULES_SENTINEL"));
+
+    cmd.system_prompt_override = Some("FULL_OVERRIDE_SENTINEL".to_string());
+    apply_prompt_command_config(&cmd, &mut runtime, false, "fixture").unwrap();
+    assert!(runtime.agent_prompt_templates.is_empty());
+    assert_eq!(
+        runtime.agent_profiles["default"].system_prompt,
+        "FULL_OVERRIDE_SENTINEL\n\nCLI_RULES_SENTINEL"
+    );
+}
+
+#[test]
 fn command_level_apply_prompt_command_config_sandbox_overrides_base_then_mode_overrides_sandbox() {
     let temp_dir = tempfile::tempdir().unwrap();
     let mut config = CoordinatorConfig::new(temp_dir.path().to_path_buf());

@@ -133,6 +133,7 @@ fn queued_agent_turn_fixture(
     scheduler_queued: bool,
 ) -> QueuedAgentTurn {
     QueuedAgentTurn {
+        prompt_template: None,
         task_id: task_id.to_string(),
         agent_id: agent_id.to_string(),
         session_id: "run_test".into(),

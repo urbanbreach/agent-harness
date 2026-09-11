@@ -617,6 +617,9 @@ async fn run_startup_launcher(
     let selected_intent_sink = Arc::clone(&selected_intent);
     let (live_update_tx, live_update_rx) = live_update_channel();
     let auth_update_tx = live_update_tx.clone();
+    if let Some(notice) = auth_backend.model_prompt_notice(&recover_mutex_lock(&launch_selection)) {
+        let _ = live_update_tx.send(notice);
+    }
     let startup_auth_backend = auth_backend.clone();
     let on_ui_intent = Arc::new(move |intent: UiIntent| {
         if handle_model_switch_intent(
@@ -625,6 +628,14 @@ async fn run_startup_launcher(
             persist_model_selection,
             &auth_backend.config_digest,
         ) {
+            if let UiIntent::SwitchModel {
+                launch_metadata, ..
+            } = &intent
+            {
+                if let Some(notice) = auth_backend.model_prompt_notice(launch_metadata) {
+                    let _ = auth_update_tx.send(notice);
+                }
+            }
             return;
         }
 
@@ -729,6 +740,7 @@ async fn run_continue_session_bootstrap(
         &settings.config_digest,
     );
 
+    let always_approve_on_start = coordinator_config.always_approve_on_start;
     let coordinator = spawn_coordinator(
         coordinator_config,
         clock,
@@ -769,6 +781,9 @@ async fn run_continue_session_bootstrap(
             .to_vec(),
     );
     let (live_update_tx, live_update_rx) = live_update_channel();
+    let _ = live_update_tx.send(LiveUpdate::AlwaysApproveModeChanged {
+        enabled: always_approve_on_start,
+    });
     let (intent_tx, intent_rx) = mpsc::unbounded_channel::<UiIntent>();
     let intent_live_update_tx = live_update_tx.clone();
 
@@ -792,6 +807,9 @@ async fn run_continue_session_bootstrap(
     let intent_coordinator = coordinator.clone();
     let intent_live_agent_target = Arc::clone(&live_agent_target);
     let auth_backend = TuiAuthBackendContext::from_settings(settings);
+    if let Some(notice) = auth_backend.model_prompt_notice(&continue_metadata) {
+        let _ = intent_live_update_tx.send(notice);
+    }
     let ui_intent_task = tokio::spawn(async move {
         handle_ui_intents(
             intent_coordinator,

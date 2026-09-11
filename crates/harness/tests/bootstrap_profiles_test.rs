@@ -30,6 +30,9 @@ mod bootstrap;
 #[path = "../src/cli_config.rs"]
 mod cli_config;
 
+#[path = "common/model_prompt_dispatch_test.rs"]
+mod model_prompt_dispatch;
+
 fn write_agent_markdown(repo_root: &Path, name: &str, body: &str) {
     let path = repo_root
         .join(".agent-harness")
@@ -220,7 +223,15 @@ fn shipped_v1_full_composed_prompt_snapshots_match_source() {
             .agent_profiles
             .get(profile)
             .unwrap_or_else(|| panic!("missing composed prompt profile {profile}"));
-        let rendered = normalize_composed_prompt_snapshot(&runtime_prompt.system_prompt);
+        let family = coordinator_config.agent_model_targets[profile]
+            .resolution
+            .prompt_family;
+        let role_and_sections = runtime_prompt
+            .system_prompt
+            .strip_prefix(family.bundled_prompt())
+            .unwrap_or_else(|| panic!("{profile} must start with its bundled model base"))
+            .trim_start();
+        let rendered = normalize_composed_prompt_snapshot(role_and_sections);
         assert!(
             !rendered.trim().is_empty(),
             "{profile} composed prompt snapshot source must not be empty"
@@ -238,8 +249,6 @@ fn shipped_v1_full_composed_prompt_snapshots_match_source() {
 
 include!("common/bootstrap_profile_helpers.rs");
 
-const V1_FAMILY_PROMPT_SNAPSHOTS: [&str; 4] = ["anthropic", "gemini", "kimi", "trinity"];
-
 fn family_prompt_model_target(
     family: harness_core::model_resolution::PromptFamily,
 ) -> ResolvedModelTarget {
@@ -253,9 +262,6 @@ fn family_prompt_model_target(
         }
         harness_core::model_resolution::PromptFamily::Kimi => {
             harness_core::model_resolution::ModelFamily::Kimi
-        }
-        harness_core::model_resolution::PromptFamily::Trinity => {
-            harness_core::model_resolution::ModelFamily::Trinity
         }
         _ => harness_core::model_resolution::ModelFamily::Unknown,
     };
@@ -289,12 +295,8 @@ fn family_prompt_model_target(
 }
 
 #[test]
-fn shipped_v1_family_prompt_assets_match_golden_snapshots() {
+fn bundled_family_prompt_assets_match_shipped_source_and_preserve_sections() {
     let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let snapshot_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests")
-        .join("snapshots")
-        .join("v1_family_prompts");
     let workspace = WorkspaceEnvironment {
         working_directory: repo_root.clone(),
         workspace_root: repo_root,
@@ -318,18 +320,29 @@ fn shipped_v1_family_prompt_assets_match_golden_snapshots() {
             },
             environment,
         );
-        let rendered = normalize_composed_prompt_snapshot(&rendered);
-        assert_snapshot_text(
-            &snapshot_dir.join(format!("{}.txt", family.id())),
-            &rendered,
+        let shipped = fs::read_to_string(
+            workspace
+                .workspace_root
+                .join(".agent-harness/prompt-families")
+                .join(family.data_asset_file().unwrap_or_abort()),
+        )
+        .unwrap_or_abort();
+        assert_eq!(family.bundled_prompt(), shipped);
+        let remainder = rendered.strip_prefix(&shipped).unwrap_or_abort();
+        let overridden = dynamic_prompt::compose_with_environment(
+            dynamic_prompt::DynamicPromptContext {
+                configured_prompt: Some("BASE_SENTINEL"),
+                model: &model,
+                instruction_prompt: Some("Instructions from: fixture\nFollow the fixture rule."),
+                skill_tool_enabled: true,
+            },
+            environment,
+        );
+        assert_eq!(
+            remainder,
+            overridden.strip_prefix("BASE_SENTINEL").unwrap_or_abort()
         );
     }
-
-    let expected_files = V1_FAMILY_PROMPT_SNAPSHOTS
-        .iter()
-        .map(|family| format!("{family}.txt"))
-        .collect::<Vec<_>>();
-    assert_snapshot_dir_contains_exact_files(&snapshot_dir, &expected_files);
 }
 
 #[test]

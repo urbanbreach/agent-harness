@@ -1498,6 +1498,11 @@
     "PublicRuntimeSettingsConfig": {
       "additionalProperties": false,
       "properties": {
+        "always_approve": {
+          "default": false,
+          "description": "Start new and resumed runs in always-approve mode (off by default).",
+          "type": "boolean"
+        },
         "compaction": {
           "allOf": [
             {
@@ -1804,6 +1809,7 @@
         }
       ],
       "default": {
+        "always_approve": false,
         "compaction": {
           "auto_retry_overflow": true,
           "enabled": true,

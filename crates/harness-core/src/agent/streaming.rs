@@ -684,6 +684,9 @@ where
     };
     let mut completion_request = provider_boundary.request;
     let request_budget = request_budget.map(|mut budget| {
+        budget.pending_prompt_index = budget
+            .pending_prompt_index
+            .saturating_add(provider_boundary.inserted_system_messages);
         if let Some(prompt) = canonical_view.and_then(|view| view.pending_prompt.as_ref()) {
             let pending_text = crate::attachment_transport::lower_provider_attachments(
                 &prompt.text,
