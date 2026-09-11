@@ -118,6 +118,11 @@ async fn openai_compatible_serializes_native_tool_schema_without_alias_dupes() {
         .and_then(serde_json::Value::as_array)
         .unwrap_or_abort();
     assert_eq!(tools.len(), 2);
+    assert!(tools.iter().all(|tool| tool["strict"] == json!(false)));
+    assert_eq!(tools[1]["parameters"]["required"], json!(["command"]));
+    assert!(tools[1]["parameters"]["properties"]
+        .get("description")
+        .is_some());
 
     let names = tools
         .iter()
@@ -172,7 +177,8 @@ fn native_surface_request() -> CompletionRequest {
                 parameters: json!({
                     "type": "object",
                     "properties": {
-                        "command": {"type": "string"}
+                        "command": {"type": "string"},
+                        "description": {"type": "string", "description": "Optional command label"}
                     },
                     "required": ["command"],
                     "additionalProperties": false

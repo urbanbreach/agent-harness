@@ -642,6 +642,9 @@ struct OpenAiResponsesTool {
     #[serde(skip_serializing_if = "Option::is_none")]
     description: Option<String>,
     parameters: serde_json::Value,
+    // Native schemas deliberately retain optional/defaulted parameters. Responses
+    // otherwise attempts strict normalization and can make those fields required.
+    strict: bool,
 }
 
 impl From<ToolDef> for OpenAiResponsesTool {
@@ -653,6 +656,7 @@ impl From<ToolDef> for OpenAiResponsesTool {
                 .description
                 .filter(|value| non_empty_string(value).is_some()),
             parameters: tool.parameters,
+            strict: false,
         }
     }
 }
