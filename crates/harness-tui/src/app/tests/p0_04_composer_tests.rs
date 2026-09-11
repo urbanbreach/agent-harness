@@ -90,14 +90,14 @@ fn multiline_shift_enter_submits_once() {
 }
 
 #[test]
-fn multiline_alt_s_submits_once() {
+fn multiline_alt_enter_submits_once() {
     // Given: multiline mode with a valid draft in the focused composer.
     let (mut app, intents) = capturing_live_app();
     app.composer.multiline_mode = true;
     app.handle_paste("alpha");
 
     // When: the terminal-safe explicit send chord is pressed.
-    app.handle_key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::ALT));
+    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::ALT));
 
     // Then: exactly one prompt submission is emitted.
     let intents = intents.lock().unwrap_or_abort();
@@ -146,11 +146,8 @@ fn active_turn_cancel_replace_interrupts_before_submitting() {
     active_turn(&mut app);
     app.handle_paste("replace this");
 
-    // When: Ctrl+Shift+Enter is pressed.
-    app.handle_key(KeyEvent::new(
-        KeyCode::Enter,
-        KeyModifiers::CONTROL | KeyModifiers::SHIFT,
-    ));
+    // When: Ctrl+Enter is pressed.
+    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::CONTROL));
 
     // Then: the active task is interrupted before exactly one submission.
     let intents = intents.lock().unwrap_or_abort();
@@ -264,7 +261,7 @@ fn multiline_getter_badge_and_queue_state_are_visible() {
         "multiline footer missing newline action\n{rendered}"
     );
     assert!(
-        rendered.contains("Alt+s:send"),
+        rendered.contains("Alt+Enter:send"),
         "multiline footer missing send action\n{rendered}"
     );
     assert!(rendered.contains("Alt+i:interject"));

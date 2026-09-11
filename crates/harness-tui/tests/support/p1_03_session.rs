@@ -190,6 +190,19 @@ impl Session {
         (required_seen, optional_seen)
     }
 
+    pub(crate) fn observe_for(&mut self, duration: Duration) {
+        let deadline = Instant::now() + duration;
+        while Instant::now() < deadline {
+            match self
+                .output
+                .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+            {
+                Ok(bytes) => self.process(&bytes),
+                Err(RecvTimeoutError::Timeout | RecvTimeoutError::Disconnected) => break,
+            }
+        }
+    }
+
     pub(crate) fn persist(&mut self, root: &Path, directory: &Path, name: &str) -> Value {
         while let Ok(bytes) = self.output.try_recv() {
             self.process(&bytes);

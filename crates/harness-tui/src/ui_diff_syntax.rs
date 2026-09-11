@@ -9,6 +9,7 @@ use ratatui::{
 use syntect::easy::HighlightLines;
 use syntect::highlighting::{FontStyle as SyntectFontStyle, Theme as SyntectTheme, ThemeSet};
 use syntect::parsing::SyntaxSet;
+use unicode_segmentation::UnicodeSegmentation;
 
 use crate::theme::{quantize_color, ColorLevel};
 
@@ -37,9 +38,21 @@ pub(super) fn wrap_styled_chunks(
 
     let mut lines = vec![Vec::new()];
     let mut remaining = max_width;
+    let mut source_column = 0;
 
     for chunk in chunks {
-        let mut rest = chunk.text.as_str();
+        let mut expanded = String::new();
+        for grapheme in chunk.text.graphemes(true) {
+            if grapheme == "\t" {
+                let spaces = 4 - source_column % 4;
+                expanded.extend(std::iter::repeat_n(' ', spaces));
+                source_column += spaces;
+            } else {
+                expanded.push_str(grapheme);
+                source_column += display_width(grapheme);
+            }
+        }
+        let mut rest = expanded.as_str();
         if rest.is_empty() {
             continue;
         }
@@ -50,11 +63,16 @@ pub(super) fn wrap_styled_chunks(
                 remaining = max_width;
             }
 
-            let piece = take_width_prefix(rest, remaining);
+            let mut piece = take_width_prefix(rest, remaining);
             if piece.is_empty() {
-                lines.push(Vec::new());
-                remaining = max_width;
-                continue;
+                if remaining < max_width {
+                    lines.push(Vec::new());
+                    remaining = max_width;
+                    continue;
+                }
+                // A double-cell glyph in a one-cell viewport must make progress;
+                // the terminal clips the glyph rather than splitting its bytes.
+                piece = rest.graphemes(true).next().unwrap_or(rest);
             }
 
             if let Some(current) = lines.last_mut() {
@@ -89,17 +107,10 @@ pub(super) fn highlight_diff_line_chunks(
         return None;
     }
     let assets = diff_syntax_highlight_assets();
-    let syntax = assets
-        .syntax_set
-        .find_syntax_for_file(path)
-        .ok()
-        .flatten()
-        .or_else(|| {
-            Path::new(path)
-                .extension()
-                .and_then(|extension| extension.to_str())
-                .and_then(|extension| assets.syntax_set.find_syntax_by_extension(extension))
-        })?;
+    let syntax = Path::new(path)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .and_then(|extension| assets.syntax_set.find_syntax_by_extension(extension))?;
     let mut highlighter = HighlightLines::new(syntax, &assets.theme);
     let regions = highlighter.highlight_line(text, &assets.syntax_set).ok()?;
     Some(
@@ -170,4 +181,99 @@ fn diff_syntect_style_to_ratatui(
         rendered = rendered.add_modifier(Modifier::UNDERLINED);
     }
     rendered
+}
+
+pub(super) struct RecordedDiffHighlights {
+    pub(super) before: Vec<ratatui::text::Line<'static>>,
+    pub(super) after: Vec<ratatui::text::Line<'static>>,
+}
+
+pub(super) fn recorded_diff_highlights(
+    file: &super::ui_diff_model::StructuredDiffFile,
+    source: Option<&str>,
+    theme: &crate::theme::Theme,
+) -> RecordedDiffHighlights {
+    use super::ui_diff_model::StructuredDiffDisplayRow;
+    let mut before: Vec<String> = source.map_or_else(Vec::new, |source| {
+        source.lines().map(str::to_string).collect()
+    });
+    if source.is_none() {
+        for row in &file.rows {
+            let item = match row {
+                StructuredDiffDisplayRow::Context {
+                    before_line: Some(line),
+                    text,
+                    ..
+                } => Some((*line, text)),
+                StructuredDiffDisplayRow::Changed {
+                    before: Some(cell), ..
+                } => cell.line_number.map(|line| (line, &cell.text)),
+                _ => None,
+            };
+            if let Some((line, text)) = item.filter(|(line, _)| (1..=100_000).contains(line)) {
+                before.resize(before.len().max(line), String::new());
+                before[line - 1] = text.clone();
+            }
+        }
+    }
+    let mut after = Vec::new();
+    let mut cursor = 0;
+    for row in &file.rows {
+        let (old_line, replacement) = match row {
+            StructuredDiffDisplayRow::Context {
+                before_line, text, ..
+            } => (*before_line, Some(text)),
+            StructuredDiffDisplayRow::Changed { before, after } => (
+                before.as_ref().and_then(|cell| cell.line_number),
+                after.as_ref().map(|cell| &cell.text),
+            ),
+            _ => continue,
+        };
+        if let Some(line) = old_line.filter(|line| *line > 0) {
+            let start = (line - 1).min(before.len());
+            if start > cursor {
+                after.extend_from_slice(&before[cursor..start]);
+            }
+            cursor = line.min(before.len());
+        }
+        if let Some(text) = replacement {
+            after.push(text.clone());
+        }
+    }
+    after.extend_from_slice(&before[cursor..]);
+    let language = file
+        .after_path
+        .as_deref()
+        .or(file.before_path.as_deref())
+        .or(Some(file.display_path.as_str()));
+    let highlight = |lines: &[String]| {
+        let body = lines.join("\n");
+        super::super::ui_syntax_highlight::render_highlighted_code_block(
+            language,
+            &body,
+            &body,
+            "",
+            theme.text.primary,
+            theme,
+        )
+    };
+    RecordedDiffHighlights {
+        before: highlight(&before),
+        after: highlight(&after),
+    }
+}
+
+impl RecordedDiffHighlights {
+    pub(super) fn before_line(
+        &self,
+        number: Option<usize>,
+    ) -> Option<&ratatui::text::Line<'static>> {
+        self.before.get(number?.checked_sub(1)?)
+    }
+    pub(super) fn after_line(
+        &self,
+        number: Option<usize>,
+    ) -> Option<&ratatui::text::Line<'static>> {
+        self.after.get(number?.checked_sub(1)?)
+    }
 }

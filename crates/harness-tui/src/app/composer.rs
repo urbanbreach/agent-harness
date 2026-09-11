@@ -7,6 +7,15 @@ use super::prompt_history::PromptHistoryDraft;
 const UNDO_STACK_MAX: usize = 100;
 
 #[derive(Debug, Clone)]
+pub(crate) struct PastePreview {
+    pub(crate) buffer: String,
+    pub(crate) start: usize,
+    pub(crate) end: usize,
+    pub(crate) line_count: usize,
+    pub(crate) expanded: bool,
+}
+
+#[derive(Debug, Clone)]
 pub(super) struct ComposerSnapshot {
     pub(super) text: String,
     pub(super) cursor: usize,
@@ -27,6 +36,8 @@ pub struct ComposerState {
     pub(super) redo_stack: Vec<ComposerSnapshot>,
     pub shell_mode: bool,
     pub multiline_mode: bool,
+    pub vim_mode: bool,
+    pub(crate) paste_preview: Option<PastePreview>,
 }
 
 impl ComposerState {

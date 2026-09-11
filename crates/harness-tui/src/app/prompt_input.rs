@@ -241,7 +241,7 @@ impl AppState {
 
     pub(in crate::app) fn replace_prompt_input(&mut self, prompt: String) {
         self.reset_clear_prompt_confirmation();
-        if !prompt.is_empty() {
+        if !prompt.is_empty() && !prompt.starts_with('/') {
             self.dismiss_welcome_for_input();
         }
         if self.composer.replace_editor_text(&prompt).is_err() {
@@ -266,7 +266,10 @@ impl AppState {
     }
 
     pub(in crate::app) fn insert_prompt_char(&mut self, c: char) {
-        if c != '\n' {
+        if c != '\n'
+            && !self.composer.prompt_buffer.starts_with('/')
+            && !(self.composer.prompt_buffer.is_empty() && c == '/')
+        {
             self.dismiss_welcome_for_input();
         }
         self.reset_clear_prompt_confirmation();
@@ -319,12 +322,30 @@ impl AppState {
             self.sync_file_mention_overlay();
             return;
         }
-        for c in text.chars() {
-            self.insert_prompt_char(c);
+        if text.is_empty() {
+            return;
         }
+        self.composer.push_undo();
+        let cursor = self.composer.prompt_cursor;
+        let anchor = self.composer.selection_anchor.take().unwrap_or(cursor);
+        let start = anchor.min(cursor);
+        self.replace_prompt_range(start, anchor.max(cursor), text);
+        self.composer.prompt_cursor = start + text.chars().count();
+        self.sync_slash_overlay();
+        self.sync_file_mention_overlay();
     }
 
     pub fn handle_paste(&mut self, text: &str) {
+        if self.status_dashboard_is_active() {
+            if let Some(dashboard) = self.dashboard.as_mut().filter(|dashboard| {
+                dashboard.focus() == crate::dashboard_integration::DashboardPane::Reply
+            }) {
+                if let Err(error) = dashboard.paste_reply(text) {
+                    self.status_banner = Some(error.to_string());
+                }
+            }
+            return;
+        }
         if self.active_permission().is_some() {
             self.handle_permission_feedback_paste(text);
             return;
@@ -345,10 +366,27 @@ impl AppState {
         }
 
         let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
-        if !normalized.is_empty() {
+        let slash_input = self.composer.prompt_buffer.starts_with('/')
+            || (self.composer.prompt_buffer.is_empty() && normalized.starts_with('/'));
+        if !normalized.is_empty() && !slash_input {
             self.dismiss_welcome_for_input();
         }
+        let start = self
+            .composer
+            .selection_anchor
+            .unwrap_or(self.composer.prompt_cursor)
+            .min(self.composer.prompt_cursor);
         self.insert_prompt_text(&normalized);
+        let line_count = normalized.lines().count();
+        if line_count >= 4 || normalized.len() >= 2000 {
+            self.composer.paste_preview = Some(super::composer::PastePreview {
+                buffer: self.composer.prompt_buffer.clone(),
+                start,
+                end: start + normalized.chars().count(),
+                line_count,
+                expanded: false,
+            });
+        }
     }
 
     pub(in crate::app) fn backspace_prompt_char(&mut self) {
@@ -734,6 +772,15 @@ mod paste_tests {
         );
         assert!(app.composer.prompt_history.is_empty());
         assert!(intents.lock().unwrap().is_empty());
+        assert!(app.composer_render_text().contains("Pasted 4 lines"));
+        app.handle_key(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::ALT));
+        assert_eq!(app.composer_render_text(), "alpha\n\nbeta\ngamma");
+        assert!(intents.lock().unwrap().is_empty());
+        app.handle_key(KeyEvent::new(KeyCode::Char('z'), KeyModifiers::CONTROL));
+        assert!(
+            app.composer.prompt_buffer.is_empty(),
+            "the paste must undo as one edit"
+        );
     }
 
     /// D2: pasting with the cursor mid-buffer inserts at the cursor.

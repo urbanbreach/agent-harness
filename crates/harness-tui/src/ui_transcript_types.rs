@@ -70,6 +70,10 @@ pub(super) enum TranscriptToolVerb {
     WebFetch,
     WebSearch,
     Subagent,
+    Edit,
+    Mcp,
+    Message,
+    Other,
 }
 
 impl TranscriptToolVerb {
@@ -83,9 +87,7 @@ impl TranscriptToolVerb {
             "skill" | "skill.load" => Some(Self::Skill),
             "web.fetch" | "webfetch" => Some(Self::WebFetch),
             "search.web" | "websearch" => Some(Self::WebSearch),
-            "agent.spawn" | "task" | "background_output" | "background_cancel" => {
-                Some(Self::Subagent)
-            }
+            "background_output" | "background_cancel" => Some(Self::Subagent),
             _ => Self::from_mcp_context_id(tool_id),
         }
     }
@@ -99,8 +101,20 @@ impl TranscriptToolVerb {
         }
     }
 
-    fn from_tool_call(tool_call: &TranscriptToolCallSection) -> Option<Self> {
-        let verb = Self::from_tool_id(&tool_call.header.tool_id)?;
+    pub(super) fn from_tool_call(tool_call: &TranscriptToolCallSection) -> Option<Self> {
+        let id = tool_call.header.tool_id.as_str();
+        let verb = Self::from_tool_id(id).unwrap_or_else(|| match id {
+            "apply_patch"
+            | "edit"
+            | "write"
+            | "fs.write"
+            | "edit.hashline_apply"
+            | "ast_grep_replace"
+            | "lsp.rename" => Self::Edit,
+            "agent.message" | "agent.send_message" => Self::Message,
+            _ if is_mcp_tool_id(id) => Self::Mcp,
+            _ => Self::Other,
+        });
         if verb == Self::Read
             && tool_call
                 .header
@@ -116,7 +130,9 @@ impl TranscriptToolVerb {
 
     pub(super) const fn group_kind(self) -> TranscriptToolGroupKind {
         match self {
-            Self::Run => TranscriptToolGroupKind::Commands,
+            Self::Run | Self::Edit | Self::Mcp | Self::Message | Self::Other => {
+                TranscriptToolGroupKind::Commands
+            }
             Self::Read
             | Self::Search
             | Self::List
@@ -129,11 +145,14 @@ impl TranscriptToolVerb {
 
     const fn verb(self, running: bool) -> &'static str {
         let (settled, active) = match self {
-            Self::Run | Self::Subagent => ("Ran", "Running"),
+            Self::Run | Self::Subagent | Self::Other => ("Ran", "Running"),
             Self::Read | Self::Skill => ("Read", "Reading"),
             Self::Search | Self::WebSearch => ("Searched", "Searching"),
             Self::List => ("Listed", "Listing"),
             Self::WebFetch => ("Fetched", "Fetching"),
+            Self::Edit => ("Edited", "Editing"),
+            Self::Mcp => ("Called", "Calling"),
+            Self::Message => ("Sent", "Sending"),
         };
         if running {
             active
@@ -145,12 +164,15 @@ impl TranscriptToolVerb {
     const fn noun(self, count: usize) -> &'static str {
         let (singular, plural) = match self {
             Self::Run => ("command", "commands"),
-            Self::Read => ("file", "files"),
+            Self::Read | Self::Edit => ("file", "files"),
             Self::Search => ("pattern", "patterns"),
             Self::List => ("dir", "dirs"),
             Self::Skill => ("skill", "skills"),
             Self::WebFetch | Self::WebSearch => ("website", "websites"),
             Self::Subagent => ("subagent", "subagents"),
+            Self::Mcp => ("MCP tool", "MCP tools"),
+            Self::Message => ("message", "messages"),
+            Self::Other => ("tool", "tools"),
         };
         if count == 1 {
             singular
@@ -160,10 +182,11 @@ impl TranscriptToolVerb {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct TranscriptToolVerbCount {
     verb: TranscriptToolVerb,
     count: usize,
+    sources: std::collections::BTreeSet<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -198,6 +221,7 @@ pub(super) struct TranscriptToolGroupSummary {
 }
 
 impl TranscriptToolGroupSummary {
+    #[cfg(test)]
     pub(super) fn from_adjacent(parts: &[TranscriptAssistantPart]) -> Option<Self> {
         let first = parts.first()?.tool_call()?;
         let mut summary = Self::empty(first)?;
@@ -210,7 +234,9 @@ impl TranscriptToolGroupSummary {
             let Some(tool_call) = part.tool_call() else {
                 break;
             };
-            if !summary.push(tool_call) {
+            if TranscriptToolVerb::from_tool_call(tool_call)?.group_kind() != summary.kind
+                || !summary.push(tool_call)
+            {
                 break;
             }
             summary.span_len = summary.span_len.saturating_add(1);
@@ -258,10 +284,6 @@ impl TranscriptToolGroupSummary {
         let Some(verb) = TranscriptToolVerb::from_tool_call(tool_call) else {
             return false;
         };
-        if verb.group_kind() != self.kind {
-            return false;
-        }
-
         self.member_count += 1;
         if let Some(bucket) = self
             .verb_counts
@@ -271,8 +293,20 @@ impl TranscriptToolGroupSummary {
             bucket.count += 1;
         } else {
             self.verbs.push(verb);
-            self.verb_counts
-                .push(TranscriptToolVerbCount { verb, count: 1 });
+            self.verb_counts.push(TranscriptToolVerbCount {
+                verb,
+                count: 1,
+                sources: std::collections::BTreeSet::new(),
+            });
+        }
+        if let Some(bucket) = self
+            .verb_counts
+            .iter_mut()
+            .find(|bucket| bucket.verb == verb)
+        {
+            bucket
+                .sources
+                .extend(tool_call.group.sources.iter().cloned());
         }
         match tool_call.header.presentation.status {
             ToolCallPresentationStatus::Queued => self.queued_count += 1,
@@ -308,13 +342,11 @@ impl TranscriptToolGroupSummary {
         true
     }
 
+    #[cfg(test)]
     pub(super) const fn folds_as_group(&self) -> bool {
         match self.kind {
             TranscriptToolGroupKind::Commands => self.member_count > 11,
-            TranscriptToolGroupKind::Context => {
-                self.member_count > 1
-                    || matches!(self.verbs.as_slice(), [TranscriptToolVerb::Subagent])
-            }
+            TranscriptToolGroupKind::Context => self.member_count > 0,
         }
     }
 
@@ -331,11 +363,16 @@ impl TranscriptToolGroupSummary {
         self.verb_counts
             .iter()
             .map(|bucket| {
+                let count = if bucket.sources.is_empty() {
+                    bucket.count
+                } else {
+                    bucket.sources.len()
+                };
                 format!(
                     "{} {} {}",
                     bucket.verb.verb(running),
-                    bucket.count,
-                    bucket.verb.noun(bucket.count)
+                    count,
+                    bucket.verb.noun(count)
                 )
             })
             .collect::<Vec<_>>()
@@ -404,6 +441,15 @@ pub(super) struct TranscriptTurnSection {
 }
 
 impl TranscriptTurnSection {
+    pub(super) fn reasoning_active(&self, part_index: usize) -> bool {
+        self.header.status == ActivityStatus::Streaming
+            && part_index + 1 == self.assistant_parts.len()
+            && !self.assistant_tools().any(|tool| {
+                matches!(tool.header.tool_id.as_str(), "question" | "user.question")
+                    || tool.header.presentation.status == ToolCallPresentationStatus::Waiting
+            })
+    }
+
     pub(super) fn assistant_tools(&self) -> impl Iterator<Item = &TranscriptToolCallSection> {
         self.assistant_parts.iter().filter_map(|part| match part {
             TranscriptAssistantPart::ToolCall(tool) => Some(tool.as_ref()),
@@ -488,6 +534,13 @@ pub(super) struct TranscriptToolCallSection {
     pub(super) animation_phase: usize,
     pub(super) expanded: bool,
     pub(super) rail_motion: ToolRailMotion,
+    pub(super) group: TranscriptToolGroupMember,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(super) struct TranscriptToolGroupMember {
+    pub(super) expanded: bool,
+    pub(super) sources: std::collections::BTreeSet<String>,
 }
 
 impl TranscriptToolCallSection {
@@ -511,6 +564,7 @@ pub(super) struct TranscriptToolCallHeader {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(in crate::ui) enum TranscriptToolCallDetailBlock {
+    Recorded(super::super::ui_recorded_tool_output::RecordedToolOutput),
     ReadOutput {
         text: String,
         start_line: Option<u64>,
@@ -534,6 +588,7 @@ pub(in crate::ui) enum TranscriptToolCallDetailBlock {
     },
     StructuredDiff {
         diff_content: String,
+        before_source: Option<String>,
         fallback_path: Option<String>,
         force_stacked: bool,
         plain_numbered: bool,
@@ -590,7 +645,7 @@ pub(super) enum TranscriptAssistantPart {
 }
 
 impl TranscriptAssistantPart {
-    fn tool_call(&self) -> Option<&TranscriptToolCallSection> {
+    pub(super) fn tool_call(&self) -> Option<&TranscriptToolCallSection> {
         match self {
             Self::ToolCall(tool_call) => Some(tool_call),
             Self::Reasoning(_) | Self::Body(_) | Self::Error(_) | Self::Compaction(_) => None,
@@ -598,12 +653,15 @@ impl TranscriptAssistantPart {
     }
 }
 
-pub(super) const TRANSCRIPT_ASSISTANT_BODY_PREFIX: &str = "   ";
+// Grok Build: HorizontalLayout::ACCENT (1) + LayoutConfig::block_pad_left (2).
+// Every entry keeps this origin through streaming, folding, selection and settlement.
+pub(super) const TRANSCRIPT_ASSISTANT_BODY_PREFIX: &str =
+    super::super::ui_transcript_surface::TRANSCRIPT_ENTRY_CONTENT_PREFIX;
 pub(super) const TRANSCRIPT_USER_BODY_PREFIX: &str = "     ";
-pub(super) const TRANSCRIPT_REASONING_BODY_PREFIX: &str = "   ";
-pub(super) const TRANSCRIPT_REASONING_HEADER_PREFIX: &str = "   ";
+pub(super) const TRANSCRIPT_REASONING_BODY_PREFIX: &str = TRANSCRIPT_ASSISTANT_BODY_PREFIX;
+pub(super) const TRANSCRIPT_REASONING_HEADER_PREFIX: &str = TRANSCRIPT_ASSISTANT_BODY_PREFIX;
 pub(super) const TRANSCRIPT_NESTED_INDENT: &str = "     ";
-pub(super) const TRANSCRIPT_OPCODE_EDIT_INDENT: &str = "       ";
+pub(super) const TRANSCRIPT_TOOL_BODY_PREFIX: &str = TRANSCRIPT_ASSISTANT_BODY_PREFIX;
 
 #[cfg(test)]
 mod tool_group_tests {
@@ -622,6 +680,7 @@ mod tool_group_tests {
         expanded: bool,
     ) -> TranscriptAssistantPart {
         TranscriptAssistantPart::ToolCall(Box::new(TranscriptToolCallSection {
+            group: Default::default(),
             tool_call_id: id.to_string(),
             coalesced_tool_call_ids: vec![id.to_string()],
             child_session_id: None,

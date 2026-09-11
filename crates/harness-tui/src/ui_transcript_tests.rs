@@ -393,7 +393,7 @@ fn transcript_layout_cache_invalidates_when_theme_changes() {
         .lines
         .iter()
         .flat_map(|line| &line.spans)
-        .find(|span| span.content.contains("theme-sensitive"))
+        .find(|span| span.content.contains("theme-"))
         .and_then(|span| span.style.fg)
         .expect("prompt text color");
 
@@ -406,7 +406,7 @@ fn transcript_layout_cache_invalidates_when_theme_changes() {
         .lines
         .iter()
         .flat_map(|line| &line.spans)
-        .find(|span| span.content.contains("theme-sensitive"))
+        .find(|span| span.content.contains("theme-"))
         .and_then(|span| span.style.fg)
         .expect("updated prompt text color");
 
@@ -458,7 +458,7 @@ fn pending_permission_sections_render_warning_turn_container() {
 }
 
 #[test]
-fn streaming_assistant_footer_reserves_blank_geometry_for_live_status() {
+fn streaming_assistant_footer_leaves_geometry_to_live_status() {
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![ActivityEntry {
         request_id: "request-streaming-header".to_string(),
@@ -496,8 +496,8 @@ fn streaming_assistant_footer_reserves_blank_geometry_for_live_status() {
 
     assert_eq!(
         lines,
-        vec![String::new(), String::new()],
-        "streaming footer should reserve one blank row before the final block trailing gap"
+        ["Waiting for first turn…"],
+        "only the empty-history placeholder remains"
     );
 }
 
@@ -636,7 +636,7 @@ fn tool_only_turns_omit_standalone_assistant_footer() {
         80,
     ));
 
-    assert!(lines.iter().any(|line| line.contains("Read ui.rs")));
+    assert!(lines.iter().any(|line| line.contains("Read 1 file")));
     assert!(lines.iter().all(|line| !line.contains("Worked for")));
     assert!(lines.iter().all(|line| !line.contains("gpt-5.4-mini")));
 }
@@ -1296,6 +1296,37 @@ fn fenced_code_blocks_render_frameless_with_highlighting() {
         "fenced code should keep syntax-highlighted content in flow without a nested frame\n{lines:#?}"
     );
     assert!(lines.iter().any(|line| line.contains("After")));
+
+    // Night-theme gray tokens must use the host foreground in terminal-native
+    // mode, and saturated tokens must avoid white/black or bright ANSI colors.
+    let native = build_transcript_lines_for_width(&app, &Theme::terminal_native(), 100);
+    let function = native
+        .iter()
+        .find(|line| line.to_string().contains("fn main()"))
+        .unwrap_or_abort();
+    assert!(function
+        .spans
+        .iter()
+        .any(|span| span.style.fg == Some(Color::Reset)));
+    assert!(function
+        .spans
+        .iter()
+        .any(|span| span.style.fg == Some(Color::Magenta)));
+    assert!(native
+        .iter()
+        .flat_map(|line| &line.spans)
+        .all(|span| matches!(
+            span.style.fg,
+            None | Some(
+                Color::Reset
+                    | Color::Red
+                    | Color::Yellow
+                    | Color::Green
+                    | Color::Cyan
+                    | Color::Blue
+                    | Color::Magenta
+            )
+        )));
 }
 
 #[test]
@@ -1355,7 +1386,7 @@ fn markdown_headings_get_blank_row_before_when_preceded_by_text() {
 }
 
 #[test]
-fn markdown_paragraphs_get_trailing_blank_row_for_margin_bottom() {
+fn markdown_paragraph_spacing_is_owned_by_the_layout() {
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![
         transcript_section_model_test_activity(
@@ -1384,19 +1415,21 @@ fn markdown_paragraphs_get_trailing_blank_row_for_margin_bottom() {
     let body_lines = transcript_test_line_texts(body_surface.lines.clone());
 
     assert!(
-        body_lines.last().is_some_and(|line| line.trim().is_empty()),
-        "body surface should end with a blank row for paragraph margin-bottom\n{body_lines:#?}"
+        body_lines
+            .last()
+            .is_some_and(|line| !line.trim().is_empty()),
+        "body content must not add blank rows on top of the layout gap\n{body_lines:#?}"
     );
 }
 
 #[test]
-fn code_block_bottom_margin_is_two_blank_rows() {
+fn code_block_has_one_blank_row_before_following_text() {
     let mut app = AppState::default();
     app.activities = std::collections::VecDeque::from(vec![
         transcript_section_model_test_activity(
             "request-code-margin",
             ActivityStatus::Done,
-            "```rust\nfn main() {}\n```",
+            "```rust\nfn main() {}\n```\n\nAfter code",
         ),
         transcript_section_model_test_activity(
             "request-code-margin-second",
@@ -1432,8 +1465,8 @@ fn code_block_bottom_margin_is_two_blank_rows() {
     assert!(
         body_lines
             .get(code_end_row + 2)
-            .is_some_and(|line| line.trim().is_empty()),
-        "second row after code block should be blank (24px margin-bottom)\n{body_lines:#?}"
+            .is_some_and(|line| line.contains("After code")),
+        "one separator follows a code fence: {body_lines:?}"
     );
 }
 
@@ -1502,8 +1535,8 @@ fn assistant_tool_surfaces_keep_same_trailing_gap_as_text_boxes() {
     assert_eq!(tool_interactions[command_row], None);
     assert_eq!(tool_interactions[output_row], None);
     assert!(
-        tool_lines.iter().any(|line| line.contains('✓')),
-        "succeeded harness shell blocks should render the lifecycle success marker\n{tool_lines:#?}"
+        tool_lines.iter().any(|line| line.contains('◆')),
+        "succeeded shell blocks should retain the tool diamond\n{tool_lines:#?}"
     );
     assert!(
         tool_surface
@@ -1547,7 +1580,7 @@ fn assistant_tool_surfaces_keep_same_trailing_gap_as_text_boxes() {
 }
 
 #[test]
-fn command_group_auto_expands_failure_and_preserves_explicit_member_folds() {
+fn command_group_keeps_failure_collapsed_until_individually_opened() {
     // arrange
     let mut activity =
         transcript_section_model_test_activity("request-command-group", ActivityStatus::Done, "");
@@ -1600,24 +1633,23 @@ fn command_group_auto_expands_failure_and_preserves_explicit_member_folds() {
         80,
     ));
 
-    // assert
-    assert!(collapsed
-        .iter()
-        .any(|line| line.contains("Ran 12 commands · 1 failed") && line.contains('▾')));
+    // Only the hidden prefix contributes to the group label.
+    assert!(collapsed.iter().any(|line| line.contains("Ran 2 commands")));
     assert!(!collapsed
         .iter()
-        .any(|line| line.contains("successful output")));
-    assert!(collapsed.iter().any(|line| line.contains("command failed")));
-    assert!(expanded
-        .iter()
-        .any(|line| line.contains("Ran 12 commands · 1 failed") && line.contains('▾')));
+        .any(|line| line.contains("successful output") || line.contains("command failed")));
     assert!(expanded
         .iter()
         .any(|line| line.contains("successful output")));
-    assert!(
-        !expanded.iter().any(|line| line.contains("command failed")),
-        "explicitly collapsed failed member leaked output: {expanded:#?}"
-    );
+    assert!(expanded.iter().any(|line| line.contains("command failed")));
+    app.toggle_tool_output_for_test("tc-command-failure");
+    let folded = transcript_test_line_texts(build_transcript_lines_for_width(
+        &app,
+        &Theme::default(),
+        80,
+    ));
+    assert!(!folded.iter().any(|line| line.contains("command failed")));
+    assert!(folded.iter().any(|line| line.contains("successful output")));
 }
 
 #[test]
@@ -1669,7 +1701,10 @@ fn command_group_stays_coalesced_while_latest_member_is_running() {
 
     // assert
     assert_eq!(
-        lines.iter().filter(|line| line.contains("2 more")).count(),
+        lines
+            .iter()
+            .filter(|line| line.contains("Ran 2 commands"))
+            .count(),
         1
     );
     assert!(lines.iter().any(|line| line.contains("printf finished")));
@@ -1712,7 +1747,7 @@ fn reasoning_to_answer_transition_uses_one_blank_row() {
 }
 
 #[test]
-fn streaming_reasoning_header_renders_plain_thinking_label() {
+fn streaming_reasoning_header_renders_diamond_and_quiet_thinking_label() {
     let mut app = AppState::default();
     let mut entry = transcript_section_model_test_activity(
         "request-streaming-reasoning",
@@ -1733,7 +1768,7 @@ fn streaming_reasoning_header_renders_plain_thinking_label() {
         rendered.contains("Thinking…"),
         "streaming reasoning should show the quiet Thinking header\n{rendered}"
     );
-    assert!(!rendered.contains("◆ Thinking…"));
+    assert!(rendered.contains("◆ Thinking…"));
     assert!(!rendered.contains('⠋'));
     assert!(
         rendered.contains("analyzing the problem"),
@@ -1857,7 +1892,7 @@ fn streaming_reasoning_header_with_title_keeps_the_quiet_header() {
         rendered.contains("Thinking…"),
         "streaming reasoning keeps the quiet header\n{rendered}"
     );
-    assert!(!rendered.contains("◆ Thinking…"));
+    assert!(rendered.contains("◆ Thinking…"));
     assert!(rendered.contains("Planning approach"));
     assert!(
         rendered.contains("Detailed analysis"),
@@ -2110,7 +2145,7 @@ fn running_reasoning_text_stays_stable_across_shared_phase() {
     // assert
     assert_eq!(before, after);
     assert!(before.contains("Thinking…"));
-    assert!(!before.contains("◆ Thinking…"));
+    assert!(before.contains("◆ Thinking…"));
 }
 
 #[test]
@@ -2294,8 +2329,8 @@ fn streaming_assistant_footer_stays_blank_across_animation_ticks() {
     assert_eq!(
         (first, second),
         (
-            vec![String::new(), String::new()],
-            vec![String::new(), String::new()]
+            vec!["Waiting for first turn…".to_string()],
+            vec!["Waiting for first turn…".to_string()]
         ),
         "animation ticks must not reintroduce a second lifecycle status source"
     );

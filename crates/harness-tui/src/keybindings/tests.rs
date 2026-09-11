@@ -256,10 +256,13 @@ fn keymap_binds_ctrl_j_to_insert_newline() {
 }
 
 #[test]
-fn keymap_binds_ctrl_enter_to_insert_newline() {
+fn keymap_binds_ctrl_enter_to_send_now() {
     let keymap = KeyMap::with_defaults();
     let event = KeyEvent::new(KeyCode::Enter, KeyModifiers::CONTROL);
-    assert_eq!(keymap.get_action(&event), Some(Action::InsertNewline));
+    assert_eq!(
+        keymap.get_action(&event),
+        Some(Action::CancelAndReplacePrompt)
+    );
 }
 
 #[test]
@@ -753,8 +756,8 @@ fn simple_mode_defaults_open_status_dialog_on_leader_s() {
     assert_eq!(keymap.get_binding_str(Action::OpenStatusDialog), "Ctrl+x s");
     assert_eq!(
         keymap.get_action(&KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL)),
-        Some(Action::OpenSessionHistory),
-        "Ctrl+S opens session history; status remains leader+s / F2 / Ctrl+,"
+        Some(Action::PromptStash),
+        "Ctrl+S stashes/restores the draft; status remains leader+s / F2 / Ctrl+,"
     );
 }
 

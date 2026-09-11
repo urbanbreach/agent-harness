@@ -231,7 +231,11 @@ impl AppState {
                     section: entry.kind.section(),
                     label: entry.label.clone(),
                     description: entry.description.clone(),
-                    enabled: entry.enabled,
+                    enabled: if matches!(entry.kind, ToggleEntryKind::YoloMode) {
+                        self.always_approve_mode()
+                    } else {
+                        entry.enabled
+                    },
                     selected: selected_index == self.toggles_selected,
                 })
             })
@@ -356,17 +360,19 @@ impl AppState {
         let Some(entry) = self.runtime_toggles.entries.get_mut(entry_index) else {
             return;
         };
-        if matches!(entry.kind, ToggleEntryKind::YoloMode) && !entry.enabled {
-            self.toggles_yolo_confirm_visible = true;
+        if matches!(entry.kind, ToggleEntryKind::YoloMode) {
+            if self.always_approve_mode() {
+                self.request_always_approve_mode_change(false);
+            } else {
+                self.toggles_yolo_confirm_visible = true;
+            }
             return;
         }
         entry.enabled = !entry.enabled;
     }
 
     fn enable_yolo_mode(&mut self) {
-        for entry in &mut self.runtime_toggles.entries {
-            entry.enabled = true;
-        }
+        self.request_always_approve_mode_change(true);
     }
 
     fn add_toggle_entry_if_missing(&mut self, entry: ToggleEntryState) {
@@ -421,8 +427,9 @@ fn default_toggle_entries() -> Vec<ToggleEntryConfig> {
         },
         ToggleEntryConfig {
             kind: ToggleEntryKind::YoloMode,
-            label: "YOLO mode".to_string(),
-            description: "Mark all menu entries on after confirmation".to_string(),
+            label: "Always approve mode".to_string(),
+            description: "Auto-approve ordinary tool permissions for this session (YOLO, Ctrl+O)"
+                .to_string(),
             enabled: false,
         },
     ]

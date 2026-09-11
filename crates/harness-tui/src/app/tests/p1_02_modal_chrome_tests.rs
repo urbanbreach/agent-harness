@@ -46,6 +46,19 @@ fn p1_02_settings_chrome_renders_exactly_at_canonical_viewports() {
             "viewport={width}x{height}"
         );
     }
+
+    // A real settings frame and its live hit map remain contained after shrinking.
+    for (width, height) in [(20, 8), (47, 9), (48, 10), (80, 24), (2, 2)] {
+        let area = Rect::new(0, 0, width, height);
+        app.set_frame_area(area);
+        let _ = rendered_rows(&app, width, height);
+        if let Some(model) = crate::ui::ui_overlays::modal_surface_model(&app, area) {
+            assert_eq!(model.popup.intersection(area), model.popup);
+            for region in &model.regions {
+                assert_eq!(region.area.intersection(area), region.area, "{region:?}");
+            }
+        }
+    }
 }
 
 #[test]

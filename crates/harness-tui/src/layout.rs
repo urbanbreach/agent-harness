@@ -232,6 +232,7 @@ pub struct FrameLayoutPlan {
     pub content: Rect,
     pub live_anchor: Option<Rect>,
     pub transcript: Option<Rect>,
+    pub(crate) model_prompt_notice: Option<Rect>,
     pub terminal_panel: Option<Rect>,
     pub operator_sidebar: Option<Rect>,
     pub dock: Option<ControlDockLayout>,
@@ -313,6 +314,7 @@ impl FrameLayoutPlan {
             content,
             live_anchor: None,
             transcript: None,
+            model_prompt_notice: None,
             terminal_panel: None,
             operator_sidebar: None,
             dock: None,
@@ -355,13 +357,7 @@ impl FrameLayoutPlan {
             )
         )
         .then(|| {
-            let overlay_area = Rect::new(
-                plan.content.x,
-                plan.content.y,
-                plan.content.width,
-                session.dock.composer.y.saturating_sub(plan.content.y),
-            );
-            command_palette_overlay_area(overlay_area, theme, shell_layout, session_contract, app)
+            command_palette_overlay_area(plan.root, theme, shell_layout, session_contract, app)
         })
         .flatten();
         plan.slash_overlay = matches!(
@@ -391,6 +387,30 @@ impl FrameLayoutPlan {
             return plan;
         }
 
+        if !app.current_subagent_session_present()
+            && !app
+                .activities
+                .iter()
+                .any(|entry| entry.user_message.is_some())
+        {
+            if let (Some(message), Some(transcript)) =
+                (&app.model_prompt_notice, plan.transcript.as_mut())
+            {
+                let width = transcript.width.saturating_sub(4);
+                let rows = crate::ui::wrap_completion_text(message, usize::from(width)).len();
+                let height = u16::try_from(rows)
+                    .unwrap_or(u16::MAX)
+                    .min(transcript.height.saturating_sub(1));
+                plan.model_prompt_notice = Some(Rect::new(
+                    transcript.x.saturating_add(2),
+                    transcript.bottom().saturating_sub(height),
+                    width,
+                    height,
+                ));
+                transcript.height = transcript.height.saturating_sub(height);
+                plan.wheel_hit_areas.transcript = Some(*transcript);
+            }
+        }
         plan
     }
 }
@@ -1160,15 +1180,8 @@ mod tests {
         ));
         let palette_plan = FrameLayoutPlan::for_app(&palette, Rect::new(0, 0, 100, 30));
         let palette_overlay = palette_plan.palette_overlay.unwrap_or_abort();
-        let composer = palette_plan.composer.unwrap_or_abort();
-        let overlay_area = Rect::new(
-            palette_plan.content.x,
-            palette_plan.content.y,
-            palette_plan.content.width,
-            composer.y.saturating_sub(palette_plan.content.y),
-        );
         let expected = command_palette_overlay_area(
-            overlay_area,
+            palette_plan.root,
             &theme,
             theme.live_shell_layout(100, 30),
             palette_plan.session_contract,
@@ -1191,9 +1204,9 @@ mod tests {
 
         assert_eq!(overlay.width, 60);
         assert_eq!(overlay.x, 20);
-        assert_eq!(overlay.y, 4);
-        assert_eq!(overlay.height, 19);
-        assert!(overlay.bottom() <= plan.composer.unwrap_or_abort().y);
+        assert_eq!(overlay.y, (30 - overlay.height) / 2);
+        assert_eq!(overlay.height, 25);
+        assert!(overlay.bottom() <= plan.root.bottom());
     }
 
     #[test]

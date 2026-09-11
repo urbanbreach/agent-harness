@@ -3,12 +3,12 @@ use super::*;
 #[test]
 fn harness_dark_theme_matches_palette_contract() {
     let theme = Theme::harness_dark();
-    assert_eq!(theme.surface.canvas, rgb(0x0B, 0x0E, 0x14));
-    assert_eq!(theme.surface.shell, rgb(0x0B, 0x0E, 0x14));
-    assert_eq!(theme.surface.panel, rgb(0x0B, 0x0E, 0x14));
-    assert_eq!(theme.surface.panel_elevated, rgb(0x12, 0x16, 0x1E));
-    assert_eq!(theme.surface.overlay, rgb(0x0B, 0x0E, 0x14));
-    assert_eq!(theme.surface.card, rgb(0x55, 0x57, 0x53));
+    assert_eq!(theme.surface.canvas, rgb(20, 20, 20));
+    assert_eq!(theme.surface.shell, rgb(20, 20, 20));
+    assert_eq!(theme.surface.panel, rgb(20, 20, 20));
+    assert_eq!(theme.surface.panel_elevated, rgb(28, 28, 28));
+    assert_eq!(theme.surface.overlay, rgb(20, 20, 20));
+    assert_eq!(theme.surface.card, rgb(36, 36, 36));
     assert_eq!(theme.border.subtle, rgb(0x3A, 0x3D, 0x43));
     assert_eq!(theme.border.strong, rgb(0x48, 0x4B, 0x52));
     assert_eq!(theme.border.focus, rgb(0x60, 0x63, 0x6A));
@@ -17,43 +17,43 @@ fn harness_dark_theme_matches_palette_contract() {
 #[test]
 fn harness_dark_text_and_status_palette() {
     let theme = Theme::harness_dark();
-    assert_eq!(theme.text.primary, rgb(0xEE, 0xEE, 0xEC));
-    assert_eq!(theme.text.secondary, rgb(0x88, 0x8B, 0x91));
-    assert_eq!(theme.text.tertiary, rgb(0x88, 0x8B, 0x91));
-    assert_eq!(theme.text.accent, rgb(0xD9, 0x84, 0xD9));
-    assert_eq!(theme.text.inverse, rgb(0x0B, 0x0E, 0x14));
-    assert_eq!(theme.question_prompt.accent, rgb(0xD9, 0x84, 0xD9));
-    assert_eq!(theme.question_prompt.secondary, rgb(0x5C, 0x9C, 0xF5));
-    assert_eq!(theme.status.success, rgb(0x7F, 0xD8, 0x8F));
-    assert_eq!(theme.status.warning, rgb(0xE5, 0xC0, 0x7B));
-    assert_eq!(theme.status.error, rgb(0xE0, 0x6C, 0x75));
-    assert_eq!(theme.status.info, rgb(0x56, 0xB6, 0xC2));
-    assert_eq!(theme.status.disabled, rgb(0x80, 0x80, 0x80));
+    assert_eq!(theme.text.primary, rgb(225, 225, 225));
+    assert_eq!(theme.text.secondary, rgb(108, 108, 108));
+    assert_eq!(theme.text.tertiary, rgb(120, 120, 120));
+    assert_eq!(theme.text.accent, rgb(187, 154, 247));
+    assert_eq!(theme.text.inverse, rgb(20, 20, 20));
+    assert_eq!(theme.question_prompt.accent, rgb(187, 154, 247));
+    assert_eq!(theme.question_prompt.secondary, rgb(122, 162, 247));
+    assert_eq!(theme.status.success, rgb(158, 206, 106));
+    assert_eq!(theme.status.warning, rgb(224, 175, 104));
+    assert_eq!(theme.status.error, rgb(247, 118, 142));
+    assert_eq!(theme.status.info, rgb(125, 207, 255));
+    assert_eq!(theme.status.disabled, rgb(90, 90, 90));
 }
 
 #[test]
 fn harness_dark_agent_and_scrollbar_palette() {
     let theme = Theme::harness_dark();
-    assert_eq!(theme.agents.build, rgb(0x5C, 0x9C, 0xF5));
-    assert_eq!(theme.agents.plan, rgb(0xD9, 0x84, 0xD9));
-    assert_eq!(theme.agents.docs, rgb(0xE5, 0xC0, 0x7B));
-    assert_eq!(theme.agents.ask, rgb(0xE8, 0xA0, 0xE8));
+    assert_eq!(theme.agents.build, rgb(122, 162, 247));
+    assert_eq!(theme.agents.plan, rgb(187, 154, 247));
+    assert_eq!(theme.agents.docs, rgb(224, 175, 104));
+    assert_eq!(theme.agents.ask, rgb(157, 124, 216));
     assert_eq!(
         theme.agents.palette,
         [
-            rgb(0x5C, 0x9C, 0xF5),
-            rgb(0xD9, 0x84, 0xD9),
-            rgb(0x7F, 0xD8, 0x8F),
-            rgb(0xE5, 0xC0, 0x7B),
-            rgb(0xE8, 0xA0, 0xE8),
-            rgb(0xE0, 0x6C, 0x75),
-            rgb(0x56, 0xB6, 0xC2),
+            rgb(122, 162, 247),
+            rgb(187, 154, 247),
+            rgb(158, 206, 106),
+            rgb(224, 175, 104),
+            rgb(157, 124, 216),
+            rgb(247, 118, 142),
+            rgb(125, 207, 255),
         ]
     );
     for profile in ["build", "Build", "default", "plan", "docs", "ask", "worker"] {
         assert_eq!(theme.agent_accent(profile), theme.text.accent);
     }
-    assert_eq!(theme.scrollbar.track, rgb(0x0B, 0x0E, 0x14));
+    assert_eq!(theme.scrollbar.track, rgb(20, 20, 20));
     assert_eq!(theme.scrollbar.thumb, rgb(0x32, 0x36, 0x3C));
     assert_eq!(theme.scrollbar.thumb_active, rgb(0x60, 0x63, 0x6A));
 }

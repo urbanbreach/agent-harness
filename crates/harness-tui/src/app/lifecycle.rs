@@ -785,10 +785,12 @@ impl AppState {
             toggles_menu_visible: self.toggles_menu_visible,
             lineage_browser_visible: self.lineage_browser_visible,
             fork_selector_visible: self.fork_selector_visible,
-            permission_pending: self.active_permission().is_some(),
+            permission_pending: self.active_permission().is_some()
+                && !self.status_dashboard_is_active(),
             theme_dialog_visible: self.theme_dialog_visible,
             error_details_visible: self.error_details_visible,
             prompt_stash_list_visible: self.prompt_stash.list_visible,
+            prompt_history_visible: self.prompt_history_picker.visible,
             auth_dialog_visible: self.connect_dialog.visible,
             settings_editor_visible: self.settings_editor_visible,
             plan_view_visible: self.plan_view_visible,
@@ -803,6 +805,7 @@ impl AppState {
     pub fn overlay_stack(&self) -> OverlayStack {
         OverlayStack::from_state(self.overlay_state())
             .with_release_notes(self.release_notes_visible && self.active_permission().is_none())
+            .with_product_info(self.product_info.visible)
     }
 
     pub fn take_reload_requested(&mut self) -> bool {
@@ -963,6 +966,15 @@ impl AppState {
 
     pub(in crate::app) fn handle_interrupt_escape(&mut self) -> bool {
         self.reset_interrupt_confirmation();
+        if self.composer.vim_mode {
+            if self.focus == Focus::Prompt {
+                self.focus = Focus::Details;
+            }
+            return true;
+        }
+        if !self.replay_mode && self.active_turn_in_progress() {
+            return self.interrupt_active_turn();
+        }
         false
     }
 

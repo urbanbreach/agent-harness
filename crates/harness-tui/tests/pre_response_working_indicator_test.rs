@@ -186,6 +186,13 @@ fn submitted_wait_matches_grok_phase_and_turn_timers() {
 
     // When: the waiting row is rendered after half a second.
     let row = dock_status_text(&app).expect("waiting status row");
+    let area = Rect::new(0, 0, WIDTH, HEIGHT);
+    let status = FrameLayoutPlan::for_app(&app, area)
+        .status
+        .expect("waiting status area");
+    let buffer = render_to_buffer(&app, area, |app, frame, _area| {
+        ui::render_app(frame, app);
+    });
 
     // Then: Grok's phase timer follows the label and its turn timer stays right-aligned.
     assert!(
@@ -204,6 +211,13 @@ fn submitted_wait_matches_grok_phase_and_turn_timers() {
         status_text_color(&app, "0.5s", 1),
         Some(app.theme().terminal_colors.secondary)
     );
+    for x in 0..WIDTH {
+        assert_eq!(
+            buffer[(x, status.y)].bg,
+            app.theme().surface.shell,
+            "waiting status background at column {x} must blend into the shell"
+        );
+    }
 }
 
 #[test]

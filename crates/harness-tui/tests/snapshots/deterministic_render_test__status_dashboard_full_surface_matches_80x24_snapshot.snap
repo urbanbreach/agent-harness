@@ -1,0 +1,28 @@
+---
+source: crates/harness-tui/tests/deterministic_render_test.rs
+expression: "status_dashboard_snapshot(80, 24)"
+---
+┌─ Status · Harness dashboard ─────────────────────────────────────────────────┐
+│   0 agents · 0 working                                                       │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│ ┌Reply─────────────────────────────────────────────────────────────────────┐ │
+│ │Write a reply…                                                            │ │
+│ └──────────────────────────────────────────────────────────────────────────┘ │
+│                                                                              │
+│ ↑↓ select · Tab focus · / search · d details · h help · Esc close            │
+└──────────────────────────────────────────────────────────────────────────────┘

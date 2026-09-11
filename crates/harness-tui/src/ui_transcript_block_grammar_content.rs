@@ -10,9 +10,7 @@ pub(super) fn content_for_part(
             TranscriptBlockRole::Reasoning,
             TranscriptBlockContent::Reasoning {
                 text: value.text.clone(),
-                active: turn.header.status == ActivityStatus::Streaming
-                    && part_index + 1 == turn.assistant_parts.len()
-                    && !reasoning_force_completed(turn),
+                active: turn.reasoning_active(part_index),
                 expanded: turn.reasoning_expanded,
                 duration_ms: turn.header.thinking_duration_ms,
                 motion_enabled: turn.motion_enabled,

@@ -193,6 +193,9 @@ fn apply_update(
             app.set_status_banner(Some(status));
         }
         LiveUpdate::SessionHistory(entries) => app.set_session_history_entries(entries),
+        LiveUpdate::ModelPromptNotice(message) => {
+            app.model_prompt_notice = Some(crate::ui::safe_product_text(&message));
+        }
         LiveUpdate::ContinueSession {
             run_id,
             run_dir,

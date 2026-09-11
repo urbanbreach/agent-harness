@@ -464,8 +464,16 @@ fn permission_detail_text(permission: &ActivePermissionView) -> Cow<'_, str> {
     if summary.is_empty() {
         return Cow::Borrowed("");
     }
-    serde_json::from_str::<serde_json::Value>(summary)
-        .ok()
+    // Edit review uses the file in the title and any human description. The
+    // coordinator's serialized request is metadata, not a description to paint.
+    let is_edit = ["edit_fs", "edit", "write", "fs.write"]
+        .iter()
+        .any(|kind| permission.kind.eq_ignore_ascii_case(kind));
+    let parsed = serde_json::from_str::<serde_json::Value>(summary).ok();
+    if is_edit && (summary.starts_with("tool=") || parsed.is_some()) {
+        return Cow::Borrowed("");
+    }
+    parsed
         .and_then(|value| serde_json::to_string_pretty(&value).ok())
         .map_or(Cow::Borrowed(summary), Cow::Owned)
 }

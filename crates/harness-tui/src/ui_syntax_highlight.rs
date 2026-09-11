@@ -4,7 +4,8 @@ use ratatui::{
     style::{Color, Modifier, Style},
     text::{Line, Span},
 };
-use syntect::easy::HighlightLines;
+#[path = "ui_syntax_highlight/cache.rs"]
+mod cache;
 use syntect::highlighting::{FontStyle as SyntectFontStyle, Theme as SyntectTheme};
 use syntect::parsing::SyntaxSet;
 
@@ -12,7 +13,6 @@ use crate::theme::{quantize_color, Theme};
 
 struct SyntaxHighlightAssets {
     syntax_set: SyntaxSet,
-    theme: SyntectTheme,
 }
 
 pub(super) fn render_highlighted_code_block(
@@ -27,36 +27,39 @@ pub(super) fn render_highlighted_code_block(
 
     let highlighted = language.and_then(|language| {
         let syntax_assets = syntax_highlight_assets();
-        let syntax = syntax_assets.syntax_set.find_syntax_by_token(language)?;
-        let mut highlighter = HighlightLines::new(syntax, &syntax_assets.theme);
-        let mut lines = Vec::new();
-        for source_line in body.lines() {
-            let Ok(regions) = highlighter.highlight_line(source_line, &syntax_assets.syntax_set)
-            else {
-                return None;
-            };
-            if regions.is_empty() {
-                lines.push(Line::from(Span::styled(
-                    source_line.to_string(),
-                    Style::default()
-                        .fg(color)
-                        .bg(theme.markdown.code_background),
-                )));
-            } else {
-                lines.push(Line::from(
-                    regions
-                        .into_iter()
-                        .map(|(style, content)| {
-                            Span::styled(
-                                content.to_string(),
-                                syntect_style_to_ratatui(style, theme),
-                            )
-                        })
-                        .collect::<Vec<_>>(),
-                ));
-            }
-        }
-        Some(lines)
+        let syntax = syntax_assets
+            .syntax_set
+            .find_syntax_by_token(language)
+            .or_else(|| {
+                let token = language.rsplit(':').next().unwrap_or(language);
+                std::path::Path::new(token)
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .and_then(|ext| syntax_assets.syntax_set.find_syntax_by_extension(ext))
+            })?;
+        let palette = syntax_theme(theme)?;
+        let highlighted = cache::highlight(
+            syntax,
+            &syntax_assets.syntax_set,
+            palette,
+            theme.is_dark(),
+            body,
+        )?;
+        Some(
+            highlighted
+                .into_iter()
+                .map(|regions| {
+                    Line::from(
+                        regions
+                            .into_iter()
+                            .map(|(style, content)| {
+                                Span::styled(content, syntect_style_to_ratatui(style, theme))
+                            })
+                            .collect::<Vec<_>>(),
+                    )
+                })
+                .collect::<Vec<_>>(),
+        )
     });
 
     if let Some(highlighted) = highlighted {
@@ -88,14 +91,32 @@ fn syntax_highlight_assets() -> &'static SyntaxHighlightAssets {
     static SYNTAX_ASSETS: OnceLock<SyntaxHighlightAssets> = OnceLock::new();
 
     SYNTAX_ASSETS.get_or_init(|| {
-        let syntax_set = SyntaxSet::load_defaults_nonewlines();
-        let theme = super::ui_diff::ui_diff_syntax::diff_syntect_theme();
-        SyntaxHighlightAssets { syntax_set, theme }
+        let syntax_set = two_face::syntax::extra_newlines();
+        SyntaxHighlightAssets { syntax_set }
     })
 }
 
+fn syntax_theme(theme: &Theme) -> Option<&'static SyntectTheme> {
+    static DARK: OnceLock<Option<SyntectTheme>> = OnceLock::new();
+    static LIGHT: OnceLock<Option<SyntectTheme>> = OnceLock::new();
+    let (cache, bytes): (_, &[u8]) = if theme.is_dark() {
+        (&DARK, include_bytes!("../assets/syntax/grok-night.tmTheme"))
+    } else {
+        (&LIGHT, include_bytes!("../assets/syntax/grok-day.tmTheme"))
+    };
+    cache
+        .get_or_init(|| {
+            syntect::highlighting::ThemeSet::load_from_reader(&mut std::io::Cursor::new(bytes)).ok()
+        })
+        .as_ref()
+}
+
 fn syntect_style_to_ratatui(style: syntect::highlighting::Style, theme: &Theme) -> Style {
-    let foreground = syntect_color_to_ratatui(style.foreground);
+    let foreground = if theme.text.primary == Color::Reset {
+        native_syntax_foreground(style.foreground)
+    } else {
+        syntect_color_to_ratatui(style.foreground)
+    };
     let mut rendered = Style::default()
         .fg(quantize_color(foreground, theme.color_level()))
         .bg(theme.markdown.code_background);
@@ -115,6 +136,32 @@ fn syntect_style_to_ratatui(style: syntect::highlighting::Style, theme: &Theme) 
 
 fn syntect_color_to_ratatui(color: syntect::highlighting::Color) -> ratatui::style::Color {
     Color::Rgb(color.r, color.g, color.b)
+}
+
+// Adapted from Grok Build's pager-render/src/syntax.rs (Apache-2.0; see assets/syntax).
+// Default foreground and base ANSI hues retain contrast on either host polarity.
+fn native_syntax_foreground(color: syntect::highlighting::Color) -> Color {
+    let (r, g, b) = (i32::from(color.r), i32::from(color.g), i32::from(color.b));
+    let max = r.max(g).max(b);
+    let chroma = max - r.min(g).min(b);
+    if chroma < 40 {
+        return Color::Reset;
+    }
+    let hue = if max == r {
+        ((g - b) * 60 / chroma).rem_euclid(360)
+    } else if max == g {
+        (b - r) * 60 / chroma + 120
+    } else {
+        (r - g) * 60 / chroma + 240
+    };
+    match hue {
+        0..30 | 330..=360 => Color::Red,
+        30..90 => Color::Yellow,
+        90..150 => Color::Green,
+        150..210 => Color::Cyan,
+        210..255 => Color::Blue,
+        _ => Color::Magenta,
+    }
 }
 
 #[cfg(test)]

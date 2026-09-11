@@ -126,15 +126,19 @@ mod new_worktree_dialog;
 pub mod notifications;
 mod operator_sidebar;
 pub(crate) mod palette_controller;
+mod paste_preview;
 mod pending_live;
 mod permission_prompt;
 pub(crate) mod permissions;
 mod plan_view;
+mod product_info;
 mod prompt_history;
+mod prompt_history_picker;
 mod prompt_input;
 mod prompt_stash;
 mod prompt_stash_actions;
 mod question_prompt;
+mod recorded_artifacts;
 mod secondary_surfaces;
 pub(crate) mod session_history;
 mod session_live_routing;
@@ -144,6 +148,7 @@ mod session_projection;
 mod session_slash;
 mod session_stack;
 mod settings_editor;
+mod slash_completion;
 pub mod terminal_diagnostics;
 mod terminal_panel;
 #[cfg(test)]
@@ -154,8 +159,10 @@ mod toggles;
 mod tool_call;
 mod tool_output;
 mod transcript_cache;
+mod transcript_entry;
 mod transcript_state;
 mod transcript_view;
+mod transcript_viewer;
 mod transcript_viewport;
 mod workspace_display;
 mod worktree_picker;
@@ -186,7 +193,6 @@ pub use self::lifecycle::{
 pub(crate) use self::modal_interaction::{
     ModalAction, ModalInteractionState, ModalSurfaceKey, ModalTarget, ModalViewKey,
 };
-pub(crate) use self::motion::StartupReveal;
 use self::new_worktree_dialog::NewWorktreeDialogState;
 use self::permission_prompt::PermissionPromptState;
 use self::permissions::{
@@ -198,7 +204,7 @@ pub use self::session_history::SessionHistoryEntry;
 pub(crate) use self::session_projection::LiveTurnWatchers;
 use self::session_projection::SessionProjection;
 use self::session_stack::SessionNavigationSnapshot;
-pub(crate) use self::settings_editor::SettingsTab;
+pub(crate) use self::settings_editor::{human_label as settings_label, SettingsTab};
 use self::terminal_panel::terminal_panel_event_is_shell;
 use self::terminal_panel::TerminalPanelState;
 pub use self::terminal_panel::{TerminalPanelEntry, TerminalPanelStatus};
@@ -330,6 +336,7 @@ pub struct AppState {
     pub replay_mode: bool,
     pub session_path: Option<PathBuf>,
     pub status_banner: Option<String>,
+    pub(crate) model_prompt_notice: Option<String>,
     pub connect_dialog: ConnectDialogState,
     toast: Option<ToastState>,
     pub details_scroll: u16,
@@ -370,6 +377,9 @@ pub struct AppState {
     continued_live_reopen_surface_active: bool,
     pub session_history_visible: bool,
     pub model_switcher_visible: bool,
+    pub(crate) product_info: product_info::ProductInfo,
+    pub(crate) prompt_history_picker: prompt_history_picker::PromptHistoryPicker,
+    queued_prompt_navigation: Option<prompt_history_picker::QueuedPromptReturn>,
     pub session_history_entries: Vec<SessionHistoryEntry>,
     pub session_history_filtered: Vec<usize>,
     pub session_history_selected: usize,
@@ -383,6 +393,7 @@ pub struct AppState {
     pub theme_dialog_visible: bool,
     pub theme_dialog_selected: usize,
     pub settings_editor_visible: bool,
+    pub(crate) settings_interaction: settings_editor::SettingsInteraction,
     pub settings_editor_selected: usize,
     pub(crate) settings_editor_tab: settings_editor::SettingsTab,
     pub(crate) settings_parent: Option<settings_editor::SettingsParent>,
@@ -562,12 +573,18 @@ pub struct AppState {
     pub fork_selector: ForkSelectorState,
     pub fork_selector_visible: bool,
     pub memory_browser: MemoryBrowserState,
+    pub(crate) recorded_artifacts: BTreeMap<String, String>,
     pub worktree_picker: WorktreePickerState,
     pub(crate) new_worktree_dialog: NewWorktreeDialogState,
     pub foreign_import_picker: ForeignImportPickerState,
     pub slash_visible: bool,
     pub slash_filtered: Vec<String>,
     pub slash_selected: usize,
+    pub(crate) slash_recent: Vec<String>,
+    pub(crate) slash_hovered: Option<usize>,
+    pub(crate) slash_pointer_down: Option<usize>,
+    pub(crate) slash_arguments: Vec<ModelOption>,
+    pub(crate) slash_model_pending: Option<ModelOption>,
     slash_draft_snapshot: Option<String>,
     pub(crate) file_mention_visible: bool,
     pub(crate) file_mention_entries: Vec<FileMentionEntry>,
@@ -579,6 +596,7 @@ pub struct AppState {
     file_mention_now_unix: Arc<dyn Fn() -> u64 + Send + Sync>,
     workspace_context_labels: Vec<String>,
     current_directory_branch_label: String,
+    pub(crate) workspace_display: workspace_display::WorkspaceDisplay,
     #[cfg(test)]
     current_directory_probe: Option<Arc<dyn Fn() -> WorkspaceEnvironment + Send + Sync>>,
     file_mention_index: Option<FileMentionIndex>,
@@ -618,6 +636,7 @@ impl Default for AppState {
         let now = Instant::now();
         let auto_theme_resolver = AutoResolver::default();
         let initial_theme_family = ThemeFamily::Dark;
+        let workspace = test_workspace_env_override().unwrap_or_else(WorkspaceEnvironment::current);
         Self {
             selected_event_index: 0,
             focus: Focus::default(),
@@ -633,6 +652,7 @@ impl Default for AppState {
             replay_mode: false,
             session_path: None,
             status_banner: None,
+            model_prompt_notice: None,
             connect_dialog: ConnectDialogState::default(),
             toast: None,
             details_scroll: 0,
@@ -674,6 +694,9 @@ impl Default for AppState {
             continued_live_reopen_surface_active: false,
             session_history_visible: false,
             model_switcher_visible: false,
+            product_info: Default::default(),
+            prompt_history_picker: prompt_history_picker::PromptHistoryPicker::default(),
+            queued_prompt_navigation: None,
             session_history_entries: Vec::new(),
             session_history_filtered: Vec::new(),
             session_history_selected: 0,
@@ -687,6 +710,7 @@ impl Default for AppState {
             theme_dialog_visible: false,
             theme_dialog_selected: 0,
             settings_editor_visible: false,
+            settings_interaction: Default::default(),
             settings_editor_selected: 0,
             settings_editor_tab: settings_editor::SettingsTab::default(),
             settings_parent: None,
@@ -793,12 +817,18 @@ impl Default for AppState {
             fork_selector: ForkSelectorState::default(),
             fork_selector_visible: false,
             memory_browser: MemoryBrowserState::default(),
+            recorded_artifacts: BTreeMap::new(),
             worktree_picker: WorktreePickerState::default(),
             new_worktree_dialog: NewWorktreeDialogState::default(),
             foreign_import_picker: ForeignImportPickerState::default(),
             slash_visible: false,
             slash_filtered: Vec::new(),
             slash_selected: 0,
+            slash_recent: Vec::new(),
+            slash_hovered: None,
+            slash_pointer_down: None,
+            slash_arguments: Vec::new(),
+            slash_model_pending: None,
             slash_draft_snapshot: None,
             file_mention_visible: false,
             file_mention_entries: Vec::new(),
@@ -809,10 +839,8 @@ impl Default for AppState {
             file_mention_scanner: Arc::new(SystemFileMentionWorkspaceScanner),
             file_mention_now_unix: Arc::new(system_file_mention_now_unix),
             workspace_context_labels: Vec::new(),
-            current_directory_branch_label: directory_branch_label(
-                &test_workspace_env_override().unwrap_or_else(WorkspaceEnvironment::current),
-                false,
-            ),
+            current_directory_branch_label: directory_branch_label(&workspace, false),
+            workspace_display: workspace_display::WorkspaceDisplay::discover(&workspace),
             #[cfg(test)]
             current_directory_probe: None,
             file_mention_index: None,
@@ -930,9 +958,62 @@ impl AppState {
     }
 
     pub(crate) fn handle_status_dashboard_key(&mut self, key: KeyEvent) {
-        if key.code == KeyCode::Esc {
+        use crate::dashboard_integration::DashboardPane;
+        let Some(dashboard) = self.dashboard.as_ref() else {
+            return;
+        };
+        let owns_escape = dashboard.help_visible()
+            || dashboard.search_state().context.is_some()
+            || dashboard.layout().details.is_some();
+        if key.code == KeyCode::Esc && !owns_escape {
             self.close_status_dashboard();
             return;
+        }
+        let selected = dashboard
+            .roster_state()
+            .selected_key()
+            .map(|key| key.as_str().to_string());
+        let current = selected.as_deref() == self.run_id();
+        let focus = dashboard.focus();
+        if !owns_escape
+            && current
+            && self.active_permission_view().is_some()
+            && matches!(focus, DashboardPane::Peek | DashboardPane::Reply)
+            && !matches!(key.code, KeyCode::Tab | KeyCode::BackTab)
+        {
+            // A compact dashboard has no peek: open the real review owner before
+            // accepting any decision. Reply focus always offers full review.
+            if focus == DashboardPane::Reply || dashboard.layout().peek.height == 0 {
+                if key.code == KeyCode::Enter {
+                    self.close_status_dashboard();
+                    self.focus = Focus::Prompt;
+                }
+                return;
+            }
+            let saved_focus = self.focus;
+            if key.code == KeyCode::Char('1')
+                && self
+                    .active_permission_view()
+                    .is_some_and(|permission| permission.question_prompts.is_none())
+            {
+                // Persistent grants keep the existing visible confirmation owner.
+                self.close_status_dashboard();
+            }
+            self.focus = Focus::Prompt;
+            self.handle_permission_modal_key(key);
+            self.focus = saved_focus;
+            return;
+        }
+        if !owns_escape && key.code == KeyCode::Enter && key.modifiers.is_empty() {
+            let draft = dashboard.reply_editor().map(|editor| editor.text());
+            if focus == DashboardPane::Reply {
+                self.submit_dashboard_reply(current, draft.unwrap_or_default());
+                return;
+            }
+            if focus == DashboardPane::Roster {
+                self.open_dashboard_session(current, selected.as_deref(), draft);
+                return;
+            }
         }
         let result = self
             .dashboard
@@ -941,6 +1022,61 @@ impl AppState {
         if let Some(Err(error)) = result.as_ref() {
             self.status_banner = Some(error.to_string());
         }
+    }
+
+    fn submit_dashboard_reply(&mut self, current: bool, text: String) {
+        if self.replay_mode {
+            self.status_banner = Some("Replay is read-only".into());
+            return;
+        }
+        if !current {
+            self.status_banner = Some("Open this session before sending a reply".into());
+            return;
+        }
+        if text.trim().is_empty() {
+            return;
+        }
+        self.emit_ui_intent(UiIntent::SubmitPrompt {
+            text,
+            selected_file_tags: Vec::new(),
+            selected_agent_tags: Vec::new(),
+            selected_resource_tags: Vec::new(),
+            attachments: Vec::new(),
+            launch_metadata: self.launch_metadata.clone(),
+        });
+        if let Some(dashboard) = self.dashboard.as_mut() {
+            dashboard.clear_reply();
+        }
+    }
+
+    fn open_dashboard_session(
+        &mut self,
+        current: bool,
+        selected: Option<&str>,
+        draft: Option<String>,
+    ) {
+        if current {
+            self.close_status_dashboard();
+            return;
+        }
+        let Some(entry) = self
+            .session_history_entries
+            .iter()
+            .find(|entry| Some(entry.catalog.run_id.as_str()) == selected)
+        else {
+            return;
+        };
+        let run_id = entry.catalog.run_id.clone();
+        let run_dir = entry.run_dir.clone();
+        let resumable = entry.catalog.is_resumable && !self.replay_mode;
+        self.close_status_dashboard();
+        if resumable {
+            set_pending_live_prompt_draft(draft);
+            self.emit_ui_intent(UiIntent::ContinueSession { run_id, run_dir });
+        } else {
+            self.emit_ui_intent(UiIntent::ReplaySession { run_id, run_dir });
+        }
+        self.should_quit = true;
     }
 
     pub(crate) fn handle_status_dashboard_mouse(&mut self, mouse: MouseEvent) -> bool {
@@ -1020,14 +1156,44 @@ impl AppState {
         let rules = DashboardEligibilityRules::default();
         let model = crate::dashboard::build_dashboard_read_model(&registry, &rules)
             .map_err(|error| error.to_string())?;
-        let selected = model.fallback_selection(None);
+        let selected = model.fallback_selection(
+            self.run_id()
+                .map(crate::dashboard::SelectionKey::new)
+                .as_ref(),
+        );
         let roster = RosterState {
             selected: selected.clone(),
             ..RosterState::default()
         };
         let mut peek = DashboardPeek::new(8.0).map_err(|error| error.to_string())?;
-        if let (Some(selection), Some(view)) = (selected.as_ref(), self.transcript_view_model()) {
-            let _ = peek.replace_from_view(selection, view);
+        peek.sync_dashboard(&model)
+            .map_err(|error| error.to_string())?;
+        for session in &registry.sessions {
+            if session.events.is_empty() {
+                continue;
+            }
+            let key = crate::dashboard::SelectionKey::new(&session.catalog.run_id);
+            let mut projection = SessionProjection::default();
+            for event in &session.events {
+                let _ = projection.ingest_event(event.clone(), true);
+            }
+            let events = projection
+                .activities
+                .iter()
+                .enumerate()
+                .flat_map(|(index, activity)| {
+                    transcript_state::transcript_events_for_activity(index, activity)
+                })
+                .collect::<Vec<_>>();
+            let mut transcript =
+                TranscriptComposite::new(viewport).map_err(|error| error.to_string())?;
+            transcript
+                .replace_events(events)
+                .map_err(|error| error.to_string())?;
+            let _ = peek.replace_from_view(&key, transcript.view());
+        }
+        if let Some(key) = selected.as_ref() {
+            peek.select(key).map_err(|error| error.to_string())?;
         }
         let details = selected.clone().and_then(|selection| {
             DashboardDetails::new(
@@ -1064,6 +1230,7 @@ impl AppState {
             .and_then(crate::dashboard_integration::dashboard_content_viewport)
             .unwrap_or(Rect::new(0, 0, 100, 36));
         if let Ok(mut next) = self.build_dashboard_integration(viewport) {
+            next.preserve_interaction_from(current);
             next.capture_return_state(return_state);
             next.set_focus(focus);
             self.dashboard = Some(next);
@@ -1094,6 +1261,9 @@ impl AppState {
     }
 
     pub(crate) fn composer_render_text(&self) -> String {
+        if let Some((text, _)) = self.collapsed_paste_presentation() {
+            return text;
+        }
         let editor_text = self.composer.editor_text();
         if editor_text != self.composer.prompt_buffer {
             self.composer.prompt_buffer.clone()
@@ -1103,6 +1273,9 @@ impl AppState {
     }
 
     pub(crate) fn composer_render_cursor(&self) -> usize {
+        if let Some((_, cursor)) = self.collapsed_paste_presentation() {
+            return cursor;
+        }
         if self.composer.editor_text() != self.composer.prompt_buffer {
             self.composer.prompt_cursor
         } else {
@@ -1366,7 +1539,9 @@ impl AppState {
     }
 
     pub(crate) fn welcome_visible(&self) -> bool {
-        !self.welcome.is_dismissed() && self.composer.prompt_buffer.is_empty()
+        !self.welcome.is_dismissed()
+            && (self.composer.prompt_buffer.is_empty()
+                || self.composer.prompt_buffer.starts_with('/'))
     }
 
     pub(in crate::app) fn dismiss_welcome_for_input(&mut self) {
@@ -1376,15 +1551,25 @@ impl AppState {
         }
     }
 
+    pub(crate) fn welcome_notice(&self) -> String {
+        self.status_banner
+            .as_deref()
+            .map(|notice| {
+                if notice == "Clipboard may be unreachable." {
+                    format!("{notice}\nRun /doctor for details and fixes.")
+                } else {
+                    notice.to_string()
+                }
+            })
+            .unwrap_or_default()
+    }
+
     pub(crate) fn welcome_layout(&self, area: Rect) -> WelcomeLayout {
-        WelcomeLayout::for_startup_area(
+        WelcomeLayout::with_content(
             (area.x, area.y, area.width, area.height),
-            self.status_banner.as_deref().is_some_and(|banner| {
-                let normalized = banner.to_ascii_lowercase();
-                normalized.contains("clipboard")
-                    && (normalized.contains("unreachable") || normalized.contains("inaccessible"))
-            }),
-            self.startup_welcome_expanded(),
+            &crate::release_notes::CURRENT,
+            &self.welcome_notice(),
+            self.theme.glyph_mode() == GlyphMode::Preferred,
         )
     }
 
@@ -1504,6 +1689,10 @@ impl AppState {
     }
 
     pub fn replace_events(&mut self, events: Vec<EventEnvelopeV1>) {
+        self.recorded_artifacts.clear();
+        for event in &events {
+            self.cache_recorded_artifacts(event);
+        }
         self.bump_transcript_render_epoch();
         self.projection.reset();
         self.projection
@@ -1602,6 +1791,7 @@ impl AppState {
         self.starting_session_seed = false;
         self.bump_transcript_render_epoch();
 
+        self.cache_recorded_artifacts(&event);
         self.prepare_event_surfaces(&event, historical);
 
         let terminal_panel_follow_event = terminal_panel_event_is_shell(&event.payload);
@@ -3466,10 +3656,17 @@ impl AppState {
     }
 
     pub(in crate::app) fn request_always_approve_mode_toggle(&mut self) {
-        self.request_always_approve_mode_change(!self.always_approve_mode);
+        self.request_always_approve_mode_change(
+            !self
+                .always_approve_mode_change_pending
+                .unwrap_or(self.always_approve_mode),
+        );
     }
 
     pub(in crate::app) fn request_always_approve_mode_change(&mut self, enabled: bool) {
+        if self.replay_mode {
+            return;
+        }
         self.always_approve_mode_change_pending = Some(enabled);
         self.emit_ui_intent(UiIntent::SetAlwaysApproveMode { enabled });
     }

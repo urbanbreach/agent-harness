@@ -58,7 +58,8 @@ fn detail_blocks_surface_error(blocks: &[TranscriptToolCallDetailBlock], error: 
         TranscriptToolCallDetailBlock::ReadOutput { .. }
         | TranscriptToolCallDetailBlock::Markdown { .. }
         | TranscriptToolCallDetailBlock::TodoList { .. }
-        | TranscriptToolCallDetailBlock::StructuredDiff { .. } => false,
+        | TranscriptToolCallDetailBlock::StructuredDiff { .. }
+        | TranscriptToolCallDetailBlock::Recorded(_) => false,
     })
 }
 

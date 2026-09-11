@@ -125,6 +125,16 @@ pub(super) fn group_label(
     responsive: RosterResponsive,
 ) -> String {
     let name = match key {
+        DashboardGroupKey::Status(status) => match status {
+            crate::dashboard::DashboardStatus::AwaitingInput => "Awaiting",
+            crate::dashboard::DashboardStatus::Running
+            | crate::dashboard::DashboardStatus::Streaming => "Working",
+            crate::dashboard::DashboardStatus::Queued => "Queued",
+            crate::dashboard::DashboardStatus::Completed => "Completed",
+            crate::dashboard::DashboardStatus::Failed => "Failed",
+            crate::dashboard::DashboardStatus::Cancelled => "Cancelled",
+            crate::dashboard::DashboardStatus::Stale => "Unavailable",
+        },
         DashboardGroupKey::Root(root) => model
             .row(root.as_str())
             .and_then(|row| row.title.as_deref())

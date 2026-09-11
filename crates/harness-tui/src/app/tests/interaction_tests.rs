@@ -190,7 +190,8 @@ pub(super) fn command_palette_mouse_hover_moves_keyboard_selection() {
     // Given: a rendered command palette with at least two selectable rows.
     let mut app = AppState::new_live(None, false, None);
     app.open_palette();
-    let model = crate::ui::ui_overlays::modal_surface_model(&app, TEST_FRAME_AREA)
+    let area = Rect::new(0, 0, 80, 18);
+    let model = crate::ui::ui_overlays::modal_surface_model(&app, area)
         .expect("command palette surface model");
     let row_region = model
         .regions
@@ -211,7 +212,7 @@ pub(super) fn command_palette_mouse_hover_moves_keyboard_selection() {
             row,
             modifiers: KeyModifiers::NONE,
         },
-        TEST_FRAME_AREA,
+        area,
         None,
         None,
         None,
@@ -222,11 +223,11 @@ pub(super) fn command_palette_mouse_hover_moves_keyboard_selection() {
     assert!(handled);
     assert_ne!(app.palette_selected, initial);
     assert_eq!(
-        rendered_cell_bg(&app, row_region.x, row_region.y),
+        rendered_cell_bg_in_area(&app, area, row_region.x, row_region.y),
         app.theme().surface.canvas
     );
     assert_eq!(
-        rendered_cell_bg(&app, layout.content.x, row_region.y),
+        rendered_cell_bg_in_area(&app, area, layout.content.x, row_region.y),
         Color::Rgb(44, 44, 44)
     );
 
@@ -244,7 +245,7 @@ pub(super) fn command_palette_mouse_hover_moves_keyboard_selection() {
             row: scrollbar_row.y,
             modifiers: KeyModifiers::NONE,
         },
-        TEST_FRAME_AREA,
+        area,
         None,
         None,
         None,
@@ -253,7 +254,7 @@ pub(super) fn command_palette_mouse_hover_moves_keyboard_selection() {
     assert!(handled);
     assert_eq!(app.palette_selected, 1);
     assert_eq!(
-        rendered_cell_bg(&app, scrollbar.x, scrollbar_row.y),
+        rendered_cell_bg_in_area(&app, area, scrollbar.x, scrollbar_row.y),
         app.theme().surface.canvas
     );
 }

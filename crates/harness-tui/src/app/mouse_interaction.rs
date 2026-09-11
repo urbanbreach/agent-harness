@@ -491,10 +491,13 @@ impl AppState {
             .last_frame_area
             .is_some_and(|previous| previous != area)
         {
+            self.slash_hovered = None;
+            self.slash_pointer_down = None;
             self.transcript_view.transcript_scrollbar_drag = None;
             self.transcript_view.hovered_transcript_target = None;
             self.transcript_view.return_to_live_hovered = false;
             self.transcript_view.transcript_selection_dragging = false;
+            self.transcript_view.viewer_pointer_anchor = None;
             self.hovered_subagent_footer_target = None;
             self.hovered_live_turn_stop = false;
             self.hovered_live_turn_background = false;
@@ -517,6 +520,7 @@ impl AppState {
         if let Some(composite) = self.transcript_integration.as_mut() {
             let _ = composite.resize(transcript_area);
         }
+        self.resize_transcript_viewer(area);
     }
 
     pub(crate) fn last_frame_area(&self) -> Option<Rect> {
@@ -573,12 +577,8 @@ impl AppState {
         true
     }
 
-    fn activate_welcome_changelog(&mut self, was_expanded: bool) {
-        if was_expanded {
-            self.open_release_notes();
-        } else {
-            self.expand_startup_changelog();
-        }
+    fn activate_welcome_changelog(&mut self, _was_expanded: bool) {
+        self.open_release_notes();
     }
 
     fn handle_welcome_pointer_completion(&mut self, mouse: MouseEvent) -> bool {
@@ -1007,6 +1007,9 @@ impl AppState {
             let cleared = self.clear_blocked_pointer_state();
             return changed || cleared;
         }
+        if self.handle_transcript_viewer_mouse(mouse, frame_area) {
+            return true;
+        }
         if self.handle_connect_dialog_mouse(mouse, frame_area) {
             return true;
         }
@@ -1076,6 +1079,18 @@ impl AppState {
             return self.interrupt_active_turn();
         }
 
+        if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
+            && self.collapsed_paste_presentation().is_some()
+            && crate::layout::FrameLayoutPlan::for_app(self, frame_area)
+                .composer
+                .is_some_and(|area| rect_contains(area, mouse.column, mouse.row))
+        {
+            if let Some(preview) = self.composer.paste_preview.as_mut() {
+                preview.expanded = true;
+            }
+            self.focus = Focus::Prompt;
+            return true;
+        }
         if self.handle_composer_mouse_event(mouse, frame_area) {
             return true;
         }

@@ -343,6 +343,7 @@ pub enum LiveUpdate {
     },
     AlwaysApproveModeChangeFailed,
     Status(String),
+    ModelPromptNotice(String),
     SessionHistory(Vec<SessionHistoryEntry>),
     ContinueSession {
         run_id: String,

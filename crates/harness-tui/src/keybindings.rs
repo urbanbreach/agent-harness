@@ -71,7 +71,7 @@ pub enum Action {
     DiffHunkPrevious,
     VariantCycle,
     AllowPermission,
-    /// Open always-approve confirm for the active permission modal
+    /// Toggle session approval mode, or open confirmation in a permission modal.
     AlwaysApprovePermission,
     /// Deny permission in modal
     DenyPermission,
@@ -538,7 +538,7 @@ impl KeyMap {
         );
         keymap.bind(
             KeyBinding::new(KeyCode::Char('s'), KeyModifiers::CONTROL),
-            Action::OpenSessionHistory,
+            Action::PromptStash,
         );
         keymap.bind(
             KeyBinding::new(KeyCode::Char('x'), KeyModifiers::CONTROL),
@@ -600,7 +600,7 @@ impl KeyMap {
         );
         keymap.bind(
             KeyBinding::new(KeyCode::Enter, KeyModifiers::CONTROL),
-            Action::InsertNewline,
+            Action::CancelAndReplacePrompt,
         );
         keymap.bind(
             KeyBinding::new(KeyCode::Enter, KeyModifiers::ALT),
@@ -620,7 +620,7 @@ impl KeyMap {
         );
         keymap.bind(
             KeyBinding::new(KeyCode::Char('s'), KeyModifiers::ALT),
-            Action::SubmitPrompt,
+            Action::PromptStash,
         );
         keymap.bind(
             KeyBinding::new(KeyCode::Char('i'), KeyModifiers::ALT),

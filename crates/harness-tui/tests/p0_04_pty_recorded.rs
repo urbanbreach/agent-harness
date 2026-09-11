@@ -70,14 +70,14 @@ fn p0_04_real_pty_records_multiline_composer_shortcuts() {
         "queued draft missing\n{queued}"
     );
 
-    // When: Ctrl+Alt+Enter interjects a draft, then Ctrl+Shift+Enter replaces the active turn.
+    // When: Ctrl+Alt+Enter interjects a draft, then Ctrl+Enter replaces the active turn.
     helper.send(b"interject draft");
     helper.wait_for("interject draft");
     helper.send(modified_enter(7).as_bytes());
     helper.wait_for_raw(scenario::INTERJECT_MARKER);
     helper.send(b"replacement draft");
     helper.wait_for("replacement draft");
-    helper.send(modified_enter(6).as_bytes());
+    helper.send(modified_enter(5).as_bytes());
     helper.wait_for_raw(scenario::REPLACE_INTERRUPT_MARKER);
     helper.wait_for_raw(scenario::REPLACE_MARKER);
     let replaced = helper.screen();
@@ -93,7 +93,7 @@ fn p0_04_real_pty_records_multiline_composer_shortcuts() {
     );
 
     // When: the empty replacement shortcut is pressed.
-    helper.send(modified_enter(6).as_bytes());
+    helper.send(modified_enter(5).as_bytes());
 
     // Then: processing a later palette action proves the empty shortcut produced no activity.
     helper.send(b"\x10");

@@ -15,7 +15,7 @@ pub(super) fn append_streaming_rich_text_block(
     theme: &Theme,
     width: u16,
 ) {
-    if !text.contains("```") {
+    if !text.contains("```") && !text.contains("~~~") {
         append_markdownish_text_block(lines, text, color, prefix, theme, width);
         return;
     }
@@ -59,7 +59,6 @@ fn append_streaming_code(
     let highlighted =
         render_highlighted_code_block(language, body, raw, prefix, theme.markdown.text, theme);
     append_prebuilt_plain_lines(lines, prefix, highlighted, width);
-    lines.push(Line::default());
     lines.push(Line::default());
 }
 

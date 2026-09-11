@@ -2,6 +2,7 @@
 //!
 //! Writable when a project runtime config path is bound:
 //! - `hashline_edit`
+//! - `runtime.always_approve`
 //! - `runtime.compaction.enabled`
 //! - `runtime.compaction.auto_retry_overflow`
 //! - `runtime.compaction.structured_summary_contract`
@@ -24,6 +25,40 @@ use harness_core::config::{
 };
 
 use super::{AppState, Focus, ToastVariant};
+use crate::composer_editing::{ComposerEditor, DeleteKind};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use harness_core::config::{
+    read_project_setting_value, setting_editor_kind, write_project_setting_value, SettingEditorKind,
+};
+
+#[derive(Default)]
+pub(crate) struct SettingsInteraction {
+    pub(crate) query: String,
+    pub(crate) filtering: bool,
+    pub(crate) edit: Option<SettingsValueEdit>,
+    values: std::collections::BTreeMap<String, String>,
+}
+
+pub(crate) struct SettingsValueEdit {
+    pub(crate) id: String,
+    pub(crate) editor: ComposerEditor,
+    pub(crate) kind: SettingEditorKind,
+    pub(crate) error: Option<String>,
+}
+
+pub(crate) fn human_label(id: &str) -> String {
+    if id == "runtime.always_approve" {
+        return "Always approve on startup".to_string();
+    }
+    let label = id
+        .strip_prefix("runtime.")
+        .unwrap_or(id)
+        .replace(['.', '_'], " ");
+    let mut chars = label.chars();
+    chars.next().map_or_else(String::new, |first| {
+        first.to_uppercase().chain(chars).collect()
+    })
+}
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) enum SettingsTab {
@@ -132,15 +167,16 @@ const COMPACTION_ESTIMATED_TOKEN_TRIGGERS_ID: &str = "runtime.compaction.estimat
 const DETERMINISTIC_ENABLED_ID: &str = "runtime.deterministic.enabled";
 
 fn is_writable_setting(setting_id: &str) -> bool {
-    matches!(
-        setting_id,
-        HASHLINE_EDIT_ID
-            | COMPACTION_ENABLED_ID
-            | COMPACTION_AUTO_RETRY_OVERFLOW_ID
-            | COMPACTION_STRUCTURED_SUMMARY_CONTRACT_ID
-            | COMPACTION_ESTIMATED_TOKEN_TRIGGERS_ID
-            | DETERMINISTIC_ENABLED_ID
-    )
+    setting_editor_kind(setting_id).is_some()
+        || matches!(
+            setting_id,
+            HASHLINE_EDIT_ID
+                | COMPACTION_ENABLED_ID
+                | COMPACTION_AUTO_RETRY_OVERFLOW_ID
+                | COMPACTION_STRUCTURED_SUMMARY_CONTRACT_ID
+                | COMPACTION_ESTIMATED_TOKEN_TRIGGERS_ID
+                | DETERMINISTIC_ENABLED_ID
+        )
 }
 
 impl AppState {
@@ -165,9 +201,13 @@ impl AppState {
                 self.settings_parent = Some(SettingsParent::Focus(self.focus));
             }
         }
+        self.settings_interaction.query.clear();
+        self.settings_interaction.filtering = false;
+        self.settings_interaction.edit = None;
         self.settings_editor_visible = true;
         self.settings_editor_tab = SettingsTab::Runtime;
-        self.settings_editor_selected = self.settings_indices().next().unwrap_or_default();
+        let first = self.settings_indices().next().unwrap_or_default();
+        self.settings_editor_selected = first;
         self.theme_dialog_visible = false;
         self.error_details_visible = false;
         self.prompt_stash.list_visible = false;
@@ -180,6 +220,8 @@ impl AppState {
     }
 
     pub(in crate::app) fn close_settings_editor(&mut self) {
+        self.settings_interaction.edit = None;
+        self.settings_interaction.filtering = false;
         self.settings_editor_visible = false;
         match self.settings_parent.take() {
             Some(SettingsParent::Palette(snapshot)) => {
@@ -207,7 +249,22 @@ impl AppState {
         compaction_estimated_token_triggers: bool,
         deterministic_enabled: bool,
     ) {
-        self.settings_project_config_path = Some(path.into());
+        let path = path.into();
+        self.settings_interaction.values.clear();
+        if !self.replay_mode {
+            for definition in settings_registry() {
+                let id = definition.setting_id.as_str();
+                if setting_editor_kind(id).is_none() {
+                    continue;
+                }
+                if let Ok(Some(value)) = read_project_setting_value(&path, id) {
+                    self.settings_interaction
+                        .values
+                        .insert(id.to_string(), value);
+                }
+            }
+        }
+        self.settings_project_config_path = Some(path);
         self.settings_hashline_edit = hashline_edit;
         self.settings_compaction_enabled = compaction_enabled;
         self.settings_compaction_auto_retry_overflow = compaction_auto_retry_overflow;
@@ -247,7 +304,8 @@ impl AppState {
 
     pub(in crate::app) fn settings_editor_switch_tab(&mut self) {
         self.settings_editor_tab = self.settings_editor_tab.next();
-        self.settings_editor_selected = self.settings_indices().next().unwrap_or_default();
+        let first = self.settings_indices().next().unwrap_or_default();
+        self.settings_editor_selected = first;
         self.modal_interaction.invalidate();
     }
 
@@ -272,22 +330,27 @@ impl AppState {
         self.settings_editor_selected = indices[usize::try_from(next).unwrap_or_default()];
     }
 
-    fn settings_indices(&self) -> impl Iterator<Item = usize> {
+    fn settings_indices(&self) -> impl Iterator<Item = usize> + '_ {
         let surface = self.settings_editor_tab.surface();
         settings_registry()
             .iter()
             .enumerate()
-            .filter(move |(_, definition)| definition.surface == surface)
+            .filter(move |(_, definition)| {
+                definition.surface == surface && self.settings_matches(definition)
+            })
             .map(|(index, _)| index)
     }
 
     pub fn settings_editor_rows(&self) -> Vec<SettingsEditorRow> {
         let selected = self.settings_editor_selected;
-        let bound = self.settings_project_config_path.is_some();
+        let bound = self.settings_project_config_path.is_some() && !self.replay_mode;
         settings_registry()
             .iter()
             .enumerate()
-            .filter(|(_, definition)| definition.surface == self.settings_editor_tab.surface())
+            .filter(|(_, definition)| {
+                definition.surface == self.settings_editor_tab.surface()
+                    && self.settings_matches(definition)
+            })
             .map(|(index, def)| {
                 let id = def.setting_id.as_str();
                 SettingsEditorRow {
@@ -310,7 +373,8 @@ impl AppState {
 
     pub(in crate::app) fn settings_editor_select_row(&mut self, row: usize) -> usize {
         let previous = self.settings_editor_selected_index();
-        if let Some(index) = self.settings_indices().nth(row) {
+        let index = self.settings_indices().nth(row);
+        if let Some(index) = index {
             self.settings_editor_selected = index;
         }
         previous
@@ -327,7 +391,7 @@ impl AppState {
     }
 
     pub fn settings_editor_summary(&self) -> SettingsEditorSummary {
-        let bound = self.settings_project_config_path.is_some();
+        let bound = self.settings_project_config_path.is_some() && !self.replay_mode;
         let mut summary = SettingsEditorSummary {
             total: settings_registry().len(),
             bound,
@@ -354,6 +418,9 @@ impl AppState {
     }
 
     pub fn settings_editor_activate_selected(&mut self) {
+        if self.replay_mode {
+            return;
+        }
         let Some(setting_id) = self.settings_editor_selected_id() else {
             return;
         };
@@ -380,6 +447,35 @@ impl AppState {
             );
             return;
         };
+        if let Some(kind) = setting_editor_kind(setting_id) {
+            if kind == SettingEditorKind::Boolean {
+                let next = self.effective_value_for(setting_id).as_deref() != Some("true");
+                match write_project_setting_value(&path, setting_id, &next.to_string()) {
+                    Ok(value) => {
+                        self.settings_interaction
+                            .values
+                            .insert(setting_id.to_string(), value);
+                        self.show_toast(
+                            "Startup setting saved; takes effect after restart",
+                            ToastVariant::Info,
+                        );
+                    }
+                    Err(err) => self.report_settings_write_error(err),
+                }
+                return;
+            }
+            let mut editor = ComposerEditor::default();
+            let value = self.effective_value_for(setting_id).unwrap_or_default();
+            let _ = editor.insert_text(&value);
+            self.settings_interaction.edit = Some(SettingsValueEdit {
+                id: setting_id.to_string(),
+                editor,
+                kind,
+                error: None,
+            });
+            self.modal_interaction.invalidate();
+            return;
+        }
         match setting_id {
             HASHLINE_EDIT_ID => {
                 let next = !self.settings_hashline_edit;
@@ -468,6 +564,9 @@ impl AppState {
     }
 
     pub fn settings_editor_reset_selected(&mut self) {
+        if self.replay_mode {
+            return;
+        }
         let Some(setting_id) = self.settings_editor_selected_id() else {
             return;
         };
@@ -494,6 +593,21 @@ impl AppState {
             );
             return;
         };
+        if setting_editor_kind(setting_id) == Some(SettingEditorKind::Boolean) {
+            match harness_core::config::reset_project_setting_to_default(&path, setting_id) {
+                Ok(value) => {
+                    self.settings_interaction
+                        .values
+                        .insert(setting_id.to_string(), value);
+                    self.show_toast(
+                        "Startup setting reset; takes effect after restart",
+                        ToastVariant::Info,
+                    );
+                }
+                Err(err) => self.report_settings_write_error(err),
+            }
+            return;
+        }
         match setting_id {
             HASHLINE_EDIT_ID => match reset_project_hashline_edit(&path) {
                 Ok(effective) => {
@@ -571,8 +685,93 @@ impl AppState {
         }
     }
 
+    fn settings_matches(&self, definition: &SettingDefinition) -> bool {
+        let text = format!(
+            "{} {}",
+            definition.setting_id,
+            human_label(definition.setting_id.as_str())
+        )
+        .to_lowercase();
+        self.settings_interaction
+            .query
+            .to_lowercase()
+            .split_whitespace()
+            .all(|word| text.contains(word))
+    }
+
+    pub(in crate::app) fn handle_settings_editor_input(&mut self, key: KeyEvent) -> bool {
+        if let Some(edit) = self.settings_interaction.edit.take() {
+            self.handle_settings_value_key(edit, key);
+            return true;
+        }
+        if self.settings_interaction.filtering {
+            match key.code {
+                KeyCode::Esc | KeyCode::Enter | KeyCode::Down | KeyCode::Up => {
+                    self.settings_interaction.filtering = false
+                }
+                KeyCode::Backspace => {
+                    let _ = self.settings_interaction.query.pop();
+                }
+                KeyCode::Char(c)
+                    if !key
+                        .modifiers
+                        .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+                {
+                    self.settings_interaction.query.push(c)
+                }
+                _ => {}
+            }
+            let first = self.settings_indices().next().unwrap_or_default();
+            self.settings_editor_selected = first;
+            self.modal_interaction.invalidate();
+            return true;
+        }
+        if key.code == KeyCode::Char('/') {
+            self.settings_interaction.filtering = true;
+            return true;
+        }
+        false
+    }
+
+    fn handle_settings_value_key(&mut self, mut edit: SettingsValueEdit, key: KeyEvent) {
+        if key.code == KeyCode::Esc {
+            self.modal_interaction.invalidate();
+            return;
+        }
+        if key.code == KeyCode::Enter {
+            let result = self
+                .settings_project_config_path
+                .as_ref()
+                .map(|path| write_project_setting_value(path, &edit.id, &edit.editor.text()));
+            match result {
+                Some(Ok(value)) => {
+                    self.settings_interaction.values.insert(edit.id, value);
+                    self.show_toast("Setting saved for the next session", ToastVariant::Info);
+                    self.modal_interaction.invalidate();
+                    return;
+                }
+                Some(Err(err)) => edit.error = Some(err.to_string()),
+                None => edit.error = Some("No project configuration is bound".into()),
+            }
+        } else {
+            edit.handle_key(key);
+        }
+        self.settings_interaction.edit = Some(edit);
+    }
+
     fn effective_value_for(&self, setting_id: &str) -> Option<String> {
         self.settings_project_config_path.as_ref()?;
+        if setting_editor_kind(setting_id).is_some() {
+            return self
+                .settings_interaction
+                .values
+                .get(setting_id)
+                .cloned()
+                .or_else(|| {
+                    setting_definition(setting_id)
+                        .and_then(|def| def.default_value.map(str::to_string))
+                });
+        }
         match setting_id {
             HASHLINE_EDIT_ID => Some(bool_label(self.settings_hashline_edit)),
             COMPACTION_ENABLED_ID => Some(bool_label(self.settings_compaction_enabled)),
@@ -621,6 +820,62 @@ fn surface_label(def: &SettingDefinition) -> &'static str {
     match def.surface {
         harness_core::config::SettingSurface::Runtime => "runtime",
         harness_core::config::SettingSurface::Tui => "tui",
+    }
+}
+
+impl SettingsValueEdit {
+    fn handle_key(&mut self, key: KeyEvent) {
+        if let SettingEditorKind::Choice(choices) = self.kind {
+            self.handle_choice_key(choices, key.code);
+            return;
+        }
+        self.error = None;
+        match key.code {
+            KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.editor = ComposerEditor::default();
+            }
+            KeyCode::Char(c)
+                if !key
+                    .modifiers
+                    .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+            {
+                let _ = self.editor.insert_text(&c.to_string());
+            }
+            KeyCode::Backspace => {
+                let _ = self.editor.backspace();
+            }
+            KeyCode::Delete => {
+                let _ = self.editor.delete(DeleteKind::CharacterForward);
+            }
+            KeyCode::Left => self.editor.move_left(),
+            KeyCode::Right => self.editor.move_right(),
+            KeyCode::Home => self.editor.move_line_start(),
+            KeyCode::End => self.editor.move_line_end(),
+            _ => {}
+        }
+    }
+
+    fn handle_choice_key(&mut self, choices: &[&str], code: KeyCode) {
+        if choices.is_empty()
+            || !matches!(
+                code,
+                KeyCode::Left | KeyCode::Up | KeyCode::Right | KeyCode::Down | KeyCode::Tab
+            )
+        {
+            return;
+        }
+        let current = choices
+            .iter()
+            .position(|choice| *choice == self.editor.text())
+            .unwrap_or_default();
+        let next = if matches!(code, KeyCode::Left | KeyCode::Up) {
+            (current + choices.len() - 1) % choices.len()
+        } else {
+            (current + 1) % choices.len()
+        };
+        self.error = None;
+        self.editor = ComposerEditor::default();
+        let _ = self.editor.insert_text(choices[next]);
     }
 }
 

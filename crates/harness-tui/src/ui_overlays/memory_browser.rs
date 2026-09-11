@@ -1,136 +1,119 @@
 use super::*;
 
+pub(super) fn preview_rows(app: &AppState, popup: Rect) -> u16 {
+    if !app.memory_browser.fullscreen && popup.width >= 60 && popup.height >= 16 {
+        7
+    } else {
+        0
+    }
+}
+
 pub(super) fn render_memory_browser_overlay(
     frame: &mut Frame,
     app: &AppState,
     theme: &Theme,
     root: Rect,
 ) {
-    if root.width == 0 || root.height == 0 {
+    let Some(model) = modal_surface_model(app, root) else {
+        return;
+    };
+    if !paint_modal_panel(frame, app, theme, model.popup, model.key, "Memory") {
         return;
     }
-
-    render_overlay_dim_backdrop(frame, root);
-
-    let overlay_width = root.width.clamp(40, 80);
-    let overlay_height = root.height.clamp(8, 24);
-    let overlay_x = root.x + (root.width.saturating_sub(overlay_width)) / 2;
-    let overlay_y = root.y + (root.height.saturating_sub(overlay_height)) / 2;
-    let overlay = Rect::new(overlay_x, overlay_y, overlay_width, overlay_height);
-
-    let surface = ui_chrome::command_palette_surface(theme);
-    let title_style = Style::default()
-        .fg(theme.text.primary)
-        .bg(surface)
-        .add_modifier(Modifier::BOLD);
-    let muted_style = Style::default().fg(theme.text.secondary).bg(surface);
-
-    if !paint_modal_panel(
-        frame,
-        app,
-        theme,
-        overlay,
-        ModalSurfaceKey::Overlay {
-            kind: OverlayKind::MemoryBrowser,
-            view: ModalViewKey::Primary,
-        },
-        "Commands",
-    ) {
-        return;
-    }
-    let inner = inset_rect(overlay, 1.min(overlay.width.saturating_sub(1)), 1);
+    let inner = inset_rect(model.popup, 1, 1);
     if inner.width == 0 || inner.height == 0 {
         return;
     }
-
-    let title = "Memory";
-    let title_area = Rect::new(inner.x, inner.y, inner.width, 1);
+    let muted = Style::default().fg(theme.text.secondary);
     frame.render_widget(
-        Paragraph::new(Line::from(vec![
-            Span::styled(title, title_style),
-            Span::styled(
-                " ".repeat(usize::from(inner.width).saturating_sub(title.len() + 3)),
-                Style::default().bg(surface),
-            ),
-            Span::styled("esc", muted_style),
-        ])),
-        title_area,
+        Paragraph::new(format!(
+            "{} {}",
+            if app.memory_browser.filtering {
+                "Filter:"
+            } else {
+                "Search /"
+            },
+            app.memory_browser.filter_input
+        ))
+        .style(muted),
+        Rect::new(inner.x, inner.y, inner.width, 1),
     );
-
-    let list_y = inner.y.saturating_add(1);
-    let list_height = inner.height.saturating_sub(1);
     let entries = app.memory_browser.filtered_entries();
-    if entries.is_empty() {
-        if list_height > 0 {
-            let area = Rect::new(inner.x, list_y, inner.width, 1);
+    for region in &model.regions {
+        if let ModalTarget::Row(index) = region.target {
+            let Some(entry) = entries.get(index) else {
+                continue;
+            };
+            let row = modal_list_row(
+                theme,
+                ModalListRowSpec {
+                    area: region.area,
+                    state: ModalListRowState {
+                        selected: index == app.memory_browser.selected,
+                        hovered: app.modal_target_hovered(model.key, region.target),
+                        dimmed: false,
+                    },
+                    max_scroll: model.max_scroll,
+                },
+            );
             frame.render_widget(
-                Paragraph::new(Line::from(Span::styled("No memory entries", muted_style))),
+                Paragraph::new(format!(
+                    "{}  {}",
+                    entry.id,
+                    entry.label.lines().next().unwrap_or_default()
+                ))
+                .style(row.style),
+                row.layout.content,
+            );
+        }
+    }
+    let preview_height = if app.memory_browser.fullscreen {
+        inner.height.saturating_sub(2)
+    } else {
+        preview_rows(app, model.popup)
+    };
+    if preview_height > 0 {
+        let area = Rect::new(
+            inner.x,
+            inner.bottom().saturating_sub(1 + preview_height),
+            inner.width,
+            preview_height,
+        );
+        if let Some(entry) = app.memory_browser.selected_entry() {
+            let mut lines = Vec::new();
+            ui_markdown::append_rich_text_block(
+                &mut lines,
+                &entry.label,
+                theme.text.primary,
+                "",
+                theme,
+                area.width,
+            );
+            let max_scroll = lines.len().saturating_sub(usize::from(area.height));
+            let scroll = usize::from(app.memory_browser.preview_scroll).min(max_scroll);
+            frame.render_widget(
+                Paragraph::new(lines.into_iter().skip(scroll).collect::<Vec<_>>())
+                    .style(Style::default().fg(theme.text.primary)),
                 area,
             );
         }
-        return;
     }
-    let visible_rows = usize::from(list_height);
-    let default_scroll = app
-        .memory_browser
-        .selected
-        .saturating_sub(visible_rows.saturating_sub(1));
-    let scroll = app.modal_visual_offset(
-        ModalSurfaceKey::Overlay {
-            kind: OverlayKind::MemoryBrowser,
-            view: ModalViewKey::Primary,
-        },
-        default_scroll,
-        entries.len().saturating_sub(visible_rows),
-    );
-    let max_scroll = entries.len().saturating_sub(visible_rows);
-    let list_area = Rect::new(inner.x, list_y, inner.width, list_height);
-    for (visible_index, row_index) in (scroll..entries.len()).take(visible_rows).enumerate() {
-        let Some(entry) = entries.get(row_index) else {
-            break;
+    if entries.is_empty() && inner.height > 2 {
+        let message = if app.replay_mode {
+            "Workspace memory is unavailable during replay"
+        } else {
+            "No matching memory entries"
         };
-        let y = list_y.saturating_add(u16::try_from(visible_index).unwrap_or(u16::MAX));
-        let area = Rect::new(inner.x, y, inner.width, 1);
-        let is_selected = row_index == app.memory_browser.selected;
-        let key = ModalSurfaceKey::Overlay {
-            kind: OverlayKind::MemoryBrowser,
-            view: ModalViewKey::Primary,
-        };
-        let presentation = modal_list_row(
-            theme,
-            ModalListRowSpec {
-                area,
-                state: ModalListRowState {
-                    selected: is_selected,
-                    hovered: app.modal_target_hovered(key, ModalTarget::Row(row_index)),
-                    dimmed: false,
-                },
-                max_scroll,
-            },
-        );
-        let label = truncate_plain_text(
-            &entry.label,
-            usize::from(presentation.layout.content.width).saturating_sub(1),
-        );
         frame.render_widget(
-            Block::default().style(presentation.style),
-            presentation.layout.content,
-        );
-        frame.render_widget(
-            Paragraph::new(Line::from(vec![
-                Span::styled(label, presentation.style),
-                Span::styled(" ", presentation.style),
-            ])),
-            presentation.layout.content,
+            Paragraph::new(message).style(muted),
+            Rect::new(inner.x, inner.y + 1, inner.width, 1),
         );
     }
-    render_modal_list_scrollbar(
-        frame,
-        theme,
-        ModalListScrollbarSpec {
-            area: list_area,
-            offset: scroll,
-            max_scroll,
-        },
-    );
+    if inner.height > 2 {
+        frame.render_widget(
+            Paragraph::new("/ filter · Ctrl+F full view · Ctrl+C copy value · Esc return")
+                .style(muted),
+            Rect::new(inner.x, inner.bottom() - 1, inner.width, 1),
+        );
+    }
 }

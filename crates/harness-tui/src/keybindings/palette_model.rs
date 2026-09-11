@@ -368,9 +368,9 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
         id: "model.always_approve",
         category: PaletteCategory::ModelInput,
         title: DynamicTitle::Static("Always Approve Mode"),
-        description: "Toggle always-approve (YOLO) mode for tool permissions",
+        description: "Toggle always-approve for this session (Ctrl+O)",
         suggested: SuggestedRule::Never,
-        dispatch: PaletteDispatch::OpenTogglesMenu,
+        dispatch: PaletteDispatch::Action(Action::AlwaysApprovePermission),
     },
     PaletteCommandEntry {
         id: "model.multiline",

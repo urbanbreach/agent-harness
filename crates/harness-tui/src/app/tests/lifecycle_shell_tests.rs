@@ -108,11 +108,11 @@ fn assert_settings_values(app: &AppState) {
         settings.bound,
         "expected project config bound: {settings:?}"
     );
-    assert_eq!((settings.writable_paths, settings.editable), (6, 6));
+    assert_eq!((settings.writable_paths, settings.editable), (12, 12));
     assert!(settings.with_effective_value >= 6);
     assert!(settings.total >= 38);
     assert!(settings.one_line().contains("bound=true"));
-    assert!(settings.one_line().contains("writable_paths=6"));
+    assert!(settings.one_line().contains("writable_paths=12"));
     assert!(
         app.settings_project_config_path()
             .is_some_and(|path| path.ends_with("harness.json")),

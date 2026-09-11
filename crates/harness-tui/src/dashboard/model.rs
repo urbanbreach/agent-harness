@@ -5,8 +5,9 @@ use harness_core::event::{EventEnvelopeV1, EventV1};
 
 use super::eligibility::{DashboardEntryEligibility, SelectionKey};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum DashboardStatus {
+    AwaitingInput,
     Running,
     Queued,
     Streaming,
@@ -19,11 +20,12 @@ pub enum DashboardStatus {
 impl DashboardStatus {
     pub(crate) const fn sort_rank(self) -> u8 {
         match self {
-            Self::Running | Self::Streaming => 0,
-            Self::Queued => 1,
-            Self::Completed => 2,
-            Self::Failed | Self::Cancelled => 3,
-            Self::Stale => 4,
+            Self::AwaitingInput => 0,
+            Self::Running | Self::Streaming => 1,
+            Self::Queued => 2,
+            Self::Completed => 3,
+            Self::Failed | Self::Cancelled => 4,
+            Self::Stale => 5,
         }
     }
 }
@@ -43,6 +45,7 @@ impl DashboardActivity {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum DashboardGroupKey {
+    Status(DashboardStatus),
     Root(SelectionKey),
     Orphaned(SelectionKey),
 }

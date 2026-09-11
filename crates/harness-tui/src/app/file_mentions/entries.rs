@@ -12,7 +12,7 @@ use crate::app::{LaunchMetadata, McpResourceOption};
 
 use super::{
     FileMentionEntry, FileMentionEntryKind, FileMentionFrecency, FileMentionSelectedTag,
-    FileMentionWorkspaceScanner, LineRangeQuery, ALWAYS_SKIPPED_DIRS, FILE_MENTION_RESULT_LIMIT,
+    FileMentionWorkspaceScanner, LineRangeQuery, ALWAYS_SKIPPED_DIRS,
 };
 
 pub(super) fn selected_file_mention_tag(
@@ -183,7 +183,6 @@ pub(super) fn search_file_mentions(
 
     matches
         .drain(..)
-        .take(FILE_MENTION_RESULT_LIMIT)
         .map(|entry| {
             let mut entry = entry.clone();
             if matches!(entry.kind, FileMentionEntryKind::File) && !entry.is_directory {

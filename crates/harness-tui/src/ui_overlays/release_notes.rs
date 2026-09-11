@@ -17,7 +17,6 @@ pub(super) fn render_release_notes_overlay(
     root: Rect,
 ) {
     let popup = crate::layout::release_notes_modal_area(root);
-    render_overlay_dim_backdrop(frame, root);
     let key = ModalSurfaceKey::Overlay {
         kind: OverlayKind::ReleaseNotes,
         view: ModalViewKey::Primary,
@@ -119,31 +118,12 @@ fn release_note_rows(width: usize) -> Vec<ReleaseNoteRow> {
         env!("CARGO_PKG_VERSION")
     )));
     rows.push(ReleaseNoteRow::Blank);
-    rows.push(ReleaseNoteRow::Heading("Features".to_string()));
+    rows.push(ReleaseNoteRow::Heading("TUI and rendering".to_string()));
     rows.push(ReleaseNoteRow::Blank);
-    push_wrapped_bullet(
-        &mut rows,
-        "/session-info",
-        "now lets you click any row to copy its value, with hover highlights and a copy-all shortcut.",
-        width,
-    );
-    rows.push(ReleaseNoteRow::Blank);
-    rows.push(ReleaseNoteRow::Heading("Performance".to_string()));
-    rows.push(ReleaseNoteRow::Blank);
-    push_wrapped_bullet(
-        &mut rows,
-        "Subagent spawning",
-        "is dramatically faster when you have many sessions in ~/.harness",
-        width,
-    );
-    push_wrapped_bullet(
-        &mut rows,
-        "TUI rendering",
-        "now automatically matches high-refresh displays (120 Hz+) for smoother scrolling and painting.",
-        width,
-    );
-    rows.push(ReleaseNoteRow::Blank);
-    rows.push(ReleaseNoteRow::Blank);
+    for note in crate::release_notes::CURRENT {
+        push_wrapped(&mut rows, &format!("• {note}"), width);
+        rows.push(ReleaseNoteRow::Blank);
+    }
     rows.push(ReleaseNoteRow::Heading("Earlier changes   ".to_string()));
     rows.push(ReleaseNoteRow::Blank);
     rows.push(ReleaseNoteRow::Blank);
@@ -279,7 +259,8 @@ mod tests {
 
         // assert
         assert!(text.contains(env!("CARGO_PKG_VERSION")));
-        assert!(text.contains("~/.harness"));
+        assert!(text.contains("Structural Markdown"));
+        assert!(!text.contains("high-refresh"));
     }
 
     #[test]
@@ -327,11 +308,17 @@ mod tests {
             .collect::<String>();
         assert_eq!(rendered, "current   ");
         assert!((21..31).all(|column| buffer[(column, 6)].modifier.contains(Modifier::BOLD)));
-        let history = (13..31)
-            .map(|column| buffer[(column, 21)].symbol())
-            .collect::<String>();
-        assert_eq!(history, "Earlier changes   ");
-        assert!((13..31).all(|column| buffer[(column, 21)].modifier.contains(Modifier::BOLD)));
+        let history_row = (0..30)
+            .find(|row| {
+                (0..100)
+                    .map(|col| buffer[(col, *row)].symbol())
+                    .collect::<String>()
+                    .contains("Earlier changes")
+            })
+            .unwrap_or_abort();
+        assert!((13..28).all(|column| buffer[(column, history_row)]
+            .modifier
+            .contains(Modifier::BOLD)));
         let footer = (38..61)
             .map(|column| buffer[(column, 24)].symbol())
             .collect::<String>();

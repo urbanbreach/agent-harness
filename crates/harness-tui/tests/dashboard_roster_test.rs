@@ -165,7 +165,7 @@ fn pinned_rows_lead_their_group_and_fold_preserves_stable_selection() {
     state.toggle_pin(SelectionKey::new("stale"));
     state.set_selected(Some(SelectionKey::new("stale")));
     let expanded = layout_for_rect(Rect::new(0, 0, 80, 24), &source, &state);
-    let parent_group = DashboardGroupKey::Root(SelectionKey::new("parent"));
+    let parent_group = DashboardGroupKey::Status(DashboardStatus::Running);
     // assert
     assert_eq!(
         expanded
@@ -175,12 +175,12 @@ fn pinned_rows_lead_their_group_and_fold_preserves_stable_selection() {
             .map(|row| row.selection_key.as_str()),
         Some("stale")
     );
-    state.toggle_fold(DashboardGroupKey::Root(SelectionKey::new("parent")));
+    state.toggle_fold(DashboardGroupKey::Status(DashboardStatus::Running));
     let folded = layout_for_rect(Rect::new(0, 0, 80, 24), &source, &state);
     assert!(folded
         .rows
         .iter()
-        .all(|row| row.group != DashboardGroupKey::Root(SelectionKey::new("parent"))));
+        .all(|row| row.group != DashboardGroupKey::Status(DashboardStatus::Running)));
     assert_eq!(
         state.selected_key().map(SelectionKey::as_str),
         Some("stale")
@@ -207,14 +207,25 @@ fn overflow_and_hit_map_cover_every_rendered_roster_region() {
         scroll_top: 2,
         ..RosterState::default()
     };
-    let layout = layout_for_rect(Rect::new(0, 0, 32, 5), &model(), &state);
+    let layout = layout_for_rect(Rect::new(0, 0, 32, 8), &model(), &state);
     // assert
     assert!(!layout.overflow.is_empty());
     let hit_map = RosterHitMap::from_layout(&layout);
-    assert!(hit_map.regions.iter().any(|region| {
-        matches!(region.target, RosterHitTarget::Row(ref key) if key.as_str() == "child")
-    }));
+    assert!(
+        hit_map.regions.iter().any(|region| {
+            matches!(region.target, RosterHitTarget::Row(ref key) if key.as_str() == "child")
+        }),
+        "visible items: {:?}",
+        layout.items
+    );
     for region in &hit_map.regions {
+        assert!(region.rect.bottom() <= layout.content.bottom());
+        for y in region.rect.y..region.rect.bottom() {
+            assert_eq!(
+                hit_map.hit_test(region.rect.x, y),
+                Some(region.target.clone())
+            );
+        }
         assert_eq!(
             hit_map.hit_test(region.rect.x, region.rect.y),
             Some(region.target.clone())
@@ -241,7 +252,7 @@ fn viewport_matrix_preserves_group_filter_pin_and_hit_contracts() {
         for viewport in ViewportId::ALL {
             for folded in [false, true] {
                 let folded_groups = if folded {
-                    BTreeSet::from([DashboardGroupKey::Root(SelectionKey::new("parent"))])
+                    BTreeSet::from([DashboardGroupKey::Status(DashboardStatus::Running)])
                 } else {
                     BTreeSet::new()
                 };

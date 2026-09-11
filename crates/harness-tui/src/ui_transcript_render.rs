@@ -1,6 +1,5 @@
 // allow: SIZE_OK — TUI transcript rendering (indivisible view model)
 use super::super::ui_transcript_selection::selection_rows_for_rich_text_block;
-use super::ui_reasoning_markdown_body::ReasoningSelectionMetadata;
 use super::ui_streaming_markdown::append_streaming_rich_text_block;
 use super::ui_transcript_block_grammar::{
     TranscriptBlockContent, TranscriptBlockRole, TranscriptBlockSpec, TranscriptGrammarError,
@@ -66,44 +65,37 @@ pub(in crate::ui) fn try_build_transcript_render_surfaces_with_specs(
     Ok(entries)
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 enum AssistantVisualEntryPlan {
     Part { index: usize },
-    ToolGroup { start: usize, len: usize },
+    ToolGroup(Box<super::ui_transcript_groups::TranscriptToolGroup>),
     Footer,
 }
 
 fn assistant_visual_entry_plan(turn: &TranscriptTurnSection) -> Vec<AssistantVisualEntryPlan> {
     let mut plan = Vec::with_capacity(turn.assistant_parts.len().saturating_add(1));
-    let mut index = 0;
-    while index < turn.assistant_parts.len() {
-        let group_len = match &turn.assistant_parts[index] {
-            TranscriptAssistantPart::ToolCall(_) => {
-                TranscriptToolGroupSummary::from_adjacent(&turn.assistant_parts[index..])
-                    .filter(TranscriptToolGroupSummary::folds_as_group)
-                    .map_or(0, |summary| summary.span_len)
-            }
-            TranscriptAssistantPart::Reasoning(_)
-            | TranscriptAssistantPart::Body(_)
-            | TranscriptAssistantPart::Error(_)
-            | TranscriptAssistantPart::Compaction(_) => 0,
-        };
-        if group_len > 0
-            && !context_tool_group_uses_individual_rows(
-                &turn.assistant_parts[index..index + group_len],
-            )
-        {
-            plan.push(AssistantVisualEntryPlan::ToolGroup {
-                start: index,
-                len: group_len,
-            });
-            index += group_len;
-        } else {
-            plan.push(AssistantVisualEntryPlan::Part { index });
-            index += 1;
+    let groups = super::ui_transcript_groups::scan(turn);
+    let mut hidden = vec![false; turn.assistant_parts.len()];
+    for group in &groups {
+        for &index in &group.hidden {
+            hidden[index] = true;
         }
     }
-    if turn.show_footer && !matches!(turn.header.status, ActivityStatus::Error) {
+    let mut groups = groups.into_iter().peekable();
+    for (index, hidden) in hidden.into_iter().enumerate() {
+        if let Some(group) = groups.next_if(|group| group.start == index) {
+            plan.push(AssistantVisualEntryPlan::ToolGroup(Box::new(group)));
+        }
+        if !hidden {
+            plan.push(AssistantVisualEntryPlan::Part { index });
+        }
+    }
+    if turn.show_footer
+        && !matches!(turn.header.status, ActivityStatus::Error)
+        && (turn.header.status != ActivityStatus::Streaming
+            || waiting_on_answers_label(turn).is_some()
+            || pending_permission_tool_waiting(turn).is_some())
+    {
         plan.push(AssistantVisualEntryPlan::Footer);
     }
     plan
@@ -137,16 +129,11 @@ fn plan_visual_entry_specs(
                     })
                     .cloned()
             }
-            AssistantVisualEntryPlan::ToolGroup { start, len } => {
-                let ids = turn.assistant_parts[start..start + len]
+            AssistantVisualEntryPlan::ToolGroup(group) => {
+                let ids = group
+                    .target_ids
                     .iter()
-                    .filter_map(|part| match part {
-                        TranscriptAssistantPart::ToolCall(tool) => Some(tool.tool_call_id.as_str()),
-                        TranscriptAssistantPart::Reasoning(_)
-                        | TranscriptAssistantPart::Body(_)
-                        | TranscriptAssistantPart::Error(_)
-                        | TranscriptAssistantPart::Compaction(_) => None,
-                    })
+                    .map(String::as_str)
                     .collect::<Vec<_>>();
                 specs
                     .iter()
@@ -177,16 +164,7 @@ fn normalize_semantic_entry_chrome(
     entries: &mut [ResolvedTranscriptVisualEntryDraft],
     base_surface: Color,
 ) {
-    let accented_entry = entries
-        .iter()
-        .rposition(|entry| entry.selected_rail)
-        .or_else(|| {
-            entries
-                .iter()
-                .rposition(|entry| entry.tool_rail_motion.is_some())
-        })
-        .or_else(|| entries.iter().rposition(|entry| entry.show_outer_rail));
-    for (index, entry) in entries.iter_mut().enumerate() {
+    for entry in entries {
         let previous_surface = entry.surface;
         let preserve_user_surface = entry.kind == TranscriptRenderSurfaceKind::User;
         if previous_surface != base_surface && !preserve_user_surface {
@@ -198,16 +176,6 @@ fn normalize_semantic_entry_chrome(
         }
         if !preserve_user_surface {
             entry.surface = base_surface;
-        }
-        let persistent_group_rail = entry.show_outer_rail
-            && matches!(entry.metadata.id, TranscriptVisualEntryId::ToolGroup { .. });
-        if Some(index) != accented_entry && !persistent_group_rail {
-            entry.show_outer_rail = false;
-            entry.selected_rail = false;
-            entry.tool_rail_motion = None;
-            entry.metadata.accent = TranscriptVisualEntryAccent::Hidden;
-        } else {
-            entry.show_outer_rail = true;
         }
     }
 }
@@ -407,7 +375,7 @@ fn assemble_user_surface_lines(
         let marker_prefix = format!("   {marker} ");
         lines[1].spans[0] = surface_span(
             marker_prefix,
-            Style::default().fg(theme.text.primary),
+            Style::default().fg(theme.markdown.text),
             surface,
         );
         if let Some(clock) = user_msg.wall_clock.as_deref() {
@@ -601,25 +569,14 @@ fn build_assistant_render_surfaces(
     let mut surfaces = Vec::new();
     for entry in assistant_visual_entry_plan(turn) {
         match entry {
-            AssistantVisualEntryPlan::ToolGroup { start, len } => {
-                let tool_calls = turn.assistant_parts[start..start + len]
-                    .iter()
-                    .filter_map(|part| match part {
-                        TranscriptAssistantPart::ToolCall(tool_call) => Some(tool_call.as_ref()),
-                        _ => None,
-                    })
-                    .collect::<Vec<_>>();
+            AssistantVisualEntryPlan::ToolGroup(group) => {
                 surfaces.push(build_context_tool_group_render_surface(
                     turn,
-                    &tool_calls,
+                    &group,
                     theme,
                     width,
                     base_surface,
-                    false,
-                    assistant_icon,
-                    assistant_color,
-                    assistant_status,
-                )?);
+                ));
             }
             AssistantVisualEntryPlan::Part { index } => {
                 surfaces.push(build_assistant_part_render_surface(
@@ -747,7 +704,7 @@ fn append_plain_body_with_clock(
         .saturating_sub(prefix_width)
         .saturating_sub(TIMESTAMP_RESERVED_WIDTH)
         .max(1);
-    let style = Style::default().fg(theme.text.primary);
+    let style = Style::default().fg(theme.markdown.text);
     for (index, row) in wrap_surface_spans(vec![Span::styled(text.to_string(), style)], text_width)
         .into_iter()
         .enumerate()
@@ -763,16 +720,6 @@ fn append_plain_body_with_clock(
         lines.push(line);
     }
     lines.push(Line::default());
-}
-
-fn context_tool_group_uses_individual_rows(parts: &[TranscriptAssistantPart]) -> bool {
-    parts.iter().all(|part| {
-        matches!(
-            part,
-            TranscriptAssistantPart::ToolCall(tool_call)
-                if matches!(tool_call.header.tool_id.as_str(), "fs.write" | "write" | "edit")
-        )
-    })
 }
 
 fn build_assistant_part_render_surface(
@@ -853,7 +800,7 @@ fn build_assistant_part_render_surface(
             (
                 TranscriptRenderSurfaceKind::AssistantReasoning,
                 reasoning_active || expanded,
-                theme.text.tertiary,
+                theme.terminal_colors.muted,
                 base_surface,
                 Some(interaction_rows),
                 Some(selection_rows),
@@ -901,16 +848,10 @@ fn build_assistant_part_render_surface(
             } else {
                 TranscriptRenderSurfaceKind::AssistantTool
             };
-            let render_width = if tool_call_is_todo(tool_call) {
-                width
-                    .saturating_sub(TRANSCRIPT_SURFACE_TRAILING_GAP_WIDTH)
-                    .max(1)
-            } else {
-                transcript_surface_render_width(
-                    width.saturating_sub(policy.trailing_gap_cells),
-                    kind,
-                )
-            };
+            let render_width = transcript_surface_render_width(
+                width.saturating_sub(policy.trailing_gap_cells),
+                kind,
+            );
             let mut render =
                 append_tool_call_section_lines(tool_call, theme, render_width, base_surface);
             if subagent.is_some_and(|policy| policy.navigation_target().is_none()) {
@@ -928,7 +869,7 @@ fn build_assistant_part_render_surface(
             lines = render.lines;
             (
                 kind,
-                false,
+                family == TranscriptToolFamily::Execute && tool_call.details_visible(),
                 tool_rail_color(tool_call.header.presentation.status, theme),
                 base_surface,
                 Some(render.interaction_rows),
@@ -1023,9 +964,7 @@ fn build_assistant_part_render_surface(
         trailing_gap_rows: 0,
         placement: spec.placement,
         show_outer_rail,
-        rail_glyph: if tool_rail_motion.is_some()
-            || (kind == TranscriptRenderSurfaceKind::AssistantReasoning && show_outer_rail)
-        {
+        rail_glyph: if show_outer_rail || tool_rail_motion.is_some() {
             theme.live_shell.transcript_glyphs.rail
         } else {
             TRANSCRIPT_RAIL_GLYPH
@@ -1076,7 +1015,9 @@ fn resolve_assistant_body_content(
     } else {
         0
     };
-    let selection_rows = if *streaming
+    let mut selection_rows = if *streaming
+        && !text.contains("```")
+        && !text.contains("~~~")
         && !text.contains("](")
         && !text.contains("http://")
         && !text.contains("https://")
@@ -1085,7 +1026,7 @@ fn resolve_assistant_body_content(
     } else {
         selection_rows_for_rich_text_block(
             text,
-            theme.text.primary,
+            theme.markdown.text,
             TRANSCRIPT_ASSISTANT_BODY_PREFIX,
             theme,
             content_width,
@@ -1098,7 +1039,7 @@ fn resolve_assistant_body_content(
         append_streaming_rich_text_block(
             &mut lines,
             text,
-            theme.text.primary,
+            theme.markdown.text,
             TRANSCRIPT_ASSISTANT_BODY_PREFIX,
             theme,
             content_width,
@@ -1107,11 +1048,20 @@ fn resolve_assistant_body_content(
         append_rich_text_block(
             &mut lines,
             text,
-            theme.text.primary,
+            theme.markdown.text,
             TRANSCRIPT_ASSISTANT_BODY_PREFIX,
             theme,
             content_width,
         );
+    }
+    while lines
+        .last()
+        .is_some_and(|line| line.to_string().trim().is_empty())
+    {
+        lines.pop();
+    }
+    if let Some(rows) = &mut selection_rows {
+        rows.truncate(lines.len().saturating_sub(prefix_rows));
     }
     AssistantBodyContent {
         lines,
@@ -1176,7 +1126,7 @@ struct ReasoningBlockContext<'a> {
 #[derive(Clone, Default)]
 struct ReasoningBlockLayout {
     body_start: Option<usize>,
-    selection_rows: Vec<Option<ReasoningSelectionMetadata>>,
+    selection_rows: Vec<Option<TranscriptSelectionRow>>,
 }
 
 fn append_reasoning_block(
@@ -1219,27 +1169,34 @@ fn append_reasoning_block(
     }
 
     let completed = !active;
-    let disclosure_marker = ((selected || hovered) && !expanded).then(|| {
-        if theme.glyph_mode() == crate::theme::GlyphMode::Ascii {
-            ">"
-        } else {
-            "›"
-        }
-    });
     let marker_color = if active {
-        theme.text.tertiary
+        theme.terminal_colors.muted
     } else if expanded {
         super::ui_transcript_style::blend_color(surface, theme.text.primary, 0.5)
     } else {
         header_color
     };
-    let mut header_spans = Vec::with_capacity(3);
-    if let Some(disclosure_marker) = disclosure_marker {
-        header_spans.push(Span::styled(
-            format!("{disclosure_marker} "),
-            Style::default().fg(marker_color),
-        ));
-    }
+    let mut header_spans = vec![Span::styled(
+        format!(
+            "{} ",
+            if selected || hovered {
+                if theme.glyph_mode() == crate::theme::GlyphMode::Ascii {
+                    if expanded {
+                        "v"
+                    } else {
+                        ">"
+                    }
+                } else if expanded {
+                    "⌄"
+                } else {
+                    "›"
+                }
+            } else {
+                theme.live_shell.transcript_glyphs.tool_marker
+            }
+        ),
+        Style::default().fg(marker_color),
+    )];
     if completed {
         header_spans.push(Span::styled("Thought", label_style));
         if let Some(duration_ms) = duration_ms {
@@ -1251,7 +1208,7 @@ fn append_reasoning_block(
     } else {
         header_spans.push(Span::styled("Thinking…", label_style));
     }
-    let content_prefix = if active || expanded { "   " } else { "  " };
+    let content_prefix = "   ";
     append_prefixed_wrapped_spans_line(lines, content_prefix, prefix_style, header_spans, width);
 
     if completed && !expanded {
@@ -1304,23 +1261,17 @@ fn reasoning_selection_rows(
     lines
         .iter()
         .enumerate()
-        .map(|(index, line)| {
+        .map(|(index, _line)| {
             let Some(metadata) = layout
                 .body_start
                 .and_then(|start| index.checked_sub(start))
                 .and_then(|body_index| layout.selection_rows.get(body_index))
-                .copied()
+                .cloned()
                 .flatten()
             else {
                 return blank_selection_row(width);
             };
-            let mut row = selection_rows_for_rendered_line(line, width)
-                .into_iter()
-                .next()
-                .unwrap_or_else(|| blank_selection_row(width));
-            row.continues_previous = metadata.continues_previous;
-            row.copy_offset = metadata.copy_offset;
-            row
+            metadata
         })
         .collect()
 }
@@ -1371,390 +1322,103 @@ fn reasoning_summary(text: &str) -> (Option<String>, String) {
 
 fn build_context_tool_group_render_surface(
     turn: &TranscriptTurnSection,
-    tool_calls: &[&TranscriptToolCallSection],
+    group: &super::ui_transcript_groups::TranscriptToolGroup,
     theme: &Theme,
     width: u16,
     base_surface: Color,
-    append_footer: bool,
-    assistant_icon: &str,
-    assistant_color: Color,
-    assistant_status: &str,
-) -> Result<TranscriptVisualEntryDraft, TranscriptGrammarError> {
-    let mut lines = Vec::new();
-    let mut interaction_rows = Vec::new();
-    let ids = tool_calls
+) -> TranscriptVisualEntryDraft {
+    let tools = group
+        .members
         .iter()
-        .map(|tool| tool.tool_call_id.as_str())
+        .filter_map(|&index| turn.assistant_parts[index].tool_call())
         .collect::<Vec<_>>();
-    let spec = super::ui_transcript_block_grammar::normalize_turn_blocks(turn)
-        .into_iter()
-        .find(|spec| match &spec.content {
-            TranscriptBlockContent::Tool {
-                family: TranscriptToolFamily::Group,
-                ids: spec_ids,
-                ..
-            } => spec_ids.iter().map(String::as_str).eq(ids.iter().copied()),
-            _ => false,
-        })
-        .ok_or(TranscriptGrammarError::InvalidGrouping)?;
-    let policy = match &spec.content {
-        TranscriptBlockContent::Tool { policy, .. } => policy,
-        TranscriptBlockContent::UserMessage { .. }
-        | TranscriptBlockContent::AssistantBody { .. }
-        | TranscriptBlockContent::Reasoning { .. }
-        | TranscriptBlockContent::Footer { .. }
-        | TranscriptBlockContent::Error { .. }
-        | TranscriptBlockContent::Compaction { .. } => {
-            return Err(TranscriptGrammarError::InvalidGrouping);
-        }
-        #[cfg(test)]
-        TranscriptBlockContent::Synthetic { .. } => {
-            return Err(TranscriptGrammarError::InvalidGrouping);
-        }
-    };
-    let command_group = policy.group_class == Some(TranscriptToolGroupClass::Commands);
-    let kind = TranscriptRenderSurfaceKind::AssistantTool;
-    let width =
-        transcript_surface_render_width(width.saturating_sub(policy.trailing_gap_cells), kind);
-    let group_summary = TranscriptToolGroupSummary::from_tool_calls(tool_calls)
-        .ok_or(TranscriptGrammarError::InvalidGrouping)?;
-    let surface = if command_group {
-        theme.terminal_colors.canvas
+    let expanded = group.summary.disclosure == TranscriptToolDisclosureMode::Expanded;
+    let context_group = group.summary.kind == TranscriptToolGroupKind::Context;
+    let described = group
+        .members
+        .iter()
+        .filter(|index| context_group || expanded || group.hidden.binary_search(index).is_ok())
+        .filter_map(|&index| turn.assistant_parts[index].tool_call())
+        .collect::<Vec<_>>();
+    let label = TranscriptToolGroupSummary::from_tool_calls(&described);
+    let failed = label
+        .as_ref()
+        .is_some_and(|summary| summary.failed_count > 0);
+    let active = context_group && group.summary.running_count + group.summary.queued_count > 0;
+    let color = if failed && context_group {
+        theme.terminal_colors.error
+    } else if active {
+        theme.text.tertiary
     } else {
-        base_surface
+        theme.text.secondary
     };
-    let mut tool_rail_motion = tool_calls.iter().rev().find_map(|tool_call| {
-        matches!(
-            tool_call.header.presentation.status,
-            ToolCallPresentationStatus::Running
-        )
-        .then_some(tool_call.rail_motion)
-        .filter(|motion| matches!(motion, ToolRailMotion::Running { .. }))
-    });
-    let aggregate_status = context_group_status(tool_calls, &group_summary, command_group);
-    fn context_group_status(
-        tool_calls: &[&TranscriptToolCallSection],
-        group_summary: &TranscriptToolGroupSummary,
-        command_group: bool,
-    ) -> ToolCallPresentationStatus {
-        if command_group {
-            dominant_tool_group_status(tool_calls)
-        } else if group_summary.failed_count > 0 {
-            ToolCallPresentationStatus::Failed
-        } else if group_summary.running_count > 0 {
-            ToolCallPresentationStatus::Running
-        } else if group_summary.queued_count > 0 {
-            ToolCallPresentationStatus::Queued
-        } else if group_summary.cancelled_count > 0 {
-            ToolCallPresentationStatus::Cancelled
-        } else {
-            ToolCallPresentationStatus::Succeeded
-        }
+    let mut spans = vec![
+        Span::raw(TRANSCRIPT_ASSISTANT_BODY_PREFIX),
+        Span::styled(
+            format!("{} ", theme.live_shell.transcript_glyphs.group_marker),
+            Style::default().fg(color),
+        ),
+        Span::styled(
+            label.as_ref().map_or_else(
+                || format!("{} more", group.hidden.len()),
+                TranscriptToolGroupSummary::semantic_core_label,
+            ),
+            Style::default()
+                .fg(theme.text.tertiary)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ];
+    if let Some(summary) = label.filter(|summary| summary.failed_count > 0) {
+        spans.push(Span::styled(
+            format!(" · {} failed", summary.failed_count),
+            Style::default().fg(theme.terminal_colors.error),
+        ));
     }
-    if !command_group && aggregate_status == ToolCallPresentationStatus::Failed {
-        tool_rail_motion = None;
-    }
-    let rail_color = if tool_calls.is_empty() {
-        theme.border.subtle
-    } else if !command_group && aggregate_status == ToolCallPresentationStatus::Succeeded {
-        blend_color(base_surface, theme.text.accent, 0.5)
-    } else {
-        tool_rail_color(aggregate_status, theme)
-    };
-    let group_expanded = policy.disclosure == TranscriptToolDisclosure::Expanded;
-    let group_preview_visible = policy.disclosure == TranscriptToolDisclosure::Preview;
-    let group_disclosure = (!tool_calls.is_empty()).then_some(if group_expanded {
-        TranscriptToolCallDisclosureState::Expanded
-    } else {
-        TranscriptToolCallDisclosureState::Collapsed
-    });
-    fn group_header_spans(
-        command_group: bool,
-        tool_count: usize,
-        group_summary: &TranscriptToolGroupSummary,
-        aggregate_status: ToolCallPresentationStatus,
-        rail_color: Color,
-        theme: &Theme,
-    ) -> Vec<Span<'static>> {
-        if command_group {
-            vec![
-                Span::styled(
-                    format!("{} ", theme.live_shell.transcript_glyphs.group_marker),
-                    Style::default().fg(theme.terminal_colors.secondary),
-                ),
-                Span::styled(
-                    "Ran ",
-                    Style::default()
-                        .fg(theme.terminal_colors.secondary)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(
-                    format!(
-                        "{} command{}",
-                        tool_count,
-                        if tool_count == 1 { "" } else { "s" }
-                    ),
-                    Style::default().fg(theme.terminal_colors.secondary),
-                ),
-            ]
-        } else {
-            let marker_color = if matches!(
-                aggregate_status,
-                ToolCallPresentationStatus::Running
-                    | ToolCallPresentationStatus::Queued
-                    | ToolCallPresentationStatus::Failed
-            ) {
-                rail_color
-            } else {
-                theme.terminal_colors.secondary
-            };
-            vec![
-                Span::styled(
-                    format!("{} ", theme.live_shell.transcript_glyphs.group_marker),
-                    Style::default().fg(marker_color),
-                ),
-                Span::styled(
-                    group_summary.semantic_core_label(),
-                    Style::default()
-                        .fg(theme.terminal_colors.secondary)
-                        .add_modifier(Modifier::BOLD),
-                ),
-            ]
-        }
-    }
-    let mut summary = group_header_spans(
-        command_group,
-        tool_calls.len(),
-        &group_summary,
-        aggregate_status,
-        rail_color,
-        theme,
+    let mut line = Line::from(spans);
+    truncate_line_to_width(
+        &mut line,
+        usize::from(transcript_surface_content_width(width, false)),
     );
-    if group_summary.failed_count > 0 {
-        let count_style = Style::default().fg(theme.terminal_colors.error);
-        summary.push(Span::styled(" · ", count_style));
-        summary.push(Span::styled(
-            format!("{} failed", group_summary.failed_count),
-            count_style,
-        ));
-    }
-    if let Some(disclosure) = tool_header_disclosure_glyph(group_disclosure, theme) {
-        summary.push(Span::styled("  ", muted_meta_style(theme)));
-        summary.push(Span::styled(disclosure, muted_meta_style(theme)));
-    }
-
-    let summary_prefix = TRANSCRIPT_ASSISTANT_BODY_PREFIX.to_string();
-    if !command_group || group_expanded {
-        append_surface_row(
-            &mut lines,
-            &summary_prefix,
-            surface,
-            summary,
-            transcript_surface_content_width(width, false),
-        );
-    }
-
-    if command_group || group_preview_visible || group_expanded {
-        let detail_prefix = TRANSCRIPT_ASSISTANT_BODY_PREFIX.to_string();
-        let preview_index = context_group_preview_index(tool_calls);
-        let dense_start = policy.hidden_count();
-        if dense_start > 0 {
-            append_surface_row(
-                &mut lines,
-                &detail_prefix,
-                surface,
-                vec![Span::styled(
-                    format!(
-                        "{} {dense_start} more",
-                        theme.live_shell.transcript_glyphs.disclosure_closed
-                    ),
-                    muted_meta_style(theme),
-                )],
-                transcript_surface_content_width(width, false),
-            );
-        }
-        let visible_tool_calls = if command_group || group_expanded {
-            &tool_calls[dense_start..]
-        } else {
-            &tool_calls[preview_index..tool_calls.len().min(preview_index + 1)]
-        };
-        fn context_group_member_lines(
-            tool_call: &TranscriptToolCallSection,
-            theme: &Theme,
-            width: u16,
-            surface: Color,
-            detail_prefix: &str,
-            group_expanded: bool,
-        ) -> Vec<Line<'static>> {
-            let mut lines = Vec::new();
-            let member_accent = inline_tool_color(tool_call.header.presentation.status, theme);
-            let mut header = tool_call.header.clone();
-            if group_expanded {
-                header.disclosure_state = Some(TranscriptToolCallDisclosureState::Expanded);
+    let target = if context_group && group.target_ids.len() == 1 && !tools[0].replay_read_only {
+        tools[0].child_session_id.as_ref().map(|session_id| {
+            TranscriptMouseTarget::SubagentSession {
+                session_id: session_id.clone(),
             }
-            let spans = super::ui_transcript_tool_render::build_tool_header_spans(
-                &header,
-                theme,
-                tool_call_header_style(header.struck_out, theme.terminal_colors.secondary),
-                Style::default().fg(member_accent),
-                usize::from(transcript_surface_content_width(width, false))
-                    .saturating_sub(surface_prefix_width(detail_prefix)),
-            );
-            append_surface_row(
-                &mut lines,
-                &detail_prefix,
-                surface,
-                spans,
-                transcript_surface_content_width(width, false),
-            );
-            if group_expanded && tool_call.details_visible() {
-                let mut detail_render = ToolSectionRender {
-                    lines: Vec::new(),
-                    interaction_rows: Vec::new(),
-                    diff_hunk_offsets: Vec::new(),
-                };
-                super::ui_transcript_tool_render::append_tool_call_detail_blocks(
-                    &mut detail_render,
-                    tool_call,
-                    theme,
-                    width,
-                    surface,
-                    None,
-                );
-                lines.extend(detail_render.lines);
-            }
-            lines
-        }
-        for tool_call in visible_tool_calls {
-            interaction_rows.resize(lines.len(), None);
-            if command_group {
-                let rendered = super::ui_transcript_tool_render::append_tool_call_section_lines(
-                    tool_call, theme, width, surface,
-                );
-                lines.extend(rendered.lines);
-                interaction_rows.extend(rendered.interaction_rows);
-                continue;
-            }
-            let start = lines.len();
-            lines.extend(context_group_member_lines(
-                tool_call,
-                theme,
-                width,
-                surface,
-                &detail_prefix,
-                group_expanded,
-            ));
-            interaction_rows.resize(lines.len(), None);
-            if start < lines.len() {
-                interaction_rows[start] =
-                    Some(full_width_interaction_row(TranscriptMouseTarget::Tool {
-                        tool_call_id: tool_call.tool_call_id.clone(),
-                    }));
-            }
-        }
+        })
+    } else {
+        None
     }
-
-    if append_footer {
-        if !lines.is_empty() && !lines.last().is_some_and(|line| line.spans.is_empty()) {
-            lines.push(Line::default());
-        }
-        lines.push(build_assistant_footer_line(
-            turn,
-            assistant_icon,
-            assistant_color,
-            assistant_status,
-            theme,
-            transcript_surface_content_width(width, false),
-        ));
+    .unwrap_or_else(|| TranscriptMouseTarget::ToolGroup {
+        tool_call_ids: group.target_ids.clone(),
+    });
+    if tools.first().and_then(|tool| tool.hovered_target.as_ref()) == Some(&target) {
+        super::ui_transcript_tool_render::apply_header_hover(&mut line, expanded, theme);
     }
-
-    interaction_rows.resize(lines.len(), None);
-    if !interaction_rows.is_empty() {
-        let target = if !command_group && tool_calls.len() == 1 {
-            let tool_call = tool_calls[0];
-            if tool_call.replay_read_only {
-                TranscriptMouseTarget::ToolGroup {
-                    tool_call_ids: vec![tool_call.tool_call_id.clone()],
-                }
-            } else {
-                tool_call.child_session_id.as_ref().map_or_else(
-                    || TranscriptMouseTarget::ToolGroup {
-                        tool_call_ids: vec![tool_call.tool_call_id.clone()],
-                    },
-                    |session_id| TranscriptMouseTarget::SubagentSession {
-                        session_id: session_id.clone(),
-                    },
-                )
-            }
-        } else {
-            TranscriptMouseTarget::ToolGroup {
-                tool_call_ids: tool_calls
-                    .iter()
-                    .map(|tool_call| tool_call.tool_call_id.clone())
-                    .collect(),
-            }
-        };
-        interaction_rows[0] = Some(full_width_interaction_row(target));
-    }
-
-    let raw = TranscriptVisualEntryDraft {
-        kind,
+    TranscriptVisualEntryDraft {
+        kind: TranscriptRenderSurfaceKind::AssistantTool,
         leading_gap_rows: 0,
         trailing_gap_rows: 0,
         placement: TranscriptBlockPlacement::Flow,
-        show_outer_rail: true,
-        rail_glyph: context_group_rail_glyph(aggregate_status, theme),
-        rail_color,
-        surface,
-        lines,
-        interaction_rows: Some(interaction_rows),
+        show_outer_rail: false,
+        rail_glyph: theme.live_shell.transcript_glyphs.rail,
+        rail_color: color,
+        surface: base_surface,
+        lines: vec![line],
+        interaction_rows: Some(vec![Some(full_width_interaction_row(target))]),
         selection_rows: None,
         diff_hunk_offsets: Vec::new(),
         selected_rail: false,
-        tool_rail_motion,
-    };
-    Ok(raw)
-}
-
-fn context_group_rail_glyph(_status: ToolCallPresentationStatus, theme: &Theme) -> &'static str {
-    theme.live_shell.transcript_glyphs.rail
-}
-
-fn context_group_preview_index(tool_calls: &[&TranscriptToolCallSection]) -> usize {
-    for status in [
-        ToolCallPresentationStatus::Waiting,
-        ToolCallPresentationStatus::Running,
-        ToolCallPresentationStatus::Queued,
-    ] {
-        if let Some(index) = tool_calls
-            .iter()
-            .position(|tool_call| tool_call.header.presentation.status == status)
-        {
-            return index;
-        }
+        tool_rail_motion: (active && !failed && turn.motion_enabled).then_some(
+            ToolRailMotion::Running {
+                elapsed: Duration::from_millis(
+                    u64::try_from(turn.animation_phase)
+                        .unwrap_or(u64::MAX)
+                        .saturating_mul(crate::scheduling::active_animation_period_ms()),
+                ),
+                sampled_phase: turn.animation_phase,
+            },
+        ),
     }
-    0
-}
-
-fn dominant_tool_group_status(
-    tool_calls: &[&TranscriptToolCallSection],
-) -> ToolCallPresentationStatus {
-    for status in [
-        ToolCallPresentationStatus::Waiting,
-        ToolCallPresentationStatus::Running,
-        ToolCallPresentationStatus::Queued,
-        ToolCallPresentationStatus::Failed,
-        ToolCallPresentationStatus::Cancelled,
-        ToolCallPresentationStatus::Succeeded,
-    ] {
-        if tool_calls
-            .iter()
-            .any(|tool_call| tool_call.header.presentation.status == status)
-        {
-            return status;
-        }
-    }
-    ToolCallPresentationStatus::Succeeded
 }
 
 const fn tool_rail_color(status: ToolCallPresentationStatus, theme: &Theme) -> Color {
@@ -1997,10 +1661,7 @@ fn format_thought_duration_ms(duration_ms: u64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        build_transcript_render_surfaces, build_user_surface_lines, context_group_rail_glyph,
-        reasoning_summary,
-    };
+    use super::{build_transcript_render_surfaces, build_user_surface_lines, reasoning_summary};
     use crate::{
         app::{ActivityStatus, ActivityUsage, AppState, ToolCallDisplayStatus},
         theme::{GlyphMode, Theme},
@@ -2011,25 +1672,6 @@ mod tests {
         ToolCallRequestedEvent, ToolCallStartedEvent, ToolCallStatus, SCHEMA_VERSION,
     };
     use ratatui::{backend::TestBackend, layout::Rect, Terminal};
-
-    #[test]
-    fn context_group_rails_follow_the_theme_glyph_catalog() {
-        // Given: preferred and ASCII themes.
-        let preferred = Theme::default();
-        let ascii = preferred.with_glyph_mode(GlyphMode::Ascii);
-
-        // When: a non-scrollbar transcript rail is selected.
-        let rails = [
-            context_group_rail_glyph(
-                crate::app::ToolCallPresentationStatus::Succeeded,
-                &preferred,
-            ),
-            context_group_rail_glyph(crate::app::ToolCallPresentationStatus::Running, &ascii),
-        ];
-
-        // Then: preferred remains one cell and fallback is ASCII-safe.
-        assert_eq!(rails, [preferred.live_shell.transcript_glyphs.rail, "|"]);
-    }
 
     fn lifecycle_event(seq: u64, request_id: &str, payload: EventV1) -> EventEnvelopeV1 {
         EventEnvelopeV1 {
@@ -2065,6 +1707,7 @@ mod tests {
 
     fn ui10_diff_turn(highlight_syntax: bool) -> super::super::TranscriptTurnSection {
         let tool = super::super::TranscriptToolCallSection {
+            group: Default::default(),
             tool_call_id: "edit-ui10".to_string(),
             coalesced_tool_call_ids: vec!["edit-ui10".to_string()],
             child_session_id: None,
@@ -2087,6 +1730,7 @@ mod tests {
             },
             detail_blocks: vec![
                 super::super::TranscriptToolCallDetailBlock::StructuredDiff {
+                    before_source: None,
                     diff_content: concat!(
                         "--- src/lib.rs\n",
                         "+++ src/lib.rs\n",
@@ -2593,6 +2237,7 @@ mod tests {
         // Given: adjacent commands with one successful and one failed member.
         let command = |id: &str, title: &str, status: ToolCallDisplayStatus| {
             super::super::TranscriptToolCallSection {
+                group: Default::default(),
                 tool_call_id: id.to_string(),
                 coalesced_tool_call_ids: vec![id.to_string()],
                 child_session_id: None,
@@ -2664,28 +2309,21 @@ mod tests {
 
         // When: the mixed-status group is rendered.
         let theme = Theme::default();
-        let tools = turn.assistant_tools().collect::<Vec<_>>();
-        let group = super::build_context_tool_group_render_surface(
-            &turn,
-            &tools,
-            &theme,
-            120,
-            ratatui::style::Color::Reset,
-            false,
-            "",
-            ratatui::style::Color::Reset,
-            "",
-        )
-        .expect("valid tool group spec");
+        let entries =
+            build_transcript_render_surfaces(&turn, &theme, 120, ratatui::style::Color::Reset);
+        let lines = entries
+            .iter()
+            .flat_map(|entry| &entry.lines)
+            .collect::<Vec<_>>();
         let row_has_error_color = |needle: &str| {
-            let row = group.lines.iter().find(|line| {
+            let row = lines.iter().find(|line| {
                 line.spans
                     .iter()
                     .map(|span| span.content.as_ref())
                     .collect::<String>()
                     .contains(needle)
             });
-            assert!(row.is_some(), "missing {needle}: {:#?}", group.lines);
+            assert!(row.is_some(), "missing {needle}: {lines:#?}");
             row.expect("command member row")
                 .spans
                 .iter()
@@ -2708,6 +2346,7 @@ mod tests {
             details: Vec<super::super::TranscriptToolCallDetailBlock>,
         ) -> super::super::TranscriptToolCallSection {
             super::super::TranscriptToolCallSection {
+                group: Default::default(),
                 tool_call_id: id.to_string(),
                 coalesced_tool_call_ids: vec![id.to_string()],
                 child_session_id: None,
@@ -2821,7 +2460,9 @@ mod tests {
                 .collect::<Vec<_>>();
             assert!(
                 backgrounds.iter().all(|background| {
-                    background.is_none() || *background == Some(ratatui::style::Color::Rgb(1, 2, 3))
+                    background.is_none()
+                        || *background == Some(ratatui::style::Color::Rgb(1, 2, 3))
+                        || *background == Some(theme.markdown.code_background)
                 }),
                 "{backgrounds:?}"
             );
@@ -2972,15 +2613,15 @@ mod tests {
                     .map(|span| span.content.as_ref())
                     .collect::<String>()
             })
-            .find(|line| line.contains("2 more"))
+            .find(|line| line.contains("Ran 2 commands"))
             .expect("dense fold affordance");
 
         // assert
         assert_eq!(
             affordance.trim(),
             format!(
-                "{} 2 more",
-                theme.live_shell.transcript_glyphs.disclosure_closed
+                "{} Ran 2 commands",
+                theme.live_shell.transcript_glyphs.group_marker
             )
         );
         app.activities[0].tool_calls.truncate(11);
@@ -3062,12 +2703,21 @@ mod tests {
         let flashed = build_transcript_render_surfaces(&turn, &theme, 80, theme.surface.canvas);
         assert_eq!(settled[0].lines.len(), flashed[0].lines.len());
         assert_eq!(settled[0].lines[0], flashed[0].lines[0]);
-        assert!(flashed[0].lines.iter().skip(1).any(|line| {
-            super::super::ui_transcript_surface::line_has_tool_rail(
-                line,
-                theme.live_shell.transcript_glyphs.rail,
-            )
-        }));
+        let rails = flashed[0]
+            .lines
+            .iter()
+            .skip(1)
+            .filter(|line| {
+                super::super::ui_transcript_surface::line_has_tool_rail(
+                    line,
+                    theme.live_shell.transcript_glyphs.rail,
+                )
+            })
+            .collect::<Vec<_>>();
+        assert!(!rails.is_empty());
+        assert!(rails
+            .iter()
+            .all(|line| line.spans[0].style.fg == Some(theme.status.success)));
         for (before, after) in settled[0].lines.iter().zip(&flashed[0].lines) {
             assert_eq!(before.width(), after.width());
         }

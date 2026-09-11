@@ -1,7 +1,6 @@
 // allow: SIZE_OK — TUI rendering (indivisible view model)
 use super::*;
 
-use crate::app::StartupReveal;
 use crate::welcome_surface::{WelcomeFocus, WelcomeLayout};
 use ratatui::widgets::{BorderType, Clear};
 use unicode_width::UnicodeWidthStr;
@@ -152,7 +151,6 @@ pub(crate) fn render_startup_lifecycle_flow(
     render_startup_breadcrumb(frame, app, area, theme);
 
     if app.welcome_visible() {
-        render_startup_clipboard_warning(frame, app, area, theme);
         render_welcome_panel(frame, app, area, theme);
     }
 
@@ -202,26 +200,29 @@ fn startup_breadcrumb_text(app: &AppState) -> String {
 }
 
 fn startup_breadcrumb_parts(app: &AppState) -> (String, String) {
-    let label = app.startup_directory_branch_label();
-    if let Some((path, branch)) = label.rsplit_once(':') {
-        let branch = branch.trim();
-        if !branch.is_empty() && !branch.contains('/') && !branch.contains('\\') {
-            return (format!("  git:{branch}"), path.to_owned());
-        }
-    }
-    (format!("  {label}"), String::new())
+    let facts = &app.workspace_display;
+    let branch = facts
+        .branch
+        .as_ref()
+        .map(|branch| format!("git:{branch}"))
+        .or_else(|| facts.detached.then(|| "git:detached".to_string()))
+        .unwrap_or_default();
+    let provenance = if facts.linked_worktree {
+        " worktree"
+    } else {
+        ""
+    };
+    (format!("  {branch}{provenance}"), facts.directory.clone())
 }
 
 fn live_breadcrumb_text(app: &AppState, width: u16) -> String {
-    let prefix = " ".repeat(usize::from(crate::layout::composer_horizontal_inset(width)));
-    let label = app.startup_directory_branch_label();
-    if let Some((path, branch)) = label.rsplit_once(':') {
-        let branch = branch.trim();
-        if !branch.is_empty() && !branch.contains('/') && !branch.contains('\\') {
-            return format!("{prefix}git:{branch} {path}");
-        }
-    }
-    format!("{prefix}{label}")
+    let (prefix, path) = startup_breadcrumb_parts(app);
+    format!(
+        "{}{} {}",
+        " ".repeat(usize::from(crate::layout::composer_horizontal_inset(width))),
+        prefix.trim(),
+        path
+    )
 }
 
 pub(super) const LIVE_BREADCRUMB_RESERVE_ROWS: u16 = 2;
@@ -259,7 +260,10 @@ fn render_startup_breadcrumb(frame: &mut Frame, app: &AppState, area: Rect, them
         frame.render_widget(
             Paragraph::new(Line::from(vec![
                 Span::styled("  ", Style::default().bg(theme.surface.canvas)),
-                Span::styled(dimmed_prefix.to_string(), dim),
+                Span::styled(
+                    dimmed_prefix.to_string(),
+                    dim.fg(theme.text.accent).remove_modifier(Modifier::DIM),
+                ),
             ])),
             Rect {
                 width: u16::try_from(prefix_width)
@@ -314,24 +318,45 @@ pub(super) fn render_live_breadcrumb(frame: &mut Frame, app: &AppState, area: Re
         .fg(theme.text.tertiary)
         .bg(theme.surface.canvas)
         .add_modifier(Modifier::DIM);
-    let line = context_meta
-        .as_deref()
-        .filter(|meta| text.ends_with(*meta))
-        .map_or_else(
-            || Line::from(Span::styled(text.clone(), dim)),
-            |meta| {
-                let split = text.len().saturating_sub(meta.len());
-                Line::from(vec![
-                    Span::styled(text[..split].to_string(), dim),
-                    Span::styled(
-                        meta.to_string(),
-                        Style::default()
-                            .fg(theme.text.primary)
-                            .bg(theme.surface.canvas),
-                    ),
-                ])
-            },
-        );
+    let metadata = context_meta.as_deref().filter(|meta| text.ends_with(*meta));
+    let split = text.len().saturating_sub(metadata.map_or(0, str::len));
+    let left = &text[..split];
+    let (prefix, _) = startup_breadcrumb_parts(app);
+    let prefix = format!(
+        "{}{}",
+        " ".repeat(usize::from(crate::layout::composer_horizontal_inset(
+            area.width
+        ))),
+        prefix.trim()
+    );
+    let branch_end = if prefix.trim().is_empty() {
+        0
+    } else {
+        left.char_indices()
+            .nth(prefix.chars().count())
+            .map_or(left.len(), |(byte, _)| byte)
+    };
+    let mut spans = vec![
+        Span::styled(
+            left[..branch_end].to_owned(),
+            dim.fg(theme.text.accent).remove_modifier(Modifier::DIM),
+        ),
+        Span::styled(
+            left[branch_end..].to_owned(),
+            Style::default()
+                .fg(theme.text.primary)
+                .bg(theme.surface.canvas),
+        ),
+    ];
+    if let Some(meta) = metadata {
+        spans.push(Span::styled(
+            meta.to_owned(),
+            Style::default()
+                .fg(theme.text.primary)
+                .bg(theme.surface.canvas),
+        ));
+    }
+    let line = Line::from(spans);
     frame.render_widget(Paragraph::new(line), row);
 }
 
@@ -498,353 +523,162 @@ fn welcome_action_spans(theme: &Theme, row: WelcomeActionLine) -> Vec<Span<'stat
     ]
 }
 
-fn welcome_inner_lines(
-    theme: &Theme,
-    inner_width: usize,
-    app: &AppState,
-    inline_copy: bool,
-) -> Vec<Line<'static>> {
-    let surface = theme.surface.canvas;
-    let title_style = Style::default()
-        .fg(theme.text.primary)
-        .bg(surface)
-        .add_modifier(Modifier::BOLD);
-    let muted = Style::default().fg(theme.text.secondary).bg(surface);
-    let body = Style::default().fg(theme.text.primary).bg(surface);
-    let section = welcome_changelog_section_style(theme, app);
-    let identity = welcome::welcome_identity(theme.live_shell.startup.title);
-    let changelog_bullets = welcome::changelog_bullets();
-    let action_col = WELCOME_ACTION_COL;
-
-    let mut lines = Vec::new();
-    lines.push(Line::from(Span::styled(" ", muted)));
-
-    let logo =
-        crate::startup_logo::full_logo(theme.glyph_mode() == crate::theme::GlyphMode::Preferred);
-    let logo_width = logo.map_or(0, crate::startup_logo::Logo::width);
-    let reveal = app.startup_reveal();
-    let expanded = reveal == StartupReveal::Complete;
-    let line_count = logo.map_or(7, crate::startup_logo::Logo::height);
-    for idx in 0..line_count {
-        let mut spans = logo
-            .filter(|logo| idx < logo.height())
-            .map_or_else(Vec::new, |logo| {
-                crate::startup_logo::row_spans(logo, idx, theme.text.secondary)
-            });
-        for span in &mut spans {
-            span.style = span.style.bg(surface);
+fn welcome_content_lines(app: &AppState, area: Rect, theme: &Theme) -> (Rect, Vec<Line<'static>>) {
+    let layout = app.welcome_layout(area);
+    let content = rect_from_tuple(layout.content_rect);
+    let mut lines = vec![Line::default(); usize::from(content.height)];
+    let mut put = |rect: (u16, u16, u16, u16), line: Line<'static>| {
+        if rect.2 == 0 || rect.3 == 0 {
+            return;
         }
-        match idx {
-            0 if inline_copy && reveal >= StartupReveal::Identity => {
-                let title_text = format!("   {:<10}  ", identity.title);
-                let version_text = welcome_text_after_logo(
-                    &format!("{title_text}{}", identity.version),
-                    inner_width,
-                    logo_width,
-                );
-                let title_prefix = welcome_text_after_logo(&title_text, inner_width, logo_width);
-                let title_len = title_prefix.chars().count();
-                if version_text.chars().count() > title_len {
-                    spans.push(Span::styled(title_prefix, title_style));
-                    spans.push(Span::styled(
-                        version_text.chars().skip(title_len).collect::<String>(),
-                        muted,
-                    ));
-                } else {
-                    spans.push(Span::styled(version_text, title_style));
-                }
-            }
-            1 if inline_copy && !expanded && reveal >= StartupReveal::Identity => {
-                spans.push(Span::styled(
-                    welcome_text_after_logo(
-                        "   Thanks for trying Harness, give feedback with /feedback!",
-                        inner_width,
-                        logo_width,
-                    ),
-                    body,
-                ))
-            }
-            2 if inline_copy && expanded => spans.push(Span::styled(
-                welcome_text_after_logo("   Changelog", inner_width, logo_width),
-                section,
-            )),
-            4..=6 if expanded => spans.push(Span::styled(
-                welcome_text_after_logo(
-                    &format!("    • {}", changelog_bullets[idx - 4]),
-                    inner_width,
-                    logo_width,
+        let Some(row) = lines.get_mut(usize::from(rect.1.saturating_sub(content.y))) else {
+            return;
+        };
+        let offset = usize::from(rect.0.saturating_sub(content.x));
+        row.spans
+            .push(Span::raw(" ".repeat(offset.saturating_sub(row.width()))));
+        row.spans.extend(line.spans);
+    };
+    let logo = if layout.panel_rect.is_some() {
+        crate::startup_logo::full_logo(true)
+    } else {
+        crate::startup_logo::for_height(area.height.saturating_add(5), true)
+    };
+    if let Some(logo) = logo.filter(|_| layout.logo_rect.3 > 0) {
+        for row in 0..usize::from(layout.logo_rect.3).min(logo.height()) {
+            put(
+                (
+                    layout.logo_rect.0,
+                    layout.logo_rect.1 + u16::try_from(row).unwrap_or(u16::MAX),
+                    layout.logo_rect.2,
+                    1,
                 ),
-                body,
-            )),
-            3..=6 if !expanded && reveal >= StartupReveal::Affordances => {
-                let (label, shortcut, action_index) = match idx {
-                    3 => ("New worktree", "ctrl+w", Some(0)),
-                    4 => ("Resume session", "ctrl+s", Some(1)),
-                    5 => ("Changelog", "", Some(2)),
-                    6 => ("Quit", "ctrl+q", Some(3)),
-                    _ => ("", "", None),
-                };
-                let prefix_width = action_col.saturating_sub(1).saturating_sub(logo_width);
-                let emphasis = action_index.map_or(WelcomeActionEmphasis::Default, |index| {
-                    welcome_action_emphasis(app, index)
-                });
-                let prefix_surface = match emphasis {
-                    WelcomeActionEmphasis::Default => theme.surface.canvas,
-                    WelcomeActionEmphasis::Hovered => theme.surface.card,
-                    WelcomeActionEmphasis::Focused => theme.surface.selected_card,
-                };
-                spans.push(Span::styled(
-                    " ".repeat(prefix_width),
-                    muted.bg(prefix_surface),
-                ));
-                spans.extend(welcome_action_spans(
+                Line::from(crate::startup_logo::shimmer_row(
+                    logo,
+                    row,
+                    app.startup_motion_elapsed(),
+                    app.transcript_motion_enabled(),
                     theme,
-                    WelcomeActionLine {
-                        label,
-                        shortcut,
-                        width: inner_width.saturating_sub(logo_width.saturating_add(prefix_width)),
-                        emphasis,
-                    },
-                ));
-            }
-            _ => {}
+                )),
+            );
         }
-        lines.push(Line::from(spans));
     }
-
-    if !expanded {
-        lines.push(Line::from(Span::styled(" ", muted)));
-        return lines;
+    let muted = Style::default().fg(theme.text.secondary);
+    let title = Style::default()
+        .fg(theme.text.primary)
+        .add_modifier(Modifier::BOLD);
+    put(
+        layout.identity_rect,
+        Line::from(vec![
+            Span::styled("Harness ", title),
+            Span::styled(env!("CARGO_PKG_VERSION"), muted),
+        ]),
+    );
+    if let Some(header) = layout.changelog_header_rect {
+        put(
+            header,
+            Line::from(Span::styled(
+                "Changelog",
+                welcome_changelog_section_style(theme, app),
+            )),
+        );
     }
-
-    lines.push(Line::from(Span::styled(" ", muted)));
-
-    for (label, shortcut, action_index) in [
-        ("New worktree", "ctrl+w", Some(0)),
-        ("Resume session", "ctrl+s", Some(1)),
-        ("Changelog", "", Some(2)),
-        ("Quit", "ctrl+q", Some(3)),
-    ] {
-        let prefix_width = action_col.saturating_sub(1).min(inner_width);
-        let mut spans = vec![Span::styled(" ".repeat(prefix_width), muted)];
-        spans.extend(welcome_action_spans(
-            theme,
-            WelcomeActionLine {
-                label,
-                shortcut,
-                width: inner_width.saturating_sub(prefix_width),
-                emphasis: action_index.map_or(WelcomeActionEmphasis::Default, |index| {
-                    welcome_action_emphasis(app, index)
-                }),
-            },
-        ));
-        lines.push(Line::from(spans));
-    }
-
-    lines.push(Line::from(Span::styled(" ", muted)));
-
-    lines
-}
-
-fn compact_welcome_lines(
-    theme: &Theme,
-    inner_width: usize,
-    max_lines: usize,
-    _window_height: u16,
-    app: &AppState,
-) -> Vec<Line<'static>> {
-    let surface = theme.surface.canvas;
-    let muted = Style::default().fg(theme.text.secondary).bg(surface);
-    let section_style = welcome_changelog_section_style(theme, app);
-    let identity = welcome::welcome_identity(theme.live_shell.startup.title);
-    let reveal = app.startup_reveal();
-
-    let mut lines = Vec::new();
-    if reveal >= StartupReveal::Mark {
-        let mut spans = vec![Span::styled(
-            truncate_plain_text(identity.title, inner_width),
-            Style::default()
-                .fg(theme.text.primary)
-                .bg(surface)
-                .add_modifier(Modifier::BOLD),
-        )];
-        if reveal >= StartupReveal::Identity {
-            spans.push(Span::styled(
-                truncate_plain_text(
-                    &format!(" {}", identity.version),
-                    inner_width.saturating_sub(identity.title.chars().count()),
-                ),
-                muted,
-            ));
-        }
-        lines.push(Line::from(spans));
-    }
-    if reveal >= StartupReveal::Identity && lines.len() < max_lines {
-        lines.push(Line::from(Span::styled(
-            truncate_plain_text(
-                "Thanks for trying Harness, give feedback with /feedback!",
-                inner_width,
+    let bullet = if theme.glyph_mode() == crate::theme::GlyphMode::Ascii {
+        "*"
+    } else {
+        "•"
+    };
+    let notes = welcome::changelog_bullets()
+        .into_iter()
+        .flat_map(|text| {
+            super::wrap_completion_text(
+                &format!("{bullet} {text}"),
+                usize::from(layout.notes_rect.2),
+            )
+        })
+        .collect::<Vec<_>>();
+    for (index, text) in notes
+        .into_iter()
+        .take(usize::from(layout.notes_rect.3))
+        .enumerate()
+    {
+        put(
+            (
+                layout.notes_rect.0,
+                layout.notes_rect.1 + u16::try_from(index).unwrap_or(u16::MAX),
+                layout.notes_rect.2,
+                1,
             ),
-            muted,
-        )));
+            Line::from(Span::styled(text, muted)),
+        );
     }
-    if reveal >= StartupReveal::Affordances {
-        for (label, shortcut, action_index) in [
-            ("New worktree", "ctrl+w", Some(0)),
-            ("Resume session", "ctrl+s", Some(1)),
-            ("Changelog", "", Some(2)),
-            ("Quit", "ctrl+q", Some(3)),
-        ] {
-            if lines.len() >= max_lines {
-                break;
-            }
-            lines.push(Line::from(welcome_action_spans(
+    for (index, (label, shortcut)) in [
+        ("New worktree", "ctrl+w"),
+        ("Resume session", "ctrl+s"),
+        ("Changelog", ""),
+        ("Quit", "ctrl+q"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let rect = layout.action_rects[index];
+        put(
+            rect,
+            Line::from(welcome_action_spans(
                 theme,
                 WelcomeActionLine {
                     label,
                     shortcut,
-                    width: inner_width,
-                    emphasis: action_index.map_or(WelcomeActionEmphasis::Default, |index| {
-                        welcome_action_emphasis(app, index)
-                    }),
+                    width: usize::from(rect.2),
+                    emphasis: welcome_action_emphasis(app, index),
                 },
-            )));
-        }
-    }
-    let changelog_min_lines = 2 + 1 + 1 + 1;
-    if app.startup_welcome_expanded()
-        && max_lines.saturating_sub(lines.len()) >= changelog_min_lines
-    {
-        lines.push(Line::from(Span::styled(" ", muted)));
-        lines.push(Line::from(Span::styled("Changelog", section_style)));
-        lines.push(Line::from(Span::styled(" ", muted)));
-        for bullet in welcome::changelog_bullets() {
-            if lines.len() >= max_lines {
-                break;
-            }
-            let text = format!("• {bullet}");
-            lines.push(Line::from(Span::styled(
-                truncate_plain_text(&text, inner_width),
-                muted,
-            )));
-        }
-    }
-    lines
-}
-
-fn render_compact_welcome_body(
-    frame: &mut Frame,
-    app: &AppState,
-    area: Rect,
-    window_height: u16,
-    theme: &Theme,
-) {
-    let layout = app.welcome_layout(area);
-    let content = rect_from_tuple(layout.content_rect);
-    if content.width == 0 || content.height == 0 {
-        return;
-    }
-    let surface = theme.surface.canvas;
-    let lines = compact_welcome_lines(
-        theme,
-        usize::from(content.width),
-        usize::from(content.height),
-        window_height,
-        app,
-    );
-    frame.render_widget(
-        Paragraph::new(Text::from(lines)).style(Style::default().bg(surface)),
-        content,
-    );
-}
-
-fn render_welcome_copy(
-    frame: &mut Frame,
-    app: &AppState,
-    layout: &crate::welcome_surface::WelcomeLayout,
-    inner: Rect,
-    theme: &Theme,
-) {
-    let x = inner.x.saturating_add(18);
-    let width = inner.right().saturating_sub(x);
-    if width == 0 {
-        return;
-    }
-    let surface = theme.surface.canvas;
-    let identity = welcome::welcome_identity(theme.live_shell.startup.title);
-    let reveal = app.startup_reveal();
-    if reveal >= StartupReveal::Identity {
-        frame.render_widget(
-            Paragraph::new(Line::from(vec![
-                Span::styled(
-                    format!("{:<10}  ", identity.title),
-                    Style::default()
-                        .fg(theme.text.primary)
-                        .bg(surface)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(
-                    identity.version,
-                    Style::default().fg(theme.text.secondary).bg(surface),
-                ),
-            ])),
-            Rect::new(x, inner.y.saturating_add(1), width, 1),
+            )),
         );
     }
-    let (row, text, style) = if reveal == StartupReveal::Complete {
-        (
-            layout
-                .changelog_header_rect
-                .map_or(inner.y.saturating_add(3), |rect| rect.1),
-            "Changelog",
-            welcome_changelog_section_style(theme, app),
-        )
-    } else if reveal >= StartupReveal::Identity {
-        (
-            inner.y.saturating_add(2),
-            "Thanks for trying Harness, give feedback with /feedback!",
-            Style::default().fg(theme.text.primary).bg(surface),
-        )
-    } else {
-        return;
-    };
-    frame.render_widget(
-        Paragraph::new(Span::styled(
-            truncate_plain_text(text, usize::from(width)),
-            style,
-        )),
-        Rect::new(x, row, width, 1),
-    );
+    if app.status_banner.is_some() {
+        for (index, text) in
+            super::wrap_completion_text(&app.welcome_notice(), usize::from(layout.notices_rect.2))
+                .into_iter()
+                .take(usize::from(layout.notices_rect.3))
+                .enumerate()
+        {
+            put(
+                (
+                    layout.notices_rect.0,
+                    layout.notices_rect.1 + u16::try_from(index).unwrap_or(u16::MAX),
+                    layout.notices_rect.2,
+                    1,
+                ),
+                Line::from(Span::styled(text, muted)),
+            );
+        }
+    }
+    (content, lines)
 }
 
 fn render_welcome_panel(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
     let layout = app.welcome_layout(area);
-    let window_height = area.height;
     if let Some(panel) = layout.panel_rect.map(rect_from_tuple) {
-        let surface = theme.surface.canvas;
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .border_style(
-                Style::default()
-                    .fg(theme.terminal_colors.welcome_border)
-                    .bg(surface),
-            )
-            .style(Style::default().bg(surface));
-        let inner = inset_rect(block.inner(panel), 1, 0);
-        frame.render_widget(block, panel);
-        if inner.width == 0 || inner.height == 0 {
-            return;
-        }
-        let lines = welcome_inner_lines(theme, usize::from(inner.width), app, false);
         frame.render_widget(
-            Paragraph::new(Text::from(lines)).style(Style::default().bg(surface)),
-            inner,
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(if theme.glyph_mode() == crate::theme::GlyphMode::Ascii {
+                    BorderType::Plain
+                } else {
+                    BorderType::Rounded
+                })
+                .border_style(Style::default().fg(theme.terminal_colors.welcome_border))
+                .style(Style::default().bg(theme.surface.canvas)),
+            panel,
         );
-        render_welcome_copy(frame, app, &layout, inner, theme);
-        return;
     }
-    render_compact_welcome_body(frame, app, area, window_height, theme);
+    let (content, lines) = welcome_content_lines(app, area, theme);
+    if content.width > 0 && content.height > 0 {
+        frame.render_widget(
+            Paragraph::new(lines).style(Style::default().bg(theme.surface.canvas)),
+            content,
+        );
+    }
 }
 
 /// Render the folder-trust prompt as a centered overlay dialog.
@@ -854,9 +688,6 @@ fn render_welcome_panel(frame: &mut Frame, app: &AppState, area: Rect, theme: &T
 /// startup content (welcome panel + breadcrumb) with correct z-order.
 fn render_trust_folder_prompt_overlay(frame: &mut Frame, area: Rect, theme: &Theme) {
     let root = frame.area();
-
-    // Dim the backdrop so the dialog stands out.
-    frame.render_widget(Block::default().style(Style::default().dim()), root);
 
     let width = 56u16.min(root.width.saturating_sub(4));
     let height = 9u16.min(root.height.saturating_sub(4));
@@ -939,52 +770,19 @@ fn startup_lifecycle_flow_selection_surface(
     if area.width == 0 || area.height == 0 || !app.welcome_visible() {
         return None;
     }
-    let layout = app.welcome_layout(area);
-    let window_height = area.height;
-    if let Some(panel) = layout.panel_rect.map(rect_from_tuple) {
-        let block = Block::default().borders(Borders::ALL);
-        let content_area = inset_rect(block.inner(panel), 1, 0);
-        if content_area.width == 0 || content_area.height == 0 {
-            return None;
-        }
-        let text_rows = welcome_inner_lines(theme, usize::from(content_area.width), app, true)
+    let (viewport, lines) = welcome_content_lines(app, area, theme);
+    Some(LifecycleSelectionSurface {
+        viewport,
+        text_rows: lines
             .into_iter()
             .enumerate()
-            .map(|(idx, line)| LifecycleSelectableText {
-                row: idx,
+            .map(|(row, line)| LifecycleSelectableText {
+                row,
                 max_height: 1,
                 line,
                 alignment: Alignment::Left,
             })
-            .collect();
-        return Some(LifecycleSelectionSurface {
-            viewport: content_area,
-            text_rows,
-        });
-    }
-    let content_area = rect_from_tuple(layout.content_rect);
-    if content_area.width == 0 || content_area.height == 0 {
-        return None;
-    }
-    let text_rows = compact_welcome_lines(
-        theme,
-        usize::from(content_area.width),
-        usize::from(content_area.height),
-        window_height,
-        app,
-    )
-    .into_iter()
-    .enumerate()
-    .map(|(idx, line)| LifecycleSelectableText {
-        row: idx,
-        max_height: 1,
-        line,
-        alignment: Alignment::Left,
-    })
-    .collect();
-    Some(LifecycleSelectionSurface {
-        viewport: content_area,
-        text_rows,
+            .collect(),
     })
 }
 

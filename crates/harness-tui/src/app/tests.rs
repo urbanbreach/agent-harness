@@ -160,7 +160,7 @@ mod modal_hit_map_parity_tests;
 mod transcript_return_to_live_tests;
 
 delegate_test!(toggles_slash_command_opens_command_styled_menu => toggles_menu_tests::toggles_slash_command_opens_command_styled_menu);
-delegate_test!(yolo_toggle_requires_confirmation_and_enables_entries => toggles_menu_tests::yolo_toggle_requires_confirmation_and_enables_entries);
+delegate_test!(yolo_toggle_changes_coordinator_mode_after_confirmation => toggles_menu_tests::yolo_toggle_changes_coordinator_mode_after_confirmation);
 delegate_test!(toggles_config_drops_primary_profiles_and_keeps_subagents => toggles_menu_tests::toggles_config_drops_primary_profiles_and_keeps_subagents);
 delegate_test!(toggles_config_drops_primary_agents_and_keeps_subagents => toggles_menu_tests::toggles_config_drops_primary_agents_and_keeps_subagents);
 delegate_test!(toggles_menu_sanitizes_config_derived_text => toggles_menu_tests::toggles_menu_sanitizes_config_derived_text);
@@ -298,7 +298,11 @@ fn transcript_click_position_in_area(app: &AppState, area: Rect, needle: &str) -
 }
 
 fn rendered_cell_bg(app: &AppState, column: u16, row: u16) -> Color {
-    let backend = TestBackend::new(TEST_FRAME_AREA.width, TEST_FRAME_AREA.height);
+    rendered_cell_bg_in_area(app, TEST_FRAME_AREA, column, row)
+}
+
+fn rendered_cell_bg_in_area(app: &AppState, area: Rect, column: u16, row: u16) -> Color {
+    let backend = TestBackend::new(area.width, area.height);
     let mut terminal = Terminal::new(backend).unwrap_or_abort();
     terminal
         .draw(|frame| render_app(frame, app))
@@ -1146,16 +1150,10 @@ delegate_test!(letter_on_transcript_focus_focuses_prompt_and_inserts_char => int
 delegate_test!(focus_returns_after_palette_close => interaction_tests::focus_returns_after_palette_close);
 delegate_test!(welcome_mouse_move_applies_hover_state_to_the_action_row => interaction_tests::welcome_mouse_move_applies_hover_state_to_the_action_row);
 delegate_test!(welcome_mouse_move_away_clears_hover_state_and_row_surface => interaction_tests::welcome_mouse_move_away_clears_hover_state_and_row_surface);
-delegate_test!(welcome_changelog_mouse_down_expands_the_startup_panel => interaction_tests::welcome_changelog_mouse_down_expands_the_startup_panel);
 delegate_test!(welcome_changelog_expanded_mouse_down_opens_release_notes_and_up_is_inert => interaction_tests::welcome_changelog_expanded_mouse_down_opens_release_notes_and_up_is_inert);
-delegate_test!(welcome_changelog_release_away_cancels_modal_activation => interaction_tests::welcome_changelog_release_away_cancels_modal_activation);
-delegate_test!(welcome_changelog_drag_cancels_modal_activation => interaction_tests::welcome_changelog_drag_cancels_modal_activation);
 delegate_test!(welcome_changelog_keyboard_activation_opens_modal_and_restores_focus => interaction_tests::welcome_changelog_keyboard_activation_opens_modal_and_restores_focus);
 delegate_test!(welcome_changelog_mouse_down_preserves_pointer_hover_for_inline_preview => interaction_tests::welcome_changelog_mouse_down_preserves_pointer_hover_for_inline_preview);
-delegate_test!(welcome_changelog_mouse_down_renders_a_bright_expanded_header => interaction_tests::welcome_changelog_mouse_down_renders_a_bright_expanded_header);
-delegate_test!(welcome_changelog_pointer_move_away_restores_the_dim_header => interaction_tests::welcome_changelog_pointer_move_away_restores_the_dim_header);
 delegate_test!(welcome_changelog_keyboard_activation_does_not_synthesize_pointer_hover => interaction_tests::welcome_changelog_keyboard_activation_does_not_synthesize_pointer_hover);
-delegate_test!(welcome_changelog_click_brightens_the_compact_section_header => interaction_tests::welcome_changelog_click_brightens_the_compact_section_header);
 
 delegate_test!(details_drawer_toggles_without_stealing_transcript_state => interaction_tests::details_drawer_toggles_without_stealing_transcript_state);
 
@@ -1448,7 +1446,7 @@ delegate_test!(slash_menu_handles_unicode_query_deterministically => slash_menu_
 delegate_test!(slash_menu_matches_descriptions_and_boosts_prefixes => slash_menu_tests::slash_menu_matches_descriptions_and_boosts_prefixes);
 delegate_test!(slash_alias_executes_matching_command_without_menu => slash_menu_tests::slash_alias_executes_matching_command_without_menu);
 delegate_test!(slash_help_opens_help_surface_and_preserves_draft => slash_menu_tests::slash_help_opens_help_surface_and_preserves_draft);
-delegate_test!(slash_escape_clears_token_or_restores_prior_draft => slash_menu_tests::slash_escape_clears_token_or_restores_prior_draft);
+delegate_test!(slash_escape_preserves_query_and_cursor => slash_menu_tests::slash_escape_preserves_query_and_cursor);
 delegate_test!(slash_exit_matches_quit_requested_behavior => slash_menu_tests::slash_exit_matches_quit_requested_behavior);
 delegate_test!(resume_history_surface_uses_meaningful_session_title => slash_menu_tests::resume_history_surface_uses_meaningful_session_title);
 delegate_test!(live_session_picker_continue_quits_tui_and_emits_intent => slash_menu_tests::live_session_picker_continue_quits_tui_and_emits_intent);
@@ -1476,3 +1474,8 @@ delegate_test!(post_run_handoff_ignores_completed_turns_without_terminal_event =
 delegate_test!(tool_task_completion_does_not_copy_tool_output_into_activity_transcript => activity_lifecycle_tests::terminal_tool_task_completion_does_not_copy_tool_output_into_activity_transcript);
 
 delegate_test!(replay_mode_never_reports_lifecycle_shell_actions => lifecycle_shell_part2_test::replay_mode_never_reports_lifecycle_shell_actions);
+
+delegate_test!(dashboard_reply_survives_refresh_resize_and_submits_once => secondary_surface_ownership_tests::dashboard_reply_survives_refresh_resize_and_submits_once);
+
+#[path = "tests/grok_parity_surfaces_test.rs"]
+mod grok_parity_surfaces;

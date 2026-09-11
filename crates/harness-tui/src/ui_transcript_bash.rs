@@ -9,7 +9,7 @@ use ratatui::{
 use crate::app::{ToolCallDisplayStatus, ToolCallEntry};
 use crate::text::{
     collapse_inline_whitespace, has_trimmed_content, replace_control_chars_except_tabs,
-    strip_ansi_escapes, trimmed_json_string_field,
+    trimmed_json_string_field,
 };
 use crate::theme::Theme;
 
@@ -20,8 +20,9 @@ use super::ui_transcript_surface::{
     transcript_surface_content_width,
 };
 
-pub(super) const TRANSCRIPT_COMMAND_TOOL_INDENT: &str = "   ";
-const HARNESS_BLOCK_TOOL_PADDING_LEFT: usize = 2;
+pub(super) const TRANSCRIPT_COMMAND_TOOL_INDENT: &str =
+    super::ui_transcript_surface::TRANSCRIPT_ENTRY_CONTENT_PREFIX;
+const HARNESS_BLOCK_TOOL_PADDING_LEFT: usize = 0;
 const HARNESS_BLOCK_TOOL_GAP: usize = 1;
 
 pub(super) struct HarnessBashPanel<'a> {
@@ -98,7 +99,13 @@ pub(super) fn shell_tool_title_description(
                 .and_then(|value| trimmed_json_string_field(Some(&value), &["description"]))
         })
         .map(|description| {
-            collapse_inline_whitespace(&super::ui_tool_output::safe_tool_text(&description))
+            let description =
+                collapse_inline_whitespace(&super::ui_tool_output::safe_tool_text(&description));
+            description
+                .strip_prefix("Running ")
+                .or_else(|| description.strip_prefix("Run "))
+                .unwrap_or(&description)
+                .to_string()
         })
         .filter(|description| !description.is_empty())
 }
@@ -148,23 +155,8 @@ fn home_collapsed_path_display(path: &Path) -> String {
 }
 
 pub(super) fn shell_tool_output(tool_call: &ToolCallEntry) -> Option<String> {
-    let structured = shell_tool_structured_output(tool_call.output_json.as_ref());
-    if tool_call.status == ToolCallDisplayStatus::Failed {
-        return structured.or_else(|| {
-            tool_call
-                .output_summary
-                .as_deref()
-                .map(strip_ansi_escapes)
-                .map(|output| output.trim().to_string())
-        });
-    }
-    structured.or_else(|| {
-        tool_call
-            .output_summary
-            .as_deref()
-            .map(strip_ansi_escapes)
-            .map(|output| output.trim().to_string())
-    })
+    shell_tool_structured_output(tool_call.output_json.as_ref())
+        .or_else(|| tool_call.output_summary.clone())
 }
 
 fn shell_tool_structured_output(output_json: Option<&serde_json::Value>) -> Option<String> {
@@ -181,8 +173,7 @@ fn shell_tool_structured_output(output_json: Option<&serde_json::Value>) -> Opti
         (_, Some(stderr)) => stderr.to_string(),
         _ => return None,
     };
-    let stripped = strip_ansi_escapes(&output);
-    Some(stripped.trim().to_string())
+    Some(output)
 }
 
 fn harness_bash_card_lines(
@@ -199,11 +190,7 @@ fn harness_bash_card_lines(
         tone,
     } = panel;
     let mut lines = Vec::new();
-    let body_padding_left = if command.trim().is_empty() {
-        HARNESS_BLOCK_TOOL_PADDING_LEFT + 2
-    } else {
-        HARNESS_BLOCK_TOOL_PADDING_LEFT
-    };
+    let body_padding_left = HARNESS_BLOCK_TOOL_PADDING_LEFT;
 
     if let Some(title) = harness_bash_title(description) {
         append_harness_bash_rows(
@@ -221,28 +208,70 @@ fn harness_bash_card_lines(
     }
 
     if !command.trim().is_empty() {
-        let command_style = Style::default().fg(theme.text.primary);
-        append_harness_bash_rows(
-            &mut lines,
-            &format!("$ {command}"),
-            command_style,
-            panel_width,
-            HARNESS_BLOCK_TOOL_PADDING_LEFT,
-            surface,
+        let command = super::ui_tool_output::safe_tool_text(command);
+        let highlighted = super::ui_syntax_highlight::render_highlighted_code_block(
+            Some("bash"),
+            &command,
+            &command,
+            "",
+            theme.text.primary,
+            theme,
         );
+        let content_width = panel_width.saturating_sub(body_padding_left + 2).max(1);
+        let mut first = true;
+        for line in highlighted {
+            for spans in
+                super::ui_transcript_surface::wrap_preformatted_spans(line.spans, content_width)
+            {
+                let mut row = vec![
+                    Span::raw(" ".repeat(body_padding_left)),
+                    Span::styled(
+                        if first { "$ " } else { "  " },
+                        Style::default().fg(theme.terminal_colors.muted),
+                    ),
+                ];
+                row.extend(spans.into_iter().map(|mut span| {
+                    span.style = span.style.bg(surface);
+                    span
+                }));
+                lines.push(harness_bash_line(row, surface));
+                first = false;
+            }
+        }
     }
 
-    let output = super::ui_tool_output::safe_tool_text(output);
-    let output = output.trim();
+    let output = output.trim_end_matches('\n');
+    let content_width = panel_width.saturating_sub(body_padding_left).max(1);
+    let output_background = if tone == TranscriptToolCallDetailTone::Error {
+        surface
+    } else {
+        theme.markdown.code_background
+    };
     let mut output_rows = Vec::new();
-    append_harness_bash_rows(
-        &mut output_rows,
-        output,
-        harness_bash_output_style(tone, theme),
-        panel_width,
-        body_padding_left,
-        surface,
-    );
+    for line in
+        super::ui_terminal_output::render(output, harness_bash_output_style(tone, theme), theme)
+    {
+        for spans in
+            super::ui_transcript_surface::wrap_preformatted_spans(line.spans, content_width)
+        {
+            let mut row = vec![Span::raw(" ".repeat(body_padding_left))];
+            let used = spans
+                .iter()
+                .map(|span| display_width(&span.content))
+                .sum::<usize>();
+            row.extend(spans.into_iter().map(|mut span| {
+                if span.style.bg.is_none() || span.style.bg == Some(surface) {
+                    span.style.bg = Some(output_background);
+                }
+                span
+            }));
+            row.push(Span::styled(
+                " ".repeat(content_width.saturating_sub(used)),
+                Style::default().bg(output_background),
+            ));
+            output_rows.push(Line::from(row));
+        }
+    }
     let (output_rows, expand_hint) =
         super::ui_tool_output::measured_output_preview(output_rows, (2, 3), expanded);
     if !output.is_empty() {
@@ -293,8 +322,12 @@ fn harness_bash_title(description: Option<&str>) -> Option<String> {
     })
 }
 
-fn harness_bash_output_style(_tone: TranscriptToolCallDetailTone, theme: &Theme) -> Style {
-    Style::default().fg(theme.text.primary)
+fn harness_bash_output_style(tone: TranscriptToolCallDetailTone, theme: &Theme) -> Style {
+    Style::default().fg(if tone == TranscriptToolCallDetailTone::Error {
+        theme.terminal_colors.error
+    } else {
+        theme.text.primary
+    })
 }
 
 fn theme_muted_style(theme: &Theme) -> Style {
@@ -390,6 +423,7 @@ fn sanitize_harness_bash_text(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::UnwrapOrAbort;
 
     #[test]
     fn bash_body_can_omit_command_owned_by_header() {
@@ -424,7 +458,7 @@ mod tests {
         for expanded in [false, true] {
             let rows = harness_bash_card_lines(
                 HarnessBashPanel {
-                    command: "cargo test",
+                    command: "printf 'ready\\n'",
                     output: &output,
                     description: None,
                     expanded,
@@ -441,7 +475,14 @@ mod tests {
                 .collect::<String>();
             assert!(text.contains("row-02") && text.contains("row-10") && text.contains("row-12"));
             assert_eq!(text.contains("row-03"), expanded, "{text}");
-            assert_eq!(text.matches("$ cargo test").count(), 1);
+            assert_eq!(text.matches("$ printf 'ready\\n'").count(), 1);
+            let string_span = rows
+                .iter()
+                .flat_map(|line| &line.spans)
+                .find(|span| span.content.contains("ready"))
+                .unwrap_or_abort();
+            assert_ne!(string_span.style.fg, Some(Theme::default().text.primary));
+            assert_eq!(string_span.style.bg, Some(Color::Reset));
         }
     }
 }

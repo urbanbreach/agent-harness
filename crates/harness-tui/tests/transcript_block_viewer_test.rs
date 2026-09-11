@@ -159,6 +159,30 @@ fn viewer_scroll_is_independent_and_survives_resize_with_anchor_identity() -> Te
     assert_eq!(before.block_id(), block_id());
     assert_eq!(viewer.scroll_anchor()?.block_id(), block_id());
     assert!(frame.value >= 0.0);
+
+    // Large recorded output must reach its real tail beyond u16 scroll offsets.
+    let content = format!("{}tail-after-65535", "recorded row\n".repeat(70_000));
+    let mut large = ViewerState::open(
+        block_id(),
+        ViewerBlockContent::new(&content, Some(&content)),
+        return_snapshot(block_id())?,
+    )?;
+    large.resize(78, 21)?;
+    large.scroll_by(100_000.0)?;
+    let area = Rect::new(0, 0, 80, 24);
+    let mut buffer = Buffer::empty(area);
+    render_to_buffer(
+        &mut buffer,
+        area,
+        &large.render_surface(area),
+        &Theme::harness_dark(),
+    );
+    let painted = buffer
+        .content
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect::<String>();
+    assert!(painted.contains("tail-after-65535"));
     Ok(())
 }
 

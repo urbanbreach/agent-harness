@@ -111,6 +111,7 @@ pub(crate) struct TranscriptViewState {
     pub(crate) stacked_transcript_diffs: bool,
     pub(crate) expanded_reasoning_requests: BTreeSet<String>,
     pub(crate) expanded_tool_outputs: BTreeSet<String>,
+    pub(crate) expanded_tool_groups: BTreeSet<String>,
     pub(crate) collapsed_tool_outputs: BTreeSet<String>,
     pub(crate) expanded_patch_file_outputs: BTreeSet<String>,
     pub(crate) transcript_cache: TranscriptRenderCache,
@@ -121,9 +122,28 @@ pub(crate) struct TranscriptViewState {
     pub(crate) legacy_scroll_snapshot: Cell<(bool, usize)>,
     pub(crate) measured_anchor: Cell<Option<TranscriptContentAnchor>>,
     pub(crate) selected_activity_index: usize,
+    pub(crate) selected_entry: Option<crate::ui::TranscriptVisualEntryId>,
+    pub(crate) search_query: String,
+    pub(crate) search_editing: bool,
+    pub(crate) search_match: usize,
+    pub(crate) search_match_count: usize,
+    pub(crate) response_position: Option<crate::transcript_timeline::ResponsePosition>,
+    pub(crate) viewer_pointer_anchor: Option<crate::transcript_selection::CellPoint>,
     pub(crate) page_flip: Cell<PageFlipState>,
     pub(crate) tool_motion: ToolMotionTracker,
     pub(crate) visible_running_tool_motion: Cell<bool>,
+}
+
+impl TranscriptViewState {
+    pub(super) fn reset_entry_navigation(&mut self) {
+        self.selected_entry = None;
+        self.search_query.clear();
+        self.search_editing = false;
+        self.search_match = 0;
+        self.search_match_count = 0;
+        self.response_position = None;
+        self.viewer_pointer_anchor = None;
+    }
 }
 
 impl Default for TranscriptViewState {
@@ -147,6 +167,7 @@ impl Default for TranscriptViewState {
             stacked_transcript_diffs: false,
             expanded_reasoning_requests: BTreeSet::new(),
             expanded_tool_outputs: BTreeSet::new(),
+            expanded_tool_groups: BTreeSet::new(),
             collapsed_tool_outputs: BTreeSet::new(),
             expanded_patch_file_outputs: BTreeSet::new(),
             transcript_cache: TranscriptRenderCache::default(),
@@ -157,6 +178,13 @@ impl Default for TranscriptViewState {
             legacy_scroll_snapshot: Cell::new((true, 0)),
             measured_anchor: Cell::new(None),
             selected_activity_index: 0,
+            selected_entry: None,
+            search_query: String::new(),
+            search_editing: false,
+            search_match: 0,
+            search_match_count: 0,
+            response_position: None,
+            viewer_pointer_anchor: None,
             page_flip: Cell::new(PageFlipState::Idle),
             tool_motion: ToolMotionTracker::default(),
             visible_running_tool_motion: Cell::new(true),

@@ -27,6 +27,25 @@ fn running_tool_wave_is_spatially_continuous_and_time_based() {
         .iter()
         .chain(&after_skipped_frames)
         .all(|brightness| (0.0..=1.0).contains(brightness)));
+    let motion = Some(ToolRailMotion::Running {
+        elapsed: Duration::ZERO,
+        sampled_phase: 0,
+    });
+    // Reference ticks 0 and 10: sin²(0) and sin²(1.5), with no brightness floor.
+    assert_eq!(
+        tool_rail_motion_color(Color::Rgb(0, 0, 0), Color::Rgb(200, 200, 200), motion, 0, 0),
+        Color::Rgb(0, 0, 0)
+    );
+    assert_eq!(
+        tool_rail_motion_color(
+            Color::Rgb(0, 0, 0),
+            Color::Rgb(200, 200, 200),
+            motion,
+            0,
+            10
+        ),
+        Color::Rgb(199, 199, 199)
+    );
 }
 
 #[test]

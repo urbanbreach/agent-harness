@@ -11,6 +11,7 @@ pub(super) fn derive_status(
     catalog_status: Option<RunStatus>,
     events: &[&EventEnvelopeV1],
 ) -> DashboardStatus {
+    let mut pending = std::collections::BTreeSet::new();
     let mut status = match catalog_status {
         Some(RunStatus::Running) => DashboardStatus::Running,
         Some(RunStatus::Finished) => DashboardStatus::Completed,
@@ -18,6 +19,15 @@ pub(super) fn derive_status(
         None => DashboardStatus::Stale,
     };
     for event in events {
+        match &event.payload {
+            EventV1::PermissionRequested(permission) => {
+                pending.insert(permission.permission_id.clone());
+            }
+            EventV1::PermissionResolved(permission) => {
+                pending.remove(&permission.permission_id);
+            }
+            _ => {}
+        }
         status = match &event.payload {
             EventV1::RunStarted(_) => DashboardStatus::Running,
             EventV1::TaskScheduled(TaskScheduledEvent {
@@ -45,5 +55,14 @@ pub(super) fn derive_status(
             _ => status,
         };
     }
-    status
+    if !pending.is_empty()
+        && matches!(
+            status,
+            DashboardStatus::Running | DashboardStatus::Streaming | DashboardStatus::Queued
+        )
+    {
+        DashboardStatus::AwaitingInput
+    } else {
+        status
+    }
 }

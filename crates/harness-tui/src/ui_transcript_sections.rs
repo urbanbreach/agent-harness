@@ -770,13 +770,27 @@ fn build_ordered_assistant_parts_from_events(
         next_index += 1;
     }
 
-    if !saw_body_event && !activity.transcript_text.is_empty() {
+    // Typed live deltas are intentionally absent from durable event history.
+    // Render only the uncommitted suffix after the preceding committed parts,
+    // rather than merging it into an earlier response or hiding it.
+    let rendered_body = parts
+        .iter()
+        .filter_map(|part| match &part.part {
+            TranscriptAssistantPart::Body(
+                TranscriptBodyBlock::RichText(text) | TranscriptBodyBlock::StreamingRichText(text),
+            ) => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<String>();
+    if let Some(text) = activity
+        .transcript_text
+        .strip_prefix(&rendered_body)
+        .filter(|text| !text.is_empty())
+    {
         let body = match activity.status {
-            ActivityStatus::Streaming => {
-                TranscriptBodyBlock::StreamingRichText(activity.transcript_text.clone())
-            }
+            ActivityStatus::Streaming => TranscriptBodyBlock::StreamingRichText(text.to_string()),
             ActivityStatus::Queued | ActivityStatus::Done | ActivityStatus::Error => {
-                TranscriptBodyBlock::RichText(activity.transcript_text.clone())
+                TranscriptBodyBlock::RichText(text.to_string())
             }
         };
         parts.push(SequencedTranscriptAssistantPart {
@@ -1087,6 +1101,7 @@ mod ui10_tests {
         // arrange
         // act
         let mut blocks = vec![TranscriptToolCallDetailBlock::StructuredDiff {
+            before_source: None,
             diff_content: "--- src/lib.rs\n+++ src/lib.rs\n@@ -1 +1 @@\n-old\n+new\n".to_string(),
             fallback_path: Some("src/lib.rs".to_string()),
             force_stacked: false,
@@ -1097,6 +1112,7 @@ mod ui10_tests {
         let before = blocks.clone();
         super::super::ui_transcript_tool_sections::set_diff_highlight_phase(&mut blocks, true);
         let TranscriptToolCallDetailBlock::StructuredDiff {
+            before_source: None,
             diff_content: before_text,
             fallback_path: before_path,
             ..
@@ -1105,6 +1121,7 @@ mod ui10_tests {
             panic!("structured before block");
         };
         let TranscriptToolCallDetailBlock::StructuredDiff {
+            before_source: None,
             diff_content: after_text,
             fallback_path: after_path,
             highlight_syntax,

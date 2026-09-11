@@ -24,7 +24,6 @@ pub(super) fn render_status_dialog_overlay(
         return;
     };
 
-    render_overlay_dim_backdrop(frame, root);
     if !paint_overlay_panel_titled(frame, theme, overlay, "Status · Harness dashboard", None) {
         return;
     }
@@ -57,7 +56,9 @@ pub(crate) fn render_status_dashboard_surface(
     };
 
     render_interactive_dashboard(frame, app, theme, surface);
-    render_dashboard_summary(frame, app, theme, dashboard.layout().shell.composer);
+    if dashboard.layout().details.is_some() {
+        render_dashboard_summary(frame, app, theme, dashboard.layout().shell.composer);
+    }
     if dashboard.help_visible() {
         render_dashboard_help(frame, theme, content, dashboard);
     }
@@ -100,16 +101,19 @@ fn render_interactive_dashboard(frame: &mut Frame, app: &AppState, theme: &Theme
         return;
     };
     let layout = dashboard.layout();
-    render_dashboard_roster(frame, theme, layout.roster, dashboard);
-    render_dashboard_peek(frame, theme, layout.peek, dashboard);
-    render_dashboard_reply(frame, theme, layout.reply, dashboard);
+    render_dashboard_roster(frame, app, theme, layout.roster, dashboard);
+    render_dashboard_peek(frame, app, theme, layout.peek, dashboard);
+    render_dashboard_reply(frame, app, theme, layout.reply, dashboard);
     if let Some(details) = layout.details {
         render_dashboard_details(frame, theme, details, dashboard);
+        let inner = inset_rect(details, 2, 1);
+        render_status_dialog_body(frame, theme, inner, status_dialog_body(app, theme));
     }
-    let focus = format!(
-        "focus: {:?} · Tab focus · / search · h help · esc close",
-        dashboard.focus()
-    );
+    let focus = if dashboard.search_state().context.is_some() {
+        format!("/{}", dashboard.search_state().query)
+    } else {
+        "↑↓ select · Tab focus · / search · d details · h help · Esc close".to_string()
+    };
     let footer = Rect::new(
         overlay.x.saturating_add(2),
         overlay.bottom().saturating_sub(2),
@@ -124,71 +128,349 @@ fn render_interactive_dashboard(frame: &mut Frame, app: &AppState, theme: &Theme
 
 fn render_dashboard_roster(
     frame: &mut Frame,
+    app: &AppState,
     theme: &Theme,
     area: Rect,
     dashboard: &crate::dashboard_integration::DashboardIntegration,
 ) {
+    use crate::dashboard_roster::RosterItem;
     let layout = dashboard.roster_layout();
-    let lines = layout
+    let parents = dashboard
+        .dashboard()
         .rows
         .iter()
-        .map(|row| {
-            let data = dashboard.dashboard().row(row.selection_key.as_str());
-            let status = data.map_or("unknown", |entry| dashboard_status_label(entry.status));
-            let marker = if row.selected { ">" } else { " " };
-            format!("{marker} {status:<9} {}", row.label)
-        })
-        .collect::<Vec<_>>();
-    render_dashboard_pane(frame, theme, area, "Roster", lines);
+        .filter(|row| !row.relationship.is_child);
+    let (mut total, mut working, mut awaiting) = (0, 0, 0);
+    for row in parents {
+        total += 1;
+        if row.status == crate::dashboard::DashboardStatus::AwaitingInput {
+            awaiting += 1;
+            continue;
+        }
+        working += usize::from(matches!(
+            row.status,
+            crate::dashboard::DashboardStatus::Running
+                | crate::dashboard::DashboardStatus::Streaming
+        ));
+    }
+    let header = Rect::new(
+        area.x.saturating_add(2),
+        area.y.saturating_sub(2),
+        area.width.saturating_sub(4),
+        1,
+    );
+    let pending_count = if awaiting > 0 {
+        format!(" · {awaiting} needs input")
+    } else {
+        String::new()
+    };
+    frame.render_widget(
+        Paragraph::new(format!("{total} agents · {working} working{pending_count}"))
+            .style(Style::default().fg(theme.text.secondary)),
+        header,
+    );
+    for item in layout.items {
+        match item {
+            RosterItem::Group(group) => frame.render_widget(
+                Paragraph::new(group.label).style(Style::default().fg(theme.text.secondary)),
+                group.rect,
+            ),
+            RosterItem::Overflow(overflow) => frame.render_widget(
+                Paragraph::new(overflow.label).style(Style::default().fg(theme.text.secondary)),
+                overflow.rect,
+            ),
+            RosterItem::Row(row) => {
+                let data = dashboard.dashboard().row(row.selection_key.as_str());
+                let pending = app.run_id() == Some(row.selection_key.as_str())
+                    && app.active_permission_view().is_some();
+                let status = if pending {
+                    "needs input"
+                } else {
+                    data.map_or("unavailable", |entry| dashboard_status_label(entry.status))
+                };
+                let color = if pending {
+                    theme.status.warning
+                } else {
+                    match row.marker.status {
+                        crate::dashboard::DashboardStatus::Failed => theme.status.error,
+                        crate::dashboard::DashboardStatus::Completed => theme.status.success,
+                        _ => theme.text.secondary,
+                    }
+                };
+                let marker = if !row.selected {
+                    " "
+                } else if theme.glyph_mode() == crate::theme::GlyphMode::Ascii {
+                    "|"
+                } else {
+                    "│"
+                };
+                let indent = " ".repeat(usize::from(row.indent));
+                let subtitle = if pending {
+                    app.active_permission_view()
+                        .map(dashboard_permission_subject)
+                        .unwrap_or_default()
+                } else {
+                    format!(
+                        "{}{}",
+                        if row.pinned { "pinned · " } else { "" },
+                        row.selection_key.as_str()
+                    )
+                };
+                let title = Line::from(vec![
+                    Span::styled(
+                        format!("{marker} {indent}"),
+                        Style::default().fg(theme.text.accent),
+                    ),
+                    Span::styled(
+                        format!(
+                            "{} ",
+                            if theme.glyph_mode() == crate::theme::GlyphMode::Ascii {
+                                row.marker.ascii
+                            } else {
+                                row.marker.preferred
+                            }
+                        ),
+                        Style::default().fg(color),
+                    ),
+                    Span::styled(
+                        row.label,
+                        Style::default()
+                            .fg(theme.text.primary)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(format!("  [{status}]"), Style::default().fg(color)),
+                ]);
+                let secondary = Line::from(vec![
+                    Span::styled(
+                        format!("{marker} {indent}  "),
+                        Style::default().fg(theme.text.accent),
+                    ),
+                    Span::styled(
+                        truncate_plain_text(
+                            &subtitle,
+                            usize::from(row.rect.width.saturating_sub(row.indent + 4)),
+                        ),
+                        Style::default().fg(color),
+                    ),
+                ]);
+                frame.render_widget(Paragraph::new(vec![title, secondary]), row.rect);
+            }
+        }
+    }
+}
+
+fn dashboard_permission_subject(permission: crate::app::ActivePermissionView) -> String {
+    permission
+        .question_prompts
+        .as_ref()
+        .and_then(|prompts| prompts.first())
+        .map(|prompt| prompt.question.clone())
+        .unwrap_or_else(|| super::permission_modal::permission_modal_subject_line(&permission))
 }
 
 fn render_dashboard_peek(
     frame: &mut Frame,
+    app: &AppState,
     theme: &Theme,
     area: Rect,
     dashboard: &crate::dashboard_integration::DashboardIntegration,
 ) {
-    let lines = match dashboard.peek_view() {
-        Ok(view) => {
-            let mut lines = vec![
-                format!("session: {}", view.session_id.as_str()),
-                format!("tail: {} blocks", view.blocks.len()),
-                format!("unread: {}", view.unread_count),
-                format!("follow: {:?}", view.follow),
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+    let title = dashboard
+        .peek_view()
+        .ok()
+        .and_then(|view| dashboard.dashboard().row(view.session_id.as_str()))
+        .and_then(|row| row.title.as_deref())
+        .unwrap_or("Agent preview");
+    let panel = Block::default()
+        .borders(Borders::TOP | Borders::LEFT | Borders::RIGHT)
+        .border_style(Style::default().fg(theme.terminal_colors.muted))
+        .title(title);
+    let inner = panel.inner(area);
+    frame.render_widget(panel, area);
+    let selected_current = dashboard
+        .roster_state()
+        .selected_key()
+        .map(|key| key.as_str())
+        == app.run_id();
+    if let Some(permission) = app.active_permission_view().filter(|_| selected_current) {
+        let body = if let Some(prompts) = &permission.question_prompts {
+            super::permission_modal::question_permission_body_text(
+                app,
+                &permission,
+                prompts,
+                theme,
+                theme.surface.canvas,
+                inner.width,
+            )
+        } else {
+            let mut rows = vec![
+                Line::from(super::permission_modal::permission_modal_title(&permission)),
+                Line::from(super::permission_modal::permission_modal_subject_line(
+                    &permission,
+                )),
             ];
-            if !view.draft.is_empty() {
-                lines.push(format!("draft: {}", view.draft));
+            if app.permission_submission_pending(&permission.permission_id) {
+                rows.push(Line::from("Decision submitted · awaiting confirmation"));
+            } else {
+                let selected = app
+                    .permission_modal_selection(&permission.permission_id)
+                    .number();
+                for (index, label) in [
+                    "Review always-approve mode",
+                    "Allow this session",
+                    "Allow once",
+                    "Reject and add feedback",
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    rows.push(dashboard_permission_option(
+                        theme,
+                        index + 1,
+                        label,
+                        selected,
+                    ));
+                }
+                if let Some(feedback) = app.permission_feedback(&permission.permission_id) {
+                    let (before, after) =
+                        feedback.visible_parts(usize::from(inner.width).saturating_sub(10));
+                    rows.push(Line::from(format!("Feedback: {before}{after}")));
+                }
             }
-            lines.extend(view.blocks.into_iter().map(|block| block.content));
-            lines
-        }
-        Err(error) => vec![error.to_string()],
+            Text::from(rows)
+        };
+        frame.render_widget(Paragraph::new(body).wrap(Wrap { trim: false }), inner);
+        return;
+    }
+    let mut lines = dashboard.peek_view().map_or_else(
+        |_| Vec::new(),
+        |view| {
+            super::super::dashboard_preview_frame(
+                &view.blocks,
+                inner.width,
+                inner.height,
+                peek_scroll_row(view.scroll_top),
+                theme,
+            )
+        },
+    );
+    if lines.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "No recorded output yet",
+            Style::default().fg(theme.text.secondary),
+        )));
+    }
+    frame.render_widget(Paragraph::new(lines), inner);
+}
+
+fn dashboard_permission_option(
+    theme: &Theme,
+    number: usize,
+    label: &str,
+    selected: usize,
+) -> Line<'static> {
+    let marker = if selected == number { "❯" } else { " " };
+    let color = if selected == number {
+        theme.text.accent
+    } else {
+        theme.text.primary
     };
-    render_dashboard_pane(frame, theme, area, "Peek / tail", lines);
+    Line::from(Span::styled(
+        format!("{marker} {number} {label}"),
+        Style::default().fg(color),
+    ))
 }
 
 fn render_dashboard_reply(
     frame: &mut Frame,
+    app: &AppState,
     theme: &Theme,
     area: Rect,
     dashboard: &crate::dashboard_integration::DashboardIntegration,
 ) {
-    let visual = dashboard.controls_visual();
-    let mut lines = vec![
-        "reply composer".to_string(),
-        format!("controls: {}", visual.state.label()),
-    ];
-    if let Some(message) = visual.message.as_deref() {
-        lines.push(message.to_string());
+    if area.width == 0 || area.height == 0 {
+        return;
     }
-    if let Ok(view) = dashboard.peek_view() {
-        lines.push(if view.draft.is_empty() {
-            "draft: <empty>".to_string()
+    let focused = dashboard.focus() == crate::dashboard_integration::DashboardPane::Reply;
+    let border = if focused {
+        theme.text.accent
+    } else {
+        theme.terminal_colors.muted
+    };
+    let panel = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(border))
+        .title("Reply");
+    let inner = panel.inner(area);
+    frame.render_widget(panel, area);
+    let selected_current = dashboard
+        .roster_state()
+        .selected_key()
+        .map(|key| key.as_str())
+        == app.run_id();
+    if selected_current && app.active_permission_view().is_some() {
+        let message = if dashboard.layout().peek.height == 0 {
+            "Input required · Enter to review"
         } else {
-            format!("draft: {}", view.draft)
-        });
+            "Answer above · Enter opens full review"
+        };
+        frame.render_widget(
+            Paragraph::new(message).style(Style::default().fg(theme.text.accent)),
+            inner,
+        );
+        return;
     }
-    render_dashboard_pane(frame, theme, area, "Reply", lines);
+    let text = dashboard
+        .reply_editor()
+        .map_or_else(String::new, |editor| editor.text());
+    if text.is_empty() {
+        frame.render_widget(
+            Paragraph::new("Write a reply…").style(Style::default().fg(theme.text.secondary)),
+            inner,
+        );
+        if focused && inner.width > 0 && inner.height > 0 {
+            frame.set_cursor_position((inner.x, inner.y));
+        }
+        return;
+    }
+    let Ok(wrapped) =
+        crate::transcript_selection::WrappedText::new(&text, usize::from(inner.width.max(1)))
+    else {
+        return;
+    };
+    let byte = dashboard.reply_editor().map_or(text.len(), |editor| {
+        use unicode_segmentation::UnicodeSegmentation;
+        text.graphemes(true)
+            .take(editor.cursor().insertion_index())
+            .map(str::len)
+            .sum()
+    });
+    let cursor = wrapped.point_for_byte(byte);
+    let top = cursor
+        .row
+        .saturating_sub(usize::from(inner.height.saturating_sub(1)));
+    let lines = (top..wrapped.row_count())
+        .map(|row| Line::from(wrapped.row_text(row)))
+        .collect::<Vec<_>>();
+    frame.render_widget(
+        Paragraph::new(lines).style(Style::default().fg(theme.text.primary)),
+        inner,
+    );
+    if focused && inner.width > 0 && inner.height > 0 {
+        frame.set_cursor_position((
+            inner.x
+                + u16::try_from(cursor.cell)
+                    .unwrap_or(u16::MAX)
+                    .min(inner.width - 1),
+            inner.y
+                + u16::try_from(cursor.row.saturating_sub(top))
+                    .unwrap_or(u16::MAX)
+                    .min(inner.height - 1),
+        ));
+    }
 }
 
 fn render_dashboard_details(
@@ -315,6 +597,7 @@ fn render_dashboard_help(
 
 fn dashboard_status_label(status: crate::dashboard::DashboardStatus) -> &'static str {
     match status {
+        crate::dashboard::DashboardStatus::AwaitingInput => "needs input",
         crate::dashboard::DashboardStatus::Running => "working",
         crate::dashboard::DashboardStatus::Queued => "queued",
         crate::dashboard::DashboardStatus::Streaming => "streaming",
@@ -1303,7 +1586,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_fallback_and_no
     assert!(summary.crash_or_recovery.is_none());
     assert!(summary.demote_handle.is_none());
     assert!(!summary.settings_bound);
-    assert_eq!(summary.settings_writable_paths, 6);
+    assert_eq!(summary.settings_writable_paths, 12);
     assert!(summary.settings_total >= 38);
 
     let rendered = render_operator_summary_for_test(&summary);
@@ -1320,7 +1603,7 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_fallback_and_no
         "expected empty demote line: {rendered}"
     );
     assert!(
-        rendered.contains("Settings: unbound, 6 write paths"),
+        rendered.contains("Settings: unbound, 12 write paths"),
         "expected unbound settings line: {rendered}"
     );
 }
@@ -1364,10 +1647,10 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_bound_settings_
 
     // Then
     assert!(summary.settings_bound);
-    assert_eq!(summary.settings_writable_paths, 6);
-    assert_eq!(summary.settings_editable, 6);
+    assert_eq!(summary.settings_writable_paths, 12);
+    assert_eq!(summary.settings_editable, 12);
     assert!(
-        rendered.contains("Settings: bound, 6/6 writable editable"),
+        rendered.contains("Settings: bound, 12/12 writable editable"),
         "expected bound settings line: {rendered}"
     );
 
@@ -3571,7 +3854,6 @@ pub(crate) fn exact_test_status_dialog_render_snapshot_covers_harness_sections()
         .draw(|frame| {
             let root = Rect::new(0, 0, 80, 24);
             let overlay = status_dialog_area(root).unwrap_or_abort();
-            render_overlay_dim_backdrop(frame, root);
             assert!(paint_overlay_panel_titled(
                 frame,
                 &theme,
@@ -3873,4 +4155,17 @@ pub(crate) fn exact_test_status_dialog_operator_summary_surfaces_os_sandbox_firs
         rendered.contains("Sandbox prepare last:"),
         "rendered={rendered}"
     );
+}
+
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "scroll rows are finite nonnegative values; the saturating float conversion bounds oversized offsets"
+)]
+fn peek_scroll_row(value: f64) -> usize {
+    if value.is_finite() && value > 0.0 {
+        value.floor() as usize
+    } else {
+        0
+    }
 }

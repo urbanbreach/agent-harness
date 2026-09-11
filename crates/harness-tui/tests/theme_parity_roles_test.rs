@@ -46,14 +46,14 @@ fn default_resolved_theme_role_table_preserves_contrast_and_elevation() {
 
     // assert
     insta::assert_snapshot!(role_table, @r###"
-    surface.canvas = Rgb(11, 14, 20)
-    surface.panel_elevated = Rgb(18, 22, 30)
-    surface.card = Rgb(85, 87, 83)
+    surface.canvas = Rgb(20, 20, 20)
+    surface.panel_elevated = Rgb(28, 28, 28)
+    surface.card = Rgb(36, 36, 36)
     border.subtle = Rgb(58, 61, 67)
     border.strong = Rgb(72, 75, 82)
     border.focus = Rgb(96, 99, 106)
-    text.secondary = Rgb(136, 139, 145)
-    text.accent = Rgb(217, 132, 217)
+    text.secondary = Rgb(108, 108, 108)
+    text.accent = Rgb(187, 154, 247)
     "###);
     assert!(surfaces.iter().all(|color| !borders.contains(color)));
     assert!(borders.iter().all(|color| *color != muted_text));

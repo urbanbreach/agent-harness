@@ -246,12 +246,11 @@ fn operator_sidebar_chrome_has_no_persistent_primary_variant() {
     let palette = palette_plan
         .palette_overlay
         .expect("P0-SHELL-02: palette must have an overlay rect");
-    let composer = palette_plan
-        .composer
-        .expect("P0-SHELL-02: live shell must retain the composer");
     assert!(
-        palette.bottom() <= composer.y,
-        "P0-SHELL-02: palette must remain above the composer; palette={palette:?} composer={composer:?}"
+        palette_plan.shell.contains(palette.as_position())
+            && palette.bottom() <= palette_plan.shell.bottom()
+            && palette.right() <= palette_plan.shell.right(),
+        "palette must be contained by its owning shell: {palette:?}"
     );
 }
 

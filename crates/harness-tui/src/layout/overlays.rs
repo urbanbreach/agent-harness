@@ -39,7 +39,7 @@ pub(super) fn command_palette_overlay_area(
 ) -> Option<Rect> {
     if app.fork_selector_visible {
         let popup_width = FORK_SELECTOR_WIDTH.min(area.width.saturating_sub(2));
-        let popup_height = fork_selector_overlay_height(app, area.height);
+        let popup_height = fork_selector_overlay_height(app, area.height).min(area.height);
         if popup_width == 0 || popup_height == 0 {
             return None;
         }
@@ -88,10 +88,8 @@ pub(super) fn command_palette_overlay_area(
 const FREEZE_MODAL_TOP_ROW: u16 = 4;
 
 fn absolute_modal_top(area: Rect, popup_height: u16) -> u16 {
-    let max_y = area
-        .y
-        .saturating_add(area.height.saturating_sub(popup_height.max(1)));
-    FREEZE_MODAL_TOP_ROW.clamp(area.y, max_y.max(area.y))
+    area.y
+        .saturating_add(area.height.saturating_sub(popup_height) / 2)
 }
 
 fn command_palette_overlay_width(shell: LiveShellLayout, app: &AppState) -> u16 {
@@ -186,7 +184,7 @@ pub(super) fn slash_command_overlay_area(
     }
 
     let popup_width = input_width.max(1);
-    let popup_height = slash_command_overlay_height(app)
+    let popup_height = slash_command_overlay_height(app, popup_width)
         .min(composer.y.saturating_sub(SLASH_COMMAND_OVERLAY_GAP_Y));
     if popup_height == 0 {
         return None;
@@ -207,13 +205,13 @@ pub(crate) fn completion_overlay_content_area(overlay: Rect) -> Rect {
     overlay
 }
 
-fn slash_command_overlay_height(app: &AppState) -> u16 {
+fn slash_command_overlay_height(app: &AppState, width: u16) -> u16 {
     const MAX_ROWS: usize = 10;
 
     let len = if app.file_mention_visible {
         app.file_mention_entries.len()
     } else {
-        app.slash_filtered.len()
+        app.slash_completion_rows(width).len()
     };
     let rows = len.clamp(1, MAX_ROWS);
     u16::try_from(rows).unwrap_or(u16::MAX)

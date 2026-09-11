@@ -39,7 +39,7 @@ pub(super) fn mouse_click_toggles_transcript_tool_disclosure() {
         }),
     ));
 
-    assert!(tool_output_is_expanded(&app, "tc_shell_toggle"));
+    assert!(!tool_output_is_expanded(&app, "tc_shell_toggle"));
 
     let (column, row) = transcript_click_position(&app, "false");
     app.handle_mouse(
@@ -54,7 +54,7 @@ pub(super) fn mouse_click_toggles_transcript_tool_disclosure() {
         None,
         None,
     );
-    assert!(!tool_output_is_expanded(&app, "tc_shell_toggle"));
+    assert!(tool_output_is_expanded(&app, "tc_shell_toggle"));
 
     app.handle_mouse(
         MouseEvent {
@@ -68,12 +68,12 @@ pub(super) fn mouse_click_toggles_transcript_tool_disclosure() {
         None,
         None,
     );
-    assert!(tool_output_is_expanded(&app, "tc_shell_toggle"));
+    assert!(!tool_output_is_expanded(&app, "tc_shell_toggle"));
 }
 
 pub(super) fn palette_turn_result_commands_override_failed_output_default() {
     let mut app = failed_tool_disclosure_app("req_palette_toggle", "tc_palette_toggle");
-    assert!(tool_output_is_expanded(&app, "tc_palette_toggle"));
+    assert!(!tool_output_is_expanded(&app, "tc_palette_toggle"));
 
     crate::app::palette_controller::dispatch_palette_command(
         &mut app,
@@ -91,13 +91,13 @@ pub(super) fn palette_turn_result_commands_override_failed_output_default() {
 pub(super) fn transcript_enter_toggles_effective_failed_output_state() {
     let mut app = failed_tool_disclosure_app("req_enter_toggle", "tc_enter_toggle");
     app.focus = Focus::Details;
-    assert!(tool_output_is_expanded(&app, "tc_enter_toggle"));
-
-    app.handle_key(key(KeyCode::Enter));
     assert!(!tool_output_is_expanded(&app, "tc_enter_toggle"));
 
     app.handle_key(key(KeyCode::Enter));
     assert!(tool_output_is_expanded(&app, "tc_enter_toggle"));
+
+    app.handle_key(key(KeyCode::Enter));
+    assert!(!tool_output_is_expanded(&app, "tc_enter_toggle"));
 }
 
 #[test]
@@ -162,7 +162,7 @@ fn group_keyboard_and_mouse_toggle_the_same_disclosure_state() {
     keyboard_app.focus = Focus::Details;
 
     // act
-    let (column, row) = transcript_click_position(&mouse_app, "Ran 12 commands");
+    let (column, row) = transcript_click_position(&mouse_app, "Ran 2 commands");
     mouse_app.handle_mouse(
         MouseEvent {
             kind: MouseEventKind::Down(MouseButton::Left),
@@ -177,24 +177,18 @@ fn group_keyboard_and_mouse_toggle_the_same_disclosure_state() {
     );
     keyboard_app.handle_key(key(KeyCode::Enter));
 
-    // assert
+    // Opening the fold reveals member headers with output still collapsed.
     assert_eq!(
-        mouse_app.transcript_view.expanded_tool_outputs,
-        keyboard_app.transcript_view.expanded_tool_outputs
+        mouse_app.transcript_view.expanded_tool_groups,
+        keyboard_app.transcript_view.expanded_tool_groups
     );
-    assert_eq!(
-        mouse_app.transcript_view.collapsed_tool_outputs,
-        keyboard_app.transcript_view.collapsed_tool_outputs
-    );
-    assert!(mouse_app
+    assert!(mouse_app.tool_group_expanded("tc_shared_first"));
+    assert!(mouse_app.transcript_view.expanded_tool_outputs.is_empty());
+    assert!(keyboard_app
         .transcript_view
         .expanded_tool_outputs
-        .contains("tc_shared_first"));
-    assert!(mouse_app
-        .transcript_view
-        .expanded_tool_outputs
-        .contains("tc_shared_second"));
-    assert_eq!(mouse_app.transcript_view.expanded_tool_outputs.len(), 12);
+        .is_empty());
+    assert!(render_text(&mouse_app, 120, 40).contains("Ran 12 commands"));
 }
 
 fn tool_output_is_expanded(app: &AppState, tool_call_id: &str) -> bool {
@@ -327,7 +321,7 @@ pub(super) fn context_group_disclosure_preserves_detached_anchor() {
         ));
     }
     let body = (1..=80)
-        .map(|line| format!("stable transcript line {line}"))
+        .map(|line| format!("stable transcript line {line}  "))
         .collect::<Vec<_>>()
         .join("\n");
     app.ingest_event(envelope(
@@ -363,16 +357,25 @@ pub(super) fn context_group_disclosure_preserves_detached_anchor() {
     let _ = render_text(&app, TEST_FRAME_AREA.width, TEST_FRAME_AREA.height);
 
     // assert
-    assert!(app
-        .transcript_view
-        .expanded_tool_outputs
-        .contains("tc_group_read"));
-    assert!(app
-        .transcript_view
-        .expanded_tool_outputs
-        .contains("tc_group_skill"));
+    assert!(app.tool_group_expanded("tc_group_read"));
+    assert!(app.transcript_view.expanded_tool_outputs.is_empty());
     assert_eq!(app.transcript_view.measured_anchor.get(), anchor_before);
     assert!(app.transcript_view.measured_viewport().top() > top_before);
+    app.toggle_tool_output("tc_group_read");
+    let target = ui::transcript_navigation_entries(&app, TEST_FRAME_AREA)
+        .into_iter()
+        .find_map(|entry| {
+            entry
+                .target
+                .filter(|target| matches!(target, TranscriptMouseTarget::ToolGroup { .. }))
+        })
+        .unwrap_or_abort();
+    app.activate_transcript_mouse_target(target);
+    assert!(
+        !app.tool_group_expanded("tc_group_read"),
+        "opening the first member must preserve the group's collapse target"
+    );
+    assert!(tool_output_is_expanded(&app, "tc_group_read"));
 }
 
 pub(super) fn mouse_click_toggles_apply_patch_file_disclosure() {

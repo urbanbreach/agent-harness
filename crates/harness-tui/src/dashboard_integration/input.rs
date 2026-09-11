@@ -58,6 +58,7 @@ impl Default for SearchState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DashboardInput {
     Focus(FocusDirection),
+    FocusPane(DashboardPane),
     Search(SearchContext),
     SearchText(String),
     Help,
@@ -173,16 +174,14 @@ impl DashboardInputRouter {
                     }
                     (MouseEventKind::ScrollUp, _) => DashboardInput::Scroll(pane, -1),
                     (MouseEventKind::ScrollDown, _) => DashboardInput::Scroll(pane, 1),
-                    _ => DashboardInput::Focus(FocusDirection::Forward),
+                    _ => DashboardInput::Unhandled,
                 };
             }
         }
         match event.kind {
             MouseEventKind::ScrollUp => DashboardInput::Scroll(pane, -1),
             MouseEventKind::ScrollDown => DashboardInput::Scroll(pane, 1),
-            MouseEventKind::Down(MouseButton::Left) => {
-                DashboardInput::Focus(FocusDirection::Forward)
-            }
+            MouseEventKind::Down(MouseButton::Left) => DashboardInput::FocusPane(pane),
             _ => DashboardInput::Unhandled,
         }
     }

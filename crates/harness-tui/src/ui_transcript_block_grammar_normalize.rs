@@ -10,25 +10,19 @@ pub(in crate::ui) fn normalize_turn_blocks(
     if let Some(user) = normalized_user_spec(turn) {
         specs.push(user);
     }
-    let mut index = 0;
-    let mut grouped_until = 0;
-    while index < turn.assistant_parts.len() {
-        if let Some(group) = (index >= grouped_until)
-            .then(|| TranscriptToolGroupSummary::from_adjacent(&turn.assistant_parts[index..]))
-            .flatten()
-            .filter(TranscriptToolGroupSummary::folds_as_group)
-        {
-            let ids = turn.assistant_parts[index..index + group.span_len]
-                .iter()
-                .filter_map(|part| match part {
-                    TranscriptAssistantPart::ToolCall(tool) => Some(tool.as_ref()),
-                    TranscriptAssistantPart::Reasoning(_)
-                    | TranscriptAssistantPart::Body(_)
-                    | TranscriptAssistantPart::Error(_)
-                    | TranscriptAssistantPart::Compaction(_) => None,
-                })
-                .map(|tool| tool.tool_call_id.clone())
-                .collect();
+    let groups = super::super::ui_transcript_groups::scan(turn);
+    let mut groups = groups.iter().peekable();
+    for index in 0..turn.assistant_parts.len() {
+        if let Some(group) = groups.next_if(|group| group.start == index) {
+            let ids = group.target_ids.clone();
+            let mut policy = group_policy(&group.summary);
+            if group.summary.kind == TranscriptToolGroupKind::Commands {
+                policy.visible_start = group
+                    .hidden
+                    .iter()
+                    .filter(|&&i| turn.assistant_parts[i].tool_call().is_some())
+                    .count();
+            }
             let mut spec = base_spec(
                 turn,
                 Some(index),
@@ -36,20 +30,18 @@ pub(in crate::ui) fn normalize_turn_blocks(
                 TranscriptBlockContent::Tool {
                     family: TranscriptToolFamily::Group,
                     ids,
-                    policy: group_policy(&group),
+                    policy,
                     subagent: None,
                 },
             );
             spec.grouping = TranscriptBlockGrouping {
                 group_id: Some(spec.id.clone()),
-                member_count: group.member_count,
+                member_count: group.summary.member_count,
             };
             apply_tool_policy(&mut spec);
             specs.push(spec);
-            grouped_until = index + group.span_len;
         }
         specs.push(normalized_part_spec_without_spacing(turn, index));
-        index += 1;
     }
     if turn.show_footer {
         let lifecycle = footer_lifecycle(turn);

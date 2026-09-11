@@ -145,6 +145,111 @@ fn copied_to_clipboard_toast_renders_in_live_shell() {
 }
 
 #[test]
+fn model_switch_feedback_waits_for_runtime_notice_and_keeps_identifier_visible() {
+    use ratatui::{backend::TestBackend, Terminal};
+
+    let message = format!("{}: {}", "status".repeat(6), "model-id-".repeat(6));
+    let (tx, rx) = crate::live_update_channel();
+    let mut app = AppState::new_live(None, false, None);
+    app.restart_motion_epoch_for_evidence();
+    app.set_launch_metadata(
+        LaunchMetadata::from_model_ref("default", "test:gpt-5.4").with_available_models(vec![
+            ModelOption::from_model_ref("default", "test:gpt-5.4"),
+            ModelOption::from_model_ref("default", "test:claude-sonnet-4-6"),
+        ]),
+    );
+    for ch in "/model".chars() {
+        app.handle_key(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE));
+    }
+    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    assert!(app.model_switcher_visible);
+    app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+    assert!(app.toast().is_none());
+    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    assert!(!app.model_switcher_visible);
+    assert_eq!(app.launch_metadata().model(), Some("claude-sonnet-4-6"));
+    assert!(app.toast().is_none());
+
+    tx.send(crate::LiveUpdate::ModelPromptNotice(message.clone()))
+        .unwrap_or_abort();
+    assert!(app.toast().is_none());
+    crate::runtime_live_updates::drain_live_updates(&mut app, &rx);
+    assert!(app.toast().is_none());
+    assert_eq!(app.model_prompt_notice.as_ref(), Some(&message));
+
+    for (width, height) in [(40, 10), (80, 24), (132, 40)] {
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap_or_abort();
+        terminal
+            .draw(|frame| render_app(frame, &app))
+            .unwrap_or_abort();
+        let buffer = terminal.backend().buffer();
+        eprintln!("{width}x{height}: {buffer:?}");
+        let notice = FrameLayoutPlan::for_app(&app, buffer.area)
+            .model_prompt_notice
+            .unwrap_or_abort();
+        let rendered = (notice.y..notice.bottom())
+            .flat_map(|y| (notice.x..notice.right()).map(move |x| (x, y)))
+            .map(|pos| buffer[pos].symbol())
+            .collect::<String>();
+        assert_eq!(
+            rendered.split_whitespace().collect::<String>(),
+            message.split_whitespace().collect::<String>(),
+            "{width}x{height}: {buffer:?}"
+        );
+        assert!(
+            notice.bottom()
+                <= FrameLayoutPlan::for_app(&app, buffer.area)
+                    .composer
+                    .unwrap_or_abort()
+                    .y
+        );
+    }
+    tx.send(crate::LiveUpdate::Status("working".to_string()))
+        .unwrap_or_abort();
+    crate::runtime_live_updates::drain_live_updates(&mut app, &rx);
+    assert_eq!(app.model_prompt_notice.as_ref(), Some(&message));
+
+    for ch in "first message".chars() {
+        app.handle_key(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE));
+    }
+    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    assert!(app
+        .activities
+        .iter()
+        .any(|entry| entry.user_message.is_some()));
+    tx.send(crate::LiveUpdate::ModelPromptNotice(message))
+        .unwrap_or_abort();
+    crate::runtime_live_updates::drain_live_updates(&mut app, &rx);
+    assert!(FrameLayoutPlan::for_app(&app, Rect::new(0, 0, 80, 24))
+        .model_prompt_notice
+        .is_none());
+}
+
+#[test]
+fn startup_model_command_preserves_welcome_until_message_input() {
+    let mut app = AppState::new_startup(Vec::new(), None);
+    app.set_launch_metadata(
+        LaunchMetadata::from_model_ref("default", "test:gpt-6-astra").with_available_models(vec![
+            ModelOption::from_model_ref("default", "test:gpt-6-astra"),
+            ModelOption::from_model_ref("default", "test:kimi-k2"),
+        ]),
+    );
+    for ch in "/model".chars() {
+        app.handle_key(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE));
+    }
+    assert!(app.welcome_visible());
+    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    assert!(app.model_switcher_visible);
+    app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    assert_eq!(app.launch_metadata().model(), Some("kimi-k2"));
+    assert!(app.startup_shell_visible());
+    assert!(app.welcome_visible());
+    app.handle_key(KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE));
+    assert!(!app.welcome_visible());
+}
+
+#[test]
 fn manual_compaction_toast_remains_visible_in_dense_live_shell() {
     let mut app = AppState::new_live(None, false, None);
     app.composer.prompt_buffer = "draft".to_string();
@@ -348,13 +453,12 @@ fn transcript_debug_places_assistant_answer_before_nested_context() {
     ));
 
     let transcript = transcript_debug(&app);
-    let thinking_index = transcript.find("Thought").unwrap_or_abort();
+    assert!(!transcript.contains("Thought"));
     let answer_index = transcript
         .find("Found the transcript renderer and the composer chrome.")
         .unwrap_or_abort();
-    let tool_index = transcript.find("Read ui.rs").unwrap_or_abort();
+    let tool_index = transcript.find("Read 1 file").unwrap_or_abort();
 
-    assert!(thinking_index < tool_index);
     assert!(tool_index < answer_index);
 }
 
@@ -921,7 +1025,7 @@ fn transcript_tool_rows_keep_status_but_not_raw_json_dump() {
     ));
 
     let transcript = transcript_debug(&app);
-    assert!(transcript.contains("Read lib.rs (42-61)"));
+    assert!(transcript.contains("Read 1 file"));
     assert!(!transcript.contains(r#"{"path":"src/lib.rs","start_line":42,"limit":20}"#));
     assert!(!transcript.contains("args {"));
     assert_eq!(
@@ -977,6 +1081,8 @@ fn failed_tool_rows_still_surface_error_summary() {
         }),
     ));
 
+    assert!(!transcript_debug(&app).contains("stderr: permission denied"));
+    app.toggle_tool_output_for_test("tc_error");
     let transcript = transcript_debug(&app);
     assert!(transcript.contains("false"));
     assert!(transcript.contains("exit code: 1"));
