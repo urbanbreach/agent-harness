@@ -286,6 +286,18 @@ const SETTINGS_REGISTRY: &[SettingDefinition] = &[
         "harness.runtime.permission.shell_allowlist",
         None,
     ),
+    def(
+        "runtime.always_approve",
+        "harness.runtime.always_approve",
+        SettingSurface::Runtime,
+        SettingScope::Project,
+        SettingSensitivity::Public,
+        None,
+        true,
+        Some("false"),
+        SettingMergeStrategy::Replace,
+        SettingMutability::Editable,
+    ),
     runtime_public(
         "runtime.compaction.enabled",
         "harness.runtime.compaction.enabled",
@@ -573,6 +585,7 @@ impl SettingSourceExplanation {
 }
 
 const PROJECT_BOOL_WRITE_SETTING_IDS: &[&str] = &[
+    "runtime.always_approve",
     "hashline_edit",
     "runtime.compaction.enabled",
     "runtime.compaction.auto_retry_overflow",

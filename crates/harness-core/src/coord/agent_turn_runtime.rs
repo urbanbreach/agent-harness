@@ -331,12 +331,16 @@ where
     let ScheduleAgentTurnArgs {
         provider,
         tool_registry,
-        profile,
+        mut profile,
         request,
         request_id,
         child_task,
         model_fallback_chain,
     } = args;
+    let prompt_template = run_state.agent_prompt_templates.get(&profile.name).cloned();
+    if let Some(template) = &prompt_template {
+        template.recompose_profile(&mut profile, &request);
+    }
     let model = crate::agent::AgentModelRef::parse(&request.model_ref);
     let agent_id = request.agent_id.clone();
     let task_id = format!("task_{:06}", run_state.next_task_id);
@@ -373,6 +377,7 @@ where
         )?;
 
         run_state.queue_agent_turn(QueuedAgentTurn {
+            prompt_template,
             task_id,
             agent_id,
             session_id: session_id.into(),
@@ -419,6 +424,7 @@ where
                 provider,
                 tool_registry,
                 QueuedAgentTurn {
+                    prompt_template,
                     task_id,
                     agent_id,
                     session_id: session_id.into(),
@@ -449,6 +455,7 @@ where
             )?;
 
             run_state.queue_agent_turn(QueuedAgentTurn {
+                prompt_template,
                 task_id,
                 agent_id,
                 session_id: session_id.into(),
@@ -994,6 +1001,9 @@ where
                                 task.request.model_ref = next_target.model_ref.clone();
                                 task.request.model_settings = AgentModelSettings::from(&next_target);
                                 task.request.model_target = Some(next_target.clone());
+                                if let Some(template) = &task.prompt_template {
+                                    template.recompose_profile(&mut task.profile, &task.request);
+                                }
                                 tracing::warn!(
                                     agent_id = %task.agent_id,
                                     request_id = %task.request_id,

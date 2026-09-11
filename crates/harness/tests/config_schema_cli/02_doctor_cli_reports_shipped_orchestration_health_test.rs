@@ -265,7 +265,7 @@ fn assert_doctor_skill_routes(route_check: &Value) {
 }
 
 #[test]
-fn doctor_cli_json_reports_prompt_family_asset_fallback_warning() {
+fn doctor_cli_json_reports_bundled_prompt_family_without_workspace_asset() {
     let temp = tempdir().unwrap_or_abort();
     fs::create_dir_all(temp.path().join(".agent-harness")).unwrap_or_abort();
     let config_path = temp.path().join("harness.jsonc");
@@ -320,16 +320,10 @@ fn doctor_cli_json_reports_prompt_family_asset_fallback_warning() {
     let prompt_asset = &route_check["details"]["routes"]["default"]["model"]["prompt_family_asset"];
 
     assert_eq!(prompt_asset["family"], "anthropic");
-    assert_eq!(prompt_asset["status"], "fallback");
-    assert_eq!(prompt_asset["source"], "default_prompt_fallback");
-    assert_eq!(
-        prompt_asset["path"],
-        ".agent-harness/prompt-families/anthropic.md"
-    );
-    assert!(prompt_asset["warning"]
-        .as_str()
-        .unwrap_or_abort()
-        .contains("using default prompt"));
+    assert_eq!(prompt_asset["status"], "builtin");
+    assert_eq!(prompt_asset["source"], "bundled_prompt");
+    assert!(prompt_asset["path"].is_null());
+    assert!(prompt_asset["warning"].is_null());
     assert_eq!(prompt_asset["no_network_probes"], true);
 }
 

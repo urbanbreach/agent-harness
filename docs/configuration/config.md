@@ -111,11 +111,12 @@ Provider-family prompt selection is routed through the explicit model-resolution
 seam in `harness_core::model_resolution`, which prefers catalog
 `metadata.family` and falls back to a documented heuristic/default family. The
 base prompt is composed through `crates/harness/src/dynamic_prompt.rs`, markdown
-agent assets, and non-GPT family prompt bodies under
-`.agent-harness/prompt-families/{family}.md` for `anthropic`, `gemini`, `kimi`,
-and `trinity`. If a referenced family prompt asset is missing or empty, the
-runtime fails closed to the documented default prompt and `doctor --json` reports
-`model.prompt_family_asset.status = "fallback"` with the relative asset path and
+agent assets, and bundled family prompt bodies for `reasoning`, `codex`, `gpt`,
+`meta`, `anthropic`, `gemini`, `kimi`, and `default`. Nonempty workspace files at
+`.agent-harness/prompt-families/{family}.md` can override those bundles. Missing,
+empty, or unreadable overrides use the same family's bundled prompt; empty or
+unreadable overrides produce a warning. Unrecognized model families use the
+default prompt. `doctor --json` reports the effective prompt source and any
 warning. Model-specific differences in this slice are explicit catalog metadata
 such as family, modalities, context/output limits, variants, reasoning support,
 and data-backed family prompts, rather than scattered raw `model_id.contains(...)` checks.
@@ -278,7 +279,7 @@ for those settings instead of mixing them into runtime config.
 | `permission` | Default permission policy for the supported tool subset plus optional shell allowlist. Supports scalar `allow`/`ask`/`deny` or per-tool pattern maps. Catch-all deny hides tools from the model; last matching pattern wins. |
 
 | `provider` | Provider definitions keyed by provider id. |
-| `runtime` | Runtime knobs that are not provider/model/agent definitions, currently including provider-context compaction settings and provider retry policy. |
+| `runtime` | Runtime knobs including startup approval mode, provider-context compaction settings, and provider retry policy. |
 | `server` | Upstream server configuration; accepted only when empty because server commands are outside this runtime config. |
 
 | `small_model` | Optional smaller model reference for coordinator-owned internal operations such as title generation. |
@@ -365,6 +366,30 @@ Output is `harness-settings-registry-v1`:
 
 Library entry points: `settings_registry()`, `setting_definition()`,
 `settings_registry_json()`, `is_metadata_only_setting()`.
+
+### Always approve on startup
+
+Set `runtime.always_approve` in your runtime config to start new and resumed runs
+with ordinary tool permissions automatically approved. It defaults to `false`.
+
+```json
+{
+  "runtime": {
+    "always_approve": true
+  }
+}
+```
+
+In the TUI, open `/settings` and select **Always approve on startup** on the
+Runtime tab. Enter toggles the saved preference in the bound runtime config;
+reset restores `false`. Restart the harness to apply the saved preference.
+
+Use **Ctrl+O**, `/always-approve` (alias `/yolo`), or **Always Approve Mode** in the
+command palette to toggle the current session. `/toggles` also exposes the active
+mode. These session toggles do not change the saved startup preference. The
+composer shows `always-approve` when the coordinator confirms it is enabled.
+Questions, sensitive requests, and explicit permission denials keep their existing
+checks. Replay does not enable or change approval mode.
 
 ## Config layering
 
@@ -464,6 +489,7 @@ bindings, and `<leader>` expands to the configured leader key, for example
 | `backspace` | `Backspace` | Delete before the prompt cursor. |
 | `delete` | `Del` | Delete after the prompt cursor. |
 | `allow_permission` | `Ctrl+y` | Allow a pending permission request. |
+| `always_approve_permission` | `Ctrl+o` | Toggle always-approve for this session; opens confirmation when a permission prompt is active. |
 | `deny_permission` | `Ctrl+n` | Deny a pending permission request. |
 | `dismiss_modal` | `Esc` | Dismiss or reject the active modal. |
 | `variant_cycle` | `Ctrl+t` | Cycle the active model variant/reasoning preset. |

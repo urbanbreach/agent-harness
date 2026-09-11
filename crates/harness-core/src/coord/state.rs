@@ -200,6 +200,8 @@ pub(in crate::coord) struct RunState {
     pub(in crate::coord) next_compaction_generation: u64,
     pub(in crate::coord) compaction_boundary_watermark: u64,
     pub(in crate::coord) agents: BTreeMap<String, AgentProfile>,
+    pub(in crate::coord) agent_prompt_templates:
+        BTreeMap<String, crate::model_resolution::ModelPromptTemplate>,
     pub(in crate::coord) provider_context_by_agent: BTreeMap<String, ProviderContext>,
     pub(in crate::coord) canonical_provider_view_by_agent:
         BTreeMap<String, crate::session::CanonicalProviderView>,
@@ -557,6 +559,7 @@ impl From<&crate::session::CanonicalProviderView> for ProviderContextCacheKey {
 
 #[derive(Debug, Clone)]
 pub(in crate::coord) struct QueuedAgentTurn {
+    pub(in crate::coord) prompt_template: Option<crate::model_resolution::ModelPromptTemplate>,
     pub(in crate::coord) task_id: String,
     pub(in crate::coord) agent_id: String,
     pub(in crate::coord) session_id: crate::ids::SessionId,

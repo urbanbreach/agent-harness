@@ -135,6 +135,11 @@ pub(super) async fn run_new_live_session(
     let run_dir = settings.session_dir.join(&run_id_override);
 
     let (live_update_tx, live_update_rx) = live_update_channel();
+    if let Some(notice) =
+        TuiAuthBackendContext::from_settings(settings).model_prompt_notice(&launch_metadata)
+    {
+        let _ = live_update_tx.send(notice);
+    }
     let (intent_tx, intent_rx) = mpsc::unbounded_channel::<UiIntent>();
     let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
     let mut shutdown_tx = Some(shutdown_tx);
@@ -393,6 +398,7 @@ async fn bootstrap_new_live_runtime(
     );
 
     let run_name = create_default_title(clock.as_ref(), false);
+    let always_approve_on_start = coordinator_config.always_approve_on_start;
     let coordinator = spawn_coordinator(
         coordinator_config,
         clock,
@@ -405,6 +411,9 @@ async fn bootstrap_new_live_runtime(
         .await
         .map_err(|err| err.to_string())?;
     profile_handoff("new_live.start_run_done");
+    let _ = live_update_tx.send(LiveUpdate::AlwaysApproveModeChanged {
+        enabled: always_approve_on_start,
+    });
     if let Some(config) = settings.config.as_ref() {
         let _ = logging::init_logging(config, &run.run_dir)?;
     }

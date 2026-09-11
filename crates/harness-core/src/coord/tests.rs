@@ -643,7 +643,10 @@ delegate_test!(always_approve_mode_preserves_sensitive_permission_kinds => permi
 delegate_tokio_test!(static_deny_overrides_permission_grant => permission_flow_tests::static_deny_overrides_permission_grant);
 delegate_tokio_test!(permission_grant_event_does_not_persist_raw_shell_command_secret => permission_flow_tests::permission_grant_event_does_not_persist_raw_shell_command_secret);
 delegate_tokio_test!(perm_timeout_path_denies_deterministically => permission_flow_tests::perm_timeout_path_denies_deterministically);
-delegate_tokio_test!(malformed_question_answer_does_not_resolve_permission => permission_flow_tests::malformed_question_answer_does_not_resolve_permission);
+#[path = "tests/question_answer_validation_tests.rs"]
+mod question_answer_validation_tests;
+
+delegate_tokio_test!(malformed_question_answer_does_not_resolve_permission => question_answer_validation_tests::malformed_question_answer_does_not_resolve_permission);
 
 #[cfg(test)]
 #[path = "tests/mcp_identity_tests.rs"]
@@ -1380,6 +1383,7 @@ fn test_run_state(session_dir: &Path, run_id: &str) -> RunState {
         next_compaction_generation: 1,
         compaction_boundary_watermark: 0,
         agents: std::collections::BTreeMap::new(),
+        agent_prompt_templates: std::collections::BTreeMap::new(),
         provider_context_by_agent: std::collections::BTreeMap::new(),
         canonical_provider_view_by_agent: std::collections::BTreeMap::new(),
         provider_context_cache_key_by_agent: std::collections::BTreeMap::new(),

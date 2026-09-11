@@ -15,6 +15,7 @@ pub(super) struct TuiAuthBackendContext {
     pub(super) session_dir: Option<PathBuf>,
     pub(super) workspace_root: PathBuf,
     pub(super) config_digest: String,
+    pub(super) prompt_overrides: std::collections::BTreeMap<String, String>,
 }
 
 impl TuiAuthBackendContext {
@@ -24,7 +25,41 @@ impl TuiAuthBackendContext {
             session_dir: Some(settings.session_dir.clone()),
             workspace_root: settings.workspace_root.clone(),
             config_digest: settings.config_digest.clone(),
+            prompt_overrides: settings
+                .config
+                .iter()
+                .flat_map(|config| &config.agents)
+                .filter_map(|(name, profile)| {
+                    harness_core::model_resolution::configured_prompt_override(
+                        name,
+                        profile.system_prompt.as_deref(),
+                    )
+                    .map(|prompt| (name.clone(), prompt.to_string()))
+                })
+                .collect(),
         }
+    }
+
+    pub(super) fn model_prompt_notice(&self, metadata: &LaunchMetadata) -> Option<LiveUpdate> {
+        let target = super::launch_metadata::launch_metadata_model_target(metadata)?;
+        let status = harness_core::model_resolution::effective_prompt_status(
+            target.resolution.prompt_family,
+            self.prompt_overrides
+                .get(metadata.profile())
+                .map(String::as_str),
+            &self.workspace_root,
+        );
+        let label = if matches!(status.source, "configured_prompt" | "data_asset") {
+            "Using configured prompt for"
+        } else if status.family == "default" {
+            "Using default prompt for"
+        } else {
+            "Using optimized prompt for"
+        };
+        Some(LiveUpdate::ModelPromptNotice(format!(
+            "{label}: {}",
+            target.model
+        )))
     }
 }
 

@@ -99,6 +99,12 @@ pub fn load_config_from_file(path: &Path) -> Result<HarnessConfig, ConfigError> 
     finalize_loaded_config(parsed, Some(path), configured_instructions)
 }
 
+/// Validate an edited document before replacing its source, without updating registries.
+pub(super) fn validate_settings_document(raw: &str, path: &Path) -> Result<(), ConfigError> {
+    let (mut parsed, _) = parse_config_from_str(raw, path.parent())?;
+    parsed.validate_references()
+}
+
 pub fn load_config_from_file_with_context(
     path: &Path,
     context: &ConfigLoadContext,

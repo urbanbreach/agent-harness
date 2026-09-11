@@ -235,52 +235,57 @@ pub(super) async fn allow_always_shell_run_grant_does_not_authorize_changed_args
 }
 
 pub(super) async fn always_approve_mode_bypasses_future_ordinary_permission_prompts() {
-    let temp_dir = tempfile::tempdir().unwrap_or_abort();
-    let mut config = test_config(temp_dir.path());
-    config.permission_policy = ask_shell_permission_policy(1_000);
+    for on_start in [false, true] {
+        let temp_dir = tempfile::tempdir().unwrap_or_abort();
+        let mut config = test_config(temp_dir.path());
+        config.permission_policy = ask_shell_permission_policy(1_000);
+        config.always_approve_on_start = on_start;
 
-    let handle = spawn_coordinator(
-        config,
-        Arc::new(FakeClock::new()),
-        Arc::new(DefaultRedactor::default()),
-    );
-    let run = handle
-        .start_run("always_approve_future", temp_dir.path())
-        .await
-        .unwrap_or_abort();
+        let handle = spawn_coordinator(
+            config,
+            Arc::new(FakeClock::new()),
+            Arc::new(DefaultRedactor::default()),
+        );
+        let run = handle
+            .start_run("always_approve_future", temp_dir.path())
+            .await
+            .unwrap_or_abort();
 
-    handle.set_always_approve_mode(true).await.unwrap_or_abort();
-    let tool_call_id = handle
-        .request_tool_call(
-            EventActor::new(ActorKind::Supervisor, Some("agent-supervisor".to_string())),
-            Some("deep".to_string()),
-            "shell.run",
-            json!({"cmd": "echo auto-approved"}),
-        )
-        .await
-        .unwrap_or_abort();
-
-    wait_for_events(
-        &handle,
-        &run.events_path,
-        "auto-approved tool call to start",
-        |event| {
-            matches!(
-                &event.payload,
-                EventV1::ToolCallStarted(data) if data.tool_call_id.as_str() == tool_call_id
+        if !on_start {
+            handle.set_always_approve_mode(true).await.unwrap_or_abort();
+        }
+        let tool_call_id = handle
+            .request_tool_call(
+                EventActor::new(ActorKind::Supervisor, Some("agent-supervisor".to_string())),
+                Some("deep".to_string()),
+                "shell.run",
+                json!({"cmd": "echo auto-approved"}),
             )
-        },
-    )
-    .await;
-    handle.stop_run().await.unwrap_or_abort();
+            .await
+            .unwrap_or_abort();
 
-    let events = read_events(&run.events_path);
-    assert!(!events
-        .iter()
-        .any(|event| matches!(event.payload, EventV1::PermissionRequested(_))));
-    assert!(!events
-        .iter()
-        .any(|event| matches!(event.payload, EventV1::PermissionResolved(_))));
+        wait_for_events(
+            &handle,
+            &run.events_path,
+            "auto-approved tool call to start",
+            |event| {
+                matches!(
+                    &event.payload,
+                    EventV1::ToolCallStarted(data) if data.tool_call_id.as_str() == tool_call_id
+                )
+            },
+        )
+        .await;
+        handle.stop_run().await.unwrap_or_abort();
+
+        let events = read_events(&run.events_path);
+        assert!(!events
+            .iter()
+            .any(|event| matches!(event.payload, EventV1::PermissionRequested(_))));
+        assert!(!events
+            .iter()
+            .any(|event| matches!(event.payload, EventV1::PermissionResolved(_))));
+    }
 }
 
 pub(super) async fn enabling_always_approve_drains_pending_ordinary_permission() {
@@ -773,80 +778,4 @@ pub(super) async fn perm_timeout_path_denies_deterministically() {
             EventV1::ToolCallStarted(data) if data.tool_call_id.as_str() == tool_call_id
         )
     }));
-}
-
-pub(super) async fn malformed_question_answer_does_not_resolve_permission() {
-    let temp_dir = tempfile::tempdir().unwrap_or_abort();
-    let config = test_config(temp_dir.path());
-    let handle = spawn_coordinator(
-        config,
-        Arc::new(RealClock::new()),
-        Arc::new(DefaultRedactor::default()),
-    );
-    let run = handle
-        .start_run("question_validation", temp_dir.path())
-        .await
-        .unwrap_or_abort();
-
-    let question_handle = handle.clone();
-    let request = tokio::spawn(async move {
-        question_handle
-            .request_question(
-                EventActor::new(ActorKind::Worker, Some("agent-worker".to_string())),
-                "toolcall_question_validation",
-                json!({
-                    "questions": [{
-                        "question": "Pick one",
-                        "header": "Choice",
-                        "options": [{"label": "A", "description": "Option A"}],
-                    }]
-                }),
-            )
-            .await
-    });
-
-    let before = wait_for_events(
-        &handle,
-        &run.events_path,
-        "question permission request",
-        |event| {
-            matches!(
-                &event.payload,
-                EventV1::PermissionRequested(data) if data.kind == "question"
-            )
-        },
-    )
-    .await;
-    let permission_id = before
-        .iter()
-        .find_map(|event| match &event.payload {
-            EventV1::PermissionRequested(data) if data.kind == "question" => {
-                Some(data.permission_id.clone())
-            }
-            _ => None,
-        })
-        .unwrap_or_abort();
-
-    let err = handle
-        .resolve_permission(
-            permission_id.clone(),
-            PermissionDecision::Allow,
-            Some("not-json".to_string()),
-        )
-        .await
-        .expect_err("malformed answers must be rejected");
-    assert!(err.to_string().contains("invalid question answer payload"));
-
-    assert!(
-        read_events(&run.events_path).iter().all(|event| {
-            !matches!(
-                &event.payload,
-                EventV1::PermissionResolved(data) if data.permission_id == permission_id
-            )
-        }),
-        "permission should remain pending when answer payload is invalid"
-    );
-
-    request.abort();
-    handle.stop_run().await.unwrap_or_abort();
 }

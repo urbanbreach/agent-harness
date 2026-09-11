@@ -116,13 +116,11 @@ fn astra_discovery_preserves_api_limits_and_explicit_codex_overrides() {
     assert_eq!(api.limits.context_window_tokens(), Some(1_050_000));
     assert_eq!(api.limits.max_input_tokens(), Some(922_000));
 
-    let ProviderConfig::OpenAiCompatible(codex) = config
-        .providers
-        .get_mut(BUILTIN_CODEX_PROVIDER_ID)
-        .unwrap_or_abort()
-    else {
-        unreachable!("fixture is OpenAI-compatible");
-    };
+    let codex = match config.providers.get_mut(BUILTIN_CODEX_PROVIDER_ID) {
+        Some(ProviderConfig::OpenAiCompatible(codex)) => Some(codex),
+        _ => None,
+    }
+    .unwrap_or_abort();
     codex.models.insert(
         "gpt-6-astra".to_string(),
         serde_json::from_value(serde_json::json!({

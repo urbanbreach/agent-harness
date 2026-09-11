@@ -1,4 +1,11 @@
 // allow: SIZE_OK — model resolution (variant + capability inference)
+mod prompt_template;
+mod prompts;
+pub use prompt_template::ModelPromptTemplate;
+pub use prompts::{
+    configured_prompt_override, effective_prompt_status, shipped_agent_prompt,
+    PromptFamilyAssetStatus,
+};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModelFamily {
     OpenAiReasoning,
@@ -17,7 +24,6 @@ pub enum ModelFamily {
     Grok,
     Mistral,
     Llama,
-    Trinity,
     Unknown,
 }
 
@@ -33,10 +39,10 @@ pub enum PromptFamily {
     Reasoning,
     Codex,
     Gpt,
+    Meta,
     Anthropic,
     Gemini,
     Kimi,
-    Trinity,
     Default,
 }
 
@@ -46,26 +52,38 @@ impl PromptFamily {
             Self::Reasoning => "reasoning",
             Self::Codex => "codex",
             Self::Gpt => "gpt",
+            Self::Meta => "meta",
             Self::Anthropic => "anthropic",
             Self::Gemini => "gemini",
             Self::Kimi => "kimi",
-            Self::Trinity => "trinity",
             Self::Default => "default",
         }
     }
 
     pub fn data_asset_file(self) -> Option<&'static str> {
         match self {
+            Self::Reasoning => Some("reasoning.md"),
+            Self::Codex => Some("codex.md"),
+            Self::Gpt => Some("gpt.md"),
+            Self::Meta => Some("meta.md"),
             Self::Anthropic => Some("anthropic.md"),
             Self::Gemini => Some("gemini.md"),
             Self::Kimi => Some("kimi.md"),
-            Self::Trinity => Some("trinity.md"),
-            _ => None,
+            Self::Default => Some("default.md"),
         }
     }
 
     pub fn data_asset_families() -> &'static [Self] {
-        &[Self::Anthropic, Self::Gemini, Self::Kimi, Self::Trinity]
+        &[
+            Self::Reasoning,
+            Self::Codex,
+            Self::Gpt,
+            Self::Meta,
+            Self::Anthropic,
+            Self::Gemini,
+            Self::Kimi,
+            Self::Default,
+        ]
     }
 }
 
@@ -136,7 +154,17 @@ pub fn resolve_model(input: ModelResolutionInput<'_>) -> ModelResolution {
     ModelResolution {
         family,
         family_source,
-        prompt_family: prompt_family_for(family),
+        prompt_family: if family == ModelFamily::GptLegacy
+            && input
+                .metadata_family
+                .unwrap_or(input.model)
+                .to_ascii_lowercase()
+                .contains("gpt-4")
+        {
+            PromptFamily::Reasoning
+        } else {
+            prompt_family_for(family)
+        },
         capabilities: caps,
     }
 }
@@ -201,7 +229,7 @@ fn detect_family_from_normalized(value: &str) -> Option<ModelFamily> {
     if value.contains("mistral") || value.contains("codestral") {
         return Some(ModelFamily::Mistral);
     }
-    if value.contains("llama") {
+    if value.contains("llama") || value == "meta" {
         return Some(ModelFamily::Llama);
     }
     if value.contains("grok") {
@@ -209,9 +237,6 @@ fn detect_family_from_normalized(value: &str) -> Option<ModelFamily> {
     }
     if value.contains("glm") {
         return Some(ModelFamily::Glm);
-    }
-    if value.contains("trinity") {
-        return Some(ModelFamily::Trinity);
     }
     if value.contains("gpt-5") {
         return Some(ModelFamily::Gpt5);
@@ -256,13 +281,12 @@ fn prompt_family_for(family: ModelFamily) -> PromptFamily {
         ModelFamily::ClaudeOpus | ModelFamily::Claude => PromptFamily::Anthropic,
         ModelFamily::Gemini => PromptFamily::Gemini,
         ModelFamily::KimiThinking | ModelFamily::Kimi => PromptFamily::Kimi,
-        ModelFamily::Trinity => PromptFamily::Trinity,
+        ModelFamily::Llama => PromptFamily::Meta,
         ModelFamily::Glm
         | ModelFamily::MiniMax
         | ModelFamily::DeepSeek
         | ModelFamily::Grok
         | ModelFamily::Mistral
-        | ModelFamily::Llama
         | ModelFamily::Unknown => PromptFamily::Default,
     }
 }
@@ -331,7 +355,7 @@ fn family_capabilities(family: ModelFamily) -> ModelCapabilities {
             caps.variants = variants(&["low", "medium", "high"]);
             caps.reasoning_efforts = variants(&["high", "max"]);
         }
-        ModelFamily::Trinity | ModelFamily::Unknown => {}
+        ModelFamily::Unknown => {}
     }
 
     caps
@@ -353,6 +377,33 @@ fn input_modalities_support_vision(input_modalities: &[String]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn model_dependent_prompt_routes_cover_upstream_and_meta_extension() {
+        for (model, expected) in [
+            ("gpt-6-astra", "gpt"),
+            ("kimi-k2", "kimi"),
+            ("kimi-thinking", "kimi"),
+            ("gpt-4.1", "reasoning"),
+            ("o3", "reasoning"),
+            ("gpt-5-codex", "codex"),
+            ("meta-llama/Llama-4-Maverick", "meta"),
+            ("claude-sonnet-4", "anthropic"),
+            ("gemini-2.5-pro", "gemini"),
+            ("opaque", "default"),
+            ("trinity", "default"),
+        ] {
+            let resolved = resolve_model(ModelResolutionInput {
+                provider: "local",
+                model,
+                metadata_family: None,
+                input_modalities: &[],
+                supports_tool_calls: None,
+                supports_reasoning_summaries: None,
+            });
+            assert_eq!(resolved.prompt_family.id(), expected, "{model}");
+        }
+    }
 
     #[test]
     fn astra_resolves_supported_reasoning_from_id_and_catalog_family() {

@@ -26,7 +26,7 @@ use harness_tools::{
     EditingToolSurfaceConfig, SkillCatalogEntry, SkillCatalogStatus,
 };
 
-use crate::dynamic_prompt::{self, DynamicPromptContext};
+use crate::dynamic_prompt;
 use crate::UnwrapOrAbort;
 
 pub const DEFAULT_INTERACTIVE_PROFILE: &str = "default";
@@ -50,6 +50,7 @@ pub fn build_interactive_coordinator_config(
 ) -> Result<CoordinatorConfig, String> {
     let mut coordinator_config = CoordinatorConfig::new(cfg.paths.session_dir.clone());
     coordinator_config.permission_policy = PermissionPolicy::from_config(cfg);
+    coordinator_config.always_approve_on_start = cfg.runtime.always_approve;
     let mut tool_registry = coordinator_registry_with_mcp_and_editing(
         cfg.permissions.shell_allowlist.clone(),
         cfg.integrations.mcp.clone(),
@@ -73,6 +74,17 @@ pub fn build_interactive_coordinator_config(
     coordinator_config.agent_profiles = agent_profiles;
     coordinator_config.agent_model_targets = agent_model_targets;
     coordinator_config.agent_model_fallbacks = agent_model_fallbacks;
+    for (name, profile) in &cfg.agents {
+        coordinator_config.agent_prompt_templates.insert(
+            name.clone(),
+            interactive_prompt_template(
+                cfg,
+                name,
+                profile,
+                &coordinator_config.agent_model_targets[name],
+            ),
+        );
+    }
     coordinator_config.formatter = cfg.formatter.clone();
     Ok(coordinator_config)
 }
@@ -350,53 +362,34 @@ fn compose_interactive_system_prompt(
     profile_cfg: &harness_core::config::ProfileConfig,
     model: &harness_core::config::ResolvedModelTarget,
     toolset: &[String],
-) -> Result<String, String> {
-    let bundled_prompt = profile_cfg
-        .system_prompt
-        .is_none()
-        .then(|| bundled_shipped_agent_prompt(profile_name))
-        .flatten();
-
-    if profile_cfg.system_prompt.is_none() && bundled_prompt.is_none() {
-        return Err(format!(
-            "agent `{profile_name}` is missing a system prompt; define `agent.system_prompt` or ship `.agent-harness/agents/default.md`"
-        ));
-    }
-
-    let instruction_prompt = cfg.instruction_prompt_prefix();
-    Ok(dynamic_prompt::compose(DynamicPromptContext {
-        configured_prompt: profile_cfg
-            .system_prompt
-            .as_deref()
-            .or(bundled_prompt.as_deref()),
-        model,
-        instruction_prompt: instruction_prompt.as_deref(),
-        skill_tool_enabled: toolset.iter().any(|tool| tool == "skill"),
-    }))
+) -> String {
+    interactive_prompt_template(cfg, profile_name, profile_cfg, model)
+        .compose(model, toolset.iter().any(|tool| tool == "skill"))
 }
 
-fn bundled_shipped_agent_prompt(profile_name: &str) -> Option<String> {
-    let markdown = match profile_name {
-        DEFAULT_INTERACTIVE_PROFILE => include_str!("../../../.agent-harness/agents/default.md"),
-        "explore" => include_str!("../../../.agent-harness/agents/explore.md"),
-        "general" => include_str!("../../../.agent-harness/agents/general.md"),
-        "librarian" => include_str!("../../../.agent-harness/agents/librarian.md"),
-        _ => return None,
+fn interactive_prompt_template(
+    cfg: &HarnessConfig,
+    profile_name: &str,
+    profile_cfg: &harness_core::config::ProfileConfig,
+    model: &harness_core::config::ResolvedModelTarget,
+) -> harness_core::model_resolution::ModelPromptTemplate {
+    use harness_core::model_resolution::{
+        configured_prompt_override, shipped_agent_prompt, ModelPromptTemplate,
     };
-    Some(markdown_prompt_body(markdown))
-}
-
-fn markdown_prompt_body(markdown: &str) -> String {
-    let mut lines = markdown.lines();
-    if lines.next() == Some("---") {
-        for line in &mut lines {
-            if line == "---" {
-                break;
-            }
-        }
-        return lines.collect::<Vec<_>>().join("\n").trim().to_string();
+    let configured_prompt =
+        configured_prompt_override(profile_name, profile_cfg.system_prompt.as_deref());
+    let role = configured_prompt
+        .is_none()
+        .then(|| shipped_agent_prompt(profile_name))
+        .flatten();
+    ModelPromptTemplate {
+        model: model.clone(),
+        configured_prompt: configured_prompt.map(str::to_string),
+        role_prompt: role.map(str::to_string),
+        instruction_prompt: cfg.instruction_prompt_prefix(),
+        extra_rules: None,
+        render: dynamic_prompt::compose_template,
     }
-    markdown.trim().to_string()
 }
 
 pub fn interactive_agent_profiles(
@@ -448,7 +441,7 @@ fn interactive_agent_profiles_with_extra_tools(
             profile_cfg,
             &model_selection.primary,
             &toolset,
-        )?;
+        );
         let cache_retention = cfg
             .providers
             .get(&model_selection.primary.provider)
@@ -683,9 +676,9 @@ mod tests {
         );
 
         let profiles = interactive_agent_profiles(&cfg).unwrap_or_abort();
-        assert!(profiles["default"]
-            .system_prompt
-            .starts_with("You are an expert coding assistant"));
+        assert!(profiles["default"].system_prompt.contains(
+            harness_core::model_resolution::shipped_agent_prompt("default").unwrap_or_abort()
+        ));
     }
 
     #[test]
@@ -776,9 +769,9 @@ mod tests {
         assert!(profiles["librarian"]
             .toolset
             .contains(&"webfetch".to_string()));
-        assert!(profiles["default"]
-            .system_prompt
-            .starts_with("You are an expert coding assistant"));
+        assert!(profiles["default"].system_prompt.contains(
+            harness_core::model_resolution::shipped_agent_prompt("default").unwrap_or_abort()
+        ));
         assert!(profiles["default"].system_prompt.contains("inside Harness"));
         assert!(!profiles["default"]
             .system_prompt

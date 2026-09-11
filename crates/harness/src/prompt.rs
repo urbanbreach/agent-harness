@@ -1020,12 +1020,16 @@ pub(super) fn apply_prompt_command_config(
 
     if !cmd.verbatim {
         if let Some(ref override_prompt) = cmd.system_prompt_override {
+            coordinator_config.agent_prompt_templates.clear();
             for profile in coordinator_config.agent_profiles.values_mut() {
                 profile.system_prompt = override_prompt.clone();
             }
         }
 
         if let Some(ref rules) = cmd.rules {
+            for template in coordinator_config.agent_prompt_templates.values_mut() {
+                template.extra_rules = Some(rules.clone());
+            }
             for profile in coordinator_config.agent_profiles.values_mut() {
                 profile.system_prompt.push_str("\n\n");
                 profile.system_prompt.push_str(rules);

@@ -116,14 +116,16 @@ pub use self::settings_write::{
     read_effective_compaction_auto_retry_overflow, read_effective_compaction_enabled,
     read_effective_compaction_estimated_token_triggers,
     read_effective_compaction_structured_summary_contract, read_effective_deterministic_enabled,
-    read_effective_hashline_edit, reset_project_compaction_auto_retry_overflow,
-    reset_project_compaction_enabled, reset_project_compaction_estimated_token_triggers,
+    read_effective_hashline_edit, read_project_setting_value,
+    reset_project_compaction_auto_retry_overflow, reset_project_compaction_enabled,
+    reset_project_compaction_estimated_token_triggers,
     reset_project_compaction_structured_summary_contract, reset_project_deterministic_enabled,
-    reset_project_hashline_edit, reset_project_setting_to_default,
+    reset_project_hashline_edit, reset_project_setting_to_default, setting_editor_kind,
     write_project_compaction_auto_retry_overflow, write_project_compaction_enabled,
     write_project_compaction_estimated_token_triggers,
     write_project_compaction_structured_summary_contract, write_project_deterministic_enabled,
-    write_project_hashline_edit, write_project_setting_bool, SettingWriteError,
+    write_project_hashline_edit, write_project_setting_bool, write_project_setting_value,
+    SettingEditorKind, SettingWriteError,
 };
 use self::validation::{
     is_blank_config_value, validate_hook_definitions, validate_lsp_overrides, validate_mcp_servers,
@@ -453,6 +455,9 @@ impl Default for BackgroundTaskSettings {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RuntimeConfig {
+    /// Start new and resumed runs in always-approve mode.
+    #[serde(default)]
+    pub always_approve: bool,
     #[serde(alias = "backgroundTasks")]
     pub background_tasks: BackgroundTaskSettings,
     #[serde(default = "default_session_dir", alias = "sessionDir")]
