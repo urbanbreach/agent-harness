@@ -99,6 +99,8 @@ Prefer:
 
 A test that cannot plausibly catch a regression should not exist.
 
+When running tests, use nextest instead of cargo test.
+
 ## ANTI-PATTERNS (THIS PROJECT)
 
 - Do not replay historical tools or hooks, mutate source histories, or perform network
