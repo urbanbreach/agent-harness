@@ -79,6 +79,99 @@ fn semantic_transcript_events() -> Vec<EventEnvelopeV1> {
 }
 
 #[test]
+fn semantic_commit_preserves_tools_waiting_for_permission() {
+    // The interactive scenario queues an edit before the provider responds.
+    // Its response may also mention the tool; neither case can discard the
+    // coordinator's request or approval state.
+    for response_mentions_tool in [false, true] {
+        let mut events = semantic_transcript_events();
+        let requested = events.pop().unwrap_or_abort();
+        events.insert(1, requested);
+        events.insert(
+            2,
+            envelope(
+                0,
+                system(),
+                Some("turn-1"),
+                EventV1::PermissionRequested(PermissionRequestedEvent {
+                    permission_id: "permission-1".to_string(),
+                    kind: "tool".to_string(),
+                    tool_call_id: Some("toolcall_000001".into()),
+                    summary: "Allow the queued tool?".to_string(),
+                    request_digest: "permission-digest".to_string(),
+                    timeout_ms: 30_000,
+                    default_decision: PermissionDecision::Deny,
+                }),
+            ),
+        );
+        if let EventV1::AssistantMessageFinished(commit) =
+            &mut events.last_mut().unwrap_or_abort().payload
+        {
+            commit.parts.retain(|part| {
+                response_mentions_tool
+                    || !matches!(part, harness_core::session::AssistantPart::ToolCall(_))
+            });
+            commit.tool_call_count = usize::from(response_mentions_tool);
+        }
+        events.extend([
+            envelope(
+                0,
+                system(),
+                Some("turn-1"),
+                EventV1::PermissionResolved(PermissionResolvedEvent {
+                    permission_id: "permission-1".to_string(),
+                    decision: PermissionDecision::Allow,
+                    reason: None,
+                }),
+            ),
+            envelope(
+                0,
+                system(),
+                Some("turn-1"),
+                EventV1::ToolCallStarted(ToolCallStartedEvent {
+                    tool_call_id: "toolcall_000001".into(),
+                }),
+            ),
+            envelope(
+                0,
+                system(),
+                Some("turn-1"),
+                EventV1::ToolCallFinished(ToolCallFinishedEvent {
+                    tool_call_id: "toolcall_000001".into(),
+                    status: ToolCallStatus::Succeeded,
+                    output_summary: Some("file contents".to_string()),
+                    output_digest: Some("result-digest".to_string()),
+                    output_json: None,
+                    metadata: None,
+                }),
+            ),
+        ]);
+        for (index, event) in events.iter_mut().enumerate() {
+            event.seq = u64::try_from(index + 1).unwrap_or_abort();
+        }
+
+        let projection = project_transcript(&events).unwrap_or_abort();
+        let tools = assistant_message(&projection, "turn-1")
+            .parts
+            .iter()
+            .filter_map(|part| match part {
+                ProjectedPart::ToolCall(tool) => Some(tool),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(tools.len(), 1);
+        let tool = tools[0];
+        assert_eq!(tool.tool_id, "read");
+        assert_eq!(tool.args_summary, r#"{"path":"Cargo.toml"}"#);
+        assert_eq!(tool.requested_seq, Some(2));
+        assert_eq!(tool.state, ProjectedToolCallState::Succeeded);
+        assert_eq!(tool.output_summary.as_deref(), Some("file contents"));
+        assert_eq!(tool.permissions.len(), 1);
+        assert_eq!(tool.permissions[0].decision, Some(PermissionDecision::Allow));
+    }
+}
+
+#[test]
 fn semantic_transcript_preserves_reasoning_text_and_tool_order() {
     // arrange
     let events = semantic_transcript_events();
