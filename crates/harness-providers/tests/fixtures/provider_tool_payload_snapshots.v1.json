@@ -68,7 +68,7 @@
           "api_mode": "responses",
           "endpoint_path": "/v1/responses",
           "bearer_token": "<redacted>",
-          "request_body_digest": "05d39c38103b482f300759d1edbc88d2141d75a41a2b8f77bb996817821c197e",
+          "request_body_digest": "1405af0767aa55982055fc825dcb24fbeed2e369d417e5a04ee5a61db79cce3f",
           "tool_function_names": [
             "apply_patch",
             "bash",
@@ -139,7 +139,7 @@
           "api_mode": "responses",
           "endpoint_path": "/v1/responses",
           "bearer_token": "<redacted>",
-          "request_body_digest": "54fb1791af8720a722117d22c8ea9841939319770395c9ea5252090a3c8943d2",
+          "request_body_digest": "a4b62ee4792a8e853be6ddaa136f9838650aca7e87d95dbaeef303f1d306d6c2",
           "tool_function_names": [
             "glob",
             "grep",
@@ -153,7 +153,7 @@
     {
       "profile": "general",
       "category": "general",
-      "completion_request_digest": "dd203e418c567086daf3b5b6fb3121036d0fc2c990c7e10944e346f991c7ce58",
+      "completion_request_digest": "616ffe7846ee5af3c3c411b0e4d6012de23cf2c6564adc6f3ad8e4ef3eed4a91",
       "tools": [
         {
           "canonical_id": "background_output",
@@ -173,7 +173,7 @@
           "canonical_id": "task",
           "provider_function_name": "task",
           "description_digest": "716b0dda2653583dbcfc25434e758a3bbe48501ad70fcc3fdacbd1c4acb0e7bc",
-          "parameters_digest": "077f7368cb63c9bcdc1b84b7a3d6a52d8af2811c639f53a8267ad175b22d0fca",
+          "parameters_digest": "a8d8fc2c357bee5ec9cc021413ff042460e2c10f6467609d003ab37c28c38d4e",
           "parameters_type": "object"
         },
         {
@@ -189,7 +189,7 @@
           "api_mode": "chat_completions",
           "endpoint_path": "/v1/chat/completions",
           "bearer_token": "<redacted>",
-          "request_body_digest": "07bd5cd66b6957fb73a3d8e8d6fc542a7b3d7f2f985fe2be6cfb3ccd24da93b1",
+          "request_body_digest": "4a2111f8efbe767a9733cde1b6ec6c080ba7951684cbfcfc1756a6bcc5a39d0c",
           "tool_function_names": [
             "background_output",
             "skill",
@@ -201,7 +201,7 @@
           "api_mode": "responses",
           "endpoint_path": "/v1/responses",
           "bearer_token": "<redacted>",
-          "request_body_digest": "1253c5bd39c05be05a5ba32952a394d19193de63eaa986d7d512fe472a2a6eee",
+          "request_body_digest": "5dd9826a8542f939c18cb2899cfbb09fc3271e7b8120ee073d4e74a37fa8ad0d",
           "tool_function_names": [
             "background_output",
             "skill",
@@ -246,7 +246,7 @@
           "api_mode": "responses",
           "endpoint_path": "/v1/responses",
           "bearer_token": "<redacted>",
-          "request_body_digest": "d6d253058896774bba12498b0ca743d1377622a7789909a672d7d79345376e57",
+          "request_body_digest": "3cf35024e1b2d164ea1e1febefddc42787cd7c8896219b2282ea0e2082809efb",
           "tool_function_names": [
             "mcp_docs_rs_tool_call",
             "mcp_docs_rs_tools_list"
