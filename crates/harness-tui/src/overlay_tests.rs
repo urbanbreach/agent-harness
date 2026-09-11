@@ -222,6 +222,7 @@ fn test_permission_pending_preempts_all_other_overlays() {
         settings_editor_visible: false,
         plan_view_visible: false,
         memory_browser_visible: false,
+        prompt_history_visible: false,
         worktree_picker_visible: false,
         new_worktree_dialog_visible: false,
         foreign_import_picker_visible: false,

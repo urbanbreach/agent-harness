@@ -67,6 +67,33 @@ pub(crate) fn modal_surface_model(app: &AppState, frame_area: Rect) -> Option<Mo
         OverlayKind::LineageBrowser => lineage_model(app, plan.palette_overlay?),
         OverlayKind::ForkSelector => fork_model(app, plan.palette_overlay?),
         OverlayKind::ThemeDialog => theme_dialog_model(app, frame_area),
+        OverlayKind::ProductInfo => {
+            let popup = centered_clamped(frame_area, 40, 88, 8, 28);
+            uniform_list_model(
+                app,
+                ModalSurfaceKey::Overlay {
+                    kind: OverlayKind::ProductInfo,
+                    view: ModalViewKey::Primary,
+                },
+                popup,
+                1,
+                app.product_info.matches().len(),
+                app.product_info.selected,
+                1 + super::product_info::preview_rows(popup),
+            )
+        }
+        OverlayKind::PromptHistory => uniform_list_model(
+            app,
+            ModalSurfaceKey::Overlay {
+                kind: OverlayKind::PromptHistory,
+                view: ModalViewKey::Primary,
+            },
+            centered_clamped(frame_area, 40, 80, 8, 24),
+            1,
+            app.prompt_history_matches().len(),
+            app.prompt_history_picker.selected,
+            1,
+        ),
         OverlayKind::PromptStashList => prompt_stash_model(app, frame_area),
         OverlayKind::SettingsEditor => settings_model(app, frame_area),
         OverlayKind::PlanView => plan_model(app, frame_area),
@@ -580,7 +607,11 @@ fn settings_model(app: &AppState, root: Rect) -> Option<ModalSurfaceModel> {
         },
         centered_clamped(root, 48, 88, 10, 28),
         3,
-        app.settings_editor_rows().len(),
+        if app.settings_interaction.edit.is_some() {
+            0
+        } else {
+            app.settings_editor_rows().len()
+        },
         app.settings_editor_selected_index(),
         1,
     )
@@ -612,17 +643,26 @@ fn plan_model(app: &AppState, root: Rect) -> Option<ModalSurfaceModel> {
 }
 
 fn memory_model(app: &AppState, root: Rect) -> Option<ModalSurfaceModel> {
+    let popup = if app.memory_browser.fullscreen {
+        root
+    } else {
+        centered_clamped(root, 40, 80, 8, 24)
+    };
     uniform_list_model(
         app,
         ModalSurfaceKey::Overlay {
             kind: OverlayKind::MemoryBrowser,
             view: ModalViewKey::Primary,
         },
-        centered_clamped(root, 40, 80, 8, 24),
+        popup,
         1,
-        app.memory_browser.filtered_entries().len(),
+        if app.memory_browser.fullscreen {
+            0
+        } else {
+            app.memory_browser.filtered_entries().len()
+        },
         app.memory_browser.selected,
-        0,
+        1 + super::memory_browser::preview_rows(app, popup),
     )
 }
 

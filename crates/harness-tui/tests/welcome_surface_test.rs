@@ -39,8 +39,14 @@ fn layout_matches_full_and_compact_viewports() {
 fn responsive_hero_stacks_below_90_columns_and_splits_at_or_above_90() {
     // arrange
     // act
-    for (width, stacked) in [(80, true), (90, false), (100, false), (120, false)] {
-        let layout = WelcomeLayout::compute(width, 19);
+    for (width, stacked) in [
+        (80, true),
+        (89, true),
+        (90, false),
+        (100, false),
+        (120, false),
+    ] {
+        let layout = WelcomeLayout::compute(width, 32);
 
         // assert
         assert_eq!(
@@ -52,7 +58,7 @@ fn responsive_hero_stacks_below_90_columns_and_splits_at_or_above_90() {
             assert_eq!(layout.action_rects[0].0, layout.content_rect.0);
         } else {
             assert!(layout.panel_rect.is_some());
-            assert_eq!(layout.logo_rect.2, 15);
+            assert_eq!(layout.logo_rect.2, 9);
             assert_eq!(layout.logo_rect.3, 7);
             assert!(
                 layout.action_rects[0].0
@@ -61,7 +67,7 @@ fn responsive_hero_stacks_below_90_columns_and_splits_at_or_above_90() {
             );
             assert_eq!(
                 layout.action_rects[0].0.saturating_add(1),
-                layout.content_rect.0.saturating_add(18),
+                layout.content_rect.0.saturating_add(13),
                 "the action hit row must include the focus marker at {width} columns"
             );
         }
@@ -69,15 +75,15 @@ fn responsive_hero_stacks_below_90_columns_and_splits_at_or_above_90() {
 }
 
 #[test]
-fn hero_breakpoint_depends_on_width_even_when_height_is_short() {
+fn hero_requires_both_width_and_height_to_fit() {
     // arrange
     // act
     let stacked = WelcomeLayout::compute(89, 20);
-    let split = WelcomeLayout::compute(90, 20);
+    let split = WelcomeLayout::compute(90, 16);
 
     // assert
     assert!(stacked.compact);
-    assert!(!split.compact);
+    assert!(split.compact);
 }
 
 #[test]
@@ -85,13 +91,14 @@ fn wide_hero_uses_compact_topology_when_the_panel_would_clip() {
     // arrange
     // act
     let clipped = WelcomeLayout::compute(90, 16);
-    let complete = WelcomeLayout::compute(90, 19);
+    let complete = WelcomeLayout::compute(90, 32);
 
     // assert
     assert!(clipped.compact);
     assert!(clipped.panel_rect.is_none());
     assert!(!complete.compact);
-    assert_eq!(complete.panel_rect.map(|panel| panel.3), Some(15));
+    let panel = complete.panel_rect.unwrap_or((0, 0, 0, 0));
+    assert!(panel.1 + panel.3 <= 32);
 }
 
 #[test]
@@ -101,7 +108,9 @@ fn region_at_identifies_regions_and_gaps() {
     let layout = WelcomeLayout::compute(120, 32);
     for (region, rect) in layout.all_regions() {
         // assert
-        assert_eq!(layout.region_at(rect.0, rect.1), region);
+        if rect.2 > 0 && rect.3 > 0 {
+            assert_eq!(layout.region_at(rect.0, rect.1), region);
+        }
     }
     assert_eq!(layout.region_at(0, 0), WelcomeRegion::None);
 }

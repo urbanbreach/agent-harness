@@ -21,29 +21,28 @@ pub struct DashboardPaneVisibility {
 
 impl DashboardPaneVisibility {
     pub const fn visible(self) -> [DashboardPane; 4] {
-        if self.details {
-            [
-                DashboardPane::Roster,
-                DashboardPane::Peek,
-                DashboardPane::Reply,
-                DashboardPane::Details,
-            ]
-        } else {
-            [
-                DashboardPane::Roster,
-                DashboardPane::Peek,
-                DashboardPane::Reply,
-                DashboardPane::Roster,
-            ]
+        let mut panes = [DashboardPane::Roster; 4];
+        let candidates = [
+            DashboardPane::Roster,
+            DashboardPane::Peek,
+            DashboardPane::Reply,
+            DashboardPane::Details,
+        ];
+        let visible = [self.roster, self.peek, self.reply, self.details];
+        let mut index = 0;
+        let mut count = 0;
+        while index < 4 {
+            if visible[index] {
+                panes[count] = candidates[index];
+                count += 1;
+            }
+            index += 1;
         }
+        panes
     }
 
     pub const fn count(self) -> usize {
-        if self.details {
-            4
-        } else {
-            3
-        }
+        self.roster as usize + self.peek as usize + self.reply as usize + self.details as usize
     }
 }
 
@@ -82,8 +81,15 @@ pub fn dashboard_content_viewport(root: Rect) -> Option<Rect> {
 
 impl DashboardLayout {
     pub fn visible_panes(&self) -> Vec<DashboardPane> {
-        let all = self.visibility.visible();
-        all[..self.visibility.count()].to_vec()
+        [
+            (DashboardPane::Roster, self.visibility.roster),
+            (DashboardPane::Peek, self.visibility.peek),
+            (DashboardPane::Reply, self.visibility.reply),
+            (DashboardPane::Details, self.visibility.details),
+        ]
+        .into_iter()
+        .filter_map(|(pane, visible)| visible.then_some(pane))
+        .collect()
     }
 
     pub fn pane_at(&self, x: u16, y: u16) -> Option<DashboardPane> {
@@ -99,6 +105,14 @@ impl DashboardLayout {
 }
 
 pub fn layout_for_rect(viewport: Rect, shell_state: ShellState) -> DashboardLayout {
+    layout_with_reply_rows(viewport, shell_state, 1)
+}
+
+pub(super) fn layout_with_reply_rows(
+    viewport: Rect,
+    shell_state: ShellState,
+    reply_rows: u16,
+) -> DashboardLayout {
     let shell = shell_layout_for_rect(viewport, shell_state);
     let breakpoint = if viewport.width <= 60 {
         DashboardBreakpoint::Compact
@@ -107,24 +121,35 @@ pub fn layout_for_rect(viewport: Rect, shell_state: ShellState) -> DashboardLayo
     } else {
         DashboardBreakpoint::Wide
     };
-    let visibility = DashboardPaneVisibility {
-        roster: true,
-        peek: true,
-        reply: true,
-        details: breakpoint == DashboardBreakpoint::Wide,
-    };
-    let body = shell.transcript_viewport;
-    let first = body.width / 3;
-    let second = body.width / 3;
-    let roster = Rect::new(body.x, body.y, first, body.height);
-    let peek = Rect::new(body.x.saturating_add(first), body.y, second, body.height);
-    let reply = Rect::new(
-        body.x.saturating_add(first).saturating_add(second),
-        body.y,
-        body.width.saturating_sub(first).saturating_sub(second),
-        body.height,
+    // Reserve the roster first. A bottom peek may use at most 3/8 of the
+    // viewport, and appears only when twelve list rows and useful content fit.
+    let body = Rect::new(
+        viewport.x,
+        viewport.y.saturating_add(2),
+        viewport.width,
+        viewport.height.saturating_sub(4),
     );
-    let details = visibility.details.then_some(centered_overlay(viewport));
+    let reply_height = reply_rows.clamp(1, 5).saturating_add(2).min(body.height);
+    let available = body.height.saturating_sub(reply_height);
+    let candidate = available
+        .saturating_sub(12)
+        .min(viewport.height.saturating_mul(3) / 8);
+    let peek_height = if candidate >= 8 { candidate } else { 0 };
+    let roster = Rect::new(
+        body.x,
+        body.y,
+        body.width,
+        available.saturating_sub(peek_height),
+    );
+    let peek = Rect::new(body.x, roster.bottom(), body.width, peek_height);
+    let reply = Rect::new(body.x, peek.bottom(), body.width, reply_height);
+    let details = None;
+    let visibility = DashboardPaneVisibility {
+        roster: roster.height > 0,
+        peek: peek.height > 0,
+        reply: reply.height > 0,
+        details: false,
+    };
     DashboardLayout {
         viewport,
         shell,
@@ -193,17 +218,6 @@ impl Default for DashboardHooks {
     fn default() -> Self {
         Self::new()
     }
-}
-
-fn centered_overlay(viewport: Rect) -> Rect {
-    let width = viewport.width.saturating_sub(8).min(72);
-    let height = viewport.height.saturating_sub(4).min(32);
-    Rect::new(
-        viewport.x + viewport.width.saturating_sub(width) / 2,
-        viewport.y + viewport.height.saturating_sub(height) / 2,
-        width,
-        height,
-    )
 }
 
 fn contains(rect: Rect, x: u16, y: u16) -> bool {

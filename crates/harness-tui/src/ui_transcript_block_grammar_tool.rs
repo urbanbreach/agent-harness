@@ -94,6 +94,10 @@ pub(in crate::ui::ui_transcript) fn tool_family(
                     TranscriptToolFamily::Web
                 }
                 TranscriptToolVerb::Subagent => TranscriptToolFamily::Task,
+                TranscriptToolVerb::Edit => TranscriptToolFamily::Edit,
+                TranscriptToolVerb::Mcp
+                | TranscriptToolVerb::Message
+                | TranscriptToolVerb::Other => TranscriptToolFamily::Unknown,
             },
         ),
     }
@@ -191,6 +195,7 @@ mod dense_fold_tests {
 
     fn tool(id: &str, status: ToolCallDisplayStatus) -> TranscriptToolCallSection {
         TranscriptToolCallSection {
+            group: Default::default(),
             tool_call_id: id.to_string(),
             coalesced_tool_call_ids: vec![id.to_string()],
             child_session_id: None,

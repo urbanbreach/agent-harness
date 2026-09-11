@@ -20,8 +20,6 @@ use crate::keybindings::{self, Action};
 use crate::leaf_actions::group_d_dashboard::{action_for_command, DashboardAction};
 use crate::text::has_trimmed_content;
 
-const SLASH_COMMAND_RESULT_LIMIT: usize = 10;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LineageSlashCommand {
     Fork,
@@ -146,7 +144,7 @@ impl AppState {
         Some((command, args))
     }
 
-    fn active_slash_parts_full(&self) -> Option<(&str, Option<&str>)> {
+    pub(in crate::app) fn active_slash_parts_full(&self) -> Option<(&str, Option<&str>)> {
         let slash_start = self.active_slash_start()?;
         let expression = &self.composer.prompt_buffer[slash_start + 1..];
         let (command, args) = expression
@@ -192,6 +190,9 @@ impl AppState {
 
     pub(in crate::app) fn clear_slash_menu(&mut self) {
         self.slash_visible = false;
+        self.slash_hovered = None;
+        self.slash_pointer_down = None;
+        self.slash_arguments.clear();
         self.slash_filtered.clear();
         self.slash_selected = 0;
     }
@@ -223,6 +224,12 @@ impl AppState {
             .unwrap_or_default();
 
         self.slash_visible = true;
+        if has_args && matches!(slash_query.as_str(), "model" | "models" | "mo") {
+            self.sync_slash_model_completions();
+            return;
+        }
+        self.slash_arguments.clear();
+        self.slash_model_pending = None;
         if has_args {
             let exact = keybindings::slash_commands().iter().find(|command| {
                 command.id == slash_query
@@ -248,12 +255,25 @@ impl AppState {
                 .map(|rank| (rank, command.id.to_string()))
             })
             .collect::<Vec<_>>();
-        filtered.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
-        self.slash_filtered = filtered
-            .into_iter()
-            .take(SLASH_COMMAND_RESULT_LIMIT)
-            .map(|(_, command)| command)
-            .collect();
+        filtered.sort_by(|left, right| {
+            left.0
+                .cmp(&right.0)
+                .then_with(|| {
+                    self.slash_recent
+                        .iter()
+                        .position(|id| id == &left.1)
+                        .unwrap_or(usize::MAX)
+                        .cmp(
+                            &self
+                                .slash_recent
+                                .iter()
+                                .position(|id| id == &right.1)
+                                .unwrap_or(usize::MAX),
+                        )
+                })
+                .then_with(|| left.1.cmp(&right.1))
+        });
+        self.slash_filtered = filtered.into_iter().map(|(_, command)| command).collect();
         self.slash_selected = 0;
     }
 
@@ -283,9 +303,13 @@ impl AppState {
     }
 
     fn slash_command_available(&self, command: &str) -> bool {
+        if command == "always-approve" {
+            return !self.replay_mode;
+        }
         match command {
+            "usage" | "extensions" => true,
             "new" | "status" | "dashboard" | "toggles" | "auth" | "connect" | "help" | "exit"
-            | "mcps" | "timestamps" | "thinking" | "settings" | "view-plan" => true,
+            | "mcps" | "timestamps" | "thinking" | "settings" | "view-plan" | "vim" => true,
             "sessions" | "replay" => !self.replay_mode,
             "fork" => !self.startup_mode && !self.replay_mode,
             "clone" => !self.startup_mode && self.lineage_write_blocked_reason().is_none(),
@@ -310,6 +334,9 @@ impl AppState {
         self.projection.reset();
         self.selected_event_index = 0;
         self.transcript_view.selected_activity_index = 0;
+        self.transcript_view.reset_entry_navigation();
+        self.prompt_history_picker = Default::default();
+        self.queued_prompt_navigation = None;
         self.transcript_view.follow_mode = true;
         self.active_tab = Tab::Run;
         self.live_details_drawer_open = false;
@@ -363,6 +390,14 @@ impl AppState {
             return;
         }
         match command {
+            "always-approve" => {
+                self.restore_slash_draft(preserved_draft);
+                self.request_always_approve_mode_toggle();
+            }
+            "usage" | "extensions" => {
+                self.restore_slash_draft(preserved_draft);
+                self.open_product_info(command == "usage");
+            }
             "new" => self.navigate_to_home_shell(preserved_draft.unwrap_or_default()),
             "sessions" => {
                 self.restore_slash_draft(preserved_draft);
@@ -474,6 +509,24 @@ impl AppState {
                 self.restore_slash_draft(preserved_draft);
                 self.transcript_view.show_transcript_thinking =
                     !self.transcript_view.show_transcript_thinking;
+                self.transcript_view.expanded_tool_groups.clear();
+            }
+            "vim" => {
+                self.restore_slash_draft(preserved_draft);
+                self.composer.vim_mode = !self.composer.vim_mode;
+                self.focus = if self.composer.vim_mode {
+                    Focus::Details
+                } else {
+                    Focus::Prompt
+                };
+                self.show_toast(
+                    if self.composer.vim_mode {
+                        "Vim mode · i to type"
+                    } else {
+                        "Simple input"
+                    },
+                    crate::app::ToastVariant::Mode,
+                );
             }
             "settings" => {
                 self.restore_slash_draft(preserved_draft);
@@ -585,6 +638,9 @@ impl AppState {
     }
 
     pub(in crate::app) fn apply_selected_slash_completion(&mut self) {
+        if self.accept_slash_model(false) {
+            return;
+        }
         let Some(command) = self.selected_slash_command() else {
             return;
         };
@@ -619,6 +675,9 @@ impl AppState {
     }
 
     fn execute_selected_slash_completion(&mut self) {
+        if self.accept_slash_model(true) {
+            return;
+        }
         let Some(command) = self.slash_filtered.get(self.slash_selected).cloned() else {
             return;
         };
@@ -636,17 +695,25 @@ impl AppState {
             self.apply_selected_slash_completion();
             return;
         }
+        self.slash_recent.retain(|recent| recent != &command);
+        self.slash_recent.insert(0, command.clone());
+        self.slash_recent
+            .truncate(keybindings::slash_commands().len());
         self.execute_slash_command(&command, self.slash_draft_snapshot.clone());
     }
 
     pub(in crate::app) fn handle_slash_key(&mut self, key: &KeyEvent) -> bool {
         match (key.code, key.modifiers) {
             (KeyCode::Esc, _) => {
-                self.restore_slash_draft(self.slash_draft_snapshot.clone());
+                self.clear_slash_menu();
                 true
             }
-            (KeyCode::Enter, _) => {
+            (KeyCode::Enter, KeyModifiers::NONE) => {
                 self.execute_selected_slash_completion();
+                true
+            }
+            (KeyCode::Enter, KeyModifiers::SHIFT) => {
+                self.insert_prompt_char('\n');
                 true
             }
             (KeyCode::Tab, _) => {
@@ -666,6 +733,8 @@ impl AppState {
     }
 
     fn move_slash_selection(&mut self, delta: isize) {
+        self.slash_hovered = None;
+        self.slash_pointer_down = None;
         let len = self.slash_filtered.len();
         if len == 0 {
             self.slash_selected = 0;
@@ -950,6 +1019,9 @@ impl AppState {
         self.projection.reset();
         self.selected_event_index = 0;
         self.transcript_view.selected_activity_index = 0;
+        self.transcript_view.reset_entry_navigation();
+        self.prompt_history_picker = Default::default();
+        self.queued_prompt_navigation = None;
         self.transcript_view.follow_mode = true;
         self.details_scroll = 0;
         self.transcript_view.transcript_scroll = 0;

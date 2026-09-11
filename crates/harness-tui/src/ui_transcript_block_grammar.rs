@@ -106,11 +106,16 @@ fn block_is_groupable(spec: &TranscriptBlockSpec) -> bool {
 
 fn block_is_collapsed(spec: &TranscriptBlockSpec) -> bool {
     match &spec.content {
-        TranscriptBlockContent::Reasoning { expanded, .. } => !expanded,
-        TranscriptBlockContent::Tool { policy, .. } => matches!(
-            policy.disclosure,
-            TranscriptToolDisclosure::None | TranscriptToolDisclosure::Collapsed
-        ),
+        TranscriptBlockContent::Reasoning {
+            active, expanded, ..
+        } => !active && !expanded,
+        TranscriptBlockContent::Tool { policy, .. } => {
+            policy.group_class.is_some()
+                || matches!(
+                    policy.disclosure,
+                    TranscriptToolDisclosure::None | TranscriptToolDisclosure::Collapsed
+                )
+        }
         TranscriptBlockContent::UserMessage { .. }
         | TranscriptBlockContent::AssistantBody { .. }
         | TranscriptBlockContent::Footer { .. }

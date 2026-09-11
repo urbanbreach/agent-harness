@@ -6,7 +6,7 @@ pub(super) fn default_app_uses_harness_dark_theme() {
     let app = AppState::default();
 
     assert_eq!(app.theme(), &Theme::harness_dark());
-    assert_eq!(rendered_cell_bg(&app, 0, 0), Color::Rgb(11, 14, 20));
+    assert_eq!(rendered_cell_bg(&app, 0, 0), Color::Rgb(20, 20, 20));
 }
 
 pub(super) fn explicit_harness_dark_selection_uses_harness_dark_theme() {

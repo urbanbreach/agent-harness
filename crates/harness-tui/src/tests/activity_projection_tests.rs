@@ -321,7 +321,7 @@ pub(super) fn tool_call_requested_renders_pending_status() {
 
     let debug = format!("{:?}", terminal.backend().buffer());
     assert!(
-        debug.contains("Read test.txt"),
+        debug.contains("Reading 1 file"),
         "transcript must show the queued semantic tool header"
     );
 }
@@ -372,7 +372,7 @@ pub(super) fn tool_call_started_renders_running_status() {
 
     let debug = format!("{:?}", terminal.backend().buffer());
     assert!(
-        debug.contains("Read test.txt"),
+        debug.contains("Reading 1 file"),
         "transcript must show the running semantic tool header"
     );
 }
@@ -438,7 +438,7 @@ pub(super) fn tool_call_finished_renders_truncated_output() {
     let debug = format!("{:?}", terminal.backend().buffer());
     // Individual reads retain their path while stored output stays folded.
     assert!(
-        debug.contains("Read test.txt"),
+        debug.contains("Read 1 file"),
         "transcript must show tool title"
     );
     assert!(
@@ -496,6 +496,7 @@ pub(super) fn tool_call_failed_renders_error() {
         }),
     ));
 
+    app.toggle_tool_output_for_test("tc_001");
     app.active_tab = app::Tab::Run;
 
     let backend = TestBackend::new(80, 24);

@@ -1,6 +1,6 @@
 ---
 source: crates/harness-tui/tests/deterministic_render_test.rs
-assertion_line: 109
+assertion_line: 105
 expression: trim_trailing_snapshot_whitespace(&rendered)
 ---
 
@@ -10,16 +10,16 @@ expression: trim_trailing_snapshot_whitespace(&rendered)
      ❯ Inspect tool activity
 
 
-     ✓ Read ui.rs (1-24)  ▸
-     ✓ Edit ui.rs  ▸
-  ┃  ◈ Ran 1 subagent  ▸
-
-     ✗ Run cargo test -p harness-tui · in workspace · Failed  ▾
-
-         exit code: 1
-         stderr: snapshot mismatch
+     ◈ Read 1 file
+     ◆ Edit ui.rs
+     ◆ Researcher Task — audit tool lifecycle consistency · completed
+     ◆ Run cargo test -p harness-tui · in workspace
 
      Tool summaries are now easier to scan, and edits stay inline.
+
+
+
+
 
 
 

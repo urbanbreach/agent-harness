@@ -139,7 +139,7 @@ fn modal_overlay_precedes_dashboard_chrome_and_pane_targets() {
 }
 
 #[test]
-fn responsive_layout_uses_shell_geometry_and_hides_details_at_narrow_widths() {
+fn responsive_layout_reserves_roster_before_optional_bottom_peek() {
     // arrange
     // act
     let compact = layout_for_rect(Rect::new(0, 0, 60, 15), ShellState::Streaming);
@@ -150,7 +150,12 @@ fn responsive_layout_uses_shell_geometry_and_hides_details_at_narrow_widths() {
     assert!(!compact.visibility.details);
     assert!(compact.shell.contains_all_regions());
     assert_eq!(wide.breakpoint, DashboardBreakpoint::Wide);
-    assert!(wide.visibility.details);
+    assert!(!wide.visibility.details);
+    assert!(!compact.visibility.peek);
+    assert!(wide.roster.height >= 12);
+    assert_eq!(wide.peek.y, wide.roster.bottom());
+    assert_eq!(wide.reply.y, wide.peek.bottom());
+    assert!(wide.peek.height <= wide.viewport.height * 3 / 8);
     assert!(wide.visibility.roster && wide.visibility.peek && wide.visibility.reply);
 }
 

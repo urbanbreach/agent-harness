@@ -141,9 +141,10 @@ impl super::DashboardPeek {
 
 fn status_for(status: DashboardStatus) -> super::PeekSessionStatus {
     match status {
-        DashboardStatus::Running | DashboardStatus::Queued | DashboardStatus::Streaming => {
-            super::PeekSessionStatus::Active
-        }
+        DashboardStatus::AwaitingInput
+        | DashboardStatus::Running
+        | DashboardStatus::Queued
+        | DashboardStatus::Streaming => super::PeekSessionStatus::Active,
         DashboardStatus::Completed
         | DashboardStatus::Failed
         | DashboardStatus::Cancelled

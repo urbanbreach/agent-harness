@@ -252,18 +252,18 @@ pub(super) fn render_yolo_warning_popup(frame: &mut Frame, theme: &Theme, overla
     let surface = ui_chrome::command_palette_surface(theme);
     let text = Text::from(vec![
         Line::from(Span::styled(
-            "Confirm YOLO mode",
+            "Confirm always-approve mode",
             Style::default()
                 .fg(theme.status.warning)
                 .bg(surface)
                 .add_modifier(Modifier::BOLD),
         )),
         Line::from(Span::styled(
-            "YOLO marks every menu entry on.",
+            "Auto-approve ordinary tool permissions.",
             Style::default().fg(theme.text.primary).bg(surface),
         )),
         Line::from(Span::styled(
-            "Coordinator permissions still apply.",
+            "Questions and sensitive requests still prompt.",
             Style::default().fg(theme.text.secondary).bg(surface),
         )),
         Line::default(),

@@ -23,6 +23,8 @@ use crate::composer_atoms::split_graphemes;
 use crate::terminal::char_display_width;
 
 const TRANSCRIPT_SURFACE_RAIL_WIDTH: u16 = 1;
+// Grok Build HorizontalLayout::ACCENT (1) + LayoutConfig::block_pad_left (2).
+pub(super) const TRANSCRIPT_ENTRY_CONTENT_PREFIX: &str = "   ";
 pub(super) const TRANSCRIPT_SURFACE_TRAILING_GAP_WIDTH: u16 = 2;
 pub(super) const TRANSCRIPT_RAIL_GLYPH: &str = " ";
 
@@ -43,7 +45,11 @@ pub(super) fn render_transcript_surface(
         area,
     );
 
-    let tool_rail_overlay = surface.tool_rail_motion.is_some();
+    let tool_rail_overlay = surface.tool_rail_motion.is_some()
+        && surface
+            .lines
+            .iter()
+            .any(|line| line_has_tool_rail(line, surface.rail_glyph));
     let rail_visible = surface.show_outer_rail || tool_rail_overlay;
     let rail_width = 0;
 
@@ -149,6 +155,8 @@ mod animation_phase_tests {
         motion: Option<ToolRailMotion>,
     ) -> TranscriptVisualEntry {
         TranscriptVisualEntry {
+            source_text: None,
+            rendered_text: std::rc::Rc::from(""),
             metadata: TranscriptVisualEntryMetadata::settled(
                 0,
                 0,
@@ -193,6 +201,8 @@ mod animation_phase_tests {
         // Given: a cached waiting footer with independently styled marker and label spans.
         let theme = Theme::default();
         let surface = TranscriptVisualEntry {
+            source_text: None,
+            rendered_text: std::rc::Rc::from(""),
             metadata: TranscriptVisualEntryMetadata::settled(
                 0,
                 0,
@@ -267,7 +277,7 @@ mod animation_phase_tests {
     #[test]
     fn active_reasoning_wave_animates_the_ascii_marker() {
         // arrange
-        let theme = Theme::default();
+        let theme = Theme::default().with_glyph_mode(crate::theme::GlyphMode::Ascii);
         let surface = reasoning_surface(
             &theme,
             "*",
@@ -365,6 +375,9 @@ fn apply_tool_header_motion_color(
     let Some(motion) = surface.tool_rail_motion else {
         return;
     };
+    if matches!(motion, ToolRailMotion::FinishFlash { .. }) {
+        return;
+    }
     if surface.kind == TranscriptRenderSurfaceKind::AssistantReasoning {
         if absolute_row == 0 {
             let color = tool_rail_motion_color(
@@ -377,7 +390,7 @@ fn apply_tool_header_motion_color(
             if let Some(marker) = line
                 .spans
                 .iter_mut()
-                .find(|span| !span.content.trim().is_empty())
+                .find(|span| span.content.trim() == theme.live_shell.transcript_glyphs.tool_marker)
             {
                 marker.style = marker.style.fg(color);
             }
@@ -432,13 +445,14 @@ fn transcript_surface_rail_lines_for_motion(
     visible_height: usize,
     animation_phase: usize,
 ) -> Vec<Line<'static>> {
-    let row_scoped_rail = matches!(
-        surface.tool_rail_motion,
-        Some(ToolRailMotion::FinishFlash { .. })
-    ) || surface
-        .lines
-        .iter()
-        .any(|line| line_has_tool_rail(line, surface.rail_glyph));
+    let row_scoped_rail = !surface.show_outer_rail
+        && (matches!(
+            surface.tool_rail_motion,
+            Some(ToolRailMotion::FinishFlash { .. })
+        ) || surface
+            .lines
+            .iter()
+            .any(|line| line_has_tool_rail(line, surface.rail_glyph)));
     (0..visible_height)
         .map(|local_row| {
             let absolute_row = local_scroll.saturating_add(local_row);
@@ -455,7 +469,7 @@ fn transcript_surface_rail_lines_for_motion(
             let color = tool_rail_motion_color(
                 surface.surface,
                 surface.rail_color,
-                if tool_surface {
+                if tool_surface && !surface.show_outer_rail {
                     None
                 } else {
                     surface.tool_rail_motion
@@ -466,7 +480,11 @@ fn transcript_surface_rail_lines_for_motion(
             let color = surface
                 .lines
                 .get(absolute_row)
-                .filter(|line| tool_surface && line_has_tool_rail(line, surface.rail_glyph))
+                .filter(|line| {
+                    tool_surface
+                        && !surface.show_outer_rail
+                        && line_has_tool_rail(line, surface.rail_glyph)
+                })
                 .and_then(|line| line.spans.first())
                 .and_then(|span| span.style.fg)
                 .unwrap_or(color);
@@ -488,9 +506,8 @@ pub(super) fn line_has_tool_rail(line: &Line<'_>, rail_glyph: &str) -> bool {
 }
 
 const TOOL_RAIL_WAVE_ROWS: usize = 32;
-const TOOL_RAIL_ANGULAR_SPEED: f32 = 4.5;
-const TOOL_RAIL_MIN_BRIGHTNESS: f32 = 0.28;
-const TOOL_RAIL_BRIGHTNESS_RANGE: f32 = 0.72;
+// Reference: 0.15 radians per tick, with its 30 fps interval rounded to 33 ms.
+const TOOL_RAIL_ANGULAR_SPEED: f32 = 0.15 / 0.033;
 
 pub(super) fn wave_brightness(elapsed: Duration, row: usize, wave_rows: usize) -> f32 {
     let elapsed_secs = elapsed.as_secs_f32();
@@ -514,11 +531,7 @@ pub(super) fn tool_rail_motion_color(
         Some(ToolRailMotion::Running { .. }) => {
             let elapsed = motion_elapsed(motion, animation_phase);
             let brightness = wave_brightness(elapsed, row, TOOL_RAIL_WAVE_ROWS);
-            blend_color(
-                surface,
-                accent,
-                TOOL_RAIL_MIN_BRIGHTNESS + brightness * TOOL_RAIL_BRIGHTNESS_RANGE,
-            )
+            blend_color(surface, accent, brightness)
         }
         Some(ToolRailMotion::FinishFlash { .. })
         | Some(ToolRailMotion::Waiting)
@@ -852,8 +865,15 @@ pub(super) fn append_prebuilt_plain_lines(
     prebuilt: Vec<Line<'static>>,
     width: u16,
 ) {
+    let content_width = usize::from(width)
+        .saturating_sub(display_width(prefix))
+        .max(1);
     for line in prebuilt {
-        append_prefixed_wrapped_spans_line(lines, prefix, Style::default(), line.spans, width);
+        for row in wrap_preformatted_spans(line.spans, content_width) {
+            let mut spans = vec![Span::raw(prefix.to_string())];
+            spans.extend(row);
+            lines.push(Line::from(spans));
+        }
     }
 }
 
@@ -1046,6 +1066,14 @@ pub(super) fn wrap_surface_spans(
     spans: Vec<Span<'static>>,
     width: usize,
 ) -> Vec<Vec<Span<'static>>> {
+    wrap_surface_spans_impl(spans, width, false)
+}
+
+fn wrap_surface_spans_impl(
+    spans: Vec<Span<'static>>,
+    width: usize,
+    preserve_indent: bool,
+) -> Vec<Vec<Span<'static>>> {
     if spans.is_empty() {
         return Vec::new();
     }
@@ -1059,7 +1087,7 @@ pub(super) fn wrap_surface_spans(
         let token_width = token.width();
         let token_is_whitespace = token_text.chars().all(char::is_whitespace);
 
-        if token_is_whitespace && current.is_empty() {
+        if token_is_whitespace && current.is_empty() && !(preserve_indent && rows.is_empty()) {
             continue;
         }
 
@@ -1127,6 +1155,37 @@ pub(super) fn wrap_surface_spans(
     rows
 }
 
+/// Code and terminal output preserve whitespace instead of treating it as a word separator.
+/// Expand tabs in source columns before cell wrapping, shared with selection.
+pub(super) fn wrap_preformatted_spans(
+    spans: Vec<Span<'static>>,
+    width: usize,
+) -> Vec<Vec<Span<'static>>> {
+    let mut source_column = 0;
+    let expanded = spans
+        .into_iter()
+        .map(|span| {
+            let mut text = String::new();
+            for cluster in split_graphemes(&span.content) {
+                let part = if cluster.as_str() == "\t" {
+                    " ".repeat(4 - source_column % 4)
+                } else {
+                    cluster.as_str().to_string()
+                };
+                source_column += display_width(&part);
+                text.push_str(&part);
+            }
+            Span::styled(text, span.style)
+        })
+        .collect();
+    let rows = wrap_surface_spans_impl(expanded, width.max(1), true);
+    if rows.is_empty() {
+        vec![Vec::new()]
+    } else {
+        rows
+    }
+}
+
 fn simple_grapheme_boundaries(text: &str) -> bool {
     text.chars().all(|character| {
         char_display_width(character) > 0
@@ -1140,25 +1199,26 @@ fn surface_wrap_tokens(span: Span<'static>) -> Vec<Span<'static>> {
     let mut tokens = Vec::new();
     let mut current = String::new();
     let mut current_is_whitespace = None;
-
-    for ch in span.content.chars() {
+    let mut chars = span.content.chars().peekable();
+    let mut previous = None;
+    while let Some(ch) = chars.next() {
         let is_whitespace = ch.is_whitespace();
-        if current_is_whitespace == Some(is_whitespace) || current.is_empty() {
-            current.push(ch);
-            current_is_whitespace = Some(is_whitespace);
-            continue;
+        if current_is_whitespace.is_some_and(|was| was != is_whitespace) && !current.is_empty() {
+            tokens.push(Span::styled(std::mem::take(&mut current), span.style));
         }
-
-        tokens.push(Span::styled(current.clone(), span.style));
-        current.clear();
         current.push(ch);
         current_is_whitespace = Some(is_whitespace);
+        if ch == '-'
+            && previous.is_some_and(char::is_alphanumeric)
+            && chars.peek().is_some_and(|next| next.is_alphanumeric())
+        {
+            tokens.push(Span::styled(std::mem::take(&mut current), span.style));
+        }
+        previous = Some(ch);
     }
-
     if !current.is_empty() {
         tokens.push(Span::styled(current, span.style));
     }
-
     tokens
 }
 

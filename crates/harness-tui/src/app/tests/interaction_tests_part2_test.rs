@@ -682,7 +682,7 @@ pub(super) fn completed_stream_more_below_affordance_is_actionable() {
     for activity in &mut app.activities {
         activity.status = ActivityStatus::Done;
     }
-    let area = Rect::new(0, 0, 80, 20);
+    let area = Rect::new(0, 0, 48, 12);
     let rendered = render_text(&app, area.width, area.height);
 
     // When: checking every cell of the visible affordance surface.

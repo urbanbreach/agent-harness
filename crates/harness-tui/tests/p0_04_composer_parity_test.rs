@@ -22,8 +22,7 @@ fn default_composer_keymap_preserves_newline_and_routes_distinct_actions() {
         KeyModifiers::CONTROL | KeyModifiers::SHIFT,
     ));
     let toggle_multiline = keymap.get_action(&KeyEvent::new(KeyCode::Char('m'), KeyModifiers::ALT));
-    let terminal_safe_send =
-        keymap.get_action(&KeyEvent::new(KeyCode::Char('s'), KeyModifiers::ALT));
+    let stash = keymap.get_action(&KeyEvent::new(KeyCode::Char('s'), KeyModifiers::ALT));
     let terminal_safe_interject =
         keymap.get_action(&KeyEvent::new(KeyCode::Char('i'), KeyModifiers::ALT));
     let terminal_safe_cancel_replace =
@@ -34,7 +33,7 @@ fn default_composer_keymap_preserves_newline_and_routes_distinct_actions() {
     assert_eq!(interject, Some(Action::InterjectPrompt));
     assert_eq!(cancel_replace, Some(Action::CancelAndReplacePrompt));
     assert_eq!(toggle_multiline, Some(Action::ToggleMultiline));
-    assert_eq!(terminal_safe_send, Some(Action::SubmitPrompt));
+    assert_eq!(stash, Some(Action::PromptStash));
     assert_eq!(terminal_safe_interject, Some(Action::InterjectPrompt));
     assert_eq!(
         terminal_safe_cancel_replace,

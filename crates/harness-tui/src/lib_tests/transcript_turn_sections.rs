@@ -64,7 +64,7 @@ pub(super) fn transcript_turn_sections_render_open_rail_surfaces() {
     let (assistant_body_row, assistant_body_fgs, assistant_body_bgs) =
         row_at(&buffer, 80, assistant_body).unwrap_or_abort();
     let user_marker_column = user_body_row.find('❯').unwrap_or_abort();
-    assert_eq!(user_body_fgs[user_marker_column], theme.text.primary);
+    assert_eq!(user_body_fgs[user_marker_column], theme.markdown.text);
 
     let mut plan_app = app::AppState::new_live(None, false, None);
     plan_app.set_launch_metadata(app::LaunchMetadata::from_model_ref(
@@ -92,16 +92,11 @@ pub(super) fn transcript_turn_sections_render_open_rail_surfaces() {
     let plan_user_marker_column = plan_user_body_row.find('❯').unwrap_or_abort();
     assert_eq!(
         plan_user_body_fgs[plan_user_marker_column],
-        theme.text.primary
+        theme.markdown.text
     );
     assert!(!assistant_body_row.contains('┃'));
     let assistant_fg = assistant_body_fgs[assistant_body_column];
-    assert!(
-        assistant_fg == theme.text.primary
-            || assistant_fg == theme.text.secondary
-            || assistant_fg == theme.text.tertiary,
-        "assistant body should use primary or muted text color, got {assistant_fg:?}"
-    );
+    assert_eq!(assistant_fg, theme.markdown.text);
     assert!(user_body_bgs[user_body_column..user_body_column + 4]
         .iter()
         .all(|color| *color == theme.surface.card));
@@ -207,6 +202,8 @@ pub(super) fn transcript_turn_sections_keep_nested_tool_details() {
     app.transcript_view.selected_activity_index = 0;
     app.transcript_view.transcript_scroll = usize::MAX;
 
+    app.toggle_tool_output_for_test("call-1");
+
     let rendered = render_live_lines(&app, 100, 24);
     let buffer = render_live_cells(&app, 100, 24);
     let theme = Theme::default();
@@ -217,7 +214,7 @@ pub(super) fn transcript_turn_sections_keep_nested_tool_details() {
         .unwrap_or_else(|| panic!("assistant body row\n{rendered}"));
     let tool_row = find_line_containing_all_from(&lines, body_row + 1, &["false"])
         .unwrap_or_else(|| panic!("tool row\n{rendered}"));
-    // Nested tool detail body stays indented; freeze fail chrome is flat (not nested).
+    // Tool output starts under the bullet; failure chrome stays outside the tool block.
     let detail_row = find_line_containing_from(&lines, tool_row + 1, "command failed")
         .unwrap_or_else(|| panic!("tool detail row\n{rendered}"));
     let fail_chrome_row = find_line_containing_from(&lines, detail_row + 1, "Retry failed")
@@ -248,6 +245,16 @@ pub(super) fn transcript_turn_sections_keep_nested_tool_details() {
             .all(|color| *color == theme.text.secondary),
         "thinking body should stay muted like the shell\n{rendered}"
     );
+    assert_eq!(
+        first_alphanumeric_column(lines[detail_row]),
+        lines[tool_row]
+            .split_once('◆')
+            .unwrap_or_abort()
+            .0
+            .chars()
+            .count(),
+        "command output should align with the tool bullet"
+    );
     let nested_detail_columns = [tool_row, detail_row]
         .into_iter()
         .map(|row| first_alphanumeric_column(lines[row]))
@@ -256,8 +263,8 @@ pub(super) fn transcript_turn_sections_keep_nested_tool_details() {
     assert!(
         nested_detail_columns
             .iter()
-            .all(|column| *column > assistant_body_column),
-        "nested tool details should remain deeper than the assistant body rail\n{rendered}"
+            .all(|column| *column >= assistant_body_column),
+        "tool title and output should stay inside the assistant content column\n{rendered}"
     );
     assert!(
         first_alphanumeric_column(lines[fail_chrome_row]) <= assistant_body_column,

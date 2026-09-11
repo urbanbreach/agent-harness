@@ -8,7 +8,7 @@ use super::ui_transcript_block_grammar::{
 use super::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(in crate::ui) enum TranscriptVisualEntryId {
+pub(crate) enum TranscriptVisualEntryId {
     User {
         activity_first_seq: u64,
     },
@@ -35,6 +35,7 @@ pub(in crate::ui) enum TranscriptVisualEntryGroup {
 pub(in crate::ui) enum TranscriptVisualEntryDisplayMode {
     Flow,
     Compact,
+    Expanded,
     StickyPrompt,
     PinnedFooter,
 }
@@ -92,7 +93,7 @@ impl TranscriptVisualEntryMetadata {
     ) -> Self {
         let tool_key = match &spec.content {
             TranscriptBlockContent::Tool { ids, .. } => {
-                Some(semantic_key(ids.iter().map(String::as_str)))
+                Some(semantic_key(ids.iter().take(1).map(String::as_str)))
             }
             TranscriptBlockContent::UserMessage { .. }
             | TranscriptBlockContent::AssistantBody { .. }
@@ -138,24 +139,7 @@ impl TranscriptVisualEntryMetadata {
             Some(key) => TranscriptVisualEntryGroup::ToolRun(key),
             None => TranscriptVisualEntryGroup::Standalone,
         };
-        let display_mode = match draft.placement {
-            TranscriptBlockPlacement::StickyPromptCandidate => {
-                TranscriptVisualEntryDisplayMode::StickyPrompt
-            }
-            TranscriptBlockPlacement::PinnedFooter { .. } => {
-                TranscriptVisualEntryDisplayMode::PinnedFooter
-            }
-            TranscriptBlockPlacement::Flow
-                if matches!(
-                    draft.kind,
-                    TranscriptRenderSurfaceKind::AssistantTool
-                        | TranscriptRenderSurfaceKind::AssistantCommandTool
-                ) =>
-            {
-                TranscriptVisualEntryDisplayMode::Compact
-            }
-            TranscriptBlockPlacement::Flow => TranscriptVisualEntryDisplayMode::Flow,
-        };
+        let display_mode = entry_display_mode(spec, draft);
         let lifecycle = match &spec.content {
             TranscriptBlockContent::UserMessage { queued, state, .. } => {
                 if *queued || matches!(state, TranscriptPromptState::ActiveThinking) {
@@ -225,6 +209,35 @@ impl TranscriptVisualEntryMetadata {
     }
 }
 
+fn entry_display_mode(
+    spec: &TranscriptBlockSpec,
+    draft: &TranscriptVisualEntryDraft,
+) -> TranscriptVisualEntryDisplayMode {
+    match draft.placement {
+        TranscriptBlockPlacement::StickyPromptCandidate => {
+            TranscriptVisualEntryDisplayMode::StickyPrompt
+        }
+        TranscriptBlockPlacement::PinnedFooter { .. } => {
+            TranscriptVisualEntryDisplayMode::PinnedFooter
+        }
+        TranscriptBlockPlacement::Flow
+            if matches!(
+                draft.kind,
+                TranscriptRenderSurfaceKind::AssistantReasoning
+                    | TranscriptRenderSurfaceKind::AssistantTool
+                    | TranscriptRenderSurfaceKind::AssistantCommandTool
+            ) =>
+        {
+            if spec.disclosure.expanded {
+                TranscriptVisualEntryDisplayMode::Expanded
+            } else {
+                TranscriptVisualEntryDisplayMode::Compact
+            }
+        }
+        TranscriptBlockPlacement::Flow => TranscriptVisualEntryDisplayMode::Flow,
+    }
+}
+
 pub(in crate::ui) fn semantic_key<'a>(values: impl IntoIterator<Item = &'a str>) -> u64 {
     values
         .into_iter()
@@ -239,6 +252,7 @@ pub(in crate::ui) fn semantic_key<'a>(values: impl IntoIterator<Item = &'a str>)
 pub(in crate::ui) struct ResolvedTranscriptVisualEntryDraft {
     pub(in crate::ui) metadata: TranscriptVisualEntryMetadata,
     pub(in crate::ui) draft: TranscriptVisualEntryDraft,
+    pub(in crate::ui) source_text: Option<std::rc::Rc<str>>,
 }
 
 impl Deref for ResolvedTranscriptVisualEntryDraft {
@@ -320,6 +334,7 @@ impl IntoResolvedTranscriptVisualEntryDraft for TranscriptVisualEntryDraft {
         ResolvedTranscriptVisualEntryDraft {
             metadata,
             draft: self,
+            source_text: None,
         }
     }
 }

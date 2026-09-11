@@ -30,7 +30,18 @@ fn resolve_block_surface_for_activity(
     surface.show_outer_rail |= block_has_visible_accent(spec);
     surface.selected_rail |= block_is_selected(spec);
     let metadata = TranscriptVisualEntryMetadata::from_spec(activity_first_seq, spec, &surface);
+    let source_text = match &spec.content {
+        TranscriptBlockContent::UserMessage { text, .. }
+        | TranscriptBlockContent::AssistantBody { text, .. }
+        | TranscriptBlockContent::Reasoning { text, .. } => Some(std::rc::Rc::from(text.as_str())),
+        TranscriptBlockContent::Error { message } => Some(std::rc::Rc::from(message.as_str())),
+        TranscriptBlockContent::Compaction { summary, .. } => {
+            Some(std::rc::Rc::from(summary.as_str()))
+        }
+        _ => None,
+    };
     Ok(ResolvedTranscriptVisualEntryDraft {
+        source_text,
         metadata,
         draft: surface,
     })
@@ -43,12 +54,9 @@ fn block_has_visible_accent(spec: &TranscriptBlockSpec) -> bool {
         }
         TranscriptBlockContent::AssistantBody { streaming, .. } => *streaming,
         TranscriptBlockContent::Reasoning { active, .. } => *active,
-        TranscriptBlockContent::Tool { policy, .. } => {
-            matches!(
-                policy.status,
-                TranscriptToolStatus::Running | TranscriptToolStatus::Waiting
-            ) || spec.motion != TranscriptBlockMotionDemand::None
-        }
+        // Tool builders own the rail: an animated bullet does not imply an
+        // open content rail, and read/edit blocks have no persistent accent.
+        TranscriptBlockContent::Tool { .. } => false,
         TranscriptBlockContent::Footer { .. } => false,
         TranscriptBlockContent::Error { .. } | TranscriptBlockContent::Compaction { .. } => false,
         #[cfg(test)]

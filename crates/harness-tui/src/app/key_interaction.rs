@@ -13,6 +13,19 @@ impl AppState {
             return;
         }
 
+        if self.handle_top_overlay_key(key) {
+            return;
+        }
+
+        if self.handle_transcript_viewer_key(key) {
+            self.maybe_auto_exit();
+            return;
+        }
+
+        if self.handle_transcript_search_key(key) {
+            return;
+        }
+
         if self.replay_mode && matches!(key.code, KeyCode::Tab | KeyCode::BackTab) {
             self.focus = Focus::Details;
             return;
@@ -37,16 +50,7 @@ impl AppState {
             return;
         }
 
-        if self.handle_top_overlay_key(key) {
-            return;
-        }
-
         if self.handle_composer_completion_key(key) {
-            self.maybe_auto_exit();
-            return;
-        }
-
-        if self.handle_transcript_viewer_key(key) {
             self.maybe_auto_exit();
             return;
         }
@@ -65,6 +69,13 @@ impl AppState {
 
         if self.handle_navigation_overlay_key(&key) {
             self.maybe_auto_exit();
+            return;
+        }
+
+        if self.focus == Focus::Prompt
+            && !self.composer_disabled()
+            && self.handle_paste_preview_key(key)
+        {
             return;
         }
 
@@ -95,6 +106,9 @@ impl AppState {
             return;
         }
 
+        if self.close_queued_prompt_navigation(key) {
+            return;
+        }
         if key.code == KeyCode::Esc && self.handle_interrupt_escape() {
             self.maybe_auto_exit();
             return;
@@ -172,9 +186,9 @@ impl AppState {
         }
 
         match key.modifiers {
+            KeyModifiers::NONE if self.composer.shell_mode => Some(Action::SubmitPrompt),
             KeyModifiers::NONE => Some(Action::InsertNewline),
-            KeyModifiers::SHIFT => Some(Action::SubmitPrompt),
-            KeyModifiers::ALT => Some(Action::InsertNewline),
+            KeyModifiers::SHIFT | KeyModifiers::ALT => Some(Action::SubmitPrompt),
             modifiers if modifiers == (KeyModifiers::CONTROL | KeyModifiers::ALT) => {
                 Some(Action::InterjectPrompt)
             }
@@ -217,6 +231,8 @@ impl AppState {
             Some(OverlayKind::ErrorDetails) => {
                 self.handle_error_details_key(key);
             }
+            Some(OverlayKind::ProductInfo) => self.handle_product_info_key(key),
+            Some(OverlayKind::PromptHistory) => self.handle_prompt_history_picker_key(key),
             Some(OverlayKind::PromptStashList) => {
                 self.handle_prompt_stash_list_key(key);
             }
@@ -414,31 +430,32 @@ impl AppState {
             || list_area.height == 0
             || !rect_contains(list_area, mouse.column, mouse.row)
         {
+            self.slash_hovered = None;
+            if matches!(mouse.kind, MouseEventKind::Up(MouseButton::Left)) {
+                self.slash_pointer_down = None;
+            }
             return;
         }
 
-        let visible_rows = usize::from(list_area.height);
-        let selected = self
-            .slash_selected
-            .min(self.slash_filtered.len().saturating_sub(1));
-        let scroll = selected.saturating_sub(visible_rows.saturating_sub(1));
-        let row = usize::from(mouse.row.saturating_sub(list_area.y));
-        let Some(next) = scroll
-            .checked_add(row)
-            .filter(|index| *index < self.slash_filtered.len())
-        else {
-            return;
-        };
-
+        let next = self
+            .slash_completion_viewport(list_area)
+            .into_iter()
+            .find(|(_, area)| rect_contains(*area, mouse.column, mouse.row))
+            .map(|(row, _)| row.index);
         match mouse.kind {
-            MouseEventKind::Moved
-            | MouseEventKind::Drag(MouseButton::Left)
-            | MouseEventKind::Down(MouseButton::Left) => {
-                self.slash_selected = next;
+            MouseEventKind::Moved | MouseEventKind::Drag(MouseButton::Left) => {
+                self.slash_hovered = next
+            }
+            MouseEventKind::Down(MouseButton::Left) => {
+                self.slash_pointer_down = next;
+                self.slash_hovered = next;
             }
             MouseEventKind::Up(MouseButton::Left) => {
-                self.slash_selected = next;
-                self.apply_selected_slash_completion();
+                if let Some(next) = next.filter(|next| self.slash_pointer_down == Some(*next)) {
+                    self.slash_selected = next;
+                    self.apply_selected_slash_completion();
+                }
+                self.slash_pointer_down = None;
             }
             _ => {}
         }
@@ -880,6 +897,16 @@ impl AppState {
                 return;
             }
             Action::CancelAndReplacePrompt => {
+                if self.composer.prompt_buffer.trim().is_empty() && self.queued_prompt_count > 0 {
+                    let task_ids = self.active_interrupt_task_ids();
+                    if !task_ids.is_empty() {
+                        self.emit_ui_intent(UiIntent::InterruptSession {
+                            task_ids: task_ids.into_iter().collect(),
+                            reason: InterruptReason::SendNow,
+                        });
+                    }
+                    return;
+                }
                 if self.composer_submission().is_err()
                     || (self.launch_metadata.model().is_none()
                         && self.launch_metadata.provider() == "local"
@@ -924,6 +951,10 @@ impl AppState {
                 }
             }
             Action::HistoryUp => {
+                if self.composer.prompt_buffer.is_empty() {
+                    self.open_prompt_history_or_queue();
+                    return;
+                }
                 if self.move_prompt_cursor_up() {
                     self.sync_file_mention_overlay();
                     return;
@@ -1174,7 +1205,9 @@ impl AppState {
                 Focus::List if self.active_review_surface.is_none() => self.next_activity(),
                 Focus::List => self.next_event(),
                 Focus::Terminal => self.scroll_terminal_panel_down(1),
-                Focus::Details if self.transcript_surface_active() => self.scroll_transcript_up(1),
+                Focus::Details if self.transcript_surface_active() => {
+                    self.move_transcript_entry(true);
+                }
                 Focus::Details => self.details_scroll = self.details_scroll.saturating_add(1),
                 Focus::Prompt => {}
             },
@@ -1183,7 +1216,7 @@ impl AppState {
                 Focus::List => self.previous_event(),
                 Focus::Terminal => self.scroll_terminal_panel_up(1),
                 Focus::Details if self.transcript_surface_active() => {
-                    self.scroll_transcript_down(1);
+                    self.move_transcript_entry(false);
                 }
                 Focus::Details => self.details_scroll = self.details_scroll.saturating_sub(1),
                 Focus::Prompt => {}
@@ -1233,7 +1266,11 @@ impl AppState {
                 self.error_details_visible = true;
             }
             Action::PromptStash => {
-                self.prompt_stash_push();
+                if self.composer.prompt_buffer.is_empty() {
+                    self.prompt_stash_pop();
+                } else {
+                    self.prompt_stash_push();
+                }
             }
             Action::PromptStashPop => {
                 self.prompt_stash_pop();
@@ -1352,6 +1389,9 @@ impl AppState {
     }
 
     fn handle_settings_editor_key(&mut self, key: KeyEvent) {
+        if self.handle_settings_editor_input(key) {
+            return;
+        }
         match key.code {
             KeyCode::Esc => {
                 self.close_settings_editor();
@@ -1604,6 +1644,26 @@ impl AppState {
             return false;
         }
 
+        if let KeyCode::Char(character) = key.code {
+            if !key
+                .modifiers
+                .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
+            {
+                if !self.composer.vim_mode && !self.replay_mode && character.is_alphabetic() {
+                    self.insert_transcript_typed_character(character);
+                    return true;
+                }
+                if self.composer.vim_mode && character == 'i' {
+                    self.focus = Focus::Prompt;
+                    return true;
+                }
+            }
+        }
+
+        if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('f') {
+            return self.open_selected_transcript_viewer();
+        }
+
         if matches!(
             crate::transcript_timeline::navigation::key_jump(key),
             Some(
@@ -1658,20 +1718,21 @@ impl AppState {
         }
 
         match key.code {
-            KeyCode::Enter => {
-                let tool_call_ids = self.selected_activity_expandable_tool_ids();
-                if tool_call_ids.is_empty() {
-                    false
-                } else {
-                    let expand = tool_call_ids.iter().any(|tool_call_id| {
-                        !self
-                            .tool_call_entry(tool_call_id)
-                            .is_some_and(|tool_call| self.tool_output_expanded(tool_call))
-                    });
-                    self.set_tool_group_outputs_expanded(&tool_call_ids, expand);
-                    true
-                }
+            KeyCode::Enter => self.fold_selected_entry(),
+            KeyCode::Char('/') => {
+                self.begin_transcript_search();
+                true
             }
+            KeyCode::Char('n') if !self.transcript_view.search_query.is_empty() => {
+                self.find_transcript_match(Some(true));
+                true
+            }
+            KeyCode::Char('N') if !self.transcript_view.search_query.is_empty() => {
+                self.find_transcript_match(Some(false));
+                true
+            }
+            KeyCode::Down => self.move_transcript_entry(true),
+            KeyCode::Up => self.move_transcript_entry(false),
             KeyCode::Char('v') | KeyCode::Char('V') => self.open_selected_transcript_viewer(),
             KeyCode::PageUp => {
                 self.scroll_page_up(usize::from(self.transcript_page_scroll_rows()));
@@ -1702,6 +1763,16 @@ fn action_preempts_text_input(action: Action, _key: KeyEvent) -> bool {
             | Action::ToggleTerminalPanel
             | Action::TogglePromptFocus
     ) && !matches!(_key.code, KeyCode::Char(' '))
+}
+
+impl AppState {
+    fn insert_transcript_typed_character(&mut self, character: char) {
+        if self.composer_disabled() {
+            return;
+        }
+        self.focus = Focus::Prompt;
+        self.insert_prompt_char(character);
+    }
 }
 
 #[cfg(test)]
@@ -1814,48 +1885,90 @@ mod tests {
     fn completed_response_key_routes_from_transcript_focus() {
         // arrange
         let mut app = AppState::new_live(None, false, None);
-        let mut composite = crate::transcript_integration::TranscriptComposite::new(
-            ratatui::layout::Rect::new(0, 0, 80, 24),
-        )
-        .unwrap_or_abort();
-        for index in 0..2 {
-            let replay = crate::transcript_identity::ReplayTurn::event(index + 1, index, 1);
-            composite
-                .apply(crate::transcript_integration::TranscriptEvent::TurnStarted(
-                    crate::transcript_integration::TurnSeed::new(
-                        replay,
-                        crate::transcript_timeline::TimelineStatus::Completed,
-                        crate::theme_tokens::LifecycleState::Completed,
-                    ),
-                ))
-                .unwrap_or_abort();
-            composite
-                .apply(
-                    crate::transcript_integration::TranscriptEvent::BlockCreated(
-                        crate::transcript_integration::BlockSeed {
-                            id: replay.block_id(0),
-                            turn_id: replay.turn_id(),
-                            kind: crate::transcript_blocks::BlockKind::Assistant,
-                            lifecycle: crate::transcript_blocks::BlockLifecycle::Completed,
-                            content: format!("response {index}"),
-                            raw: None,
-                        },
-                    ),
-                )
-                .unwrap_or_abort();
+        for index in 0..3u64 {
+            let request = format!("response-{index}");
+            let first = index * 3 + 1;
+            let event = |seq, payload| EventEnvelopeV1 {
+                schema_version: harness_core::event::SCHEMA_VERSION,
+                event_id: format!("response-event-{seq}"),
+                seq,
+                run_id: "response-fixture".into(),
+                mono_ms: seq,
+                ts: None,
+                actor: harness_core::event::EventActor::new(
+                    harness_core::event::ActorKind::User,
+                    None,
+                ),
+                correlation_id: Some(request.clone()),
+                causation_id: None,
+                stream_key: None,
+                payload,
+            };
+            app.ingest_event(event(
+                first,
+                EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+                    request_id: request.clone().into(),
+                    text: format!("prompt {index}"),
+                }),
+            ));
+            app.ingest_event(event(
+                first + 1,
+                EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                    request_id: request.clone().into(),
+                    provider_id: "mock".into(),
+                    model_id: "fixture".into(),
+                    prompt_summary: "fixture".into(),
+                    request_digest: "fixture".into(),
+                    metadata: None,
+                }),
+            ));
+            if index != 1 {
+                app.ingest_event(event(
+                    first + 2,
+                    EventV1::ProviderStreamDelta(harness_core::event::ProviderStreamDeltaEvent {
+                        request_id: request.clone().into(),
+                        delta: format!(
+                            "```text\n{}\n```",
+                            (0..50)
+                                .map(|line| format!("response {index} line {line}"))
+                                .collect::<Vec<_>>()
+                                .join("\n")
+                        ),
+                    }),
+                ));
+            }
         }
-        app.transcript_integration = Some(composite);
+        app.set_frame_area(Rect::new(0, 0, 80, 24));
+        let _ =
+            crate::render_test::render_to_string(&app, Rect::new(0, 0, 80, 24), |app, frame, _| {
+                crate::ui::render_app(frame, app)
+            });
+        app.scroll_goto_top();
         app.focus = Focus::Details;
+        app.composer.vim_mode = true;
 
         // act
         app.handle_key(KeyEvent::new(KeyCode::Char('J'), KeyModifiers::SHIFT));
 
         // assert
-        let position = app
-            .transcript_view_model()
-            .and_then(|view| view.response_position);
         assert_eq!(
-            position.map(|position| (position.index, position.total)),
+            app.transcript_view
+                .response_position
+                .map(|position| (position.index, position.total)),
+            Some((1, 2))
+        );
+        app.handle_key(KeyEvent::new(KeyCode::Char('J'), KeyModifiers::SHIFT));
+        assert_eq!(
+            app.transcript_view
+                .response_position
+                .map(|position| (position.index, position.total)),
+            Some((2, 2))
+        );
+        app.handle_key(KeyEvent::new(KeyCode::Char('K'), KeyModifiers::SHIFT));
+        assert_eq!(
+            app.transcript_view
+                .response_position
+                .map(|position| (position.index, position.total)),
             Some((1, 2))
         );
     }
@@ -1894,6 +2007,7 @@ mod tests {
             .unwrap_or_abort();
         app.transcript_integration = Some(composite);
         app.focus = Focus::Details;
+        app.composer.vim_mode = true;
         app.transcript_view.last_transcript_max_scroll.set(10);
         app.transcript_view.set_measured_viewport(
             crate::app::transcript_viewport::MeasuredTranscriptViewport::following(10),

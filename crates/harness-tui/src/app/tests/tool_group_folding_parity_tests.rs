@@ -1,5 +1,19 @@
 use super::*;
 
+#[test]
+fn transcript_search_opens_the_matching_member_of_a_collapsed_group() {
+    let (mut app, ids) = command_group_app(14);
+    let _ = render_text(&app, 80, 24);
+    app.transcript_view.search_query = "command-00".into();
+    app.find_transcript_match(None);
+    assert!(app.tool_output_expanded(app.tool_call_entry(&ids[0]).unwrap_or_abort()));
+    assert!(!app.tool_output_expanded(app.tool_call_entry(&ids[1]).unwrap_or_abort()));
+    assert!(
+        matches!(app.selected_transcript_entry().and_then(|entry| entry.target), Some(TranscriptMouseTarget::Tool { tool_call_id }) if tool_call_id == ids[0])
+    );
+    assert!(render_text(&app, 80, 24).contains("command-00"));
+}
+
 fn command_group_app(command_count: usize) -> (AppState, Vec<String>) {
     let mut app = AppState::new_live(None, false, None);
     app.ingest_event(provider_started(
@@ -72,7 +86,7 @@ pub(super) fn many_tool_group_members_render_one_exact_hidden_count_affordance()
     let screen = render_text(&app, 140, 40);
 
     // assert
-    assert_eq!(screen.matches("4 more").count(), 1, "{screen}");
+    assert_eq!(screen.matches("Ran 4 commands").count(), 1, "{screen}");
     assert_eq!(
         screen.matches("Run printf command-").count(),
         10,
@@ -90,15 +104,21 @@ pub(super) fn tool_group_fold_round_trip_survives_compaction_and_narrow_reflow()
     let target = TranscriptMouseTarget::ToolGroup {
         tool_call_ids: tool_call_ids.clone(),
     };
-    assert_eq!(render_text(&app, 140, 40).matches("4 more").count(), 1);
+    assert_eq!(
+        render_text(&app, 140, 40).matches("Ran 4 commands").count(),
+        1
+    );
 
     // act
     app.activate_transcript_mouse_target(target.clone());
-    let expanded_count = app
-        .transcript_view
-        .expanded_tool_outputs
-        .intersection(&tool_call_ids.iter().cloned().collect())
-        .count();
+    assert!(app.tool_group_expanded(&tool_call_ids[0]));
+    assert!(app.transcript_view.expanded_tool_outputs.is_empty());
+    assert_eq!(
+        render_text(&app, 140, 40)
+            .matches("Run printf command-")
+            .count(),
+        13
+    );
     app.activate_transcript_mouse_target(target.clone());
     app.ingest_event(envelope(
         31,
@@ -130,20 +150,11 @@ pub(super) fn tool_group_fold_round_trip_survives_compaction_and_narrow_reflow()
     let narrow_screen = render_text(&app, 80, 50);
 
     // assert
-    assert_eq!(expanded_count, 14);
-    assert!(app
-        .transcript_view
-        .expanded_tool_outputs
-        .is_disjoint(&tool_call_ids.iter().cloned().collect()));
+    assert!(!app.tool_group_expanded(&tool_call_ids[0]));
+    assert!(app.transcript_view.expanded_tool_outputs.is_empty());
+    assert!(app.transcript_view.collapsed_tool_outputs.is_empty());
     assert_eq!(
-        app.transcript_view
-            .collapsed_tool_outputs
-            .intersection(&tool_call_ids.iter().cloned().collect())
-            .count(),
-        14
-    );
-    assert_eq!(
-        narrow_screen.matches("4 more").count(),
+        narrow_screen.matches("Ran 4 commands").count(),
         1,
         "{narrow_screen}"
     );
@@ -152,11 +163,6 @@ pub(super) fn tool_group_fold_round_trip_survives_compaction_and_narrow_reflow()
     app.activate_transcript_mouse_target(target);
 
     // assert
-    assert_eq!(
-        app.transcript_view
-            .expanded_tool_outputs
-            .intersection(&tool_call_ids.into_iter().collect())
-            .count(),
-        14
-    );
+    assert!(app.tool_group_expanded(&tool_call_ids[0]));
+    assert!(app.transcript_view.expanded_tool_outputs.is_empty());
 }

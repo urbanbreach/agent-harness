@@ -10,8 +10,6 @@ pub(super) fn render_settings_editor_overlay(
         return;
     }
 
-    render_overlay_dim_backdrop(frame, root);
-
     let overlay = modal_chrome::centered_popup(root, 48, 88, 10, 28);
     let chrome = modal_chrome::settings_chrome(app.settings_editor_tab());
     let surface = ui_chrome::command_palette_surface(theme);
@@ -30,8 +28,33 @@ pub(super) fn render_settings_editor_overlay(
         return;
     }
 
-    let summary = app.settings_editor_summary();
-    let summary_line = summary.overlay_line();
+    if let Some(edit) = &app.settings_interaction.edit {
+        let text = format!(
+            "{}\n\n{}\n\n{}\n\n{}",
+            crate::app::settings_label(&edit.id),
+            edit.editor.text(),
+            edit.error
+                .as_deref()
+                .unwrap_or("Enter saves · Esc cancels · Ctrl+A clears · arrows select choices"),
+            "Changes apply to the next session."
+        );
+        frame.render_widget(
+            Paragraph::new(text)
+                .style(Style::default().fg(theme.text.primary))
+                .wrap(Wrap { trim: false }),
+            inner,
+        );
+        return;
+    }
+    let summary_line = format!(
+        "Search / {}{}",
+        app.settings_interaction.query,
+        if app.settings_interaction.filtering {
+            "_"
+        } else {
+            ""
+        }
+    );
     let summary_area = Rect::new(
         overlay.x.saturating_add(2),
         overlay.y.saturating_add(3),
@@ -100,15 +123,21 @@ pub(super) fn render_settings_editor_overlay(
         let style = presentation.style;
         frame.render_widget(Block::default().style(style), presentation.layout.content);
 
-        let meta = format!(
-            "{} · {}{}",
-            entry.surface,
-            entry.sensitivity,
-            if entry.editable { " · edit" } else { "" }
-        );
+        let meta = if entry.sensitivity == "secret" {
+            "secret"
+        } else if entry.editable {
+            "Enter edit"
+        } else {
+            "read only"
+        }
+        .to_string();
         let label = match entry.effective_value.as_deref() {
-            Some(value) => format!("{} = {}", entry.setting_id, value),
-            None => entry.setting_id.clone(),
+            Some(value) => format!(
+                "{} = {}",
+                crate::app::settings_label(&entry.setting_id),
+                value
+            ),
+            None => crate::app::settings_label(&entry.setting_id),
         };
         let list_width = usize::from(presentation.layout.content.width);
         let id_budget = list_width.saturating_sub(meta.chars().count() + 3);

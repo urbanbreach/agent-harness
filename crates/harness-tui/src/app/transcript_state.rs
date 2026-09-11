@@ -203,15 +203,7 @@ impl AppState {
     }
 
     pub fn toggle_selected_transcript_fold(&mut self) -> bool {
-        let Some(request_id) = self
-            .activities
-            .get(self.transcript_view.selected_activity_index)
-            .map(|activity| activity.request_id.clone())
-        else {
-            return false;
-        };
-        self.toggle_reasoning_expansion(&request_id);
-        true
+        self.fold_selected_entry()
     }
 
     pub fn run_transcript_pager<T: TerminalControl>(
@@ -237,67 +229,37 @@ impl AppState {
     }
 
     pub(crate) fn open_selected_transcript_viewer(&mut self) -> bool {
-        let Some(block_id) = self.transcript_integration.as_ref().and_then(|composite| {
-            composite
-                .view()
-                .turns
-                .get(self.transcript_view.selected_activity_index)
-                .map(|turn| turn.replay_turn().block_id(0))
-        }) else {
+        let Some(entry) = self.selected_transcript_entry() else {
             return false;
         };
-        self.transcript_integration
+        self.transcript_view.selected_entry = Some(entry.id);
+        let content = self.selected_entry_content(&entry);
+        let Some(index) = self
+            .activities
+            .iter()
+            .position(|activity| activity.first_seq == entry.activity_first_seq)
+        else {
+            return false;
+        };
+        let Some(block_id) = self
+            .transcript_view_model()
+            .and_then(|view| view.turns.get(index))
+            .map(|turn| turn.replay_turn().block_id(0))
+        else {
+            return false;
+        };
+        let opened = self
+            .transcript_integration
             .as_mut()
-            .is_some_and(|composite| composite.open_viewer(block_id).is_ok())
+            .is_some_and(|composite| composite.open_viewer_content(block_id, content).is_ok());
+        self.resize_transcript_viewer(self.last_frame_area.unwrap_or(Rect::new(0, 0, 80, 24)));
+        opened
     }
 
     pub(crate) fn close_transcript_viewer(&mut self) -> bool {
         self.transcript_integration
             .as_mut()
             .is_some_and(|composite| composite.close_viewer().is_ok())
-    }
-
-    pub(crate) fn handle_transcript_viewer_key(&mut self, key: KeyEvent) -> bool {
-        if self.transcript_screen_mode() != Some(TranscriptScreenMode::SelectedBlockViewer) {
-            return false;
-        }
-        match key.code {
-            KeyCode::Esc => self.close_transcript_viewer(),
-            KeyCode::Char('r') | KeyCode::Char('R') => self
-                .transcript_integration
-                .as_mut()
-                .and_then(TranscriptComposite::viewer_mut)
-                .is_some_and(|viewer| viewer.toggle_mode().is_ok()),
-            KeyCode::Char('n') | KeyCode::Char('N') => self
-                .transcript_integration
-                .as_mut()
-                .and_then(TranscriptComposite::viewer_mut)
-                .is_some_and(|viewer| {
-                    if key.modifiers.contains(KeyModifiers::SHIFT) {
-                        let _ = viewer.search_backward();
-                    } else {
-                        let _ = viewer.search_forward();
-                    }
-                    true
-                }),
-            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                let Some(viewer) = self.transcript_viewer() else {
-                    return false;
-                };
-                let Some(text) = viewer.copy_selection_text().ok() else {
-                    return true;
-                };
-                match clipboard::copy(&text) {
-                    Ok(()) => self.show_toast("Copied to clipboard", ToastVariant::Info),
-                    Err(error) => self.show_toast(
-                        format!("clipboard copy failed: {error}"),
-                        ToastVariant::Error,
-                    ),
-                }
-                true
-            }
-            _ => false,
-        }
     }
 
     pub(crate) fn select_transcript_turn(&mut self, turn_id: TurnId) -> bool {
@@ -327,6 +289,11 @@ impl AppState {
             crate::transcript_timeline::TimelineJump::NextResponse
                 | crate::transcript_timeline::TimelineJump::PreviousResponse
         );
+        if response_jump {
+            return self.jump_transcript_response(
+                jump == crate::transcript_timeline::TimelineJump::NextResponse,
+            );
+        }
         let Some(snapshot) = self
             .transcript_integration
             .as_mut()
@@ -550,6 +517,7 @@ impl AppState {
         for tool_call_id in &self.transcript_view.expanded_tool_outputs {
             tool_call_id.hash(hasher);
         }
+        self.transcript_view.expanded_tool_groups.hash(hasher);
         for tool_call_id in &self.transcript_view.collapsed_tool_outputs {
             tool_call_id.hash(hasher);
         }
@@ -681,7 +649,7 @@ impl AppState {
             .contains(request_id)
     }
 
-    fn toggle_reasoning_expansion(&mut self, request_id: &str) {
+    pub(in crate::app) fn toggle_reasoning_expansion(&mut self, request_id: &str) {
         if !self
             .transcript_view
             .expanded_reasoning_requests
@@ -718,16 +686,6 @@ impl AppState {
                 .expanded_patch_file_outputs
                 .iter()
                 .any(|key| key.starts_with(&format!("{}\u{1f}", tool_call.tool_call_id)))
-            || (tool_call.status == ToolCallDisplayStatus::Failed
-                && (tool_call
-                    .output_summary
-                    .as_deref()
-                    .is_some_and(crate::text::has_trimmed_content)
-                    || tool_call
-                        .truncated_output
-                        .as_deref()
-                        .is_some_and(crate::text::has_trimmed_content)
-                    || tool_call.output_json.is_some()))
     }
 
     pub(crate) fn patch_file_output_expanded(&self, tool_call_id: &str, file_path: &str) -> bool {
@@ -775,7 +733,7 @@ impl AppState {
         self.set_tool_output_expanded(tool_call_id, !expanded);
     }
 
-    fn set_tool_output_expanded(&mut self, tool_call_id: &str, expanded: bool) {
+    pub(in crate::app) fn set_tool_output_expanded(&mut self, tool_call_id: &str, expanded: bool) {
         if expanded {
             self.transcript_view
                 .collapsed_tool_outputs
@@ -813,9 +771,23 @@ impl AppState {
         tool_call_ids: &[String],
         expanded: bool,
     ) {
-        for tool_call_id in tool_call_ids {
-            self.set_tool_output_expanded(tool_call_id, expanded);
+        let Some(first) = tool_call_ids.first() else {
+            return;
+        };
+        if expanded {
+            self.transcript_view
+                .expanded_tool_groups
+                .insert(first.clone());
+        } else {
+            self.transcript_view.expanded_tool_groups.remove(first);
         }
+        self.bump_transcript_render_epoch();
+    }
+
+    pub(crate) fn tool_group_expanded(&self, first_tool_call_id: &str) -> bool {
+        self.transcript_view
+            .expanded_tool_groups
+            .contains(first_tool_call_id)
     }
 
     pub(in crate::app) fn tool_call_entry(&self, tool_call_id: &str) -> Option<&ToolCallEntry> {
@@ -874,11 +846,9 @@ impl AppState {
                 self.toggle_tool_output(&tool_call_id);
             }
             TranscriptMouseTarget::ToolGroup { tool_call_ids } => {
-                let expand_group = tool_call_ids.iter().any(|tool_call_id| {
-                    !self
-                        .tool_call_entry(tool_call_id)
-                        .is_some_and(|tool_call| self.tool_output_expanded(tool_call))
-                });
+                let expand_group = !tool_call_ids
+                    .first()
+                    .is_some_and(|id| self.tool_group_expanded(id));
                 self.set_tool_group_outputs_expanded(&tool_call_ids, expand_group);
             }
             TranscriptMouseTarget::PatchFile {
@@ -944,7 +914,7 @@ fn transcript_events_for_activities(app: &AppState) -> Vec<TranscriptEvent> {
     events
 }
 
-fn transcript_events_for_activity(
+pub(super) fn transcript_events_for_activity(
     activity_index: usize,
     activity: &ActivityEntry,
 ) -> Vec<TranscriptEvent> {

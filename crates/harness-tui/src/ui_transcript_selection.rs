@@ -61,6 +61,7 @@ impl TranscriptSelection {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SelectionRow {
     pub line_index: usize,
+    pub copy_joiner: Option<String>,
     pub start_cell: usize,
     pub end_cell: usize,
     pub links: Vec<TranscriptSelectionLink>,
@@ -124,6 +125,7 @@ pub(super) struct TranscriptSelectionRow {
     pub(super) cells: Vec<String>,
     pub(super) continues_previous: bool,
     pub(super) copy_offset: usize,
+    pub(super) copy_joiner: Option<String>,
     pub(super) links: Vec<TranscriptSelectionLink>,
 }
 
@@ -230,7 +232,9 @@ impl TranscriptSelectionSnapshot {
             if row_idx != start_row && continues_previous && !lines.is_empty() {
                 let continuation = text.trim_start_matches(' ');
                 let current = lines.last_mut().unwrap_or_abort();
-                if !continuation.is_empty() && !current.ends_with(char::is_whitespace) {
+                if let Some(joiner) = row.copy_joiner.as_deref() {
+                    current.push_str(joiner);
+                } else if !continuation.is_empty() && !current.ends_with(char::is_whitespace) {
                     current.push(' ');
                 }
                 current.push_str(continuation);
@@ -294,16 +298,22 @@ pub(super) fn compact_selection_row(
     line_index: usize,
 ) -> SelectionRow {
     let content_start = selection_row_content_start(row);
-    let start_cell = content_start.max(row.copy_offset);
+    let start_cell = if row.copy_joiner.is_some() {
+        row.copy_offset
+    } else {
+        content_start.max(row.copy_offset)
+    };
     match selection_row_content_end(row, content_start) {
         Some(end_cell) => SelectionRow {
             line_index,
+            copy_joiner: row.copy_joiner.clone(),
             start_cell,
             end_cell,
             links: row.links.clone(),
         },
         None => SelectionRow {
             line_index,
+            copy_joiner: row.copy_joiner.clone(),
             start_cell: 1,
             end_cell: 0,
             links: Vec::new(),
@@ -438,6 +448,7 @@ pub(super) fn selection_rows_for_rendered_line(
             cells,
             continues_previous: idx > 0,
             copy_offset: 0,
+            copy_joiner: None,
             links: Vec::new(),
         })
         .collect()
@@ -457,6 +468,10 @@ pub(super) fn selection_rows_for_markdownish_text_block(
     let mut index = 0;
 
     while let Some(line) = source_rows.get(index).copied() {
+        if line.is_empty() && rows.last().is_some_and(selection_row_is_blank) {
+            index += 1;
+            continue;
+        }
         if let Some((table_lines, consumed, table_links)) =
             try_render_markdown_table_block(&source_rows[index..], color, prefix, theme, width)
         {
@@ -518,9 +533,14 @@ pub(super) fn selection_rows_for_rich_text_block(
     for block in blocks {
         match block {
             ParsedTextBlock::Plain(plain) => {
-                rows.extend(selection_rows_for_markdownish_text_block(
-                    &plain, color, prefix, theme, width,
-                ));
+                let mut plain_rows =
+                    selection_rows_for_markdownish_text_block(&plain, color, prefix, theme, width);
+                if rows.last().is_some_and(selection_row_is_blank)
+                    && plain_rows.first().is_some_and(selection_row_is_blank)
+                {
+                    plain_rows.remove(0);
+                }
+                rows.extend(plain_rows);
                 if rows.last().is_some_and(|row| !selection_row_is_blank(row)) {
                     rows.push(blank_selection_row(width));
                 }
@@ -535,20 +555,63 @@ pub(super) fn selection_rows_for_rich_text_block(
                     rows.push(blank_selection_row(width));
                 }
                 for line in body.lines() {
-                    rows.extend(selection_rows_for_prefixed_wrapped_spans(
+                    rows.extend(selection_rows_for_preformatted_line(
+                        line,
                         prefix,
                         base_style,
-                        vec![Span::styled(line.to_string(), base_style)],
                         width,
                         copy_offset,
                     ));
                 }
                 rows.push(blank_selection_row(width));
-                rows.push(blank_selection_row(width));
             }
         }
     }
     Some(rows)
+}
+
+fn selection_rows_for_preformatted_line(
+    line: &str,
+    prefix: &str,
+    style: Style,
+    width: u16,
+    copy_offset: usize,
+) -> Vec<TranscriptSelectionRow> {
+    let source_spans = vec![Span::styled(line.to_string(), style)];
+    let expanded =
+        super::ui_transcript_surface::wrap_preformatted_spans(source_spans.clone(), usize::MAX)
+            .into_iter()
+            .flatten()
+            .map(|span| span.content.into_owned())
+            .collect::<String>();
+    let wrapped = super::ui_transcript_surface::wrap_preformatted_spans(
+        source_spans,
+        usize::from(width).saturating_sub(copy_offset).max(1),
+    );
+    let mut consumed = 0;
+    let mut trailing = String::new();
+    let mut rows = Vec::new();
+    for (index, spans) in wrapped.into_iter().enumerate() {
+        let text = spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect::<String>();
+        let rest = &expanded[consumed..];
+        let gap = rest.find(&text).unwrap_or_default();
+        let joiner = format!("{trailing}{}", &rest[..gap]);
+        consumed += gap + text.len();
+        trailing = text[text.trim_end_matches(' ').len()..].to_string();
+        let mut rendered = vec![Span::styled(prefix.to_string(), style)];
+        rendered.extend(spans);
+        let mut selected = selection_rows_for_rendered_line(&Line::from(rendered), width);
+        for row in &mut selected {
+            row.continues_previous |= index > 0;
+            row.copy_offset = copy_offset;
+            row.copy_joiner = Some(joiner.clone());
+        }
+        rows.extend(selected);
+    }
+    rows
 }
 
 fn selection_row_is_blank(row: &TranscriptSelectionRow) -> bool {
@@ -574,6 +637,7 @@ fn selection_rows_for_rendered_table_lines(
                     cells,
                     continues_previous: wrapped_index > 0,
                     copy_offset,
+                    copy_joiner: None,
                     links: links
                         .iter()
                         .filter(|link| link.row == line_index)
@@ -710,6 +774,7 @@ fn selection_rows_for_prefixed_wrapped_inline(
                     .unwrap_or_else(|| vec![" ".to_string(); usize::from(width)]),
                 continues_previous: index > 0,
                 copy_offset,
+                copy_joiner: None,
                 links: row
                     .links
                     .into_iter()
@@ -756,6 +821,7 @@ fn selection_rows_for_prefixed_wrapped_spans(
                 .unwrap_or_else(|| vec![" ".to_string(); usize::from(width)]),
             continues_previous: idx > 0,
             copy_offset,
+            copy_joiner: None,
             links: Vec::new(),
         })
         .collect()
@@ -766,6 +832,7 @@ pub(super) fn blank_selection_row(width: u16) -> TranscriptSelectionRow {
         cells: vec![" ".to_string(); usize::from(width.max(1))],
         continues_previous: false,
         copy_offset: 0,
+        copy_joiner: None,
         links: Vec::new(),
     }
 }
@@ -782,6 +849,7 @@ pub(super) fn lifecycle_selection_snapshot(
     let mut rows: Vec<SelectionRow> = (0..height)
         .map(|line_index| SelectionRow {
             line_index,
+            copy_joiner: None,
             start_cell: 1,
             end_cell: 0,
             links: Vec::new(),
@@ -834,6 +902,7 @@ fn aligned_selection_rows_for_line(
             cells,
             continues_previous: idx > 0,
             copy_offset: copy_offsets[idx],
+            copy_joiner: None,
             links: Vec::new(),
         })
         .collect()
@@ -1071,6 +1140,7 @@ mod tests {
             cells: "aa link zz".chars().map(|ch| ch.to_string()).collect(),
             continues_previous: false,
             copy_offset: 0,
+            copy_joiner: None,
             links: vec![TranscriptSelectionLink {
                 start_cell: 3,
                 end_cell: 7,
@@ -1236,6 +1306,7 @@ mod tests {
             visible_rows: vec![0],
             rows: vec![SelectionRow {
                 line_index: 0,
+                copy_joiner: None,
                 start_cell: 0,
                 end_cell: 4,
                 links: Vec::new(),

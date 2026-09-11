@@ -59,6 +59,104 @@ fn render(app: &AppState) -> String {
 }
 
 #[test]
+fn interleaved_live_responses_keep_their_place_between_tool_calls() {
+    // Given: a turn that has already called a tool.
+    let mut app = AppState::new_live(None, false, None);
+    app.ingest_runtime_event(durable(
+        1,
+        EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {
+            request_id: "turn-1".into(),
+            text: "inspect and verify".to_string(),
+        }),
+    ));
+    let start = |seq, request_id: &str| {
+        durable(
+            seq,
+            EventV1::ProviderRequestStarted(ProviderRequestStartedEvent {
+                request_id: request_id.into(),
+                provider_id: "mock".to_string(),
+                model_id: "model".to_string(),
+                prompt_summary: "inspect and verify".to_string(),
+                request_digest: "digest".to_string(),
+                metadata: None,
+            }),
+        )
+    };
+    let commit = |seq, request_id: &str, parts: Vec<AssistantPart>| {
+        durable(
+            seq,
+            EventV1::AssistantMessageFinished(AssistantMessageFinishedEvent {
+                request_id: request_id.into(),
+                tool_call_count: parts
+                    .iter()
+                    .filter(|part| matches!(part, AssistantPart::ToolCall(_)))
+                    .count(),
+                parts,
+                provenance: None,
+                assistant_message: None,
+            }),
+        )
+    };
+    let tool = |id: &str, command: &str| {
+        AssistantPart::ToolCall(AssistantToolCall {
+            tool_call_id: id.into(),
+            provider_tool_call_id: None,
+            tool_id: "bash".to_string(),
+            args_summary: serde_json::json!({ "command": command }).to_string(),
+            args_digest: "digest".to_string(),
+            provider_call_id: None,
+        })
+    };
+    app.ingest_runtime_event(start(2, "provider-1"));
+    app.ingest_runtime_event(commit(3, "provider-1", vec![tool("tool-1", "ls")]));
+    app.ingest_runtime_event(start(4, "provider-2"));
+
+    // When: the next provider step speaks, calls another tool, and commits.
+    app.ingest_runtime_event(live(
+        "live-middle",
+        LiveEventV1::ProviderTextDelta {
+            request_id: "provider-2".into(),
+            delta: "Intermediate response".to_string(),
+        },
+    ));
+    app.ingest_runtime_event(commit(
+        5,
+        "provider-2",
+        vec![
+            AssistantPart::Text {
+                text: "Intermediate response".to_string(),
+            },
+            tool("tool-2", "pwd"),
+        ],
+    ));
+    app.ingest_runtime_event(start(6, "provider-3"));
+    app.ingest_runtime_event(live(
+        "live-final",
+        LiveEventV1::ProviderTextDelta {
+            request_id: "provider-3".into(),
+            delta: "Final response".to_string(),
+        },
+    ));
+
+    // Then: committed and currently streaming text both remain in sequence.
+    let rendered = render(&app);
+    let positions = ["ls", "Intermediate response", "pwd", "Final response"].map(|text| {
+        rendered
+            .find(text)
+            .unwrap_or_else(|| panic!("missing {text}\n{rendered}"))
+    });
+    assert!(
+        positions.windows(2).all(|pair| pair[0] < pair[1]),
+        "{rendered}"
+    );
+    assert_eq!(
+        rendered.matches("Intermediate response").count(),
+        1,
+        "{rendered}"
+    );
+}
+
+#[test]
 fn typed_live_fragments_render_then_final_commit_settles_them() {
     // Given: a live turn with its durable request barrier.
     let mut app = AppState::new_live(None, false, None);
@@ -145,7 +243,7 @@ fn typed_live_fragments_render_then_final_commit_settles_them() {
     assert!(settled.contains("final answer"), "{settled}");
     assert!(settled.contains("final"), "{settled}");
     assert!(!settled.contains("draft answer"), "{settled}");
-    assert_eq!(settled.matches("Read final").count(), 1, "{settled}");
+    assert_eq!(settled.matches("Reading 1 file").count(), 1, "{settled}");
     assert!(!settled.contains("Read draft"), "{settled}");
     assert_eq!(app.selected_event().map(|event| event.seq), Some(3));
 

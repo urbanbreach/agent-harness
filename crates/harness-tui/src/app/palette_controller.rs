@@ -144,7 +144,8 @@ pub fn is_available(app: &AppState, entry: &PaletteCommandEntry) -> bool {
 
         "model.list" => !app.startup_shell_visible(),
         "agent.list" | "mcp.list" => !app.startup_shell_visible() && app.model_switcher_supported(),
-        "model.always_approve" | "model.multiline" => !app.startup_shell_visible(),
+        "model.always_approve" => !app.replay_mode,
+        "model.multiline" => !app.startup_shell_visible(),
         "tools.hooks" | "tools.plugins" | "tools.marketplace" => !app.startup_shell_visible(),
         "variant.cycle" => !app.startup_shell_visible() && !app.replay_mode,
         "provider.connect" => !app.startup_shell_visible(),
@@ -405,6 +406,7 @@ pub fn dispatch_palette_command(app: &mut AppState, value: &str) {
         PaletteDispatch::ToggleTranscriptThinking => {
             app.transcript_view.show_transcript_thinking =
                 !app.transcript_view.show_transcript_thinking;
+            app.transcript_view.expanded_tool_groups.clear();
         }
         PaletteDispatch::ToggleTranscriptTimestamps => {
             app.transcript_view.show_transcript_timestamps =

@@ -11,7 +11,9 @@ use ratatui::text::{Line, Span};
 
 use super::ui_transcript_style::transcript_emphasized_surface;
 use super::ui_transcript_surface::transcript_surface_content_width;
-use super::ui_transcript_types::{TranscriptCompactionKind, TranscriptCompactionSection};
+use super::ui_transcript_types::{
+    TranscriptCompactionKind, TranscriptCompactionSection, TRANSCRIPT_ASSISTANT_BODY_PREFIX,
+};
 use crate::theme::Theme;
 use crate::ui::ui_chrome::display_width;
 
@@ -34,7 +36,9 @@ pub(super) fn resolve_compaction_content(
     base_surface: Color,
 ) -> ResolvedCompactionContent {
     let surface = transcript_emphasized_surface(theme, base_surface);
-    let content_width = transcript_surface_content_width(width, false);
+    let content_width = transcript_surface_content_width(width, false).saturating_sub(
+        u16::try_from(display_width(TRANSCRIPT_ASSISTANT_BODY_PREFIX)).unwrap_or(u16::MAX),
+    );
     let mut lines = Vec::new();
 
     // Badge line: [compaction] or [branch-summary]
@@ -120,6 +124,12 @@ pub(super) fn resolve_compaction_content(
         content_width,
     );
 
+    // Session-event chrome shares EntryRenderer's origin with chat and tools.
+    for line in &mut lines {
+        line.spans
+            .insert(0, Span::raw(TRANSCRIPT_ASSISTANT_BODY_PREFIX));
+    }
+
     ResolvedCompactionContent { surface, lines }
 }
 
@@ -141,7 +151,10 @@ fn append_file_list(
     );
 
     let files_text = files.join(", ");
-    let truncated = truncate_to_width(&files_text, max_width.saturating_sub(display_width(label)));
+    let truncated = truncate_to_width(
+        &files_text,
+        max_width.saturating_sub(display_width(label) + 1),
+    );
     lines.push(Line::from(vec![
         label_span,
         Span::styled(truncated, Style::default().fg(theme.text.secondary)),

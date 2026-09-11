@@ -355,7 +355,7 @@ pub(super) fn settings_editor_summary_counts_bound_writable_paths() {
     assert_eq!(unbound.total, settings_registry().len());
     assert!(!unbound.bound);
     assert_eq!(unbound.editable, 0);
-    assert_eq!(unbound.writable_paths, 6);
+    assert_eq!(unbound.writable_paths, 12);
     assert!(unbound.secret > 0);
     assert_eq!(unbound.editable + unbound.read_only, unbound.total);
     assert!(unbound.one_line().starts_with("settings editor: "));
@@ -384,11 +384,11 @@ pub(super) fn settings_editor_summary_counts_bound_writable_paths() {
             bound.editable,
             bound.with_effective_value
         ),
-        (6, 6, 6)
+        (12, 12, 11)
     );
     assert!(bound.has_editable());
     assert!(bound.one_line().contains("bound=true"));
-    assert!(bound.one_line().contains("editable=6"));
+    assert!(bound.one_line().contains("editable=12"));
     assert!(bound.overlay_line().contains("bound"));
     assert!(bound.overlay_line().contains("editable"));
     assert!(!bound.overlay_line().contains("unbound"));
@@ -667,8 +667,8 @@ pub(super) fn settings_editor_e2e_open_edit_persist_and_read_effective() {
     assert_eq!(app.overlay_stack().top(), Some(OverlayKind::SettingsEditor));
     let summary = app.settings_editor_summary();
     assert!(summary.bound);
-    assert_eq!(summary.writable_paths, 6);
-    assert_eq!(summary.editable, 6);
+    assert_eq!(summary.writable_paths, 12);
+    assert_eq!(summary.editable, 12);
     assert!(summary.with_effective_value >= 6);
 
     // When: edit hashline_edit via Enter
@@ -691,6 +691,38 @@ pub(super) fn settings_editor_e2e_open_edit_persist_and_read_effective() {
     assert_eq!(row.effective_value.as_deref(), Some("false"));
     assert!(row.editable);
 
+    // The startup preference persists without changing the active session.
+    app.settings_editor_selected = settings_registry()
+        .iter()
+        .position(|entry| entry.setting_id.as_str() == "runtime.always_approve")
+        .expect("startup approval setting");
+    for enabled in [true, false, true] {
+        app.handle_key(key(KeyCode::Enter));
+        let loaded =
+            harness_core::config::load_config_from_file(&path).expect("reload startup preference");
+        assert_eq!(loaded.runtime.always_approve, enabled);
+        assert!(!app.always_approve_mode());
+    }
+    app.bind_settings_project_config(&path, false, compaction, true, true, true, false);
+    assert_eq!(
+        app.settings_editor_rows()
+            .into_iter()
+            .find(|row| row.setting_id == "runtime.always_approve")
+            .expect("startup row")
+            .effective_value
+            .as_deref(),
+        Some("true")
+    );
+    app.settings_editor_reset_selected();
+    assert!(
+        !harness_core::config::load_config_from_file(&path)
+            .expect("reset startup preference")
+            .runtime
+            .always_approve
+    );
+
+    exercise_typed_settings_drafts(&mut app, &path);
+
     // When: write another value via backend and re-bind from read_effective
     write_project_hashline_edit(&path, true).expect("write true");
     let reloaded = read_effective_hashline_edit(&path).expect("reload");
@@ -702,4 +734,61 @@ pub(super) fn settings_editor_e2e_open_edit_persist_and_read_effective() {
         .find(|row| row.setting_id == "hashline_edit")
         .expect("row after rebind");
     assert_eq!(row.effective_value.as_deref(), Some("true"));
+}
+
+fn exercise_typed_settings_drafts(app: &mut AppState, path: &std::path::Path) {
+    // Typed editors own drafts until commit, including after validation errors.
+    for (query, value, persist) in [
+        ("fallback input tokens", "not-a-number", false),
+        ("fallback input tokens", "16384", true),
+        ("session dir", "captured-sessions", true),
+    ] {
+        app.settings_interaction.query.clear();
+        app.handle_key(key(KeyCode::Char('/')));
+        for c in query.chars() {
+            app.handle_key(key(KeyCode::Char(c)));
+        }
+        app.handle_key(key(KeyCode::Enter));
+        assert_eq!(app.settings_editor_rows().len(), 1);
+        app.handle_key(key(KeyCode::Enter));
+        assert!(app.settings_interaction.edit.is_some());
+        app.handle_key(key_with_modifiers(
+            KeyCode::Char('a'),
+            KeyModifiers::CONTROL,
+        ));
+        for c in value.chars() {
+            app.handle_key(key(KeyCode::Char(c)));
+        }
+        let before = fs::read(path).expect("before edit");
+        app.handle_key(key(KeyCode::Enter));
+        if persist {
+            assert!(app.settings_interaction.edit.is_none());
+            assert!(fs::read_to_string(path)
+                .expect("committed config")
+                .contains(value));
+        } else {
+            assert!(app
+                .settings_interaction
+                .edit
+                .as_ref()
+                .and_then(|edit| edit.error.as_ref())
+                .is_some());
+            assert_eq!(fs::read(path).expect("after invalid edit"), before);
+            app.handle_key(key(KeyCode::Esc));
+            assert_eq!(fs::read(path).expect("after cancel"), before);
+        }
+    }
+    app.settings_interaction.query = "permission bash".into();
+    app.settings_editor_selected = settings_registry()
+        .iter()
+        .position(|entry| entry.setting_id.as_str() == "permission.bash")
+        .expect("permission scalar");
+    app.handle_key(key(KeyCode::Enter));
+    let before = fs::read(path).expect("before choice");
+    app.handle_key(key(KeyCode::Right));
+    assert_eq!(fs::read(path).expect("during preview"), before);
+    app.handle_key(key(KeyCode::Esc));
+    assert!(app.settings_interaction.edit.is_none());
+    assert_eq!(fs::read(path).expect("choice cancelled"), before);
+    app.settings_interaction.query.clear();
 }

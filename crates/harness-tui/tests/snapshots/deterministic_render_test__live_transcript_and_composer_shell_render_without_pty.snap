@@ -1,6 +1,5 @@
 ---
 source: crates/harness-tui/tests/deterministic_render_test.rs
-assertion_line: 90
 expression: trim_trailing_snapshot_whitespace(&rendered)
 ---
 
@@ -12,8 +11,8 @@ expression: trim_trailing_snapshot_whitespace(&rendered)
 
      Assistant verified the rendered shell.
 
+     ◈ Searched 1 website, Searched 1 pattern
 
-  ┃  ◈ Searched 1 website, Searched 1 pattern  ▸
 
 
 

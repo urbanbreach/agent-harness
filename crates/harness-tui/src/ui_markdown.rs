@@ -704,7 +704,6 @@ pub(super) fn append_rich_text_block(
                     }
                     lines.extend(render_mermaid_diagram(&body, prefix, theme, width));
                     lines.push(Line::default());
-                    lines.push(Line::default());
                     continue;
                 }
 
@@ -720,7 +719,6 @@ pub(super) fn append_rich_text_block(
                     lines.push(Line::default());
                 }
                 append_prebuilt_plain_lines(lines, prefix, highlighted, width);
-                lines.push(Line::default());
                 lines.push(Line::default());
             }
         }
@@ -771,7 +769,9 @@ fn append_markdownish_line(
     width: u16,
 ) {
     if line.is_empty() {
-        append_prefixed_wrapped_spans_line(lines, prefix, base_style, Vec::new(), width);
+        if !last_line_is_visually_blank(lines) {
+            append_prefixed_wrapped_spans_line(lines, prefix, base_style, Vec::new(), width);
+        }
         return;
     }
 

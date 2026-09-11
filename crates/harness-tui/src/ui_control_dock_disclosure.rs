@@ -781,10 +781,7 @@ fn live_freeze_shortcut_disclosure_row(
             Span::styled("Enter", bold),
             Span::styled(":newline", normal),
             Span::styled("  │  ", dim),
-            Span::styled(
-                freeze_preferred_binding(app, Action::SubmitPrompt, "Alt+s"),
-                bold,
-            ),
+            Span::styled("Alt+Enter".to_string(), bold),
             Span::styled(":send", normal),
             Span::styled("  │  ", dim),
             Span::styled(

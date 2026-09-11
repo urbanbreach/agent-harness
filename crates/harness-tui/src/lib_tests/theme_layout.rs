@@ -85,25 +85,16 @@ fn assert_theme_token_bindings(default: &Theme) {
 pub(super) fn harness_dark_theme_has_exact_palette() {
     let theme = Theme::harness_dark();
 
-    assert_eq!(
-        theme.surface.canvas,
-        ratatui::style::Color::Rgb(0x0B, 0x0E, 0x14)
-    );
-    assert_eq!(
-        theme.surface.shell,
-        ratatui::style::Color::Rgb(0x0B, 0x0E, 0x14)
-    );
-    assert_eq!(
-        theme.surface.panel,
-        ratatui::style::Color::Rgb(0x0B, 0x0E, 0x14)
-    );
+    assert_eq!(theme.surface.canvas, ratatui::style::Color::Rgb(20, 20, 20));
+    assert_eq!(theme.surface.shell, ratatui::style::Color::Rgb(20, 20, 20));
+    assert_eq!(theme.surface.panel, ratatui::style::Color::Rgb(20, 20, 20));
     assert_eq!(
         theme.surface.panel_elevated,
-        ratatui::style::Color::Rgb(0x12, 0x16, 0x1E)
+        ratatui::style::Color::Rgb(28, 28, 28)
     );
     assert_eq!(
         theme.surface.overlay,
-        ratatui::style::Color::Rgb(0x0B, 0x0E, 0x14)
+        ratatui::style::Color::Rgb(20, 20, 20)
     );
     assert_eq!(
         theme.border.subtle,
@@ -119,43 +110,34 @@ pub(super) fn harness_dark_theme_has_exact_palette() {
     );
     assert_eq!(
         theme.text.primary,
-        ratatui::style::Color::Rgb(0xEE, 0xEE, 0xEC)
+        ratatui::style::Color::Rgb(225, 225, 225)
     );
     assert_eq!(
         theme.text.secondary,
-        ratatui::style::Color::Rgb(0x88, 0x8B, 0x91)
+        ratatui::style::Color::Rgb(108, 108, 108)
     );
     assert_eq!(
         theme.text.tertiary,
-        ratatui::style::Color::Rgb(0x88, 0x8B, 0x91)
+        ratatui::style::Color::Rgb(120, 120, 120)
     );
-    assert_eq!(
-        theme.text.accent,
-        ratatui::style::Color::Rgb(0xD9, 0x84, 0xD9)
-    );
-    assert_eq!(
-        theme.text.inverse,
-        ratatui::style::Color::Rgb(0x0B, 0x0E, 0x14)
-    );
+    assert_eq!(theme.text.accent, ratatui::style::Color::Rgb(187, 154, 247));
+    assert_eq!(theme.text.inverse, ratatui::style::Color::Rgb(20, 20, 20));
     assert_eq!(
         theme.status.success,
-        ratatui::style::Color::Rgb(0x7F, 0xD8, 0x8F)
+        ratatui::style::Color::Rgb(158, 206, 106)
     );
     assert_eq!(
         theme.status.warning,
-        ratatui::style::Color::Rgb(0xE5, 0xC0, 0x7B)
+        ratatui::style::Color::Rgb(224, 175, 104)
     );
     assert_eq!(
         theme.status.error,
-        ratatui::style::Color::Rgb(0xE0, 0x6C, 0x75)
+        ratatui::style::Color::Rgb(247, 118, 142)
     );
-    assert_eq!(
-        theme.status.info,
-        ratatui::style::Color::Rgb(0x56, 0xB6, 0xC2)
-    );
+    assert_eq!(theme.status.info, ratatui::style::Color::Rgb(125, 207, 255));
     assert_eq!(
         theme.status.disabled,
-        ratatui::style::Color::Rgb(0x80, 0x80, 0x80)
+        ratatui::style::Color::Rgb(90, 90, 90)
     );
     assert_agent_palette(&theme);
 }
@@ -163,12 +145,9 @@ pub(super) fn harness_dark_theme_has_exact_palette() {
 fn assert_agent_palette(theme: &Theme) {
     assert_eq!(
         theme.agents.build,
-        ratatui::style::Color::Rgb(0x5C, 0x9C, 0xF5)
+        ratatui::style::Color::Rgb(122, 162, 247)
     );
-    assert_eq!(
-        theme.agents.plan,
-        ratatui::style::Color::Rgb(0xD9, 0x84, 0xD9)
-    );
+    assert_eq!(theme.agents.plan, ratatui::style::Color::Rgb(187, 154, 247));
 }
 
 pub(super) fn command_palette_state_filters_existing_commands() {

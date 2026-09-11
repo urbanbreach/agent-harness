@@ -99,17 +99,32 @@ fn capture_full_motion(
     session.wait_for_alternate_screen();
     let first_paint = session.persist(root, &directory, "first-paint");
 
-    // Prove staged ordering from byte-exact first-seen offsets in the fully
-    // recorded raw stream: the reveal only paints (never erases) before any
-    // input, so visibility is monotone in the prefix length. Live screen
-    // sampling can skip transient stages when PTY reads coalesce whole
-    // stages into one batch; bisection over the replayed stream cannot.
-    session.wait_for_all_markers(&["0.1.0", "New worktree", "Subagent spawning"]);
-    let (required, optional) = session.marker_byte_offsets(
-        &["0.1.0", "New worktree", "Subagent spawning"],
-        &["Thanks for trying Harness"],
-    );
+    // Controls are present on the first complete frame. Time samples below use
+    // the real runtime clock; deterministic exact-time samples live in the render test.
+    let required_markers = [
+        "0.1.0",
+        "New worktree",
+        "Resume session",
+        "Changelog",
+        "Quit",
+    ];
+    session.wait_for_all_markers(&required_markers);
+    let (required, optional) = session.marker_byte_offsets(&required_markers, &[]);
     let reveal_timeline = reveal_timeline_receipt(&required, &optional, root, &directory);
+    let started = std::time::Instant::now();
+    let mut motion_samples = Vec::new();
+    for target_ms in [0, 100, 300, 1300, 4000] {
+        session.observe_for(
+            std::time::Duration::from_millis(target_ms).saturating_sub(started.elapsed()),
+        );
+        let frame = session.persist(root, &directory, &format!("motion-{target_ms}ms"));
+        let text = session.text();
+        assert!(
+            required_markers.iter().all(|marker| text.contains(marker)),
+            "controls disappeared during shimmer: {text}"
+        );
+        motion_samples.push(json!({"targetMs": target_ms, "observedElapsedMs": started.elapsed().as_millis(), "frame": frame}));
+    }
     let complete = session.persist(root, &directory, "complete");
     assert_brand(variant, &session.text(), session.raw());
 
@@ -134,6 +149,7 @@ fn capture_full_motion(
             "afterInput": after_input,
         },
         "revealTimeline": reveal_timeline,
+        "motionSamples": motion_samples,
         "cleanup": artifacts::receipt(root, &directory.join("cleanup.json")),
     })
 }
@@ -144,45 +160,15 @@ fn reveal_timeline_receipt(
     root: &Path,
     directory: &Path,
 ) -> Value {
-    let offset = |marker: &str| {
-        required
-            .iter()
-            .chain(optional)
-            .find(|(seen, _)| *seen == marker)
-            .map(|(_, offset)| *offset)
-    };
-    #[expect(
-        clippy::panic,
-        reason = "timeline markers are load-bearing ordering evidence"
-    )]
-    let identity = offset("0.1.0")
-        .unwrap_or_else(|| panic!("identity marker missing from first-seen timeline"));
-    #[expect(
-        clippy::panic,
-        reason = "timeline markers are load-bearing ordering evidence"
-    )]
-    let affordances = offset("New worktree")
-        .unwrap_or_else(|| panic!("affordance marker missing from first-seen timeline"));
-    #[expect(
-        clippy::panic,
-        reason = "timeline markers are load-bearing ordering evidence"
-    )]
-    let changelog = offset("Subagent spawning")
-        .unwrap_or_else(|| panic!("changelog marker missing from first-seen timeline"));
-    // Every geometry now paints the versioned identity row (compact included),
-    // so the full staged order is required evidence in all captures.
-    assert!(
-        identity < affordances && affordances < changelog,
-        "reveal stages appeared out of order: identity={identity} affordances={affordances} changelog={changelog}"
-    );
+    assert_eq!(required.len(), 5, "all immediate controls must appear");
     let path = directory.join("reveal-timeline.json");
     artifacts::write_json(
         &path,
         &json!({
-            "identityFirstSeen": identity,
-            "affordancesFirstSeen": affordances,
-            "changelogFirstSeen": changelog,
-            "stagedOrder": "identity < affordances < changelog",
+            "contract": "immediate identity and controls; continuous Harness H shimmer",
+            "requiredFirstSeenByteOffsets": required,
+            "optionalFirstSeenByteOffsets": optional,
+            "clock": "runtime monotonic samples measured after first complete frame; exact injected times verified separately",
         }),
     );
     artifacts::receipt(root, &path)
@@ -272,16 +258,28 @@ fn capture_reduced_motion(
         },
     );
 
-    session.wait_for("Subagent spawning");
+    session.wait_for_all_markers(&[
+        "0.1.0",
+        "New worktree",
+        "Resume session",
+        "Changelog",
+        "Quit",
+    ]);
     let first_paint = session.persist(root, &directory, "reduced-motion-first-paint");
     let text = session.text();
-    // Compact layouts omit the identity copy; the frozen frame is proven by
-    // affordances and changelog coexisting with (optional) identity at t=0.
+    // Identity and all actions coexist immediately, including at compact sizes.
     assert!(
-        text.contains("New worktree") && text.contains("Subagent spawning"),
+        text.contains("New worktree") && text.contains("0.1.0"),
         "reduced motion must freeze on the complete frame\n{text}"
     );
     assert_brand(variant, &text, session.raw());
+    session.observe_for(std::time::Duration::from_millis(4000));
+    let settled = session.persist(root, &directory, "reduced-motion-4000ms");
+    assert_eq!(
+        session.text(),
+        text,
+        "reduced-motion frame must remain stable"
+    );
 
     session.exit();
     write_cleanup(&directory);
@@ -291,6 +289,7 @@ fn capture_reduced_motion(
         "reducedMotion": { "environment": "HARNESS_DISABLE_ANIMATIONS=1", "active": true },
         "states": {
             "firstPaint": first_paint,
+            "settled": settled,
         },
         "cleanup": artifacts::receipt(root, &directory.join("cleanup.json")),
     })
@@ -341,6 +340,16 @@ fn assert_manifest_receipts(root: &Path, manifest: &Value) {
         for state in keys {
             for artifact in ["ansi", "text", "screen"] {
                 assert_receipt(root, &states[state][artifact]);
+            }
+        }
+        for sample in capture["motionSamples"].as_array().into_iter().flatten() {
+            for artifact in ["ansi", "text", "screen"] {
+                assert_receipt(root, &sample["frame"][artifact]);
+            }
+        }
+        if let Some(settled) = states.get("settled") {
+            for artifact in ["ansi", "text", "screen"] {
+                assert_receipt(root, &settled[artifact]);
             }
         }
         if capture.get("revealTimeline").is_some() {

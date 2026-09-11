@@ -19,7 +19,6 @@ use entries::{
     scan_workspace_entries, search_file_mentions, selected_file_mention_tag,
 };
 
-const FILE_MENTION_RESULT_LIMIT: usize = 10;
 const ALWAYS_SKIPPED_DIRS: &[&str] = &[
     ".git",
     ".agent-harness/sessions",
@@ -225,8 +224,48 @@ impl AppState {
                 self.clear_file_mention_menu();
                 true
             }
-            (KeyCode::Enter, _) => {
+            (KeyCode::Enter, KeyModifiers::NONE) => {
                 self.apply_selected_file_mention(false);
+                true
+            }
+            (KeyCode::Right, KeyModifiers::NONE) => {
+                if self
+                    .file_mention_entries
+                    .get(self.file_mention_selected)
+                    .is_some_and(|entry| entry.is_directory)
+                {
+                    self.apply_selected_file_mention(true);
+                    true
+                } else {
+                    false
+                }
+            }
+            (KeyCode::Char(':'), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
+                if let (Some(entry), Some(trigger)) = (
+                    self.file_mention_entries
+                        .get(self.file_mention_selected)
+                        .filter(|entry| {
+                            !entry.is_directory && matches!(entry.kind, FileMentionEntryKind::File)
+                        })
+                        .cloned(),
+                    self.file_mention_trigger,
+                ) {
+                    let token = format!("@{}#", entry.path);
+                    self.composer.push_undo();
+                    self.replace_prompt_range(trigger, self.composer.prompt_cursor, &token);
+                    self.composer.prompt_cursor = trigger + token.chars().count();
+                    self.sync_file_mention_overlay();
+                    true
+                } else {
+                    false
+                }
+            }
+            (KeyCode::PageDown, _) | (KeyCode::Char('d'), KeyModifiers::CONTROL) => {
+                self.move_file_mention_selection(5);
+                true
+            }
+            (KeyCode::PageUp, _) | (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
+                self.move_file_mention_selection(-5);
                 true
             }
             (KeyCode::Tab, _) => {
@@ -338,6 +377,7 @@ impl AppState {
             format!("@{}{}", entry.value, suffix)
         };
         let tag_end = trigger + 1 + entry.value.chars().count();
+        self.composer.push_undo();
         self.replace_prompt_range(trigger, self.composer.prompt_cursor, &token);
         self.composer.prompt_cursor = trigger + token.chars().count();
 
@@ -438,6 +478,11 @@ impl AppState {
             };
         } else if delta == 1 {
             self.file_mention_selected = (self.file_mention_selected + 1) % len;
+        } else {
+            self.file_mention_selected = self
+                .file_mention_selected
+                .saturating_add_signed(delta)
+                .min(len - 1);
         }
     }
 
@@ -479,7 +524,12 @@ impl AppState {
         &self.composer.prompt_buffer[start_byte..end_byte]
     }
 
-    fn replace_prompt_range(&mut self, start: usize, end: usize, replacement: &str) {
+    pub(in crate::app) fn replace_prompt_range(
+        &mut self,
+        start: usize,
+        end: usize,
+        replacement: &str,
+    ) {
         let start_byte = prompt_char_to_byte(&self.composer.prompt_buffer, start);
         let end_byte = prompt_char_to_byte(&self.composer.prompt_buffer, end);
         self.adjust_file_mention_tags_for_delete(start, end);

@@ -397,7 +397,7 @@ pub(super) fn transcript_tool_rows_keep_status_but_not_raw_json_dump() {
     ));
 
     let transcript = render_live_lines(&app, 120, 36);
-    assert!(transcript.contains("Read lib.rs (42-61)"));
+    assert!(transcript.contains("Read 1 file"));
     assert!(!transcript.contains(r#"{"path":"src/lib.rs","start_line":42,"limit":20}"#));
     assert!(!transcript.contains("args {"));
 }
@@ -412,10 +412,12 @@ pub(super) fn transcript_shell_remains_scannable_without_bubble_cards() {
     let rendered = render_live_lines(&app, 120, 30);
     let lines = rendered.lines().collect::<Vec<_>>();
     let prompt_row = find_line_containing(&lines, "Restyle the transcript shell").unwrap_or_abort();
-    let thinking_row =
-        find_line_containing_all_from(&lines, prompt_row + 1, &["Thought"]).unwrap_or_abort();
     let tool_row =
-        find_line_containing_all_from(&lines, thinking_row + 1, &["Read ui.rs"]).unwrap_or_abort();
+        find_line_containing_all_from(&lines, prompt_row + 1, &["Read 1 file"]).unwrap_or_abort();
+    assert!(
+        !rendered.contains("Thought"),
+        "finished reasoning folds into the context group"
+    );
     let body_row = find_line_containing_from(
         &lines,
         tool_row + 1,
@@ -424,18 +426,16 @@ pub(super) fn transcript_shell_remains_scannable_without_bubble_cards() {
     .unwrap_or_abort();
 
     assert!(prompt_row < body_row);
-    assert!(prompt_row < thinking_row);
-    assert!(thinking_row < tool_row);
+    assert!(prompt_row < tool_row);
     assert!(tool_row < body_row);
     let rail_rows = lines
         .iter()
         .enumerate()
         .filter_map(|(index, line)| line.contains('┃').then_some(index))
         .collect::<Vec<_>>();
-    assert_eq!(
-        rail_rows,
-        Vec::<usize>::new(),
-        "settled individual tool entry must not retain a group or completion rail\n{rendered}"
+    assert!(
+        rail_rows.is_empty(),
+        "collapsed context groups do not paint content rails\n{rendered}"
     );
     assert!(!lines[body_row].contains('┃'));
     assert!(!rendered.contains("Composer ·"));
@@ -454,7 +454,7 @@ pub(super) fn transcript_status_metadata_is_inline_not_chrome() {
 
     assert!(!rendered.contains("req_rich_shell"));
     assert!(rendered.contains("model-1"));
-    assert!(rendered.contains("Read ui.rs (1-24)"));
+    assert!(rendered.contains("Read 1 file"));
     assert!(!rendered.contains("user ("));
     assert!(!rendered.contains("assistant ("));
     assert!(!rendered.contains("(tool fs.read · succeeded)"));
@@ -494,6 +494,9 @@ pub(super) fn nested_transcript_rows_preserve_prefix_on_wrapped_continuations() 
     let mut app = rich_transcript_fixture_app();
     app.activities[0].thinking_text = "Drafting a document-like plan with enough extra detail to force a wrapped continuation so the nested rail stays visible on every continued row.".to_string();
     app.transcript_view.selected_activity_index = 0;
+    assert!(app.move_transcript_entry(true));
+    assert!(app.toggle_selected_transcript_fold()); // context group
+    assert!(app.move_transcript_entry(true));
     assert!(app.toggle_selected_transcript_fold());
 
     // Scroll to top so wrapped thinking first-line + body both stay visible under breadcrumb chrome.
@@ -526,6 +529,10 @@ pub(super) fn nested_transcript_rows_preserve_prefix_on_wrapped_continuations() 
 pub(super) fn thinking_visibility_toggle_hides_and_restores_inline_thinking_rows() {
     let mut app = rich_transcript_fixture_app();
 
+    app.transcript_view.selected_activity_index = 0;
+    assert!(app.move_transcript_entry(true));
+    assert!(app.toggle_selected_transcript_fold()); // reveal the group's Thought header
+
     let initial = render_live_lines(&app, 120, 30);
     assert!(initial.contains("Thought"));
     assert!(!initial.contains("Drafting a document-like plan"));
@@ -538,10 +545,12 @@ pub(super) fn thinking_visibility_toggle_hides_and_restores_inline_thinking_rows
 
     run_palette_command(&mut app, "expand thinking");
     let restored = render_live_lines(&app, 120, 30);
-    assert!(restored.contains("Thought"));
+    assert!(!restored.contains("Thought"));
     assert!(!restored.contains("Drafting a document-like plan"));
 
     app.transcript_view.selected_activity_index = 0;
+    assert!(app.toggle_selected_transcript_fold()); // visibility changes reset the group fold
+    assert!(app.move_transcript_entry(true));
     assert!(app.toggle_selected_transcript_fold());
     let expanded = render_live_lines(&app, 120, 30);
     assert!(expanded.contains("Drafting a document-like plan"));
@@ -551,15 +560,15 @@ pub(super) fn tool_details_toggle_collapses_successful_tool_payloads() {
     let mut app = rich_transcript_fixture_app();
 
     let shown = render_live_lines(&app, 120, 30);
-    assert!(shown.contains("Read ui.rs (1-24)"));
+    assert!(shown.contains("Read 1 file"));
 
     run_palette_command(&mut app, "hide tool details");
     let hidden = render_live_lines(&app, 120, 30);
-    assert!(!hidden.contains("Read ui.rs"));
+    assert!(!hidden.contains("Read 1 file"));
 
     run_palette_command(&mut app, "show tool details");
     let restored = render_live_lines(&app, 120, 30);
-    assert!(restored.contains("Read ui.rs (1-24)"));
+    assert!(restored.contains("Read 1 file"));
 }
 
 pub(super) fn failed_tool_rows_still_surface_error_summary() {
@@ -614,6 +623,8 @@ pub(super) fn failed_tool_rows_still_surface_error_summary() {
         ),
     ));
 
+    assert!(!render_live_lines(&app, 120, 36).contains("stderr: permission denied"));
+    app.toggle_tool_output_for_test("tc_error");
     let transcript = render_live_lines(&app, 120, 36);
     assert!(transcript.contains("false"));
     assert!(
