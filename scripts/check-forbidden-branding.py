@@ -26,6 +26,9 @@ ALLOWED_DIRS: Final[set[str]] = {
     "target",
 }
 ALLOWED_REFERENCE_PATHS: Final[set[Path]] = {
+    # Bundled prompt source provenance and required upstream copyright notice.
+    Path(".agent-harness/prompt-families/README.md"),
+    Path(".agent-harness/prompt-families/LICENSE.upstream"),
     # External provider catalog keys still named after third-party products.
     Path("crates/harness-tui/src/app/auth_dialog/provider_menu.rs"),
     # Compaction ports still cite the upstream reference agent in comments.
@@ -72,7 +75,17 @@ ALLOWED_MATCH_LINES: Final[dict[Path, set[int]]] = {
         158, 160, 162, 163, 164, 165, 262, 282, 413, 414,
     },
 }
-ALLOWED_MATCH_TEXT: Final[dict[Path, set[str]]] = {}
+# Mathematical symbols are not source-product branding. Keep these exemptions
+# to exact semantic lines rather than exempting either rendering module.
+ALLOWED_MATCH_TEXT: Final[dict[Path, set[str]]] = {
+    Path("crates/harness-tui/src/ui_markdown.rs"): {
+        '"pi" => "π",',
+        '"Pi" => "Π",',
+    },
+    Path("crates/harness-tui/src/startup_logo.rs"): {
+        "0.5 * (1.0 + (std::f32::consts::PI * distance / 0.38).cos())",
+    },
+}
 SOURCE_PREFIX: Final[str] = "p" + "i"
 FORBIDDEN_PATTERNS: Final[list[re.Pattern[str]]] = [
     re.compile(pattern, re.IGNORECASE)

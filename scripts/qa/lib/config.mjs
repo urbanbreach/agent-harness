@@ -253,7 +253,7 @@ function p103StartupRevealContract(options) {
     : [
         { kind: "wait", value: "Beta" },
         { kind: "wait", value: "New worktree" },
-        { kind: "wait", value: "Subagent spawning" },
+        { kind: "wait", value: "Resume session" },
         { kind: "capture", state: "welcome-complete" },
         { kind: "type", value: "draft 川山 during reveal" },
         { kind: "waitAbsent", value: "New worktree" },
@@ -284,7 +284,7 @@ function p103StartupRevealContract(options) {
 function p104ResponsiveFeedbackContract(options) {
   const basicAscii = options.capabilityVariant === "basic-ascii";
   const detachedTranscriptLine = options.cols < 100
-    ? "❯ Harness responsive prompt [0-9]+"
+    ? `${basicAscii ? ">" : "❯"} Harness responsive prompt [0-9]+`
     : "Harness response [0-9]+: .*terminal-safe status feedback\\.";
   const environment = basicAscii
     ? {
@@ -340,7 +340,9 @@ function composerMultilineActionsContract(options) {
   return {
     name: "composer-multiline-actions",
     title: options.title ?? "Harness multiline composer actions",
-    command: "env HARNESS_TUI_P0_04_SCENARIO=1 cargo test --manifest-path $HARNESS_QA_REPO_ROOT/Cargo.toml -p harness-tui --test p0_04_pty_recorded -- --exact p0_04_pty_helper --nocapture",
+    command: 'env HARNESS_TUI_P0_04_SCENARIO=1 "$HARNESS_QA_TEST_BINARY" --exact p0_04_pty_helper --nocapture',
+    binaryTarget: { package: "harness-tui", test: "p0_04_pty_recorded" },
+    environment: { TERM: "xterm-256color", TERM_PROGRAM: "WezTerm", COLORTERM: "truecolor" },
     actions: [
       { kind: "wait", value: "P0-04 active streaming" },
       { kind: "key", value: "Alt+m" },
@@ -349,11 +351,11 @@ function composerMultilineActionsContract(options) {
       { kind: "key", value: "Enter" },
       { kind: "type", value: "second line" },
       { kind: "wait", value: "Enter:newline" },
-      { kind: "wait", value: "Alt+s:send" },
+      { kind: "wait", value: "Alt+Enter:send" },
       { kind: "wait", value: "Alt+i:interject" },
       { kind: "wait", value: "Alt+r:replace" },
       { kind: "capture" },
-      { kind: "key", value: "Alt+s" },
+      { kind: "key", value: "Alt+Enter" },
       { kind: "waitCount", value: "QUEUED", count: 1 },
       { kind: "type", value: "interject text" },
       { kind: "key", value: "Alt+i" },
@@ -371,7 +373,7 @@ function composerMultilineActionsContract(options) {
 }
 
 function slashCompletionCommand() {
-  return "env HARNESS_TUI_P1_01_SCENARIO=1 cargo test --manifest-path $HARNESS_QA_REPO_ROOT/Cargo.toml -p harness-tui --test p1_01_pty_recorded -- --exact p1_01_pty_helper --nocapture";
+  return 'env HARNESS_TUI_P1_01_SCENARIO=1 "$HARNESS_QA_TEST_BINARY" --exact p1_01_pty_helper --nocapture';
 }
 
 function slashCompletionHappyContract(options) {
@@ -380,6 +382,8 @@ function slashCompletionHappyContract(options) {
     name: "slash-completion-happy",
     title: options.title ?? "Harness slash completion happy path",
     command: slashCompletionCommand(),
+    binaryTarget: { package: "harness-tui", test: "p1_01_pty_recorded" },
+    environment: { TERM: "xterm-256color", TERM_PROGRAM: "WezTerm", COLORTERM: "truecolor" },
     actions: [
       { kind: "wait", value: "P1-01 slash ready" },
       { kind: "type", value: "draft /ren" },
@@ -405,6 +409,8 @@ function slashCompletionEdgeContract(options) {
     name: "slash-completion-edge",
     title: options.title ?? "Harness slash completion edge path",
     command: slashCompletionCommand(),
+    binaryTarget: { package: "harness-tui", test: "p1_01_pty_recorded" },
+    environment: { TERM: "xterm-256color", TERM_PROGRAM: "WezTerm", COLORTERM: "truecolor" },
     actions: [
       { kind: "wait", value: "P1-01 slash ready" },
       { kind: "type", value: "/rename" },
@@ -413,7 +419,8 @@ function slashCompletionEdgeContract(options) {
       { kind: "key", value: "Enter" },
       { kind: "wait", value: "argument required" },
       { kind: "waitAbsent", value: "session title cannot be empty" },
-      { kind: "capture" },
+      // Empty required arguments deliberately produce no new terminal output.
+      { kind: "capture", allowUnchanged: true },
       { kind: "key", value: "Escape" },
       { kind: "type", value: "https://example.com \\/help /名" },
       { kind: "wait", value: "No matching items" },
