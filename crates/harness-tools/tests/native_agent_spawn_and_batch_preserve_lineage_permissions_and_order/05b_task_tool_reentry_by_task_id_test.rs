@@ -16,6 +16,8 @@ async fn task_tool_reenters_existing_child_session_by_task_id() {
                 "description": "Initial child",
                 "prompt": "First child turn",
                 "subagent_type": "general",
+                "session_id": "",
+                "task_id": "  ",
                 "run_in_background": true,
                 "load_skills": []
             }),
@@ -26,6 +28,7 @@ async fn task_tool_reenters_existing_child_session_by_task_id() {
 
     let first_events = read_events(&run.events_path);
     let first_finished = find_finished(&first_events, &first_tool_call_id);
+    assert_eq!(first_finished.status, ToolCallStatus::Succeeded);
     let first_output = first_finished
         .output_json
         .as_ref()
@@ -52,6 +55,7 @@ async fn task_tool_reenters_existing_child_session_by_task_id() {
                 "prompt": "Second child turn by task_id",
                 "subagent_type": "general",
                 "task_id": child_task_id,
+                "session_id": "",
                 "run_in_background": true,
                 "load_skills": []
             }),

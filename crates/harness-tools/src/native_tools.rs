@@ -463,6 +463,7 @@ impl Tool for TaskTool {
         let args: TaskArgs = parse_tool_args(args_json)?;
         let description = args
             .description
+            .filter(|value| !value.trim().is_empty())
             .unwrap_or_else(|| generate_task_description(&args.prompt));
         self.executor
             .spawn_agent(
@@ -471,8 +472,11 @@ impl Tool for TaskTool {
                     description,
                     profile_name: args.subagent_type.as_str().to_string(),
                     prompt: args.prompt,
-                    task_id: args.task_id,
-                    session_id: args.session_id,
+                    // Some providers populate unused optional strings with "".
+                    // An empty selector means a new child, and must not shadow
+                    // a real continuation ID supplied through the other alias.
+                    task_id: args.task_id.filter(|value| !value.trim().is_empty()),
+                    session_id: args.session_id.filter(|value| !value.trim().is_empty()),
                     run_in_background: args.run_in_background,
                     load_skills: args.load_skills,
                     command: args.command,

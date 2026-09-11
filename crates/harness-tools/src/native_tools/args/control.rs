@@ -33,11 +33,11 @@ pub(in crate::native_tools) struct TaskArgs {
     )]
     pub(in crate::native_tools) subagent_type: TaskSubagentType,
     #[schemars(
-        description = "Compatibility selector for continuing an existing child task/session when provided by prior task output."
+        description = "Optional continuation ID returned by a prior task call. Omit for a new child; an empty string also starts a new child."
     )]
     pub(in crate::native_tools) task_id: Option<String>,
     #[schemars(
-        description = "Compatibility selector for continuing an existing child session when provided by prior task output."
+        description = "Optional continuation ID returned by a prior task call. Omit for a new child; an empty string is ignored and does not override task_id."
     )]
     pub(in crate::native_tools) session_id: Option<String>,
     #[schemars(
