@@ -507,6 +507,27 @@ fn merge_tool_call_metadata(
     }
 }
 
+fn committed_tool_part(
+    existing: Option<Box<ProjectedToolCallPart>>,
+    tool_call: &crate::session::AssistantToolCall,
+    event: &EventEnvelopeV1,
+) -> Box<ProjectedToolCallPart> {
+    let mut projected = existing.unwrap_or_else(|| {
+        Box::new(placeholder_tool_call_part(
+            tool_call.tool_call_id.as_str(),
+            ProjectedToolCallState::Pending,
+            event,
+        ))
+    });
+    if projected.requested_seq.is_none() {
+        projected.tool_id.clone_from(&tool_call.tool_id);
+        projected.args_summary.clone_from(&tool_call.args_summary);
+        projected.args_digest.clone_from(&tool_call.args_digest);
+    }
+    projected.provenance.extend(event);
+    projected
+}
+
 fn project_assistant_completion(
     projection: &mut TranscriptProjection,
     request_locations: &mut BTreeMap<String, RequestLocations>,
@@ -532,7 +553,23 @@ fn project_assistant_completion(
         }
         if !payload.parts.is_empty() {
             tool_locations.retain(|_, location| location.message_index != message_index);
-            message.parts.clear();
+            // The response replaces streamed text, but queued tools and their
+            // permission/lifecycle facts belong to the coordinator. A response
+            // can finish while one of those tools is waiting for approval.
+            let mut committed_tools = BTreeMap::new();
+            message.parts.retain(|part| match part {
+                ProjectedPart::Text(_) | ProjectedPart::Reasoning(_) => false,
+                ProjectedPart::ToolCall(tool)
+                    if payload.parts.iter().any(|part| {
+                        matches!(part, AssistantPart::ToolCall(committed)
+                            if committed.tool_call_id == tool.tool_call_id)
+                    }) =>
+                {
+                    committed_tools.insert(tool.tool_call_id.clone(), tool.clone());
+                    false
+                }
+                _ => true,
+            });
             let locations = request_locations.entry(request_id.clone()).or_default();
             locations.assistant_text_part_index = None;
             locations.assistant_reasoning_part_index = None;
@@ -557,35 +594,25 @@ fn project_assistant_completion(
                         locations.assistant_reasoning_part_index = Some(part_index);
                     }
                     AssistantPart::ToolCall(tool_call) => {
-                        message.parts.push(ProjectedPart::ToolCall(Box::new(
-                            ProjectedToolCallPart {
-                                tool_call_id: tool_call.tool_call_id.clone(),
-                                tool_id: tool_call.tool_id.clone(),
-                                args_summary: tool_call.args_summary.clone(),
-                                args_digest: tool_call.args_digest.clone(),
-                                state: ProjectedToolCallState::Pending,
-                                status: None,
-                                output_summary: None,
-                                output_digest: None,
-                                output_json: None,
-                                requested_seq: None,
-                                started_seq: None,
-                                finished_seq: None,
-                                metadata: None,
-                                permissions: Vec::new(),
-                                artifacts: Vec::new(),
-                                lineage: None,
-                                provenance: ProvenanceRange::from_event(event),
-                            },
-                        )));
-                        tool_locations.insert(
-                            tool_call.tool_call_id.to_string(),
-                            PartLocation {
-                                message_index,
-                                part_index,
-                            },
-                        );
+                        message
+                            .parts
+                            .push(ProjectedPart::ToolCall(committed_tool_part(
+                                committed_tools.remove(&tool_call.tool_call_id),
+                                tool_call,
+                                event,
+                            )));
                     }
+                }
+            }
+            for (part_index, part) in message.parts.iter().enumerate() {
+                if let ProjectedPart::ToolCall(tool) = part {
+                    tool_locations.insert(
+                        tool.tool_call_id.to_string(),
+                        PartLocation {
+                            message_index,
+                            part_index,
+                        },
+                    );
                 }
             }
         }
@@ -618,6 +645,9 @@ fn project_tool_event(
             }
             if let Some(location) = tool_locations.get(payload.tool_call_id.as_str()).copied() {
                 if let Some(tool_call) = tool_call_part_mut(projection, location) {
+                    tool_call.tool_id.clone_from(&payload.tool_id);
+                    tool_call.args_summary.clone_from(&payload.args_summary);
+                    tool_call.args_digest.clone_from(&payload.args_digest);
                     tool_call.requested_seq = Some(event.seq);
                     tool_call.metadata.clone_from(&payload.metadata);
                     tool_call.lineage = lineage.clone();
