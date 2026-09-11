@@ -18,7 +18,15 @@ export async function currentTree(repoRoot) {
   let files = 0;
   for (const path of paths) {
     const absolute = resolve(repoRoot, path);
-    const details = await stat(absolute);
+    const details = await stat(absolute).catch((error) => {
+      if (error.code === "ENOENT") return null;
+      throw error;
+    });
+    // Tracked deletions are part of a working tree, including snapshot migrations.
+    if (!details) {
+      digest.update(path).update("\0deleted\0");
+      continue;
+    }
     if (!details.isFile()) continue;
     digest.update(path).update("\0").update(await readFile(absolute)).update("\0");
     files += 1;

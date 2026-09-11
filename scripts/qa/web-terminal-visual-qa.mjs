@@ -306,7 +306,7 @@ export async function executeActions(settings) {
       else if (action.kind === "capture") {
         await settings.pty.flush();
         await settings.terminal.waitForStableFrame({
-          parsedCountBefore,
+          parsedCountBefore: action.allowUnchanged ? null : parsedCountBefore,
           linePattern: action.linePattern ?? null,
         });
         parsedCountBefore = null;

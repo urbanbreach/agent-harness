@@ -125,6 +125,15 @@ T5_PATH_PARTS: Final[tuple[str, ...]] = (
     "crates/harness/tests/pty_happy_path_recorded.rs",
     "crates/harness-tui/tests/pty_e2e.rs",
     "crates/harness-tui/tests/support/pty_e2e_impl.rs",
+    # Executable lane dry-run and the split support owners of recorded native PTY tests.
+    "crates/harness/tests/test_lanes_script_test.rs",
+    "crates/harness-tui/tests/support/p0_06_artifact_support.rs",
+    "crates/harness-tui/tests/support/p0_06_artifacts.rs",
+    "crates/harness-tui/tests/support/p0_06_terminal_emulator.rs",
+    "crates/harness-tui/tests/support/p1_03_recorded_owner.rs",
+    "crates/harness-tui/tests/support/p1_03_session.rs",
+    "crates/harness-tui/tests/support/p1_04_recorded_owner.rs",
+    "crates/harness-tui/tests/support/p1_04_session.rs",
 )
 RECORDED_TEST_SUFFIX: Final[str] = "_recorded.rs"
 
