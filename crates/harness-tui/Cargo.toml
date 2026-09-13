@@ -12,6 +12,11 @@ categories.workspace = true
 [dependencies]
 anyhow = "1.0"
 ratatui.workspace = true
+regex = "1"
+textwrap = { version = "=0.16.2", default-features = false, features = ["unicode-linebreak", "unicode-width"] }
+tree-sitter = "=0.25.10"
+tree-sitter-bash = "=0.25.0"
+tui-scrollbar = "=0.2.2"
 crossterm = { workspace = true, features = ["event-stream"] }
 crossbeam-channel.workspace = true
 fuzzy-matcher = "0.3"
