@@ -24,6 +24,7 @@ pub(super) fn envelope(seq: u64, payload: EventV1) -> EventEnvelopeV1 {
 
 pub(super) fn streaming_app() -> AppState {
     let mut app = AppState::new_live(Some(PathBuf::from("/tmp/run-motion")), false, None);
+    app.restart_motion_epoch_for_evidence();
     app.ingest_event(envelope(
         1,
         EventV1::UserMessageSubmitted(UserMessageSubmittedEvent {

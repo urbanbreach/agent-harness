@@ -59,7 +59,7 @@ fn render(app: &AppState) -> String {
 }
 
 #[test]
-fn interleaved_live_responses_keep_their_place_between_tool_calls() {
+fn canonical_response_text_coalesces_before_its_tools_between_steps() {
     // Given: a turn that has already called a tool.
     let mut app = AppState::new_live(None, false, None);
     app.ingest_runtime_event(durable(
@@ -111,7 +111,7 @@ fn interleaved_live_responses_keep_their_place_between_tool_calls() {
     app.ingest_runtime_event(commit(3, "provider-1", vec![tool("tool-1", "ls")]));
     app.ingest_runtime_event(start(4, "provider-2"));
 
-    // When: the next provider step speaks, calls another tool, and commits.
+    // When: one response interleaves text and a tool, then a later step speaks.
     app.ingest_runtime_event(live(
         "live-middle",
         LiveEventV1::ProviderTextDelta {
@@ -127,6 +127,9 @@ fn interleaved_live_responses_keep_their_place_between_tool_calls() {
                 text: "Intermediate response".to_string(),
             },
             tool("tool-2", "pwd"),
+            AssistantPart::Text {
+                text: " trailing fragment".to_string(),
+            },
         ],
     ));
     app.ingest_runtime_event(start(6, "provider-3"));
@@ -138,9 +141,15 @@ fn interleaved_live_responses_keep_their_place_between_tool_calls() {
         },
     ));
 
-    // Then: committed and currently streaming text both remain in sequence.
+    // Then: a response's text coalesces before its tools without crossing steps.
     let rendered = render(&app);
-    let positions = ["ls", "Intermediate response", "pwd", "Final response"].map(|text| {
+    let positions = [
+        "ls",
+        "Intermediate response trailing fragment",
+        "pwd",
+        "Final response",
+    ]
+    .map(|text| {
         rendered
             .find(text)
             .unwrap_or_else(|| panic!("missing {text}\n{rendered}"))
@@ -209,6 +218,12 @@ fn typed_live_fragments_render_then_final_commit_settles_them() {
     let transient = render(&app);
     assert!(transient.contains("draft answer"), "{transient}");
     assert!(transient.contains("draft"), "{transient}");
+    assert!(
+        !transient
+            .lines()
+            .any(|line| line.trim_start().starts_with("◆ tool")),
+        "argument fragments must not create placeholder tool rows\n{transient}"
+    );
     assert_eq!(app.selected_event().map(|event| event.seq), Some(2));
 
     // When: the durable assistant commit arrives with canonical content.

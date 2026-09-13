@@ -134,7 +134,7 @@ fn live_transcript_viewer_is_reachable_from_production_input() {
         found.contains("unique-tail") && found.contains('川') && found.contains('山'),
         "{found}"
     );
-    assert!(found.contains("1/1"), "{found}");
+    assert!(found.contains("[search: unique-tail]"), "{found}");
     app.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE));
     app.handle_key(KeyEvent::new(KeyCode::Home, KeyModifiers::NONE));
     assert!(

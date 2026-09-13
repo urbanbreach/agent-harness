@@ -907,8 +907,7 @@ mod breadcrumb_token_meta_tests {
         let wider = live_breadcrumb_text(&app, 79);
 
         // assert
-        assert!(compact.starts_with(' '));
-        assert!(!compact.starts_with("  "));
+        assert!(compact.starts_with("  "));
         assert!(wider.starts_with("  "));
     }
 

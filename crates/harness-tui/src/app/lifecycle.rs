@@ -1060,26 +1060,8 @@ impl AppState {
         };
         let total_ms = entry.last_mono_ms.saturating_sub(entry.first_mono_ms);
         let phase_ms = entry
-            .tool_calls
-            .iter()
-            .rev()
-            .find(|tool| tool.status == ToolCallDisplayStatus::Running)
-            .map(|tool| tool.last_mono_ms.saturating_sub(tool.first_mono_ms))
-            .or_else(|| {
-                (!entry.transcript_text.is_empty())
-                    .then(|| entry.responding_duration_ms())
-                    .flatten()
-            })
-            .or_else(|| {
-                (!entry.thinking_text.is_empty())
-                    .then(|| entry.thinking_duration_ms())
-                    .flatten()
-            })
-            .unwrap_or_else(|| {
-                entry.request_started_mono_ms.map_or(total_ms, |started| {
-                    entry.last_mono_ms.saturating_sub(started)
-                })
-            });
+            .last_mono_ms
+            .saturating_sub(self.live_turn_phase(entry).1);
         let request_id = entry.request_id.clone();
         let now = self.now();
         self.live_turn_request_id = Some(request_id);
@@ -1091,8 +1073,6 @@ impl AppState {
             now.checked_sub(Duration::from_millis(phase_ms))
                 .unwrap_or(now),
         );
-        self.motion_epoch_started_at = self.live_turn_phase_started_at.unwrap_or(now);
-        self.sampled_motion_elapsed = Duration::ZERO;
         self.motion_revision = self.motion_revision.wrapping_add(1);
     }
 
@@ -1110,17 +1090,47 @@ impl AppState {
             self.live_turn_phase_started_at = Some(now);
         }
         self.live_turn_request_id = request_id.map(str::to_string);
-        self.motion_epoch_started_at = now;
-        self.sampled_motion_elapsed = Duration::ZERO;
         self.motion_revision = self.motion_revision.wrapping_add(1);
+    }
+
+    pub(crate) fn live_turn_phase(&self, activity: &ActivityEntry) -> (LiveTurnPhase, u64) {
+        self.projection.live_turn_phase(activity)
+    }
+
+    pub(in crate::app) fn current_live_turn_phase(&self) -> Option<LiveTurnPhase> {
+        self.live_turn_request_id
+            .as_deref()
+            .and_then(|request_id| {
+                self.activities
+                    .iter()
+                    .find(|activity| activity.request_id == request_id)
+            })
+            .map(|activity| self.live_turn_phase(activity).0)
+            .or_else(|| self.live_turn_started_at.map(|_| LiveTurnPhase::Waiting))
+    }
+
+    pub(in crate::app) fn sync_live_turn_phase_timing(&mut self, previous: Option<LiveTurnPhase>) {
+        let next = self.current_live_turn_phase();
+        let continued_writing = matches!(
+            (&previous, &next),
+            (
+                Some(LiveTurnPhase::WritingToolCall { .. }),
+                Some(LiveTurnPhase::WritingToolCall { .. })
+            )
+        );
+        if next != previous && !continued_writing {
+            if let Some(request_id) = self.live_turn_request_id.clone() {
+                self.restart_live_turn_phase_timing(&request_id);
+            }
+        }
     }
 
     pub(in crate::app) fn restart_live_turn_phase_timing(&mut self, request_id: &str) {
         if self.live_turn_request_id.as_deref() == Some(request_id) {
             let now = self.now();
             self.live_turn_phase_started_at = Some(now);
-            self.motion_epoch_started_at = now;
-            self.sampled_motion_elapsed = Duration::ZERO;
+            // The phase timer changes its label/elapsed time, while the shared
+            // animation clock keeps every visible tool and reasoning wave in sync.
             self.motion_revision = self.motion_revision.wrapping_add(1);
         }
     }

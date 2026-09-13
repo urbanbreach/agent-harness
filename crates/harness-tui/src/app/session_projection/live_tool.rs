@@ -51,6 +51,7 @@ impl SessionProjection {
                         tool_entry.sync_display_status();
                     } else {
                         let mut tool_entry = ToolCallEntry {
+                            hook_executions: Vec::new(),
                             tool_call_id: data.tool_call_id.to_string(),
                             tool_id: data.tool_id.clone(),
                             canonical_tool_id: None,
