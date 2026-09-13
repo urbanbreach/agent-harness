@@ -221,6 +221,7 @@ pub(super) fn module_transcript_edit_tool_wide_diff_uses_syntax_highlighting_and
         revision: 0,
     };
     entry.tool_calls.push(crate::app::ToolCallEntry {
+        hook_executions: Vec::new(),
         tool_call_id: "call-edit-wide-1".to_string(),
         tool_id: "edit.hashline_apply".to_string(),
         canonical_tool_id: None,
@@ -522,7 +523,7 @@ pub(super) fn generic_tool_output_toggle_reveals_block_payload() {
         .unwrap_or_abort();
     let collapsed = format!("{:?}", terminal.backend().buffer());
     assert!(collapsed.contains("background.cancel"));
-    assert!(collapsed.contains("[taskId=bg_123]"));
+    assert!(!collapsed.contains("[taskId=bg_123]"));
     assert!(!collapsed.contains("cancelled background task"));
     assert!(!collapsed.contains("result: ok"));
 
@@ -542,10 +543,10 @@ pub(super) fn generic_tool_output_toggle_reveals_block_payload() {
         .unwrap_or_abort();
     let expanded = format!("{:?}", terminal.backend().buffer());
     assert!(expanded.contains("background.cancel"));
-    assert!(expanded.contains("[taskId=bg_123]"));
+    assert!(!expanded.contains("[taskId=bg_123]"));
     assert!(expanded.contains("cancelled background task"));
     assert!(!expanded.contains("result: ok"));
-    assert!(expanded.contains("Click to expand"));
+    assert!(!expanded.contains("Click to expand"));
 
     app::palette_controller::dispatch_palette_command(&mut app, "harness.expand_turn_results");
 
