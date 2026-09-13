@@ -223,7 +223,7 @@ mod tests {
     }
 
     #[test]
-    fn viewport_plan_breadcrumb_margin_is_zero_only_at_ultra_compact() {
+    fn viewport_plan_keeps_native_breadcrumb_margin_at_every_width() {
         // arrange
         // act
         let v60 = ViewportPlan::for_viewport(VIEWPORT_60x20);
@@ -234,11 +234,8 @@ mod tests {
         let v120x50 = ViewportPlan::for_viewport(VIEWPORT_120x50);
         let vwide = ViewportPlan::for_viewport(VIEWPORT_WIDE);
 
-        // assert — only 60x20 has zero breadcrumb top margin
-        assert_eq!(
-            v60.breadcrumb_top_margin, 0,
-            "60x20: no breadcrumb top margin"
-        );
+        // The native outer row does not disappear at the compact breakpoint.
+        assert_eq!(v60.breadcrumb_top_margin, 1, "60x20: breadcrumb top margin");
         assert_eq!(v79.breadcrumb_top_margin, 1, "79x24: breadcrumb top margin");
         assert_eq!(v80.breadcrumb_top_margin, 1, "80x24: breadcrumb top margin");
         assert_eq!(

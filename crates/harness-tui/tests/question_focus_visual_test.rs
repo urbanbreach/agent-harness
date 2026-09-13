@@ -217,7 +217,7 @@ fn question_footer_labels_follow_focus_and_selection_state() {
     assert!(focused.contains("Esc:scrollback"));
     assert!(focused.contains("Enter:submit"));
     assert!(focused.contains("Tab:next answer"));
-    assert!(focused.contains("X:dismiss"));
+    assert!(focused.contains("Shift+x:dismiss"));
 
     app.handle_key(crossterm::event::KeyEvent::new(
         crossterm::event::KeyCode::Char(' '),

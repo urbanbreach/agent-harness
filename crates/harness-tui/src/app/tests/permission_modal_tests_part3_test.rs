@@ -133,14 +133,8 @@ fn question_mouse_click_preserves_shell_state_and_emits_only_answer_intent() {
     assert_eq!(app.transcript_view.transcript_scroll, 4);
     assert!(!app.transcript_view.follow_mode);
     let composer_after = FrameLayoutPlan::for_app(&app, frame_area).composer;
-    assert_eq!(
-        composer_after.map(|area| area.y),
-        composer_before.map(|area| area.y.saturating_add(1))
-    );
-    assert_eq!(
-        composer_after.map(|area| area.height),
-        composer_before.map(|area| area.height)
-    );
+    assert_eq!(composer_after.map(|area| area.y), Some(frame_area.bottom()));
+    assert_eq!(composer_after.map(|area| area.height), Some(0));
     assert_eq!(
         composer_after.map(|area| area.width),
         composer_before.map(|area| area.width)
@@ -384,8 +378,14 @@ fn question_tab_and_fullscreen_round_trip_preserves_scroll_offsets() {
     // act — When tabs and fullscreen are round-tripped.
     app.handle_key(key(KeyCode::Right));
     app.handle_key(key(KeyCode::Left));
-    app.handle_key(key_with_modifiers(KeyCode::Char('f'), KeyModifiers::CONTROL));
-    app.handle_key(key_with_modifiers(KeyCode::Char('f'), KeyModifiers::CONTROL));
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char('f'),
+        KeyModifiers::CONTROL,
+    ));
+    app.handle_key(key_with_modifiers(
+        KeyCode::Char('f'),
+        KeyModifiers::CONTROL,
+    ));
 
     // assert — Then both explicit offsets remain intact.
     assert_eq!(app.question_prompt.scroll_offsets, vec![3, 5]);

@@ -392,19 +392,19 @@ fn permission_mouse_hit_regions_match_the_rendered_option_rows() {
         vec![
             (
                 PermissionPointerTarget::Decision(PermissionModalSelection::AllowAlways),
-                Rect::new(5, 29, 111, 1),
+                Rect::new(5, 32, 111, 1),
             ),
             (
                 PermissionPointerTarget::Decision(PermissionModalSelection::AllowSession),
-                Rect::new(5, 30, 111, 1),
+                Rect::new(5, 33, 111, 1),
             ),
             (
                 PermissionPointerTarget::Decision(PermissionModalSelection::AllowOnce),
-                Rect::new(5, 31, 111, 1),
+                Rect::new(5, 34, 111, 1),
             ),
             (
                 PermissionPointerTarget::Decision(PermissionModalSelection::Reject),
-                Rect::new(5, 32, 111, 1),
+                Rect::new(5, 35, 111, 1),
             ),
         ]
     );
@@ -417,11 +417,11 @@ fn permission_mouse_hit_regions_match_the_rendered_option_rows() {
         vec![
             (
                 PermissionPointerTarget::Confirm(PermissionConfirmSelection::Confirm),
-                Rect::new(5, 31, 11, 1),
+                Rect::new(5, 34, 11, 1),
             ),
             (
                 PermissionPointerTarget::Confirm(PermissionConfirmSelection::Cancel),
-                Rect::new(17, 31, 10, 1),
+                Rect::new(17, 34, 10, 1),
             ),
         ]
     );
@@ -446,19 +446,19 @@ fn question_mouse_hit_regions_match_the_rendered_option_rows() {
         vec![
             (
                 PermissionPointerTarget::QuestionChoice(0),
-                Rect::new(5, 25, 111, 1),
+                Rect::new(5, 31, 111, 1),
             ),
             (
                 PermissionPointerTarget::QuestionChoice(1),
-                Rect::new(5, 26, 111, 1),
+                Rect::new(5, 32, 111, 1),
             ),
             (
                 PermissionPointerTarget::QuestionChoice(2),
-                Rect::new(5, 27, 111, 1),
+                Rect::new(5, 33, 111, 1),
             ),
             (
                 PermissionPointerTarget::QuestionSubmit,
-                Rect::new(104, 29, 12, 1),
+                Rect::new(101, 35, 14, 1),
             ),
         ]
     );
@@ -530,7 +530,7 @@ fn question_overflow_keeps_custom_error_and_footer_sticky_at_60x20() {
     );
     assert!(!rendered.contains("Ctrl+F expand"), "{rendered}");
     assert!(
-        rendered.contains("X:dismiss"),
+        rendered.contains("Shift+x:dismiss"),
         "compact outer footer must name the question cancellation action\n{rendered}"
     );
 }
@@ -550,8 +550,15 @@ fn question_compact_chrome_truncation_keeps_options_in_the_option_viewport() {
         .filter(|(target, _)| matches!(target, PermissionPointerTarget::QuestionChoice(_)))
         .count();
 
-    // assert — Then hidden chrome is replaced by an affordance and never painted as choices.
-    assert!(rendered.contains("... Ctrl-F to expand"), "{rendered}");
+    // The native compact budget can omit the description entirely. In that case
+    // there is no indicator row to steal from the option viewport.
+    let permission = app.active_permission_view().unwrap_or_abort();
+    let status = crate::layout::FrameLayoutPlan::for_app(&app, frame_area)
+        .status
+        .unwrap_or_abort();
+    let measure = crate::layout::question_dock_measure(&app, status.width, frame_area, &permission);
+    assert_eq!(measure.description_cap, 0);
+    assert_eq!(measure.chrome_rows, 3);
     assert!(rendered.contains("Choice 1"), "{rendered}");
     assert!(rendered.contains("Choice 2"), "{rendered}");
     assert!(rendered.contains("Choice 3"), "{rendered}");
@@ -572,7 +579,7 @@ fn question_compact_footer_names_active_row_walk_park_and_cancel_actions() {
     assert!(rendered.contains("Enter:submit"), "{rendered}");
     assert!(!rendered.contains("Ctrl+F expand"), "{rendered}");
     assert!(rendered.contains("Tab:next answer"), "{rendered}");
-    assert!(rendered.contains("X:dismiss"), "{rendered}");
+    assert!(rendered.contains("Shift+x:dismiss"), "{rendered}");
     assert!(!rendered.contains("Esc:back"), "{rendered}");
 }
 

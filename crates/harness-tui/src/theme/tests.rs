@@ -22,8 +22,14 @@ fn harness_dark_text_and_status_palette() {
     assert_eq!(theme.text.tertiary, rgb(120, 120, 120));
     assert_eq!(theme.text.accent, rgb(187, 154, 247));
     assert_eq!(theme.text.inverse, rgb(20, 20, 20));
-    assert_eq!(theme.question_prompt.accent, rgb(187, 154, 247));
-    assert_eq!(theme.question_prompt.secondary, rgb(122, 162, 247));
+    assert_eq!(
+        theme.question_prompt.accent,
+        theme_role_color(ColorRole::QuestionAccent)
+    );
+    assert_eq!(
+        theme.question_prompt.secondary,
+        theme_role_color(ColorRole::QuestionSecondary)
+    );
     assert_eq!(theme.status.success, rgb(158, 206, 106));
     assert_eq!(theme.status.warning, rgb(224, 175, 104));
     assert_eq!(theme.status.error, rgb(247, 118, 142));

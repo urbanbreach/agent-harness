@@ -217,9 +217,17 @@ impl AppState {
     }
 
     pub(crate) fn permission_feedback(&self, permission_id: &str) -> Option<&PermissionFeedback> {
+        (self.permission_prompt.selection == PermissionModalSelection::Reject)
+            .then(|| self.permission_feedback_for_display(permission_id))
+            .flatten()
+    }
+
+    pub(crate) fn permission_feedback_for_display(
+        &self,
+        permission_id: &str,
+    ) -> Option<&PermissionFeedback> {
         (self.permission_modal_is_active(permission_id)
-            && self.permission_prompt.stage == PermissionModalStage::Decision
-            && self.permission_prompt.selection == PermissionModalSelection::Reject)
+            && self.permission_prompt.stage == PermissionModalStage::Decision)
             .then_some(self.permission_prompt.feedback.as_ref())
             .flatten()
     }
@@ -534,6 +542,13 @@ impl AppState {
             return;
         }
 
+        if key.code == KeyCode::Char('f') && key.modifiers == KeyModifiers::CONTROL {
+            if !permission.summary.trim().is_empty() {
+                self.permission_prompt.detail_expanded = !self.permission_prompt.detail_expanded;
+            }
+            return;
+        }
+
         let command_modifiers = KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER;
         if self
             .permission_feedback(&permission.permission_id)
@@ -559,17 +574,6 @@ impl AppState {
                 }
                 PermissionModalStage::AlwaysConfirm => self
                     .cycle_permission_modal_confirm_selection(&permission.permission_id, forward),
-            }
-            return;
-        }
-
-        if key.code == KeyCode::Char('f') && key.modifiers == KeyModifiers::CONTROL {
-            if !permission.summary.trim().is_empty() {
-                if !self.permission_modal_is_active(&permission.permission_id) {
-                    self.permission_prompt.permission_id = Some(permission.permission_id.clone());
-                    self.permission_prompt.detail_expanded = false;
-                }
-                self.permission_prompt.detail_expanded = !self.permission_prompt.detail_expanded;
             }
             return;
         }

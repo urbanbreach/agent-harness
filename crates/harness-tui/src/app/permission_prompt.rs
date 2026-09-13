@@ -43,6 +43,17 @@ pub(crate) struct PermissionFeedback {
 }
 
 impl PermissionFeedback {
+    pub(crate) fn preview_text(&self) -> &str {
+        self.text.lines().next().unwrap_or_default()
+    }
+    pub(crate) fn editor_viewport(&self, width: u16, max_rows: u16) -> (Vec<String>, (u16, u16)) {
+        crate::layout::question_editor_viewport(
+            &self.text,
+            self.text[..self.cursor].chars().count(),
+            width,
+            max_rows,
+        )
+    }
     pub(super) fn paste(&mut self, text: &str) {
         self.text.insert_str(self.cursor, text);
         let inserted_end = self.cursor.saturating_add(text.len());

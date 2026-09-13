@@ -31,7 +31,12 @@ pub(super) fn parse_question_prompts(kind: &str, summary: &str) -> Option<Vec<Qu
         .map(|question| {
             Some(QuestionPromptView {
                 question: question.get("question")?.as_str()?.to_string(),
-                header: question.get("header")?.as_str()?.to_string(),
+                // Native ACP questions have no header; retain the optional harness label.
+                header: question
+                    .get("header")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
                 options: question
                     .get("options")?
                     .as_array()?
@@ -48,7 +53,9 @@ pub(super) fn parse_question_prompts(kind: &str, summary: &str) -> Option<Vec<Qu
                     })
                     .collect::<Option<Vec<_>>>()?,
                 multiple: question
-                    .get("multiple")
+                    .get("multiSelect")
+                    .or_else(|| question.get("multi_select"))
+                    .or_else(|| question.get("multiple"))
                     .and_then(serde_json::Value::as_bool)
                     .unwrap_or(false),
                 custom: question

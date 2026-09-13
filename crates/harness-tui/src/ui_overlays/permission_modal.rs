@@ -300,99 +300,56 @@ pub(in crate::ui) fn question_permission_actions_text(
         .bg(surface)
         .add_modifier(Modifier::BOLD);
     let navigation_label_style = muted_style.add_modifier(Modifier::BOLD);
-    let action_key_style = navigation_key_style.bg(theme.question_prompt.selected);
-    let action_label_style = muted_style.bg(theme.question_prompt.selected);
+    let action_key_style = navigation_key_style.bg(theme.surface.canvas);
+    let action_label_style = muted_style.bg(theme.surface.canvas);
     let tab = app
         .question_prompt_tab(&permission.permission_id)
         .min(prompts.len().saturating_sub(1));
-    let full_navigation = if prompts.len() > 1 {
-        format!(
-            "[{}/{}] ↑/↓ navigate · ←/→ question · y copy",
-            tab.saturating_add(1),
-            prompts.len()
-        )
-    } else {
-        "↑/↓ navigate · y copy".to_string()
-    };
     let prompt = prompts.get(tab);
     let selected = app.question_prompt_selection(&permission.permission_id);
-    let enter_label = if app.question_prompt_editing(&permission.permission_id) {
-        "commit"
-    } else if prompt.is_some_and(|prompt| prompt.custom && selected == prompt.options.len()) {
-        "edit"
-    } else if tab + 1 >= prompts.len() {
-        "submit"
+    let enter_label =
+        if prompt.is_some_and(|prompt| prompt.custom && selected == prompt.options.len()) {
+            "edit"
+        } else if tab + 1 >= prompts.len() {
+            "submit"
+        } else {
+            "select"
+        };
+    let action_width = display_width(&format!(" Enter:{enter_label} "));
+    let show_action = usize::from(content_width) > action_width + 1;
+    let navigation_width = if show_action {
+        usize::from(content_width).saturating_sub(action_width + 1)
     } else {
-        "select"
+        usize::from(content_width)
     };
-    let action = format!("Enter:{enter_label}");
-    let navigation_width = usize::from(content_width)
-        .saturating_sub(display_width(&action))
-        .saturating_sub(1);
-    let compact_navigation = if prompts.len() > 1 {
-        format!(
-            "[{}/{}] ↑/↓ · ←/→ · y",
-            tab.saturating_add(1),
-            prompts.len()
-        )
-    } else {
-        "↑/↓ · y".to_string()
-    };
-    let navigation_kind = if display_width(&full_navigation) <= navigation_width {
-        2
-    } else if display_width(&compact_navigation) <= navigation_width {
-        1
-    } else {
-        0
-    };
-    let navigation = match navigation_kind {
-        2 => &full_navigation,
-        1 => &compact_navigation,
-        _ => "",
-    };
-    let visible_action = truncate_question_text_with_ellipsis(&action, usize::from(content_width));
-    let padding = usize::from(content_width)
-        .saturating_sub(display_width(&navigation))
-        .saturating_sub(display_width(&visible_action));
     let mut spans = Vec::new();
-    if prompts.len() > 1 && navigation_kind > 0 {
+    if prompts.len() > 1 {
         spans.push(Span::styled(
             format!("[{}/{}] ", tab.saturating_add(1), prompts.len()),
             navigation_label_style,
         ));
     }
-    if navigation_kind > 0 {
-        spans.push(Span::styled("↑/↓", navigation_key_style));
-        spans.push(Span::styled(
-            if navigation_kind == 2 {
-                " navigate · "
-            } else {
-                " · "
-            },
-            navigation_label_style,
-        ));
-        if prompts.len() > 1 {
-            spans.push(Span::styled("←/→", navigation_key_style));
-            spans.push(Span::styled(
-                if navigation_kind == 2 {
-                    " question · "
-                } else {
-                    " · "
-                },
-                navigation_label_style,
-            ));
-        }
-        spans.push(Span::styled("y", navigation_key_style));
-        if navigation_kind == 2 {
-            spans.push(Span::styled(" copy", navigation_label_style));
-        }
+    spans.push(Span::styled("↑/↓", navigation_key_style));
+    spans.push(Span::styled(" navigate · ", navigation_label_style));
+    if prompts.len() > 1 {
+        spans.push(Span::styled("←/→", navigation_key_style));
+        spans.push(Span::styled(" question · ", navigation_label_style));
     }
-    spans.push(Span::styled(" ".repeat(padding), muted_style));
-    if visible_action == action {
+    spans.push(Span::styled("y", navigation_key_style));
+    spans.push(Span::styled(" copy", navigation_label_style));
+    let mut remaining = navigation_width;
+    for span in &mut spans {
+        span.content = ui_chrome::take_width_prefix(&span.content, remaining)
+            .to_string()
+            .into();
+        remaining = remaining.saturating_sub(span.width());
+    }
+    spans.push(Span::styled(" ".repeat(remaining), muted_style));
+    if show_action {
+        spans.push(Span::styled(" ", action_label_style));
         spans.push(Span::styled("Enter", action_key_style));
-        spans.push(Span::styled(format!(":{enter_label}"), action_label_style));
-    } else {
-        spans.push(Span::styled(visible_action, action_key_style));
+        spans.push(Span::styled(format!(":{enter_label} "), action_label_style));
+        spans.push(Span::styled(" ", muted_style));
     }
     Text::from(Line::from(spans))
 }
@@ -408,8 +365,10 @@ fn question_preview_lines(
         usize::from(width.max(1)),
     );
     if let Some(limit) = max_rows.filter(|limit| lines.len() > *limit) {
-        lines.truncate(limit.saturating_sub(1));
-        lines.push(Line::from(Span::styled("... Ctrl-F to expand", style)));
+        lines.truncate(limit);
+        if limit >= 2 {
+            lines[limit - 1] = Line::from(Span::styled("... Ctrl-F to expand", style));
+        }
     }
     lines
 }
@@ -420,8 +379,9 @@ pub(in crate::ui) fn question_permission_body_text(
     prompts: &[crate::app::QuestionPromptView],
     theme: &Theme,
     surface: Color,
-    content_width: u16,
+    measure: &crate::layout::QuestionDockMeasure,
 ) -> Text<'static> {
+    let content_width = measure.content_width;
     if prompts.is_empty() {
         return Text::default();
     }
@@ -434,7 +394,7 @@ pub(in crate::ui) fn question_permission_body_text(
         .bg(surface);
     let question_accent = ui_chrome::question_prompt_accent(theme);
     let active_row_style = Style::default()
-        .fg(theme.question_prompt.primary)
+        .fg(theme.question_prompt.secondary)
         .bg(theme.question_prompt.selected);
     let selected_style = Style::default()
         .fg(theme.question_prompt.primary)
@@ -449,7 +409,6 @@ pub(in crate::ui) fn question_permission_body_text(
     let prompt = &prompts[tab];
     let selected = app.question_prompt_selection(&permission.permission_id);
     let hovered = app.question_prompt_hovered(&permission.permission_id);
-    let fullscreen = app.question_prompt_fullscreen(&permission.permission_id);
     let current_answers = answers.get(tab).cloned().unwrap_or_default();
 
     let (question_label, question_description) = prompt
@@ -466,31 +425,31 @@ pub(in crate::ui) fn question_permission_body_text(
         question_line,
         usize::from(content_width.max(1)),
     ));
-    if !question_description.is_empty() {
+    if !question_description.is_empty() || !prompt.options.is_empty() {
         lines.push(Line::default());
+    }
+    if !question_description.is_empty() {
         lines.extend(question_preview_lines(
             question_description,
             muted_style,
             content_width,
-            (!fullscreen).then_some(4),
+            Some(usize::from(measure.description_cap)),
         ));
     }
     if let Some(preview) = prompt
         .options
         .get(selected)
         .and_then(|option| option.preview.as_deref())
-        .filter(|preview| !preview.is_empty())
+        .filter(|preview| !preview.is_empty() && measure.preview_cap > 0)
     {
         lines.push(Line::default());
         lines.extend(question_preview_lines(
             preview,
             muted_style,
             content_width,
-            (!fullscreen).then_some(3),
+            Some(usize::from(measure.preview_cap)),
         ));
     }
-    // Waiting-state layout: two blank rows between title and options.
-    lines.push(Line::default());
     lines.push(Line::default());
 
     // Label-column packing: pad option labels so descriptions share a column
@@ -586,17 +545,13 @@ pub(in crate::ui) fn question_permission_body_text(
         }
         let mut spans = prefix;
         spans.push(Span::styled(label, row_style));
-        if !option.description.is_empty() {
-            spans.push(Span::styled(
-                format!("  {}", option.description),
-                (if active {
-                    active_row_style
-                } else {
-                    muted_style
-                })
-                .bg(row_background),
-            ));
-        }
+        spans.extend(question_collapsed_description_spans(
+            &option.description,
+            muted_style.bg(row_background),
+            usize::from(content_width)
+                .saturating_sub(prefix_width + label_column_width + 2)
+                .max(1),
+        ));
         let option_line = Line::from(spans).style(Style::default().bg(row_background));
         if active {
             lines.extend(wrap_question_line_preserving_spans(
@@ -611,7 +566,15 @@ pub(in crate::ui) fn question_permission_body_text(
         }
     }
 
-    if let Some(custom_row) = question_custom_row(
+    if !measure.editor_lines.is_empty() {
+        let picked = app.question_prompt_custom_selected(&permission.permission_id, tab);
+        lines.extend(question_editor_lines(
+            theme,
+            &measure.editor_lines,
+            prompt.multiple,
+            picked,
+        ));
+    } else if let Some(custom_row) = question_custom_row(
         app,
         permission,
         prompt,
@@ -636,6 +599,73 @@ pub(in crate::ui) fn question_permission_body_text(
     }
 
     Text::from(lines)
+}
+
+fn question_collapsed_description_spans(
+    text: &str,
+    style: Style,
+    width: usize,
+) -> Vec<Span<'static>> {
+    if text.is_empty() {
+        return Vec::new();
+    }
+    let description = wrap_question_line_preserving_spans(
+        Line::from(Span::styled(text.to_string(), style)),
+        width,
+    );
+    let Some(first) = description.first() else {
+        return Vec::new();
+    };
+    let mut first = first.clone();
+    if description.len() > 1 {
+        if let Some(last) = first.spans.last_mut() {
+            last.content = last.content.trim_end().to_string().into();
+        }
+        first.spans.push(Span::styled("…", style));
+        first = truncate_question_line_with_ellipsis(first, width);
+    }
+    let mut spans = vec![Span::styled("  ", style)];
+    spans.extend(first.spans);
+    spans
+}
+
+fn question_editor_lines(
+    theme: &Theme,
+    editor_lines: &[String],
+    multiple: bool,
+    picked: bool,
+) -> Vec<Line<'static>> {
+    let background = theme.question_prompt.selected;
+    let normal = Style::default()
+        .fg(theme.question_prompt.primary)
+        .bg(background);
+    let accent = normal.fg(ui_chrome::question_prompt_accent(theme));
+    let marker = question_choice_marker(theme, multiple, picked);
+    let mut lines = Vec::new();
+    for (index, text) in editor_lines.iter().enumerate() {
+        let mut spans = if index == 0 {
+            vec![
+                Span::styled("z ", accent),
+                Span::styled(
+                    format!("{marker} "),
+                    if picked {
+                        normal.add_modifier(Modifier::BOLD)
+                    } else {
+                        normal.fg(theme.question_prompt.secondary)
+                    },
+                ),
+                Span::styled(
+                    format!("{} ", theme.live_shell.transcript_glyphs.user_marker),
+                    accent,
+                ),
+            ]
+        } else {
+            vec![Span::styled("        ", normal)]
+        };
+        spans.push(Span::styled(text.clone(), normal));
+        lines.push(Line::from(spans).style(Style::default().bg(background)));
+    }
+    lines
 }
 
 fn question_row_background(theme: &Theme, surface: Color, hovered: bool, active: bool) -> Color {
@@ -663,11 +693,11 @@ fn question_choice_marker(theme: &Theme, multiple: bool, picked: bool) -> String
     )
 }
 
-fn question_row_style(theme: &Theme, background: Color, active: bool, picked: bool) -> Style {
+fn question_row_style(theme: &Theme, background: Color, active: bool, _picked: bool) -> Style {
     let style = Style::default()
         .fg(theme.question_prompt.primary)
         .bg(background);
-    if active || picked {
+    if active {
         style.add_modifier(Modifier::BOLD)
     } else {
         style
@@ -704,15 +734,17 @@ fn question_custom_row(
         active,
     );
     let marker = question_choice_marker(theme, prompt.multiple, picked);
-    let row_style = question_row_style(theme, background, active, picked);
-    let number_style = Style::default()
-        .fg(ui_chrome::question_prompt_accent(theme))
-        .bg(background)
-        .add_modifier(if active {
-            Modifier::BOLD
-        } else {
-            Modifier::empty()
-        });
+    let row_style = Style::default()
+        .fg(theme.question_prompt.primary)
+        .bg(background);
+    let number_style = row_style.fg(ui_chrome::question_prompt_accent(theme));
+    let marker_style = if picked {
+        row_style.add_modifier(Modifier::BOLD)
+    } else if active {
+        number_style
+    } else {
+        row_style.fg(theme.question_prompt.secondary)
+    };
     let editing = app.question_prompt_editing(&permission.permission_id) && active;
     let glyphs = theme.live_shell.transcript_glyphs;
     let (text, text_style) = if editing {
@@ -734,11 +766,15 @@ fn question_custom_row(
                 .bg(background),
         )
     } else {
-        ("Type your answer here".to_string(), row_style)
+        (
+            "Type your answer here".to_string(),
+            row_style.fg(theme.question_prompt.secondary),
+        )
     };
     Some(truncate_question_line_with_ellipsis(
         Line::from(vec![
-            Span::styled(format!("z {marker} "), number_style),
+            Span::styled("z ", number_style),
+            Span::styled(format!("{marker} "), marker_style),
             Span::styled(text, text_style),
         ])
         .style(Style::default().bg(background)),
