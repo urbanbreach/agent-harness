@@ -367,6 +367,8 @@ pub struct ExecutionTimingMetadata {
 #[serde(rename_all = "snake_case")]
 pub enum HookExecutionStatus {
     Succeeded,
+    /// The hook completed and chose to block continuation.
+    Blocked,
     Failed,
     Skipped,
     #[default]

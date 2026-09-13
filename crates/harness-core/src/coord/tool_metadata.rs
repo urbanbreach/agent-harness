@@ -443,6 +443,7 @@ fn extract_object_u64(object: &serde_json::Map<String, Value>, keys: &[&str]) ->
 fn parse_hook_execution_status(status: &str) -> HookExecutionStatus {
     match status.trim().to_ascii_lowercase().as_str() {
         "succeeded" | "success" | "ok" | "passed" => HookExecutionStatus::Succeeded,
+        "blocked" => HookExecutionStatus::Blocked,
         "failed" | "error" => HookExecutionStatus::Failed,
         "skipped" | "ignored" => HookExecutionStatus::Skipped,
         _ => HookExecutionStatus::Unknown,
