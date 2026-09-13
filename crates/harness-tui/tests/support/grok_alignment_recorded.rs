@@ -252,7 +252,7 @@ fn verify_lifecycle(tool: &str, args: &Value, width: u16, height: u16, failed: b
     let status = if failed { "failed" } else { "succeeded" };
     if tool == "task" && failed && width == 120 {
         let rendered = text(&render(&app, width, height));
-        assert!(rendered.contains("· failed"), "{rendered}");
+        assert!(rendered.contains("· 1 failed"), "{rendered}");
         assert!(!rendered.contains("· cancelled"), "{rendered}");
     }
     capture(&app, width, height, &name, status);
@@ -282,14 +282,52 @@ fn capture(app: &AppState, width: u16, height: u16, tool: &str, state: &str) {
         })
         .collect::<Vec<_>>();
     assert!(
-        !marker_columns.is_empty(),
+        if tool == "todowrite" {
+            !rendered.contains("# Todos") && !rendered.contains("Updating todos")
+        } else if state == "streaming" {
+            marker_columns.is_empty()
+        } else {
+            !marker_columns.is_empty()
+        },
         "missing marker: {tool} {state}\n{rendered}"
     );
     let expected = 5; // Grok LayoutConfig: outer left 2 + accent 1 + block left 2.
     assert!(
-        marker_columns.iter().all(|&col| col == expected),
+        tool == "todowrite" || marker_columns.iter().all(|&col| col == expected),
         "misaligned markers: {tool} {state}: {marker_columns:?}\n{rendered}"
     );
+    if tool == "read" && state == "succeeded-open" {
+        let theme = harness_tui::theme::Theme::harness_dark();
+        let header_y = (0..height)
+            .find(|&y| buffer[(5, y)].symbol() == theme.live_shell.transcript_glyphs.tool_marker)
+            .unwrap_or_abort();
+        let rail = (header_y..=header_y + 2)
+            .map(|y| (buffer[(2, y)].symbol().to_string(), buffer[(2, y)].fg))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            (buffer[(5, header_y)].fg, rail),
+            (
+                theme.text.tertiary,
+                vec![(theme.live_shell.transcript_glyphs.rail.to_string(), theme.status.success); 3],
+            ),
+            "expanded read marker and completion rail must cover the whole entry: {width}x{height}\n{rendered}"
+        );
+        let output_row = buffer.content.chunks(usize::from(width)).find(|row| {
+            row.iter()
+                .map(|cell| cell.symbol())
+                .collect::<String>()
+                .trim()
+                .ends_with("1  ready")
+        });
+        assert!(
+            output_row.is_some_and(|row| {
+                row[5].bg == row[8].bg
+                    && row[usize::from(width) - 5].bg == row[8].bg
+                    && row[5].fg == harness_tui::theme::Theme::harness_dark().terminal_colors.muted
+            }),
+            "read preview must preserve panel fill and dim line numbers: {width}x{height}\n{rendered}"
+        );
+    }
     persist_frame(
         app,
         width,
