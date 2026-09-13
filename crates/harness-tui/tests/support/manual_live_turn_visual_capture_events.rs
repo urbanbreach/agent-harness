@@ -251,6 +251,14 @@ fn watcher_events() -> Vec<EventEnvelopeV1> {
 
 pub(crate) fn scenario(name: &str) -> Result<CaptureScenario, std::io::Error> {
     Ok(match name {
+        "streamed_tools" => {
+            if std::env::var_os("HARNESS_TUI_MANUAL_EVENT_STREAM").is_none() {
+                return Err(std::io::Error::other(
+                    "streamed_tools requires a synthetic event sequence",
+                ));
+            }
+            CaptureScenario::live(Vec::new())
+        }
         "tool_parity" | "tool_permission" => {
             let mut events = active_events();
             crate::tool_capture_events::append_tools(&mut events, name == "tool_permission");
