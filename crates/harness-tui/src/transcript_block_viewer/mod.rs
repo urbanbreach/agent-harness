@@ -1,3 +1,4 @@
+mod layout;
 mod render;
 mod search;
 mod state;
@@ -25,6 +26,24 @@ pub struct ViewerBlockContent {
     content: String,
     raw: Option<String>,
     markdown: bool,
+    preamble: Option<ViewerPreamble>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ViewerPreamble {
+    Read {
+        path: String,
+        details: String,
+        start_line: Option<u64>,
+    },
+    Command {
+        command: String,
+        description: Option<String>,
+    },
+    Title {
+        label: String,
+        argument: String,
+    },
 }
 
 impl ViewerBlockContent {
@@ -33,6 +52,7 @@ impl ViewerBlockContent {
             content: redacted(content),
             raw: raw.map(redacted),
             markdown: false,
+            preamble: None,
         }
     }
 
@@ -41,6 +61,7 @@ impl ViewerBlockContent {
             content: redacted(content),
             raw: Some(redacted(content)),
             markdown: true,
+            preamble: None,
         }
     }
 
@@ -59,6 +80,11 @@ impl ViewerBlockContent {
 
     pub fn content(&self) -> &str {
         &self.content
+    }
+
+    pub(crate) fn with_preamble(mut self, preamble: ViewerPreamble) -> Self {
+        self.preamble = Some(preamble);
+        self
     }
 
     pub fn raw(&self) -> Option<&str> {
@@ -175,8 +201,43 @@ impl state::ViewerState {
     }
 
     pub fn move_cursor(&mut self, key: NavigationKey, shift: bool) -> CellPoint {
-        let next = self.wrapped.move_focus(self.cursor, key);
-        if shift {
+        let next = if self.content().preamble.is_some()
+            && matches!(key, NavigationKey::Up | NavigationKey::Down)
+        {
+            let rows = self.logical_rows(self.cursor.row);
+            let row = if key == NavigationKey::Down {
+                rows.end.min(self.wrapped.row_count().saturating_sub(1))
+            } else {
+                self.logical_rows(rows.start.saturating_sub(1)).start
+            };
+            CellPoint::new(row, 0)
+        } else {
+            self.wrapped.move_focus(self.cursor, key)
+        };
+        if self.visual_mode {
+            let anchor = self
+                .selection
+                .map_or(self.cursor, |selection| selection.anchor);
+            let row_end = |row| {
+                self.wrapped
+                    .select(CellPoint::new(row, 0), SelectionMode::Line)
+                    .focus
+                    .cell
+            };
+            let anchor_rows = self.logical_rows(anchor.row);
+            let next_rows = self.logical_rows(next.row);
+            self.selection = Some(if next.row >= anchor.row {
+                SelectionRange::new(
+                    CellPoint::new(anchor_rows.start, 0),
+                    CellPoint::new(next_rows.end - 1, row_end(next_rows.end - 1)),
+                )
+            } else {
+                SelectionRange::new(
+                    CellPoint::new(anchor_rows.end - 1, row_end(anchor_rows.end - 1)),
+                    CellPoint::new(next_rows.start, 0),
+                )
+            });
+        } else if shift {
             let anchor = self
                 .selection
                 .map_or(self.cursor, |selection| selection.anchor);
@@ -221,9 +282,23 @@ impl state::ViewerState {
         let selection = self
             .selection
             .ok_or(ViewerCopyError::Selection(SelectionError::EmptySelection))?;
-        self.wrapped
+        let text = self
+            .wrapped
             .copy(selection)
-            .map_err(ViewerCopyError::Selection)
+            .map_err(ViewerCopyError::Selection)?;
+        let (start, _) = selection.normalized();
+        let mut output = String::new();
+        for (index, line) in text.split('\n').enumerate() {
+            if index > 0 {
+                output.push_str(
+                    self.row_joiners
+                        .get(start.row + index - 1)
+                        .map_or("\n", String::as_str),
+                );
+            }
+            output.push_str(line);
+        }
+        Ok(output)
     }
 
     pub fn copy_local(&self, platform: LocalPlatform) -> Result<(), ViewerCopyError> {
@@ -256,6 +331,7 @@ impl state::ViewerState {
     }
 }
 
+pub(crate) use layout::viewer_layout;
 pub use render::{render_surface, render_to_buffer, RenderedLine, ViewerRenderSurface};
 pub use search::{SearchDirection, SearchMatch, SearchNavigation, SearchState};
 pub use state::ViewerState;

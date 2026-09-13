@@ -4,6 +4,7 @@ use crate::transcript_selection::{CellPoint, NavigationKey, Viewport};
 impl AppState {
     pub(crate) fn resize_transcript_viewer(&mut self, area: Rect) {
         let theme = *self.theme();
+        let body = crate::transcript_block_viewer::viewer_layout(area).body;
         if let Some(viewer) = self
             .transcript_integration
             .as_mut()
@@ -11,8 +12,12 @@ impl AppState {
         {
             let _ = viewer.set_theme(theme);
             let _ = viewer.resize(
-                usize::from(area.width.saturating_sub(2).max(1)),
-                usize::from(area.height.saturating_sub(3).max(1)),
+                usize::from(body.width.max(1)),
+                usize::from(
+                    body.height
+                        .saturating_sub(u16::from(viewer.input_active()))
+                        .max(1),
+                ),
             );
         }
     }
@@ -25,13 +30,25 @@ impl AppState {
         else {
             return false;
         };
-        if viewer.search_editing() {
-            let mut query = viewer.search().query().to_owned();
+        if viewer.search_editing() || viewer.filter_editing() {
+            let filtering = viewer.filter_editing();
+            let mut query = if filtering {
+                viewer.filter_query().to_owned()
+            } else {
+                viewer.search().query().to_owned()
+            };
             match key.code {
-                KeyCode::Esc | KeyCode::Enter => viewer.set_search_editing(false),
+                KeyCode::Esc => {
+                    query.clear();
+                    viewer.set_search_editing(false);
+                    viewer.set_filter_editing(false);
+                }
+                KeyCode::Enter => {
+                    viewer.set_search_editing(false);
+                    viewer.set_filter_editing(false);
+                }
                 KeyCode::Backspace => {
                     let _ = query.pop();
-                    let _ = viewer.set_search_query(&query);
                 }
                 KeyCode::Char(c)
                     if !key
@@ -39,10 +56,15 @@ impl AppState {
                         .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
                 {
                     query.push(c);
-                    let _ = viewer.set_search_query(&query);
                 }
                 _ => {}
             }
+            if filtering {
+                let _ = viewer.set_filter_query(query);
+            } else {
+                let _ = viewer.set_search_query(&query);
+            }
+            self.resize_transcript_viewer(self.last_frame_area.unwrap_or(Rect::new(0, 0, 80, 24)));
             return true;
         }
         let shift = key.modifiers.contains(KeyModifiers::SHIFT);
@@ -55,15 +77,58 @@ impl AppState {
             KeyCode::End => Some(NavigationKey::End),
             _ => None,
         };
-        if let Some(navigation) = navigation.filter(|_| shift) {
+        if let Some(navigation) = navigation.filter(|_| shift || viewer.visual_mode()) {
             viewer.move_cursor(navigation, true);
             viewer.reveal_cursor();
             return true;
         }
-        let page = f64::from(
-            u32::try_from(viewer.viewport_height().saturating_sub(1).max(1)).unwrap_or(u32::MAX),
-        );
+        let page = f64::from(u32::try_from(viewer.viewport_height()).unwrap_or(u32::MAX));
+        if key.modifiers == KeyModifiers::CONTROL {
+            let delta = match key.code {
+                KeyCode::Char('j') => Some(1.0),
+                KeyCode::Char('k') => Some(-1.0),
+                // Grok's outer command registry reserves Ctrl-D; the viewer
+                // consumes it without moving its cursor or closing the modal.
+                KeyCode::Char('d') => return true,
+                KeyCode::Char('u') => Some(-(page / 2.0).floor()),
+                _ => None,
+            };
+            if let Some(delta) = delta {
+                let _ = viewer.scroll_keeping_cursor(delta);
+                return true;
+            }
+        }
         match key.code {
+            KeyCode::Enter => {
+                let quote = viewer
+                    .quote_text()
+                    .lines()
+                    .map(|line| format!("> {line}"))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                self.close_transcript_viewer();
+                self.focus = Focus::Prompt;
+                self.handle_paste(&format!("{quote}\n"));
+            }
+            KeyCode::Char('f') if key.modifiers.is_empty() => {
+                viewer.set_filter_editing(true);
+                let _ = viewer.set_search_query("");
+            }
+            KeyCode::Char('v') => viewer.toggle_visual(),
+            KeyCode::Char('w') => {
+                let _ = viewer.toggle_wrap();
+            }
+            KeyCode::Char('Y') => {
+                if let Some(command) = viewer.command_text() {
+                    if let Err(error) = clipboard::copy(&command) {
+                        self.show_toast(
+                            format!("clipboard copy failed: {error}"),
+                            ToastVariant::Error,
+                        );
+                    }
+                }
+            }
+            KeyCode::Esc if viewer.visual_mode() => viewer.toggle_visual(),
             KeyCode::Esc | KeyCode::Char('q') => {
                 self.close_transcript_viewer();
             }
@@ -72,7 +137,9 @@ impl AppState {
             }
             KeyCode::Char('/') => {
                 viewer.set_search_editing(true);
-                let _ = viewer.set_search_query("");
+                if !viewer.filter_query().is_empty() {
+                    let _ = viewer.set_filter_query(String::new());
+                }
             }
             KeyCode::Char('r' | 'R') => {
                 let _ = viewer.toggle_mode();
@@ -85,22 +152,24 @@ impl AppState {
                 }
             }
             KeyCode::Up | KeyCode::Char('k') => {
-                let _ = viewer.scroll_by(-1.0);
+                viewer.move_cursor(NavigationKey::Up, viewer.visual_mode());
+                viewer.reveal_cursor();
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                let _ = viewer.scroll_by(1.0);
+                viewer.move_cursor(NavigationKey::Down, viewer.visual_mode());
+                viewer.reveal_cursor();
             }
             KeyCode::PageUp => {
-                let _ = viewer.scroll_by(-page);
+                let _ = viewer.scroll_keeping_cursor(-page);
             }
             KeyCode::PageDown | KeyCode::Char(' ') => {
-                let _ = viewer.scroll_by(page);
+                let _ = viewer.scroll_keeping_cursor(page);
             }
             KeyCode::Home | KeyCode::Char('g') => {
-                let _ = viewer.scroll_by(-f64::from(u32::MAX));
+                viewer.select_edge(false);
             }
             KeyCode::End | KeyCode::Char('G') => {
-                let _ = viewer.scroll_by(f64::from(u32::MAX));
+                viewer.select_edge(true);
             }
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 if let Ok(text) = viewer.copy_selection_text() {
@@ -115,12 +184,19 @@ impl AppState {
             }
             _ => {}
         }
+        self.resize_transcript_viewer(self.last_frame_area.unwrap_or(Rect::new(0, 0, 80, 24)));
         // A viewer owns the whole surface even for keys it does not bind.
         true
     }
 
     pub(crate) fn handle_transcript_viewer_mouse(&mut self, mouse: MouseEvent, area: Rect) -> bool {
-        let transcript = area;
+        let layout = crate::transcript_block_viewer::viewer_layout(area);
+        let position = (mouse.column, mouse.row).into();
+        if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
+            && (layout.close.contains(position) || !layout.popup.contains(position))
+        {
+            return self.close_transcript_viewer();
+        }
         let Some(viewer) = self
             .transcript_integration
             .as_mut()
@@ -129,10 +205,11 @@ impl AppState {
             return false;
         };
         let point = CellPoint::new(
-            viewer.scroll_top() + usize::from(mouse.row.saturating_sub(transcript.y + 1)),
-            usize::from(mouse.column.saturating_sub(transcript.x + 1)),
+            viewer.scroll_top() + usize::from(mouse.row.saturating_sub(layout.body.y)),
+            usize::from(mouse.column.saturating_sub(layout.body.x)),
         );
         match mouse.kind {
+            MouseEventKind::Moved => viewer.set_close_hovered(layout.close.contains(position)),
             MouseEventKind::ScrollUp => {
                 let _ = viewer.scroll_by(-3.0);
             }
@@ -140,6 +217,9 @@ impl AppState {
                 let _ = viewer.scroll_by(3.0);
             }
             MouseEventKind::Down(MouseButton::Left) => {
+                if !layout.body.contains(position) {
+                    return true;
+                }
                 self.transcript_view.viewer_pointer_anchor = Some(point);
                 let _ = viewer.mouse_drag(
                     point,

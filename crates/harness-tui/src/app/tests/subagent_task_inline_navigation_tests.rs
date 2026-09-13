@@ -39,6 +39,7 @@ pub(crate) fn mouse_click_on_task_inline_row_opens_subagent_session() {
         }),
     ));
 
+    open_subagent_group_for_click(&mut app);
     let (column, row) = transcript_click_position(&app, "inspect child");
     assert_eq!(
         transcript_mouse_target(&app, TEST_FRAME_AREA, column, row),
@@ -152,6 +153,7 @@ pub(crate) fn mouse_click_on_task_inline_row_uses_task_row_child_session() {
         }),
     ));
 
+    open_subagent_group_for_click(&mut app);
     let (column, row) = transcript_click_position(&app, "inspect child");
     assert_eq!(
         transcript_mouse_target(&app, TEST_FRAME_AREA, column, row),

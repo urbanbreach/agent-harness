@@ -3,6 +3,7 @@ use crate::UnwrapOrAbort;
 
 pub(super) fn mouse_click_toggles_transcript_tool_disclosure() {
     let mut app = AppState::new_live(None, false, None);
+    app.advance_wall_clock_for_motion_evidence(std::time::Duration::ZERO);
     app.ingest_event(envelope(
         1,
         "req_tool_toggle",
@@ -41,34 +42,35 @@ pub(super) fn mouse_click_toggles_transcript_tool_disclosure() {
 
     assert!(!tool_output_is_expanded(&app, "tc_shell_toggle"));
 
-    let (column, row) = transcript_click_position(&app, "false");
-    app.handle_mouse(
-        MouseEvent {
-            kind: MouseEventKind::Down(MouseButton::Left),
-            column,
-            row,
-            modifiers: KeyModifiers::NONE,
-        },
-        TEST_FRAME_AREA,
-        None,
-        None,
-        None,
-    );
-    assert!(tool_output_is_expanded(&app, "tc_shell_toggle"));
-
-    app.handle_mouse(
-        MouseEvent {
-            kind: MouseEventKind::Down(MouseButton::Left),
-            column,
-            row,
-            modifiers: KeyModifiers::NONE,
-        },
-        TEST_FRAME_AREA,
-        None,
-        None,
-        None,
-    );
-    assert!(!tool_output_is_expanded(&app, "tc_shell_toggle"));
+    for (elapsed_ms, expanded) in [
+        (10, false),
+        (10, true),
+        (10, false),
+        (10, false),
+        (300, false),
+        (10, true),
+    ] {
+        app.advance_wall_clock_for_motion_evidence(std::time::Duration::from_millis(elapsed_ms));
+        let (column, row) = transcript_click_position(&app, "false");
+        app.handle_mouse(
+            MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Left),
+                column,
+                row,
+                modifiers: KeyModifiers::NONE,
+            },
+            TEST_FRAME_AREA,
+            None,
+            None,
+            None,
+        );
+        assert_eq!(tool_output_is_expanded(&app, "tc_shell_toggle"), expanded);
+        assert!(matches!(
+            app.selected_transcript_entry().and_then(|entry| entry.target),
+            Some(TranscriptMouseTarget::Tool { ref tool_call_id })
+                if tool_call_id == "tc_shell_toggle"
+        ));
+    }
 }
 
 pub(super) fn palette_turn_result_commands_override_failed_output_default() {
@@ -88,15 +90,39 @@ pub(super) fn palette_turn_result_commands_override_failed_output_default() {
     assert!(tool_output_is_expanded(&app, "tc_palette_toggle"));
 }
 
-pub(super) fn transcript_enter_toggles_effective_failed_output_state() {
+pub(super) fn transcript_enter_opens_failed_tool_full_output() {
+    for tool_id in [
+        "fs.read",
+        "grep",
+        "glob",
+        "list",
+        "websearch",
+        "webfetch",
+        "fixture.inspect",
+    ] {
+        let mut app =
+            failed_tool_disclosure_app_with_tool("req_failed_file", "tc_failed_file", tool_id);
+        app.focus = Focus::Details;
+        assert!(app.select_transcript_tool("tc_failed_file"));
+        app.handle_key(key(KeyCode::Enter));
+        if app.transcript_viewer().is_none() {
+            app.handle_key(key(KeyCode::Enter));
+        }
+        let viewer = app.transcript_viewer().unwrap_or_abort();
+        assert!(viewer.content().content().contains("nope"), "{tool_id}");
+        assert!(!tool_output_is_expanded(&app, "tc_failed_file"));
+    }
+
     let mut app = failed_tool_disclosure_app("req_enter_toggle", "tc_enter_toggle");
     app.focus = Focus::Details;
     assert!(!tool_output_is_expanded(&app, "tc_enter_toggle"));
 
     app.handle_key(key(KeyCode::Enter));
-    assert!(tool_output_is_expanded(&app, "tc_enter_toggle"));
+    assert!(app.transcript_viewer().is_some());
+    assert!(!tool_output_is_expanded(&app, "tc_enter_toggle"));
 
-    app.handle_key(key(KeyCode::Enter));
+    app.handle_key(key(KeyCode::Esc));
+    assert!(app.transcript_viewer().is_none());
     assert!(!tool_output_is_expanded(&app, "tc_enter_toggle"));
 }
 
@@ -158,23 +184,33 @@ fn group_keyboard_and_mouse_toggle_the_same_disclosure_state() {
         app
     };
     let mut mouse_app = app();
+    mouse_app.advance_wall_clock_for_motion_evidence(std::time::Duration::ZERO);
     let mut keyboard_app = app();
     keyboard_app.focus = Focus::Details;
 
     // act
-    let (column, row) = transcript_click_position(&mouse_app, "Ran 2 commands");
-    mouse_app.handle_mouse(
-        MouseEvent {
-            kind: MouseEventKind::Down(MouseButton::Left),
-            column,
-            row,
-            modifiers: KeyModifiers::NONE,
-        },
-        TEST_FRAME_AREA,
-        None,
-        None,
-        None,
-    );
+    for expanded in [false, true, true, false, false, true] {
+        let title = if mouse_app.tool_group_expanded("tc_shared_first") {
+            "Ran 12 commands"
+        } else {
+            "Ran 2 commands"
+        };
+        let (column, row) = transcript_click_position(&mouse_app, title);
+        mouse_app.advance_wall_clock_for_motion_evidence(std::time::Duration::from_millis(10));
+        mouse_app.handle_mouse(
+            MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Left),
+                column,
+                row,
+                modifiers: KeyModifiers::NONE,
+            },
+            TEST_FRAME_AREA,
+            None,
+            None,
+            None,
+        );
+        assert_eq!(mouse_app.tool_group_expanded("tc_shared_first"), expanded);
+    }
     keyboard_app.handle_key(key(KeyCode::Enter));
 
     // Opening the fold reveals member headers with output still collapsed.
@@ -200,6 +236,14 @@ fn tool_output_is_expanded(app: &AppState, tool_call_id: &str) -> bool {
 }
 
 fn failed_tool_disclosure_app(request_id: &str, tool_call_id: &str) -> AppState {
+    failed_tool_disclosure_app_with_tool(request_id, tool_call_id, "shell.run")
+}
+
+fn failed_tool_disclosure_app_with_tool(
+    request_id: &str,
+    tool_call_id: &str,
+    tool_id: &str,
+) -> AppState {
     let mut app = AppState::new_live(None, false, None);
     app.ingest_event(envelope(
         1,
@@ -218,8 +262,8 @@ fn failed_tool_disclosure_app(request_id: &str, tool_call_id: &str) -> AppState 
         request_id,
         EventV1::ToolCallRequested(ToolCallRequestedEvent {
             tool_call_id: tool_call_id.into(),
-            tool_id: "shell.run".to_string(),
-            args_summary: r#"{"cmd":"false"}"#.to_string(),
+            tool_id: tool_id.to_string(),
+            args_summary: r#"{"cmd":"false","path":"missing.txt"}"#.to_string(),
             args_digest: format!("digest-{tool_call_id}-args"),
             metadata: None,
         }),

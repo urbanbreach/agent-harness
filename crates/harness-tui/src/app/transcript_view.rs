@@ -101,6 +101,7 @@ pub(crate) struct TranscriptViewState {
         Cell<Option<(TranscriptContentAnchor, TranscriptContentAnchor)>>,
     pub(crate) transcript_selection_dragging: bool,
     pub(crate) transcript_click_activated_on_down: bool,
+    pub(crate) last_tool_click: Option<(Instant, crate::ui::TranscriptVisualEntryId, u8)>,
     pub(crate) selected_diff_hunk_row: Option<usize>,
     pub(crate) hovered_transcript_target: Option<TranscriptMouseTarget>,
     pub(crate) return_to_live_hovered: bool,
@@ -111,6 +112,7 @@ pub(crate) struct TranscriptViewState {
     pub(crate) stacked_transcript_diffs: bool,
     pub(crate) expanded_reasoning_requests: BTreeSet<String>,
     pub(crate) expanded_tool_outputs: BTreeSet<String>,
+    pub(crate) previewed_tool_outputs: BTreeSet<String>,
     pub(crate) expanded_tool_groups: BTreeSet<String>,
     pub(crate) collapsed_tool_outputs: BTreeSet<String>,
     pub(crate) expanded_patch_file_outputs: BTreeSet<String>,
@@ -137,6 +139,7 @@ pub(crate) struct TranscriptViewState {
 impl TranscriptViewState {
     pub(super) fn reset_entry_navigation(&mut self) {
         self.selected_entry = None;
+        self.last_tool_click = None;
         self.search_query.clear();
         self.search_editing = false;
         self.search_match = 0;
@@ -157,6 +160,7 @@ impl Default for TranscriptViewState {
             transcript_selection_anchors: Cell::new(None),
             transcript_selection_dragging: false,
             transcript_click_activated_on_down: false,
+            last_tool_click: None,
             selected_diff_hunk_row: None,
             hovered_transcript_target: None,
             return_to_live_hovered: false,
@@ -167,6 +171,7 @@ impl Default for TranscriptViewState {
             stacked_transcript_diffs: false,
             expanded_reasoning_requests: BTreeSet::new(),
             expanded_tool_outputs: BTreeSet::new(),
+            previewed_tool_outputs: BTreeSet::new(),
             expanded_tool_groups: BTreeSet::new(),
             collapsed_tool_outputs: BTreeSet::new(),
             expanded_patch_file_outputs: BTreeSet::new(),

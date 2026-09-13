@@ -416,6 +416,9 @@ impl AppState {
     }
 
     fn hash_transcript_render_settings(&self, hasher: &mut impl Hasher) {
+        (self.focus == super::Focus::Details).hash(hasher);
+        self.todo_pane_focused().hash(hasher);
+        self.transcript_view.selected_entry.hash(hasher);
         self.replay_mode.hash(hasher);
         self.transcript_view.selected_activity_index.hash(hasher);
         self.transcript_view.show_transcript_thinking.hash(hasher);
@@ -518,6 +521,7 @@ impl AppState {
             tool_call_id.hash(hasher);
         }
         self.transcript_view.expanded_tool_groups.hash(hasher);
+        self.transcript_view.previewed_tool_outputs.hash(hasher);
         for tool_call_id in &self.transcript_view.collapsed_tool_outputs {
             tool_call_id.hash(hasher);
         }
@@ -585,12 +589,6 @@ impl AppState {
         self.starting_session_seed = visible && !self.active_turn_in_progress();
     }
 
-    pub(crate) fn tool_running_elapsed(&self, tool_call_id: &str) -> Duration {
-        self.transcript_view
-            .tool_motion
-            .running_elapsed(tool_call_id, self.now())
-    }
-
     pub(crate) fn tool_finish_elapsed(&self, tool_call_id: &str) -> Option<Duration> {
         if self.replay_mode || self.reduced_motion {
             return None;
@@ -624,6 +622,7 @@ impl AppState {
                 }
                 ToolCallDisplayStatus::PendingPermission | ToolCallDisplayStatus::Queued => {
                     has_active_tool = true;
+                    has_running_tool |= tool_call.has_execution_motion();
                 }
                 ToolCallDisplayStatus::Succeeded | ToolCallDisplayStatus::Failed => {}
             }
@@ -671,6 +670,9 @@ impl AppState {
     }
 
     pub(crate) fn tool_output_expanded(&self, tool_call: &ToolCallEntry) -> bool {
+        if ui::tool_output_is_viewer_only(tool_call) {
+            return false;
+        }
         if self
             .transcript_view
             .collapsed_tool_outputs
@@ -681,11 +683,17 @@ impl AppState {
         self.transcript_view
             .expanded_tool_outputs
             .contains(&tool_call.tool_call_id)
+            || self.tool_output_previewed(&tool_call.tool_call_id)
             || self
                 .transcript_view
                 .expanded_patch_file_outputs
                 .iter()
                 .any(|key| key.starts_with(&format!("{}\u{1f}", tool_call.tool_call_id)))
+            || (tool_call.status == ToolCallDisplayStatus::Succeeded
+                && matches!(
+                    tool_call.effective_tool_id(),
+                    "edit" | "write" | "fs.write" | "edit.hashline_apply"
+                ))
     }
 
     pub(crate) fn patch_file_output_expanded(&self, tool_call_id: &str, file_path: &str) -> bool {
@@ -731,9 +739,38 @@ impl AppState {
             .tool_call_entry(tool_call_id)
             .is_some_and(|tool_call| self.tool_output_expanded(tool_call));
         self.set_tool_output_expanded(tool_call_id, !expanded);
+        if !expanded
+            && self.tool_call_entry(tool_call_id).is_some_and(|tool| {
+                matches!(tool.effective_tool_id(), "read" | "fs.read")
+                    && tool_call_has_expandable_output(tool)
+                    && !ui::tool_output_is_viewer_only(tool)
+            })
+        {
+            self.transcript_view
+                .expanded_tool_outputs
+                .remove(tool_call_id);
+            self.transcript_view
+                .previewed_tool_outputs
+                .insert(tool_call_id.to_string());
+        }
+    }
+
+    pub(crate) fn tool_output_previewed(&self, tool_call_id: &str) -> bool {
+        self.transcript_view
+            .previewed_tool_outputs
+            .contains(tool_call_id)
     }
 
     pub(in crate::app) fn set_tool_output_expanded(&mut self, tool_call_id: &str, expanded: bool) {
+        self.transcript_view
+            .previewed_tool_outputs
+            .remove(tool_call_id);
+        if self
+            .tool_call_entry(tool_call_id)
+            .is_some_and(ui::tool_output_is_viewer_only)
+        {
+            return;
+        }
         if expanded {
             self.transcript_view
                 .collapsed_tool_outputs
@@ -774,6 +811,15 @@ impl AppState {
         let Some(first) = tool_call_ids.first() else {
             return;
         };
+        let area = self.last_frame_area.unwrap_or(Rect::new(0, 0, 80, 24));
+        let select_member = expanded && self.selected_transcript_entry().is_some_and(|entry| {
+            matches!(&entry.target, Some(TranscriptMouseTarget::ToolGroup { tool_call_ids: ids })
+                if ids.first() == Some(first))
+        });
+        let select_tail = expanded && ui::transcript_navigation_entries(self, area)
+            .iter()
+            .any(|entry| !entry.context_group && matches!(&entry.target,
+                Some(TranscriptMouseTarget::ToolGroup { tool_call_ids: ids }) if ids.first() == Some(first)));
         if expanded {
             self.transcript_view
                 .expanded_tool_groups
@@ -782,6 +828,28 @@ impl AppState {
             self.transcript_view.expanded_tool_groups.remove(first);
         }
         self.bump_transcript_render_epoch();
+        if select_tail {
+            // The reference clears dense-group selection and its active pane
+            // resumes at the final member. Context groups retain member zero.
+            if let Some(entry) = ui::transcript_navigation_entries(self, area)
+                .into_iter()
+                .rev()
+                .find(|entry| matches!(&entry.target,
+                    Some(TranscriptMouseTarget::Tool { tool_call_id }) if tool_call_ids.contains(tool_call_id)))
+            {
+                self.select_transcript_entry(&entry);
+            }
+        } else if select_member {
+            // Grok's expanded context header selects member zero. That member
+            // can be a Thought, whose next fold key must reveal its own body.
+            let entries = ui::transcript_navigation_entries(self, area);
+            if let Some([_, member]) = entries.windows(2).find(|pair| {
+                pair[0].context_group && matches!(&pair[0].target,
+                    Some(TranscriptMouseTarget::ToolGroup { tool_call_ids: ids }) if ids.first() == Some(first))
+            }) {
+                self.transcript_view.selected_entry = Some(member.id);
+            }
+        }
     }
 
     pub(crate) fn tool_group_expanded(&self, first_tool_call_id: &str) -> bool {

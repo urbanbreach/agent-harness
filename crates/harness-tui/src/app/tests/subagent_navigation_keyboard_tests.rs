@@ -102,6 +102,7 @@ pub(crate) fn live_subagent_hitbox_uses_rendered_transcript_area() {
     app.ingest_event(child_agent_spawned(5, "agent_child", "explore", "parent"));
 
     let compact_area = Rect::new(0, 0, 80, 24);
+    open_subagent_group_for_click(&mut app);
     let (column, row) = transcript_click_position_in_area(&app, compact_area, "inspect child");
     assert_eq!(
         transcript_mouse_target(&app, compact_area, column, row),

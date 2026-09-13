@@ -2,6 +2,23 @@ use super::*;
 use crate::ui::{TranscriptMouseTarget, TranscriptNavigationEntry};
 
 impl AppState {
+    /// Select a visible tool entry, or its collapsed group when the entry is hidden.
+    pub fn select_transcript_tool(&mut self, tool_call_id: &str) -> bool {
+        let entries = ui::transcript_navigation_entries(
+            self,
+            self.last_frame_area.unwrap_or(Rect::new(0, 0, 80, 24)),
+        );
+        let entry = entries.iter().find(|entry| matches!(&entry.target,
+            Some(TranscriptMouseTarget::Tool { tool_call_id: id }) if id == tool_call_id))
+            .or_else(|| entries.iter().find(|entry| matches!(&entry.target,
+                Some(TranscriptMouseTarget::ToolGroup { tool_call_ids }) if tool_call_ids.iter().any(|id| id == tool_call_id))));
+        let Some(entry) = entry else {
+            return false;
+        };
+        self.select_transcript_entry(entry);
+        true
+    }
+
     pub(crate) fn jump_transcript_response(&mut self, forward: bool) -> bool {
         let entries = ui::transcript_navigation_entries(
             self,
@@ -92,9 +109,11 @@ impl AppState {
         let matches = entries
             .iter()
             .filter(|entry| {
-                self.selected_entry_content(entry)
-                    .content()
-                    .contains(&query)
+                entry.text.contains(&query)
+                    || self
+                        .selected_entry_content(entry)
+                        .content()
+                        .contains(&query)
             })
             .collect::<Vec<_>>();
         self.transcript_view.search_match_count = matches.len();
@@ -238,6 +257,22 @@ impl AppState {
         );
     }
 
+    pub(crate) fn activate_selected_transcript_entry(&mut self) -> bool {
+        let Some(entry) = self.selected_transcript_entry() else {
+            return false;
+        };
+        if self.transcript_view.selected_entry.is_none() && entry.target.is_none() {
+            return false;
+        }
+        let collapsed_group = matches!(entry.target, Some(TranscriptMouseTarget::ToolGroup { ref tool_call_ids })
+            if !tool_call_ids.first().is_some_and(|id| self.tool_group_expanded(id)));
+        if collapsed_group {
+            self.fold_selected_entry()
+        } else {
+            self.open_selected_transcript_viewer()
+        }
+    }
+
     pub(crate) fn fold_selected_entry(&mut self) -> bool {
         let Some(entry) = self.selected_transcript_entry() else {
             return false;
@@ -283,6 +318,11 @@ impl AppState {
             }
             _ => Vec::new(),
         };
+        if let [id] = tool_ids.as_slice() {
+            if let Some(tool) = self.tool_call_entry(id) {
+                return ui::recorded_tool_viewer_content(tool);
+            }
+        }
         if !tool_ids.is_empty() {
             let text = tool_ids
                 .iter()

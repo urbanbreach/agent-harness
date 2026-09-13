@@ -101,6 +101,7 @@ pub(crate) fn mouse_up_on_completed_general_task_row_opens_child_session() {
         }),
     ));
 
+    open_subagent_group_for_click(&mut app);
     let (column, row) = transcript_click_position(&app, "Subagent functionality smoke test");
     assert_eq!(
         transcript_mouse_target(&app, TEST_FRAME_AREA, column, row),

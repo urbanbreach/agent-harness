@@ -295,6 +295,7 @@ pub(super) fn expanded_edit_ctrl_c_copies_canonical_unified_patches() {
     app.session_path = Some(run_dir.path().to_path_buf());
     app.activities[0].transcript_text.clear();
     let make_edit = |id: &str, path: &str, old: &str, new: &str, seq: u64| ToolCallEntry {
+        hook_executions: Vec::new(),
         tool_call_id: id.to_string(),
         tool_id: "edit".to_string(),
         canonical_tool_id: Some("edit".to_string()),
@@ -331,7 +332,7 @@ pub(super) fn expanded_edit_ctrl_c_copies_canonical_unified_patches() {
         make_edit("delete", "deleted.txt", "deleted line\n", "", 30),
     ];
     for id in ["create", "modify", "delete"] {
-        app.toggle_tool_output_for_test(id);
+        assert!(app.is_tool_output_expanded_for_test(id));
     }
 
     let (start_column, start_row, _) = transcript_selection_text_bounds(&app, "created line");

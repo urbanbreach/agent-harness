@@ -354,14 +354,14 @@ fn recorded_tool_cells_preserve_code_diff_and_terminal_output() {
             "assets/chart.png",
             Some("image/png"),
             "Recorded image · 640×480",
-            "Read image",
+            "Read chart.png (image)",
         ),
         (
             "pdf",
             "docs/report.pdf",
             Some("application/pdf"),
             "Recorded document · 2 pages",
-            "Read PDF",
+            "Read report.pdf (PDF)",
         ),
     ] {
         verify_recorded_read_variant(scene, path, mime, content, expected);
@@ -394,6 +394,12 @@ fn verify_recorded_read_variant(
     }
     app.set_tool_output_expanded("tc_read", true);
     app.set_frame_area(area);
+    if mime.is_some() {
+        app.focus = Focus::Details;
+        app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::CONTROL));
+        app.focus = Focus::Prompt;
+    }
     let rendered = capture(&app, area, &format!("read-{scene}"));
     assert!(rendered.contains(expected), "{rendered}");
 }

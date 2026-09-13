@@ -167,7 +167,7 @@ fn viewer_scroll_is_independent_and_survives_resize_with_anchor_identity() -> Te
         ViewerBlockContent::new(&content, Some(&content)),
         return_snapshot(block_id())?,
     )?;
-    large.resize(78, 21)?;
+    large.resize(70, 17)?;
     large.scroll_by(100_000.0)?;
     let area = Rect::new(0, 0, 80, 24);
     let mut buffer = Buffer::empty(area);
@@ -240,7 +240,8 @@ fn wrapped_and_raw_render_surfaces_highlight_current_match_and_selection() -> Te
     let mut viewer = viewer("alpha beta")?;
     viewer.select_line(CellPoint::new(0, 1));
     viewer.set_search_query("beta");
-    let area = Rect::new(0, 0, 24, 5);
+    let area = Rect::new(0, 0, 40, 12);
+    viewer.resize(34, 4)?;
 
     // When: both rendering modes are materialized into a terminal buffer.
     let wrapped = render_surface(&viewer, area);
@@ -257,6 +258,6 @@ fn wrapped_and_raw_render_surfaces_highlight_current_match_and_selection() -> Te
     assert!(wrapped.lines[0].current_match);
     assert_eq!(raw.mode, ViewerMode::Raw);
     assert!(buffer.content.iter().any(|cell| cell.symbol() == "b"));
-    assert_eq!(buffer[(0, 0)].fg, ratatui::style::Color::Rgb(88, 88, 88));
+    assert_eq!(buffer[(0, 1)].fg, ratatui::style::Color::Rgb(88, 88, 88));
     Ok(())
 }

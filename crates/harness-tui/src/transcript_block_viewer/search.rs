@@ -128,9 +128,17 @@ fn find_matches(text: &str, query: &str) -> Vec<SearchMatch> {
         return Vec::new();
     }
     let boundaries = grapheme_boundaries(text);
-    text.match_indices(query)
-        .filter_map(|(start, _)| {
-            let end = start + query.len();
+    let Ok(matcher) = regex::RegexBuilder::new(query)
+        .case_insensitive(!query.chars().any(char::is_uppercase))
+        .build()
+    else {
+        return Vec::new();
+    };
+    matcher
+        .find_iter(text)
+        .filter_map(|found| {
+            let start = found.start();
+            let end = found.end();
             (boundaries.binary_search(&start).is_ok() && boundaries.binary_search(&end).is_ok())
                 .then_some(SearchMatch {
                     byte_range: start..end,
