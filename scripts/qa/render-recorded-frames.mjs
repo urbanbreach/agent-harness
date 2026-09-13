@@ -35,6 +35,7 @@ try {
       if (terminal) await terminal.close();
       terminal = await openBrowserTerminal({
         cols: Number(cols), rows: Number(rows), browser: "/usr/bin/chromium",
+        captureAllCells: true,
         profilePath: await mkdtemp(join(tmpdir(), "harness-xterm-frame-profile-")),
         title: reference ? "Grok Build reference renderer evidence" : "Harness exact-clock parity evidence", timeoutMs: 20000, onInput() {},
       });

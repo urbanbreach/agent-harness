@@ -30,6 +30,7 @@ export async function openBrowserTerminal(settings) {
       headless: true,
       viewport: initialViewport,
       deviceScaleFactor: 1,
+      recordVideo: settings.videoDir ? { dir: settings.videoDir, size: initialViewport } : undefined,
       args: ["--disable-background-timer-throttling", "--force-device-scale-factor=1"],
     });
     browser = context.browser();
@@ -56,6 +57,11 @@ export async function openBrowserTerminal(settings) {
   }
 
   return {
+    async recordingInfo() {
+      const video = page.video();
+      if (!video) return null;
+      return { path: await video.path(), screen: await (await screenshotTarget(page)).boundingBox() };
+    },
     write(bytes) {
       const write = pendingWrites.then(() => page.evaluate(
         async (base64) => window.qaTerminal.write(base64),
@@ -168,6 +174,13 @@ export async function openBrowserTerminal(settings) {
     async snapshot() {
       await waitForWrites();
       return page.evaluate(() => window.qaTerminal.snapshot());
+    },
+    async motionSample() {
+      await waitForWrites();
+      return page.evaluate(() => {
+        const snapshot = window.qaTerminal.snapshot(false);
+        return { text: snapshot.text, cells: snapshot.cells.filter(cell => ["◆", "◈", "›", "⌄"].includes(cell.chars)) };
+      });
     },
     async waitForFrame(frame) {
       await waitForWrites();
