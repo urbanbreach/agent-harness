@@ -8,7 +8,7 @@ fn replay_suppresses_hooks_but_preserves_hook_history() {
 
     let hook_execution = HookExecutionMetadata {
         hook_name: "after_task".to_string(),
-        status: HookExecutionStatus::Succeeded,
+        status: HookExecutionStatus::Blocked,
         hook_event: Some("task_completed".to_string()),
         command_digest: Some(side_effect_digest),
         output_digest: Some("hook-output-digest".to_string()),
@@ -91,7 +91,7 @@ fn replay_suppresses_hooks_but_preserves_hook_history() {
                         "hook_executions": [
                             {
                                 "hook_name": "after_task",
-                                "status": "succeeded",
+                                "status": "blocked",
                                 "hook_event": "task_completed",
                                 "command_digest": "hook-command-digest",
                                 "output_digest": "hook-output-digest",

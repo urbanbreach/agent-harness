@@ -306,6 +306,23 @@ fn summarize_hook_output_preserves_existing_summary_contract() {
 }
 
 #[test]
+fn recorded_hook_outcomes_preserve_blocking_and_unknown_states() {
+    let blocked = serde_json::json!({"name":"policy", "status":"blocked", "phase":"pre_tool_use"});
+    let output = serde_json::json!({
+        "hooks": [blocked, {"name":"future", "status":"future_status"}],
+        "_harness": {"hook_executions": [blocked]}
+    });
+    let hooks = super::tool_metadata::extract_hook_execution_metadata(Some(&output));
+    assert_eq!(
+        hooks.len(),
+        2,
+        "duplicate metadata sources retain one hook run"
+    );
+    assert_eq!(hooks[0].status, HookExecutionStatus::Blocked);
+    assert_eq!(hooks[1].status, HookExecutionStatus::Unknown);
+}
+
+#[test]
 fn summarize_hook_output_truncates_long_single_stream_output() {
     let summary = summarize_hook_output(&"x".repeat(161), "");
 
