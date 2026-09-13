@@ -602,6 +602,7 @@ fn tool_only_turns_omit_standalone_assistant_footer() {
         "",
     );
     entry.tool_calls.push(crate::app::ToolCallEntry {
+        hook_executions: Vec::new(),
         tool_call_id: "call-tool-only-footer".to_string(),
         tool_id: "fs.read".to_string(),
         canonical_tool_id: None,
@@ -661,6 +662,7 @@ fn pending_question_turn_renders_waiting_on_answers_footer() {
         total_tokens: 10_200,
     });
     entry.tool_calls.push(crate::app::ToolCallEntry {
+        hook_executions: Vec::new(),
         tool_call_id: "call-question-waiting".to_string(),
         tool_id: "user.question".to_string(),
         canonical_tool_id: None,
@@ -757,6 +759,7 @@ fn waiting_on_answers_shows_thought_for_not_thinking() {
     entry.thinking_first_mono_ms = Some(0);
     entry.thinking_last_mono_ms = Some(100);
     entry.tool_calls.push(crate::app::ToolCallEntry {
+        hook_executions: Vec::new(),
         tool_call_id: "call-question-thought".to_string(),
         tool_id: "user.question".to_string(),
         canonical_tool_id: None,
@@ -1822,6 +1825,7 @@ fn streaming_reasoning_stops_spinner_when_tool_call_arrives() {
     );
     entry.thinking_text = "planning the approach".to_string();
     entry.tool_calls.push(crate::app::ToolCallEntry {
+        hook_executions: Vec::new(),
         tool_call_id: "call-1".to_string(),
         tool_id: "shell.run".to_string(),
         canonical_tool_id: None,

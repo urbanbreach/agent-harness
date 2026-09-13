@@ -37,8 +37,8 @@ use super::ui_tool_question_todo::{
     todo_items_from_tool_call, TranscriptTodoItem,
 };
 use super::ui_tool_style::{
-    block_tool_color, generic_tool_visual_style, inline_tool_color, task_inline_tool_color,
-    tool_call_header_style, TranscriptToolCallVisualStyle,
+    block_tool_color, generic_tool_visual_style, inline_tool_color, tool_call_header_style,
+    TranscriptToolCallVisualStyle,
 };
 use super::ui_tool_titles::{
     background_output_tool_subtitle, background_output_tool_title, batch_tool_title,
@@ -50,8 +50,7 @@ use super::ui_tool_titles_harness::{
     plan_enter_tool_title, plan_exit_tool_title, session_tool_title, skill_tool_title,
 };
 use super::ui_tool_visibility::{
-    tool_call_should_remain_visible_without_tool_details, tool_disclosure_state,
-    tool_hidden_from_transcript, TranscriptToolCallDisclosureState,
+    tool_disclosure_state, tool_hidden_from_transcript, TranscriptToolCallDisclosureState,
 };
 use super::ui_transcript_bash::{
     append_harness_bash_panel, shell_tool_command, shell_tool_output, shell_tool_title_description,
@@ -124,8 +123,14 @@ mod ui_reasoning_markdown_body;
 #[path = "ui_transcript_tool_render.rs"]
 mod ui_transcript_tool_render;
 
+#[path = "ui_transcript_tool_hooks.rs"]
+mod ui_transcript_tool_hooks;
+
 #[path = "ui_transcript_tool_sections.rs"]
 mod ui_transcript_tool_sections;
+
+#[path = "ui_transcript_subagent.rs"]
+mod ui_transcript_subagent;
 
 #[path = "ui_transcript_sections.rs"]
 mod ui_transcript_sections;
@@ -246,6 +251,11 @@ fn transcript_tool_call_cache_matches(
     candidate.tool_call_id == section.tool_call_id
         && candidate.coalesced_tool_call_ids == section.coalesced_tool_call_ids
         && candidate.child_session_id == section.child_session_id
+        && candidate.subagent_background == section.subagent_background
+        && candidate.output_truncated == section.output_truncated
+        && candidate.replay_read_only == section.replay_read_only
+        && candidate.hook_executions == section.hook_executions
+        && candidate.group == section.group
         && candidate.hovered_target == section.hovered_target
         && transcript_tool_header_cache_matches(&candidate.header, &section.header)
         && candidate.detail_blocks == section.detail_blocks
@@ -260,6 +270,7 @@ fn transcript_tool_header_cache_matches(
     section: &TranscriptToolCallHeader,
 ) -> bool {
     candidate.tool_id == section.tool_id
+        && candidate.selected == section.selected
         && candidate.title == section.title
         && candidate.subtitle == section.subtitle
         && candidate.path_metadata == section.path_metadata
@@ -305,9 +316,11 @@ pub(crate) struct TranscriptNavigationEntry {
     pub(crate) id: TranscriptVisualEntryId,
     pub(crate) activity_first_seq: u64,
     pub(crate) kind: TranscriptRenderSurfaceKind,
+    pub(crate) context_group: bool,
     pub(crate) target: Option<TranscriptMouseTarget>,
     pub(crate) top: usize,
     pub(crate) height: usize,
+    pub(crate) max_scroll: usize,
     pub(crate) text: Rc<str>,
     pub(crate) source_text: Option<Rc<str>>,
 }
@@ -344,19 +357,27 @@ pub(crate) fn transcript_navigation_entries(
                         .filter(|surface| {
                             surface.kind != TranscriptRenderSurfaceKind::AssistantFooter
                         })
-                        .map(|surface| TranscriptNavigationEntry {
-                            id: surface.metadata.id,
-                            activity_first_seq: section.activity_first_seq,
-                            kind: surface.kind,
-                            target: surface
-                                .interaction_rows
-                                .as_ref()
-                                .and_then(|rows| rows.iter().flatten().next())
-                                .map(|row| row.target.clone()),
-                            top: section.top_row + section.leading_gap_height + surface.top_offset,
-                            height: surface.height,
-                            text: Rc::clone(&surface.rendered_text),
-                            source_text: surface.source_text.clone(),
+                        .map(|surface| {
+                            let top =
+                                section.top_row + section.leading_gap_height + surface.top_offset;
+                            TranscriptNavigationEntry {
+                                id: surface.metadata.id,
+                                activity_first_seq: section.activity_first_seq,
+                                kind: surface.kind,
+                                context_group: surface.metadata.context_group,
+                                target: surface
+                                    .interaction_rows
+                                    .as_ref()
+                                    .and_then(|rows| rows.iter().flatten().next())
+                                    .map(|row| row.target.clone()),
+                                top,
+                                height: surface.height,
+                                max_scroll: layout
+                                    .total_height
+                                    .saturating_sub(usize::from(viewport.height)),
+                                text: Rc::clone(&surface.rendered_text),
+                                source_text: surface.source_text.clone(),
+                            }
                         })
                 })
                 .collect()
@@ -364,12 +385,37 @@ pub(crate) fn transcript_navigation_entries(
     )
 }
 
+pub(crate) fn transcript_entry_scroll_top(
+    app: &AppState,
+    area: Rect,
+    entry_top: usize,
+) -> Option<usize> {
+    let context = transcript_pane_context(app, resolved_transcript_area(app, area)?, app.theme());
+    let scrollbar = with_measured_transcript_layout_for_width_on_surface(
+        app,
+        app.theme(),
+        context.inner_area.width,
+        context.base_surface,
+        |layout| transcript_scrollbar_needed(layout.total_height, context.inner_area),
+    );
+    let viewport = transcript_viewport_layout(context.inner_area, scrollbar).content;
+    Some(with_measured_transcript_layout_for_width_on_surface(
+        app,
+        app.theme(),
+        viewport.width,
+        context.base_surface,
+        |layout| {
+            let mut top = entry_top;
+            for _ in 0..3 {
+                let rows = transcript_viewport_rows(layout, usize::from(viewport.height), top);
+                top = entry_top.saturating_sub(rows.sticky_height);
+            }
+            top
+        },
+    ))
+}
+
 pub(super) fn render_transcript_pane(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) {
-    if let Some(viewer) = app.transcript_viewer() {
-        let surface = viewer.render_surface(area);
-        crate::transcript_block_viewer::render_to_buffer(frame.buffer_mut(), area, &surface, theme);
-        return;
-    }
     let context = transcript_pane_context(app, area, theme);
 
     if !app.replay_mode {
@@ -462,8 +508,17 @@ fn transcript_pane_context<'a>(
         } else {
             theme.live_shell.rhythm.transcript_gutter_y
         };
+        let mut inner_area = inset_rect(area, horizontal_gutter, 0);
+        inner_area.y = inner_area
+            .y
+            .saturating_add(vertical_gutter.min(area.height));
+        inner_area.height = inner_area
+            .height
+            // The native pane keeps its own bottom gutter. The more-below
+            // affordance uses this row even when the live status dock is gone.
+            .saturating_sub(vertical_gutter.saturating_mul(2));
         return TranscriptPaneContext {
-            inner_area: inset_rect(area, horizontal_gutter, vertical_gutter),
+            inner_area,
             base_surface: theme.surface.shell,
             block: None,
         };
@@ -587,9 +642,6 @@ fn render_measured_transcript_pane(
             let regular_max = layout
                 .total_height
                 .saturating_sub(usize::from(viewport.content.height));
-            app.transcript_view
-                .last_transcript_viewport_height
-                .set(usize::from(viewport.content.height));
             app.transcript_view.record_measured_max_scroll(regular_max);
             let transcript_scroll = transcript_scroll_top(app, layout, viewport.content.height);
             let TranscriptScrollPosition {
@@ -605,6 +657,7 @@ fn render_measured_transcript_pane(
             app.set_transcript_page_flip_state(page_flip);
             app.transcript_view.record_measured_max_scroll(max_scroll);
             let surface_area = transcript_surface_area(
+                app,
                 viewport.content,
                 TranscriptScrollPosition {
                     top: transcript_scroll,
@@ -612,6 +665,9 @@ fn render_measured_transcript_pane(
                     page_flip,
                 },
             );
+            app.transcript_view
+                .last_transcript_viewport_height
+                .set(usize::from(surface_area.height));
             app.record_visible_running_tool_motion(transcript_layout_has_visible_running_tool(
                 layout,
                 usize::from(surface_area.height),
@@ -627,7 +683,7 @@ fn render_measured_transcript_pane(
                 theme,
             );
             register_transcript_hyperlinks(layout, surface_area, transcript_scroll);
-            if app.focus == Focus::Details {
+            if app.focus == Focus::Details && !app.todo_pane_focused() {
                 super::ui_transcript_layout::render_selected_transcript_entry(
                     frame,
                     layout,
@@ -686,7 +742,7 @@ fn render_measured_transcript_pane(
             );
             render_transcript_more_below_affordance(
                 frame,
-                viewport.content,
+                transcript_more_below_area(app, viewport.content),
                 transcript_scroll,
                 max_scroll,
                 theme,
@@ -765,8 +821,15 @@ fn render_response_position_affordance(frame: &mut Frame, area: Rect, app: &AppS
     );
 }
 
-fn transcript_surface_area(viewport: Rect, scroll_position: TranscriptScrollPosition) -> Rect {
-    if scroll_position.max_scroll > 0 && scroll_position.top < scroll_position.max_scroll {
+fn transcript_surface_area(
+    app: &AppState,
+    viewport: Rect,
+    scroll_position: TranscriptScrollPosition,
+) -> Rect {
+    if !transcript_more_below_uses_gap(app)
+        && scroll_position.max_scroll > 0
+        && scroll_position.top < scroll_position.max_scroll
+    {
         return Rect::new(
             viewport.x,
             viewport.y,
@@ -775,6 +838,24 @@ fn transcript_surface_area(viewport: Rect, scroll_position: TranscriptScrollPosi
         );
     }
     viewport
+}
+
+// The live shell's existing prompt gap owns this affordance. Showing it must
+// not change the scrollback viewport or its half-page navigation distance.
+fn transcript_more_below_area(app: &AppState, viewport: Rect) -> Rect {
+    Rect {
+        height: viewport
+            .height
+            .saturating_add(u16::from(transcript_more_below_uses_gap(app))),
+        ..viewport
+    }
+}
+
+fn transcript_more_below_uses_gap(app: &AppState) -> bool {
+    !app.replay_mode
+        && app
+            .last_frame_area()
+            .is_none_or(|area| crate::layout::composer_footer_spacer_rows(area.height) > 0)
 }
 
 fn transcript_scroll_top(
@@ -863,7 +944,8 @@ fn build_transcript_selection_snapshot(
                 viewport.content.height,
                 transcript_scroll_top(app, layout, viewport.content.height),
             );
-            let selection_viewport = transcript_surface_area(viewport.content, scroll_position);
+            let selection_viewport =
+                transcript_surface_area(app, viewport.content, scroll_position);
             let viewport_rows = transcript_viewport_rows(
                 layout,
                 usize::from(selection_viewport.height),
@@ -1311,7 +1393,7 @@ pub(crate) fn transcript_return_to_live_hit(
                 transcript_scroll_top(app, layout, viewport.height),
             );
             transcript_more_below_hit_rect(
-                viewport,
+                transcript_more_below_area(app, viewport),
                 scroll_position.top,
                 scroll_position.max_scroll,
             )
@@ -1423,7 +1505,7 @@ pub(crate) fn transcript_mouse_target(
                 viewport.height,
                 transcript_scroll_top(app, layout, viewport.height),
             );
-            let surface_viewport = transcript_surface_area(viewport, scroll_position);
+            let surface_viewport = transcript_surface_area(app, viewport, scroll_position);
             let viewport_rows = transcript_viewport_rows(
                 layout,
                 usize::from(surface_viewport.height),

@@ -12,7 +12,7 @@ pub(super) fn content_for_part(
                 text: value.text.clone(),
                 active: turn.reasoning_active(part_index),
                 expanded: turn.reasoning_expanded,
-                duration_ms: turn.header.thinking_duration_ms,
+                duration_ms: value.duration_ms.or(turn.header.thinking_duration_ms),
                 motion_enabled: turn.motion_enabled,
             },
         ),
@@ -22,10 +22,6 @@ pub(super) fn content_for_part(
                 text: text.clone(),
                 streaming: false,
                 wall_clock: turn.footer_timestamp.clone(),
-                has_tools: turn
-                    .assistant_parts
-                    .iter()
-                    .any(|part| matches!(part, TranscriptAssistantPart::ToolCall(_))),
             },
         ),
         TranscriptAssistantPart::Body(TranscriptBodyBlock::StreamingRichText(text)) => (
@@ -34,10 +30,6 @@ pub(super) fn content_for_part(
                 text: text.clone(),
                 streaming: true,
                 wall_clock: turn.footer_timestamp.clone(),
-                has_tools: turn
-                    .assistant_parts
-                    .iter()
-                    .any(|part| matches!(part, TranscriptAssistantPart::ToolCall(_))),
             },
         ),
         TranscriptAssistantPart::ToolCall(tool) => (

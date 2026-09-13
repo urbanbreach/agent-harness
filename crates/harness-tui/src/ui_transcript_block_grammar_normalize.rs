@@ -39,6 +39,11 @@ pub(in crate::ui) fn normalize_turn_blocks(
                 member_count: group.summary.member_count,
             };
             apply_tool_policy(&mut spec);
+            // Group disclosure is separate from the first member's output fold.
+            // Native subagent rows remain diamonds when their group is selected.
+            spec.fold.foldable = turn.assistant_parts[index].tool_call().is_none_or(|tool| {
+                tool.header.visual_style != TranscriptToolCallVisualStyle::TaskInline
+            });
             specs.push(spec);
         }
         specs.push(normalized_part_spec_without_spacing(turn, index));

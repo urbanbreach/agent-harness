@@ -3,7 +3,7 @@ use std::ops::{Deref, DerefMut};
 
 use super::ui_transcript_block_grammar::{
     TranscriptBlockContent, TranscriptBlockRole, TranscriptBlockSpec, TranscriptLifecycleState,
-    TranscriptPromptState, TranscriptToolFamily, TranscriptToolStatus,
+    TranscriptPromptState, TranscriptToolFamily, TranscriptToolGroupClass, TranscriptToolStatus,
 };
 use super::*;
 
@@ -57,6 +57,8 @@ pub(in crate::ui) enum TranscriptVisualEntryAccent {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::ui) struct TranscriptVisualEntryMetadata {
+    pub(in crate::ui) foldable: bool,
+    pub(in crate::ui) context_group: bool,
     pub(in crate::ui) id: TranscriptVisualEntryId,
     pub(in crate::ui) kind: TranscriptRenderSurfaceKind,
     pub(in crate::ui) group: TranscriptVisualEntryGroup,
@@ -74,6 +76,8 @@ impl TranscriptVisualEntryMetadata {
         display_mode: TranscriptVisualEntryDisplayMode,
     ) -> Self {
         Self {
+            foldable: false,
+            context_group: false,
             id: TranscriptVisualEntryId::Part {
                 activity_first_seq,
                 semantic_key: u64::try_from(ordinal).unwrap_or(u64::MAX),
@@ -199,6 +203,9 @@ impl TranscriptVisualEntryMetadata {
             TranscriptVisualEntryAccent::Hidden
         };
         Self {
+            foldable: entry_foldable(spec),
+            context_group: matches!(&spec.content, TranscriptBlockContent::Tool { policy, .. }
+                if policy.group_class == Some(TranscriptToolGroupClass::Context)),
             id,
             kind: draft.kind,
             group,
@@ -206,6 +213,16 @@ impl TranscriptVisualEntryMetadata {
             lifecycle,
             accent,
         }
+    }
+}
+
+fn entry_foldable(spec: &TranscriptBlockSpec) -> bool {
+    match &spec.content {
+        TranscriptBlockContent::Tool {
+            family: TranscriptToolFamily::Group,
+            ..
+        } => spec.fold.foldable,
+        _ => spec.fold.foldable || spec.disclosure.available,
     }
 }
 
@@ -228,7 +245,11 @@ fn entry_display_mode(
                     | TranscriptRenderSurfaceKind::AssistantCommandTool
             ) =>
         {
-            if spec.disclosure.expanded {
+            if spec.disclosure.expanded
+                || matches!(&spec.content,
+                TranscriptBlockContent::Tool { family: TranscriptToolFamily::Task, policy, .. }
+                    if policy.status == TranscriptToolStatus::Running)
+            {
                 TranscriptVisualEntryDisplayMode::Expanded
             } else {
                 TranscriptVisualEntryDisplayMode::Compact

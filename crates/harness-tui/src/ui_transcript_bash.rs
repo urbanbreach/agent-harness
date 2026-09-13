@@ -8,13 +8,11 @@ use ratatui::{
 
 use crate::app::{ToolCallDisplayStatus, ToolCallEntry};
 use crate::text::{
-    collapse_inline_whitespace, has_trimmed_content, replace_control_chars_except_tabs,
-    trimmed_json_string_field,
+    collapse_inline_whitespace, replace_control_chars_except_tabs, trimmed_json_string_field,
 };
 use crate::theme::Theme;
 
 use super::ui_chrome::{display_width, take_width_prefix};
-use super::ui_transcript::TranscriptToolCallDetailTone;
 use super::ui_transcript_surface::{
     append_prebuilt_surface_lines, surface_prefix_width, surface_span,
     transcript_surface_content_width,
@@ -30,7 +28,6 @@ pub(super) struct HarnessBashPanel<'a> {
     pub(super) output: &'a str,
     pub(super) description: Option<&'a str>,
     pub(super) expanded: bool,
-    pub(super) tone: TranscriptToolCallDetailTone,
 }
 
 pub(super) fn append_harness_bash_panel(
@@ -187,7 +184,6 @@ fn harness_bash_card_lines(
         output,
         description,
         expanded,
-        tone,
     } = panel;
     let mut lines = Vec::new();
     let body_padding_left = HARNESS_BLOCK_TOOL_PADDING_LEFT;
@@ -217,43 +213,37 @@ fn harness_bash_card_lines(
             theme.text.primary,
             theme,
         );
-        let content_width = panel_width.saturating_sub(body_padding_left + 2).max(1);
+        // The reference's content width already excludes the two-cell bullet.
+        let content_width = panel_width.saturating_sub(body_padding_left + 4).max(1);
         let mut first = true;
-        for line in highlighted {
-            for spans in
-                super::ui_transcript_surface::wrap_preformatted_spans(line.spans, content_width)
-            {
-                let mut row = vec![
-                    Span::raw(" ".repeat(body_padding_left)),
-                    Span::styled(
-                        if first { "$ " } else { "  " },
-                        Style::default().fg(theme.terminal_colors.muted),
-                    ),
-                ];
-                row.extend(spans.into_iter().map(|mut span| {
-                    span.style = span.style.bg(surface);
-                    span
-                }));
-                lines.push(harness_bash_line(row, surface));
-                first = false;
-            }
+        for spans in super::ui_tool_wrapping::shell(highlighted, content_width) {
+            let mut row = vec![
+                Span::raw(" ".repeat(body_padding_left)),
+                Span::styled(
+                    if first { "$ " } else { "  " },
+                    Style::default().fg(theme.terminal_colors.muted),
+                ),
+            ];
+            row.extend(spans.into_iter().map(|mut span| {
+                span.style = span.style.bg(surface);
+                span
+            }));
+            lines.push(harness_bash_line(row, surface));
+            first = false;
         }
     }
 
     let output = output.trim_end_matches('\n');
-    let content_width = panel_width.saturating_sub(body_padding_left).max(1);
-    let output_background = if tone == TranscriptToolCallDetailTone::Error {
-        surface
-    } else {
-        theme.markdown.code_background
-    };
+    let content_width = panel_width.saturating_sub(body_padding_left + 4).max(20);
+    let output_background = theme.markdown.code_background;
     let mut output_rows = Vec::new();
     for line in
-        super::ui_terminal_output::render(output, harness_bash_output_style(tone, theme), theme)
+        super::ui_terminal_output::render(output, Style::default().fg(theme.text.primary), theme)
     {
-        for spans in
-            super::ui_transcript_surface::wrap_preformatted_spans(line.spans, content_width)
-        {
+        for spans in super::ui_tool_wrapping::words(
+            super::ui_transcript_surface::expand_preformatted_tabs(line.spans),
+            content_width,
+        ) {
             let mut row = vec![Span::raw(" ".repeat(body_padding_left))];
             let used = spans
                 .iter()
@@ -266,14 +256,18 @@ fn harness_bash_card_lines(
                 span
             }));
             row.push(Span::styled(
-                " ".repeat(content_width.saturating_sub(used)),
+                " ".repeat(panel_width.saturating_sub(body_padding_left + used)),
                 Style::default().bg(output_background),
             ));
             output_rows.push(Line::from(row));
         }
     }
-    let (output_rows, expand_hint) =
-        super::ui_tool_output::measured_output_preview(output_rows, (2, 3), expanded);
+    let output_rows = super::ui_tool_output::measured_output_preview(
+        output_rows,
+        (2, 3),
+        expanded,
+        Style::default(),
+    );
     if !output.is_empty() {
         for _ in 0..HARNESS_BLOCK_TOOL_GAP {
             lines.push(harness_bash_padding_line(surface));
@@ -294,20 +288,6 @@ fn harness_bash_card_lines(
         }
     }
 
-    if let Some(expand_hint) = expand_hint.filter(|hint| has_trimmed_content(hint)) {
-        for _ in 0..HARNESS_BLOCK_TOOL_GAP {
-            lines.push(harness_bash_padding_line(surface));
-        }
-        append_harness_bash_rows(
-            &mut lines,
-            expand_hint.trim(),
-            Style::default().fg(theme.text.secondary),
-            panel_width,
-            body_padding_left,
-            surface,
-        );
-    }
-
     lines
 }
 
@@ -319,14 +299,6 @@ fn harness_bash_title(description: Option<&str>) -> Option<String> {
         description
     } else {
         format!("# {description}")
-    })
-}
-
-fn harness_bash_output_style(tone: TranscriptToolCallDetailTone, theme: &Theme) -> Style {
-    Style::default().fg(if tone == TranscriptToolCallDetailTone::Error {
-        theme.terminal_colors.error
-    } else {
-        theme.text.primary
     })
 }
 
@@ -426,6 +398,60 @@ mod tests {
     use crate::UnwrapOrAbort;
 
     #[test]
+    fn shell_panel_wraps_operators_without_splitting_quoted_or_heredoc_payload() {
+        // These are rendered rows: a wrapping regression changes every tool below them.
+        for (command, width, expected) in [
+            (
+                "printf 'a deliberately long command argument for terminal reflow'",
+                30,
+                vec![
+                    "$ printf",
+                    "  'a deliberately long command argument for terminal reflow'",
+                ],
+            ),
+            (
+                "git status --short --branch && cargo check --workspace",
+                42,
+                vec![
+                    "$ git status --short --branch &&",
+                    "  cargo check --workspace",
+                ],
+            ),
+            (
+                "echo \"keep && together\" && echo next",
+                30,
+                vec!["$ echo \"keep && together\" &&", "  echo next"],
+            ),
+            (
+                "cat <<EOF\nthis long heredoc body keeps its spaces and && payload together\nEOF",
+                30,
+                vec![
+                    "$ cat <<EOF",
+                    "  this long heredoc body keeps its spaces and && payload together",
+                    "  EOF",
+                ],
+            ),
+        ] {
+            let rows = harness_bash_card_lines(
+                HarnessBashPanel {
+                    command,
+                    output: "",
+                    description: None,
+                    expanded: true,
+                },
+                &Theme::default(),
+                width,
+                Color::Reset,
+            );
+            assert_eq!(
+                rows.iter().map(Line::to_string).collect::<Vec<_>>(),
+                expected,
+                "{command}"
+            );
+        }
+    }
+
+    #[test]
     fn bash_body_can_omit_command_owned_by_header() {
         // arrange
         // act
@@ -435,7 +461,6 @@ mod tests {
                 output: "stdout",
                 description: None,
                 expanded: false,
-                tone: TranscriptToolCallDetailTone::Primary,
             },
             &Theme::default(),
             80,
@@ -462,7 +487,6 @@ mod tests {
                     output: &output,
                     description: None,
                     expanded,
-                    tone: TranscriptToolCallDetailTone::Primary,
                 },
                 &Theme::default(),
                 80,

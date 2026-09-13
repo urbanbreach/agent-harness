@@ -196,6 +196,7 @@ mod dense_fold_tests {
     fn tool(id: &str, status: ToolCallDisplayStatus) -> TranscriptToolCallSection {
         TranscriptToolCallSection {
             group: Default::default(),
+            hook_executions: Vec::new(),
             tool_call_id: id.to_string(),
             coalesced_tool_call_ids: vec![id.to_string()],
             child_session_id: None,
@@ -204,6 +205,7 @@ mod dense_fold_tests {
             replay_read_only: false,
             hovered_target: None,
             header: TranscriptToolCallHeader {
+                selected: false,
                 tool_id: "bash".to_string(),
                 title: id.to_string(),
                 subtitle: None,
