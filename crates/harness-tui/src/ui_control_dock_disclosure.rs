@@ -355,6 +355,31 @@ pub(super) fn render_control_dock_disclosure(
     let base = Style::default().bg(surface);
 
     frame.render_widget(Block::default().style(base), area);
+    if app.todo_pane_focused() {
+        let done = if app.todo_pane.hide_done {
+            "show done"
+        } else {
+            "hide done"
+        };
+        let primary = Style::default()
+            .fg(theme.text.primary)
+            .bg(surface)
+            .add_modifier(Modifier::BOLD);
+        let muted = Style::default().fg(theme.text.secondary).bg(surface);
+        frame.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled("h", primary),
+                Span::styled(format!(":{done}  │  "), muted),
+                Span::styled(
+                    freeze_preferred_binding(app, Action::Help, "Ctrl+x"),
+                    primary,
+                ),
+                Span::styled(":shortcuts", muted),
+            ])),
+            area,
+        );
+        return;
+    }
     if dock.variant == crate::view_model::ControlDockVariant::Startup {
         let palette = app.keymap.get_binding_str(Action::Palette);
         let newline = composer_newline_binding_hint(app);

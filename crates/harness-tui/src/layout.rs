@@ -22,9 +22,10 @@ pub(crate) use overlays::{completion_overlay_content_area, slash_command_overlay
 use overlays::{fork_selector_overlay_height, lifecycle_overlay_area};
 pub(crate) use permission::{
     permission_detail_lines, permission_dock_geometry, permission_dock_measure,
-    question_dock_geometry, question_dock_measure, question_label_column_width,
-    question_option_visual, PermissionDockGeometry, PermissionDockMeasure, QuestionDockGeometry,
-    QuestionDockMeasure, QUESTION_AUTO_SCROLL, QUESTION_OUTER_FOOTER_ROWS,
+    question_content_measure, question_dock_geometry, question_dock_measure,
+    question_editor_viewport, question_label_column_width, question_option_visual,
+    PermissionDockGeometry, PermissionDockMeasure, QuestionDockGeometry, QuestionDockMeasure,
+    QUESTION_AUTO_SCROLL, QUESTION_OUTER_FOOTER_ROWS,
 };
 #[cfg(test)]
 pub(crate) use surfaces::lifecycle_card_area;
@@ -75,19 +76,9 @@ struct LiveDockRhythm {
     bottom_margin_rows: u16,
 }
 
-/// Breadcrumb top-margin rows: 1 at standard/compact viewports (>60 cols),
-/// 0 at ultra-compact (≤60 cols) so the breadcrumb sits on row 1.
-pub(crate) fn breadcrumb_top_margin(width: u16) -> u16 {
-    if width <= DENSE_SESSION_MAX_WIDTH {
-        0
-    } else {
-        DESIGN_TOKENS
-            .breakpoints
-            .all
-            .iter()
-            .find(|breakpoint| breakpoint.width > DENSE_SESSION_MAX_WIDTH)
-            .map_or(0, |breakpoint| breakpoint.breadcrumb_top_margin)
-    }
+/// The native chat shell keeps its outer row at narrow widths too.
+pub(crate) fn breadcrumb_top_margin(_width: u16) -> u16 {
+    1
 }
 
 /// Total breadcrumb reserve rows (top margin + 1 breadcrumb text row).
@@ -128,17 +119,7 @@ pub(crate) fn live_turn_status_content_area(area: Rect, theme: &Theme) -> Rect {
 }
 
 pub(crate) fn composer_horizontal_inset(width: u16) -> u16 {
-    let preferred = if width <= DENSE_SESSION_MAX_WIDTH {
-        1
-    } else {
-        DESIGN_TOKENS
-            .breakpoints
-            .all
-            .iter()
-            .find(|breakpoint| breakpoint.width > DENSE_SESSION_MAX_WIDTH)
-            .map_or(0, |breakpoint| breakpoint.composer_inset)
-    };
-    preferred.min(width.saturating_sub(4) / 2)
+    STARTUP_COMPOSER_INSET_X.min(width.saturating_sub(4) / 2)
 }
 
 fn startup_composer_horizontal_inset(width: u16) -> u16 {
@@ -214,6 +195,7 @@ pub struct WheelHitAreas {
 pub(crate) struct SessionShellLayout {
     pub live_anchor: Option<Rect>,
     pub transcript: Rect,
+    pub todo: Option<Rect>,
     pub terminal_panel: Option<Rect>,
     pub operator_sidebar: Option<Rect>,
     pub operator_sidebar_compact_empty: bool,
@@ -232,6 +214,7 @@ pub struct FrameLayoutPlan {
     pub content: Rect,
     pub live_anchor: Option<Rect>,
     pub transcript: Option<Rect>,
+    pub todo: Option<Rect>,
     pub(crate) model_prompt_notice: Option<Rect>,
     pub terminal_panel: Option<Rect>,
     pub operator_sidebar: Option<Rect>,
@@ -314,6 +297,7 @@ impl FrameLayoutPlan {
             content,
             live_anchor: None,
             transcript: None,
+            todo: None,
             model_prompt_notice: None,
             terminal_panel: None,
             operator_sidebar: None,
@@ -340,6 +324,7 @@ impl FrameLayoutPlan {
         );
         plan.live_anchor = session.live_anchor;
         plan.transcript = Some(session.transcript);
+        plan.todo = session.todo;
         plan.terminal_panel = session.terminal_panel;
         plan.operator_sidebar = session.operator_sidebar;
         plan.dock = Some(session.dock);
@@ -548,7 +533,26 @@ pub(crate) fn session_shell_layout(
         width: inset_composer_width(content_column.width),
         ..content_column
     };
-    let prompt_height = if subagent_footer_visible {
+    // Live permission and question prompts own the composer slot.
+    let permission_prompt = app.active_permission_view().filter(|_| !app.replay_mode);
+    let question_inset = STARTUP_COMPOSER_INSET_X.min(content_column.width / 2);
+    let question_width = content_column.width.saturating_sub(question_inset * 2);
+    let prompt_height = if let Some(permission) = permission_prompt.as_ref() {
+        if permission.question_prompts.is_some() {
+            question_dock_measure(
+                app,
+                question_width,
+                Rect::new(0, 0, area.width, terminal_height),
+                permission,
+            )
+            .status_height
+        } else {
+            permission_dock_measure(app, question_width, terminal_height, permission)
+                .height
+                .saturating_add(QUESTION_OUTER_FOOTER_ROWS)
+                .min(content_column.height)
+        }
+    } else if subagent_footer_visible {
         0
     } else if app.replay_mode {
         shell_tokens.spacing.heights.prompt_block()
@@ -576,7 +580,19 @@ pub(crate) fn session_shell_layout(
         .split(content_column);
 
     let body = main_chunks[0];
-    let dock = if app.replay_mode {
+    let dock = if permission_prompt.is_some() {
+        let status = Rect {
+            x: main_chunks[1].x.saturating_add(question_inset),
+            width: question_width,
+            ..main_chunks[1]
+        };
+        control_dock_layout(
+            status,
+            Some(status),
+            Rect::new(status.x, status.bottom(), status.width, 0),
+            None,
+        )
+    } else if app.replay_mode {
         control_dock_layout(main_chunks[1], None, main_chunks[1], None)
     } else {
         let shell_area = main_chunks[1];
@@ -665,6 +681,7 @@ pub(crate) fn session_shell_layout(
         return SessionShellLayout {
             live_anchor: None,
             transcript: body,
+            todo: None,
             terminal_panel: None,
             operator_sidebar: None,
             operator_sidebar_compact_empty: false,
@@ -677,6 +694,7 @@ pub(crate) fn session_shell_layout(
 
     let operator_sidebar_compact_empty =
         operator_sidebar.is_some() && !app.operator_rail_has_sections();
+    let (body, todo) = todo_pane_split(app, body, terminal_height);
     let (transcript, terminal_panel) = terminal_panel_split(app, body, gap);
     let operator_overlay = if operator_sidebar.is_some() {
         None
@@ -695,14 +713,53 @@ pub(crate) fn session_shell_layout(
     SessionShellLayout {
         live_anchor: None,
         transcript,
+        todo,
         terminal_panel,
         operator_sidebar,
         operator_sidebar_compact_empty,
         operator_overlay,
         activity,
         inspector,
-        dock: dock_with_horizontal_inset(dock, content_column),
+        dock: if permission_prompt.is_some() {
+            dock
+        } else {
+            dock_with_horizontal_inset(dock, content_column)
+        },
     }
+}
+
+fn todo_pane_split(app: &AppState, body: Rect, terminal_height: u16) -> (Rect, Option<Rect>) {
+    if !app.todo_pane.visible
+        || app.transcript_viewer().is_some()
+        || body.width < 6
+        || body.height < 6
+    {
+        return (body, None);
+    }
+    let height = app
+        .todo_pane
+        .desired_height(terminal_height)
+        .min(body.height.saturating_sub(5));
+    let todo = Rect::new(
+        body.x.saturating_add(2),
+        body.y.saturating_add(3),
+        body.width.saturating_sub(4),
+        height,
+    );
+    let reserve = height.saturating_add(2);
+    (
+        Rect::new(
+            body.x,
+            body.y.saturating_add(reserve),
+            body.width,
+            body.height.saturating_sub(reserve),
+        ),
+        Some(todo),
+    )
+}
+
+pub(crate) fn todo_close_rect(area: Rect) -> Rect {
+    Rect::new(area.right(), area.y.saturating_sub(1), 1, 1)
 }
 
 fn terminal_panel_split(app: &AppState, body: Rect, gap: u16) -> (Rect, Option<Rect>) {
@@ -846,7 +903,11 @@ fn live_dock_rhythm(
 
     LiveDockRhythm {
         status_rows,
-        status_composer_spacer_rows: outer_spacer_rows,
+        status_composer_spacer_rows: if status_rows > 0 || app.activities.is_empty() {
+            outer_spacer_rows
+        } else {
+            0
+        },
         composer_footer_spacer_rows: outer_spacer_rows,
         disclosure_rows,
         bottom_margin_rows: outer_spacer_rows,
@@ -859,10 +920,6 @@ fn permission_prompt_block_height(
     terminal_height: u16,
     permission: &crate::app::ActivePermissionView,
 ) -> u16 {
-    if permission.question_prompts.is_some() {
-        return question_dock_measure(app, width, terminal_height, permission).status_height;
-    }
-
     permission_dock_measure(app, width, terminal_height, permission).height
 }
 
@@ -885,14 +942,6 @@ fn live_prompt_block_height(
             .saturating_add(STARTUP_COMPOSER_SPACER_ROWS)
             .min(max_block_height)
             .max(3 + STARTUP_COMPOSER_SPACER_ROWS);
-    }
-
-    if app.focus != crate::app::Focus::Prompt
-        && app.composer.prompt_buffer.is_empty()
-        && app.active_permission_view().is_none()
-        && !app.completed_session_shell_active()
-    {
-        return 1.min(max_block_height);
     }
 
     let input_height = composer_input_height(&app.composer.prompt_buffer, area.width).max(1);
@@ -1136,7 +1185,7 @@ mod tests {
     #[test]
     fn live_post_turn_dock_keeps_horizontal_inset_matching_freeze() {
         // Given: live shell (not startup) at freeze-primary 120×40
-        let app = AppState::new_live(None, false, None);
+        let mut app = AppState::new_live(None, false, None);
         assert!(
             !app.startup_shell_visible(),
             "new_live must use post-startup dock path"
@@ -1166,6 +1215,16 @@ mod tests {
         assert_eq!(
             dock.composer.width, dock.shell.width,
             "live composer band must share shell width"
+        );
+        app.focus = crate::app::Focus::Details;
+        let unfocused = FrameLayoutPlan::for_app(&app, Rect::new(0, 0, 120, 40));
+        assert_eq!(
+            unfocused.composer, plan.composer,
+            "focus changes must not resize the empty composer"
+        );
+        assert_eq!(
+            unfocused.transcript, plan.transcript,
+            "focus changes must not move transcript rows"
         );
     }
 
@@ -1298,11 +1357,7 @@ mod tests {
                 "transcript must span full shell width at {width}x{height}; transcript={transcript:?} shell={:?}",
                 plan.shell
             );
-            let expected_inset = if width <= DENSE_SESSION_MAX_WIDTH {
-                1
-            } else {
-                STARTUP_COMPOSER_INSET_X
-            };
+            let expected_inset = STARTUP_COMPOSER_INSET_X;
             assert_eq!(
                 composer.x,
                 plan.shell.x.saturating_add(expected_inset),

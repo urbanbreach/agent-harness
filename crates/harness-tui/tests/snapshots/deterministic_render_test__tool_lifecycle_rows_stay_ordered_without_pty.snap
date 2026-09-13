@@ -11,13 +11,13 @@ expression: trim_trailing_snapshot_whitespace(&rendered)
 
 
      ◈ Read 1 file
-     ◆ Edit ui.rs
-     ◆ Researcher Task — audit tool lifecycle consistency · completed
+
+     ◆ Edit crates/harness-tui/src/ui.rs
+
+     ◈ Ran 1 subagent
      ◆ Run cargo test -p harness-tui · in workspace
 
      Tool summaries are now easier to scan, and edits stay inline.
-
-
 
 
 
