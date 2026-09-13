@@ -37,6 +37,7 @@ pub enum Action {
     OpenStatusDialog,
     ToggleTerminalPanel,
     ToggleTasks,
+    ToggleTodos,
     /// Toggle follow mode
     ToggleFollow,
     /// Submit the prompt
@@ -168,6 +169,7 @@ action_ids! {
     OpenStatusDialog => "open_status_dialog" | "toggle_operator_sidebar",
     ToggleTerminalPanel => "toggle_terminal_panel",
     ToggleTasks => "toggle_tasks",
+    ToggleTodos => "toggle_todos",
     ToggleFollow => "toggle_follow",
     SubmitPrompt => "submit_prompt",
     InterjectPrompt => "interject_prompt",
@@ -550,7 +552,7 @@ impl KeyMap {
         );
         keymap.bind(
             KeyBinding::new(KeyCode::Char('t'), KeyModifiers::CONTROL),
-            Action::VariantCycle,
+            Action::ToggleTodos,
         );
         keymap.bind(
             KeyBinding::new(KeyCode::Char('c'), KeyModifiers::CONTROL),

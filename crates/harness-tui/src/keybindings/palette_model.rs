@@ -136,6 +136,14 @@ pub struct PaletteCommandEntry {
 
 pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
     PaletteCommandEntry {
+        id: "session.todos",
+        category: PaletteCategory::Session,
+        title: DynamicTitle::Static("Toggle Todos"),
+        description: "Show, focus, or hide the todo pane",
+        suggested: SuggestedRule::Never,
+        dispatch: PaletteDispatch::Action(Action::ToggleTodos),
+    },
+    PaletteCommandEntry {
         id: "session.new",
         category: PaletteCategory::Session,
         title: DynamicTitle::Static("New Session"),
@@ -284,7 +292,7 @@ pub const PALETTE_COMMAND_ENTRIES: &[PaletteCommandEntry] = &[
             show: "Show tool details",
             hide: "Hide tool details",
         },
-        description: "Toggle completed successful tools",
+        description: "Toggle automatic tool payload previews",
         suggested: SuggestedRule::Never,
         dispatch: PaletteDispatch::ToggleToolDetails,
     },

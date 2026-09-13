@@ -22,6 +22,10 @@ impl AppState {
             return;
         }
 
+        if self.handle_todo_pane_key(key) {
+            return;
+        }
+
         if self.handle_transcript_search_key(key) {
             return;
         }
@@ -1121,10 +1125,7 @@ impl AppState {
                 self.arm_quit_confirmation(default_key);
             }
             Action::HalfPageDown if self.focus == Focus::Details => {
-                let viewport = self
-                    .last_frame_area()
-                    .and_then(|area| crate::layout::FrameLayoutPlan::for_app(self, area).transcript)
-                    .map_or(1, |area| usize::from(area.height));
+                let viewport = self.transcript_view.last_transcript_viewport_height.get();
                 self.scroll_half_page_down(viewport);
             }
             Action::ScrollDown if self.focus == Focus::Details => {
@@ -1138,6 +1139,7 @@ impl AppState {
                     Focus::Prompt
                 };
             }
+            Action::ToggleTodos => self.toggle_todo_pane(),
             Action::TogglePromptFocus => {
                 self.focus = if self.focus == Focus::Prompt {
                     Focus::Details
@@ -1644,6 +1646,25 @@ impl AppState {
             return false;
         }
 
+        if self.focus == Focus::Details && key.modifiers == KeyModifiers::CONTROL {
+            let half_page = self.transcript_view.last_transcript_viewport_height.get() / 2;
+            let movement = match key.code {
+                KeyCode::Char('k') => Some((true, 1)),
+                KeyCode::Char('j') => Some((false, 1)),
+                KeyCode::Char('u') => Some((true, half_page)),
+                KeyCode::Char('d') => Some((false, half_page)),
+                _ => None,
+            };
+            if let Some((up, rows)) = movement {
+                if up {
+                    self.scroll_page_up(rows);
+                } else {
+                    self.scroll_page_down(rows);
+                }
+                return true;
+            }
+        }
+
         if let KeyCode::Char(character) = key.code {
             if !key
                 .modifiers
@@ -1718,7 +1739,7 @@ impl AppState {
         }
 
         match key.code {
-            KeyCode::Enter => self.fold_selected_entry(),
+            KeyCode::Enter => self.activate_selected_transcript_entry(),
             KeyCode::Char('/') => {
                 self.begin_transcript_search();
                 true

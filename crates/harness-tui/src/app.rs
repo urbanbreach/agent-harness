@@ -155,6 +155,7 @@ mod terminal_panel;
 mod tests;
 pub mod theme_preview;
 pub mod tips;
+pub(crate) mod todo_pane;
 mod toggles;
 mod tool_call;
 mod tool_output;
@@ -201,8 +202,8 @@ use self::permissions::{
 use self::prompt_stash::{PromptStashEntry, PromptStashState};
 use self::question_prompt::QuestionPromptState;
 pub use self::session_history::SessionHistoryEntry;
-pub(crate) use self::session_projection::LiveTurnWatchers;
 use self::session_projection::SessionProjection;
+pub(crate) use self::session_projection::{LiveTurnPhase, LiveTurnWatchers};
 use self::session_stack::SessionNavigationSnapshot;
 pub(crate) use self::settings_editor::{human_label as settings_label, SettingsTab};
 use self::terminal_panel::terminal_panel_event_is_shell;
@@ -342,6 +343,7 @@ pub struct AppState {
     pub details_scroll: u16,
     mouse_wheel_lines_per_tick: u16,
     pub(crate) terminal_panel: TerminalPanelState,
+    pub(crate) todo_pane: todo_pane::TodoPaneState,
     last_frame_area: Option<Rect>,
     pub(crate) secondary_surfaces: SecondarySurfaceState,
     pub(crate) modal_interaction: ModalInteractionState,
@@ -658,6 +660,7 @@ impl Default for AppState {
             details_scroll: 0,
             mouse_wheel_lines_per_tick: 3,
             terminal_panel: TerminalPanelState::default(),
+            todo_pane: todo_pane::TodoPaneState::default(),
             last_frame_area: None,
             secondary_surfaces: SecondarySurfaceState::default(),
             help_browser: HelpBrowserState::default(),
@@ -1720,6 +1723,7 @@ impl AppState {
             self.ingest_event_internal(event, true, false);
         }
         self.projection.replace_settled_projection(&events);
+        self.refresh_todo_items();
         self.resume_live_turn_timing_from_projection();
         self.sync_transcript_integration(false);
 
@@ -1759,8 +1763,10 @@ impl AppState {
         }
         self.starting_session_seed = false;
         self.bump_transcript_render_epoch();
+        let previous_phase = self.current_live_turn_phase();
         self.note_live_fragment_timing(event);
         self.projection.ingest_live_event(event);
+        self.sync_live_turn_phase_timing(previous_phase);
         self.sync_transcript_integration(true);
         if self.status_dashboard_is_active() {
             self.refresh_status_dashboard();
@@ -1803,6 +1809,7 @@ impl AppState {
         let page_flip_target = (!historical)
             .then(|| self.transcript_page_flip_activation_target(&event))
             .flatten();
+        let previous_phase = self.current_live_turn_phase();
         if !historical {
             self.continued_live_reopen_surface_active = false;
             self.note_live_turn_status_timing(&event);
@@ -1821,7 +1828,11 @@ impl AppState {
         if historical && update_canonical {
             self.projection.run_terminal_seen = run_terminal_seen_before_historical_ingest;
         }
+        if matches!(event.payload, EventV1::ToolCallFinished(_)) {
+            self.refresh_todo_items();
+        }
         if !historical {
+            self.sync_live_turn_phase_timing(previous_phase);
             self.reconcile_permission_focus(permission_was_pending);
             self.reconcile_interrupt_request();
             self.retarget_local_transcript_page_flip(&event);
@@ -1909,26 +1920,10 @@ impl AppState {
                 .correlation_id
                 .as_deref()
                 .unwrap_or(fragment.request_id);
-            let activity = self
-                .activities
-                .iter()
-                .rev()
-                .find(|activity| activity.request_id == turn_id);
-            let starts_phase = match fragment.kind {
-                CanonicalProviderFragmentKind::Reasoning => activity.is_none_or(|activity| {
-                    activity.thinking_text.is_empty() && activity.transcript_text.is_empty()
-                }),
-                CanonicalProviderFragmentKind::Text => {
-                    activity.is_none_or(|activity| activity.transcript_text.is_empty())
-                }
-            };
-            if starts_phase {
-                if fragment.kind == CanonicalProviderFragmentKind::Text {
-                    self.transcript_view
-                        .expanded_reasoning_requests
-                        .remove(turn_id);
-                }
-                self.restart_live_turn_phase_timing(turn_id);
+            if fragment.kind == CanonicalProviderFragmentKind::Text && !fragment.delta.is_empty() {
+                self.transcript_view
+                    .expanded_reasoning_requests
+                    .remove(turn_id);
             }
             return;
         }
@@ -1952,7 +1947,6 @@ impl AppState {
                     self.transcript_view
                         .expanded_reasoning_requests
                         .remove(turn_id);
-                    self.restart_live_turn_phase_timing(turn_id);
                 }
             }
             EventV1::ProviderRequestFinished(data) => {
@@ -1963,11 +1957,6 @@ impl AppState {
                 self.transcript_view
                     .expanded_reasoning_requests
                     .remove(turn_id);
-            }
-            EventV1::ToolCallStarted(_) => {
-                if let Some(turn_id) = event.correlation_id.as_deref() {
-                    self.restart_live_turn_phase_timing(turn_id);
-                }
             }
             _ => {}
         }
@@ -1983,39 +1972,15 @@ impl AppState {
                 | LiveEventV1::ProviderToolInputDelta { request_id, .. } => request_id.as_str(),
             });
         match &event.payload {
-            LiveEventV1::ProviderReasoningDelta { .. } => {
-                let starts_thinking = self
-                    .activities
-                    .iter()
-                    .rev()
-                    .find(|activity| activity.request_id == turn_id)
-                    .is_none_or(|activity| {
-                        activity.thinking_text.is_empty() && activity.transcript_text.is_empty()
-                    });
-                if starts_thinking {
-                    self.restart_live_turn_phase_timing(turn_id);
-                }
-            }
-            LiveEventV1::ProviderTextDelta { .. } => {
-                let starts_responding = self
-                    .activities
-                    .iter()
-                    .rev()
-                    .find(|activity| activity.request_id == turn_id)
-                    .is_none_or(|activity| activity.transcript_text.is_empty());
-                if starts_responding {
-                    self.transcript_view
-                        .expanded_reasoning_requests
-                        .remove(turn_id);
-                    self.restart_live_turn_phase_timing(turn_id);
-                }
-            }
-            LiveEventV1::ProviderToolInputDelta { .. } => {
+            LiveEventV1::ProviderTextDelta { delta, .. }
+            | LiveEventV1::ProviderToolInputDelta { delta, .. }
+                if !delta.is_empty() =>
+            {
                 self.transcript_view
                     .expanded_reasoning_requests
                     .remove(turn_id);
-                self.restart_live_turn_phase_timing(turn_id);
             }
+            _ => {}
         }
     }
 
@@ -3878,6 +3843,11 @@ impl AppState {
         self.toggle_tool_output(tool_call_id);
     }
 
+    /// Set the complete inline disclosure without cycling through a Read preview.
+    pub fn set_tool_output_expanded_for_test(&mut self, tool_call_id: &str, expanded: bool) {
+        self.set_tool_output_expanded(tool_call_id, expanded);
+    }
+
     /// Check whether a tool output is expanded.
     pub fn is_tool_output_expanded_for_test(&self, tool_call_id: &str) -> bool {
         self.activities
@@ -3903,6 +3873,7 @@ impl AppState {
 
     /// Expand all known tool-call outputs.
     pub fn expand_all_tool_outputs_for_test(&mut self) {
+        self.transcript_view.previewed_tool_outputs.clear();
         for activity in &self.projection.activities {
             for tc in &activity.tool_calls {
                 self.transcript_view
@@ -3915,6 +3886,7 @@ impl AppState {
 
     /// Collapse all tool-call outputs.
     pub fn collapse_all_tool_outputs_for_test(&mut self) {
+        self.transcript_view.previewed_tool_outputs.clear();
         self.transcript_view.expanded_tool_outputs.clear();
         self.bump_transcript_render_epoch();
     }

@@ -353,6 +353,9 @@ impl AppState {
         if self.handle_new_worktree_dialog_paste(text) {
             return;
         }
+        if self.handle_todo_pane_paste(text) {
+            return;
+        }
         if self.composer_disabled() {
             return;
         }

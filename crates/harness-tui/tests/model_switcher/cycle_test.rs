@@ -10,7 +10,7 @@ use harness_tui::app::{AppState, LaunchMetadata, UiIntent};
 use crate::model_switcher_fixtures::*;
 
 #[test]
-fn ctrl_t_cycles_reasoning_variants_in_semantic_order() {
+fn shift_tab_cycles_reasoning_variants_in_semantic_order() {
     let variants = reasoning_order_variant_options();
     let mut live = AppState::new_live(None, false, None);
     live.set_launch_metadata(
@@ -19,13 +19,13 @@ fn ctrl_t_cycles_reasoning_variants_in_semantic_order() {
 
     assert_eq!(live.current_model_label(), "GPT-5.4 Mini · Medium");
 
-    live.handle_key(KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL));
+    live.handle_key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::NONE));
 
     assert_eq!(live.active_profile(), "default");
     assert_eq!(live.current_model_label(), "GPT-5.4 Mini · High");
     assert_eq!(live.current_model_reasoning_label(), Some("high"));
 
-    live.handle_key(KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL));
+    live.handle_key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::NONE));
 
     assert_eq!(live.current_model_label(), "GPT-5.4 Mini · XHigh");
     assert_eq!(live.current_model_reasoning_label(), Some("xhigh"));
@@ -146,7 +146,7 @@ fn variant_cycle_updates_selected_model_without_losing_launch_metadata() {
 }
 
 #[test]
-fn ctrl_t_cycles_thinking_variant_within_current_profile() {
+fn shift_tab_cycles_thinking_variant_within_current_profile() {
     let _config = load_config_from_str(rich_model_config()).unwrap_or_abort();
 
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
@@ -165,7 +165,7 @@ fn ctrl_t_cycles_thinking_variant_within_current_profile() {
             .with_mode_label("Demo"),
     );
 
-    live.handle_key(KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL));
+    live.handle_key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::NONE));
 
     assert_eq!(live.active_profile(), "default");
     assert_eq!(live.current_model_label(), "GPT-5.4 Mini · Creative");
@@ -187,7 +187,7 @@ fn ctrl_t_cycles_thinking_variant_within_current_profile() {
 }
 
 #[test]
-fn ctrl_t_includes_base_model_entries_in_config_backed_variant_cycle() {
+fn shift_tab_includes_base_model_entries_in_config_backed_variant_cycle() {
     let _config = load_config_from_str(rich_model_config()).unwrap_or_abort();
 
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
@@ -210,7 +210,7 @@ fn ctrl_t_includes_base_model_entries_in_config_backed_variant_cycle() {
             .with_mode_label("Demo"),
     );
 
-    live.handle_key(KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL));
+    live.handle_key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::NONE));
 
     assert_eq!(live.active_profile(), "default");
     assert_eq!(live.current_model_label(), "GPT-5.4 Mini · Creative");
@@ -233,7 +233,7 @@ fn ctrl_t_includes_base_model_entries_in_config_backed_variant_cycle() {
 }
 
 #[test]
-fn ctrl_t_cycles_from_last_variant_to_none() {
+fn shift_tab_cycles_from_last_variant_to_none() {
     let _config = load_config_from_str(rich_model_config()).unwrap_or_abort();
 
     let intents = Arc::new(Mutex::new(Vec::<UiIntent>::new()));
@@ -258,7 +258,7 @@ fn ctrl_t_cycles_from_last_variant_to_none() {
             .with_mode_label("Demo"),
     );
 
-    live.handle_key(KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL));
+    live.handle_key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::NONE));
 
     assert_eq!(live.active_profile(), "default");
     assert_eq!(live.current_model_label(), "GPT-5.4 Mini");
