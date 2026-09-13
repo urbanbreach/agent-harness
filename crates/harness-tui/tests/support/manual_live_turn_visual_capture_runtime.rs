@@ -18,6 +18,24 @@ pub(crate) fn run_capture(config: CaptureScenario) -> Result<(), Box<dyn std::er
     let next_tool_seq = config.events.last().map_or(1, |event| event.seq + 1);
     let run_dir = tempfile::tempdir()?;
     let (update_tx, update_rx) = live_update_channel();
+    let sequence_worker = if let Some(path) = std::env::var_os("HARNESS_TUI_MANUAL_EVENT_STREAM") {
+        let sender = update_tx.clone();
+        Some(std::thread::spawn(move || -> std::io::Result<()> {
+            use std::io::BufRead;
+
+            let reader = std::io::BufReader::new(std::fs::File::open(path)?);
+            for line in reader.lines() {
+                let event: RuntimeEvent =
+                    serde_json::from_str(&line?).map_err(std::io::Error::other)?;
+                if sender.send(LiveUpdate::Event(Box::new(event))).is_err() {
+                    break;
+                }
+            }
+            Ok(())
+        }))
+    } else {
+        None
+    };
     if let Some(status) = config.status {
         update_tx
             .send(LiveUpdate::Status(status.to_string()))
@@ -155,5 +173,10 @@ pub(crate) fn run_capture(config: CaptureScenario) -> Result<(), Box<dyn std::er
     .map_err(|error| std::io::Error::other(format!("capture TUI: {error}")))?;
 
     drop(update_tx);
+    if let Some(worker) = sequence_worker {
+        worker
+            .join()
+            .map_err(|_| std::io::Error::other("synthetic event stream failed"))??;
+    }
     Ok(())
 }

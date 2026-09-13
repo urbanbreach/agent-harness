@@ -36,6 +36,8 @@ use std::fs;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
+mod tool_runtime_capture_tests;
+
 const TEST_FRAME_AREA: Rect = Rect::new(0, 0, 140, 40);
 
 struct ClipboardModeGuard;
@@ -273,6 +275,18 @@ fn compaction_written_status_surfaces_deterministic_fallback() {
     assert!(status.message.contains("deterministic fallback"));
 }
 
+fn open_subagent_group_for_click(app: &mut AppState) {
+    app.focus = Focus::Details;
+    let _ = render_text(app, TEST_FRAME_AREA.width, TEST_FRAME_AREA.height);
+    let group = crate::ui::transcript_navigation_entries(app, TEST_FRAME_AREA)
+        .into_iter()
+        .find(|entry| matches!(entry.target, Some(TranscriptMouseTarget::ToolGroup { .. })))
+        .unwrap_or_abort();
+    app.select_transcript_entry(&group);
+    assert!(app.toggle_selected_transcript_fold());
+    app.focus = Focus::Prompt;
+}
+
 fn transcript_click_position(app: &AppState, needle: &str) -> (u16, u16) {
     transcript_click_position_in_area(app, TEST_FRAME_AREA, needle)
 }
@@ -501,7 +515,7 @@ mod tool_group_folding_parity_tests;
 
 delegate_test!(mouse_click_toggles_transcript_tool_disclosure => tool_disclosure_tests::mouse_click_toggles_transcript_tool_disclosure);
 delegate_test!(palette_turn_result_commands_override_failed_output_default => tool_disclosure_tests::palette_turn_result_commands_override_failed_output_default);
-delegate_test!(transcript_enter_toggles_effective_failed_output_state => tool_disclosure_tests::transcript_enter_toggles_effective_failed_output_state);
+delegate_test!(transcript_enter_opens_failed_tool_full_output => tool_disclosure_tests::transcript_enter_opens_failed_tool_full_output);
 delegate_test!(explicit_tool_disclosure_survives_replay_replacement => tool_disclosure_tests::explicit_tool_disclosure_survives_replay_replacement);
 delegate_test!(context_group_disclosure_preserves_detached_anchor => tool_disclosure_tests::context_group_disclosure_preserves_detached_anchor);
 delegate_test!(mouse_click_toggles_apply_patch_file_disclosure => tool_disclosure_tests::mouse_click_toggles_apply_patch_file_disclosure);
