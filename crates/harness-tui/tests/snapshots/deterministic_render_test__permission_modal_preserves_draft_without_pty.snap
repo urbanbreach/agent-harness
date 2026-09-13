@@ -15,6 +15,9 @@ expression: rendered.as_str()
                                                                                                     
                                                                                                     
                                                                                                     
+                                                                                                    
+                                                                                                    
+                                                                                                    
   ┃                                                                                                 
   ┃  Allow Edit to demo.txt?                                                                        
   ┃  Apply hashline edit to demo.txt                                                                
@@ -23,8 +26,6 @@ expression: rendered.as_str()
   ┃  2 (○) Yes, allow all edits during this session                                                 
   ┃  3 (○) Yes                                                                                      
   ┃  4 (○) No, reject (type to add feedback)                                                        
-  ┃    1/4:select  │  Ctrl+o:always-approve  │  Ctrl+c:cancel                                       
+  ┃                                                                                                 
                                                                                                     
-  ╭──────────────────────────────────────────────────────────────────────────────────────────────╮  
-  │ ❯ keep this draft                                                                            │  
-  ╰───────────────────────────────────────────────────────────────────────────────────── unknown ╯
+  1/4:select  │  Tab:next option  │  Ctrl+o:always-approve  │  Ctrl+c:cancel  │  Esc:scrollback

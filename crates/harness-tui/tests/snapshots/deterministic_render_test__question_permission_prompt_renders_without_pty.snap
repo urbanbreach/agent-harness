@@ -12,19 +12,20 @@ expression: rendered.as_str()
                                                                                                     
                                                                                                     
                                                                                                     
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
   ┃                                                                                                 
   ┃  Pick one                                                                                       
   ┃                                                                                                 
   ┃                                                                                                 
-  ┃  1 (○) A  Option A                                                                              
+  ┃  1 (○) A  Option A                                                                           █  
   ┃  z (○) Type your answer here                                                                    
   ┃                                                                                                 
-  ┃  ↑/↓ navigate · y copy                                                          Enter:submit    
+  ┃  ↑/↓ navigate · y copy                                                        Enter:submit      
   ┃                                                                                                 
                                                                                                     
-  Tab:next answer  │  Esc:scrollback  │  X:dismiss                                                  
-                                                                                                    
-                                                                                                    
-  ╭──────────────────────────────────────────────────────────────────────────────────────────────╮  
-  │ ❯ Build anything                                                                             │  
-  ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
+  Tab:next answer  │  Esc:scrollback  │  Shift+x:dismiss

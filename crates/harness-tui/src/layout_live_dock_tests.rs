@@ -157,7 +157,7 @@ fn assert_terminal_rows(state: &str, app: &AppState, expected: ExpectedDockRows)
 }
 
 #[test]
-fn permission_suppression_keeps_dedicated_prompt_above_the_composer() {
+fn permission_suppression_replaces_the_composer_with_its_dedicated_prompt() {
     let app = permission_app();
     assert!(!app.live_turn_status_visible());
 
@@ -166,11 +166,12 @@ fn permission_suppression_keeps_dedicated_prompt_above_the_composer() {
         let permission = plan.status.expect("permission prompt band");
         let composer = plan.composer.expect("permission composer");
 
-        assert_eq!(permission.height, 9);
+        assert_eq!(permission.height, 9 + QUESTION_OUTER_FOOTER_ROWS);
+        assert_eq!(composer.height, 0);
         assert_eq!(
             composer.y.saturating_sub(permission.bottom()),
-            expected.outer_spacer,
-            "permission/status suppression spacer at {}x{}",
+            0,
+            "permission prompt owns the composer slot at {}x{}",
             expected.width,
             expected.height,
         );
@@ -197,8 +198,8 @@ fn rendered_permission_and_terminal_cells_keep_their_state_contracts() {
             assert_blank_row(
                 &buffer,
                 expected.width,
-                permission_area.bottom(),
-                "permission/composer spacer",
+                permission_area.bottom().saturating_sub(1),
+                "permission footer bottom margin",
             );
         }
     }

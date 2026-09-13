@@ -23,23 +23,23 @@ fn permission_prompt_hit_regions(
     };
 
     if permission.question_prompts.is_some() {
-        question_prompt_hit_regions(app, status_area, &permission)
+        question_prompt_hit_regions(app, status_area, frame_area, &permission)
     } else {
-        permission_choice_hit_regions(app, status_area, &permission)
+        permission_choice_hit_regions(app, status_area, frame_area.height, &permission)
     }
 }
 
 fn permission_choice_hit_regions(
     app: &AppState,
-    status_area: Rect,
+    mut status_area: Rect,
+    screen_height: u16,
     permission: &ActivePermissionView,
 ) -> Vec<PermissionPromptHitRegion> {
-    let measure = crate::layout::permission_dock_measure(
-        app,
-        status_area.width,
-        status_area.height,
-        permission,
-    );
+    if status_area.height > crate::layout::QUESTION_OUTER_FOOTER_ROWS {
+        status_area.height -= crate::layout::QUESTION_OUTER_FOOTER_ROWS;
+    }
+    let measure =
+        crate::layout::permission_dock_measure(app, status_area.width, screen_height, permission);
     let tray = crate::layout::permission_dock_geometry(status_area, measure).options;
     if tray.width == 0 || tray.height == 0 {
         return Vec::new();
@@ -60,7 +60,16 @@ fn permission_choice_hit_regions(
                 .saturating_add(u16::try_from(index).unwrap_or(u16::MAX));
             (y < tray.bottom()).then_some(PermissionPromptHitRegion {
                 target: PermissionPointerTarget::Decision(selection),
-                area: Rect::new(tray.x, y, tray.width, 1),
+                area: Rect::new(
+                    tray.x,
+                    y,
+                    tray.width,
+                    if selection == PermissionModalSelection::Reject {
+                        tray.bottom().saturating_sub(y)
+                    } else {
+                        1
+                    },
+                ),
             })
         })
         .collect(),
@@ -90,6 +99,7 @@ fn permission_choice_hit_regions(
 fn question_prompt_hit_regions(
     app: &AppState,
     status_area: Rect,
+    screen: Rect,
     permission: &ActivePermissionView,
 ) -> Vec<PermissionPromptHitRegion> {
     let Some(prompts) = permission.question_prompts.as_deref() else {
@@ -120,12 +130,7 @@ fn question_prompt_hit_regions(
     } else {
         status_area
     };
-    let measure = crate::layout::question_dock_measure(
-        app,
-        status_area.width,
-        status_area.height,
-        permission,
-    );
+    let measure = crate::layout::question_dock_measure(app, status_area.width, screen, permission);
     let geometry = crate::layout::question_dock_geometry(dock_area, &measure);
     let visible_bottom = measure
         .scroll_offset
@@ -157,16 +162,17 @@ fn question_prompt_hit_regions(
                 geometry.sticky.x,
                 geometry.sticky.y,
                 geometry.sticky.width,
-                1,
+                u16::try_from(measure.editor_lines.len())
+                    .unwrap_or(u16::MAX)
+                    .max(1)
+                    .min(geometry.sticky.height),
             ),
         });
     }
     if geometry.footer.width > 0
         && app.submitted_permission_id.as_deref() != Some(permission.permission_id.as_str())
     {
-        let enter_label = if app.question_prompt_editing(&permission.permission_id) {
-            "commit"
-        } else if prompt.custom
+        let enter_label = if prompt.custom
             && app.question_prompt_selection(&permission.permission_id) == prompt.options.len()
         {
             "edit"
@@ -175,20 +181,21 @@ fn question_prompt_hit_regions(
         } else {
             "select"
         };
-        let action_width = u16::try_from(format!("Enter:{enter_label}").width())
-            .unwrap_or(u16::MAX)
-            .min(geometry.footer.width);
-        regions.push(PermissionPromptHitRegion {
-            target: PermissionPointerTarget::QuestionSubmit,
-            area: Rect::new(
-                geometry.footer.right().saturating_sub(action_width),
-                geometry.footer.y,
-                action_width,
-                geometry.footer.height,
-            ),
-        });
+        let action_width =
+            u16::try_from(format!(" Enter:{enter_label} ").width()).unwrap_or(u16::MAX);
+        if geometry.footer.width > action_width.saturating_add(1) {
+            regions.push(PermissionPromptHitRegion {
+                target: PermissionPointerTarget::QuestionSubmit,
+                area: Rect::new(
+                    geometry.footer.right().saturating_sub(action_width + 1),
+                    geometry.footer.y,
+                    action_width,
+                    geometry.footer.height,
+                ),
+            });
+        }
     }
-    if let Some(scrollbar) = geometry.scrollbar {
+    if let Some((scrollbar, _)) = geometry.scrollbar {
         regions.insert(
             0,
             PermissionPromptHitRegion {
@@ -486,7 +493,8 @@ impl AppState {
         }
     }
 
-    pub(crate) fn set_frame_area(&mut self, area: Rect) {
+    /// Update terminal geometry before routing input to the rendered panes.
+    pub fn set_frame_area(&mut self, area: Rect) {
         if self
             .last_frame_area
             .is_some_and(|previous| previous != area)
@@ -505,6 +513,7 @@ impl AppState {
             self.secondary_surfaces.selection_dragging = false;
             self.secondary_surfaces.pending_click = None;
             self.modal_interaction.invalidate();
+            self.todo_pane.invalidate_pointer();
         }
         self.last_frame_area = Some(area);
         if let Some(dashboard) = self.dashboard.as_mut() {
@@ -694,12 +703,8 @@ impl AppState {
         else {
             return false;
         };
-        let measure = crate::layout::question_dock_measure(
-            self,
-            status_area.width,
-            status_area.height,
-            &permission,
-        );
+        let measure =
+            crate::layout::question_dock_measure(self, status_area.width, frame_area, &permission);
         let dock_area = if status_area.height > crate::layout::QUESTION_OUTER_FOOTER_ROWS {
             Rect::new(
                 status_area.x,
@@ -733,12 +738,9 @@ impl AppState {
                 let relative = row
                     .saturating_sub(geometry.options.y)
                     .min(track_height.saturating_sub(1));
-                let thumb_height = track_height
-                    .saturating_mul(track_height)
-                    .checked_div(measure.option_rows.max(1))
-                    .unwrap_or(1)
-                    .max(1)
-                    .min(track_height);
+                let thumb_height = geometry
+                    .scrollbar
+                    .map_or(track_height, |(_, thumb)| thumb.height);
                 let thumb_range = track_height.saturating_sub(thumb_height);
                 relative
                     .saturating_sub(thumb_height / 2)
@@ -1051,6 +1053,10 @@ impl AppState {
 
         self.set_frame_area(frame_area);
 
+        if self.handle_todo_pane_mouse(mouse, frame_area) {
+            return true;
+        }
+
         if self.startup_shell_visible() && self.handle_welcome_pointer_completion(mouse) {
             return true;
         }
@@ -1166,6 +1172,63 @@ impl AppState {
         changed
     }
 
+    fn handle_transcript_target_click(&mut self, target: TranscriptMouseTarget, frame_area: Rect) {
+        if !matches!(
+            target,
+            TranscriptMouseTarget::Reasoning { .. }
+                | TranscriptMouseTarget::Tool { .. }
+                | TranscriptMouseTarget::ToolGroup { .. }
+        ) {
+            self.transcript_view.last_tool_click = None;
+            self.activate_transcript_mouse_target(target);
+            return;
+        }
+        let Some(entry) = ui::transcript_navigation_entries(self, frame_area)
+            .into_iter()
+            .find(|entry| entry.target.as_ref() == Some(&target))
+        else {
+            return;
+        };
+        let now = self.now();
+        let count = self
+            .transcript_view
+            .last_tool_click
+            .filter(|(previous, id, _)| {
+                *id == entry.id
+                    && now.saturating_duration_since(*previous)
+                        < std::time::Duration::from_millis(300)
+            })
+            .map_or(1, |(_, _, count)| count + 1);
+        let viewport = self.transcript_view.measured_viewport();
+        self.select_transcript_entry(&entry);
+        self.focus = Focus::Details;
+        self.transcript_view.last_tool_click = if count >= 3
+            || (count == 2 && matches!(target, TranscriptMouseTarget::ToolGroup { .. }))
+        {
+            None
+        } else {
+            Some((now, entry.id, count))
+        };
+        if count >= 2 {
+            self.activate_transcript_mouse_target(target.clone());
+        }
+        if let Some(current) = ui::transcript_navigation_entries(self, frame_area)
+            .into_iter()
+            .find(|entry| entry.target.as_ref() == Some(&target))
+        {
+            let top = if count >= 3 {
+                let Some(top) = ui::transcript_entry_scroll_top(self, frame_area, current.top)
+                else {
+                    return;
+                };
+                top
+            } else {
+                viewport.top()
+            };
+            self.set_transcript_scroll_from_top_with_max(top, current.max_scroll);
+        }
+    }
+
     fn handle_surface_mouse_down(
         &mut self,
         mouse: MouseEvent,
@@ -1184,12 +1247,6 @@ impl AppState {
         self.hovered_subagent_footer_target =
             ui::subagent_footer_target_at(self, frame_area, mouse.column, mouse.row);
         self.pending_subagent_footer_target = self.hovered_subagent_footer_target;
-        self.transcript_view.hovered_transcript_target =
-            if self.hovered_subagent_footer_target.is_none() {
-                ui::transcript_mouse_target(self, frame_area, mouse.column, mouse.row)
-            } else {
-                None
-            };
         if self.hovered_subagent_footer_target.is_some() {
             self.transcript_view.transcript_scrollbar_drag = None;
             self.clear_transcript_selection();
@@ -1266,7 +1323,7 @@ impl AppState {
 
         if let Some(target) = ui::transcript_mouse_target(self, frame_area, mouse.column, mouse.row)
         {
-            self.activate_transcript_mouse_target(target);
+            self.handle_transcript_target_click(target, frame_area);
             self.transcript_view.transcript_click_activated_on_down = true;
             self.clear_transcript_selection();
             self.clear_operator_sidebar_selection();
@@ -1409,7 +1466,7 @@ impl AppState {
             if let Some(target) =
                 ui::transcript_mouse_target(self, frame_area, mouse.column, mouse.row)
             {
-                self.activate_transcript_mouse_target(target);
+                self.handle_transcript_target_click(target, frame_area);
                 self.clear_transcript_selection();
                 return true;
             }

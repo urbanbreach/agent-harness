@@ -105,7 +105,7 @@ pub(crate) fn modal_list_row(theme: &Theme, spec: ModalListRowSpec) -> ModalList
     let background = if spec.state.hovered {
         theme.surface.hover
     } else if spec.state.selected {
-        theme.question_prompt.selected
+        ui_chrome::legacy_modal_selection_surface(theme)
     } else {
         ui_chrome::command_palette_surface(theme)
     };
@@ -202,6 +202,57 @@ mod tests {
                 max_scroll: 0,
             },
         )
+    }
+
+    #[test]
+    fn question_palette_change_preserves_modal_selection_across_families() {
+        use crate::theme::{quantize_color, ColorLevel};
+        use crate::theme_family::ThemeFamily;
+        let cases = [
+            (Theme::harness_dark(), Color::Rgb(36, 36, 36)),
+            (Theme::harness_light(), Color::Rgb(222, 222, 222)),
+            (Theme::harness_high_contrast(), Color::DarkGray),
+            (Theme::terminal_native(), Color::DarkGray),
+            (
+                Theme::from_family(ThemeFamily::Dark, ColorLevel::TrueColor),
+                Color::Rgb(36, 36, 36),
+            ),
+            (
+                Theme::from_family(ThemeFamily::Light, ColorLevel::TrueColor),
+                Color::Rgb(201, 201, 201),
+            ),
+        ];
+        for (theme, old_color) in cases {
+            for level in [
+                ColorLevel::TrueColor,
+                ColorLevel::Ansi256,
+                ColorLevel::Basic,
+                ColorLevel::None,
+            ] {
+                let mut legacy = theme;
+                legacy.question_prompt.selected = old_color;
+                let expected = legacy.for_color_level(level).question_prompt.selected;
+                let row = presentation(
+                    &theme.for_color_level(level),
+                    ModalListRowState {
+                        selected: true,
+                        hovered: false,
+                        dimmed: false,
+                    },
+                );
+                assert_eq!(row.style.bg, Some(expected), "{level:?} {old_color:?}");
+                let quantized = theme.quantized(level);
+                let row = presentation(
+                    &quantized,
+                    ModalListRowState {
+                        selected: true,
+                        hovered: false,
+                        dimmed: false,
+                    },
+                );
+                assert_eq!(row.style.bg, Some(quantize_color(old_color, level)));
+            }
+        }
     }
 
     #[test]

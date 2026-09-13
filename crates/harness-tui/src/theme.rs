@@ -1368,11 +1368,11 @@ impl Theme {
                 inverse: rgb(20, 20, 20),
             },
             question_prompt: QuestionPromptColors {
-                surface: rgb(28, 28, 28),
-                selected: rgb(36, 36, 36),
-                primary: rgb(225, 225, 225),
-                accent: rgb(187, 154, 247),
-                secondary: rgb(122, 162, 247),
+                surface: theme_role_color(ColorRole::QuestionSurface),
+                selected: theme_role_color(ColorRole::QuestionSelected),
+                primary: theme_role_color(ColorRole::QuestionPrimary),
+                accent: theme_role_color(ColorRole::QuestionAccent),
+                secondary: theme_role_color(ColorRole::QuestionSecondary),
             },
             status: StatusColors {
                 success: rgb(158, 206, 106),

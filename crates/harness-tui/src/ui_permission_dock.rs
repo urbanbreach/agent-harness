@@ -3,17 +3,17 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Paragraph, Wrap},
+    widgets::{Block, Clear, Paragraph, Wrap},
     Frame,
 };
 
 use crate::app::permissions::{
-    PermissionConfirmSelection, PermissionFeedback, PermissionModalSelection, PermissionModalStage,
+    PermissionConfirmSelection, PermissionModalSelection, PermissionModalStage,
 };
 use crate::app::{ActivePermissionView, AppState, Focus};
 use crate::layout::{
     permission_detail_lines, permission_dock_geometry, permission_dock_measure,
-    question_dock_geometry, question_dock_measure, QUESTION_OUTER_FOOTER_ROWS,
+    question_dock_geometry, question_dock_measure,
 };
 use crate::theme::Theme;
 
@@ -47,10 +47,10 @@ pub(super) fn render_inline_permission_dock(
 
     let always_confirm = app.permission_modal_stage(&permission.permission_id)
         == PermissionModalStage::AlwaysConfirm;
-    let dock_surface = theme.surface.panel_elevated;
+    let dock_surface = theme.question_prompt.surface;
     let shell_surface = dock_surface;
     let tray_surface = dock_surface;
-    let measure = permission_dock_measure(app, area.width, area.height, permission);
+    let measure = permission_dock_measure(app, area.width, frame.area().height, permission);
     let geometry = permission_dock_geometry(area, measure);
     let body_area = Rect::new(
         geometry.rail.right(),
@@ -76,7 +76,9 @@ pub(super) fn render_inline_permission_dock(
     render_permission_rail(frame, geometry.rail, theme, dock_surface);
     fn render_permission_rail(frame: &mut Frame, rail: Rect, theme: &Theme, dock_surface: Color) {
         if rail.width > 0 && rail.height > 0 {
-            let rail_style = Style::default().fg(theme.text.accent).bg(dock_surface);
+            let rail_style = Style::default()
+                .fg(question_prompt_accent(theme))
+                .bg(dock_surface);
             let rail_lines = (0..usize::from(rail.height))
                 .map(|_| {
                     Line::from(Span::styled(
@@ -115,8 +117,9 @@ pub(super) fn render_inline_permission_dock(
     }
 
     if geometry.detail.height > 0 {
-        let clipped = measure.detail_truncated || measure.detail_rows > geometry.detail.height;
-        let content_rows = if clipped {
+        let indicator =
+            measure.detail_truncated && geometry.detail.height >= measure.visible_detail_rows;
+        let content_rows = if indicator {
             geometry.detail.height.saturating_sub(1)
         } else {
             geometry.detail.height
@@ -124,13 +127,23 @@ pub(super) fn render_inline_permission_dock(
         let lines = permission_detail_lines(permission, measure.content_width, content_rows)
             .into_iter()
             .map(|line| {
-                Line::from(Span::styled(
-                    line,
-                    Style::default().fg(theme.text.primary).bg(shell_surface),
-                ))
+                let mut lines = super::super::ui_syntax_highlight::render_highlighted_code_block(
+                    Some("json"),
+                    &line,
+                    &line,
+                    "",
+                    theme.terminal_colors.prompt_accent,
+                    theme,
+                );
+                let mut line = lines.pop().unwrap_or_default();
+                for span in &mut line.spans {
+                    span.style.bg = Some(shell_surface);
+                }
+                line
             })
             .collect::<Vec<_>>();
         let rendered_rows = u16::try_from(lines.len()).unwrap_or(u16::MAX);
+        let last_width = lines.last().map_or(0, Line::width);
         frame.render_widget(
             Paragraph::new(Text::from(lines)).style(Style::default().bg(shell_surface)),
             Rect::new(
@@ -140,21 +153,34 @@ pub(super) fn render_inline_permission_dock(
                 rendered_rows.min(geometry.detail.height),
             ),
         );
-        if clipped && rendered_rows < geometry.detail.height {
-            let indicator = if measure.expanded {
-                "… terminal height clips content"
-            } else {
-                "… Ctrl-F to expand"
-            };
+        if indicator && rendered_rows < geometry.detail.height {
+            let style = Style::default().fg(theme.text.secondary).bg(shell_surface);
             frame.render_widget(
-                Paragraph::new(Line::from(Span::styled(
-                    indicator,
-                    Style::default().fg(theme.text.secondary).bg(shell_surface),
-                ))),
+                Paragraph::new(Line::from(vec![
+                    Span::styled("... ", style),
+                    Span::styled("Ctrl-F", style.fg(question_prompt_accent(theme))),
+                    Span::styled(" to expand", style),
+                ])),
                 Rect::new(
                     geometry.detail.x,
                     geometry.detail.y.saturating_add(rendered_rows),
                     geometry.detail.width,
+                    1,
+                ),
+            );
+        } else if measure.detail_rows > rendered_rows && rendered_rows > 0 {
+            let offset = u16::try_from(last_width)
+                .unwrap_or(u16::MAX)
+                .min(geometry.detail.width.saturating_sub(2));
+            frame.render_widget(
+                Paragraph::new(Span::styled(
+                    " …",
+                    Style::default().fg(theme.text.secondary),
+                )),
+                Rect::new(
+                    geometry.detail.x + offset,
+                    geometry.detail.y + rendered_rows - 1,
+                    2,
                     1,
                 ),
             );
@@ -242,155 +268,34 @@ pub(super) fn render_inline_permission_dock(
     }
 
     let selection = app.permission_modal_selection(&permission.permission_id);
-    let options = if tray_inner.width <= 60 {
-        [
-            (
-                "Yes, always approve",
-                selection == PermissionModalSelection::AllowAlways,
-            ),
-            (
-                "Yes, allow edits this session",
-                selection == PermissionModalSelection::AllowSession,
-            ),
-            (
-                "Yes, once",
-                selection == PermissionModalSelection::AllowOnce,
-            ),
-            (
-                "No, reject and add feedback",
-                selection == PermissionModalSelection::Reject,
-            ),
-        ]
-    } else {
-        [
-            (
-                "Yes, and don't ask again for anything (always-approve mode)",
-                selection == PermissionModalSelection::AllowAlways,
-            ),
-            (
-                "Yes, allow all edits during this session",
-                selection == PermissionModalSelection::AllowSession,
-            ),
-            ("Yes", selection == PermissionModalSelection::AllowOnce),
-            (
-                "No, reject (type to add feedback)",
-                selection == PermissionModalSelection::Reject,
-            ),
-        ]
-    };
-    let selected_index = selection.number();
-    let expansion_label = (measure.detail_rows > 5).then_some(if measure.expanded {
-        "Ctrl-F to collapse"
-    } else {
-        "Ctrl-F to expand"
-    });
-    let mut action_text = permission_prompt_numbered_options(theme, tray_surface, &options);
-    let mut hint_line = permission_prompt_hint_line(
-        app,
-        theme,
-        tray_surface,
-        selected_index,
-        options.len(),
-        tray_inner.width,
-        expansion_label,
-    );
-    if let Some(feedback) = app.permission_feedback(&permission.permission_id) {
-        let (option_line, feedback_hint) = permission_feedback_lines(
-            theme,
-            feedback,
-            tray_inner.width,
-            app.focus == Focus::Prompt,
-        );
-        action_text.lines[3] = option_line;
-        hint_line = feedback_hint.unwrap_or(hint_line);
-    }
-    let option_rows = u16::try_from(options.len()).unwrap_or(u16::MAX);
-    // Freeze tray: options, post blank, empty, hints, trailing blank (height 8).
-    if tray_inner.height >= option_rows.saturating_add(4) {
-        let rows = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(option_rows),
-                Constraint::Length(1),
-                Constraint::Length(1),
-                Constraint::Length(1),
-                Constraint::Length(1),
-            ])
-            .split(tray_inner);
-        render_permission_numbered_options(
-            frame,
-            rows[0],
-            action_text,
-            theme,
-            tray_surface,
-            &options,
-        );
-        let hint_area = permission_hint_area(rows[3]);
-        if hint_area.width > 0 && hint_area.height > 0 {
-            frame.render_widget(
-                Paragraph::new(hint_line).style(Style::default().bg(tray_surface)),
-                hint_area,
-            );
-        }
-        return;
-    }
-    if tray_inner.height >= option_rows.saturating_add(2) {
-        let rows = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(option_rows),
-                Constraint::Length(1),
-                Constraint::Length(1),
-            ])
-            .split(tray_inner);
-        render_permission_numbered_options(
-            frame,
-            rows[0],
-            action_text,
-            theme,
-            tray_surface,
-            &options,
-        );
-        let hint_area = permission_hint_area(rows[2]);
-        if hint_area.width > 0 && hint_area.height > 0 {
-            frame.render_widget(
-                Paragraph::new(hint_line).style(Style::default().bg(tray_surface)),
-                hint_area,
-            );
-        }
-        return;
-    }
-    if tray_inner.height > option_rows {
-        let rows = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Length(option_rows), Constraint::Length(1)])
-            .split(tray_inner);
-        render_permission_numbered_options(
-            frame,
-            rows[0],
-            action_text,
-            theme,
-            tray_surface,
-            &options,
-        );
-        let hint_area = permission_hint_area(rows[1]);
-        if hint_area.width > 0 && hint_area.height > 0 {
-            frame.render_widget(
-                Paragraph::new(hint_line).style(Style::default().bg(tray_surface)),
-                hint_area,
-            );
-        }
-        return;
-    }
-
+    let options = [
+        (
+            "Yes, and don't ask again for anything (always-approve mode)",
+            selection == PermissionModalSelection::AllowAlways,
+        ),
+        (
+            "Yes, allow all edits during this session",
+            selection == PermissionModalSelection::AllowSession,
+        ),
+        ("Yes", selection == PermissionModalSelection::AllowOnce),
+        (
+            "No, reject (type to add feedback)",
+            selection == PermissionModalSelection::Reject,
+        ),
+    ];
+    let action_text = permission_prompt_numbered_options(theme, tray_surface, &options);
     render_permission_numbered_options(
         frame,
-        tray_inner,
+        geometry.options,
         action_text,
         theme,
         tray_surface,
         &options,
     );
+    render_permission_feedback(frame, area, geometry.options, app, permission, theme);
+    if app.focus != Focus::Prompt {
+        dim_question_permission_dock(frame, area, theme);
+    }
 }
 
 fn render_question_permission_dock(
@@ -404,12 +309,7 @@ fn render_question_permission_dock(
     let surface = theme.question_prompt.surface;
     let focused = app.focus == Focus::Prompt;
     let rail_color = question_prompt_accent(theme);
-    let measure = question_dock_measure(
-        app,
-        area.width,
-        area.height.saturating_add(QUESTION_OUTER_FOOTER_ROWS),
-        permission,
-    );
+    let measure = question_dock_measure(app, area.width, frame.area(), permission);
     let geometry = question_dock_geometry(area, &measure);
     let rail_area = geometry.rail;
     let body_area = Rect::new(
@@ -445,21 +345,11 @@ fn render_question_permission_dock(
     }
 
     if geometry.content.width == 0 || geometry.content.height == 0 {
-        if !focused {
-            dim_question_permission_dock(frame, area, theme);
-        }
         return;
     }
 
     let prompts = permission.question_prompts.as_deref().unwrap_or(&[]);
-    let body = question_permission_body_text(
-        app,
-        permission,
-        prompts,
-        theme,
-        surface,
-        measure.content_width,
-    );
+    let body = question_permission_body_text(app, permission, prompts, theme, surface, &measure);
     let source_chrome_end = usize::from(measure.source_chrome_rows).min(body.lines.len());
     let sticky_start = body
         .lines
@@ -524,48 +414,35 @@ fn render_question_permission_dock(
             Paragraph::new(scroll_body).scroll((measure.scroll_offset, 0)),
             geometry.options,
         );
-        if let Some(scrollbar) = geometry.scrollbar {
-            render_question_scrollbar(
-                frame,
-                scrollbar,
-                measure.option_rows,
-                measure.scroll_offset,
-                theme,
-                surface,
-            );
+        if let Some((scrollbar, thumb)) = geometry.scrollbar {
+            render_question_scrollbar(frame, scrollbar, thumb, theme, surface);
         }
     }
 
     if geometry.sticky.height > 0 {
-        if focused && question_custom_row_selected(app, permission, prompts) {
-            frame.render_widget(
-                Block::default().style(Style::default().bg(theme.question_prompt.selected)),
-                Rect::new(
-                    geometry.sticky.x,
-                    geometry.sticky.y,
-                    geometry.sticky.width,
-                    1,
-                ),
-            );
-        }
-        if question_custom_row_hovered(app, permission, prompts) {
-            frame.render_widget(
-                Block::default().style(Style::default().bg(theme.surface.hover)),
-                Rect::new(
-                    geometry.sticky.x,
-                    geometry.sticky.y,
-                    geometry.sticky.width,
-                    1,
-                ),
-            );
-        }
+        render_question_sticky_background(frame, app, area, permission, theme, &geometry, &measure);
         frame.render_widget(Paragraph::new(sticky_body), geometry.sticky);
+        if focused && !submission_pending {
+            if let Some((row, column)) = measure.editor_cursor {
+                if row < geometry.sticky.height {
+                    frame.set_cursor_position((
+                        geometry.sticky.x + 8 + column,
+                        geometry.sticky.y + row,
+                    ));
+                }
+            }
+        }
     }
 
-    if geometry.footer.width == 0 || geometry.footer.height == 0 {
-        if !focused {
-            dim_question_permission_dock(frame, area, theme);
+    if !focused {
+        for content in [geometry.chrome, geometry.options, geometry.sticky] {
+            dim_question_permission_dock(frame, content, theme);
         }
+        if let Some((scrollbar, thumb)) = geometry.scrollbar {
+            render_question_scrollbar(frame, scrollbar, thumb, theme, surface);
+        }
+    }
+    if geometry.footer.width == 0 || geometry.footer.height == 0 {
         return;
     }
     let footer = if submission_pending {
@@ -584,8 +461,57 @@ fn render_question_permission_dock(
         Paragraph::new(footer).style(Style::default().bg(surface)),
         geometry.footer,
     );
-    if !focused {
-        dim_question_permission_dock(frame, area, theme);
+}
+
+fn render_question_sticky_background(
+    frame: &mut Frame,
+    app: &AppState,
+    area: Rect,
+    permission: &ActivePermissionView,
+    theme: &Theme,
+    geometry: &crate::layout::QuestionDockGeometry,
+    measure: &crate::layout::QuestionDockMeasure,
+) {
+    let prompts = permission.question_prompts.as_deref().unwrap_or(&[]);
+    let editing = !measure.editor_lines.is_empty();
+    let custom_height = if editing {
+        u16::try_from(measure.editor_lines.len()).unwrap_or(u16::MAX)
+    } else {
+        1
+    }
+    .min(geometry.sticky.height);
+    if editing {
+        frame.render_widget(
+            Block::default().style(Style::default().bg(theme.question_prompt.selected)),
+            Rect::new(
+                area.x.saturating_add(1),
+                geometry.sticky.y,
+                area.width.saturating_sub(1),
+                custom_height,
+            ),
+        );
+    }
+    if app.focus == Focus::Prompt && question_custom_row_selected(app, permission, prompts) {
+        frame.render_widget(
+            Block::default().style(Style::default().bg(theme.question_prompt.selected)),
+            Rect::new(
+                geometry.sticky.x,
+                geometry.sticky.y,
+                geometry.sticky.width,
+                1,
+            ),
+        );
+    }
+    if question_custom_row_hovered(app, permission, prompts) {
+        frame.render_widget(
+            Block::default().style(Style::default().bg(theme.surface.hover)),
+            Rect::new(
+                geometry.sticky.x,
+                geometry.sticky.y,
+                geometry.sticky.width,
+                1,
+            ),
+        );
     }
 }
 
@@ -600,7 +526,7 @@ fn dim_question_permission_dock(frame: &mut Frame, area: Rect, theme: &Theme) {
             cell.fg = blend_color(
                 cell.fg,
                 theme.question_prompt.surface,
-                QUESTION_UNFOCUSED_BLEND,
+                1.0 - QUESTION_UNFOCUSED_BLEND,
             );
         }
     }
@@ -637,41 +563,27 @@ fn question_custom_row_hovered(
 fn render_question_scrollbar(
     frame: &mut Frame,
     scrollbar_area: Rect,
-    total_lines: u16,
-    scroll_y: u16,
+    thumb: Rect,
     theme: &Theme,
     surface: Color,
 ) {
-    let visible_lines = scrollbar_area.height;
-    if total_lines <= visible_lines || visible_lines == 0 || scrollbar_area.width == 0 {
-        return;
-    }
-    let thumb_height = visible_lines
-        .saturating_mul(visible_lines)
-        .checked_div(total_lines)
-        .unwrap_or(1)
-        .max(1)
-        .min(visible_lines);
-    let scroll_range = total_lines.saturating_sub(visible_lines);
-    let thumb_range = visible_lines.saturating_sub(thumb_height);
-    let thumb_top = scroll_y
-        .min(scroll_range)
-        .saturating_mul(thumb_range)
-        .checked_div(scroll_range.max(1))
-        .unwrap_or(0);
-    let lines = (0..visible_lines)
+    let lines = (scrollbar_area.y..scrollbar_area.bottom())
         .map(|row| {
-            let symbol = if row >= thumb_top && row < thumb_top.saturating_add(thumb_height) {
+            let symbol = if row >= thumb.y && row < thumb.bottom() {
                 "█"
             } else {
                 " "
             };
             let color = if symbol == "█" {
-                theme.scrollbar.thumb
+                theme.question_prompt.secondary
             } else {
-                theme.scrollbar.track
+                theme.terminal_colors.muted
             };
-            Line::from(Span::styled(symbol, Style::default().fg(color).bg(surface)))
+            let background = if symbol == "█" { color } else { surface };
+            Line::from(Span::styled(
+                symbol,
+                Style::default().fg(color).bg(background),
+            ))
         })
         .collect::<Vec<_>>();
     frame.render_widget(Paragraph::new(Text::from(lines)), scrollbar_area);
@@ -729,44 +641,105 @@ fn permission_prompt_action_line(
     Line::from(spans)
 }
 
-fn permission_feedback_lines(
+fn render_permission_feedback(
+    frame: &mut Frame,
+    panel: Rect,
+    options: Rect,
+    app: &AppState,
+    permission: &ActivePermissionView,
     theme: &Theme,
-    feedback: &PermissionFeedback,
-    available_width: u16,
-    focused: bool,
-) -> (Line<'static>, Option<Line<'static>>) {
-    let marker = theme.live_shell.transcript_glyphs.choice_selected;
-    let label = format!("4 ({marker}) No, feedback: ");
-    let label = if display_width(&label) < usize::from(available_width) {
-        label
-    } else {
-        "4: ".to_string()
+) {
+    let Some(feedback) = app.permission_feedback_for_display(&permission.permission_id) else {
+        return;
     };
-    let width = usize::from(available_width).saturating_sub(display_width(&label));
-    let (before, after) = feedback.visible_parts(width);
-    let style = permission_prompt_option_style(theme, theme.surface.panel_elevated, true);
-    let mut spans = vec![
-        Span::styled(label, style),
-        Span::styled(before.to_owned(), style),
-    ];
-    if feedback.editing && focused && width > 0 {
-        spans.push(Span::styled(" ", style.add_modifier(Modifier::REVERSED)));
+    let selected = app.permission_modal_selection(&permission.permission_id)
+        == PermissionModalSelection::Reject;
+    let focused = app.focus == Focus::Prompt;
+    let top = options.y.saturating_add(3);
+    let height = options.bottom().saturating_sub(top);
+    let editing = selected && feedback.editing;
+    if height == 0 || (!editing && feedback.preview_text().trim().is_empty()) {
+        return;
     }
-    spans.push(Span::styled(after.to_owned(), style));
-    let hint = feedback.editing.then(|| {
-        let hint_width = usize::from(available_width.saturating_sub(2));
-        let label = ["Enter:reject  Esc:back", "Enter:reject", "Enter"]
-            .into_iter()
-            .find(|label| label.len() <= hint_width)
-            .unwrap_or("");
-        Line::from(Span::styled(
-            label,
-            Style::default()
-                .fg(theme.text.secondary)
-                .bg(theme.surface.panel_elevated),
-        ))
-    });
-    (Line::from(spans), hint)
+    let marker = if selected {
+        theme.live_shell.transcript_glyphs.choice_selected
+    } else {
+        theme.live_shell.transcript_glyphs.choice_unselected
+    };
+    let arrow = if theme.glyph_mode() == crate::theme::GlyphMode::Ascii {
+        ">"
+    } else {
+        "❯"
+    };
+    let background = if selected {
+        theme.question_prompt.selected
+    } else {
+        theme.question_prompt.surface
+    };
+    let accent = Style::default()
+        .fg(question_prompt_accent(theme))
+        .bg(background)
+        .remove_modifier(Modifier::BOLD);
+    let text = Style::default()
+        .fg(theme.text.primary)
+        .bg(background)
+        .remove_modifier(Modifier::BOLD);
+    let (rows, cursor) = if editing {
+        feedback.editor_viewport(options.width.saturating_sub(6).max(1), height)
+    } else {
+        (
+            vec![super::truncate_plain_text(feedback.preview_text(), 50)],
+            (0, 0),
+        )
+    };
+    for (index, row) in rows.into_iter().enumerate() {
+        let offset = u16::try_from(index).unwrap_or(u16::MAX);
+        if offset >= height {
+            break;
+        }
+        let y = top.saturating_add(offset);
+        let row_area = Rect::new(
+            options.x,
+            y,
+            options.width.saturating_add(2 * u16::from(editing)),
+            1,
+        );
+        // The numbered placeholder was painted first; remove its glyphs and
+        // modifiers before overlaying a shorter or wrapped feedback line.
+        frame.render_widget(Clear, row_area);
+        frame.render_widget(Block::default().style(text), row_area);
+        if editing {
+            frame.render_widget(
+                Block::default().style(Style::default().bg(background)),
+                Rect::new(panel.x, y, panel.width, 1),
+            );
+            frame.render_widget(
+                Block::default().style(Style::default().bg(theme.markdown.code_background)),
+                Rect::new(panel.right().saturating_sub(1), y, 1, 1),
+            );
+        }
+        let mut spans = if index == 0 {
+            vec![
+                Span::styled("4 ", accent),
+                Span::styled(
+                    format!("({marker}) "),
+                    if selected {
+                        text.add_modifier(Modifier::BOLD)
+                    } else {
+                        text.fg(theme.text.secondary)
+                    },
+                ),
+                Span::styled(format!("{arrow} "), accent),
+            ]
+        } else {
+            vec![Span::styled("        ", text)]
+        };
+        spans.push(Span::styled(row, text));
+        frame.render_widget(Paragraph::new(Line::from(spans)), row_area);
+    }
+    if editing && focused && cursor.0 < height {
+        frame.set_cursor_position((options.x + 8 + cursor.1, top + cursor.0));
+    }
 }
 
 fn permission_prompt_numbered_options(
@@ -784,10 +757,26 @@ fn permission_prompt_numbered_options(
                 theme.live_shell.transcript_glyphs.choice_unselected
             };
             let style = permission_prompt_option_style(theme, surface, *selected);
-            Line::from(vec![Span::styled(
-                format!("{} ({marker}) {label}", index + 1),
-                style,
-            )])
+            let marker_style = if *selected {
+                style.add_modifier(Modifier::BOLD)
+            } else {
+                style.fg(theme.text.secondary)
+            };
+            let label_style = if index == options.len().saturating_sub(1) {
+                style.fg(theme.text.secondary)
+            } else if *selected {
+                style.add_modifier(Modifier::BOLD)
+            } else {
+                style
+            };
+            Line::from(vec![
+                Span::styled(
+                    format!("{} ", index + 1),
+                    style.fg(question_prompt_accent(theme)),
+                ),
+                Span::styled(format!("({marker}) "), marker_style),
+                Span::styled((*label).to_owned(), label_style),
+            ])
         })
         .collect::<Vec<_>>();
     Text::from(lines)
@@ -814,15 +803,6 @@ fn render_permission_numbered_options(
     }
 
     frame.render_widget(Paragraph::new(options_text), area);
-}
-
-fn permission_hint_area(row: Rect) -> Rect {
-    Rect::new(
-        row.x.saturating_add(2),
-        row.y,
-        row.width.saturating_sub(2),
-        row.height,
-    )
 }
 
 fn permission_prompt_option_style(theme: &Theme, surface: Color, selected: bool) -> Style {
@@ -899,7 +879,7 @@ mod semantic_style_tests {
     use super::*;
 
     #[test]
-    fn selected_permission_choice_uses_question_choice_tokens() {
+    fn selected_permission_choice_preserves_its_card_tokens() {
         // arrange
         let theme = Theme::harness_dark();
 
