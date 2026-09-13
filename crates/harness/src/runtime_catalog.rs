@@ -280,8 +280,11 @@ fn normalize_codex_model_variants(model_id: &str, mut cfg: ModelConfig) -> Model
 }
 
 fn codex_reasoning_efforts(model_id: &str) -> Option<&'static [ModelVariantReasoningEffort]> {
-    if model_id == "gpt-6-astra" {
-        return Some(&ASTRA_EFFORTS);
+    if matches!(
+        model_id,
+        "gpt-6-astra" | "gpt-5.6-luna" | "gpt-5.6-terra" | "gpt-5.6-sol"
+    ) {
+        return Some(&LOW_TO_MAX_EFFORTS);
     }
     let minor = gpt5_minor_version(model_id);
     if model_id.contains("-chat") {
@@ -309,7 +312,7 @@ fn codex_reasoning_efforts(model_id: &str) -> Option<&'static [ModelVariantReaso
     None
 }
 
-const ASTRA_EFFORTS: [ModelVariantReasoningEffort; 5] = [
+const LOW_TO_MAX_EFFORTS: [ModelVariantReasoningEffort; 5] = [
     ModelVariantReasoningEffort::Low,
     ModelVariantReasoningEffort::Medium,
     ModelVariantReasoningEffort::High,
@@ -910,7 +913,16 @@ mod tests {
             assert_eq!(codex.models[model_id].limit.context, Some(1_050_000));
             assert_eq!(codex.models[model_id].limit.input, Some(369_384));
             assert_eq!(codex.models[model_id].max_input_tokens, Some(369_384));
-            assert!(codex.models[model_id].variants.contains_key("xhigh"));
+            let efforts = configured_model_catalog(&config)
+                .into_iter()
+                .filter(|entry| entry.model == model_id && entry.variant.is_some())
+                .map(|entry| (entry.variant.unwrap_or_abort(), entry.reasoning_effort))
+                .collect::<BTreeMap<_, _>>();
+            let expected = ["low", "medium", "high", "xhigh", "max"]
+                .into_iter()
+                .map(|effort| (effort.to_string(), Some(effort.to_string())))
+                .collect::<BTreeMap<_, _>>();
+            assert_eq!(efforts, expected, "reasoning variants for {model_id}");
         }
 
         let luna = configured_model_catalog(&config)
