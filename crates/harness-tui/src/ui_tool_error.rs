@@ -36,7 +36,7 @@ pub(super) fn push_failed_tool_error_block(
     let Some(error) = tool_error_text(tool_call) else {
         return;
     };
-    if detail_blocks_surface_error(detail_blocks, &error) {
+    if detail_blocks_surface_error(detail_blocks, &error, tool_call.output_summary.as_deref()) {
         return;
     }
     detail_blocks.push(TranscriptToolCallDetailBlock::Message {
@@ -45,16 +45,25 @@ pub(super) fn push_failed_tool_error_block(
     });
 }
 
-fn detail_blocks_surface_error(blocks: &[TranscriptToolCallDetailBlock], error: &str) -> bool {
+fn detail_blocks_surface_error(
+    blocks: &[TranscriptToolCallDetailBlock],
+    error: &str,
+    summary: Option<&str>,
+) -> bool {
     let error = error.trim();
     blocks.iter().any(|block| match block {
         TranscriptToolCallDetailBlock::Message { text, tone } => {
             *tone == TranscriptToolCallDetailTone::Error && text.trim() == error
         }
-        TranscriptToolCallDetailBlock::BashPanel { output, .. } => output.trim() == error,
-        TranscriptToolCallDetailBlock::FileSection(section) => {
-            detail_blocks_surface_error(&section.detail_blocks, error)
+        TranscriptToolCallDetailBlock::BashPanel { output, .. } => {
+            output.trim() == error || summary.is_some_and(|summary| output.trim() == summary.trim())
         }
+        TranscriptToolCallDetailBlock::FileSection(section) => {
+            detail_blocks_surface_error(&section.detail_blocks, error, summary)
+        }
+        TranscriptToolCallDetailBlock::Recorded(
+            super::ui_recorded_tool_output::RecordedToolOutput::Mcp { error: Some(_), .. },
+        ) => true,
         TranscriptToolCallDetailBlock::ReadOutput { .. }
         | TranscriptToolCallDetailBlock::Markdown { .. }
         | TranscriptToolCallDetailBlock::TodoList { .. }

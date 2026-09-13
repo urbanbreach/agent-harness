@@ -3,6 +3,21 @@ use crate::text::{collapse_inline_whitespace, has_trimmed_content};
 
 use super::ui_tool_metadata::tool_summary_number;
 
+pub(super) fn tool_path_color(theme: &crate::theme::Theme) -> ratatui::style::Color {
+    use ratatui::style::Color;
+    if theme.text.primary == Color::Reset {
+        return Color::Reset;
+    }
+    crate::theme::quantize_color(
+        if theme.is_dark() {
+            Color::Rgb(255, 158, 100)
+        } else {
+            Color::Rgb(195, 105, 30)
+        },
+        theme.color_level(),
+    )
+}
+
 pub(super) fn tool_header_path(path: &str, expanded: bool) -> String {
     let path = std::path::Path::new(path);
     let relative = !path.is_absolute()
@@ -17,6 +32,42 @@ pub(super) fn tool_header_path(path: &str, expanded: bool) -> String {
             .to_string_lossy()
     };
     super::ui_tool_output::safe_tool_text(&display)
+}
+
+/// Search scopes keep their relative path, shortening leading components only
+/// when the query and result summary leave too little space.
+pub(super) fn shorten_search_path(path: &str, budget: usize) -> String {
+    use super::ui_chrome::{display_width, truncate_plain_text};
+    use unicode_segmentation::UnicodeSegmentation;
+
+    if budget == 0 {
+        return String::new();
+    }
+    if display_width(path) <= budget {
+        return path.to_string();
+    }
+    let mut parts = path.split('/').map(str::to_string).collect::<Vec<_>>();
+    for index in 0..parts.len().saturating_sub(1) {
+        if display_width(&parts.join("/")) <= budget {
+            break;
+        }
+        parts[index] = parts[index]
+            .graphemes(true)
+            .next()
+            .unwrap_or_default()
+            .to_string();
+    }
+    let shortened = parts.join("/");
+    if display_width(&shortened) <= budget {
+        return shortened;
+    }
+    for (index, _) in path.match_indices('/') {
+        let tail = format!("…{}", &path[index..]);
+        if display_width(&tail) <= budget {
+            return tail;
+        }
+    }
+    truncate_plain_text(path, budget)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -95,8 +146,21 @@ pub(super) fn read_tool_input_suffix(tool_call: &ToolCallEntry) -> String {
 }
 
 pub(super) fn tool_match_count_description(tool_call: &ToolCallEntry) -> Option<String> {
-    tool_match_count(tool_call)
-        .map(|count| format!("{count} match{}", if count == 1 { "" } else { "es" }))
+    if tool_call.status == crate::app::ToolCallDisplayStatus::Failed {
+        let files = matches!(tool_call.effective_tool_id(), "fs.glob" | "glob")
+            || super::ui_tool_metadata::tool_summary_string(
+                &tool_call.args_summary,
+                &["output_mode"],
+            )
+            .is_some_and(|mode| mode == "files_with_matches");
+        return Some(if files { "(no files)" } else { "(no matches)" }.into());
+    }
+    super::ui_recorded_tool_output::project(tool_call)
+        .and_then(|output| output.search_summary())
+        .or_else(|| {
+            tool_match_count(tool_call)
+                .map(|count| format!("{count} match{}", if count == 1 { "" } else { "es" }))
+        })
 }
 
 fn tool_match_count(tool_call: &ToolCallEntry) -> Option<u64> {

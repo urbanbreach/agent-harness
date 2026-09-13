@@ -1,5 +1,18 @@
 use crate::text::{collapse_inline_whitespace, non_empty_trimmed};
 
+pub(super) fn read_media_mime(tool: &crate::app::ToolCallEntry) -> Option<&str> {
+    if tool.status != crate::app::ToolCallDisplayStatus::Succeeded
+        || !matches!(tool.effective_tool_id(), "read" | "fs.read")
+    {
+        return None;
+    }
+    tool.output_json
+        .as_ref()?
+        .pointer("/attachments/0/mime")?
+        .as_str()
+        .filter(|mime| *mime == "application/pdf" || mime.starts_with("image/"))
+}
+
 pub(super) fn tool_json_string(
     output_json: Option<&serde_json::Value>,
     keys: &[&str],

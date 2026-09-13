@@ -37,23 +37,6 @@ pub(super) fn inline_tool_color(status: ToolCallPresentationStatus, theme: &Them
     }
 }
 
-pub(super) fn task_inline_tool_color(
-    status: ToolCallPresentationStatus,
-    theme: &Theme,
-    clickable_hovered: bool,
-) -> Color {
-    match status {
-        ToolCallPresentationStatus::Waiting => theme.status.warning,
-        ToolCallPresentationStatus::Running | ToolCallPresentationStatus::Queued => {
-            theme.text.primary
-        }
-        ToolCallPresentationStatus::Succeeded if clickable_hovered => theme.text.primary,
-        ToolCallPresentationStatus::Succeeded => theme.text.secondary,
-        ToolCallPresentationStatus::Failed => theme.status.error,
-        ToolCallPresentationStatus::Cancelled => theme.status.disabled,
-    }
-}
-
 pub(super) fn block_tool_color(status: ToolCallPresentationStatus, theme: &Theme) -> Color {
     block_status_color(status, theme, theme.text.primary)
 }

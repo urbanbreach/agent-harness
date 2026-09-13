@@ -103,7 +103,7 @@ pub(super) fn lsp_tool_title(tool_call: &ToolCallEntry) -> String {
 
 pub(super) fn skill_tool_title(tool_call: &ToolCallEntry) -> String {
     let name = tool_summary_string(&tool_call.args_summary, &["name"]).unwrap_or_default();
-    format!("Skill \"{name}\"")
+    format!("Skill {name}")
 }
 
 pub(super) fn local_search_tool_title(tool_call: &ToolCallEntry) -> String {
