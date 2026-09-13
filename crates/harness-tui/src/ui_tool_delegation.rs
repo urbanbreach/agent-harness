@@ -46,27 +46,42 @@ pub(super) fn hidden_delegated_child_request_ids(app: &AppState) -> BTreeSet<&st
     hidden
 }
 
-pub(super) fn agent_spawn_title(tool_call: &ToolCallEntry, description: Option<String>) -> String {
-    let profile = tool_call
-        .output_json
-        .as_ref()
-        .and_then(|value| value.get("profile"))
-        .and_then(serde_json::Value::as_str)
-        .map(collapse_inline_whitespace)
-        .or_else(|| {
-            tool_summary_string(
-                &tool_call.args_summary,
-                &["profile_name", "profile", "subagent_type"],
-            )
-        });
-
-    let label = subagent_profile_label(profile.as_deref().unwrap_or("General"));
-    let background = agent_spawn_is_background(tool_call);
-    match description {
-        Some(description) => format_subagent_title(&label, &description, background),
-        None if background => format!("{label} Task (background)"),
-        None => format!("{label} Task"),
+pub(super) fn agent_spawn_title(
+    tool_call: &ToolCallEntry,
+    description: Option<String>,
+    activity: Option<&str>,
+) -> String {
+    let verb = if agent_spawn_is_background(tool_call) {
+        "started"
+    } else {
+        "running"
+    };
+    let description = description.unwrap_or_default();
+    let persona = tool_summary_string(&tool_call.args_summary, &["persona"]);
+    let role = tool_summary_string(&tool_call.args_summary, &["role"]);
+    let model = tool_summary_string(&tool_call.args_summary, &["model"]);
+    let mut meta = Vec::new();
+    if let Some(persona) = &persona {
+        meta.push(persona.as_str());
     }
+    if let Some(role) = &role {
+        if Some(role) != persona.as_ref() {
+            meta.push(role.as_str());
+        }
+    }
+    if let Some(model) = &model {
+        meta.push(model.as_str());
+    }
+    let suffix = if meta.is_empty() {
+        String::new()
+    } else {
+        format!(" ({})", meta.join(" · "))
+    };
+    let activity = activity
+        .filter(|activity| !activity.is_empty())
+        .map(|activity| format!(" · {}", collapse_inline_whitespace(activity)))
+        .unwrap_or_default();
+    format!("Subagent {verb}: “{description}”{activity}{suffix}")
 }
 
 pub(super) fn agent_spawn_subtitle(_tool_call: &ToolCallEntry) -> Option<String> {
@@ -101,13 +116,6 @@ pub(super) fn subagent_profile_label(profile: &str) -> String {
         previous_was_word = is_word;
     }
     label
-}
-
-fn format_subagent_title(agent: &str, description: &str, background: bool) -> String {
-    format!(
-        "{agent} Task{} — {description}",
-        if background { " (background)" } else { "" }
-    )
 }
 
 pub(super) fn agent_spawn_is_background(tool_call: &ToolCallEntry) -> bool {

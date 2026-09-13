@@ -1,7 +1,7 @@
 // allow: SIZE_OK — TUI tool path rendering (indivisible view model)
 use std::path::Path;
 
-use ratatui::style::Style;
+use ratatui::style::{Modifier, Style};
 
 use crate::app::{PermissionEntry, ToolCallEntry};
 use crate::text::collapse_inline_whitespace;
@@ -14,13 +14,13 @@ pub(super) struct TranscriptQuestionAnswerItem {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct TranscriptTodoItem {
-    pub(super) content: String,
-    pub(super) status: TranscriptTodoStatus,
+pub(crate) struct TranscriptTodoItem {
+    pub(crate) content: String,
+    pub(crate) status: TranscriptTodoStatus,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum TranscriptTodoStatus {
+pub(crate) enum TranscriptTodoStatus {
     Pending,
     InProgress,
     Completed,
@@ -75,7 +75,7 @@ fn first_question_subject(
     })
 }
 
-pub(super) fn todo_items_from_tool_call(
+pub(crate) fn todo_items_from_tool_call(
     tool_call: &ToolCallEntry,
     session_path: Option<&Path>,
 ) -> Vec<TranscriptTodoItem> {
@@ -156,7 +156,7 @@ fn todo_items_from_array(todos: &[serde_json::Value]) -> Option<Vec<TranscriptTo
             Some(TranscriptTodoItem { content, status })
         })
         .collect::<Vec<_>>();
-    (!items.is_empty()).then_some(items)
+    Some(items)
 }
 
 fn todo_items_from_embedded_json_fields(
@@ -218,7 +218,16 @@ impl TranscriptTodoStatus {
     }
 
     pub(super) fn content_style(self, theme: &Theme) -> Style {
-        self.style(theme)
+        match self {
+            Self::Pending => Style::default().fg(theme.text.primary),
+            Self::InProgress => Style::default()
+                .fg(theme.text.primary)
+                .add_modifier(Modifier::BOLD),
+            Self::Completed => Style::default().fg(theme.text.tertiary),
+            Self::Cancelled => Style::default()
+                .fg(theme.text.tertiary)
+                .add_modifier(Modifier::CROSSED_OUT),
+        }
     }
 }
 

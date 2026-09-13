@@ -1,23 +1,65 @@
 use crate::app::ToolCallEntry;
 use crate::text::collapse_inline_whitespace;
 
-use super::ui_tool_input::{compact_tool_trigger_subtitle, tool_input_args, tool_input_label};
 use super::ui_tool_metadata::{tool_json_nested_string, tool_json_string, tool_summary_string};
 use super::ui_tool_style::status_label;
 
-pub(super) fn generic_tool_title(tool_call: &ToolCallEntry, tool_id: &str) -> String {
-    let suffix = compact_tool_trigger_subtitle(
-        tool_input_label(&tool_call.args_summary, false),
-        tool_input_args(&tool_call.args_summary, false, &[]),
-    );
-    match suffix {
-        Some(suffix) => format!("{} {}", generic_tool_name(tool_id), suffix),
-        None => generic_tool_name(tool_id),
-    }
+pub(super) fn generic_tool_title(_tool_call: &ToolCallEntry, tool_id: &str) -> String {
+    tool_id.trim().to_string()
 }
 
-fn generic_tool_name(tool_id: &str) -> String {
-    tool_id.trim().to_string()
+pub(super) fn generic_tool_id(tool_id: &str) -> bool {
+    !is_mcp_tool_id(tool_id)
+        && !matches!(
+            tool_id,
+            "fs.read"
+                | "read"
+                | "fs.glob"
+                | "glob"
+                | "fs.grep"
+                | "grep"
+                | "fs.ls"
+                | "list"
+                | "shell.run"
+                | "bash"
+                | "edit.hashline_apply"
+                | "edit.hashline_scan"
+                | "agent.spawn"
+                | "task"
+                | "background_output"
+                | "background_cancel"
+                | "plan_enter"
+                | "plan_exit"
+                | "invalid"
+                | "session_list"
+                | "session_read"
+                | "session_search"
+                | "session_info"
+                | "ast_grep_search"
+                | "ast_grep_replace"
+                | "lsp"
+                | "lsp.rename"
+                | "skill"
+                | "skill.load"
+                | "todo.read"
+                | "todoread"
+                | "todo.write"
+                | "todowrite"
+                | "fs.write"
+                | "write"
+                | "edit"
+                | "apply_patch"
+                | "web.fetch"
+                | "webfetch"
+                | "search.web"
+                | "websearch"
+                | "search.code"
+                | "user.question"
+                | "question"
+                | "tool.batch"
+                | "batch"
+                | "code.lsp"
+        )
 }
 
 pub(super) fn background_output_tool_title(tool_call: &ToolCallEntry) -> String {
@@ -107,19 +149,8 @@ pub(super) fn batch_tool_title(tool_call: &ToolCallEntry) -> String {
 
 pub(super) fn write_tool_title(tool_call: &ToolCallEntry) -> String {
     let path = tool_summary_string(&tool_call.args_summary, &["filePath", "path"]);
-    match tool_call.status {
-        crate::app::ToolCallDisplayStatus::Succeeded => path
-            .map(|path| format!("Created {path}"))
-            .unwrap_or_else(|| "Created".to_string()),
-        crate::app::ToolCallDisplayStatus::Failed => path
-            .map(|path| format!("Write {path}"))
-            .unwrap_or_else(|| "Write".to_string()),
-        crate::app::ToolCallDisplayStatus::PendingPermission
-        | crate::app::ToolCallDisplayStatus::Queued
-        | crate::app::ToolCallDisplayStatus::Running => path
-            .map(|path| format!("Creating {path}"))
-            .unwrap_or_else(|| "Creating file...".to_string()),
-    }
+    path.map(|path| format!("Creating {path}"))
+        .unwrap_or_else(|| "Creating".to_string())
 }
 
 pub(super) fn edit_tool_title(tool_call: &ToolCallEntry) -> String {
@@ -130,6 +161,15 @@ pub(super) fn edit_tool_title(tool_call: &ToolCallEntry) -> String {
 
 pub(super) fn mcp_tool_title(tool_call: &ToolCallEntry, display_tool_id: &str) -> String {
     mcp_display_name(tool_call, display_tool_id)
+        .split(['_', ' '])
+        .map(|word| {
+            let mut chars = word.chars();
+            chars.next().map_or_else(String::new, |first| {
+                first.to_uppercase().chain(chars).collect()
+            })
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn mcp_display_name(tool_call: &ToolCallEntry, display_tool_id: &str) -> String {
