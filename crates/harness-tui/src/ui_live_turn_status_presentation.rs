@@ -1,7 +1,7 @@
 use ratatui::style::Style;
 
 use crate::{
-    app::{ActivityEntry, LiveTurnWatchers, ToolCallDisplayStatus},
+    app::{ActivityEntry, LiveTurnPhase, LiveTurnWatchers},
     theme::Theme,
 };
 
@@ -86,32 +86,26 @@ impl LiveTurnStatus {
         }
     }
 
-    pub(super) fn from_activity(activity: &ActivityEntry, theme: &Theme) -> Self {
-        if let Some(retry) = activity
-            .request_data
-            .as_ref()
-            .and_then(|request| request.metadata.as_ref())
-            .and_then(|metadata| metadata.retry)
-            .filter(|retry| retry.attempt > 0)
-        {
+    pub(super) fn from_activity(
+        activity: &ActivityEntry,
+        (phase, started): (LiveTurnPhase, u64),
+        theme: &Theme,
+    ) -> Self {
+        let elapsed = Some(activity.last_mono_ms.saturating_sub(started));
+        if let LiveTurnPhase::Retrying(attempt) = phase {
             return Self {
-                label: format!("Retrying (attempt {})…", retry.attempt),
+                label: format!("Retrying (attempt {attempt})…"),
                 style: Style::default().fg(theme.status.warning),
-                phase_elapsed_ms: activity
-                    .request_started_mono_ms
-                    .map(|started| activity.last_mono_ms.saturating_sub(started)),
+                phase_elapsed_ms: elapsed,
                 shows_phase_timer: true,
                 allows_stop: true,
                 allows_send_now: false,
             };
         }
 
-        if let Some(tool) = activity
-            .tool_calls
-            .iter()
-            .rev()
-            .find(|tool| tool.status == ToolCallDisplayStatus::Running)
-        {
+        if let Some(tool) = activity.tool_calls.iter().find(
+            |tool| matches!(&phase, LiveTurnPhase::ToolRunning(id) if id == &tool.tool_call_id),
+        ) {
             let (label, style, phase_elapsed_ms) = match tool.effective_tool_id() {
                 "question" | "user.question" => (
                     "Waiting on answers".to_string(),
@@ -147,30 +141,24 @@ impl LiveTurnStatus {
             };
         }
 
-        if !activity.transcript_text.is_empty() {
-            return Self {
-                label: "Responding…".to_string(),
-                style: Style::default().fg(theme.live_turn_activity_color()),
-                phase_elapsed_ms: activity.responding_duration_ms(),
-                shows_phase_timer: true,
-                allows_stop: true,
-                allows_send_now: false,
-            };
+        let label = match phase {
+            LiveTurnPhase::Thinking => "Thinking…".to_string(),
+            LiveTurnPhase::Responding => "Responding…".to_string(),
+            // The normalized tool-input delta has no tool name until ToolCallRequested.
+            LiveTurnPhase::WritingToolCall { ordinal, .. } => {
+                if ordinal > 1 {
+                    format!("Preparing tool call ({ordinal})…")
+                } else {
+                    "Preparing tool call…".to_string()
+                }
+            }
+            _ => "Waiting for response…".to_string(),
+        };
+        Self {
+            label,
+            phase_elapsed_ms: elapsed,
+            ..Self::waiting(theme)
         }
-
-        if !activity.thinking_text.trim().is_empty() {
-            let phase_elapsed_ms = activity.thinking_duration_ms();
-            return Self {
-                label: "Thinking…".to_string(),
-                style: Style::default().fg(theme.live_turn_activity_color()),
-                phase_elapsed_ms,
-                shows_phase_timer: true,
-                allows_stop: true,
-                allows_send_now: false,
-            };
-        }
-
-        Self::waiting(theme)
     }
 }
 

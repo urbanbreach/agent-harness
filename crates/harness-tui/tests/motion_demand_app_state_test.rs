@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use harness_core::event::{
     EventV1, ProviderReasoningDeltaEvent, ProviderRequestStartedEvent, ProviderStreamDeltaEvent,
+    ToolCallRequestedEvent,
 };
 use harness_tui::app::{AppState, Focus};
 use harness_tui::scheduling::{DualClock, MotionCadence, RuntimePacer};
@@ -34,6 +35,23 @@ fn app_routes_startup_and_streaming_to_distinct_visible_cadences() {
     assert_eq!(
         streaming_plan.cadence(),
         MotionCadence::Slow(Duration::from_millis(133))
+    );
+
+    // Commands pulse from arrival, before the executor's separate started event.
+    let mut queued = streaming;
+    queued.ingest_event(envelope(
+        3,
+        EventV1::ToolCallRequested(ToolCallRequestedEvent {
+            tool_call_id: "queued-command".into(),
+            tool_id: "bash".into(),
+            args_summary: r#"{"command":"printf ready"}"#.into(),
+            args_digest: "queued-command".into(),
+            metadata: None,
+        }),
+    ));
+    assert_eq!(
+        queued.motion_plan_for_evidence().cadence(),
+        MotionCadence::Fast(Duration::from_millis(33))
     );
 }
 
@@ -123,7 +141,7 @@ fn wall_clock_sampling_is_independent_of_intermediate_polls() {
 }
 
 #[test]
-fn semantic_epoch_survives_same_phase_delta_and_restarts_on_transition() {
+fn shared_animation_clock_survives_deltas_and_phase_transitions() {
     // arrange
     // Given: a request has entered reasoning and accumulated wall-clock phase.
     let mut app = streaming_app();
@@ -159,19 +177,21 @@ fn semantic_epoch_survives_same_phase_delta_and_restarts_on_transition() {
     app.advance_wall_clock_for_motion_evidence(Duration::ZERO);
 
     // act
-    // Then: same-phase input retains its epoch and the semantic transition resets it.
+    // Then: a semantic transition requests a redraw without rewinding the shared wave.
     // assert
     assert_eq!(repeated_phase, reasoning_phase);
     assert_eq!(repeated_revision, reasoning_revision);
-    assert_eq!(app.animation_phase(), 0);
+    assert_eq!(app.animation_phase(), reasoning_phase);
+    assert!(app.motion_revision_for_evidence() > reasoning_revision);
 }
 
 #[test]
-fn new_request_restarts_epoch_and_focus_transition_is_immediate() {
+fn new_request_preserves_shared_animation_clock_and_focus_transition_is_immediate() {
     // arrange
     // Given: one request has accumulated motion and an idle shell changes focus.
     let mut active = streaming_app();
     active.advance_wall_clock_for_motion_evidence(Duration::from_millis(99));
+    let phase = active.animation_phase();
     let mut idle = AppState::new_live(None, false, None);
     idle.focus = Focus::Details;
 
@@ -190,8 +210,8 @@ fn new_request_restarts_epoch_and_focus_transition_is_immediate() {
     active.advance_wall_clock_for_motion_evidence(Duration::ZERO);
 
     // act
-    // Then: the new semantic identity restarts while focus owns no motion demand.
+    // Then: starting another request preserves existing animation and idle focus owns no motion.
     // assert
-    assert_eq!(active.animation_phase(), 0);
+    assert_eq!(active.animation_phase(), phase);
     assert!(idle.motion_plan_for_evidence().is_none());
 }

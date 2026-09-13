@@ -195,7 +195,7 @@ impl AppState {
                         && activity
                             .tool_calls
                             .iter()
-                            .any(|tool| tool.status == ToolCallDisplayStatus::Running)))
+                            .any(super::ToolCallEntry::has_execution_motion)))
         })
     }
 

@@ -37,7 +37,11 @@ mod event_ingest;
 mod live_lifecycle;
 mod live_orchestration;
 mod live_tool;
+mod live_turn_phase;
 mod settled_presentation;
+
+pub(crate) use live_turn_phase::LiveTurnPhase;
+use live_turn_phase::ProviderPhase;
 
 use self::background_notification::{
     activity_is_background_notification_reminder, background_task_notification_text,
@@ -73,7 +77,16 @@ impl LiveTurnWatchers {
 struct TransientAssistantState {
     text_start: usize,
     reasoning_start: usize,
+    reasoning_first_seq: Option<u64>,
     tool_call_ids: BTreeSet<String>,
+    text_first_seq: Option<u64>,
+}
+
+#[derive(Debug)]
+struct ReasoningTiming {
+    first_seq: u64,
+    started_mono_ms: u64,
+    finished_mono_ms: Option<u64>,
 }
 
 #[derive(Default)]
@@ -141,6 +154,8 @@ pub struct SessionProjection {
     fallback_profile_label: String,
     seen_seqs: BTreeSet<u64>,
     transient_assistants: BTreeMap<String, TransientAssistantState>,
+    provider_phases: BTreeMap<String, ProviderPhase>,
+    reasoning_timings: BTreeMap<u64, ReasoningTiming>,
     pub(crate) pending_permissions: BTreeMap<String, PendingPermission>,
     pub(crate) run_terminal_seen: bool,
     pub(crate) pending_status_notice: Option<String>,
@@ -167,6 +182,8 @@ impl SessionProjection {
         self.terminal_elapsed_ms.clear();
         self.seen_seqs.clear();
         self.transient_assistants.clear();
+        self.provider_phases.clear();
+        self.reasoning_timings.clear();
         self.pending_permissions.clear();
         self.run_terminal_seen = false;
         self.events_trimmed_count = 0;
@@ -265,19 +282,32 @@ impl SessionProjection {
             return;
         };
 
+        self.update_phase_for_live_fragment(event, activity_index);
+
         let activity = &self.activities[activity_index];
         self.transient_assistants
             .entry(provider_request_id.to_string())
             .or_insert_with(|| TransientAssistantState {
                 text_start: activity.transcript_text.len(),
                 reasoning_start: activity.thinking_text.len(),
+                reasoning_first_seq: None,
                 tool_call_ids: BTreeSet::new(),
+                text_first_seq: None,
             });
 
+        if matches!(&event.payload, LiveEventV1::ProviderTextDelta { delta, .. } if !delta.is_empty())
+        {
+            self.finish_live_reasoning(provider_request_id, event.mono_ms);
+        }
         let activity = &mut self.activities[activity_index];
         activity.status = ActivityStatus::Streaming;
         match &event.payload {
             LiveEventV1::ProviderTextDelta { delta, .. } => {
+                if !delta.is_empty() {
+                    if let Some(state) = self.transient_assistants.get_mut(provider_request_id) {
+                        state.text_first_seq.get_or_insert(activity.last_seq);
+                    }
+                }
                 if activity.transcript_text.is_empty() && activity.tool_calls.is_empty() {
                     activity.finish_thinking_mono(event.mono_ms);
                 }
@@ -285,6 +315,18 @@ impl SessionProjection {
                 activity.transcript_text.push_str(delta);
             }
             LiveEventV1::ProviderReasoningDelta { delta, .. } => {
+                if !delta.is_empty() {
+                    if let Some(state) = self.transient_assistants.get_mut(provider_request_id) {
+                        let seq = *state.reasoning_first_seq.get_or_insert(activity.last_seq);
+                        self.reasoning_timings
+                            .entry(seq)
+                            .or_insert(ReasoningTiming {
+                                first_seq: seq,
+                                started_mono_ms: event.mono_ms,
+                                finished_mono_ms: None,
+                            });
+                    }
+                }
                 activity.thinking_text.push_str(delta);
                 activity.note_thinking_mono(event.mono_ms);
             }
@@ -304,6 +346,7 @@ impl SessionProjection {
                     tool_call.last_timestamp.clone_from(&event.ts);
                 } else {
                     activity.tool_calls.push(ToolCallEntry {
+                        hook_executions: Vec::new(),
                         tool_call_id: tool_call_id.to_string(),
                         tool_id: "tool".to_string(),
                         canonical_tool_id: None,
@@ -346,6 +389,42 @@ impl SessionProjection {
     }
 
     pub(crate) fn ingest_event(&mut self, event: EventEnvelopeV1, historical: bool) -> usize {
+        match &event.payload {
+            EventV1::ToolCallRequested(_) => {
+                let request_id = self
+                    .activities
+                    .iter()
+                    .rev()
+                    .find(|activity| {
+                        event
+                            .correlation_id
+                            .as_deref()
+                            .is_none_or(|id| id == activity.request_id)
+                    })
+                    .and_then(|activity| activity.request_data.as_ref())
+                    .map(|request| request.request_id.to_string());
+                if let Some(request_id) = request_id {
+                    self.finish_live_reasoning(&request_id, event.mono_ms);
+                }
+            }
+            EventV1::ProviderRequestFinished(data) => {
+                self.finish_live_reasoning(data.request_id.as_str(), event.mono_ms);
+            }
+            _ => {}
+        }
+        if let EventV1::AssistantMessageFinished(data) = &event.payload {
+            self.finish_live_reasoning(data.request_id.as_str(), event.mono_ms);
+            if let Some(seq) = self
+                .transient_assistants
+                .remove(data.request_id.as_str())
+                .and_then(|state| state.reasoning_first_seq)
+            {
+                if let Some(timing) = self.reasoning_timings.remove(&seq) {
+                    // The durable block replaces the live block without restarting its clock.
+                    self.reasoning_timings.insert(event.seq, timing);
+                }
+            }
+        }
         self.unsettled_durable_events.push(event.clone());
         let should_settle = canonical_projection_update_for_event(&event.payload)
             == CanonicalProjectionUpdate::Settle;
@@ -354,6 +433,44 @@ impl SessionProjection {
             self.transcript_delta = ProjectionDelta::FullRebuild;
         }
         trimmed
+    }
+
+    fn finish_live_reasoning(&mut self, request_id: &str, mono_ms: u64) {
+        if let Some(timing) = self
+            .transient_assistants
+            .get(request_id)
+            .and_then(|state| state.reasoning_first_seq)
+            .and_then(|seq| self.reasoning_timings.get_mut(&seq))
+        {
+            timing.finished_mono_ms.get_or_insert(mono_ms);
+        }
+    }
+
+    pub(crate) fn reasoning_duration_at_seq(&self, seq: u64) -> Option<u64> {
+        let timing = self.reasoning_timings.get(&seq)?;
+        timing
+            .finished_mono_ms
+            .map(|end| end.saturating_sub(timing.started_mono_ms))
+    }
+
+    pub(crate) fn reasoning_source_seq(&self, seq: u64) -> u64 {
+        self.reasoning_timings
+            .get(&seq)
+            .map_or(seq, |timing| timing.first_seq)
+    }
+
+    pub(crate) fn uncommitted_text_first_seq(&self, activity: &ActivityEntry) -> Option<u64> {
+        let request = activity.request_data.as_ref()?;
+        self.transient_assistants
+            .get(request.request_id.as_str())?
+            .text_first_seq
+    }
+
+    pub(crate) fn uncommitted_reasoning_first_seq(&self, activity: &ActivityEntry) -> Option<u64> {
+        let request = activity.request_data.as_ref()?;
+        self.transient_assistants
+            .get(request.request_id.as_str())?
+            .reasoning_first_seq
     }
 
     pub(crate) fn ingest_transient_view_event(
@@ -379,6 +496,7 @@ impl SessionProjection {
         event: EventEnvelopeV1,
         historical: bool,
     ) -> usize {
+        self.update_phase_for_event(&event);
         self.seen_seqs.insert(event.seq);
         self.transcript_delta = if historical {
             ProjectionDelta::ReplayPending
@@ -857,6 +975,7 @@ impl SessionProjection {
         };
 
         let mut tool_entry = ToolCallEntry {
+            hook_executions: Vec::new(),
             tool_call_id: tool_call_id.to_string(),
             tool_id: "user.question".to_string(),
             canonical_tool_id: Some("user.question".to_string()),
@@ -1278,6 +1397,9 @@ impl SessionProjection {
         if self.events.len() > max_events {
             let to_remove = self.events.len() - max_events;
             self.events.drain(0..to_remove);
+            if let Some(oldest) = self.events.first() {
+                self.reasoning_timings.retain(|seq, _| *seq >= oldest.seq);
+            }
             self.events_trimmed_count += to_remove;
             to_remove
         } else {
@@ -1286,6 +1408,11 @@ impl SessionProjection {
     }
 
     fn enforce_transcript_memory_cap(&mut self) {
+        self.provider_phases.retain(|request_id, _| {
+            self.activities.iter().any(|activity| {
+                activity.request_id == *request_id && activity.status == ActivityStatus::Streaming
+            })
+        });
         let max_chars = self.memory_caps.max_transcript_chars;
         let total_chars: usize = self
             .activities

@@ -7,6 +7,7 @@ impl SessionProjection {
         event: &EventEnvelopeV1,
         historical: bool,
     ) {
+        self.update_phase_for_event(event);
         if let Some(fragment) = canonical_provider_fragment_for_event(event) {
             self.update_compatibility_provider_fragment(event, fragment);
             return;

@@ -60,6 +60,7 @@ impl std::fmt::Display for ToolCallDisplayStatus {
 
 #[derive(Debug, Clone)]
 pub struct ToolCallEntry {
+    pub hook_executions: Vec<harness_core::event::HookExecutionMetadata>,
     pub tool_call_id: String,
     pub tool_id: String,
     pub canonical_tool_id: Option<String>,
@@ -122,6 +123,12 @@ pub struct EditEntry {
 }
 
 impl ToolCallEntry {
+    pub(crate) fn has_execution_motion(&self) -> bool {
+        self.status == ToolCallDisplayStatus::Running
+            || (self.status == ToolCallDisplayStatus::Queued
+                && matches!(self.effective_tool_id(), "bash" | "shell.run"))
+    }
+
     pub fn duration_ms(&self) -> Option<u64> {
         self.timing_elapsed_ms.or_else(|| {
             (self.last_mono_ms >= self.first_mono_ms)
@@ -362,6 +369,11 @@ pub(in crate::app) fn merge_tool_call_metadata(
             entry.artifact_refs.push(artifact);
         }
     }
+    for hook in &metadata.hook_executions {
+        if !entry.hook_executions.contains(hook) {
+            entry.hook_executions.push(hook.clone());
+        }
+    }
 }
 
 pub(in crate::app) fn merge_resolved_tool_identity(
@@ -425,6 +437,7 @@ mod presentation_tests {
 
     fn tool_call(tool_id: &str) -> ToolCallEntry {
         ToolCallEntry {
+            hook_executions: Vec::new(),
             tool_call_id: "tool-call".to_string(),
             tool_id: tool_id.to_string(),
             canonical_tool_id: None,

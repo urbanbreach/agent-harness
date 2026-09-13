@@ -791,6 +791,7 @@ fn runtime_tool_identity_fixture(status: ToolCallDisplayStatus) -> ActivityEntry
         error_message: None,
         permissions: Vec::new(),
         tool_calls: vec![crate::app::ToolCallEntry {
+            hook_executions: Vec::new(),
             tool_call_id: "tc_task".to_string(),
             tool_id: "task".to_string(),
             canonical_tool_id: Some("agent.spawn".to_string()),

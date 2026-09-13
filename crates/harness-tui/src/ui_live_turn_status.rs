@@ -76,7 +76,7 @@ pub(super) fn render_live_turn_status(
                     if parked {
                         LiveTurnStatus::parked(watchers, theme)
                     } else {
-                        LiveTurnStatus::from_activity(entry, theme)
+                        LiveTurnStatus::from_activity(entry, app.live_turn_phase(entry), theme)
                     }
                 },
             ),
@@ -230,7 +230,8 @@ pub(super) fn render_live_turn_status(
         .saturating_sub(right_width)
         .saturating_sub(usize::from(right_width > 0))
         .saturating_sub(fixed_left_width);
-    let label = truncate_plain_text(&status.label, label_width.max(1));
+    let label = truncate_plain_text(&status.label, label_width);
+    let has_label = !label.is_empty();
 
     frame.render_widget(
         Block::default().style(Style::default().bg(theme.live_turn_background_color())),
@@ -244,7 +245,9 @@ pub(super) fn render_live_turn_status(
     let mut left_spans = vec![Span::styled(format!("{spinner} "), spinner_style)];
     left_spans.push(Span::styled(label, status.style));
     if !phase.is_empty() {
-        left_spans.push(Span::raw(" "));
+        if has_label {
+            left_spans.push(Span::raw(" "));
+        }
         left_spans.push(Span::styled(
             phase,
             Style::default()

@@ -183,6 +183,10 @@ impl SessionProjection {
         apply_canonical_edits(canonical, &mut settled_activities);
 
         merge_presentation_enrichment(&mut settled_activities, &presentation_enrichment);
+        self.restore_uncommitted_assistant_suffixes(
+            &presentation_enrichment,
+            &mut settled_activities,
+        );
         merge_orchestration_presentation(&mut orchestration_tasks, &presentation_orchestration);
         let mut activities = settled_activities;
         apply_turn_terminals(
@@ -235,6 +239,47 @@ impl SessionProjection {
         }
         self.enforce_transcript_memory_cap();
         self.transcript_delta = ProjectionDelta::FullRebuild;
+    }
+    fn restore_uncommitted_assistant_suffixes(
+        &self,
+        presentation_enrichment: &VecDeque<ActivityEntry>,
+        settled_activities: &mut VecDeque<ActivityEntry>,
+    ) {
+        // A provider finish or another durable tool update can settle before
+        // the assistant commit. Keep its live suffix on screen until that
+        // commit replaces it; otherwise every tool below it jumps up and back.
+        for (request_id, transient) in &self.transient_assistants {
+            let Some(previous) = presentation_enrichment.iter().find(|activity| {
+                activity
+                    .request_data
+                    .as_ref()
+                    .is_some_and(|request| request.request_id.as_str() == request_id)
+            }) else {
+                continue;
+            };
+            let Some(activity) = settled_activities
+                .iter_mut()
+                .find(|activity| activity.request_id == previous.request_id)
+            else {
+                continue;
+            };
+            if let Some(text) = previous.transcript_text.get(transient.text_start..) {
+                activity.transcript_text.push_str(text);
+            }
+            if let Some(reasoning) = previous.thinking_text.get(transient.reasoning_start..) {
+                activity.thinking_text.push_str(reasoning);
+            }
+            for tool in &previous.tool_calls {
+                if transient.tool_call_ids.contains(&tool.tool_call_id)
+                    && !activity
+                        .tool_calls
+                        .iter()
+                        .any(|existing| existing.tool_call_id == tool.tool_call_id)
+                {
+                    activity.tool_calls.push(tool.clone());
+                }
+            }
+        }
     }
 }
 

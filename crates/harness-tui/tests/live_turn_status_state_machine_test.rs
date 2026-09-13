@@ -2,10 +2,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use harness_core::event::{
-    ActorKind, EventActor, EventEnvelopeV1, EventV1, ProviderRequestStartedEvent,
-    ProviderStreamDeltaEvent, TaskCancelledEvent, TaskScheduleState, TaskScheduledEvent,
-    TaskTerminalScope, ToolCallRequestedEvent, ToolCallStartedEvent, UserMessageSubmittedEvent,
-    SCHEMA_VERSION,
+    ActorKind, EventActor, EventEnvelopeV1, EventV1, LiveEventEnvelope,
+    ProviderRequestStartedEvent, ProviderStreamDeltaEvent, RuntimeEvent, TaskCancelledEvent,
+    TaskScheduleState, TaskScheduledEvent, TaskTerminalScope, ToolCallRequestedEvent,
+    ToolCallStartedEvent, UserMessageSubmittedEvent, SCHEMA_VERSION,
 };
 use harness_tui::app::AppState;
 use harness_tui::layout::FrameLayoutPlan;
@@ -15,6 +15,159 @@ use ratatui::layout::Rect;
 
 const HEIGHT: u16 = 30;
 const WIDE_WIDTH: u16 = 100;
+
+#[test]
+fn footer_tracks_current_provider_phase_across_tools_and_multiple_responses() {
+    use serde_json::json;
+
+    // Earlier answer/reasoning text remains in the transcript across provider requests.
+    // Both normalized live streams and legacy replay fragments must describe the current phase.
+    for live in [false, true] {
+        let mut app = active_app();
+        app.freeze_animation_clock();
+        let mut seq = 4;
+        let mut tick = 4;
+        let mut apply = |kind: &str, data: serde_json::Value, label: &str, elapsed: &str| {
+            tick += 1;
+            let fragment = kind.ends_with("_delta");
+            let payload = json!({"event_type": kind, "data": data});
+            if fragment && live {
+                let event: LiveEventEnvelope = serde_json::from_value(json!({
+                    "event_id": format!("live-{tick}"), "run_id": "run_live_turn_status",
+                    "mono_ms": tick * 1000, "actor": {"kind": "worker"},
+                    "correlation_id": "req_live_turn_status", "payload": payload,
+                }))
+                .expect("valid live fixture");
+                app.ingest_runtime_event(RuntimeEvent::Live(Box::new(event)));
+            } else {
+                seq += 1;
+                let mut payload = payload;
+                if kind == "provider_text_delta" {
+                    payload["event_type"] = json!("provider_stream_delta");
+                }
+                let mut event = envelope(
+                    seq,
+                    "req_live_turn_status",
+                    serde_json::from_value(payload).expect("valid durable fixture"),
+                );
+                event.mono_ms = tick * 1000;
+                app.ingest_event(event);
+                assert_eq!(app.canonical_projection_error(), None);
+            }
+            app.advance_wall_clock_for_motion_evidence(Duration::from_millis(500));
+            let row = status_text(&app, WIDE_WIDTH).expect("active footer");
+            assert!(
+                row.contains(&format!("{label} {elapsed}")),
+                "live={live}, event={kind}: {row}"
+            );
+        };
+        let start = |id| {
+            json!({"request_id": id, "provider_id": "mock", "model_id": "model-status",
+            "prompt_summary": "Synthetic status transition", "request_digest": "synthetic"})
+        };
+        apply(
+            "provider_request_started",
+            start("provider-2"),
+            "Waiting for response…",
+            "0.5s",
+        );
+        apply(
+            "provider_reasoning_delta",
+            json!({"request_id":"provider-2","delta":"**Checking**"}),
+            "Thinking…",
+            "0.5s",
+        );
+        apply(
+            "provider_reasoning_delta",
+            json!({"request_id":"provider-2","delta":"\n\n**Verifying**"}),
+            "Thinking…",
+            "1.0s",
+        );
+        if live {
+            apply(
+                "provider_tool_input_delta",
+                json!({"request_id":"provider-2","tool_call_id":"tool-current","delta":"{"}),
+                "Preparing tool call…",
+                "0.5s",
+            );
+            apply(
+                "provider_tool_input_delta",
+                json!({"request_id":"provider-2","tool_call_id":"tool-current","delta":"}"}),
+                "Preparing tool call…",
+                "1.0s",
+            );
+        }
+        apply(
+            "tool_call_requested",
+            json!({"tool_call_id":"tool-current","tool_id":"read","args_summary":"{}","args_digest":"synthetic"}),
+            "Waiting for response…",
+            "0.5s",
+        );
+        apply(
+            "tool_call_started",
+            json!({"tool_call_id":"tool-current"}),
+            "Run read",
+            "0.5s",
+        );
+        apply(
+            "provider_request_finished",
+            json!({"request_id":"provider-2","finish_reason":"tool_calls"}),
+            "Run read",
+            "1.0s",
+        );
+        apply(
+            "assistant_message_finished",
+            json!({"request_id":"provider-2","parts":[
+            {"kind":"reasoning","text":"**Checking**\n\n**Verifying**"},
+            {"kind":"tool_call","tool_call_id":"tool-current","tool_id":"read","args_summary":"{}","args_digest":"synthetic"}
+        ],"tool_call_count":1}),
+            "Run read",
+            "1.5s",
+        );
+        apply(
+            "tool_call_finished",
+            json!({"tool_call_id":"tool-current","status":"succeeded","output_summary":"Synthetic result","output_digest":"synthetic"}),
+            "Waiting for response…",
+            "0.5s",
+        );
+        apply(
+            "provider_request_started",
+            start("provider-3"),
+            "Waiting for response…",
+            "1.0s",
+        );
+        apply(
+            "provider_reasoning_delta",
+            json!({"request_id":"provider-3","delta":""}),
+            "Waiting for response…",
+            "1.5s",
+        );
+        apply(
+            "provider_reasoning_delta",
+            json!({"request_id":"provider-3","delta":"**Reviewing**"}),
+            "Thinking…",
+            "0.5s",
+        );
+        apply(
+            "provider_text_delta",
+            json!({"request_id":"provider-3","delta":"The check is complete."}),
+            "Responding…",
+            "0.5s",
+        );
+        apply(
+            "provider_text_delta",
+            json!({"request_id":"provider-3","delta":" Verified."}),
+            "Responding…",
+            "1.0s",
+        );
+        apply(
+            "provider_request_finished",
+            json!({"request_id":"provider-3","finish_reason":"stop"}),
+            "Waiting for response…",
+            "0.5s",
+        );
+    }
+}
 
 fn envelope(seq: u64, request_id: &str, payload: EventV1) -> EventEnvelopeV1 {
     EventEnvelopeV1 {

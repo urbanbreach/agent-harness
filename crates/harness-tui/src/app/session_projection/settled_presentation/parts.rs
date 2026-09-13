@@ -96,6 +96,9 @@ pub(super) fn tool_entry(tool: &ProjectedToolCallPart) -> ToolCallEntry {
     let metadata = tool.metadata.as_ref();
     let lifecycle_state = tool_lifecycle(tool.state);
     ToolCallEntry {
+        hook_executions: metadata
+            .map(|value| value.hook_executions.clone())
+            .unwrap_or_default(),
         tool_call_id: tool.tool_call_id.to_string(),
         tool_id: tool.tool_id.clone(),
         canonical_tool_id: metadata.and_then(|value| value.canonical_tool_id.clone()),
