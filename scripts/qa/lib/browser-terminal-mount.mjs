@@ -12,7 +12,7 @@ export async function mountTerminal(page, settings) {
   await page.setContent(`<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(settings.title)}</title></head><body><main id="terminal" aria-label="Harness terminal"></main></body></html>`);
   await page.addStyleTag({ content: `${tokens()}\n${xtermCss}\n@font-face{font-family:"Harness QA Mono";src:url(data:font/ttf;base64,${font}) format("truetype");font-display:block}` });
   await page.addScriptTag({ path: join(xtermRoot, "lib/xterm.js") });
-  await page.evaluate(async ({ cols, rows, initialTitle, hostWidth, hostHeight }) => {
+  await page.evaluate(async ({ cols, rows, initialTitle, hostWidth, hostHeight, captureAllCells }) => {
     await document.fonts.ready;
     await document.fonts.load('16px "Harness QA Mono"');
     const terminal = new Terminal({
@@ -130,7 +130,7 @@ export async function mountTerminal(page, settings) {
       }),
       title: () => latestTitle,
       titleHistory: () => [...titleHistory],
-      snapshot: () => {
+      snapshot: (allCells = captureAllCells) => {
         const buffer = terminal.buffer.active;
         const rows = rowsText();
         const lines = rows.map((text, row) => {
@@ -140,8 +140,20 @@ export async function mountTerminal(page, settings) {
             const cell = line?.getCell(column);
             const chars = cell?.getChars() ?? "";
             const width = cell?.getWidth() ?? 1;
-            if (chars.trim().length > 0 || width !== 1) {
+            if (allCells || chars.trim().length > 0 || width !== 1) {
               const style = { invisible: cell.isInvisible(), fgColor: cell.getFgColor(), bgColor: cell.getBgColor(), fgColorMode: cell.getFgColorMode(), bgColorMode: cell.getBgColorMode(), fgRgb: cell.isFgRGB(), bgRgb: cell.isBgRGB(), fgPalette: cell.isFgPalette(), bgPalette: cell.isBgPalette(), fgDefault: cell.isFgDefault(), bgDefault: cell.isBgDefault() };
+              if (allCells) {
+                Object.assign(style, {
+                  bold: Boolean(cell.isBold()),
+                  dim: Boolean(cell.isDim()),
+                  italic: Boolean(cell.isItalic()),
+                  underline: Boolean(cell.isUnderline()),
+                  blink: Boolean(cell.isBlink()),
+                  inverse: Boolean(cell.isInverse()),
+                  strikethrough: Boolean(cell.isStrikethrough()),
+                  overline: Boolean(cell.isOverline()),
+                });
+              }
               cells.push({ row, column, chars, width, ...style });
             }
           }
@@ -193,6 +205,7 @@ export async function mountTerminal(page, settings) {
     initialTitle: settings.title,
     hostWidth: settings.hostWidth,
     hostHeight: settings.hostHeight,
+    captureAllCells: settings.captureAllCells ?? false,
   });
   await page.waitForFunction(() => document.documentElement.dataset.qaReady === "true", null, { timeout: settings.timeoutMs });
   await page.evaluate((timeoutMs) => window.qaTerminal.waitForVisualSync(timeoutMs), settings.timeoutMs);
