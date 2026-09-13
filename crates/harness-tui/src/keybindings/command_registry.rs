@@ -140,7 +140,7 @@ define_command_metadata! {
     ("show_timestamps", "Show timestamps", "Reveal user message timestamps in the transcript"),
     ("hide_timestamps", "Hide timestamps", "Hide user message timestamps in the transcript"),
     ("show_tool_details", "Show tool details", "Show completed successful tools in the transcript"),
-    ("hide_tool_details", "Hide tool details", "Hide completed successful tools in the transcript"),
+    ("hide_tool_details", "Hide tool details", "Hide automatic tool payload previews"),
     ("show_generic_tool_output", "Show generic tool output", "Expand generic tool payload blocks in the transcript"),
     ("hide_generic_tool_output", "Hide generic tool output", "Collapse generic tool payload blocks in the transcript"),
     ("expand_selected_turn_results", "Expand turn results", "Expand overflow tool output in the selected turn"),
@@ -178,6 +178,7 @@ define_command_metadata! {
     ("delete", "Delete", "Delete the character after the composer cursor"),
     ("toggle_prompt_focus", "Toggle prompt focus", "Switch focus between the composer and transcript"),
     ("toggle_tasks", "Toggle tasks", "Show or hide the task and operator details surface"),
+    ("toggle_todos", "Toggle todos", "Show, focus, or hide the todo pane"),
     ("open_theme_dialog", "Theme", "Open the theme selector"),
     ("open_model_switcher", "Switch model", "Open the model selector"),
     ("first_message", "First message", "Jump to the first transcript message"),
@@ -318,7 +319,7 @@ pub(super) const fn help_category(action: Action) -> Option<HelpCategory> {
         | Action::OpenSessionHistory
         | Action::OpenLineageBrowser
         | Action::AlwaysApprovePermission => Some(HelpCategory::Session),
-        Action::ToggleTasks => Some(HelpCategory::Dashboard),
+        Action::ToggleTasks | Action::ToggleTodos => Some(HelpCategory::Dashboard),
         Action::InterjectPrompt
         | Action::CancelAndReplacePrompt
         | Action::ToggleMultiline
@@ -389,7 +390,8 @@ define_palette_commands! {
     ("resume_session", "resume_session", "resume", PaletteCommandSection::Session),
     ("replay_session", "replay_session", "replay", PaletteCommandSection::Session),
     ("switch_model", "switch_model", "models", PaletteCommandSection::Agent),
-    ("cycle_variant", "cycle_variant", "ctrl+t", PaletteCommandSection::Agent),
+    ("cycle_variant", "cycle_variant", "shift+tab", PaletteCommandSection::Agent),
+    ("toggle_todos", "toggle_todos", "ctrl+t", PaletteCommandSection::Agent),
     ("toggles", "toggles", "toggles", PaletteCommandSection::Agent),
     ("auth", "auth", "auth", PaletteCommandSection::System),
     ("close_review_surface", "close_review_surface", "esc", PaletteCommandSection::Session),

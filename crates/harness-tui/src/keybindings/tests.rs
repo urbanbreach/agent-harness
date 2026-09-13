@@ -412,7 +412,7 @@ fn ws8_keyboard_surfaces_use_registry_actions_instead_of_hardcoded_keys() {
         source_between(
             mouse_interaction_source,
             "fn operator_sidebar_keyboard_active",
-            "    pub(crate) fn set_frame_area",
+            "    pub fn set_frame_area",
         ),
     );
     assert_no_key_checks(
@@ -529,7 +529,7 @@ fn keymap_keeps_focus_prev_on_control_shift_tab() {
 }
 
 #[test]
-fn keymap_binds_shift_tab_and_ctrl_t_to_variant_cycle() {
+fn keymap_keeps_variant_cycle_and_todo_pane_shortcuts_distinct() {
     let keymap = KeyMap::with_defaults();
 
     assert_eq!(
@@ -538,11 +538,11 @@ fn keymap_binds_shift_tab_and_ctrl_t_to_variant_cycle() {
     );
     assert_eq!(
         keymap.get_action(&KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL)),
-        Some(Action::VariantCycle)
+        Some(Action::ToggleTodos)
     );
     let bindings = keymap.get_binding_strs(Action::VariantCycle);
     assert!(
-        bindings.iter().any(|b| b == "Shift+Tab" || b == "Ctrl+t"),
+        bindings.iter().any(|b| b == "Shift+Tab"),
         "variant cycle bindings present: {bindings:?}"
     );
 }
