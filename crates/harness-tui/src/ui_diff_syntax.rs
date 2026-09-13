@@ -36,64 +36,80 @@ pub(super) fn wrap_styled_chunks(
         return vec![Vec::new()];
     }
 
-    let mut lines = vec![Vec::new()];
-    let mut remaining = max_width;
+    let mut text = String::new();
+    let mut styles = Vec::new();
     let mut source_column = 0;
-
     for chunk in chunks {
-        let mut expanded = String::new();
+        let start = text.len();
         for grapheme in chunk.text.graphemes(true) {
             if grapheme == "\t" {
                 let spaces = 4 - source_column % 4;
-                expanded.extend(std::iter::repeat_n(' ', spaces));
+                text.extend(std::iter::repeat_n(' ', spaces));
                 source_column += spaces;
             } else {
-                expanded.push_str(grapheme);
+                text.push_str(grapheme);
                 source_column += display_width(grapheme);
             }
         }
-        let mut rest = expanded.as_str();
-        if rest.is_empty() {
-            continue;
-        }
-
-        loop {
-            if remaining == 0 {
-                lines.push(Vec::new());
-                remaining = max_width;
-            }
-
-            let mut piece = take_width_prefix(rest, remaining);
-            if piece.is_empty() {
-                if remaining < max_width {
-                    lines.push(Vec::new());
-                    remaining = max_width;
-                    continue;
-                }
-                // A double-cell glyph in a one-cell viewport must make progress;
-                // the terminal clips the glyph rather than splitting its bytes.
-                piece = rest.graphemes(true).next().unwrap_or(rest);
-            }
-
-            if let Some(current) = lines.last_mut() {
-                current.push(StyledTextChunk {
-                    text: piece.to_string(),
-                    style: chunk.style,
-                });
-            }
-            remaining = remaining.saturating_sub(display_width(piece));
-            rest = &rest[piece.len()..];
-
-            if rest.is_empty() {
-                break;
-            }
-
-            lines.push(Vec::new());
-            remaining = max_width;
+        if text.len() > start {
+            styles.push((start..text.len(), chunk.style));
         }
     }
 
-    lines
+    // Match Grok's whitespace-inclusive word wrapping before projecting styles:
+    // syntax/intraline span boundaries must never become wrapping boundaries.
+    let mut ranges = Vec::new();
+    let mut start = 0;
+    let mut offset = 0;
+    let mut used = 0;
+    for word in text.split_inclusive(char::is_whitespace) {
+        if used + display_width(word) > max_width && offset > start {
+            ranges.push(start..offset);
+            start = offset;
+            used = 0;
+        }
+        let mut rest = word;
+        while display_width(rest) > max_width {
+            // Unlike the reference's over-width word, retain the whole source
+            // on screen by splitting oversized tokens only at grapheme edges.
+            let mut piece = take_width_prefix(rest, max_width);
+            if piece.is_empty() {
+                // A two-cell glyph in a one-cell viewport must make progress.
+                piece = rest.graphemes(true).next().unwrap_or(rest);
+            }
+            offset += piece.len();
+            ranges.push(start..offset);
+            start = offset;
+            rest = &rest[piece.len()..];
+        }
+        offset += rest.len();
+        used += display_width(rest);
+    }
+    if offset > start || ranges.is_empty() {
+        ranges.push(start..offset);
+    }
+
+    let mut style_index = 0;
+    ranges
+        .into_iter()
+        .map(|range| {
+            let mut row = Vec::new();
+            let mut cursor = range.start;
+            while cursor < range.end {
+                let (source, style) = &styles[style_index];
+                let end = source.end.min(range.end);
+                row.push(StyledTextChunk {
+                    text: text[cursor..end].to_string(),
+                    style: *style,
+                });
+                cursor = end;
+                if cursor == source.end {
+                    style_index += 1;
+                }
+            }
+            row
+        })
+        .collect()
 }
 
 pub(super) fn highlight_diff_line_chunks(

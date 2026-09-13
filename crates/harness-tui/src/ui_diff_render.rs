@@ -9,8 +9,7 @@ use ratatui::{
 use crate::theme::Theme;
 
 use super::super::ui_chrome::{
-    display_width, muted_meta_style, take_width_prefix, transcript_prefix_style,
-    truncate_plain_text,
+    display_width, muted_meta_style, transcript_prefix_style, truncate_plain_text,
 };
 use super::ui_diff_model::{
     DiffCell, DiffSegmentKind, StructuredDiffDisplayRow, StructuredDiffFile, StructuredDiffModel,
@@ -137,29 +136,16 @@ pub(super) fn render_structured_diff_model(
 }
 
 fn wrap_plain_text_lines(text: &str, max_width: usize) -> Vec<String> {
-    if max_width == 0 {
-        return vec![String::new()];
-    }
-    if text.is_empty() {
-        return vec![String::new()];
-    }
-
-    let mut lines = Vec::new();
-    let mut rest = text;
-    while !rest.is_empty() {
-        let piece = take_width_prefix(rest, max_width);
-        if piece.is_empty() {
-            lines.push(String::new());
-            break;
-        }
-        lines.push(piece.to_string());
-        rest = &rest[piece.len()..];
-    }
-
-    if lines.is_empty() {
-        lines.push(String::new());
-    }
-    lines
+    wrap_styled_chunks(
+        &[StyledTextChunk {
+            text: text.to_string(),
+            style: Style::default(),
+        }],
+        max_width,
+    )
+    .into_iter()
+    .map(|chunks| chunks.into_iter().map(|chunk| chunk.text).collect())
+    .collect()
 }
 
 #[expect(
@@ -394,8 +380,13 @@ pub(super) fn diff_marker_style(marker: char, row_bg: Option<Color>, theme: &The
     apply_optional_bg(style, row_bg)
 }
 
-fn diff_line_number_style(_marker: char, row_bg: Option<Color>, theme: &Theme) -> Style {
-    apply_optional_bg(Style::default().fg(theme.text.secondary), row_bg)
+fn diff_line_number_style(marker: char, row_bg: Option<Color>, theme: &Theme) -> Style {
+    let foreground = match marker {
+        '+' => diff_highlight_added(theme),
+        '-' => diff_highlight_removed(theme),
+        _ => theme.text.secondary,
+    };
+    apply_optional_bg(Style::default().fg(foreground), row_bg)
 }
 
 pub(super) fn diff_segment_style(

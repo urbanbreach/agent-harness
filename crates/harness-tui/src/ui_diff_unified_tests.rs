@@ -119,6 +119,15 @@ fn banded_rows_use_one_compact_number_gutter_without_redundant_markers() {
             span.style.bg != Some(diff_row_palette('+', &theme).content_bg)
                 && span.style.bg != Some(diff_row_palette('-', &theme).content_bg)
         }));
+        let number_color = match marker {
+            '-' => theme.terminal_colors.diff_removed_highlight,
+            '+' => theme.terminal_colors.diff_added_highlight,
+            _ => theme.text.secondary,
+        };
+        let area = ratatui::layout::Rect::new(0, 0, 72, 1);
+        let mut buffer = ratatui::buffer::Buffer::empty(area);
+        ratatui::widgets::Widget::render(line, area, &mut buffer);
+        assert_eq!(buffer[(1, 0)].fg, number_color, "{marker} number gutter");
         let content_bg = (marker != ' ').then(|| diff_row_palette(marker, &theme).content_bg);
         assert!(line
             .spans
@@ -239,6 +248,134 @@ fn long_rows_wrap_without_ellipsis_at_wide_and_narrow_widths() {
             rows.iter().all(|row| !row.contains('…')),
             "width {width} rendered {rows:#?}"
         );
+    }
+}
+
+#[test]
+#[expect(
+    clippy::excessive_nesting,
+    reason = "the source reconstruction matrix exercises width, numbering, syntax, and both diff sides"
+)]
+fn diff_body_wraps_at_words_without_changing_source_or_syntax() {
+    let patch_lines = |text: &str, prefix: char| {
+        text.lines().fold(String::new(), |mut output, line| {
+            output.push(prefix);
+            output.push_str(line);
+            output.push('\n');
+            output
+        })
+    };
+    let before = "/* A multiline source scope.\n * old implementation\n */\nfn ready() -> bool {\n    false\n}\n";
+    let after = "/* A multiline source scope.\n * new implementation with a deliberately long explanatory sentence that wraps on narrow terminals\n */\nfn ready() -> bool {\n    true\n}\n";
+    let diff = format!(
+        "--- src/renderer.rs\n+++ src/renderer.rs\n@@ -1,6 +1,6 @@\n{}{}",
+        patch_lines(before, '-'),
+        patch_lines(after, '+'),
+    );
+    // The production 40/80/120-column surface leaves 29/69/109 cells
+    // after its outer padding and diff indent; the compact gutter uses three.
+    for (width, expected) in [
+        (
+            29,
+            vec![
+                " * new implementation ",
+                "with a deliberately long ",
+                "explanatory sentence that ",
+                "wraps on narrow terminals",
+            ],
+        ),
+        (
+            69,
+            vec![
+                " * new implementation with a deliberately long explanatory ",
+                "sentence that wraps on narrow terminals",
+            ],
+        ),
+        (109, vec![after.lines().nth(1).unwrap_or_abort()]),
+    ] {
+        for (plain_numbered, highlight_syntax) in [(false, false), (true, false), (false, true)] {
+            let theme = Theme::default();
+            let lines = render_diff_with_recorded_source(
+                &diff,
+                None,
+                "",
+                width,
+                StructuredDiffRenderOptions {
+                    plain_numbered,
+                    highlight_syntax,
+                    ..unified_options()
+                },
+                &theme,
+                Some(before),
+            )
+            .unwrap_or_abort()
+            .0;
+            let contents = |line: &Line<'static>| {
+                let mut spans = line.spans.iter().skip(3).collect::<Vec<_>>();
+                if spans.last().is_some_and(|span| {
+                    span.style.fg.is_none() && span.content.chars().all(char::is_whitespace)
+                }) {
+                    spans.pop(); // renderer padding, not source whitespace
+                }
+                spans
+                    .into_iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<String>()
+            };
+            let start = lines
+                .iter()
+                .position(|line| contents(line).starts_with(" * new"))
+                .unwrap_or_abort();
+            let end = lines[start + 1..]
+                .iter()
+                .position(|line| !line.spans[1].content.trim().is_empty())
+                .map(|offset| start + 1 + offset)
+                .unwrap_or(lines.len());
+            let comment_rows = &lines[start..end];
+            assert_eq!(
+                comment_rows.iter().map(contents).collect::<Vec<_>>(),
+                expected,
+                "width {width}, numbered {plain_numbered}, syntax {highlight_syntax}"
+            );
+            assert!(lines.iter().all(|line| line.width() == usize::from(width)));
+            for (index, row) in comment_rows.iter().enumerate() {
+                assert_eq!(
+                    row.spans[1].content.trim(),
+                    if index == 0 { "2" } else { "" }
+                );
+            }
+            // Reconstruct both versions from logical lines, retaining all source
+            // whitespace and excluding only gutters and renderer-owned padding.
+            let mut old = String::new();
+            let mut new = String::new();
+            for line in &lines {
+                let bg = line.spans[3].style.bg;
+                let numbered = !line.spans[1].content.trim().is_empty();
+                for (target, excluded) in [
+                    (&mut old, theme.terminal_colors.diff_added),
+                    (&mut new, theme.terminal_colors.diff_removed),
+                ] {
+                    if bg == Some(excluded) {
+                        continue;
+                    }
+                    if numbered && !target.is_empty() {
+                        target.push('\n');
+                    }
+                    target.push_str(&contents(line));
+                }
+            }
+            assert_eq!(old, before.trim_end_matches('\n'));
+            assert_eq!(new, after.trim_end_matches('\n'));
+            if highlight_syntax {
+                let style = lines[0].spans[3].style;
+                assert!(comment_rows
+                    .iter()
+                    .flat_map(|line| line.spans.iter().skip(3))
+                    .filter(|span| span.style.fg.is_some())
+                    .all(|span| span.style.fg == style.fg
+                        && span.style.add_modifier == style.add_modifier));
+            }
+        }
     }
 }
 
