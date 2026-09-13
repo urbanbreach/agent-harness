@@ -1,0 +1,29 @@
+{
+  "schema": "tool-runtime-input-v1",
+  "sizes": [[40, 32], [80, 32], [120, 40]],
+  "command": "printf tool_rows",
+  "description": "Inspect scrollable tool output",
+  "prompt": "Scroll tools",
+  "line_count": 160,
+  "start_offset": 60,
+  "keys": ["k", "j", "u", "d"],
+  "viewer_cases": [
+    {"name": "open", "keys": []},
+    {"name": "read", "family": "read", "keys": []},
+    {"name": "down", "keys": ["Down"]},
+    {"name": "search", "keys": ["/", "l", "i", "n", "e", "_", "1", "2", "0", "Enter"]},
+    {"name": "filter", "keys": ["f", "l", "i", "n", "e", "_", "1", "2", "Enter"]},
+    {"name": "select", "keys": ["v", "Down"]},
+    {"name": "search-editing", "keys": ["/", "l", "i", "n", "e", "_", "1", "2"]},
+    {"name": "filter-editing", "keys": ["f", "l", "i", "n", "e", "_", "1", "2"]},
+    {"name": "regex", "keys": ["/", "L", "I", "N", "E", "_", "1", "2", "[", "0", "-", "3", "]", "Enter"]},
+    {"name": "scroll", "keys": ["Ctrl-j"]},
+    {"name": "reserved-control-d", "keys": ["Ctrl-d"]},
+    {"name": "half-page", "keys": ["PageDown", "Ctrl-u"]},
+    {"name": "page", "keys": ["PageDown"]},
+    {"name": "end", "keys": ["End"]},
+    {"name": "long-wrap", "keys": [], "line_suffix": "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron"},
+    {"name": "long-select", "keys": ["v", "Down"], "line_suffix": "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron"},
+    {"name": "wrap", "keys": ["w"], "line_suffix": "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron"}
+  ]
+}
