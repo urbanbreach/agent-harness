@@ -71,6 +71,7 @@ pub(crate) fn mouse_click_on_task_row_uses_harness_session_metadata() {
         }),
     ));
 
+    open_subagent_group_for_click(&mut app);
     let (column, row) = transcript_click_position(&app, "Smoke test subagent dispatch");
     assert_eq!(
         transcript_mouse_target(&app, TEST_FRAME_AREA, column, row),

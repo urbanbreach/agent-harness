@@ -18,8 +18,9 @@ const DEFAULT_HEIGHT: usize = 24;
 pub struct ViewerState {
     block_id: BlockId,
     content: ViewerBlockContent,
-    display_text: String,
+    pub(super) display_text: String,
     pub(super) styled_lines: Vec<ratatui::text::Line<'static>>,
+    pub(super) row_joiners: Vec<String>,
     theme: crate::theme::Theme,
     return_snapshot: ViewerReturnSnapshot,
     mode: ViewerMode,
@@ -28,6 +29,12 @@ pub struct ViewerState {
     pub(super) wrapped: WrappedText,
     pub(super) selection: Option<SelectionRange>,
     pub(super) cursor: CellPoint,
+    pub(super) body_start: usize,
+    pub(super) close_hovered: bool,
+    pub(super) filter_query: String,
+    pub(super) filter_editing: bool,
+    pub(super) visual_mode: bool,
+    pub(super) wrap_enabled: bool,
     search: SearchState,
     search_editing: bool,
     layout: TranscriptLayout,
@@ -53,6 +60,7 @@ impl ViewerState {
             display_text: content.text(mode).to_string(),
             content,
             styled_lines: Vec::new(),
+            row_joiners: Vec::new(),
             theme: crate::theme::Theme::default(),
             return_snapshot,
             mode,
@@ -61,6 +69,12 @@ impl ViewerState {
             wrapped,
             selection: None,
             cursor: CellPoint::new(0, 0),
+            body_start: 0,
+            close_hovered: false,
+            filter_query: String::new(),
+            filter_editing: false,
+            visual_mode: false,
+            wrap_enabled: true,
             search: SearchState::new(),
             search_editing: false,
             layout,
@@ -130,6 +144,89 @@ impl ViewerState {
         self.height
     }
 
+    pub(crate) fn input_active(&self) -> bool {
+        self.search_editing
+            || !self.search.query().is_empty()
+            || self.filter_editing
+            || !self.filter_query.is_empty()
+    }
+
+    pub(crate) fn filter_editing(&self) -> bool {
+        self.filter_editing
+    }
+    pub(crate) fn filter_query(&self) -> &str {
+        &self.filter_query
+    }
+    pub(crate) fn set_filter_editing(&mut self, editing: bool) {
+        self.filter_editing = editing;
+    }
+    pub(crate) fn set_filter_query(&mut self, query: String) -> Result<(), ViewerError> {
+        self.filter_query = query;
+        self.scroll_top = 0.0;
+        self.rebuild_display()?;
+        self.cursor = CellPoint::new(0, 0);
+        Ok(())
+    }
+    pub(crate) fn toggle_wrap(&mut self) -> Result<(), ViewerError> {
+        self.wrap_enabled = !self.wrap_enabled;
+        self.rebuild_display()
+    }
+    pub(crate) fn toggle_visual(&mut self) {
+        self.visual_mode = !self.visual_mode;
+        if self.visual_mode {
+            let rows = self.logical_rows(self.cursor.row);
+            let end = self
+                .wrapped
+                .select(
+                    CellPoint::new(rows.end - 1, 0),
+                    crate::transcript_selection::SelectionMode::Line,
+                )
+                .focus;
+            self.selection = Some(SelectionRange::new(CellPoint::new(rows.start, 0), end));
+        } else {
+            self.selection = None;
+        }
+    }
+    pub(crate) fn visual_mode(&self) -> bool {
+        self.visual_mode
+    }
+
+    pub(super) fn logical_rows(&self, row: usize) -> std::ops::Range<usize> {
+        let mut start = row;
+        while start > 0
+            && self
+                .row_joiners
+                .get(start - 1)
+                .is_some_and(|joiner| joiner != "\n")
+        {
+            start -= 1;
+        }
+        let mut end = row + 1;
+        while end < self.wrapped.row_count()
+            && self
+                .row_joiners
+                .get(end - 1)
+                .is_some_and(|joiner| joiner != "\n")
+        {
+            end += 1;
+        }
+        start..end
+    }
+    pub(crate) fn quote_text(&self) -> String {
+        self.copy_selection_text()
+            .unwrap_or_else(|_| self.wrapped.row_text(self.cursor.row))
+    }
+    pub(crate) fn command_text(&self) -> Option<String> {
+        match &self.content.preamble {
+            Some(super::ViewerPreamble::Command { command, .. }) => Some(command.clone()),
+            Some(super::ViewerPreamble::Read { path, .. }) => Some(path.clone()),
+            _ => None,
+        }
+    }
+    pub(crate) fn set_close_hovered(&mut self, hovered: bool) {
+        self.close_hovered = hovered;
+    }
+
     pub fn scroll_top(&self) -> usize {
         // The layout only accepts finite, bounded row counts.
         super::render::scroll_offset(self.scroll_top)
@@ -138,10 +235,11 @@ impl ViewerState {
     pub fn reveal_cursor(&mut self) {
         let row = f64::from(u32::try_from(self.cursor.row).unwrap_or(u32::MAX));
         let height = f64::from(u32::try_from(self.height).unwrap_or(u32::MAX));
-        if row < self.scroll_top {
-            self.scroll_top = row;
-        } else if row >= self.scroll_top + height {
-            self.scroll_top = (row + 1.0 - height).min(self.layout.max_scroll());
+        let margin = ((height - 1.0) / 2.0).floor().min(2.0);
+        if row < self.scroll_top + margin {
+            self.scroll_top = (row - margin).max(0.0);
+        } else if row + 1.0 + margin > self.scroll_top + height {
+            self.scroll_top = (row + 1.0 + margin - height).min(self.layout.max_scroll());
         }
         self.transition = None;
     }
@@ -173,12 +271,60 @@ impl ViewerState {
             return Ok(());
         }
         let anchor = self.scroll_anchor().map_err(ViewerError::Scroll)?;
+        let width_changed = self.width != width;
         self.width = width;
         self.height = height;
-        self.rebuild_display()?;
+        if width_changed {
+            self.rebuild_display()?;
+        } else {
+            self.layout = viewer_layout(
+                self.block_id,
+                &self.display_text,
+                self.wrapped_width(),
+                height,
+            )?;
+        }
         self.scroll_top = anchor.resolve(&self.layout).map_err(ViewerError::Scroll)?;
         self.transition = None;
         Ok(())
+    }
+
+    pub(crate) fn scroll_keeping_cursor(&mut self, delta: f64) -> Result<(), ViewerError> {
+        let previous = self.scroll_top();
+        self.scroll_by(delta)?;
+        self.cursor.row = self
+            .cursor
+            .row
+            .saturating_add(self.scroll_top())
+            .saturating_sub(previous)
+            .min(self.wrapped.row_count().saturating_sub(1));
+        Ok(())
+    }
+
+    pub(crate) fn select_edge(&mut self, last: bool) {
+        self.cursor = CellPoint::new(
+            if last {
+                self.wrapped.row_count().saturating_sub(1)
+            } else {
+                0
+            },
+            0,
+        );
+        self.selection = None;
+        self.reveal_cursor();
+    }
+
+    fn wrapped_width(&self) -> usize {
+        if self.wrap_enabled {
+            self.width
+        } else {
+            self.display_text
+                .lines()
+                .map(unicode_width::UnicodeWidthStr::width)
+                .max()
+                .unwrap_or(1)
+                .max(self.width)
+        }
     }
 
     pub fn scroll_by(&mut self, delta: f64) -> Result<(), ViewerError> {
@@ -261,29 +407,77 @@ impl ViewerState {
     }
 
     fn rebuild_display(&mut self) -> Result<(), ViewerError> {
-        self.styled_lines = if self.mode == ViewerMode::Wrapped && self.content.markdown {
+        let previous_body = self.body_start;
+        let mut body = if let Some(super::ViewerPreamble::Read {
+            path,
+            start_line: Some(start),
+            ..
+        }) = &self.content.preamble
+        {
+            crate::ui::viewer_read_lines(self.content.text(self.mode), path, *start, &self.theme)
+        } else if self.mode == ViewerMode::Wrapped && self.content.markdown {
             crate::ui::viewer_markdown_lines(
                 self.content.content(),
                 u16::try_from(self.width).unwrap_or(u16::MAX),
                 &self.theme,
             )
         } else {
-            Vec::new()
+            self.content
+                .text(self.mode)
+                .split('\n')
+                .map(|line| ratatui::text::Line::from(line.to_owned()))
+                .collect()
         };
-        self.display_text = if self.styled_lines.is_empty() {
-            self.content.text(self.mode).to_string()
+        let mut lines = self
+            .content
+            .preamble
+            .as_ref()
+            .map(|preamble| crate::ui::viewer_preamble_lines(preamble, self.width, &self.theme))
+            .unwrap_or_default();
+        self.body_start = lines.len();
+        if !self.filter_query.is_empty() {
+            let matcher = regex::RegexBuilder::new(&regex::escape(&self.filter_query))
+                .case_insensitive(!self.filter_query.chars().any(char::is_uppercase))
+                .build()
+                .ok();
+            let matches = |line: &ratatui::text::Line<'_>| {
+                matcher
+                    .as_ref()
+                    .is_some_and(|regex| regex.is_match(&line.to_string()))
+            };
+            lines.retain(matches);
+            self.body_start = lines.len();
+            body.retain(matches);
+        }
+        lines.extend(body);
+        (self.styled_lines, self.row_joiners) = if self.wrap_enabled {
+            crate::ui::viewer_wrap_lines(lines, self.width)
         } else {
-            self.styled_lines
-                .iter()
-                .map(ratatui::text::Line::to_string)
-                .collect::<Vec<_>>()
-                .join("\n")
+            let joiners = vec!["\n".to_owned(); lines.len()];
+            (lines, joiners)
         };
+        self.display_text = self
+            .styled_lines
+            .iter()
+            .map(ratatui::text::Line::to_string)
+            .collect::<Vec<_>>()
+            .join("\n");
+        let width = self.wrapped_width();
         self.wrapped =
-            WrappedText::new(&self.display_text, self.width).map_err(ViewerError::Selection)?;
-        self.layout = viewer_layout(self.block_id, &self.display_text, self.width, self.height)?;
-        self.selection = None;
-        self.cursor = CellPoint::new(0, 0);
+            WrappedText::new(&self.display_text, width).map_err(ViewerError::Selection)?;
+        self.layout = viewer_layout(self.block_id, &self.display_text, width, self.height)?;
+        if self.cursor.row >= previous_body {
+            self.cursor.row = self
+                .cursor
+                .row
+                .saturating_sub(previous_body)
+                .saturating_add(self.body_start);
+        }
+        self.cursor.row = self
+            .cursor
+            .row
+            .min(self.wrapped.row_count().saturating_sub(1));
+        self.scroll_top = self.scroll_top.min(self.layout.max_scroll());
         if !self.search.query().is_empty() {
             let query = self.search.query().to_owned();
             let _ = self.search.set_query(&self.display_text, &query);

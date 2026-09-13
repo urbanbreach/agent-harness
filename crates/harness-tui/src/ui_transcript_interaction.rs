@@ -143,6 +143,7 @@ pub(super) fn transcript_surface_focused(app: &AppState) -> bool {
     !app.replay_mode
         && app.active_tab == Tab::Run
         && app.focus == Focus::Details
+        && !app.todo_pane_focused()
         && !app.details_drawer_open()
 }
 

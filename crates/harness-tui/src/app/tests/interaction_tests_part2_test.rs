@@ -404,7 +404,8 @@ fn detached_resize_app() -> AppState {
     let _ = render_text(&app, compact.width, compact.height);
     let max_scroll = app.transcript_view.last_transcript_max_scroll.get();
     assert!(max_scroll > 5, "fixture must provide detached scroll range");
-    app.set_transcript_page_flip_state(PageFlipState::Idle.begin(0).preserve_at(max_scroll));
+    // Keep the real prompt's page-flip reserve while scrolling away. A pin to
+    // nonexistent sequence 0 is consumed at the unpadded tail on the next paint.
     app.scroll_page_up(5);
     app
 }
