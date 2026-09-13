@@ -173,6 +173,7 @@ pub(super) fn transcript_turn_sections_keep_nested_tool_details() {
     activity.thinking_text = "tool planning".to_string();
     activity.error_message = Some("tool call failed".to_string());
     activity.tool_calls.push(app::ToolCallEntry {
+        hook_executions: Vec::new(),
         tool_call_id: "call-1".to_string(),
         tool_id: "shell.run".to_string(),
         canonical_tool_id: None,

@@ -1,5 +1,5 @@
 // allow: SIZE_OK — TUI transcript rendering (indivisible view model)
-use super::ui_transcript_tool_sections::{build_tool_call_section, successful_edit_summary};
+use super::ui_transcript_tool_sections::{build_tool_call_section, edit_tool_action};
 use super::*;
 
 pub(super) fn build_transcript_sections(app: &AppState) -> Vec<TranscriptTurnSection> {
@@ -7,11 +7,20 @@ pub(super) fn build_transcript_sections(app: &AppState) -> Vec<TranscriptTurnSec
     TRANSCRIPT_SEMANTIC_BUILD_COUNT.with(|count| count.set(count.get().saturating_add(1)));
     let motion_enabled = app.transcript_motion_enabled() && !app.replay_mode;
     let hidden_child_request_ids = hidden_delegated_child_request_ids(app);
+    let mut notifications = super::ui_transcript_subagent::notification_sections(app);
+    let notification_first_seqs = notifications
+        .values()
+        .flatten()
+        .map(|row| row.first_seq)
+        .collect::<std::collections::BTreeSet<_>>();
     let visible_activities = app
         .activities
         .iter()
         .enumerate()
-        .filter(|(_, activity)| !hidden_child_request_ids.contains(activity.request_id.as_str()))
+        .filter(|(_, activity)| {
+            !hidden_child_request_ids.contains(activity.request_id.as_str())
+                || notification_first_seqs.contains(&activity.first_seq)
+        })
         .collect::<Vec<_>>();
     let mut turn_sections = Vec::with_capacity(visible_activities.len());
     let pending_assistant_index = visible_activities
@@ -22,6 +31,9 @@ pub(super) fn build_transcript_sections(app: &AppState) -> Vec<TranscriptTurnSec
         turn_sections.push(build_turn_section(BuildTurnSectionArgs {
             activity_first_seq: activity.first_seq,
             activity,
+            notifications: notifications
+                .remove(activity.request_id.as_str())
+                .unwrap_or_default(),
             queued_user_message: pending_assistant_index
                 .is_some_and(|pending| visible_index > pending),
             is_selected: transcript_surface_focused(app)
@@ -48,6 +60,7 @@ pub(super) fn build_transcript_sections(app: &AppState) -> Vec<TranscriptTurnSec
             turn.footer_timestamp = app.activities[original_activity_index]
                 .user_timestamp
                 .as_deref()
+                .filter(|_| app.transcript_timestamps_visible())
                 .map(crate::time_format::wall_clock_12h);
         }
     }
@@ -109,6 +122,7 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
     let BuildTurnSectionArgs {
         activity_first_seq,
         activity,
+        notifications,
         queued_user_message,
         is_selected,
         is_latest,
@@ -122,23 +136,30 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
         app,
     } = args;
 
-    let user_message = activity.user_message.as_ref().map(|user_msg| {
-        let timestamp = activity
-            .user_timestamp
-            .as_deref()
-            .filter(|_| timestamps_visible);
-        TranscriptUserMessageSection {
-            text: user_msg.text.clone(),
-            queued: queued_user_message,
-            wall_clock: timestamp.map(crate::time_format::wall_clock_12h),
-            expanded_wall_clock: timestamp.map(crate::time_format::wall_clock_hover_detail),
-            wall_clock_hovered: matches!(
-                app.hovered_transcript_target(),
-                Some(TranscriptMouseTarget::UserTimestamp { request_id })
-                    if request_id == &activity.request_id
-            ),
-        }
-    });
+    let notification_created_activity = notifications
+        .iter()
+        .any(|row| row.first_seq == activity.first_seq);
+    let user_message = activity
+        .user_message
+        .as_ref()
+        .filter(|_| !notification_created_activity)
+        .map(|user_msg| {
+            let timestamp = activity
+                .user_timestamp
+                .as_deref()
+                .filter(|_| timestamps_visible);
+            TranscriptUserMessageSection {
+                text: user_msg.text.clone(),
+                queued: queued_user_message,
+                wall_clock: timestamp.map(crate::time_format::wall_clock_12h),
+                expanded_wall_clock: timestamp.map(crate::time_format::wall_clock_hover_detail),
+                wall_clock_hovered: matches!(
+                    app.hovered_transcript_target(),
+                    Some(TranscriptMouseTarget::UserTimestamp { request_id })
+                        if request_id == &activity.request_id
+                ),
+            }
+        });
 
     let thinking = thinking_visible
         .then(|| {
@@ -147,6 +168,7 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
             {
                 Some(TranscriptLabeledTextSection {
                     label: THINKING_TRACE_LABEL,
+                    duration_ms: None,
                     text: activity.thinking_text.clone(),
                 })
             } else {
@@ -203,7 +225,8 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
                     .section
                     .coalesced_tool_call_ids
                     .push(tool_call.tool_call_id.clone());
-                previous.section.expanded |= section.expanded;
+                // The first recorded identity owns disclosure for repeated,
+                // identical writes, including a fold made before a later duplicate.
                 previous.section.details_collapsed_by_default = true;
                 previous.section.details_preview_visible = false;
                 previous.section.header.disclosure_state = Some(if previous.section.expanded {
@@ -211,14 +234,8 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
                 } else {
                     TranscriptToolCallDisclosureState::Collapsed
                 });
-                let (action, stats) =
-                    successful_edit_summary(tool_call, &previous.section.detail_blocks);
-                previous.section.header.title = action.to_string();
-                previous.section.header.subtitle = if previous.section.expanded {
-                    None
-                } else {
-                    stats
-                };
+                previous.section.header.title = edit_tool_action(tool_call).to_string();
+                previous.section.header.subtitle = None;
                 continue;
             }
         }
@@ -228,6 +245,7 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
             section,
         });
     }
+    ordered_tool_calls.extend(notifications);
     let error = activity
         .error_message
         .as_ref()
@@ -258,6 +276,7 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
         footer_timestamp: activity
             .user_timestamp
             .as_deref()
+            .filter(|_| timestamps_visible)
             .map(crate::time_format::wall_clock_12h),
         animation_phase: app.transcript_animation_phase(),
         motion_enabled,
@@ -401,6 +420,12 @@ fn build_ordered_assistant_parts(
 
     sync_reasoning_parts_with_activity(&mut event_parts, activity, thinking_visible);
     ensure_completed_thought_header(&mut event_parts, activity, thinking_visible);
+    for part in &mut event_parts {
+        if let TranscriptAssistantPart::Reasoning(reasoning) = &mut part.part {
+            reasoning.duration_ms = app.reasoning_duration_at_seq(part.seq);
+            part.seq = app.reasoning_source_seq(part.seq);
+        }
+    }
     if let Some(error) = error {
         event_parts.push(SequencedTranscriptAssistantPart {
             seq: activity.last_seq,
@@ -445,6 +470,7 @@ fn ensure_completed_thought_header(
             index: 0,
             part: TranscriptAssistantPart::Reasoning(TranscriptLabeledTextSection {
                 label: THINKING_TRACE_LABEL,
+                duration_ms: None,
                 text: activity.thinking_text.clone(),
             }),
         },
@@ -486,6 +512,7 @@ fn sync_reasoning_parts_with_activity(
         parts[first_reasoning_index].part =
             TranscriptAssistantPart::Reasoning(TranscriptLabeledTextSection {
                 label: THINKING_TRACE_LABEL,
+                duration_ms: None,
                 text: activity.thinking_text.clone(),
             });
         return;
@@ -578,18 +605,21 @@ fn append_committed_parts(
                     text,
                 );
             }
-            harness_core::session::AssistantPart::ToolCall(tool_call) => {
-                saw_tool = true;
-                settle_trailing_body(parts);
-                if let Some(tool_call) = pending_tool_calls.remove(tool_call.tool_call_id.as_str())
-                {
-                    parts.push(SequencedTranscriptAssistantPart {
-                        seq,
-                        index: *next_index,
-                        part: TranscriptAssistantPart::ToolCall(Box::new(tool_call.section)),
-                    });
-                    *next_index += 1;
-                }
+            harness_core::session::AssistantPart::ToolCall(_) => saw_tool = true,
+        }
+    }
+    // A response's text stays together above its tool entries, without moving
+    // either across a different response's durable sequence boundary.
+    for part in committed_parts {
+        if let harness_core::session::AssistantPart::ToolCall(tool_call) = part {
+            settle_trailing_body(parts);
+            if let Some(tool_call) = pending_tool_calls.remove(tool_call.tool_call_id.as_str()) {
+                parts.push(SequencedTranscriptAssistantPart {
+                    seq,
+                    index: *next_index,
+                    part: TranscriptAssistantPart::ToolCall(Box::new(tool_call.section)),
+                });
+                *next_index += 1;
             }
         }
     }
@@ -614,6 +644,31 @@ fn build_ordered_assistant_parts_from_events(
         .cloned()
         .map(|tool_call| (tool_call.tool_call_id.clone(), tool_call))
         .collect::<std::collections::BTreeMap<_, _>>();
+
+    // The coordinator may queue a tool before the response commit. Its visible
+    // position still belongs to that response, after the text already streamed.
+    let committed_tool_ids = app
+        .events
+        .iter()
+        .filter_map(|event| match &event.payload {
+            harness_core::event::EventV1::AssistantMessageFinished(data)
+                if provider_event_matches_activity(
+                    event,
+                    data.request_id.as_str(),
+                    &activity.request_id,
+                ) =>
+            {
+                Some(data.parts.iter().filter_map(|part| match part {
+                    harness_core::session::AssistantPart::ToolCall(tool) => {
+                        Some(tool.tool_call_id.as_str())
+                    }
+                    _ => None,
+                }))
+            }
+            _ => None,
+        })
+        .flatten()
+        .collect::<std::collections::BTreeSet<_>>();
 
     for event in app.events.iter().filter(|event| {
         event.seq >= activity.first_seq
@@ -731,7 +786,10 @@ fn build_ordered_assistant_parts_from_events(
                     &mut saw_body_event,
                 );
                 settle_trailing_body(&mut parts);
-                if let Some(tool_call) = pending_tool_calls.remove(data.tool_call_id.as_str()) {
+                if let Some(tool_call) = (!committed_tool_ids.contains(data.tool_call_id.as_str()))
+                    .then(|| pending_tool_calls.remove(data.tool_call_id.as_str()))
+                    .flatten()
+                {
                     parts.push(SequencedTranscriptAssistantPart {
                         seq: event.seq,
                         index: next_index,
@@ -758,13 +816,30 @@ fn build_ordered_assistant_parts_from_events(
         &mut saw_body_event,
     );
 
-    if !saw_reasoning_event && !saw_body_event && activity_has_thinking_text(activity) {
+    // Live reasoning belongs to the current provider response, just like its
+    // text suffix. Do not merge it into an earlier, already collapsed Thought:
+    // its eventual commit would insert a new block under an existing answer.
+    let rendered_reasoning = parts
+        .iter()
+        .filter_map(|part| match &part.part {
+            TranscriptAssistantPart::Reasoning(reasoning) => Some(reasoning.text.as_str()),
+            _ => None,
+        })
+        .collect::<String>();
+    let reasoning_first_seq = app.uncommitted_reasoning_first_seq(activity);
+    if let Some(text) = thinking_visible
+        .then(|| activity.thinking_text.strip_prefix(&rendered_reasoning))
+        .flatten()
+        .filter(|text| !text.is_empty())
+        .filter(|_| reasoning_first_seq.is_some() || (!saw_reasoning_event && !saw_body_event))
+    {
         parts.push(SequencedTranscriptAssistantPart {
-            seq: activity.first_seq,
+            seq: reasoning_first_seq.unwrap_or(activity.first_seq),
             index: next_index,
             part: TranscriptAssistantPart::Reasoning(TranscriptLabeledTextSection {
                 label: THINKING_TRACE_LABEL,
-                text: activity.thinking_text.clone(),
+                duration_ms: None,
+                text: text.to_string(),
             }),
         });
         next_index += 1;
@@ -794,7 +869,9 @@ fn build_ordered_assistant_parts_from_events(
             }
         };
         parts.push(SequencedTranscriptAssistantPart {
-            seq: activity.last_seq,
+            seq: app
+                .uncommitted_text_first_seq(activity)
+                .unwrap_or(activity.last_seq),
             index: next_index,
             part: TranscriptAssistantPart::Body(body),
         });
@@ -900,6 +977,7 @@ fn push_sequenced_text_part(
         TranscriptAssistantTextKind::Reasoning => {
             TranscriptAssistantPart::Reasoning(TranscriptLabeledTextSection {
                 label: THINKING_TRACE_LABEL,
+                duration_ms: None,
                 text: text.to_string(),
             })
         }
@@ -991,6 +1069,7 @@ mod ui10_tests {
         tool.status = ToolCallDisplayStatus::Running;
         activity.tool_calls.push(tool);
         app.activities = std::collections::VecDeque::from([activity]);
+
         app.sync_transcript_integration(true);
         app.activities[0].tool_calls[0].status = ToolCallDisplayStatus::Succeeded;
         app.sync_transcript_integration(true);
@@ -1067,6 +1146,11 @@ mod ui10_tests {
         activity.tool_calls = writes;
         app.activities = std::collections::VecDeque::from([activity]);
 
+        assert!(build_transcript_sections(&app)[0]
+            .assistant_tools()
+            .all(|tool| tool.details_visible()));
+        app.toggle_tool_output_for_test("write-0");
+
         let collapsed = build_transcript_sections(&app);
         let collapsed_tools = collapsed[0].assistant_tools().collect::<Vec<_>>();
         assert_eq!(collapsed_tools.len(), 1);
@@ -1075,24 +1159,27 @@ mod ui10_tests {
             collapsed_tools[0].coalesced_tool_call_ids,
             ["write-0", "write-1", "write-2"]
         );
-        assert_eq!(collapsed_tools[0].header.title, "Edit");
+        assert_eq!(collapsed_tools[0].header.title, "Creating");
         assert_eq!(
             collapsed_tools[0].header.path_metadata.as_deref(),
             Some("demo.txt")
         );
-        assert_eq!(collapsed_tools[0].header.subtitle.as_deref(), Some("+1/-1"));
+        assert_eq!(collapsed_tools[0].header.subtitle, None);
         assert!(!collapsed_tools[0].details_visible());
 
         // act
-        for id in ["write-0", "write-1", "write-2"] {
-            app.toggle_tool_output_for_test(id);
-        }
+        app.focus = crate::app::Focus::Details;
+        app.handle_key(crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::Down,
+            crossterm::event::KeyModifiers::NONE,
+        ));
+        assert!(app.toggle_selected_transcript_fold());
         let expanded = build_transcript_sections(&app);
         let expanded_tools = expanded[0].assistant_tools().collect::<Vec<_>>();
         // assert
         assert!(expanded_tools[0].details_visible());
         assert_eq!(expanded_tools[0].detail_blocks.len(), 1);
-        assert_eq!(expanded_tools[0].header.title, "Edit");
+        assert_eq!(expanded_tools[0].header.title, "Creating");
         assert_eq!(expanded_tools[0].header.subtitle, None);
     }
 

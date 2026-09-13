@@ -8,6 +8,7 @@ fn reasoning_turn(text: &str) -> TranscriptTurnSection {
     turn.assistant_parts = vec![TranscriptAssistantPart::Reasoning(
         TranscriptLabeledTextSection {
             label: "Thinking",
+            duration_ms: None,
             text: text.into(),
         },
     )];

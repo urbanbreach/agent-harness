@@ -41,6 +41,7 @@ pub(crate) fn transcript_section_model_test_tool_call(
     tool_id: &str,
 ) -> ToolCallEntry {
     ToolCallEntry {
+        hook_executions: Vec::new(),
         tool_call_id: tool_call_id.to_string(),
         tool_id: tool_id.to_string(),
         canonical_tool_id: None,

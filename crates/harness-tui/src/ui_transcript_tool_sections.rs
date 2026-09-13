@@ -1,8 +1,9 @@
 // allow: SIZE_OK — TUI transcript rendering (indivisible view model)
-use super::ui_diff::structured_diff_stats;
 use super::ui_tool_delegation::agent_spawn_is_background;
 use super::ui_tool_paths::tool_id_matches;
-use super::ui_tool_visibility::tool_call_has_transcript_disclosure;
+use super::ui_tool_visibility::{
+    tool_call_has_transcript_disclosure, tool_error_hidden_inline, tool_output_is_viewer_only,
+};
 use super::ui_transcript_block_grammar::{tool_family, TranscriptToolFamily};
 use super::*;
 
@@ -26,13 +27,6 @@ pub(super) fn build_tool_call_section(
         return None;
     }
 
-    if tool_call.status == ToolCallDisplayStatus::Succeeded
-        && !show_tool_details
-        && !tool_call_should_remain_visible_without_tool_details(tool_call)
-    {
-        return None;
-    }
-
     let task_row = app.transcript_task_row_for_tool_call(tool_call);
 
     let mut section = build_transcript_tool_call_section(
@@ -45,8 +39,22 @@ pub(super) fn build_tool_call_section(
         stacked_diffs,
         session_path,
     );
+    super::ui_transcript_subagent::refresh_started_status(
+        &mut section,
+        tool_call,
+        task_row.as_ref(),
+        app,
+    );
     section.group.expanded = app.tool_group_expanded(&section.tool_call_id);
-    if let Some(child) = &section.child_session_id {
+    if app.tool_output_previewed(&tool_call.tool_call_id) {
+        section.expanded = false;
+        section.header.disclosure_state = Some(TranscriptToolCallDisclosureState::Collapsed);
+    }
+    if let Some(child) = section
+        .child_session_id
+        .as_ref()
+        .filter(|_| tool_family(&section) == TranscriptToolFamily::Task)
+    {
         section.group.sources.insert(child.clone());
     } else if matches!(tool_call.effective_tool_id(), "search.web" | "websearch")
         && tool_call.status == ToolCallDisplayStatus::Succeeded
@@ -57,12 +65,15 @@ pub(super) fn build_tool_call_section(
     }
     section.details_preview_visible |= show_tool_details
         && !section.detail_blocks.is_empty()
-        && (matches!(
-            tool_family(&section),
-            TranscriptToolFamily::Edit
-                | TranscriptToolFamily::Task
-                | TranscriptToolFamily::Question
-        ) || matches!(tool_call.effective_tool_id(), "todo.write" | "todowrite"));
+        && (app.tool_output_previewed(&tool_call.tool_call_id)
+            || matches!(
+                tool_family(&section),
+                TranscriptToolFamily::Task | TranscriptToolFamily::Question
+            )
+            || matches!(
+                tool_call.effective_tool_id(),
+                "edit.hashline_apply" | "apply_patch" | "todo.write" | "todowrite"
+            ));
     // These reference blocks have no animated accent; only commands and task
     // lifecycle rows signal execution with a wave.
     if matches!(section.rail_motion, ToolRailMotion::Running { .. })
@@ -72,13 +83,19 @@ pub(super) fn build_tool_call_section(
                 | TranscriptToolFamily::Edit
                 | TranscriptToolFamily::Search
                 | TranscriptToolFamily::List
-                | TranscriptToolFamily::Web
         )
     {
         section.rail_motion = ToolRailMotion::Settled;
     }
     if !section.details_visible()
         && matches!(section.rail_motion, ToolRailMotion::FinishFlash { .. })
+    {
+        section.rail_motion = ToolRailMotion::Settled;
+    }
+    if (is_mcp_tool_id(&section.header.tool_id)
+        || super::ui_tool_titles::generic_tool_id(&section.header.tool_id))
+        && !section.expanded
+        && !section.details_preview_visible
     {
         section.rail_motion = ToolRailMotion::Settled;
     }
@@ -117,6 +134,21 @@ fn read_output_block(
     })
 }
 
+fn suppress_unexecuted_edit_proposals(
+    detail_blocks: &mut Vec<TranscriptToolCallDetailBlock>,
+    tool_call: &crate::app::ToolCallEntry,
+) {
+    // Input-derived replacements are proposals, not output from a completed
+    // edit. Keep recorded diff artifacts, including partial failure results.
+    if matches!(tool_call.effective_tool_id(), "write" | "fs.write" | "edit")
+        && tool_call.status != ToolCallDisplayStatus::Succeeded
+        && tool_call_diff_artifacts(tool_call).is_empty()
+    {
+        detail_blocks
+            .retain(|block| !matches!(block, TranscriptToolCallDetailBlock::StructuredDiff { .. }));
+    }
+}
+
 #[expect(
     clippy::too_many_arguments,
     reason = "tool-row assembly keeps transcript toggles and state inputs explicit at the call site"
@@ -131,6 +163,9 @@ pub(super) fn build_transcript_tool_call_section(
     stacked_diffs: bool,
     session_path: Option<&Path>,
 ) -> TranscriptToolCallSection {
+    let viewer_only = tool_output_is_viewer_only(tool_call);
+    let error_hidden_inline = tool_error_hidden_inline(tool_call);
+    let tool_output_expanded = tool_output_expanded && !viewer_only;
     fn initial_tool_row(
         tool_call: &crate::app::ToolCallEntry,
         app: &AppState,
@@ -166,8 +201,14 @@ pub(super) fn build_transcript_tool_call_section(
         let (title, icon, visual_style, uses_generic_output_visibility) = match display_tool_id {
             "fs.read" | "read" => {
                 let path = tool_path_display(tool_call);
-                header_path_metadata = path.clone();
                 let (title, icon) = read_tool_row_header(tool_call, app, path.as_deref());
+                header_path_metadata = if title == "Skill" {
+                    path.as_deref()
+                        .and_then(|path| Path::new(path).parent()?.file_name()?.to_str())
+                        .map(str::to_owned)
+                } else {
+                    path
+                };
                 if generic_output_visible && tool_call.status != ToolCallDisplayStatus::Failed {
                     detail_blocks.extend(read_output_block(tool_call));
                 }
@@ -204,13 +245,7 @@ pub(super) fn build_transcript_tool_call_section(
                     shell_tool_output(tool_call).or_else(|| expanded.then(String::new));
                 let has_output = shell_output.is_some();
                 if let Some(output) = shell_output {
-                    push_bash_panel_block(
-                        &mut detail_blocks,
-                        &cmd,
-                        &output,
-                        description,
-                        output_tone,
-                    );
+                    push_bash_panel_block(&mut detail_blocks, &cmd, &output, description);
                 }
                 (
                     title,
@@ -239,7 +274,7 @@ pub(super) fn build_transcript_tool_call_section(
                 false,
             ),
             "agent.spawn" | "task" => {
-                build_agent_spawn_tool_row(tool_call, task_row, &mut detail_blocks, app)
+                build_agent_spawn_tool_row(tool_call, task_row, &mut detail_blocks)
             }
             "background_output" => (
                 background_output_tool_title(tool_call),
@@ -393,11 +428,7 @@ pub(super) fn build_transcript_tool_call_section(
                     session_path,
                     stacked_diffs,
                 );
-                let title = if rendered_diff {
-                    edit_tool_title(tool_call)
-                } else {
-                    write_tool_title(tool_call)
-                };
+                let title = write_tool_title(tool_call);
                 (
                     title,
                     Some("←"),
@@ -443,7 +474,7 @@ pub(super) fn build_transcript_tool_call_section(
                     false,
                 )
             }
-            "web.fetch" => (
+            "web.fetch" | "webfetch" => (
                 format!(
                     "Fetch {}",
                     tool_summary_string(&tool_call.args_summary, &["url"])
@@ -453,25 +484,11 @@ pub(super) fn build_transcript_tool_call_section(
                 TranscriptToolCallVisualStyle::Inline,
                 true,
             ),
-            "search.web" | "search.code" => {
-                let title = if display_tool_id == "search.web" {
-                    web_search_provider_label(tool_call)
-                } else {
-                    "Exa Code Search"
-                };
+            "search.web" | "websearch" | "search.code" => {
+                let is_web = matches!(display_tool_id, "search.web" | "websearch");
                 (
-                    format!(
-                        "{} \"{}\"{}",
-                        title,
-                        tool_summary_string(&tool_call.args_summary, &["query"])
-                            .unwrap_or_else(|| "query".to_string()),
-                        if expanded {
-                            String::new()
-                        } else {
-                            search_result_count_suffix(tool_call, display_tool_id)
-                        }
-                    ),
-                    Some(if display_tool_id == "search.web" {
+                    search_tool_title(tool_call, expanded),
+                    Some(if is_web {
                         theme.live_shell.transcript_glyphs.group_marker
                     } else {
                         theme.live_shell.transcript_glyphs.thought_marker
@@ -590,22 +607,20 @@ pub(super) fn build_transcript_tool_call_section(
                 .map(str::to_string)
         });
 
+    suppress_unexecuted_edit_proposals(&mut detail_blocks, tool_call);
     attach_recorded_diff_sources(&mut detail_blocks, tool_call, app);
     set_diff_highlight_phase(
         &mut detail_blocks,
         tool_call.status == ToolCallDisplayStatus::Succeeded,
     );
 
-    let mut edit_stats = None;
     if tool_call.status == ToolCallDisplayStatus::Succeeded
         && matches!(
             display_tool_id,
             "edit.hashline_apply" | "edit" | "write" | "fs.write"
         )
     {
-        let (action, stats) = successful_edit_summary(tool_call, &detail_blocks);
-        title = action.to_string();
-        edit_stats = stats.filter(|_| !expanded);
+        title = edit_tool_action(tool_call).to_string();
     }
 
     replace_recorded_output(&mut detail_blocks, tool_call, generic_output_visible);
@@ -645,10 +660,13 @@ pub(super) fn build_transcript_tool_call_section(
         push_failed_tool_error_block(&mut detail_blocks, tool_call);
     }
     push_truncated_output_artifact_block(&mut detail_blocks, tool_call);
+    prepare_failed_tool_details(&mut detail_blocks, tool_call);
 
-    let details_collapsed_by_default = tool_call_has_transcript_disclosure(tool_call);
-    let details_preview_visible = show_generic_tool_output && uses_generic_output_visibility;
-    let disclosure_state = if details_collapsed_by_default {
+    let details_collapsed_by_default =
+        viewer_only || tool_call_has_transcript_disclosure(tool_call);
+    let details_preview_visible =
+        show_generic_tool_output && uses_generic_output_visibility && !viewer_only;
+    let disclosure_state = if details_collapsed_by_default && !viewer_only {
         Some(if expanded {
             TranscriptToolCallDisclosureState::Expanded
         } else {
@@ -662,15 +680,17 @@ pub(super) fn build_transcript_tool_call_section(
             super::super::ui_transcript_bash::shell_tool_workdir_display(tool_call, session_path)
                 .map(|path| format!("in {path}"))
         }
-        "fs.read" | "read" => {
-            let range = read_tool_input_suffix(tool_call);
-            (!range.is_empty()).then_some(range)
-        }
+        "fs.read" | "read" => read_tool_subtitle(tool_call),
         "fs.ls" | "list" => (tool_call.status == ToolCallDisplayStatus::Succeeded)
             .then(|| tool_entry_count(tool_call))
             .flatten()
             .map(|count| format!("({count} {})", if count == 1 { "entry" } else { "entries" })),
         "fs.glob" | "glob" | "fs.grep" | "grep" => tool_match_count_description(tool_call),
+        "search.web" | "websearch" if !expanded => {
+            let sources = super::super::ui_recorded_tool_output::web_sources(tool_call);
+            let count = super::super::ui_recorded_tool_output::source_domains(&sources).len();
+            (count > 0).then(|| format!("({count} site{})", if count == 1 { "" } else { "s" }))
+        }
         "edit.hashline_apply" | "fs.write" | "write" | "edit" => {
             header_path_metadata = tool_call
                 .edit_path_display()
@@ -683,37 +703,18 @@ pub(super) fn build_transcript_tool_call_section(
             if let Some(action) = action {
                 title = action.to_string();
             }
-            edit_stats
+            None
         }
         "background_output" => background_output_tool_subtitle(tool_call),
         "agent.spawn" | "task" => agent_spawn_subtitle(tool_call),
         "apply_patch" => None,
         _ => None,
     };
-    let rail_motion = if app.replay_mode || !app.transcript_motion_enabled() {
-        ToolRailMotion::Settled
-    } else {
-        match tool_call.status {
-            ToolCallDisplayStatus::Running => ToolRailMotion::Running {
-                elapsed: app.tool_running_elapsed(&tool_call.tool_call_id),
-                sampled_phase: app.transcript_animation_phase(),
-            },
-            ToolCallDisplayStatus::PendingPermission => ToolRailMotion::Waiting,
-            ToolCallDisplayStatus::Queued => ToolRailMotion::Queued,
-            ToolCallDisplayStatus::Succeeded | ToolCallDisplayStatus::Failed => app
-                .tool_finish_elapsed(&tool_call.tool_call_id)
-                .filter(|_| !detail_blocks.is_empty())
-                .map_or(ToolRailMotion::Settled, |elapsed| {
-                    ToolRailMotion::FinishFlash {
-                        elapsed,
-                        sampled_phase: app.transcript_animation_phase(),
-                    }
-                }),
-        }
-    };
+    let rail_motion = tool_rail_motion(tool_call, app, !detail_blocks.is_empty());
 
     TranscriptToolCallSection {
         group: Default::default(),
+        hook_executions: tool_call.hook_executions.clone(),
         tool_call_id: tool_call.tool_call_id.clone(),
         coalesced_tool_call_ids: vec![tool_call.tool_call_id.clone()],
         child_session_id,
@@ -723,6 +724,7 @@ pub(super) fn build_transcript_tool_call_section(
         replay_read_only: app.replay_mode,
         hovered_target: app.hovered_transcript_target().cloned(),
         header: TranscriptToolCallHeader {
+            selected: tool_header_selected(app, &tool_call.tool_call_id),
             tool_id: if matches!(display_tool_id, "shell.run" | "bash") {
                 display_tool_id.to_string()
             } else {
@@ -730,9 +732,18 @@ pub(super) fn build_transcript_tool_call_section(
             },
             title,
             subtitle: if tool_call.status == ToolCallDisplayStatus::Failed
+                && !error_hidden_inline
+                && !is_mcp_tool_id(display_tool_id)
                 && !matches!(
                     display_tool_id,
-                    "user.question" | "question" | "bash" | "shell.run"
+                    "user.question"
+                        | "question"
+                        | "bash"
+                        | "shell.run"
+                        | "edit"
+                        | "write"
+                        | "fs.write"
+                        | "edit.hashline_apply"
                 ) {
                 join_tool_subtitles(default_subtitle, error_subtitle)
             } else {
@@ -754,25 +765,95 @@ pub(super) fn build_transcript_tool_call_section(
     }
 }
 
+fn tool_rail_motion(
+    tool: &crate::app::ToolCallEntry,
+    app: &AppState,
+    has_details: bool,
+) -> ToolRailMotion {
+    if app.replay_mode || !app.transcript_motion_enabled() {
+        return ToolRailMotion::Settled;
+    }
+    if tool.has_execution_motion() {
+        return ToolRailMotion::Running {
+            elapsed: std::time::Duration::from_millis(
+                u64::try_from(app.transcript_animation_phase())
+                    .unwrap_or(u64::MAX)
+                    .saturating_mul(crate::scheduling::active_animation_period_ms()),
+            ),
+            sampled_phase: app.transcript_animation_phase(),
+        };
+    }
+    match tool.status {
+        ToolCallDisplayStatus::PendingPermission => ToolRailMotion::Waiting,
+        ToolCallDisplayStatus::Queued => ToolRailMotion::Queued,
+        ToolCallDisplayStatus::Succeeded | ToolCallDisplayStatus::Failed => app
+            .tool_finish_elapsed(&tool.tool_call_id)
+            .filter(|_| has_details)
+            .map_or(ToolRailMotion::Settled, |elapsed| {
+                ToolRailMotion::FinishFlash {
+                    elapsed,
+                    sampled_phase: app.transcript_animation_phase(),
+                }
+            }),
+        ToolCallDisplayStatus::Running => ToolRailMotion::Settled,
+    }
+}
+
+fn prepare_failed_tool_details(
+    detail_blocks: &mut Vec<TranscriptToolCallDetailBlock>,
+    tool_call: &crate::app::ToolCallEntry,
+) {
+    if tool_error_hidden_inline(tool_call) {
+        detail_blocks.clear();
+        return;
+    }
+
+    // Failed edits reveal their error below the header, using the same muted
+    // decoration as Grok's edit block. Keep the full recorded error text.
+    if tool_call.status == ToolCallDisplayStatus::Failed
+        && matches!(
+            tool_call.effective_tool_id(),
+            "edit" | "write" | "fs.write" | "edit.hashline_apply"
+        )
+    {
+        for block in detail_blocks {
+            if let TranscriptToolCallDetailBlock::Message { text, tone } = block {
+                if *tone == TranscriptToolCallDetailTone::Error {
+                    *text = format!("\n{text}");
+                    *tone = TranscriptToolCallDetailTone::Secondary;
+                }
+            }
+        }
+    }
+}
+
+fn read_tool_subtitle(tool: &crate::app::ToolCallEntry) -> Option<String> {
+    if let Some(mime) = super::super::ui_tool_metadata::read_media_mime(tool) {
+        return Some(
+            if mime == "application/pdf" {
+                "(PDF)"
+            } else {
+                "(image)"
+            }
+            .into(),
+        );
+    }
+    let range = read_tool_input_suffix(tool);
+    (!range.is_empty() && tool.status != ToolCallDisplayStatus::Failed).then_some(range)
+}
+
 fn read_tool_row_header(
     tool_call: &crate::app::ToolCallEntry,
     app: &AppState,
     path: Option<&str>,
 ) -> (String, Option<&'static str>) {
-    let mime = tool_call
-        .output_json
-        .as_ref()
-        .and_then(|value| value.pointer("/attachments/0/mime"))
-        .and_then(serde_json::Value::as_str);
-    let title = match mime {
-        Some("application/pdf") => "Read PDF",
-        Some(mime) if mime.starts_with("image/") => "Read image",
-        _ if path.is_some_and(|path| path.ends_with("/SKILL.md") && path.contains("/skills/")) => {
+    let title =
+        if path.is_some_and(|path| path.ends_with("/SKILL.md") && path.contains("/skills/")) {
             "Skill"
+        } else {
+            "Read"
         }
-        _ => "Read",
-    }
-    .to_string();
+        .to_string();
     let icon = match tool_call.status {
         ToolCallDisplayStatus::Running => glyph_routed_streaming_spinner_frame(
             app.theme(),
@@ -837,6 +918,35 @@ fn hashline_tool_row_header(
     (title, Some(icon))
 }
 
+pub(super) fn tool_header_selected(app: &AppState, tool_call_id: &str) -> bool {
+    app.focus == Focus::Details
+        && !app.todo_pane_focused()
+        && matches!(
+            app.transcript_view.selected_entry,
+            Some(TranscriptVisualEntryId::Part { semantic_key, .. }
+                | TranscriptVisualEntryId::ToolGroup { semantic_key, .. })
+                if semantic_key == super::ui_transcript_entry::semantic_key([tool_call_id])
+        )
+}
+
+fn search_tool_title(tool: &crate::app::ToolCallEntry, expanded: bool) -> String {
+    let id = tool.effective_tool_id();
+    let is_web = matches!(id, "search.web" | "websearch");
+    let label = if is_web {
+        web_search_provider_label(tool)
+    } else {
+        "Exa Code Search"
+    };
+    let query =
+        tool_summary_string(&tool.args_summary, &["query"]).unwrap_or_else(|| "query".into());
+    let suffix = if expanded || is_web {
+        String::new()
+    } else {
+        search_result_count_suffix(tool, id)
+    };
+    format!("{label} {query}{suffix}")
+}
+
 fn web_search_provider_label(tool_call: &crate::app::ToolCallEntry) -> &'static str {
     match tool_call
         .output_json
@@ -867,45 +977,12 @@ pub(super) fn set_diff_highlight_phase(
     }
 }
 
-pub(super) fn successful_edit_summary(
-    tool_call: &crate::app::ToolCallEntry,
-    detail_blocks: &[TranscriptToolCallDetailBlock],
-) -> (&'static str, Option<String>) {
-    let creating = matches!(tool_call.effective_tool_id(), "write" | "fs.write")
-        && detail_blocks.iter().any(|block| match block {
-            TranscriptToolCallDetailBlock::StructuredDiff { diff_content, .. } => diff_content
-                .lines()
-                .any(|line| line.trim() == "--- /dev/null"),
-            _ => false,
-        });
-    let (additions, removals) = detail_blocks.iter().fold(
-        (0usize, 0usize),
-        |(additions, removals), block| match block {
-            TranscriptToolCallDetailBlock::StructuredDiff {
-                diff_content,
-                fallback_path,
-                ..
-            } => structured_diff_stats(diff_content, fallback_path.as_deref(), false).map_or(
-                (additions, removals),
-                |(added, removed)| {
-                    (
-                        additions.saturating_add(added),
-                        removals.saturating_add(removed),
-                    )
-                },
-            ),
-            _ => (additions, removals),
-        },
-    );
-    let action = if creating { "Create" } else { "Edit" };
-    let stats = if additions == 0 && removals == 0 {
-        None
-    } else if creating {
-        Some(format!("+{additions}"))
+pub(super) fn edit_tool_action(tool_call: &crate::app::ToolCallEntry) -> &'static str {
+    if matches!(tool_call.effective_tool_id(), "write" | "fs.write") {
+        "Creating"
     } else {
-        Some(format!("+{additions}/-{removals}"))
-    };
-    (action, stats)
+        "Edit"
+    }
 }
 
 fn push_tool_call_diff_blocks(
@@ -1086,106 +1163,22 @@ pub(super) fn build_agent_spawn_tool_row(
     tool_call: &crate::app::ToolCallEntry,
     task_row: Option<&crate::app::OrchestrationTaskRow>,
     detail_blocks: &mut Vec<TranscriptToolCallDetailBlock>,
-    app: &AppState,
 ) -> (
     String,
     Option<&'static str>,
     TranscriptToolCallVisualStyle,
     bool,
 ) {
-    let description = agent_spawn_description(tool_call).or_else(|| {
-        task_row
-            .and_then(|row| row.result_summary.as_deref())
-            .map(collapse_inline_whitespace)
-            .filter(|value| !value.is_empty())
-    });
-    let has_profile = tool_call
-        .output_json
-        .as_ref()
-        .and_then(|value| value.get("profile"))
-        .and_then(serde_json::Value::as_str)
-        .is_some_and(|profile| !profile.trim().is_empty())
-        || tool_summary_string(
-            &tool_call.args_summary,
-            &["profile_name", "profile", "subagent_type"],
-        )
-        .is_some();
-    let has_task_args = serde_json::from_str::<serde_json::Value>(&tool_call.args_summary)
-        .ok()
-        .and_then(|value| value.as_object().map(|args| !args.is_empty()))
-        .unwrap_or(false);
-    let title = if tool_id_matches(tool_call, &["task"]) && !has_profile && !has_task_args {
-        generic_task_title(description.as_deref(), agent_spawn_is_background(tool_call))
-    } else {
-        agent_spawn_title(tool_call, description)
-    };
-    let background_child_running = tool_call.status == ToolCallDisplayStatus::Succeeded
-        && agent_spawn_is_background(tool_call)
-        && task_row.is_some_and(|row| !row.state.is_terminal());
-    let active_task_row =
-        tool_call.status == ToolCallDisplayStatus::Running || background_child_running;
-    // A scheduler TaskCancelled event also records tool validation failures.
-    // The tool's terminal status distinguishes these from a cancelled child.
-    let lifecycle = task_row
-        .filter(|row| {
-            tool_call.status != ToolCallDisplayStatus::Failed || row.child_session_id.is_some()
-        })
-        .map(|row| match row.state {
-            crate::app::OrchestrationTaskState::Completed => "completed",
-            crate::app::OrchestrationTaskState::Cancelled => "cancelled",
-            crate::app::OrchestrationTaskState::Failed => "failed",
-            crate::app::OrchestrationTaskState::TimedOut => "timed out",
-            crate::app::OrchestrationTaskState::LateResult => "late result",
-            crate::app::OrchestrationTaskState::Stale => "stale",
-            crate::app::OrchestrationTaskState::Queued => "queued",
-            crate::app::OrchestrationTaskState::Running => "running",
-        })
-        .unwrap_or(match tool_call.status {
-            ToolCallDisplayStatus::Succeeded if active_task_row => "running",
-            ToolCallDisplayStatus::Succeeded => "completed",
-            ToolCallDisplayStatus::Failed => "failed",
-            ToolCallDisplayStatus::Running => "running",
-            ToolCallDisplayStatus::PendingPermission => "waiting",
-            ToolCallDisplayStatus::Queued => "queued",
-        });
-    let title = format!("{title} · {lifecycle}");
+    let activity = task_row
+        .filter(|row| !row.state.is_terminal())
+        .and_then(|row| row.current_child_tool_title.as_deref());
+    let title = agent_spawn_title(tool_call, agent_spawn_description(tool_call), activity);
     detail_blocks.clear();
-    let theme = app.theme();
-    let icon = match tool_call.status {
-        ToolCallDisplayStatus::Failed => Some(theme.live_shell.glyphs.failed),
-        ToolCallDisplayStatus::Succeeded => Some(theme.live_shell.transcript_glyphs.success_marker),
-        ToolCallDisplayStatus::Running => Some(theme.live_shell.glyphs.running),
-        ToolCallDisplayStatus::PendingPermission => {
-            Some(theme.live_shell.glyphs.pending_permission)
-        }
-        ToolCallDisplayStatus::Queued => Some(theme.live_shell.glyphs.queued),
-    };
-    let icon = if active_task_row {
-        Some(glyph_routed_streaming_spinner_frame(
-            theme,
-            app.transcript_animation_phase(),
-            app.transcript_motion_enabled(),
-        ))
-    } else {
-        icon
-    };
     (
         title,
-        icon,
+        None,
         TranscriptToolCallVisualStyle::TaskInline,
         false,
-    )
-}
-
-fn generic_task_title(description: Option<&str>, background: bool) -> String {
-    let label = if background {
-        "Task (background)"
-    } else {
-        "Task"
-    };
-    description.map_or_else(
-        || label.to_string(),
-        |description| format!("{label} — {description}"),
     )
 }
 
@@ -1308,15 +1301,17 @@ fn push_collapsible_output_block(
 ) {
     let preview = collapsible_output_preview(output, max_lines, expanded);
     detail_blocks.push(TranscriptToolCallDetailBlock::Message {
-        text: preview.output,
-        tone,
+        text: if tone == TranscriptToolCallDetailTone::Primary {
+            format!("\n{preview}")
+        } else {
+            preview
+        },
+        tone: if tone == TranscriptToolCallDetailTone::Primary {
+            TranscriptToolCallDetailTone::Secondary
+        } else {
+            tone
+        },
     });
-    if let Some(hint) = preview.expand_hint {
-        detail_blocks.push(TranscriptToolCallDetailBlock::Message {
-            text: hint.to_string(),
-            tone: TranscriptToolCallDetailTone::Secondary,
-        });
-    }
 }
 
 fn push_bash_panel_block(
@@ -1324,7 +1319,6 @@ fn push_bash_panel_block(
     command: &str,
     output: &str,
     description: Option<String>,
-    tone: TranscriptToolCallDetailTone,
 ) {
     detail_blocks.push(TranscriptToolCallDetailBlock::BashPanel {
         command: command.to_string(),
@@ -1333,11 +1327,19 @@ fn push_bash_panel_block(
         output: output.to_string(),
         description,
         expand_hint: None,
-        tone,
     });
 }
 
 fn tool_entry_count(tool_call: &crate::app::ToolCallEntry) -> Option<u64> {
+    if let Some(summary) = tool_call.output_summary.as_deref() {
+        let count = summary
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .count();
+        if count > 0 {
+            return Some(u64::try_from(count).unwrap_or(u64::MAX));
+        }
+    }
     if let Some(value) = tool_call.output_json.as_ref() {
         if let Some(count) = value
             .get("entry_count")
@@ -1351,13 +1353,7 @@ fn tool_entry_count(tool_call: &crate::app::ToolCallEntry) -> Option<u64> {
             return Some(entries.len() as u64);
         }
     }
-    tool_call.output_summary.as_deref().and_then(|summary| {
-        let lines = summary
-            .lines()
-            .filter(|line| !line.trim().is_empty())
-            .count();
-        (lines > 0).then_some(lines as u64)
-    })
+    None
 }
 
 fn attach_recorded_diff_sources(
@@ -1466,7 +1462,7 @@ mod presentation_section_tests {
             (
                 "mcp.database.query",
                 r#"{"sql":"select 1"}"#,
-                "database query",
+                "Database Query",
                 None,
                 None,
             ),

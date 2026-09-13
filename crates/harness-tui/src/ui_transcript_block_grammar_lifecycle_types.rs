@@ -68,7 +68,6 @@ pub(in crate::ui) enum TranscriptBlockContent {
         text: String,
         streaming: bool,
         wall_clock: Option<String>,
-        has_tools: bool,
     },
     Reasoning {
         text: String,

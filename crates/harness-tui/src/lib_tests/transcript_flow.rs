@@ -495,8 +495,8 @@ pub(super) fn nested_transcript_rows_preserve_prefix_on_wrapped_continuations() 
     app.activities[0].thinking_text = "Drafting a document-like plan with enough extra detail to force a wrapped continuation so the nested rail stays visible on every continued row.".to_string();
     app.transcript_view.selected_activity_index = 0;
     assert!(app.move_transcript_entry(true));
-    assert!(app.toggle_selected_transcript_fold()); // context group
-    assert!(app.move_transcript_entry(true));
+    // Expanding a context group selects its first member, the Thought.
+    assert!(app.toggle_selected_transcript_fold());
     assert!(app.toggle_selected_transcript_fold());
 
     // Scroll to top so wrapped thinking first-line + body both stay visible under breadcrumb chrome.
@@ -549,8 +549,8 @@ pub(super) fn thinking_visibility_toggle_hides_and_restores_inline_thinking_rows
     assert!(!restored.contains("Drafting a document-like plan"));
 
     app.transcript_view.selected_activity_index = 0;
+    assert!(app.move_transcript_entry(true)); // reselect the restored group
     assert!(app.toggle_selected_transcript_fold()); // visibility changes reset the group fold
-    assert!(app.move_transcript_entry(true));
     assert!(app.toggle_selected_transcript_fold());
     let expanded = render_live_lines(&app, 120, 30);
     assert!(expanded.contains("Drafting a document-like plan"));
@@ -564,7 +564,12 @@ pub(super) fn tool_details_toggle_collapses_successful_tool_payloads() {
 
     run_palette_command(&mut app, "hide tool details");
     let hidden = render_live_lines(&app, 120, 30);
-    assert!(!hidden.contains("Read 1 file"));
+    assert!(hidden.contains("Read 1 file"));
+    assert_eq!(
+        shown.lines().position(|line| line.contains("Read 1 file")),
+        hidden.lines().position(|line| line.contains("Read 1 file")),
+        "hiding payload details must retain the completed tool's place"
+    );
 
     run_palette_command(&mut app, "show tool details");
     let restored = render_live_lines(&app, 120, 30);
@@ -652,7 +657,7 @@ pub(super) fn permission_overlay_preserves_draft_and_transcript_context() {
     let debug = render_live_buffer(&app, 80, 24);
     assert!(!debug.contains("Composer · disabled · Permission blocked"));
     assert!(debug.contains("Allow Edit to demo.txt?"));
-    assert!(debug.contains("keep this draft"));
+    assert!(!debug.contains("keep this draft"));
     assert!(!debug.contains("Select an activity to view transcript"));
     assert!(
         debug.contains("always-approve") && debug.contains("No, reject"),
@@ -682,7 +687,7 @@ pub(super) fn permission_overlay_ignores_plain_draft_input_once_prompt_is_active
     assert!(app.active_permission().is_some());
 
     let debug = render_live_buffer(&app, 80, 24);
-    assert!(debug.contains("keep this dr"));
+    assert!(!debug.contains("keep this dr"));
     assert!(!debug.contains("Slash commands"));
 }
 
@@ -710,5 +715,5 @@ pub(super) fn permission_overlay_preserves_existing_draft_without_buffering_new_
     );
 
     let debug = render_live_buffer(&app, 80, 24);
-    assert!(debug.contains("keep t"));
+    assert!(!debug.contains("keep t"));
 }

@@ -109,7 +109,9 @@ pub(super) fn render_transcript_more_below_affordance(
         return;
     };
 
-    let cell = &mut frame.buffer_mut()[(area.x, area.y)];
+    let Some(cell) = frame.buffer_mut().cell_mut((area.x, area.y)) else {
+        return;
+    };
     cell.set_symbol(theme.live_shell.transcript_glyphs.more_below);
     cell.set_fg(if hovered {
         theme.text.primary

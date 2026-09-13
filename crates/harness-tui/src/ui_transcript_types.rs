@@ -87,7 +87,9 @@ impl TranscriptToolVerb {
             "skill" | "skill.load" => Some(Self::Skill),
             "web.fetch" | "webfetch" => Some(Self::WebFetch),
             "search.web" | "websearch" => Some(Self::WebSearch),
-            "background_output" | "background_cancel" => Some(Self::Subagent),
+            "agent.spawn" | "task" | "background_output" | "background_cancel" => {
+                Some(Self::Subagent)
+            }
             _ => Self::from_mcp_context_id(tool_id),
         }
     }
@@ -116,11 +118,12 @@ impl TranscriptToolVerb {
             _ => Self::Other,
         });
         if verb == Self::Read
-            && tool_call
-                .header
-                .path_metadata
-                .as_deref()
-                .is_some_and(|path| path.rsplit('/').next() == Some("SKILL.md"))
+            && (tool_call.header.title == "Skill"
+                || tool_call
+                    .header
+                    .path_metadata
+                    .as_deref()
+                    .is_some_and(|path| path.rsplit('/').next() == Some("SKILL.md")))
         {
             Some(Self::Skill)
         } else {
@@ -402,6 +405,7 @@ pub(super) struct ToolSectionRender {
 pub(super) struct BuildTurnSectionArgs<'a> {
     pub(super) activity_first_seq: u64,
     pub(super) activity: &'a ActivityEntry,
+    pub(super) notifications: Vec<TranscriptOrderedToolCallSection>,
     pub(super) queued_user_message: bool,
     pub(super) is_selected: bool,
     pub(super) is_latest: bool,
@@ -516,10 +520,12 @@ pub(super) enum TranscriptBodyBlock {
 pub(super) struct TranscriptLabeledTextSection {
     pub(super) label: &'static str,
     pub(super) text: String,
+    pub(super) duration_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct TranscriptToolCallSection {
+    pub(super) hook_executions: Vec<harness_core::event::HookExecutionMetadata>,
     pub(super) tool_call_id: String,
     pub(super) coalesced_tool_call_ids: Vec<String>,
     pub(super) child_session_id: Option<String>,
@@ -547,10 +553,19 @@ impl TranscriptToolCallSection {
     pub(super) fn details_visible(&self) -> bool {
         !self.details_collapsed_by_default || self.details_preview_visible || self.expanded
     }
+
+    pub(super) fn has_detail_content(&self) -> bool {
+        !self.detail_blocks.is_empty()
+            || self
+                .hook_executions
+                .iter()
+                .any(|hook| hook.status != harness_core::event::HookExecutionStatus::Skipped)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct TranscriptToolCallHeader {
+    pub(super) selected: bool,
     pub(super) tool_id: String,
     pub(super) title: String,
     pub(super) subtitle: Option<String>,
@@ -584,7 +599,6 @@ pub(in crate::ui) enum TranscriptToolCallDetailBlock {
         output: String,
         description: Option<String>,
         expand_hint: Option<String>,
-        tone: TranscriptToolCallDetailTone,
     },
     StructuredDiff {
         diff_content: String,
@@ -681,6 +695,7 @@ mod tool_group_tests {
     ) -> TranscriptAssistantPart {
         TranscriptAssistantPart::ToolCall(Box::new(TranscriptToolCallSection {
             group: Default::default(),
+            hook_executions: Vec::new(),
             tool_call_id: id.to_string(),
             coalesced_tool_call_ids: vec![id.to_string()],
             child_session_id: None,
@@ -689,6 +704,7 @@ mod tool_group_tests {
             replay_read_only: false,
             hovered_target: None,
             header: TranscriptToolCallHeader {
+                selected: false,
                 tool_id: tool_id.to_string(),
                 title: tool_id.to_string(),
                 subtitle: None,
@@ -1003,6 +1019,7 @@ mod tool_group_tests {
             ),
             TranscriptAssistantPart::Reasoning(TranscriptLabeledTextSection {
                 label: "Thought",
+                duration_ms: None,
                 text: "checked the result".to_string(),
             }),
             tool_part(
@@ -1063,7 +1080,6 @@ mod tool_group_tests {
                     text: String::new(),
                     streaming: false,
                     wall_clock: None,
-                    has_tools: false,
                 },
             ),
             test_spec(
@@ -1202,7 +1218,6 @@ mod tool_group_tests {
                 text: String::new(),
                 streaming: false,
                 wall_clock: None,
-                has_tools: false,
             },
         );
         let mut interaction = base.clone();

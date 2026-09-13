@@ -506,18 +506,22 @@ pub(super) fn line_has_tool_rail(line: &Line<'_>, rail_glyph: &str) -> bool {
 }
 
 const TOOL_RAIL_WAVE_ROWS: usize = 32;
-// Reference: 0.15 radians per tick, with its 30 fps interval rounded to 33 ms.
-const TOOL_RAIL_ANGULAR_SPEED: f32 = 0.15 / 0.033;
+// Reference: 0.15 radians per shared tick, held between its 33 ms frames.
+const TOOL_RAIL_ANGULAR_SPEED: f32 = 0.15;
 
 pub(super) fn wave_brightness(elapsed: Duration, row: usize, wave_rows: usize) -> f32 {
-    let elapsed_secs = elapsed.as_secs_f32();
+    let tick = elapsed.as_millis() / u128::from(crate::scheduling::ANIMATION_PERIOD_MS);
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "match the reference wave's f32 clock, including long-session tick quantization"
+    )]
+    let tick = tick as f32;
     let wave_rows = wave_rows.max(1);
     let row = u16::try_from(row % wave_rows).unwrap_or(0);
     let wave_rows = u16::try_from(wave_rows).unwrap_or(u16::MAX);
     let spatial_phase = f32::from(row) / f32::from(wave_rows) * std::f32::consts::TAU;
-    (elapsed_secs.mul_add(TOOL_RAIL_ANGULAR_SPEED, spatial_phase))
-        .sin()
-        .powi(2)
+    let sine = (tick * TOOL_RAIL_ANGULAR_SPEED + spatial_phase).sin();
+    sine * sine
 }
 
 pub(super) fn tool_rail_motion_color(
@@ -650,12 +654,20 @@ pub(super) fn append_prebuilt_surface_lines(
     let prefix = surface_prefix(indent);
     let prefix_width = surface_prefix_width(indent);
     for line in prebuilt {
+        // A tool can mix unbacked metadata with backed output rows. Preserve
+        // that row's style through the shared surface without painting the rail.
+        let row_surface = line.style.bg.unwrap_or(surface);
+        let spans = line
+            .spans
+            .into_iter()
+            .map(|span| Span::styled(span.content, line.style.patch(span.style)))
+            .collect();
         lines.push(surface_line(
             prefix.clone(),
             prefix_width,
-            line.spans,
+            spans,
             width,
-            surface,
+            row_surface,
         ));
     }
 }
@@ -1161,8 +1173,18 @@ pub(super) fn wrap_preformatted_spans(
     spans: Vec<Span<'static>>,
     width: usize,
 ) -> Vec<Vec<Span<'static>>> {
+    let expanded = expand_preformatted_tabs(spans);
+    let rows = wrap_surface_spans_impl(expanded, width.max(1), true);
+    if rows.is_empty() {
+        vec![Vec::new()]
+    } else {
+        rows
+    }
+}
+
+pub(super) fn expand_preformatted_tabs(spans: Vec<Span<'static>>) -> Vec<Span<'static>> {
     let mut source_column = 0;
-    let expanded = spans
+    spans
         .into_iter()
         .map(|span| {
             let mut text = String::new();
@@ -1177,13 +1199,7 @@ pub(super) fn wrap_preformatted_spans(
             }
             Span::styled(text, span.style)
         })
-        .collect();
-    let rows = wrap_surface_spans_impl(expanded, width.max(1), true);
-    if rows.is_empty() {
-        vec![Vec::new()]
-    } else {
-        rows
-    }
+        .collect()
 }
 
 fn simple_grapheme_boundaries(text: &str) -> bool {

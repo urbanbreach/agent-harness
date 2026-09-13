@@ -65,7 +65,8 @@ pub(crate) struct TranscriptContentAnchor {
 pub(super) struct TranscriptViewportRows {
     body_scroll_top: usize,
     sticky_source_top: Option<usize>,
-    sticky_height: usize,
+    sticky_content_height: usize,
+    pub(super) sticky_height: usize,
     viewport_height: usize,
 }
 
@@ -74,6 +75,7 @@ impl TranscriptViewportRows {
         Self {
             body_scroll_top: scroll_top,
             sticky_source_top: None,
+            sticky_content_height: 0,
             sticky_height: 0,
             viewport_height,
         }
@@ -83,10 +85,13 @@ impl TranscriptViewportRows {
         if local_row >= self.viewport_height {
             return None;
         }
-        if local_row < self.sticky_height {
+        if local_row < self.sticky_content_height {
             return self
                 .sticky_source_top
                 .map(|top| top.saturating_add(local_row));
+        }
+        if local_row < self.sticky_height {
+            return None;
         }
         Some(
             self.body_scroll_top
@@ -111,31 +116,33 @@ pub(super) fn transcript_viewport_rows(
     scroll_top: usize,
 ) -> TranscriptViewportRows {
     let sticky = sticky_user_surface(layout, scroll_top, viewport_height);
-    let sticky_height = sticky
-        .map(|(section, surface, _)| {
-            sticky_prompt_clip(layout, scroll_top, viewport_height, section, surface).0
-        })
-        .unwrap_or(0);
-    let sticky_source_top = sticky.map(|(section_idx, surface_idx, surface)| {
-        let section = &layout.sections[section_idx];
-        section
-            .top_row
-            .saturating_add(section.leading_gap_height)
-            .saturating_add(surface.top_offset)
-            .saturating_add(
-                sticky_prompt_clip(
-                    layout,
-                    scroll_top,
-                    viewport_height,
-                    section_idx,
-                    surface_idx,
-                )
-                .1,
+    let (sticky_source_top, sticky_content_height, sticky_height) = sticky
+        .map(|(section_idx, surface_idx, surface)| {
+            let section = &layout.sections[section_idx];
+            let clip = sticky_prompt_clip(
+                layout,
+                scroll_top,
+                viewport_height,
+                section_idx,
+                surface_idx,
+            );
+            (
+                Some(
+                    section
+                        .top_row
+                        .saturating_add(section.leading_gap_height)
+                        .saturating_add(surface.top_offset)
+                        .saturating_add(clip.clip_top),
+                ),
+                clip.visible_height,
+                clip.visible_height + clip.gap_height,
             )
-    });
+        })
+        .unwrap_or((None, 0, 0));
     TranscriptViewportRows {
         body_scroll_top: scroll_top.saturating_add(sticky_height),
         sticky_source_top,
+        sticky_content_height,
         sticky_height,
         viewport_height,
     }
@@ -511,6 +518,47 @@ pub(super) fn render_selected_transcript_entry(
             if surface.metadata.id != selected {
                 continue;
             }
+            render_selected_context_header(
+                frame,
+                layout,
+                area,
+                scroll_top,
+                section_index,
+                surface_index,
+                theme,
+            );
+            // The reference's expanded group slot selects member zero below
+            // its header. Each member is a separate measured surface here.
+            let surface_index = if matches!(
+                surface.metadata.id,
+                TranscriptVisualEntryId::ToolGroup { .. }
+            ) && surface.metadata.display_mode
+                == TranscriptVisualEntryDisplayMode::Expanded
+            {
+                if let Some(header) = transcript_visual_entry_viewport_placement(
+                    layout,
+                    area,
+                    scroll_top,
+                    section_index,
+                    surface_index,
+                )
+                .filter(|_| {
+                    !matches!(section.surfaces.get(surface_index + 1), Some(member)
+                        if member.metadata.display_mode == TranscriptVisualEntryDisplayMode::Expanded)
+                }) {
+                    paint_compact_selection(
+                        frame,
+                        Rect::new(area.x, header.rect.y, area.width, 1),
+                        theme.markdown.code_background,
+                    );
+                }
+                surface_index.saturating_add(1)
+            } else {
+                surface_index
+            };
+            let Some(surface) = section.surfaces.get(surface_index) else {
+                continue;
+            };
             let Some(placement) = transcript_visual_entry_viewport_placement(
                 layout,
                 area,
@@ -526,6 +574,20 @@ pub(super) fn render_selected_transcript_entry(
             {
                 continue;
             }
+            if surface.metadata.display_mode == TranscriptVisualEntryDisplayMode::Expanded
+                && matches!(
+                    surface.kind,
+                    TranscriptRenderSurfaceKind::AssistantReasoning
+                        | TranscriptRenderSurfaceKind::AssistantTool
+                        | TranscriptRenderSurfaceKind::AssistantCommandTool
+                )
+                && !matches!(
+                    surface.metadata.id,
+                    TranscriptVisualEntryId::ToolGroup { .. }
+                )
+            {
+                continue;
+            }
             let first = surface
                 .lines
                 .first()
@@ -537,10 +599,25 @@ pub(super) fn render_selected_transcript_entry(
                     | TranscriptRenderSurfaceKind::AssistantTool
                     | TranscriptRenderSurfaceKind::AssistantCommandTool
             );
+            if replaces_marker
+                && surface.metadata.display_mode == TranscriptVisualEntryDisplayMode::Compact
+            {
+                paint_compact_selection(
+                    frame,
+                    Rect::new(area.x, placement.rect.y, area.width, 1),
+                    theme.markdown.code_background,
+                );
+            }
             let offset = if replaces_marker {
-                unicode_width::UnicodeWidthStr::width(
-                    &first[..first.len() - first.trim_start().len()],
-                )
+                if !surface.metadata.foldable {
+                    continue;
+                }
+                let content = first.trim_start();
+                let content = content
+                    .strip_prefix(theme.live_shell.transcript_glyphs.rail)
+                    .unwrap_or(content)
+                    .trim_start();
+                unicode_width::UnicodeWidthStr::width(&first[..first.len() - content.len()])
             } else {
                 0
             };
@@ -559,9 +636,23 @@ pub(super) fn render_selected_transcript_entry(
             let offset = u16::try_from(offset)
                 .unwrap_or(u16::MAX)
                 .min(placement.rect.width.saturating_sub(1));
+            if replaces_marker {
+                // Like the native pane's post-pass, replace only the glyph.
+                // Preserve the tool's muted, failed, or animated marker color.
+                if let Some(cell) = frame
+                    .buffer_mut()
+                    .cell_mut((placement.rect.x.saturating_add(offset), placement.rect.y))
+                {
+                    cell.set_symbol(glyph);
+                }
+                continue;
+            }
             frame.render_widget(
-                Paragraph::new(glyph)
-                    .style(Style::default().fg(theme.terminal_colors.prompt_accent)),
+                Paragraph::new(glyph).style(
+                    Style::default()
+                        .fg(theme.terminal_colors.prompt_accent)
+                        .bg(surface.surface),
+                ),
                 Rect::new(
                     placement.rect.x.saturating_add(offset),
                     placement.rect.y,
@@ -569,6 +660,54 @@ pub(super) fn render_selected_transcript_entry(
                     1,
                 ),
             );
+        }
+    }
+}
+
+fn render_selected_context_header(
+    frame: &mut Frame,
+    layout: &MeasuredTranscriptLayout,
+    area: Rect,
+    scroll_top: usize,
+    section_index: usize,
+    surface_index: usize,
+    theme: &Theme,
+) {
+    let section = &layout.sections[section_index];
+    if section.surfaces[surface_index].metadata.display_mode
+        != TranscriptVisualEntryDisplayMode::Compact
+    {
+        return;
+    }
+    let Some(header_index) = surface_index.checked_sub(1).filter(|index| {
+        let header = &section.surfaces[*index];
+        header.metadata.context_group
+            && header.metadata.display_mode == TranscriptVisualEntryDisplayMode::Expanded
+    }) else {
+        return;
+    };
+    if let Some(header) = transcript_visual_entry_viewport_placement(
+        layout,
+        area,
+        scroll_top,
+        section_index,
+        header_index,
+    ) {
+        // The native context slot contains both its header and member zero,
+        // so selecting that member shades both rows.
+        paint_compact_selection(
+            frame,
+            Rect::new(area.x, header.rect.y, area.width, 1),
+            theme.markdown.code_background,
+        );
+    }
+}
+
+fn paint_compact_selection(frame: &mut Frame, rect: Rect, color: Color) {
+    let background = Style::default().bg(color);
+    for x in rect.x..rect.right() {
+        if let Some(cell) = frame.buffer_mut().cell_mut((x, rect.y)) {
+            cell.set_style(background);
         }
     }
 }
@@ -638,27 +777,28 @@ pub(super) fn transcript_visual_entry_viewport_placement(
     if sticky_user.is_some_and(|(sticky_section, sticky_surface, _)| {
         sticky_section == section_idx && sticky_surface == surface_idx
     }) {
-        let (height, clip_top) = sticky_prompt_clip(
+        let clip = sticky_prompt_clip(
             layout,
             scroll_top,
             viewport_height,
             section_idx,
             surface_idx,
         );
-        return (height > 0).then(|| TranscriptVisualEntryViewportPlacement {
+        return (clip.visible_height > 0).then(|| TranscriptVisualEntryViewportPlacement {
             rect: Rect::new(
                 area.x,
                 area.y,
                 surface.width.min(area.width),
-                u16::try_from(height).unwrap_or(u16::MAX),
+                u16::try_from(clip.visible_height).unwrap_or(u16::MAX),
             ),
-            local_scroll: clip_top,
+            local_scroll: clip.clip_top,
         });
     }
 
     let sticky_height = sticky_user
         .map(|(section, surface, _)| {
-            sticky_prompt_clip(layout, scroll_top, viewport_height, section, surface).0
+            let clip = sticky_prompt_clip(layout, scroll_top, viewport_height, section, surface);
+            clip.visible_height + clip.gap_height
         })
         .unwrap_or(0);
     let sticky_height_u16 = u16::try_from(sticky_height).unwrap_or(u16::MAX);
@@ -760,8 +900,15 @@ fn sticky_user_surface<'a>(
         section_idx,
         surface_idx,
     )
-    .0 > 0)
-        .then_some((section_idx, surface_idx, user_surface))
+    .visible_height
+        > 0)
+    .then_some((section_idx, surface_idx, user_surface))
+}
+
+struct StickyPromptClip {
+    visible_height: usize,
+    clip_top: usize,
+    gap_height: usize,
 }
 
 fn sticky_prompt_clip(
@@ -770,7 +917,7 @@ fn sticky_prompt_clip(
     viewport_height: usize,
     section_index: usize,
     surface_index: usize,
-) -> (usize, usize) {
+) -> StickyPromptClip {
     let section = &layout.sections[section_index];
     let surface = &section.surfaces[surface_index];
     let top = section.top_row + section.leading_gap_height + surface.top_offset;
@@ -779,11 +926,12 @@ fn sticky_prompt_clip(
         .saturating_sub(scroll_top.saturating_sub(top))
         .max(surface.height.min(4))
         .min(viewport_height.saturating_sub(1));
+    let push_boundary = scroll_top + render_height + 1;
     let next = layout
         .sections
         .iter()
         .skip(section_index + 1)
-        .take_while(|section| section.top_row < scroll_top + render_height + 1)
+        .take_while(|section| section.top_row <= push_boundary)
         .find_map(|section| {
             section
                 .surfaces
@@ -792,11 +940,16 @@ fn sticky_prompt_clip(
                     surface.placement == TranscriptBlockPlacement::StickyPromptCandidate
                 })
                 .map(|surface| section.top_row + section.leading_gap_height + surface.top_offset)
-        });
+        })
+        .filter(|top| *top <= push_boundary);
     let visible = next.map_or(render_height, |top| {
         render_height.min(top.saturating_sub(scroll_top).saturating_sub(1))
     });
-    (visible, render_height.saturating_sub(visible))
+    StickyPromptClip {
+        visible_height: visible,
+        clip_top: render_height.saturating_sub(visible),
+        gap_height: usize::from(next.is_none()),
+    }
 }
 
 /// `(section_idx, surface_idx, pin_delta)` for pending-permission footer bottom pin.
@@ -903,6 +1056,8 @@ mod pin_tests {
         ordinal: usize,
     ) -> TranscriptVisualEntryMetadata {
         TranscriptVisualEntryMetadata {
+            foldable: false,
+            context_group: false,
             id: match kind {
                 TranscriptRenderSurfaceKind::User => TranscriptVisualEntryId::User {
                     activity_first_seq: 0,
@@ -1149,7 +1304,6 @@ mod pin_tests {
                 text: String::new(),
                 streaming: false,
                 wall_clock: None,
-                has_tools: false,
             },
         );
         let surface = test_render_surface(0, Some(vec![None, None]));
@@ -1175,7 +1329,6 @@ mod pin_tests {
                 text: String::new(),
                 streaming: false,
                 wall_clock: None,
-                has_tools: false,
             },
         );
         spec.placement = TranscriptBlockPlacement::PinnedFooter { outdent_cells: 1 };
@@ -1318,7 +1471,8 @@ mod pin_tests {
         // assert
         assert_eq!(rows.absolute_row(0), Some(0));
         assert_eq!(rows.absolute_row(3), Some(3));
-        assert_eq!(rows.absolute_row(4), Some(14));
+        assert_eq!(rows.absolute_row(4), None);
+        assert_eq!(rows.absolute_row(5), Some(15));
         assert_eq!(rows.absolute_row(19), Some(29));
     }
 
@@ -1335,14 +1489,17 @@ mod pin_tests {
             hit_start: 0,
             hit_width: 20,
         });
+        interaction_rows[5] = interaction_rows[4].clone();
         Rc::make_mut(&mut layout.sections[0]).surfaces[1].interaction_rows = Some(interaction_rows);
         let viewport = Rect::new(0, 0, 120, 10);
         let rows = transcript_viewport_rows(&layout, usize::from(viewport.height), 4);
 
         // act
-        let hit = TranscriptViewportHitMap::new(&layout, viewport, rows).hit(1, 4);
+        let hits = TranscriptViewportHitMap::new(&layout, viewport, rows);
+        let hit = hits.hit(1, 5);
 
         // assert
+        assert_eq!(hits.hit(1, 4), None);
         assert_eq!(hit, Some(target));
     }
 
@@ -1360,18 +1517,27 @@ mod pin_tests {
         next.top_row = 48;
         layout.sections.push(Rc::new(next));
         layout.total_height = 96;
-        for (scroll, height, source_row) in [
-            (1, 7, 0),
-            (2, 6, 0),
-            (4, 4, 0),
-            (44, 3, 1),
-            (45, 2, 2),
-            (46, 1, 3),
+        for (scroll, height, source_row, gap) in [
+            (1, 7, 0, 1),
+            (2, 6, 0, 1),
+            (4, 4, 0, 1),
+            (42, 4, 0, 1),
+            (43, 4, 0, 0),
+            (44, 3, 1, 0),
+            (45, 2, 2, 0),
+            (46, 1, 3, 0),
         ] {
             let rows = transcript_viewport_rows(&layout, 20, scroll);
-            assert_eq!(rows.sticky_height, height, "scroll {scroll}");
+            assert_eq!(rows.sticky_height, height + gap, "scroll {scroll}");
             assert_eq!(rows.absolute_row(0), Some(source_row), "scroll {scroll}");
-            assert_eq!(rows.absolute_row(height), Some(scroll + height));
+            if gap > 0 {
+                assert_eq!(rows.absolute_row(height), None, "scroll {scroll}");
+            }
+            assert_eq!(
+                rows.absolute_row(height + gap),
+                Some(scroll + height + gap),
+                "scroll {scroll}"
+            );
         }
         assert!(sticky_user_surface(&layout, 47, 20).is_none());
         let (section, _, _) =
