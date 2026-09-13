@@ -318,7 +318,7 @@ pub(super) fn overlays_share_elevated_card_language() {
     assert!(
         bgs[start..end]
             .iter()
-            .all(|color| *color == theme.question_prompt.selected),
+            .all(|color| *color == theme.surface.selected_card),
         "selected palette row uses semantic selection surface\n{row}"
     );
     assert!(
@@ -359,7 +359,7 @@ pub(super) fn overlays_share_elevated_card_language() {
     assert!(
         sessions_bgs[sessions_start..sessions_end]
             .iter()
-            .all(|color| *color == theme.question_prompt.selected),
+            .all(|color| *color == theme.surface.selected_card),
         "session history selected row uses semantic selection surface\n{sessions_row}"
     );
     assert!(
@@ -487,7 +487,7 @@ pub(super) fn permission_modal_remains_visually_dominant_and_fail_closed() {
         bgs[start..end]
             .iter()
             .all(|color| *color == theme.question_prompt.selected),
-        "selected allow option should use the question selection background\n{row}"
+        "selected allow option should retain its card background\n{row}"
     );
     assert!(
         fgs[start..end].iter().all(|color| {

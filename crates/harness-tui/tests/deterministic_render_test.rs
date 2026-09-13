@@ -110,8 +110,8 @@ fn tool_lifecycle_rows_stay_ordered_without_pty() {
     let tool_markers: &[&str] = &[
         "Inspect tool activity",
         "Read 1 file",
-        "Edit ui.rs",
-        "audit tool lifecycle consistency",
+        "Edit crates/harness-tui/src/ui.rs",
+        "Ran 1 subagent",
         "Run cargo test -p harness-tui",
         "snapshot mismatch",
         "Tool summaries are now easier to scan, and edits stay inline.",
@@ -151,7 +151,7 @@ fn p21_tool_display_descriptors_cover_state_families_without_pty() {
     assert!(rendered.contains("AST Search"));
     assert!(rendered.contains("ast-grep binary not found"));
     // S4: denied — skill tool shows denied state
-    assert_markers_in_order(&rendered, &["Skill \"denied-skill\"", "Denied"]);
+    assert_markers_in_order(&rendered, &["Skill denied-skill", "Denied"]);
     assert!(rendered.contains("Operator denied skill load"));
     // S5: truncated — session_read has artifact ref (link visible when output expanded)
     assert_markers_in_order(&rendered, &["Read session"]);
@@ -263,7 +263,7 @@ fn permission_modal_preserves_draft_without_pty() {
 }
 
 #[test]
-fn question_permission_prompt_renders_without_pty() {
+fn question_permission_prompt_renders_without_pty() -> Result<(), Box<dyn std::error::Error>> {
     let mut app = AppState::new_live(None, false, None);
     app.ingest_event(question_permission_requested_event(
         1,
@@ -272,6 +272,25 @@ fn question_permission_prompt_renders_without_pty() {
     ));
 
     let rendered = render_text(&app, 100, 28);
+
+    if let Some(directory) = std::env::var_os("HARNESS_QUESTION_SNAPSHOT_ARTIFACT_DIR") {
+        let directory = PathBuf::from(directory);
+        let mut bytes = Vec::new();
+        {
+            let mut terminal = ratatui::Terminal::with_options(
+                ratatui::backend::CrosstermBackend::new(&mut bytes),
+                ratatui::TerminalOptions {
+                    viewport: ratatui::Viewport::Fixed(Rect::new(0, 0, 100, 28)),
+                },
+            )?;
+            terminal.draw(|frame| ui::render_app(frame, &app))?;
+        }
+        std::fs::create_dir_all(&directory)?;
+        std::fs::write(
+            directory.join("interaction-question-initial-100x28-motion-0ms.ansi"),
+            bytes,
+        )?;
+    }
 
     insta::assert_snapshot!(rendered.as_str());
 
@@ -282,7 +301,8 @@ fn question_permission_prompt_renders_without_pty() {
     assert!(rendered.contains("Enter:submit"));
     assert!(rendered.contains("Esc:scrollback"));
     assert!(rendered.contains("Tab:next answer"));
-    assert!(rendered.contains("X:dismiss"));
+    assert!(rendered.contains("Shift+x:dismiss"));
+    Ok(())
 }
 
 #[test]

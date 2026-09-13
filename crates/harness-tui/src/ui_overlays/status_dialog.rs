@@ -297,13 +297,19 @@ fn render_dashboard_peek(
         == app.run_id();
     if let Some(permission) = app.active_permission_view().filter(|_| selected_current) {
         let body = if let Some(prompts) = &permission.question_prompts {
+            let measure = crate::layout::question_content_measure(
+                app,
+                inner.width,
+                frame.area().height,
+                &permission,
+            );
             super::permission_modal::question_permission_body_text(
                 app,
                 &permission,
                 prompts,
                 theme,
                 theme.surface.canvas,
-                inner.width,
+                &measure,
             )
         } else {
             let mut rows = vec![

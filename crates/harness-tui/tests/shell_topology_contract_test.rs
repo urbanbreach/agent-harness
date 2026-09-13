@@ -69,7 +69,7 @@ fn live_single_line_composer_stays_anchored_across_disclosure_states() {
     // act
     for (width, height, expected) in [
         (120, 40, Rect::new(2, 34, 116, 3)),
-        (60, 20, Rect::new(1, 16, 58, 3)),
+        (60, 20, Rect::new(2, 16, 56, 3)),
     ] {
         // assert
         assert_eq!(plan_for(&idle, width, height).composer, Some(expected));
@@ -560,24 +560,24 @@ fn boundary_breakpoint_targets_match_theme_contract() {
     assert!(ViewportClassification::from_dims(121, 32).is_primary());
 }
 
-/// Composer horizontal inset transitions at the 60-column boundary.
+/// Composer horizontal inset stays stable across the old 60-column boundary.
 #[test]
-fn boundary_composer_inset_transitions_at_60_columns() {
+fn boundary_composer_inset_stays_stable_at_60_columns() {
     // arrange
     let app = live_session_app();
 
-    // At ≤60 cols: the frozen 60x20 shell keeps a one-cell inset.
+    // The native shell keeps two cells of horizontal padding at both widths.
     let plan_60 = plan_for(&app, 60, 20);
     let composer_60 = plan_60.composer.expect("composer at 60x20");
     assert_eq!(
         composer_60.x,
-        plan_60.shell.x + 1,
-        "composer must keep the measured one-cell inset at 60x20"
+        plan_60.shell.x + 2,
+        "composer must keep the native two-cell inset at 60x20"
     );
     assert_eq!(
         composer_60.width,
-        plan_60.shell.width - 2,
-        "composer must keep the measured one-cell inset on both sides at 60x20"
+        plan_60.shell.width - 4,
+        "composer must keep the native two-cell inset on both sides at 60x20"
     );
 
     // act
@@ -704,7 +704,7 @@ fn composer_horizontal_inset_matches_centralized_contract_at_all_viewports() {
     let app = live_session_app();
 
     let cases: &[(u16, u16, u16)] = &[
-        (60, 20, 1),
+        (60, 20, 2),
         (79, 24, 2),
         (80, 24, 2),
         (100, 30, 2),

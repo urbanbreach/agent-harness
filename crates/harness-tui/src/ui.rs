@@ -65,6 +65,11 @@ mod ui_tool_output;
 mod ui_tool_paths;
 #[path = "ui_tool_question_todo.rs"]
 mod ui_tool_question_todo;
+pub(crate) use ui_tool_question_todo::{
+    todo_items_from_tool_call, TranscriptTodoItem, TranscriptTodoStatus,
+};
+#[path = "ui_todo_pane.rs"]
+mod ui_todo_pane;
 #[path = "ui_tool_style.rs"]
 mod ui_tool_style;
 #[path = "ui_tool_titles.rs"]
@@ -73,6 +78,8 @@ mod ui_tool_titles;
 mod ui_tool_titles_harness;
 #[path = "ui_tool_visibility.rs"]
 mod ui_tool_visibility;
+#[path = "ui_tool_wrapping.rs"]
+mod ui_tool_wrapping;
 #[path = "ui_transcript.rs"]
 mod ui_transcript;
 #[path = "ui_transcript_bash.rs"]
@@ -139,6 +146,7 @@ use ui_secondary_events_tab::render_help_tab;
 use ui_terminal::render_terminal_panel;
 use ui_transcript::render_transcript_pane;
 pub(crate) use ui_transcript::transcript_diff_hunk_rows;
+pub(crate) use ui_transcript::transcript_entry_scroll_top;
 pub(crate) use ui_transcript::transcript_mouse_target;
 pub(crate) use ui_transcript::transcript_return_to_live_hit;
 pub(crate) use ui_transcript::transcript_scrollbar_hit;
@@ -226,14 +234,6 @@ pub fn render_app(frame: &mut Frame, app: &AppState) {
         return;
     }
 
-    if let Some(viewer) = app.transcript_viewer() {
-        let surface = viewer.render_surface(area);
-        crate::transcript_block_viewer::render_to_buffer(frame.buffer_mut(), area, &surface, theme);
-        render_overlays(frame, app, theme, &plan);
-        render_toast(frame, app, area, theme);
-        return;
-    }
-
     render_header(frame, app, &plan, theme);
     render_content(frame, app, plan.content, theme, &plan);
     if let (Some(message), Some(notice_area)) = (&app.model_prompt_notice, plan.model_prompt_notice)
@@ -249,6 +249,10 @@ pub fn render_app(frame: &mut Frame, app: &AppState) {
         );
     }
     render_footer(frame, app, &plan, theme);
+    if let Some(viewer) = app.transcript_viewer() {
+        let surface = viewer.render_surface(area);
+        crate::transcript_block_viewer::render_to_buffer(frame.buffer_mut(), area, &surface, theme);
+    }
     render_overlays(frame, app, theme, &plan);
     render_toast(frame, app, area, theme);
 }
@@ -321,6 +325,9 @@ fn render_replay_session_surface(
         plan.shell,
     );
     render_transcript_pane(frame, app, transcript_area, theme);
+    if let Some(todo) = plan.todo {
+        ui_todo_pane::render_todo_pane(frame, app, todo, theme);
+    }
     if let Some(terminal_panel) = plan.terminal_panel {
         render_terminal_panel(frame, app, terminal_panel, theme);
     }
@@ -378,9 +385,12 @@ fn render_live_run_shell(frame: &mut Frame, app: &AppState, theme: &Theme, plan:
         live_transcript_shell_section(theme.surface.shell),
         plan.shell,
     );
-    render_live_breadcrumb(frame, app, transcript_area, theme);
+    render_live_breadcrumb(frame, app, plan.shell, theme);
     let transcript_area = live_transcript_area_with_breadcrumb(transcript_area);
     render_transcript_pane(frame, app, transcript_area, theme);
+    if let Some(todo) = plan.todo {
+        ui_todo_pane::render_todo_pane(frame, app, todo, theme);
+    }
     if let Some(terminal_panel) = plan.terminal_panel {
         render_terminal_panel(frame, app, terminal_panel, theme);
     }
@@ -686,9 +696,234 @@ mod ui_terminal_output;
 #[path = "ui_recorded_tool_output.rs"]
 mod ui_recorded_tool_output;
 
+pub(crate) use ui_tool_visibility::tool_output_is_viewer_only;
+
+pub(crate) fn recorded_tool_viewer_content(
+    tool: &crate::app::ToolCallEntry,
+) -> crate::transcript_block_viewer::ViewerBlockContent {
+    use crate::transcript_block_viewer::{ViewerBlockContent, ViewerPreamble};
+    let text = recorded_tool_viewer_text(tool);
+    if matches!(tool.effective_tool_id(), "read" | "fs.read") {
+        let start_line = (tool.status == crate::app::ToolCallDisplayStatus::Succeeded
+            && ui_tool_metadata::read_media_mime(tool).is_none())
+        .then(|| {
+            tool.output_json
+                .as_ref()
+                .and_then(|value| value.pointer("/metadata/display/lineStart"))
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(1)
+        });
+        return ViewerBlockContent::new(&text, Some(&text)).with_preamble(ViewerPreamble::Read {
+            path: ui_tool_paths::tool_path_display(tool).unwrap_or_default(),
+            details: ui_tool_paths::read_tool_input_suffix(tool),
+            start_line,
+        });
+    }
+    if matches!(tool.effective_tool_id(), "bash" | "shell.run") {
+        let command = ui_transcript_bash::shell_tool_command(tool).unwrap_or_default();
+        let body = text
+            .strip_prefix(&format!("$ {command}\n"))
+            .unwrap_or(&text);
+        return ViewerBlockContent::new(body, Some(body)).with_preamble(ViewerPreamble::Command {
+            command: ui_tool_output::safe_tool_text(&command),
+            description: ui_transcript_bash::shell_tool_title_description(tool, None),
+        });
+    }
+    let label = match tool.effective_tool_id() {
+        "read" | "fs.read" => "Read",
+        "write" | "fs.write" => "Create",
+        "edit" | "edit.hashline_apply" => "Edit",
+        "list" | "fs.ls" => "List",
+        _ => tool.effective_tool_id(),
+    };
+    ViewerBlockContent::new(&text, Some(&text)).with_preamble(ViewerPreamble::Title {
+        label: label.to_string(),
+        argument: ui_tool_paths::tool_path_display(tool).unwrap_or_default(),
+    })
+}
+
+pub(crate) fn viewer_wrap_lines(
+    lines: Vec<Line<'static>>,
+    width: usize,
+) -> (Vec<Line<'static>>, Vec<String>) {
+    let mut output = Vec::new();
+    let mut joiners: Vec<String> = Vec::new();
+    for line in lines {
+        let text = line.to_string();
+        let mut cursor = 0;
+        for (index, spans) in ui_tool_wrapping::words(line.spans, width)
+            .into_iter()
+            .enumerate()
+        {
+            let wrapped = Line::from(spans);
+            let value = wrapped.to_string();
+            let start = cursor
+                + text
+                    .get(cursor..)
+                    .and_then(|rest| rest.find(&value))
+                    .unwrap_or(0);
+            if index > 0 {
+                if let Some(joiner) = joiners.last_mut() {
+                    *joiner = text.get(cursor..start).unwrap_or_default().to_owned();
+                }
+            }
+            cursor = start + value.len();
+            output.push(wrapped);
+            joiners.push("\n".to_owned());
+        }
+    }
+    (output, joiners)
+}
+
+pub(crate) fn viewer_preamble_lines(
+    preamble: &crate::transcript_block_viewer::ViewerPreamble,
+    width: usize,
+    theme: &Theme,
+) -> Vec<Line<'static>> {
+    use crate::transcript_block_viewer::ViewerPreamble;
+    if let ViewerPreamble::Read { path, details, .. } = preamble {
+        let mut header = vec![
+            Span::styled(
+                "Read ",
+                Style::default()
+                    .fg(theme.text.primary)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                path.clone(),
+                Style::default().fg(ui_tool_paths::tool_path_color(theme)),
+            ),
+        ];
+        if !details.is_empty() {
+            header.push(Span::styled(
+                format!(" {details}"),
+                Style::default().fg(theme.terminal_colors.muted),
+            ));
+        }
+        let mut lines = ui_tool_wrapping::words(header, width)
+            .into_iter()
+            .map(Line::from)
+            .collect::<Vec<_>>();
+        lines.push(Line::default());
+        return lines;
+    }
+    let bold = Style::default()
+        .fg(theme.text.primary)
+        .add_modifier(Modifier::BOLD);
+    let plain = Style::default().fg(theme.text.primary);
+    let (label, argument, shell, secondary) = match preamble {
+        ViewerPreamble::Command {
+            command,
+            description,
+        } => (
+            "Run",
+            description.as_deref().unwrap_or(command),
+            description.is_none(),
+            description.as_ref().map(|_| command),
+        ),
+        ViewerPreamble::Title { label, argument } => {
+            (label.as_str(), argument.as_str(), false, None)
+        }
+        ViewerPreamble::Read { .. } => return Vec::new(),
+    };
+    let mut header = vec![Span::styled(label.to_string(), bold), Span::raw(" ")];
+    let mut lines = if shell {
+        let highlighted = ui_syntax_highlight::render_highlighted_code_block(
+            Some("bash"),
+            argument,
+            argument,
+            "",
+            theme.text.primary,
+            theme,
+        );
+        let rows =
+            ui_tool_wrapping::shell(highlighted, width.saturating_sub(label.len() + 1).max(1));
+        rows.into_iter()
+            .enumerate()
+            .map(|(index, spans)| {
+                let mut prefix = if index == 0 {
+                    header.clone()
+                } else {
+                    Vec::new()
+                };
+                prefix.extend(spans);
+                Line::from(prefix)
+            })
+            .collect::<Vec<_>>()
+    } else {
+        header.push(Span::styled(argument.to_string(), plain));
+        ui_tool_wrapping::words(header, width)
+            .into_iter()
+            .map(Line::from)
+            .collect()
+    };
+    if let Some(command) = secondary {
+        let highlighted = ui_syntax_highlight::render_highlighted_code_block(
+            Some("bash"),
+            command,
+            command,
+            "",
+            theme.text.primary,
+            theme,
+        );
+        for (index, spans) in ui_tool_wrapping::shell(highlighted, width.saturating_sub(2).max(1))
+            .into_iter()
+            .enumerate()
+        {
+            let mut line = vec![Span::styled(
+                if index == 0 { "$ " } else { "  " },
+                Style::default().fg(theme.terminal_colors.muted),
+            )];
+            line.extend(spans);
+            lines.push(Line::from(line));
+        }
+    }
+    for span in lines.iter_mut().flat_map(|line| &mut line.spans) {
+        span.style = span.style.bg(theme.surface.shell);
+    }
+    lines.push(Line::default());
+    lines
+}
+
 pub(crate) fn recorded_tool_viewer_text(tool: &crate::app::ToolCallEntry) -> String {
+    let mut text = recorded_tool_viewer_body(tool);
+    for hook in &tool.hook_executions {
+        text.push_str("\n\n");
+        if let Some(phase) = &hook.hook_event {
+            text.push_str(phase);
+            text.push_str(": ");
+        }
+        text.push_str(&hook.hook_name);
+        let status = match hook.status {
+            harness_core::event::HookExecutionStatus::Succeeded => "succeeded",
+            harness_core::event::HookExecutionStatus::Blocked => "blocked",
+            harness_core::event::HookExecutionStatus::Failed => "failed",
+            harness_core::event::HookExecutionStatus::Skipped => "skipped",
+            harness_core::event::HookExecutionStatus::Unknown => "unknown",
+        };
+        text.push_str(&format!(" ({status})"));
+        if let Some(duration) = hook.duration_ms {
+            text.push_str(&format!(" {duration}ms"));
+        }
+        if let Some(output) = &hook.output_summary {
+            text.push('\n');
+            text.push_str(output);
+        }
+    }
+    ui_tool_output::safe_tool_text(&text)
+}
+
+fn recorded_tool_viewer_body(tool: &crate::app::ToolCallEntry) -> String {
     if let Some(output) = ui_recorded_tool_output::project(tool) {
-        return output.full_text();
+        let text = output.full_text();
+        if matches!(
+            output,
+            ui_recorded_tool_output::RecordedToolOutput::Mcp { error: Some(_), .. }
+        ) {
+            return text;
+        }
+        return ui_tool_error::tool_error_text(tool)
+            .map_or_else(|| text.clone(), |error| format!("{text}\n\n{error}"));
     }
     if matches!(tool.effective_tool_id(), "shell.run" | "bash") {
         let command = ui_transcript_bash::shell_tool_command(tool).unwrap_or_default();
@@ -721,4 +956,38 @@ pub(crate) fn viewer_markdown_lines(text: &str, width: u16, theme: &Theme) -> Ve
     let mut lines = Vec::new();
     ui_markdown::append_rich_text_block(&mut lines, text, theme.text.primary, "", theme, width);
     lines
+}
+
+pub(crate) fn viewer_read_lines(
+    text: &str,
+    path: &str,
+    start: u64,
+    theme: &Theme,
+) -> Vec<Line<'static>> {
+    let last = start
+        .saturating_add(u64::try_from(text.lines().count().saturating_sub(1)).unwrap_or(u64::MAX));
+    let gutter_width = last.to_string().len();
+    ui_syntax_highlight::render_highlighted_code_block(
+        Some(path),
+        text,
+        text,
+        "",
+        theme.text.primary,
+        theme,
+    )
+    .into_iter()
+    .enumerate()
+    .map(|(index, line)| {
+        let number = start.saturating_add(u64::try_from(index).unwrap_or(u64::MAX));
+        let mut spans = vec![Span::styled(
+            format!("{number:>gutter_width$}  "),
+            Style::default().fg(theme.terminal_colors.muted),
+        )];
+        spans.extend(line.spans.into_iter().map(|mut span| {
+            span.style.bg = None;
+            span
+        }));
+        Line::from(spans)
+    })
+    .collect()
 }

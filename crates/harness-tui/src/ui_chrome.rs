@@ -45,6 +45,17 @@ struct DocumentComposerRenderContext<'a> {
 
 const QUIET_SURFACE_PADDING_X: u16 = 1;
 const QUIET_SURFACE_PADDING_TOP: u16 = 1;
+
+// Dark Question selection now has its own native band. Other modal/permission
+// rows retain the old card band. Light and terminal-native palettes are unchanged;
+// their Question selection was not interchangeable with SelectedCard.
+pub(super) fn legacy_modal_selection_surface(theme: &Theme) -> Color {
+    if theme.is_dark() && theme.question_prompt.surface != Color::Reset {
+        theme.surface.selected_card
+    } else {
+        theme.question_prompt.selected
+    }
+}
 pub(super) const fn composer_input_surface(theme: &Theme) -> Color {
     theme.surface.canvas
 }
@@ -766,17 +777,7 @@ pub(super) fn render_unified_bottom_dock(
     let active_permission = app.active_permission_view();
     if let Some(status_area) = dock_layout.status {
         if let Some(permission) = active_permission.as_ref() {
-            if permission.question_prompts.is_some() {
-                render_question_permission_with_shell_footer(
-                    frame,
-                    app,
-                    status_area,
-                    theme,
-                    permission,
-                );
-            } else {
-                render_inline_permission_dock(frame, app, status_area, theme, permission);
-            }
+            render_permission_with_shell_footer(frame, app, status_area, theme, permission);
         } else {
             super::ui_live_turn_status::render_live_turn_status(frame, app, status_area, theme);
         }
@@ -809,7 +810,7 @@ pub(super) fn render_unified_bottom_dock(
     );
 }
 
-fn render_question_permission_with_shell_footer(
+fn render_permission_with_shell_footer(
     frame: &mut Frame,
     app: &AppState,
     area: Rect,
@@ -848,12 +849,14 @@ fn render_question_permission_with_shell_footer(
 
     let surface = live_control_dock_surface(theme);
     let bold = Style::default()
-        .fg(theme.text.primary)
+        .fg(theme.terminal_colors.prompt_accent)
         .bg(surface)
         .add_modifier(Modifier::BOLD);
-    let normal = Style::default().fg(theme.text.primary).bg(surface);
+    let normal = Style::default()
+        .fg(theme.terminal_colors.secondary)
+        .bg(surface);
     let dim = Style::default()
-        .fg(theme.text.tertiary)
+        .fg(theme.text.secondary)
         .bg(surface)
         .add_modifier(Modifier::DIM);
 
@@ -863,13 +866,29 @@ fn render_question_permission_with_shell_footer(
         .get(active_tab)
         .is_some_and(|values| !values.is_empty());
     let hints = if app.focus != crate::app::Focus::Prompt {
-        vec![("Tab/Space", ":question")]
-    } else if app.question_prompt_editing(&permission.permission_id) {
         vec![
-            ("Enter", ":submit"),
-            ("Shift/Alt+Enter", ":newline"),
-            ("Ctrl+C/Esc", ":back"),
+            (
+                "Tab/Space",
+                if permission.question_prompts.is_some() {
+                    ":question"
+                } else {
+                    ":permission"
+                },
+            ),
+            (
+                "Ctrl+e",
+                if app.transcript_thinking_visible() {
+                    ":collapse thinking"
+                } else {
+                    ":expand thinking"
+                },
+            ),
+            ("Ctrl+x", ":shortcuts"),
         ]
+    } else if permission.question_prompts.is_none() {
+        permission_shell_hints(app, permission, footer_area.width, frame.area().height)
+    } else if app.question_prompt_editing(&permission.permission_id) {
+        vec![("Enter", ":submit"), ("Esc", ":back")]
     } else {
         vec![
             ("Tab", ":next answer"),
@@ -881,53 +900,89 @@ fn render_question_permission_with_shell_footer(
                     ":scrollback"
                 },
             ),
-            ("X", ":dismiss"),
+            ("Shift+x", ":dismiss"),
         ]
     };
+    let separator = Span::styled("  │  ", dim);
     let mut spans = Vec::new();
-    for (index, (key, label)) in hints.into_iter().enumerate() {
-        if index > 0 {
-            spans.push(Span::styled("  │  ", dim));
-        }
-        spans.push(Span::styled(key, bold));
-        spans.push(Span::styled(label, normal));
-    }
-    if Line::from(spans.clone()).width() > usize::from(footer_area.width) {
-        spans.clear();
-        let compact_hints = if app.focus != crate::app::Focus::Prompt {
-            vec![("Tab/Spc", ":question")]
-        } else if app.question_prompt_editing(&permission.permission_id) {
-            vec![
-                ("Enter", ":commit"),
-                ("S/A+Enter", ":newline"),
-                ("Esc", ":back"),
-            ]
-        } else {
-            vec![
-                ("Tab", ":next"),
-                (
-                    "Esc",
-                    if has_selection {
-                        ":clear"
-                    } else {
-                        ":scrollback"
-                    },
-                ),
-                ("X", ":dismiss"),
-            ]
-        };
-        for (index, (key, label)) in compact_hints.into_iter().enumerate() {
-            if index > 0 {
-                spans.push(Span::styled("  │  ", dim));
+    let mut used_width = 0;
+    let available = usize::from(footer_area.width);
+    for (key, label) in hints {
+        if !spans.is_empty() {
+            if used_width + separator.width() > available {
+                break;
             }
-            spans.push(Span::styled(key, bold));
-            spans.push(Span::styled(label, normal));
+            used_width += separator.width();
+            spans.push(separator.clone());
         }
+        if used_width + display_width(key) > available {
+            break;
+        }
+        used_width += display_width(key);
+        for (index, segment) in key.split('/').enumerate() {
+            if index > 0 {
+                spans.push(Span::styled("/", normal));
+            }
+            spans.push(Span::styled(segment.to_owned(), bold));
+        }
+        if used_width + 1 > available {
+            break;
+        }
+        spans.push(Span::styled(":", normal));
+        used_width += 1;
+        let label = label.trim_start_matches(':');
+        if used_width + display_width(label) > available {
+            break;
+        }
+        spans.push(Span::styled(label, normal));
+        used_width += display_width(label);
     }
     frame.render_widget(
         Paragraph::new(Line::from(spans)).style(Style::default().bg(surface)),
         footer_area,
     );
+}
+
+fn permission_shell_hints(
+    app: &AppState,
+    permission: &crate::app::ActivePermissionView,
+    width: u16,
+    height: u16,
+) -> Vec<(&'static str, &'static str)> {
+    use crate::app::permissions::PermissionModalStage;
+    if app.permission_modal_stage(&permission.permission_id) == PermissionModalStage::AlwaysConfirm
+    {
+        return vec![("Enter", ":confirm"), ("Esc", ":back")];
+    }
+    let editing = app
+        .permission_feedback(&permission.permission_id)
+        .is_some_and(|feedback| feedback.editing);
+    let measure = crate::layout::permission_dock_measure(app, width, height, permission);
+    let mut hints = if editing {
+        vec![("Enter", ":send")]
+    } else {
+        vec![("1/4", ":select"), ("Tab", ":next option")]
+    };
+    if measure.detail_rows > 5 {
+        hints.push((
+            "Ctrl+f",
+            if measure.expanded {
+                ":collapse"
+            } else {
+                ":expand"
+            },
+        ));
+    }
+    if editing {
+        hints.push(("Esc", ":back"));
+    } else {
+        hints.extend([
+            ("Ctrl+o", ":always-approve"),
+            ("Ctrl+c", ":cancel"),
+            ("Esc", ":scrollback"),
+        ]);
+    }
+    hints
 }
 
 fn preferred_binding(

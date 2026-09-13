@@ -121,7 +121,7 @@ fn compact_startup_composer_is_flush_while_live_composer_keeps_its_inset() {
 
     // assert
     assert_eq!((startup_dock.shell.x, startup_dock.shell.width), (0, 60));
-    assert_eq!((live_dock.shell.x, live_dock.shell.width), (1, 58));
+    assert_eq!((live_dock.shell.x, live_dock.shell.width), (2, 56));
 }
 
 #[test]
