@@ -4,7 +4,6 @@ use crate::scheduling::{MotionDemand, MotionPlan};
 
 use super::{ActivityStatus, AppState, ToolCallDisplayStatus};
 
-const FAST_CADENCE: Duration = Duration::from_millis(33);
 const STREAM_CADENCE: Duration = Duration::from_millis(133);
 const STARTUP_CADENCE: Duration = Duration::from_millis(83);
 const BACKGROUND_CADENCE: Duration = Duration::from_millis(264);
@@ -49,6 +48,7 @@ impl AppState {
     pub(crate) fn motion_plan(&self) -> MotionPlan {
         let now = self.now();
         let mut plan = MotionPlan::none();
+        let fast_cadence = Duration::from_millis(crate::scheduling::runtime_flush_interval_ms());
 
         if !self.reduced_motion && !self.replay_mode {
             if let Some(remaining) = self.transcript_view.tool_motion.finish_remaining(now) {
@@ -63,7 +63,7 @@ impl AppState {
         if let Some(remaining) = self.toast_motion_remaining(now) {
             plan = plan.merge(MotionDemand::until(remaining));
             if !self.reduced_motion && self.toast_requires_fade(now) {
-                plan = plan.merge(MotionDemand::fast(FAST_CADENCE));
+                plan = plan.merge(MotionDemand::fast(fast_cadence));
             }
         }
         if let Some(deadline) = self.interrupt_confirm_deadline {
@@ -74,7 +74,7 @@ impl AppState {
         }
         if !self.reduced_motion {
             plan = if self.fast_visible_motion_active() {
-                plan.merge(MotionDemand::fast(FAST_CADENCE))
+                plan.merge(MotionDemand::fast(fast_cadence))
             } else if self.startup_welcome_transition_pending()
                 || self.starting_session_seed_visible()
             {
@@ -201,9 +201,10 @@ impl AppState {
 
     fn streaming_wait_motion_active(&self) -> bool {
         !self.replay_mode
-            && (self
-                .active_permission_view()
-                .is_some_and(|permission| permission.kind.eq_ignore_ascii_case("question"))
+            && (self.active_compaction().is_some()
+                || self
+                    .active_permission_view()
+                    .is_some_and(|permission| permission.kind.eq_ignore_ascii_case("question"))
                 || self.activities.iter().any(|activity| {
                     activity.status == ActivityStatus::Streaming
                         && !activity.tool_calls.iter().any(|tool| {

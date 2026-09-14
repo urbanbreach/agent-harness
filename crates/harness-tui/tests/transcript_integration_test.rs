@@ -57,7 +57,7 @@ fn lifecycle_frames_are_pure_samples_of_the_runtime_clock() -> TestResult {
         flush_ms: 0,
     });
     let advanced = lifecycle.tick(FrameNow {
-        animation_ms: 33,
+        animation_ms: 133,
         flush_ms: 0,
     });
 

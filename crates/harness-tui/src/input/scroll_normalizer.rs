@@ -4,7 +4,8 @@ use std::time::Duration;
 use crate::terminal::{TerminalMultiplexer, TerminalName};
 
 pub const SCROLL_STREAM_GAP: Duration = Duration::from_millis(80);
-pub const SCROLL_REDRAW_CADENCE: Duration = Duration::from_millis(16);
+pub const SCROLL_REDRAW_CADENCE: Duration =
+    Duration::from_millis(crate::scheduling::FLUSH_DEADLINE_MS);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScrollInputMode {

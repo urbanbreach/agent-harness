@@ -138,8 +138,7 @@ impl LifecycleCoordinator {
 }
 
 fn interval_for(kind: BlockKind) -> u64 {
-    let _ = kind;
-    let motion = MotionKind::ActiveTick;
+    let motion = motion_for(kind);
     DESIGN_TOKENS
         .motion_tokens
         .all
@@ -165,17 +164,21 @@ fn is_animated(kind: BlockKind) -> bool {
 }
 
 fn frames_for(kind: BlockKind) -> u8 {
-    let motion = match kind {
-        BlockKind::Thinking => MotionKind::StreamingSpinner,
-        BlockKind::Tool | BlockKind::Diff => MotionKind::ToolPulse,
-        BlockKind::User | BlockKind::Assistant | BlockKind::System => MotionKind::ActiveTick,
-    };
+    let motion = motion_for(kind);
     DESIGN_TOKENS
         .motion_tokens
         .all
         .iter()
         .find(|token| token.kind == motion)
         .map_or(1, |token| token.frames.max(1))
+}
+
+fn motion_for(kind: BlockKind) -> MotionKind {
+    match kind {
+        BlockKind::Thinking => MotionKind::StreamingSpinner,
+        BlockKind::Tool | BlockKind::Diff => MotionKind::ToolPulse,
+        BlockKind::User | BlockKind::Assistant | BlockKind::System => MotionKind::ActiveTick,
+    }
 }
 
 use super::cache::{build_layout, build_turns};

@@ -5,7 +5,7 @@ use crate::terminal::ResizeEvent;
 
 use super::{TerminalEnvelope, TerminalQueue};
 
-pub const RESIZE_DEBOUNCE: Duration = Duration::from_millis(16);
+pub const RESIZE_DEBOUNCE: Duration = Duration::from_millis(crate::scheduling::FLUSH_DEADLINE_MS);
 
 #[derive(Default)]
 pub(crate) struct RuntimeInputIngress {

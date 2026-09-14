@@ -271,7 +271,7 @@ fn edge_drag_autoscroll_extends_selection_on_scheduler_deadlines() -> TestResult
     assert!(drag.next_deadline_ms().is_some());
 
     // When: the task-10 flush deadline elapses at the lower edge.
-    clock.tick_flush();
+    clock.advance_flush(drag.next_deadline_ms().ok_or("autoscroll deadline")?);
     let step = drag
         .tick(clock.flush_now())
         .ok_or("expected an autoscroll step")?;

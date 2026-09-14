@@ -1,4 +1,4 @@
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use crossbeam_channel::{unbounded, Receiver, Sender, TryRecvError};
 use std::sync::Mutex;
@@ -7,11 +7,10 @@ use thiserror::Error;
 use crate::app::{set_pending_live_prompt_draft, AppState, ToastVariant, UiIntent};
 use crate::runtime_integration::RuntimeExperience;
 use crate::runtime_scheduling::SchedulingLiveReadiness;
-use crate::scheduling::DeferredLiveUpdate;
+use crate::scheduling::{DeferredLiveUpdate, LIVE_BATCH_TIME};
 use crate::{LiveUpdate, OperatorNoticeLevel};
 
 pub(crate) const LIVE_UPDATE_DRAIN_MAX_PER_FRAME: usize = 16;
-const LIVE_UPDATE_DRAIN_MAX_DURATION: Duration = Duration::from_millis(8);
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct LiveUpdateDrainState {
@@ -137,9 +136,7 @@ fn drain_with_limit(
     let mut drained = 0_usize;
     let started_at = Instant::now();
     loop {
-        if drained >= limit
-            || (drained > 0 && started_at.elapsed() >= LIVE_UPDATE_DRAIN_MAX_DURATION)
-        {
+        if drained >= limit || (drained > 0 && started_at.elapsed() >= LIVE_BATCH_TIME) {
             state.budget_exhausted = !receiver.is_empty();
             break;
         }

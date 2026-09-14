@@ -6,7 +6,7 @@ use harness_tui::terminal::brand::TerminalName;
 use harness_tui::terminal::multiplexer::TerminalMultiplexer;
 
 #[test]
-fn changed_work_is_coalesced_until_the_sixteen_millisecond_flush_deadline() {
+fn changed_work_is_coalesced_until_the_four_millisecond_flush_deadline() {
     // arrange
     // Given: changed UI work requested at the start of a flush window.
     let clock = DualClock::new();
@@ -15,10 +15,10 @@ fn changed_work_is_coalesced_until_the_sixteen_millisecond_flush_deadline() {
 
     // When: more changed work arrives before the original deadline.
     let armed = pacer.poll(clock.snapshot(), false);
-    clock.advance_flush(10);
+    clock.advance_flush(2);
     pacer.request_flush();
     let pending = pacer.poll(clock.snapshot(), false);
-    clock.advance_flush(FLUSH_DEADLINE_MS - 10);
+    clock.advance_flush(FLUSH_DEADLINE_MS - 2);
     let due = pacer.poll(clock.snapshot(), false);
 
     // act
@@ -31,22 +31,21 @@ fn changed_work_is_coalesced_until_the_sixteen_millisecond_flush_deadline() {
 }
 
 #[test]
-fn changed_work_can_be_paced_at_one_hundred_twenty_hertz() {
-    // arrange — Given the runtime pacer uses an 8 ms minimum draw interval.
-    let clock = DualClock::new();
-    let mut pacer = RuntimePacer::with_reduced_motion_and_flush_interval_ms(false, 8);
-    pacer.request_flush();
-
-    // act — When the high-refresh deadline elapses.
-    let armed = pacer.poll(clock.snapshot(), false);
-    clock.advance_flush(8);
-    let due = pacer.poll(clock.snapshot(), false);
-
-    // assert — Then changed work paints at 120 Hz without creating an idle redraw loop.
-    assert_eq!(
-        (armed.next_wait_ms, armed.paint, due.paint, due.next_wait_ms),
-        (Some(8), false, true, None)
-    );
+fn changed_work_supports_high_refresh_rates_without_idle_redraws() {
+    for interval in [4, 6, 8, 16] {
+        let clock = DualClock::new();
+        let mut pacer = RuntimePacer::with_reduced_motion_and_flush_interval_ms(false, interval);
+        pacer.request_flush();
+        let armed = pacer.poll(clock.snapshot(), false);
+        clock.advance_flush(interval - 1);
+        assert!(!pacer.poll(clock.snapshot(), false).paint);
+        clock.advance_flush(1);
+        let due = pacer.poll(clock.snapshot(), false);
+        assert_eq!(
+            (armed.next_wait_ms, armed.paint, due.paint, due.next_wait_ms),
+            (Some(interval), false, true, None)
+        );
+    }
 }
 
 #[test]
@@ -77,7 +76,7 @@ fn animation_ticks_remain_independent_from_the_flush_clock() {
     let mut pacer = RuntimePacer::new();
     let armed = pacer.poll(clock.snapshot(), true);
 
-    // When: the flush clock advances first, then the animation clock reaches 30 Hz.
+    // When: the flush clock advances first, then the animation clock reaches its deadline.
     clock.advance_flush(FLUSH_DEADLINE_MS);
     let flush_clock_only = pacer.poll(clock.snapshot(), true);
     clock.advance_animation(ANIMATION_PERIOD_MS);
@@ -170,7 +169,7 @@ fn wheel_flood_is_reduced_to_one_capped_batch() {
     }
     pacer.poll(clock.snapshot(), false);
 
-    // When: the 16 ms wheel flush becomes due.
+    // When: the configured wheel flush becomes due.
     clock.advance_flush(FLUSH_DEADLINE_MS);
     let due = pacer.poll(clock.snapshot(), false);
     let after = pacer.poll(clock.snapshot(), false);

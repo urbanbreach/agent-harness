@@ -6,16 +6,23 @@ use crate::theme::Theme;
 use super::ui_chrome::elevated_card_surface;
 
 const TRANSCRIPT_BRAILLE_SPINNER_FRAMES: [&str; 8] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧"];
-const TRANSCRIPT_SPINNER_TICK_DIVISOR: usize = 4;
+const TRANSCRIPT_SPINNER_INTERVAL_MS: usize = 132;
 const MONITOR_PULSE_FRAMES: [&str; 4] = ["○", "◎", "◉", "◎"];
-const MONITOR_PULSE_TICK_DIVISOR: usize = 8;
+const MONITOR_PULSE_INTERVAL_MS: usize = 264;
 const TRANSCRIPT_TOOL_WAVE_SPEED: f32 = 0.15;
 const USER_WAITING_PULSE_SPEED: f32 = 0.08;
 const ANIMATION_PHASE_WRAP: usize = 65_536;
 
+pub(super) fn animation_elapsed_ms(animation_phase: usize) -> usize {
+    animation_phase.saturating_mul(
+        usize::try_from(crate::scheduling::ANIMATION_PERIOD_MS).unwrap_or(usize::MAX),
+    )
+}
+
 fn animation_phase_f32(animation_phase: usize) -> f32 {
-    let wrapped = animation_phase % ANIMATION_PHASE_WRAP;
-    f32::from(u16::try_from(wrapped).unwrap_or_default())
+    let wrapped_ms = animation_elapsed_ms(animation_phase) % (ANIMATION_PHASE_WRAP * 33);
+    std::time::Duration::from_millis(u64::try_from(wrapped_ms).unwrap_or_default()).as_secs_f32()
+        / 0.033
 }
 
 pub(super) fn glyph_routed_streaming_spinner_frame(
@@ -29,7 +36,7 @@ pub(super) fn glyph_routed_streaming_spinner_frame(
     if !motion_enabled {
         return TRANSCRIPT_BRAILLE_SPINNER_FRAMES[0];
     }
-    let frame = animation_phase / TRANSCRIPT_SPINNER_TICK_DIVISOR;
+    let frame = animation_elapsed_ms(animation_phase) / TRANSCRIPT_SPINNER_INTERVAL_MS;
     TRANSCRIPT_BRAILLE_SPINNER_FRAMES[frame % TRANSCRIPT_BRAILLE_SPINNER_FRAMES.len()]
 }
 
@@ -44,7 +51,7 @@ pub(super) fn glyph_routed_monitor_pulse_frame(
     if !motion_enabled {
         return MONITOR_PULSE_FRAMES[0];
     }
-    let frame = animation_phase / MONITOR_PULSE_TICK_DIVISOR;
+    let frame = animation_elapsed_ms(animation_phase) / MONITOR_PULSE_INTERVAL_MS;
     MONITOR_PULSE_FRAMES[frame % MONITOR_PULSE_FRAMES.len()]
 }
 
@@ -209,6 +216,10 @@ mod tests {
         assert_ne!(
             transcript_running_tool_marker_color(&theme, 0),
             transcript_running_tool_marker_color(&theme, 10)
+        );
+        // A faster sampling clock must not bring the long-session phase reset forward.
+        assert!(
+            (super::animation_phase_f32(65_536) - super::animation_phase_f32(65_535)).abs() < 1.0
         );
     }
 
