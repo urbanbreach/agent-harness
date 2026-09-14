@@ -506,16 +506,11 @@ pub(super) fn line_has_tool_rail(line: &Line<'_>, rail_glyph: &str) -> bool {
 }
 
 const TOOL_RAIL_WAVE_ROWS: usize = 32;
-// Reference: 0.15 radians per shared tick, held between its 33 ms frames.
+// Preserve the reference wave's speed while sampling continuously at the display cadence.
 const TOOL_RAIL_ANGULAR_SPEED: f32 = 0.15;
 
 pub(super) fn wave_brightness(elapsed: Duration, row: usize, wave_rows: usize) -> f32 {
-    let tick = elapsed.as_millis() / u128::from(crate::scheduling::ANIMATION_PERIOD_MS);
-    #[expect(
-        clippy::cast_precision_loss,
-        reason = "match the reference wave's f32 clock, including long-session tick quantization"
-    )]
-    let tick = tick as f32;
+    let tick = elapsed.as_secs_f32() / 0.033;
     let wave_rows = wave_rows.max(1);
     let row = u16::try_from(row % wave_rows).unwrap_or(0);
     let wave_rows = u16::try_from(wave_rows).unwrap_or(u16::MAX);
@@ -1016,6 +1011,15 @@ pub(super) fn wrap_surface_spans_with_links(
     links: &[SurfaceLinkRun],
     width: usize,
 ) -> Vec<WrappedSurfaceRow> {
+    if links.is_empty() {
+        return wrap_surface_spans(spans, width)
+            .into_iter()
+            .map(|spans| WrappedSurfaceRow {
+                spans,
+                links: Vec::new(),
+            })
+            .collect();
+    }
     let source = spans
         .iter()
         .flat_map(|span| split_graphemes(span.content.as_ref()))
@@ -1095,7 +1099,7 @@ fn wrap_surface_spans_impl(
     let mut current_width = 0;
 
     for token in spans.into_iter().flat_map(surface_wrap_tokens) {
-        let token_text = token.content.to_string();
+        let token_text = token.content.as_ref();
         let token_width = token.width();
         let token_is_whitespace = token_text.chars().all(char::is_whitespace);
 
@@ -1123,7 +1127,7 @@ fn wrap_surface_spans_impl(
             current = Vec::new();
         }
 
-        if simple_grapheme_boundaries(&token_text) {
+        if simple_grapheme_boundaries(token_text) {
             let mut chunk = String::new();
             let mut chunk_width = 0usize;
             for character in token_text.chars() {
@@ -1142,7 +1146,7 @@ fn wrap_surface_spans_impl(
             continue;
         }
 
-        let clusters = split_graphemes(&token_text);
+        let clusters = split_graphemes(token_text);
         let mut chunk = String::new();
         let mut chunk_width = 0usize;
         for cluster in clusters {
@@ -1174,6 +1178,9 @@ pub(super) fn wrap_preformatted_spans(
     width: usize,
 ) -> Vec<Vec<Span<'static>>> {
     let expanded = expand_preformatted_tabs(spans);
+    if expanded.iter().map(Span::width).sum::<usize>() <= width.max(1) {
+        return vec![expanded];
+    }
     let rows = wrap_surface_spans_impl(expanded, width.max(1), true);
     if rows.is_empty() {
         vec![Vec::new()]
@@ -1183,6 +1190,9 @@ pub(super) fn wrap_preformatted_spans(
 }
 
 pub(super) fn expand_preformatted_tabs(spans: Vec<Span<'static>>) -> Vec<Span<'static>> {
+    if !spans.iter().any(|span| span.content.contains('\t')) {
+        return spans;
+    }
     let mut source_column = 0;
     spans
         .into_iter()

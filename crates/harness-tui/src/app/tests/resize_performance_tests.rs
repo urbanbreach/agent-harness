@@ -12,7 +12,7 @@ const MEASURED_RESIZE_COUNT: usize = 100;
 const NARROW_COLUMNS: u16 = 80;
 const WIDE_COLUMNS: u16 = 160;
 const VIEWPORT_ROWS: u16 = 40;
-const P95_LIMIT_US: u128 = 33_000;
+const P95_LIMIT_US: u128 = 8_333;
 
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 
@@ -56,6 +56,259 @@ fn settled_assistant_block(index: usize) -> ActivityEntry {
         request_started_mono_ms: None,
         revision: 0,
     }
+}
+
+// Run each scenario in a fresh nextest process to isolate allocator/cache residency.
+#[test]
+fn perf_interactive_resources_under_load() -> TestResult {
+    use crate::terminal::{FrameOutput, FrameOutputBackend, FrameSubmission};
+    use harness_core::event::{LiveEventEnvelope, LiveEventV1, RuntimeEvent};
+
+    require_release_profile()?;
+    let scenario = std::env::var("HARNESS_PERF_SCENARIO").unwrap_or_else(|_| "scroll".into());
+    let count: usize = std::env::var("HARNESS_PERF_HISTORY")
+        .unwrap_or_else(|_| "10000".into())
+        .parse()?;
+    let frames: usize = std::env::var("HARNESS_PERF_FRAMES")
+        .unwrap_or_else(|_| "120".into())
+        .parse()?;
+    assert!(frames > 0);
+    let mut app = if scenario == "startup" {
+        AppState::new_startup(Vec::new(), None)
+    } else {
+        AppState::new_live(None, false, None)
+    };
+    if scenario != "startup" {
+        // Stress retained history without the normal 200 kB eviction changing its size.
+        app.memory_caps.max_transcript_chars = usize::MAX;
+        app.activities = (0..count).map(settled_assistant_block).collect();
+    }
+    if matches!(
+        scenario.as_str(),
+        "stream" | "stream-events" | "code" | "tool"
+    ) {
+        app.ingest_event(provider_started(100_000, "perf-live", "benchmark", "model"));
+        if scenario == "code" {
+            app.activities
+                .back_mut()
+                .ok_or("missing activity")?
+                .transcript_text = "```rust\n".to_string();
+        }
+        if scenario == "tool" {
+            app.ingest_event(shell_requested(
+                100_001,
+                "perf-live",
+                "perf-tool",
+                r#"{"command":"printf output"}"#,
+            ));
+            app.activities
+                .back_mut()
+                .ok_or("missing activity")?
+                .tool_calls[0]
+                .status = ToolCallDisplayStatus::Running;
+        }
+    }
+    if scenario == "stream-events" {
+        let history = (0..count).map(|index| {
+            provider_started(
+                u64::try_from(index).unwrap_or_abort(),
+                &format!("resize-perf-{index}"),
+                "benchmark",
+                "model",
+            )
+        });
+        app.events.splice(..0, history);
+    }
+    let (mut output, writer, receiver) = FrameOutput::bounded(1);
+    let mut terminal = Terminal::with_options(
+        FrameOutputBackend::new(writer),
+        ratatui::TerminalOptions {
+            viewport: ratatui::Viewport::Fixed(Rect::new(0, 0, 160, 48)),
+        },
+    )?;
+    let cold = Instant::now();
+    app.set_frame_area(Rect::new(0, 0, 160, 48));
+    output.begin_frame()?;
+    terminal.draw(|frame| render_app(frame, &app))?;
+    output.finish_frame()?;
+    receiver.write_next(&mut std::io::sink())?;
+    let _ = output.take_acknowledgements();
+    let cold_us = cold.elapsed().as_micros();
+    let max_scroll = app.transcript_view.last_transcript_max_scroll.get();
+    if matches!(
+        scenario.as_str(),
+        "scroll" | "resize" | "selection" | "hover"
+    ) {
+        app.set_transcript_scroll_for_test(max_scroll / 2);
+    }
+    if scenario == "selection" {
+        app.transcript_view.transcript_selection = Some(crate::ui::TranscriptSelection {
+            anchor: crate::ui::TranscriptSelectionCell {
+                row: max_scroll / 2,
+                column: 1,
+            },
+            focus: crate::ui::TranscriptSelectionCell {
+                row: max_scroll / 2 + 2,
+                column: 20,
+            },
+        });
+    }
+    let step = |app: &mut AppState,
+                terminal: &mut Terminal<FrameOutputBackend>,
+                output: &mut FrameOutput,
+                index: usize|
+     -> TestResult {
+        output.begin_frame()?;
+        match scenario.as_str() {
+            "startup" => {
+                app.advance_wall_clock_for_motion_evidence(std::time::Duration::from_millis(8))
+            }
+            "static" => {}
+            "scroll" | "selection" => {
+                if index % 100 < 50 {
+                    app.scroll_page_up(1);
+                } else {
+                    app.scroll_page_down(1);
+                }
+            }
+            "hover" => {
+                app.handle_mouse(
+                    MouseEvent {
+                        kind: MouseEventKind::Moved,
+                        column: 20,
+                        row: 3 + u16::try_from(index % 30)?,
+                        modifiers: KeyModifiers::NONE,
+                    },
+                    Rect::new(0, 0, 160, 48),
+                    None,
+                    None,
+                    None,
+                );
+            }
+            "typing" => {
+                app.handle_key(key(if index % 2 == 0 {
+                    KeyCode::Char('x')
+                } else {
+                    KeyCode::Backspace
+                }));
+            }
+            "stream" | "stream-events" | "code" => {
+                app.ingest_runtime_event(RuntimeEvent::Live(Box::new(LiveEventEnvelope {
+                    event_id: format!("perf-delta-{index}"),
+                    run_id: "run_app_tests".into(),
+                    mono_ms: 100_002 + u64::try_from(index)?,
+                    ts: None,
+                    actor: EventActor::new(ActorKind::System, None),
+                    correlation_id: Some("perf-live".into()),
+                    causation_id: None,
+                    stream_key: None,
+                    payload: LiveEventV1::ProviderTextDelta {
+                        request_id: "perf-live".into(),
+                        delta: if scenario == "code" {
+                            format!("fn value_{index}() -> u64 {{ 42 }}\n")
+                        } else {
+                            " **token** 界e\u{301}🙂".into()
+                        },
+                    },
+                })))
+            }
+            "tool" => {
+                let tool = &mut app
+                    .activities
+                    .back_mut()
+                    .ok_or("missing activity")?
+                    .tool_calls[0];
+                tool.output_summary = Some(format!(
+                    "{}output line {index}",
+                    "synthetic output\n".repeat(100),
+                ));
+                tool.last_seq += 1;
+                app.bump_transcript_render_epoch();
+            }
+            "resize" => {
+                let area = Rect::new(0, 0, if index % 2 == 0 { 80 } else { 160 }, 48);
+                app.set_frame_area(area);
+                terminal.resize(area)?;
+            }
+            _ => return Err(format!("unknown performance scenario: {scenario}").into()),
+        }
+        black_box(app.motion_plan());
+        terminal.draw(|frame| render_app(frame, app))?;
+        if matches!(output.finish_frame()?, FrameSubmission::Accepted(_)) {
+            receiver.write_next(&mut std::io::sink())?;
+        }
+        let _ = output.take_acknowledgements();
+        Ok(())
+    };
+    for index in 0..10 {
+        step(&mut app, &mut terminal, &mut output, index)?;
+    }
+    let before = process_resources()?;
+    let bytes_before = output.metrics().bytes_submitted;
+    let started = Instant::now();
+    let mut samples_us = Vec::with_capacity(frames);
+    for index in 10..frames + 10 {
+        let frame_start = Instant::now();
+        step(&mut app, &mut terminal, &mut output, index)?;
+        samples_us.push(frame_start.elapsed().as_micros());
+    }
+    let wall_us = started.elapsed().as_micros();
+    let after = process_resources()?;
+    if matches!(
+        scenario.as_str(),
+        "scroll" | "typing" | "stream" | "stream-events" | "code" | "tool" | "resize"
+    ) {
+        assert!(
+            output.metrics().bytes_submitted > bytes_before,
+            "workload must change the terminal"
+        );
+    }
+    let mut sorted = samples_us.clone();
+    sorted.sort_unstable();
+    let report = serde_json::json!({
+        "benchmark": "interactive_resources", "scenario": scenario, "history": count,
+        "frames": frames, "columns": 160, "rows": 48, "cold_us": cold_us,
+        "p50_us": sorted[(frames * 50).div_ceil(100) - 1],
+        "p95_us": sorted[(frames * 95).div_ceil(100) - 1],
+        "p99_us": sorted[(frames * 99).div_ceil(100) - 1],
+        "wall_us": wall_us, "cpu_ticks": after.0 - before.0,
+        "bytes_submitted": output.metrics().bytes_submitted - bytes_before,
+        "rss_before_kib": before.1, "rss_after_kib": after.1, "peak_rss_kib": after.2,
+        "samples_us": samples_us,
+    });
+    println!("{report}");
+    if let Some(directory) = std::env::var_os("HARNESS_PERF_ARTIFACT_DIR") {
+        std::fs::create_dir_all(&directory)?;
+        std::fs::write(
+            std::path::Path::new(&directory).join(format!("{scenario}-{count}.json")),
+            serde_json::to_vec_pretty(&report)?,
+        )?;
+    }
+    terminal.backend_mut().prepare_for_terminal_drop();
+    Ok(())
+}
+
+fn process_resources() -> TestResult<(u64, u64, u64)> {
+    let stat = std::fs::read_to_string("/proc/self/stat")?;
+    let fields: Vec<_> = stat
+        .rsplit_once(')')
+        .ok_or("invalid proc stat")?
+        .1
+        .split_whitespace()
+        .collect();
+    let cpu = fields[11].parse::<u64>()? + fields[12].parse::<u64>()?;
+    let status = std::fs::read_to_string("/proc/self/status")?;
+    let kib = |key| -> TestResult<u64> {
+        Ok(status
+            .lines()
+            .find_map(|line| line.strip_prefix(key))
+            .ok_or("missing proc resource")?
+            .split_whitespace()
+            .next()
+            .ok_or("missing resource value")?
+            .parse()?)
+    };
+    Ok((cpu, kib("VmRSS:")?, kib("VmHWM:")?))
 }
 
 pub(super) fn perf_resize_to_render_p95_stays_within_one_frame_and_preserves_detached_anchor(
@@ -121,7 +374,7 @@ pub(super) fn perf_resize_to_render_p95_stays_within_one_frame_and_preserves_det
         );
     }
 
-    // Then: emit the complete machine-readable sample set and enforce one 33 ms frame at p95.
+    // Then: emit the complete sample set and enforce the 120 Hz frame budget at p95.
     let mut sorted_us = samples_us.clone();
     sorted_us.sort_unstable();
     let p95_index = (MEASURED_RESIZE_COUNT * 95).div_ceil(100) - 1;

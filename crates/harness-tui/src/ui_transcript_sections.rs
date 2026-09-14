@@ -34,8 +34,8 @@ pub(super) fn build_transcript_sections(app: &AppState) -> Vec<TranscriptTurnSec
             notifications: notifications
                 .remove(activity.request_id.as_str())
                 .unwrap_or_default(),
-            queued_user_message: pending_assistant_index
-                .is_some_and(|pending| visible_index > pending),
+            queued_user_message: activity.status == ActivityStatus::Queued
+                && pending_assistant_index.is_some_and(|pending| visible_index > pending),
             is_selected: transcript_surface_focused(app)
                 && *activity_index == app.transcript_view.selected_activity_index,
             is_latest: false,
@@ -78,6 +78,7 @@ fn inject_compaction_events(
     for event in &app.events {
         let compaction_section = match &event.payload {
             harness_core::event::EventV1::SessionCompaction(data) => TranscriptCompactionSection {
+                expanded: app.transcript_view.compaction_details_expanded,
                 kind: TranscriptCompactionKind::SessionCompaction,
                 summary: data.summary.clone(),
                 tokens_before: Some(data.tokens_before),
@@ -85,6 +86,7 @@ fn inject_compaction_events(
                 modified_files: data.modified_files.clone(),
             },
             harness_core::event::EventV1::BranchSummary(data) => TranscriptCompactionSection {
+                expanded: app.transcript_view.compaction_details_expanded,
                 kind: TranscriptCompactionKind::BranchSummary,
                 summary: data.summary.clone(),
                 tokens_before: None,
@@ -116,6 +118,20 @@ fn inject_compaction_events(
 fn turn_supports_assistant_footer(turn: &TranscriptTurnSection, app: &AppState) -> bool {
     matches!(turn.header.status, ActivityStatus::Streaming)
         || app.turn_completion_seen(&turn.request_id)
+}
+
+fn events_for_activity<'a>(
+    app: &'a AppState,
+    activity: &ActivityEntry,
+) -> &'a [harness_core::event::EventEnvelopeV1] {
+    // Durable history is ordered by sequence; unrelated turns need no scan.
+    let start = app
+        .events
+        .partition_point(|event| event.seq < activity.first_seq);
+    let end = app
+        .events
+        .partition_point(|event| event.seq <= activity.last_seq);
+    app.events.get(start..end).unwrap_or_default()
 }
 
 fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
@@ -260,10 +276,10 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
         activity,
         app,
         thinking_visible,
-        thinking.clone(),
-        body_blocks.clone(),
+        thinking,
+        body_blocks,
         ordered_tool_calls,
-        error.clone(),
+        error,
     );
 
     TranscriptTurnSection {
@@ -289,11 +305,8 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
                 Some(TranscriptMouseTarget::Reasoning { request_id })
                     if request_id == &activity.request_id
             ),
-            provider_request_open: app
-                .events
-                .iter()
-                .rev()
-                .find_map(|event| match &event.payload {
+            provider_request_open: events_for_activity(app, activity).iter().rev().find_map(
+                |event| match &event.payload {
                     harness_core::event::EventV1::ProviderRequestStarted(data)
                         if provider_event_matches_activity(
                             event,
@@ -313,8 +326,8 @@ fn build_turn_section(args: BuildTurnSectionArgs<'_>) -> TranscriptTurnSection {
                         Some(false)
                     }
                     _ => None,
-                })
-                == Some(true),
+                },
+            ) == Some(true),
             profile_label: activity.profile_label.clone(),
             model_id: activity.model_id.clone(),
             duration_ms: app
@@ -647,8 +660,8 @@ fn build_ordered_assistant_parts_from_events(
 
     // The coordinator may queue a tool before the response commit. Its visible
     // position still belongs to that response, after the text already streamed.
-    let committed_tool_ids = app
-        .events
+    let events = events_for_activity(app, activity);
+    let committed_tool_ids = events
         .iter()
         .filter_map(|event| match &event.payload {
             harness_core::event::EventV1::AssistantMessageFinished(data)
@@ -670,11 +683,10 @@ fn build_ordered_assistant_parts_from_events(
         .flatten()
         .collect::<std::collections::BTreeSet<_>>();
 
-    for event in app.events.iter().filter(|event| {
-        event.seq >= activity.first_seq
-            && event.seq <= activity.last_seq
-            && turn_event_matches_activity(event, &activity.request_id)
-    }) {
+    for event in events
+        .iter()
+        .filter(|event| turn_event_matches_activity(event, &activity.request_id))
+    {
         if let Some(fragment) = harness_core::session::canonical_provider_fragment_for_event(event)
         {
             saw_turn_event = true;

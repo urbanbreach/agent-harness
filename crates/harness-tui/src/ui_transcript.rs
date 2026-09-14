@@ -139,7 +139,6 @@ mod ui_transcript_sections;
 mod ui_transcript_compaction;
 
 pub(in crate::ui) use ui_transcript_block_grammar::TranscriptBlockPlacement;
-use ui_transcript_block_grammar::{normalize_turn_blocks, TranscriptBlockSpec};
 pub(crate) use ui_transcript_entry::TranscriptVisualEntryId;
 pub(super) use ui_transcript_entry::{
     IntoResolvedTranscriptVisualEntryDraft, ResolvedTranscriptVisualEntryDraft,
@@ -209,24 +208,21 @@ fn cached_measured_section(
     previous: Option<&TranscriptLayoutCacheEntry>,
 ) -> Option<Rc<MeasuredTranscriptSection>> {
     let previous = previous?;
-    transcript_section_cache_matches(
-        previous.sections.get(index)?,
-        previous.normalized_specs.get(index)?,
-        section,
-    )
-    .then(|| previous.layout.sections.get(index).cloned())
-    .flatten()
+    transcript_section_cache_matches(previous.sections.get(index)?, section)
+        .then(|| previous.layout.sections.get(index).cloned())
+        .flatten()
 }
 
 fn transcript_section_cache_matches(
     candidate: &TranscriptTurnSection,
-    candidate_specs: &[TranscriptBlockSpec],
     section: &TranscriptTurnSection,
 ) -> bool {
     candidate.activity_first_seq == section.activity_first_seq
         && candidate.request_id == section.request_id
         && candidate.user_message == section.user_message
-        && candidate_specs == normalize_turn_blocks(section)
+        && candidate.motion_enabled == section.motion_enabled
+        && candidate.reasoning_expanded == section.reasoning_expanded
+        && candidate.assistant_part_source_ids == section.assistant_part_source_ids
         && candidate.show_footer == section.show_footer
         && candidate.footer_timestamp == section.footer_timestamp
         && candidate.header == section.header
@@ -234,14 +230,6 @@ fn transcript_section_cache_matches(
             &candidate.assistant_parts,
             &section.assistant_parts,
         )
-}
-
-#[cfg(test)]
-fn normalized_turn_cache_matches(
-    candidate: &TranscriptTurnSection,
-    section: &TranscriptTurnSection,
-) -> bool {
-    transcript_section_cache_matches(candidate, &normalize_turn_blocks(candidate), section)
 }
 
 fn transcript_tool_call_cache_matches(
@@ -894,6 +882,7 @@ fn transcript_scroll_top(
 fn build_transcript_selection_snapshot(
     app: &AppState,
     area: Rect,
+    previous: Option<&TranscriptSelectionSnapshot>,
 ) -> Option<TranscriptSelectionSnapshot> {
     let transcript_area = resolved_transcript_area(app, area)?;
     let context = transcript_pane_context(app, transcript_area, app.theme());
@@ -936,8 +925,19 @@ fn build_transcript_selection_snapshot(
         u16::try_from(render_width).unwrap_or(u16::MAX),
         context.base_surface,
         |layout| {
-            let (rows, line_texts, continues_previous) =
-                transcript_selection_rows(layout, render_width);
+            let (rows, line_texts, continues_previous) = previous.map_or_else(
+                || {
+                    let (rows, texts, continues) = transcript_selection_rows(layout, render_width);
+                    (Rc::from(rows), Rc::from(texts), Rc::from(continues))
+                },
+                |snapshot| {
+                    (
+                        Rc::clone(&snapshot.rows),
+                        Rc::clone(&snapshot.line_texts),
+                        Rc::clone(&snapshot.continues_previous),
+                    )
+                },
+            );
             let scroll_position = transcript_scroll_position(
                 app.transcript_page_flip_state(),
                 layout,
@@ -1031,7 +1031,7 @@ fn with_transcript_selection_snapshot<R>(
             follow_mode: app.transcript_following(),
             transcript_scroll: app.transcript_scroll_offset(),
         },
-        || build_transcript_selection_snapshot(app, area),
+        |previous| build_transcript_selection_snapshot(app, area, previous),
         |snapshot| {
             snapshot.resolved_selection.set(resolved_selection);
             render(snapshot)
@@ -1270,8 +1270,8 @@ fn with_measured_transcript_layout_for_width_on_surface<R>(
                     && entry.theme == *theme
                     && entry.base_surface == base_surface
             })
-            .map(|entry| entry.sections.clone())
-            .unwrap_or_else(|| build_transcript_sections(app));
+            .map(|entry| Rc::clone(&entry.sections))
+            .unwrap_or_else(|| Rc::from(build_transcript_sections(app)));
         let previous = previous_cache.iter().rev().find(|entry| {
             entry.app_instance_id == app_instance_id
                 && entry.theme == *theme
@@ -1300,7 +1300,6 @@ fn with_measured_transcript_layout_for_width_on_surface<R>(
                     || entry.width != width
                     || entry.base_surface != base_surface
             });
-            let normalized_specs = sections.iter().map(normalize_turn_blocks).collect();
             cache.push(TranscriptLayoutCacheEntry {
                 app_instance_id,
                 render_key,
@@ -1308,7 +1307,6 @@ fn with_measured_transcript_layout_for_width_on_surface<R>(
                 width,
                 base_surface,
                 sections,
-                normalized_specs,
                 layout,
             });
             if cache.len() > 4 {

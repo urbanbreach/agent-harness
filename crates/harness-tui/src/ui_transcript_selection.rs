@@ -1,6 +1,7 @@
 // allow: SIZE_OK — TUI transcript rendering (indivisible view model)
 use crate::UnwrapOrAbort;
 use std::cell::{Cell, RefCell};
+use std::rc::Rc;
 
 use ratatui::{
     layout::{Alignment, Rect},
@@ -77,9 +78,9 @@ impl SelectionRow {
 pub(super) struct TranscriptSelectionSnapshot {
     pub(super) viewport: Rect,
     pub(super) visible_rows: Vec<usize>,
-    pub(super) rows: Vec<SelectionRow>,
-    pub(super) line_texts: Vec<String>,
-    pub(super) continues_previous: Vec<bool>,
+    pub(super) rows: Rc<[SelectionRow]>,
+    pub(super) line_texts: Rc<[String]>,
+    pub(super) continues_previous: Rc<[bool]>,
     pub(super) row_width: usize,
     pub(super) resolved_selection: Cell<Option<TranscriptSelection>>,
 }
@@ -102,11 +103,15 @@ pub(super) struct TranscriptSelectionCacheKey {
 }
 
 impl TranscriptSelectionCacheKey {
-    fn matches(self, other: Self) -> bool {
+    fn same_content(self, other: Self) -> bool {
         self.render_width == other.render_width
             && self.app_instance_id == other.app_instance_id
             && self.render_key == other.render_key
             && self.theme == other.theme
+    }
+
+    fn matches(self, other: Self) -> bool {
+        self.same_content(other)
             && self.area == other.area
             && self.follow_mode == other.follow_mode
             && self.transcript_scroll == other.transcript_scroll
@@ -344,22 +349,20 @@ fn extract_text_by_display_columns(text: &str, start_col: usize, end_col: usize)
 
 pub(super) fn with_cached_transcript_selection_snapshot<R>(
     key: TranscriptSelectionCacheKey,
-    build_snapshot: impl FnOnce() -> Option<TranscriptSelectionSnapshot>,
+    build_snapshot: impl FnOnce(
+        Option<&TranscriptSelectionSnapshot>,
+    ) -> Option<TranscriptSelectionSnapshot>,
     render: impl FnOnce(&TranscriptSelectionSnapshot) -> R,
 ) -> Option<R> {
-    let mut render = Some(render);
-    let mut build_snapshot = Some(build_snapshot);
-
     TRANSCRIPT_SELECTION_CACHE.with(|cache| {
-        {
+        let snapshot = {
             let cache = cache.borrow();
             if let Some(entry) = cache.iter().find(|entry| entry.key.matches(key)) {
-                let render = render.take().unwrap_or_abort();
                 return Some(render(&entry.snapshot));
             }
-        }
-
-        let snapshot = build_snapshot.take().unwrap_or_abort()()?;
+            let previous = cache.iter().find(|entry| entry.key.same_content(key));
+            build_snapshot(previous.map(|entry| &entry.snapshot))?
+        };
 
         #[cfg(test)]
         TRANSCRIPT_SELECTION_CACHE_BUILD_COUNT
@@ -379,11 +382,7 @@ pub(super) fn with_cached_transcript_selection_snapshot<R>(
         }
 
         let cache = cache.borrow();
-        let entry = cache
-            .iter()
-            .find(|entry| entry.key.matches(key))
-            .unwrap_or_abort();
-        let render = render.take().unwrap_or_abort();
+        let entry = cache.last().unwrap_or_abort();
         Some(render(&entry.snapshot))
     })
 }
@@ -405,7 +404,6 @@ pub(super) fn transcript_selection_line_rows(
                 continue;
             }
             if row.len() + cell_width > width {
-                row.resize(width, " ".to_string());
                 rows.push(std::mem::take(&mut row));
             }
 
@@ -424,13 +422,11 @@ pub(super) fn transcript_selection_line_rows(
     }
 
     if rows.is_empty() && row.is_empty() {
-        row.resize(width, " ".to_string());
         rows.push(row);
         return rows;
     }
 
     if !row.is_empty() {
-        row.resize(width, " ".to_string());
         rows.push(row);
     }
 
@@ -542,7 +538,7 @@ pub(super) fn selection_rows_for_rich_text_block(
                 }
                 rows.extend(plain_rows);
                 if rows.last().is_some_and(|row| !selection_row_is_blank(row)) {
-                    rows.push(blank_selection_row(width));
+                    rows.push(blank_selection_row());
                 }
             }
             ParsedTextBlock::Code { language, body, .. } => {
@@ -552,7 +548,7 @@ pub(super) fn selection_rows_for_rich_text_block(
                     return None;
                 }
                 if rows.last().is_some_and(|row| !selection_row_is_blank(row)) {
-                    rows.push(blank_selection_row(width));
+                    rows.push(blank_selection_row());
                 }
                 for line in body.lines() {
                     rows.extend(selection_rows_for_preformatted_line(
@@ -563,7 +559,7 @@ pub(super) fn selection_rows_for_rich_text_block(
                         copy_offset,
                     ));
                 }
-                rows.push(blank_selection_row(width));
+                rows.push(blank_selection_row());
             }
         }
     }
@@ -818,7 +814,7 @@ fn selection_rows_for_prefixed_wrapped_spans(
             cells: transcript_selection_line_rows(&row, usize::from(width))
                 .into_iter()
                 .next()
-                .unwrap_or_else(|| vec![" ".to_string(); usize::from(width)]),
+                .unwrap_or_default(),
             continues_previous: idx > 0,
             copy_offset,
             copy_joiner: None,
@@ -827,9 +823,9 @@ fn selection_rows_for_prefixed_wrapped_spans(
         .collect()
 }
 
-pub(super) fn blank_selection_row(width: u16) -> TranscriptSelectionRow {
+pub(super) fn blank_selection_row() -> TranscriptSelectionRow {
     TranscriptSelectionRow {
-        cells: vec![" ".to_string(); usize::from(width.max(1))],
+        cells: Vec::new(),
         continues_previous: false,
         copy_offset: 0,
         copy_joiner: None,
@@ -875,9 +871,9 @@ pub(super) fn lifecycle_selection_snapshot(
     Some(TranscriptSelectionSnapshot {
         viewport: surface.viewport,
         visible_rows: (0..height).collect(),
-        rows,
-        line_texts,
-        continues_previous,
+        rows: Rc::from(rows),
+        line_texts: Rc::from(line_texts),
+        continues_previous: Rc::from(continues_previous),
         row_width: width,
         resolved_selection: Cell::new(None),
     })
@@ -892,6 +888,7 @@ fn aligned_selection_rows_for_line(
     let mut copy_offsets = vec![0; rows.len()];
     if !matches!(alignment, Alignment::Left) {
         for (idx, cells) in rows.iter_mut().enumerate() {
+            cells.resize(width, " ".to_string());
             copy_offsets[idx] = align_selection_cells(cells, alignment);
         }
     }
@@ -1111,9 +1108,9 @@ mod tests {
         let snapshot = TranscriptSelectionSnapshot {
             viewport: Rect::new(0, 0, 40, 1),
             visible_rows: vec![0],
-            line_texts: rows.iter().map(selection_row_line_text).collect(),
-            continues_previous: vec![false],
-            rows: compact,
+            line_texts: Rc::from(rows.iter().map(selection_row_line_text).collect::<Vec<_>>()),
+            continues_previous: Rc::from(vec![false]),
+            rows: Rc::from(compact),
             row_width: 40,
             resolved_selection: Cell::new(Some(TranscriptSelection {
                 anchor: TranscriptSelectionCell { row: 0, column: 2 },
@@ -1150,9 +1147,9 @@ mod tests {
         let snapshot_for = |anchor, focus| TranscriptSelectionSnapshot {
             viewport: Rect::new(0, 0, 10, 1),
             visible_rows: vec![0],
-            rows: vec![compact_selection_row(&row, 0)],
-            line_texts: vec![selection_row_line_text(&row)],
-            continues_previous: vec![false],
+            rows: Rc::from(vec![compact_selection_row(&row, 0)]),
+            line_texts: Rc::from(vec![selection_row_line_text(&row)]),
+            continues_previous: Rc::from(vec![false]),
             row_width: 10,
             resolved_selection: Cell::new(Some(TranscriptSelection {
                 anchor: TranscriptSelectionCell {
@@ -1304,15 +1301,15 @@ mod tests {
         let snapshot = TranscriptSelectionSnapshot {
             viewport: Rect::new(0, 0, 5, 1),
             visible_rows: vec![0],
-            rows: vec![SelectionRow {
+            rows: Rc::from(vec![SelectionRow {
                 line_index: 0,
                 copy_joiner: None,
                 start_cell: 0,
                 end_cell: 4,
                 links: Vec::new(),
-            }],
-            line_texts: vec!["stale".to_string()],
-            continues_previous: vec![false],
+            }]),
+            line_texts: Rc::from(vec!["stale".to_string()]),
+            continues_previous: Rc::from(vec![false]),
             row_width: 5,
             resolved_selection: Cell::new(None),
         };

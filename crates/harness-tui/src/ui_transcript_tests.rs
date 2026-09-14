@@ -284,7 +284,7 @@ fn streaming_delta_reuses_unrelated_running_tool_section() {
             terminal
                 .draw(|frame| render_app(frame, app))
                 .unwrap_or_abort();
-            let snapshot = build_transcript_selection_snapshot(app, area).unwrap_or_abort();
+            let snapshot = build_transcript_selection_snapshot(app, area, None).unwrap_or_abort();
             (
                 terminal.backend().buffer().clone(),
                 snapshot.viewport,

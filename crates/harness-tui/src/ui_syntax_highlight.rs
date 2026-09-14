@@ -51,9 +51,12 @@ pub(super) fn render_highlighted_code_block(
                 .map(|regions| {
                     Line::from(
                         regions
-                            .into_iter()
+                            .iter()
                             .map(|(style, content)| {
-                                Span::styled(content, syntect_style_to_ratatui(style, theme))
+                                Span::styled(
+                                    content.clone(),
+                                    syntect_style_to_ratatui(*style, theme),
+                                )
                             })
                             .collect::<Vec<_>>(),
                     )
