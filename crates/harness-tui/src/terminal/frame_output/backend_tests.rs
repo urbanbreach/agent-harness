@@ -50,6 +50,10 @@ fn backend_balances_osc8_around_linked_cells_and_never_links_padding() {
         }],
     );
     let output = String::from_utf8_lossy(&bytes);
+    assert!(
+        output.contains("doc"),
+        "one link run should batch its text: {output:?}"
+    );
 
     // Then: OSC-8 closes before padding and the border, with no control bytes in cells.
     let open = output
@@ -84,6 +88,14 @@ fn backend_repaints_same_label_when_url_changes_or_link_is_removed() {
         &receiver,
         &[(0, 0, cell.clone())],
         first.to_vec(),
+    );
+
+    output.begin_frame().expect("begin unchanged frame");
+    set_frame_hyperlinks(first.to_vec());
+    backend.draw(std::iter::empty()).expect("unchanged links");
+    assert_eq!(
+        output.finish_frame().expect("finish unchanged frame"),
+        crate::terminal::FrameSubmission::Unchanged
     );
 
     // When: no Ratatui cell changes, but URL metadata changes and then disappears.

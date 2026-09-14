@@ -104,12 +104,17 @@ impl Backend for FrameOutputBackend {
         self.metrics.draw_calls = self.metrics.draw_calls.saturating_add(1);
         let current_links = take_frame_hyperlinks();
         let mut changed = content
-            .map(|(x, y, cell)| ((x, y), cell.clone()))
+            .map(|(x, y, cell)| ((y, x), cell.clone()))
             .collect::<BTreeMap<_, _>>();
-        for link in self.hyperlinks.iter().chain(&current_links) {
-            for x in link.start_column..link.end_column {
-                if let Some(cell) = self.cells.get(&(x, link.row)) {
-                    changed.entry((x, link.row)).or_insert_with(|| cell.clone());
+        if self.hyperlinks != current_links {
+            for position in self
+                .hyperlinks
+                .iter()
+                .chain(&current_links)
+                .flat_map(|link| (link.start_column..link.end_column).map(move |x| (link.row, x)))
+            {
+                if let Some(cell) = self.cells.get(&position) {
+                    changed.entry(position).or_insert_with(|| cell.clone());
                 }
             }
         }
@@ -117,34 +122,33 @@ impl Backend for FrameOutputBackend {
             self.cursor_position = None;
         }
 
-        let mut open_destination: Option<String> = None;
-        for ((x, y), cell) in &changed {
-            let destination = Self::destination_at(&current_links, *x, *y);
-            if destination != open_destination.as_deref() {
-                if open_destination.is_some() {
-                    self.write_hyperlink_control(None)?;
-                }
-                if let Some(destination) = destination {
-                    self.write_hyperlink_control(Some(destination))?;
-                }
-                open_destination = destination.map(str::to_string);
+        // Keep row order and whole runs so Crossterm can reuse cursor/style state.
+        let mut pending = changed.iter().peekable();
+        while let Some((&(y, x), _)) = pending.peek().copied() {
+            let destination = Self::destination_at(&current_links, x, y);
+            if destination.is_some() {
+                self.write_hyperlink_control(destination)?;
             }
-            if let Err(error) = self.inner.draw(std::iter::once((*x, *y, cell))) {
-                if open_destination.is_some() {
-                    let _ = self.write_hyperlink_control(None);
-                }
-                return Err(error);
-            }
-            self.cells.insert((*x, *y), cell.clone());
-        }
-        if open_destination.is_some() {
-            self.write_hyperlink_control(None)?;
+            let result = self.inner.draw(std::iter::from_fn(|| {
+                let (&(y, x), cell) = pending.next_if(|(&(y, x), _)| {
+                    Self::destination_at(&current_links, x, y) == destination
+                })?;
+                Some((x, y, cell))
+            }));
+            let closed = if destination.is_some() {
+                self.write_hyperlink_control(None)
+            } else {
+                Ok(())
+            };
+            result?;
+            closed?;
         }
         Backend::flush(&mut self.inner)?;
         self.metrics.cells_changed = self
             .metrics
             .cells_changed
             .saturating_add(u64::try_from(changed.len()).unwrap_or(u64::MAX));
+        self.cells.extend(changed);
         self.hyperlinks = current_links;
         Ok(())
     }
