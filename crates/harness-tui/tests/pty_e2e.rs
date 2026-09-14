@@ -44,6 +44,11 @@ fn pty_waiting_for_response_matches_grok_layout_and_timer_motion() {
 }
 
 #[test]
+fn pty_compaction_stream_animates_resizes_and_cancels() {
+    pty_e2e_impl::pty_compaction_stream_animates_resizes_and_cancels();
+}
+
+#[test]
 fn pty_draft_esc_esc_clears_composer() {
     pty_e2e_impl::pty_draft_esc_esc_clears_composer();
 }
@@ -91,4 +96,9 @@ fn pty_helper_permission_overlay() {
 #[test]
 fn pty_helper_waiting_for_response() {
     pty_e2e_impl::pty_helper_waiting_for_response();
+}
+
+#[test]
+fn pty_helper_compaction() {
+    pty_e2e_impl::pty_helper_compaction();
 }

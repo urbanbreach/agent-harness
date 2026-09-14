@@ -314,7 +314,11 @@ async fn compact_intent_reports_noop_status_for_idle_live_agent() {
         },
     ));
 
-    intent_tx.send(UiIntent::CompactSession).unwrap_or_abort();
+    intent_tx
+        .send(UiIntent::CompactSession {
+            custom_instructions: None,
+        })
+        .unwrap_or_abort();
     drop(intent_tx);
 
     handle.await.unwrap_or_abort().unwrap_or_abort();
@@ -324,7 +328,7 @@ async fn compact_intent_reports_noop_status_for_idle_live_agent() {
         LiveUpdate::OperatorNotice {
             message,
             level: OperatorNoticeLevel::Info,
-        } if message == "manual compaction skipped: need at least two completed turns"
+        } if message == "Nothing to compact: the recent context already fits."
     ));
 
     coordinator.stop_run().await.unwrap_or_abort();
@@ -588,7 +592,11 @@ async fn compact_intent_reports_unavailable_when_no_live_agent_target_exists() {
         },
     ));
 
-    intent_tx.send(UiIntent::CompactSession).unwrap_or_abort();
+    intent_tx
+        .send(UiIntent::CompactSession {
+            custom_instructions: None,
+        })
+        .unwrap_or_abort();
     drop(intent_tx);
 
     handle.await.unwrap_or_abort().unwrap_or_abort();
@@ -616,7 +624,9 @@ fn live_ui_router_forwards_runtime_intents_without_switching_workflow() {
         "test-digest".to_string(),
     );
     let intents = [
-        UiIntent::CompactSession,
+        UiIntent::CompactSession {
+            custom_instructions: None,
+        },
         UiIntent::InterruptSession {
             task_ids: vec!["task_active".to_string()],
             reason: harness_tui::app::InterruptReason::User,

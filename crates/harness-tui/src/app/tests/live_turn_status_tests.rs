@@ -237,9 +237,7 @@ pub(super) fn thinking_spinner_advances_on_animation_tick() {
     let before_glyph = status_spinner_glyph(&before, "Thinking…");
 
     // When: the fixed-rate animation scheduler advances one spinner frame.
-    for _ in 0..4 {
-        app.advance_animation_tick();
-    }
+    app.advance_wall_clock_for_motion_evidence(Duration::from_millis(136));
 
     // Then: the visible spinner advances without requiring a provider event.
     let after = render_text(&app, 140, 40);
@@ -399,9 +397,7 @@ pub(super) fn clicking_stop_affordance_interrupts_active_task() {
     assert!(app.has_active_animations());
 
     let before_glyph = status_spinner_glyph(&screen, "Cancelling…");
-    for _ in 0..4 {
-        app.advance_animation_tick();
-    }
+    app.advance_wall_clock_for_motion_evidence(Duration::from_millis(136));
     let after = render_text(&app, 140, 40);
     let after_glyph = status_spinner_glyph(&after, "Cancelling…");
     assert_ne!(before_glyph, after_glyph);

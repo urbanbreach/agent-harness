@@ -23,7 +23,7 @@ pub(super) fn live_turn_control_visibility(
     app: &AppState,
     area: Rect,
 ) -> LiveTurnControlVisibility {
-    if live_turn_is_parked(app) {
+    if live_turn_is_parked(app) || app.active_compaction().is_some() {
         return LiveTurnControlVisibility::default();
     }
     let spinner_width = display_width(glyph_routed_monitor_pulse_frame(

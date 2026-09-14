@@ -1,16 +1,16 @@
 use super::*;
 
 pub(super) fn apply_compaction_policy(spec: &mut TranscriptBlockSpec) {
-    if !matches!(spec.content, TranscriptBlockContent::Compaction { .. }) {
+    let TranscriptBlockContent::Compaction { expanded, .. } = spec.content else {
         return;
-    }
+    };
     spec.chrome = TranscriptBlockChrome {
         accent: true,
         rail: false,
     };
     spec.fold = TranscriptBlockFold {
         foldable: true,
-        expanded: false,
+        expanded,
     };
     spec.interaction = TranscriptBlockInteraction {
         selectable: false,
@@ -20,7 +20,7 @@ pub(super) fn apply_compaction_policy(spec: &mut TranscriptBlockSpec) {
     };
     spec.disclosure = TranscriptBlockDisclosure {
         available: true,
-        expanded: false,
+        expanded,
     };
     spec.compact = TranscriptBlockCompactPolicy::ElideDetails;
     spec.motion = TranscriptBlockMotionDemand::None;

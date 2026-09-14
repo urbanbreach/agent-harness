@@ -39,6 +39,51 @@ pub(super) fn format_elapsed_ms(duration_ms: u64) -> String {
     status_model::format_elapsed_ms(duration_ms)
 }
 
+fn render_compaction_status(frame: &mut Frame, app: &AppState, area: Rect, theme: &Theme) -> bool {
+    let Some(compaction) = app.active_compaction() else {
+        return false;
+    };
+    let spinner = glyph_routed_streaming_spinner_frame(
+        theme,
+        app.transcript_animation_phase(),
+        app.transcript_motion_enabled(),
+    );
+    let preview = compaction.preview.as_deref().unwrap_or_default();
+    let label = match compaction.trigger_reason.as_str() {
+        "overflow" => "Context overflow detected, compacting...",
+        "pre_prompt" => "Compacting before next prompt...",
+        "threshold" | "proactive" | "idle" => "Auto-compacting...",
+        _ => "Compacting context...",
+    };
+    let full = format!("{spinner} {label} (esc to cancel)");
+    let status = if !preview.is_empty() || display_width(&full) > usize::from(area.width) {
+        format!("{spinner} Compacting... (esc to cancel)")
+    } else {
+        full
+    };
+    let remaining =
+        usize::from(area.width).saturating_sub(display_width(&status).saturating_add(1));
+    let tail = compaction_preview_tail(preview, remaining);
+    let label = status.strip_prefix(spinner).unwrap_or(&status);
+    let line = Line::from(vec![
+        Span::styled(spinner.to_string(), Style::default().fg(theme.text.accent)),
+        Span::styled(label.to_string(), Style::default().fg(theme.text.secondary)),
+        Span::styled(
+            if tail.is_empty() {
+                String::new()
+            } else {
+                format!(" {tail}")
+            },
+            Style::default().fg(theme.text.secondary),
+        ),
+    ]);
+    frame.render_widget(
+        Paragraph::new(line).style(Style::default().bg(theme.surface.canvas)),
+        area,
+    );
+    true
+}
+
 pub(super) fn render_live_turn_status(
     frame: &mut Frame,
     app: &AppState,
@@ -46,7 +91,11 @@ pub(super) fn render_live_turn_status(
     theme: &Theme,
 ) {
     let area = crate::layout::live_turn_status_content_area(area, theme);
-    if area.width < 10 || area.height == 0 || !app.live_turn_status_visible() {
+    if area.width == 0 || area.height == 0 || !app.live_turn_status_visible() {
+        return;
+    }
+
+    if render_compaction_status(frame, app, area, theme) {
         return;
     }
 
@@ -285,4 +334,18 @@ pub(super) fn render_live_turn_status(
             .alignment(Alignment::Right),
         area,
     );
+}
+
+fn compaction_preview_tail(text: &str, width: usize) -> &str {
+    use unicode_segmentation::UnicodeSegmentation;
+    let mut cells = 0;
+    let mut start = text.len();
+    for (index, grapheme) in text.grapheme_indices(true).rev() {
+        cells += display_width(grapheme);
+        if cells > width {
+            break;
+        }
+        start = index;
+    }
+    &text[start..]
 }
