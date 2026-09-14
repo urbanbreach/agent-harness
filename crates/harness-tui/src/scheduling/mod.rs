@@ -30,5 +30,5 @@ pub use runtime_wheel::{WheelBatch, WheelDirection, WheelSample, MAX_WHEEL_STEPS
 pub(crate) use scheduler::active_animation_period_ms;
 pub use scheduler::{FrameInputs, FrameScheduler};
 
-pub const ANIMATION_PERIOD_MS: u64 = 1_000 / 30;
-pub const FLUSH_DEADLINE_MS: u64 = 16;
+pub const ANIMATION_PERIOD_MS: u64 = 4;
+pub const FLUSH_DEADLINE_MS: u64 = 4;

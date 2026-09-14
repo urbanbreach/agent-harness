@@ -766,7 +766,14 @@ pub fn run_tui_with_options(mut options: TuiOptions) -> Result<()> {
                         PresentationCauseKind::LiveUpdate,
                         RenderReason::LiveUpdate,
                     );
-                    presenter.request_redraw(Instant::now());
+                    // Coalesce provider bursts on the same cadence as input. A final
+                    // update must remain pending until painted before the quit gate.
+                    InputPresentation::Immediate.request(
+                        app.should_quit,
+                        &mut presenter,
+                        &mut pacer,
+                        Instant::now(),
+                    );
                     pacer.request_flush();
                 }
                 if drain_state.disconnected {
@@ -1222,8 +1229,9 @@ fn poll_frame_output(
     if let Some(failure) = output.take_fatal_failure() {
         return Err(failure.into());
     }
+    let acknowledgements = output.take_acknowledgements();
     if let Some(session) = session {
-        session.record_acknowledgements(output.take_acknowledgements());
+        session.record_acknowledgements(acknowledgements);
     }
     Ok(ready)
 }
@@ -1503,6 +1511,37 @@ mod tests {
     }
 
     #[test]
+    fn frame_acknowledgements_are_retired_without_telemetry() -> Result<()> {
+        use std::io::Write;
+
+        let (mut output, mut writer, receiver) = FrameOutput::bounded(1);
+        let frames = std::env::var("HARNESS_PERF_ACK_FRAMES")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(64);
+        let before = std::fs::read_to_string("/proc/self/status").unwrap_or_default();
+        for _ in 0..frames {
+            output.begin_frame()?;
+            writer.write_all(b"x")?;
+            output.finish_frame()?;
+            receiver.write_next(&mut std::io::sink())?;
+            assert!(poll_frame_output(&mut output, None)?);
+        }
+        let after = std::fs::read_to_string("/proc/self/status").unwrap_or_default();
+        let retained = output.take_acknowledgements().len();
+        println!(
+            "frames={frames} retained={retained} before={:?} after={:?}",
+            before.lines().find(|line| line.starts_with("VmRSS:")),
+            after.lines().find(|line| line.starts_with("VmRSS:"))
+        );
+        assert_eq!(
+            retained, 0,
+            "ordinary runtime must not retain frame history"
+        );
+        Ok(())
+    }
+
+    #[test]
     fn mouse_and_wheel_have_distinct_native_taxonomy() {
         // arrange
         let click = mouse_presentation_kind(MouseEventKind::Down(MouseButton::Left));
@@ -1739,7 +1778,7 @@ mod tests {
         );
 
         // act
-        // Then: the scheduler's 30 Hz deadline is the poll authority.
+        // Then: the scheduler's active-animation deadline is the poll authority.
         // assert
         assert_eq!(
             (pending, due),

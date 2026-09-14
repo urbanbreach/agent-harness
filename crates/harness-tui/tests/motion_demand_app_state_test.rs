@@ -51,7 +51,7 @@ fn app_routes_startup_and_streaming_to_distinct_visible_cadences() {
     ));
     assert_eq!(
         queued.motion_plan_for_evidence().cadence(),
-        MotionCadence::Fast(Duration::from_millis(33))
+        MotionCadence::Fast(Duration::from_millis(4))
     );
 }
 

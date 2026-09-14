@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 pub const INPUT_BATCH_LIMIT: usize = 16;
 pub const INPUT_BATCH_TIME: Duration = Duration::from_millis(2);
 pub const LIVE_BATCH_LIMIT: usize = 16;
-pub const LIVE_BATCH_TIME: Duration = Duration::from_millis(8);
+pub const LIVE_BATCH_TIME: Duration = Duration::from_millis(2);
 
 pub trait ArbiterClock {
     fn now(&self) -> Instant;

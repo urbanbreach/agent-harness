@@ -13,18 +13,18 @@ fn frame_clock_advances_at_fixed_cadence() {
     let frame = scheduler.schedule(clock.snapshot(), FrameInputs::active());
 
     // act
-    // Then: the design-contract cadence is 30 Hz (33 ms integer deadline).
+    // Then: the design-contract cadence is 250 Hz (4 ms integer deadline).
     // assert
-    assert_eq!(clock.animation_now(), 33);
+    assert_eq!(clock.animation_now(), 4);
     assert_eq!(clock.flush_now(), 0);
     assert_eq!(
         armed.as_ref().and_then(|decision| decision.deadline_ms),
-        Some(33)
+        Some(4)
     );
     assert_eq!(frame.as_ref().map(|decision| decision.render), Some(true));
     assert_eq!(
         frame.as_ref().and_then(|decision| decision.deadline_ms),
-        Some(66)
+        Some(8)
     );
     assert_eq!(
         frame.as_ref().map(|decision| decision.reason),
@@ -41,24 +41,24 @@ fn animation_and_flush_deadlines_are_serviced_in_exact_order() {
     let armed = scheduler.schedule(clock.snapshot(), FrameInputs::active_and_flush());
     assert_eq!(
         armed.as_ref().and_then(|decision| decision.deadline_ms),
-        Some(16)
+        Some(4)
     );
 
     // When: only the shorter flush deadline elapses.
     clock.tick_flush();
     let flush = scheduler.schedule(clock.snapshot(), FrameInputs::active());
 
-    // Then: flush renders first and leaves animation at its original 33 ms deadline.
+    // Then: flush renders first and leaves animation at its original 4 ms deadline.
     assert_eq!(
         flush.as_ref().map(|decision| decision.reason),
         Some(FrameReason::Flush)
     );
     assert_eq!(
         flush.as_ref().and_then(|decision| decision.deadline_ms),
-        Some(33)
+        Some(4)
     );
 
-    // When: the independent animation clock reaches 33 ms.
+    // When: the independent animation clock reaches 4 ms.
     clock.tick_animation();
     let animation = scheduler.schedule(clock.snapshot(), FrameInputs::active());
 
@@ -145,7 +145,7 @@ fn reduced_motion_settles_transitions_without_scheduled_frames() {
 #[test]
 fn input_burst_is_coalesced_into_one_flush_render() {
     // arrange
-    // Given: several input events arrive before the 16 ms flush boundary.
+    // Given: several input events arrive before the 4 ms flush boundary.
     let clock = DualClock::new();
     let mut scheduler = FrameScheduler::new();
     scheduler.schedule(clock.snapshot(), FrameInputs::flush());
@@ -186,7 +186,7 @@ fn custom_flush_cadence_supports_one_hundred_twenty_hertz_input_pacing() {
     clock.advance_flush(8);
     let rendered = scheduler.schedule(clock.snapshot(), FrameInputs::idle());
 
-    // assert — Then the work is presented at the 120 Hz cadence instead of the 16 ms default.
+    // assert — Then the work is presented at the 120 Hz cadence using an explicit cadence.
     assert_eq!(
         (
             armed.and_then(|decision| decision.deadline_ms),

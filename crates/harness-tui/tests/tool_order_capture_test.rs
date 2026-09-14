@@ -538,7 +538,7 @@ fn production_ordering_capture() -> Result<()> {
     {
         let mut state = Capture::new(&fixture)?;
         let mut anchored_rows = BTreeMap::new();
-        let mut markers_at_tick = BTreeMap::new();
+        let mut markers_at_time = BTreeMap::new();
         for action in scenario["actions"].as_array().ok_or("actions array")? {
             if action["op"] != "snapshot" {
                 state.action(action, &fixture)?;
@@ -711,11 +711,13 @@ fn production_ordering_capture() -> Result<()> {
                     {
                         failures.push(format!("out-of-phase markers in {name}: {colors:?}"));
                     }
-                    let prior = markers_at_tick
-                        .entry((width, height, state.now_ms / 33))
+                    let prior = markers_at_time
+                        .entry((width, height, state.now_ms))
                         .or_insert(colors.clone());
                     if *prior != colors {
-                        failures.push(format!("wave changed within one tick in {name}"));
+                        failures.push(format!(
+                            "wave changed at the same wall-clock sample in {name}"
+                        ));
                     }
                 }
                 if let Some(ref directory) = directory {

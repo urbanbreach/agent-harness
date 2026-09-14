@@ -305,7 +305,9 @@ pub(super) fn render_live_breadcrumb(frame: &mut Frame, app: &AppState, area: Re
         y: area
             .y
             .saturating_add(crate::layout::breadcrumb_top_margin(area.width)),
-        width: area.width,
+        width: area
+            .width
+            .saturating_sub(crate::layout::composer_horizontal_inset(area.width)),
         height: 1,
     };
     let context_meta = breadcrumb_context_meta(app);

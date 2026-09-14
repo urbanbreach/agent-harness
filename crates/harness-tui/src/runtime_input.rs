@@ -94,27 +94,27 @@ mod tests {
 
     #[test]
     fn resize_burst_emits_only_latest_dimensions_after_quiet_boundary() {
-        // Given: three production resize events inside one 16 ms burst.
+        // Given: three production resize events inside one 4 ms burst.
         let mut ingress = RuntimeInputIngress::default();
         assert!(ingress
             .ingest_at(Duration::ZERO, envelope(1, TuiEvent::Resize(80, 24)))
             .is_none());
         assert!(ingress
             .ingest_at(
-                Duration::from_millis(5),
+                Duration::from_millis(1),
                 envelope(2, TuiEvent::Resize(100, 30)),
             )
             .is_none());
         assert!(ingress
             .ingest_at(
-                Duration::from_millis(10),
+                Duration::from_millis(2),
                 envelope(3, TuiEvent::Resize(120, 40)),
             )
             .is_none());
 
         // When: the explicit runtime clock reaches the first event's quiet boundary.
-        let before = ingress.flush_due(Duration::from_millis(15));
-        let due = ingress.flush_due(Duration::from_millis(16));
+        let before = ingress.flush_due(Duration::from_millis(3));
+        let due = ingress.flush_due(Duration::from_millis(4));
 
         // Then: no early resize escapes and only the latest dimensions become ready.
         assert!(before.is_none());
@@ -126,10 +126,10 @@ mod tests {
 
     #[test]
     fn sustained_resize_storm_still_flushes_from_the_first_event_window() {
-        // Given: resize events arriving every 5 ms, faster than the 16 ms debounce.
+        // Given: resize events arriving every millisecond, faster than the 4 ms debounce.
         let mut ingress = RuntimeInputIngress::default();
         for tick in 0..8u64 {
-            let at = Duration::from_millis(tick * 5);
+            let at = Duration::from_millis(tick);
             let cols = 80 + u16::try_from(tick).expect("storm tick fits u16");
             assert!(
                 ingress
@@ -140,7 +140,7 @@ mod tests {
         }
 
         // When: the clock passes the first event's quiet boundary mid-storm.
-        let due = ingress.flush_due(Duration::from_millis(40));
+        let due = ingress.flush_due(Duration::from_millis(8));
 
         // Then: the newest dimensions flush even though the storm never paused.
         assert!(matches!(
@@ -183,7 +183,7 @@ mod tests {
 
     #[test]
     fn non_resize_input_bypasses_pending_resize_quiet_boundary() {
-        // Given: a resize waiting for its 16 ms quiet boundary.
+        // Given: a resize waiting for its 4 ms quiet boundary.
         let mut ingress = RuntimeInputIngress::default();
         assert!(ingress
             .ingest_at(Duration::ZERO, envelope(1, TuiEvent::Resize(80, 24)))
@@ -201,10 +201,10 @@ mod tests {
             ready.map(|envelope| envelope.event),
             Some(TuiEvent::Key(ready_key)) if ready_key == key
         ));
-        assert!(ingress.flush_due(Duration::from_millis(15)).is_none());
+        assert!(ingress.flush_due(Duration::from_millis(3)).is_none());
         assert!(matches!(
             ingress
-                .flush_due(Duration::from_millis(16))
+                .flush_due(Duration::from_millis(4))
                 .map(|envelope| envelope.event),
             Some(TuiEvent::Resize(80, 24))
         ));
@@ -263,7 +263,7 @@ mod tests {
             .expect("write physical frame");
 
         // act
-        // Then: the completed click is ready without waiting for a 16 ms pacer cycle.
+        // Then: the completed click is ready without waiting for a 4 ms pacer cycle.
         // assert
         assert_eq!(
             decisions,
@@ -295,7 +295,7 @@ mod tests {
         // When: the visible resize reaches the production presentation boundary.
         InputPresentation::for_event(&resize).request(true, &mut presenter, &mut pacer, now);
 
-        // Then: it can render immediately instead of paying another 16 ms coalescing deadline.
+        // Then: it can render immediately instead of paying another 4 ms coalescing deadline.
         assert!(presenter.should_present(true));
         assert_eq!(pacer.next_wait_ms(FrameNow::default()), None);
         assert!(!pacer.needs_poll(FrameNow::default(), MotionPlan::none()));

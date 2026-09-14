@@ -120,11 +120,11 @@ fn heuristic_paste_windows_have_explicit_boundaries() {
 }
 
 #[test]
-fn resize_storm_emits_only_the_latest_after_sixteen_ms_quiet() {
+fn resize_storm_emits_only_the_latest_after_four_ms_quiet() {
     // arrange
     // act
     let mut normalizer = InputNormalizer::new();
-    for (at, cols, rows) in [(0, 80, 24), (5, 100, 30), (10, 120, 40)] {
+    for (at, cols, rows) in [(0, 80, 24), (1, 100, 30), (2, 120, 40)] {
         // assert
         assert!(normalizer
             .ingest_at(
@@ -135,11 +135,11 @@ fn resize_storm_emits_only_the_latest_after_sixteen_ms_quiet() {
             .is_empty());
     }
     assert!(normalizer
-        .flush_at(Duration::from_millis(15))
+        .flush_at(Duration::from_millis(3))
         .unwrap()
         .is_empty());
     assert_eq!(
-        normalizer.flush_at(Duration::from_millis(16)).unwrap(),
+        normalizer.flush_at(Duration::from_millis(4)).unwrap(),
         vec![NormalizedInput::Resize(ResizeEvent::new(120, 40))]
     );
 }
