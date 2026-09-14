@@ -23,6 +23,11 @@ fn running_tool_wave_is_spatially_continuous_and_time_based() {
         .windows(2)
         .all(|pair| (pair[0] - pair[1]).abs() > f32::EPSILON));
     assert_ne!(at_start, after_skipped_frames);
+    assert!(
+        (wave_brightness(Duration::ZERO, 0, 32) - wave_brightness(Duration::from_millis(4), 0, 32))
+            .abs()
+            > f32::EPSILON
+    );
     assert!(at_start
         .iter()
         .chain(&after_skipped_frames)
@@ -31,7 +36,7 @@ fn running_tool_wave_is_spatially_continuous_and_time_based() {
         elapsed: Duration::ZERO,
         sampled_phase: 0,
     });
-    // Reference ticks 0 and 10: sin²(0) and sin²(1.5), with no brightness floor.
+    // Preserve sin²(0) and sin²(1.5) at 0 and 330 ms, independent of refresh rate.
     assert_eq!(
         tool_rail_motion_color(Color::Rgb(0, 0, 0), Color::Rgb(200, 200, 200), motion, 0, 0),
         Color::Rgb(0, 0, 0)
@@ -40,9 +45,12 @@ fn running_tool_wave_is_spatially_continuous_and_time_based() {
         tool_rail_motion_color(
             Color::Rgb(0, 0, 0),
             Color::Rgb(200, 200, 200),
-            motion,
+            Some(ToolRailMotion::Running {
+                elapsed: Duration::from_millis(330),
+                sampled_phase: 0
+            }),
             0,
-            10
+            0
         ),
         Color::Rgb(199, 199, 199)
     );

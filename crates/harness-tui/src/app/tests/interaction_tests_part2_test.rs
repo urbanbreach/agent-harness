@@ -450,7 +450,7 @@ pub(super) fn debounced_resize_preserves_detached_wide_glyph_display_column_anch
         .is_none());
     assert!(ingress
         .ingest_at(
-            std::time::Duration::from_millis(7),
+            std::time::Duration::from_millis(2),
             crate::input::TerminalEnvelope::new(
                 crate::input::TerminalSequence::new(2),
                 std::time::Instant::now(),
@@ -459,10 +459,10 @@ pub(super) fn debounced_resize_preserves_detached_wide_glyph_display_column_anch
         )
         .is_none());
     assert!(ingress
-        .flush_due(std::time::Duration::from_millis(15))
+        .flush_due(std::time::Duration::from_millis(3))
         .is_none());
     let crate::event::TuiEvent::Resize(width, height) = ingress
-        .flush_due(std::time::Duration::from_millis(16))
+        .flush_due(std::time::Duration::from_millis(4))
         .expect("final resize must become ready at the quiet boundary")
         .event
     else {

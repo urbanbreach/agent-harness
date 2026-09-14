@@ -1,4 +1,3 @@
-use super::ui_transcript_block_grammar::TranscriptBlockSpec;
 use super::*;
 use harness_core::event::ProviderRequestRetryMetadata;
 use std::time::Duration;
@@ -22,8 +21,7 @@ pub(super) struct TranscriptLayoutCacheEntry {
     pub(super) theme: Theme,
     pub(super) width: u16,
     pub(super) base_surface: Color,
-    pub(super) sections: Vec<TranscriptTurnSection>,
-    pub(super) normalized_specs: Vec<Vec<TranscriptBlockSpec>>,
+    pub(super) sections: Rc<[TranscriptTurnSection]>,
     pub(super) layout: MeasuredTranscriptLayout,
 }
 
@@ -642,6 +640,7 @@ pub(super) enum TranscriptCompactionKind {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct TranscriptCompactionSection {
+    pub(super) expanded: bool,
     pub(super) kind: TranscriptCompactionKind,
     pub(super) summary: String,
     pub(super) tokens_before: Option<u32>,
@@ -1110,6 +1109,7 @@ mod tool_group_tests {
                 TranscriptBlockRole::Compaction,
                 TranscriptBlockContent::Compaction {
                     branch_summary: false,
+                    expanded: false,
                     summary: String::new(),
                     tokens_before: None,
                     read_files: Vec::new(),

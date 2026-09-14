@@ -196,9 +196,9 @@ fn tilde_fences_highlight_and_select_code_without_markers() {
 
 #[test]
 fn code_indentation_tabs_citation_syntax_and_copy_follow_the_same_wrapping() {
-    for settled in [false, true] {
+    for (settled, indent) in [(false, "\t"), (true, "\t"), (false, "    "), (true, "    ")] {
         let source = format!(
-            "```1:4:src/main.rs\nfn main() {{\n\tlet answer = 42;\n\n}}{}",
+            "```1:4:src/main.rs\nfn main() {{\n{indent}let answer = 42;\n\n}}{}",
             if settled { "\n```" } else { "" }
         );
         for width in [32, 80] {

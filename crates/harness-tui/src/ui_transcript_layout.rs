@@ -154,21 +154,39 @@ pub(super) fn transcript_layout_has_visible_running_tool(
     scroll_top: usize,
 ) -> bool {
     let viewport_bottom = scroll_top.saturating_add(viewport_height);
-    layout.sections.iter().any(|section| {
-        let section_top = section.top_row.saturating_add(section.leading_gap_height);
-        section.surfaces.iter().any(|surface| {
-            let surface_top = section_top.saturating_add(surface.top_offset);
-            let surface_bottom = surface_top.saturating_add(surface.height);
-            matches!(
-                surface.tool_rail_motion,
-                Some(ToolRailMotion::Running { .. })
-            ) && surface_bottom > scroll_top
-                && surface_top < viewport_bottom
+    layout
+        .visible_sections(scroll_top, viewport_height)
+        .any(|index| {
+            let section = &layout.sections[index];
+            let section_top = section.top_row.saturating_add(section.leading_gap_height);
+            section.surfaces.iter().any(|surface| {
+                let surface_top = section_top.saturating_add(surface.top_offset);
+                let surface_bottom = surface_top.saturating_add(surface.height);
+                matches!(
+                    surface.tool_rail_motion,
+                    Some(ToolRailMotion::Running { .. })
+                ) && surface_bottom > scroll_top
+                    && surface_top < viewport_bottom
+            })
         })
-    })
 }
 
 impl MeasuredTranscriptLayout {
+    pub(super) fn visible_sections(
+        &self,
+        scroll_top: usize,
+        viewport_height: usize,
+    ) -> std::ops::Range<usize> {
+        let start = self
+            .sections
+            .partition_point(|section| section.top_row <= scroll_top)
+            .saturating_sub(1);
+        let end = self.sections.partition_point(|section| {
+            section.top_row < scroll_top.saturating_add(viewport_height)
+        });
+        start..end
+    }
+
     fn rendered_lines(&self) -> Vec<Line<'static>> {
         let mut lines = Vec::new();
         for section in &self.sections {
@@ -200,11 +218,10 @@ impl MeasuredTranscriptLayout {
         column: usize,
     ) -> Option<TranscriptContentAnchor> {
         let point = absolute_row.min(self.total_height.saturating_sub(1));
-        let section = self
-            .sections
-            .iter()
-            .find(|section| point < section.top_row.saturating_add(section.total_height()))
-            .or_else(|| self.sections.last())?;
+        let index = self.sections.partition_point(|section| {
+            section.top_row.saturating_add(section.total_height()) <= point
+        });
+        let section = self.sections.get(index).or_else(|| self.sections.last())?;
         let section_content_top = section.top_row.saturating_add(section.leading_gap_height);
         let surface_index = section
             .surfaces
@@ -513,7 +530,8 @@ pub(super) fn render_selected_transcript_entry(
     let Some(selected) = selected else {
         return;
     };
-    for (section_index, section) in layout.sections.iter().enumerate() {
+    for section_index in layout.visible_sections(scroll_top, usize::from(area.height)) {
+        let section = &layout.sections[section_index];
         for (surface_index, surface) in section.surfaces.iter().enumerate() {
             if surface.metadata.id != selected {
                 continue;
@@ -725,7 +743,8 @@ pub(super) fn render_transcript_layout_surfaces(
         return;
     }
 
-    for (section_idx, section) in layout.sections.iter().enumerate() {
+    for section_idx in layout.visible_sections(scroll_top, viewport_height) {
+        let section = &layout.sections[section_idx];
         for (surface_idx, surface) in section.surfaces.iter().enumerate() {
             let Some(placement) = transcript_visual_entry_viewport_placement(
                 layout,

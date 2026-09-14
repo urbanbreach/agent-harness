@@ -42,7 +42,7 @@ pub(super) fn append_reasoning_body_lines(
                 selection_rows_for_rendered_line(&lines[start + index], width)
                     .into_iter()
                     .next()
-                    .unwrap_or_else(|| blank_selection_row(width))
+                    .unwrap_or_else(blank_selection_row)
             })
         })
         .collect()

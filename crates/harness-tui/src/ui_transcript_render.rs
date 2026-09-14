@@ -728,7 +728,7 @@ fn build_assistant_part_render_surface(
                     hovered: turn.header.is_hovered,
                 },
             );
-            let selection_rows = reasoning_selection_rows(&lines, width, block_layout);
+            let selection_rows = reasoning_selection_rows(&lines, block_layout);
             let mut interaction_rows = vec![None; lines.len()];
             if lines.len() > content_start {
                 interaction_rows[content_start] = Some(full_width_interaction_row(
@@ -850,10 +850,12 @@ fn build_assistant_part_render_surface(
             )
         }
         TranscriptAssistantPart::Compaction(compaction) => {
+            let render_width =
+                transcript_surface_render_width(width, TranscriptRenderSurfaceKind::Compaction);
             let content = super::ui_transcript_compaction::resolve_compaction_content(
                 compaction,
                 theme,
-                width,
+                render_width,
                 base_surface,
             );
             lines = content.lines;
@@ -880,7 +882,7 @@ fn build_assistant_part_render_surface(
                 rows.push(None);
             }
             if let Some(rows) = selection_rows.as_mut() {
-                rows.push(blank_selection_row(width));
+                rows.push(blank_selection_row());
             }
         }
         let footer_line = build_assistant_footer_line(
@@ -999,7 +1001,7 @@ fn resolve_assistant_body_content(
     if let Some(rows) = &mut selection_rows {
         rows.truncate(lines.len());
         for row in rows {
-            row.cells.resize(usize::from(content_width), String::new());
+            row.cells.truncate(usize::from(content_width));
         }
     }
     AssistantBodyContent {
@@ -1191,7 +1193,6 @@ fn append_reasoning_block(
 
 fn reasoning_selection_rows(
     lines: &[Line<'static>],
-    width: u16,
     layout: ReasoningBlockLayout,
 ) -> Vec<TranscriptSelectionRow> {
     lines
@@ -1205,7 +1206,7 @@ fn reasoning_selection_rows(
                 .cloned()
                 .flatten()
             else {
-                return blank_selection_row(width);
+                return blank_selection_row();
             };
             metadata
         })

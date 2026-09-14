@@ -2,6 +2,27 @@ use super::*;
 use crate::UnwrapOrAbort;
 use harness_providers::CompletionUsage;
 
+#[test]
+fn streaming_memory_cap_preserves_complete_graphemes() {
+    let mut app = AppState::new_live(None, false, None);
+    app.memory_caps.max_transcript_chars = 8;
+    app.ingest_event(provider_started(1, "bounded", "test", "test"));
+    for (seq, delta, expected) in [(2, "Ae\u{301}🙂Z", "e\u{301}🙂Z"), (3, "!", "🙂Z!")] {
+        app.ingest_event(envelope(
+            seq,
+            "bounded",
+            EventV1::ProviderStreamDelta(ProviderStreamDeltaEvent {
+                request_id: "bounded".into(),
+                delta: delta.into(),
+            }),
+        ));
+        assert_eq!(
+            app.activities.back().unwrap_or_abort().transcript_text,
+            expected
+        );
+    }
+}
+
 #[path = "activity_lifecycle_terminal_tests.rs"]
 mod activity_lifecycle_terminal_tests;
 pub(super) use activity_lifecycle_terminal_tests::{

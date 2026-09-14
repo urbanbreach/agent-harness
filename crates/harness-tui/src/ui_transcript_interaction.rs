@@ -85,7 +85,15 @@ impl<'a> TranscriptViewportHitMap<'a> {
             return None;
         }
 
-        for (section_idx, section) in self.layout.sections.iter().enumerate().rev() {
+        for section_idx in self
+            .layout
+            .visible_sections(
+                self.rows.body_scroll_top(),
+                usize::from(self.viewport.height),
+            )
+            .rev()
+        {
+            let section = &self.layout.sections[section_idx];
             for (surface_idx, surface) in section.surfaces.iter().enumerate().rev() {
                 let Some(placement) = transcript_visual_entry_viewport_placement(
                     self.layout,

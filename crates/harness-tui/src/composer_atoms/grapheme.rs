@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use unicode_segmentation::UnicodeSegmentation;
 
 use crate::terminal::char_display_width;
 
@@ -26,68 +27,22 @@ impl GraphemeCluster {
 }
 
 pub(crate) fn split_graphemes(text: &str) -> Vec<GraphemeCluster> {
-    let chars: Vec<char> = text.chars().collect();
-    let mut clusters = Vec::new();
-    let mut index = 0;
-    while index < chars.len() {
-        let mut cluster = String::new();
-        let first = chars[index];
-        cluster.push(first);
-        index += 1;
-
-        if is_regional_indicator(first)
-            && index < chars.len()
-            && is_regional_indicator(chars[index])
-        {
-            cluster.push(chars[index]);
-            index += 1;
-        }
-
-        while let Some(&next) = chars.get(index) {
-            if next == '\u{200D}' {
-                cluster.push(next);
-                index += 1;
-                if let Some(&joined) = chars.get(index) {
-                    cluster.push(joined);
-                    index += 1;
-                }
-            } else if is_grapheme_extend(next) {
-                cluster.push(next);
-                index += 1;
-            } else {
-                break;
-            }
-        }
-        clusters.push(GraphemeCluster::new(&cluster));
-    }
-    clusters
+    text.graphemes(true).map(GraphemeCluster::new).collect()
 }
 
 fn cluster_display_width(text: &str) -> u16 {
-    let chars: Vec<char> = text.chars().collect();
-    if chars.is_empty() {
-        return 0;
-    }
-    if chars.len() == 2
-        && chars
-            .iter()
-            .all(|character| is_regional_indicator(*character))
-    {
+    if text.chars().count() == 2 && text.chars().all(is_regional_indicator) {
         return 2;
     }
-    if chars.contains(&'\u{200D}') {
-        return chars
-            .iter()
-            .filter(|character| !is_grapheme_extend(**character) && **character != '\u{200D}')
-            .map(|character| display_width(*character))
-            .max()
-            .unwrap_or(0);
+    let widths = text
+        .chars()
+        .filter(|character| !is_grapheme_extend(*character) && *character != '\u{200D}')
+        .map(display_width);
+    if text.contains('\u{200D}') {
+        widths.max().unwrap_or(0)
+    } else {
+        widths.sum()
     }
-    chars
-        .iter()
-        .filter(|character| !is_grapheme_extend(**character))
-        .map(|character| display_width(*character))
-        .sum()
 }
 
 fn display_width(character: char) -> u16 {

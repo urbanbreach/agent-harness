@@ -1,6 +1,7 @@
 //! Resume at the last complete line of a growing fence. Exact repeats also
 //! reuse the final partial line; non-append edits rebuild from a matching prefix.
 use std::cell::RefCell;
+use std::rc::Rc;
 
 use syntect::{
     easy::HighlightLines,
@@ -8,7 +9,7 @@ use syntect::{
     parsing::{ParseState, SyntaxReference, SyntaxSet},
 };
 
-type HighlightedLine = Vec<(Style, String)>;
+type HighlightedLine = Rc<[(Style, String)]>;
 const MAX_SOURCE_BYTES: usize = 256 * 1024;
 const MAX_BLOCKS: usize = 8;
 
