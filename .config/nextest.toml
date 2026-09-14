@@ -26,6 +26,11 @@ status-level = "pass"
 final-status-level = "none"
 junit = { path = "target/nextest/perf/junit.xml" }
 
+# This opt-in resource fixture also measures unoptimized baseline histories.
+[[profile.perf.overrides]]
+filter = 'test(perf_interactive_resources)'
+slow-timeout = { period = "30s", terminate-after = 10 }
+
 [test-groups.process-global-state]
 max-threads = 1
 

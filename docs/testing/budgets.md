@@ -5,7 +5,7 @@ Budgets are local release-readiness gates, not production-class performance clai
 | Budget | Current local threshold | Evidence |
 |---|---:|---|
 | startup/readiness | 2s local startup smoke | `signoff-binary` startup stage |
-| TUI render | deterministic snapshot/render tests complete without timeout | `cargo nextest run -p harness-tui` |
+| TUI render | warm 10,000-entry resize p95 below 8.333 ms; frame/resource comparisons measured separately | `cargo nextest run -p harness-tui` and the release perf profile |
 | session resume | 200ms default local resume-plan budget | `crates/harness-core/tests/perf/resume_plan_perf.rs` |
 | large-session list/reopen/search | measured local artifact, no fast long-session claim by itself | `crates/harness/tests/perf_sessions_surface_test.rs` |
 | binary size | documented only in this slice | final-slice binary artifact gate |
@@ -16,7 +16,13 @@ Startup/readiness covers launching the binary far enough to parse config, initia
 
 ## TUI render budget
 
-TUI render budget is currently guarded by deterministic TestBackend/snapshot tests. The expected behavior is that startup, overlays, transcript render, permission state, model switcher, session picker, diff rendering, resume, and replay-failure states complete inside normal cargo nextest run timeouts without sleeps or live dependencies.
+The release resize contract requires p95 below the 8.333 ms budget for 120 Hz. Deterministic
+tests also cover startup, overlays, permissions, replay, Unicode geometry, and selection.
+`scripts/measure-tui-performance.py` measures complete render/diff/ANSI encoding, CPU time,
+resident memory, and terminal bytes across synthetic workloads. `scripts/measure-tui-runtime.py`
+measures the production event loop and writer through a real PTY, including a slow reader.
+See [the fluidity measurements](../performance/tui-fluidity-2026-09-13.md) for before/after data,
+workload sizes, commands, and the distinction between PTY throughput and physical display refresh.
 
 ## Session resume budget
 
