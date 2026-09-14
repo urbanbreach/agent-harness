@@ -128,7 +128,8 @@ pub(super) fn map_startup_intent_to_workflow(intent: Option<UiIntent>) -> Intera
         | Some(UiIntent::SetAlwaysApproveMode { .. })
         | Some(UiIntent::ResolvePermission { .. })
         | Some(UiIntent::OpenAuthManager { .. })
-        | Some(UiIntent::CompactSession)
+        | Some(UiIntent::CancelCompaction { .. })
+        | Some(UiIntent::CompactSession { .. })
         | Some(UiIntent::BackgroundForegroundSubagents)
         | Some(UiIntent::DemoteForegroundChildTask { .. })
         | Some(UiIntent::InterruptSession { .. })
@@ -189,7 +190,8 @@ pub(super) fn live_workflow_from_intent(intent: &UiIntent) -> Option<Interactive
         | UiIntent::ResolvePermission { .. }
         | UiIntent::SubmitPrompt { .. }
         | UiIntent::OpenAuthManager { .. }
-        | UiIntent::CompactSession
+        | UiIntent::CancelCompaction { .. }
+        | UiIntent::CompactSession { .. }
         | UiIntent::BackgroundForegroundSubagents
         | UiIntent::DemoteForegroundChildTask { .. }
         | UiIntent::InterruptSession { .. }
@@ -213,7 +215,8 @@ fn forward_intent_to_live_run(intent: &UiIntent) -> bool {
             | UiIntent::ResolvePermission { .. }
             | UiIntent::SubmitPrompt { .. }
             | UiIntent::OpenAuthManager { .. }
-            | UiIntent::CompactSession
+            | UiIntent::CancelCompaction { .. }
+            | UiIntent::CompactSession { .. }
             | UiIntent::BackgroundForegroundSubagents
             | UiIntent::DemoteForegroundChildTask { .. }
             | UiIntent::InterruptSession { .. }

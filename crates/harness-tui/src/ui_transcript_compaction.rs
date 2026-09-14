@@ -1,28 +1,12 @@
-//! Compaction transcript surface rendering, inspired by Pi's
-//! `[compaction]` transcript component.
-//!
-//! Renders a `[compaction]` badge, a "Compacted from X tokens" line,
-//! the summary text (collapsed by default), and read/modified file lists
-//! as small bullet lines. Uses `transcript_emphasized_surface` for visual
-//! consistency with tool-call surfaces.
-
-use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::{Line, Span};
-
+//! Senpi-style collapsed compaction checkpoint and expandable Markdown summary.
 use super::ui_transcript_style::transcript_emphasized_surface;
 use super::ui_transcript_surface::transcript_surface_content_width;
 use super::ui_transcript_types::{
     TranscriptCompactionKind, TranscriptCompactionSection, TRANSCRIPT_ASSISTANT_BODY_PREFIX,
 };
 use crate::theme::Theme;
-use crate::ui::ui_chrome::display_width;
-
-const COMPACTION_BADGE: &str = "[compaction]";
-const BRANCH_SUMMARY_BADGE: &str = "[branch-summary]";
-const DISCLOSURE_COLLAPSED: &str = "\u{25b6} "; // ▶
-const DISCLOSURE_EXPANDED: &str = "\u{25bc} "; // ▼
-const FILE_BULLET: &str = "  ";
-const COMPACTION_PREFIX: &str = "   ";
+use ratatui::style::{Color, Modifier, Style};
+use ratatui::text::{Line, Span};
 
 pub(super) struct ResolvedCompactionContent {
     pub(super) lines: Vec<Line<'static>>,
@@ -36,173 +20,69 @@ pub(super) fn resolve_compaction_content(
     base_surface: Color,
 ) -> ResolvedCompactionContent {
     let surface = transcript_emphasized_surface(theme, base_surface);
-    let content_width = transcript_surface_content_width(width, false).saturating_sub(
-        u16::try_from(display_width(TRANSCRIPT_ASSISTANT_BODY_PREFIX)).unwrap_or(u16::MAX),
-    );
-    let mut lines = Vec::new();
-
-    // Badge line: [compaction] or [branch-summary]
+    let content_width = transcript_surface_content_width(width, false);
     let badge = match compaction.kind {
-        TranscriptCompactionKind::SessionCompaction => COMPACTION_BADGE,
-        TranscriptCompactionKind::BranchSummary => BRANCH_SUMMARY_BADGE,
+        TranscriptCompactionKind::SessionCompaction => "[compaction]",
+        TranscriptCompactionKind::BranchSummary => "[branch-summary]",
     };
-    let badge_color = match compaction.kind {
-        TranscriptCompactionKind::SessionCompaction => theme.text.accent,
-        TranscriptCompactionKind::BranchSummary => theme.status.info,
-    };
-
-    lines.push(Line::from(vec![
-        Span::styled(
-            DISCLOSURE_COLLAPSED.to_string(),
-            Style::default().fg(theme.text.secondary),
-        ),
-        Span::styled(
-            badge.to_string(),
+    let mut lines = vec![
+        Line::from(Span::styled(
+            badge,
             Style::default()
-                .fg(badge_color)
+                .fg(theme.text.accent)
                 .add_modifier(Modifier::BOLD),
-        ),
-    ]));
-
-    // "Compacted from X tokens" line (only for SessionCompaction)
-    if let Some(tokens_before) = compaction.tokens_before {
-        if tokens_before > 0 {
-            let token_str = format_token_count(tokens_before);
-            let label = match compaction.kind {
-                TranscriptCompactionKind::SessionCompaction => {
-                    format!("Compacted from {token_str} tokens")
-                }
-                TranscriptCompactionKind::BranchSummary => {
-                    format!("Summarized {token_str} tokens of branch history")
-                }
-            };
-            lines.push(Line::from(vec![Span::styled(
-                format!("{COMPACTION_PREFIX}{label}"),
+        )),
+        Line::default(),
+    ];
+    let action = if compaction.expanded {
+        "collapse"
+    } else {
+        "expand"
+    };
+    let label = compaction.tokens_before.map_or_else(
+        || "Branch summary".to_string(),
+        |tokens| format!("Compacted from {} tokens", format_token_count(tokens)),
+    );
+    lines.extend(
+        super::ui_transcript_surface::wrap_surface_spans(
+            vec![Span::styled(
+                format!("{label} (ctrl+alt+o to {action})"),
                 Style::default().fg(theme.text.secondary),
-            )]));
-        }
-    }
-
-    // Summary text (collapsed: first line only, truncated)
-    if !compaction.summary.is_empty() {
-        let summary_first_line = compaction
-            .summary
-            .lines()
-            .find(|line| !line.trim().is_empty())
-            .unwrap_or("");
-        if !summary_first_line.is_empty() {
-            let max_summary_width = usize::from(content_width)
-                .saturating_sub(display_width(COMPACTION_PREFIX))
-                .saturating_sub(display_width(DISCLOSURE_COLLAPSED));
-            let truncated = truncate_to_width(summary_first_line, max_summary_width);
-            lines.push(Line::from(vec![
-                Span::styled(
-                    DISCLOSURE_COLLAPSED.to_string(),
-                    Style::default().fg(theme.text.secondary),
-                ),
-                Span::styled(
-                    format!("{COMPACTION_PREFIX}{truncated}"),
-                    Style::default().fg(theme.text.primary),
-                ),
-            ]));
-        }
-    }
-
-    // File lists as small bullet lines
-    append_file_list(
-        &mut lines,
-        "read:",
-        &compaction.read_files,
-        theme,
-        content_width,
+            )],
+            usize::from(content_width.saturating_sub(3)),
+        )
+        .into_iter()
+        .map(Line::from),
     );
-    append_file_list(
-        &mut lines,
-        "modified:",
-        &compaction.modified_files,
-        theme,
-        content_width,
-    );
-
-    // Session-event chrome shares EntryRenderer's origin with chat and tools.
+    if compaction.expanded {
+        lines.push(Line::default());
+        let summary = crate::text::strip_ansi_escapes(&compaction.summary);
+        super::ui_streaming_markdown::append_streaming_rich_text_block(
+            &mut lines,
+            &summary,
+            theme.text.primary,
+            "",
+            theme,
+            content_width.saturating_sub(3),
+        );
+    }
     for line in &mut lines {
         line.spans
             .insert(0, Span::raw(TRANSCRIPT_ASSISTANT_BODY_PREFIX));
     }
-
     ResolvedCompactionContent { surface, lines }
 }
 
-fn append_file_list(
-    lines: &mut Vec<Line<'static>>,
-    label: &str,
-    files: &[String],
-    theme: &Theme,
-    content_width: u16,
-) {
-    if files.is_empty() {
-        return;
-    }
-
-    let max_width = usize::from(content_width).saturating_sub(display_width(FILE_BULLET));
-    let label_span = Span::styled(
-        format!("{FILE_BULLET}{label} "),
-        Style::default().fg(theme.text.tertiary),
-    );
-
-    let files_text = files.join(", ");
-    let truncated = truncate_to_width(
-        &files_text,
-        max_width.saturating_sub(display_width(label) + 1),
-    );
-    lines.push(Line::from(vec![
-        label_span,
-        Span::styled(truncated, Style::default().fg(theme.text.secondary)),
-    ]));
-}
-
 fn format_token_count(count: u32) -> String {
-    if count < 1000 {
-        return count.to_string();
-    }
-    if count < 10000 {
-        return format!("{:.1}k", f64::from(count) / 1000.0);
-    }
-    if count < 1000000 {
-        return format!("{}k", count / 1000);
-    }
-    format!("{:.1}M", f64::from(count) / 1000000.0)
-}
-
-fn truncate_to_width(text: &str, max_width: usize) -> String {
-    if max_width == 0 {
-        return String::new();
-    }
-
-    let text_width = display_width(text);
-    if text_width <= max_width {
-        return text.to_string();
-    }
-
-    let ellipsis = "\u{2026}"; // …
-    let ellipsis_width = display_width(ellipsis);
-    if max_width <= ellipsis_width {
-        return ellipsis.to_string();
-    }
-
-    let target = max_width.saturating_sub(ellipsis_width);
-    let mut used = 0usize;
-    let mut split_at = text.len();
-    for (index, ch) in text.char_indices() {
-        let ch_width = display_width(&ch.to_string());
-        if used.saturating_add(ch_width) > target {
-            split_at = index;
-            break;
+    let digits = count.to_string();
+    let mut formatted = String::new();
+    for (index, digit) in digits.chars().enumerate() {
+        if index > 0 && (digits.len() - index).is_multiple_of(3) {
+            formatted.push(',');
         }
-        used = used.saturating_add(ch_width);
+        formatted.push(digit);
     }
-
-    format!("{}{ellipsis}", &text[..split_at])
+    formatted
 }
 
 #[cfg(test)]
@@ -215,46 +95,10 @@ mod tests {
     };
 
     #[test]
-    fn format_token_count_small() {
-        assert_eq!(format_token_count(42), "42");
-        assert_eq!(format_token_count(999), "999");
-    }
-
-    #[test]
-    fn format_token_count_thousands() {
-        assert_eq!(format_token_count(1500), "1.5k");
-        assert_eq!(format_token_count(9999), "10.0k");
-    }
-
-    #[test]
-    fn format_token_count_large() {
-        assert_eq!(format_token_count(50000), "50k");
-        assert_eq!(format_token_count(2500000), "2.5M");
-    }
-
-    #[test]
-    fn truncate_to_width_short_text_unchanged() {
-        assert_eq!(truncate_to_width("hello", 10), "hello");
-    }
-
-    #[test]
-    fn truncate_to_width_long_text_truncated() {
-        let result = truncate_to_width("hello world this is long", 10);
-        assert!(result.ends_with('\u{2026}'));
-        assert!(display_width(&result) <= 10);
-    }
-
-    #[test]
-    fn truncate_to_width_cjk_text() {
-        // CJK characters are double-width
-        let result = truncate_to_width("\u{4f60}\u{597d}\u{4e16}\u{754c}", 5);
-        assert!(display_width(&result) <= 5);
-    }
-
-    #[test]
     fn compaction_surface_contains_badge() {
         let theme = Theme::default();
         let compaction = TranscriptCompactionSection {
+            expanded: false,
             kind: TranscriptCompactionKind::SessionCompaction,
             summary: "Summary of work done".to_string(),
             tokens_before: Some(50000),
@@ -275,6 +119,7 @@ mod tests {
     fn compaction_surface_shows_token_count() {
         let theme = Theme::default();
         let compaction = TranscriptCompactionSection {
+            expanded: false,
             kind: TranscriptCompactionKind::SessionCompaction,
             summary: "Summary".to_string(),
             tokens_before: Some(50000),
@@ -282,13 +127,13 @@ mod tests {
             modified_files: vec![],
         };
         let surface = resolve_compaction_content(&compaction, &theme, 80, theme.surface.shell);
-        let token_line = &surface.lines[1];
+        let token_line = &surface.lines[2];
         let token_text = token_line
             .spans
             .iter()
             .map(|s| s.content.as_ref())
             .collect::<String>();
-        assert!(token_text.contains("50k"));
+        assert!(token_text.contains("50,000"));
         assert!(token_text.contains("Compacted from"));
     }
 
@@ -296,6 +141,7 @@ mod tests {
     fn branch_summary_surface_uses_branch_badge() {
         let theme = Theme::default();
         let compaction = TranscriptCompactionSection {
+            expanded: false,
             kind: TranscriptCompactionKind::BranchSummary,
             summary: "Branch summary".to_string(),
             tokens_before: None,
@@ -313,27 +159,33 @@ mod tests {
     }
 
     #[test]
-    fn compaction_surface_shows_file_lists() {
+    fn compaction_summary_is_collapsed_until_requested_and_sanitizes_controls() {
         let theme = Theme::default();
-        let compaction = TranscriptCompactionSection {
+        let mut compaction = TranscriptCompactionSection {
+            expanded: false,
             kind: TranscriptCompactionKind::SessionCompaction,
-            summary: "Summary".to_string(),
-            tokens_before: Some(1000),
-            read_files: vec!["src/a.rs".to_string(), "src/b.rs".to_string()],
-            modified_files: vec!["src/c.rs".to_string()],
+            summary: "## Retained work\n\n\u{1b}[31mSafe summary\u{1b}[0m\n\n- Continue testing"
+                .to_string(),
+            tokens_before: Some(128_000),
+            read_files: vec![],
+            modified_files: vec![],
         };
-        let surface = resolve_compaction_content(&compaction, &theme, 80, theme.surface.shell);
-        let all_text: String = surface
+        let collapsed = resolve_compaction_content(&compaction, &theme, 80, theme.surface.shell);
+        assert_eq!(collapsed.lines.len(), 3);
+        assert!(!collapsed
             .lines
             .iter()
-            .flat_map(|l| l.spans.iter())
-            .map(|s| s.content.as_ref().to_string())
-            .collect::<Vec<_>>()
-            .join("");
-        assert!(all_text.contains("read:"));
-        assert!(all_text.contains("src/a.rs"));
-        assert!(all_text.contains("modified:"));
-        assert!(all_text.contains("src/c.rs"));
+            .any(|line| line.to_string().contains("Safe summary")));
+        compaction.expanded = true;
+        let expanded = resolve_compaction_content(&compaction, &theme, 80, theme.surface.shell);
+        assert!(expanded
+            .lines
+            .iter()
+            .any(|line| line.to_string().contains("Safe summary")));
+        assert!(expanded
+            .lines
+            .iter()
+            .all(|line| !line.to_string().contains('\u{1b}')));
     }
 
     fn make_test_activity(request_id: &str, seq: u64) -> ActivityEntry {
@@ -392,6 +244,7 @@ mod tests {
                 summary_model_id: None,
                 read_files: vec!["src/auth.rs".to_string()],
                 modified_files: vec!["src/login.rs".to_string()],
+                task_intent: None,
                 current_intent: None,
                 trigger_reason: "threshold".to_string(),
                 from_hook: false,
@@ -455,12 +308,56 @@ mod tests {
             "rendered surface should contain 'Compacted from' text"
         );
         assert!(
-            all_text.contains("50k"),
+            all_text.contains("50,000"),
             "rendered surface should contain token count"
         );
         assert!(
-            all_text.contains("auth.rs"),
-            "rendered surface should contain read file"
+            !all_text.contains("auth.rs"),
+            "collapsed surface hides summary details"
         );
+        for width in [100, 48] {
+            for expanded in [false, true] {
+                if app.transcript_view.compaction_details_expanded != expanded {
+                    app.handle_key(crossterm::event::KeyEvent::new(
+                        crossterm::event::KeyCode::Char('o'),
+                        crossterm::event::KeyModifiers::CONTROL
+                            | crossterm::event::KeyModifiers::ALT,
+                    ));
+                }
+                let mut terminal =
+                    ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, 32))
+                        .expect("test terminal");
+                terminal
+                    .draw(|frame| crate::ui::render_app(frame, &app))
+                    .expect("draw completed compaction");
+                let buffer = terminal.backend().buffer();
+                let text: String = buffer.content.iter().map(|cell| cell.symbol()).collect();
+                capture_compaction_frame(buffer, width, expanded);
+                assert!(text.contains("[compaction]"));
+                assert_eq!(text.contains("discussed"), expanded);
+                assert!(
+                    text.contains("ctrl+alt+o"),
+                    "{width} columns, expanded={expanded}: {text}"
+                );
+                assert!(text.contains(if expanded { "collapse)" } else { "expand)" }));
+            }
+        }
+    }
+    fn capture_compaction_frame(buffer: &ratatui::buffer::Buffer, width: u16, expanded: bool) {
+        if let Ok(dir) = std::env::var("HARNESS_COMPACTION_CAPTURE_DIR") {
+            std::fs::create_dir_all(&dir).expect("capture directory");
+            let cells: Vec<_> = (0..32).flat_map(|y| (0..width).map(move |x| {
+                        let cell = &buffer[(x,y)];
+                        serde_json::json!({"x": x, "y": y, "text": cell.symbol(), "fg": format!("{:?}", cell.fg), "bg": format!("{:?}", cell.bg)})
+                    })).collect();
+            std::fs::write(
+                std::path::Path::new(&dir).join(format!("completed-{expanded}-{width}.json")),
+                serde_json::to_vec(
+                    &serde_json::json!({"width": width, "height": 32, "cells": cells}),
+                )
+                .expect("capture JSON"),
+            )
+            .expect("write capture");
+        }
     }
 }

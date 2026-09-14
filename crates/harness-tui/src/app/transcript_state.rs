@@ -424,6 +424,9 @@ impl AppState {
         self.transcript_view.show_transcript_thinking.hash(hasher);
         self.transcript_view.show_transcript_timestamps.hash(hasher);
         self.transcript_view.show_tool_details.hash(hasher);
+        self.transcript_view
+            .compaction_details_expanded
+            .hash(hasher);
         self.transcript_view.show_generic_tool_output.hash(hasher);
         self.transcript_view.stacked_transcript_diffs.hash(hasher);
         self.transcript_view.hovered_transcript_target.hash(hasher);
@@ -438,6 +441,9 @@ impl AppState {
         self.transcript_view.show_transcript_thinking.hash(hasher);
         self.transcript_view.show_transcript_timestamps.hash(hasher);
         self.transcript_view.show_tool_details.hash(hasher);
+        self.transcript_view
+            .compaction_details_expanded
+            .hash(hasher);
         self.transcript_view.show_generic_tool_output.hash(hasher);
         self.transcript_view.stacked_transcript_diffs.hash(hasher);
         self.transcript_view.transcript_cache.epoch().hash(hasher);
@@ -1321,19 +1327,18 @@ mod toast_tests {
         app.show_toast("Saved", ToastVariant::Info);
         assert!(app.toast().is_some());
 
-        for _ in 0..30 {
-            app.advance_animation_tick();
-        }
+        app.advance_wall_clock_for_motion_evidence(Duration::from_millis(990));
+        app.refresh_motion_state();
         app.palette_visible = true;
-        for _ in 0..30 {
-            app.advance_animation_tick();
-        }
+        app.refresh_motion_state();
+        app.advance_wall_clock_for_motion_evidence(Duration::from_millis(990));
+        app.refresh_motion_state();
         assert!(app.toast().is_some());
 
         app.palette_visible = false;
-        for _ in 0..31 {
-            app.advance_animation_tick();
-        }
+        app.refresh_motion_state();
+        app.advance_wall_clock_for_motion_evidence(Duration::from_millis(1023));
+        app.refresh_motion_state();
         assert!(app.toast().is_none());
     }
 }

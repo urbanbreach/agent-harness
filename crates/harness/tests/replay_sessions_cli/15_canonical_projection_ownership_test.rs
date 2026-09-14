@@ -168,6 +168,7 @@ fn mixed_canonical_events(run_id: &str) -> Vec<EventEnvelopeV1> {
                 summary_model_id: Some("model-1".to_string()),
                 read_files: Vec::new(),
                 modified_files: Vec::new(),
+                task_intent: None,
                 current_intent: None,
                 trigger_reason: "threshold".to_string(),
                 from_hook: false,

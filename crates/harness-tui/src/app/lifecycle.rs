@@ -153,7 +153,12 @@ pub enum UiIntent {
         attachments: Vec<crate::composer_integration::SubmissionAttachment>,
         launch_metadata: LaunchMetadata,
     },
-    CompactSession,
+    CompactSession {
+        custom_instructions: Option<String>,
+    },
+    CancelCompaction {
+        agent_id: String,
+    },
     BackgroundForegroundSubagents,
     DemoteForegroundChildTask {
         handle_id: String,
@@ -315,6 +320,9 @@ impl AppState {
             return false;
         }
 
+        if self.active_compaction().is_some() {
+            return true;
+        }
         let foreground_work = self.live_turn_stop_available();
         let background_work = self.active_background_task_count() > 0;
         let actionable_work = self.has_live_turn_activity() || foreground_work || background_work;
@@ -966,6 +974,9 @@ impl AppState {
 
     pub(in crate::app) fn handle_interrupt_escape(&mut self) -> bool {
         self.reset_interrupt_confirmation();
+        if self.active_compaction().is_some() {
+            return self.interrupt_active_turn();
+        }
         if self.composer.vim_mode {
             if self.focus == Focus::Prompt {
                 self.focus = Focus::Details;
@@ -979,6 +990,9 @@ impl AppState {
     }
 
     pub(in crate::app) fn handle_ctrl_c_clear_or_cancel(&mut self) -> bool {
+        if self.active_compaction().is_some() {
+            return self.interrupt_active_turn();
+        }
         if !self.composer_disabled() && !self.composer.prompt_buffer.is_empty() {
             self.composer.push_undo();
             self.clear_prompt_input();
@@ -998,6 +1012,11 @@ impl AppState {
     }
 
     pub(in crate::app) fn interrupt_active_turn(&mut self) -> bool {
+        if let Some(compaction) = self.active_compaction() {
+            let agent_id = compaction.agent_id.clone();
+            self.emit_ui_intent(UiIntent::CancelCompaction { agent_id });
+            return true;
+        }
         let task_ids = self.active_interrupt_task_ids();
         self.interrupt_active_turn_with_ids(task_ids)
     }

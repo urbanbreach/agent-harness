@@ -52,6 +52,7 @@ pub(super) fn content_for_part(
         TranscriptAssistantPart::Compaction(compaction) => (
             TranscriptBlockRole::Compaction,
             TranscriptBlockContent::Compaction {
+                expanded: compaction.expanded,
                 branch_summary: compaction.kind == TranscriptCompactionKind::BranchSummary,
                 summary: compaction.summary.clone(),
                 tokens_before: compaction.tokens_before,

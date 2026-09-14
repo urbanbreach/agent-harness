@@ -1,6 +1,6 @@
 use harness_core::event::{
-    ActorKind, EventActor, EventEnvelopeV1, EventV1, PermissionRequestedEvent, RuntimeEvent,
-    ToolCallRequestedEvent, SCHEMA_VERSION,
+    ActorKind, EventActor, EventEnvelopeV1, EventV1, LiveEventEnvelope, LiveEventV1,
+    PermissionRequestedEvent, RuntimeEvent, ToolCallRequestedEvent, SCHEMA_VERSION,
 };
 use harness_tui::UnwrapOrAbort;
 use harness_tui::{
@@ -297,6 +297,121 @@ pub(crate) fn pty_waiting_for_response_matches_grok_layout_and_timer_motion() {
     }
 
     exit_via_palette(&mut helper);
+}
+
+pub(crate) fn pty_compaction_stream_animates_resizes_and_cancels() {
+    if !cfg!(target_os = "linux") || std::env::var(PTY_SIGNOFF_ENV).as_deref() != Ok("1") {
+        return;
+    }
+    let mut helper = spawn_animated_helper("pty_helper_compaction", "compaction");
+    helper.wait_for("Compacting context...");
+    let initial = compaction_spinner(&helper.screen_text());
+    let deadline = Instant::now() + MARKER_TIMEOUT;
+    loop {
+        let screen = helper.screen_text();
+        if compaction_spinner(&screen) != initial {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "compaction spinner stopped\n{screen}"
+        );
+        if let Ok(chunk) = helper.output_rx.recv_timeout(READ_POLL_TIMEOUT) {
+            helper.parser.process(&chunk);
+        }
+    }
+    send_bytes(helper.writer.as_mut(), b"next chunk\r").unwrap_or_abort();
+    helper.wait_for("Latest summary chunk");
+    let streamed = helper.screen_text();
+    assert_eq!(
+        streamed
+            .lines()
+            .filter(|row| row.contains("Compacting"))
+            .count(),
+        1
+    );
+    assert!(streamed.contains("(esc to cancel) Latest summary chunk"));
+    helper.master.resize(pty_size(48, 24)).unwrap_or_abort();
+    helper.parser = Parser::new(24, 48, 0);
+    helper.wait_for("(esc to cancel)");
+    let narrow = helper.screen_text();
+    assert_eq!(
+        narrow
+            .lines()
+            .filter(|row| row.contains("Compacting"))
+            .count(),
+        1
+    );
+    assert!(
+        narrow.contains("最新"),
+        "stream must retain the newest trailing columns\n{narrow}"
+    );
+    send_bytes(helper.writer.as_mut(), b"\x1b").unwrap_or_abort();
+    helper.wait_until_absent("Compacting");
+    println!("--- compaction stream ---\n{streamed}\n--- compaction at 48 columns ---\n{narrow}");
+    exit_via_palette(&mut helper);
+}
+
+fn compaction_spinner(screen: &str) -> char {
+    screen
+        .lines()
+        .find(|row| row.contains("Compacting"))
+        .and_then(|row| row.trim_start().chars().next())
+        .unwrap_or_abort()
+}
+
+pub(crate) fn pty_helper_compaction() {
+    if std::env::var(HELPER_SCENARIO_ENV).as_deref() != Ok("compaction") {
+        return;
+    }
+    let run_dir = tempfile::tempdir().unwrap_or_abort();
+    let (update_tx, update_rx) = live_update_channel();
+    update_tx
+        .send(compaction_update(Some("")))
+        .unwrap_or_abort();
+    run_tui_with_options(TuiOptions {
+        mode: TuiMode::Live {
+            run_dir: run_dir.path().to_path_buf(),
+            historical_events: Vec::new(),
+            session_history_entries: Vec::new(),
+            prompt_history_path: None,
+            update_rx,
+            compact_session_supported: true,
+        },
+        exit_on_finish: false,
+        on_ui_intent: Some(Arc::new(move |intent| {
+            let preview = match intent {
+                UiIntent::SubmitPrompt { .. } => Some("Latest summary chunk · 最新"),
+                UiIntent::CancelCompaction { agent_id } if agent_id == "compaction-agent" => None,
+                _ => return,
+            };
+            update_tx.send(compaction_update(preview)).unwrap_or_abort();
+        })),
+        keybindings: None,
+        toggles: None,
+        preserve_terminal_on_exit: false,
+        skip_alternate_screen: false,
+    })
+    .unwrap_or_abort();
+}
+
+fn compaction_update(preview: Option<&str>) -> LiveUpdate {
+    LiveUpdate::Event(Box::new(RuntimeEvent::Live(Box::new(LiveEventEnvelope {
+        event_id: "compaction-progress".to_string(),
+        run_id: "compaction-pty".into(),
+        mono_ms: 0,
+        ts: None,
+        actor: EventActor::new(ActorKind::System, Some("compaction-agent".to_string())),
+        correlation_id: None,
+        causation_id: None,
+        stream_key: None,
+        payload: LiveEventV1::CompactionProgress {
+            agent_id: "compaction-agent".to_string(),
+            generation: 1,
+            trigger_reason: "manual".to_string(),
+            preview: preview.map(str::to_string),
+        },
+    }))))
 }
 
 #[allow(clippy::panic, reason = "test code must panic gracefully")]

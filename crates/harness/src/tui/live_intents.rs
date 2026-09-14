@@ -108,10 +108,28 @@ pub(super) async fn handle_ui_intents(
                     }
                 }
             }
-            UiIntent::CompactSession => {
-                let (message, level) =
-                    manual_compaction_notice(&coordinator, live_agent_target.as_ref()).await?;
-                let _ = live_update_tx.send(LiveUpdate::OperatorNotice { message, level });
+            UiIntent::CompactSession {
+                custom_instructions,
+            } => {
+                let coordinator = coordinator.clone();
+                let target = live_agent_target.clone();
+                let updates = live_update_tx.clone();
+                tokio::spawn(async move {
+                    let (message, level) = manual_compaction_notice(
+                        &coordinator,
+                        target.as_ref(),
+                        custom_instructions,
+                    )
+                    .await
+                    .unwrap_or_else(|message| (message, OperatorNoticeLevel::Error));
+                    let _ = updates.send(LiveUpdate::OperatorNotice { message, level });
+                });
+            }
+            UiIntent::CancelCompaction { agent_id } => {
+                coordinator
+                    .cancel_compaction(agent_id)
+                    .await
+                    .map_err(|error| error.to_string())?;
             }
             UiIntent::BackgroundForegroundSubagents => {
                 let (message, level) = background_foreground_notice(&coordinator).await;
@@ -376,6 +394,7 @@ async fn switch_live_model(
 async fn manual_compaction_notice(
     coordinator: &CoordinatorHandle,
     live_agent_target: Option<&LiveAgentTargetState>,
+    custom_instructions: Option<String>,
 ) -> Result<(String, OperatorNoticeLevel), String> {
     let Some(live_agent_target) = live_agent_target else {
         return Ok((
@@ -396,7 +415,12 @@ async fn manual_compaction_notice(
 
     Ok(
         match coordinator
-            .compact_agent_context(agent_id, through_request_id, "manual")
+            .compact_agent_context_with_instructions(
+                agent_id,
+                through_request_id,
+                "manual",
+                custom_instructions,
+            )
             .await
         {
             Ok(ManualCompactionOutcome::Compacted {
@@ -408,7 +432,11 @@ async fn manual_compaction_notice(
                 OperatorNoticeLevel::Info,
             ),
             Ok(ManualCompactionOutcome::NoOp) => (
-                "manual compaction skipped: need at least two completed turns".to_string(),
+                "Nothing to compact: the recent context already fits.".to_string(),
+                OperatorNoticeLevel::Info,
+            ),
+            Err(harness_core::coord::CoordinatorError::CompactionCancelled { .. }) => (
+                "Compaction cancelled".to_string(),
                 OperatorNoticeLevel::Info,
             ),
             Err(err) => (

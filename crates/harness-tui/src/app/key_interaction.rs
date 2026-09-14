@@ -6,6 +6,17 @@ const QUIT_CONFIRMATION_TTL: Duration = Duration::from_millis(1_000);
 const QUIT_CONFIRMATION_BANNER: &str = "Press Ctrl+Q again to quit";
 
 impl AppState {
+    fn handle_compaction_details_key(&mut self, key: KeyEvent) -> bool {
+        if key.code != KeyCode::Char('o')
+            || key.modifiers != (KeyModifiers::CONTROL | KeyModifiers::ALT)
+        {
+            return false;
+        }
+        self.transcript_view.compaction_details_expanded =
+            !self.transcript_view.compaction_details_expanded;
+        true
+    }
+
     pub fn handle_key(&mut self, key: KeyEvent) {
         self.modal_interaction.invalidate();
         if self.handle_pending_quit_confirmation(&key) {
@@ -102,9 +113,10 @@ impl AppState {
             return;
         }
 
-        if key.modifiers == KeyModifiers::CONTROL
-            && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('C'))
-            && self.handle_ctrl_c_clear_or_cancel()
+        if self.handle_compaction_details_key(key)
+            || (key.modifiers == KeyModifiers::CONTROL
+                && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('C'))
+                && self.handle_ctrl_c_clear_or_cancel())
         {
             self.maybe_auto_exit();
             return;

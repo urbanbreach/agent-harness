@@ -91,6 +91,7 @@ pub(in crate::ui) enum TranscriptBlockContent {
         message: String,
     },
     Compaction {
+        expanded: bool,
         branch_summary: bool,
         summary: String,
         tokens_before: Option<u32>,

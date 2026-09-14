@@ -466,7 +466,9 @@ pub fn dispatch_palette_command(app: &mut AppState, value: &str) {
             app.request_new_worktree_session();
         }
         PaletteDispatch::CompactSession => {
-            app.emit_ui_intent(crate::app::UiIntent::CompactSession);
+            app.emit_ui_intent(crate::app::UiIntent::CompactSession {
+                custom_instructions: None,
+            });
         }
         PaletteDispatch::CopySessionTranscript => {
             let text: String = app
