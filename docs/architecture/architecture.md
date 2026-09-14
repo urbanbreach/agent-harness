@@ -218,7 +218,7 @@ checks without scheduling work during replay.
 - `ProviderRequestFinished`
 - `AssistantMessageFinished` - Self-contained assistant commit before tool preflight/execution; includes `request_id`, `tool_call_count`, `parts`, `provenance`, and optional `assistant_message`
 - Provider tool-call deltas/completions are normalized before coordinator execution
-- `SessionCompaction` (`agent_id`, `summary`, `first_kept_event_seq`, `first_kept_request_id`, `first_kept_entry_id`, `tokens_before`, `tokens_after`, `summary_usage`, `summary_provider_id`, `summary_model_id`, `read_files`, `modified_files`, `current_intent`, `trigger_reason`, `from_hook`) - session-level compaction event; replaces the deprecated compaction sequence.
+- `SessionCompaction` (`agent_id`, `summary`, `first_kept_event_seq`, `first_kept_request_id`, `first_kept_entry_id`, `tokens_before`, `tokens_after`, `summary_usage`, `summary_provider_id`, `summary_model_id`, `read_files`, `modified_files`, `task_intent`, `current_intent`, `trigger_reason`, `from_hook`) - session-level compaction event; replaces the deprecated compaction sequence.
 - Deprecated read-only compatibility variants: `CompactionRequested`, `CompactionWritten`, `CompactionApplied`, `CompactionFailed`.
 - `BranchSummary` - branch-level summary event for forked/child session context.
 
@@ -516,108 +516,78 @@ tail so prior complete events remain readable and the next append uses the expec
 
 ## Provider Context Compaction
 
-Provider-visible conversation state is compacted without rewriting `events.jsonl`. Compaction V2 has
-one active coordinator-owned pipeline:
+The coordinator implements the compaction flow from `inspirations/senpi/packages/coding-agent`:
+`prepare -> generate -> validate -> commit`. Manual `/compact [focus]`, pre-prompt pressure,
+background preparation, idle preparation, and overflow recovery share this pipeline. Generation
+runs outside the command loop; only the coordinator can append `SessionCompaction` and install the
+resulting canonical provider context. The journal remains append-only.
 
-`prepare -> generate -> validate -> commit`
+### Cut points and summary requests
 
-Manual `/compact`, pre-prompt pressure, and the single overflow retry all call that same pipeline.
-Summary generation runs outside the coordinator command loop. A successful run appends exactly one
-`SessionCompaction` event and rebuilds the in-memory provider context from the committed event. There
-is no trigger-specific compaction bypass, second success event, or active checkpoint-artifact writer.
+Cut selection walks backward to the recent-token target and keeps whole messages. The target is
+approximate: a retained message or tool batch may exceed it. A tool result never starts a suffix;
+its assistant call stays with it. A split turn sends the older history and turn prefix in one native
+conversation summarization request. Text is never divided into artificial user/assistant messages.
+If all messages fit the recent allowance, manual compaction is a no-op. Overflow can advance to the
+next valid message boundary, but cannot split a lone oversized user message.
 
-### V2 durable contract
+The summary request retains the agent system prompt and tool definitions, disables tool calls and
+prompt-cache retention, and appends the internal compaction instructions. Initial, rolling-update,
+and split-turn prompts use the upstream summary structure. Optional `/compact` focus instructions
+apply only to that generation. Summary output is capped at the minimum of 32,768 tokens, half the
+context window, and the model output limit. OpenAI and Codex models use their configured provider
+transport; this implementation does not add a separate remote `/responses/compact` endpoint.
 
-The canonical active path is typed before cut selection. The success event carries these fields:
+### Pressure, preparation, and recovery
 
-- `agent_id`, `summary`, `first_kept_event_seq`, and optional `first_kept_request_id` identify the
-  owner and durable boundary;
-- optional `first_kept_entry_id` identifies the canonical `SessionEntry` boundary;
-- `tokens_before` and optional `tokens_after` record the shared budget estimate before and after;
-- optional `summary_usage`, `summary_provider_id`, and `summary_model_id` preserve summary-generation
-  accounting and provenance;
-- `read_files`, `modified_files`, and optional typed `current_intent` preserve operational state;
-- `trigger_reason` and `from_hook` describe the trigger without changing the pipeline.
+Pressure prefers matching completed provider usage plus subsequent messages. Without usable usage,
+it estimates UTF-16 characters / 4, with long opaque runs weighted fourfold. Summary request sizing
+also weights CJK text. Thresholds range from 45% for windows up to 16,000 to 80% above 512,000;
+high-yield compaction lowers the next threshold by five percentage points, bounded at 40%.
+Reserve grows to 4% of the window, capped at 49,152 tokens. Recent retention scales for large windows
+and stays within the threshold's remaining headroom.
 
-The optional fields are serde-defaulted so old `SessionCompaction` fixtures remain readable. The
-canonical `CompactionSummary` entry carries the typed boundary, accounting, provenance, and preserved
-state used by the active-path projection. File state and current intent are typed state, not markers
-that a reader must recover by searching summary prose.
+Background preparation starts 8,192–32,768 tokens before the soft threshold. Successful interactive
+turns can also prepare while idle. A prepared summary is reused only when the original history is
+unchanged, the model matches, and appended growth is bounded. It commits at a later safe boundary;
+it never replaces history merely because background generation completed. Preparation has a
+30-second cooldown. Three failed attempts trip a 60-second automatic cooldown; manual requests can
+bypass it. Cancellation stops generation without committing partial output.
 
-### Threshold policy
+Summary generation has an idle watchdog and an input-scaled duration limit. Overflow retries shrink
+older messages/tool pairs, with at most three attempts and a four-minute cumulative retry budget.
+Typed transport/rate-limit failures use bounded backoff. Required compaction can use an explicitly
+marked deterministic recovery checkpoint after empty, truncated, timed-out, or exhausted overflow
+output. It does not claim model provenance. Every checkpoint must pass the same current-model fit
+validation. Unknown model limits stay unknown: automatic compaction fails closed, while manual
+compaction requires strict reduction of observed history.
 
-Manual and automatic pressure consume the prepared request's shared `RequestBudgetSnapshot`. When a
-compaction threshold is known, every trigger uses it for complete-request fit validation. Automatic,
-pre-prompt, and overflow compaction fail closed when the current model has no threshold. Explicit
-manual compaction may still proceed after at least two completed turns and a canonical safe cut: its
-summary allowance is bounded by removable observed history, and commit requires the actual summary
-plus retained history to be strictly smaller than the prepared input. That manual fallback does not
-invent a context window, threshold, remaining-token count, or exact pressure percentage.
+### Durable state and restoration
 
-### Retained recent turns
+`SessionCompaction` stores owner, typed first-kept boundary, summary, token accounting, optional
+summary usage/provenance, cumulative file operations, optional `task_intent`, typed `current_intent`,
+and trigger. New optional fields are serde-defaulted for older logs. A model change, stale result,
+cancellation, or non-fitting replacement leaves the previous checkpoint active.
 
-`runtime.compaction.keep_recent_tokens` is capped by the snapshot's history allowance after system
-text, tools, attachments, provider framing, and the pending prompt are charged. Recent typed entries
-remain verbatim when they fit; a single oversized text entry may use the UTF-8 split rule below.
+File and skill restoration carries identifiers only, bounded by ten items, 5,000 tokens per item,
+50,000 total, 15% of the window, and actual remaining request headroom. Already retained/restored
+identifiers are skipped. It never rereads files or replays tools. Oversized tool results are projected
+on the outgoing request copy with a bounded head/tail excerpt; durable tool output is unchanged.
+A compacted tool continuation with its user prefix in the summary counts all remaining messages as
+history, rather than appending another user prompt after the tool results.
 
-### File-operation context
+Restart/replay derives the same summary, suffix, tool pairs, and operational state from the durable
+journal, without network calls or tool execution. Deprecated compaction events and artifact readers
+remain read-only compatibility inputs in `session::legacy`; new sessions do not write checkpoint
+artifacts.
 
-Active compaction extracts deterministic read-file and modified-file facts from the event-derived
-messages being summarized rather than a second provider-context planner. Tool calls/results,
-attachments, todo state, and plan context remain represented by their typed entries and protocol
-messages.
+### Terminal presentation
 
-Threshold and fit checks consume the prepared request's shared `RequestBudgetSnapshot`. The snapshot
-charges system text, tools, attachments, provider framing, pending prompt, retained history, prior
-summary, and requested completion through one budget service. With a known threshold, the complete
-current-model request is validated before commit. For explicit manual compaction without a threshold,
-validation instead requires strict reduction of the prepared input and makes no model-fit claim. A
-model change, stale generation, empty/error/cancelled generation, malformed history, non-fitting known-
-threshold summary, or non-shrinking unknown-threshold manual summary is non-committable: the previous
-durable boundary remains active and no replacement success event is appended. UTF-8 text may split
-only at a valid boundary; attachments, tool calls, and tool results remain atomic pairs.
-
-### Post-compaction restoration
-
-The contract is explicit: preserved recent turns plus the live user prompt take precedence over the
-lossy recap. The recap is historical provider context, not a system instruction, and replay does not
-recover it by scanning the workspace.
-
-### Replay, restart, and compatibility
-
-Restart reconstructs provider context from the latest committed `SessionCompaction` event and the
-post-boundary canonical events. The live post-commit and reopened contexts preserve the same roles,
-ordered tool pairs, attachment metadata, summary, recent suffix, file state, and current intent.
-`events.jsonl` remains append-only and replay remains side-effect free.
-
-The deprecated `CompactionRequested`, `CompactionWritten`, `CompactionApplied`, and `CompactionFailed`
-variants plus checkpoint-artifact readers remain decode/read-only compatibility inputs inside the
-single `session::legacy` adapter boundary until G010. They have no new writers in the active V2 path.
-When a legacy log references a checkpoint artifact, the compatibility reader may import it; new V2
-sessions do not create one. Operational memory is replay-derived from durable events and does not scan
-the workspace or execute tools during replay.
-
-### Manual `/compact`
-
-Manual `/compact` requests the shared V2 pipeline now. It summarizes the older typed active-path
-entries and preserves the configured recent suffix, including the complete latest completed turn and
-its protocol atoms. It appends one `SessionCompaction` only after known-threshold fit validation or,
-when the threshold is unknown, after strict post-compaction shrink validation. A one-turn session may
-no-op because there is no older completed entry to summarize. Manual and automatic triggers have the
-same durable event shape; only `trigger_reason` differs.
-
-### Overflow retry behavior
-
-After an overflow-style provider failure, the coordinator may run the shared pipeline and retry once
-when `runtime.compaction.autoRetryOverflow=true`. `overflow_retry_attempted` is the sole retry guard;
-a second overflow terminates without a third provider request. A single oversized text entry may be
-split at a valid UTF-8 boundary so its prefix is summarized and its suffix remains provider-visible.
-Attachments, tool calls, and tool results are never split or invented, and the event log is never
-rewritten.
-
-### Session artifacts vs UI memory caps
-
-Compaction is a provider-context persistence feature. It is separate from TUI/session presentation caps that trim or collapse on-screen history for usability. UI memory caps do not rewrite provider context, do not create `SessionCompaction` events, and should not be treated as compaction.
+Compaction streams on one status row: an animated accent-colored spinner, a reason label, an Escape
+cancel hint, and the trailing summary preview. Previews are redacted live events, never journaled.
+Generation identities reject late chunks, and replay never resurrects a spinner. Completed checkpoints
+show `[compaction]` and the comma-separated prior token count. Ctrl+Alt+O expands/collapses the Markdown
+summary; the existing Ctrl+O permission action retains its binding.
 
 ## Canonical session and semantic assistant history
 
@@ -687,8 +657,12 @@ Interactive input has one producer: a terminal-reader thread feeds a bounded 128
 runtime arbiter orders fatal writer failure, frame acknowledgement, quit/cancel, terminal input,
 pacer and animation deadlines, then live provider updates. An input quantum is bounded to 16
 terminal envelopes or 2 ms; fairness permits live progress without reordering input. Live work
-retains the 16 live / 8 ms budget boundary. The scheduler uses independent 16 ms flush, 80 ms lazy
-scroll-gesture, and 33 ms animation clocks and keeps the one-frame acknowledgement rule.
+retains a 16-update / 2 ms budget boundary. Input and provider bursts share a 4 ms default flush
+cadence, configurable through `HARNESS_TUI_MIN_DRAW_MS` (1–100 ms). Resize coalescing also uses
+4 ms. Fast visible motion follows the configured cadence; discrete spinner and background
+glyphs retain their slower wall-clock periods. Scroll gesture classification retains its 80 ms
+window. The writer keeps at most one frame in flight, and completed acknowledgements are
+retired even when telemetry is disabled. Idle state without visible motion parks.
 
 Runtime scheduling QA exercises typing, wheel input, disclosure open/close, resizes, and semantic
 cancellation while live work remains pending. Its

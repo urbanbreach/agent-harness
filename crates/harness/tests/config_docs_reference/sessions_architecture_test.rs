@@ -117,18 +117,14 @@ fn architecture_docs_cover_compaction_contracts_and_preservation_context() {
 
     // act
     for doc_anchor in [
-        "Threshold policy",
-        "RequestBudgetSnapshot",
-        "fail closed when the current model has no threshold",
-        "strictly smaller than the prepared input",
-        "invent a context window",
-        "Retained recent turns",
-        "runtime.compaction.keep_recent_tokens",
-        "snapshot's history allowance",
-        "File-operation context",
-        "rather than a second provider-context planner",
-        "Post-compaction restoration",
-        "preserved recent turns plus the live user prompt take precedence",
+        "Cut points and summary requests",
+        "whole messages",
+        "Unknown model limits stay unknown",
+        "strict reduction of observed history",
+        "Durable state and restoration",
+        "never rereads files or replays tools",
+        "Terminal presentation",
+        "Previews are redacted live events, never journaled",
     ] {
         // assert
         assert!(
