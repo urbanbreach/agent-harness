@@ -6,7 +6,7 @@ mod safe;
 mod turn_boundary;
 
 pub(crate) use safe::SafeCutError;
-pub use turn_boundary::{find_cut_point, find_manual_cut_point, CutPointResult};
+pub use turn_boundary::{find_cut_point, CutPointResult};
 
 use crate::ids::EntryId;
 use crate::session::{AssistantPart, SessionEntryPayload};
@@ -16,15 +16,8 @@ use super::tokens::estimate_text_tokens;
 use safe::{plan_safe_cut, SafeCutCandidate};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct TypedTextSplit {
-    pub(crate) entry_id: EntryId,
-    pub(crate) byte_index: usize,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TypedCutPointPlan {
     pub(crate) first_kept_entry_id: EntryId,
-    pub(crate) text_split: Option<TypedTextSplit>,
     pub(crate) retained_tokens: u32,
     pub(crate) summarized_tokens: u32,
 }
@@ -32,6 +25,7 @@ pub(crate) struct TypedCutPointPlan {
 pub(crate) fn find_safe_cut_point(
     snapshot: &ActivePathCompactionSnapshot,
     keep_recent_tokens: u32,
+    force_progress: bool,
 ) -> Result<TypedCutPointPlan, SafeCutError> {
     let candidates = snapshot
         .entries
@@ -48,25 +42,33 @@ pub(crate) fn find_safe_cut_point(
             candidate_for_payload(&entry.entry.payload, joins_previous, joins_next)
         })
         .collect::<Vec<_>>();
-    let plan = plan_safe_cut(&candidates, keep_recent_tokens, estimate_text_tokens)?;
+    let mut plan = plan_safe_cut(&candidates, keep_recent_tokens, estimate_text_tokens)?;
+    if force_progress && plan.summarized_tokens == 0 {
+        if let Some(next) =
+            snapshot
+                .entries
+                .iter()
+                .enumerate()
+                .skip(1)
+                .find_map(|(index, entry)| {
+                    matches!(
+                        entry.entry.payload,
+                        SessionEntryPayload::UserMessage { .. }
+                            | SessionEntryPayload::AssistantMessage { .. }
+                    )
+                    .then_some(index)
+                })
+        {
+            plan.first_kept_index = next;
+            plan.retained_tokens = estimate_typed_entries_tokens(&snapshot.entries[next..]);
+            plan.summarized_tokens = estimate_typed_entries_tokens(&snapshot.entries[..next]);
+        }
+    }
     let Some(first_kept) = snapshot.entries.get(plan.first_kept_index) else {
         return Err(SafeCutError::NoSafeCut);
     };
-    let text_split = match plan.text_split {
-        Some(split) => {
-            let Some(entry) = snapshot.entries.get(split.entry_index) else {
-                return Err(SafeCutError::NoSafeCut);
-            };
-            Some(TypedTextSplit {
-                entry_id: entry.entry.id.clone(),
-                byte_index: split.byte_index,
-            })
-        }
-        None => None,
-    };
     Ok(TypedCutPointPlan {
         first_kept_entry_id: first_kept.entry.id.clone(),
-        text_split,
         retained_tokens: plan.retained_tokens,
         summarized_tokens: plan.summarized_tokens,
     })
@@ -123,7 +125,7 @@ fn candidate_for_payload(
                 },
                 estimate_text_tokens,
             ),
-            joins_previous,
+            true,
             joins_next,
         ),
         SessionEntryPayload::SystemContextUpdate { context }

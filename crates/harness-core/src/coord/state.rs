@@ -84,7 +84,7 @@ impl From<AgentTurnFailure> for AgentTurnFailureMemory {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(in crate::coord) struct CompactionGenerationToken(u64);
+pub(in crate::coord) struct CompactionGenerationToken(pub(in crate::coord) u64);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(in crate::coord) struct CompactionGenerationBase {
@@ -172,6 +172,9 @@ pub(in crate::coord) struct PendingCompactionState {
     pub(in crate::coord) cancellation_token: CancellationToken,
     pub(in crate::coord) trigger: ProviderCompactionTrigger,
     pub(in crate::coord) response: PendingCompactionResponse,
+    pub(in crate::coord) background: bool,
+    pub(in crate::coord) allow_appended: bool,
+    pub(in crate::coord) request_budget: crate::context_budget::RequestBudgetSnapshot,
 }
 
 impl PendingCompactionState {
@@ -226,9 +229,8 @@ pub(in crate::coord) struct RunState {
     pub(in crate::coord) queued_agent_turns: BTreeMap<String, QueuedAgentTurn>,
     pub(in crate::coord) running_agent_turns: BTreeMap<String, RunningAgentTurn>,
     pub(in crate::coord) pending_compactions: BTreeMap<String, PendingCompactionState>,
-    pub(in crate::coord) failed_terminal_compaction_attempts: BTreeSet<(String, String)>,
-    pub(in crate::coord) overflow_retry_compacted_context_by_attempt:
-        BTreeMap<(String, String), ProviderContext>,
+    pub(in crate::coord) compaction_state: BTreeMap<String, session_compaction::CompactionState>,
+
     pub(in crate::coord) scheduler: Scheduler,
     pub(in crate::coord) recorded_runtime_context: Option<RecordedRuntimeContext>,
     pub(in crate::coord) allow_initial_runtime_context_recording: bool,
@@ -502,39 +504,6 @@ impl RunState {
     pub(in crate::coord) fn reset_identical_tool_call_streak(&mut self) {
         self.last_identical_tool_key = None;
         self.identical_tool_call_streak = 0;
-    }
-
-    pub(in crate::coord) fn record_overflow_retry_compacted_context(
-        &mut self,
-        task_id: &str,
-        request_id: &str,
-        context: ProviderContext,
-    ) {
-        self.overflow_retry_compacted_context_by_attempt
-            .insert((task_id.to_string(), request_id.to_string()), context);
-    }
-
-    pub(in crate::coord) fn failed_terminal_compaction_attempt_should_run(
-        &mut self,
-        request: &FailedTerminalCompactionRequest,
-    ) -> bool {
-        let key = request.attempt_key();
-        if !self.failed_terminal_compaction_attempts.insert(key.clone()) {
-            return false;
-        }
-
-        if let Some(overflow_context) = self.overflow_retry_compacted_context_by_attempt.get(&key) {
-            let current_context = self
-                .provider_context_by_agent
-                .get(&request.agent_id)
-                .cloned()
-                .unwrap_or_default();
-            if &current_context == overflow_context {
-                return false;
-            }
-        }
-
-        true
     }
 }
 

@@ -250,6 +250,7 @@ fn projects_session_compaction_event_as_compaction_activity() {
                 summary_model_id: None,
                 read_files: vec!["src/main.rs".to_string()],
                 modified_files: vec!["src/lib.rs".to_string()],
+                task_intent: None,
                 current_intent: None,
                 trigger_reason: "overflow".to_string(),
                 from_hook: false,

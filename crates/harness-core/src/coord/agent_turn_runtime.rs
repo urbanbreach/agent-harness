@@ -848,6 +848,7 @@ where
                             task: &task,
                             trigger_reason: "pre_prompt",
                             evidence: CompactionRequestEvidence {
+                                custom_instructions: None,
                                 usage: None,
                                 context_budget: Some(provisional.budget_snapshot),
                             },

@@ -84,6 +84,8 @@ mod background_notifications;
 mod child_session;
 mod command_loop;
 mod compaction;
+pub(crate) use compaction::admit_tool_result;
+pub use compaction::estimate_text_tokens as estimate_compaction_text_tokens;
 mod compaction_support;
 mod event_helpers;
 mod formatter;
@@ -107,9 +109,7 @@ mod task_lifecycle;
 mod tool_execution;
 mod tool_metadata;
 
-pub(in crate::coord) use self::agent_turn_completion::{
-    CompactAgentContextResult, FailedTerminalCompactionRequest,
-};
+pub(in crate::coord) use self::agent_turn_completion::CompactAgentContextResult;
 #[cfg(test)]
 use self::agent_turn_phases::{
     completion_messages_to_conversation_messages, provider_tool_message_status,
@@ -347,6 +347,7 @@ pub enum JobOutcome {
 #[doc(hidden)]
 #[derive(Debug, Clone, Default)]
 pub struct CompactionRequestEvidence {
+    pub custom_instructions: Option<String>,
     pub usage: Option<harness_providers::CompletionUsage>,
     pub context_budget: Option<RequestBudgetSnapshot>,
 }
@@ -576,12 +577,22 @@ pub enum Command {
         >,
     },
     ManualCompactAgentContext {
+        custom_instructions: Option<String>,
         agent_id: String,
         through_request_id: Option<String>,
         trigger_reason: String,
         respond_to: oneshot::Sender<Result<ManualCompactionOutcome, CoordinatorError>>,
     },
     CompactionGenerated(CompactionGeneratedCommand),
+    CompactionProgress {
+        agent_id: String,
+        generation: u64,
+        preview: String,
+    },
+    CancelCompaction {
+        agent_id: String,
+        respond_to: oneshot::Sender<Result<(), CoordinatorError>>,
+    },
     AgentTurnFinished {
         task_id: String,
         agent_id: String,

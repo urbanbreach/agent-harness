@@ -384,10 +384,35 @@ impl CoordinatorHandle {
         through_request_id: Option<String>,
         trigger_reason: impl Into<String>,
     ) -> Result<ManualCompactionOutcome, CoordinatorError> {
+        self.compact_agent_context_with_instructions(
+            agent_id,
+            through_request_id,
+            trigger_reason,
+            None,
+        )
+        .await
+    }
+
+    pub async fn compact_agent_context_with_instructions(
+        &self,
+        agent_id: impl Into<String>,
+        through_request_id: Option<String>,
+        trigger_reason: impl Into<String>,
+        custom_instructions: Option<String>,
+    ) -> Result<ManualCompactionOutcome, CoordinatorError> {
         self.request(|respond_to| Command::ManualCompactAgentContext {
+            custom_instructions,
             agent_id: agent_id.into(),
             through_request_id,
             trigger_reason: trigger_reason.into(),
+            respond_to,
+        })
+        .await
+    }
+
+    pub async fn cancel_compaction(&self, agent_id: String) -> Result<(), CoordinatorError> {
+        self.request(|respond_to| Command::CancelCompaction {
+            agent_id,
             respond_to,
         })
         .await

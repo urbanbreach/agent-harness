@@ -299,6 +299,8 @@ impl Coordinator {
             | Command::CompactAgentContext { .. }
             | Command::ManualCompactAgentContext { .. }
             | Command::CompactionGenerated(..)
+            | Command::CompactionProgress { .. }
+            | Command::CancelCompaction { .. }
             | Command::AgentTurnFinished { .. }) => self.handle_provider_command(command).await,
             Command::SnapshotWorkspace {
                 request_id,
@@ -468,6 +470,7 @@ impl Coordinator {
                 .await;
             }
             Command::ManualCompactAgentContext {
+                custom_instructions,
                 agent_id,
                 through_request_id,
                 trigger_reason,
@@ -479,19 +482,47 @@ impl Coordinator {
                         agent_id,
                         through_request_id,
                         trigger_reason,
-                        evidence: CompactionRequestEvidence::default(),
+                        evidence: CompactionRequestEvidence {
+                            custom_instructions,
+                            ..Default::default()
+                        },
                     },
                     PendingCompactionResponse::Manual(respond_to),
                 )
                 .await;
             }
             Command::CompactionGenerated(completion) => {
+                self.publish_compaction_progress(
+                    &completion.agent_id,
+                    completion.generation.0,
+                    None,
+                );
                 self.compaction_generated_internal(
                     completion.agent_id,
                     completion.generation,
                     completion.result,
                 )
                 .await;
+            }
+            Command::CompactionProgress {
+                agent_id,
+                generation,
+                preview,
+            } => {
+                self.publish_compaction_progress(&agent_id, generation, Some(preview));
+            }
+            Command::CancelCompaction {
+                agent_id,
+                respond_to,
+            } => {
+                if let Some(pending) = self
+                    .run_state
+                    .as_ref()
+                    .and_then(|state| state.pending_compactions.get(&agent_id))
+                {
+                    pending.cancellation_token.cancel();
+                }
+                warn_oneshot_send_failure(respond_to.send(Ok(())), "cancel_compaction");
             }
             Command::AgentTurnFinished {
                 task_id,

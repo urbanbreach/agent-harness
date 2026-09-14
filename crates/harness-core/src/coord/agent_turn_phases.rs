@@ -394,10 +394,15 @@ pub(in crate::coord) fn prepare_provider_transform_phase(
         ),
     }
     .map_err(ProviderRequestPreflightError::Cost)?;
+    let safety_margin_tokens = model_limits
+        .context_window_tokens()
+        .map_or(compaction.reserve_tokens, |window| {
+            compaction.reserve_tokens.max((window / 25).min(49_152))
+        });
     let request_budget = ProviderRequestBudgetContext {
         model_limits,
         requested_output_tokens: None,
-        safety_margin_tokens: compaction.reserve_tokens,
+        safety_margin_tokens,
         estimated_token_triggers: compaction.estimated_token_triggers
             && !compaction.suppress_auto_compaction,
         fallback_input_tokens: compaction.fallback_input_tokens,

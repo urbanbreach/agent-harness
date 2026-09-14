@@ -6,8 +6,8 @@ use crate::event::{EventEnvelopeV1, EventV1, UiIntentReceivedEvent};
 use crate::ids::EntryId;
 
 use super::super::compaction::{
-    build_summarization_prompt, build_turn_prefix_prompt, compute_file_lists,
-    estimate_context_tokens, estimate_messages_tokens, estimate_text_tokens, CutPointResult,
+    build_summarization_prompt, compute_file_lists, estimate_context_tokens, estimate_text_tokens,
+    CutPointResult,
 };
 use super::super::{CoordinatorError, RunState};
 use super::budget::CompactionBudget;
@@ -32,7 +32,12 @@ pub(super) struct PreparedSessionCompaction {
     pub(super) trigger_reason: String,
     pub(super) model: AgentModelRef,
     pub(super) summary_prompt: String,
-    pub(super) turn_prefix_prompt: Option<String>,
+    pub(super) summary_messages: Vec<harness_providers::CompletionMessage>,
+    pub(super) summary_tools: Option<Vec<harness_providers::ToolDef>>,
+    pub(super) context_window: u32,
+    pub(super) required: bool,
+    pub(super) warm_max_growth: u32,
+    pub(super) within_grace: bool,
     pub(super) first_kept_event_seq: u64,
     pub(super) first_kept_request_id: Option<String>,
     pub(super) first_kept_entry_id: Option<EntryId>,
@@ -57,7 +62,7 @@ pub(in crate::coord) async fn prepare_session_compaction(
         settings,
         prepared_budget,
     } = request;
-    if !settings.enabled {
+    if trigger_reason != "manual" && (!settings.enabled || settings.suppress_auto_compaction) {
         return Ok(None);
     }
 
@@ -70,6 +75,22 @@ pub(in crate::coord) async fn prepare_session_compaction(
             EventV1::SessionCompaction(payload) if payload.agent_id == agent_id => Some(payload),
             _ => None,
         });
+    let latest_visible = all_events.iter().rev().find(|event| {
+        super::super::provider_context::event_belongs_to_agent(
+            event,
+            agent_id,
+            &format!("agent:{agent_id}"),
+        ) && matches!(
+            event.payload,
+            EventV1::UserMessageSubmitted(_)
+                | EventV1::AssistantMessageFinished(_)
+                | EventV1::ToolCallFinished(_)
+                | EventV1::SessionCompaction(_)
+        )
+    });
+    if latest_visible.is_some_and(|event| matches!(event.payload, EventV1::SessionCompaction(_))) {
+        return Ok(None);
+    }
     let effective_first_seq = latest_compaction.map_or(0, |event| event.first_kept_event_seq);
     let events = all_events
         .iter()
@@ -77,21 +98,8 @@ pub(in crate::coord) async fn prepare_session_compaction(
         .cloned()
         .collect::<Vec<EventEnvelopeV1>>();
 
-    let completed_turns = events
-        .iter()
-        .filter(|event| {
-            event.actor.agent_id.as_deref() == Some(agent_id)
-                && matches!(event.payload, EventV1::AssistantMessageFinished(_))
-        })
-        .count();
-    if completed_turns <= 1 && matches!(trigger_reason, "manual" | "pre_prompt" | "proactive") {
-        return Ok(None);
-    }
-    if completed_turns == 0 && matches!(trigger_reason, "aborted_response" | "failed_response") {
-        return Ok(None);
-    }
-
-    let context_messages = build_agent_conversation_messages(&events, agent_id);
+    let mut context_messages = build_agent_conversation_messages(&events, agent_id);
+    context_messages.retain(|message| !matches!(message, ConversationMessage::Checkpoint(_)));
     let mut total_tokens = estimate_context_tokens(&context_messages).total_tokens;
     if let Some(summary) = run_state
         .provider_context_by_agent
@@ -101,87 +109,139 @@ pub(in crate::coord) async fn prepare_session_compaction(
         total_tokens = total_tokens.saturating_add(estimate_text_tokens(summary));
     }
 
-    let force_compact = matches!(
-        trigger_reason,
-        "manual" | "overflow" | "aborted_response" | "failed_response"
-    );
-    if !force_compact && !context_budget.requires_compaction() {
-        return Ok(None);
-    }
-    if force_compact && trigger_reason != "manual" && total_tokens < 100 {
-        return Ok(None);
-    }
-
-    let Some(request_budget) = context_budget.request_snapshot() else {
+    let force_compact = matches!(trigger_reason, "manual" | "overflow");
+    let Some(mut request_budget) = context_budget.request_snapshot() else {
         return Ok(None);
     };
     if request_budget.compaction_threshold_tokens.is_none() && trigger_reason != "manual" {
         return Ok(None);
     }
+    // The canonical snapshot already owns the submitted prompt, including during pre-prompt compaction.
+    let pending_request_id = run_state
+        .running_agent_turns
+        .values()
+        .find(|turn| turn.agent_id == agent_id)
+        .map(|turn| turn.request_id.as_str())
+        .or_else(|| {
+            all_events
+                .iter()
+                .rev()
+                .find_map(|event| match &event.payload {
+                    EventV1::ProviderRequestStarted(started)
+                        if event.actor.agent_id.as_deref() == Some(agent_id) =>
+                    {
+                        Some(started.request_id.as_str())
+                    }
+                    _ => None,
+                })
+        });
+    if pending_request_id.is_some_and(|request_id| context_messages.iter().any(|message| matches!(message, ConversationMessage::User(user) if user.request_id.as_str() == request_id))) {
+        request_budget.components.pending_prompt_tokens = 0;
+    }
     let model = AgentModelRef::parse(&determine_model_ref(run_state, agent_id));
-    let history_allowance =
-        context_budget.history_allowance(settings.keep_recent_tokens, trigger_reason != "manual");
-    let retained_tokens = if trigger_reason == "manual" {
-        context_messages
-            .iter()
-            .rposition(|message| {
-                matches!(message, crate::conversation::ConversationMessage::User(_))
+    let limits = run_state
+        .cached_canonical_provider_view(agent_id)
+        .filter(|view| {
+            view.runtime_selection.provider_id == model.provider_id
+                && view.runtime_selection.model_id == model.model_id
+        })
+        .map(|view| &view.runtime_selection.resolved_limits);
+    let context_window = limits
+        .and_then(|limits| limits.context_window_tokens())
+        .or_else(|| {
+            request_budget.maximum_input_tokens.map(|tokens| {
+                tokens.saturating_add(request_budget.reserved_output_tokens.unwrap_or(0))
             })
-            .map_or(history_allowance, |index| {
-                estimate_messages_tokens(&context_messages[index..])
-                    .max(1)
-                    .min(history_allowance)
-            })
+        })
+        .unwrap_or(settings.fallback_input_tokens);
+    let summary_max_tokens = 32_768.min(context_window / 2).min(
+        limits
+            .and_then(|limits| limits.max_output_tokens())
+            .unwrap_or(32_768),
+    );
+    let last_compaction_seq = all_events.iter().rev().find(|event| matches!(&event.payload, EventV1::SessionCompaction(data) if data.agent_id == agent_id)).map(|event| event.seq);
+    let occupied = context_budget
+        .anchored_context_tokens(&context_messages, last_compaction_seq)
+        .unwrap_or(total_tokens);
+    let threshold = super::policy::threshold_tokens(context_window, latest_compaction);
+    let hard_limit = context_window.saturating_sub(super::policy::reserve_tokens(
+        settings.reserve_tokens,
+        context_window,
+    ));
+    if let Some(limit) = &mut request_budget.compaction_threshold_tokens {
+        *limit = (*limit).min(hard_limit);
+    }
+    let required = force_compact
+        || occupied >= threshold
+        || context_budget.requires_compaction()
+        || occupied >= hard_limit;
+    let lead_threshold = if trigger_reason == "idle" {
+        context_window / 2
     } else {
-        history_allowance
+        threshold.saturating_sub(super::policy::lead_tokens(threshold))
     };
+    if !required && occupied < lead_threshold {
+        return Ok(None);
+    }
+    let history_allowance = CompactionBudget::resolve(Some(request_budget), &all_events, agent_id)
+        .history_allowance(
+            super::policy::keep_recent_tokens(
+                settings.keep_recent_tokens,
+                context_window,
+                latest_compaction,
+            ),
+            true,
+        );
     let Some(typed) = prepare_typed_compaction(TypedCompactionPreparationRequest {
         events: &all_events,
         agent_id,
         model: &model,
         request_budget,
-        keep_recent_tokens: retained_tokens,
-        preserve_latest_completed_turn: trigger_reason == "manual",
+        keep_recent_tokens: history_allowance,
+        force_progress: trigger_reason == "overflow",
+        context_window,
     })?
     else {
         return Ok(None);
     };
-    let text_split = typed.text_split;
-    let is_text_split = text_split.is_some();
     let cut_point = CutPointResult {
         first_kept_event_seq: typed.first_kept_event_seq,
         first_kept_request_id: typed.first_kept_request_id.clone(),
-        is_split_turn: false,
-        turn_start_seq: None,
+        is_split_turn: typed.is_split_turn && typed.turn_start_seq.is_some(),
+        turn_start_seq: typed.turn_start_seq,
         tokens_before: typed.request_budget.pre_input_tokens,
     };
-    let (mut messages_to_summarize, _, _) =
+    let (mut messages_to_summarize, turn_prefix_messages, _) =
         split_messages_at_cut_point(&context_messages, &cut_point);
-    let mut turn_prefix_messages = match text_split {
-        Some(split) => vec![split_prefix_message(
-            &context_messages,
-            cut_point.first_kept_event_seq,
-            split.byte_index,
-        )?],
-        None => Vec::new(),
-    };
-    if messages_to_summarize.is_empty() && !turn_prefix_messages.is_empty() {
-        messages_to_summarize = std::mem::take(&mut turn_prefix_messages);
-    }
-    if messages_to_summarize.is_empty() {
+    if messages_to_summarize.is_empty() && turn_prefix_messages.is_empty() {
         return Ok(None);
     }
-
     let file_ops = extract_file_ops_from_messages(&messages_to_summarize, &turn_prefix_messages);
-    let previous_summary = find_previous_summary(&events, agent_id);
-    let summary_prompt = build_summarization_prompt(
-        &messages_to_summarize,
-        previous_summary.as_deref(),
-        None,
-        &file_ops,
-    );
-    let turn_prefix_prompt = (is_text_split && !turn_prefix_messages.is_empty())
-        .then(|| build_turn_prefix_prompt(&turn_prefix_messages));
+    let previous_summary = find_previous_summary(&all_events, agent_id);
+    let summary_prompt = if previous_summary.is_none() && cut_point.is_split_turn {
+        super::super::compaction::TURN_PREFIX_SUMMARIZATION_PROMPT.to_string()
+    } else {
+        build_summarization_prompt(&[], previous_summary.as_deref(), None, &file_ops)
+    };
+    messages_to_summarize.extend(turn_prefix_messages);
+    messages_to_summarize.retain(|message| !matches!(message, ConversationMessage::Checkpoint(_)));
+    let profile = run_state
+        .agents
+        .get(agent_id)
+        .ok_or_else(|| CoordinatorError::UnknownAgent(agent_id.to_string()))?;
+    let summary_messages =
+        crate::agent::transform_context_for_provider(crate::agent::ProviderBoundaryInput {
+            profile,
+            model: model.clone(),
+            model_settings: Default::default(),
+            context: crate::agent::ProviderBoundaryContext::ProjectedHarness {
+                messages: &messages_to_summarize,
+                checkpoint: None,
+            },
+            tools: None,
+            tool_choice: Some(harness_providers::ToolChoice::None),
+        })
+        .messages;
     let (read_files, modified_files) = compute_file_lists(&file_ops);
     let durable_state = durable_compaction_state(&all_events, agent_id, read_files, modified_files);
     Ok(Some(PreparedSessionCompaction {
@@ -189,13 +249,31 @@ pub(in crate::coord) async fn prepare_session_compaction(
         trigger_reason: trigger_reason.to_string(),
         model,
         summary_prompt,
-        turn_prefix_prompt,
+        summary_messages,
+        summary_tools: None,
+        context_window,
+        required,
+        warm_max_growth: history_allowance.max(8192),
+        within_grace: !force_compact
+            && occupied
+                < threshold
+                    .saturating_add(super::policy::lead_tokens(threshold))
+                    .min(hard_limit)
+            && !context_budget.requires_compaction(),
         first_kept_event_seq: cut_point.first_kept_event_seq,
         first_kept_request_id: cut_point.first_kept_request_id,
         first_kept_entry_id: Some(typed.first_kept_entry_id),
-        tokens_before: typed.request_budget.pre_input_tokens,
+        tokens_before: typed
+            .request_budget
+            .pre_input_tokens
+            .max(request_budget.occupied_input_tokens)
+            .max(total_tokens),
         preserved_message_tokens: typed.request_budget.retained_history_tokens,
-        summary_max_tokens: typed.request_budget.summary_allowance_tokens,
+        summary_max_tokens: if context_window == 0 {
+            typed.request_budget.summary_allowance_tokens
+        } else {
+            summary_max_tokens
+        },
         request_budget,
         durable_agent_tail_seq: super::super::provider_context::latest_agent_event_seq(
             &all_events,
@@ -206,57 +284,4 @@ pub(in crate::coord) async fn prepare_session_compaction(
         current_intent: durable_state.current_intent,
         committed_events: all_events,
     }))
-}
-
-fn split_prefix_message(
-    messages: &[ConversationMessage],
-    sequence: u64,
-    byte_index: usize,
-) -> Result<ConversationMessage, CoordinatorError> {
-    let message = messages
-        .iter()
-        .find(|message| match message {
-            ConversationMessage::User(message) => message.seq == Some(sequence),
-            ConversationMessage::Assistant(message) => {
-                message.first_seq == Some(sequence) || message.last_seq == Some(sequence)
-            }
-            ConversationMessage::ToolResult(_) | ConversationMessage::Checkpoint(_) => false,
-        })
-        .cloned()
-        .ok_or_else(|| {
-            CoordinatorError::CompactionFailed(
-                "typed split entry is absent from projected conversation".to_string(),
-            )
-        })?;
-    match message {
-        ConversationMessage::User(mut message) => {
-            message.text = message
-                .text
-                .get(..byte_index)
-                .ok_or_else(|| {
-                    CoordinatorError::CompactionFailed(
-                        "typed user split is not a UTF-8 boundary".to_string(),
-                    )
-                })?
-                .to_string();
-            Ok(ConversationMessage::User(message))
-        }
-        ConversationMessage::Assistant(mut message) => {
-            message.text = message
-                .text
-                .get(..byte_index)
-                .ok_or_else(|| {
-                    CoordinatorError::CompactionFailed(
-                        "typed assistant split is not a UTF-8 boundary".to_string(),
-                    )
-                })?
-                .to_string();
-            Ok(ConversationMessage::Assistant(message))
-        }
-        ConversationMessage::ToolResult(_) | ConversationMessage::Checkpoint(_) => {
-            Err(CoordinatorError::CompactionFailed(
-                "typed split targeted an atomic protocol entry".to_string(),
-            ))
-        }
-    }
 }

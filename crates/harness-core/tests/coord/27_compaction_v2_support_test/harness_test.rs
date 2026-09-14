@@ -11,8 +11,10 @@ pub(crate) struct CompactionV2Harness {
 impl CompactionV2Harness {
     pub(crate) async fn with_provider(
         provider: Arc<dyn Provider>,
-        compaction: CompactionRuntimeConfig,
+        mut compaction: CompactionRuntimeConfig,
     ) -> Self {
+        // These lifecycle fixtures use short messages; request a correspondingly small suffix.
+        if compaction.keep_recent_tokens == CompactionRuntimeConfig::default().keep_recent_tokens { compaction.keep_recent_tokens = 8; }
         let temp_dir = tempfile::tempdir().unwrap_or_abort();
         let coordinator = test_agent_coordinator_with_provider_and_compaction(
             temp_dir.path(),
@@ -58,10 +60,11 @@ impl CompactionV2Harness {
 
     pub(crate) async fn scripted_with_named_tool(
         events: Vec<Vec<ProviderStreamEvent>>,
-        compaction: CompactionRuntimeConfig,
+        mut compaction: CompactionRuntimeConfig,
         tool_id: &str,
         tool_output: String,
     ) -> (Self, SequentialScriptedProvider) {
+        if compaction.keep_recent_tokens == CompactionRuntimeConfig::default().keep_recent_tokens { compaction.keep_recent_tokens = 8; }
         let provider = SequentialScriptedProvider::new(events);
         let mut registry = ToolRegistry::new();
         registry.register(Arc::new(StaticTextTool {

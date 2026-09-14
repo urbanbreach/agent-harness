@@ -1,9 +1,8 @@
 use crate::agent::AgentModelRef;
 use crate::context_budget::RequestBudgetSnapshot;
 use crate::coord::compaction::{
-    build_active_path_compaction_snapshot, estimate_typed_entries_tokens, find_safe_cut_point,
-    ActivePathCompactionSnapshot, ActivePathCompactionSnapshotInput, CompactionOwner,
-    CurrentCompactionModel, LegacySourceSequences,
+    build_active_path_compaction_snapshot, find_safe_cut_point, ActivePathCompactionSnapshotInput,
+    CompactionOwner, CurrentCompactionModel, LegacySourceSequences,
 };
 use crate::coord::provider_context::event_belongs_to_agent;
 use crate::event::{EventEnvelopeV1, EventV1};
@@ -17,7 +16,8 @@ pub(super) struct TypedCompactionPreparation {
     pub(super) first_kept_entry_id: EntryId,
     pub(super) first_kept_event_seq: u64,
     pub(super) first_kept_request_id: Option<String>,
-    pub(super) text_split: Option<crate::coord::compaction::TypedTextSplit>,
+    pub(super) is_split_turn: bool,
+    pub(super) turn_start_seq: Option<u64>,
     pub(super) request_budget: CompleteRequestBudget,
 }
 
@@ -27,7 +27,8 @@ pub(super) struct TypedCompactionPreparationRequest<'a> {
     pub(super) model: &'a AgentModelRef,
     pub(super) request_budget: RequestBudgetSnapshot,
     pub(super) keep_recent_tokens: u32,
-    pub(super) preserve_latest_completed_turn: bool,
+    pub(super) force_progress: bool,
+    pub(super) context_window: u32,
 }
 
 pub(super) fn prepare_typed_compaction(
@@ -39,7 +40,8 @@ pub(super) fn prepare_typed_compaction(
         model,
         request_budget,
         keep_recent_tokens,
-        preserve_latest_completed_turn,
+        force_progress,
+        context_window,
     } = request;
     let projected =
         CanonicalSessionProjection::from_event_history(events).map_err(compaction_error)?;
@@ -109,25 +111,10 @@ pub(super) fn prepare_typed_compaction(
         .collect();
     snapshot.active_branch.leaf_entry_id = snapshot.active_branch.entry_ids.last().cloned();
 
-    let keep_recent_tokens = if preserve_latest_completed_turn {
-        latest_completed_turn_tokens(&snapshot).unwrap_or(keep_recent_tokens)
-    } else {
-        keep_recent_tokens
-    };
-    let cut = match find_safe_cut_point(&snapshot, keep_recent_tokens) {
+    let mut cut = match find_safe_cut_point(&snapshot, keep_recent_tokens, force_progress) {
         Ok(cut) => cut,
         Err(_) => return Ok(None),
     };
-    let request_budget =
-        match CompactionBudget::resolve_for_snapshot(request_budget, events, &snapshot)
-            .complete_request_plan(CompactionBudgetPlanInput {
-                snapshot: &snapshot,
-                cut: &cut,
-                keep_recent_tokens,
-            }) {
-            Ok(budget) => budget,
-            Err(_) => return Ok(None),
-        };
     let Some(boundary) = snapshot
         .entries
         .iter()
@@ -138,6 +125,28 @@ pub(super) fn prepare_typed_compaction(
     let Some(first_kept_event_seq) = boundary.legacy_source_sequence else {
         return Ok(None);
     };
+    cut.retained_tokens = super::preparation::build_agent_conversation_messages(events, agent_id)
+        .iter()
+        .filter(|message| {
+            !matches!(
+                message,
+                crate::conversation::ConversationMessage::Checkpoint(_)
+            ) && super::preparation::message_seq(message) >= first_kept_event_seq
+        })
+        .map(|message| {
+            super::super::compaction::estimate_admitted_message_tokens(message, context_window)
+        })
+        .fold(0_u32, u32::saturating_add);
+    let request_budget =
+        match CompactionBudget::resolve_for_snapshot(request_budget, events, &snapshot)
+            .complete_request_plan(CompactionBudgetPlanInput {
+                snapshot: &snapshot,
+                cut: &cut,
+                keep_recent_tokens: keep_recent_tokens.max(cut.retained_tokens),
+            }) {
+            Ok(budget) => budget,
+            Err(_) => return Ok(None),
+        };
     let first_kept_request_id = events
         .iter()
         .find(|event| event.seq == first_kept_event_seq)
@@ -146,26 +155,23 @@ pub(super) fn prepare_typed_compaction(
         first_kept_entry_id: cut.first_kept_entry_id,
         first_kept_event_seq,
         first_kept_request_id,
-        text_split: cut.text_split,
-        request_budget,
-    }))
-}
-
-fn latest_completed_turn_tokens(snapshot: &ActivePathCompactionSnapshot) -> Option<u32> {
-    let latest_turn_id =
-        snapshot
+        is_split_turn: !matches!(
+            boundary.entry.payload,
+            SessionEntryPayload::UserMessage { .. }
+        ),
+        turn_start_seq: snapshot
             .entries
             .iter()
             .rev()
-            .find_map(|entry| match &entry.entry.payload {
-                SessionEntryPayload::AssistantMessage { .. } => entry.entry.turn_id.as_ref(),
-                _ => None,
-            })?;
-    let first_entry = snapshot
-        .entries
-        .iter()
-        .position(|entry| entry.entry.turn_id.as_ref() == Some(latest_turn_id))?;
-    Some(estimate_typed_entries_tokens(&snapshot.entries[first_entry..]).max(1))
+            .find(|entry| {
+                entry
+                    .legacy_source_sequence
+                    .is_some_and(|seq| seq < first_kept_event_seq)
+                    && matches!(entry.entry.payload, SessionEntryPayload::UserMessage { .. })
+            })
+            .and_then(|entry| entry.legacy_source_sequence),
+        request_budget,
+    }))
 }
 
 fn compaction_error(error: impl std::fmt::Display) -> CoordinatorError {

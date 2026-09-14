@@ -275,6 +275,15 @@ pub(crate) fn apply_provider_request_budget(
     request: &mut CompletionRequest,
     context: &ProviderRequestBudgetContext,
 ) -> Result<RequestBudgetSnapshot, ProviderRequestPreflightError> {
+    let window = context
+        .model_limits
+        .context_window_tokens()
+        .unwrap_or(context.fallback_input_tokens);
+    for message in &mut request.messages {
+        if message.role == MessageRole::Tool {
+            message.content = crate::coord::admit_tool_result(&message.content, window);
+        }
+    }
     let attachment_tokens = context.historical_attachment_tokens;
     let mut provisional =
         provider.request_budget_semantics(request, context.pending_prompt_index)?;
@@ -692,11 +701,13 @@ where
                 &prompt.text,
                 &prompt.attachments,
             );
-            if let Some(index) = completion_request.messages.iter().rposition(|message| {
-                message.role == MessageRole::User && message.content == pending_text
-            }) {
-                budget.pending_prompt_index = index;
-            }
+            budget.pending_prompt_index = completion_request
+                .messages
+                .iter()
+                .rposition(|message| {
+                    message.role == MessageRole::User && message.content == pending_text
+                })
+                .unwrap_or(completion_request.messages.len());
         }
         budget
     });

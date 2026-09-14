@@ -171,6 +171,7 @@ fn append_session_compaction_event(
             summary_model_id: None,
             read_files: Vec::new(),
             modified_files: Vec::new(),
+            task_intent: None,
             current_intent: None,
             trigger_reason: "proactive".to_string(),
             from_hook: false,
@@ -275,7 +276,7 @@ async fn disabled_compaction_is_noop() {
         provider,
         agent_id,
         "proactive",
-        &settings(true, 0, 500),
+        &settings(false, 0, 500),
         None,
     )
     .await

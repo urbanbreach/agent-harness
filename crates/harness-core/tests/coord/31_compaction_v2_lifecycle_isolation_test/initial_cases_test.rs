@@ -17,7 +17,7 @@ async fn compaction_v2_root_child_histories_isolated() {
     harness.turn("ROOT_SENTINEL_TWO").await;
     harness
         .coordinator
-        .compact_agent_context(harness.agent_id.clone(), None, "manual")
+        .compact_agent_context_with_instructions(harness.agent_id.clone(), None, "manual", Some("Preserve the rollback procedure".to_string()))
         .await
         .unwrap_or_abort();
     let child = harness
@@ -41,6 +41,7 @@ async fn compaction_v2_root_child_histories_isolated() {
     let root_summary_request = serde_json::to_string(&requests[2]).unwrap_or_abort();
     let child_summary_request = serde_json::to_string(&requests[5]).unwrap_or_abort();
     assert!(root_summary_request.contains("ROOT_SENTINEL"));
+    assert!(root_summary_request.contains("Preserve the rollback procedure"));
     assert!(!root_summary_request.contains("CHILD_SENTINEL"));
     assert!(child_summary_request.contains("CHILD_SENTINEL"));
     assert!(!child_summary_request.contains("ROOT_SENTINEL"));
@@ -85,8 +86,11 @@ async fn compaction_v2_lifecycle_command_loop_remains_responsive() {
             .spawn_agent_idle(supervisor_actor(), "beta", None),
     )
     .await;
+    tokio::time::timeout(Duration::from_millis(100), harness.coordinator.cancel_compaction(harness.agent_id.clone())).await.unwrap_or_abort().unwrap_or_abort();
+    let cancelled = tokio::time::timeout(Duration::from_millis(100), compaction).await.unwrap_or_abort().unwrap_or_abort();
+    assert!(matches!(cancelled, Err(CoordinatorError::CompactionCancelled { .. })));
     release.notify_waiters();
-    let _ = compaction.await.unwrap_or_abort();
+    assert!(session_compaction_values(&harness.events()).is_empty());
     harness.stop().await;
 
     // Then: coordinator authority remains available during provider work.
@@ -171,4 +175,52 @@ async fn compaction_v2_lifecycle_other_agent_progresses_during_generation() {
         "same run's other agent was blocked by summary generation"
     );
     assert!(provider.requests().len() >= 4);
+}
+
+#[tokio::test]
+async fn compaction_warm_summary_rebases_appended_turn_and_commits_once() {
+    use harness_core::event::{LiveEventV1, RuntimeEvent};
+    let first_answer = "retained answer ".repeat(2_000);
+    let (provider, entered, release) = BlockingSummaryProvider::new(vec![
+        vec![ProviderStreamEvent::Start, ProviderStreamEvent::TextDelta(first_answer.clone()),
+            ProviderStreamEvent::Done { usage: Some(CompletionUsage { prompt_tokens: 6_000, completion_tokens: 8_000, total_tokens: 14_000 }) }],
+        provider_text_events("<task-intent>Keep the original task</task-intent><summary>warm checkpoint</summary>"),
+        provider_text_events("appended answer"),
+        provider_text_events("continued answer"),
+    ], 1);
+    let harness = CompactionV2Harness::with_provider(Arc::new(provider.clone()), CompactionRuntimeConfig {
+        keep_recent_tokens: 2_000, fallback_input_tokens: 32_000, reserve_tokens: 4_096, ..Default::default()
+    }).await;
+    harness.turn(&"original task ".repeat(1_800)).await;
+    let store = harness.coordinator.event_store().await.unwrap_or_abort();
+    let runtime = store.subscribe_runtime(1).unwrap_or_abort();
+    let outcome = harness.coordinator.compact_agent_context(harness.agent_id.clone(), None, "threshold").await.unwrap_or_abort();
+    assert_eq!(outcome, ManualCompactionOutcome::NoOp);
+    tokio::time::timeout(Duration::from_secs(1), entered).await.unwrap_or_abort().unwrap_or_abort();
+    harness.turn("appended task").await;
+    assert!(session_compaction_values(&harness.events()).is_empty());
+    release.notify_waiters();
+    let previews = runtime.filter_map(|event| match event.unwrap_or_abort() {
+        RuntimeEvent::Live(event) => Some(event.payload),
+        _ => None,
+    }).filter_map(|payload| match payload {
+        LiveEventV1::CompactionProgress { preview, .. } => Some(preview),
+        _ => None,
+    }).take_while(Option::is_some).collect::<Vec<_>>();
+    let previews = tokio::time::timeout(Duration::from_secs(1), previews).await.unwrap_or_abort();
+    assert!(previews.iter().flatten().any(|text| text.contains("warm checkpoint")));
+    let applied = harness.coordinator.compact_agent_context(harness.agent_id.clone(), None, "manual").await.unwrap_or_abort();
+    assert!(matches!(applied, ManualCompactionOutcome::Compacted { .. }));
+    assert_eq!(provider.requests().len(), 3, "reuse must not generate another summary");
+    harness.turn("continue after compaction").await;
+    let requests = provider.requests();
+    let resumed = &requests.last().unwrap_or_abort().messages;
+    for text in ["warm checkpoint", "appended task", "appended answer"] {
+        assert_eq!(resumed.iter().filter(|message| message.content.contains(text)).count(), 1);
+    }
+    harness.stop().await;
+    let values = session_compaction_values(&harness.events());
+    assert_eq!(values.len(), 1);
+    assert_eq!(values[0]["task_intent"], "Keep the original task");
+    assert!(!std::fs::read_to_string(&harness.run.events_path).unwrap_or_abort().contains("CompactionProgress"));
 }

@@ -92,6 +92,11 @@ pub struct CanonicalEditEvent<'a> {
 }
 
 impl CanonicalSessionProjection {
+    /// The complete event history backing this projection, including uncached details.
+    pub fn source_events(&self) -> &[EventEnvelopeV1] {
+        &self.source_events
+    }
+
     pub(crate) fn conversation_from_event_history(
         events: &[EventEnvelopeV1],
     ) -> Result<ConversationProjection, ConversationProjectionError> {

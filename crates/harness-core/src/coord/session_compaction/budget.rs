@@ -75,6 +75,27 @@ impl CompactionBudget {
         }
     }
 
+    pub(super) fn anchored_context_tokens(
+        self,
+        messages: &[crate::conversation::ConversationMessage],
+        last_compaction_seq: Option<u64>,
+    ) -> Option<u32> {
+        let UsageAnchorResolution::Valid(anchor) = self.usage_anchor else {
+            return None;
+        };
+        let through = u64::try_from(anchor.through_index).ok()?;
+        if last_compaction_seq.is_some_and(|seq| through <= seq) {
+            return None;
+        }
+        Some(
+            messages
+                .iter()
+                .filter(|message| super::preparation::message_seq(message) > through)
+                .map(crate::coord::compaction::estimate_message_tokens)
+                .fold(anchor.usage_total_tokens, u32::saturating_add),
+        )
+    }
+
     pub(super) fn requires_compaction(self) -> bool {
         self.request
             .and_then(|snapshot| snapshot.requires_compaction)
@@ -85,7 +106,7 @@ impl CompactionBudget {
         self.request
     }
 
-    pub(super) fn history_allowance(self, keep_recent_tokens: u32, reserve_summary: bool) -> u32 {
+    pub(super) fn history_allowance(self, keep_recent_tokens: u32, _reserve_summary: bool) -> u32 {
         let Some(snapshot) = self.request else {
             return keep_recent_tokens;
         };
@@ -102,16 +123,7 @@ impl CompactionBudget {
         ]
         .into_iter()
         .fold(0_u32, u32::saturating_add);
-        let requested_summary_reserve = snapshot
-            .reserved_output_tokens
-            .or(snapshot.requested_output_tokens)
-            .unwrap_or(snapshot.safety_margin_tokens);
-        let available_tokens = threshold.saturating_sub(non_history_tokens);
-        if !reserve_summary {
-            return keep_recent_tokens.min(available_tokens);
-        }
-        let summary_reserve = requested_summary_reserve.min(available_tokens.saturating_sub(1));
-        keep_recent_tokens.min(available_tokens.saturating_sub(summary_reserve))
+        keep_recent_tokens.min(threshold.saturating_sub(non_history_tokens))
     }
 
     pub(super) fn complete_request_plan(

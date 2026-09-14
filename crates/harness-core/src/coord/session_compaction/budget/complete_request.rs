@@ -219,13 +219,9 @@ pub(crate) fn plan_complete_request(
             history_tokens_before
                 .saturating_sub(history.retained_tokens)
                 .saturating_sub(1)
-                .min(components.requested_completion_tokens)
+                .min(32_768)
         },
-        |threshold| {
-            threshold
-                .saturating_sub(occupied_after_cut)
-                .min(components.requested_completion_tokens)
-        },
+        |threshold| threshold.saturating_sub(occupied_after_cut).min(32_768),
     );
     if summary_allowance_tokens == 0 {
         return Err(CompleteRequestBudgetError::NoSummaryAllowance);

@@ -16,10 +16,12 @@ pub use recovery::{recover_event_history, LegacyHistoryRecovery, LegacyHistoryRe
 
 pub use super::EventIdentityNamespace as LegacyIdentityNamespace;
 pub(crate) use compaction::{
-    classify_compatibility_event, latest_legacy_compaction, legacy_projection_update_for_event,
-    CompatibilityEvent, CompatibilityEventLifecycle,
+    classify_compatibility_event, legacy_projection_update_for_event, CompatibilityEvent,
+    CompatibilityEventLifecycle,
 };
-pub use compaction::{CanonicalLegacyCompaction, CanonicalLegacyCompactionStatus};
+pub use compaction::{
+    latest_legacy_compaction, CanonicalLegacyCompaction, CanonicalLegacyCompactionStatus,
+};
 pub use provider_fragments::{
     canonical_provider_fragment_for_event, canonical_provider_fragment_payload,
     CanonicalProviderFragment, CanonicalProviderFragmentKind, CanonicalProviderFragmentPayload,

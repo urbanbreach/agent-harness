@@ -63,12 +63,12 @@ use super::{
     permission_rule_request_selectors, provider_tool_message_status,
     restore_provider_context_from_history, schedule_pending_agent_wakeups_for_idle_agent,
     spawn_coordinator, summarize_hook_output, system_actor, AppliedCompaction, ChildTaskTurnState,
-    Coordinator, CoordinatorConfig, CoordinatorError, EditAppliedEventArgs,
-    FailedTerminalCompactionRequest, HashlineEditMetadata, HookExecutionBatch,
-    HookInvocationContext, JobOutcome, JobProgressKind, PendingPermissionResolution,
-    PendingPermissionState, PermissionRequestedEventArgs, ProviderCompactionTrigger,
-    QueuedAgentTurn, RunInfo, RunState, RunningAgentTurn, TaskExecutionState, TaskState,
-    TokioLifecycleHookCommandExecutor, ToolCallFinishedEventArgs, ToolCallRequestedEventArgs,
+    Coordinator, CoordinatorConfig, CoordinatorError, EditAppliedEventArgs, HashlineEditMetadata,
+    HookExecutionBatch, HookInvocationContext, JobOutcome, JobProgressKind,
+    PendingPermissionResolution, PendingPermissionState, PermissionRequestedEventArgs,
+    ProviderCompactionTrigger, QueuedAgentTurn, RunInfo, RunState, RunningAgentTurn,
+    TaskExecutionState, TaskState, TokioLifecycleHookCommandExecutor, ToolCallFinishedEventArgs,
+    ToolCallRequestedEventArgs,
 };
 use harness_providers::{CompletionMessage, MessageRole, ProviderOutputCapDisposition};
 
@@ -1422,8 +1422,7 @@ fn test_run_state(session_dir: &Path, run_id: &str) -> RunState {
         queued_agent_turns: std::collections::BTreeMap::new(),
         running_agent_turns: std::collections::BTreeMap::new(),
         pending_compactions: std::collections::BTreeMap::new(),
-        failed_terminal_compaction_attempts: std::collections::BTreeSet::new(),
-        overflow_retry_compacted_context_by_attempt: std::collections::BTreeMap::new(),
+        compaction_state: std::collections::BTreeMap::new(),
         scheduler: Scheduler::new(SchedulerLimits {
             provider_model: 1,
             tool: 1,

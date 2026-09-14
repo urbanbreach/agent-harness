@@ -32,7 +32,7 @@ fn compaction_v2_attachments_charge_budget_once() {
         (
             with_attachment.fixed_input_tokens - without_attachment.fixed_input_tokens,
             with_attachment.pre_total_tokens - without_attachment.pre_total_tokens,
-            with_attachment.post_total_tokens - without_attachment.post_total_tokens,
+            without_attachment.summary_allowance_tokens - with_attachment.summary_allowance_tokens,
         ),
         (1_024, 1_024, 1_024),
     );

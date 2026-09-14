@@ -30,7 +30,7 @@ async fn compaction_v2_same_turn_tool_overflow_retries_without_replay() {
     };
     let (_temp, coordinator, run, agent_id, provider, tool_calls) = large_tool_harness(
         vec![
-            provider_text_events(&"A".repeat(12_000)),
+            provider_text_events(&"A ".repeat(6_000)),
             vec![
                 ProviderStreamEvent::Start,
                 ProviderStreamEvent::ToolCallComplete {
@@ -45,7 +45,7 @@ async fn compaction_v2_same_turn_tool_overflow_retries_without_replay() {
                 ProviderStreamEvent::error("same-turn continuation context overflow"),
             ],
             provider_text_events("same-turn bounded summary"),
-            provider_text_events("same-turn bounded split prefix"),
+
             provider_text_events("same-turn retry answer"),
         ],
         hook_runtime,
@@ -64,9 +64,9 @@ async fn compaction_v2_same_turn_tool_overflow_retries_without_replay() {
                 && matches!(event.payload, EventV1::ProviderRequestStarted(_))
         })
         .collect::<Vec<_>>();
-    assert_eq!(correlated_starts.len(), 3, "tool call, overflow, one retry");
+    assert_eq!(correlated_starts.len(), 3, "tool call, overflow, one retry: {:?}", events.iter().filter_map(|event| match &event.payload { EventV1::TaskCancelled(data) => Some(&data.reason), _ => None }).collect::<Vec<_>>());
     let requests = provider.requests();
-    assert_eq!(requests.len(), 6, "history, tool call, overflow, split summaries, retry");
+    assert_eq!(requests.len(), 5, "history, tool call, overflow, one summary, retry");
     let compaction = events
         .iter()
         .find_map(|event| match &event.payload {
@@ -75,10 +75,11 @@ async fn compaction_v2_same_turn_tool_overflow_retries_without_replay() {
         })
         .unwrap_or_abort();
     assert!(compaction.summary.contains("same-turn bounded summary"));
-    assert!(compaction
-        .summary
-        .contains("same-turn bounded split prefix"));
     let retry = requests.last().unwrap_or_abort();
+    let tool_output = retry.messages.iter().find(|message| message.role == MessageRole::Tool).unwrap_or_abort();
+    assert!(tool_output.content.contains("[tool result projected:"));
+    assert!(harness_core::estimate_compaction_text_tokens(&tool_output.content) <= 8192);
+    assert!(events.iter().any(|event| matches!(&event.payload, EventV1::ToolCallFinished(result) if result.output_summary.as_ref().is_some_and(|text| text.contains(&"R".repeat(50_000))))));
     let retry_start = correlated_starts[2];
     let committed_at_retry = events
         .iter()
@@ -97,8 +98,8 @@ async fn compaction_v2_same_turn_tool_overflow_retries_without_replay() {
             .filter(|message| message.role == MessageRole::User
                 && message.content == "tool then overflow in this turn")
             .count(),
-        1,
-        "the durable pending prompt must not be duplicated"
+        0,
+        "the compacted user prefix must not be reinserted after its tool results"
     );
     let pending_prompt_index = retry
         .messages
@@ -107,7 +108,7 @@ async fn compaction_v2_same_turn_tool_overflow_retries_without_replay() {
             message.role == MessageRole::User
                 && message.content == "tool then overflow in this turn"
         })
-        .unwrap_or_abort();
+        .unwrap_or(retry.messages.len());
     let semantics = harness_providers::generic_request_budget_semantics(
         retry,
         pending_prompt_index,

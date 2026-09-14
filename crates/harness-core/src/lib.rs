@@ -71,6 +71,6 @@ pub use context_budget::{
     compute_request_budget, BudgetStatus, RequestBudget, RequestBudgetComponents,
     RequestBudgetError, RequestBudgetInput, RequestBudgetSnapshot,
 };
+pub use coord::estimate_compaction_text_tokens;
 pub use harness_providers::UnwrapOrAbort;
-pub use token_estimation::estimate_text_tokens as estimate_compaction_text_tokens;
 pub use tool::ToolResultExt;

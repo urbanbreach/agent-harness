@@ -628,6 +628,7 @@ mod tests {
                 summary_model_id: None,
                 read_files,
                 modified_files,
+                task_intent: None,
                 current_intent: None,
                 trigger_reason: "auto".to_string(),
                 from_hook: false,

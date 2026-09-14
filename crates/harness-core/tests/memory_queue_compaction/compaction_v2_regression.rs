@@ -100,7 +100,10 @@ async fn runtime_state_after_reopen() -> (
         allow_all_permission_policy(),
         vec!["read".to_string(), "edit".to_string()],
         8,
-        CompactionRuntimeConfig::default(),
+        CompactionRuntimeConfig {
+            keep_recent_tokens: 8,
+            ..Default::default()
+        },
     );
     let run = coordinator
         .start_run("compaction-v2-durable-state", PathBuf::from("/workspace"))

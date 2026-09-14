@@ -25,7 +25,7 @@ impl Tool for LargeResultTool {
         self.calls.fetch_add(1, Ordering::SeqCst);
         Ok(ToolResult::text(format!(
             "TOOL_RESULT_PREFIX {} TOOL_RESULT_SUFFIX",
-            "R".repeat(4_000)
+            "R".repeat(50_000)
         )))
     }
 }
@@ -126,7 +126,7 @@ pub(super) fn normalize_provider_messages(
         .filter(|message| message.role != MessageRole::System)
         .map(|message| NormalizedProviderMessage {
             role: message.role.clone(),
-            content: message.content.clone(),
+            content: if message.role == MessageRole::Tool { String::new() } else { message.content.clone() },
             tool_call_ids: message
                 .assistant_tool_calls
                 .as_deref()
@@ -180,7 +180,8 @@ pub(super) fn normalize_committed_messages(events: &[EventEnvelopeV1]) -> Vec<No
             },
             harness_core::conversation::ConversationMessage::ToolResult(result) => NormalizedProviderMessage {
                 role: MessageRole::Tool,
-                content: result.output_summary.unwrap_or_default(),
+                // Tool text is intentionally admitted on the request copy; compare protocol identity here.
+                content: String::new(),
                 tool_call_ids: Vec::new(),
                 tool_result_id: Some(
                     provider_ids

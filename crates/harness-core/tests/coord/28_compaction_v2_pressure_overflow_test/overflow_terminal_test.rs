@@ -7,14 +7,14 @@ async fn compaction_v2_second_overflow_terminates() {
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let hook_counter_path = temp_dir.path().join("agent-turn-started.count");
     let provider = SequentialScriptedProvider::new(vec![
-        provider_text_events(&"A".repeat(12_000)),
-        provider_text_events(&"B".repeat(12_000)),
+        provider_text_events(&"A ".repeat(6_000)),
+        provider_text_events(&"B ".repeat(6_000)),
         vec![
             ProviderStreamEvent::Start,
             ProviderStreamEvent::error("first context overflow"),
         ],
         provider_text_events("overflow summary"),
-        provider_text_events("overflow split prefix"),
+
         vec![
             ProviderStreamEvent::Start,
             ProviderStreamEvent::error("second context overflow"),
@@ -82,8 +82,8 @@ async fn compaction_v2_second_overflow_terminates() {
     let requests = provider.requests();
     assert_eq!(
         requests.len(),
-        6,
-        "history, overflow, split summaries, and one retry only"
+        5,
+        "history, overflow, one summary, and one retry only"
     );
     let compaction = events
         .iter()
@@ -93,7 +93,6 @@ async fn compaction_v2_second_overflow_terminates() {
         })
         .unwrap_or_abort();
     assert!(compaction.summary.contains("overflow summary"));
-    assert!(compaction.summary.contains("overflow split prefix"));
     assert_eq!(
         events
             .iter()

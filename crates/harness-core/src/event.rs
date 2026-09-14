@@ -56,6 +56,13 @@ pub struct LiveEventEnvelope {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "event_type", content = "data", rename_all = "snake_case")]
 pub enum LiveEventV1 {
+    /// Ephemeral compaction feedback. `None` retires this generation's indicator.
+    CompactionProgress {
+        agent_id: String,
+        generation: u64,
+        trigger_reason: String,
+        preview: Option<String>,
+    },
     ProviderTextDelta {
         request_id: crate::ids::ProviderRequestId,
         delta: String,
@@ -771,6 +778,8 @@ pub struct SessionCompactionEvent {
     pub read_files: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub modified_files: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_intent: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub current_intent: Option<UiIntentReceivedEvent>,
     pub trigger_reason: String,

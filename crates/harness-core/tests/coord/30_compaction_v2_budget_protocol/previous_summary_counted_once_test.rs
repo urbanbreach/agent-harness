@@ -9,7 +9,7 @@ async fn compaction_v2_previous_summary_counted_once() {
             provider_text_events("three"),
             provider_text_events("new rolling summary"),
         ],
-        CompactionRuntimeConfig::default(),
+        CompactionRuntimeConfig { keep_recent_tokens: 4, ..Default::default() },
     )
     .await;
     harness.turn("budget one").await;
