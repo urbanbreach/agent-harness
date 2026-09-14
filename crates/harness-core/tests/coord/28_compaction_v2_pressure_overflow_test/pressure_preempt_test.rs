@@ -6,15 +6,16 @@ async fn compaction_v2_long_session_preempts_overflow() {
     // Given: two large completed turns and one pressured pending turn.
     let (harness, provider) = CompactionV2Harness::scripted(
         vec![
-            provider_text_events(&"A".repeat(12_000)),
-            provider_text_events(&"B".repeat(12_000)),
+            provider_text_events(&"A ".repeat(6_000)),
+            provider_text_events(&"B ".repeat(6_000)),
             provider_text_events("pressure summary"),
-            provider_text_events("pressure split prefix"),
+
             provider_text_events("bounded answer"),
         ],
         CompactionRuntimeConfig {
             reserve_tokens: 4_096,
             fallback_input_tokens: 12_000,
+            keep_recent_tokens: 4_000,
             ..CompactionRuntimeConfig::default()
         },
     )
@@ -23,7 +24,7 @@ async fn compaction_v2_long_session_preempts_overflow() {
     harness.turn("second pressure turn").await;
 
     // When: the third turn requires proactive compaction.
-    let request_id = harness.turn(&"C".repeat(12_000)).await;
+    let request_id = harness.turn(&"C ".repeat(6_000)).await;
     harness.stop().await;
 
     // Then: one summary commit precedes the first pressured provider dispatch.
@@ -46,7 +47,7 @@ async fn compaction_v2_long_session_preempts_overflow() {
     let requests = provider.requests();
     assert_eq!(
         requests.len(),
-        5,
+        4,
         "the pressured turn dispatch remains single-shot"
     );
     let compaction = events
@@ -57,5 +58,4 @@ async fn compaction_v2_long_session_preempts_overflow() {
         })
         .unwrap_or_abort();
     assert!(compaction.summary.contains("pressure summary"));
-    assert!(compaction.summary.contains("pressure split prefix"));
 }

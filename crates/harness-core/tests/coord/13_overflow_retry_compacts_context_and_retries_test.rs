@@ -6,7 +6,7 @@ async fn overflow_retry_compacts_context_and_retries_with_summary() {
     let provider = SequentialScriptedProvider::new(vec![
         vec![
             ProviderStreamEvent::Start,
-            ProviderStreamEvent::TextDelta("A".repeat(12_000)),
+            ProviderStreamEvent::TextDelta("A ".repeat(6_000)),
             ProviderStreamEvent::Done {
                 usage: Some(CompletionUsage {
                     prompt_tokens: 100,
@@ -17,7 +17,7 @@ async fn overflow_retry_compacts_context_and_retries_with_summary() {
         ],
         vec![
             ProviderStreamEvent::Start,
-            ProviderStreamEvent::TextDelta("B".repeat(12_000)),
+            ProviderStreamEvent::TextDelta("B ".repeat(6_000)),
             ProviderStreamEvent::Done {
                 usage: Some(CompletionUsage {
                     prompt_tokens: 100,
@@ -37,7 +37,7 @@ async fn overflow_retry_compacts_context_and_retries_with_summary() {
                 usage: None,
             },
         ],
-        provider_text_events("Compaction prefix of split turn."),
+
         vec![
             ProviderStreamEvent::Start,
             ProviderStreamEvent::TextDelta("recovered answer".to_string()),
@@ -81,7 +81,7 @@ async fn overflow_retry_compacts_context_and_retries_with_summary() {
         .unwrap_or_abort();
     tokio::task::yield_now().await;
     tokio::time::timeout(Duration::from_secs(2), async {
-        while provider.requests().len() < 6
+        while provider.requests().len() < 5
             && !load_events(&run.events_path)
                 .iter()
                 .any(|e| matches!(e.payload, EventV1::SessionCompaction(_)))
@@ -96,8 +96,8 @@ async fn overflow_retry_compacts_context_and_retries_with_summary() {
     let requests = provider.requests();
     assert_eq!(
         requests.len(),
-        6,
-        "third turn should retry once after history and split-prefix summaries"
+        5,
+        "third turn should retry once after one native history summary"
     );
     let retried_messages = requests
         .last()
@@ -123,7 +123,6 @@ async fn overflow_retry_compacts_context_and_retries_with_summary() {
         })
         .unwrap_or_abort();
     assert!(compaction.summary.contains("Compaction summary of earlier turns."));
-    assert!(compaction.summary.contains("Compaction prefix of split turn."));
     let provider_finishes = events
         .iter()
         .filter(|event| {
@@ -150,7 +149,7 @@ async fn overflow_retry_compacts_context_and_retries_with_summary() {
         matches!(
             &event.payload,
             EventV1::TaskCompleted(payload)
-                if payload.result_summary == "A".repeat(12_000)
+                if payload.result_summary == "A ".repeat(6_000)
         )
     }));
 }
@@ -160,7 +159,7 @@ async fn overflow_retry_can_compact_a_single_large_preserved_turn() {
     let provider = SequentialScriptedProvider::new(vec![
         vec![
             ProviderStreamEvent::Start,
-            ProviderStreamEvent::TextDelta("A".repeat(12_000)),
+            ProviderStreamEvent::TextDelta("A ".repeat(6_000)),
             ProviderStreamEvent::Done {
                 usage: Some(CompletionUsage {
                     prompt_tokens: 100,
@@ -180,7 +179,7 @@ async fn overflow_retry_can_compact_a_single_large_preserved_turn() {
                 usage: None,
             },
         ],
-        provider_text_events("Compaction prefix of split turn."),
+
         vec![
             ProviderStreamEvent::Start,
             ProviderStreamEvent::TextDelta("recovered answer".to_string()),
@@ -223,8 +222,8 @@ async fn overflow_retry_can_compact_a_single_large_preserved_turn() {
     let requests = provider.requests();
     assert_eq!(
         requests.len(),
-        5,
-        "single preserved turn should retry once after history and split-prefix summaries"
+        4,
+        "single preserved turn should retry once after one native history summary"
     );
     let retried_messages = requests
         .last()
@@ -253,7 +252,6 @@ async fn overflow_retry_can_compact_a_single_large_preserved_turn() {
         })
         .unwrap_or_abort();
     assert!(compaction.summary.contains("Compaction summary of earlier turns."));
-    assert!(compaction.summary.contains("Compaction prefix of split turn."));
     let provider_finishes = events
         .iter()
         .filter(|event| {
@@ -283,17 +281,6 @@ async fn overflow_retry_does_not_resend_same_context_when_compaction_is_noop() {
     let provider = SequentialScriptedProvider::new(vec![
         vec![
             ProviderStreamEvent::Start,
-            ProviderStreamEvent::TextDelta("first answer".to_string()),
-            ProviderStreamEvent::Done {
-                usage: Some(CompletionUsage {
-                    prompt_tokens: 32,
-                    completion_tokens: 8,
-                    total_tokens: 40,
-                }),
-            },
-        ],
-        vec![
-            ProviderStreamEvent::Start,
             ProviderStreamEvent::error("prompt token count of 128713 exceeds the limit of 128000"),
         ],
     ]);
@@ -312,11 +299,6 @@ async fn overflow_retry_does_not_resend_same_context_when_compaction_is_noop() {
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
         .unwrap_or_abort();
-    coordinator
-        .request_agent_turn(supervisor_actor(), agent_id.clone(), "first question")
-        .await
-        .unwrap_or_abort();
-    tokio::task::yield_now().await;
     let second_request_id = coordinator
         .request_agent_turn(supervisor_actor(), agent_id, "second question")
         .await
@@ -327,7 +309,7 @@ async fn overflow_retry_does_not_resend_same_context_when_compaction_is_noop() {
     let requests = provider.requests();
     assert_eq!(
         requests.len(),
-        2,
+        1,
         "overflow retry should not resend when compaction cannot shrink context"
     );
 
@@ -352,12 +334,12 @@ async fn overflow_retry_does_not_resend_same_context_when_compaction_is_noop() {
 #[tokio::test]
 async fn compaction_trigger_pre_prompt_occurs_before_provider_request_started() {
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
-    let current_prompt = "C".repeat(12_000);
+    let current_prompt = "C ".repeat(6_000);
     let provider = SequentialScriptedProvider::new(vec![
-        provider_text_events(&"A".repeat(12_000)),
-        provider_text_events(&"B".repeat(12_000)),
+        provider_text_events(&"A ".repeat(6_000)),
+        provider_text_events(&"B ".repeat(6_000)),
         provider_text_events("Compaction summary of earlier turns."),
-        provider_text_events("Compaction prefix of split turn."),
+
         provider_text_events("third answer"),
     ]);
     let coordinator = test_agent_coordinator_with_provider_and_compaction(
@@ -367,6 +349,7 @@ async fn compaction_trigger_pre_prompt_occurs_before_provider_request_started() 
         CompactionRuntimeConfig {
             reserve_tokens: 4_096,
             fallback_input_tokens: 12_000,
+            keep_recent_tokens: 4_000,
             ..CompactionRuntimeConfig::default()
         },
     );
@@ -423,7 +406,7 @@ async fn compaction_trigger_pre_prompt_occurs_before_provider_request_started() 
         "pre-prompt compaction must be written before the third provider request is constructed"
     );
     let requests = provider.requests();
-    assert_eq!(requests.len(), 5);
+    assert_eq!(requests.len(), 4);
     let compaction = events
         .iter()
         .find_map(|event| match &event.payload {
@@ -432,17 +415,16 @@ async fn compaction_trigger_pre_prompt_occurs_before_provider_request_started() 
         })
         .unwrap_or_abort();
     assert!(compaction.summary.contains("Compaction summary of earlier turns."));
-    assert!(compaction.summary.contains("Compaction prefix of split turn."));
 }
 #[tokio::test]
 async fn compaction_trigger_pre_prompt_attempts_once_per_turn() {
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
-    let current_prompt = "C".repeat(12_000);
+    let current_prompt = "C ".repeat(6_000);
     let provider = SequentialScriptedProvider::new(vec![
-        provider_text_events(&"A".repeat(12_000)),
-        provider_text_events(&"B".repeat(12_000)),
+        provider_text_events(&"A ".repeat(6_000)),
+        provider_text_events(&"B ".repeat(6_000)),
         provider_text_events("Compaction summary of earlier turns."),
-        provider_text_events("Compaction prefix of split turn."),
+
         provider_text_events("third answer"),
     ]);
     let coordinator = test_agent_coordinator_with_provider_and_compaction(
@@ -452,6 +434,7 @@ async fn compaction_trigger_pre_prompt_attempts_once_per_turn() {
         CompactionRuntimeConfig {
             reserve_tokens: 4_096,
             fallback_input_tokens: 12_000,
+            keep_recent_tokens: 4_000,
             ..CompactionRuntimeConfig::default()
         },
     );
@@ -496,7 +479,7 @@ async fn compaction_trigger_pre_prompt_attempts_once_per_turn() {
         "pre-prompt compaction should write at most one SessionCompaction for a turn"
     );
     let requests = provider.requests();
-    assert_eq!(requests.len(), 5, "provider execution should continue once");
+    assert_eq!(requests.len(), 4, "provider execution should continue once");
     let compaction = events
         .iter()
         .find_map(|event| match &event.payload {
@@ -505,5 +488,4 @@ async fn compaction_trigger_pre_prompt_attempts_once_per_turn() {
         })
         .unwrap_or_abort();
     assert!(compaction.summary.contains("Compaction summary of earlier turns."));
-    assert!(compaction.summary.contains("Compaction prefix of split turn."));
 }

@@ -5,12 +5,12 @@ async fn aborted_response_compaction_preserves_abort_marker() {
     let tool_started = Arc::new(Notify::new());
     let tool_release = Arc::new(Notify::new());
     let provider = SequentialScriptedProvider::new(vec![
-        provider_text_events(&"A".repeat(12_000)),
+        provider_text_events(&"A ".repeat(6_000)),
         vec![
             ProviderStreamEvent::Start,
             ProviderStreamEvent::TextDelta(format!(
                 "partial before cancellation {}",
-                "C".repeat(12_000)
+                "C ".repeat(6_000)
             )),
             ProviderStreamEvent::ToolCallComplete {
                 tool_call_id: "blocking_tool".to_string(),
@@ -64,7 +64,7 @@ async fn aborted_response_compaction_preserves_abort_marker() {
         events.iter().any(|event| {
             matches!(
                 &event.payload,
-                EventV1::TaskCompleted(data) if data.result_summary == "A".repeat(12_000)
+                EventV1::TaskCompleted(data) if data.result_summary == "A ".repeat(6_000)
             )
         })
     })
@@ -162,12 +162,12 @@ async fn aborted_response_compaction_preserves_abort_marker() {
 async fn failed_response_compaction_failure_does_not_mask_original_error() {
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![
-        provider_text_events(&"A".repeat(12_000)),
+        provider_text_events(&"A ".repeat(6_000)),
         vec![
             ProviderStreamEvent::Start,
             ProviderStreamEvent::TextDelta(format!(
                 "partial provider output {}",
-                "B".repeat(12_000)
+                "B ".repeat(6_000)
             )),
             ProviderStreamEvent::error("provider exploded"),
         ],
@@ -204,7 +204,7 @@ async fn failed_response_compaction_failure_does_not_mask_original_error() {
         events.iter().any(|event| {
             matches!(
                 &event.payload,
-                EventV1::TaskCompleted(data) if data.result_summary == "A".repeat(12_000)
+                EventV1::TaskCompleted(data) if data.result_summary == "A ".repeat(6_000)
             )
         })
     })
@@ -244,12 +244,12 @@ async fn failed_response_compaction_failure_does_not_mask_original_error() {
 async fn critical_compaction_requested_hook_failure_does_not_commit() {
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![
-        provider_text_events(&"A".repeat(12_000)),
+        provider_text_events(&"A ".repeat(6_000)),
         vec![
             ProviderStreamEvent::Start,
             ProviderStreamEvent::TextDelta(format!(
                 "partial provider output {}",
-                "B".repeat(12_000)
+                "B ".repeat(6_000)
             )),
             ProviderStreamEvent::error("provider exploded"),
         ],
@@ -306,7 +306,7 @@ async fn critical_compaction_requested_hook_failure_does_not_commit() {
         events.iter().any(|event| {
             matches!(
                 &event.payload,
-                EventV1::TaskCompleted(data) if data.result_summary == "A".repeat(12_000)
+                EventV1::TaskCompleted(data) if data.result_summary == "A ".repeat(6_000)
             )
         })
     })

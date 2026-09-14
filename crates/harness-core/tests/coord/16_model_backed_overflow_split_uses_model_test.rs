@@ -14,7 +14,7 @@ async fn overflow_compaction_appends_session_compaction_event_and_retries() {
             ProviderStreamEvent::error("prompt token count of 128713 exceeds the limit of 128000"),
         ],
         provider_text_events("Compaction summary of earlier turns."),
-        provider_text_events("Compaction prefix of split turn."),
+
         provider_text_events("recovered answer"),
     ]);
     let coordinator = test_agent_coordinator_with_provider_and_compaction(
@@ -57,8 +57,8 @@ async fn overflow_compaction_appends_session_compaction_event_and_retries() {
     let requests = provider.requests();
     assert_eq!(
         requests.len(),
-        6,
-        "two turns, overflow, two split summaries, and one retry"
+        5,
+        "two turns, overflow, one summary, and one retry"
     );
     let events = load_events(&run.events_path);
     let compaction = events
@@ -71,7 +71,6 @@ async fn overflow_compaction_appends_session_compaction_event_and_retries() {
         })
         .unwrap_or_abort();
     assert!(compaction.summary.contains("Compaction summary of earlier turns."));
-    assert!(compaction.summary.contains("Compaction prefix of split turn."));
     assert_eq!(
         events
             .iter()

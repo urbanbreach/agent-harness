@@ -128,7 +128,7 @@ pub(super) fn split_messages_at_cut_point(
     }
 }
 
-fn message_seq(message: &ConversationMessage) -> u64 {
+pub(super) fn message_seq(message: &ConversationMessage) -> u64 {
     match message {
         ConversationMessage::User(message) => message.seq.unwrap_or(0),
         ConversationMessage::Assistant(message) => {
@@ -168,7 +168,14 @@ pub(super) fn extract_file_ops_from_messages(
 pub(super) fn find_previous_summary(events: &[EventEnvelopeV1], agent_id: &str) -> Option<String> {
     events.iter().rev().find_map(|event| match &event.payload {
         EventV1::SessionCompaction(compaction) if compaction.agent_id == agent_id => {
-            Some(compaction.summary.clone())
+            Some(match &compaction.task_intent {
+                Some(intent) => format!(
+                    "<task-intent>{}</task-intent>\n{}",
+                    intent.replace("</task-intent>", "[/task-intent]"),
+                    compaction.summary
+                ),
+                None => compaction.summary.clone(),
+            })
         }
         _ => None,
     })
@@ -184,4 +191,115 @@ pub(super) fn determine_model_ref(run_state: &RunState, agent_id: &str) -> Strin
         || "default:default".to_string(),
         |profile| profile.model_ref.clone(),
     )
+}
+
+/// Restore only file/skill identifiers; never reread a file or replay a tool.
+pub(super) fn restoration_context(
+    prepared: &super::prepared::PreparedSessionCompaction,
+    summary: &str,
+) -> String {
+    use super::super::compaction::estimate_text_tokens;
+    let messages =
+        build_agent_conversation_messages(&prepared.committed_events, &prepared.agent_id);
+    let kept_text = messages
+        .iter()
+        .filter(|message| message_seq(message) >= prepared.first_kept_event_seq)
+        .filter_map(|message| serde_json::to_string(message).ok())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut items = std::collections::BTreeMap::new();
+    for (paths, priority, operation) in [
+        (&prepared.read_files, 50, "read"),
+        (&prepared.modified_files, 100, "edit"),
+    ] {
+        for path in paths {
+            items.insert(
+                path.clone(),
+                (priority, "file", format!("{path} ({operation})")),
+            );
+        }
+    }
+    for message in &messages {
+        let ConversationMessage::Assistant(assistant) = message else {
+            continue;
+        };
+        for call in &assistant.tool_calls {
+            if !matches!(call.tool_id.as_str(), "skill" | "load_skill") {
+                continue;
+            }
+            let Ok(args) = serde_json::from_str::<serde_json::Value>(&call.args_summary) else {
+                continue;
+            };
+            if let Some(name) = args
+                .get("name")
+                .or_else(|| args.get("skillName"))
+                .and_then(serde_json::Value::as_str)
+                .filter(|name| !name.is_empty())
+            {
+                items.insert(name.to_string(), (80, "skill", name.to_string()));
+            }
+        }
+    }
+    let components = prepared.request_budget.components;
+    let occupied = [
+        components.system_tokens,
+        components.tools_tokens,
+        components.attachments_tokens,
+        components.framing_tokens,
+        components.pending_prompt_tokens,
+        estimate_text_tokens(summary),
+        prepared.preserved_message_tokens,
+    ]
+    .into_iter()
+    .fold(0_u32, u32::saturating_add);
+    let budget = prepared
+        .request_budget
+        .compaction_threshold_tokens
+        .unwrap_or(0)
+        .saturating_sub(occupied)
+        .saturating_sub(1)
+        .min(prepared.context_window.saturating_mul(15) / 100)
+        .min(50_000);
+    let escape = |text: &str| {
+        text.replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+            .replace('"', "&quot;")
+    };
+    let mut items: Vec<_> = items.into_iter().filter(|(label, _)| !kept_text.contains(label))
+        .filter(|(label, _)| !prepared.committed_events.iter().any(|event| matches!(&event.payload, EventV1::SessionCompaction(data) if data.agent_id == prepared.agent_id && data.summary.contains(&format!("label=\"{}\"", escape(label)))))).collect();
+    items.sort_by_key(|(label, (priority, _, content))| {
+        (
+            std::cmp::Reverse(*priority),
+            estimate_text_tokens(content),
+            label.clone(),
+        )
+    });
+    let mut output =
+        "\n\n[Restored context after compaction — files and skills from before compaction]\n"
+            .to_string();
+    let mut selected = 0;
+    for (label, (_, kind, mut content)) in items {
+        if selected == 10 {
+            break;
+        }
+        while estimate_text_tokens(&content) > 5_000 {
+            content.truncate(content.floor_char_boundary(content.len().saturating_mul(4) / 5));
+        }
+        let item = format!(
+            "<{kind} label=\"{}\">{}</{kind}>\n",
+            escape(&label),
+            escape(&content)
+        );
+        if estimate_text_tokens(&output).saturating_add(estimate_text_tokens(&item)) > budget {
+            continue;
+        }
+        output.push_str(&item);
+        selected += 1;
+    }
+    if selected == 0 {
+        String::new()
+    } else {
+        output
+    }
 }

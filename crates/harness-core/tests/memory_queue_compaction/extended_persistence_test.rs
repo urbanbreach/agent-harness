@@ -156,6 +156,7 @@ fn compaction_checkpoint_event_round_trips_through_serde() {
         summary_model_id: None,
         read_files: vec!["src/main.rs".to_string()],
         modified_files: vec!["src/lib.rs".to_string()],
+        task_intent: None,
         current_intent: None,
         trigger_reason: "proactive".to_string(),
         from_hook: false,

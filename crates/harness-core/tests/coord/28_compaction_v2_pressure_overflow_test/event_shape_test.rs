@@ -10,7 +10,7 @@ async fn compaction_v2_manual_auto_share_event_shape() {
             provider_text_events("two"),
             provider_text_events("summary"),
         ],
-        CompactionRuntimeConfig::default(),
+        CompactionRuntimeConfig { keep_recent_tokens: 4, ..Default::default() },
     )
     .await;
     manual.turn("shape one").await;
@@ -23,15 +23,16 @@ async fn compaction_v2_manual_auto_share_event_shape() {
     manual.stop().await;
     let (automatic, _) = CompactionV2Harness::scripted(
         vec![
-            provider_text_events(&"A".repeat(12_000)),
-            provider_text_events(&"B".repeat(12_000)),
+            provider_text_events(&"A ".repeat(6_000)),
+            provider_text_events(&"B ".repeat(6_000)),
             provider_text_events("automatic summary"),
-            provider_text_events("split prefix"),
+
             provider_text_events("automatic answer"),
         ],
         CompactionRuntimeConfig {
             reserve_tokens: 4_096,
             fallback_input_tokens: 12_000,
+            keep_recent_tokens: 4_000,
             ..CompactionRuntimeConfig::default()
         },
     )
@@ -40,7 +41,7 @@ async fn compaction_v2_manual_auto_share_event_shape() {
     automatic.turn("auto shape two").await;
 
     // When: automatic pressure commits through its trigger path.
-    automatic.turn(&"C".repeat(12_000)).await;
+    automatic.turn(&"C ".repeat(6_000)).await;
     automatic.stop().await;
     let manual_payload = session_compaction_values(&manual.events())
         .pop()

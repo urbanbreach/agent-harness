@@ -351,12 +351,12 @@ async fn failed_turn_context_preserves_tool_failure_without_orphan_tool_call() {
 async fn failed_response_compaction_writes_checkpoint_after_provider_error() {
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![
-        provider_text_events(&"A".repeat(12_000)),
+        provider_text_events(&"A ".repeat(6_000)),
         vec![
             ProviderStreamEvent::Start,
             ProviderStreamEvent::TextDelta(format!(
                 "partial provider output {}",
-                "B".repeat(12_000)
+                "B ".repeat(6_000)
             )),
             ProviderStreamEvent::error("provider exploded"),
         ],
@@ -389,7 +389,7 @@ async fn failed_response_compaction_writes_checkpoint_after_provider_error() {
         events.iter().any(|event| {
             matches!(
                 &event.payload,
-                EventV1::TaskCompleted(data) if data.result_summary == "A".repeat(12_000)
+                EventV1::TaskCompleted(data) if data.result_summary == "A ".repeat(6_000)
             )
         })
     })

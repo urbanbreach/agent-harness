@@ -53,35 +53,41 @@ impl Coordinator {
         }
         let durable_agent_tail_seq =
             super::super::provider_context::latest_agent_event_seq(&current_events, &agent_id);
-        if !pending.base.is_current(run_state, durable_agent_tail_seq) {
+        if !pending.allow_appended && !pending.base.is_current(run_state, durable_agent_tail_seq) {
             pending
                 .response
-                .finish(Err(CoordinatorError::CompactionStale { agent_id }));
+                .finish(Err(CoordinatorError::CompactionStale {
+                    agent_id: agent_id.clone(),
+                }));
             return;
         }
 
         let completion = match *result {
             Ok(generated) if generated.agent_id() != agent_id => {
-                Err(CoordinatorError::CompactionStale { agent_id })
+                Err(CoordinatorError::CompactionStale {
+                    agent_id: agent_id.clone(),
+                })
             }
             Ok(mut generated) => {
+                if pending.allow_appended {
+                    if let Err(error) = generated.rebase(
+                        &current_events,
+                        pending.request_budget,
+                        &crate::agent::AgentModelRef::parse(
+                            &super::preparation::determine_model_ref(run_state, &agent_id),
+                        ),
+                    ) {
+                        pending.response.finish(Err(error));
+                        return;
+                    }
+                }
+                if pending.background {
+                    run_state.compaction_state.entry(agent_id).or_default().warm = Some(generated);
+                    return;
+                }
                 generated.refresh_committed_events(current_events);
                 match generated.commit(self.clock.as_ref(), self.redactor.as_ref(), run_state) {
                     Ok(applied) => {
-                        if let ("overflow", Some(task_id), Some(request_id)) = (
-                            pending.trigger.trigger_reason.as_str(),
-                            pending.task_id.as_deref(),
-                            pending.trigger.through_request_id.as_deref(),
-                        ) {
-                            let context = run_state
-                                .provider_context_by_agent
-                                .get(&agent_id)
-                                .cloned()
-                                .unwrap_or_default();
-                            run_state.record_overflow_retry_compacted_context(
-                                task_id, request_id, context,
-                            );
-                        }
                         let context = run_state
                             .provider_context_by_agent
                             .get(&agent_id)
@@ -103,6 +109,17 @@ impl Coordinator {
             }
             Err(error) => Err(error),
         };
+        if !matches!(
+            &completion,
+            Err(CoordinatorError::CompactionCancelled { .. }
+                | CoordinatorError::CompactionStale { .. })
+        ) {
+            run_state
+                .compaction_state
+                .entry(agent_id)
+                .or_default()
+                .record(completion.is_ok(), self.clock.mono_ms());
+        }
         pending.response.finish(completion);
     }
 }

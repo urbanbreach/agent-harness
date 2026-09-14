@@ -29,6 +29,8 @@ mod budget;
 mod completion;
 mod lifecycle;
 mod pipeline;
+mod policy;
+pub(in crate::coord) use policy::CompactionState;
 mod preparation;
 mod prepared;
 mod request_context;
@@ -83,6 +85,6 @@ where
         return Ok(None);
     };
     let cancellation = run_state.shutdown_token.child_token();
-    let generated = generate_session_compaction(provider, prepared, cancellation).await?;
+    let generated = generate_session_compaction(provider, prepared, cancellation, None).await?;
     generated.commit(clock, redactor, run_state).map(Some)
 }

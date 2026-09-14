@@ -37,9 +37,8 @@ pub use context_projection::{
 };
 pub(crate) use cut_point::{
     estimate_typed_entries_tokens, find_safe_cut_point, SafeCutError, TypedCutPointPlan,
-    TypedTextSplit,
 };
-pub use cut_point::{find_cut_point, find_manual_cut_point, CutPointResult};
+pub use cut_point::{find_cut_point, CutPointResult};
 pub use file_ops::{
     compute_file_lists, extract_file_ops_from_tool_call, merge_file_operations, FileOperation,
     FileOperations,
@@ -57,8 +56,9 @@ pub use summary::{
     TURN_PREFIX_SUMMARIZATION_PROMPT, UPDATE_SUMMARIZATION_PROMPT,
 };
 pub use tokens::{
-    calculate_context_tokens, estimate_context_tokens, estimate_message_tokens,
-    estimate_messages_tokens, estimate_text_tokens, ContextUsageEstimate,
+    admit_tool_result, calculate_context_tokens, estimate_admitted_message_tokens,
+    estimate_context_tokens, estimate_message_tokens, estimate_messages_tokens,
+    estimate_text_tokens, ContextUsageEstimate,
 };
 
 use crate::config::CompactionSettings;

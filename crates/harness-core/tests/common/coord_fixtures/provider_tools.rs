@@ -264,7 +264,7 @@ impl Provider for SequentialScriptedProvider {
         let fallback_text = req
             .messages
             .iter()
-            .filter(|m| matches!(m.role, harness_providers::MessageRole::User))
+            .filter(|m| matches!(m.role, harness_providers::MessageRole::User) && !m.content.starts_with("[USER]"))
             .map(|m| m.content.as_str())
             .collect::<Vec<_>>()
             .join("\n\n");

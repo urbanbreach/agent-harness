@@ -119,16 +119,26 @@ fn request_budget_semantics(
     pending_prompt_index: usize,
     protocol: BudgetProtocol,
 ) -> Result<ProviderBudgetSemantics, ProviderRequestCostError> {
-    let pending = request.messages.get(pending_prompt_index).ok_or(
-        ProviderRequestCostError::PendingPromptOutOfBounds {
-            pending_prompt_index,
-            message_count: request.messages.len(),
-        },
-    )?;
-    if pending.role != MessageRole::User {
-        return Err(ProviderRequestCostError::PendingPromptNotUser {
-            pending_prompt_index,
-        });
+    // A compacted tool continuation can have its user message in the checkpoint.
+    // The end index then means all messages belong to history, with no new prompt.
+    match request.messages.get(pending_prompt_index) {
+        Some(pending) if pending.role == MessageRole::User => {}
+        Some(_) => {
+            return Err(ProviderRequestCostError::PendingPromptNotUser {
+                pending_prompt_index,
+            })
+        }
+        None if pending_prompt_index == request.messages.len()
+            && request
+                .messages
+                .last()
+                .is_some_and(|message| message.role == MessageRole::Tool) => {}
+        None => {
+            return Err(ProviderRequestCostError::PendingPromptOutOfBounds {
+                pending_prompt_index,
+                message_count: request.messages.len(),
+            })
+        }
     }
 
     let (framing, attachments_supported, provider_controlled_output, provider_default_output) =

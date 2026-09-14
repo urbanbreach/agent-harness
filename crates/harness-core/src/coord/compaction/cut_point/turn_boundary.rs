@@ -24,64 +24,6 @@ pub struct CutPointResult {
     pub tokens_before: u32,
 }
 
-/// Find a cut point that preserves the agent's last complete turn and summarizes
-/// everything before it.
-///
-/// Used for explicit manual compaction requests, where the operator expects the
-/// most recent turn to remain intact and all prior turns to be rolled into a
-/// summary. Returns `None` if the agent has fewer than two completed turns.
-pub fn find_manual_cut_point(events: &[EventEnvelopeV1], agent_id: &str) -> Option<CutPointResult> {
-    let turn_ids: std::collections::HashSet<&str> = events
-        .iter()
-        .filter(|e| e.actor.agent_id.as_deref() == Some(agent_id))
-        .filter_map(|e| e.correlation_id.as_deref().filter(|s| !s.is_empty()))
-        .collect();
-
-    let agent_events: Vec<&EventEnvelopeV1> = events
-        .iter()
-        .filter(|e| {
-            e.actor.agent_id.as_deref() == Some(agent_id)
-                || matches!(
-                    &e.payload,
-                    EventV1::UserMessageSubmitted(payload)
-                        if turn_ids.contains(payload.request_id.as_str())
-                )
-        })
-        .collect();
-
-    if agent_events.is_empty() {
-        return None;
-    }
-
-    // Find the last completed turn, then the nearest user message before it.
-    let last_assistant_idx = agent_events
-        .iter()
-        .rposition(|e| matches!(e.payload, EventV1::AssistantMessageFinished(_)))?;
-    let last_user_idx = agent_events[..last_assistant_idx]
-        .iter()
-        .rposition(|e| matches!(e.payload, EventV1::UserMessageSubmitted(_)))?;
-
-    // If the user message is the very first agent event, there is no prior history.
-    if last_user_idx == 0 {
-        return None;
-    }
-
-    let cut_event = agent_events[last_user_idx];
-    let semantic_accounting = SemanticAccounting::new(&agent_events);
-    let tokens_before: u32 = agent_events
-        .iter()
-        .map(|event| semantic_accounting.estimate(event))
-        .sum();
-
-    Some(CutPointResult {
-        first_kept_event_seq: cut_event.seq,
-        first_kept_request_id: extract_request_id(&cut_event.payload),
-        is_split_turn: false,
-        turn_start_seq: None,
-        tokens_before,
-    })
-}
-
 /// Find the cut point in an agent's events that keeps approximately `keep_recent_tokens`.
 ///
 /// Walks backward through the agent's events, accumulating token estimates.
@@ -141,13 +83,8 @@ pub fn find_cut_point(
         });
     }
 
-    // Walk backward, accumulating tokens. Default: keep the most recent whole
-    // turn (last user-message cut point) so there is prior context to summarize.
     let mut accumulated_tokens = 0u32;
-    let mut cut_idx = *cut_point_indices
-        .iter()
-        .rfind(|&&i| matches!(agent_events[i].payload, EventV1::UserMessageSubmitted(_)))
-        .unwrap_or(&cut_point_indices[0]);
+    let mut cut_idx = cut_point_indices[0];
 
     for i in (0..agent_events.len()).rev() {
         let event_tokens = semantic_accounting.estimate(agent_events[i]);
@@ -157,13 +94,11 @@ pub fn find_cut_point(
         accumulated_tokens = accumulated_tokens.saturating_add(event_tokens);
 
         if accumulated_tokens >= keep_recent_tokens {
-            // Find the closest valid cut point at or after index i.
-            for &cp in &cut_point_indices {
-                if cp >= i {
-                    cut_idx = cp;
-                    break;
-                }
-            }
+            cut_idx = cut_point_indices
+                .iter()
+                .copied()
+                .find(|&cut| cut >= i)
+                .or_else(|| cut_point_indices.last().copied())?;
             break;
         }
     }

@@ -78,9 +78,7 @@ pub(crate) const fn legacy_projection_update_for_event(
     deprecated,
     reason = "legacy compaction details are decoded only through the compatibility boundary"
 )]
-pub(crate) fn latest_legacy_compaction(
-    events: &[EventEnvelopeV1],
-) -> Option<CanonicalLegacyCompaction> {
+pub fn latest_legacy_compaction(events: &[EventEnvelopeV1]) -> Option<CanonicalLegacyCompaction> {
     events.iter().rev().find_map(|event| match &event.payload {
         EventV1::CompactionRequested(payload) => Some(CanonicalLegacyCompaction {
             status: CanonicalLegacyCompactionStatus::Requested,

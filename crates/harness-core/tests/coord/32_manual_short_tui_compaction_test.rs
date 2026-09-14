@@ -1,7 +1,7 @@
 use harness_core::UnwrapOrAbort;
 
 #[tokio::test]
-async fn manual_short_tui_turns_compact_and_preserve_newest_turn() {
+async fn manual_short_tui_turns_remain_intact_within_recent_budget() {
     // arrange: the real TUI actor shape, default fallback budget, and two short completed turns.
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![
@@ -63,32 +63,11 @@ async fn manual_short_tui_turns_compact_and_preserve_newest_turn() {
         .unwrap_or_abort();
     coordinator.stop_run().await.unwrap_or_abort();
 
-    // assert: one older turn is summarized while the newest completed turn remains canonical.
-    let ManualCompactionOutcome::Compacted {
-        tokens_before,
-        tokens_after,
-        ..
-    } = outcome
-    else {
-        panic!("two short TUI turns should produce a non-empty manual cut");
-    };
-    assert!(tokens_after < tokens_before);
-    assert_eq!(provider.requests().len(), 3);
+    // Senpi keeps the complete history when every message fits the recent budget.
+    assert_eq!(outcome, ManualCompactionOutcome::NoOp);
+    assert_eq!(provider.requests().len(), 2);
     let events = load_events(&run.events_path);
-    let compaction = events
-        .iter()
-        .find_map(|event| match &event.payload {
-            EventV1::SessionCompaction(payload) if payload.agent_id == agent_id => Some(payload),
-            _ => None,
-        })
-        .unwrap_or_abort();
-    let preserved = harness_core::conversation::project_conversation(&events, &[])
-        .unwrap_or_abort()
-        .messages;
-    assert!(compaction.first_kept_event_seq > 3);
-    assert!(preserved.iter().any(|message| matches!(
-        message,
-        harness_core::conversation::ConversationMessage::User(user)
-            if user.text == "hello"
-    )));
+    assert!(!events.iter().any(|event| matches!(event.payload, EventV1::SessionCompaction(_))));
+    let preserved = harness_core::conversation::project_conversation(&events, &[]).unwrap_or_abort().messages;
+    assert_eq!(preserved.iter().filter(|message| matches!(message, harness_core::conversation::ConversationMessage::User(user) if user.text == "hello")).count(), 2);
 }

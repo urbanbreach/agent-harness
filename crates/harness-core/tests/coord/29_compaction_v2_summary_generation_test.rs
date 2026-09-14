@@ -87,6 +87,7 @@ async fn compaction_v2_summary_generation_success_captures_usage_and_provenance(
 
     // Then: durable accounting includes final file-operation text and ignores generation usage.
     assert!(summary.contains("<read-files>"));
+    assert!(summary.contains("[Restored context after compaction"));
     assert!(summary.contains(&file_path));
     assert!(tokens_after >= harness_core::estimate_compaction_text_tokens(summary));
     assert!(tokens_after < 50_000, "generation usage is separate accounting");
@@ -120,7 +121,7 @@ async fn compaction_v2_summary_generation_success_captures_usage_and_provenance(
 }
 
 #[tokio::test]
-async fn compaction_v2_summary_generation_empty_is_not_committable() {
+async fn compaction_v2_required_empty_summary_uses_deterministic_checkpoint() {
     // Given: an empty terminal summary stream.
     let run = run_summary_generation(vec![
         ProviderStreamEvent::Start,
@@ -128,9 +129,13 @@ async fn compaction_v2_summary_generation_empty_is_not_committable() {
     ])
     .await;
 
-    // When/Then: rejection preserves the exact durable boundary.
-    assert!(run.result.is_err());
-    assert_eq!(run.boundary_after, run.boundary_before);
+    assert!(matches!(run.result, Ok(ManualCompactionOutcome::Compacted { .. })));
+    assert_ne!(run.boundary_after, run.boundary_before);
+    assert_eq!(run.requests.len(), 3);
+    let checkpoint = run.values.last().unwrap_or_abort();
+    assert!(checkpoint["summary"].as_str().unwrap_or_abort().starts_with("[Deterministic compaction recovery checkpoint]"));
+    assert!(checkpoint["summary_provider_id"].is_null());
+    assert!(checkpoint["summary_usage"].is_null());
 }
 
 #[tokio::test]

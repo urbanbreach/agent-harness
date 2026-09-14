@@ -6,8 +6,18 @@ use tokio_util::sync::CancellationToken;
 pub(super) enum SummaryGenerationError {
     #[error("summary generation was cancelled")]
     Cancelled,
-    #[error("summary provider failed: {0}")]
-    Provider(String),
+    #[error("summary provider failed: {message}")]
+    Provider {
+        message: String,
+        category: Option<harness_providers::ProviderErrorCategory>,
+        retry_after_ms: Option<u64>,
+    },
+    #[error("summary stream stalled without provider events")]
+    IdleTimeout,
+    #[error("summary generation exceeded its duration budget")]
+    DurationBudget,
+    #[error("summary is incomplete: {0}")]
+    IncompleteOutput(String),
     #[error("summary stream ended without completion")]
     MissingTerminal,
     #[error("summary stream contained duplicate completion")]
@@ -23,20 +33,35 @@ pub(super) enum SummaryGenerationError {
 }
 
 pub(super) async fn reduce_summary_stream(
+    stream: ProviderEventStream,
+    cancellation: &CancellationToken,
+) -> Result<ReducedSummary, SummaryGenerationError> {
+    reduce_summary_stream_with_progress(stream, cancellation, None).await
+}
+
+pub(super) async fn reduce_summary_stream_with_progress(
     mut stream: ProviderEventStream,
     cancellation: &CancellationToken,
+    progress: Option<&(dyn Fn(&str) + Send + Sync)>,
 ) -> Result<ReducedSummary, SummaryGenerationError> {
     let mut reducer = SummaryStreamReducer::new();
     loop {
         let event = tokio::select! {
             biased;
             () = cancellation.cancelled() => return Err(SummaryGenerationError::Cancelled),
-            event = stream.next() => event,
+            event = tokio::time::timeout(std::time::Duration::from_millis(300_000), stream.next()) => event.map_err(|_| SummaryGenerationError::IdleTimeout)?,
         };
         let Some(event) = event else {
             break;
         };
+        let text_changed =
+            matches!(&event, ProviderStreamEvent::TextDelta(delta) if !delta.is_empty());
         reducer.apply(event)?;
+        if text_changed {
+            if let Some(progress) = progress {
+                progress(&reducer.text);
+            }
+        }
     }
     let reduced = reducer.finish()?;
     if cancellation.is_cancelled() {
@@ -81,9 +106,16 @@ impl SummaryStreamReducer {
                     Err(SummaryGenerationError::DuplicateTerminal)
                 }
                 ProviderStreamEvent::TextDelta(_) => Err(SummaryGenerationError::PostTerminalDelta),
-                ProviderStreamEvent::Error { message, .. } => {
-                    Err(SummaryGenerationError::Provider(message))
-                }
+                ProviderStreamEvent::Error {
+                    message,
+                    category,
+                    retry_after_ms,
+                    ..
+                } => Err(SummaryGenerationError::Provider {
+                    message,
+                    category,
+                    retry_after_ms,
+                }),
                 ProviderStreamEvent::Start
                 | ProviderStreamEvent::Started { .. }
                 | ProviderStreamEvent::ReasoningDelta(_)
@@ -96,12 +128,38 @@ impl SummaryStreamReducer {
 
         match event {
             ProviderStreamEvent::TextDelta(delta) => self.text.push_str(&delta),
-            ProviderStreamEvent::Done { usage }
-            | ProviderStreamEvent::DoneWithMetadata { usage, .. } => {
+            ProviderStreamEvent::Done { usage } => self.terminal = Terminal::Completed(usage),
+            ProviderStreamEvent::DoneWithMetadata { usage, metadata } => {
+                if let Some(reason) = metadata
+                    .as_ref()
+                    .and_then(|metadata| metadata.provider_stop_reason.as_deref())
+                {
+                    if matches!(
+                        reason,
+                        "length"
+                            | "max_tokens"
+                            | "max_output_tokens"
+                            | "incomplete"
+                            | "aborted"
+                            | "cancelled"
+                            | "refusal"
+                    ) {
+                        return Err(SummaryGenerationError::IncompleteOutput(reason.to_string()));
+                    }
+                }
                 self.terminal = Terminal::Completed(usage);
             }
-            ProviderStreamEvent::Error { message, .. } => {
-                return Err(SummaryGenerationError::Provider(message));
+            ProviderStreamEvent::Error {
+                message,
+                category,
+                retry_after_ms,
+                ..
+            } => {
+                return Err(SummaryGenerationError::Provider {
+                    message,
+                    category,
+                    retry_after_ms,
+                });
             }
             ProviderStreamEvent::ToolCallDelta { .. }
             | ProviderStreamEvent::ToolCallComplete { .. } => {

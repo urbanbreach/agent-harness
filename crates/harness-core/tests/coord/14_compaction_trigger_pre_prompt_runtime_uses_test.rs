@@ -2,12 +2,12 @@ use harness_core::UnwrapOrAbort;
 #[tokio::test]
 async fn compaction_trigger_pre_prompt_runtime_uses_checkpointed_prior_context() {
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
-    let current_prompt = "C".repeat(12_000);
+    let current_prompt = "C ".repeat(6_000);
     let provider = SequentialScriptedProvider::new(vec![
-        provider_text_events(&"A".repeat(12_000)),
-        provider_text_events(&"B".repeat(12_000)),
+        provider_text_events(&"A ".repeat(6_000)),
+        provider_text_events(&"B ".repeat(6_000)),
         provider_text_events("Compaction summary of earlier turns."),
-        provider_text_events("Compaction prefix of split turn."),
+
         provider_text_events("third answer"),
     ]);
     let coordinator = test_agent_coordinator_with_provider_and_compaction(
@@ -17,6 +17,7 @@ async fn compaction_trigger_pre_prompt_runtime_uses_checkpointed_prior_context()
         CompactionRuntimeConfig {
             reserve_tokens: 4_096,
             fallback_input_tokens: 12_000,
+            keep_recent_tokens: 4_000,
             ..CompactionRuntimeConfig::default()
         },
     );
@@ -49,8 +50,8 @@ async fn compaction_trigger_pre_prompt_runtime_uses_checkpointed_prior_context()
     let requests = provider.requests();
     assert_eq!(
         requests.len(),
-        5,
-        "third turn should include history and split-prefix summary calls"
+        4,
+        "third turn should include one native history summary call"
     );
     let third_messages = requests
         .last()
@@ -82,17 +83,16 @@ async fn compaction_trigger_pre_prompt_runtime_uses_checkpointed_prior_context()
         .unwrap_or_abort();
     assert!(compaction.tokens_before > 0);
     assert!(compaction.summary.contains("Compaction summary of earlier turns."));
-    assert!(compaction.summary.contains("Compaction prefix of split turn."));
 }
 #[tokio::test]
 async fn compaction_no_loop_guards_cover_pre_prompt_overflow_and_failed_response() {
     let pre_prompt_dir = tempfile::tempdir().unwrap_or_abort();
-    let pre_prompt_current_prompt = "C".repeat(12_000);
+    let pre_prompt_current_prompt = "C ".repeat(6_000);
     let pre_prompt_provider = SequentialScriptedProvider::new(vec![
-        provider_text_events(&"A".repeat(12_000)),
-        provider_text_events(&"B".repeat(12_000)),
+        provider_text_events(&"A ".repeat(6_000)),
+        provider_text_events(&"B ".repeat(6_000)),
         provider_text_events("Compaction summary of earlier turns."),
-        provider_text_events("Compaction prefix of split turn."),
+
         provider_text_events("third answer after pre-prompt no-shrink"),
     ]);
     let pre_prompt = test_agent_coordinator_with_provider_and_compaction(
@@ -102,6 +102,7 @@ async fn compaction_no_loop_guards_cover_pre_prompt_overflow_and_failed_response
         CompactionRuntimeConfig {
             reserve_tokens: 4_096,
             fallback_input_tokens: 12_000,
+            keep_recent_tokens: 4_000,
             ..CompactionRuntimeConfig::default()
         },
     );
@@ -162,7 +163,7 @@ async fn compaction_no_loop_guards_cover_pre_prompt_overflow_and_failed_response
         "pre-prompt compaction should attempt at most once before provider execution"
     );
     let pre_prompt_requests = pre_prompt_provider.requests();
-    assert_eq!(pre_prompt_requests.len(), 5);
+    assert_eq!(pre_prompt_requests.len(), 4);
     let pre_prompt_compaction = pre_prompt_events
         .iter()
         .find_map(|event| match &event.payload {
@@ -173,23 +174,9 @@ async fn compaction_no_loop_guards_cover_pre_prompt_overflow_and_failed_response
     assert!(pre_prompt_compaction
         .summary
         .contains("Compaction summary of earlier turns."));
-    assert!(pre_prompt_compaction
-        .summary
-        .contains("Compaction prefix of split turn."));
 
     let overflow_dir = tempfile::tempdir().unwrap_or_abort();
     let overflow_provider = SequentialScriptedProvider::new(vec![
-        vec![
-            ProviderStreamEvent::Start,
-            ProviderStreamEvent::TextDelta("first answer".to_string()),
-            ProviderStreamEvent::Done {
-                usage: Some(CompletionUsage {
-                    prompt_tokens: 32,
-                    completion_tokens: 8,
-                    total_tokens: 40,
-                }),
-            },
-        ],
         vec![
             ProviderStreamEvent::Start,
             ProviderStreamEvent::error("prompt token count of 128713 exceeds the limit of 128000"),
@@ -211,11 +198,6 @@ async fn compaction_no_loop_guards_cover_pre_prompt_overflow_and_failed_response
         .spawn_agent_idle(supervisor_actor(), "alpha", None)
         .await
         .unwrap_or_abort();
-    overflow
-        .request_agent_turn(supervisor_actor(), overflow_agent.clone(), "first question")
-        .await
-        .unwrap_or_abort();
-    tokio::task::yield_now().await;
     let overflow_request_id = overflow
         .request_agent_turn(supervisor_actor(), overflow_agent, "second question")
         .await
@@ -245,7 +227,7 @@ async fn compaction_no_loop_guards_cover_pre_prompt_overflow_and_failed_response
     );
     assert_eq!(
         overflow_provider.requests().len(),
-        2,
+        1,
         "overflow no-shrink must not resend the same context"
     );
     assert!(overflow_events.iter().any(|event| {
@@ -345,7 +327,7 @@ async fn manual_compaction_writes_checkpoint_and_manual_events() {
     let provider = SequentialScriptedProvider::new(vec![
         vec![
             ProviderStreamEvent::Start,
-            ProviderStreamEvent::TextDelta("A".repeat(12_000)),
+            ProviderStreamEvent::TextDelta("A ".repeat(6_000)),
             ProviderStreamEvent::Done {
                 usage: Some(CompletionUsage {
                     prompt_tokens: 100,
@@ -356,7 +338,7 @@ async fn manual_compaction_writes_checkpoint_and_manual_events() {
         ],
         vec![
             ProviderStreamEvent::Start,
-            ProviderStreamEvent::TextDelta("B".repeat(12_000)),
+            ProviderStreamEvent::TextDelta("B ".repeat(6_000)),
             ProviderStreamEvent::Done {
                 usage: Some(CompletionUsage {
                     prompt_tokens: 100,
@@ -368,7 +350,7 @@ async fn manual_compaction_writes_checkpoint_and_manual_events() {
         provider_text_events("Compaction summary of earlier turns."),
     ]);
     let coordinator =
-        test_agent_coordinator_with_provider(temp_dir.path(), Arc::new(provider.clone()), 1);
+        test_agent_coordinator_with_provider_and_compaction(temp_dir.path(), Arc::new(provider.clone()), 1, CompactionRuntimeConfig { keep_recent_tokens: 4_000, ..Default::default() });
 
     let run = coordinator
         .start_run(
@@ -441,6 +423,7 @@ async fn manual_unknown_budget_does_not_invent_compaction_capacity() {
         1,
         CompactionRuntimeConfig {
             estimated_token_triggers: false,
+            keep_recent_tokens: 8,
             fallback_input_tokens: 0,
             ..CompactionRuntimeConfig::default()
         },
@@ -532,6 +515,7 @@ async fn manual_unknown_budget_non_shrinking_summary_preserves_boundary() {
         1,
         CompactionRuntimeConfig {
             estimated_token_triggers: false,
+            keep_recent_tokens: 8,
             fallback_input_tokens: 0,
             ..CompactionRuntimeConfig::default()
         },

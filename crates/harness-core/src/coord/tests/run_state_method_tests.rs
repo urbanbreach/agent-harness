@@ -101,30 +101,17 @@ pub(super) fn run_state_permission_methods_own_pending_and_grant_state() {
 }
 
 pub(super) fn run_state_compaction_methods_own_overflow_retry_attempt_state() {
-    // arrange
-    let temp_dir = tempfile::tempdir().unwrap_or_abort();
-    let mut run_state = test_run_state(temp_dir.path(), "run_state_compaction_methods");
-    let request = FailedTerminalCompactionRequest::new(
-        "task_000001",
-        "agent_000001",
-        "req_000001",
-        "failed_response",
-    );
-
-    // act
-    assert!(run_state.failed_terminal_compaction_attempt_should_run(&request));
-
-    // assert
-    assert!(!run_state.failed_terminal_compaction_attempt_should_run(&request));
-
-    let mut second = test_run_state(temp_dir.path(), "run_state_compaction_overflow_skip");
-    let compacted = ProviderContext::from_turns(vec![long_turn("same turn", 'A')]);
-    second
-        .provider_context_by_agent
-        .insert("agent_000001".to_string(), compacted.clone());
-    second.record_overflow_retry_compacted_context("task_000001", "req_000001", compacted);
-
-    assert!(!second.failed_terminal_compaction_attempt_should_run(&request));
+    let mut state = crate::coord::session_compaction::CompactionState::default();
+    for now in [0, 1, 2] {
+        state.record(false, now);
+    }
+    assert!(state.tripped(60_001));
+    assert!(!state.tripped(60_002));
+    state.record(false, 60_002);
+    assert!(!state.tripped(60_002));
+    state.record(true, 60_003);
+    state.record(false, 60_004);
+    assert!(!state.tripped(60_004));
 }
 
 fn queued_agent_turn_fixture(

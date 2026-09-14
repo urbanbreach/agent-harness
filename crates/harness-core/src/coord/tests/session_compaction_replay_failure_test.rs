@@ -43,6 +43,9 @@ async fn completion_replay_failure_finishes_and_cancels_pending_compaction() {
                     estimate_source: None,
                 },
                 response: super::super::PendingCompactionResponse::Manual(respond_to),
+                background: false,
+                allow_appended: false,
+                request_budget: pressured_compaction_budget(),
             },
         );
         (

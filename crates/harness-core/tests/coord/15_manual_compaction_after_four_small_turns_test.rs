@@ -26,7 +26,7 @@ async fn manual_compaction_after_four_small_turns_writes_checkpoint_with_latest_
         .collect(),
     );
     let coordinator =
-        test_agent_coordinator_with_provider(temp_dir.path(), Arc::new(provider.clone()), 1);
+        test_agent_coordinator_with_provider_and_compaction(temp_dir.path(), Arc::new(provider.clone()), 1, CompactionRuntimeConfig { keep_recent_tokens: 5, ..Default::default() });
 
     let run = coordinator
         .start_run(
@@ -102,7 +102,7 @@ async fn manual_compaction_after_two_turns_summarizes_first_and_preserves_latest
             .collect(),
     );
     let coordinator =
-        test_agent_coordinator_with_provider(temp_dir.path(), Arc::new(provider.clone()), 1);
+        test_agent_coordinator_with_provider_and_compaction(temp_dir.path(), Arc::new(provider.clone()), 1, CompactionRuntimeConfig { keep_recent_tokens: 5, ..Default::default() });
 
     let run = coordinator
         .start_run(
@@ -154,7 +154,7 @@ async fn manual_compaction_after_two_turns_summarizes_first_and_preserves_latest
     assert_eq!(compaction.trigger_reason, "manual");
     assert!(compaction.tokens_before > 0);
     assert!(compaction.summary.contains("first question"));
-    assert!(compaction.summary.contains("first answer"));
+    assert!(provider.requests().last().unwrap_or_abort().messages.iter().any(|message| message.role == MessageRole::Assistant && message.content == "first answer"));
     assert!(!compaction.summary.contains("second question"));
     assert!(!compaction.summary.contains("second answer"));
 }
@@ -162,8 +162,8 @@ async fn manual_compaction_after_two_turns_summarizes_first_and_preserves_latest
 async fn manual_compaction_summary_call_uses_provider_without_emitting_provider_events() {
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
     let provider = SequentialScriptedProvider::new(vec![
-        provider_text_events(&"A".repeat(12_000)),
-        provider_text_events(&"B".repeat(12_000)),
+        provider_text_events(&"A ".repeat(6_000)),
+        provider_text_events(&"B ".repeat(6_000)),
         provider_text_events("Compaction summary of earlier turns."),
     ]);
     let coordinator = test_agent_coordinator_with_provider_and_compaction(
@@ -171,6 +171,7 @@ async fn manual_compaction_summary_call_uses_provider_without_emitting_provider_
         Arc::new(provider.clone()),
         1,
         CompactionRuntimeConfig {
+            keep_recent_tokens: 5,
             ..CompactionRuntimeConfig::default()
         },
     );
@@ -222,8 +223,8 @@ async fn manual_compaction_summary_call_uses_provider_without_emitting_provider_
         "two turns plus one summary model call"
     );
     let summary_request = provider.requests().get(2).cloned().unwrap_or_abort();
-    assert_eq!(summary_request.tools, None);
-    assert_eq!(summary_request.tool_choice, None);
+    assert!(summary_request.tools.as_ref().is_none_or(Vec::is_empty));
+    assert_eq!(summary_request.tool_choice, Some(harness_providers::ToolChoice::None));
     let compaction = events
         .iter()
         .find_map(|event| match &event.payload {
@@ -239,7 +240,7 @@ async fn manual_compaction_summary_call_uses_provider_without_emitting_provider_
 #[tokio::test]
 async fn overflow_retry_split_oversized_latest_turn_preserves_suffix_context() {
     let temp_dir = tempfile::tempdir().unwrap_or_abort();
-    let oversized_answer = "B".repeat(12_000);
+    let oversized_answer = "B ".repeat(6_000);
     let provider = SequentialScriptedProvider::new(vec![
         provider_text_events("first compacted answer"),
         provider_text_events(&oversized_answer),
@@ -248,7 +249,6 @@ async fn overflow_retry_split_oversized_latest_turn_preserves_suffix_context() {
             ProviderStreamEvent::error("prompt token count of 128713 exceeds the limit of 128000"),
         ],
         provider_text_events("Compaction summary of earlier turns."),
-        provider_text_events("Compaction prefix of split turn."),
         provider_text_events("recovered answer"),
     ]);
     let coordinator = test_agent_coordinator_with_provider_and_compaction(
@@ -299,9 +299,8 @@ async fn overflow_retry_split_oversized_latest_turn_preserves_suffix_context() {
         })
         .unwrap_or_abort();
     assert!(compaction.summary.contains("Compaction summary of earlier turns."));
-    assert!(compaction.summary.contains("Compaction prefix of split turn."));
     let requests = provider.requests();
-    assert_eq!(requests.len(), 6, "overflow dispatch still retries exactly once");
+    assert_eq!(requests.len(), 5, "overflow dispatch still retries exactly once");
     assert_eq!(
         events
             .iter()

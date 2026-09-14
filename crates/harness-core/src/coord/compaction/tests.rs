@@ -138,10 +138,17 @@ fn estimate_text_tokens_five_bytes_two_tokens() {
 }
 
 #[test]
-fn estimate_text_tokens_uses_byte_length_not_char_count() {
-    // Multi-byte UTF-8: each of these chars is 3 bytes.
-    // 4 chars * 3 bytes = 12 bytes -> ceil(12/4) = 3 tokens.
-    assert_eq!(estimate_text_tokens("\u{3042}\u{3044}\u{3046}\u{3048}"), 3);
+fn estimate_text_tokens_matches_senpi_unicode_and_opaque_runs() {
+    assert_eq!(estimate_text_tokens("あいうえ"), 1);
+    assert_eq!(estimate_text_tokens("😀😀😀"), 2);
+    assert_eq!(estimate_text_tokens(&"a".repeat(511)), 128);
+    assert_eq!(estimate_text_tokens(&"a".repeat(512)), 512);
+    let original = format!("BEGIN {} END", "A".repeat(100_000));
+    let admitted = admit_tool_result(&original, 128_000);
+    assert!(admitted.starts_with("BEGIN ") && admitted.ends_with(" END"));
+    assert!(admitted.contains("[tool result projected:"));
+    assert!(estimate_text_tokens(&admitted) <= 8192);
+    assert_eq!(original.len(), 100_010);
 }
 
 // =========================================================================
@@ -323,7 +330,7 @@ fn find_cut_point_keeps_recent_turn_if_budget_fits() {
 
     let result = find_cut_point(&events, "agent-1", 50000).unwrap();
 
-    assert_eq!(result.first_kept_event_seq, 4);
+    assert_eq!(result.first_kept_event_seq, 1);
     assert!(!result.is_split_turn);
     assert_eq!(result.turn_start_seq, None);
     assert!(result.tokens_before > 0);
@@ -554,8 +561,7 @@ fn pi_find_cut_point_finds_valid_cut_point() {
 #[test]
 fn pi_find_cut_point_keeps_recent_turn_if_fits() {
     // Port of Pi's "should keep everything if all messages fit within budget",
-    // adapted for harness: when the whole context fits, still keep the most
-    // recent turn so there is prior context to summarize.
+    // when the whole context fits, retain every message.
     let events = vec![
         user_msg(1, "agent-1", "req-1", "1"),
         stream_delta(2, "agent-1", "req-1", "a"),
@@ -566,7 +572,7 @@ fn pi_find_cut_point_keeps_recent_turn_if_fits() {
     ];
 
     let result = find_cut_point(&events, "agent-1", 50000).unwrap();
-    assert_eq!(result.first_kept_event_seq, 4);
+    assert_eq!(result.first_kept_event_seq, 1);
 }
 
 // =========================================================================
@@ -610,6 +616,7 @@ fn session_compaction(
             summary_model_id: None,
             read_files: Vec::new(),
             modified_files: Vec::new(),
+            task_intent: None,
             current_intent: None,
             trigger_reason: "auto".to_string(),
             from_hook: false,

@@ -135,8 +135,7 @@ impl Coordinator {
             queued_agent_turns: BTreeMap::new(),
             running_agent_turns: BTreeMap::new(),
             pending_compactions: BTreeMap::new(),
-            failed_terminal_compaction_attempts: BTreeSet::new(),
-            overflow_retry_compacted_context_by_attempt: BTreeMap::new(),
+            compaction_state: BTreeMap::new(),
             scheduler: Scheduler::new(SchedulerLimits {
                 provider_model: self.config.provider_model_concurrency,
                 tool: self.config.tool_concurrency,
@@ -461,8 +460,7 @@ impl Coordinator {
             queued_agent_turns: BTreeMap::new(),
             running_agent_turns: BTreeMap::new(),
             pending_compactions: BTreeMap::new(),
-            failed_terminal_compaction_attempts: BTreeSet::new(),
-            overflow_retry_compacted_context_by_attempt: BTreeMap::new(),
+            compaction_state: BTreeMap::new(),
             scheduler: Scheduler::new(SchedulerLimits {
                 provider_model: self.config.provider_model_concurrency,
                 tool: self.config.tool_concurrency,

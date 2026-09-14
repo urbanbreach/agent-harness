@@ -1,5 +1,5 @@
 #[tokio::test]
-async fn compaction_v2_unsplittable_protocol_entry_preserves_boundary() {
+async fn compaction_v2_atomic_tool_pair_compacts_only_at_message_boundaries() {
     let huge_output = "U".repeat(50_000);
     let typed_cut = plan_safe_cut(
         &[
@@ -9,7 +9,9 @@ async fn compaction_v2_unsplittable_protocol_entry_preserves_boundary() {
         1_000,
         estimate_compaction_text_tokens,
     );
-    assert_eq!(typed_cut, Err(SafeCutError::NoSafeCut));
+    let cut = typed_cut.unwrap_or_abort();
+    assert_eq!(cut.first_kept_index, 0);
+    assert_eq!(cut.summarized_tokens, 0);
     let (harness, provider) = CompactionV2Harness::scripted_with_tool(
         vec![
             provider_text_events("older reducible answer"),
@@ -38,12 +40,9 @@ async fn compaction_v2_unsplittable_protocol_entry_preserves_boundary() {
 
     assert!(events.iter().any(|event| {
         event.correlation_id.as_deref() == Some(request_id.as_str())
-            && matches!(event.payload, EventV1::TaskCancelled(_))
+            && matches!(event.payload, EventV1::TaskCompleted(_))
     }));
-    assert_eq!(
-        boundary_after, boundary_before,
-        "an unsplittable retained protocol entry must preserve compaction count and identity",
-    );
+    assert_eq!(boundary_after.count, boundary_before.count + 1);
 
     let requests = provider.requests();
     assert!(

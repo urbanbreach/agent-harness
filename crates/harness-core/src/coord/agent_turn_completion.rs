@@ -5,34 +5,6 @@ use super::compaction::{
 use super::*;
 
 impl Coordinator {
-    pub(in crate::coord) async fn compact_failed_terminal_agent_context(
-        &mut self,
-        request: FailedTerminalCompactionRequest,
-    ) {
-        let should_attempt = {
-            let Some(run_state) = self.run_state.as_mut() else {
-                return;
-            };
-            run_state.failed_terminal_compaction_attempt_should_run(&request)
-        };
-        if !should_attempt {
-            return;
-        }
-
-        let trigger_reason = request.trigger_reason.clone();
-        self.start_compaction_generation(
-            CompactAgentContextRequest {
-                task_id: Some(request.task_id),
-                agent_id: request.agent_id,
-                through_request_id: Some(request.request_id),
-                trigger_reason: trigger_reason.clone(),
-                evidence: CompactionRequestEvidence::default(),
-            },
-            PendingCompactionResponse::Internal { trigger_reason },
-        )
-        .await;
-    }
-
     pub(in crate::coord) async fn summarize_session_branch(
         &mut self,
         agent_id: &str,
@@ -286,7 +258,10 @@ impl Coordinator {
             };
         }
 
-        let mut terminal_compaction = None;
+        let warm_when_idle = matches!(
+            (&outcome, was_cancelled, &critical_hook_failure),
+            (AgentTurnTaskOutcome::Succeeded { .. }, false, None)
+        );
         if was_cancelled {
             let memory = match &outcome {
                 AgentTurnTaskOutcome::Failed { reason, memory } => memory
@@ -298,12 +273,6 @@ impl Coordinator {
             };
             if let Some(memory) = memory {
                 push_incomplete_provider_turn(run_state, &running, &request_id, memory);
-                terminal_compaction = Some(FailedTerminalCompactionRequest::new(
-                    task_id.clone(),
-                    running.agent_id.clone(),
-                    request_id.clone(),
-                    "aborted_response",
-                ));
             }
         } else {
             match outcome {
@@ -350,12 +319,6 @@ impl Coordinator {
                             &terminal_event_summary(&terminal_event),
                         )
                         .await?;
-                        terminal_compaction = Some(FailedTerminalCompactionRequest::new(
-                            task_id.clone(),
-                            running.agent_id.clone(),
-                            request_id.clone(),
-                            "failed_response",
-                        ));
                     } else {
                         let lineage = agent_turn_child_lineage(run_state, &running, &request_id);
                         let completed_turn = ProviderConversationTurn {
@@ -428,19 +391,8 @@ impl Coordinator {
                     if let Some(memory) = &mut memory {
                         memory.failure_reason = reason.clone();
                     }
-                    let terminal_trigger_reason = memory
-                        .as_ref()
-                        .filter(|memory| memory.status == ProviderConversationTurnStatus::Aborted)
-                        .map(|_| "aborted_response")
-                        .unwrap_or("failed_response");
                     if let Some(memory) = memory {
                         push_incomplete_provider_turn(run_state, &running, &request_id, memory);
-                        terminal_compaction = Some(FailedTerminalCompactionRequest::new(
-                            task_id.clone(),
-                            running.agent_id.clone(),
-                            request_id.clone(),
-                            terminal_trigger_reason,
-                        ));
                     }
                     let terminal_event = append_payload_event_with_correlation(
                         self.clock.as_ref(),
@@ -479,9 +431,8 @@ impl Coordinator {
         run_state
             .explicit_runtime_selection_request_ids
             .remove(&request_id);
-        if let Some(request) = terminal_compaction {
-            self.compact_failed_terminal_agent_context(request).await;
-        }
+        self.prepare_idle_compaction(&running.agent_id, warm_when_idle)
+            .await;
         self.start_dequeued_agent_turns(dequeued).await?;
         let Some(run_state) = self.run_state.as_mut() else {
             return Ok(());
@@ -545,38 +496,10 @@ fn summary_preview(summary: &str) -> String {
     if summary.len() <= PREVIEW_MAX {
         return summary.to_string();
     }
-    let truncated = &summary[..PREVIEW_MAX];
+    let truncated = &summary[..summary.floor_char_boundary(PREVIEW_MAX)];
     match truncated.rfind('\n') {
         Some(idx) if idx > PREVIEW_MAX / 2 => format!("{}…", &truncated[..idx]),
         _ => format!("{truncated}…"),
-    }
-}
-
-#[derive(Debug, Clone)]
-pub(in crate::coord) struct FailedTerminalCompactionRequest {
-    pub(in crate::coord) task_id: String,
-    pub(in crate::coord) agent_id: String,
-    pub(in crate::coord) request_id: String,
-    pub(in crate::coord) trigger_reason: String,
-}
-
-impl FailedTerminalCompactionRequest {
-    pub(in crate::coord) fn new(
-        task_id: impl Into<String>,
-        agent_id: impl Into<String>,
-        request_id: impl Into<String>,
-        trigger_reason: impl Into<String>,
-    ) -> Self {
-        Self {
-            task_id: task_id.into(),
-            agent_id: agent_id.into(),
-            request_id: request_id.into(),
-            trigger_reason: trigger_reason.into(),
-        }
-    }
-
-    pub(in crate::coord) fn attempt_key(&self) -> (String, String) {
-        (self.task_id.clone(), self.request_id.clone())
     }
 }
 
