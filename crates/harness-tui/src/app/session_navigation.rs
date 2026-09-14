@@ -449,8 +449,16 @@ impl AppState {
                 self.execute_action(Action::ToggleFollow);
             }
             "compact" => {
+                let custom_instructions = self
+                    .active_slash_parts_full()
+                    .and_then(|(_, args)| args)
+                    .map(str::trim)
+                    .filter(|text| !text.is_empty())
+                    .map(str::to_string);
                 self.restore_slash_draft(preserved_draft);
-                self.emit_ui_intent(UiIntent::CompactSession);
+                self.emit_ui_intent(UiIntent::CompactSession {
+                    custom_instructions,
+                });
             }
             "rename" => {
                 let title = self

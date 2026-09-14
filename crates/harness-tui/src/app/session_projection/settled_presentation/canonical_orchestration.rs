@@ -1,12 +1,15 @@
 use super::*;
 
 pub(super) fn apply_canonical_background_notifications(
-    canonical: &CanonicalSessionProjection,
+    events: &[EventEnvelopeV1],
+    transcript: &harness_core::transcript_projection::TranscriptProjection,
     activities: &mut VecDeque<ActivityEntry>,
     tasks: &mut BTreeMap<String, OrchestrationTaskRow>,
 ) {
-    for notification in canonical.background_notifications() {
-        let data = notification.payload;
+    for notification in events {
+        let EventV1::BackgroundTaskNotification(data) = &notification.payload else {
+            continue;
+        };
         let request_id = data
             .delivered_turn_request_id
             .as_deref()
@@ -18,10 +21,10 @@ pub(super) fn apply_canonical_background_notifications(
             let mut activity = new_streaming_activity_entry(NewStreamingActivityEntryArgs {
                 request_id: request_id.to_string(),
                 profile_label: profile_label(
-                    &canonical.transcript,
+                    transcript,
                     data.parent_agent_id
                         .as_deref()
-                        .or(notification.actor_agent_id),
+                        .or(notification.actor.agent_id.as_deref()),
                 ),
                 model_id: String::new(),
                 provider_id: String::new(),
@@ -29,7 +32,7 @@ pub(super) fn apply_canonical_background_notifications(
                     request_id: request_id.into(),
                     text: background_task_notification_text(data),
                 }),
-                user_timestamp: notification.timestamp.map(str::to_string),
+                user_timestamp: notification.ts.clone(),
                 request_data: None,
                 transcript_text: String::new(),
                 first_seq: notification.seq,
@@ -50,9 +53,9 @@ pub(super) fn apply_canonical_background_notifications(
                 queue_key: None,
                 state: OrchestrationTaskState::Running,
                 warning: None,
-                owner_kind: notification.actor_kind,
-                owner_agent_id: notification.actor_agent_id.map(str::to_string),
-                request_id: notification.correlation_id.map(str::to_string),
+                owner_kind: notification.actor.kind,
+                owner_agent_id: notification.actor.agent_id.clone(),
+                request_id: notification.correlation_id.clone(),
                 parent_tool_call_id: None,
                 parent_request_id: None,
                 child_session_id: Some(data.child_session_id.to_string()),
@@ -65,8 +68,8 @@ pub(super) fn apply_canonical_background_notifications(
                 last_seq: notification.seq,
                 first_mono_ms: notification.mono_ms,
                 last_mono_ms: notification.mono_ms,
-                first_timestamp: notification.timestamp.map(str::to_string),
-                last_timestamp: notification.timestamp.map(str::to_string),
+                first_timestamp: notification.ts.clone(),
+                last_timestamp: notification.ts.clone(),
             });
         row.child_session_id = Some(data.child_session_id.to_string());
         row.child_request_id = Some(data.child_request_id.clone());
@@ -91,35 +94,43 @@ pub(super) fn apply_canonical_background_notifications(
         };
         row.last_seq = notification.seq;
         row.last_mono_ms = notification.mono_ms;
-        row.last_timestamp = notification.timestamp.map(str::to_string);
+        row.last_timestamp.clone_from(&notification.ts);
     }
 }
 
 pub(super) fn apply_canonical_stale_detections(
-    canonical: &CanonicalSessionProjection,
+    events: &[EventEnvelopeV1],
     tasks: &mut BTreeMap<String, OrchestrationTaskRow>,
 ) {
-    for stale in canonical.stale_detections() {
-        let Some(task) = tasks.get_mut(stale.task_id) else {
+    for event in events {
+        let EventV1::StaleDetected(stale) = &event.payload else {
             continue;
         };
-        if task.last_seq > stale.seq {
+        let Some(task) = tasks.get_mut(stale.task_id.as_str()) else {
+            continue;
+        };
+        if task.last_seq > event.seq {
             continue;
         }
         task.state = OrchestrationTaskState::Stale;
         task.warning = Some(format!("stale for {} ms", stale.stale_for_ms));
-        task.last_seq = stale.seq;
-        task.last_mono_ms = stale.mono_ms;
-        task.last_timestamp = stale.timestamp.map(str::to_string);
+        task.last_seq = event.seq;
+        task.last_mono_ms = event.mono_ms;
+        task.last_timestamp.clone_from(&event.ts);
     }
 }
 
 pub(super) fn apply_canonical_edits(
-    canonical: &CanonicalSessionProjection,
+    events: &[EventEnvelopeV1],
     activities: &mut VecDeque<ActivityEntry>,
 ) {
-    for event in canonical.edit_events() {
-        let Some(tool_call_id) = event.tool_call_id else {
+    for event in events.iter().filter(|event| {
+        matches!(
+            event.payload,
+            EventV1::EditProposed(_) | EventV1::EditApplied(_) | EventV1::EditRejected(_)
+        )
+    }) {
+        let Some(tool_call_id) = event.correlation_id.as_deref() else {
             continue;
         };
         let Some(tool) = activities
@@ -129,8 +140,8 @@ pub(super) fn apply_canonical_edits(
         else {
             continue;
         };
-        match event.payload {
-            CanonicalEditPayload::Proposed(data) => {
+        match &event.payload {
+            EventV1::EditProposed(data) => {
                 tool.edit = Some(EditEntry {
                     edit_id: data.edit_id.clone(),
                     path: data.path.clone(),
@@ -143,7 +154,7 @@ pub(super) fn apply_canonical_edits(
                     rejection_reason: None,
                 });
             }
-            CanonicalEditPayload::Applied(data) => {
+            EventV1::EditApplied(data) => {
                 let prior = tool.edit.take();
                 tool.edit = Some(EditEntry {
                     edit_id: data.edit_id.clone(),
@@ -157,7 +168,7 @@ pub(super) fn apply_canonical_edits(
                     rejection_reason: None,
                 });
             }
-            CanonicalEditPayload::Rejected(data) => {
+            EventV1::EditRejected(data) => {
                 let prior = tool.edit.take();
                 tool.edit = Some(EditEntry {
                     edit_id: data.edit_id.clone(),
@@ -171,6 +182,7 @@ pub(super) fn apply_canonical_edits(
                     rejection_reason: Some(data.reason.clone()),
                 });
             }
+            _ => continue,
         }
         tool.last_seq = tool.last_seq.max(event.seq);
     }

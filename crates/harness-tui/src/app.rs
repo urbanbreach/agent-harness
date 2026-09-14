@@ -1722,7 +1722,8 @@ impl AppState {
         for event in events.iter().cloned() {
             self.ingest_event_internal(event, true, false);
         }
-        self.projection.replace_settled_projection(&events);
+        self.projection
+            .replace_settled_projection(&events, self.is_inline_child_view());
         self.refresh_todo_items();
         self.resume_live_turn_timing_from_projection();
         self.sync_transcript_integration(false);
@@ -1773,18 +1774,22 @@ impl AppState {
         }
     }
 
+    fn is_inline_child_view(&self) -> bool {
+        self.replay_mode
+            && !self.session_navigation_stack.is_empty()
+            && self
+                .session_path
+                .as_ref()
+                .is_some_and(|path| !path.is_dir())
+    }
+
     fn ingest_event_internal(
         &mut self,
         event: EventEnvelopeV1,
         historical: bool,
         update_canonical: bool,
     ) {
-        let inline_live_child_view = self.replay_mode
-            && !self.session_navigation_stack.is_empty()
-            && self
-                .session_path
-                .as_ref()
-                .is_some_and(|path| !path.is_dir());
+        let inline_live_child_view = self.is_inline_child_view();
         if !historical && self.route_live_event_while_viewing_child(&event) {
             return;
         }
@@ -1818,6 +1823,9 @@ impl AppState {
         let run_terminal_seen_before_historical_ingest = self.projection.run_terminal_seen;
         let trimmed_events = if update_canonical && !inline_live_child_view {
             self.projection.ingest_event(event.clone(), historical)
+        } else if update_canonical && inline_live_child_view {
+            self.projection
+                .ingest_inline_event(event.clone(), historical)
         } else if inline_live_child_view {
             self.projection
                 .ingest_transient_view_event(event.clone(), historical)
@@ -1967,6 +1975,7 @@ impl AppState {
             .correlation_id
             .as_deref()
             .unwrap_or(match &event.payload {
+                LiveEventV1::CompactionProgress { .. } => return,
                 LiveEventV1::ProviderTextDelta { request_id, .. }
                 | LiveEventV1::ProviderReasoningDelta { request_id, .. }
                 | LiveEventV1::ProviderToolInputDelta { request_id, .. } => request_id.as_str(),

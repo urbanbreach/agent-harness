@@ -4,8 +4,7 @@ use harness_core::event::{
     ActorKind, ProviderRequestStartedEvent, ToolCallLifecycleState, UserMessageSubmittedEvent,
 };
 use harness_core::session::{
-    CanonicalEditPayload, CanonicalLegacyCompaction, CanonicalLegacyCompactionStatus,
-    CanonicalProviderFragmentKind,
+    CanonicalLegacyCompaction, CanonicalLegacyCompactionStatus, CanonicalProviderFragmentKind,
 };
 use harness_core::transcript_projection::{
     CompactionCheckpointStatus, ProjectedMessageRole, ProjectedMessageState, ProjectedPart,
@@ -31,13 +30,37 @@ use self::presentation_merge::*;
 use self::tasks::*;
 
 impl SessionProjection {
-    pub(super) fn rebuild_settled_presentation(&mut self) {
-        let Some(canonical) = self.canonical_projection.as_ref() else {
-            return;
+    pub(super) fn rebuild_settled_presentation(&mut self, inline: bool) {
+        // An inline child is a display slice, not a complete durable log. Keep
+        // its original sequence numbers and use the transcript projector,
+        // which accepts ordered slices without weakening history validation.
+        let (events, transcript, run_summary) = if inline {
+            let events = self.events.as_slice();
+            match (
+                harness_core::transcript_projection::project_transcript(events),
+                harness_core::proj::project_run_summary(events),
+            ) {
+                (Ok(transcript), Ok(summary)) => (events, transcript, summary),
+                (Err(error), _) => {
+                    self.canonical_projection_error = Some(error.to_string());
+                    return;
+                }
+                (_, Err(error)) => {
+                    self.canonical_projection_error = Some(error.to_string());
+                    return;
+                }
+            }
+        } else {
+            let Some(canonical) = self.canonical_projection.as_ref() else {
+                return;
+            };
+            (
+                canonical.source_events(),
+                canonical.transcript.clone(),
+                canonical.run_summary.clone(),
+            )
         };
-        let transcript = canonical.transcript.clone();
-        let run_summary = canonical.run_summary.clone();
-        let legacy_compaction = canonical.latest_legacy_compaction();
+        let legacy_compaction = harness_core::session::legacy::latest_legacy_compaction(events);
         let presentation_enrichment = std::mem::take(&mut self.activities);
         let presentation_orchestration = std::mem::take(&mut self.orchestration_tasks);
         let mut settled_activities = VecDeque::new();
@@ -172,15 +195,16 @@ impl SessionProjection {
         }
 
         let (latest_request_budget, provider_context_usage) =
-            apply_canonical_provider_presentation(canonical, &mut settled_activities);
+            apply_canonical_provider_presentation(events, &transcript, &mut settled_activities);
         mark_user_only_activities(&mut settled_activities);
         apply_canonical_background_notifications(
-            canonical,
+            events,
+            &transcript,
             &mut settled_activities,
             &mut orchestration_tasks,
         );
-        apply_canonical_stale_detections(canonical, &mut orchestration_tasks);
-        apply_canonical_edits(canonical, &mut settled_activities);
+        apply_canonical_stale_detections(events, &mut orchestration_tasks);
+        apply_canonical_edits(events, &mut settled_activities);
 
         merge_presentation_enrichment(&mut settled_activities, &presentation_enrichment);
         self.restore_uncommitted_assistant_suffixes(

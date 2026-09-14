@@ -182,4 +182,12 @@ pub(crate) fn mouse_click_on_task_inline_row_uses_task_row_child_session() {
     assert!(!render_text(&app, 140, 40).contains("Subagent Actions"));
     assert_eq!(app.current_session_id(), Some("agent_child"));
     assert!(app.replay_mode, "inline child sessions open read-only");
+    assert_eq!(
+        app.session_navigation_stack
+            .last()
+            .unwrap_or_abort()
+            .child_session_ids,
+        vec!["agent_child".to_string()],
+        "task lineage must be available for sibling navigation before the spawn finishes"
+    );
 }
